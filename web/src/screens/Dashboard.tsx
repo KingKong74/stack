@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Project, ProjectStatus } from '../types';
-import { getProjects, createProject } from '../store';
+import type { Project, ProjectStatus, Overview } from '../types';
+import { getProjects, getOverview, createProject } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { NewProjectModal } from '../components/NewProjectModal';
+import { CommandDeck } from '../components/CommandDeck';
 
 type Filter = 'all' | ProjectStatus;
 const STATUS_LABEL: Record<ProjectStatus, string> = {
@@ -17,6 +18,9 @@ export function Dashboard() {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [newOpen, setNewOpen] = useState(false);
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [deckLoading, setDeckLoading] = useState(true);
+  const [deckError, setDeckError] = useState('');
 
   useEffect(() => {
     let live = true;
@@ -25,6 +29,18 @@ export function Dashboard() {
       .then((ps) => { if (live) { setProjects(ps); setError(''); } })
       .catch((e) => { if (live) setError(e?.message || 'Failed to load projects.'); })
       .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, []);
+
+  // The deck loads independently so an overview hiccup never blanks the grid
+  // (and vice versa). A 401 in either clears the token and routes to the gate.
+  useEffect(() => {
+    let live = true;
+    setDeckLoading(true);
+    getOverview()
+      .then((o) => { if (live) { setOverview(o); setDeckError(''); } })
+      .catch((e) => { if (live) setDeckError(e?.message || 'Failed to load the deck.'); })
+      .finally(() => { if (live) setDeckLoading(false); });
     return () => { live = false; };
   }, []);
 
@@ -76,9 +92,17 @@ export function Dashboard() {
       </div>
 
       <div className="page">
+        {deckLoading ? (
+          <div className="deck deck-skeleton" aria-busy="true">Loading the deck…</div>
+        ) : deckError ? (
+          <div className="deck-error">Couldn’t load the command deck — {deckError}</div>
+        ) : overview ? (
+          <CommandDeck data={overview} />
+        ) : null}
+
         <div className="dash-head">
           <div>
-            <div className="dash-title">Your projects</div>
+            <div className="dash-title">All projects</div>
             <div className="dash-count">{counts.live} live · {counts.building} building · {counts.paused} paused</div>
           </div>
           <div className="chips">

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 
-export type Route = { name: 'dashboard' } | { name: 'detail'; id: string };
+export type Route = { name: 'dashboard' } | { name: 'detail'; id: string; tab?: string };
 
 function parse(): Route {
   const h = window.location.hash.replace(/^#/, '');
-  const m = h.match(/^\/p\/([^/]+)/);
-  if (m) return { name: 'detail', id: decodeURIComponent(m[1]) };
+  const m = h.match(/^\/p\/([^/]+)(?:\/([^/]+))?/);
+  if (m) return { name: 'detail', id: decodeURIComponent(m[1]), tab: m[2] };
   return { name: 'dashboard' };
 }
 
@@ -21,5 +21,7 @@ export function useRoute(): Route {
 
 export const go = {
   dashboard: () => { window.location.hash = '#/'; },
-  detail: (id: string) => { window.location.hash = `#/p/${encodeURIComponent(id)}`; },
+  detail: (id: string, tab?: string) => {
+    window.location.hash = `#/p/${encodeURIComponent(id)}${tab ? `/${tab}` : ''}`;
+  },
 };

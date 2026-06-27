@@ -29,7 +29,8 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 
 ### Frontend structure (`web/src`)
 - `store.ts` — **the only module that touches the network.** Auth helpers (`getToken/setToken/
-  clearToken/onAuthChange/verifyToken`) + async data calls: `getProjects`, `getProjectDetail`,
+  clearToken/onAuthChange/verifyToken`) + async data calls: `getOverview` (the command deck),
+  `getProjects`, `getProjectDetail`,
   `createProject/patchProject/deleteProject`, `getBugs/createBug/patchBug/deleteBug`,
   `getRoadmap/createRoadmapItem/patchRoadmapItem/deleteRoadmapItem`,
   `getNotes/createNote/patchNote/deleteNote`. `request()` attaches the bearer and throws `AuthError`
@@ -37,9 +38,15 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 - `types.ts` — Project, Bug, RoadmapItem, Note, Activity, Resume. Status is `live | building |
   paused | archived`. Bug/RoadmapItem/Note carry `source: 'hook' | 'manual'` (drives the "auto" cue).
 - `components/TokenGate.tsx` — first-load token screen; `App.tsx` shows it whenever there's no token.
-- `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router.
-- `screens/` Dashboard (async load, status filters, computed progress on cards),
-  ProjectDetail (loads project+activity+collections, owns tab/modal state, persists on mutate).
+- `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router; the
+  detail route is `#/p/<slug>[/<tab>]`, so `go.detail(slug, 'activity')` opens straight on a tab.
+- `components/CommandDeck.tsx` — the cross-project deck at the top of the dashboard (resume hero,
+  Blocked/Stale/Bugs attention row that goes calm at zero, merged activity stream). Renders the
+  `getOverview()` payload; all click-throughs use `go.detail(slug, tab?)`.
+- `screens/` Dashboard (loads projects + overview independently — a deck hiccup never blanks the
+  grid; renders the deck above the "All projects" grid; status filters, computed progress on cards),
+  ProjectDetail (loads project+activity+collections, owns tab/modal state, persists on mutate;
+  initial tab comes from the route so the deck can deep-link to e.g. a project's Activity tab).
 - `detail/` Overview, Bugs (auto cue), Roadmap (done toggle + auto cue), Notes (inline edit on the
   sticky; promote → bug/roadmap prefills the existing modal, then a keep/delete-the-note confirm),
   Activity. ProjectDetail also owns: the Visit-site/Repo buttons (open the URL, or inline-set it when
@@ -63,10 +70,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   - `notes` — text, `colour`, `source`.
   - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap`, fingerprint).
 - `util.js` — `slugify`, `fingerprint` (title normalised: lowercased, punctuation + extra
-  whitespace stripped), `relativeTime`, palettes, and **`computeProgress` — the one documented
-  progress model** (see below).
+  whitespace stripped), `relativeTime`, palettes, **`computeProgress` — the one documented progress
+  model** (see below), and **`STALE_DAYS`** — the single knob for the command deck's stale threshold
+  (default 14; the only place to change it).
 - `shape.js` — row → client-shape mappers (bug/roadmap/note/activity/project).
 - `routes/ingest.js` — `POST /api/ingest`: see the package + behaviour below.
+- `routes/overview.js` — `GET /api/overview`: the cross-project command deck, computed in four
+  aggregate queries (projects, bugs agg, recent sessions, week count) — never one-per-project. Shape
+  documented below.
 - `routes/projects.js` — list (computed progress), combined detail, create, extended PATCH, delete.
 - `routes/{bugs,roadmap,notes}.js` — per-project collection CRUD, mounted under
   `/api/projects/:slug/...` (mergeParams).
@@ -110,10 +121,34 @@ done Must weighs double a done Should; `progress = doneWeight / totalWeight` as 
 capped at 90% while any critical/high bug is open; 0% when there are no Must/Should items. Exposed on
 every project payload (`progress`) and recomputed on the dashboard each load.
 
+## The overview payload (`GET /api/overview` → the command deck)
+
+The cross-project glance layer, computed server-side in four aggregate queries (never one-per-project):
+
+```jsonc
+{
+  "resume":  { "slug": "…", "name": "…", "tint": "#…|null",
+               "summary": "…", "currentPhase": "…", "nextUp": ["…"] },   // or null
+  // resume = most-recently-touched live|building project (by last_session_at, not pin order),
+  //          falling back to the most-recently-touched of any status; null if there are no projects.
+  "blockers": [ { "slug": "…", "name": "…", "text": "…" } ],            // every stored blocker line, flat
+  "stale":    [ { "slug": "…", "name": "…", "since": "2w ago" } ],      // live|building, last push > STALE_DAYS
+  "bugs":     { "total": 3, "projects": [ { "slug": "…", "name": "…", "count": 2 } ] }, // open critical|high
+  "activity": [ { "slug": "…", "name": "…", "hash": "…", "branch": "…",
+                  "summary": "…", "tags": ["…"], "when": "just now" } ], // merged, newest first, ~12
+  "totals":   { "byStatus": { "live": 0, "building": 3, "paused": 0, "archived": 0 },
+                "openBugs": 4, "pushesThisWeek": 2 }
+}
+```
+
+`stale` excludes paused/archived (dormant on purpose) and projects that have never pushed; the
+threshold is the single constant `util.STALE_DAYS` (default 14). The deck loads independently of the
+project grid on the dashboard, so an overview hiccup never blanks the grid.
+
 ## Routes (all behind bearer auth except GET /api/health)
 
-- `POST /api/ingest`
 - `POST /api/ingest` (also the source the SessionStart hook reads back via `GET /api/projects/:slug`)
+- `GET /api/overview` (cross-project command deck — resume, blockers, stale, bugs, activity, totals)
 - `GET /api/projects` · `POST /api/projects` · `GET /api/projects/:slug` (project + activity +
   collections + progress; the detail payload includes `blockers` for the start hook) ·
   `PATCH /api/projects/:slug` (subtitle, site_url, repo_url, status, pin, …) ·

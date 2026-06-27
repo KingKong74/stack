@@ -25,7 +25,10 @@ const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', arc
 
 const roadmapTotal = (r: RoadmapData) => r.must.length + r.should.length + r.could.length + r.wont.length;
 
-export function ProjectDetail({ id }: { id: string }) {
+const TAB_KEYS = new Set<Tab>(['overview', 'bugs', 'roadmap', 'notes', 'activity']);
+const asTab = (t: string | undefined): Tab => (t && TAB_KEYS.has(t as Tab) ? (t as Tab) : 'overview');
+
+export function ProjectDetail({ id, tab }: { id: string; tab?: string }) {
   const [data, setData] = useState<ProjectDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -52,7 +55,7 @@ export function ProjectDetail({ id }: { id: string }) {
       </Shell>
     );
   }
-  return <Detail data={data} setData={setData} />;
+  return <Detail data={data} setData={setData} initialTab={asTab(tab)} />;
 }
 
 function Shell({ children }: { children: ReactNode }) {
@@ -69,11 +72,11 @@ function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-function Detail({ data, setData }: { data: ProjectDetailData; setData: (d: ProjectDetailData) => void }) {
+function Detail({ data, setData, initialTab }: { data: ProjectDetailData; setData: (d: ProjectDetailData) => void; initialTab: Tab }) {
   const { project, activity } = data;
   const slug = project.id;
 
-  const [tab, setTab] = useState<Tab>('overview');
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [bugFilter, setBugFilter] = useState<BugFilter>('all');
   const [highlightRef, setHighlightRef] = useState<string | null>(null);
   const [bugModal, setBugModal] = useState<{ open: boolean; title: string; fromNote: number | null }>(

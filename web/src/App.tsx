@@ -13,6 +13,6 @@ export default function App() {
   useEffect(() => onAuthChange(() => setTokenState(getToken())), []);
 
   if (!token) return <TokenGate />;
-  if (route.name === 'detail') return <ProjectDetail id={route.id} />;
+  if (route.name === 'detail') return <ProjectDetail id={route.id} tab={route.tab} />;
   return <Dashboard />;
 }

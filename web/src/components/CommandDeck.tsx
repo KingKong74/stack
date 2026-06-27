@@ -1,0 +1,127 @@
+import type { ReactNode } from 'react';
+import type { Overview } from '../types';
+import { go } from '../lib/route';
+
+// The cross-project command deck that sits at the top of the dashboard:
+// a resume hero, a quiet attention row, and a merged activity stream.
+// Calm when all's well; loud only where something needs attention.
+export function CommandDeck({ data }: { data: Overview }) {
+  const { resume, blockers, stale, bugs, activity } = data;
+  const worstBug = bugs.projects[0] || null;
+
+  return (
+    <section className="deck" aria-label="Command deck">
+      {/* resume hero */}
+      {resume ? (
+        <div className="deck-hero">
+          <div className="hero-main">
+            <div className="hero-eyebrow"><span className="resume-ico">↩</span> Pick up where you left off</div>
+            <div className="hero-row">
+              <span className="hero-name">{resume.name}</span>
+              {resume.currentPhase && <span className="hero-phase">{resume.currentPhase}</span>}
+            </div>
+            {resume.summary && <div className="hero-summary">{resume.summary}</div>}
+            {resume.nextUp.length > 0 && (
+              <div className="hero-next">
+                {resume.nextUp.slice(0, 2).map((t, i) => (
+                  <div className="hero-step" key={i}><span className="mk arrow">→</span><span>{t}</span></div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="hero-side">
+            <button className="btn-accent hero-continue" onClick={() => go.detail(resume.slug)}>
+              Continue <span className="arr">→</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="deck-hero empty">
+          <div className="hero-main">
+            <div className="hero-eyebrow"><span className="resume-ico">↩</span> Pick up where you left off</div>
+            <div className="hero-summary">
+              Nothing on the go yet. Start a project or fire a push, and your resume point lands here.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* attention row — quiet at zero, loud only where it matters */}
+      <div className="deck-attention">
+        <AttentionCard kind="blocked" title="Blocked" count={blockers.length} clearText="Nothing blocked">
+          {blockers.slice(0, 4).map((b, i) => (
+            <button className="att-row" key={i} onClick={() => go.detail(b.slug)}>
+              <span className="att-text">{b.text}</span>
+              <span className="att-proj">{b.name}</span>
+            </button>
+          ))}
+          {blockers.length > 4 && <div className="att-more">+{blockers.length - 4} more</div>}
+        </AttentionCard>
+
+        <AttentionCard kind="stale" title="Stale" count={stale.length} clearText="All current">
+          {stale.slice(0, 4).map((s, i) => (
+            <button className="att-row" key={i} onClick={() => go.detail(s.slug)}>
+              <span className="att-text">{s.name}</span>
+              <span className="att-proj mono">{s.since}</span>
+            </button>
+          ))}
+          {stale.length > 4 && <div className="att-more">+{stale.length - 4} more</div>}
+        </AttentionCard>
+
+        <AttentionCard kind="bugs" title="Critical & high bugs" count={bugs.total} clearText="No serious bugs"
+          onCount={worstBug ? () => go.detail(worstBug.slug, 'bugs') : undefined}>
+          {bugs.projects.slice(0, 4).map((p, i) => (
+            <button className="att-row" key={i} onClick={() => go.detail(p.slug, 'bugs')}>
+              <span className="att-text">{p.name}</span>
+              <span className="att-proj">{p.count}</span>
+            </button>
+          ))}
+        </AttentionCard>
+      </div>
+
+      {/* merged activity stream */}
+      <div className="deck-activity">
+        <div className="deck-section-head">Across everything</div>
+        {activity.length ? (
+          <div className="deck-feed">
+            {activity.map((a, i) => (
+              <button className="feed-row" key={i} disabled={!a.slug}
+                onClick={() => a.slug && go.detail(a.slug, 'activity')}>
+                <span className="feed-hash">{a.hash}</span>
+                <span className="feed-proj">{a.name}</span>
+                <span className="feed-summary">{a.summary || '—'}</span>
+                <span className="feed-when">{a.when}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="deck-empty">No pushes yet across any project.</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AttentionCard({
+  kind, title, count, clearText, onCount, children,
+}: {
+  kind: string; title: string; count: number; clearText: string;
+  onCount?: () => void; children?: ReactNode;
+}) {
+  const calm = count === 0;
+  return (
+    <div className={`att-card ${kind} ${calm ? 'calm' : 'flag'}`}>
+      <div className="att-head">
+        <span className="att-title">{title}</span>
+        {calm ? (
+          <span className="att-count">✓</span>
+        ) : onCount ? (
+          <button className="att-count link" onClick={onCount}>{count}</button>
+        ) : (
+          <span className="att-count">{count}</span>
+        )}
+      </div>
+      {calm ? <div className="att-clear">{clearText}</div> : <div className="att-body">{children}</div>}
+    </div>
+  );
+}

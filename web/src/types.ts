@@ -75,3 +75,28 @@ export interface Collections {
   roadmap: Roadmap;
   notes: Note[];
 }
+
+// ---- cross-project command deck (GET /api/overview) ----
+export interface OverviewResume {
+  slug: string; name: string; tint: string | null;
+  summary: string; currentPhase: string; nextUp: string[];
+}
+export interface OverviewBlocker { slug: string; name: string; text: string }
+export interface OverviewStale { slug: string; name: string; since: string }
+export interface OverviewBugProject { slug: string; name: string; count: number }
+export interface OverviewActivity {
+  slug: string; name: string; hash: string; branch: string;
+  summary: string; tags: string[]; when: string;
+}
+export interface Overview {
+  resume: OverviewResume | null;
+  blockers: OverviewBlocker[];
+  stale: OverviewStale[];
+  bugs: { total: number; projects: OverviewBugProject[] };
+  activity: OverviewActivity[];
+  totals: {
+    byStatus: Record<ProjectStatus, number>;
+    openBugs: number;
+    pushesThisWeek: number;
+  };
+}

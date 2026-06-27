@@ -17,6 +17,11 @@ export const BUG_STATUSES = ['open', 'investigating', 'fixing', 'fixed'];
 export const BUCKETS = ['must', 'should', 'could', 'wont'];
 export const PROJECT_STATUSES = ['live', 'building', 'paused', 'archived'];
 
+// Days since last push after which a live/building project counts as "stale"
+// on the command deck. Single knob — change it here and GET /api/overview
+// follows. Paused/archived projects are dormant on purpose and never stale.
+export const STALE_DAYS = 14;
+
 export function slugify(s) {
   return (
     String(s || '')

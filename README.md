@@ -9,6 +9,12 @@ Each project tracks its live site, repo, deploy status, an auto-generated **acti
 **sticky notes**. Two screens: a cover-forward **projects dashboard** and a five-tab
 **project detail** (Overview · Bugs · Roadmap · Notes · Activity).
 
+The dashboard opens with a **cross-project command deck** — a console that glances across everything:
+a resume hero (the one project to jump back into), a quiet attention row (**Blocked · Stale · Bugs**
+that stays calm at zero and gets loud only where something needs you), and a merged recent-activity
+stream. It's calm when all's well, and every item clicks straight through to the project. The grid of
+all projects sits below it.
+
 A push does more than feed the resume card: the SessionEnd hook **auto-extracts candidate bugs
 and next-steps** into the trackers, and the dashboard **progress bar is computed** from
 roadmap/bug completion — never set by hand.
@@ -45,6 +51,11 @@ stack/
 - **The detail screen is hands-on:** the Visit-site and Repo buttons open the project's URLs (and let
   you set them inline when unset), notes are editable in place and can be promoted to a bug or roadmap
   item, and a project can be deleted (cascading its sessions, bugs, roadmap and notes).
+- **The command deck glances across everything:** a single server-side aggregate (`GET /api/overview`,
+  four queries, never one-per-project) backs the dashboard deck — resume hero, Blocked/Stale/Bugs
+  attention row, and a merged activity stream. A project counts as **stale** once a live/building
+  project's last push is older than a threshold; that threshold is one constant, `STALE_DAYS` in
+  `server/src/util.js` (default 14) — change it there and the deck follows.
 
 ## Run the full stack (compose)
 

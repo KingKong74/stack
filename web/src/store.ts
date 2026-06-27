@@ -1,5 +1,5 @@
 import type {
-  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note,
+  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Overview,
   ProjectStatus, Priority, Severity, BugStatus,
 } from './types';
 
@@ -103,6 +103,13 @@ function toProject(d: ProjectPayload): Project {
     },
     resume: isDetail ? toResume(d) : null,
   };
+}
+
+// ---- cross-project command deck ----
+
+// The server already returns the client shape, so this is a thin pass-through.
+export async function getOverview(): Promise<Overview> {
+  return request<Overview>('/overview');
 }
 
 // ---- projects ----
