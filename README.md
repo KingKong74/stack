@@ -154,6 +154,46 @@ node ~/.stack/stack-checkpoint.mjs --settings
 echo '{"project":{"slug":"stack"},"session":{"summary":"Quick manual checkpoint."}}' | node ~/.stack/stack-checkpoint.mjs
 ```
 
+## Set up a new project (and get Claude connected)
+
+One-time machine setup first (hooks + `~/.stack/env` + `/checkpoint` — the section above). After
+that, connecting a project is mostly automatic:
+
+1. **Just start working.** Open Claude Code in the project's repo and do a unit of work. The slug is
+   derived from the git remote (`owner/repo` tail, lowercased; falls back to the directory name if
+   there's no remote), so there's nothing to register — **the first checkpoint or session-end post
+   creates the project in Stack**, assigns it a tint, and fills the repo URL.
+
+2. **Run `/checkpoint` when you wrap up.** That's what makes the resume card rich — the summary,
+   current phase, in-progress / next-up / working-well / blockers, and candidate bugs + next-steps
+   for the trackers. (If you forget, the SessionEnd hook still records a metadata backstop, so the
+   activity feed never has gaps.)
+
+3. **Give the project's agents the manual** (optional but recommended). Stamp the portable
+   operating manual into the project's `CLAUDE.md` so any fresh session knows how Stack works, that
+   the injected "where you left off" block is trustworthy, and how to read live state from the API:
+
+   ```bash
+   node scripts/stack-context.mjs --slug <project-slug> --api https://stack.your-domain >> /path/to/project/CLAUDE.md
+   ```
+
+4. **Dress the card in the UI.** Open the project in Stack and set the subtitle, site URL and
+   status (the repo URL will already be filled from the first push; a hand-set value is never
+   overwritten by ingest).
+
+5. **Verify the round-trip** from the project's directory:
+
+   ```bash
+   node ~/.stack/stack-session-start.mjs --demo   # prints the "where you left off" block Claude will see
+   node ~/.stack/stack-checkpoint.mjs --settings  # confirms the poster can reach the API + token works
+   ```
+
+Troubleshooting: a **401** means `STACK_TOKEN` in `~/.stack/env` doesn't match the server's
+`API_TOKEN`; a silent SessionStart just means the project has no checkpoints yet or the API was
+unreachable (the hooks never block); `Cannot find module ~/.stack/stack-checkpoint.mjs` means the
+install step above wasn't run on this machine (it copies **four** files — the two hooks,
+`stack-post.mjs` and the poster).
+
 ## The agent-context template
 
 `templates/stack-agent-context.md` is a portable operating manual a fresh Claude session can load to
