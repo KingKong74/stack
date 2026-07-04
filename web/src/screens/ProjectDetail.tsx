@@ -149,6 +149,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
 
   const openBugCount = bugs.filter((b) => b.status !== 'fixed').length;
   const openRoadCount = allRoadmap.filter((r) => !r.done).length;
+  const unsortedFutures = futures.filter((f) => !f.alignment).length;
   const fixingCount = bugs.filter((b) => b.status === 'fixing').length;
   const roadmapCount = roadmapTotal(roadmap);
   const linkedBugId = bugs.find((b) => b.linkRef === highlightRef)?.id ?? null;
@@ -424,7 +425,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
 
         <div className="tabs">
           {TABS.map((t) => {
-            const n = t.key === 'bugs' ? openBugCount : t.key === 'roadmap' ? openRoadCount : 0;
+            const n = t.key === 'bugs' ? openBugCount : t.key === 'roadmap' ? openRoadCount : t.key === 'futures' ? unsortedFutures : 0;
             return (
               <button key={t.key} className={`tab ${tab === t.key ? 'on' : ''}`} onClick={() => setTab(t.key)}>
                 {t.label}{n > 0 && <span className="tab-n">{n}</span>}
