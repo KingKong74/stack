@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import type { Overview } from '../types';
 import { go } from '../lib/route';
 import { getProjectDetail } from '../store';
-import { downloadBrief } from '../lib/brief';
+import { ExportBriefModal } from './ExportBriefModal';
 
 // The cross-project command deck that sits at the top of the dashboard:
 // a resume hero, a quiet attention row, and a merged activity stream.
@@ -11,21 +11,13 @@ export function CommandDeck({ data }: { data: Overview }) {
   const { resume, keepResumeCard, blockers, stale, bugs, activity } = data;
   const worstBug = bugs.projects[0] || null;
 
-  // The hero only carries a slice of the project, so exporting the brief pulls
-  // the full detail on demand. 'failed' shows briefly, then resets.
-  const [exportState, setExportState] = useState<'idle' | 'busy' | 'failed'>('idle');
-  const exportBrief = async () => {
-    if (!resume || exportState === 'busy') return;
-    setExportState('busy');
-    try {
-      const d = await getProjectDetail(resume.slug);
-      downloadBrief({ project: d.project, currentPhase: d.currentPhase, blockers: d.blockers,
-        activity: d.activity, bugs: d.bugs, roadmap: d.roadmap });
-      setExportState('idle');
-    } catch {
-      setExportState('failed');
-      setTimeout(() => setExportState('idle'), 2500);
-    }
+  // The hero only carries a slice of the project, so the export modal pulls
+  // the full detail on demand when the user confirms.
+  const [exportOpen, setExportOpen] = useState(false);
+  const loadHeroInput = async () => {
+    const d = await getProjectDetail(resume!.slug);
+    return { project: d.project, currentPhase: d.currentPhase, blockers: d.blockers,
+      activity: d.activity, bugs: d.bugs, roadmap: d.roadmap };
   };
 
   return (
@@ -52,9 +44,9 @@ export function CommandDeck({ data }: { data: Overview }) {
             <button className="btn-accent hero-continue" onClick={() => go.detail(resume.slug)}>
               Continue <span className="arr">→</span>
             </button>
-            <button className="hero-export" onClick={exportBrief} disabled={exportState === 'busy'}
+            <button className="hero-export" onClick={() => setExportOpen(true)}
               title="Download a markdown brief for starting back into this project">
-              {exportState === 'busy' ? 'Exporting…' : exportState === 'failed' ? 'Export failed' : 'Export brief ↓'}
+              Export brief ↓
             </button>
           </div>
         </div>
@@ -121,6 +113,11 @@ export function CommandDeck({ data }: { data: Overview }) {
           <div className="deck-empty">No pushes yet across any project.</div>
         )}
       </div>
+
+      {exportOpen && resume && (
+        <ExportBriefModal projectName={resume.name} loadInput={loadHeroInput}
+          onClose={() => setExportOpen(false)} />
+      )}
     </section>
   );
 }

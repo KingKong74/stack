@@ -29,6 +29,26 @@ export class AuthError extends Error {
   constructor() { super('Unauthorised'); this.name = 'AuthError'; }
 }
 
+// ---- export-brief preferences (device-local, like the token) ----
+
+const BRIEF_PREFS_KEY = 'stack.briefPrefs';
+
+export interface BriefPrefs { compact: boolean; directives: string[] }
+
+export function getBriefPrefs(): BriefPrefs {
+  try {
+    const raw = localStorage.getItem(BRIEF_PREFS_KEY);
+    const p = raw ? JSON.parse(raw) : null;
+    return { compact: p?.compact === true, directives: Array.isArray(p?.directives) ? p.directives : [] };
+  } catch {
+    return { compact: false, directives: [] };
+  }
+}
+
+export function setBriefPrefs(prefs: BriefPrefs) {
+  localStorage.setItem(BRIEF_PREFS_KEY, JSON.stringify(prefs));
+}
+
 async function request<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
   const token = getToken();
   const res = await fetch(`/api${path}`, {

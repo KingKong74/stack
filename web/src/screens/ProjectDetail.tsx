@@ -6,7 +6,7 @@ import {
   createNote, patchNote, deleteNote, patchProject, deleteProject,
 } from '../store';
 import { go } from '../lib/route';
-import { downloadBrief } from '../lib/brief';
+import { ExportBriefModal } from '../components/ExportBriefModal';
 import { Overview } from '../detail/Overview';
 import { Bugs } from '../detail/Bugs';
 import { Roadmap } from '../detail/Roadmap';
@@ -117,6 +117,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     { open: false, priority: 'should', title: '', fromNote: null });
   const [promotedNote, setPromotedNote] = useState<{ id: number; kind: 'bug' | 'roadmap' } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [editingUrl, setEditingUrl] = useState<'site' | 'repo' | null>(null);
   const [urlDraft, setUrlDraft] = useState('');
   const [actionError, setActionError] = useState('');
@@ -212,9 +213,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const removeProject = () =>
     guard(async () => { await deleteProject(slug); go.dashboard(); });
 
-  const exportBrief = () =>
-    downloadBrief({ project, currentPhase: data.currentPhase, blockers: data.blockers, activity, bugs, roadmap });
-
   const openBugLink = (hash: string) => { setHighlightRef(hash); setTab('activity'); };
   const viewAll = () => { setHighlightRef(null); setTab('activity'); };
   const open = (url: string) => { if (url) window.open(url, '_blank', 'noopener'); };
@@ -281,7 +279,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {tab === 'overview' && (
           <Overview project={project} activity={activity} keepResumeCard={data.keepResumeCard}
             openBugCount={openBugCount} fixingCount={fixingCount} roadmapCount={roadmapCount}
-            onViewAll={viewAll} onExport={exportBrief} />
+            onViewAll={viewAll} onExport={() => setExportOpen(true)} />
         )}
         {tab === 'bugs' && (
           <Bugs bugs={bugs} filter={bugFilter} setFilter={setBugFilter} highlightId={highlightId}
@@ -310,6 +308,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       {roadModal.open && (
         <RoadmapModal initialPriority={roadModal.priority} initialTitle={roadModal.title}
           onClose={() => setRoadModal({ open: false, priority: roadModal.priority, title: '', fromNote: null })} onSubmit={addRoad} />
+      )}
+      {exportOpen && (
+        <ExportBriefModal projectName={project.name} onClose={() => setExportOpen(false)}
+          loadInput={async () => ({
+            project, currentPhase: data.currentPhase, blockers: data.blockers, activity, bugs, roadmap,
+          })} />
       )}
       {promotedNote && (
         <ConfirmModal
