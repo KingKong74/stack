@@ -1,5 +1,5 @@
 import type {
-  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Overview,
+  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings,
 } from './types';
 
@@ -206,18 +206,20 @@ export interface ProjectDetailData {
   roadmap: Roadmap;
   notes: Note[];
   futures: Future[];
+  checks: Check[];
   keepResumeCard: boolean;
 }
 
 export async function getProjectDetail(slug: string): Promise<ProjectDetailData> {
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; futures?: Future[];
-    keepResumeCard?: boolean;
+    checks?: Check[]; keepResumeCard?: boolean;
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
     project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
     blockers: d.blockers || [], directives: d.directives || [],
     activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes, futures: d.futures || [],
+    checks: d.checks || [],
     keepResumeCard: d.keepResumeCard !== false,
   };
 }
@@ -304,6 +306,26 @@ export async function patchFuture(
 }
 export async function deleteFuture(slug: string, id: number): Promise<void> {
   await request<void>(`${futuresBase(slug)}/${id}`, { method: 'DELETE' });
+}
+
+// ---- checks (the Bugs tab's testing panel) ----
+
+const checksBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/checks`;
+
+export async function getChecks(slug: string): Promise<Check[]> {
+  return request<Check[]>(checksBase(slug));
+}
+export async function createCheck(
+  slug: string, input: { name: string; url: string; expect_status?: number; contains?: string },
+): Promise<Check> {
+  return request<Check>(checksBase(slug), { method: 'POST', body: input });
+}
+export async function deleteCheck(slug: string, id: number): Promise<void> {
+  await request<void>(`${checksBase(slug)}/${id}`, { method: 'DELETE' });
+}
+// Run all checks (or one, by id); returns the updated rows.
+export async function runChecks(slug: string, id?: number): Promise<Check[]> {
+  return request<Check[]>(`${checksBase(slug)}/run`, { method: 'POST', body: id ? { id } : {} });
 }
 
 // ---- notes ----

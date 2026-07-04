@@ -4,7 +4,7 @@ import {
   slugify, oneOf, relativeTime, computeProgress, TINTS, PROJECT_STATUSES,
 } from '../util.js';
 import {
-  bugShape, groupRoadmap, noteShape, futureShape, activityShape,
+  bugShape, groupRoadmap, noteShape, futureShape, checkShape, activityShape,
   projectListShape, projectDetailShape,
 } from '../shape.js';
 import { readSettings } from '../settings.js';
@@ -94,7 +94,7 @@ projects.get('/:slug', async (req, res) => {
   const p = rows[0];
 
   const appSettings = await readSettings();
-  const [sessions, bugs, road, notes, futures, weekly] = await Promise.all([
+  const [sessions, bugs, road, notes, futures, checks, weekly] = await Promise.all([
     q(
       `SELECT commit_hash, branch, summary, tags, created_at FROM sessions
         WHERE project_id = $1 ORDER BY created_at DESC LIMIT 50`,
@@ -104,6 +104,7 @@ projects.get('/:slug', async (req, res) => {
     q('SELECT * FROM roadmap_items WHERE project_id = $1 ORDER BY bucket, position, created_at', [p.id]),
     q('SELECT * FROM notes WHERE project_id = $1 ORDER BY created_at DESC', [p.id]),
     q('SELECT * FROM futures WHERE project_id = $1 ORDER BY created_at DESC', [p.id]),
+    q('SELECT * FROM checks WHERE project_id = $1 ORDER BY created_at', [p.id]),
     q(
       `SELECT count(*)::int AS n FROM sessions
         WHERE project_id = $1 AND created_at > now() - interval '7 days'`,
@@ -121,6 +122,7 @@ projects.get('/:slug', async (req, res) => {
       roadmap: groupRoadmap(road.rows),
       notes: notes.rows.map(noteShape),
       futures: futures.rows.map(futureShape),
+      checks: checks.rows.map(checkShape),
       keepResumeCard: appSettings.keep_resume_card,
     })
   );

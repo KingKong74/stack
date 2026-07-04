@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Severity, Priority } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Check, Severity, Priority } from '../types';
 import {
   getProjectDetail, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture,
+  createCheck, deleteCheck, runChecks,
   patchProject, deleteProject,
 } from '../store';
 import { go } from '../lib/route';
@@ -127,6 +128,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const [pendingFuture, setPendingFuture] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [checksBusy, setChecksBusy] = useState(false);
   const [editingUrl, setEditingUrl] = useState<'site' | 'repo' | null>(null);
   const [urlDraft, setUrlDraft] = useState('');
   const [actionError, setActionError] = useState('');
@@ -314,6 +316,34 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       });
     });
 
+  // ---- checks (the Bugs tab's testing panel) ----
+  const runProjectChecks = (id?: number) =>
+    guard(async () => {
+      setChecksBusy(true);
+      try {
+        const updated = await runChecks(slug, id);
+        const byId = new Map(updated.map((c) => [c.id, c]));
+        setData({ ...data, checks: data.checks.map((c) => byId.get(c.id) ?? c) });
+      } finally {
+        setChecksBusy(false);
+      }
+    });
+
+  const addCheck = (input: { name: string; url: string; expect_status?: number }) =>
+    guard(async () => {
+      const c = await createCheck(slug, input);
+      setData({ ...data, checks: [...data.checks, c] });
+    });
+
+  const removeCheck = (cid: number) =>
+    guard(async () => {
+      await deleteCheck(slug, cid);
+      setData({ ...data, checks: data.checks.filter((c) => c.id !== cid) });
+    });
+
+  const checkToBug = (c: Check) =>
+    setBugModal({ open: true, title: `Check failing: ${c.name} — ${c.lastError || `HTTP ${c.lastCode}`}`, fromNote: null });
+
   const saveStack = (next: string[]) =>
     guard(async () => {
       await patchProject(slug, { tech_stack: next });
@@ -444,7 +474,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         )}
         {tab === 'bugs' && (
           <Bugs bugs={bugs} filter={bugFilter} setFilter={setBugFilter} highlightId={highlightId}
-            onReport={() => setBugModal({ open: true, title: '', fromNote: null })} onOpenLink={openBugLink} />
+            onReport={() => setBugModal({ open: true, title: '', fromNote: null })} onOpenLink={openBugLink}
+            checks={data.checks} siteUrl={project.siteUrl} checksBusy={checksBusy}
+            onRunChecks={runProjectChecks} onAddCheck={addCheck} onDeleteCheck={removeCheck}
+            onCheckToBug={checkToBug} />
         )}
         {tab === 'roadmap' && (
           <Roadmap roadmap={roadmap} highlightId={highlightId}

@@ -53,6 +53,21 @@ export function futureShape(row) {
   };
 }
 
+export function checkShape(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    url: row.url,
+    expectStatus: row.expect_status,
+    contains: row.contains || '',
+    lastStatus: row.last_status || '',   // '' = never run
+    lastCode: row.last_code ?? null,
+    lastMs: row.last_ms ?? null,
+    lastError: row.last_error || '',
+    when: relativeTime(row.last_run_at) || '',
+  };
+}
+
 export function noteShape(row) {
   return {
     id: row.id,
@@ -95,7 +110,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, keepResumeCard }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
@@ -118,5 +133,6 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, acti
     roadmap,
     notes,
     futures: futures || [],
+    checks: checks || [],
   };
 }

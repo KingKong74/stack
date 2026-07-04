@@ -80,6 +80,21 @@ export interface Future {
   alignment: string;   // north-star verdict: '' | on-course | tangent | off-course
 }
 
+// A check: an HTTP probe against the project's live application, run from the
+// Bugs tab. lastStatus '' = never run.
+export interface Check {
+  id: number;
+  name: string;
+  url: string;
+  expectStatus: number;
+  contains: string;
+  lastStatus: '' | 'pass' | 'fail';
+  lastCode: number | null;
+  lastMs: number | null;
+  lastError: string;
+  when: string;
+}
+
 export interface Activity {
   hash: string;
   branch: string;

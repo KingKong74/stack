@@ -117,7 +117,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   RoadmapModal then a keep/delete-the-idea confirm, dismiss deletes + tombstones; ideas are
   editable in place, the composer takes "first line = idea, rest = why", and each idea carries an
   **alignment verdict** — ✦ Judge → On course / Tangent / Off course, pick the same to clear —
-  which is how the list groups itself), Notes (inline
+  which is how the list groups itself), Bugs also hosts the **Checks panel** (HTTP probes against
+  the live app: Run all / run one, quick-add "Site up" from site_url, add name+URL+expected
+  status, failing checks offer "→ Bug" prefilled into the BugModal), Notes (inline
   edit on the sticky; promote → bug/roadmap prefills the existing modal, then a
   keep/delete-the-note confirm), Activity. ProjectDetail also owns: the Visit-site/Repo buttons (open the URL, or inline-set it when
   unset via `patchProject`), and a quiet delete-project control behind a `ConfirmModal`.
@@ -168,6 +170,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     roadmap item `done` also sets it (a human touch counts as review — archived items never
     linger in the inbox).
   - `notes` — text, `colour`, `source`.
+  - `checks` — the Bugs tab's testing panel: HTTP probes against the project's live app (name,
+    url, `expect_status`, optional `contains` keyword) with the last result on the row
+    (`last_status/code/ms/error/run_at`). Run on demand, bounded (8s), never scheduled.
   - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap|future`, fingerprint).
   - `presence` — live sessions, keyed (project, session_id). SessionStart upserts, an authored
     /checkpoint bumps `last_seen_at`, SessionEnd (and ingest's metadata backstop) deletes;
@@ -357,6 +362,8 @@ the silent metadata backstop so the feed never has gaps.
   DELETE tombstones a hook idea)
 - `GET|POST /api/projects/:slug/notes` · `PATCH /api/projects/:slug/notes/:id` (text) ·
   `DELETE /api/projects/:slug/notes/:id`
+- `GET|POST /api/projects/:slug/checks` · `DELETE /api/projects/:slug/checks/:id` ·
+  `POST /api/projects/:slug/checks/run` (all, or one with `{id}`; returns updated rows)
 
 Deleting a `source='hook'` bug, roadmap item or future tombstones its fingerprint so the next push
 won't re-create it.

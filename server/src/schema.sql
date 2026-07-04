@@ -161,6 +161,25 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 CREATE INDEX IF NOT EXISTS idx_notes_project ON notes (project_id, created_at DESC);
 
+-- Per-project checks: HTTP probes run against the project's live application
+-- from the Bugs tab ("is the site up, does the API answer"). Run on demand;
+-- the last result lives on the row.
+CREATE TABLE IF NOT EXISTS checks (
+  id            SERIAL PRIMARY KEY,
+  project_id    INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  url           TEXT NOT NULL,
+  expect_status INTEGER NOT NULL DEFAULT 200,
+  contains      TEXT,                                  -- optional body keyword
+  last_status   TEXT,                                  -- pass | fail | NULL (never run)
+  last_code     INTEGER,
+  last_ms       INTEGER,
+  last_error    TEXT,
+  last_run_at   TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_checks_project ON checks (project_id, created_at);
+
 -- Tombstones: a deleted auto item must not be re-created by the next push.
 -- Keyed by project + kind (bug | roadmap | future) + fingerprint.
 CREATE TABLE IF NOT EXISTS dismissed_items (

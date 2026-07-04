@@ -70,6 +70,9 @@ stack/
   what it's becoming, injected into every session start so all agents pull the same way — plus an
   idea funnel: loose "could become…" ideas (yours, or extracted from checkpoints via
   `extract.futures`) that you promote into the roadmap when they firm up, or dismiss.
+- **Checks — click-to-test your live apps:** each project's Bugs tab has a testing panel of HTTP
+  probes (site up, API health, expected status + optional body keyword). Run them all with one
+  button; a failing check files itself as a bug in one click.
 - **A review inbox keeps you looped in:** everything the hooks auto-extract lands in a
   **Needs review** queue on the deck until you look at it — **Keep** approves it into its tracker,
   **Dismiss** deletes it and tombstones the fingerprint so the next push won't re-create it.
