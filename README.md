@@ -59,6 +59,9 @@ stack/
   attention row, and a merged activity stream. A project counts as **stale** once a live/building
   project's last push is older than a threshold; that threshold is one constant, `STALE_DAYS` in
   `server/src/util.js` (default 14) — change it there and the deck follows.
+- **Live-now presence:** the deck shows which projects have a Claude session open right now (and on
+  which branches — parallel worktree sessions each count). The SessionStart hook pings, an authored
+  `/checkpoint` proves liveness, SessionEnd clears, and a TTL ages out crashed sessions.
 - **A Futures tab curates direction:** each project can carry a **north star** — one paragraph on
   what it's becoming, injected into every session start so all agents pull the same way — plus an
   idea funnel: loose "could become…" ideas (yours, or extracted from checkpoints via

@@ -128,10 +128,11 @@ function toProject(d: ProjectPayload): Project {
 // ---- cross-project command deck ----
 
 // The server already returns the client shape, so this is a thin pass-through.
-// (`review` is defaulted so a not-yet-redeployed server can't blank the deck.)
+// (`review`/`presence` are defaulted so a not-yet-redeployed server can't
+// blank the deck.)
 export async function getOverview(): Promise<Overview> {
   const o = await request<Overview>('/overview');
-  return { ...o, review: o.review ?? { total: 0, items: [] } };
+  return { ...o, review: o.review ?? { total: 0, items: [] }, presence: o.presence ?? [] };
 }
 
 // ---- search (the ⌘K command palette) ----

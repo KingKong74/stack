@@ -150,6 +150,24 @@ CREATE TABLE IF NOT EXISTS dismissed_items (
   UNIQUE (project_id, kind, fingerprint)
 );
 
+-- Session presence: which projects have a Claude session open right now.
+-- The SessionStart hook upserts a row; an authored /checkpoint bumps
+-- last_seen_at; the SessionEnd hook (and ingest's metadata backstop) clears it.
+-- Liveness = last_seen_at within util.PRESENCE_TTL_MINUTES, so a crashed
+-- session ages out on its own. session_id defaults to '' so the per-project
+-- upsert key works even when a hook payload carries no id.
+CREATE TABLE IF NOT EXISTS presence (
+  id           SERIAL PRIMARY KEY,
+  project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  session_id   TEXT NOT NULL DEFAULT '',
+  branch       TEXT,
+  cwd          TEXT,
+  started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_presence_seen ON presence (last_seen_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions (project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_projects_touch  ON projects (pinned DESC, last_session_at DESC NULLS LAST);
 

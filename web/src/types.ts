@@ -92,6 +92,13 @@ export interface OverviewResume {
   summary: string; currentPhase: string; nextUp: string[];
 }
 export interface OverviewBlocker { slug: string; name: string; text: string }
+// A project with at least one Claude session open right now.
+export interface PresenceItem {
+  slug: string; name: string;
+  count: number;           // live sessions on this project
+  branches: string[];      // distinct branches those sessions are on
+  seen: string;            // most recent ping, relative
+}
 export interface ReviewItem {
   kind: 'bug' | 'roadmap' | 'future';
   slug: string; name: string;
@@ -109,6 +116,7 @@ export interface OverviewActivity {
 export interface Overview {
   resume: OverviewResume | null;
   keepResumeCard: boolean;
+  presence: PresenceItem[];
   blockers: OverviewBlocker[];
   stale: OverviewStale[];
   review: { total: number; items: ReviewItem[] };

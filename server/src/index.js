@@ -11,6 +11,7 @@ import { bugs } from './routes/bugs.js';
 import { roadmap } from './routes/roadmap.js';
 import { notes } from './routes/notes.js';
 import { futures } from './routes/futures.js';
+import { presence } from './routes/presence.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -33,6 +34,7 @@ app.use('/api/ingest', requireToken, ingest);
 app.use('/api/overview', requireToken, overview);
 app.use('/api/search', requireToken, search);
 app.use('/api/settings', requireToken, settings);
+app.use('/api/presence', requireToken, presence);
 app.use('/api/projects/:slug/bugs', requireToken, bugs);
 app.use('/api/projects/:slug/roadmap', requireToken, roadmap);
 app.use('/api/projects/:slug/notes', requireToken, notes);

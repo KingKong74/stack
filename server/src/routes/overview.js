@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { q } from '../db.js';
-import { relativeTime, STALE_DAYS } from '../util.js';
+import { relativeTime, STALE_DAYS, PRESENCE_TTL_MINUTES } from '../util.js';
 import { readSettings } from '../settings.js';
 
 // GET /api/overview — the cross-project command deck, computed server-side in a
@@ -10,6 +10,7 @@ import { readSettings } from '../settings.js';
 // {
 //   resume: { slug, name, tint, summary, currentPhase, nextUp[] } | null,
 //   keepResumeCard: true,    // false hides the resume hero (settings)
+//   presence: [ { slug, name, count, branches[], seen } ],   // live sessions right now
 //   blockers: [ { slug, name, text } ],
 //   stale:    [ { slug, name, since } ],
 //   review:   { total, items: [ { kind: 'bug'|'roadmap'|'future', slug, name, id, title, meta, when } ] },
@@ -26,8 +27,8 @@ const ms = (ts) => (ts ? new Date(ts).getTime() : -1);
 overview.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
-  // Five aggregate queries, run together — no per-project fan-out.
-  const [projectsR, bugsR, recentR, weekR, reviewR] = await Promise.all([
+  // Six aggregate queries, run together — no per-project fan-out.
+  const [projectsR, bugsR, recentR, weekR, reviewR, presenceR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, summary, current_phase,
               next_up, blockers, last_session_at, updated_at
          FROM projects`),
@@ -48,6 +49,10 @@ overview.get('/', async (_req, res) => {
        SELECT 'future', project_id, id::text, title, 'idea', created_at
          FROM futures WHERE source = 'hook' AND reviewed_at IS NULL
        ORDER BY created_at DESC`),
+    // Live sessions: presence pings still inside the TTL window.
+    q(`SELECT project_id, branch, last_seen_at FROM presence
+        WHERE last_seen_at > now() - interval '${PRESENCE_TTL_MINUTES} minutes'
+        ORDER BY last_seen_at DESC`),
   ]);
 
   const projects = projectsR.rows;
@@ -70,6 +75,21 @@ overview.get('/', async (_req, res) => {
     currentPhase: pick.current_phase || '',
     nextUp: asList(pick.next_up).map((s) => String(s)).slice(0, 3),
   } : null;
+
+  // presence: live sessions grouped per project, most recently seen first.
+  const liveByProject = new Map();
+  for (const r of presenceR.rows) {
+    const p = byId.get(r.project_id);
+    if (!p) continue;
+    if (!liveByProject.has(r.project_id)) {
+      liveByProject.set(r.project_id, { slug: p.slug, name: p.name, count: 0, branches: [], seen: relativeTime(r.last_seen_at) || 'just now' });
+    }
+    const entry = liveByProject.get(r.project_id);
+    entry.count++;
+    const branch = r.branch || 'main';
+    if (!entry.branches.includes(branch)) entry.branches.push(branch);
+  }
+  const livePresence = [...liveByProject.values()];
 
   // blockers: every stored blocker line, flat, tagged with its project.
   const blockers = [];
@@ -140,6 +160,7 @@ overview.get('/', async (_req, res) => {
   res.json({
     resume,
     keepResumeCard: appSettings.keep_resume_card,
+    presence: livePresence,
     blockers,
     stale,
     review,

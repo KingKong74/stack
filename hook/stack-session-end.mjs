@@ -27,7 +27,7 @@
 
 import { readFileSync } from 'node:fs';
 import {
-  loadStackEnv, logStderr, projectFromGit, fetchSettings, postIngest,
+  loadStackEnv, logStderr, projectFromGit, fetchSettings, postIngest, endPresence,
 } from './stack-post.mjs';
 
 loadStackEnv();
@@ -107,6 +107,10 @@ function lastSubstantiveMessage(turns) {
 
   const cwd = DEMO ? process.cwd() : (payload.cwd || process.cwd());
   const project = projectFromGit(cwd);
+
+  // The session is over regardless of the gates below — clear its live-now
+  // presence row first (bounded, silent; the server TTL is the backstop).
+  await endPresence({ slug: project.slug, session_id: payload.session_id });
 
   // Settings gate — bounded, defaults to on if the API is unreachable.
   const settings = await fetchSettings();

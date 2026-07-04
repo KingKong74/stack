@@ -25,9 +25,13 @@ hook/   Zero-dependency Node ESM. stack-post.mjs is the shared lib (env load, gi
           transcript for commit/branch/files/tools/message-count + the last substantive message and
           POSTs that (authored:false). Calls NO external API. Always exits 0. Honours auto_record /
           include_chores. Idempotent + COALESCE-safe (never clobbers an authored checkpoint).
+          Clears the session's presence row first (POST /api/presence/end) — before any gate, so
+          even skipped sessions stop showing as live.
         • stack-session-start.mjs — the SessionStart hook. GETs /api/projects/:slug and injects a
           "where you left off" block via additionalContext (nothing if untracked/unreachable),
           including the project's **north star** when set; nudges /checkpoint when wrapping up.
+          Also fires a live-now **presence ping** (POST /api/presence) in parallel with that fetch —
+          same timeout budget, silent on any failure, 404 for untracked projects.
         • stack-checkpoint.mjs — the /checkpoint POSTER (not a hook). Reads a checkpoint JSON on
           stdin and POSTs it (authored:true); `--settings` prints current settings. Installs to
           ~/.stack/ alongside the hooks + stack-post.mjs.
@@ -77,8 +81,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit
   hash (activity), a bug key (bugs) or a row id (roadmap/notes). `go.settings()` opens Settings.
 - `components/CommandDeck.tsx` — the cross-project deck at the top of the dashboard (resume hero,
-  the **review inbox**, Blocked/Stale/Bugs attention row that goes calm at zero, merged activity
-  stream). Renders the `getOverview()` payload; all click-throughs use `go.detail(slug, tab?)`.
+  the **live-now strip** — green presence chips per project with branches and session count, gone
+  when quiet — the **review inbox**, Blocked/Stale/Bugs attention row that goes calm at zero,
+  merged activity stream). Renders the `getOverview()` payload; all click-throughs use `go.detail(slug, tab?)`.
   The review inbox (`ReviewQueue`) lists auto-extracted items no human has looked at yet:
   **Keep** = `patchBug/patchRoadmapItem {reviewed:true}` (stays in its tracker), **Dismiss** =
   the existing DELETE (tombstones the fingerprint); rows settle optimistically and the whole
@@ -126,7 +131,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     needs review while NULL; PATCH `{reviewed:true}` sets it (approve), DELETE dismisses (tombstone).
     Ingest's dedup re-point never touches it, so approving is sticky across pushes.
   - `notes` — text, `colour`, `source`.
-  - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap`, fingerprint).
+  - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap|future`, fingerprint).
+  - `presence` — live sessions, keyed (project, session_id). SessionStart upserts, an authored
+    /checkpoint bumps `last_seen_at`, SessionEnd (and ingest's metadata backstop) deletes;
+    liveness = within `util.PRESENCE_TTL_MINUTES` (default 240 — the crashed-session backstop,
+    and the second single-knob constant alongside `STALE_DAYS`).
 - `util.js` — `slugify`, `fingerprint` (title normalised: lowercased, punctuation + extra
   whitespace stripped), `relativeTime`, palettes, **`computeProgress` — the one documented progress
   model** (see below), and **`STALE_DAYS`** — the single knob for the command deck's stale threshold
@@ -207,6 +216,8 @@ The cross-project glance layer, computed server-side in four aggregate queries (
 {
   "resume":  { "slug": "…", "name": "…", "tint": "#…|null",
                "summary": "…", "currentPhase": "…", "nextUp": ["…"] },   // or null
+  "presence": [ { "slug": "…", "name": "…", "count": 2,                  // live sessions now
+                  "branches": ["main", "wt-x"], "seen": "5m ago" } ],
   // resume = most-recently-touched live|building project (by last_session_at, not pin order),
   //          falling back to the most-recently-touched of any status; null if there are no projects.
   "keepResumeCard": true,   // false when keep_resume_card is off → the deck drops the hero entirely
@@ -290,6 +301,8 @@ the silent metadata backstop so the feed never has gaps.
 - `GET /api/overview` (cross-project command deck — resume, blockers, stale, bugs, activity, totals)
 - `GET /api/search?q=…` (the ⌘K palette — grouped results across all kinds; see shape below)
 - `GET|PATCH /api/settings` (single-row app settings; see shape below)
+- `POST /api/presence` (live-now ping from the SessionStart hook; 404 for untracked projects) ·
+  `POST /api/presence/end` (idempotent clear from the SessionEnd hook)
 - `GET /api/projects` · `POST /api/projects` · `GET /api/projects/:slug` (project + activity +
   collections + progress; the detail payload includes `blockers` for the start hook and
   `keepResumeCard`) ·

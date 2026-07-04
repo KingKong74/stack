@@ -138,17 +138,32 @@ function buildBlock(p) {
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const base = api.replace(/\/$/, '');
+
+  // Fire the live-now presence ping alongside the state fetch — same budget,
+  // same abort, and a failure is silent (presence is a nicety, never a gate).
+  // Untracked projects 404 here and simply don't register.
+  const branch = git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']) || null;
+  const ping = fetch(`${base}/api/presence`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ slug, session_id: payload.session_id || '', branch, cwd }),
+    signal: ctrl.signal,
+  }).catch(() => {});
+
   try {
-    const res = await fetch(`${api.replace(/\/$/, '')}/api/projects/${encodeURIComponent(slug)}`, {
+    const res = await fetch(`${base}/api/projects/${encodeURIComponent(slug)}`, {
       headers: { authorization: `Bearer ${token}` },
       signal: ctrl.signal,
     });
+    await ping; // let the ping land before any exit below
     clearTimeout(timer);
     if (res.status === 404) done('');           // not tracked yet — nothing to say
     if (!res.ok) done('');                       // auth/other error — stay silent
     const project = await res.json();
     done(buildBlock(project));
   } catch (e) {
+    await ping;
     clearTimeout(timer);
     log(`could not reach ${api}: ${e.message}`);
     done(''); // unreachable — never delay startup

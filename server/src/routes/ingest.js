@@ -352,6 +352,26 @@ ingest.post('/', async (req, res) => {
       }
     }
 
+    // --- 7. Presence upkeep ---
+    // An authored /checkpoint proves the session is alive → bump last_seen_at.
+    // The metadata backstop (authored:false) only arrives when a session ends →
+    // clear its presence row. (The SessionEnd hook also calls /presence/end
+    // explicitly; this is the belt for machines running older hooks.)
+    if (session.session_id) {
+      if (authored) {
+        await client.query(
+          `UPDATE presence SET last_seen_at = now(), branch = COALESCE($3, branch)
+            WHERE project_id = $1 AND session_id = $2`,
+          [projectId, session.session_id, session.branch]
+        );
+      } else {
+        await client.query(
+          'DELETE FROM presence WHERE project_id = $1 AND session_id = $2',
+          [projectId, session.session_id]
+        );
+      }
+    }
+
     await client.query('COMMIT');
     res.json({
       ok: true,

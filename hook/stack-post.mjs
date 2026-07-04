@@ -97,6 +97,27 @@ export async function fetchSettings({ timeoutMs = 2500 } = {}) {
   }
 }
 
+// Clear a session's live-now presence row. Bounded and silent — presence is a
+// nicety; failing to clear it never blocks anything (the server-side TTL is
+// the backstop). Never throws.
+export async function endPresence({ slug, session_id }, { timeoutMs = 2000 } = {}) {
+  const api = process.env.STACK_API;
+  const token = process.env.STACK_TOKEN;
+  if (!api || !token) return;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    await fetch(`${api.replace(/\/$/, '')}/api/presence/end`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ slug, session_id: session_id || '' }),
+      signal: ctrl.signal,
+    });
+  } catch { /* silent */ } finally {
+    clearTimeout(timer);
+  }
+}
+
 // POST a checkpoint package to STACK_API/api/ingest. Bounded; returns a small
 // result object and never throws. Never includes the token in any return value.
 export async function postIngest(body, { timeoutMs = 8000 } = {}) {

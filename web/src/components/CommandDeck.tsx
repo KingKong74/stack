@@ -11,7 +11,7 @@ import { ExportBriefModal } from './ExportBriefModal';
 // a resume hero, a quiet attention row, and a merged activity stream.
 // Calm when all's well; loud only where something needs attention.
 export function CommandDeck({ data }: { data: Overview }) {
-  const { resume, keepResumeCard, blockers, stale, bugs, activity } = data;
+  const { resume, keepResumeCard, presence, blockers, stale, bugs, activity } = data;
   const worstBug = bugs.projects[0] || null;
 
   // The hero only carries a slice of the project, so the export modal pulls
@@ -61,6 +61,22 @@ export function CommandDeck({ data }: { data: Overview }) {
               Nothing on the go yet. Start a project or fire a push, and your resume point lands here.
             </div>
           </div>
+        </div>
+      )}
+
+      {/* live now — projects with a Claude session open; gone when quiet */}
+      {presence.length > 0 && (
+        <div className="deck-live">
+          <span className="live-pulse" aria-hidden="true" />
+          <span className="live-label">Live now</span>
+          {presence.map((p) => (
+            <button className="live-chip" key={p.slug} onClick={() => go.detail(p.slug)}
+              title={`Last ping ${p.seen}`}>
+              <span className="live-name">{p.name}</span>
+              <span className="live-branch">{p.branches.join(' · ')}</span>
+              {p.count > 1 && <span className="live-count">×{p.count}</span>}
+            </button>
+          ))}
         </div>
       )}
 

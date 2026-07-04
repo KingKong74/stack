@@ -25,6 +25,12 @@ export const PRIORITY_SHORT = { must: 'Must', should: 'Should', could: 'Could', 
 // follows. Paused/archived projects are dormant on purpose and never stale.
 export const STALE_DAYS = 14;
 
+// Minutes since a presence row's last_seen_at after which a session no longer
+// counts as "live now" on the deck. Single knob. A SessionStart pings, an
+// authored /checkpoint bumps, SessionEnd clears — this TTL only catches
+// sessions that died without a clean end.
+export const PRESENCE_TTL_MINUTES = 240;
+
 export function slugify(s) {
   return (
     String(s || '')
