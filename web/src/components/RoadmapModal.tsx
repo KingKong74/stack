@@ -5,16 +5,17 @@ import { PRIORITY_META } from '../lib/ui';
 
 // Add OR edit a roadmap item — `mode: 'edit'` prefills and relabels.
 export function RoadmapModal({
-  initialPriority, onClose, onSubmit, initialTitle = '', initialNote = '', mode = 'add',
+  initialPriority, onClose, onSubmit, initialTitle = '', initialNote = '', initialLane = '', mode = 'add',
 }: {
   initialPriority: Priority; onClose: () => void;
-  onSubmit: (v: { title: string; note: string; priority: Priority }) => void;
-  initialTitle?: string; initialNote?: string; mode?: 'add' | 'edit';
+  onSubmit: (v: { title: string; note: string; priority: Priority; lane: string }) => void;
+  initialTitle?: string; initialNote?: string; initialLane?: string; mode?: 'add' | 'edit';
 }) {
   const [title, setTitle] = useState(initialTitle);
   const [note, setNote] = useState(initialNote);
+  const [lane, setLane] = useState(initialLane);
   const [priority, setPriority] = useState<Priority>(initialPriority);
-  const submit = () => { if (title.trim()) onSubmit({ title, note, priority }); };
+  const submit = () => { if (title.trim()) onSubmit({ title, note, priority, lane: lane.trim() }); };
 
   return (
     <Modal onClose={onClose} wide>
@@ -26,6 +27,10 @@ export function RoadmapModal({
       <div className="lbl">Note <span className="optional">optional</span></div>
       <textarea className="field-area" style={{ marginBottom: 18 }} value={note}
         placeholder="Why it matters, or context…" onChange={(e) => setNote(e.target.value)} />
+      <div className="lbl">Lane <span className="optional">optional — who's claiming this</span></div>
+      <input className="field-input" style={{ marginBottom: 18 }} value={lane}
+        placeholder="e.g. lane/ui, or a name" onChange={(e) => setLane(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
       <div className="lbl" style={{ marginBottom: 9 }}>Priority</div>
       <div className="seg" style={{ marginBottom: 26 }}>
         {PRIORITY_META.map((p) => (

@@ -118,6 +118,12 @@ CREATE TABLE IF NOT EXISTS roadmap_items (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_roadmap_auto_fp
   ON roadmap_items (project_id, fingerprint) WHERE source = 'hook';
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;  -- see bugs.reviewed_at
+-- Lane claims: which parallel session (usually a branch, e.g. lane/ui) owns an
+-- open item. Injected by the SessionStart hook so lanes never double-grab.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS claimed_by TEXT;
+-- The archive-review verdict on a completed item: solid | needs-work | rethink.
+-- Tagging needs-work/rethink offers to spin a follow-up item back onto the board.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS review_tag TEXT;
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
 -- Per-project futures: loose directional ideas, curated against the north star

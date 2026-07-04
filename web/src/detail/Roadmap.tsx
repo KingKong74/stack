@@ -2,19 +2,31 @@ import { useState } from 'react';
 import type { Roadmap as RoadmapData, RoadmapItem, Priority } from '../types';
 import { PRIORITY_META } from '../lib/ui';
 
-// MoSCoW roadmap. Open items live in their bucket columns (with edit/delete on
-// hover); completed items move to the collapsed Archive below — still counted
-// by the progress model, just out of the working view. Un-ticking restores.
+export type ReviewTag = 'solid' | 'needs-work' | 'rethink';
+export const REVIEW_TAGS: { key: ReviewTag; label: string }[] = [
+  { key: 'solid', label: 'Solid' },
+  { key: 'needs-work', label: 'Needs more work' },
+  { key: 'rethink', label: 'Rethink' },
+];
+const tagLabel = (tag: string) => REVIEW_TAGS.find((t) => t.key === tag)?.label || tag;
+
+// MoSCoW roadmap. Open items live in their bucket columns (with lane-claim
+// chips and edit/delete on hover); completed items move to the collapsed
+// Archive below — still counted by the progress model, reviewable with a
+// verdict tag (needs-work/rethink offer a follow-up item), restorable by
+// un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, highlightId,
 }: {
   roadmap: RoadmapData;
   onAdd: (p: Priority) => void;
   onToggle: (item: RoadmapItem) => void;
   onEdit: (item: RoadmapItem) => void;
   onDelete: (item: RoadmapItem) => void;
+  onReviewTag: (item: RoadmapItem, tag: ReviewTag) => void;
   highlightId?: string | null;
 }) {
+  const [pickerFor, setPickerFor] = useState<number | null>(null);
   const archived = PRIORITY_META.flatMap((col) => roadmap[col.key].filter((it) => it.done));
   // Open the archive straight away when a deep-link targets an archived item.
   const [archiveOpen, setArchiveOpen] = useState(
@@ -57,6 +69,7 @@ export function Roadmap({
                         {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
                       </div>
                       {it.note && <div className="note">{it.note}</div>}
+                      {it.claimedBy && <div className="claim-chip" title="Claimed by this lane">⚑ {it.claimedBy}</div>}
                     </div>
                     <div className="road-actions">
                       <button onClick={() => onEdit(it)} aria-label="Edit item" title="Edit">✎</button>
@@ -91,11 +104,30 @@ export function Roadmap({
                       {it.title}
                       <span className="arch-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
                       {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
+                      {it.claimedBy && <span className="claim-chip inline" title="Done by this lane">⚑ {it.claimedBy}</span>}
                     </div>
                   </div>
-                  <div className="road-actions">
-                    <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
-                  </div>
+                  {pickerFor === it.id ? (
+                    <div className="review-pick">
+                      {REVIEW_TAGS.map((t) => (
+                        <button key={t.key} className={`review-pick-opt ${t.key}`}
+                          onClick={() => { setPickerFor(null); onReviewTag(it, t.key); }}>
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="road-actions arch">
+                      {it.reviewTag ? (
+                        <button className={`review-verdict ${it.reviewTag}`} onClick={() => setPickerFor(it.id)}
+                          title="Change the verdict">{tagLabel(it.reviewTag)}</button>
+                      ) : (
+                        <button className="review-verdict none" onClick={() => setPickerFor(it.id)}
+                          title="Review this completed item">Review</button>
+                      )}
+                      <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

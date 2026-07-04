@@ -55,6 +55,8 @@ export interface RoadmapItem {
   bucket: Priority;
   source: Source;
   reviewed: boolean;
+  claimedBy: string;   // lane owning this item ('' = free)
+  reviewTag: string;   // archive verdict: '' | solid | needs-work | rethink
 }
 export interface Roadmap { must: RoadmapItem[]; should: RoadmapItem[]; could: RoadmapItem[]; wont: RoadmapItem[] }
 

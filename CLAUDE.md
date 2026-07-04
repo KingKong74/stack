@@ -100,14 +100,17 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 - `screens/` Dashboard (loads projects + overview independently — a deck hiccup never blanks the
   grid; renders the deck above the "All projects" grid; status filters, computed progress on cards),
   ProjectDetail (loads project+activity+collections, owns tab/modal state, persists on mutate;
-  initial tab comes from the route so the deck can deep-link to e.g. a project's Activity tab).
+  initial tab comes from the route so the deck can deep-link to e.g. a project's Activity tab;
+  the Bugs/Roadmap tab titles carry open-count badges).
 - `detail/` Overview (resume card, the **project-scoped review queue** — same Keep/Dismiss semantics
   as the deck inbox, computed client-side from the collections' `reviewed` flags — the **Directives
   card** (add/remove steer lines, persisted whole via `patchProject {directives}`) and the
   **editable Deployment panel** — status/platform/logs URL via `patchProject` — and the **editable
   Tech stack panel** — chips via `patchProject {tech_stack}`), Bugs (auto cue),
   Roadmap (tick moves an item to the collapsed **Archive** below the buckets — still counted by
-  progress; hover ✎/× edit + delete, edit reuses RoadmapModal in `mode='edit'`), Futures (the **north star**
+  progress; hover ✎/× edit + delete, edit reuses RoadmapModal in `mode='edit'` incl. the Lane
+  field; open items show ⚑ claim chips; archived items have a **Review** verdict button —
+  solid/needs-work/rethink, the latter two opening a prefilled follow-up item), Futures (the **north star**
   — one editable paragraph on what the project is becoming, PATCHed as `north_star` and injected by
   the SessionStart hook — plus the idea funnel: loose ideas added/extracted, promote → prefills the
   RoadmapModal then a keep/delete-the-idea confirm, dismiss deletes + tombstones), Notes (inline
@@ -145,7 +148,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   - `bugs` — `bug_key` (BUG-N per project), title, severity, status, `link_ref` (commit), `source`,
     `fingerprint`, `reviewed_at`. Partial unique index on (project, fingerprint) WHERE source='hook'.
   - `roadmap_items` — `bucket`, title, note, `done`, `position`, `source`, `fingerprint`,
-    `reviewed_at`.
+    `reviewed_at`, `claimed_by` (the **lane claim** — which parallel session owns an open item;
+    set via POST/PATCH, shown as a ⚑ chip, injected by the SessionStart hook as "Lane claims —
+    respect these"; the agent template documents the claim-before-starting protocol) and
+    `review_tag` (the **archive verdict**: solid | needs-work | rethink — set from the Archive's
+    Review button; needs-work/rethink prefill a follow-up item back onto the board).
   - `futures` — loose directional ideas: title, `note`, `source`, `fingerprint`, `reviewed_at`.
     Same dedup index and tombstone semantics as bugs/roadmap (kind `future`); promotion to the
     roadmap is a client flow (create the roadmap item, delete the idea).
@@ -335,7 +342,8 @@ the silent metadata backstop so the feed never has gaps.
 - `GET|POST /api/projects/:slug/bugs` · `PATCH|DELETE /api/projects/:slug/bugs/:bugKey`
   (PATCH also takes `reviewed: bool` — the review-inbox approve)
 - `GET|POST /api/projects/:slug/roadmap` · `PATCH|DELETE /api/projects/:slug/roadmap/:id`
-  (PATCH also takes `reviewed: bool`)
+  (POST takes `claimed_by`; PATCH also takes `reviewed: bool`, `claimed_by` ('' releases) and
+  `review_tag: solid|needs-work|rethink` ('' clears))
 - `GET|POST /api/projects/:slug/futures` · `PATCH|DELETE /api/projects/:slug/futures/:id`
   (PATCH: title/note/reviewed; DELETE tombstones a hook idea)
 - `GET|POST /api/projects/:slug/notes` · `PATCH /api/projects/:slug/notes/:id` (text) ·

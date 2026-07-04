@@ -79,6 +79,25 @@ fingerprint of their title. So:
 - Manual items are never touched by the extractor. Reach for a manual bug/roadmap
   item/note when you want something the session summary wouldn't capture.
 
+## Lane claims (parallel sessions)
+
+Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
+`lane/ui`). The SessionStart block lists current claims. The protocol:
+
+- **Never start an item claimed by another lane.**
+- If you're one of several parallel sessions and you pick up a roadmap item,
+  **claim it first** (your claim label = your branch name):
+
+  ```bash
+  source ~/.stack/env
+  curl -s -X PATCH "$STACK_API/api/projects/<slug>/roadmap/<id>" \
+    -H "authorization: Bearer $STACK_TOKEN" -H 'content-type: application/json' \
+    -d '{"claimed_by":"<your-branch>"}'
+  ```
+
+- Marking the item `{"done":true}` finishes it; send `{"claimed_by":""}` to
+  release one you're abandoning. Never print the token while doing this.
+
 ## House rules
 
 - **en-AU spelling** everywhere (colour, behaviour, summarise, …).

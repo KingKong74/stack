@@ -10,7 +10,7 @@ import { go } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Bugs } from '../detail/Bugs';
-import { Roadmap } from '../detail/Roadmap';
+import { Roadmap, type ReviewTag } from '../detail/Roadmap';
 import { Futures } from '../detail/Futures';
 import { Notes } from '../detail/Notes';
 import { Activity } from '../detail/Activity';
@@ -148,6 +148,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   ];
 
   const openBugCount = bugs.filter((b) => b.status !== 'fixed').length;
+  const openRoadCount = allRoadmap.filter((r) => !r.done).length;
   const fixingCount = bugs.filter((b) => b.status === 'fixing').length;
   const roadmapCount = roadmapTotal(roadmap);
   const linkedBugId = bugs.find((b) => b.linkRef === highlightRef)?.id ?? null;
@@ -169,17 +170,17 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     });
 
   // Create, or save an edit, depending on how the modal was opened.
-  const submitRoad = ({ title, note, priority }: { title: string; note: string; priority: Priority }) =>
+  const submitRoad = ({ title, note, priority, lane }: { title: string; note: string; priority: Priority; lane: string }) =>
     guard(async () => {
       const editing = roadModal.editing;
       if (editing) {
-        const updated = await patchRoadmapItem(slug, editing.id, { title, note, bucket: priority });
+        const updated = await patchRoadmapItem(slug, editing.id, { title, note, bucket: priority, claimed_by: lane });
         const without = { ...roadmap, [editing.bucket]: roadmap[editing.bucket].filter((i) => i.id !== editing.id) };
         setData({ ...data, roadmap: { ...without, [updated.bucket]: [...without[updated.bucket], updated] } });
         setRoadModal(roadModalClosed);
         return;
       }
-      const item = await createRoadmapItem(slug, { title, note, bucket: priority });
+      const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: lane || undefined });
       const fromNote = roadModal.fromNote;
       const fromFuture = pendingFuture;
       setData({ ...data, roadmap: { ...roadmap, [priority]: [...roadmap[priority], item] } });
@@ -193,6 +194,22 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     guard(async () => {
       await deleteRoadmapItem(slug, item.id);
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].filter((i) => i.id !== item.id) } });
+    });
+
+  // Archive review: store the verdict; needs-work/rethink offer a follow-up
+  // item straight back onto the board (prefilled, cancellable).
+  const reviewTagRoad = (item: RoadmapItem, tag: ReviewTag) =>
+    guard(async () => {
+      const updated = await patchRoadmapItem(slug, item.id, { review_tag: tag });
+      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
+      if (tag !== 'solid') {
+        setRoadModal({
+          open: true, priority: 'should',
+          title: `Follow up: ${item.title}`,
+          note: `Spun off while reviewing the archived item (verdict: ${tag === 'needs-work' ? 'needs more work' : 'rethink'}).`,
+          fromNote: null, editing: null,
+        });
+      }
     });
 
   const toggleRoad = (item: RoadmapItem) =>
@@ -394,9 +411,14 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {actionError && <div className="action-error">{actionError}</div>}
 
         <div className="tabs">
-          {TABS.map((t) => (
-            <button key={t.key} className={`tab ${tab === t.key ? 'on' : ''}`} onClick={() => setTab(t.key)}>{t.label}</button>
-          ))}
+          {TABS.map((t) => {
+            const n = t.key === 'bugs' ? openBugCount : t.key === 'roadmap' ? openRoadCount : 0;
+            return (
+              <button key={t.key} className={`tab ${tab === t.key ? 'on' : ''}`} onClick={() => setTab(t.key)}>
+                {t.label}{n > 0 && <span className="tab-n">{n}</span>}
+              </button>
+            );
+          })}
         </div>
 
         {tab === 'overview' && (
@@ -416,7 +438,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onAdd={(p) => setRoadModal({ open: true, priority: p, title: '', note: '', fromNote: null, editing: null })}
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
-            onDelete={(it) => setConfirmRoadDelete(it)} />
+            onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad} />
         )}
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId}
@@ -440,7 +462,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       )}
       {roadModal.open && (
         <RoadmapModal initialPriority={roadModal.priority} initialTitle={roadModal.title}
-          initialNote={roadModal.note} mode={roadModal.editing ? 'edit' : 'add'}
+          initialNote={roadModal.note} initialLane={roadModal.editing?.claimedBy ?? ''}
+          mode={roadModal.editing ? 'edit' : 'add'}
           onClose={() => { setRoadModal(roadModalClosed); setPendingFuture(null); }}
           onSubmit={submitRoad} />
       )}

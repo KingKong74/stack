@@ -264,13 +264,16 @@ export async function getRoadmap(slug: string): Promise<Roadmap> {
   return request<Roadmap>(roadmapBase(slug));
 }
 export async function createRoadmapItem(
-  slug: string, input: { title: string; note: string; bucket: Priority },
+  slug: string, input: { title: string; note: string; bucket: Priority; claimed_by?: string },
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(roadmapBase(slug), { method: 'POST', body: input });
 }
 export async function patchRoadmapItem(
   slug: string, id: number,
-  patch: Partial<{ done: boolean; bucket: Priority; title: string; note: string; reviewed: boolean }>,
+  patch: Partial<{
+    done: boolean; bucket: Priority; title: string; note: string; reviewed: boolean;
+    claimed_by: string; review_tag: string;
+  }>,
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });
 }

@@ -23,32 +23,43 @@ roadmap.get('/', async (req, res) => {
   res.json(groupRoadmap(rows));
 });
 
-// POST /  -> create a manual roadmap item
+// POST /  -> create a manual roadmap item (optionally pre-claimed to a lane)
 roadmap.post('/', async (req, res) => {
   const title = String(req.body?.title || '').trim().slice(0, 300);
   if (!title) return res.status(400).json({ error: 'Title is required.' });
   const note = String(req.body?.note || '').trim().slice(0, 1000);
   const bucket = oneOf(req.body?.bucket, BUCKETS, 'should');
+  const claimedBy = String(req.body?.claimed_by || '').trim().slice(0, 100) || null;
 
   const { rows: pos } = await q(
     'SELECT COALESCE(MAX(position), -1) + 1 AS p FROM roadmap_items WHERE project_id = $1 AND bucket = $2',
     [req.project.id, bucket]
   );
   const { rows } = await q(
-    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint)
-     VALUES ($1,$2,$3,$4,$5,'manual',$6) RETURNING *`,
-    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title)]
+    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by)
+     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7) RETURNING *`,
+    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy]
   );
   res.status(201).json(roadmapItemShape(rows[0]));
 });
 
-// PATCH /:id  -> done toggle, bucket move, title/note edit, reorder, reviewed
+// PATCH /:id  -> done toggle, bucket move, title/note edit, reorder, reviewed,
+//                claim/release (claimed_by), archive-review verdict (review_tag)
 roadmap.patch('/:id', async (req, res) => {
   const sets = [];
   const vals = [];
   let i = 1;
   if (req.body?.reviewed !== undefined) {
     sets.push(`reviewed_at = ${req.body.reviewed ? 'now()' : 'NULL'}`);
+  }
+  if (req.body?.claimed_by !== undefined) {
+    sets.push(`claimed_by = $${i++}`);
+    vals.push(String(req.body.claimed_by || '').trim().slice(0, 100) || null);
+  }
+  if (req.body?.review_tag !== undefined) {
+    const tag = String(req.body.review_tag || '').trim();
+    sets.push(`review_tag = $${i++}`);
+    vals.push(['solid', 'needs-work', 'rethink'].includes(tag) ? tag : null);
   }
   if (req.body?.done !== undefined) {
     sets.push(`done = $${i++}`); vals.push(Boolean(req.body.done));

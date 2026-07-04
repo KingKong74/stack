@@ -26,6 +26,8 @@ export function roadmapItemShape(row) {
     bucket: row.bucket,
     source: row.source,
     reviewed: !!row.reviewed_at,
+    claimedBy: row.claimed_by || '',   // lane owning this item ('' = free)
+    reviewTag: row.review_tag || '',   // archive verdict: solid | needs-work | rethink
   };
 }
 
