@@ -121,10 +121,14 @@ export interface OverviewActivity {
   slug: string; name: string; hash: string; branch: string;
   summary: string; tags: string[]; when: string;
 }
+// An open roadmap item claimed by a lane, surfaced on the deck.
+export interface ClaimItem { slug: string; name: string; lane: string; title: string; id: string }
+
 export interface Overview {
   resume: OverviewResume | null;
   keepResumeCard: boolean;
   presence: PresenceItem[];
+  claims: ClaimItem[];
   blockers: OverviewBlocker[];
   stale: OverviewStale[];
   review: { total: number; items: ReviewItem[] };

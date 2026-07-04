@@ -91,8 +91,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   hash (activity), a bug key (bugs) or a row id (roadmap/notes). `go.settings()` opens Settings.
 - `components/CommandDeck.tsx` — the cross-project deck at the top of the dashboard (resume hero,
   the **live-now strip** — green presence chips per project with branches and session count, gone
-  when quiet — the **review inbox**, Blocked/Stale/Bugs attention row that goes calm at zero,
-  merged activity stream). Renders the `getOverview()` payload; all click-throughs use `go.detail(slug, tab?)`.
+  when quiet — the **lanes strip** — ⚑ chips for open lane-claimed roadmap items, deep-linking to
+  the item, gone when nothing's claimed — the **review inbox**, Blocked/Stale/Bugs attention row
+  that goes calm at zero, merged activity stream). Renders the `getOverview()` payload; all click-throughs use `go.detail(slug, tab?)`.
   The review inbox (`ReviewQueue`) lists auto-extracted items no human has looked at yet:
   **Keep** = `patchBug/patchRoadmapItem {reviewed:true}` (stays in its tracker), **Dismiss** =
   the existing DELETE (tombstones the fingerprint); rows settle optimistically and the whole
@@ -181,9 +182,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 - `settings.js` — the single-row settings: `readSettings(client?)` (accepts a txn client; defaults on
   failure) and `settingsShape` (row → client camelCase). Imported by ingest/overview/projects.
 - `routes/ingest.js` — `POST /api/ingest`: see the package + behaviour below.
-- `routes/overview.js` — `GET /api/overview`: the cross-project command deck, computed in five
-  aggregate queries (projects, bugs agg, recent sessions, week count, review inbox) — never
-  one-per-project. Reads
+- `routes/overview.js` — `GET /api/overview`: the cross-project command deck, computed in seven
+  aggregate queries (projects, bugs agg, recent sessions, week count, review inbox, presence,
+  lane claims) — never one-per-project. Reads
   settings: when `keep_resume_card` is off, `resume` is null and `keepResumeCard:false` lets the deck
   drop the hero. Shape documented below.
 - `routes/search.js` — `GET /api/search?q=…`: the ⌘K palette. Six capped ILIKE queries (projects,
@@ -254,6 +255,8 @@ The cross-project glance layer, computed server-side in four aggregate queries (
                "summary": "…", "currentPhase": "…", "nextUp": ["…"] },   // or null
   "presence": [ { "slug": "…", "name": "…", "count": 2,                  // live sessions now
                   "branches": ["main", "wt-x"], "seen": "5m ago" } ],
+  "claims":   [ { "slug": "…", "name": "…", "lane": "lane/ui",           // open lane-claimed items
+                  "title": "…", "id": "42" } ],
   // resume = most-recently-touched live|building project (by last_session_at, not pin order),
   //          falling back to the most-recently-touched of any status; null if there are no projects.
   "keepResumeCard": true,   // false when keep_resume_card is off → the deck drops the hero entirely

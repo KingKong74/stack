@@ -11,7 +11,7 @@ import { ExportBriefModal } from './ExportBriefModal';
 // a resume hero, a quiet attention row, and a merged activity stream.
 // Calm when all's well; loud only where something needs attention.
 export function CommandDeck({ data }: { data: Overview }) {
-  const { resume, keepResumeCard, presence, blockers, stale, bugs, activity } = data;
+  const { resume, keepResumeCard, presence, claims, blockers, stale, bugs, activity } = data;
   const worstBug = bugs.projects[0] || null;
 
   // The hero only carries a slice of the project, so the export modal pulls
@@ -75,6 +75,22 @@ export function CommandDeck({ data }: { data: Overview }) {
               <span className="live-name">{p.name}</span>
               <span className="live-branch">{p.branches.join(' · ')}</span>
               {p.count > 1 && <span className="live-count">×{p.count}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* lane claims — who holds what, across everything; gone when nothing's claimed */}
+      {claims.length > 0 && (
+        <div className="deck-lanes">
+          <span className="lanes-label">⚑ Lanes</span>
+          {claims.map((c) => (
+            <button className="lane-chip" key={`${c.slug}:${c.id}`}
+              onClick={() => go.detail(c.slug, 'roadmap', c.id)}
+              title={`${c.name} — open in the roadmap`}>
+              <span className="lane-name">{c.lane}</span>
+              <span className="lane-arrow">→</span>
+              <span className="lane-title">{c.title}</span>
             </button>
           ))}
         </div>

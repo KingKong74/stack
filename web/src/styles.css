@@ -120,9 +120,29 @@
 [data-theme='dark'] .status-pill.open { color: var(--chip-ink); background: #2b2823; }
 [data-theme='dark'] .sev-pill.critical { background: #3a2323; }
 [data-theme='dark'] .tl .node { background: var(--card); }
-/* Sticky notes + composer keep their paper colours — pin their text dark */
-[data-theme='dark'] .note, [data-theme='dark'] .composer { color: #2c2820; }
-[data-theme='dark'] .composer textarea { color: #2c2820; }
+/* Sticky notes + the composer go properly dark: each note's paper colour is
+   remixed into the dark ground (hue survives, glare doesn't). */
+[data-theme='dark'] .note {
+  background: color-mix(in srgb, var(--note-c, #fef4a8) 22%, #1d1a16);
+  border-color: color-mix(in srgb, var(--note-c, #fef4a8) 30%, #1d1a16);
+  box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+[data-theme='dark'] .note .txt { color: #e4ddd1; }
+[data-theme='dark'] .note .when { color: rgba(236, 231, 223, .45); }
+[data-theme='dark'] .note .x { color: rgba(236, 231, 223, .35); }
+[data-theme='dark'] .note .x:hover { color: rgba(236, 231, 223, .7); }
+[data-theme='dark'] .note-actions .promote { color: rgba(236, 231, 223, .6); border-color: rgba(236, 231, 223, .22); background: rgba(0,0,0,.18); }
+[data-theme='dark'] .note-actions .promote:hover { color: #ece7df; border-color: rgba(236, 231, 223, .45); }
+[data-theme='dark'] .composer {
+  background: color-mix(in srgb, #fef4a8 16%, #1d1a16);
+  border-color: color-mix(in srgb, #ecdf8a 26%, #1d1a16);
+  box-shadow: 0 1px 3px rgba(0,0,0,.35);
+}
+[data-theme='dark'] .composer textarea { color: #e4ddd1; }
+[data-theme='dark'] .composer textarea::placeholder { color: rgba(236, 231, 223, .4); }
+[data-theme='dark'] .composer .hint { color: rgba(220, 205, 130, .55); }
+[data-theme='dark'] .composer .add { background: var(--accent); }
+[data-theme='dark'] .composer .add:hover { background: var(--accent-deep); }
 /* Header, avatar, chips, misc literals */
 [data-theme='dark'] .topbar { background: rgba(23, 21, 18, 0.86); }
 [data-theme='dark'] .avatar { background: #45403a; }
@@ -513,7 +533,7 @@ a { color: inherit; }
 .composer .hint { font-size: 11px; color: #b0a14f; }
 .composer .add { height: 30px; padding: 0 15px; border-radius: 8px; background: var(--ink); color: #fff; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; }
 .notes-wall { column-count: 3; column-gap: 16px; }
-.note { break-inside: avoid; -webkit-column-break-inside: avoid; margin-bottom: 16px; border: 1px solid rgba(0,0,0,.06); border-radius: 12px; padding: 15px 16px; position: relative; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+.note { break-inside: avoid; -webkit-column-break-inside: avoid; margin-bottom: 16px; border: 1px solid rgba(0,0,0,.06); border-radius: 12px; padding: 15px 16px; position: relative; box-shadow: 0 1px 4px rgba(0,0,0,.1); background: var(--note-c, #fef4a8); }
 .note .x { position: absolute; top: 7px; right: 10px; color: rgba(0,0,0,.28); font-size: 15px; line-height: 1; }
 .note .x:hover { color: rgba(0,0,0,.55); }
 .note .txt { font-size: 14px; line-height: 1.5; color: #473f30; white-space: pre-wrap; padding-right: 10px; }
@@ -698,6 +718,15 @@ a { color: inherit; }
 .live-name { font-family: var(--disp); font-size: 12.5px; font-weight: 600; color: var(--ink); }
 .live-branch { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .live-count { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--green); }
+
+/* lane claims strip */
+.deck-lanes { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 9px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 16px; }
+.lanes-label { font-family: var(--disp); font-size: 12.5px; font-weight: 600; color: var(--sage); margin-right: 2px; }
+.lane-chip { display: inline-flex; align-items: baseline; gap: 6px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; padding: 4px 10px; max-width: 340px; }
+.lane-chip:hover { border-color: var(--sage); }
+.lane-name { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--sage); white-space: nowrap; }
+.lane-arrow { font-size: 11px; color: var(--faint); }
+.lane-title { font-size: 12px; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* review inbox (needs-review queue) */
 .deck-review { background: var(--card); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 8px 8px 6px; margin-bottom: 16px; }

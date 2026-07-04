@@ -159,7 +159,12 @@ function toProject(d: ProjectPayload): Project {
 // blank the deck.)
 export async function getOverview(): Promise<Overview> {
   const o = await request<Overview>('/overview');
-  return { ...o, review: o.review ?? { total: 0, items: [] }, presence: o.presence ?? [] };
+  return {
+    ...o,
+    review: o.review ?? { total: 0, items: [] },
+    presence: o.presence ?? [],
+    claims: o.claims ?? [],
+  };
 }
 
 // ---- search (the ⌘K command palette) ----

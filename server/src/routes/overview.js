@@ -11,6 +11,7 @@ import { readSettings } from '../settings.js';
 //   resume: { slug, name, tint, summary, currentPhase, nextUp[] } | null,
 //   keepResumeCard: true,    // false hides the resume hero (settings)
 //   presence: [ { slug, name, count, branches[], seen } ],   // live sessions right now
+//   claims:   [ { slug, name, lane, title, id } ],           // open lane-claimed roadmap items
 //   blockers: [ { slug, name, text } ],
 //   stale:    [ { slug, name, since } ],
 //   review:   { total, items: [ { kind: 'bug'|'roadmap'|'future', slug, name, id, title, meta, when } ] },
@@ -27,8 +28,8 @@ const ms = (ts) => (ts ? new Date(ts).getTime() : -1);
 overview.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
-  // Six aggregate queries, run together — no per-project fan-out.
-  const [projectsR, bugsR, recentR, weekR, reviewR, presenceR] = await Promise.all([
+  // Seven aggregate queries, run together — no per-project fan-out.
+  const [projectsR, bugsR, recentR, weekR, reviewR, presenceR, claimsR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, summary, current_phase,
               next_up, blockers, last_session_at, updated_at
          FROM projects`),
@@ -53,6 +54,10 @@ overview.get('/', async (_req, res) => {
     q(`SELECT project_id, branch, last_seen_at FROM presence
         WHERE last_seen_at > now() - interval '${PRESENCE_TTL_MINUTES} minutes'
         ORDER BY last_seen_at DESC`),
+    // Open lane-claimed roadmap items — which lanes hold what, across everything.
+    q(`SELECT project_id, id, title, claimed_by FROM roadmap_items
+        WHERE claimed_by IS NOT NULL AND NOT done
+        ORDER BY updated_at DESC LIMIT 10`),
   ]);
 
   const projects = projectsR.rows;
@@ -90,6 +95,12 @@ overview.get('/', async (_req, res) => {
     if (!entry.branches.includes(branch)) entry.branches.push(branch);
   }
   const livePresence = [...liveByProject.values()];
+
+  // claims: open lane-claimed items, flat, tagged with their project.
+  const claims = claimsR.rows.flatMap((r) => {
+    const p = byId.get(r.project_id);
+    return p ? [{ slug: p.slug, name: p.name, lane: r.claimed_by, title: r.title, id: String(r.id) }] : [];
+  });
 
   // blockers: every stored blocker line, flat, tagged with its project.
   const blockers = [];
@@ -161,6 +172,7 @@ overview.get('/', async (_req, res) => {
     resume,
     keepResumeCard: appSettings.keep_resume_card,
     presence: livePresence,
+    claims,
     blockers,
     stale,
     review,
