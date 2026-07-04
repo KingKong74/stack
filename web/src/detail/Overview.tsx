@@ -1,6 +1,86 @@
 import { useState } from 'react';
-import type { Project, Activity } from '../types';
+import type { Project, Activity, ProjectStatus } from '../types';
 import { isAccentTag, PRODUCT_NAME } from '../lib/ui';
+
+// One row of the project-scoped review queue (hook-created, not yet reviewed).
+export interface ReviewEntry {
+  kind: 'bug' | 'roadmap' | 'future';
+  key: string;      // bug key or row id
+  title: string;
+  meta: string;     // severity / bucket / 'idea'
+}
+
+export interface DeployPatch { deploy_platform: string; logs_url: string; status: ProjectStatus }
+
+const STATUS_OPTS: { key: ProjectStatus; label: string }[] = [
+  { key: 'live', label: 'Live' }, { key: 'building', label: 'Building' },
+  { key: 'paused', label: 'Paused' }, { key: 'archived', label: 'Archived' },
+];
+const STATUS_TEXT: Record<ProjectStatus, string> = {
+  live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived',
+};
+
+// The Deployment panel, hand-editable: status, platform label, logs URL.
+function DeploymentPanel({ project, onSave }: { project: Project; onSave: (p: DeployPatch) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [status, setStatus] = useState<ProjectStatus>(project.status);
+  const [platform, setPlatform] = useState(project.deployPlatform);
+  const [logs, setLogs] = useState(project.logsUrl);
+
+  const start = () => {
+    setStatus(project.status); setPlatform(project.deployPlatform); setLogs(project.logsUrl);
+    setEditing(true);
+  };
+  const save = () => {
+    onSave({ status, deploy_platform: platform.trim(), logs_url: logs.trim() });
+    setEditing(false);
+  };
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div className="lbl">Deployment</div>
+        {!editing && <button className="panel-edit" onClick={start} aria-label="Edit deployment" title="Edit deployment">✎</button>}
+      </div>
+      {editing ? (
+        <div className="deploy-edit">
+          <div className="seg-control" role="tablist" aria-label="Status">
+            {STATUS_OPTS.map((s) => (
+              <button key={s.key} role="tab" aria-selected={status === s.key}
+                className={`seg-opt ${status === s.key ? 'on' : ''}`} onClick={() => setStatus(s.key)}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <input className="field-input sm" value={platform} placeholder="Platform — e.g. Dokploy, Vercel"
+            onChange={(e) => setPlatform(e.target.value)} />
+          <input className="field-input sm" value={logs} placeholder="Logs URL (optional)"
+            onChange={(e) => setLogs(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') setEditing(false); }} />
+          <div className="row">
+            <button className="btn-cancel sm" onClick={() => setEditing(false)}>Cancel</button>
+            <button className="btn-submit sm" onClick={save}>Save</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="deploy-row">
+            <span className={`dot ${project.status}`} /><b>{STATUS_TEXT[project.status]}</b>
+            <span className="mono">· main</span>
+          </div>
+          <div className="deploy-meta">
+            Last push {project.meta.lastDeploy}{project.deployPlatform ? ` · ${project.deployPlatform}` : ''}
+          </div>
+          {project.logsUrl && (
+            <button className="deploy-link" onClick={() => window.open(project.logsUrl, '_blank', 'noopener')}>
+              View logs ↗
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 // Standing instructions for the next session(s): edited here, injected
 // verbatim at every SessionStart — steering without the terminal. Lines stay
@@ -74,12 +154,15 @@ function ActivityCard({ a }: { a: Activity }) {
 }
 
 export function Overview({
-  project, activity, directives, openBugCount, fixingCount, roadmapCount,
-  onViewAll, onExport, onChangeDirectives, keepResumeCard = true,
+  project, activity, directives, reviewQueue, openBugCount, fixingCount, roadmapCount,
+  onViewAll, onExport, onChangeDirectives, onReviewKeep, onReviewDismiss, onSaveDeploy,
+  keepResumeCard = true,
 }: {
-  project: Project; activity: Activity[]; directives: string[];
+  project: Project; activity: Activity[]; directives: string[]; reviewQueue: ReviewEntry[];
   openBugCount: number; fixingCount: number; roadmapCount: number;
   onViewAll: () => void; onExport: () => void; onChangeDirectives: (next: string[]) => void;
+  onReviewKeep: (e: ReviewEntry) => void; onReviewDismiss: (e: ReviewEntry) => void;
+  onSaveDeploy: (patch: DeployPatch) => void;
   keepResumeCard?: boolean;
 }) {
   const r = project.resume;
@@ -143,20 +226,34 @@ export function Overview({
       </div>
       )}
 
+      {/* project-scoped review queue — same semantics as the deck inbox */}
+      {reviewQueue.length > 0 && (
+        <div className="proj-review">
+          <div className="proj-review-head">
+            <span className="title">Needs review</span>
+            <span className="review-count">{reviewQueue.length}</span>
+            <span className="auto-badge">✦ auto-extracted</span>
+          </div>
+          {reviewQueue.map((e) => (
+            <div className="proj-review-row" key={`${e.kind}:${e.key}`}>
+              <span className={`review-kind ${e.kind}`}>{e.kind === 'bug' ? e.key : e.kind === 'roadmap' ? 'roadmap' : 'idea'}</span>
+              <span className="txt">{e.title}</span>
+              <span className="review-meta">{e.meta}</span>
+              <span className="review-actions">
+                <button className="review-keep" onClick={() => onReviewKeep(e)} title="Keep — mark reviewed">✓ Keep</button>
+                <button className="review-dismiss" onClick={() => onReviewDismiss(e)} title="Dismiss — delete and don't re-extract">✕ Dismiss</button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* directives — the steer list injected into every session start */}
       <DirectivesCard directives={directives} onChange={onChangeDirectives} />
 
       {/* stat panels */}
       <div className="stats">
-        <div className="panel">
-          <div className="lbl">Deployment</div>
-          <div className="deploy-row">
-            <span className="dot" /><b>{project.status === 'live' ? 'Live' : project.status === 'building' ? 'Building' : 'Paused'}</b>
-            <span className="mono">· main · {project.meta.version}</span>
-          </div>
-          <div className="deploy-meta">Last deploy {project.meta.lastDeploy} · Vercel</div>
-          {project.siteUrl && <div className="deploy-link">View logs ↗</div>}
-        </div>
+        <DeploymentPanel project={project} onSave={onSaveDeploy} />
         <div className="panel">
           <div className="lbl">Tech stack</div>
           <div className="techchips">

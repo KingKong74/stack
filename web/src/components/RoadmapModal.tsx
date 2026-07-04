@@ -3,21 +3,22 @@ import type { Priority } from '../types';
 import { Modal } from './Modal';
 import { PRIORITY_META } from '../lib/ui';
 
+// Add OR edit a roadmap item — `mode: 'edit'` prefills and relabels.
 export function RoadmapModal({
-  initialPriority, onClose, onSubmit, initialTitle = '',
+  initialPriority, onClose, onSubmit, initialTitle = '', initialNote = '', mode = 'add',
 }: {
   initialPriority: Priority; onClose: () => void;
   onSubmit: (v: { title: string; note: string; priority: Priority }) => void;
-  initialTitle?: string;
+  initialTitle?: string; initialNote?: string; mode?: 'add' | 'edit';
 }) {
   const [title, setTitle] = useState(initialTitle);
-  const [note, setNote] = useState('');
+  const [note, setNote] = useState(initialNote);
   const [priority, setPriority] = useState<Priority>(initialPriority);
   const submit = () => { if (title.trim()) onSubmit({ title, note, priority }); };
 
   return (
     <Modal onClose={onClose} wide>
-      <h3>Add roadmap item</h3>
+      <h3>{mode === 'edit' ? 'Edit roadmap item' : 'Add roadmap item'}</h3>
       <div className="lbl">What is it?</div>
       <input className="field-input" style={{ marginBottom: 16 }} value={title} autoFocus
         placeholder="e.g. Offline map caching" onChange={(e) => setTitle(e.target.value)}
@@ -35,7 +36,7 @@ export function RoadmapModal({
       </div>
       <div className="modal-actions">
         <button className="btn-cancel" onClick={onClose}>Cancel</button>
-        <button className="btn-submit" onClick={submit}>Add item</button>
+        <button className="btn-submit" onClick={submit}>{mode === 'edit' ? 'Save changes' : 'Add item'}</button>
       </div>
     </Modal>
   );

@@ -131,6 +131,7 @@ const PATCHABLE = new Set([
   'name', 'repo', 'repo_url', 'subtitle', 'site_url', 'status', 'pinned',
   'current_phase', 'summary', 'next_steps', 'blockers',
   'in_progress', 'next_up', 'working_well', 'tint', 'north_star', 'directives',
+  'deploy_platform', 'logs_url',
 ]);
 const JSON_FIELDS = new Set(['next_steps', 'blockers', 'in_progress', 'next_up', 'working_well', 'directives']);
 

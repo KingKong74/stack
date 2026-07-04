@@ -13,6 +13,7 @@ export function bugShape(row) {
     meta: `reported ${relativeTime(row.created_at) || 'recently'}`,
     linkRef: row.link_ref || null,
     source: row.source, // 'hook' | 'manual' — drives the "auto" cue
+    reviewed: !!row.reviewed_at, // hook items with false await the review inbox
   };
 }
 
@@ -24,6 +25,7 @@ export function roadmapItemShape(row) {
     done: row.done,
     bucket: row.bucket,
     source: row.source,
+    reviewed: !!row.reviewed_at,
   };
 }
 
@@ -44,6 +46,7 @@ export function futureShape(row) {
     note: row.note || '',
     when: relativeTime(row.created_at) || 'just now',
     source: row.source,
+    reviewed: !!row.reviewed_at,
   };
 }
 
@@ -97,6 +100,8 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, acti
     summary: p.summary || '',
     currentPhase: p.current_phase || '',
     northStar: p.north_star || '',
+    deployPlatform: p.deploy_platform || '',
+    logsUrl: p.logs_url || '',
     inProgress: Array.isArray(p.in_progress) ? p.in_progress : [],
     nextUp: Array.isArray(p.next_up) ? p.next_up : [],
     workingWell: Array.isArray(p.working_well) ? p.working_well : [],

@@ -49,6 +49,29 @@ export function setBriefPrefs(prefs: BriefPrefs) {
   localStorage.setItem(BRIEF_PREFS_KEY, JSON.stringify(prefs));
 }
 
+// ---- theme preference (device-local; App applies it to <html data-theme>) ----
+
+const THEME_KEY = 'stack.theme';
+
+export type ThemePref = 'system' | 'light' | 'dark';
+
+export function getThemePref(): ThemePref {
+  const v = localStorage.getItem(THEME_KEY);
+  return v === 'light' || v === 'dark' ? v : 'system';
+}
+
+export function setThemePref(pref: ThemePref) {
+  localStorage.setItem(THEME_KEY, pref);
+  notifyTheme();
+}
+
+let themeListeners: Array<() => void> = [];
+function notifyTheme() { for (const cb of themeListeners) cb(); }
+export function onThemeChange(cb: () => void): () => void {
+  themeListeners.push(cb);
+  return () => { themeListeners = themeListeners.filter((x) => x !== cb); };
+}
+
 async function request<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
   const token = getToken();
   const res = await fetch(`/api${path}`, {
@@ -86,6 +109,7 @@ interface ProjectPayload {
   pushesThisWeek: number;
   // detail-only:
   summary?: string; currentPhase?: string; northStar?: string;
+  deployPlatform?: string; logsUrl?: string;
   inProgress?: string[]; nextUp?: string[]; workingWell?: string[]; blockers?: string[];
   directives?: string[];
   ref?: string; when?: string;
@@ -116,6 +140,8 @@ function toProject(d: ProjectPayload): Project {
     metaLine: d.metaLine || '',
     siteUrl: d.siteUrl || '',
     repoUrl: d.repoUrl || repoUrl(d.repo || ''),
+    deployPlatform: d.deployPlatform || '',
+    logsUrl: d.logsUrl || '',
     meta: {
       version: '—',
       lastDeploy: d.metaLine ? d.metaLine.replace(/^pushed /, '') : '—',
@@ -139,7 +165,13 @@ export async function getOverview(): Promise<Overview> {
 // ---- search (the ⌘K command palette) ----
 
 export async function getSearch(query: string): Promise<SearchResponse> {
-  return request<SearchResponse>(`/search?q=${encodeURIComponent(query)}`);
+  const r = await request<SearchResponse>(`/search?q=${encodeURIComponent(query)}`);
+  // Default the futures group so a not-yet-redeployed server can't break the palette.
+  return {
+    ...r,
+    groups: { ...r.groups, futures: r.groups.futures ?? [] },
+    counts: { ...r.counts, futures: r.counts.futures ?? 0 },
+  };
 }
 
 // ---- settings ----
@@ -191,7 +223,10 @@ export async function createProject(input: { name: string; subtitle: string; sta
 
 export async function patchProject(
   slug: string,
-  patch: Partial<{ subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean; name: string; north_star: string; directives: string[] }>,
+  patch: Partial<{
+    subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean;
+    name: string; north_star: string; directives: string[]; deploy_platform: string; logs_url: string;
+  }>,
 ): Promise<Project> {
   return toProject(await request<ProjectPayload>(`/projects/${encodeURIComponent(slug)}`, { method: 'PATCH', body: patch }));
 }

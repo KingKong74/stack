@@ -30,6 +30,8 @@ export interface Project {
   metaLine: string;        // dashboard card meta e.g. "pushed 2h ago"
   siteUrl: string;
   repoUrl: string;
+  deployPlatform: string;  // hand-set label on the Deployment panel ("Dokploy", "Vercel", …)
+  logsUrl: string;         // where "View logs" points
   meta: ProjectMeta;
   resume: Resume | null;
 }
@@ -42,6 +44,7 @@ export interface Bug {
   meta: string;            // "reported 2h ago"
   linkRef: string | null;  // commit hash
   source: Source;
+  reviewed: boolean;       // hook items with false await review
 }
 
 export interface RoadmapItem {
@@ -51,6 +54,7 @@ export interface RoadmapItem {
   done: boolean;
   bucket: Priority;
   source: Source;
+  reviewed: boolean;
 }
 export interface Roadmap { must: RoadmapItem[]; should: RoadmapItem[]; could: RoadmapItem[]; wont: RoadmapItem[] }
 
@@ -70,6 +74,7 @@ export interface Future {
   note: string;
   when: string;
   source: Source;
+  reviewed: boolean;
 }
 
 export interface Activity {
@@ -130,7 +135,7 @@ export interface Overview {
 }
 
 // ---- ⌘K command palette search (GET /api/search) ----
-export type SearchKind = 'project' | 'bug' | 'roadmap' | 'note' | 'activity';
+export type SearchKind = 'project' | 'bug' | 'roadmap' | 'future' | 'note' | 'activity';
 export interface SearchTarget { slug: string; tab: string; highlight: string | null }
 export interface SearchResult {
   kind: SearchKind;
@@ -140,12 +145,12 @@ export interface SearchResult {
 }
 export interface SearchGroups {
   projects: SearchResult[]; bugs: SearchResult[]; roadmap: SearchResult[];
-  notes: SearchResult[]; activity: SearchResult[];
+  futures: SearchResult[]; notes: SearchResult[]; activity: SearchResult[];
 }
 export interface SearchResponse {
   query: string;
   groups: SearchGroups;
-  counts: { projects: number; bugs: number; roadmap: number; notes: number; activity: number; total: number };
+  counts: { projects: number; bugs: number; roadmap: number; futures: number; notes: number; activity: number; total: number };
   projectCount: number;
 }
 

@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react';
 import type { Settings as SettingsData, CheckpointDetail } from '../types';
-import { getSettings, patchSettings, getToken, clearToken, verifyToken, AuthError } from '../store';
+import {
+  getSettings, patchSettings, getToken, clearToken, verifyToken, AuthError,
+  getThemePref, setThemePref, type ThemePref,
+} from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
+
+const THEMES: { key: ThemePref; label: string }[] = [
+  { key: 'system', label: 'System' }, { key: 'light', label: 'Light' }, { key: 'dark', label: 'Dark' },
+];
 
 const DETAILS: { key: CheckpointDetail; label: string; blurb: string }[] = [
   { key: 'brief', label: 'Brief', blurb: 'A line or two — just enough to re-orient.' },
@@ -22,6 +29,7 @@ export function Settings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [test, setTest] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
+  const [theme, setTheme] = useState<ThemePref>(() => getThemePref());
 
   useEffect(() => {
     let live = true;
@@ -140,6 +148,29 @@ export function Settings() {
                 </div>
                 <div className="set-detail-blurb">
                   {DETAILS.find((d) => d.key === settings.checkpointDetail)?.blurb}
+                </div>
+              </div>
+            </section>
+
+            {/* ---- Appearance (device-local) ---- */}
+            <section className="set-card">
+              <div className="set-card-head">
+                <div className="set-card-title">Appearance</div>
+                <div className="set-card-sub">How {PRODUCT_NAME} looks on this device.</div>
+              </div>
+              <div className="set-row col">
+                <div className="set-row-text">
+                  <div className="set-row-label">Theme</div>
+                  <div className="set-row-hint">System follows your OS setting.</div>
+                </div>
+                <div className="seg-control" role="tablist" aria-label="Theme">
+                  {THEMES.map((t) => (
+                    <button key={t.key} role="tab" aria-selected={theme === t.key}
+                      className={`seg-opt ${theme === t.key ? 'on' : ''}`}
+                      onClick={() => { setTheme(t.key); setThemePref(t.key); }}>
+                      {t.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </section>

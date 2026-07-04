@@ -2,13 +2,13 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Severity, Priority } from '../types';
 import {
   getProjectDetail, type ProjectDetailData,
-  createBug, createRoadmapItem, patchRoadmapItem,
-  createNote, patchNote, deleteNote, createFuture, deleteFuture,
+  createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
+  createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture,
   patchProject, deleteProject,
 } from '../store';
 import { go } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
-import { Overview } from '../detail/Overview';
+import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Bugs } from '../detail/Bugs';
 import { Roadmap } from '../detail/Roadmap';
 import { Futures } from '../detail/Futures';
@@ -116,8 +116,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   }, [highlightId, tab]);
   const [bugModal, setBugModal] = useState<{ open: boolean; title: string; fromNote: number | null }>(
     { open: false, title: '', fromNote: null });
-  const [roadModal, setRoadModal] = useState<{ open: boolean; priority: Priority; title: string; fromNote: number | null }>(
-    { open: false, priority: 'should', title: '', fromNote: null });
+  const [roadModal, setRoadModal] = useState<{
+    open: boolean; priority: Priority; title: string; note: string;
+    fromNote: number | null; editing: RoadmapItem | null;
+  }>({ open: false, priority: 'should', title: '', note: '', fromNote: null, editing: null });
+  const roadModalClosed = { open: false, priority: 'should' as Priority, title: '', note: '', fromNote: null, editing: null };
+  const [confirmRoadDelete, setConfirmRoadDelete] = useState<RoadmapItem | null>(null);
   const [promotedNote, setPromotedNote] = useState<{ id: number; kind: 'bug' | 'roadmap' } | null>(null);
   const [promotedFuture, setPromotedFuture] = useState<number | null>(null);
   const [pendingFuture, setPendingFuture] = useState<number | null>(null);
@@ -131,6 +135,17 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const roadmap = data.roadmap;
   const notes = data.notes;
   const futures = data.futures;
+
+  const allRoadmap = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
+  // The project-scoped review queue: hook-created items no human has looked at.
+  const reviewQueue: ReviewEntry[] = [
+    ...bugs.filter((b) => b.source === 'hook' && !b.reviewed)
+      .map((b) => ({ kind: 'bug' as const, key: b.id, title: b.title, meta: b.severity })),
+    ...allRoadmap.filter((r) => r.source === 'hook' && !r.reviewed)
+      .map((r) => ({ kind: 'roadmap' as const, key: String(r.id), title: r.title, meta: r.bucket })),
+    ...futures.filter((f) => f.source === 'hook' && !f.reviewed)
+      .map((f) => ({ kind: 'future' as const, key: String(f.id), title: f.title, meta: 'idea' })),
+  ];
 
   const openBugCount = bugs.filter((b) => b.status !== 'fixed').length;
   const fixingCount = bugs.filter((b) => b.status === 'fixing').length;
@@ -153,16 +168,31 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       if (fromNote != null) setPromotedNote({ id: fromNote, kind: 'bug' });
     });
 
-  const addRoad = ({ title, note, priority }: { title: string; note: string; priority: Priority }) =>
+  // Create, or save an edit, depending on how the modal was opened.
+  const submitRoad = ({ title, note, priority }: { title: string; note: string; priority: Priority }) =>
     guard(async () => {
+      const editing = roadModal.editing;
+      if (editing) {
+        const updated = await patchRoadmapItem(slug, editing.id, { title, note, bucket: priority });
+        const without = { ...roadmap, [editing.bucket]: roadmap[editing.bucket].filter((i) => i.id !== editing.id) };
+        setData({ ...data, roadmap: { ...without, [updated.bucket]: [...without[updated.bucket], updated] } });
+        setRoadModal(roadModalClosed);
+        return;
+      }
       const item = await createRoadmapItem(slug, { title, note, bucket: priority });
       const fromNote = roadModal.fromNote;
       const fromFuture = pendingFuture;
       setData({ ...data, roadmap: { ...roadmap, [priority]: [...roadmap[priority], item] } });
-      setRoadModal({ open: false, priority, title: '', fromNote: null });
+      setRoadModal(roadModalClosed);
       setPendingFuture(null);
       if (fromNote != null) setPromotedNote({ id: fromNote, kind: 'roadmap' });
       else if (fromFuture != null) setPromotedFuture(fromFuture);
+    });
+
+  const removeRoad = (item: RoadmapItem) =>
+    guard(async () => {
+      await deleteRoadmapItem(slug, item.id);
+      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].filter((i) => i.id !== item.id) } });
     });
 
   const toggleRoad = (item: RoadmapItem) =>
@@ -209,6 +239,51 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, northStar: text });
     });
 
+  // Keep = mark reviewed (stays in its tracker); Dismiss = delete (hook items
+  // tombstone server-side, so the next push can't re-create them).
+  const reviewKeep = (e: ReviewEntry) =>
+    guard(async () => {
+      if (e.kind === 'bug') {
+        const u = await patchBug(slug, e.key, { reviewed: true });
+        setData({ ...data, bugs: bugs.map((b) => (b.id === e.key ? u : b)) });
+      } else if (e.kind === 'roadmap') {
+        const id = Number(e.key);
+        const u = await patchRoadmapItem(slug, id, { reviewed: true });
+        setData({ ...data, roadmap: { ...roadmap, [u.bucket]: roadmap[u.bucket].map((i) => (i.id === id ? u : i)) } });
+      } else {
+        const id = Number(e.key);
+        const u = await patchFuture(slug, id, { reviewed: true });
+        setData({ ...data, futures: futures.map((f) => (f.id === id ? u : f)) });
+      }
+    });
+
+  const reviewDismiss = (e: ReviewEntry) =>
+    guard(async () => {
+      if (e.kind === 'bug') {
+        await deleteBug(slug, e.key);
+        setData({ ...data, bugs: bugs.filter((b) => b.id !== e.key) });
+      } else if (e.kind === 'roadmap') {
+        const id = Number(e.key);
+        const item = allRoadmap.find((i) => i.id === id);
+        if (!item) return;
+        await deleteRoadmapItem(slug, id);
+        setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].filter((i) => i.id !== id) } });
+      } else {
+        const id = Number(e.key);
+        await deleteFuture(slug, id);
+        setData({ ...data, futures: futures.filter((f) => f.id !== id) });
+      }
+    });
+
+  const saveDeploy = (patch: DeployPatch) =>
+    guard(async () => {
+      const updated = await patchProject(slug, patch);
+      setData({
+        ...data,
+        project: { ...project, status: updated.status, deployPlatform: patch.deploy_platform, logsUrl: patch.logs_url },
+      });
+    });
+
   const changeDirectives = (next: string[]) =>
     guard(async () => {
       await patchProject(slug, { directives: next });
@@ -220,13 +295,13 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // hook idea so the next push won't re-extract it).
   const promoteFuture = (f: Future) => {
     setPendingFuture(f.id);
-    setRoadModal({ open: true, priority: 'should', title: f.title, fromNote: null });
+    setRoadModal({ open: true, priority: 'should', title: f.title, note: '', fromNote: null, editing: null });
   };
 
   // Promote a note into the existing create-bug / create-roadmap flow, prefilled.
   const promoteNote = (note: Note, kind: 'bug' | 'roadmap') => {
     if (kind === 'bug') setBugModal({ open: true, title: note.text, fromNote: note.id });
-    else setRoadModal({ open: true, priority: 'should', title: note.text, fromNote: note.id });
+    else setRoadModal({ open: true, priority: 'should', title: note.text, note: '', fromNote: note.id, editing: null });
   };
 
   const keepPromotedNote = () => setPromotedNote(null);
@@ -320,9 +395,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
 
         {tab === 'overview' && (
           <Overview project={project} activity={activity} directives={data.directives}
-            keepResumeCard={data.keepResumeCard}
+            reviewQueue={reviewQueue} keepResumeCard={data.keepResumeCard}
             openBugCount={openBugCount} fixingCount={fixingCount} roadmapCount={roadmapCount}
-            onViewAll={viewAll} onExport={() => setExportOpen(true)} onChangeDirectives={changeDirectives} />
+            onViewAll={viewAll} onExport={() => setExportOpen(true)} onChangeDirectives={changeDirectives}
+            onReviewKeep={reviewKeep} onReviewDismiss={reviewDismiss} onSaveDeploy={saveDeploy} />
         )}
         {tab === 'bugs' && (
           <Bugs bugs={bugs} filter={bugFilter} setFilter={setBugFilter} highlightId={highlightId}
@@ -330,7 +406,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         )}
         {tab === 'roadmap' && (
           <Roadmap roadmap={roadmap} highlightId={highlightId}
-            onAdd={(p) => setRoadModal({ open: true, priority: p, title: '', fromNote: null })} onToggle={toggleRoad} />
+            onAdd={(p) => setRoadModal({ open: true, priority: p, title: '', note: '', fromNote: null, editing: null })}
+            onToggle={toggleRoad}
+            onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
+            onDelete={(it) => setConfirmRoadDelete(it)} />
         )}
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId}
@@ -354,8 +433,18 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       )}
       {roadModal.open && (
         <RoadmapModal initialPriority={roadModal.priority} initialTitle={roadModal.title}
-          onClose={() => { setRoadModal({ open: false, priority: roadModal.priority, title: '', fromNote: null }); setPendingFuture(null); }}
-          onSubmit={addRoad} />
+          initialNote={roadModal.note} mode={roadModal.editing ? 'edit' : 'add'}
+          onClose={() => { setRoadModal(roadModalClosed); setPendingFuture(null); }}
+          onSubmit={submitRoad} />
+      )}
+      {confirmRoadDelete && (
+        <ConfirmModal
+          title="Delete roadmap item?"
+          body={<>Delete <b>{confirmRoadDelete.title}</b>{confirmRoadDelete.source === 'hook'
+            ? ' — it was auto-extracted, so it won’t be re-created by the next push.' : '.'}</>}
+          confirmLabel="Delete item" cancelLabel="Cancel" danger
+          onConfirm={() => { const it = confirmRoadDelete; setConfirmRoadDelete(null); removeRoad(it); }}
+          onCancel={() => setConfirmRoadDelete(null)} />
       )}
       {promotedFuture != null && (
         <ConfirmModal

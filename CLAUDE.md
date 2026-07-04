@@ -77,7 +77,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   via store.ts callers. Export buttons live on both "Pick up where you left off" cards (detail
   Overview + deck hero); both open `components/ExportBriefModal.tsx`, the curate-then-export step
   (Full/Compact seg control + preference switches, persisted device-local via
-  `store.getBriefPrefs/setBriefPrefs`; the deck hero fetches `getProjectDetail` on confirm).
+  `store.getBriefPrefs/setBriefPrefs`; the deck hero fetches `getProjectDetail` on confirm). Step 2
+  is the **tinker view**: the generated markdown in an editable textarea with a token estimate
+  (`estimateTokens`), a deterministic **Tighten** pass (`tightenBrief` — strips decoration + footer,
+  no AI API), copy-to-clipboard and download.
+- **Dark mode** — Settings → Appearance (System/Light/Dark, device-local via
+  `store.getThemePref/setThemePref`; App resolves to `<html data-theme>`). The dark palette is one
+  `[data-theme='dark']` override block on the same named tokens at the top of `styles.css`, plus a
+  short list of literal-background fixups right below it. Stickies keep their paper colours.
 - `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router; routes
   are `#/`, `#/settings`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit
@@ -94,8 +101,12 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   grid; renders the deck above the "All projects" grid; status filters, computed progress on cards),
   ProjectDetail (loads project+activity+collections, owns tab/modal state, persists on mutate;
   initial tab comes from the route so the deck can deep-link to e.g. a project's Activity tab).
-- `detail/` Overview (resume card + the **Directives card** — add/remove steer lines, persisted
-  whole via `patchProject {directives}`), Bugs (auto cue), Roadmap (done toggle + auto cue), Futures (the **north star**
+- `detail/` Overview (resume card, the **project-scoped review queue** — same Keep/Dismiss semantics
+  as the deck inbox, computed client-side from the collections' `reviewed` flags — the **Directives
+  card** (add/remove steer lines, persisted whole via `patchProject {directives}`) and the
+  **editable Deployment panel** — status/platform/logs URL via `patchProject`), Bugs (auto cue),
+  Roadmap (tick moves an item to the collapsed **Archive** below the buckets — still counted by
+  progress; hover ✎/× edit + delete, edit reuses RoadmapModal in `mode='edit'`), Futures (the **north star**
   — one editable paragraph on what the project is becoming, PATCHed as `north_star` and injected by
   the SessionStart hook — plus the idea funnel: loose ideas added/extracted, promote → prefills the
   RoadmapModal then a keep/delete-the-idea confirm, dismiss deletes + tombstones), Notes (inline
@@ -119,7 +130,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     injected by the SessionStart hook, shown/edited on the Futures tab) and `directives` (jsonb
     list — the standing steer instructions, edited on the detail Overview's Directives card,
     injected FIRST by the SessionStart hook and echoed in the exported brief; lines stay until
-    removed in the UI). Status default `building`; legacy `active` rows migrate
+    removed in the UI), plus `deploy_platform` + `logs_url` (the hand-edited Deployment panel). Status default `building`; legacy `active` rows migrate
     to `live`. `repo` is the `owner/repo` identity; `repo_url` is the browseable URL the Repo button
     opens (filled once by ingest, never overwriting a hand-set value).
   - `sessions` — the activity feed. + `commit_hash`, `tags` jsonb, `authored` bool (a rich
@@ -156,9 +167,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   one-per-project. Reads
   settings: when `keep_resume_card` is off, `resume` is null and `keepResumeCard:false` lets the deck
   drop the hero. Shape documented below.
-- `routes/search.js` — `GET /api/search?q=…`: the ⌘K palette. Five capped ILIKE queries (projects,
-  bugs, roadmap, notes, activity); grouped results, each with kind, owning project, title, meta and a
-  `{slug, tab, highlight}` target. Per-group + total caps; empty query → nothing. Shape below.
+- `routes/search.js` — `GET /api/search?q=…`: the ⌘K palette. Six capped ILIKE queries (projects,
+  bugs, roadmap, futures, notes, activity); grouped results, each with kind, owning project, title,
+  meta and a `{slug, tab, highlight}` target. Per-group + total caps; empty query → nothing.
 - `routes/settings.js` — `GET|PATCH /api/settings`: the single-row settings (camelCase). Shape below.
 - `routes/projects.js` — list (computed progress), combined detail, create, extended PATCH, delete.
 - `routes/{bugs,roadmap,notes}.js` — per-project collection CRUD, mounted under
@@ -254,7 +265,7 @@ navigation target. An empty query returns empty groups.
 {
   "query": "fog",
   "groups": {
-    // kind ∈ project|bug|roadmap|note|activity; meta = status (bug) / priority (roadmap) / relative time (note,activity)
+    // kind ∈ project|bug|roadmap|future|note|activity; meta = status (bug) / priority (roadmap) / 'idea' (future) / relative time (note,activity)
     "projects": [ { "kind": "project", "slug": "…", "name": "…", "tint": "#…|null",
                     "title": "…", "meta": "…",
                     "target": { "slug": "…", "tab": "overview", "highlight": null } } ],

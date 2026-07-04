@@ -135,13 +135,32 @@ export function buildBrief(
   return `${parts.filter(Boolean).join('\n\n')}\n`;
 }
 
-// Compose the brief and hand it to the browser as a markdown download.
-export function downloadBrief(input: BriefInput, options?: BriefOptions) {
-  const blob = new Blob([buildBrief(input, options)], { type: 'text/markdown;charset=utf-8' });
+export const briefFilename = (slug: string) => `${slug}-resume-brief.md`;
+
+// Rough token estimate (~4 chars/token) — enough to compare before/after.
+export const estimateTokens = (text: string) => Math.max(1, Math.round(text.length / 4));
+
+// Deterministic token-saving reformat (no AI API): strips markdown decoration
+// and the footer, collapses whitespace. The content survives; the chrome goes.
+export function tightenBrief(md: string): string {
+  return md
+    .replace(/\n---\n_Exported from [^\n]*\n?/, '\n')  // footer
+    .replace(/\*\*/g, '')                              // bold markers
+    .replace(/^> /gm, '')                              // blockquote marker
+    .replace(/`/g, '')                                 // inline code ticks
+    .replace(/ _\(([^)]+)\)_/g, ' ($1)')               // italic parentheticals
+    .replace(/[ \t]+$/gm, '')                          // trailing spaces
+    .replace(/\n{3,}/g, '\n\n')                        // stacked blank lines
+    .trim() + '\n';
+}
+
+// Hand any text to the browser as a markdown download.
+export function downloadText(filename: string, text: string) {
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${input.project.id}-resume-brief.md`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();

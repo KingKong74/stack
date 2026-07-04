@@ -17,9 +17,9 @@ import { relativeTime, PRIORITY_SHORT } from '../util.js';
 //   query: "…",
 //   groups: {
 //     projects: [ { kind, slug, name, tint, title, meta, target } ],
-//     bugs:     [ … ], roadmap: [ … ], notes: [ … ], activity: [ … ]
+//     bugs:     [ … ], roadmap: [ … ], futures: [ … ], notes: [ … ], activity: [ … ]
 //   },
-//   counts: { projects, bugs, roadmap, notes, activity, total },
+//   counts: { projects, bugs, roadmap, futures, notes, activity, total },
 //   projectCount: 3            // distinct projects across all results
 // }
 export const search = Router();
@@ -39,15 +39,15 @@ search.get('/', async (req, res) => {
   const query = String(req.query.q || '').trim();
   const empty = {
     query,
-    groups: { projects: [], bugs: [], roadmap: [], notes: [], activity: [] },
-    counts: { projects: 0, bugs: 0, roadmap: 0, notes: 0, activity: 0, total: 0 },
+    groups: { projects: [], bugs: [], roadmap: [], futures: [], notes: [], activity: [] },
+    counts: { projects: 0, bugs: 0, roadmap: 0, futures: 0, notes: 0, activity: 0, total: 0 },
     projectCount: 0,
   };
   if (!query) return res.json(empty);
 
   const pat = likePattern(query);
 
-  const [projR, bugR, roadR, noteR, actR] = await Promise.all([
+  const [projR, bugR, roadR, futR, noteR, actR] = await Promise.all([
     q(
       `SELECT slug, name, tint, status, subtitle FROM projects
         WHERE name ILIKE $1 OR subtitle ILIKE $1
@@ -68,6 +68,14 @@ search.get('/', async (req, res) => {
          FROM roadmap_items r JOIN projects p ON p.id = r.project_id
         WHERE r.title ILIKE $1 OR r.note ILIKE $1
         ORDER BY r.updated_at DESC NULLS LAST, r.created_at DESC
+        LIMIT $2`,
+      [pat, PER_GROUP]
+    ),
+    q(
+      `SELECT f.id, f.title, f.note, p.slug, p.name, p.tint
+         FROM futures f JOIN projects p ON p.id = f.project_id
+        WHERE f.title ILIKE $1 OR f.note ILIKE $1
+        ORDER BY f.created_at DESC
         LIMIT $2`,
       [pat, PER_GROUP]
     ),
@@ -113,6 +121,14 @@ search.get('/', async (req, res) => {
     target: { slug: r.slug, tab: 'roadmap', highlight: String(r.id) },
   }));
 
+  const futures = futR.rows.map((r) => ({
+    kind: 'future',
+    slug: r.slug, name: r.name, tint: r.tint || null,
+    title: r.title,
+    meta: 'idea',
+    target: { slug: r.slug, tab: 'futures', highlight: String(r.id) },
+  }));
+
   const notes = noteR.rows.map((r) => ({
     kind: 'note',
     slug: r.slug, name: r.name, tint: r.tint || null,
@@ -131,9 +147,9 @@ search.get('/', async (req, res) => {
 
   // Apply the overall total cap, trimming from the largest groups so no single
   // kind crowds the rest out.
-  const groups = { projects, bugs, roadmap, notes, activity };
+  const groups = { projects, bugs, roadmap, futures, notes, activity };
   let total = Object.values(groups).reduce((n, g) => n + g.length, 0);
-  const order = ['activity', 'notes', 'roadmap', 'bugs', 'projects']; // trim these first
+  const order = ['activity', 'notes', 'futures', 'roadmap', 'bugs', 'projects']; // trim these first
   while (total > TOTAL_CAP) {
     const key = order.find((k) => groups[k].length === Math.max(...order.map((o) => groups[o].length)));
     if (!key || !groups[key].length) break;
@@ -145,6 +161,7 @@ search.get('/', async (req, res) => {
     projects: groups.projects.length,
     bugs: groups.bugs.length,
     roadmap: groups.roadmap.length,
+    futures: groups.futures.length,
     notes: groups.notes.length,
     activity: groups.activity.length,
     total,

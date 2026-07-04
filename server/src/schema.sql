@@ -37,6 +37,11 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS north_star TEXT;
 -- without being in the terminal. Lines stay until removed in the UI.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS directives JSONB NOT NULL DEFAULT '[]'::jsonb;
 
+-- Deployment card fields: where this deploys (label) and where its logs live —
+-- both hand-edited on the detail Overview's Deployment panel.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS deploy_platform TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS logs_url        TEXT;
+
 -- Status vocabulary migration: active | paused | done | archived  ->
 -- live | building | paused | archived. Convert legacy 'active' rows to 'live'.
 ALTER TABLE projects ALTER COLUMN status SET DEFAULT 'building';

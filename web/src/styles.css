@@ -55,6 +55,75 @@
   --mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
+/* ============================================================
+   Dark theme — set via <html data-theme="dark"> (Settings →
+   Appearance; 'system' follows the OS). Overrides the same named
+   tokens, so everything that references the palette follows.
+   ============================================================ */
+[data-theme='dark'] {
+  /* neutrals */
+  --paper: #171512;
+  --surface: #201d19;
+  --sand: #272119;
+  --keyline: #3d372d;
+  --muted: #9b948a;
+  --ink: #ece7df;
+
+  /* accent ramp — hover gets lighter, not darker, on a dark ground */
+  --accent-deep: #de8055;
+  --accent: #cf6a42;
+  --accent-soft: #a85a39;
+  --accent-tint: #322019;
+  --accent-tint-border: #4c2f21;
+
+  /* semantic tones */
+  --live: #6fbe8c;
+  --building: #c9a44a;
+  --sage: #8ab48d;
+  --critical: #d76c6c;
+  --paused: #857e73;
+
+  /* supporting literals re-based for dark */
+  --resume-border: #3b3226;
+  --line: #2b2822;
+  --line-2: #2e2a24;
+  --line-panel: #2e2a24;
+  --body: #cfc8bd;
+  --body-2: #d8d0c4;
+  --faint: #7d766a;
+  --fainter: #6f695e;
+  --placeholder: #6f695e;
+  --green-tint: #1e2b23;
+  --chip-ink: #b0a89b;
+  --panel: #262320;
+}
+/* Literal light backgrounds that don't ride the tokens */
+[data-theme='dark'] .auto-badge { background: var(--panel); }
+[data-theme='dark'] .auto-cue { background: var(--accent-tint); }
+[data-theme='dark'] .deck-error,
+[data-theme='dark'] .action-error,
+[data-theme='dark'] .set-test.fail { background: #33211f; border-color: #4c2c28; }
+[data-theme='dark'] .resume-when,
+[data-theme='dark'] .hero-eyebrow,
+[data-theme='dark'] .hero-export,
+[data-theme='dark'] .col-progress .lbl,
+[data-theme='dark'] .col-next .lbl { color: var(--muted); }
+[data-theme='dark'] .col-keep .lbl { color: var(--sage); }
+[data-theme='dark'] .switch { background: #45403a; }
+[data-theme='dark'] .switch.on { background: var(--accent); }
+[data-theme='dark'] .statusbadge.building,
+[data-theme='dark'] .sev-pill.medium,
+[data-theme='dark'] .status-pill.investigating { color: var(--building); background: #2e2817; }
+[data-theme='dark'] .statusbadge.paused,
+[data-theme='dark'] .statusbadge.archived,
+[data-theme='dark'] .sev-pill.low,
+[data-theme='dark'] .status-pill.open { color: var(--chip-ink); background: #2b2823; }
+[data-theme='dark'] .sev-pill.critical { background: #3a2323; }
+[data-theme='dark'] .tl .node { background: var(--card); }
+/* Sticky notes + composer keep their paper colours — pin their text dark */
+[data-theme='dark'] .note, [data-theme='dark'] .composer { color: #2c2820; }
+[data-theme='dark'] .composer textarea { color: #2c2820; }
+
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; min-height: 100%; }
 body {
@@ -227,6 +296,12 @@ a { color: inherit; }
 .brief-row + .brief-row { border-top: 1px solid var(--line-2); }
 .brief-row-label { font-size: 13.5px; font-weight: 500; color: var(--ink); }
 .brief-row-hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.brief-tokenbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.brief-tokens { font-family: var(--mono); font-size: 11.5px; color: var(--muted); background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; padding: 3px 9px; }
+.brief-tighten { font-size: 12px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent-tint-border); border-radius: 8px; padding: 5px 11px; }
+.brief-tighten:hover { background: var(--accent-tint); color: var(--accent-deep); }
+.brief-edit { width: 100%; height: 340px; resize: vertical; border: 1px solid var(--line-3); border-radius: 10px; background: var(--panel); color: var(--body); padding: 12px 14px; font-family: var(--mono); font-size: 12px; line-height: 1.55; margin-bottom: 18px; }
+.modal-actions.split { justify-content: space-between; }
 .resume-summary { font-size: 15px; line-height: 1.65; color: var(--body-2); margin-bottom: 20px; }
 .resume-cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 22px; }
 .resume-col .lbl { margin-bottom: 10px; }
@@ -240,6 +315,14 @@ a { color: inherit; }
 .item .mk.arrow { color: var(--accent); margin-top: 1px; }
 .item .mk.tick { color: var(--green); margin-top: 1px; }
 .empty-soft { font-size: 13px; color: var(--faint); }
+
+/* ---------- project-scoped review queue (detail Overview) ---------- */
+.proj-review { background: var(--card); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 13px 17px; margin-bottom: 24px; }
+.proj-review-head { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
+.proj-review-head .title { font-family: var(--disp); font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.proj-review-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+.proj-review-row + .proj-review-row { border-top: 1px solid var(--line-2); }
+.proj-review-row .txt { flex: 1; font-size: 13.5px; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- directives (the steer list) ---------- */
 .directives { background: var(--card); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 15px 17px; margin-bottom: 24px; }
@@ -267,6 +350,16 @@ a { color: inherit; }
 .panel .lbl { margin-bottom: 12px; }
 .deploy-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .deploy-row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.deploy-row .dot.building { background: var(--building); }
+.deploy-row .dot.paused { background: var(--paused); }
+.deploy-row .dot.archived { background: var(--paused); }
+.panel-head { display: flex; align-items: center; justify-content: space-between; }
+.panel-head .lbl { margin-bottom: 12px; }
+.panel-edit { color: var(--faint); font-size: 12px; margin-top: -6px; }
+.panel-edit:hover { color: var(--accent); }
+.deploy-edit { display: flex; flex-direction: column; gap: 8px; }
+.deploy-edit .row { display: flex; justify-content: flex-end; gap: 8px; }
+.deploy-link { padding: 0; text-align: left; }
 .deploy-row b { font-weight: 600; }
 .deploy-row .mono { color: var(--muted); font-size: 12px; }
 .deploy-meta { font-size: 12px; color: var(--muted); margin-top: 9px; }
@@ -340,6 +433,18 @@ a { color: inherit; }
 .auto-cue { display: inline-block; margin-left: 7px; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); background: #f0e7df; border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 5px; vertical-align: middle; }
 .road-add { font-size: 12px; color: var(--fainter); padding: 6px 3px; text-align: left; }
 .road-add:hover { color: var(--accent); }
+.road-actions { flex: none; display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s ease; }
+.road-item:hover .road-actions { opacity: 1; }
+.road-actions button { color: var(--faint); font-size: 13px; line-height: 1; padding: 2px 5px; border-radius: 6px; }
+.road-actions button:hover { color: var(--accent-deep); background: var(--panel); }
+.road-archive { margin-top: 26px; border-top: 1px solid var(--line-2); padding-top: 14px; }
+.road-archive-head { display: flex; align-items: baseline; gap: 8px; font-family: var(--disp); font-size: 13.5px; font-weight: 600; color: var(--muted); }
+.road-archive-head:hover { color: var(--ink); }
+.road-archive-head .chev { font-size: 11px; }
+.road-archive-head .count { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
+.road-archive-head .hint { font-size: 11.5px; font-family: var(--sans); font-weight: 400; color: var(--faint); }
+.road-archive-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; max-width: 640px; }
+.arch-bucket { display: inline-block; margin-left: 8px; font-family: var(--mono); font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.03em; }
 
 /* ---------- notes ---------- */
 .note-intro { font-size: 13px; color: var(--muted); margin-bottom: 22px; }
@@ -656,6 +761,7 @@ a { color: inherit; }
 .cmdk-ico.kind-note { color: var(--accent); }
 .cmdk-ico.kind-activity { color: var(--live); }
 .cmdk-ico.kind-project { color: var(--ink); }
+.cmdk-ico.kind-future { color: var(--sage); }
 .cmdk-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .cmdk-row-title { font-size: 13.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmdk-mark { background: transparent; color: var(--accent); font-weight: 600; }

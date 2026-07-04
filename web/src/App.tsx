@@ -5,7 +5,16 @@ import { ProjectDetail } from './screens/ProjectDetail';
 import { Settings } from './screens/Settings';
 import { TokenGate } from './components/TokenGate';
 import { CommandPalette } from './components/CommandPalette';
-import { getToken, onAuthChange } from './store';
+import { getToken, onAuthChange, getThemePref, onThemeChange } from './store';
+
+// Resolve the stored preference to a concrete theme on <html data-theme>.
+// 'system' follows prefers-color-scheme live.
+function applyTheme() {
+  const pref = getThemePref();
+  const dark = pref === 'dark'
+    || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+}
 
 export default function App() {
   const route = useRoute();
@@ -14,6 +23,15 @@ export default function App() {
 
   // Re-read the token whenever it changes (set on unlock, cleared on any 401).
   useEffect(() => onAuthChange(() => setTokenState(getToken())), []);
+
+  // Theme: apply on boot, on preference change (Settings), and on OS change.
+  useEffect(() => {
+    applyTheme();
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    media.addEventListener('change', applyTheme);
+    const off = onThemeChange(applyTheme);
+    return () => { media.removeEventListener('change', applyTheme); off(); };
+  }, []);
 
   // Global ⌘K / Ctrl+K toggles the command palette from anywhere.
   useEffect(() => {
