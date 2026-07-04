@@ -75,8 +75,12 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit
   hash (activity), a bug key (bugs) or a row id (roadmap/notes). `go.settings()` opens Settings.
 - `components/CommandDeck.tsx` — the cross-project deck at the top of the dashboard (resume hero,
-  Blocked/Stale/Bugs attention row that goes calm at zero, merged activity stream). Renders the
-  `getOverview()` payload; all click-throughs use `go.detail(slug, tab?)`.
+  the **review inbox**, Blocked/Stale/Bugs attention row that goes calm at zero, merged activity
+  stream). Renders the `getOverview()` payload; all click-throughs use `go.detail(slug, tab?)`.
+  The review inbox (`ReviewQueue`) lists auto-extracted items no human has looked at yet:
+  **Keep** = `patchBug/patchRoadmapItem {reviewed:true}` (stays in its tracker), **Dismiss** =
+  the existing DELETE (tombstones the fingerprint); rows settle optimistically and the whole
+  block disappears at zero. Titles deep-link via `go.detail(slug, tab, highlight)`.
 - `screens/` Dashboard (loads projects + overview independently — a deck hiccup never blanks the
   grid; renders the deck above the "All projects" grid; status filters, computed progress on cards),
   ProjectDetail (loads project+activity+collections, owns tab/modal state, persists on mutate;
@@ -106,8 +110,12 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   - `settings` — single row (boolean PK = true, CHECK singleton). `auto_record`, `keep_resume_card`,
     `checkpoint_detail` (brief|standard|detailed), `include_chores`. Seeded once on migrate.
   - `bugs` — `bug_key` (BUG-N per project), title, severity, status, `link_ref` (commit), `source`,
-    `fingerprint`. Partial unique index on (project, fingerprint) WHERE source='hook'.
-  - `roadmap_items` — `bucket`, title, note, `done`, `position`, `source`, `fingerprint`.
+    `fingerprint`, `reviewed_at`. Partial unique index on (project, fingerprint) WHERE source='hook'.
+  - `roadmap_items` — `bucket`, title, note, `done`, `position`, `source`, `fingerprint`,
+    `reviewed_at`.
+  - `reviewed_at` (bugs + roadmap_items) drives the **review inbox**: a hook-created item needs
+    review while NULL; PATCH `{reviewed:true}` sets it (approve), DELETE dismisses (tombstone).
+    Ingest's dedup re-point never touches it, so approving is sticky across pushes.
   - `notes` — text, `colour`, `source`.
   - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap`, fingerprint).
 - `util.js` — `slugify`, `fingerprint` (title normalised: lowercased, punctuation + extra
@@ -119,8 +127,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 - `settings.js` — the single-row settings: `readSettings(client?)` (accepts a txn client; defaults on
   failure) and `settingsShape` (row → client camelCase). Imported by ingest/overview/projects.
 - `routes/ingest.js` — `POST /api/ingest`: see the package + behaviour below.
-- `routes/overview.js` — `GET /api/overview`: the cross-project command deck, computed in four
-  aggregate queries (projects, bugs agg, recent sessions, week count) — never one-per-project. Reads
+- `routes/overview.js` — `GET /api/overview`: the cross-project command deck, computed in five
+  aggregate queries (projects, bugs agg, recent sessions, week count, review inbox) — never
+  one-per-project. Reads
   settings: when `keep_resume_card` is off, `resume` is null and `keepResumeCard:false` lets the deck
   drop the hero. Shape documented below.
 - `routes/search.js` — `GET /api/search?q=…`: the ⌘K palette. Five capped ILIKE queries (projects,
@@ -190,6 +199,9 @@ The cross-project glance layer, computed server-side in four aggregate queries (
   // resume = most-recently-touched live|building project (by last_session_at, not pin order),
   //          falling back to the most-recently-touched of any status; null if there are no projects.
   "keepResumeCard": true,   // false when keep_resume_card is off → the deck drops the hero entirely
+  "review":  { "total": 2,  // hook-created items with reviewed_at IS NULL, newest first, items capped at 8
+               "items": [ { "kind": "bug|roadmap", "slug": "…", "name": "…", "id": "BUG-3|42",
+                            "title": "…", "meta": "high|should", "when": "2h ago" } ] },
   "blockers": [ { "slug": "…", "name": "…", "text": "…" } ],            // every stored blocker line, flat
   "stale":    [ { "slug": "…", "name": "…", "since": "2w ago" } ],      // live|building, last push > STALE_DAYS
   "bugs":     { "total": 3, "projects": [ { "slug": "…", "name": "…", "count": 2 } ] }, // open critical|high
@@ -273,7 +285,9 @@ the silent metadata backstop so the feed never has gaps.
   `PATCH /api/projects/:slug` (subtitle, site_url, repo_url, status, pin, …) ·
   `DELETE /api/projects/:slug` (cascades sessions/bugs/roadmap/notes via FK `ON DELETE CASCADE`)
 - `GET|POST /api/projects/:slug/bugs` · `PATCH|DELETE /api/projects/:slug/bugs/:bugKey`
+  (PATCH also takes `reviewed: bool` — the review-inbox approve)
 - `GET|POST /api/projects/:slug/roadmap` · `PATCH|DELETE /api/projects/:slug/roadmap/:id`
+  (PATCH also takes `reviewed: bool`)
 - `GET|POST /api/projects/:slug/notes` · `PATCH /api/projects/:slug/notes/:id` (text) ·
   `DELETE /api/projects/:slug/notes/:id`
 

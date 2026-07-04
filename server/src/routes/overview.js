@@ -12,6 +12,7 @@ import { readSettings } from '../settings.js';
 //   keepResumeCard: true,    // false hides the resume hero (settings)
 //   blockers: [ { slug, name, text } ],
 //   stale:    [ { slug, name, since } ],
+//   review:   { total, items: [ { kind: 'bug'|'roadmap', slug, name, id, title, meta, when } ] },
 //   bugs:     { total, projects: [ { slug, name, count } ] },
 //   activity: [ { slug, name, hash, branch, summary, tags[], when } ],
 //   totals:   { byStatus: { live, building, paused, archived },
@@ -25,8 +26,8 @@ const ms = (ts) => (ts ? new Date(ts).getTime() : -1);
 overview.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
-  // Four aggregate queries, run together — no per-project fan-out.
-  const [projectsR, bugsR, recentR, weekR] = await Promise.all([
+  // Five aggregate queries, run together — no per-project fan-out.
+  const [projectsR, bugsR, recentR, weekR, reviewR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, summary, current_phase,
               next_up, blockers, last_session_at, updated_at
          FROM projects`),
@@ -37,6 +38,13 @@ overview.get('/', async (_req, res) => {
     q(`SELECT project_id, commit_hash, branch, summary, tags, created_at
          FROM sessions ORDER BY created_at DESC LIMIT 12`),
     q(`SELECT count(*)::int AS n FROM sessions WHERE created_at > now() - interval '7 days'`),
+    // The review inbox: auto-extracted items no human has looked at yet.
+    q(`SELECT 'bug' AS kind, project_id, bug_key AS ref, title, severity AS meta, created_at
+         FROM bugs WHERE source = 'hook' AND reviewed_at IS NULL
+       UNION ALL
+       SELECT 'roadmap', project_id, id::text, title, bucket, created_at
+         FROM roadmap_items WHERE source = 'hook' AND reviewed_at IS NULL
+       ORDER BY created_at DESC`),
   ]);
 
   const projects = projectsR.rows;
@@ -75,6 +83,25 @@ overview.get('/', async (_req, res) => {
     .filter((p) => isActive(p) && p.last_session_at && ms(p.last_session_at) < cutoff)
     .map((p) => ({ slug: p.slug, name: p.name, since: relativeTime(p.last_session_at) }));
 
+  // review: the needs-review queue, newest first, capped for the deck (total
+  // still reflects everything outstanding).
+  const REVIEW_CAP = 8;
+  const review = {
+    total: reviewR.rows.length,
+    items: reviewR.rows.slice(0, REVIEW_CAP).map((r) => {
+      const p = byId.get(r.project_id);
+      return {
+        kind: r.kind,
+        slug: p ? p.slug : '',
+        name: p ? p.name : '(removed)',
+        id: r.ref,
+        title: r.title,
+        meta: r.meta,
+        when: relativeTime(r.created_at) || 'just now',
+      };
+    }),
+  };
+
   // bugs: cross-project critical/high open count + per-project breakdown.
   let seriousTotal = 0;
   let openBugs = 0;
@@ -112,6 +139,7 @@ overview.get('/', async (_req, res) => {
     keepResumeCard: appSettings.keep_resume_card,
     blockers,
     stale,
+    review,
     bugs: { total: seriousTotal, projects: bugProjects },
     activity,
     totals: { byStatus, openBugs, pushesThisWeek: weekR.rows[0].n },

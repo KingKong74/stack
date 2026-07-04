@@ -82,6 +82,14 @@ export interface OverviewResume {
   summary: string; currentPhase: string; nextUp: string[];
 }
 export interface OverviewBlocker { slug: string; name: string; text: string }
+export interface ReviewItem {
+  kind: 'bug' | 'roadmap';
+  slug: string; name: string;
+  id: string;              // bug key (BUG-N) or roadmap row id
+  title: string;
+  meta: string;            // severity (bug) / bucket (roadmap)
+  when: string;
+}
 export interface OverviewStale { slug: string; name: string; since: string }
 export interface OverviewBugProject { slug: string; name: string; count: number }
 export interface OverviewActivity {
@@ -93,6 +101,7 @@ export interface Overview {
   keepResumeCard: boolean;
   blockers: OverviewBlocker[];
   stale: OverviewStale[];
+  review: { total: number; items: ReviewItem[] };
   bugs: { total: number; projects: OverviewBugProject[] };
   activity: OverviewActivity[];
   totals: {

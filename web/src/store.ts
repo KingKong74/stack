@@ -128,8 +128,10 @@ function toProject(d: ProjectPayload): Project {
 // ---- cross-project command deck ----
 
 // The server already returns the client shape, so this is a thin pass-through.
+// (`review` is defaulted so a not-yet-redeployed server can't blank the deck.)
 export async function getOverview(): Promise<Overview> {
-  return request<Overview>('/overview');
+  const o = await request<Overview>('/overview');
+  return { ...o, review: o.review ?? { total: 0, items: [] } };
 }
 
 // ---- search (the ⌘K command palette) ----
@@ -203,7 +205,7 @@ export async function createBug(slug: string, input: { title: string; severity: 
 }
 export async function patchBug(
   slug: string, bugKey: string,
-  patch: Partial<{ status: BugStatus; severity: Severity; title: string }>,
+  patch: Partial<{ status: BugStatus; severity: Severity; title: string; reviewed: boolean }>,
 ): Promise<Bug> {
   return request<Bug>(`${bugsBase(slug)}/${encodeURIComponent(bugKey)}`, { method: 'PATCH', body: patch });
 }
@@ -225,7 +227,7 @@ export async function createRoadmapItem(
 }
 export async function patchRoadmapItem(
   slug: string, id: number,
-  patch: Partial<{ done: boolean; bucket: Priority; title: string; note: string }>,
+  patch: Partial<{ done: boolean; bucket: Priority; title: string; note: string; reviewed: boolean }>,
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });
 }

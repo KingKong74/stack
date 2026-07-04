@@ -1,7 +1,9 @@
-import { useState, type ReactNode } from 'react';
-import type { Overview } from '../types';
+import { useEffect, useState, type ReactNode } from 'react';
+import type { Overview, ReviewItem } from '../types';
 import { go } from '../lib/route';
-import { getProjectDetail } from '../store';
+import {
+  getProjectDetail, patchBug, deleteBug, patchRoadmapItem, deleteRoadmapItem, AuthError,
+} from '../store';
 import { ExportBriefModal } from './ExportBriefModal';
 
 // The cross-project command deck that sits at the top of the dashboard:
@@ -61,6 +63,9 @@ export function CommandDeck({ data }: { data: Overview }) {
         </div>
       )}
 
+      {/* review inbox — auto-extracted items awaiting a look; gone at zero */}
+      <ReviewQueue initial={data.review} />
+
       {/* attention row — quiet at zero, loud only where it matters */}
       <div className="deck-attention">
         <AttentionCard kind="blocked" title="Blocked" count={blockers.length} clearText="Nothing blocked">
@@ -119,6 +124,72 @@ export function CommandDeck({ data }: { data: Overview }) {
           onClose={() => setExportOpen(false)} />
       )}
     </section>
+  );
+}
+
+// The needs-review queue: everything the hooks extracted that no human has
+// looked at yet. Keep marks it reviewed (it's already in the trackers); Dismiss
+// deletes it (tombstoning the fingerprint so the next push won't re-create it).
+// Rows settle optimistically; the whole block disappears at zero.
+function ReviewQueue({ initial }: { initial: Overview['review'] }) {
+  const [items, setItems] = useState(initial.items);
+  const [total, setTotal] = useState(initial.total);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => { setItems(initial.items); setTotal(initial.total); }, [initial]);
+
+  if (total === 0) return null;
+  const rowKey = (it: ReviewItem) => `${it.slug}:${it.kind}:${it.id}`;
+
+  const act = async (it: ReviewItem, action: 'keep' | 'dismiss') => {
+    if (busyKey) return;
+    setBusyKey(rowKey(it));
+    setError('');
+    try {
+      if (it.kind === 'bug') {
+        if (action === 'keep') await patchBug(it.slug, it.id, { reviewed: true });
+        else await deleteBug(it.slug, it.id);
+      } else {
+        if (action === 'keep') await patchRoadmapItem(it.slug, Number(it.id), { reviewed: true });
+        else await deleteRoadmapItem(it.slug, Number(it.id));
+      }
+      setItems((prev) => prev.filter((x) => rowKey(x) !== rowKey(it)));
+      setTotal((t) => Math.max(0, t - 1));
+    } catch (e) {
+      if (e instanceof AuthError) return; // global handler routes to the gate
+      setError((e as Error)?.message || "Couldn't update that item.");
+    }
+    setBusyKey(null);
+  };
+
+  return (
+    <div className="deck-review">
+      <div className="deck-section-head review-head">
+        <span>Needs review</span>
+        <span className="review-count">{total}</span>
+        <span className="auto-badge">✦ auto-extracted</span>
+      </div>
+      <div className="review-rows">
+        {items.map((it) => (
+          <div className={`review-row ${busyKey === rowKey(it) ? 'busy' : ''}`} key={rowKey(it)}>
+            <span className={`review-kind ${it.kind}`}>{it.kind === 'bug' ? it.id : 'roadmap'}</span>
+            <button className="review-title" title="Open in its tracker"
+              onClick={() => go.detail(it.slug, it.kind === 'bug' ? 'bugs' : 'roadmap', it.id)}>
+              {it.title}
+            </button>
+            <span className="review-meta">{it.meta}</span>
+            <span className="review-proj">{it.name}</span>
+            <span className="review-when">{it.when}</span>
+            <span className="review-actions">
+              <button className="review-keep" onClick={() => act(it, 'keep')} title="Keep — mark reviewed">✓ Keep</button>
+              <button className="review-dismiss" onClick={() => act(it, 'dismiss')} title="Dismiss — delete and don't re-extract">✕ Dismiss</button>
+            </span>
+          </div>
+        ))}
+      </div>
+      {total > items.length && <div className="review-more">+{total - items.length} more after these</div>}
+      {error && <div className="review-error">{error}</div>}
+    </div>
   );
 }
 

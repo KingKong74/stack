@@ -45,11 +45,14 @@ bugs.post('/', async (req, res) => {
   res.status(201).json(bugShape(rows[0]));
 });
 
-// PATCH /:bugKey  -> status / severity / title
+// PATCH /:bugKey  -> status / severity / title / reviewed (the review inbox)
 bugs.patch('/:bugKey', async (req, res) => {
   const sets = [];
   const vals = [];
   let i = 1;
+  if (req.body?.reviewed !== undefined) {
+    sets.push(`reviewed_at = ${req.body.reviewed ? 'now()' : 'NULL'}`);
+  }
   if (req.body?.status !== undefined) {
     sets.push(`status = $${i++}`); vals.push(oneOf(req.body.status, BUG_STATUSES, 'open'));
   }

@@ -42,11 +42,14 @@ roadmap.post('/', async (req, res) => {
   res.status(201).json(roadmapItemShape(rows[0]));
 });
 
-// PATCH /:id  -> done toggle, bucket move, title/note edit, reorder
+// PATCH /:id  -> done toggle, bucket move, title/note edit, reorder, reviewed
 roadmap.patch('/:id', async (req, res) => {
   const sets = [];
   const vals = [];
   let i = 1;
+  if (req.body?.reviewed !== undefined) {
+    sets.push(`reviewed_at = ${req.body.reviewed ? 'now()' : 'NULL'}`);
+  }
   if (req.body?.done !== undefined) { sets.push(`done = $${i++}`); vals.push(Boolean(req.body.done)); }
   if (req.body?.bucket !== undefined) { sets.push(`bucket = $${i++}`); vals.push(oneOf(req.body.bucket, BUCKETS, 'should')); }
   if (req.body?.title !== undefined) {

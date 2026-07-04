@@ -59,6 +59,10 @@ stack/
   attention row, and a merged activity stream. A project counts as **stale** once a live/building
   project's last push is older than a threshold; that threshold is one constant, `STALE_DAYS` in
   `server/src/util.js` (default 14) — change it there and the deck follows.
+- **A review inbox keeps you looped in:** everything the hooks auto-extract lands in a
+  **Needs review** queue on the deck until you look at it — **Keep** approves it into its tracker,
+  **Dismiss** deletes it and tombstones the fingerprint so the next push won't re-create it.
+  Approval is sticky across pushes; the block disappears entirely at zero.
 - **A ⌘K command palette** searches across everything — project names, bug titles, roadmap items,
   notes and activity summaries — grouped by kind, fully keyboard-driven, and every result jumps
   straight to its project tab with the item highlighted (`GET /api/search`).

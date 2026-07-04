@@ -76,6 +76,11 @@ CREATE TABLE IF NOT EXISTS bugs (
 -- Auto (hook) items dedupe on fingerprint; manual items are never deduped.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_bugs_auto_fp
   ON bugs (project_id, fingerprint) WHERE source = 'hook';
+-- Review inbox: an auto-extracted item awaits a human look until reviewed_at is
+-- set (approve keeps it; dismiss deletes + tombstones). Manual items never need
+-- review — the inbox query filters on source = 'hook' AND reviewed_at IS NULL.
+-- Ingest's dedup re-point leaves reviewed_at alone, so approving is sticky.
+ALTER TABLE bugs          ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_bugs_project ON bugs (project_id, created_at DESC);
 
 -- Per-project MoSCoW roadmap.
@@ -94,6 +99,7 @@ CREATE TABLE IF NOT EXISTS roadmap_items (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_roadmap_auto_fp
   ON roadmap_items (project_id, fingerprint) WHERE source = 'hook';
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;  -- see bugs.reviewed_at
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
 -- Per-project sticky notes.

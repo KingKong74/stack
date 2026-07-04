@@ -478,6 +478,30 @@ a { color: inherit; }
 .deck-hero.empty { align-items: center; }
 .deck-hero.empty .hero-summary { color: var(--muted); }
 
+/* review inbox (needs-review queue) */
+.deck-review { background: var(--card); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 8px 8px 6px; margin-bottom: 16px; }
+.review-head { display: flex; align-items: center; gap: 9px; color: var(--ink); }
+.review-count { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); min-width: 22px; height: 20px; padding: 0 6px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; }
+.review-rows { display: flex; flex-direction: column; }
+.review-row { display: grid; grid-template-columns: 64px 1fr auto auto auto auto; align-items: center; gap: 12px; padding: 8px 11px; border-radius: 9px; }
+.review-row:not(:last-child) { border-bottom: 1px solid var(--line-2); }
+.review-row.busy { opacity: 0.55; pointer-events: none; }
+.review-kind { font-family: var(--mono); font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--accent); }
+.review-kind.roadmap { color: var(--sage); }
+.review-title { font-size: 13px; color: var(--body); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-title:hover { color: var(--accent-deep); }
+.review-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.review-proj { font-family: var(--disp); font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.review-when { font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; }
+.review-actions { display: flex; gap: 6px; }
+.review-keep, .review-dismiss { font-size: 11.5px; font-weight: 600; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--line-2); white-space: nowrap; }
+.review-keep { color: var(--green); }
+.review-keep:hover { border-color: var(--green); background: var(--green-tint); }
+.review-dismiss { color: var(--muted); }
+.review-dismiss:hover { color: var(--critical); border-color: var(--critical); }
+.review-more { font-size: 11px; color: var(--faint); padding: 7px 11px 6px; }
+.review-error { font-size: 12px; color: var(--critical); padding: 7px 11px 6px; }
+
 /* attention row */
 .deck-attention { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
 .att-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 15px 16px; display: flex; flex-direction: column; }
@@ -517,6 +541,8 @@ a { color: inherit; }
   .deck-attention { grid-template-columns: 1fr; }
   .feed-row { grid-template-columns: 50px 1fr auto; }
   .feed-proj { display: none; }
+  .review-row { grid-template-columns: 56px 1fr auto; }
+  .review-meta, .review-proj, .review-when { display: none; }
 }
 
 /* ---------- ⌘K hint on the dashboard search box ---------- */
