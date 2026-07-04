@@ -109,7 +109,7 @@ interface ProjectPayload {
   pushesThisWeek: number;
   // detail-only:
   summary?: string; currentPhase?: string; northStar?: string;
-  deployPlatform?: string; logsUrl?: string;
+  deployPlatform?: string; logsUrl?: string; techStack?: string[];
   inProgress?: string[]; nextUp?: string[]; workingWell?: string[]; blockers?: string[];
   directives?: string[];
   ref?: string; when?: string;
@@ -145,7 +145,7 @@ function toProject(d: ProjectPayload): Project {
     meta: {
       version: '—',
       lastDeploy: d.metaLine ? d.metaLine.replace(/^pushed /, '') : '—',
-      stack: [],
+      stack: d.techStack || [],
       pushesThisWeek: d.pushesThisWeek ?? 0,
     },
     resume: isDetail ? toResume(d) : null,
@@ -226,6 +226,7 @@ export async function patchProject(
   patch: Partial<{
     subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean;
     name: string; north_star: string; directives: string[]; deploy_platform: string; logs_url: string;
+    tech_stack: string[];
   }>,
 ): Promise<Project> {
   return toProject(await request<ProjectPayload>(`/projects/${encodeURIComponent(slug)}`, { method: 'PATCH', body: patch }));

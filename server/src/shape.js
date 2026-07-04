@@ -102,6 +102,7 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, acti
     northStar: p.north_star || '',
     deployPlatform: p.deploy_platform || '',
     logsUrl: p.logs_url || '',
+    techStack: Array.isArray(p.tech_stack) ? p.tech_stack : [],
     inProgress: Array.isArray(p.in_progress) ? p.in_progress : [],
     nextUp: Array.isArray(p.next_up) ? p.next_up : [],
     workingWell: Array.isArray(p.working_well) ? p.working_well : [],

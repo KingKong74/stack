@@ -50,7 +50,12 @@ roadmap.patch('/:id', async (req, res) => {
   if (req.body?.reviewed !== undefined) {
     sets.push(`reviewed_at = ${req.body.reviewed ? 'now()' : 'NULL'}`);
   }
-  if (req.body?.done !== undefined) { sets.push(`done = $${i++}`); vals.push(Boolean(req.body.done)); }
+  if (req.body?.done !== undefined) {
+    sets.push(`done = $${i++}`); vals.push(Boolean(req.body.done));
+    // Completing an item is a human touch — it counts as reviewed, so archived
+    // items never linger in the review inbox.
+    if (req.body.done) sets.push('reviewed_at = COALESCE(reviewed_at, now())');
+  }
   if (req.body?.bucket !== undefined) { sets.push(`bucket = $${i++}`); vals.push(oneOf(req.body.bucket, BUCKETS, 'should')); }
   if (req.body?.title !== undefined) {
     const title = String(req.body.title).trim().slice(0, 300);

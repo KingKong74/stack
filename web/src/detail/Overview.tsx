@@ -82,6 +82,54 @@ function DeploymentPanel({ project, onSave }: { project: Project; onSave: (p: De
   );
 }
 
+// The Tech stack panel, hand-edited: chips with × in edit mode, ⏎ to add.
+function TechStackPanel({ stack, onSave }: { stack: string[]; onSave: (next: string[]) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [list, setList] = useState<string[]>(stack);
+  const [draft, setDraft] = useState('');
+
+  const start = () => { setList(stack); setDraft(''); setEditing(true); };
+  const withDraft = () => {
+    const t = draft.trim();
+    return t && !list.includes(t) ? [...list, t] : list;
+  };
+  const add = () => { setList(withDraft()); setDraft(''); };
+  const save = () => { onSave(withDraft()); setEditing(false); };
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div className="lbl">Tech stack</div>
+        {!editing && <button className="panel-edit" onClick={start} aria-label="Edit tech stack" title="Edit tech stack">✎</button>}
+      </div>
+      {editing ? (
+        <div className="deploy-edit">
+          <div className="techchips">
+            {list.map((s) => (
+              <span key={s} className="techchip editable">
+                {s}
+                <button onClick={() => setList(list.filter((x) => x !== s))} aria-label={`Remove ${s}`}>×</button>
+              </span>
+            ))}
+          </div>
+          <input className="field-input sm" autoFocus value={draft} placeholder="Add — e.g. React, Postgres…"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') add(); else if (e.key === 'Escape') setEditing(false); }} />
+          <div className="row">
+            <button className="btn-cancel sm" onClick={() => setEditing(false)}>Cancel</button>
+            <button className="btn-submit sm" onClick={save}>Save</button>
+          </div>
+        </div>
+      ) : (
+        <div className="techchips">
+          {stack.length ? stack.map((s) => <span key={s} className="techchip">{s}</span>)
+            : <span className="empty-soft">No stack set yet.</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Standing instructions for the next session(s): edited here, injected
 // verbatim at every SessionStart — steering without the terminal. Lines stay
 // until removed.
@@ -155,14 +203,14 @@ function ActivityCard({ a }: { a: Activity }) {
 
 export function Overview({
   project, activity, directives, reviewQueue, openBugCount, fixingCount, roadmapCount,
-  onViewAll, onExport, onChangeDirectives, onReviewKeep, onReviewDismiss, onSaveDeploy,
+  onViewAll, onExport, onChangeDirectives, onReviewKeep, onReviewDismiss, onSaveDeploy, onSaveStack,
   keepResumeCard = true,
 }: {
   project: Project; activity: Activity[]; directives: string[]; reviewQueue: ReviewEntry[];
   openBugCount: number; fixingCount: number; roadmapCount: number;
   onViewAll: () => void; onExport: () => void; onChangeDirectives: (next: string[]) => void;
   onReviewKeep: (e: ReviewEntry) => void; onReviewDismiss: (e: ReviewEntry) => void;
-  onSaveDeploy: (patch: DeployPatch) => void;
+  onSaveDeploy: (patch: DeployPatch) => void; onSaveStack: (next: string[]) => void;
   keepResumeCard?: boolean;
 }) {
   const r = project.resume;
@@ -254,13 +302,7 @@ export function Overview({
       {/* stat panels */}
       <div className="stats">
         <DeploymentPanel project={project} onSave={onSaveDeploy} />
-        <div className="panel">
-          <div className="lbl">Tech stack</div>
-          <div className="techchips">
-            {project.meta.stack.length ? project.meta.stack.map((s) => <span key={s} className="techchip">{s}</span>)
-              : <span className="empty-soft">No stack set yet.</span>}
-          </div>
-        </div>
+        <TechStackPanel stack={project.meta.stack} onSave={onSaveStack} />
         <div className="panel">
           <div className="lbl">Snapshot</div>
           <div className="snap">

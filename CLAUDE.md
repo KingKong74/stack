@@ -104,7 +104,8 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 - `detail/` Overview (resume card, the **project-scoped review queue** — same Keep/Dismiss semantics
   as the deck inbox, computed client-side from the collections' `reviewed` flags — the **Directives
   card** (add/remove steer lines, persisted whole via `patchProject {directives}`) and the
-  **editable Deployment panel** — status/platform/logs URL via `patchProject`), Bugs (auto cue),
+  **editable Deployment panel** — status/platform/logs URL via `patchProject` — and the **editable
+  Tech stack panel** — chips via `patchProject {tech_stack}`), Bugs (auto cue),
   Roadmap (tick moves an item to the collapsed **Archive** below the buckets — still counted by
   progress; hover ✎/× edit + delete, edit reuses RoadmapModal in `mode='edit'`), Futures (the **north star**
   — one editable paragraph on what the project is becoming, PATCHed as `north_star` and injected by
@@ -113,8 +114,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   edit on the sticky; promote → bug/roadmap prefills the existing modal, then a
   keep/delete-the-note confirm), Activity. ProjectDetail also owns: the Visit-site/Repo buttons (open the URL, or inline-set it when
   unset via `patchProject`), and a quiet delete-project control behind a `ConfirmModal`.
-- `components/` — `Modal`, `ConfirmModal` (delete / keep-or-delete), `BugModal`/`RoadmapModal`
-  (both take an optional `initialTitle` for note promotion), `NewProjectModal`, `TokenGate`.
+- `components/` — `Modal` (scrolls when tall), `ConfirmModal` (delete / keep-or-delete),
+  `BugModal`/`RoadmapModal` (both take an optional `initialTitle` for note promotion; RoadmapModal
+  also `initialNote` + `mode='edit'`), `NewProjectModal`, `TokenGate`, `ConnectGuide` (the in-app
+  onboarding modal — Dashboard "Connect" button; steps stamped with `window.location.origin`, token
+  never shown, plus the **parallel-lanes worktree playbook**), `ExportBriefModal`.
 - `styles.css` — **the formal palette is the named CSS variables at the top of `:root`** (Atlas):
   neutrals (`--paper --surface --sand --keyline --muted --ink`), the terracotta accent ramp
   (`--accent-deep` hover · `--accent` · `--accent-soft` · `--accent-tint` · `--accent-tint-border`)
@@ -130,7 +134,8 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     injected by the SessionStart hook, shown/edited on the Futures tab) and `directives` (jsonb
     list — the standing steer instructions, edited on the detail Overview's Directives card,
     injected FIRST by the SessionStart hook and echoed in the exported brief; lines stay until
-    removed in the UI), plus `deploy_platform` + `logs_url` (the hand-edited Deployment panel). Status default `building`; legacy `active` rows migrate
+    removed in the UI), plus `deploy_platform` + `logs_url` (the hand-edited Deployment panel) and
+    `tech_stack` (jsonb — the hand-edited chips on the Tech stack panel). Status default `building`; legacy `active` rows migrate
     to `live`. `repo` is the `owner/repo` identity; `repo_url` is the browseable URL the Repo button
     opens (filled once by ingest, never overwriting a hand-set value).
   - `sessions` — the activity feed. + `commit_hash`, `tags` jsonb, `authored` bool (a rich
@@ -146,7 +151,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     roadmap is a client flow (create the roadmap item, delete the idea).
   - `reviewed_at` (bugs + roadmap_items + futures) drives the **review inbox**: a hook-created item
     needs review while NULL; PATCH `{reviewed:true}` sets it (approve), DELETE dismisses (tombstone).
-    Ingest's dedup re-point never touches it, so approving is sticky across pushes.
+    Ingest's dedup re-point never touches it, so approving is sticky across pushes. Marking a
+    roadmap item `done` also sets it (a human touch counts as review — archived items never
+    linger in the inbox).
   - `notes` — text, `colour`, `source`.
   - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap|future`, fingerprint).
   - `presence` — live sessions, keyed (project, session_id). SessionStart upserts, an authored

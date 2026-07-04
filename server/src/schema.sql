@@ -42,6 +42,9 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS directives JSONB NOT NULL DEFAULT 
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS deploy_platform TEXT;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS logs_url        TEXT;
 
+-- The tech-stack chips on the detail Overview, hand-edited.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS tech_stack JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 -- Status vocabulary migration: active | paused | done | archived  ->
 -- live | building | paused | archived. Convert legacy 'active' rows to 'live'.
 ALTER TABLE projects ALTER COLUMN status SET DEFAULT 'building';

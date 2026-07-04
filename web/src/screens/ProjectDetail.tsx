@@ -284,6 +284,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       });
     });
 
+  const saveStack = (next: string[]) =>
+    guard(async () => {
+      await patchProject(slug, { tech_stack: next });
+      setData({ ...data, project: { ...project, meta: { ...project.meta, stack: next } } });
+    });
+
   const changeDirectives = (next: string[]) =>
     guard(async () => {
       await patchProject(slug, { directives: next });
@@ -398,7 +404,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             reviewQueue={reviewQueue} keepResumeCard={data.keepResumeCard}
             openBugCount={openBugCount} fixingCount={fixingCount} roadmapCount={roadmapCount}
             onViewAll={viewAll} onExport={() => setExportOpen(true)} onChangeDirectives={changeDirectives}
-            onReviewKeep={reviewKeep} onReviewDismiss={reviewDismiss} onSaveDeploy={saveDeploy} />
+            onReviewKeep={reviewKeep} onReviewDismiss={reviewDismiss} onSaveDeploy={saveDeploy}
+            onSaveStack={saveStack} />
         )}
         {tab === 'bugs' && (
           <Bugs bugs={bugs} filter={bugFilter} setFilter={setBugFilter} highlightId={highlightId}

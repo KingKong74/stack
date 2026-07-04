@@ -90,6 +90,7 @@ export function Roadmap({
                     <div className="t">
                       {it.title}
                       <span className="arch-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
+                      {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
                     </div>
                   </div>
                   <div className="road-actions">

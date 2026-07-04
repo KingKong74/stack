@@ -209,6 +209,23 @@ unreachable (the hooks never block); `Cannot find module ~/.stack/stack-checkpoi
 install step above wasn't run on this machine (it copies **four** files — the two hooks,
 `stack-post.mjs` and the poster).
 
+## Parallel lanes — a team on one project
+
+Run several sessions on one project without collisions: one git worktree per lane, one terminal per
+worktree, one directive per lane (the dashboard's in-app **Connect** guide has the copy-paste
+version):
+
+```bash
+git worktree add ../project-ui  -b lane/ui
+git worktree add ../project-api -b lane/api
+# one Claude Code session per worktree, each with its own steer;
+# both appear under "Live now" with their branch. When the lanes land,
+# a third session in the main repo plays integrator and merges them.
+```
+
+Ingest is parallel-safe by construction: sessions are idempotent per commit, extractions dedupe by
+fingerprint, and only authored checkpoints touch the resume card.
+
 ## The agent-context template
 
 `templates/stack-agent-context.md` is a portable operating manual a fresh Claude session can load to
