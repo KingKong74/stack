@@ -10,6 +10,7 @@ import { projects } from './routes/projects.js';
 import { bugs } from './routes/bugs.js';
 import { roadmap } from './routes/roadmap.js';
 import { notes } from './routes/notes.js';
+import { futures } from './routes/futures.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -35,6 +36,7 @@ app.use('/api/settings', requireToken, settings);
 app.use('/api/projects/:slug/bugs', requireToken, bugs);
 app.use('/api/projects/:slug/roadmap', requireToken, roadmap);
 app.use('/api/projects/:slug/notes', requireToken, notes);
+app.use('/api/projects/:slug/futures', requireToken, futures);
 app.use('/api/projects', requireToken, projects);
 
 const port = process.env.PORT || 4000;

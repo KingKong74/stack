@@ -2,7 +2,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { Overview, ReviewItem } from '../types';
 import { go } from '../lib/route';
 import {
-  getProjectDetail, patchBug, deleteBug, patchRoadmapItem, deleteRoadmapItem, AuthError,
+  getProjectDetail, patchBug, deleteBug, patchRoadmapItem, deleteRoadmapItem,
+  patchFuture, deleteFuture, AuthError,
 } from '../store';
 import { ExportBriefModal } from './ExportBriefModal';
 
@@ -149,9 +150,12 @@ function ReviewQueue({ initial }: { initial: Overview['review'] }) {
       if (it.kind === 'bug') {
         if (action === 'keep') await patchBug(it.slug, it.id, { reviewed: true });
         else await deleteBug(it.slug, it.id);
-      } else {
+      } else if (it.kind === 'roadmap') {
         if (action === 'keep') await patchRoadmapItem(it.slug, Number(it.id), { reviewed: true });
         else await deleteRoadmapItem(it.slug, Number(it.id));
+      } else {
+        if (action === 'keep') await patchFuture(it.slug, Number(it.id), { reviewed: true });
+        else await deleteFuture(it.slug, Number(it.id));
       }
       setItems((prev) => prev.filter((x) => rowKey(x) !== rowKey(it)));
       setTotal((t) => Math.max(0, t - 1));
@@ -172,9 +176,9 @@ function ReviewQueue({ initial }: { initial: Overview['review'] }) {
       <div className="review-rows">
         {items.map((it) => (
           <div className={`review-row ${busyKey === rowKey(it) ? 'busy' : ''}`} key={rowKey(it)}>
-            <span className={`review-kind ${it.kind}`}>{it.kind === 'bug' ? it.id : 'roadmap'}</span>
+            <span className={`review-kind ${it.kind}`}>{it.kind === 'bug' ? it.id : it.kind === 'roadmap' ? 'roadmap' : 'idea'}</span>
             <button className="review-title" title="Open in its tracker"
-              onClick={() => go.detail(it.slug, it.kind === 'bug' ? 'bugs' : 'roadmap', it.id)}>
+              onClick={() => go.detail(it.slug, it.kind === 'bug' ? 'bugs' : it.kind === 'roadmap' ? 'roadmap' : 'futures', it.id)}>
               {it.title}
             </button>
             <span className="review-meta">{it.meta}</span>

@@ -62,6 +62,16 @@ export interface Note {
   source: Source;
 }
 
+// A future: a loose directional idea, curated against the project's north star
+// and promoted into the roadmap when it firms up.
+export interface Future {
+  id: number;
+  title: string;
+  note: string;
+  when: string;
+  source: Source;
+}
+
 export interface Activity {
   hash: string;
   branch: string;
@@ -83,11 +93,11 @@ export interface OverviewResume {
 }
 export interface OverviewBlocker { slug: string; name: string; text: string }
 export interface ReviewItem {
-  kind: 'bug' | 'roadmap';
+  kind: 'bug' | 'roadmap' | 'future';
   slug: string; name: string;
-  id: string;              // bug key (BUG-N) or roadmap row id
+  id: string;              // bug key (BUG-N) or row id (roadmap/future)
   title: string;
-  meta: string;            // severity (bug) / bucket (roadmap)
+  meta: string;            // severity (bug) / bucket (roadmap) / 'idea' (future)
   when: string;
 }
 export interface OverviewStale { slug: string; name: string; since: string }

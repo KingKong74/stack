@@ -61,14 +61,21 @@ Do the following:
      },
      "extract": {
        "bugs": [{ "title": "<bug found/introduced>", "severity": "critical|high|medium|low" }],
-       "next_steps": [{ "title": "<concrete follow-up>", "priority": "must|should|could|wont" }]
+       "next_steps": [{ "title": "<concrete follow-up>", "priority": "must|should|could|wont" }],
+       "futures": [{ "title": "<directional idea for later>", "note": "<why it might matter>" }]
      }
    }
    ```
 
    Leave any list empty (`[]`) when there's nothing real to put in it — do **not**
-   invent bugs or next-steps. Auto-extracted items dedupe by title fingerprint,
-   so don't restate ones already tracked.
+   invent bugs, next-steps or futures. Auto-extracted items dedupe by title
+   fingerprint, so don't restate ones already tracked.
+
+   `futures` vs `next_steps`: a next-step is concrete work someone could start
+   tomorrow; a future is a **directional idea** worth curating later ("could
+   become a review platform", "consider a public read-only mode"). If the
+   session's SessionStart block showed a **North star**, align `next_up` with it
+   and use `futures` for ideas that would bend the direction.
 
 4. **Post it.** Pipe the JSON straight to the poster — it reads the token from
    `~/.stack/env` itself, so **never print, echo or paste the token**:

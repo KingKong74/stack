@@ -1,32 +1,35 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Note, Severity, Priority } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Severity, Priority } from '../types';
 import {
   getProjectDetail, type ProjectDetailData,
   createBug, createRoadmapItem, patchRoadmapItem,
-  createNote, patchNote, deleteNote, patchProject, deleteProject,
+  createNote, patchNote, deleteNote, createFuture, deleteFuture,
+  patchProject, deleteProject,
 } from '../store';
 import { go } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
 import { Overview } from '../detail/Overview';
 import { Bugs } from '../detail/Bugs';
 import { Roadmap } from '../detail/Roadmap';
+import { Futures } from '../detail/Futures';
 import { Notes } from '../detail/Notes';
 import { Activity } from '../detail/Activity';
 import { BugModal } from '../components/BugModal';
 import { RoadmapModal } from '../components/RoadmapModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 
-type Tab = 'overview' | 'bugs' | 'roadmap' | 'notes' | 'activity';
+type Tab = 'overview' | 'bugs' | 'roadmap' | 'futures' | 'notes' | 'activity';
 type BugFilter = 'all' | 'open' | 'fixing' | 'fixed';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Overview' }, { key: 'bugs', label: 'Bugs' },
-  { key: 'roadmap', label: 'Roadmap' }, { key: 'notes', label: 'Notes' }, { key: 'activity', label: 'Activity' },
+  { key: 'roadmap', label: 'Roadmap' }, { key: 'futures', label: 'Futures' },
+  { key: 'notes', label: 'Notes' }, { key: 'activity', label: 'Activity' },
 ];
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
 
 const roadmapTotal = (r: RoadmapData) => r.must.length + r.should.length + r.could.length + r.wont.length;
 
-const TAB_KEYS = new Set<Tab>(['overview', 'bugs', 'roadmap', 'notes', 'activity']);
+const TAB_KEYS = new Set<Tab>(['overview', 'bugs', 'roadmap', 'futures', 'notes', 'activity']);
 const asTab = (t: string | undefined): Tab => (t && TAB_KEYS.has(t as Tab) ? (t as Tab) : 'overview');
 
 export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
@@ -116,6 +119,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const [roadModal, setRoadModal] = useState<{ open: boolean; priority: Priority; title: string; fromNote: number | null }>(
     { open: false, priority: 'should', title: '', fromNote: null });
   const [promotedNote, setPromotedNote] = useState<{ id: number; kind: 'bug' | 'roadmap' } | null>(null);
+  const [promotedFuture, setPromotedFuture] = useState<number | null>(null);
+  const [pendingFuture, setPendingFuture] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [editingUrl, setEditingUrl] = useState<'site' | 'repo' | null>(null);
@@ -125,6 +130,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const bugs = data.bugs;
   const roadmap = data.roadmap;
   const notes = data.notes;
+  const futures = data.futures;
 
   const openBugCount = bugs.filter((b) => b.status !== 'fixed').length;
   const fixingCount = bugs.filter((b) => b.status === 'fixing').length;
@@ -151,9 +157,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     guard(async () => {
       const item = await createRoadmapItem(slug, { title, note, bucket: priority });
       const fromNote = roadModal.fromNote;
+      const fromFuture = pendingFuture;
       setData({ ...data, roadmap: { ...roadmap, [priority]: [...roadmap[priority], item] } });
       setRoadModal({ open: false, priority, title: '', fromNote: null });
+      setPendingFuture(null);
       if (fromNote != null) setPromotedNote({ id: fromNote, kind: 'roadmap' });
+      else if (fromFuture != null) setPromotedFuture(fromFuture);
     });
 
   const toggleRoad = (item: RoadmapItem) =>
@@ -180,6 +189,33 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       await deleteNote(slug, nid);
       setData({ ...data, notes: notes.filter((n) => n.id !== nid) });
     });
+
+  // ---- futures (the ideas curated against the north star) ----
+  const addFuture = (title: string) =>
+    guard(async () => {
+      const f = await createFuture(slug, { title });
+      setData({ ...data, futures: [f, ...futures] });
+    });
+
+  const removeFuture = (fid: number) =>
+    guard(async () => {
+      await deleteFuture(slug, fid);
+      setData({ ...data, futures: futures.filter((f) => f.id !== fid) });
+    });
+
+  const saveNorthStar = (text: string) =>
+    guard(async () => {
+      await patchProject(slug, { north_star: text });
+      setData({ ...data, northStar: text });
+    });
+
+  // Promote an idea into the existing create-roadmap flow, prefilled; after the
+  // item lands, offer to keep or delete the original idea (delete tombstones a
+  // hook idea so the next push won't re-extract it).
+  const promoteFuture = (f: Future) => {
+    setPendingFuture(f.id);
+    setRoadModal({ open: true, priority: 'should', title: f.title, fromNote: null });
+  };
 
   // Promote a note into the existing create-bug / create-roadmap flow, prefilled.
   const promoteNote = (note: Note, kind: 'bug' | 'roadmap') => {
@@ -289,6 +325,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           <Roadmap roadmap={roadmap} highlightId={highlightId}
             onAdd={(p) => setRoadModal({ open: true, priority: p, title: '', fromNote: null })} onToggle={toggleRoad} />
         )}
+        {tab === 'futures' && (
+          <Futures northStar={data.northStar} futures={futures} highlightId={highlightId}
+            onSaveNorthStar={saveNorthStar} onAdd={addFuture} onDelete={removeFuture} onPromote={promoteFuture} />
+        )}
         {tab === 'notes' && (
           <Notes notes={notes} highlightId={highlightId} onAdd={addNote} onEdit={editNote} onDelete={removeNote} onPromote={promoteNote} />
         )}
@@ -307,7 +347,16 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       )}
       {roadModal.open && (
         <RoadmapModal initialPriority={roadModal.priority} initialTitle={roadModal.title}
-          onClose={() => setRoadModal({ open: false, priority: roadModal.priority, title: '', fromNote: null })} onSubmit={addRoad} />
+          onClose={() => { setRoadModal({ open: false, priority: roadModal.priority, title: '', fromNote: null }); setPendingFuture(null); }}
+          onSubmit={addRoad} />
+      )}
+      {promotedFuture != null && (
+        <ConfirmModal
+          title="Promoted to a roadmap item"
+          body="Keep the original idea in Futures, or delete it now that it's on the roadmap?"
+          confirmLabel="Delete idea" cancelLabel="Keep idea" danger
+          onConfirm={() => { const id = promotedFuture; setPromotedFuture(null); removeFuture(id); }}
+          onCancel={() => setPromotedFuture(null)} />
       )}
       {exportOpen && (
         <ExportBriefModal projectName={project.name} onClose={() => setExportOpen(false)}

@@ -93,6 +93,8 @@ function buildBlock(p) {
   if (p.currentPhase) head.push(`Phase: ${p.currentPhase}`);
   if (head.length) lines.push(head.join(' · '));
 
+  if (p.northStar) lines.push('', `**North star:** ${String(p.northStar).replace(/\s+/g, ' ').trim().slice(0, 500)}`);
+
   if (p.summary) lines.push('', p.summary);
 
   if (Array.isArray(p.inProgress) && p.inProgress.length) lines.push('', '**Currently in progress**', bullets(p.inProgress));

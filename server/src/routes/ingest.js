@@ -34,6 +34,16 @@ function asStepCandidates(v) {
     .slice(0, 25);
 }
 
+// Candidate futures list off the wire: [{ title, note? }] — loose directional
+// ideas for the Futures tab, distinct from concrete next-steps.
+function asFutureCandidates(v) {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((f) => ({ title: str(f?.title, 300), note: str(f?.note, 1000) || '' }))
+    .filter((f) => f.title)
+    .slice(0, 25);
+}
+
 /**
  * POST /api/ingest
  *
@@ -49,7 +59,8 @@ function asStepCandidates(v) {
  *   },
  *   extract: {
  *     bugs?: [{ title, severity }],
- *     next_steps?: [{ title, priority }]
+ *     next_steps?: [{ title, priority }],
+ *     futures?: [{ title, note? }]
  *   }
  * }
  *
@@ -97,6 +108,7 @@ ingest.post('/', async (req, res) => {
 
   const bugCandidates = asBugCandidates(extract.bugs);
   const stepCandidates = asStepCandidates(extract.next_steps);
+  const futureCandidates = asFutureCandidates(extract.futures);
 
   const client = await pool.connect();
   try {
@@ -311,6 +323,35 @@ ingest.post('/', async (req, res) => {
       }
     }
 
+    // --- 6. Land auto-extracted futures (directional ideas) ---
+    let createdFutures = 0;
+    {
+      const seen = new Set();
+      for (const cand of futureCandidates) {
+        const fp = fingerprint(cand.title);
+        if (!fp || seen.has(fp)) continue;
+        seen.add(fp);
+        if (await dismissed('future', fp)) continue;
+
+        const existing = await client.query(
+          `SELECT id FROM futures WHERE project_id=$1 AND fingerprint=$2 AND source='hook'`,
+          [projectId, fp]
+        );
+        if (existing.rows.length) {
+          await client.query('UPDATE futures SET updated_at = now() WHERE id = $1', [
+            existing.rows[0].id,
+          ]);
+        } else {
+          await client.query(
+            `INSERT INTO futures (project_id, title, note, source, fingerprint)
+             VALUES ($1,$2,$3,'hook',$4)`,
+            [projectId, cand.title, cand.note, fp]
+          );
+          createdFutures++;
+        }
+      }
+    }
+
     await client.query('COMMIT');
     res.json({
       ok: true,
@@ -318,6 +359,7 @@ ingest.post('/', async (req, res) => {
       session: existingSession ? 'updated' : 'created',
       bugs: { created: createdBugs, relinked: relinkedBugs },
       roadmap: { created: createdSteps },
+      futures: { created: createdFutures },
     });
   } catch (err) {
     await client.query('ROLLBACK');

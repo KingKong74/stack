@@ -36,7 +36,8 @@ and uses no API. When you wrap up meaningful work, run **`/checkpoint`**. It:
   summary explains; `include_chores` decides whether chore-only sessions count),
 - derives the project slug from the git remote,
 - has you compose the full checkpoint schema — summary, current phase, in-progress,
-  next-up, working-well, blockers, tags, plus candidate bugs and next-steps for
+  next-up, working-well, blockers, tags, plus candidate bugs, next-steps and
+  futures (loose directional ideas, distinct from concrete next-steps) for
   auto-extraction — and
 - pipes that JSON to `~/.stack/stack-checkpoint.mjs`, which posts it (reading the
   token from `~/.stack/env`, never printing it).
@@ -50,8 +51,10 @@ and trackers rich.
 The block is a snapshot. For the current state at any moment, read the API:
 
 - `GET /api/projects` — all projects with computed progress.
-- `GET /api/projects/<slug>` — one project plus its activity, bugs, roadmap and
-  notes. This is the authoritative "how is this project doing right now".
+- `GET /api/projects/<slug>` — one project plus its activity, bugs, roadmap,
+  notes and futures. This is the authoritative "how is this project doing right
+  now". If it carries a **north star** (`northStar`), treat it as the project's
+  direction and pull your work towards it.
 
 The base URL and slug for the project you're in are stamped at the bottom of this
 file when it was exported (or are blank in the generic template).
@@ -65,8 +68,8 @@ shell profile or settings file — `~/.stack/env` is the only source.
 
 ## Don't hand-create duplicates
 
-Bugs and roadmap items **auto-extract from sessions** and dedupe by a fingerprint
-of their title. So:
+Bugs, roadmap items and futures **auto-extract from sessions** and dedupe by a
+fingerprint of their title. So:
 
 - Don't manually re-add a bug or next-step the hook will extract anyway — you'll
   just create a near-duplicate.

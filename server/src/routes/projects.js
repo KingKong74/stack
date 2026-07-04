@@ -4,7 +4,7 @@ import {
   slugify, oneOf, relativeTime, computeProgress, TINTS, PROJECT_STATUSES,
 } from '../util.js';
 import {
-  bugShape, groupRoadmap, noteShape, activityShape,
+  bugShape, groupRoadmap, noteShape, futureShape, activityShape,
   projectListShape, projectDetailShape,
 } from '../shape.js';
 import { readSettings } from '../settings.js';
@@ -94,7 +94,7 @@ projects.get('/:slug', async (req, res) => {
   const p = rows[0];
 
   const appSettings = await readSettings();
-  const [sessions, bugs, road, notes, weekly] = await Promise.all([
+  const [sessions, bugs, road, notes, futures, weekly] = await Promise.all([
     q(
       `SELECT commit_hash, branch, summary, tags, created_at FROM sessions
         WHERE project_id = $1 ORDER BY created_at DESC LIMIT 50`,
@@ -103,6 +103,7 @@ projects.get('/:slug', async (req, res) => {
     q('SELECT * FROM bugs WHERE project_id = $1 ORDER BY created_at DESC', [p.id]),
     q('SELECT * FROM roadmap_items WHERE project_id = $1 ORDER BY bucket, position, created_at', [p.id]),
     q('SELECT * FROM notes WHERE project_id = $1 ORDER BY created_at DESC', [p.id]),
+    q('SELECT * FROM futures WHERE project_id = $1 ORDER BY created_at DESC', [p.id]),
     q(
       `SELECT count(*)::int AS n FROM sessions
         WHERE project_id = $1 AND created_at > now() - interval '7 days'`,
@@ -119,6 +120,7 @@ projects.get('/:slug', async (req, res) => {
       bugs: bugs.rows.map(bugShape),
       roadmap: groupRoadmap(road.rows),
       notes: notes.rows.map(noteShape),
+      futures: futures.rows.map(futureShape),
       keepResumeCard: appSettings.keep_resume_card,
     })
   );
@@ -128,7 +130,7 @@ projects.get('/:slug', async (req, res) => {
 const PATCHABLE = new Set([
   'name', 'repo', 'repo_url', 'subtitle', 'site_url', 'status', 'pinned',
   'current_phase', 'summary', 'next_steps', 'blockers',
-  'in_progress', 'next_up', 'working_well', 'tint',
+  'in_progress', 'next_up', 'working_well', 'tint', 'north_star',
 ]);
 const JSON_FIELDS = new Set(['next_steps', 'blockers', 'in_progress', 'next_up', 'working_well']);
 

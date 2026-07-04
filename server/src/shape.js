@@ -37,6 +37,16 @@ export function groupRoadmap(rows) {
   return out;
 }
 
+export function futureShape(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    note: row.note || '',
+    when: relativeTime(row.created_at) || 'just now',
+    source: row.source,
+  };
+}
+
 export function noteShape(row) {
   return {
     id: row.id,
@@ -79,13 +89,14 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, keepResumeCard }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, keepResumeCard }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
     keepResumeCard: keepResumeCard !== false, // global flag; false hides the resume card
     summary: p.summary || '',
     currentPhase: p.current_phase || '',
+    northStar: p.north_star || '',
     inProgress: Array.isArray(p.in_progress) ? p.in_progress : [],
     nextUp: Array.isArray(p.next_up) ? p.next_up : [],
     workingWell: Array.isArray(p.working_well) ? p.working_well : [],
@@ -96,5 +107,6 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, acti
     bugs,
     roadmap,
     notes,
+    futures: futures || [],
   };
 }

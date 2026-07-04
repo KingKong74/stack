@@ -27,6 +27,11 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS in_progress  JSONB NOT NULL DEFAUL
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS next_up      JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS working_well JSONB NOT NULL DEFAULT '[]'::jsonb;
 
+-- The project's north star: one paragraph on what this project is becoming.
+-- Injected into every SessionStart so all sessions pull the same direction,
+-- and the yardstick the Futures tab curates ideas against.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS north_star TEXT;
+
 -- Status vocabulary migration: active | paused | done | archived  ->
 -- live | building | paused | archived. Convert legacy 'active' rows to 'live'.
 ALTER TABLE projects ALTER COLUMN status SET DEFAULT 'building';
@@ -102,6 +107,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_roadmap_auto_fp
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;  -- see bugs.reviewed_at
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
+-- Per-project futures: loose directional ideas, curated against the north star
+-- and promoted into the roadmap (promotion = create the roadmap item, then
+-- delete the idea — a hook idea's fingerprint is tombstoned on delete like any
+-- auto item). Same review-inbox semantics as bugs/roadmap via reviewed_at.
+CREATE TABLE IF NOT EXISTS futures (
+  id          SERIAL PRIMARY KEY,
+  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title       TEXT NOT NULL,
+  note        TEXT,
+  source      TEXT NOT NULL DEFAULT 'manual',          -- hook | manual
+  fingerprint TEXT NOT NULL,
+  reviewed_at TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_futures_auto_fp
+  ON futures (project_id, fingerprint) WHERE source = 'hook';
+CREATE INDEX IF NOT EXISTS idx_futures_project ON futures (project_id, created_at DESC);
+
 -- Per-project sticky notes.
 CREATE TABLE IF NOT EXISTS notes (
   id          SERIAL PRIMARY KEY,
@@ -116,7 +140,7 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE INDEX IF NOT EXISTS idx_notes_project ON notes (project_id, created_at DESC);
 
 -- Tombstones: a deleted auto item must not be re-created by the next push.
--- Keyed by project + kind (bug | roadmap) + fingerprint.
+-- Keyed by project + kind (bug | roadmap | future) + fingerprint.
 CREATE TABLE IF NOT EXISTS dismissed_items (
   id          SERIAL PRIMARY KEY,
   project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,

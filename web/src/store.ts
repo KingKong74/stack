@@ -1,5 +1,5 @@
 import type {
-  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Overview,
+  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings,
 } from './types';
 
@@ -85,7 +85,7 @@ interface ProjectPayload {
   progress: number; metaLine: string; pinned: boolean; siteUrl: string; repo: string; repoUrl: string;
   pushesThisWeek: number;
   // detail-only:
-  summary?: string; currentPhase?: string;
+  summary?: string; currentPhase?: string; northStar?: string;
   inProgress?: string[]; nextUp?: string[]; workingWell?: string[]; blockers?: string[];
   ref?: string; when?: string;
 }
@@ -159,21 +159,25 @@ export async function getProjects(): Promise<Project[]> {
 export interface ProjectDetailData {
   project: Project;
   currentPhase: string;
+  northStar: string;
   blockers: string[];
   activity: Activity[];
   bugs: Bug[];
   roadmap: Roadmap;
   notes: Note[];
+  futures: Future[];
   keepResumeCard: boolean;
 }
 
 export async function getProjectDetail(slug: string): Promise<ProjectDetailData> {
   const d = await request<ProjectPayload & {
-    activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; keepResumeCard?: boolean;
+    activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; futures?: Future[];
+    keepResumeCard?: boolean;
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
-    project: toProject(d), currentPhase: d.currentPhase || '', blockers: d.blockers || [],
-    activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes,
+    project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
+    blockers: d.blockers || [],
+    activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes, futures: d.futures || [],
     keepResumeCard: d.keepResumeCard !== false,
   };
 }
@@ -184,7 +188,7 @@ export async function createProject(input: { name: string; subtitle: string; sta
 
 export async function patchProject(
   slug: string,
-  patch: Partial<{ subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean; name: string }>,
+  patch: Partial<{ subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean; name: string; north_star: string }>,
 ): Promise<Project> {
   return toProject(await request<ProjectPayload>(`/projects/${encodeURIComponent(slug)}`, { method: 'PATCH', body: patch }));
 }
@@ -233,6 +237,26 @@ export async function patchRoadmapItem(
 }
 export async function deleteRoadmapItem(slug: string, id: number): Promise<void> {
   await request<void>(`${roadmapBase(slug)}/${id}`, { method: 'DELETE' });
+}
+
+// ---- futures ----
+
+const futuresBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/futures`;
+
+export async function getFutures(slug: string): Promise<Future[]> {
+  return request<Future[]>(futuresBase(slug));
+}
+export async function createFuture(slug: string, input: { title: string; note?: string }): Promise<Future> {
+  return request<Future>(futuresBase(slug), { method: 'POST', body: input });
+}
+export async function patchFuture(
+  slug: string, id: number,
+  patch: Partial<{ title: string; note: string; reviewed: boolean }>,
+): Promise<Future> {
+  return request<Future>(`${futuresBase(slug)}/${id}`, { method: 'PATCH', body: patch });
+}
+export async function deleteFuture(slug: string, id: number): Promise<void> {
+  await request<void>(`${futuresBase(slug)}/${id}`, { method: 'DELETE' });
 }
 
 // ---- notes ----

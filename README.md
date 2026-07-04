@@ -59,6 +59,10 @@ stack/
   attention row, and a merged activity stream. A project counts as **stale** once a live/building
   project's last push is older than a threshold; that threshold is one constant, `STALE_DAYS` in
   `server/src/util.js` (default 14) — change it there and the deck follows.
+- **A Futures tab curates direction:** each project can carry a **north star** — one paragraph on
+  what it's becoming, injected into every session start so all agents pull the same way — plus an
+  idea funnel: loose "could become…" ideas (yours, or extracted from checkpoints via
+  `extract.futures`) that you promote into the roadmap when they firm up, or dismiss.
 - **A review inbox keeps you looped in:** everything the hooks auto-extract lands in a
   **Needs review** queue on the deck until you look at it — **Keep** approves it into its tracker,
   **Dismiss** deletes it and tombstones the fingerprint so the next push won't re-create it.

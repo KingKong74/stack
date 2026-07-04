@@ -12,7 +12,7 @@ import { readSettings } from '../settings.js';
 //   keepResumeCard: true,    // false hides the resume hero (settings)
 //   blockers: [ { slug, name, text } ],
 //   stale:    [ { slug, name, since } ],
-//   review:   { total, items: [ { kind: 'bug'|'roadmap', slug, name, id, title, meta, when } ] },
+//   review:   { total, items: [ { kind: 'bug'|'roadmap'|'future', slug, name, id, title, meta, when } ] },
 //   bugs:     { total, projects: [ { slug, name, count } ] },
 //   activity: [ { slug, name, hash, branch, summary, tags[], when } ],
 //   totals:   { byStatus: { live, building, paused, archived },
@@ -44,6 +44,9 @@ overview.get('/', async (_req, res) => {
        UNION ALL
        SELECT 'roadmap', project_id, id::text, title, bucket, created_at
          FROM roadmap_items WHERE source = 'hook' AND reviewed_at IS NULL
+       UNION ALL
+       SELECT 'future', project_id, id::text, title, 'idea', created_at
+         FROM futures WHERE source = 'hook' AND reviewed_at IS NULL
        ORDER BY created_at DESC`),
   ]);
 

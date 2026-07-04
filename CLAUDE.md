@@ -26,8 +26,8 @@ hook/   Zero-dependency Node ESM. stack-post.mjs is the shared lib (env load, gi
           POSTs that (authored:false). Calls NO external API. Always exits 0. Honours auto_record /
           include_chores. Idempotent + COALESCE-safe (never clobbers an authored checkpoint).
         • stack-session-start.mjs — the SessionStart hook. GETs /api/projects/:slug and injects a
-          "where you left off" block via additionalContext (nothing if untracked/unreachable); nudges
-          /checkpoint when wrapping up.
+          "where you left off" block via additionalContext (nothing if untracked/unreachable),
+          including the project's **north star** when set; nudges /checkpoint when wrapping up.
         • stack-checkpoint.mjs — the /checkpoint POSTER (not a hook). Reads a checkpoint JSON on
           stdin and POSTs it (authored:true); `--settings` prints current settings. Installs to
           ~/.stack/ alongside the hooks + stack-post.mjs.
@@ -44,6 +44,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   `getSearch` (the ⌘K palette), `getSettings/patchSettings`, `getProjects`, `getProjectDetail`,
   `createProject/patchProject/deleteProject`, `getBugs/createBug/patchBug/deleteBug`,
   `getRoadmap/createRoadmapItem/patchRoadmapItem/deleteRoadmapItem`,
+  `getFutures/createFuture/patchFuture/deleteFuture`,
   `getNotes/createNote/patchNote/deleteNote`. `request()` attaches the bearer and throws `AuthError`
   on 401 (which clears the token).
 - `components/CommandPalette.tsx` — the global ⌘K palette. Centred modal over a dimmed/blurred
@@ -56,8 +57,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   sections only: **Push summaries** (the cream card — switches + Brief/Standard/Detailed segmented
   control, optimistic with rollback) and **Access** (masked token, Test connection, Sign out). Uses
   `getSettings/patchSettings`; a 401 anywhere returns to the gate.
-- `types.ts` — Project, Bug, RoadmapItem, Note, Activity, Resume. Status is `live | building |
-  paused | archived`. Bug/RoadmapItem/Note carry `source: 'hook' | 'manual'` (drives the "auto" cue).
+- `types.ts` — Project, Bug, RoadmapItem, Future, Note, Activity, Resume. Status is `live | building |
+  paused | archived`. Bug/RoadmapItem/Future/Note carry `source: 'hook' | 'manual'` (drives the
+  "auto" cue).
 - `components/TokenGate.tsx` — first-load token screen; `App.tsx` shows it whenever there's no token.
 - `lib/brief.ts` — the exportable **resume brief**: `buildBrief(input, options)` renders a concise
   markdown template (status/phase/last push, session preferences, summary, in progress, next up,
@@ -85,9 +87,12 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   grid; renders the deck above the "All projects" grid; status filters, computed progress on cards),
   ProjectDetail (loads project+activity+collections, owns tab/modal state, persists on mutate;
   initial tab comes from the route so the deck can deep-link to e.g. a project's Activity tab).
-- `detail/` Overview, Bugs (auto cue), Roadmap (done toggle + auto cue), Notes (inline edit on the
-  sticky; promote → bug/roadmap prefills the existing modal, then a keep/delete-the-note confirm),
-  Activity. ProjectDetail also owns: the Visit-site/Repo buttons (open the URL, or inline-set it when
+- `detail/` Overview, Bugs (auto cue), Roadmap (done toggle + auto cue), Futures (the **north star**
+  — one editable paragraph on what the project is becoming, PATCHed as `north_star` and injected by
+  the SessionStart hook — plus the idea funnel: loose ideas added/extracted, promote → prefills the
+  RoadmapModal then a keep/delete-the-idea confirm, dismiss deletes + tombstones), Notes (inline
+  edit on the sticky; promote → bug/roadmap prefills the existing modal, then a
+  keep/delete-the-note confirm), Activity. ProjectDetail also owns: the Visit-site/Repo buttons (open the URL, or inline-set it when
   unset via `patchProject`), and a quiet delete-project control behind a `ConfirmModal`.
 - `components/` — `Modal`, `ConfirmModal` (delete / keep-or-delete), `BugModal`/`RoadmapModal`
   (both take an optional `initialTitle` for note promotion), `NewProjectModal`, `TokenGate`.
@@ -102,7 +107,8 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 ### Backend shape (`server/src`)
 - `schema.sql` — idempotent (ADD COLUMN IF NOT EXISTS + convergent data migrations). Tables:
   - `projects` — + `subtitle, site_url, repo_url, tint, in_progress, next_up, working_well` (the
-    jsonb fields are the resume sub-lists). Status default `building`; legacy `active` rows migrate
+    jsonb fields are the resume sub-lists) and `north_star` (the direction paragraph — PATCHable,
+    injected by the SessionStart hook, shown/edited on the Futures tab). Status default `building`; legacy `active` rows migrate
     to `live`. `repo` is the `owner/repo` identity; `repo_url` is the browseable URL the Repo button
     opens (filled once by ingest, never overwriting a hand-set value).
   - `sessions` — the activity feed. + `commit_hash`, `tags` jsonb, `authored` bool (a rich
@@ -113,8 +119,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     `fingerprint`, `reviewed_at`. Partial unique index on (project, fingerprint) WHERE source='hook'.
   - `roadmap_items` — `bucket`, title, note, `done`, `position`, `source`, `fingerprint`,
     `reviewed_at`.
-  - `reviewed_at` (bugs + roadmap_items) drives the **review inbox**: a hook-created item needs
-    review while NULL; PATCH `{reviewed:true}` sets it (approve), DELETE dismisses (tombstone).
+  - `futures` — loose directional ideas: title, `note`, `source`, `fingerprint`, `reviewed_at`.
+    Same dedup index and tombstone semantics as bugs/roadmap (kind `future`); promotion to the
+    roadmap is a client flow (create the roadmap item, delete the idea).
+  - `reviewed_at` (bugs + roadmap_items + futures) drives the **review inbox**: a hook-created item
+    needs review while NULL; PATCH `{reviewed:true}` sets it (approve), DELETE dismisses (tombstone).
     Ingest's dedup re-point never touches it, so approving is sticky across pushes.
   - `notes` — text, `colour`, `source`.
   - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap`, fingerprint).
@@ -159,7 +168,8 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   },
   "extract": {
     "bugs":       [{ "title": "…", "severity": "critical|high|medium|low" }],
-    "next_steps": [{ "title": "…", "priority": "must|should|could|wont" }]
+    "next_steps": [{ "title": "…", "priority": "must|should|could|wont" }],
+    "futures":    [{ "title": "…", "note": "…" }]   // directional ideas → the Futures tab
   }
 }
 ```
@@ -169,7 +179,8 @@ cycling the palette, and fills `repo_url` once — `COALESCE(repo_url, …)` so 
 overwritten); record the session, **idempotent on commit_hash / session_id** (re-running for the same
 push updates that row, never duplicates the activity); refresh the live resume fields; then land
 extraction — each bug becomes an open bug with `link_ref` = the commit (so the bug→activity chip
-resolves), each next-step a roadmap item in its bucket (default `should`). Dedup by fingerprint: an
+resolves), each next-step a roadmap item in its bucket (default `should`), each future an idea on
+the Futures tab. Dedup by fingerprint: an
 existing auto item is re-pointed at the commit, not duplicated; a fingerprint in `dismissed_items` is
 skipped; manual items are never touched.
 
@@ -288,11 +299,13 @@ the silent metadata backstop so the feed never has gaps.
   (PATCH also takes `reviewed: bool` — the review-inbox approve)
 - `GET|POST /api/projects/:slug/roadmap` · `PATCH|DELETE /api/projects/:slug/roadmap/:id`
   (PATCH also takes `reviewed: bool`)
+- `GET|POST /api/projects/:slug/futures` · `PATCH|DELETE /api/projects/:slug/futures/:id`
+  (PATCH: title/note/reviewed; DELETE tombstones a hook idea)
 - `GET|POST /api/projects/:slug/notes` · `PATCH /api/projects/:slug/notes/:id` (text) ·
   `DELETE /api/projects/:slug/notes/:id`
 
-Deleting a `source='hook'` bug or roadmap item tombstones its fingerprint so the next push won't
-re-create it.
+Deleting a `source='hook'` bug, roadmap item or future tombstones its fingerprint so the next push
+won't re-create it.
 
 ## Conventions
 
