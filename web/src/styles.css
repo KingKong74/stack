@@ -189,6 +189,11 @@ a { color: inherit; }
 .resume-ico { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 15px; }
 .resume-title { font-family: var(--disp); font-size: 18px; font-weight: 600; }
 .resume-when { font-family: var(--mono); font-size: 11px; color: #a9947f; }
+.resume-meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.btn-export { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 8px;
+  border: 1px solid var(--accent-tint-border); font-size: 12px; font-weight: 500; color: var(--accent); }
+.btn-export:hover { background: var(--accent-tint); color: var(--accent-deep); }
+.btn-export .arr { font-size: 12px; }
 .resume-summary { font-size: 15px; line-height: 1.65; color: var(--body-2); margin-bottom: 20px; }
 .resume-cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 22px; }
 .resume-col .lbl { margin-bottom: 10px; }
@@ -456,9 +461,12 @@ a { color: inherit; }
 .hero-next { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; }
 .hero-step { display: flex; gap: 9px; align-items: flex-start; font-size: 13.5px; color: var(--body); }
 .hero-step .mk.arrow { flex: none; color: var(--accent); margin-top: 1px; }
-.hero-side { display: flex; align-items: center; }
+.hero-side { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; }
 .hero-continue { height: 44px; padding: 0 22px; font-size: 14px; gap: 8px; white-space: nowrap; }
 .hero-continue .arr { font-size: 15px; }
+.hero-export { font-size: 12px; font-weight: 500; color: #a9947f; white-space: nowrap; }
+.hero-export:hover:not(:disabled) { color: var(--accent-deep); }
+.hero-export:disabled { cursor: default; }
 .deck-hero.empty { align-items: center; }
 .deck-hero.empty .hero-summary { color: var(--muted); }
 
@@ -497,7 +505,7 @@ a { color: inherit; }
 
 @media (max-width: 860px) {
   .deck-hero { flex-direction: column; gap: 16px; }
-  .hero-side { justify-content: flex-start; }
+  .hero-side { flex-direction: row; justify-content: flex-start; gap: 16px; }
   .deck-attention { grid-template-columns: 1fr; }
   .feed-row { grid-template-columns: 50px 1fr auto; }
   .feed-proj { display: none; }

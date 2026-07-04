@@ -18,10 +18,11 @@ function ActivityCard({ a }: { a: Activity }) {
 }
 
 export function Overview({
-  project, activity, openBugCount, fixingCount, roadmapCount, onViewAll, keepResumeCard = true,
+  project, activity, openBugCount, fixingCount, roadmapCount, onViewAll, onExport, keepResumeCard = true,
 }: {
   project: Project; activity: Activity[];
-  openBugCount: number; fixingCount: number; roadmapCount: number; onViewAll: () => void;
+  openBugCount: number; fixingCount: number; roadmapCount: number;
+  onViewAll: () => void; onExport: () => void;
   keepResumeCard?: boolean;
 }) {
   const r = project.resume;
@@ -37,7 +38,14 @@ export function Overview({
             <div className="resume-ico">↩</div>
             <div className="resume-title">Pick up where you left off</div>
           </div>
-          {r && <div className="resume-when">updated {r.when} · after push {r.ref}</div>}
+          {r && (
+            <div className="resume-meta">
+              <div className="resume-when">updated {r.when} · after push {r.ref}</div>
+              <button className="btn-export" onClick={onExport} title="Download a markdown brief for starting back into this project">
+                Export brief <span className="arr">↓</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {r ? (

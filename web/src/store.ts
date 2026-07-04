@@ -66,7 +66,7 @@ interface ProjectPayload {
   pushesThisWeek: number;
   // detail-only:
   summary?: string; currentPhase?: string;
-  inProgress?: string[]; nextUp?: string[]; workingWell?: string[];
+  inProgress?: string[]; nextUp?: string[]; workingWell?: string[]; blockers?: string[];
   ref?: string; when?: string;
 }
 
@@ -136,6 +136,8 @@ export async function getProjects(): Promise<Project[]> {
 
 export interface ProjectDetailData {
   project: Project;
+  currentPhase: string;
+  blockers: string[];
   activity: Activity[];
   bugs: Bug[];
   roadmap: Roadmap;
@@ -148,7 +150,8 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; keepResumeCard?: boolean;
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
-    project: toProject(d), activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes,
+    project: toProject(d), currentPhase: d.currentPhase || '', blockers: d.blockers || [],
+    activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes,
     keepResumeCard: d.keepResumeCard !== false,
   };
 }

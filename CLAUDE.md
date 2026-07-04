@@ -59,6 +59,12 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 - `types.ts` — Project, Bug, RoadmapItem, Note, Activity, Resume. Status is `live | building |
   paused | archived`. Bug/RoadmapItem/Note carry `source: 'hook' | 'manual'` (drives the "auto" cue).
 - `components/TokenGate.tsx` — first-load token screen; `App.tsx` shows it whenever there's no token.
+- `lib/brief.ts` — the exportable **resume brief**: `buildBrief` renders a concise markdown template
+  (status/phase/last push, summary, in progress, next up, blockers, open bugs, open must/should
+  roadmap deduped against next-up, working-well, recent pushes) and `downloadBrief` saves it as
+  `<slug>-resume-brief.md`. Export buttons live on both "Pick up where you left off" cards: the
+  detail Overview (data already loaded) and the deck hero (fetches `getProjectDetail` on click).
+  Pure formatting — data comes in via store.ts callers.
 - `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router; routes
   are `#/`, `#/settings`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit

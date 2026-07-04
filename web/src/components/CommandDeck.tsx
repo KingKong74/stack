@@ -1,6 +1,8 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { Overview } from '../types';
 import { go } from '../lib/route';
+import { getProjectDetail } from '../store';
+import { downloadBrief } from '../lib/brief';
 
 // The cross-project command deck that sits at the top of the dashboard:
 // a resume hero, a quiet attention row, and a merged activity stream.
@@ -8,6 +10,23 @@ import { go } from '../lib/route';
 export function CommandDeck({ data }: { data: Overview }) {
   const { resume, keepResumeCard, blockers, stale, bugs, activity } = data;
   const worstBug = bugs.projects[0] || null;
+
+  // The hero only carries a slice of the project, so exporting the brief pulls
+  // the full detail on demand. 'failed' shows briefly, then resets.
+  const [exportState, setExportState] = useState<'idle' | 'busy' | 'failed'>('idle');
+  const exportBrief = async () => {
+    if (!resume || exportState === 'busy') return;
+    setExportState('busy');
+    try {
+      const d = await getProjectDetail(resume.slug);
+      downloadBrief({ project: d.project, currentPhase: d.currentPhase, blockers: d.blockers,
+        activity: d.activity, bugs: d.bugs, roadmap: d.roadmap });
+      setExportState('idle');
+    } catch {
+      setExportState('failed');
+      setTimeout(() => setExportState('idle'), 2500);
+    }
+  };
 
   return (
     <section className="deck" aria-label="Command deck">
@@ -32,6 +51,10 @@ export function CommandDeck({ data }: { data: Overview }) {
           <div className="hero-side">
             <button className="btn-accent hero-continue" onClick={() => go.detail(resume.slug)}>
               Continue <span className="arr">→</span>
+            </button>
+            <button className="hero-export" onClick={exportBrief} disabled={exportState === 'busy'}
+              title="Download a markdown brief for starting back into this project">
+              {exportState === 'busy' ? 'Exporting…' : exportState === 'failed' ? 'Export failed' : 'Export brief ↓'}
             </button>
           </div>
         </div>

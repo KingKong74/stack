@@ -6,6 +6,7 @@ import {
   createNote, patchNote, deleteNote, patchProject, deleteProject,
 } from '../store';
 import { go } from '../lib/route';
+import { downloadBrief } from '../lib/brief';
 import { Overview } from '../detail/Overview';
 import { Bugs } from '../detail/Bugs';
 import { Roadmap } from '../detail/Roadmap';
@@ -211,6 +212,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const removeProject = () =>
     guard(async () => { await deleteProject(slug); go.dashboard(); });
 
+  const exportBrief = () =>
+    downloadBrief({ project, currentPhase: data.currentPhase, blockers: data.blockers, activity, bugs, roadmap });
+
   const openBugLink = (hash: string) => { setHighlightRef(hash); setTab('activity'); };
   const viewAll = () => { setHighlightRef(null); setTab('activity'); };
   const open = (url: string) => { if (url) window.open(url, '_blank', 'noopener'); };
@@ -276,7 +280,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
 
         {tab === 'overview' && (
           <Overview project={project} activity={activity} keepResumeCard={data.keepResumeCard}
-            openBugCount={openBugCount} fixingCount={fixingCount} roadmapCount={roadmapCount} onViewAll={viewAll} />
+            openBugCount={openBugCount} fixingCount={fixingCount} roadmapCount={roadmapCount}
+            onViewAll={viewAll} onExport={exportBrief} />
         )}
         {tab === 'bugs' && (
           <Bugs bugs={bugs} filter={bugFilter} setFilter={setBugFilter} highlightId={highlightId}
