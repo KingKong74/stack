@@ -101,6 +101,7 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, acti
     nextUp: Array.isArray(p.next_up) ? p.next_up : [],
     workingWell: Array.isArray(p.working_well) ? p.working_well : [],
     blockers: Array.isArray(p.blockers) ? p.blockers : [],
+    directives: Array.isArray(p.directives) ? p.directives : [],
     ref: latest ? latest.hash : '',
     when: latest ? latest.when : relativeTime(p.last_session_at) || '',
     activity,

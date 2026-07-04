@@ -87,6 +87,7 @@ interface ProjectPayload {
   // detail-only:
   summary?: string; currentPhase?: string; northStar?: string;
   inProgress?: string[]; nextUp?: string[]; workingWell?: string[]; blockers?: string[];
+  directives?: string[];
   ref?: string; when?: string;
 }
 
@@ -162,6 +163,7 @@ export interface ProjectDetailData {
   currentPhase: string;
   northStar: string;
   blockers: string[];
+  directives: string[];
   activity: Activity[];
   bugs: Bug[];
   roadmap: Roadmap;
@@ -177,7 +179,7 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
     project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
-    blockers: d.blockers || [],
+    blockers: d.blockers || [], directives: d.directives || [],
     activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes, futures: d.futures || [],
     keepResumeCard: d.keepResumeCard !== false,
   };
@@ -189,7 +191,7 @@ export async function createProject(input: { name: string; subtitle: string; sta
 
 export async function patchProject(
   slug: string,
-  patch: Partial<{ subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean; name: string; north_star: string }>,
+  patch: Partial<{ subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean; name: string; north_star: string; directives: string[] }>,
 ): Promise<Project> {
   return toProject(await request<ProjectPayload>(`/projects/${encodeURIComponent(slug)}`, { method: 'PATCH', body: patch }));
 }

@@ -1,5 +1,61 @@
+import { useState } from 'react';
 import type { Project, Activity } from '../types';
 import { isAccentTag, PRODUCT_NAME } from '../lib/ui';
+
+// Standing instructions for the next session(s): edited here, injected
+// verbatim at every SessionStart — steering without the terminal. Lines stay
+// until removed.
+function DirectivesCard({ directives, onChange }: { directives: string[]; onChange: (next: string[]) => void }) {
+  const [draft, setDraft] = useState('');
+  const [open, setOpen] = useState(false);
+
+  const add = () => {
+    const t = draft.trim();
+    if (!t) return;
+    onChange([...directives, t]);
+    setDraft('');
+    setOpen(false);
+  };
+
+  return (
+    <div className="directives">
+      <div className="directives-head">
+        <div className="left">
+          <span className="directives-ico">⚑</span>
+          <span className="directives-title">Directives</span>
+          <span className="directives-sub">standing instructions — injected into every session start</span>
+        </div>
+        {!open && <button className="directives-add" onClick={() => setOpen(true)}>+ Add</button>}
+      </div>
+      {directives.length > 0 && (
+        <div className="directives-list">
+          {directives.map((d, i) => (
+            <div className="directive" key={i}>
+              <span className="mk">⚑</span>
+              <span className="txt">{d}</span>
+              <button className="x" onClick={() => onChange(directives.filter((_, x) => x !== i))}
+                aria-label="Remove directive" title="Remove — it has been honoured or no longer applies">×</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {open ? (
+        <div className="directive-composer">
+          <input className="field-input sm" autoFocus value={draft}
+            placeholder="e.g. Ship the token gate next — don't touch ingest"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') add(); else if (e.key === 'Escape') setOpen(false); }} />
+          <button className="btn-submit sm" onClick={add}>Add</button>
+          <button className="btn-cancel sm" onClick={() => setOpen(false)}>Cancel</button>
+        </div>
+      ) : directives.length === 0 && (
+        <div className="directives-empty">
+          Nothing standing. Add a line and the next session opens with it front and centre.
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ActivityCard({ a }: { a: Activity }) {
   return (
@@ -18,11 +74,12 @@ function ActivityCard({ a }: { a: Activity }) {
 }
 
 export function Overview({
-  project, activity, openBugCount, fixingCount, roadmapCount, onViewAll, onExport, keepResumeCard = true,
+  project, activity, directives, openBugCount, fixingCount, roadmapCount,
+  onViewAll, onExport, onChangeDirectives, keepResumeCard = true,
 }: {
-  project: Project; activity: Activity[];
+  project: Project; activity: Activity[]; directives: string[];
   openBugCount: number; fixingCount: number; roadmapCount: number;
-  onViewAll: () => void; onExport: () => void;
+  onViewAll: () => void; onExport: () => void; onChangeDirectives: (next: string[]) => void;
   keepResumeCard?: boolean;
 }) {
   const r = project.resume;
@@ -85,6 +142,9 @@ export function Overview({
         )}
       </div>
       )}
+
+      {/* directives — the steer list injected into every session start */}
+      <DirectivesCard directives={directives} onChange={onChangeDirectives} />
 
       {/* stat panels */}
       <div className="stats">

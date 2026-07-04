@@ -130,9 +130,9 @@ projects.get('/:slug', async (req, res) => {
 const PATCHABLE = new Set([
   'name', 'repo', 'repo_url', 'subtitle', 'site_url', 'status', 'pinned',
   'current_phase', 'summary', 'next_steps', 'blockers',
-  'in_progress', 'next_up', 'working_well', 'tint', 'north_star',
+  'in_progress', 'next_up', 'working_well', 'tint', 'north_star', 'directives',
 ]);
-const JSON_FIELDS = new Set(['next_steps', 'blockers', 'in_progress', 'next_up', 'working_well']);
+const JSON_FIELDS = new Set(['next_steps', 'blockers', 'in_progress', 'next_up', 'working_well', 'directives']);
 
 // PATCH /api/projects/:slug  -> manual override of live state
 projects.patch('/:slug', async (req, res) => {

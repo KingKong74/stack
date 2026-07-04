@@ -93,6 +93,12 @@ function buildBlock(p) {
   if (p.currentPhase) head.push(`Phase: ${p.currentPhase}`);
   if (head.length) lines.push(head.join(' · '));
 
+  // Directives are standing instructions set on the dashboard — the highest-
+  // priority content in the block, so they land before everything else.
+  if (Array.isArray(p.directives) && p.directives.length) {
+    lines.push('', '**Directives — honour these first (set on the Stack dashboard)**', bullets(p.directives, 8));
+  }
+
   if (p.northStar) lines.push('', `**North star:** ${String(p.northStar).replace(/\s+/g, ' ').trim().slice(0, 500)}`);
 
   if (p.summary) lines.push('', p.summary);

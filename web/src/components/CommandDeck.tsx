@@ -20,7 +20,7 @@ export function CommandDeck({ data }: { data: Overview }) {
   const loadHeroInput = async () => {
     const d = await getProjectDetail(resume!.slug);
     return { project: d.project, currentPhase: d.currentPhase, blockers: d.blockers,
-      activity: d.activity, bugs: d.bugs, roadmap: d.roadmap };
+      directives: d.directives, activity: d.activity, bugs: d.bugs, roadmap: d.roadmap };
   };
 
   return (

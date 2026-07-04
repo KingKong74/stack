@@ -11,6 +11,7 @@ export interface BriefInput {
   project: Project;
   currentPhase: string;
   blockers: string[];
+  directives: string[];   // the standing steer list — echoed near the top
   activity: Activity[];
   bugs: Bug[];
   roadmap: Roadmap;
@@ -71,7 +72,7 @@ function section(title: string, body: string): string {
 }
 
 export function buildBrief(
-  { project, currentPhase, blockers, activity, bugs, roadmap }: BriefInput,
+  { project, currentPhase, blockers, directives: steer, activity, bugs, roadmap }: BriefInput,
   { compact, directives }: BriefOptions = { compact: false, directives: [] },
 ): string {
   const r = project.resume;
@@ -120,6 +121,7 @@ export function buildBrief(
     project.subtitle && `> ${project.subtitle}`,
     facts,
     section('Session preferences', bullets(prefLines)),
+    section('Directives — honour these first', bullets(steer)),
     section('Where you left off', r?.summary || ''),
     section('In progress', bullets(r?.inProgress || [])),
     section('Next up', bullets(r?.nextUp || [])),

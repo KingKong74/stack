@@ -59,6 +59,10 @@ stack/
   attention row, and a merged activity stream. A project counts as **stale** once a live/building
   project's last push is older than a threshold; that threshold is one constant, `STALE_DAYS` in
   `server/src/util.js` (default 14) — change it there and the deck follows.
+- **Directives steer sessions from the dashboard:** each project has a standing instruction list
+  (detail → Overview → Directives). Whatever's there is injected **first** into every session
+  start — "ship the token gate, don't touch ingest" — so you redirect agents without opening a
+  terminal. Lines stay until you remove them; the exported resume brief echoes them too.
 - **Live-now presence:** the deck shows which projects have a Claude session open right now (and on
   which branches — parallel worktree sessions each count). The SessionStart hook pings, an authored
   `/checkpoint` proves liveness, SessionEnd clears, and a TTL ages out crashed sessions.

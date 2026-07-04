@@ -209,6 +209,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, northStar: text });
     });
 
+  const changeDirectives = (next: string[]) =>
+    guard(async () => {
+      await patchProject(slug, { directives: next });
+      setData({ ...data, directives: next });
+    });
+
   // Promote an idea into the existing create-roadmap flow, prefilled; after the
   // item lands, offer to keep or delete the original idea (delete tombstones a
   // hook idea so the next push won't re-extract it).
@@ -313,9 +319,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         </div>
 
         {tab === 'overview' && (
-          <Overview project={project} activity={activity} keepResumeCard={data.keepResumeCard}
+          <Overview project={project} activity={activity} directives={data.directives}
+            keepResumeCard={data.keepResumeCard}
             openBugCount={openBugCount} fixingCount={fixingCount} roadmapCount={roadmapCount}
-            onViewAll={viewAll} onExport={() => setExportOpen(true)} />
+            onViewAll={viewAll} onExport={() => setExportOpen(true)} onChangeDirectives={changeDirectives} />
         )}
         {tab === 'bugs' && (
           <Bugs bugs={bugs} filter={bugFilter} setFilter={setBugFilter} highlightId={highlightId}
@@ -361,7 +368,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       {exportOpen && (
         <ExportBriefModal projectName={project.name} onClose={() => setExportOpen(false)}
           loadInput={async () => ({
-            project, currentPhase: data.currentPhase, blockers: data.blockers, activity, bugs, roadmap,
+            project, currentPhase: data.currentPhase, blockers: data.blockers,
+            directives: data.directives, activity, bugs, roadmap,
           })} />
       )}
       {promotedNote && (

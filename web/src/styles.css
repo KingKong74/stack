@@ -241,6 +241,26 @@ a { color: inherit; }
 .item .mk.tick { color: var(--green); margin-top: 1px; }
 .empty-soft { font-size: 13px; color: var(--faint); }
 
+/* ---------- directives (the steer list) ---------- */
+.directives { background: var(--card); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 15px 17px; margin-bottom: 24px; }
+.directives-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.directives-head .left { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+.directives-ico { color: var(--accent); font-size: 13px; }
+.directives-title { font-family: var(--disp); font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.directives-sub { font-size: 11.5px; color: var(--muted); }
+.directives-add { font-size: 12.5px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.directives-add:hover { color: var(--accent-deep); }
+.directives-list { display: flex; flex-direction: column; margin-top: 10px; }
+.directive { display: flex; align-items: flex-start; gap: 9px; padding: 7px 0; }
+.directive + .directive { border-top: 1px solid var(--line-2); }
+.directive .mk { flex: none; color: var(--accent); font-size: 11px; margin-top: 2px; }
+.directive .txt { flex: 1; font-size: 13.5px; color: var(--body); line-height: 1.5; }
+.directive .x { flex: none; color: var(--faint); font-size: 15px; line-height: 1; padding: 1px 4px; }
+.directive .x:hover { color: var(--critical); }
+.directive-composer { display: flex; gap: 8px; margin-top: 10px; }
+.directive-composer .field-input { flex: 1; }
+.directives-empty { font-size: 12.5px; color: var(--faint); margin-top: 8px; }
+
 /* ---------- stat panels ---------- */
 .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 24px; }
 .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 17px; }

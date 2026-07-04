@@ -29,9 +29,11 @@ hook/   Zero-dependency Node ESM. stack-post.mjs is the shared lib (env load, gi
           even skipped sessions stop showing as live.
         • stack-session-start.mjs — the SessionStart hook. GETs /api/projects/:slug and injects a
           "where you left off" block via additionalContext (nothing if untracked/unreachable),
-          including the project's **north star** when set; nudges /checkpoint when wrapping up.
-          Also fires a live-now **presence ping** (POST /api/presence) in parallel with that fetch —
-          same timeout budget, silent on any failure, 404 for untracked projects.
+          including the project's **north star** when set and any **directives** (the standing
+          steer list from the dashboard — injected first, above everything else); nudges
+          /checkpoint when wrapping up. Also fires a live-now **presence ping**
+          (POST /api/presence) in parallel with that fetch — same timeout budget, silent on any
+          failure, 404 for untracked projects.
         • stack-checkpoint.mjs — the /checkpoint POSTER (not a hook). Reads a checkpoint JSON on
           stdin and POSTs it (authored:true); `--settings` prints current settings. Installs to
           ~/.stack/ alongside the hooks + stack-post.mjs.
@@ -92,7 +94,8 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   grid; renders the deck above the "All projects" grid; status filters, computed progress on cards),
   ProjectDetail (loads project+activity+collections, owns tab/modal state, persists on mutate;
   initial tab comes from the route so the deck can deep-link to e.g. a project's Activity tab).
-- `detail/` Overview, Bugs (auto cue), Roadmap (done toggle + auto cue), Futures (the **north star**
+- `detail/` Overview (resume card + the **Directives card** — add/remove steer lines, persisted
+  whole via `patchProject {directives}`), Bugs (auto cue), Roadmap (done toggle + auto cue), Futures (the **north star**
   — one editable paragraph on what the project is becoming, PATCHed as `north_star` and injected by
   the SessionStart hook — plus the idea funnel: loose ideas added/extracted, promote → prefills the
   RoadmapModal then a keep/delete-the-idea confirm, dismiss deletes + tombstones), Notes (inline
@@ -112,8 +115,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 ### Backend shape (`server/src`)
 - `schema.sql` — idempotent (ADD COLUMN IF NOT EXISTS + convergent data migrations). Tables:
   - `projects` — + `subtitle, site_url, repo_url, tint, in_progress, next_up, working_well` (the
-    jsonb fields are the resume sub-lists) and `north_star` (the direction paragraph — PATCHable,
-    injected by the SessionStart hook, shown/edited on the Futures tab). Status default `building`; legacy `active` rows migrate
+    jsonb fields are the resume sub-lists), `north_star` (the direction paragraph — PATCHable,
+    injected by the SessionStart hook, shown/edited on the Futures tab) and `directives` (jsonb
+    list — the standing steer instructions, edited on the detail Overview's Directives card,
+    injected FIRST by the SessionStart hook and echoed in the exported brief; lines stay until
+    removed in the UI). Status default `building`; legacy `active` rows migrate
     to `live`. `repo` is the `owner/repo` identity; `repo_url` is the browseable URL the Repo button
     opens (filled once by ingest, never overwriting a hand-set value).
   - `sessions` — the activity feed. + `commit_hash`, `tags` jsonb, `authored` bool (a rich

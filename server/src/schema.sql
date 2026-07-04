@@ -32,6 +32,11 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS working_well JSONB NOT NULL DEFAUL
 -- and the yardstick the Futures tab curates ideas against.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS north_star TEXT;
 
+-- Directives: standing instructions for the next session(s), edited on the
+-- dashboard and injected verbatim at every SessionStart — how you steer agents
+-- without being in the terminal. Lines stay until removed in the UI.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS directives JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 -- Status vocabulary migration: active | paused | done | archived  ->
 -- live | building | paused | archived. Convert legacy 'active' rows to 'live'.
 ALTER TABLE projects ALTER COLUMN status SET DEFAULT 'building';

@@ -54,7 +54,9 @@ The block is a snapshot. For the current state at any moment, read the API:
 - `GET /api/projects/<slug>` — one project plus its activity, bugs, roadmap,
   notes and futures. This is the authoritative "how is this project doing right
   now". If it carries a **north star** (`northStar`), treat it as the project's
-  direction and pull your work towards it.
+  direction and pull your work towards it. If it carries **directives**, they
+  are standing instructions from the owner — honour them before anything else,
+  and don't remove them yourself (they're cleared from the dashboard).
 
 The base URL and slug for the project you're in are stamped at the bottom of this
 file when it was exported (or are blank in the generic template).
