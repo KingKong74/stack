@@ -141,6 +141,9 @@ CREATE TABLE IF NOT EXISTS futures (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- The curation verdict against the north star: on-course | tangent | off-course
+-- (NULL = unsorted). The Futures tab groups ideas by this.
+ALTER TABLE futures ADD COLUMN IF NOT EXISTS alignment TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_futures_auto_fp
   ON futures (project_id, fingerprint) WHERE source = 'hook';
 CREATE INDEX IF NOT EXISTS idx_futures_project ON futures (project_id, created_at DESC);

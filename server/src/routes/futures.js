@@ -40,13 +40,19 @@ futures.post('/', async (req, res) => {
   res.status(201).json(futureShape(rows[0]));
 });
 
-// PATCH /:id  -> title/note edit, reviewed (the review inbox)
+// PATCH /:id  -> title/note edit, reviewed (the review inbox), alignment (the
+//                north-star curation verdict; '' clears back to unsorted)
 futures.patch('/:id', async (req, res) => {
   const sets = [];
   const vals = [];
   let i = 1;
   if (req.body?.reviewed !== undefined) {
     sets.push(`reviewed_at = ${req.body.reviewed ? 'now()' : 'NULL'}`);
+  }
+  if (req.body?.alignment !== undefined) {
+    const a = String(req.body.alignment || '').trim();
+    sets.push(`alignment = $${i++}`);
+    vals.push(['on-course', 'tangent', 'off-course'].includes(a) ? a : null);
   }
   if (req.body?.title !== undefined) {
     const title = String(req.body.title).trim().slice(0, 300);

@@ -77,6 +77,7 @@ export interface Future {
   when: string;
   source: Source;
   reviewed: boolean;
+  alignment: string;   // north-star verdict: '' | on-course | tangent | off-course
 }
 
 export interface Activity {

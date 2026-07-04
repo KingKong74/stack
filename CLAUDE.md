@@ -113,7 +113,10 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   solid/needs-work/rethink, the latter two opening a prefilled follow-up item), Futures (the **north star**
   — one editable paragraph on what the project is becoming, PATCHed as `north_star` and injected by
   the SessionStart hook — plus the idea funnel: loose ideas added/extracted, promote → prefills the
-  RoadmapModal then a keep/delete-the-idea confirm, dismiss deletes + tombstones), Notes (inline
+  RoadmapModal then a keep/delete-the-idea confirm, dismiss deletes + tombstones; ideas are
+  editable in place, the composer takes "first line = idea, rest = why", and each idea carries an
+  **alignment verdict** — ✦ Judge → On course / Tangent / Off course, pick the same to clear —
+  which is how the list groups itself), Notes (inline
   edit on the sticky; promote → bug/roadmap prefills the existing modal, then a
   keep/delete-the-note confirm), Activity. ProjectDetail also owns: the Visit-site/Repo buttons (open the URL, or inline-set it when
   unset via `patchProject`), and a quiet delete-project control behind a `ConfirmModal`.
@@ -153,9 +156,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     respect these"; the agent template documents the claim-before-starting protocol) and
     `review_tag` (the **archive verdict**: solid | needs-work | rethink — set from the Archive's
     Review button; needs-work/rethink prefill a follow-up item back onto the board).
-  - `futures` — loose directional ideas: title, `note`, `source`, `fingerprint`, `reviewed_at`.
-    Same dedup index and tombstone semantics as bugs/roadmap (kind `future`); promotion to the
-    roadmap is a client flow (create the roadmap item, delete the idea).
+  - `futures` — loose directional ideas: title, `note`, `source`, `fingerprint`, `reviewed_at`,
+    `alignment` (the curation verdict against the north star: on-course | tangent | off-course,
+    NULL = unsorted; PATCHable, '' clears; the Futures tab groups by it — on-course first,
+    off-course last). Same dedup index and tombstone semantics as bugs/roadmap (kind `future`);
+    promotion to the roadmap is a client flow (create the roadmap item, delete the idea).
   - `reviewed_at` (bugs + roadmap_items + futures) drives the **review inbox**: a hook-created item
     needs review while NULL; PATCH `{reviewed:true}` sets it (approve), DELETE dismisses (tombstone).
     Ingest's dedup re-point never touches it, so approving is sticky across pushes. Marking a
@@ -345,7 +350,8 @@ the silent metadata backstop so the feed never has gaps.
   (POST takes `claimed_by`; PATCH also takes `reviewed: bool`, `claimed_by` ('' releases) and
   `review_tag: solid|needs-work|rethink` ('' clears))
 - `GET|POST /api/projects/:slug/futures` · `PATCH|DELETE /api/projects/:slug/futures/:id`
-  (PATCH: title/note/reviewed; DELETE tombstones a hook idea)
+  (PATCH: title/note/reviewed/`alignment: on-course|tangent|off-course` ('' clears);
+  DELETE tombstones a hook idea)
 - `GET|POST /api/projects/:slug/notes` · `PATCH /api/projects/:slug/notes/:id` (text) ·
   `DELETE /api/projects/:slug/notes/:id`
 

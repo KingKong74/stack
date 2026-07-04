@@ -49,6 +49,7 @@ export function futureShape(row) {
     when: relativeTime(row.created_at) || 'just now',
     source: row.source,
     reviewed: !!row.reviewed_at,
+    alignment: row.alignment || '',  // north-star verdict: on-course | tangent | off-course
   };
 }
 

@@ -11,7 +11,7 @@ import { ExportBriefModal } from '../components/ExportBriefModal';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Bugs } from '../detail/Bugs';
 import { Roadmap, type ReviewTag } from '../detail/Roadmap';
-import { Futures } from '../detail/Futures';
+import { Futures, type Alignment } from '../detail/Futures';
 import { Notes } from '../detail/Notes';
 import { Activity } from '../detail/Activity';
 import { BugModal } from '../components/BugModal';
@@ -238,10 +238,22 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     });
 
   // ---- futures (the ideas curated against the north star) ----
-  const addFuture = (title: string) =>
+  const addFuture = (title: string, note: string) =>
     guard(async () => {
-      const f = await createFuture(slug, { title });
+      const f = await createFuture(slug, { title, note });
       setData({ ...data, futures: [f, ...futures] });
+    });
+
+  const editFuture = (fid: number, patch: { title: string; note: string }) =>
+    guard(async () => {
+      const updated = await patchFuture(slug, fid, patch);
+      setData({ ...data, futures: futures.map((f) => (f.id === fid ? updated : f)) });
+    });
+
+  const alignFuture = (fid: number, alignment: Alignment | '') =>
+    guard(async () => {
+      const updated = await patchFuture(slug, fid, { alignment });
+      setData({ ...data, futures: futures.map((f) => (f.id === fid ? updated : f)) });
     });
 
   const removeFuture = (fid: number) =>
@@ -442,7 +454,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         )}
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId}
-            onSaveNorthStar={saveNorthStar} onAdd={addFuture} onDelete={removeFuture} onPromote={promoteFuture} />
+            onSaveNorthStar={saveNorthStar} onAdd={addFuture} onEdit={editFuture} onAlign={alignFuture}
+            onDelete={removeFuture} onPromote={promoteFuture} />
         )}
         {tab === 'notes' && (
           <Notes notes={notes} highlightId={highlightId} onAdd={addNote} onEdit={editNote} onDelete={removeNote} onPromote={promoteNote} />

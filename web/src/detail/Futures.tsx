@@ -1,18 +1,37 @@
 import { useState } from 'react';
 import type { Future } from '../types';
 
+export type Alignment = 'on-course' | 'tangent' | 'off-course';
+export const ALIGNMENTS: { key: Alignment; label: string; hint: string }[] = [
+  { key: 'on-course', label: 'On course', hint: 'Pulls toward the north star — promote when it firms up' },
+  { key: 'tangent', label: 'Tangent', hint: 'Interesting but sideways — park it, revisit later' },
+  { key: 'off-course', label: 'Off course', hint: 'Pulls away from the north star — usually a dismiss' },
+];
+const alignLabel = (a: string) => ALIGNMENTS.find((x) => x.key === a)?.label || a;
+
+// The ideas group in curation order: judged on-course first, then the unsorted
+// pile, then tangents and off-course at the bottom.
+const GROUPS: { key: string; label: string }[] = [
+  { key: 'on-course', label: 'On course' },
+  { key: '', label: 'Unsorted' },
+  { key: 'tangent', label: 'Tangents' },
+  { key: 'off-course', label: 'Off course' },
+];
+
 // The Futures tab: the project's north star (one paragraph on what this is
-// becoming) and the loose ideas curated against it. Ideas firm up by being
-// promoted into the roadmap (ProjectDetail owns that flow, prefilling the
-// existing RoadmapModal), or get dismissed.
+// becoming) and the loose ideas curated against it. Curate = judge each idea's
+// alignment; the panel groups itself by verdict. Ideas firm up by being
+// promoted into the roadmap (ProjectDetail owns that flow), or get dismissed.
 export function Futures({
-  northStar, futures, highlightId, onSaveNorthStar, onAdd, onDelete, onPromote,
+  northStar, futures, highlightId, onSaveNorthStar, onAdd, onEdit, onAlign, onDelete, onPromote,
 }: {
   northStar: string;
   futures: Future[];
   highlightId?: string | null;
   onSaveNorthStar: (text: string) => void;
-  onAdd: (title: string) => void;
+  onAdd: (title: string, note: string) => void;
+  onEdit: (id: number, patch: { title: string; note: string }) => void;
+  onAlign: (id: number, alignment: Alignment | '') => void;
   onDelete: (id: number) => void;
   onPromote: (future: Future) => void;
 }) {
@@ -26,12 +45,19 @@ export function Futures({
     setEditingStar(false);
   };
 
+  // First line = the idea; anything after = the why (stored as the note).
   const add = () => {
-    const t = draft.trim();
-    if (!t) return;
-    onAdd(t);
+    const lines = draft.split('\n');
+    const title = (lines[0] || '').trim();
+    if (!title) return;
+    onAdd(title, lines.slice(1).join('\n').trim());
     setDraft('');
   };
+
+  const judged = futures.some((f) => f.alignment);
+  const groups = GROUPS
+    .map((g) => ({ ...g, items: futures.filter((f) => f.alignment === g.key) }))
+    .filter((g) => g.items.length > 0);
 
   return (
     <div>
@@ -79,48 +105,114 @@ export function Futures({
       <div className="section-bar" style={{ marginBottom: 6 }}>
         <div className="titles">
           <div className="h">Ideas</div>
-          <div className="subtitle">Loose and directional — promote what fits the north star, dismiss what doesn't</div>
+          <div className="subtitle">Judge each against the north star — promote what's on course, park the tangents</div>
         </div>
       </div>
 
       <div className="composer">
         <textarea
           value={draft}
-          placeholder="Could this become… ? Capture the direction, not the task."
+          placeholder={'Could this become… ?\nFirst line is the idea — add lines below for the why.'}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); add(); } }}
         />
         <div className="row">
-          <span className="hint">⏎ to add · ⇧⏎ for newline</span>
+          <span className="hint">⏎ to add · ⇧⏎ for a "why" line</span>
           <button className="add" onClick={add}>Add idea</button>
         </div>
       </div>
 
       {futures.length ? (
-        <div className="futures-list">
-          {futures.map((f) => (
-            <div className={`future-row ${highlightId === String(f.id) ? 'hl' : ''}`} data-hl={f.id} key={f.id}>
-              <div className="future-body">
-                <div className="future-title">{f.title}</div>
-                {f.note && <div className="future-note">{f.note}</div>}
-                <div className="future-meta">
-                  {f.source === 'hook' && <span className="auto-badge">✦ auto</span>}
-                  <span className="when">{f.when}</span>
-                </div>
-              </div>
-              <div className="future-actions">
-                <button className="promote" onClick={() => onPromote(f)}>→ Roadmap</button>
-                <button className="dismiss" onClick={() => onDelete(f.id)}>Dismiss</button>
-              </div>
+        groups.map((g) => (
+          <div className="futures-group" key={g.key || 'unsorted'}>
+            {judged && <div className={`futures-group-head ${g.key || 'unsorted'}`}>{g.label} <span className="n">{g.items.length}</span></div>}
+            <div className="futures-list">
+              {g.items.map((f) => (
+                <IdeaRow key={f.id} future={f} highlighted={highlightId === String(f.id)}
+                  onEdit={onEdit} onAlign={onAlign} onDelete={onDelete} onPromote={onPromote} />
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        ))
       ) : (
         <div className="empty-state">
           <div className="big">No ideas yet</div>
           <div>Futures land here from you or from checkpoints — the loose "what ifs" worth keeping.</div>
         </div>
       )}
+    </div>
+  );
+}
+
+function IdeaRow({
+  future: f, highlighted, onEdit, onAlign, onDelete, onPromote,
+}: {
+  future: Future;
+  highlighted?: boolean;
+  onEdit: (id: number, patch: { title: string; note: string }) => void;
+  onAlign: (id: number, alignment: Alignment | '') => void;
+  onDelete: (id: number) => void;
+  onPromote: (future: Future) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(f.title);
+  const [note, setNote] = useState(f.note);
+  const [picking, setPicking] = useState(false);
+
+  const save = () => {
+    const t = title.trim();
+    if (t && (t !== f.title || note.trim() !== f.note)) onEdit(f.id, { title: t, note: note.trim() });
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="future-row editing" data-hl={f.id}>
+        <div className="future-body">
+          <input className="field-input sm" value={title} autoFocus
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') setEditing(false); }} />
+          <textarea className="field-area" style={{ marginTop: 8, minHeight: 46 }} value={note}
+            placeholder="Why it might matter…" onChange={(e) => setNote(e.target.value)} />
+          <div className="future-edit-row">
+            <button className="btn-cancel sm" onClick={() => setEditing(false)}>Cancel</button>
+            <button className="btn-submit sm" onClick={save}>Save</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`future-row ${highlighted ? 'hl' : ''}`} data-hl={f.id}>
+      <div className="future-body">
+        <div className="future-title">{f.title}</div>
+        {f.note && <div className="future-note">{f.note}</div>}
+        <div className="future-meta">
+          {picking ? (
+            <span className="review-pick">
+              {ALIGNMENTS.map((a) => (
+                <button key={a.key} className={`review-pick-opt ${a.key}`} title={a.hint}
+                  onClick={() => { setPicking(false); onAlign(f.id, f.alignment === a.key ? '' : a.key); }}>
+                  {a.label}
+                </button>
+              ))}
+            </span>
+          ) : (
+            <button className={`align-chip ${f.alignment || 'none'}`} onClick={() => setPicking(true)}
+              title={f.alignment ? 'Change the verdict (pick the same to clear)' : 'Judge this against the north star'}>
+              {f.alignment ? alignLabel(f.alignment) : '✦ Judge'}
+            </button>
+          )}
+          {f.source === 'hook' && <span className="auto-badge">✦ auto</span>}
+          <span className="when">{f.when}</span>
+        </div>
+      </div>
+      <div className="future-actions">
+        <button className="edit" onClick={() => { setTitle(f.title); setNote(f.note); setEditing(true); }} title="Edit">✎</button>
+        <button className="promote" onClick={() => onPromote(f)}>→ Roadmap</button>
+        <button className="dismiss" onClick={() => onDelete(f.id)}>Dismiss</button>
+      </div>
     </div>
   );
 }
