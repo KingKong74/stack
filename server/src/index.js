@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import express from 'express';
 import cors from 'cors';
 import { migrate, pool } from './db.js';
@@ -13,16 +14,22 @@ import { notes } from './routes/notes.js';
 import { futures } from './routes/futures.js';
 import { presence } from './routes/presence.js';
 
+// Read once at module load: the health endpoint reports the deployed version.
+const { version } = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8')
+);
+
 const app = express();
 app.disable('x-powered-by');
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
-// Open: liveness probe for Docker / Dokploy.
+// Open: liveness probe for Docker / Dokploy. Version + uptime make it a cheap
+// deploy sanity signal ("is the new build actually serving?").
 app.get('/api/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ ok: true });
+    res.json({ ok: true, version, uptime: Math.round(process.uptime()) });
   } catch {
     res.status(503).json({ ok: false });
   }
