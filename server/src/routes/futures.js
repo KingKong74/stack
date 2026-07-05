@@ -4,6 +4,7 @@ import { projectBySlug } from '../resolve.js';
 import { fingerprint } from '../util.js';
 import { futureShape } from '../shape.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
+import { buildPrompt } from '../prompts.js';
 
 // Mounted at /api/projects/:slug/futures. Futures are loose directional ideas
 // curated against the project's north star; promotion to the roadmap is a
@@ -91,19 +92,11 @@ futures.post('/:id/judge', async (req, res) => {
     return res.status(400).json({ error: 'This project has no north star to judge against yet.' });
   }
 
-  const prompt = `You are helping curate a side project's idea funnel. The project's north star
-(the one-paragraph statement of what it is becoming) is:
-
-"${northStar}"
-
-Judge this idea against that north star:
-Title: ${idea.title}
-${idea.note ? `Note: ${idea.note}` : ''}
-
-Verdicts: "on-course" (pulls directly toward the north star), "tangent" (worthwhile-ish but
-sideways — doesn't serve the core direction), "off-course" (pulls away from or against it).
-Use en-AU spelling. Respond with ONLY this JSON:
-{ "alignment": "on-course|tangent|off-course", "why": "one plain sentence, under 25 words" }`;
+  const prompt = buildPrompt('judge', {
+    NORTH_STAR: northStar,
+    TITLE: idea.title,
+    NOTE_LINE: idea.note ? `Note: ${idea.note}` : '',
+  });
 
   try {
     const answer = await askGemini(prompt);

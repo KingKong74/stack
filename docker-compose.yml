@@ -24,6 +24,7 @@ services:
       # those routes report themselves unavailable; nothing else changes.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GEMINI_TEMPERATURE: ${GEMINI_TEMPERATURE:-}
       PORT: 4000
     depends_on:
       db:

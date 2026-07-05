@@ -9,11 +9,18 @@
 
 const MODEL = () => process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
+// Default temperature is env-tunable (GEMINI_TEMPERATURE); callers can still
+// override any generationConfig field per call via opts.generation.
+const defaultTemperature = () => {
+  const t = parseFloat(process.env.GEMINI_TEMPERATURE || '');
+  return Number.isFinite(t) ? t : 0.2;
+};
+
 export const geminiEnabled = () => Boolean(process.env.GEMINI_API_KEY);
 
 // One bounded generateContent call, JSON-mode. Returns the parsed object or
 // throws with a short, key-free message.
-export async function askGemini(prompt, { timeoutMs = 25_000 } = {}) {
+export async function askGemini(prompt, { timeoutMs = 25_000, generation = {} } = {}) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('Gemini is not configured on this server.');
   const ctrl = new AbortController();
@@ -26,7 +33,7 @@ export async function askGemini(prompt, { timeoutMs = 25_000 } = {}) {
         headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
+          generationConfig: { responseMimeType: 'application/json', temperature: defaultTemperature(), ...generation },
         }),
         signal: ctrl.signal,
       }

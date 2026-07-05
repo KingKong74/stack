@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { projectBySlug } from '../resolve.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
+import { buildPrompt } from '../prompts.js';
 
 // POST /api/projects/:slug/intake — the idea dump sorter. Takes a pile of raw
 // lines, has Gemini judge each against the north star and propose a
@@ -28,27 +29,12 @@ intake.post('/', async (req, res) => {
   if (!text) return res.status(400).json({ error: 'Nothing to sort.' });
   const northStar = String(req.project.north_star || '').trim();
 
-  const prompt = `You are sorting a raw brain-dump of ideas for a side project into its planning system.
-${northStar ? `The project's north star (what it is becoming):\n"${northStar}"\n` : 'The project has no north star written yet — judge by the dump itself.\n'}
-The planning system has two homes:
-- The MoSCoW roadmap, for concrete work someone could start tomorrow. Buckets: "must"
-  (essential this round), "should" (important, not critical), "could" (nice to have),
-  "wont" (explicitly parked this round). Be honest — most things are NOT must.
-- The Futures funnel ("future"), for directional what-ifs and shapeless ideas worth keeping
-  but not startable as written. Each future gets an alignment verdict against the north star:
-  "on-course", "tangent" or "off-course" (null if there is no north star).
-
-Sort EVERY distinct idea in the dump below (lines may wrap; split or merge sensibly, keep the
-author's intent). Clean each title into a short imperative (≤ 15 words, en-AU spelling); put any
-leftover detail in the note.
-
-Respond with ONLY this JSON:
-{ "items": [ { "title": "…", "note": "…", "dest": "must|should|could|wont|future",
-               "alignment": "on-course|tangent|off-course" | null,
-               "why": "one plain sentence, under 20 words" } ] }
-
-THE DUMP:
-${text}`;
+  const prompt = buildPrompt('intake', {
+    NORTH_STAR_BLOCK: northStar
+      ? `The project's north star (what it is becoming):\n"${northStar}"\n`
+      : 'The project has no north star written yet — judge by the dump itself.\n',
+    DUMP: text,
+  });
 
   try {
     const answer = await askGemini(prompt, { timeoutMs: 45_000 });
