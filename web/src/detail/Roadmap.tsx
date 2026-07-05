@@ -54,29 +54,27 @@ export function Roadmap({
   const archPages = Math.max(1, Math.ceil(filtered.length / ARCH_PAGE_SIZE));
   const archSlice = filtered.slice(archPage * ARCH_PAGE_SIZE, (archPage + 1) * ARCH_PAGE_SIZE);
 
-  // Verdict picker + restore/delete controls, shared by both archive views.
+  // Verdict controls, shared by both archive views and the verify strip.
+  // Unverdicted rows show Solid/Rethink straight up (no picker step, no
+  // needs-more-work — legacy needs-work verdicts still render); clicking an
+  // existing verdict reopens the same two options.
+  const VISIBLE_TAGS = REVIEW_TAGS.filter((t) => t.key !== 'needs-work');
+  const verdictButtons = (it: RoadmapItem) => VISIBLE_TAGS.map((t) => (
+    <button key={t.key} className={`review-pick-opt ${t.key}`}
+      onClick={() => { setPickerFor(null); onReviewTag(it, t.key); }}>
+      {t.label}
+    </button>
+  ));
   const archActions = (it: RoadmapItem) => (
-    pickerFor === it.id ? (
-      <div className="review-pick">
-        {REVIEW_TAGS.map((t) => (
-          <button key={t.key} className={`review-pick-opt ${t.key}`}
-            onClick={() => { setPickerFor(null); onReviewTag(it, t.key); }}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-    ) : (
-      <div className="road-actions arch">
-        {it.reviewTag ? (
-          <button className={`review-verdict ${it.reviewTag}`} onClick={() => setPickerFor(it.id)}
-            title="Change the verdict">{tagLabel(it.reviewTag)}</button>
-        ) : (
-          <button className="review-verdict none" onClick={() => setPickerFor(it.id)}
-            title="Review this completed item">Review</button>
-        )}
-        <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
-      </div>
-    )
+    <div className="road-actions arch">
+      {it.reviewTag && pickerFor !== it.id ? (
+        <button className={`review-verdict ${it.reviewTag}`} onClick={() => setPickerFor(it.id)}
+          title="Change the verdict">{tagLabel(it.reviewTag)}</button>
+      ) : (
+        verdictButtons(it)
+      )}
+      <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
+    </div>
   );
 
   return (
@@ -200,7 +198,9 @@ export function Roadmap({
                       key: t.key as 'all' | ReviewTag, label: t.label,
                       n: archived.filter((it) => it.reviewTag === t.key).length,
                     })),
-                  ] as { key: 'all' | ReviewTag; label: string; n: number }[]).map((c) => (
+                  ] as { key: 'all' | ReviewTag; label: string; n: number }[])
+                    .filter((c) => c.key !== 'needs-work' || c.n > 0) // legacy verdicts only
+                    .map((c) => (
                     <button key={c.key} className={`chip-sm ${archFilter === c.key ? 'on' : ''}`}
                       onClick={() => { setArchFilter(c.key); setArchPage(0); }}>
                       {c.label} {c.n}
