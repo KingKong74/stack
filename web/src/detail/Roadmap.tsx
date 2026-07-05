@@ -94,42 +94,55 @@ export function Roadmap({
             <span className="hint">completed items — still count toward progress</span>
           </button>
           {archiveOpen && (
-            <div className="road-archive-list">
-              {archived.map((it) => (
-                <div className="road-item done" key={it.id} data-hl={it.id}>
-                  <button className="road-check on" onClick={() => onToggle(it)}
-                    aria-label="Mark not done" title="Restore to the roadmap">✓</button>
-                  <div className="road-body">
-                    <div className="t">
-                      {it.title}
-                      <span className="arch-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
-                      {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
-                      {it.claimedBy && <span className="claim-chip inline" title="Done by this lane">⚑ {it.claimedBy}</span>}
+            <div className="road-grid arch">
+              {PRIORITY_META.map((col) => {
+                const items = roadmap[col.key].filter((it) => it.done);
+                return (
+                  <div className="road-col" key={col.key}>
+                    <div className="road-col-head">
+                      <span className="dot" style={{ background: col.color }} />
+                      <span className="name">{col.label}</span>
+                      <span className="count">{items.length}</span>
                     </div>
-                  </div>
-                  {pickerFor === it.id ? (
-                    <div className="review-pick">
-                      {REVIEW_TAGS.map((t) => (
-                        <button key={t.key} className={`review-pick-opt ${t.key}`}
-                          onClick={() => { setPickerFor(null); onReviewTag(it, t.key); }}>
-                          {t.label}
-                        </button>
+                    <div className="road-items">
+                      {items.map((it) => (
+                        <div className="road-item done" key={it.id} data-hl={it.id}>
+                          <button className="road-check on" onClick={() => onToggle(it)}
+                            aria-label="Mark not done" title="Restore to the roadmap">✓</button>
+                          <div className="road-body">
+                            <div className="t">
+                              {it.title}
+                              {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
+                              {it.claimedBy && <span className="claim-chip inline" title="Done by this lane">⚑ {it.claimedBy}</span>}
+                            </div>
+                            {pickerFor === it.id ? (
+                              <div className="review-pick">
+                                {REVIEW_TAGS.map((t) => (
+                                  <button key={t.key} className={`review-pick-opt ${t.key}`}
+                                    onClick={() => { setPickerFor(null); onReviewTag(it, t.key); }}>
+                                    {t.label}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="road-actions arch">
+                                {it.reviewTag ? (
+                                  <button className={`review-verdict ${it.reviewTag}`} onClick={() => setPickerFor(it.id)}
+                                    title="Change the verdict">{tagLabel(it.reviewTag)}</button>
+                                ) : (
+                                  <button className="review-verdict none" onClick={() => setPickerFor(it.id)}
+                                    title="Review this completed item">Review</button>
+                                )}
+                                <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       ))}
                     </div>
-                  ) : (
-                    <div className="road-actions arch">
-                      {it.reviewTag ? (
-                        <button className={`review-verdict ${it.reviewTag}`} onClick={() => setPickerFor(it.id)}
-                          title="Change the verdict">{tagLabel(it.reviewTag)}</button>
-                      ) : (
-                        <button className="review-verdict none" onClick={() => setPickerFor(it.id)}
-                          title="Review this completed item">Review</button>
-                      )}
-                      <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
