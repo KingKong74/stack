@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Roadmap as RoadmapData, RoadmapItem, Priority } from '../types';
+import type { IntakeSuggestion } from '../store';
 import { PRIORITY_META } from '../lib/ui';
 
 export type ReviewTag = 'solid' | 'needs-work' | 'rethink';
@@ -17,7 +18,7 @@ const tagLabel = (tag: string) => REVIEW_TAGS.find((t) => t.key === tag)?.label 
 // un-ticking.
 export function Roadmap({
   roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onToggleSkip, highlightId,
-  draft, onResumeDraft, onDiscardDraft,
+  draft, onResumeDraft, onDiscardDraft, onSortIntake, onApplyIntake,
 }: {
   roadmap: RoadmapData;
   onAdd: (p: Priority) => void;
@@ -30,8 +31,11 @@ export function Roadmap({
   draft?: { title: string } | null;
   onResumeDraft?: () => void;
   onDiscardDraft?: () => void;
+  onSortIntake?: (text: string) => Promise<IntakeSuggestion[]>;
+  onApplyIntake?: (items: IntakeSuggestion[]) => Promise<void>;
 }) {
   const [pickerFor, setPickerFor] = useState<number | null>(null);
+  const [intakeOpen, setIntakeOpen] = useState(false);
   // Done items split into the pipeline: To verify (no verdict yet — test it,
   // verdict it, or send it back) → Archive (verdict given). Latest first.
   const ts = (it: RoadmapItem) => (it.updatedAt ? Date.parse(it.updatedAt) : 0);
@@ -82,19 +86,29 @@ export function Roadmap({
           <div className="h">Roadmap</div>
           <div className="subtitle">MoSCoW prioritisation</div>
         </div>
-        {draft && (
-          <div className="bar-actions">
-            <button className="draft-chip" onClick={onResumeDraft} title="Resume the unfinished item">
-              ✎ Draft · {draft.title.trim() || 'untitled'}
-            </button>
-            <button className="draft-x" onClick={onDiscardDraft} aria-label="Discard draft" title="Discard draft">×</button>
-          </div>
-        )}
+        <div className="bar-actions">
+          {draft && (
+            <>
+              <button className="draft-chip" onClick={onResumeDraft} title="Resume the unfinished item">
+                ✎ Draft · {draft.title.trim() || 'untitled'}
+              </button>
+              <button className="draft-x" onClick={onDiscardDraft} aria-label="Discard draft" title="Discard draft">×</button>
+            </>
+          )}
+          {onSortIntake && onApplyIntake && !intakeOpen && (
+            <button className="gemini-btn" onClick={() => setIntakeOpen(true)}
+              title="Dump loose ideas — Gemini proposes where each belongs">✧ Intake</button>
+          )}
+        </div>
       </div>
       <div className="subtitle" style={{ marginBottom: 20 }}>
         What must ship, what should, what could, and what won't — this round. Tick items off as you go;
         the dashboard progress is computed from Must/Should completion.
       </div>
+
+      {intakeOpen && onSortIntake && onApplyIntake && (
+        <IntakePanel onSort={onSortIntake} onApply={onApplyIntake} onClose={() => setIntakeOpen(false)} />
+      )}
 
       <div className="road-grid">
         {PRIORITY_META.map((col) => {
@@ -259,6 +273,128 @@ export function Roadmap({
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// The idea intake: dump loose lines, Gemini proposes a destination for each
+// (a MoSCoW bucket for startable work, Futures + alignment for what-ifs), and
+// nothing is created until the human reviews — every destination is overridable
+// per row, rows can be binned, and Apply creates the survivors through the
+// normal CRUD paths.
+const INTAKE_DESTS: { key: IntakeSuggestion['dest']; label: string }[] = [
+  { key: 'must', label: 'Must' }, { key: 'should', label: 'Should' },
+  { key: 'could', label: 'Could' }, { key: 'wont', label: "Won't" },
+  { key: 'future', label: '✧ Future' },
+];
+
+function IntakePanel({
+  onSort, onApply, onClose,
+}: {
+  onSort: (text: string) => Promise<IntakeSuggestion[]>;
+  onApply: (items: IntakeSuggestion[]) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState<'idle' | 'sorting' | 'applying'>('idle');
+  const [items, setItems] = useState<IntakeSuggestion[] | null>(null);
+  const [error, setError] = useState('');
+
+  const sort = async () => {
+    if (!text.trim() || busy !== 'idle') return;
+    setBusy('sorting');
+    setError('');
+    try {
+      setItems(await onSort(text));
+    } catch (e) {
+      setError((e as Error)?.message || 'Sorting failed.');
+    } finally {
+      setBusy('idle');
+    }
+  };
+
+  const apply = async () => {
+    if (!items?.length || busy !== 'idle') return;
+    setBusy('applying');
+    setError('');
+    try {
+      await onApply(items);
+      setText('');
+      setItems(null);
+      onClose();
+    } catch (e) {
+      setError((e as Error)?.message || 'Could not add the items.');
+      setBusy('idle');
+      return;
+    }
+    setBusy('idle');
+  };
+
+  const setDest = (i: number, dest: IntakeSuggestion['dest']) =>
+    setItems((cur) => cur!.map((it, j) => (j === i ? { ...it, dest, alignment: dest === 'future' ? it.alignment : null } : it)));
+  const drop = (i: number) => setItems((cur) => cur!.filter((_, j) => j !== i));
+
+  return (
+    <div className="intake">
+      {!items ? (
+        <>
+          <div className="intake-head">
+            <span className="intake-title">✧ Intake</span>
+            <span className="intake-sub">
+              Smash everything in — one idea per line (or just paragraphs). Gemini proposes where
+              each belongs; you review before anything lands.
+            </span>
+          </div>
+          <textarea className="field-area intake-area" autoFocus value={text}
+            placeholder={'dark mode for the settings page\nsome kind of export to CSV??\nmaybe this becomes a whole plugin system one day…'}
+            onChange={(e) => setText(e.target.value)} />
+          {error && <div className="gemini-suggest err">✧ {error}</div>}
+          <div className="intake-actions">
+            <button className="btn-cancel sm" onClick={onClose}>Close</button>
+            <button className="btn-submit sm" onClick={sort} disabled={!text.trim() || busy !== 'idle'}>
+              {busy === 'sorting' ? '✧ Sorting…' : '✧ Sort with Gemini'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="intake-head">
+            <span className="intake-title">✧ Proposed sorting</span>
+            <span className="intake-sub">Override any destination, bin what's wrong, then apply.</span>
+          </div>
+          <div className="intake-rows">
+            {items.map((it, i) => (
+              <div className="intake-row" key={i}>
+                <div className="intake-body">
+                  <div className="t">{it.title}</div>
+                  {it.note && <div className="note">{it.note}</div>}
+                  {it.why && (
+                    <div className="why">
+                      ✧ {it.why}
+                      {it.dest === 'future' && it.alignment ? ` · suggested ${it.alignment}` : ''}
+                    </div>
+                  )}
+                </div>
+                <div className="seg-control sm" role="tablist" aria-label="Destination">
+                  {INTAKE_DESTS.map((d) => (
+                    <button key={d.key} role="tab" aria-selected={it.dest === d.key}
+                      className={`seg-opt ${it.dest === d.key ? 'on' : ''}`}
+                      onClick={() => setDest(i, d.key)}>{d.label}</button>
+                  ))}
+                </div>
+                <button className="draft-x" onClick={() => drop(i)} aria-label="Bin this one" title="Bin">×</button>
+              </div>
+            ))}
+          </div>
+          {error && <div className="gemini-suggest err">✧ {error}</div>}
+          <div className="intake-actions">
+            <button className="btn-cancel sm" onClick={() => setItems(null)}>← Back</button>
+            <button className="btn-submit sm" onClick={apply} disabled={!items.length || busy !== 'idle'}>
+              {busy === 'applying' ? 'Adding…' : `Add ${items.length} item${items.length === 1 ? '' : 's'}`}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

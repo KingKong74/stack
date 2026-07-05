@@ -6,7 +6,7 @@ import {
   createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture,
   createCheck, deleteCheck, runChecks,
   patchProject, deleteProject, createShareLink, deleteShareLink,
-  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture,
+  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, sortIntake, type IntakeSuggestion,
 } from '../store';
 import { go } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
@@ -224,6 +224,26 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       await deleteRoadmapItem(slug, item.id);
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].filter((i) => i.id !== item.id) } });
     });
+
+  // Intake apply: create everything the human kept, through the normal CRUD
+  // paths — roadmap items into their buckets, futures with any accepted
+  // alignment — then patch the loaded state once. Errors surface in the panel.
+  const applyIntake = async (items: IntakeSuggestion[]) => {
+    const newRoad: RoadmapItem[] = [];
+    const newFutures: Future[] = [];
+    for (const it of items) {
+      if (it.dest === 'future') {
+        let f = await createFuture(slug, { title: it.title, note: it.note });
+        if (it.alignment) f = await patchFuture(slug, f.id, { alignment: it.alignment });
+        newFutures.push(f);
+      } else {
+        newRoad.push(await createRoadmapItem(slug, { title: it.title, note: it.note, bucket: it.dest }));
+      }
+    }
+    const road = { ...roadmap };
+    for (const r of newRoad) road[r.bucket] = [...road[r.bucket], r];
+    setData({ ...data, roadmap: road, futures: [...newFutures, ...futures] });
+  };
 
   const toggleSkipRoad = (item: RoadmapItem) =>
     guard(async () => {
@@ -547,7 +567,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
             onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad}
-            onToggleSkip={toggleSkipRoad} />
+            onToggleSkip={toggleSkipRoad}
+            onSortIntake={(text) => sortIntake(slug, text)} onApplyIntake={applyIntake} />
         )}
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId}

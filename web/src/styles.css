@@ -519,6 +519,25 @@ a { color: inherit; }
 .review-pick-opt.needs-work:hover { color: var(--building); border-color: var(--building); }
 .review-pick-opt.rethink:hover { color: var(--critical); border-color: var(--critical); }
 
+/* intake — the idea dump box + Gemini's proposed sorting */
+.intake { background: var(--surface); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 16px 18px; margin-bottom: 24px; }
+.intake-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.intake-title { font-family: var(--disp); font-size: 14px; font-weight: 600; color: var(--accent); }
+.intake-sub { font-size: 12px; color: var(--muted); }
+.intake-area { min-height: 110px; width: 100%; }
+.intake-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+.intake-rows { display: flex; flex-direction: column; }
+.intake-row { display: flex; align-items: flex-start; gap: 12px; padding: 11px 2px; }
+.intake-row + .intake-row { border-top: 1px solid var(--line-2); }
+.intake-body { flex: 1; min-width: 0; }
+.intake-body .t { font-size: 13.5px; font-weight: 500; line-height: 1.35; }
+.intake-body .note { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+.intake-body .why { font-size: 11.5px; color: var(--faint); margin-top: 4px; font-style: italic; }
+.intake-row .seg-control.sm { flex: none; margin-top: 1px; }
+@media (max-width: 640px) {
+  .intake-row { flex-wrap: wrap; }
+}
+
 /* to verify — the stage between done and archived */
 .verify-strip { margin-top: 26px; background: var(--surface); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 14px 16px; }
 .verify-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }

@@ -409,11 +409,13 @@ won't re-create it.
   • `hook/stack-gemini-review.mjs` — on-demand CLI second-model diff review; findings land through
     normal ingest into the review inbox. Key `GEMINI_API_KEY` in `~/.stack/env`. Strictly manual:
     never wire it into a hook, cron or boot.
-  • `server/src/gemini.js` + `POST /api/projects/:slug/futures/:id/judge` — the in-app Judge
-    assist: suggests an alignment verdict against the north star; the UI shows it with an Apply
-    button, nothing is written server-side. Key from the server env (compose passes
-    `GEMINI_API_KEY`/`GEMINI_MODEL`, optional — absent means the route 503s and the app works
-    normally). Model default gemini-2.5-flash for both surfaces.
+  • `server/src/gemini.js` + the in-app assists — `POST /api/projects/:slug/futures/:id/judge`
+    (suggested alignment verdict against the north star) and `POST /api/projects/:slug/intake`
+    (the ✧ Intake dump box on the Roadmap tab: raw lines in, proposed destinations out — MoSCoW
+    bucket or Futures + alignment, each with a why; the client creates only what the human keeps,
+    through normal CRUD). Both return suggestions only; nothing is written server-side. Key from
+    the server env (compose passes `GEMINI_API_KEY`/`GEMINI_MODEL`, optional — absent means these
+    routes 503 and the app works normally). Model default gemini-2.5-flash for all surfaces.
 - Colour is the named CSS variables at the top of `styles.css` `:root` — add/adjust tones there, not
   as inline hexes; terracotta buttons hover to `--accent-deep`.
 - `templates/stack-agent-context.md` is the single source of truth for the portable agent manual; if

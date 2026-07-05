@@ -254,6 +254,21 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   };
 }
 
+// ---- Gemini intake sorter (POST .../intake — suggestions only) ----
+
+export interface IntakeSuggestion {
+  title: string; note: string;
+  dest: 'must' | 'should' | 'could' | 'wont' | 'future';
+  alignment: 'on-course' | 'tangent' | 'off-course' | null;
+  why: string;
+}
+
+export async function sortIntake(slug: string, text: string): Promise<IntakeSuggestion[]> {
+  const r = await request<{ items: IntakeSuggestion[] }>(
+    `/projects/${encodeURIComponent(slug)}/intake`, { method: 'POST', body: { text } });
+  return r.items;
+}
+
 // ---- Gemini judge assist (POST .../futures/:id/judge — suggestion only) ----
 
 export interface JudgeSuggestion { alignment: 'on-course' | 'tangent' | 'off-course'; why: string }
