@@ -601,6 +601,21 @@ a { color: inherit; }
   .road-grid { grid-template-columns: 1fr; }
   .notes-wall { column-count: 1; }
   .dash-title { font-size: 26px; }
+
+  /* phone pass: tighter chrome, scrollable tabs, roomier modals */
+  .topbar .right { gap: 8px; }
+  .topbar.dash .brandmark .word { display: none; }  /* the sq mark carries the brand */
+  .btn-accent, .btn-repo { padding: 0 12px; font-size: 12.5px; }
+  .tabs {
+    gap: 18px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; flex-wrap: nowrap; white-space: nowrap;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .detail-title { font-size: 25px; }
+  .overlay { padding: 12px; align-items: flex-end; }
+  .modal, .modal.wide { width: 100%; max-height: calc(100vh - 24px); padding: 20px 18px; }
+  .future-row { flex-wrap: wrap; }
+  .set-card { padding: 18px 16px; }
 }
 
 /* ---------- severity / status variants ---------- */
