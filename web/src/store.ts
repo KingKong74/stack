@@ -247,6 +247,19 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   };
 }
 
+// ---- timeline (GET /api/timeline — cross-project pushes + contribution graph) ----
+
+export interface TimelineEntry {
+  slug: string; name: string; tint: string | null; hash: string; branch: string;
+  summary: string; tags: string[]; authored: boolean; time: string;
+}
+export interface TimelineDay { date: string; label: string; entries: TimelineEntry[] }
+export interface TimelineData { days: TimelineDay[]; graph: { date: string; count: number }[]; total: number }
+
+export async function getTimeline(): Promise<TimelineData> {
+  return request<TimelineData>('/timeline');
+}
+
 // ---- deleted projects (the soft-delete bin: restore or purge from Settings) ----
 
 export interface DeletedProject { slug: string; name: string; when: string }

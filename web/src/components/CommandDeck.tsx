@@ -134,7 +134,10 @@ export function CommandDeck({ data }: { data: Overview }) {
 
       {/* merged activity stream */}
       <div className="deck-activity">
-        <div className="deck-section-head">Across everything</div>
+        <div className="deck-section-head">
+          Across everything
+          <button className="deck-timeline-link" onClick={go.timeline}>Full timeline →</button>
+        </div>
         {activity.length ? (
           <div className="deck-feed">
             {activity.map((a, i) => (

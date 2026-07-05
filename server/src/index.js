@@ -15,6 +15,7 @@ import { futures } from './routes/futures.js';
 import { presence } from './routes/presence.js';
 import { checks } from './routes/checks.js';
 import { publicShowcase } from './routes/public.js';
+import { timeline } from './routes/timeline.js';
 
 // Read once at module load: the health endpoint reports the deployed version.
 const { version } = JSON.parse(
@@ -45,6 +46,7 @@ app.use('/api/public', publicShowcase);
 app.use('/api/ingest', requireToken, ingest);
 app.use('/api/overview', requireToken, overview);
 app.use('/api/search', requireToken, search);
+app.use('/api/timeline', requireToken, timeline);
 app.use('/api/settings', requireToken, settings);
 app.use('/api/presence', requireToken, presence);
 app.use('/api/projects/:slug/bugs', requireToken, bugs);

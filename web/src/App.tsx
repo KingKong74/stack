@@ -3,6 +3,7 @@ import { useRoute } from './lib/route';
 import { Dashboard } from './screens/Dashboard';
 import { ProjectDetail } from './screens/ProjectDetail';
 import { Settings } from './screens/Settings';
+import { Timeline } from './screens/Timeline';
 import { TokenGate } from './components/TokenGate';
 import { Showcase } from './screens/Showcase';
 import { CommandPalette } from './components/CommandPalette';
@@ -56,6 +57,8 @@ export default function App() {
     <>
       {route.name === 'settings' ? (
         <Settings />
+      ) : route.name === 'timeline' ? (
+        <Timeline />
       ) : route.name === 'detail' ? (
         <ProjectDetail id={route.id} tab={route.tab} highlight={route.highlight} onOpenSearch={() => setPaletteOpen(true)} />
       ) : (
