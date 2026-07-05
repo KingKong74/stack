@@ -392,8 +392,12 @@ won't re-create it.
 - Both **hooks** must **always exit 0** and log only to stderr — never block Claude Code start or stop.
   (The `stack-checkpoint.mjs` poster is not a hook — it may exit non-zero so /checkpoint can report a
   failure — but it still never prints the token.) Shared logic lives in `hook/stack-post.mjs`.
-- **No external AI API.** Rich summaries are authored by Claude via `/checkpoint`; the SessionEnd hook
-  only records metadata. Keep it that way — don't reintroduce an API-key summary path.
+- **No external AI API — with ONE sanctioned exception.** Rich summaries are authored by Claude via
+  `/checkpoint`; the SessionEnd hook only records metadata. Don't reintroduce an API-key summary
+  path. The exception (owner's decision, 2026-07-05): `hook/stack-gemini-review.mjs`, the on-demand
+  second-model review — it sends a diff to Gemini (key `GEMINI_API_KEY` in `~/.stack/env`, model
+  `GEMINI_MODEL`, default gemini-2.5-flash) and posts findings through the normal ingest path into
+  the review inbox. Strictly manual: never wire it into a hook, cron or boot.
 - Colour is the named CSS variables at the top of `styles.css` `:root` — add/adjust tones there, not
   as inline hexes; terracotta buttons hover to `--accent-deep`.
 - `templates/stack-agent-context.md` is the single source of truth for the portable agent manual; if
@@ -429,4 +433,5 @@ node hook/stack-session-start.mjs --demo   # print the "where you left off" bloc
 node hook/stack-checkpoint.mjs --settings  # print current settings (what /checkpoint reads)
 echo '{"project":{"slug":"stack"},"session":{"summary":"…"}}' | node hook/stack-checkpoint.mjs  # author a checkpoint
 node scripts/stack-context.mjs --slug stack --api https://stack.your-domain  # export agent manual
+node hook/stack-gemini-review.mjs --dry    # second-model review of the last commit (Gemini; --dry = print only)
 ```
