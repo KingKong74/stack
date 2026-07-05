@@ -9,6 +9,9 @@ import { HowToGuide } from '../components/HowToGuide';
 import { CommandDeck } from '../components/CommandDeck';
 
 type Filter = 'all' | ProjectStatus;
+
+// True when this app is rendered inside an iframe (e.g. its own card preview).
+const framed = window.self !== window.top;
 const STATUS_LABEL: Record<ProjectStatus, string> = {
   live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived',
 };
@@ -127,6 +130,15 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
             {visible.map((p) => (
               <button key={p.id} className="pcard" style={{ background: p.tint }} onClick={() => go.detail(p.id)} aria-label={`Open ${p.name}`}>
                 <span className="stripe" />
+                {p.siteUrl && !framed && (
+                  // Live view of the deployed site, scaled to the card (à la Vercel).
+                  // Inert to the pointer/keyboard; the tint shows while it loads or
+                  // if the site refuses framing. Skipped when Stack is itself framed
+                  // so its own card can't recurse.
+                  <span className="preview" aria-hidden="true">
+                    <iframe src={p.siteUrl} loading="lazy" tabIndex={-1} title="" referrerPolicy="no-referrer" />
+                  </span>
+                )}
                 <span className="scrim" />
                 <span className="statuspill">{STATUS_LABEL[p.status]}</span>
                 <span className="meta">
