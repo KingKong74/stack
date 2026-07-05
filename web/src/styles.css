@@ -855,6 +855,7 @@ a { color: inherit; }
 .check-dot.never { background: var(--keyline); }
 .check-name { font-size: 13.5px; font-weight: 500; color: var(--ink); white-space: nowrap; }
 .check-url { font-family: var(--mono); font-size: 11px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+.check-contains { font-size: 11px; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; padding: 1px 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
 .check-result { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; white-space: nowrap; }
 .check-error { flex-basis: 100%; font-size: 12px; color: var(--critical); padding-left: 20px; }
 .check-actions { display: flex; align-items: center; gap: 6px; }

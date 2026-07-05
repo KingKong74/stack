@@ -14,7 +14,7 @@ function ChecksPanel({
 }: {
   checks: Check[]; siteUrl: string; busy: boolean;
   onRun: (id?: number) => void;
-  onAdd: (input: { name: string; url: string; expect_status?: number }) => void;
+  onAdd: (input: { name: string; url: string; expect_status?: number; contains?: string }) => void;
   onDelete: (id: number) => void;
   onFileBug: (c: Check) => void;
 }) {
@@ -22,16 +22,21 @@ function ChecksPanel({
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [expect, setExpect] = useState('200');
+  const [contains, setContains] = useState('');
 
   const add = () => {
     if (!name.trim() || !/^https?:\/\//i.test(url.trim())) return;
-    onAdd({ name: name.trim(), url: url.trim(), expect_status: Number(expect) || 200 });
-    setName(''); setUrl(''); setExpect('200');
+    onAdd({
+      name: name.trim(), url: url.trim(), expect_status: Number(expect) || 200,
+      contains: contains.trim() || undefined,
+    });
+    setName(''); setUrl(''); setExpect('200'); setContains('');
     setAdding(false);
   };
 
   const passing = checks.filter((c) => c.lastStatus === 'pass').length;
   const failing = checks.filter((c) => c.lastStatus === 'fail').length;
+  const lastRun = checks.find((c) => c.when)?.when || '';
 
   return (
     <div className="checks">
@@ -40,8 +45,8 @@ function ChecksPanel({
           <span className="checks-title">Checks</span>
           <span className="checks-sub">
             {checks.length
-              ? `${passing} passing${failing ? ` · ${failing} failing` : ''}`
-              : 'probe the live app — is it up, does it answer'}
+              ? `${passing} passing${failing ? ` · ${failing} failing` : ''}${lastRun ? ` · last run ${lastRun}` : ' · never run'}`
+              : 'probe the live app — is it up, does it answer, does it say the right thing'}
           </span>
         </div>
         <div className="checks-actions">
@@ -68,6 +73,9 @@ function ChecksPanel({
             onKeyDown={(e) => { if (e.key === 'Enter') add(); else if (e.key === 'Escape') setAdding(false); }} />
           <input className="field-input sm code" placeholder="200" value={expect}
             onChange={(e) => setExpect(e.target.value)} title="Expected HTTP status" />
+          <input className="field-input sm" placeholder="body contains… (optional)" value={contains}
+            onChange={(e) => setContains(e.target.value)} title="Fail unless the response body contains this text"
+            onKeyDown={(e) => { if (e.key === 'Enter') add(); }} />
           <button className="btn-submit sm" onClick={add}>Add</button>
           <button className="btn-cancel sm" onClick={() => setAdding(false)}>Cancel</button>
         </div>
@@ -80,6 +88,7 @@ function ChecksPanel({
               <span className={`check-dot ${c.lastStatus || 'never'}`} />
               <span className="check-name">{c.name}</span>
               <span className="check-url">{c.url}</span>
+              {c.contains && <span className="check-contains" title="Body must contain this text">“{c.contains}”</span>}
               <span className="check-result">
                 {c.lastStatus
                   ? `${c.lastCode ?? '—'} · ${c.lastMs}ms · ${c.when}`
