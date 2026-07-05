@@ -254,6 +254,13 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   };
 }
 
+// ---- Gemini re-entry plan (POST .../replan — suggestion only) ----
+
+export async function replanProject(slug: string): Promise<string> {
+  const r = await request<{ plan: string }>(`/projects/${encodeURIComponent(slug)}/replan`, { method: 'POST' });
+  return r.plan;
+}
+
 // ---- Gemini intake sorter (POST .../intake — suggestions only) ----
 
 export interface IntakeSuggestion {

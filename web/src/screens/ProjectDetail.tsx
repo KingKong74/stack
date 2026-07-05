@@ -7,6 +7,7 @@ import {
   createCheck, deleteCheck, runChecks,
   patchProject, deleteProject, createShareLink, deleteShareLink,
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, sortIntake, type IntakeSuggestion,
+  replanProject, AuthError,
 } from '../store';
 import { go } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
@@ -136,6 +137,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const [confirmBugDelete, setConfirmBugDelete] = useState<Bug | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  // Gemini's re-entry plan: null = closed, '' = loading, text = the suggestion.
+  const [replan, setReplan] = useState<string | null>(null);
+  const [replanErr, setReplanErr] = useState('');
   const [promotedNote, setPromotedNote] = useState<{ id: number; kind: 'bug' | 'roadmap' } | null>(null);
   const [promotedFuture, setPromotedFuture] = useState<number | null>(null);
   const [pendingFuture, setPendingFuture] = useState<number | null>(null);
@@ -448,6 +452,24 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const removeProject = () =>
     guard(async () => { await deleteProject(slug); go.dashboard(); });
 
+  // Gemini drafts a first-session-back plan; the human decides whether it
+  // becomes a note. Suggestion only.
+  const openReplan = async () => {
+    setReplan('');
+    setReplanErr('');
+    try {
+      setReplan(await replanProject(slug));
+    } catch (e) {
+      if (e instanceof AuthError) return;
+      setReplanErr((e as Error)?.message || 'Gemini call failed.');
+    }
+  };
+  const saveReplanAsNote = () => {
+    const text = replan;
+    setReplan(null);
+    if (text) addNote(`✧ Re-entry plan\n${text}`);
+  };
+
   // ---- public showcase link ----
   const shareUrl = data.shareToken
     ? `${window.location.origin}/#/share/${encodeURIComponent(slug)}/${encodeURIComponent(data.shareToken)}`
@@ -545,7 +567,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           <Overview project={project} activity={activity} directives={data.directives}
             reviewQueue={reviewQueue} keepResumeCard={data.keepResumeCard}
             openBugCount={openBugCount} fixingCount={fixingCount} roadmapCount={roadmapCount}
-            onViewAll={viewAll} onExport={() => setExportOpen(true)} onChangeDirectives={changeDirectives}
+            onViewAll={viewAll} onExport={() => setExportOpen(true)} onReplan={openReplan}
+            onChangeDirectives={changeDirectives}
             onReviewKeep={reviewKeep} onReviewDismiss={reviewDismiss} onSaveDeploy={saveDeploy}
             onSaveStack={saveStack} />
         )}
@@ -599,6 +622,28 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           onClose={() => { setRoadModal(roadModalClosed); setPendingFuture(null); }}
           onDismiss={(d) => updateRoadDraft(d)}
           onSubmit={submitRoad} />
+      )}
+      {(replan !== null || replanErr) && (
+        <Modal onClose={() => { setReplan(null); setReplanErr(''); }}>
+          <h3>✧ Re-entry plan</h3>
+          {replanErr ? (
+            <div className="gemini-suggest err">✧ {replanErr}</div>
+          ) : replan === '' ? (
+            <div className="confirm-body">Gemini is reading the project's live state…</div>
+          ) : (
+            <>
+              <div className="replan-text">{replan}</div>
+              <div className="confirm-body" style={{ marginTop: 12, fontSize: 12 }}>
+                A suggestion from the resume card, open bugs and roadmap — save it as a sticky if
+                it's a keeper.
+              </div>
+            </>
+          )}
+          <div className="modal-actions" style={{ marginTop: 16 }}>
+            <button className="btn-cancel" onClick={() => { setReplan(null); setReplanErr(''); }}>Close</button>
+            {replan && <button className="btn-submit" onClick={saveReplanAsNote}>Save as note</button>}
+          </div>
+        </Modal>
       )}
       {shareOpen && (
         <Modal onClose={() => setShareOpen(false)}>

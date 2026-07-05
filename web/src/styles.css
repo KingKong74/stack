@@ -726,6 +726,8 @@ a { color: inherit; }
 /* inline action error (detail screen) */
 .action-error { margin: 0 0 16px; padding: 10px 14px; font-size: 13px; color: var(--critical); background: #f7e9e7; border: 1px solid #e6cfca; border-radius: 10px; }
 
+.replan-text { white-space: pre-wrap; font-size: 13px; line-height: 1.65; color: var(--body); background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; padding: 14px 16px; max-height: 50vh; overflow-y: auto; }
+
 /* ---------- gemini judge assist (suggestion line on idea rows) ---------- */
 .gemini-btn { font-size: 11.5px; font-weight: 600; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; padding: 3px 9px; white-space: nowrap; }
 .gemini-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-tint-border); }
