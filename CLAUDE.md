@@ -358,19 +358,28 @@ the silent metadata backstop so the feed never has gaps.
 - `POST /api/ingest` (also the source the SessionStart hook reads back via `GET /api/projects/:slug`)
 - `GET /api/overview` (cross-project command deck — resume, blockers, stale, bugs, activity, totals)
 - `GET /api/search?q=…` (the ⌘K palette — grouped results across all kinds; see shape below)
+- `GET /api/timeline` (the #/timeline screen — last month of pushes grouped by day + 53 weeks of
+  daily counts for the contribution grid; soft-deleted projects excluded)
+- `GET /api/public/:slug/:token` (**no bearer** — the public showcase, guarded by the project's
+  own share_token; strictly overview + activity, wrong slug/token both 404)
 - `GET|PATCH /api/settings` (single-row app settings; see shape below)
 - `POST /api/presence` (live-now ping from the SessionStart hook; 404 for untracked projects) ·
   `POST /api/presence/end` (idempotent clear from the SessionEnd hook)
 - `GET /api/projects` · `POST /api/projects` · `GET /api/projects/:slug` (project + activity +
-  collections + progress; the detail payload includes `blockers` for the start hook and
-  `keepResumeCard`) ·
+  collections + progress; the detail payload includes `blockers` for the start hook,
+  `keepResumeCard`, `sessionDefaults` (rendered lines) and `shareToken`) ·
   `PATCH /api/projects/:slug` (subtitle, site_url, repo_url, status, pin, …) ·
-  `DELETE /api/projects/:slug` (cascades sessions/bugs/roadmap/notes via FK `ON DELETE CASCADE`)
+  `DELETE /api/projects/:slug` (**soft** — stamps `deleted_at`, clears the share link, keeps every
+  row; deleted projects vanish from all live queries and their collection routes 404) ·
+  `GET /api/projects/deleted` (the bin) · `POST /api/projects/:slug/restore` ·
+  `DELETE /api/projects/:slug/purge` (the real cascade delete — only valid on binned projects) ·
+  `POST /api/projects/:slug/share` (mint/rotate the showcase token) · `DELETE .../share` (disable)
 - `GET|POST /api/projects/:slug/bugs` · `PATCH|DELETE /api/projects/:slug/bugs/:bugKey`
   (PATCH also takes `reviewed: bool` — the review-inbox approve)
 - `GET|POST /api/projects/:slug/roadmap` · `PATCH|DELETE /api/projects/:slug/roadmap/:id`
-  (POST takes `claimed_by`; PATCH also takes `reviewed: bool`, `claimed_by` ('' releases) and
-  `review_tag: solid|needs-work|rethink` ('' clears))
+  (POST takes `claimed_by`; PATCH also takes `reviewed: bool`, `claimed_by` ('' releases),
+  `review_tag: solid|needs-work|rethink` ('' clears) and `skipped: bool` — the parked flag:
+  sinks to the bottom of its bucket, agents never pick it up, still counts toward progress)
 - `GET|POST /api/projects/:slug/futures` · `PATCH|DELETE /api/projects/:slug/futures/:id`
   (PATCH: title/note/reviewed/`alignment: on-course|tangent|off-course` ('' clears);
   DELETE tombstones a hook idea)
