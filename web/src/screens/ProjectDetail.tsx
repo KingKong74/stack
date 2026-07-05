@@ -303,7 +303,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, futures: [f, ...futures] });
     });
 
-  const editFuture = (fid: number, patch: { title: string; note: string }) =>
+  const editFuture = (fid: number, patch: { title: string; note: string; area: string }) =>
     guard(async () => {
       const updated = await patchFuture(slug, fid, patch);
       setData({ ...data, futures: futures.map((f) => (f.id === fid ? updated : f)) });

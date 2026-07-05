@@ -61,6 +61,10 @@ futures.patch('/:id', async (req, res) => {
     if (title) { sets.push(`title = $${i++}`); vals.push(title); }
   }
   if (req.body?.note !== undefined) { sets.push(`note = $${i++}`); vals.push(String(req.body.note).slice(0, 1000)); }
+  if (req.body?.area !== undefined) {
+    sets.push(`area = $${i++}`);
+    vals.push(String(req.body.area || '').trim().toLowerCase().slice(0, 40) || null);
+  }
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
 
   vals.push(req.project.id, Number(req.params.id));

@@ -80,6 +80,7 @@ export interface Future {
   source: Source;
   reviewed: boolean;
   alignment: string;   // north-star verdict: '' | on-course | tangent | off-course
+  area: string;        // product-area tag ('' = untagged) — filters the funnel
 }
 
 // A check: an HTTP probe against the project's live application, run from the

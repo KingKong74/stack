@@ -32,7 +32,7 @@ export function Futures({
   highlightId?: string | null;
   onSaveNorthStar: (text: string) => void;
   onAdd: (title: string, note: string) => void;
-  onEdit: (id: number, patch: { title: string; note: string }) => void;
+  onEdit: (id: number, patch: { title: string; note: string; area: string }) => void;
   onAlign: (id: number, alignment: Alignment | '') => void;
   onDelete: (id: number) => void;
   onPromote: (future: Future) => void;
@@ -57,9 +57,15 @@ export function Futures({
     setDraft('');
   };
 
+  // Area tags: an orthogonal axis to alignment — alignment groups (should we),
+  // area filters (where it lives).
+  const [areaFilter, setAreaFilter] = useState('');
+  const areas = [...new Set(futures.map((f) => f.area).filter(Boolean))].sort();
+  const visible = areaFilter ? futures.filter((f) => f.area === areaFilter) : futures;
+
   const judged = futures.some((f) => f.alignment);
   const groups = GROUPS
-    .map((g) => ({ ...g, items: futures.filter((f) => f.alignment === g.key) }))
+    .map((g) => ({ ...g, items: visible.filter((f) => f.alignment === g.key) }))
     .filter((g) => g.items.length > 0);
 
   return (
@@ -110,6 +116,19 @@ export function Futures({
           <div className="h">Ideas</div>
           <div className="subtitle">Judge each against the north star — promote what's on course, park the tangents</div>
         </div>
+        {areas.length > 0 && (
+          <div className="chips">
+            <button className={`chip-sm ${areaFilter === '' ? 'on' : ''}`} onClick={() => setAreaFilter('')}>
+              All {futures.length}
+            </button>
+            {areas.map((a) => (
+              <button key={a} className={`chip-sm ${areaFilter === a ? 'on' : ''}`}
+                onClick={() => setAreaFilter(areaFilter === a ? '' : a)}>
+                {a} {futures.filter((f) => f.area === a).length}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="composer">
@@ -153,7 +172,7 @@ function IdeaRow({
 }: {
   future: Future;
   highlighted?: boolean;
-  onEdit: (id: number, patch: { title: string; note: string }) => void;
+  onEdit: (id: number, patch: { title: string; note: string; area: string }) => void;
   onAlign: (id: number, alignment: Alignment | '') => void;
   onDelete: (id: number) => void;
   onPromote: (future: Future) => void;
@@ -162,6 +181,7 @@ function IdeaRow({
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(f.title);
   const [note, setNote] = useState(f.note);
+  const [area, setArea] = useState(f.area);
   const [picking, setPicking] = useState(false);
   // Gemini's suggested verdict: shown until applied or waved away, never
   // written to the idea by itself.
@@ -184,7 +204,10 @@ function IdeaRow({
 
   const save = () => {
     const t = title.trim();
-    if (t && (t !== f.title || note.trim() !== f.note)) onEdit(f.id, { title: t, note: note.trim() });
+    const a = area.trim().toLowerCase();
+    if (t && (t !== f.title || note.trim() !== f.note || a !== f.area)) {
+      onEdit(f.id, { title: t, note: note.trim(), area: a });
+    }
     setEditing(false);
   };
 
@@ -197,6 +220,10 @@ function IdeaRow({
             onKeyDown={(e) => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') setEditing(false); }} />
           <textarea className="field-area" style={{ marginTop: 8, minHeight: 46 }} value={note}
             placeholder="Why it might matter…" onChange={(e) => setNote(e.target.value)} />
+          <input className="field-input sm" style={{ marginTop: 8, maxWidth: 220 }} value={area}
+            placeholder="area — e.g. settings, mobile (optional)"
+            onChange={(e) => setArea(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') save(); }} />
           <div className="future-edit-row">
             <button className="btn-cancel sm" onClick={() => setEditing(false)}>Cancel</button>
             <button className="btn-submit sm" onClick={save}>Save</button>
@@ -233,6 +260,7 @@ function IdeaRow({
               {suggesting ? '✧ Asking…' : '✧ Ask Gemini'}
             </button>
           )}
+          {f.area && <span className="area-chip" title="Product area — edit the idea to change it">{f.area}</span>}
           {f.source === 'hook' && <span className="auto-badge">✦ auto</span>}
           <span className="when">{f.when}</span>
         </div>

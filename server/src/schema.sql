@@ -245,6 +245,11 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS share_token TEXT;
 -- restore / purge (the hard DELETE, which cascades).
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
+-- Area tags: which part of the product an idea lives in (landing page,
+-- settings, mobile, …) — a second, orthogonal axis to alignment. Freeform,
+-- filterable on the Futures tab. NULL = untagged.
+ALTER TABLE futures ADD COLUMN IF NOT EXISTS area TEXT;
+
 -- Semantic checks: an optional plain-language assertion judged by Gemini
 -- against the fetched page ("shows the dashboard with no error banners").
 -- Skipped silently when the server has no GEMINI_API_KEY.
