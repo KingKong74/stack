@@ -14,7 +14,7 @@ function ChecksPanel({
 }: {
   checks: Check[]; siteUrl: string; busy: boolean;
   onRun: (id?: number) => void;
-  onAdd: (input: { name: string; url: string; expect_status?: number; contains?: string }) => void;
+  onAdd: (input: { name: string; url: string; expect_status?: number; contains?: string; semantic?: string }) => void;
   onDelete: (id: number) => void;
   onFileBug: (c: Check) => void;
 }) {
@@ -23,14 +23,16 @@ function ChecksPanel({
   const [url, setUrl] = useState('');
   const [expect, setExpect] = useState('200');
   const [contains, setContains] = useState('');
+  const [semantic, setSemantic] = useState('');
 
   const add = () => {
     if (!name.trim() || !/^https?:\/\//i.test(url.trim())) return;
     onAdd({
       name: name.trim(), url: url.trim(), expect_status: Number(expect) || 200,
       contains: contains.trim() || undefined,
+      semantic: semantic.trim() || undefined,
     });
-    setName(''); setUrl(''); setExpect('200'); setContains('');
+    setName(''); setUrl(''); setExpect('200'); setContains(''); setSemantic('');
     setAdding(false);
   };
 
@@ -76,6 +78,9 @@ function ChecksPanel({
           <input className="field-input sm" placeholder="body contains… (optional)" value={contains}
             onChange={(e) => setContains(e.target.value)} title="Fail unless the response body contains this text"
             onKeyDown={(e) => { if (e.key === 'Enter') add(); }} />
+          <input className="field-input sm grow" placeholder="✧ looks right? e.g. shows the dashboard, no error banners (optional)" value={semantic}
+            onChange={(e) => setSemantic(e.target.value)} title="A plain-language expectation — Gemini judges the fetched page against it"
+            onKeyDown={(e) => { if (e.key === 'Enter') add(); }} />
           <button className="btn-submit sm" onClick={add}>Add</button>
           <button className="btn-cancel sm" onClick={() => setAdding(false)}>Cancel</button>
         </div>
@@ -89,6 +94,7 @@ function ChecksPanel({
               <span className="check-name">{c.name}</span>
               <span className="check-url">{c.url}</span>
               {c.contains && <span className="check-contains" title="Body must contain this text">“{c.contains}”</span>}
+              {c.semantic && <span className="check-contains" title="Gemini judges the page against this expectation">✧ {c.semantic}</span>}
               <span className="check-result">
                 {c.lastStatus
                   ? `${c.lastCode ?? '—'} · ${c.lastMs}ms · ${c.when}`

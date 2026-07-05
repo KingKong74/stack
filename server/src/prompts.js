@@ -43,7 +43,22 @@ THE DUMP:
 {{DUMP}}`,
 };
 
-const ENV_KEYS = { judge: 'GEMINI_JUDGE_PROMPT', intake: 'GEMINI_INTAKE_PROMPT' };
+DEFAULTS.semantic = `You are a smoke-test judge. A web page was fetched and its visible text is below
+(tags stripped, truncated). Judge this plain-language expectation about the page:
+
+EXPECTATION: {{ASSERTION}}
+
+Be strict but fair: judge only what the text can evidence. Respond with ONLY this JSON:
+{ "pass": true|false, "reason": "one plain sentence, under 20 words" }
+
+PAGE TEXT:
+{{PAGE}}`;
+
+const ENV_KEYS = {
+  judge: 'GEMINI_JUDGE_PROMPT',
+  intake: 'GEMINI_INTAKE_PROMPT',
+  semantic: 'GEMINI_SEMANTIC_PROMPT',
+};
 
 export function buildPrompt(name, vars) {
   const template = process.env[ENV_KEYS[name]] || DEFAULTS[name];

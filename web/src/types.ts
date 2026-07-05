@@ -90,6 +90,7 @@ export interface Check {
   url: string;
   expectStatus: number;
   contains: string;
+  semantic: string;    // plain-language expectation, judged by Gemini on run
   lastStatus: '' | 'pass' | 'fail';
   lastCode: number | null;
   lastMs: number | null;

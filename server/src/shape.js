@@ -62,6 +62,7 @@ export function checkShape(row) {
     url: row.url,
     expectStatus: row.expect_status,
     contains: row.contains || '',
+    semantic: row.semantic || '',        // plain-language expectation, judged by Gemini
     lastStatus: row.last_status || '',   // '' = never run
     lastCode: row.last_code ?? null,
     lastMs: row.last_ms ?? null,

@@ -245,6 +245,11 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS share_token TEXT;
 -- restore / purge (the hard DELETE, which cascades).
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
+-- Semantic checks: an optional plain-language assertion judged by Gemini
+-- against the fetched page ("shows the dashboard with no error banners").
+-- Skipped silently when the server has no GEMINI_API_KEY.
+ALTER TABLE checks ADD COLUMN IF NOT EXISTS semantic TEXT;
+
 -- Skip tag: parked roadmap items — planned but not to be picked up yet. They
 -- sort to the bottom of their bucket and agents leave them alone; still count
 -- toward progress (they remain planned work).

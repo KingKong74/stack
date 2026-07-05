@@ -381,7 +381,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       }
     });
 
-  const addCheck = (input: { name: string; url: string; expect_status?: number; contains?: string }) =>
+  const addCheck = (input: { name: string; url: string; expect_status?: number; contains?: string; semantic?: string }) =>
     guard(async () => {
       const c = await createCheck(slug, input);
       setData({ ...data, checks: [...data.checks, c] });

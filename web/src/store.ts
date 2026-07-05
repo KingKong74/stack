@@ -425,7 +425,7 @@ export async function getChecks(slug: string): Promise<Check[]> {
   return request<Check[]>(checksBase(slug));
 }
 export async function createCheck(
-  slug: string, input: { name: string; url: string; expect_status?: number; contains?: string },
+  slug: string, input: { name: string; url: string; expect_status?: number; contains?: string; semantic?: string },
 ): Promise<Check> {
   return request<Check>(checksBase(slug), { method: 'POST', body: input });
 }

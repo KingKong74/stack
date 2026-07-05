@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { checkShape } from '../shape.js';
+import { askGemini, geminiEnabled } from '../gemini.js';
+import { buildPrompt } from '../prompts.js';
 
 // Mounted at /api/projects/:slug/checks — the Bugs tab's testing panel.
 // A check is an HTTP probe against the project's live application: pass =
@@ -38,11 +40,12 @@ checks.post('/', async (req, res) => {
   if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'URL must start with http(s)://' });
   const expect = Number.isFinite(Number(req.body?.expect_status)) ? Math.trunc(Number(req.body.expect_status)) : 200;
   const contains = String(req.body?.contains || '').trim().slice(0, 200) || null;
+  const semantic = String(req.body?.semantic || '').trim().slice(0, 300) || null;
 
   const { rows } = await q(
-    `INSERT INTO checks (project_id, name, url, expect_status, contains)
-     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [req.project.id, name, url, expect, contains]
+    `INSERT INTO checks (project_id, name, url, expect_status, contains, semantic)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [req.project.id, name, url, expect, contains, semantic]
   );
   res.status(201).json(checkShape(rows[0]));
 });
@@ -72,11 +75,37 @@ async function probe(row) {
     const ms = Date.now() - started;
     let pass = res.status === row.expect_status;
     let error = pass ? null : `expected ${row.expect_status}, got ${res.status}`;
-    if (pass && row.contains) {
-      const body = (await res.text()).slice(0, BODY_CAP);
-      if (!body.includes(row.contains)) {
+    let body = null;
+    if (pass && (row.contains || row.semantic)) {
+      body = (await res.text()).slice(0, BODY_CAP);
+    }
+    if (pass && row.contains && !body.includes(row.contains)) {
+      pass = false;
+      error = `body missing "${row.contains}"`;
+    }
+    // The semantic assertion: Gemini judges the page's visible text against a
+    // plain-language expectation. Skipped silently when Gemini isn't
+    // configured; a Gemini hiccup fails the check honestly rather than lying.
+    if (pass && row.semantic && geminiEnabled()) {
+      const page = body
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 6000);
+      try {
+        const verdict = await askGemini(
+          buildPrompt('semantic', { ASSERTION: row.semantic, PAGE: page }),
+          { timeoutMs: 15_000 }
+        );
+        if (verdict?.pass !== true) {
+          pass = false;
+          error = `✧ ${String(verdict?.reason || 'expectation not met').slice(0, 180)}`;
+        }
+      } catch (e) {
         pass = false;
-        error = `body missing "${row.contains}"`;
+        error = `✧ semantic judge unavailable: ${String(e.message || e).slice(0, 120)}`;
       }
     }
     return { pass, code: res.status, ms, error };
