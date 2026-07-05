@@ -57,6 +57,7 @@ export interface RoadmapItem {
   reviewed: boolean;
   claimedBy: string;   // lane owning this item ('' = free)
   reviewTag: string;   // archive verdict: '' | solid | needs-work | rethink
+  skipped: boolean;    // parked — planned, but not to be picked up yet
 }
 export interface Roadmap { must: RoadmapItem[]; should: RoadmapItem[]; could: RoadmapItem[]; wont: RoadmapItem[] }
 

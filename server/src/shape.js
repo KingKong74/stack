@@ -28,6 +28,7 @@ export function roadmapItemShape(row) {
     reviewed: !!row.reviewed_at,
     claimedBy: row.claimed_by || '',   // lane owning this item ('' = free)
     reviewTag: row.review_tag || '',   // archive verdict: solid | needs-work | rethink
+    skipped: !!row.skipped,            // parked — planned, but not to be picked up yet
   };
 }
 

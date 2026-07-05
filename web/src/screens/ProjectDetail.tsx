@@ -225,6 +225,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].filter((i) => i.id !== item.id) } });
     });
 
+  const toggleSkipRoad = (item: RoadmapItem) =>
+    guard(async () => {
+      const updated = await patchRoadmapItem(slug, item.id, { skipped: !item.skipped });
+      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
+    });
+
   // Archive review: store the verdict; needs-work/rethink offer a follow-up
   // item straight back onto the board (prefilled, cancellable).
   const reviewTagRoad = (item: RoadmapItem, tag: ReviewTag) =>
@@ -540,7 +546,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onDiscardDraft={() => updateRoadDraft(null)}
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
-            onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad} />
+            onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad}
+            onToggleSkip={toggleSkipRoad} />
         )}
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId}

@@ -61,6 +61,9 @@ roadmap.patch('/:id', async (req, res) => {
     sets.push(`review_tag = $${i++}`);
     vals.push(['solid', 'needs-work', 'rethink'].includes(tag) ? tag : null);
   }
+  if (req.body?.skipped !== undefined) {
+    sets.push(`skipped = $${i++}`); vals.push(Boolean(req.body.skipped));
+  }
   if (req.body?.done !== undefined) {
     sets.push(`done = $${i++}`); vals.push(Boolean(req.body.done));
     // Completing an item is a human touch — it counts as reviewed, so archived

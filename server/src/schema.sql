@@ -238,3 +238,8 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS session_defaults JSONB NOT NULL DE
 -- Public showcase: a project with a share_token has a tokenless read-only view
 -- at GET /api/public/:slug/:token (overview + activity only). NULL = not shared.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS share_token TEXT;
+
+-- Skip tag: parked roadmap items — planned but not to be picked up yet. They
+-- sort to the bottom of their bucket and agents leave them alone; still count
+-- toward progress (they remain planned work).
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS skipped BOOLEAN NOT NULL DEFAULT false;

@@ -89,6 +89,8 @@ Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
 `lane/ui`). The SessionStart block lists current claims. The protocol:
 
 - **Never start an item claimed by another lane.**
+- **Never start an item with `skipped: true`** — it's parked on purpose; the
+  owner unparks it from the UI when it's back in play.
 - If you're one of several parallel sessions and you pick up a roadmap item,
   **claim it first** (your claim label = your branch name):
 

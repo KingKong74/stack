@@ -16,7 +16,7 @@ const tagLabel = (tag: string) => REVIEW_TAGS.find((t) => t.key === tag)?.label 
 // verdict tag (needs-work/rethink offer a follow-up item), restorable by
 // un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onToggleSkip, highlightId,
   draft, onResumeDraft, onDiscardDraft,
 }: {
   roadmap: RoadmapData;
@@ -25,6 +25,7 @@ export function Roadmap({
   onEdit: (item: RoadmapItem) => void;
   onDelete: (item: RoadmapItem) => void;
   onReviewTag: (item: RoadmapItem, tag: ReviewTag) => void;
+  onToggleSkip: (item: RoadmapItem) => void;
   highlightId?: string | null;
   draft?: { title: string } | null;
   onResumeDraft?: () => void;
@@ -59,7 +60,9 @@ export function Roadmap({
 
       <div className="road-grid">
         {PRIORITY_META.map((col) => {
-          const items = roadmap[col.key].filter((it) => !it.done);
+          const open = roadmap[col.key].filter((it) => !it.done);
+          // Parked items sink to the bottom of their bucket.
+          const items = [...open.filter((it) => !it.skipped), ...open.filter((it) => it.skipped)];
           return (
             <div className="road-col" key={col.key}>
               <div className="road-col-head">
@@ -69,7 +72,7 @@ export function Roadmap({
               </div>
               <div className="road-items">
                 {items.map((it) => (
-                  <div className={`road-item ${highlightId === String(it.id) ? 'hl' : ''}`} key={it.id} data-hl={it.id}>
+                  <div className={`road-item ${it.skipped ? 'skipped' : ''} ${highlightId === String(it.id) ? 'hl' : ''}`} key={it.id} data-hl={it.id}>
                     <button
                       className="road-check"
                       onClick={() => onToggle(it)}
@@ -79,11 +82,14 @@ export function Roadmap({
                       <div className="t">
                         {it.title}
                         {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
+                        {it.skipped && <span className="skip-chip" title="Parked — not to be picked up yet">⏸ parked</span>}
                       </div>
                       {it.note && <div className="note">{it.note}</div>}
                       {it.claimedBy && <div className="claim-chip" title="Claimed by this lane">⚑ {it.claimedBy}</div>}
                     </div>
                     <div className="road-actions">
+                      <button onClick={() => onToggleSkip(it)} aria-label={it.skipped ? 'Unpark item' : 'Park item'}
+                        title={it.skipped ? 'Unpark — back in play' : 'Park — skip for now'}>{it.skipped ? '▶' : '⏸'}</button>
                       <button onClick={() => onEdit(it)} aria-label="Edit item" title="Edit">✎</button>
                       <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
                     </div>
