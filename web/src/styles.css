@@ -533,6 +533,20 @@ a { color: inherit; }
 .draft-x:hover { color: var(--critical); background: var(--panel); }
 .road-grid.arch { margin-top: 12px; }
 .road-body .road-actions.arch, .road-body .review-pick { margin-top: 7px; }
+.road-archive-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.seg-control.sm { padding: 2px; border-radius: 9px; }
+.seg-control.sm .seg-opt { padding: 4px 12px; font-size: 11.5px; border-radius: 7px; }
+/* dense archive list: check · bucket · title · verdict/actions */
+.arch-list { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.arch-list-row { display: flex; align-items: center; gap: 11px; padding: 9px 14px; }
+.arch-list-row + .arch-list-row { border-top: 1px solid var(--line-2); }
+.arch-list-bucket { flex: none; width: 46px; font-family: var(--mono); font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.03em; }
+.arch-list-title { flex: 1; min-width: 0; font-size: 13px; text-decoration: line-through; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arch-list-row .road-actions.arch, .arch-list-row .review-pick { margin-top: 0; flex: none; }
+.arch-pager { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 9px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line-2); }
+.arch-pager button { color: var(--chip-ink); font-size: 15px; line-height: 1; padding: 2px 9px; border-radius: 6px; }
+.arch-pager button:hover:not(:disabled) { color: var(--ink); background: var(--panel); }
+.arch-pager button:disabled { opacity: 0.35; }
 
 /* ---------- notes ---------- */
 .note-intro { font-size: 13px; color: var(--muted); margin-bottom: 22px; }

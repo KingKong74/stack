@@ -36,6 +36,37 @@ export function Roadmap({
   // Open the archive straight away when a deep-link targets an archived item.
   const [archiveOpen, setArchiveOpen] = useState(
     () => archived.some((it) => String(it.id) === highlightId));
+  // Archive rendering: the MoSCoW grid, or a dense paginated list.
+  const [archView, setArchView] = useState<'grid' | 'list'>('grid');
+  const [archPage, setArchPage] = useState(0);
+  const ARCH_PAGE_SIZE = 12;
+  const archPages = Math.max(1, Math.ceil(archived.length / ARCH_PAGE_SIZE));
+  const archSlice = archived.slice(archPage * ARCH_PAGE_SIZE, (archPage + 1) * ARCH_PAGE_SIZE);
+
+  // Verdict picker + restore/delete controls, shared by both archive views.
+  const archActions = (it: RoadmapItem) => (
+    pickerFor === it.id ? (
+      <div className="review-pick">
+        {REVIEW_TAGS.map((t) => (
+          <button key={t.key} className={`review-pick-opt ${t.key}`}
+            onClick={() => { setPickerFor(null); onReviewTag(it, t.key); }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+    ) : (
+      <div className="road-actions arch">
+        {it.reviewTag ? (
+          <button className={`review-verdict ${it.reviewTag}`} onClick={() => setPickerFor(it.id)}
+            title="Change the verdict">{tagLabel(it.reviewTag)}</button>
+        ) : (
+          <button className="review-verdict none" onClick={() => setPickerFor(it.id)}
+            title="Review this completed item">Review</button>
+        )}
+        <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
+      </div>
+    )
+  );
 
   return (
     <div>
@@ -105,13 +136,23 @@ export function Roadmap({
       {/* archive — completed items, out of the way but recoverable */}
       {archived.length > 0 && (
         <div className="road-archive">
-          <button className="road-archive-head" onClick={() => setArchiveOpen((o) => !o)}
-            aria-expanded={archiveOpen}>
-            <span className="chev">{archiveOpen ? '▾' : '▸'}</span>
-            Archive <span className="count">{archived.length}</span>
-            <span className="hint">completed items — still count toward progress</span>
-          </button>
-          {archiveOpen && (
+          <div className="road-archive-bar">
+            <button className="road-archive-head" onClick={() => setArchiveOpen((o) => !o)}
+              aria-expanded={archiveOpen}>
+              <span className="chev">{archiveOpen ? '▾' : '▸'}</span>
+              Archive <span className="count">{archived.length}</span>
+              <span className="hint">completed items — still count toward progress</span>
+            </button>
+            {archiveOpen && (
+              <div className="seg-control sm" role="tablist" aria-label="Archive view">
+                <button role="tab" aria-selected={archView === 'grid'}
+                  className={`seg-opt ${archView === 'grid' ? 'on' : ''}`} onClick={() => setArchView('grid')}>Buckets</button>
+                <button role="tab" aria-selected={archView === 'list'}
+                  className={`seg-opt ${archView === 'list' ? 'on' : ''}`} onClick={() => setArchView('list')}>List</button>
+              </div>
+            )}
+          </div>
+          {archiveOpen && archView === 'grid' && (
             <div className="road-grid arch">
               {PRIORITY_META.map((col) => {
                 const items = roadmap[col.key].filter((it) => it.done);
@@ -133,27 +174,7 @@ export function Roadmap({
                               {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
                               {it.claimedBy && <span className="claim-chip inline" title="Done by this lane">⚑ {it.claimedBy}</span>}
                             </div>
-                            {pickerFor === it.id ? (
-                              <div className="review-pick">
-                                {REVIEW_TAGS.map((t) => (
-                                  <button key={t.key} className={`review-pick-opt ${t.key}`}
-                                    onClick={() => { setPickerFor(null); onReviewTag(it, t.key); }}>
-                                    {t.label}
-                                  </button>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="road-actions arch">
-                                {it.reviewTag ? (
-                                  <button className={`review-verdict ${it.reviewTag}`} onClick={() => setPickerFor(it.id)}
-                                    title="Change the verdict">{tagLabel(it.reviewTag)}</button>
-                                ) : (
-                                  <button className="review-verdict none" onClick={() => setPickerFor(it.id)}
-                                    title="Review this completed item">Review</button>
-                                )}
-                                <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
-                              </div>
-                            )}
+                            {archActions(it)}
                           </div>
                         </div>
                       ))}
@@ -161,6 +182,26 @@ export function Roadmap({
                   </div>
                 );
               })}
+            </div>
+          )}
+          {archiveOpen && archView === 'list' && (
+            <div className="arch-list">
+              {archSlice.map((it) => (
+                <div className="arch-list-row" key={it.id} data-hl={it.id}>
+                  <button className="road-check on sm" onClick={() => onToggle(it)}
+                    aria-label="Mark not done" title="Restore to the roadmap">✓</button>
+                  <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
+                  <span className="arch-list-title">{it.title}</span>
+                  {archActions(it)}
+                </div>
+              ))}
+              {archPages > 1 && (
+                <div className="arch-pager">
+                  <button disabled={archPage === 0} onClick={() => setArchPage((p) => p - 1)}>‹</button>
+                  <span>{archPage * ARCH_PAGE_SIZE + 1}–{Math.min((archPage + 1) * ARCH_PAGE_SIZE, archived.length)} of {archived.length}</span>
+                  <button disabled={archPage >= archPages - 1} onClick={() => setArchPage((p) => p + 1)}>›</button>
+                </div>
+              )}
             </div>
           )}
         </div>
