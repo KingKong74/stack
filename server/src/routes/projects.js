@@ -7,7 +7,7 @@ import {
   bugShape, groupRoadmap, noteShape, futureShape, checkShape, activityShape,
   projectListShape, projectDetailShape,
 } from '../shape.js';
-import { readSettings } from '../settings.js';
+import { readSettings, sessionDefaultLines } from '../settings.js';
 
 export const projects = Router();
 
@@ -124,6 +124,7 @@ projects.get('/:slug', async (req, res) => {
       futures: futures.rows.map(futureShape),
       checks: checks.rows.map(checkShape),
       keepResumeCard: appSettings.keep_resume_card,
+      sessionDefaults: sessionDefaultLines(appSettings.session_defaults),
     })
   );
 });

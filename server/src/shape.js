@@ -110,11 +110,12 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
     keepResumeCard: keepResumeCard !== false, // global flag; false hides the resume card
+    sessionDefaults: sessionDefaults || [],   // global standing-preference lines for the start hook
     summary: p.summary || '',
     currentPhase: p.current_phase || '',
     northStar: p.north_star || '',

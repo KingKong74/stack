@@ -29,8 +29,10 @@ hook/   Zero-dependency Node ESM. stack-post.mjs is the shared lib (env load, gi
           even skipped sessions stop showing as live.
         • stack-session-start.mjs — the SessionStart hook. GETs /api/projects/:slug and injects a
           "where you left off" block via additionalContext (nothing if untracked/unreachable),
-          including the project's **north star** when set and any **directives** (the standing
-          steer list from the dashboard — injected first, above everything else); nudges
+          including the project's **north star** when set, the app-wide **session defaults**
+          (standing preference lines from Settings, rendered server-side onto the detail payload)
+          and any **directives** (the standing steer list from the dashboard) — defaults then
+          directives, injected first above everything else; nudges
           /checkpoint when wrapping up. Also fires a live-now **presence ping**
           (POST /api/presence) in parallel with that fetch — same timeout budget, silent on any
           failure, 404 for untracked projects.
@@ -59,10 +61,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   ↑↓ across groups, ↵ opens → `go.detail(slug, tab, highlight)`, esc closes), focus trap + restore,
   reduced-motion respected. Opened from the dashboard/detail search box or ⌘K anywhere (state lives
   in `App.tsx`).
-- `screens/Settings.tsx` — the Settings screen (reached from the avatar / `#/settings`). Two
-  sections only: **Push summaries** (the cream card — switches + Brief/Standard/Detailed segmented
-  control, optimistic with rollback) and **Access** (masked token, Test connection, Sign out). Uses
-  `getSettings/patchSettings`; a 401 anywhere returns to the gate.
+- `screens/Settings.tsx` — the Settings screen (reached from the avatar / `#/settings`). Sections:
+  **Push summaries** (the cream card — switches + Brief/Standard/Detailed segmented control,
+  optimistic with rollback), **Session defaults** (switches over the `DIRECTIVES` catalogue from
+  `lib/brief.ts` — app-wide standing preferences PATCHed as `sessionDefaults` and injected into
+  every session by the start hook, e.g. commits pre-authorised), **Appearance** (theme) and
+  **Access** (masked token, Test connection, Sign out). Uses `getSettings/patchSettings`; a 401
+  anywhere returns to the gate.
 - `types.ts` — Project, Bug, RoadmapItem, Future, Note, Activity, Resume. Status is `live | building |
   paused | archived`. Bug/RoadmapItem/Future/Note carry `source: 'hook' | 'manual'` (drives the
   "auto" cue).
@@ -150,7 +155,10 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   - `sessions` — the activity feed. + `commit_hash`, `tags` jsonb, `authored` bool (a rich
     /checkpoint vs the hook's metadata backstop; sticky — once true it stays true).
   - `settings` — single row (boolean PK = true, CHECK singleton). `auto_record`, `keep_resume_card`,
-    `checkpoint_detail` (brief|standard|detailed), `include_chores`. Seeded once on migrate.
+    `checkpoint_detail` (brief|standard|detailed), `include_chores`, `session_defaults` (jsonb list
+    of catalogue keys — the app-wide standing session preferences, default `["ship"]` = commits
+    pre-authorised; the catalogue lives in `settings.js` `SESSION_DEFAULTS`, keys mirror the web's
+    `DIRECTIVES` in `lib/brief.ts`). Seeded once on migrate.
   - `bugs` — `bug_key` (BUG-N per project), title, severity, status, `link_ref` (commit), `source`,
     `fingerprint`, `reviewed_at`. Partial unique index on (project, fingerprint) WHERE source='hook'.
   - `roadmap_items` — `bucket`, title, note, `done`, `position`, `source`, `fingerprint`,
@@ -183,7 +191,8 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   model** (see below), and **`STALE_DAYS`** — the single knob for the command deck's stale threshold
   (default 14; the only place to change it).
 - `shape.js` — row → client-shape mappers (bug/roadmap/note/activity/project). The detail shape also
-  carries `keepResumeCard` (the global flag) so the detail Overview hides its resume card cleanly.
+  carries `keepResumeCard` (the global flag) so the detail Overview hides its resume card cleanly,
+  and `sessionDefaults` (the rendered standing-preference lines) for the SessionStart hook.
 - `settings.js` — the single-row settings: `readSettings(client?)` (accepts a txn client; defaults on
   failure) and `settingsShape` (row → client camelCase). Imported by ingest/overview/projects.
 - `routes/ingest.js` — `POST /api/ingest`: see the package + behaviour below.
@@ -319,7 +328,12 @@ Single row, client camelCase. Meanings under the no-API model:
   "autoRecord": true,         // does the SessionEnd hook post its metadata backstop
   "keepResumeCard": true,     // does ingest refresh resume fields + does the deck/Overview show the card
   "checkpointDetail": "standard", // brief|standard|detailed — read by /checkpoint to shape the summary
-  "includeChores": false      // do chore-only sessions get a checkpoint (hook + /checkpoint guidance)
+  "includeChores": false,     // do chore-only sessions get a checkpoint (hook + /checkpoint guidance)
+  "sessionDefaults": ["ship"] // standing session preferences (catalogue keys: lean|ship|checkpoint|
+                              // confirm|verify). Rendered to lines server-side and injected by the
+                              // SessionStart hook into EVERY project's block (above directives) via
+                              // the detail payload's `sessionDefaults` — permissions granted once,
+                              // e.g. "ship" = commits pre-authorised, never re-asked per chat
 }
 ```
 

@@ -219,13 +219,18 @@ CREATE INDEX IF NOT EXISTS idx_projects_touch  ON projects (pinned DESC, last_se
 --                       command deck show the resume hero)
 --   checkpoint_detail — how much the /checkpoint authored summary explains
 --   include_chores    — do chore-only sessions get a checkpoint
+--   session_defaults  — standing session preferences (catalogue keys, e.g. "ship"
+--                       = commits pre-authorised); the SessionStart hook injects
+--                       the matching lines into every session on every project
 CREATE TABLE IF NOT EXISTS settings (
   id                BOOLEAN PRIMARY KEY DEFAULT true,
   auto_record       BOOLEAN NOT NULL DEFAULT true,
   keep_resume_card  BOOLEAN NOT NULL DEFAULT true,
   checkpoint_detail TEXT    NOT NULL DEFAULT 'standard',  -- brief | standard | detailed
   include_chores    BOOLEAN NOT NULL DEFAULT false,
+  session_defaults  JSONB   NOT NULL DEFAULT '["ship"]'::jsonb,
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT settings_singleton CHECK (id)
 );
 INSERT INTO settings (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS session_defaults JSONB NOT NULL DEFAULT '["ship"]'::jsonb;

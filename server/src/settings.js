@@ -7,11 +7,33 @@ import { oneOf } from './util.js';
 
 export const CHECKPOINT_DETAILS = ['brief', 'standard', 'detailed'];
 
+// The session-defaults catalogue: standing preferences toggled in Settings and
+// injected by the SessionStart hook into every session on every project, so a
+// permission is granted once instead of re-stated per chat. Keys must match the
+// web catalogue (web/src/lib/brief.ts DIRECTIVES); the lines are what agents read.
+export const SESSION_DEFAULTS = [
+  { key: 'lean', line: 'Keep token usage lean: concise output, no re-reading unchanged files, no exploratory tangents.' },
+  { key: 'ship', line: 'Commits are pre-authorised: commit and push after every completed unit of work — no need to ask.' },
+  { key: 'checkpoint', line: 'Run /checkpoint before wrapping up the session.' },
+  { key: 'confirm', line: 'Check in before changing API contracts or the schema, or deleting anything.' },
+  { key: 'verify', line: 'Run the build/typecheck and verify before declaring work done.' },
+];
+const SESSION_DEFAULT_KEYS = new Set(SESSION_DEFAULTS.map((d) => d.key));
+
+// Coerce any incoming value to a deduped list of known catalogue keys.
+export const cleanSessionDefaults = (v) =>
+  Array.isArray(v) ? [...new Set(v.map(String).filter((k) => SESSION_DEFAULT_KEYS.has(k)))] : [];
+
+// The lines the SessionStart hook injects, in catalogue order.
+export const sessionDefaultLines = (keys) =>
+  SESSION_DEFAULTS.filter((d) => (keys || []).includes(d.key)).map((d) => d.line);
+
 const DEFAULTS = {
   auto_record: true,
   keep_resume_card: true,
   checkpoint_detail: 'standard',
   include_chores: false,
+  session_defaults: ['ship'],
 };
 
 // Read the singleton row. Accepts an optional pg client (so ingest can read
@@ -26,6 +48,7 @@ export async function readSettings(client) {
     keep_resume_card: r.keep_resume_card,
     checkpoint_detail: oneOf(r.checkpoint_detail, CHECKPOINT_DETAILS, 'standard'),
     include_chores: r.include_chores,
+    session_defaults: cleanSessionDefaults(r.session_defaults),
   };
 }
 
@@ -35,5 +58,6 @@ export function settingsShape(s) {
     keepResumeCard: s.keep_resume_card,
     checkpointDetail: s.checkpoint_detail,
     includeChores: s.include_chores,
+    sessionDefaults: s.session_defaults,
   };
 }

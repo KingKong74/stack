@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { oneOf } from '../util.js';
-import { readSettings, settingsShape, CHECKPOINT_DETAILS } from '../settings.js';
+import { readSettings, settingsShape, CHECKPOINT_DETAILS, cleanSessionDefaults } from '../settings.js';
 
 // GET/PATCH /api/settings — the single-row app settings behind bearer auth.
 //
 // Shape (client camelCase):
-//   { autoRecord, keepResumeCard, checkpointDetail, includeChores }
+//   { autoRecord, keepResumeCard, checkpointDetail, includeChores, sessionDefaults }
 export const settings = Router();
 
 settings.get('/', async (_req, res) => {
@@ -30,6 +30,10 @@ settings.patch('/', async (req, res) => {
   if ('checkpointDetail' in body) {
     fields.push(`checkpoint_detail = $${i++}`);
     values.push(oneOf(body.checkpointDetail, CHECKPOINT_DETAILS, 'standard'));
+  }
+  if ('sessionDefaults' in body) {
+    fields.push(`session_defaults = $${i++}::jsonb`);
+    values.push(JSON.stringify(cleanSessionDefaults(body.sessionDefaults)));
   }
   if (fields.length) {
     await q(`UPDATE settings SET ${fields.join(', ')}, updated_at = now() WHERE id = true`, values);

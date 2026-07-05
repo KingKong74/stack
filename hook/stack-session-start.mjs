@@ -93,8 +93,13 @@ function buildBlock(p) {
   if (p.currentPhase) head.push(`Phase: ${p.currentPhase}`);
   if (head.length) lines.push(head.join(' · '));
 
-  // Directives are standing instructions set on the dashboard — the highest-
-  // priority content in the block, so they land before everything else.
+  // Session defaults are the app-wide standing preferences (Settings → Session
+  // defaults) — permissions granted once, e.g. commits pre-authorised. They and
+  // the project's own directives are the highest-priority content in the block,
+  // so they land before everything else: global grants first, project steer next.
+  if (Array.isArray(p.sessionDefaults) && p.sessionDefaults.length) {
+    lines.push('', '**Session defaults — standing preferences for every project (set in Stack settings)**', bullets(p.sessionDefaults, 6));
+  }
   if (Array.isArray(p.directives) && p.directives.length) {
     lines.push('', '**Directives — honour these first (set on the Stack dashboard)**', bullets(p.directives, 8));
   }

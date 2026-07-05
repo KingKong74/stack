@@ -183,4 +183,5 @@ export interface Settings {
   keepResumeCard: boolean;
   checkpointDetail: CheckpointDetail;
   includeChores: boolean;
+  sessionDefaults: string[];  // DIRECTIVES keys — standing preferences injected into every session
 }

@@ -6,6 +6,7 @@ import {
 } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
+import { DIRECTIVES } from '../lib/brief';
 
 const THEMES: { key: ThemePref; label: string }[] = [
   { key: 'system', label: 'System' }, { key: 'light', label: 'Light' }, { key: 'dark', label: 'Dark' },
@@ -150,6 +151,31 @@ export function Settings() {
                   {DETAILS.find((d) => d.key === settings.checkpointDetail)?.blurb}
                 </div>
               </div>
+            </section>
+
+            {/* ---- Session defaults (standing preferences, injected every session) ---- */}
+            <section className="set-card">
+              <div className="set-card-head">
+                <div className="set-card-title">Session defaults</div>
+                <div className="set-card-sub">
+                  Standing preferences injected at the start of every Claude Code session, on every
+                  project — grant it once here instead of re-stating it each chat. Project-specific
+                  steer still lives on each project's Directives card.
+                </div>
+              </div>
+              {DIRECTIVES.map((d) => (
+                <Switch
+                  key={d.key}
+                  label={d.label}
+                  hint={d.hint}
+                  checked={settings.sessionDefaults.includes(d.key)}
+                  onChange={(v) => update({
+                    sessionDefaults: v
+                      ? [...settings.sessionDefaults, d.key]
+                      : settings.sessionDefaults.filter((k) => k !== d.key),
+                  })}
+                />
+              ))}
             </section>
 
             {/* ---- Appearance (device-local) ---- */}
