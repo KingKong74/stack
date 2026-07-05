@@ -5,6 +5,7 @@ import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { NewProjectModal } from '../components/NewProjectModal';
 import { ConnectGuide } from '../components/ConnectGuide';
+import { HowToGuide } from '../components/HowToGuide';
 import { CommandDeck } from '../components/CommandDeck';
 
 type Filter = 'all' | ProjectStatus;
@@ -19,6 +20,7 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
   const [filter, setFilter] = useState<Filter>('all');
   const [newOpen, setNewOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [howToOpen, setHowToOpen] = useState(false);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [deckLoading, setDeckLoading] = useState(true);
   const [deckError, setDeckError] = useState('');
@@ -86,6 +88,7 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
             <span style={{ color: 'var(--faint)' }}>Search everything…</span>
             <span className="kbd-hint">⌘K</span>
           </button>
+          <button className="btn-repo" onClick={() => setHowToOpen(true)}>Guide</button>
           <button className="btn-repo" onClick={() => setGuideOpen(true)}>Connect</button>
           <button className="btn-accent" onClick={() => setNewOpen(true)}>New project</button>
           <button className="avatar" onClick={go.settings} aria-label="Settings" />
@@ -143,6 +146,7 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
 
       {newOpen && <NewProjectModal onClose={() => setNewOpen(false)} onCreate={onCreate} />}
       {guideOpen && <ConnectGuide onClose={() => setGuideOpen(false)} />}
+      {howToOpen && <HowToGuide onClose={() => setHowToOpen(false)} />}
     </div>
   );
 }
