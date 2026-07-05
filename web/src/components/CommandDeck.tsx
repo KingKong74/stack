@@ -6,6 +6,7 @@ import {
   patchFuture, deleteFuture, AuthError,
 } from '../store';
 import { ExportBriefModal } from './ExportBriefModal';
+import { buildWeeks, contribLevel } from '../lib/contrib';
 
 // The cross-project command deck that sits at the top of the dashboard:
 // a resume hero, a quiet attention row, and a merged activity stream.
@@ -13,6 +14,8 @@ import { ExportBriefModal } from './ExportBriefModal';
 export function CommandDeck({ data }: { data: Overview }) {
   const { resume, keepResumeCard, presence, claims, blockers, stale, bugs, activity } = data;
   const worstBug = bugs.projects[0] || null;
+  const weeks = buildWeeks(new Map((data.graph || []).map((g) => [g.date, g.count])));
+  const yearTotal = (data.graph || []).reduce((sum, g) => sum + g.count, 0);
 
   // The hero only carries a slice of the project, so the export modal pulls
   // the full detail on demand when the user confirms.
@@ -138,6 +141,23 @@ export function CommandDeck({ data }: { data: Overview }) {
           Across everything
           <button className="deck-timeline-link" onClick={go.timeline}>Full timeline →</button>
         </div>
+        {yearTotal > 0 && (
+          // The year in pushes, GitHub-history style but ours — click for the timeline.
+          <button className="ctb compact" onClick={go.timeline}
+            title={`${yearTotal} pushes in the last 12 months — open the timeline`}
+            aria-label={`${yearTotal} pushes in the last 12 months — open the timeline`}>
+            <span className="ctb-grid">
+              {weeks.map((week, wi) => (
+                <span className="ctb-col" key={wi}>
+                  {week.map((day) => (
+                    <span key={day.date}
+                      className={`ctb-cell ${day.future ? 'future' : `l${contribLevel(day.count)}`}`} />
+                  ))}
+                </span>
+              ))}
+            </span>
+          </button>
+        )}
         {activity.length ? (
           <div className="deck-feed">
             {activity.map((a, i) => (

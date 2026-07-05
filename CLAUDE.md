@@ -282,6 +282,8 @@ The cross-project glance layer, computed server-side in four aggregate queries (
   "bugs":     { "total": 3, "projects": [ { "slug": "…", "name": "…", "count": 2 } ] }, // open critical|high
   "activity": [ { "slug": "…", "name": "…", "hash": "…", "branch": "…",
                   "summary": "…", "tags": ["…"], "when": "just now" } ], // merged, newest first, ~12
+  "graph":    [ { "date": "YYYY-MM-DD", "count": 3 } ],  // year of daily push counts → the deck's
+                                                          // compact contribution strip (click = timeline)
   "totals":   { "byStatus": { "live": 0, "building": 3, "paused": 0, "archived": 0 },
                 "openBugs": 4, "pushesThisWeek": 2 }
 }

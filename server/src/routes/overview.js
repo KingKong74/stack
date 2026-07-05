@@ -29,7 +29,7 @@ overview.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
   // Seven aggregate queries, run together — no per-project fan-out.
-  const [projectsR, bugsR, recentR, weekR, reviewR, presenceR, claimsR] = await Promise.all([
+  const [projectsR, bugsR, recentR, weekR, reviewR, presenceR, claimsR, graphR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, summary, current_phase,
               next_up, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
@@ -60,6 +60,11 @@ overview.get('/', async (_req, res) => {
     q(`SELECT project_id, id, title, claimed_by FROM roadmap_items
         WHERE claimed_by IS NOT NULL AND NOT done
         ORDER BY updated_at DESC LIMIT 10`),
+    // A year of daily push counts — the deck's contribution strip.
+    q(`SELECT to_char(s.created_at, 'YYYY-MM-DD') AS d, count(*)::int AS n
+         FROM sessions s JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
+        WHERE s.created_at > now() - interval '371 days'
+        GROUP BY 1`),
   ]);
 
   const projects = projectsR.rows;
@@ -184,6 +189,7 @@ overview.get('/', async (_req, res) => {
     review,
     bugs: { total: seriousTotal, projects: bugProjects },
     activity,
+    graph: graphR.rows.map((r) => ({ date: r.d, count: r.n })),
     totals: { byStatus, openBugs, pushesThisWeek: weekR.rows[0].n },
   });
 });

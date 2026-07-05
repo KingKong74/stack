@@ -151,6 +151,7 @@ export interface Overview {
   review: { total: number; items: ReviewItem[] };
   bugs: { total: number; projects: OverviewBugProject[] };
   activity: OverviewActivity[];
+  graph: { date: string; count: number }[]; // a year of daily push counts (contribution strip)
   totals: {
     byStatus: Record<ProjectStatus, number>;
     openBugs: number;
