@@ -5,7 +5,7 @@ import {
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture,
   createCheck, deleteCheck, runChecks,
-  patchProject, deleteProject,
+  patchProject, deleteProject, createShareLink, deleteShareLink,
 } from '../store';
 import { go } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
@@ -15,6 +15,7 @@ import { Roadmap, type ReviewTag } from '../detail/Roadmap';
 import { Futures, type Alignment } from '../detail/Futures';
 import { Notes } from '../detail/Notes';
 import { Activity } from '../detail/Activity';
+import { Modal } from '../components/Modal';
 import { BugModal } from '../components/BugModal';
 import { RoadmapModal } from '../components/RoadmapModal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -124,6 +125,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const roadModalClosed = { open: false, priority: 'should' as Priority, title: '', note: '', fromNote: null, editing: null };
   const [confirmRoadDelete, setConfirmRoadDelete] = useState<RoadmapItem | null>(null);
   const [confirmBugDelete, setConfirmBugDelete] = useState<Bug | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
   const [promotedNote, setPromotedNote] = useState<{ id: number; kind: 'bug' | 'roadmap' } | null>(null);
   const [promotedFuture, setPromotedFuture] = useState<number | null>(null);
   const [pendingFuture, setPendingFuture] = useState<number | null>(null);
@@ -409,6 +412,26 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const removeProject = () =>
     guard(async () => { await deleteProject(slug); go.dashboard(); });
 
+  // ---- public showcase link ----
+  const shareUrl = data.shareToken
+    ? `${window.location.origin}/#/share/${encodeURIComponent(slug)}/${encodeURIComponent(data.shareToken)}`
+    : '';
+  const enableShare = () =>
+    guard(async () => { setData({ ...data, shareToken: await createShareLink(slug) }); });
+  const disableShare = () =>
+    guard(async () => {
+      await deleteShareLink(slug);
+      setData({ ...data, shareToken: '' });
+      setShareOpen(false);
+    });
+  const copyShare = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 1600);
+    } catch { /* clipboard blocked — the field is selectable */ }
+  };
+
   const openBugLink = (hash: string) => { setHighlightRef(hash); setTab('activity'); };
   const viewAll = () => { setHighlightRef(null); setTab('activity'); };
   const open = (url: string) => { if (url) window.open(url, '_blank', 'noopener'); };
@@ -459,6 +482,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
                 {project.repoUrl
                   ? <button className="btn-repo" onClick={() => open(project.repoUrl)}><span className="blk" />Repo</button>
                   : <button className="btn-repo btn-muted" onClick={() => startUrl('repo')}><span className="blk" />Set repo</button>}
+                <button className={`btn-repo ${data.shareToken ? '' : 'btn-muted'}`}
+                  onClick={() => { if (!data.shareToken) enableShare(); setShareOpen(true); }}
+                  title={data.shareToken ? 'The public showcase link is live' : 'Create a public showcase link'}>
+                  {data.shareToken ? '● Shared' : 'Share'}
+                </button>
               </>
             )}
           </div>
@@ -527,6 +555,29 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           mode={roadModal.editing ? 'edit' : 'add'}
           onClose={() => { setRoadModal(roadModalClosed); setPendingFuture(null); }}
           onSubmit={submitRoad} />
+      )}
+      {shareOpen && (
+        <Modal onClose={() => setShareOpen(false)}>
+          <h3>Public showcase</h3>
+          <div className="confirm-body" style={{ marginBottom: 16 }}>
+            Anyone with this link sees a read-only view — name, progress, summary and recent
+            activity. No bugs, roadmap, notes or ideas, and no API token needed.
+          </div>
+          {data.shareToken ? (
+            <>
+              <input className="field-input mono" readOnly value={shareUrl} onFocus={(e) => e.currentTarget.select()} />
+              <div className="modal-actions split" style={{ marginTop: 16 }}>
+                <button className="btn-cancel" onClick={disableShare}>Disable link</button>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button className="btn-repo" onClick={copyShare}>{shareCopied ? '✓ Copied' : 'Copy link'}</button>
+                  <button className="btn-submit" onClick={() => setShareOpen(false)}>Done</button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="confirm-body">Creating the link…</div>
+          )}
+        </Modal>
       )}
       {confirmBugDelete && (
         <ConfirmModal

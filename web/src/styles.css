@@ -668,6 +668,17 @@ a { color: inherit; }
 /* inline action error (detail screen) */
 .action-error { margin: 0 0 16px; padding: 10px 14px; font-size: 13px; color: var(--critical); background: #f7e9e7; border: 1px solid #e6cfca; border-radius: 10px; }
 
+/* ---------- public showcase (tokenless read-only view) ---------- */
+.show-badge { font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--line-2); padding: 5px 12px; border-radius: 20px; }
+.show-progress { margin: 4px 0 24px; }
+.show-progress-track { height: 6px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line-2); overflow: hidden; }
+.show-progress-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+.show-progress-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.show-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; }
+.show-phase { font-family: var(--disp); font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+.show-summary { font-size: 13.5px; line-height: 1.65; color: var(--body); white-space: pre-wrap; }
+.show-foot { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line-2); font-size: 12px; color: var(--faint); text-align: center; }
+
 /* ---------- token gate (first-load screen) ---------- */
 .gate { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .gate-card { width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--line-2); border-radius: 18px; padding: 30px 28px; box-shadow: 0 18px 50px rgba(40, 30, 20, .08); }

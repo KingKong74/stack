@@ -116,6 +116,7 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, acti
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
     keepResumeCard: keepResumeCard !== false, // global flag; false hides the resume card
     sessionDefaults: sessionDefaults || [],   // global standing-preference lines for the start hook
+    shareToken: p.share_token || '',          // non-empty = the public showcase link is live
     summary: p.summary || '',
     currentPhase: p.current_phase || '',
     northStar: p.north_star || '',

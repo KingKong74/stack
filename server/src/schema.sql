@@ -234,3 +234,7 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 INSERT INTO settings (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS session_defaults JSONB NOT NULL DEFAULT '["ship"]'::jsonb;
+
+-- Public showcase: a project with a share_token has a tokenless read-only view
+-- at GET /api/public/:slug/:token (overview + activity only). NULL = not shared.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS share_token TEXT;

@@ -14,6 +14,7 @@ import { notes } from './routes/notes.js';
 import { futures } from './routes/futures.js';
 import { presence } from './routes/presence.js';
 import { checks } from './routes/checks.js';
+import { publicShowcase } from './routes/public.js';
 
 // Read once at module load: the health endpoint reports the deployed version.
 const { version } = JSON.parse(
@@ -35,6 +36,9 @@ app.get('/api/health', async (_req, res) => {
     res.status(503).json({ ok: false });
   }
 });
+
+// Open: the tokenless read-only showcase (guarded by its own per-project token).
+app.use('/api/public', publicShowcase);
 
 // Everything else needs the token. Per-project collection routers are mounted
 // at the more specific paths; the projects router handles the rest.

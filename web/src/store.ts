@@ -208,12 +208,13 @@ export interface ProjectDetailData {
   futures: Future[];
   checks: Check[];
   keepResumeCard: boolean;
+  shareToken: string;
 }
 
 export async function getProjectDetail(slug: string): Promise<ProjectDetailData> {
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; futures?: Future[];
-    checks?: Check[]; keepResumeCard?: boolean;
+    checks?: Check[]; keepResumeCard?: boolean; shareToken?: string;
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
     project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
@@ -221,7 +222,34 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes, futures: d.futures || [],
     checks: d.checks || [],
     keepResumeCard: d.keepResumeCard !== false,
+    shareToken: d.shareToken || '',
   };
+}
+
+// ---- public showcase (tokenless — guarded by its own per-project key) ----
+
+export interface Showcase {
+  name: string; subtitle: string; status: ProjectStatus; tint: string | null;
+  siteUrl: string; progress: number; summary: string; currentPhase: string;
+  techStack: string[]; lastPush: string; activity: Activity[];
+}
+
+export async function getShowcase(slug: string, share: string): Promise<Showcase> {
+  const res = await fetch(`/api/public/${encodeURIComponent(slug)}/${encodeURIComponent(share)}`);
+  if (!res.ok) {
+    throw new Error(res.status === 404
+      ? 'This showcase link is no longer live.' : `Request failed (${res.status})`);
+  }
+  return (await res.json()) as Showcase;
+}
+
+export async function createShareLink(slug: string): Promise<string> {
+  const r = await request<{ shareToken: string }>(`/projects/${encodeURIComponent(slug)}/share`, { method: 'POST' });
+  return r.shareToken;
+}
+
+export async function deleteShareLink(slug: string): Promise<void> {
+  await request<void>(`/projects/${encodeURIComponent(slug)}/share`, { method: 'DELETE' });
 }
 
 export async function createProject(input: { name: string; subtitle: string; status: ProjectStatus }): Promise<Project> {

@@ -3,11 +3,15 @@ import { useEffect, useState } from 'react';
 export type Route =
   | { name: 'dashboard' }
   | { name: 'settings' }
+  | { name: 'share'; slug: string; token: string }
   | { name: 'detail'; id: string; tab?: string; highlight?: string };
 
 function parse(): Route {
   const h = window.location.hash.replace(/^#/, '');
   if (h === '/settings' || h.startsWith('/settings')) return { name: 'settings' };
+  // The public showcase — rendered without the token gate (read-only, its own key).
+  const s = h.match(/^\/share\/([^/]+)\/([^/?]+)/);
+  if (s) return { name: 'share', slug: decodeURIComponent(s[1]), token: decodeURIComponent(s[2]) };
   const [pathPart, queryPart] = h.split('?');
   const m = pathPart.match(/^\/p\/([^/]+)(?:\/([^/]+))?/);
   if (m) {

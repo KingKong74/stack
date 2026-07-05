@@ -4,6 +4,7 @@ import { Dashboard } from './screens/Dashboard';
 import { ProjectDetail } from './screens/ProjectDetail';
 import { Settings } from './screens/Settings';
 import { TokenGate } from './components/TokenGate';
+import { Showcase } from './screens/Showcase';
 import { CommandPalette } from './components/CommandPalette';
 import { getToken, onAuthChange, getThemePref, onThemeChange } from './store';
 
@@ -44,6 +45,10 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // The public showcase renders without the gate — it's read-only and carries
+  // its own per-project key in the URL.
+  if (route.name === 'share') return <Showcase slug={route.slug} token={route.token} />;
 
   if (!token) return <TokenGate />;
 

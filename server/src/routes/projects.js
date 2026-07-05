@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
 import { q } from '../db.js';
 import {
@@ -188,6 +189,28 @@ projects.patch('/:slug', async (req, res) => {
       pushesThisWeek: weekly.rows[0].n,
     })
   );
+});
+
+// POST /api/projects/:slug/share  -> enable the public showcase (mint a token).
+// Idempotent-ish: re-posting rotates the token, invalidating the old link.
+projects.post('/:slug/share', async (req, res) => {
+  const token = randomBytes(12).toString('base64url');
+  const { rows } = await q(
+    'UPDATE projects SET share_token = $1, updated_at = now() WHERE slug = $2 RETURNING slug',
+    [token, req.params.slug]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'No such project.' });
+  res.json({ shareToken: token });
+});
+
+// DELETE /api/projects/:slug/share  -> disable the showcase (kill the link)
+projects.delete('/:slug/share', async (req, res) => {
+  const { rowCount } = await q(
+    'UPDATE projects SET share_token = NULL, updated_at = now() WHERE slug = $1',
+    [req.params.slug]
+  );
+  if (!rowCount) return res.status(404).json({ error: 'No such project.' });
+  res.json({ ok: true });
 });
 
 // DELETE /api/projects/:slug  -> remove a project and everything under it
