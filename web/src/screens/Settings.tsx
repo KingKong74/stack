@@ -3,6 +3,7 @@ import type { Settings as SettingsData, CheckpointDetail } from '../types';
 import {
   getSettings, patchSettings, getToken, clearToken, verifyToken, AuthError,
   getThemePref, setThemePref, type ThemePref,
+  getDeletedProjects, restoreProject, purgeProject, type DeletedProject,
 } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
@@ -31,6 +32,24 @@ export function Settings() {
   const [error, setError] = useState('');
   const [test, setTest] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
   const [theme, setTheme] = useState<ThemePref>(() => getThemePref());
+  const [deleted, setDeleted] = useState<DeletedProject[]>([]);
+  const [purgeArmed, setPurgeArmed] = useState<string | null>(null);
+
+  useEffect(() => {
+    getDeletedProjects().then(setDeleted).catch(() => { /* section just stays empty */ });
+  }, []);
+
+  const restore = (slug: string) => {
+    restoreProject(slug)
+      .then(() => setDeleted((d) => d.filter((p) => p.slug !== slug)))
+      .catch((e) => { if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not restore.'); });
+  };
+  const purge = (slug: string) => {
+    setPurgeArmed(null);
+    purgeProject(slug)
+      .then(() => setDeleted((d) => d.filter((p) => p.slug !== slug)))
+      .catch((e) => { if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not delete.'); });
+  };
 
   useEffect(() => {
     let live = true;
@@ -200,6 +219,35 @@ export function Settings() {
                 </div>
               </div>
             </section>
+
+            {/* ---- Deleted projects (the soft-delete bin) ---- */}
+            {deleted.length > 0 && (
+              <section className="set-card">
+                <div className="set-card-head">
+                  <div className="set-card-title">Deleted projects</div>
+                  <div className="set-card-sub">
+                    Deleting a project keeps everything — activity, bugs, roadmap, notes — until you
+                    delete it forever here.
+                  </div>
+                </div>
+                {deleted.map((p) => (
+                  <div className="set-row" key={p.slug}>
+                    <div className="set-row-text">
+                      <div className="set-row-label">{p.name}</div>
+                      <div className="set-row-hint">deleted {p.when}</div>
+                    </div>
+                    <div className="set-row-actions">
+                      <button className="btn-repo" onClick={() => restore(p.slug)}>Restore</button>
+                      {purgeArmed === p.slug ? (
+                        <button className="btn-danger" onClick={() => purge(p.slug)}>Really delete forever?</button>
+                      ) : (
+                        <button className="btn-cancel" onClick={() => setPurgeArmed(p.slug)}>Delete forever</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </section>
+            )}
 
             {/* ---- Access ---- */}
             <section className="set-card">

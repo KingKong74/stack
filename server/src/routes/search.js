@@ -50,14 +50,14 @@ search.get('/', async (req, res) => {
   const [projR, bugR, roadR, futR, noteR, actR] = await Promise.all([
     q(
       `SELECT slug, name, tint, status, subtitle FROM projects
-        WHERE name ILIKE $1 OR subtitle ILIKE $1
+        WHERE deleted_at IS NULL AND (name ILIKE $1 OR subtitle ILIKE $1)
         ORDER BY pinned DESC, last_session_at DESC NULLS LAST
         LIMIT $2`,
       [pat, PER_GROUP]
     ),
     q(
       `SELECT b.bug_key, b.title, b.status, p.slug, p.name, p.tint
-         FROM bugs b JOIN projects p ON p.id = b.project_id
+         FROM bugs b JOIN projects p ON p.id = b.project_id AND p.deleted_at IS NULL
         WHERE b.title ILIKE $1
         ORDER BY b.created_at DESC
         LIMIT $2`,
@@ -65,7 +65,7 @@ search.get('/', async (req, res) => {
     ),
     q(
       `SELECT r.id, r.title, r.note, r.bucket, p.slug, p.name, p.tint
-         FROM roadmap_items r JOIN projects p ON p.id = r.project_id
+         FROM roadmap_items r JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
         WHERE r.title ILIKE $1 OR r.note ILIKE $1
         ORDER BY r.updated_at DESC NULLS LAST, r.created_at DESC
         LIMIT $2`,
@@ -73,7 +73,7 @@ search.get('/', async (req, res) => {
     ),
     q(
       `SELECT f.id, f.title, f.note, p.slug, p.name, p.tint
-         FROM futures f JOIN projects p ON p.id = f.project_id
+         FROM futures f JOIN projects p ON p.id = f.project_id AND p.deleted_at IS NULL
         WHERE f.title ILIKE $1 OR f.note ILIKE $1
         ORDER BY f.created_at DESC
         LIMIT $2`,
@@ -81,7 +81,7 @@ search.get('/', async (req, res) => {
     ),
     q(
       `SELECT n.id, n.text, n.created_at, p.slug, p.name, p.tint
-         FROM notes n JOIN projects p ON p.id = n.project_id
+         FROM notes n JOIN projects p ON p.id = n.project_id AND p.deleted_at IS NULL
         WHERE n.text ILIKE $1
         ORDER BY n.created_at DESC
         LIMIT $2`,
@@ -89,7 +89,7 @@ search.get('/', async (req, res) => {
     ),
     q(
       `SELECT s.commit_hash, s.branch, s.summary, s.created_at, p.slug, p.name, p.tint
-         FROM sessions s JOIN projects p ON p.id = s.project_id
+         FROM sessions s JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
         WHERE s.summary ILIKE $1
         ORDER BY s.created_at DESC
         LIMIT $2`,

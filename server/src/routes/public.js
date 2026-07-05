@@ -11,7 +11,7 @@ import { activityShape } from '../shape.js';
 export const publicShowcase = Router();
 
 publicShowcase.get('/:slug/:token', async (req, res) => {
-  const { rows } = await q('SELECT * FROM projects WHERE slug = $1', [req.params.slug]);
+  const { rows } = await q('SELECT * FROM projects WHERE slug = $1 AND deleted_at IS NULL', [req.params.slug]);
   const p = rows[0];
   // One 404 for both unknown slug and wrong/absent token — don't leak which.
   if (!p || !p.share_token || p.share_token !== req.params.token) {

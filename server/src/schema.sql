@@ -239,6 +239,12 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS session_defaults JSONB NOT NULL DE
 -- at GET /api/public/:slug/:token (overview + activity only). NULL = not shared.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS share_token TEXT;
 
+-- Soft delete: deleting a project stamps deleted_at instead of dropping the
+-- rows — everything (sessions, bugs, roadmap, notes…) survives for restore.
+-- Deleted projects vanish from every live query; Settings lists them with
+-- restore / purge (the hard DELETE, which cascades).
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
 -- Skip tag: parked roadmap items — planned but not to be picked up yet. They
 -- sort to the bottom of their bucket and agents leave them alone; still count
 -- toward progress (they remain planned work).

@@ -247,6 +247,22 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   };
 }
 
+// ---- deleted projects (the soft-delete bin: restore or purge from Settings) ----
+
+export interface DeletedProject { slug: string; name: string; when: string }
+
+export async function getDeletedProjects(): Promise<DeletedProject[]> {
+  return request<DeletedProject[]>('/projects/deleted');
+}
+
+export async function restoreProject(slug: string): Promise<void> {
+  await request<void>(`/projects/${encodeURIComponent(slug)}/restore`, { method: 'POST' });
+}
+
+export async function purgeProject(slug: string): Promise<void> {
+  await request<void>(`/projects/${encodeURIComponent(slug)}/purge`, { method: 'DELETE' });
+}
+
 // ---- public showcase (tokenless — guarded by its own per-project key) ----
 
 export interface Showcase {

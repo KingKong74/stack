@@ -644,7 +644,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       {confirmDelete && (
         <ConfirmModal
           title="Delete project?"
-          body={<>Permanently delete <b>{project.name}</b> and everything under it — its sessions, bugs, roadmap and notes. This can’t be undone.</>}
+          body={<>Delete <b>{project.name}</b> from Stack. Everything is kept — you can
+            restore it (or delete it forever) from Settings → Deleted projects.</>}
           confirmLabel="Delete project" cancelLabel="Cancel" danger
           onConfirm={removeProject} onCancel={() => setConfirmDelete(false)} />
       )}

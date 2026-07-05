@@ -18,7 +18,7 @@ const metaLineFor = (lastSessionAt) =>
 // GET /api/projects  -> all projects with computed progress, resume-order
 projects.get('/', async (_req, res) => {
   const { rows: ps } = await q(
-    `SELECT * FROM projects
+    `SELECT * FROM projects WHERE deleted_at IS NULL
       ORDER BY pinned DESC, last_session_at DESC NULLS LAST, updated_at DESC`
   );
   if (!ps.length) return res.json([]);
@@ -88,9 +88,18 @@ projects.post('/', async (req, res) => {
   );
 });
 
+// GET /api/projects/deleted  -> the soft-deleted bin (restore / purge targets).
+// Registered before /:slug so the literal path wins.
+projects.get('/deleted', async (_req, res) => {
+  const { rows } = await q(
+    'SELECT slug, name, deleted_at FROM projects WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC'
+  );
+  res.json(rows.map((r) => ({ slug: r.slug, name: r.name, when: relativeTime(r.deleted_at) || 'just now' })));
+});
+
 // GET /api/projects/:slug  -> project + activity + collections + progress
 projects.get('/:slug', async (req, res) => {
-  const { rows } = await q('SELECT * FROM projects WHERE slug = $1', [req.params.slug]);
+  const { rows } = await q('SELECT * FROM projects WHERE slug = $1 AND deleted_at IS NULL', [req.params.slug]);
   if (!rows.length) return res.status(404).json({ error: 'No such project.' });
   const p = rows[0];
 
@@ -166,7 +175,7 @@ projects.patch('/:slug', async (req, res) => {
   values.push(req.params.slug);
   const { rows } = await q(
     `UPDATE projects SET ${fields.join(', ')}, updated_at = now()
-      WHERE slug = $${i} RETURNING *`,
+      WHERE slug = $${i} AND deleted_at IS NULL RETURNING *`,
     values
   );
   if (!rows.length) return res.status(404).json({ error: 'No such project.' });
@@ -196,7 +205,7 @@ projects.patch('/:slug', async (req, res) => {
 projects.post('/:slug/share', async (req, res) => {
   const token = randomBytes(12).toString('base64url');
   const { rows } = await q(
-    'UPDATE projects SET share_token = $1, updated_at = now() WHERE slug = $2 RETURNING slug',
+    'UPDATE projects SET share_token = $1, updated_at = now() WHERE slug = $2 AND deleted_at IS NULL RETURNING slug',
     [token, req.params.slug]
   );
   if (!rows.length) return res.status(404).json({ error: 'No such project.' });
@@ -213,9 +222,34 @@ projects.delete('/:slug/share', async (req, res) => {
   res.json({ ok: true });
 });
 
-// DELETE /api/projects/:slug  -> remove a project and everything under it
+// POST /api/projects/:slug/restore  -> bring a soft-deleted project back whole
+projects.post('/:slug/restore', async (req, res) => {
+  const { rowCount } = await q(
+    'UPDATE projects SET deleted_at = NULL, updated_at = now() WHERE slug = $1 AND deleted_at IS NOT NULL',
+    [req.params.slug]
+  );
+  if (!rowCount) return res.status(404).json({ error: 'No such deleted project.' });
+  res.json({ ok: true });
+});
+
+// DELETE /api/projects/:slug/purge  -> the real delete (cascades) — only for
+// projects already in the bin, so a purge is always a deliberate second step.
+projects.delete('/:slug/purge', async (req, res) => {
+  const { rowCount } = await q(
+    'DELETE FROM projects WHERE slug = $1 AND deleted_at IS NOT NULL',
+    [req.params.slug]
+  );
+  if (!rowCount) return res.status(404).json({ error: 'No such deleted project.' });
+  res.json({ ok: true });
+});
+
+// DELETE /api/projects/:slug  -> soft delete: stamp deleted_at, kill any share
+// link, keep every row. Restore/purge live in Settings.
 projects.delete('/:slug', async (req, res) => {
-  const { rowCount } = await q('DELETE FROM projects WHERE slug = $1', [req.params.slug]);
+  const { rowCount } = await q(
+    'UPDATE projects SET deleted_at = now(), share_token = NULL WHERE slug = $1 AND deleted_at IS NULL',
+    [req.params.slug]
+  );
   if (!rowCount) return res.status(404).json({ error: 'No such project.' });
   res.json({ ok: true });
 });

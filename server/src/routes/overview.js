@@ -32,14 +32,16 @@ overview.get('/', async (_req, res) => {
   const [projectsR, bugsR, recentR, weekR, reviewR, presenceR, claimsR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, summary, current_phase,
               next_up, blockers, last_session_at, updated_at
-         FROM projects`),
+         FROM projects WHERE deleted_at IS NULL`),
     q(`SELECT project_id,
               count(*) FILTER (WHERE severity IN ('critical','high') AND status <> 'fixed')::int AS serious,
               count(*) FILTER (WHERE status <> 'fixed')::int AS open_all
          FROM bugs GROUP BY project_id`),
     q(`SELECT project_id, commit_hash, branch, summary, tags, created_at
          FROM sessions ORDER BY created_at DESC LIMIT 12`),
-    q(`SELECT count(*)::int AS n FROM sessions WHERE created_at > now() - interval '7 days'`),
+    q(`SELECT count(*)::int AS n FROM sessions s
+        JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
+       WHERE s.created_at > now() - interval '7 days'`),
     // The review inbox: auto-extracted items no human has looked at yet.
     q(`SELECT 'bug' AS kind, project_id, bug_key AS ref, title, severity AS meta, created_at
          FROM bugs WHERE source = 'hook' AND reviewed_at IS NULL
@@ -118,11 +120,13 @@ overview.get('/', async (_req, res) => {
     .map((p) => ({ slug: p.slug, name: p.name, since: relativeTime(p.last_session_at) }));
 
   // review: the needs-review queue, newest first, capped for the deck (total
-  // still reflects everything outstanding).
+  // still reflects everything outstanding). Rows from soft-deleted projects
+  // (absent from byId) are dropped.
   const REVIEW_CAP = 8;
+  const reviewRows = reviewR.rows.filter((r) => byId.has(r.project_id));
   const review = {
-    total: reviewR.rows.length,
-    items: reviewR.rows.slice(0, REVIEW_CAP).map((r) => {
+    total: reviewRows.length,
+    items: reviewRows.slice(0, REVIEW_CAP).map((r) => {
       const p = byId.get(r.project_id);
       return {
         kind: r.kind,
@@ -141,6 +145,7 @@ overview.get('/', async (_req, res) => {
   let openBugs = 0;
   const bugProjects = [];
   for (const r of bugsR.rows) {
+    if (!byId.has(r.project_id)) continue; // soft-deleted project
     openBugs += r.open_all;
     if (r.serious > 0) {
       seriousTotal += r.serious;
@@ -150,8 +155,9 @@ overview.get('/', async (_req, res) => {
   }
   bugProjects.sort((a, b) => b.count - a.count);
 
-  // activity: merged recent checkpoints, newest first (already ordered by the query).
-  const activity = recentR.rows.map((s) => {
+  // activity: merged recent checkpoints, newest first (already ordered by the
+  // query); soft-deleted projects' pushes are dropped.
+  const activity = recentR.rows.filter((s) => byId.has(s.project_id)).map((s) => {
     const p = byId.get(s.project_id);
     return {
       slug: p ? p.slug : '',
