@@ -29,9 +29,10 @@ export function RoadmapModal({
   };
 
   return (
-    // With typed content the backdrop stops dismissing — Escape (keeps a draft
-    // in add mode) or the explicit buttons are the only ways out.
-    <Modal onClose={dismiss} closeOnOverlay={!typed} wide>
+    // Clicking off with typed content closes AND keeps a draft (add mode) —
+    // the draft chip on the Roadmap bar brings it back. Cancel is the real
+    // discard. (`typed` feeds dismiss(), which decides whether to save.)
+    <Modal onClose={dismiss} wide>
       <h3>{mode === 'edit' ? 'Edit roadmap item' : 'Add roadmap item'}</h3>
       <div className="lbl">What is it?</div>
       <input className="field-input" style={{ marginBottom: 16 }} value={title} autoFocus

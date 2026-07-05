@@ -524,7 +524,7 @@ a { color: inherit; }
 .intake-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .intake-title { font-family: var(--disp); font-size: 14px; font-weight: 600; color: var(--accent); }
 .intake-sub { font-size: 12px; color: var(--muted); }
-.intake-area { min-height: 110px; width: 100%; }
+.intake-area { min-height: 220px; width: 100%; resize: vertical; }
 .intake-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
 .intake-rows { display: flex; flex-direction: column; }
 .intake-row { display: flex; align-items: flex-start; gap: 12px; padding: 11px 2px; }
