@@ -32,16 +32,23 @@ export function Roadmap({
   onDiscardDraft?: () => void;
 }) {
   const [pickerFor, setPickerFor] = useState<number | null>(null);
-  const archived = PRIORITY_META.flatMap((col) => roadmap[col.key].filter((it) => it.done));
+  // Done items split into the pipeline: To verify (no verdict yet — test it,
+  // verdict it, or send it back) → Archive (verdict given). Latest first.
+  const ts = (it: RoadmapItem) => (it.updatedAt ? Date.parse(it.updatedAt) : 0);
+  const doneItems = PRIORITY_META.flatMap((col) => roadmap[col.key].filter((it) => it.done));
+  const toVerify = doneItems.filter((it) => !it.reviewTag).sort((a, b) => ts(b) - ts(a));
+  const archived = doneItems.filter((it) => it.reviewTag).sort((a, b) => ts(b) - ts(a));
   // Open the archive straight away when a deep-link targets an archived item.
   const [archiveOpen, setArchiveOpen] = useState(
     () => archived.some((it) => String(it.id) === highlightId));
-  // Archive rendering: the MoSCoW grid, or a dense paginated list.
+  // Archive rendering: the MoSCoW grid, or a dense paginated list + verdict filter.
   const [archView, setArchView] = useState<'grid' | 'list'>('grid');
+  const [archFilter, setArchFilter] = useState<'all' | ReviewTag>('all');
   const [archPage, setArchPage] = useState(0);
+  const filtered = archived.filter((it) => archFilter === 'all' || it.reviewTag === archFilter);
   const ARCH_PAGE_SIZE = 12;
-  const archPages = Math.max(1, Math.ceil(archived.length / ARCH_PAGE_SIZE));
-  const archSlice = archived.slice(archPage * ARCH_PAGE_SIZE, (archPage + 1) * ARCH_PAGE_SIZE);
+  const archPages = Math.max(1, Math.ceil(filtered.length / ARCH_PAGE_SIZE));
+  const archSlice = filtered.slice(archPage * ARCH_PAGE_SIZE, (archPage + 1) * ARCH_PAGE_SIZE);
 
   // Verdict picker + restore/delete controls, shared by both archive views.
   const archActions = (it: RoadmapItem) => (
@@ -133,29 +140,72 @@ export function Roadmap({
         })}
       </div>
 
-      {/* archive — completed items, out of the way but recoverable */}
+      {/* to verify — completed but unverdicted: test it, verdict it, or send it back */}
+      {toVerify.length > 0 && (
+        <div className="verify-strip">
+          <div className="verify-head">
+            <span className="verify-title">To verify</span>
+            <span className="verify-sub">
+              {toVerify.length} completed — test each, give a verdict, or send it back to the board
+            </span>
+          </div>
+          {toVerify.map((it) => (
+            <div className="verify-row" key={it.id} data-hl={it.id}>
+              <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
+              <div className="verify-body">
+                <div className="t">
+                  {it.title}
+                  {it.claimedBy && <span className="claim-chip inline" title="Done by this lane">⚑ {it.claimedBy}</span>}
+                </div>
+                {it.note && <div className="note">{it.note}</div>}
+              </div>
+              <button className="verify-back" onClick={() => onToggle(it)}
+                title="Didn't hold up — send it back to the board">↩ Board</button>
+              {archActions(it)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* archive — verdict-given items, out of the way but recoverable */}
       {archived.length > 0 && (
         <div className="road-archive">
           <div className="road-archive-bar">
             <button className="road-archive-head" onClick={() => setArchiveOpen((o) => !o)}
               aria-expanded={archiveOpen}>
               <span className="chev">{archiveOpen ? '▾' : '▸'}</span>
-              Archive <span className="count">{archived.length}</span>
-              <span className="hint">completed items — still count toward progress</span>
+              Archive <span className="count">{filtered.length}</span>
+              <span className="hint">reviewed items, latest first — still count toward progress</span>
             </button>
             {archiveOpen && (
-              <div className="seg-control sm" role="tablist" aria-label="Archive view">
-                <button role="tab" aria-selected={archView === 'grid'}
-                  className={`seg-opt ${archView === 'grid' ? 'on' : ''}`} onClick={() => setArchView('grid')}>Buckets</button>
-                <button role="tab" aria-selected={archView === 'list'}
-                  className={`seg-opt ${archView === 'list' ? 'on' : ''}`} onClick={() => setArchView('list')}>List</button>
+              <div className="arch-controls">
+                <div className="chips">
+                  {([
+                    { key: 'all', label: 'All', n: archived.length },
+                    ...REVIEW_TAGS.map((t) => ({
+                      key: t.key as 'all' | ReviewTag, label: t.label,
+                      n: archived.filter((it) => it.reviewTag === t.key).length,
+                    })),
+                  ] as { key: 'all' | ReviewTag; label: string; n: number }[]).map((c) => (
+                    <button key={c.key} className={`chip-sm ${archFilter === c.key ? 'on' : ''}`}
+                      onClick={() => { setArchFilter(c.key); setArchPage(0); }}>
+                      {c.label} {c.n}
+                    </button>
+                  ))}
+                </div>
+                <div className="seg-control sm" role="tablist" aria-label="Archive view">
+                  <button role="tab" aria-selected={archView === 'grid'}
+                    className={`seg-opt ${archView === 'grid' ? 'on' : ''}`} onClick={() => setArchView('grid')}>Buckets</button>
+                  <button role="tab" aria-selected={archView === 'list'}
+                    className={`seg-opt ${archView === 'list' ? 'on' : ''}`} onClick={() => setArchView('list')}>List</button>
+                </div>
               </div>
             )}
           </div>
           {archiveOpen && archView === 'grid' && (
             <div className="road-grid arch">
               {PRIORITY_META.map((col) => {
-                const items = roadmap[col.key].filter((it) => it.done);
+                const items = filtered.filter((it) => it.bucket === col.key);
                 return (
                   <div className="road-col" key={col.key}>
                     <div className="road-col-head">
@@ -174,6 +224,7 @@ export function Roadmap({
                               {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
                               {it.claimedBy && <span className="claim-chip inline" title="Done by this lane">⚑ {it.claimedBy}</span>}
                             </div>
+                            {it.note && <div className="note">{it.note}</div>}
                             {archActions(it)}
                           </div>
                         </div>
@@ -191,14 +242,17 @@ export function Roadmap({
                   <button className="road-check on sm" onClick={() => onToggle(it)}
                     aria-label="Mark not done" title="Restore to the roadmap">✓</button>
                   <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
-                  <span className="arch-list-title">{it.title}</span>
+                  <span className="arch-list-text">
+                    <span className="arch-list-title">{it.title}</span>
+                    {it.note && <span className="arch-list-note">{it.note}</span>}
+                  </span>
                   {archActions(it)}
                 </div>
               ))}
               {archPages > 1 && (
                 <div className="arch-pager">
                   <button disabled={archPage === 0} onClick={() => setArchPage((p) => p - 1)}>‹</button>
-                  <span>{archPage * ARCH_PAGE_SIZE + 1}–{Math.min((archPage + 1) * ARCH_PAGE_SIZE, archived.length)} of {archived.length}</span>
+                  <span>{archPage * ARCH_PAGE_SIZE + 1}–{Math.min((archPage + 1) * ARCH_PAGE_SIZE, filtered.length)} of {filtered.length}</span>
                   <button disabled={archPage >= archPages - 1} onClick={() => setArchPage((p) => p + 1)}>›</button>
                 </div>
               )}
