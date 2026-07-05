@@ -53,20 +53,27 @@ export function setBriefPrefs(prefs: BriefPrefs) {
 // its text per project, so half-typed items survive a stray click ----
 
 const ROAD_DRAFT_KEY = 'stack.roadDrafts';
+// Drafts are a crash pad, not storage — stale ones self-clear after this long.
+const ROAD_DRAFT_TTL_MS = 30 * 60 * 1000;
 
-export interface RoadDraft { title: string; note: string; priority: Priority; lane: string }
+export interface RoadDraft { title: string; note: string; priority: Priority; lane: string; savedAt?: number }
 
 function readRoadDrafts(): Record<string, RoadDraft> {
   try { return JSON.parse(localStorage.getItem(ROAD_DRAFT_KEY) || '{}'); } catch { return {}; }
 }
 
 export function getRoadDraft(slug: string): RoadDraft | null {
-  return readRoadDrafts()[slug] || null;
+  const d = readRoadDrafts()[slug] || null;
+  if (d && d.savedAt && Date.now() - d.savedAt > ROAD_DRAFT_TTL_MS) {
+    setRoadDraft(slug, null); // expired — quietly bin it
+    return null;
+  }
+  return d;
 }
 
 export function setRoadDraft(slug: string, draft: RoadDraft | null) {
   const all = readRoadDrafts();
-  if (draft) all[slug] = draft; else delete all[slug];
+  if (draft) all[slug] = { ...draft, savedAt: Date.now() }; else delete all[slug];
   localStorage.setItem(ROAD_DRAFT_KEY, JSON.stringify(all));
 }
 

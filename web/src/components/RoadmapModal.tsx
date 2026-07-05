@@ -20,15 +20,18 @@ export function RoadmapModal({
   const [lane, setLane] = useState(initialLane);
   const [priority, setPriority] = useState<Priority>(initialPriority);
   const submit = () => { if (title.trim()) onSubmit({ title, note, priority, lane: lane.trim() }); };
+  const typed = Boolean(title.trim() || note.trim());
   const dismiss = () => {
-    if (mode === 'add' && onDismiss && (title.trim() || note.trim())) {
+    if (mode === 'add' && onDismiss && typed) {
       onDismiss({ title, note, priority, lane: lane.trim() });
     }
     onClose();
   };
 
   return (
-    <Modal onClose={dismiss} wide>
+    // With typed content the backdrop stops dismissing — Escape (keeps a draft
+    // in add mode) or the explicit buttons are the only ways out.
+    <Modal onClose={dismiss} closeOnOverlay={!typed} wide>
       <h3>{mode === 'edit' ? 'Edit roadmap item' : 'Add roadmap item'}</h3>
       <div className="lbl">What is it?</div>
       <input className="field-input" style={{ marginBottom: 16 }} value={title} autoFocus
