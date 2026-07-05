@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Check, Severity, Priority } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Check, Severity, Priority, Bug, BugStatus } from '../types';
 import {
   getProjectDetail, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
@@ -123,6 +123,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   }>({ open: false, priority: 'should', title: '', note: '', fromNote: null, editing: null });
   const roadModalClosed = { open: false, priority: 'should' as Priority, title: '', note: '', fromNote: null, editing: null };
   const [confirmRoadDelete, setConfirmRoadDelete] = useState<RoadmapItem | null>(null);
+  const [confirmBugDelete, setConfirmBugDelete] = useState<Bug | null>(null);
   const [promotedNote, setPromotedNote] = useState<{ id: number; kind: 'bug' | 'roadmap' } | null>(null);
   const [promotedFuture, setPromotedFuture] = useState<number | null>(null);
   const [pendingFuture, setPendingFuture] = useState<number | null>(null);
@@ -170,6 +171,18 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setBugModal({ open: false, title: '', fromNote: null });
       setBugFilter('all');
       if (fromNote != null) setPromotedNote({ id: fromNote, kind: 'bug' });
+    });
+
+  const setBugStatus = (b: Bug, status: BugStatus) =>
+    guard(async () => {
+      const updated = await patchBug(slug, b.id, { status });
+      setData({ ...data, bugs: bugs.map((x) => (x.id === b.id ? updated : x)) });
+    });
+
+  const removeBug = (b: Bug) =>
+    guard(async () => {
+      await deleteBug(slug, b.id);
+      setData({ ...data, bugs: bugs.filter((x) => x.id !== b.id) });
     });
 
   // Create, or save an edit, depending on how the modal was opened.
@@ -475,6 +488,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {tab === 'bugs' && (
           <Bugs bugs={bugs} filter={bugFilter} setFilter={setBugFilter} highlightId={highlightId}
             onReport={() => setBugModal({ open: true, title: '', fromNote: null })} onOpenLink={openBugLink}
+            onSetStatus={setBugStatus} onDelete={(b) => setConfirmBugDelete(b)}
             checks={data.checks} siteUrl={project.siteUrl} checksBusy={checksBusy}
             onRunChecks={runProjectChecks} onAddCheck={addCheck} onDeleteCheck={removeCheck}
             onCheckToBug={checkToBug} />
@@ -513,6 +527,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           mode={roadModal.editing ? 'edit' : 'add'}
           onClose={() => { setRoadModal(roadModalClosed); setPendingFuture(null); }}
           onSubmit={submitRoad} />
+      )}
+      {confirmBugDelete && (
+        <ConfirmModal
+          title="Delete bug?"
+          body={<>Delete <b>{confirmBugDelete.title}</b>{confirmBugDelete.source === 'hook'
+            ? ' — it was auto-extracted, so it won’t be re-created by the next push.' : '.'}</>}
+          confirmLabel="Delete bug" cancelLabel="Cancel" danger
+          onConfirm={() => { const b = confirmBugDelete; setConfirmBugDelete(null); removeBug(b); }}
+          onCancel={() => setConfirmBugDelete(null)} />
       )}
       {confirmRoadDelete && (
         <ConfirmModal

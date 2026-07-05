@@ -101,18 +101,23 @@ function ChecksPanel({
   );
 }
 
+const BUG_STATUSES: BugStatus[] = ['open', 'investigating', 'fixing', 'fixed'];
+
 export function Bugs({
-  bugs, filter, setFilter, onReport, onOpenLink, highlightId,
+  bugs, filter, setFilter, onReport, onOpenLink, highlightId, onSetStatus, onDelete,
   checks, siteUrl, checksBusy, onRunChecks, onAddCheck, onDeleteCheck, onCheckToBug,
 }: {
   bugs: Bug[]; filter: BugFilter; setFilter: (f: BugFilter) => void;
   onReport: () => void; onOpenLink: (hash: string) => void; highlightId?: string | null;
+  onSetStatus: (bug: Bug, status: BugStatus) => void;
+  onDelete: (bug: Bug) => void;
   checks: Check[]; siteUrl: string; checksBusy: boolean;
   onRunChecks: (id?: number) => void;
   onAddCheck: (input: { name: string; url: string; expect_status?: number }) => void;
   onDeleteCheck: (id: number) => void;
   onCheckToBug: (c: Check) => void;
 }) {
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
   const counts = {
     all: bugs.length,
     open: bugs.filter((b) => b.status === 'open' || b.status === 'investigating').length,
@@ -165,7 +170,26 @@ export function Bugs({
                   </div>
                 </div>
                 <span className={`sev-pill ${b.severity}`}>{b.severity}</span>
-                <span className={`status-pill ${b.status}`}>{STATUS_LABEL[b.status as BugStatus]}</span>
+                {pickerFor === b.id ? (
+                  <span className="review-pick">
+                    {BUG_STATUSES.map((s) => (
+                      <button key={s} className="review-pick-opt"
+                        onClick={() => { setPickerFor(null); if (s !== b.status) onSetStatus(b, s); }}>
+                        {STATUS_LABEL[s]}
+                      </button>
+                    ))}
+                  </span>
+                ) : (
+                  <button className={`status-pill ${b.status} clickable`} onClick={() => setPickerFor(b.id)}
+                    title="Change status">{STATUS_LABEL[b.status as BugStatus]}</button>
+                )}
+                <span className="bug-quick">
+                  {b.status !== 'fixed' && (
+                    <button className="bug-resolve" onClick={() => onSetStatus(b, 'fixed')}
+                      aria-label="Mark fixed" title="Mark fixed">✓</button>
+                  )}
+                  <button className="bug-x" onClick={() => onDelete(b)} aria-label="Delete bug" title="Delete">×</button>
+                </span>
               </div>
             </div>
           ))}
