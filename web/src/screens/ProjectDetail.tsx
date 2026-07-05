@@ -361,7 +361,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // hook idea so the next push won't re-extract it).
   const promoteFuture = (f: Future) => {
     setPendingFuture(f.id);
-    setRoadModal({ open: true, priority: 'should', title: f.title, note: '', fromNote: null, editing: null });
+    setRoadModal({ open: true, priority: 'should', title: f.title, note: f.note, fromNote: null, editing: null });
   };
 
   // Promote a note into the existing create-bug / create-roadmap flow, prefilled.
