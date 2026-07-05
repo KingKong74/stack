@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Future } from '../types';
+import type { JudgeSuggestion } from '../store';
 
 export type Alignment = 'on-course' | 'tangent' | 'off-course';
 export const ALIGNMENTS: { key: Alignment; label: string; hint: string }[] = [
@@ -24,6 +25,7 @@ const GROUPS: { key: string; label: string }[] = [
 // promoted into the roadmap (ProjectDetail owns that flow), or get dismissed.
 export function Futures({
   northStar, futures, highlightId, onSaveNorthStar, onAdd, onEdit, onAlign, onDelete, onPromote,
+  onAskGemini,
 }: {
   northStar: string;
   futures: Future[];
@@ -34,6 +36,7 @@ export function Futures({
   onAlign: (id: number, alignment: Alignment | '') => void;
   onDelete: (id: number) => void;
   onPromote: (future: Future) => void;
+  onAskGemini?: (id: number) => Promise<JudgeSuggestion>;
 }) {
   const [editingStar, setEditingStar] = useState(false);
   const [starDraft, setStarDraft] = useState(northStar);
@@ -129,7 +132,8 @@ export function Futures({
             <div className="futures-list">
               {g.items.map((f) => (
                 <IdeaRow key={f.id} future={f} highlighted={highlightId === String(f.id)}
-                  onEdit={onEdit} onAlign={onAlign} onDelete={onDelete} onPromote={onPromote} />
+                  onEdit={onEdit} onAlign={onAlign} onDelete={onDelete} onPromote={onPromote}
+                  onAskGemini={onAskGemini} />
               ))}
             </div>
           </div>
@@ -145,7 +149,7 @@ export function Futures({
 }
 
 function IdeaRow({
-  future: f, highlighted, onEdit, onAlign, onDelete, onPromote,
+  future: f, highlighted, onEdit, onAlign, onDelete, onPromote, onAskGemini,
 }: {
   future: Future;
   highlighted?: boolean;
@@ -153,11 +157,30 @@ function IdeaRow({
   onAlign: (id: number, alignment: Alignment | '') => void;
   onDelete: (id: number) => void;
   onPromote: (future: Future) => void;
+  onAskGemini?: (id: number) => Promise<JudgeSuggestion>;
 }) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(f.title);
   const [note, setNote] = useState(f.note);
   const [picking, setPicking] = useState(false);
+  // Gemini's suggested verdict: shown until applied or waved away, never
+  // written to the idea by itself.
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestion, setSuggestion] = useState<JudgeSuggestion | null>(null);
+  const [suggestErr, setSuggestErr] = useState('');
+
+  const askGemini = async () => {
+    if (!onAskGemini || suggesting) return;
+    setSuggesting(true);
+    setSuggestErr('');
+    try {
+      setSuggestion(await onAskGemini(f.id));
+    } catch (e) {
+      setSuggestErr((e as Error)?.message || 'Gemini call failed.');
+    } finally {
+      setSuggesting(false);
+    }
+  };
 
   const save = () => {
     const t = title.trim();
@@ -204,9 +227,26 @@ function IdeaRow({
               {f.alignment ? alignLabel(f.alignment) : '✦ Judge'}
             </button>
           )}
+          {onAskGemini && !suggestion && (
+            <button className="gemini-btn" onClick={askGemini} disabled={suggesting}
+              title="Ask Gemini for a suggested verdict — you still make the call">
+              {suggesting ? '✧ Asking…' : '✧ Ask Gemini'}
+            </button>
+          )}
           {f.source === 'hook' && <span className="auto-badge">✦ auto</span>}
           <span className="when">{f.when}</span>
         </div>
+        {suggestErr && <div className="gemini-suggest err">✧ {suggestErr}</div>}
+        {suggestion && (
+          <div className="gemini-suggest">
+            <span className="g-verdict">✧ Gemini suggests <b>{alignLabel(suggestion.alignment)}</b></span>
+            <span className="g-why">— {suggestion.why}</span>
+            <button className="g-apply" onClick={() => { onAlign(f.id, suggestion.alignment); setSuggestion(null); }}>
+              Apply
+            </button>
+            <button className="g-dismiss" onClick={() => setSuggestion(null)} aria-label="Dismiss suggestion">×</button>
+          </div>
+        )}
       </div>
       <div className="future-actions">
         <button className="edit" onClick={() => { setTitle(f.title); setNote(f.note); setEditing(true); }} title="Edit">✎</button>

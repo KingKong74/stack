@@ -6,7 +6,7 @@ import {
   createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture,
   createCheck, deleteCheck, runChecks,
   patchProject, deleteProject, createShareLink, deleteShareLink,
-  getRoadDraft, setRoadDraft, type RoadDraft,
+  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture,
 } from '../store';
 import { go } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
@@ -552,6 +552,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId}
             onSaveNorthStar={saveNorthStar} onAdd={addFuture} onEdit={editFuture} onAlign={alignFuture}
+            onAskGemini={(id) => judgeFuture(slug, id)}
             onDelete={removeFuture} onPromote={promoteFuture} />
         )}
         {tab === 'notes' && (

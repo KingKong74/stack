@@ -247,6 +247,15 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   };
 }
 
+// ---- Gemini judge assist (POST .../futures/:id/judge — suggestion only) ----
+
+export interface JudgeSuggestion { alignment: 'on-course' | 'tangent' | 'off-course'; why: string }
+
+export async function judgeFuture(slug: string, id: number): Promise<JudgeSuggestion> {
+  return request<JudgeSuggestion>(
+    `/projects/${encodeURIComponent(slug)}/futures/${id}/judge`, { method: 'POST' });
+}
+
 // ---- timeline (GET /api/timeline — cross-project pushes + contribution graph) ----
 
 export interface TimelineEntry {

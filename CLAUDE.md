@@ -382,7 +382,8 @@ the silent metadata backstop so the feed never has gaps.
   sinks to the bottom of its bucket, agents never pick it up, still counts toward progress)
 - `GET|POST /api/projects/:slug/futures` · `PATCH|DELETE /api/projects/:slug/futures/:id`
   (PATCH: title/note/reviewed/`alignment: on-course|tangent|off-course` ('' clears);
-  DELETE tombstones a hook idea)
+  DELETE tombstones a hook idea) · `POST /api/projects/:slug/futures/:id/judge` (Gemini-suggested
+  verdict + why — suggestion only, 503 without a server key, 400 without a north star)
 - `GET|POST /api/projects/:slug/notes` · `PATCH /api/projects/:slug/notes/:id` (text) ·
   `DELETE /api/projects/:slug/notes/:id`
 - `GET|POST /api/projects/:slug/checks` · `DELETE /api/projects/:slug/checks/:id` ·
@@ -403,10 +404,16 @@ won't re-create it.
   failure — but it still never prints the token.) Shared logic lives in `hook/stack-post.mjs`.
 - **No external AI API — with ONE sanctioned exception.** Rich summaries are authored by Claude via
   `/checkpoint`; the SessionEnd hook only records metadata. Don't reintroduce an API-key summary
-  path. The exception (owner's decision, 2026-07-05): `hook/stack-gemini-review.mjs`, the on-demand
-  second-model review — it sends a diff to Gemini (key `GEMINI_API_KEY` in `~/.stack/env`, model
-  `GEMINI_MODEL`, default gemini-2.5-flash) and posts findings through the normal ingest path into
-  the review inbox. Strictly manual: never wire it into a hook, cron or boot.
+  path. The exception (owner's decision, 2026-07-05) has two surfaces, both governed by one rule —
+  **Gemini proposes, the human disposes** (suggestions only, never auto-applied state):
+  • `hook/stack-gemini-review.mjs` — on-demand CLI second-model diff review; findings land through
+    normal ingest into the review inbox. Key `GEMINI_API_KEY` in `~/.stack/env`. Strictly manual:
+    never wire it into a hook, cron or boot.
+  • `server/src/gemini.js` + `POST /api/projects/:slug/futures/:id/judge` — the in-app Judge
+    assist: suggests an alignment verdict against the north star; the UI shows it with an Apply
+    button, nothing is written server-side. Key from the server env (compose passes
+    `GEMINI_API_KEY`/`GEMINI_MODEL`, optional — absent means the route 503s and the app works
+    normally). Model default gemini-2.5-flash for both surfaces.
 - Colour is the named CSS variables at the top of `styles.css` `:root` — add/adjust tones there, not
   as inline hexes; terracotta buttons hover to `--accent-deep`.
 - `templates/stack-agent-context.md` is the single source of truth for the portable agent manual; if

@@ -688,6 +688,19 @@ a { color: inherit; }
 /* inline action error (detail screen) */
 .action-error { margin: 0 0 16px; padding: 10px 14px; font-size: 13px; color: var(--critical); background: #f7e9e7; border: 1px solid #e6cfca; border-radius: 10px; }
 
+/* ---------- gemini judge assist (suggestion line on idea rows) ---------- */
+.gemini-btn { font-size: 11.5px; font-weight: 600; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; padding: 3px 9px; white-space: nowrap; }
+.gemini-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-tint-border); }
+.gemini-btn:disabled { opacity: 0.6; cursor: default; }
+.gemini-suggest { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; margin-top: 8px; padding: 8px 11px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 9px; font-size: 12px; }
+.gemini-suggest.err { color: var(--critical); }
+.gemini-suggest .g-verdict { color: var(--ink); }
+.gemini-suggest .g-why { color: var(--muted); flex: 1; min-width: 120px; }
+.gemini-suggest .g-apply { font-size: 11.5px; font-weight: 600; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 7px; padding: 2px 10px; }
+.gemini-suggest .g-apply:hover { border-color: var(--accent); }
+.gemini-suggest .g-dismiss { color: var(--faint); font-size: 13px; line-height: 1; padding: 1px 5px; border-radius: 5px; }
+.gemini-suggest .g-dismiss:hover { color: var(--ink); background: var(--surface); }
+
 /* ---------- timeline (cross-project pushes + contribution grid) ---------- */
 .deck-timeline-link { float: right; font-size: 11.5px; font-weight: 500; color: var(--muted); }
 .deck-timeline-link:hover { color: var(--accent); }

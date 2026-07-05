@@ -3,6 +3,7 @@ import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { fingerprint } from '../util.js';
 import { futureShape } from '../shape.js';
+import { askGemini, geminiEnabled } from '../gemini.js';
 
 // Mounted at /api/projects/:slug/futures. Futures are loose directional ideas
 // curated against the project's north star; promotion to the roadmap is a
@@ -69,6 +70,50 @@ futures.patch('/:id', async (req, res) => {
   );
   if (!rows.length) return res.status(404).json({ error: 'No such idea.' });
   res.json(futureShape(rows[0]));
+});
+
+// POST /:id/judge  -> ask Gemini for a SUGGESTED alignment verdict against the
+// project's north star. Nothing is written — the client shows the suggestion
+// and the human clicks the actual verdict (Gemini proposes, you dispose).
+// 503 when the server has no GEMINI_API_KEY.
+futures.post('/:id/judge', async (req, res) => {
+  if (!geminiEnabled()) {
+    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
+  }
+  const { rows } = await q(
+    'SELECT * FROM futures WHERE project_id = $1 AND id = $2',
+    [req.project.id, Number(req.params.id)]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'No such idea.' });
+  const idea = rows[0];
+  const northStar = String(req.project.north_star || '').trim();
+  if (!northStar) {
+    return res.status(400).json({ error: 'This project has no north star to judge against yet.' });
+  }
+
+  const prompt = `You are helping curate a side project's idea funnel. The project's north star
+(the one-paragraph statement of what it is becoming) is:
+
+"${northStar}"
+
+Judge this idea against that north star:
+Title: ${idea.title}
+${idea.note ? `Note: ${idea.note}` : ''}
+
+Verdicts: "on-course" (pulls directly toward the north star), "tangent" (worthwhile-ish but
+sideways — doesn't serve the core direction), "off-course" (pulls away from or against it).
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "alignment": "on-course|tangent|off-course", "why": "one plain sentence, under 25 words" }`;
+
+  try {
+    const answer = await askGemini(prompt);
+    const alignment = ['on-course', 'tangent', 'off-course'].includes(answer?.alignment)
+      ? answer.alignment : null;
+    if (!alignment) return res.status(502).json({ error: 'Gemini gave an unusable answer — try again.' });
+    res.json({ alignment, why: String(answer.why || '').slice(0, 300) });
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'Gemini call failed.' });
+  }
 });
 
 // DELETE /:id  -> remove; auto (hook) ideas leave a tombstone

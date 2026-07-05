@@ -20,6 +20,10 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-stack}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-stack}
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env}
+      # Optional: enables the in-app Gemini features (Judge assist). Absent =
+      # those routes report themselves unavailable; nothing else changes.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
       PORT: 4000
     depends_on:
       db:
