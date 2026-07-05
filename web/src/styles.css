@@ -525,6 +525,10 @@ a { color: inherit; }
 .road-archive-head .chev { font-size: 11px; }
 .road-archive-head .count { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
 .road-archive-head .hint { font-size: 11.5px; font-family: var(--sans); font-weight: 400; color: var(--faint); }
+.draft-chip { display: inline-block; font-size: 12px; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 8px; padding: 5px 11px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.draft-chip:hover { border-color: var(--accent); }
+.draft-x { color: var(--faint); font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+.draft-x:hover { color: var(--critical); background: var(--panel); }
 .road-grid.arch { margin-top: 12px; }
 .road-body .road-actions.arch, .road-body .review-pick { margin-top: 7px; }
 

@@ -6,6 +6,7 @@ import {
   createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture,
   createCheck, deleteCheck, runChecks,
   patchProject, deleteProject, createShareLink, deleteShareLink,
+  getRoadDraft, setRoadDraft, type RoadDraft,
 } from '../store';
 import { go } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
@@ -120,9 +121,17 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     { open: false, title: '', fromNote: null });
   const [roadModal, setRoadModal] = useState<{
     open: boolean; priority: Priority; title: string; note: string;
-    fromNote: number | null; editing: RoadmapItem | null;
+    fromNote: number | null; editing: RoadmapItem | null; lane?: string; fromDraft?: boolean;
   }>({ open: false, priority: 'should', title: '', note: '', fromNote: null, editing: null });
   const roadModalClosed = { open: false, priority: 'should' as Priority, title: '', note: '', fromNote: null, editing: null };
+  // Device-local draft: a half-typed add-modal dismissed by a stray click.
+  const [roadDraft, setRoadDraftState] = useState<RoadDraft | null>(() => getRoadDraft(slug));
+  useEffect(() => { setRoadDraftState(getRoadDraft(slug)); }, [slug]);
+  const updateRoadDraft = (d: RoadDraft | null) => { setRoadDraft(slug, d); setRoadDraftState(d); };
+  const openRoadDraft = (d: RoadDraft) => setRoadModal({
+    open: true, priority: d.priority, title: d.title, note: d.note, lane: d.lane,
+    fromNote: null, editing: null, fromDraft: true,
+  });
   const [confirmRoadDelete, setConfirmRoadDelete] = useState<RoadmapItem | null>(null);
   const [confirmBugDelete, setConfirmBugDelete] = useState<Bug | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -202,6 +211,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: lane || undefined });
       const fromNote = roadModal.fromNote;
       const fromFuture = pendingFuture;
+      if (roadModal.fromDraft) updateRoadDraft(null); // the draft landed — clear it
       setData({ ...data, roadmap: { ...roadmap, [priority]: [...roadmap[priority], item] } });
       setRoadModal(roadModalClosed);
       setPendingFuture(null);
@@ -523,7 +533,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         )}
         {tab === 'roadmap' && (
           <Roadmap roadmap={roadmap} highlightId={highlightId}
-            onAdd={(p) => setRoadModal({ open: true, priority: p, title: '', note: '', fromNote: null, editing: null })}
+            onAdd={(p) => roadDraft
+              ? openRoadDraft(roadDraft)
+              : setRoadModal({ open: true, priority: p, title: '', note: '', fromNote: null, editing: null })}
+            draft={roadDraft} onResumeDraft={() => roadDraft && openRoadDraft(roadDraft)}
+            onDiscardDraft={() => updateRoadDraft(null)}
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
             onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad} />
@@ -551,9 +565,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       )}
       {roadModal.open && (
         <RoadmapModal initialPriority={roadModal.priority} initialTitle={roadModal.title}
-          initialNote={roadModal.note} initialLane={roadModal.editing?.claimedBy ?? ''}
+          initialNote={roadModal.note} initialLane={roadModal.editing?.claimedBy ?? roadModal.lane ?? ''}
           mode={roadModal.editing ? 'edit' : 'add'}
           onClose={() => { setRoadModal(roadModalClosed); setPendingFuture(null); }}
+          onDismiss={(d) => updateRoadDraft(d)}
           onSubmit={submitRoad} />
       )}
       {shareOpen && (

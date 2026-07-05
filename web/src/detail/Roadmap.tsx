@@ -17,6 +17,7 @@ const tagLabel = (tag: string) => REVIEW_TAGS.find((t) => t.key === tag)?.label 
 // un-ticking.
 export function Roadmap({
   roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, highlightId,
+  draft, onResumeDraft, onDiscardDraft,
 }: {
   roadmap: RoadmapData;
   onAdd: (p: Priority) => void;
@@ -25,6 +26,9 @@ export function Roadmap({
   onDelete: (item: RoadmapItem) => void;
   onReviewTag: (item: RoadmapItem, tag: ReviewTag) => void;
   highlightId?: string | null;
+  draft?: { title: string } | null;
+  onResumeDraft?: () => void;
+  onDiscardDraft?: () => void;
 }) {
   const [pickerFor, setPickerFor] = useState<number | null>(null);
   const archived = PRIORITY_META.flatMap((col) => roadmap[col.key].filter((it) => it.done));
@@ -39,6 +43,14 @@ export function Roadmap({
           <div className="h">Roadmap</div>
           <div className="subtitle">MoSCoW prioritisation</div>
         </div>
+        {draft && (
+          <div className="bar-actions">
+            <button className="draft-chip" onClick={onResumeDraft} title="Resume the unfinished item">
+              ✎ Draft · {draft.title.trim() || 'untitled'}
+            </button>
+            <button className="draft-x" onClick={onDiscardDraft} aria-label="Discard draft" title="Discard draft">×</button>
+          </div>
+        )}
       </div>
       <div className="subtitle" style={{ marginBottom: 20 }}>
         What must ship, what should, what could, and what won't — this round. Tick items off as you go;

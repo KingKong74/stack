@@ -49,6 +49,27 @@ export function setBriefPrefs(prefs: BriefPrefs) {
   localStorage.setItem(BRIEF_PREFS_KEY, JSON.stringify(prefs));
 }
 
+// ---- roadmap draft (device-local): an accidentally-dismissed add-modal keeps
+// its text per project, so half-typed items survive a stray click ----
+
+const ROAD_DRAFT_KEY = 'stack.roadDrafts';
+
+export interface RoadDraft { title: string; note: string; priority: Priority; lane: string }
+
+function readRoadDrafts(): Record<string, RoadDraft> {
+  try { return JSON.parse(localStorage.getItem(ROAD_DRAFT_KEY) || '{}'); } catch { return {}; }
+}
+
+export function getRoadDraft(slug: string): RoadDraft | null {
+  return readRoadDrafts()[slug] || null;
+}
+
+export function setRoadDraft(slug: string, draft: RoadDraft | null) {
+  const all = readRoadDrafts();
+  if (draft) all[slug] = draft; else delete all[slug];
+  localStorage.setItem(ROAD_DRAFT_KEY, JSON.stringify(all));
+}
+
 // ---- theme preference (device-local; App applies it to <html data-theme>) ----
 
 const THEME_KEY = 'stack.theme';

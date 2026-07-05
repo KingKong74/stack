@@ -4,11 +4,15 @@ import { Modal } from './Modal';
 import { PRIORITY_META } from '../lib/ui';
 
 // Add OR edit a roadmap item — `mode: 'edit'` prefills and relabels.
+// A stray click on the overlay (or Escape) with typed content calls onDismiss
+// with the fields so the caller can keep a draft; the explicit Cancel button
+// stays a genuine discard.
 export function RoadmapModal({
-  initialPriority, onClose, onSubmit, initialTitle = '', initialNote = '', initialLane = '', mode = 'add',
+  initialPriority, onClose, onSubmit, onDismiss, initialTitle = '', initialNote = '', initialLane = '', mode = 'add',
 }: {
   initialPriority: Priority; onClose: () => void;
   onSubmit: (v: { title: string; note: string; priority: Priority; lane: string }) => void;
+  onDismiss?: (v: { title: string; note: string; priority: Priority; lane: string }) => void;
   initialTitle?: string; initialNote?: string; initialLane?: string; mode?: 'add' | 'edit';
 }) {
   const [title, setTitle] = useState(initialTitle);
@@ -16,9 +20,15 @@ export function RoadmapModal({
   const [lane, setLane] = useState(initialLane);
   const [priority, setPriority] = useState<Priority>(initialPriority);
   const submit = () => { if (title.trim()) onSubmit({ title, note, priority, lane: lane.trim() }); };
+  const dismiss = () => {
+    if (mode === 'add' && onDismiss && (title.trim() || note.trim())) {
+      onDismiss({ title, note, priority, lane: lane.trim() });
+    }
+    onClose();
+  };
 
   return (
-    <Modal onClose={onClose} wide>
+    <Modal onClose={dismiss} wide>
       <h3>{mode === 'edit' ? 'Edit roadmap item' : 'Add roadmap item'}</h3>
       <div className="lbl">What is it?</div>
       <input className="field-input" style={{ marginBottom: 16 }} value={title} autoFocus
