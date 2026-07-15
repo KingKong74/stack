@@ -105,6 +105,7 @@ export interface Activity {
   when: string;
   summary: string;
   tags: string[];
+  geminiNote: string; // the second model's one-line take on the push ('' until stamped)
 }
 
 export interface Collections {

@@ -108,7 +108,7 @@ projects.get('/:slug', async (req, res) => {
   const appSettings = await readSettings();
   const [sessions, bugs, road, notes, futures, checks, weekly] = await Promise.all([
     q(
-      `SELECT commit_hash, branch, summary, tags, created_at FROM sessions
+      `SELECT commit_hash, branch, summary, tags, gemini_note, created_at FROM sessions
         WHERE project_id = $1 ORDER BY created_at DESC LIMIT 50`,
       [p.id]
     ),

@@ -742,6 +742,11 @@ a { color: inherit; }
 .gemini-suggest .g-dismiss { color: var(--faint); font-size: 13px; line-height: 1; padding: 1px 5px; border-radius: 5px; }
 .gemini-suggest .g-dismiss:hover { color: var(--ink); background: var(--surface); }
 
+/* the second model's per-push take, embedded on activity timeline cards */
+.tl-card .gem-take { margin-top: 9px; padding: 7px 11px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 9px; font-size: 12px; line-height: 1.55; color: var(--muted); }
+.tl-card .gem-take .star { color: var(--accent); margin-right: 6px; }
+.tl-card .gem-take .who { font-weight: 600; color: var(--chip-ink); margin-right: 6px; }
+
 /* ---------- timeline (cross-project pushes + contribution grid) ---------- */
 .deck-timeline-link { float: right; font-size: 11.5px; font-weight: 500; color: var(--muted); }
 .deck-timeline-link:hover { color: var(--accent); }

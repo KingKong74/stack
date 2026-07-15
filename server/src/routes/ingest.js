@@ -5,6 +5,8 @@ import {
   SEVERITIES, BUCKETS,
 } from '../util.js';
 import { readSettings } from '../settings.js';
+import { geminiEnabled, askGemini } from '../gemini.js';
+import { buildPrompt } from '../prompts.js';
 
 export const ingest = Router();
 
@@ -170,6 +172,7 @@ ingest.post('/', async (req, res) => {
       session.reason, session.message_count, authored,
     ];
 
+    let sessionRowId = existingSession ? existingSession.id : null;
     if (existingSession) {
       // Re-running for the same push refreshes the row, never duplicates it.
       // COALESCE-safe: a metadata post ($15 = false) never clobbers an existing
@@ -205,15 +208,17 @@ ingest.post('/', async (req, res) => {
          session.reason, authored, session.message_count]
       );
     } else {
-      await client.query(
+      const ins = await client.query(
         `INSERT INTO sessions
            (project_id, session_id, commit_hash, summary, current_phase, next_steps,
             blockers, files_touched, tools_used, tags, branch, cwd, model, reason,
             message_count, authored, source)
          VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,
-                 $11,$12,$13,$14,$15,$16,'hook')`,
+                 $11,$12,$13,$14,$15,$16,'hook')
+         RETURNING id`,
         [projectId, ...sessionCols]
       );
+      sessionRowId = ins.rows[0].id;
     }
 
     // --- 3. Refresh the project's live resume state (COALESCE / keep-if-empty) ---
@@ -373,6 +378,12 @@ ingest.post('/', async (req, res) => {
     }
 
     await client.query('COMMIT');
+
+    // Post-commit, fire-and-forget: stamp the second model's one-line take on
+    // this push (sessions.gemini_note). Never awaited — ingest's latency and
+    // success are exactly what they were without Gemini.
+    if (geminiEnabled() && sessionRowId) void stampGeminiNote(sessionRowId, authored);
+
     res.json({
       ok: true,
       project: slug,
@@ -389,3 +400,33 @@ ingest.post('/', async (req, res) => {
     client.release();
   }
 });
+
+// The per-push Gemini annotation. Reads the row back fresh (the txn has
+// committed), asks for one outside take, stamps it. An existing note is only
+// refreshed when the incoming post was authored (the content got richer) —
+// so a metadata backstop can't waste a call re-judging the same summary.
+// Every failure is swallowed: an annotation must never surface as an error.
+async function stampGeminiNote(sessionRowId, incomingAuthored) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT s.summary, s.current_phase, s.next_steps, s.gemini_note,
+              p.name, p.north_star
+         FROM sessions s JOIN projects p ON p.id = s.project_id
+        WHERE s.id = $1`,
+      [sessionRowId]
+    );
+    const row = rows[0];
+    if (!row || !row.summary) return;
+    if (row.gemini_note && !incomingAuthored) return;
+
+    const out = await askGemini(buildPrompt('pushnote', {
+      NAME: row.name,
+      NORTH_STAR_LINE: row.north_star ? `North star: ${row.north_star}` : '',
+      PHASE: row.current_phase || '—',
+      SUMMARY: row.summary,
+      NEXT_STEPS: asList(row.next_steps).join('; ') || '—',
+    }));
+    const note = String(out?.note || '').trim().slice(0, 500);
+    if (note) await pool.query('UPDATE sessions SET gemini_note = $2 WHERE id = $1', [sessionRowId, note]);
+  } catch { /* silent — see above */ }
+}

@@ -75,6 +75,9 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS tags        JSONB NOT NULL DEFAULT
 -- authored = a rich Claude-authored /checkpoint (vs the hook's metadata backstop).
 -- Once true it stays true, so a later metadata post can't downgrade a rich row.
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS authored    BOOLEAN NOT NULL DEFAULT false;
+-- gemini_note = the second model's one-line take on the push, stamped after
+-- ingest commits (fire-and-forget; an annotation, never state).
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS gemini_note TEXT;
 
 -- Per-project bug tracker. bug_key is the human "BUG-N" id, unique per project.
 CREATE TABLE IF NOT EXISTS bugs (

@@ -71,11 +71,25 @@ small and verifiable, then the highest-value open work). Reference real items fr
 no invented work. Use en-AU spelling. Respond with ONLY this JSON:
 { "plan": "the plan as plain text — short paragraph, then numbered lines separated by \\n" }`;
 
+DEFAULTS.pushnote = `You are the second model keeping a quiet eye on a solo builder's side project.
+A session just pushed. Give ONE useful outside take on it: the sharpest next move, a risk the
+summary hints at, or a question worth asking before the next session. Ground it in the text
+below — never invent work that isn't implied.
+Project: {{NAME}}
+{{NORTH_STAR_LINE}}
+Phase: {{PHASE}}
+Push summary: {{SUMMARY}}
+Next steps noted: {{NEXT_STEPS}}
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "note": "one or two plain sentences, under 40 words" }`;
+
 const ENV_KEYS = {
   judge: 'GEMINI_JUDGE_PROMPT',
   intake: 'GEMINI_INTAKE_PROMPT',
   semantic: 'GEMINI_SEMANTIC_PROMPT',
   replan: 'GEMINI_REPLAN_PROMPT',
+  pushnote: 'GEMINI_PUSHNOTE_PROMPT',
 };
 
 export function buildPrompt(name, vars) {

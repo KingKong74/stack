@@ -92,6 +92,7 @@ export function activityShape(row) {
     when: relativeTime(row.created_at) || 'just now',
     summary: row.summary || '',
     tags: Array.isArray(row.tags) ? row.tags : [],
+    geminiNote: row.gemini_note || '', // the second model's take, '' until stamped
   };
 }
 

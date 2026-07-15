@@ -39,6 +39,13 @@ export function Activity({
                     <span className="when">{a.when}</span>
                   </div>
                   <div className="body">{a.summary}</div>
+                  {a.geminiNote && (
+                    <div className="gem-take">
+                      <span className="star">✦</span>
+                      <span className="who">Gemini</span>
+                      {a.geminiNote}
+                    </div>
+                  )}
                   <div className="tags">
                     {a.tags.map((t, i) => <span key={i} className={`tag ${isAccentTag(t) ? 'accent' : ''}`}>{t}</span>)}
                   </div>
