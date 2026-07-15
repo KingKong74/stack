@@ -237,6 +237,23 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 INSERT INTO settings (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS session_defaults JSONB NOT NULL DEFAULT '["ship"]'::jsonb;
+-- Autopilot controls: the in-app arm switch (the nightly runner exits unless
+-- enabled) and the per-run wall-clock cap for the unattended session.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_enabled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_minutes INTEGER NOT NULL DEFAULT 120;
+-- Access PIN: scrypt hash ("scrypt$<salt>$<hash>"); NULL = PIN sign-in disabled.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS access_pin_hash TEXT;
+
+-- Device tokens issued by POST /api/auth/login (PIN sign-in). Only the sha256
+-- of each token is stored; the bearer gate accepts API_TOKEN or a live row
+-- here. Changing or clearing the PIN deletes every row (signs devices out).
+CREATE TABLE IF NOT EXISTS auth_tokens (
+  id           SERIAL PRIMARY KEY,
+  token_hash   TEXT NOT NULL UNIQUE,
+  label        TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at TIMESTAMPTZ
+);
 
 -- Public showcase: a project with a share_token has a tokenless read-only view
 -- at GET /api/public/:slug/:token (overview + activity only). NULL = not shared.

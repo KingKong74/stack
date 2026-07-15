@@ -1107,6 +1107,11 @@ a { color: inherit; }
 .set-note { font-size: 12px; color: var(--faint); margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-2); }
 .set-note .mono { color: var(--muted); }
 
+/* the access-PIN composer (Settings → Access) */
+.set-pin-row { display: flex; gap: 8px; align-items: center; }
+.set-pin-row .field-input { flex: 1; min-width: 0; }
+.set-pin-row .btn-repo:disabled { opacity: 0.5; cursor: default; }
+
 /* ---------- search deep-link highlight (bug / roadmap / note rows) ---------- */
 /* Mirrors the activity card highlight (.tl-card.hl) so a ⌘K result flags its
    row with the same terracotta ring on whichever tab it opens. */

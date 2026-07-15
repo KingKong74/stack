@@ -14,10 +14,16 @@
 // `auto/item-N` claimed until the human merges and ticks the item done; a
 // run that produced no commits releases it so the next night retries.
 //
+// The ARM SWITCH lives in the app: Settings → Autopilot. The cron line fires
+// every night regardless; unless autopilotEnabled is on (or --force is given)
+// the runner exits without doing anything. Unreachable settings = no run —
+// the autopilot spends tokens and acts, so unlike the hooks it fails SAFE.
+//
 // Usage:
 //   node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack
-//     [--minutes 120]   wall-clock cap for the Claude session (default 120)
+//     [--minutes N]     wall-clock cap (default: Settings' autopilotMinutes)
 //     [--dry]           print the picked item and exit (no claim, no session)
+//     [--force]         run even while the Settings switch is off
 //
 // Env (~/.stack/env): STACK_API + STACK_TOKEN (required), GEMINI_API_KEY
 // (optional — skips the second-model review when absent). Never printed.
@@ -39,9 +45,10 @@ const arg = (name, fallback = null) => {
   return i > -1 ? process.argv[i + 1] : fallback;
 };
 const DRY = process.argv.includes('--dry');
+const FORCE = process.argv.includes('--force');
 const SLUG = arg('project');
 const REPO = arg('repo');
-const MINUTES = Math.max(5, parseInt(arg('minutes', '120'), 10) || 120);
+const MINUTES_ARG = arg('minutes');
 
 const API = process.env.STACK_API;
 const TOKEN = process.env.STACK_TOKEN;
@@ -65,7 +72,17 @@ async function api(method, path, body) {
   return res.json();
 }
 
-// ---- 0. One run at a time (a crashed run's stale lock is cleared by age) ----
+// ---- 0a. The in-app arm switch (Settings → Autopilot) ----
+let appSettings;
+try { appSettings = await api('GET', '/api/settings'); }
+catch (e) { die(`could not read settings (${e.message}) — not running blind.`); }
+if (!appSettings.autopilotEnabled && !FORCE) {
+  log('autopilot is switched OFF in Settings — nothing run. (--force overrides for a manual test.)');
+  process.exit(0);
+}
+const MINUTES = Math.max(15, parseInt(MINUTES_ARG ?? '', 10) || appSettings.autopilotMinutes || 120);
+
+// ---- 0b. One run at a time (a crashed run's stale lock is cleared by age) ----
 const lockDir = join(homedir(), '.stack');
 const lock = join(lockDir, 'autopilot.lock');
 mkdirSync(lockDir, { recursive: true });

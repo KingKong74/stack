@@ -1,12 +1,16 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { oneOf } from '../util.js';
+import { hashPin } from '../auth.js';
 import { readSettings, settingsShape, CHECKPOINT_DETAILS, cleanSessionDefaults } from '../settings.js';
 
 // GET/PATCH /api/settings — the single-row app settings behind bearer auth.
 //
 // Shape (client camelCase):
-//   { autoRecord, keepResumeCard, checkpointDetail, includeChores, sessionDefaults }
+//   { autoRecord, keepResumeCard, checkpointDetail, includeChores, sessionDefaults,
+//     autopilotEnabled, autopilotMinutes, accessPinSet }
+// PATCH additionally accepts write-only `accessPin` ('' disables PIN sign-in);
+// any accessPin change also signs out every PIN-issued device.
 export const settings = Router();
 
 settings.get('/', async (_req, res) => {
@@ -17,6 +21,7 @@ const BOOL_FIELDS = {
   autoRecord: 'auto_record',
   keepResumeCard: 'keep_resume_card',
   includeChores: 'include_chores',
+  autopilotEnabled: 'autopilot_enabled',
 };
 
 settings.patch('/', async (req, res) => {
@@ -35,8 +40,23 @@ settings.patch('/', async (req, res) => {
     fields.push(`session_defaults = $${i++}::jsonb`);
     values.push(JSON.stringify(cleanSessionDefaults(body.sessionDefaults)));
   }
+  if ('autopilotMinutes' in body) {
+    const m = Math.trunc(Number(body.autopilotMinutes));
+    fields.push(`autopilot_minutes = $${i++}`);
+    values.push(Number.isFinite(m) ? Math.min(360, Math.max(15, m)) : 120);
+  }
+  if ('accessPin' in body) {
+    const pin = String(body.accessPin || '').trim();
+    if (pin && (pin.length < 4 || pin.length > 64)) {
+      return res.status(400).json({ error: 'The PIN must be 4–64 characters.' });
+    }
+    fields.push(`access_pin_hash = $${i++}`);
+    values.push(pin ? hashPin(pin) : null);
+  }
   if (fields.length) {
     await q(`UPDATE settings SET ${fields.join(', ')}, updated_at = now() WHERE id = true`, values);
   }
+  // A PIN change (set, rotate or clear) signs out every PIN-issued device.
+  if ('accessPin' in body) await q('DELETE FROM auth_tokens');
   res.json(settingsShape(await readSettings()));
 });

@@ -73,9 +73,12 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   **Push summaries** (the cream card — switches + Brief/Standard/Detailed segmented control,
   optimistic with rollback), **Session defaults** (switches over the `DIRECTIVES` catalogue from
   `lib/brief.ts` — app-wide standing preferences PATCHed as `sessionDefaults` and injected into
-  every session by the start hook, e.g. commits pre-authorised), **Appearance** (theme) and
-  **Access** (masked token, Test connection, Sign out). Uses `getSettings/patchSettings`; a 401
-  anywhere returns to the gate.
+  every session by the start hook, e.g. commits pre-authorised), **Autopilot** (the overnight
+  runner's arm switch + 1h/2h/3h session cap — the cron no-ops while disarmed), **Appearance**
+  (theme) and **Access** (masked token, Test connection, the **access PIN** — set/change/disable;
+  any change signs out all PIN-connected devices — and Sign out). Uses `getSettings/patchSettings`;
+  a 401 anywhere returns to the gate. The TokenGate offers "Sign in with a PIN instead"
+  (`store.loginWithPin` → POST /api/auth/login → this browser's own device token).
 - `types.ts` — Project, Bug, RoadmapItem, Future, Note, Activity, Resume. Status is `live | building |
   paused | archived`. Bug/RoadmapItem/Future/Note carry `source: 'hook' | 'manual'` (drives the
   "auto" cue).
@@ -339,11 +342,17 @@ Single row, client camelCase. Meanings under the no-API model:
   "keepResumeCard": true,     // does ingest refresh resume fields + does the deck/Overview show the card
   "checkpointDetail": "standard", // brief|standard|detailed — read by /checkpoint to shape the summary
   "includeChores": false,     // do chore-only sessions get a checkpoint (hook + /checkpoint guidance)
-  "sessionDefaults": ["ship"] // standing session preferences (catalogue keys: lean|ship|checkpoint|
+  "sessionDefaults": ["ship"],// standing session preferences (catalogue keys: lean|ship|checkpoint|
                               // confirm|verify). Rendered to lines server-side and injected by the
                               // SessionStart hook into EVERY project's block (above directives) via
                               // the detail payload's `sessionDefaults` — permissions granted once,
                               // e.g. "ship" = commits pre-authorised, never re-asked per chat
+  "autopilotEnabled": false,  // the overnight runner's ARM SWITCH — cron fires nightly but the
+                              // runner exits unless this is on (fails SAFE: unreachable API = no run)
+  "autopilotMinutes": 120,    // wall-clock cap per unattended session (clamped 15–360)
+  "accessPinSet": false       // PIN sign-in available; PATCH accepts write-only `accessPin`
+                              // ('' disables) — any accessPin change deletes all auth_tokens
+                              // (signs out every PIN-connected device)
 }
 ```
 
@@ -372,6 +381,9 @@ the silent metadata backstop so the feed never has gaps.
   daily counts for the contribution grid; soft-deleted projects excluded)
 - `GET /api/public/:slug/:token` (**no bearer** — the public showcase, guarded by the project's
   own share_token; strictly overview + activity, wrong slug/token both 404)
+- `POST /api/auth/login` (**no bearer** — PIN sign-in: `{pin}` → `{token}`, a device token whose
+  sha256 lands in `auth_tokens`; the bearer gate accepts API_TOKEN **or** a live device token.
+  403 until an access PIN is set in Settings; 5 wrong PINs per IP → 15-minute lockout)
 - `GET|PATCH /api/settings` (single-row app settings; see shape below)
 - `POST /api/presence` (live-now ping from the SessionStart hook; 404 for untracked projects) ·
   `POST /api/presence/end` (idempotent clear from the SessionEnd hook)

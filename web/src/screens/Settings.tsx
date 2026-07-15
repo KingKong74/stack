@@ -13,6 +13,10 @@ const THEMES: { key: ThemePref; label: string }[] = [
   { key: 'system', label: 'System' }, { key: 'light', label: 'Light' }, { key: 'dark', label: 'Dark' },
 ];
 
+const CAPS: { minutes: number; label: string }[] = [
+  { minutes: 60, label: '1 hour' }, { minutes: 120, label: '2 hours' }, { minutes: 180, label: '3 hours' },
+];
+
 const DETAILS: { key: CheckpointDetail; label: string; blurb: string }[] = [
   { key: 'brief', label: 'Brief', blurb: 'A line or two — just enough to re-orient.' },
   { key: 'standard', label: 'Standard', blurb: 'A balanced summary with the next moves.' },
@@ -34,6 +38,8 @@ export function Settings() {
   const [theme, setTheme] = useState<ThemePref>(() => getThemePref());
   const [deleted, setDeleted] = useState<DeletedProject[]>([]);
   const [purgeArmed, setPurgeArmed] = useState<string | null>(null);
+  const [pin, setPin] = useState('');
+  const [pinMsg, setPinMsg] = useState('');
 
   useEffect(() => {
     getDeletedProjects().then(setDeleted).catch(() => { /* section just stays empty */ });
@@ -90,6 +96,21 @@ export function Settings() {
   };
 
   const signOut = () => { clearToken(); }; // App drops to the token gate
+
+  // Set / rotate / disable the access PIN (write-only — the server keeps a hash).
+  const savePin = async (value: string) => {
+    setPinMsg('');
+    setError('');
+    try {
+      const next = await patchSettings({ accessPin: value });
+      setSettings(next);
+      setPin('');
+      setPinMsg(value ? 'PIN saved. All PIN-connected devices were signed out — sign back in with the new PIN.' : 'PIN sign-in disabled; PIN-connected devices were signed out.');
+    } catch (e) {
+      if (e instanceof AuthError) return;
+      setError((e as Error)?.message || 'Could not save the PIN.');
+    }
+  };
 
   return (
     <div>
@@ -197,6 +218,47 @@ export function Settings() {
               ))}
             </section>
 
+            {/* ---- Autopilot (the overnight runner's arm switch + cap) ---- */}
+            <section className="set-card">
+              <div className="set-card-head">
+                <div className="set-card-title">Autopilot</div>
+                <div className="set-card-sub">
+                  The overnight runner builds ONE approved roadmap item per night, unattended, on a
+                  reviewable <span className="mono">auto/</span> branch — never main, never marked
+                  done. You steer it with the tools you already have: approve items into the board,
+                  park human-only ones as skipped, and set direction via the north star and each
+                  project's Directives card (injected into every unattended session).
+                </div>
+              </div>
+
+              <Switch
+                label="Armed"
+                hint="The nightly schedule only acts while this is on. Off = the run exits immediately."
+                checked={settings.autopilotEnabled}
+                onChange={(v) => update({ autopilotEnabled: v })}
+              />
+
+              <div className="set-row col">
+                <div className="set-row-text">
+                  <div className="set-row-label">Session cap</div>
+                  <div className="set-row-hint">Wall-clock limit per unattended session — it's stopped at the cap.</div>
+                </div>
+                <div className="seg-control" role="tablist" aria-label="Autopilot session cap">
+                  {CAPS.map((c) => (
+                    <button key={c.minutes} role="tab" aria-selected={settings.autopilotMinutes === c.minutes}
+                      className={`seg-opt ${settings.autopilotMinutes === c.minutes ? 'on' : ''}`}
+                      onClick={() => update({ autopilotMinutes: c.minutes })}>
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="set-detail-blurb">
+                  In the morning: the review inbox holds Gemini's findings, the activity feed the
+                  checkpoint, and the pushed branch waits for your merge-or-discard.
+                </div>
+              </div>
+            </section>
+
             {/* ---- Appearance (device-local) ---- */}
             <section className="set-card">
               <div className="set-card-head">
@@ -272,6 +334,38 @@ export function Settings() {
                   {test === 'ok' ? '✓ Connected — the token is valid.' : '✕ The token was rejected or the API is unreachable.'}
                 </div>
               )}
+
+              <div className="set-row col">
+                <div className="set-row-text">
+                  <div className="set-row-label">Access PIN</div>
+                  <div className="set-row-hint">
+                    {settings.accessPinSet
+                      ? 'Set — any browser can sign in with the PIN from the gate; each gets its own revocable token.'
+                      : 'Not set — set one to sign in from any device without pasting the API token.'}
+                  </div>
+                </div>
+                <div className="set-pin-row">
+                  <input
+                    className="field-input"
+                    type="password"
+                    placeholder={settings.accessPinSet ? 'New PIN (4–64 characters)' : 'Choose a PIN (4–64 characters)'}
+                    value={pin}
+                    onChange={(e) => { setPin(e.target.value); setPinMsg(''); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && pin.trim().length >= 4) savePin(pin.trim()); }}
+                  />
+                  <button className="btn-repo" disabled={pin.trim().length < 4} onClick={() => savePin(pin.trim())}>
+                    {settings.accessPinSet ? 'Change PIN' : 'Set PIN'}
+                  </button>
+                  {settings.accessPinSet && (
+                    <button className="btn-cancel" onClick={() => savePin('')}>Disable</button>
+                  )}
+                </div>
+                {pinMsg && <div className="set-test ok">✓ {pinMsg}</div>}
+                <div className="set-detail-blurb">
+                  Changing or disabling the PIN signs out every PIN-connected device. The API token
+                  keeps working regardless.
+                </div>
+              </div>
 
               <div className="set-row">
                 <div className="set-row-text">

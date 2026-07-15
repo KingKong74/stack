@@ -34,6 +34,9 @@ const DEFAULTS = {
   checkpoint_detail: 'standard',
   include_chores: false,
   session_defaults: ['ship'],
+  autopilot_enabled: false, // the arm switch fails SAFE (off), unlike the record switches
+  autopilot_minutes: 120,
+  access_pin_hash: null,
 };
 
 // Read the singleton row. Accepts an optional pg client (so ingest can read
@@ -49,6 +52,9 @@ export async function readSettings(client) {
     checkpoint_detail: oneOf(r.checkpoint_detail, CHECKPOINT_DETAILS, 'standard'),
     include_chores: r.include_chores,
     session_defaults: cleanSessionDefaults(r.session_defaults),
+    autopilot_enabled: Boolean(r.autopilot_enabled),
+    autopilot_minutes: Number.isFinite(r.autopilot_minutes) ? r.autopilot_minutes : 120,
+    access_pin_hash: r.access_pin_hash || null,
   };
 }
 
@@ -59,5 +65,8 @@ export function settingsShape(s) {
     checkpointDetail: s.checkpoint_detail,
     includeChores: s.include_chores,
     sessionDefaults: s.session_defaults,
+    autopilotEnabled: s.autopilot_enabled,
+    autopilotMinutes: s.autopilot_minutes,
+    accessPinSet: Boolean(s.access_pin_hash), // the hash itself never leaves the server
   };
 }

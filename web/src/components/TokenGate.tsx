@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { setToken, verifyToken } from '../store';
+import { setToken, verifyToken, loginWithPin } from '../store';
 import { PRODUCT_NAME } from '../lib/ui';
 import { HowToGuide } from './HowToGuide';
 
-// First-load landing: what Stack is, plus the token gate. The token is verified
-// against the API, kept in localStorage, and sent on every request. Any 401
-// clears it and brings this screen back. "Where do I find the token?" and the
-// how-it-works guide are reachable from here so a fresh visitor isn't stuck
-// staring at an unexplained password field.
+// First-load landing: what Stack is, plus the gate. Two ways in: paste the
+// shared API token, or — once an access PIN is set in Settings — sign in with
+// the PIN from any device (the server mints this browser its own revocable
+// token). Either way the token is kept in localStorage and sent on every
+// request; any 401 clears it and brings this screen back.
 export function TokenGate() {
+  const [mode, setMode] = useState<'token' | 'pin'>('token');
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -20,6 +21,15 @@ export function TokenGate() {
     if (!t || busy) return;
     setBusy(true);
     setError('');
+    if (mode === 'pin') {
+      try {
+        await loginWithPin(t); // stores the minted device token → dashboard
+      } catch (e) {
+        setError((e as Error)?.message || 'Sign-in failed.');
+        setBusy(false);
+      }
+      return;
+    }
     try {
       const ok = await verifyToken(t);
       if (!ok) {
@@ -47,16 +57,17 @@ export function TokenGate() {
         </div>
 
         <div className="gate-card">
-          <div className="gate-title">Enter your API token</div>
+          <div className="gate-title">{mode === 'pin' ? 'Sign in with your PIN' : 'Enter your API token'}</div>
           <div className="gate-sub">
-            This instance is self-hosted and locked behind one shared token. Paste it to
-            continue — it's kept in this browser only.
+            {mode === 'pin'
+              ? 'The access PIN set in Settings. This browser gets its own token — nothing to paste.'
+              : "This instance is self-hosted and locked behind one shared token. Paste it to continue — it's kept in this browser only."}
           </div>
           <input
             className="field-input"
             type="password"
             autoFocus
-            placeholder="Bearer token"
+            placeholder={mode === 'pin' ? 'Access PIN' : 'Bearer token'}
             value={value}
             disabled={busy}
             onChange={(e) => setValue(e.target.value)}
@@ -66,10 +77,16 @@ export function TokenGate() {
           <button className="btn-accent gate-btn" onClick={submit} disabled={busy || !value.trim()}>
             {busy ? 'Checking…' : 'Unlock'}
           </button>
-          <button className="gate-help-toggle" onClick={() => setHelpOpen((o) => !o)}>
-            {helpOpen ? 'Hide help' : 'Where do I find the token?'}
+          <button className="gate-help-toggle"
+            onClick={() => { setMode((m) => (m === 'pin' ? 'token' : 'pin')); setValue(''); setError(''); }}>
+            {mode === 'pin' ? 'Use the API token instead' : 'Sign in with a PIN instead'}
           </button>
-          {helpOpen && (
+          {mode === 'token' && (
+            <button className="gate-help-toggle" onClick={() => setHelpOpen((o) => !o)}>
+              {helpOpen ? 'Hide help' : 'Where do I find the token?'}
+            </button>
+          )}
+          {helpOpen && mode === 'token' && (
             <div className="gate-help">
               It's the <span className="mono">API_TOKEN</span> this server was deployed with — the
               value set in the server's <span className="mono">.env</span> or compose environment,

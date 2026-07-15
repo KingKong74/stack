@@ -126,6 +126,24 @@ export async function verifyToken(candidate: string): Promise<boolean> {
   return res.ok;
 }
 
+// PIN sign-in (the from-anywhere door): exchanges the access PIN set in
+// Settings for a device token of this browser's own, then stores it exactly
+// like a pasted API token. Throws with the server's message on failure.
+export async function loginWithPin(pin: string): Promise<void> {
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ pin, label: navigator.userAgent.slice(0, 120) }),
+  });
+  if (!res.ok) {
+    let msg = `Sign-in failed (${res.status})`;
+    try { const j = await res.json(); if (j?.error) msg = j.error; } catch { /* keep default */ }
+    throw new Error(msg);
+  }
+  const { token } = (await res.json()) as { token: string };
+  setToken(token);
+}
+
 // ---- shaping (server payload -> frontend types) ----
 
 const repoUrl = (repo: string): string =>
@@ -212,7 +230,9 @@ export async function getSearch(query: string): Promise<SearchResponse> {
 export async function getSettings(): Promise<Settings> {
   return request<Settings>('/settings');
 }
-export async function patchSettings(patch: Partial<Settings>): Promise<Settings> {
+// accessPin is write-only: '' disables PIN sign-in, any change signs out all
+// PIN-connected devices. It never appears in the returned Settings.
+export async function patchSettings(patch: Partial<Settings> & { accessPin?: string }): Promise<Settings> {
   return request<Settings>('/settings', { method: 'PATCH', body: patch });
 }
 
