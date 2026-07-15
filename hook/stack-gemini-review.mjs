@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Stack — optional second-model review via Gemini.
 //
-// THE one sanctioned external-AI call in Stack (owner's decision, 2026-07-05:
-// the no-external-AI-API rule is bent for reviews only). Strictly on-demand —
-// never wired into a hook, never run on boot. The SessionEnd/SessionStart hooks
-// stay API-free.
+// Free-tier Gemini is sanctioned app-wide (owner's decision, 2026-07-16 —
+// only PAID external AI APIs are banned). This script runs on demand or from
+// the autopilot (scripts/stack-autopilot.mjs) after an unattended session;
+// findings are suggestions only, landing in the review inbox for a human verdict.
 //
 // What it does: reads a commit range's diff from the CURRENT repo, asks Gemini
 // to review it as a second model, and posts the findings to Stack via the

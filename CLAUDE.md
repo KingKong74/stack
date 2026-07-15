@@ -404,20 +404,21 @@ won't re-create it.
 - Both **hooks** must **always exit 0** and log only to stderr — never block Claude Code start or stop.
   (The `stack-checkpoint.mjs` poster is not a hook — it may exit non-zero so /checkpoint can report a
   failure — but it still never prints the token.) Shared logic lives in `hook/stack-post.mjs`.
-- **No external AI API — with ONE sanctioned exception.** Rich summaries are authored by Claude via
-  `/checkpoint`; the SessionEnd hook only records metadata. Don't reintroduce an API-key summary
-  path. The exception (owner's decision, 2026-07-05) has two surfaces, both governed by one rule —
-  **Gemini proposes, the human disposes** (suggestions only, never auto-applied state):
-  • `hook/stack-gemini-review.mjs` — on-demand CLI second-model diff review; findings land through
-    normal ingest into the review inbox. Key `GEMINI_API_KEY` in `~/.stack/env`. Strictly manual:
-    never wire it into a hook, cron or boot.
-  • `server/src/gemini.js` + the in-app assists — `POST /api/projects/:slug/futures/:id/judge`
-    (suggested alignment verdict against the north star) and `POST /api/projects/:slug/intake`
-    (the ✧ Intake dump box on the Roadmap tab: raw lines in, proposed destinations out — MoSCoW
-    bucket or Futures + alignment, each with a why; the client creates only what the human keeps,
-    through normal CRUD). Both return suggestions only; nothing is written server-side. Key from
-    the server env (compose passes `GEMINI_API_KEY`/`GEMINI_MODEL`, optional — absent means these
-    routes 503 and the app works normally). Model default gemini-2.5-flash for all surfaces.
+- **No PAID external AI APIs.** (Owner's decision 2026-07-16, superseding the 2026-07-05
+  one-exception rule: that rule was about paid APIs all along.) Gemini on the free tier is
+  sanctioned **everywhere** — routes, ingest, hooks, cron, the autopilot — no longer
+  manual-only. Two principles survive the loosening:
+  • **Gemini annotates, the human disposes.** Gemini output lands as suggestions and annotations
+    (review-inbox items, alignment verdicts to accept, the per-push `gemini_note`) — it never
+    mutates tracker state itself (no auto-closing bugs, ticking roadmap items, merging branches).
+  • **Absent key = silent degrade.** Every Gemini surface no-ops or 503s cleanly without
+    `GEMINI_API_KEY`; nothing blocks, nothing errors user-visibly.
+  Rich checkpoints stay Claude-authored via `/checkpoint` (free, in-session) — don't replace that
+  with an API summariser. Surfaces: `hook/stack-gemini-review.mjs` (second-model diff review →
+  review inbox; run manually or from the autopilot), `server/src/gemini.js` + judge/intake/
+  semantic-checks/replan routes, and the post-ingest `gemini_note` (a one-line second-model take
+  stamped onto each push in the activity feed). Key from server env / `~/.stack/env`; model
+  default gemini-2.5-flash for all surfaces.
 - Colour is the named CSS variables at the top of `styles.css` `:root` — add/adjust tones there, not
   as inline hexes; terracotta buttons hover to `--accent-deep`.
 - `templates/stack-agent-context.md` is the single source of truth for the portable agent manual; if
