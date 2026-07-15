@@ -41,6 +41,14 @@ hook/   Zero-dependency Node ESM. stack-post.mjs is the shared lib (env load, gi
           ~/.stack/ alongside the hooks + stack-post.mjs.
 templates/  stack-agent-context.md — the canonical portable agent manual (single source of truth).
 scripts/    stack-context.mjs — prints that template to stdout, optionally stamped with slug + API.
+            stack-autopilot.mjs — the overnight autopilot (phase 1): picks ONE eligible roadmap
+            item (must→should; open, unclaimed, not skipped, human-approved), claims the lane,
+            runs an unattended `claude -p` session in a fresh worktree on branch auto/item-N
+            (never main), then a checks run + Gemini diff review (→ review inbox), and leaves the
+            pushed branch for the morning verdict. The claim stays until the human merges + ticks
+            the item (that's the don't-re-pick marker); a no-commit run releases it. Lockfile
+            ~/.stack/autopilot.lock; log ~/.stack/autopilot.log; the crontab line (23:05 nightly)
+            is the on/off switch. `skipped` items are how you keep human-only work off its plate.
 .claude/commands/checkpoint.md — the /checkpoint slash command (documented for install to
             ~/.claude/commands/). Tells the session to author the full checkpoint schema and pipe it
             to ~/.stack/stack-checkpoint.mjs (token read from ~/.stack/env, never printed).
@@ -455,4 +463,6 @@ node hook/stack-checkpoint.mjs --settings  # print current settings (what /check
 echo '{"project":{"slug":"stack"},"session":{"summary":"…"}}' | node hook/stack-checkpoint.mjs  # author a checkpoint
 node scripts/stack-context.mjs --slug stack --api https://stack.your-domain  # export agent manual
 node hook/stack-gemini-review.mjs --dry    # second-model review of the last commit (Gemini; --dry = print only)
+node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack --dry  # what would tonight's run pick?
+crontab -l                                 # the autopilot schedule (23:05 nightly; remove the line to disable)
 ```
