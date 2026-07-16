@@ -1,22 +1,21 @@
 #!/usr/bin/env node
 // Stack web terminal — the host-side PTY daemon (#/terminal in the web app).
 //
-// A small websocket server that spawns a real shell (or a claude session) in a
-// project directory on THIS machine and streams it to xterm.js in the browser.
-// The web container's nginx proxies /term here, so the browser only ever talks
-// to the app's own origin.
+// Spawns a real shell (or a claude session) in a project directory on THIS
+// machine and streams it to xterm.js in the browser. This host's firewall
+// drops container→host traffic, so the daemon doesn't listen — it dials OUT:
+// one persistent websocket to the Stack server's /term-agent endpoint (bearer
+// in the upgrade headers), reconnecting with backoff. The server relays
+// browser sessions over that socket, multiplexed by sid (see server/src/term.js).
 //
 // Trust model
-//   • Every connection must present a bearer before anything spawns. The token
-//     is validated AGAINST THE STACK API (GET /api/settings), so both the API
-//     token and PIN-minted device tokens work, and revocation is respected.
-//     Valid tokens are cached for 60s; the token itself is never logged.
+//   • The server validates every browser session's token BEFORE any frame
+//     reaches us, and strips the credential — the daemon never sees tokens
+//     other than its own.
 //   • The working directory is jailed to STACK_TERM_ROOT (default: $HOME) —
 //     a cwd resolving outside it is refused.
 //   • Only two commands exist: an interactive login shell, or claude. There is
 //     no arbitrary-exec frame.
-//   • Bind address defaults to 0.0.0.0 (auth still gates every session); set
-//     STACK_TERM_BIND to the docker bridge gateway to hide it from the LAN.
 //
 // The PTY itself comes from pty-shim.py (python3 stdlib) — no native node
 // modules, so the daemon installs with plain `npm install` anywhere.
@@ -24,23 +23,21 @@
 // Install (once, on the host):
 //   cd terminal && npm install
 //   node stack-term.mjs                       # foreground
-//   (crontab) @reboot cd /home/you/stack/terminal && node stack-term.mjs >> ~/.stack/term.log 2>&1
+//   (crontab) @reboot /usr/bin/node /home/you/stack/terminal/stack-term.mjs >> ~/.stack/term.log 2>&1
 //
 // Config (~/.stack/env or real env):
-//   STACK_API                 the API base the web app uses (token validation)
-//   STACK_TERM_PORT           default 7703
-//   STACK_TERM_BIND           default 0.0.0.0
+//   STACK_API                 the app origin, e.g. https://stack.example (required)
+//   STACK_TOKEN               the API token the agent connects with (required)
 //   STACK_TERM_ROOT           cwd jail, default $HOME
 //   STACK_TERM_IDLE_MINUTES   kill a silent session after this, default 240
 //   STACK_TERM_MAX_SESSIONS   default 8
 
-import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { WebSocketServer } from 'ws';
+import WebSocket from 'ws';
 
 // ---- env (same loader contract as the hooks: ~/.stack/env, never printed) ----
 const envFile = join(homedir(), '.stack', 'env');
@@ -58,37 +55,19 @@ if (existsSync(envFile)) {
   } catch { /* ignore */ }
 }
 
-const API = (process.env.STACK_API || 'http://localhost:8787').replace(/\/$/, '');
-const PORT = parseInt(process.env.STACK_TERM_PORT || '', 10) || 7703;
-const BIND = process.env.STACK_TERM_BIND || '0.0.0.0';
+const API = (process.env.STACK_API || '').replace(/\/$/, '');
+const TOKEN = process.env.STACK_TOKEN || '';
+if (!API || !TOKEN) {
+  console.error('[stack-term] STACK_API and STACK_TOKEN are required (~/.stack/env).');
+  process.exit(1);
+}
+const AGENT_URL = API.replace(/^http/, 'ws') + '/term-agent';
 const ROOT = realpathSync(process.env.STACK_TERM_ROOT || homedir());
 const IDLE_MS = (parseInt(process.env.STACK_TERM_IDLE_MINUTES || '', 10) || 240) * 60_000;
 const MAX_SESSIONS = parseInt(process.env.STACK_TERM_MAX_SESSIONS || '', 10) || 8;
 const SHIM = join(dirname(fileURLToPath(import.meta.url)), 'pty-shim.py');
 
 const log = (...a) => console.log(`[stack-term] ${new Date().toISOString()}`, ...a);
-
-// ---- token validation against the Stack API (60s cache, hash-keyed) ----
-const okTokens = new Map(); // token -> expiry ms
-async function tokenValid(token) {
-  if (!token) return false;
-  const hit = okTokens.get(token);
-  if (hit && hit > Date.now()) return true;
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5000);
-    const res = await fetch(`${API}/api/settings`, {
-      headers: { authorization: `Bearer ${token}` },
-      signal: ctrl.signal,
-    });
-    clearTimeout(timer);
-    if (res.status === 200) {
-      okTokens.set(token, Date.now() + 60_000);
-      return true;
-    }
-  } catch { /* unreachable API = refuse; a terminal fails CLOSED */ }
-  return false;
-}
 
 // ---- cwd jail ----
 function resolveCwd(raw) {
@@ -100,13 +79,15 @@ function resolveCwd(raw) {
   return real;
 }
 
-// ---- sessions ----
-let sessions = 0;
+// ---- sessions (sid -> child) ----
+const sessions = new Map();
 
 function startSession(ws, msg) {
+  const { sid } = msg;
+  const fail = (m) => { ws.send(JSON.stringify({ t: 'err', sid, msg: m })); ws.send(JSON.stringify({ t: 'exit', sid, code: 1 })); };
   const cwd = resolveCwd(msg.cwd);
-  if (!cwd) { ws.send(JSON.stringify({ t: 'err', msg: `No such directory under ${ROOT}.` })); ws.close(); return; }
-  if (sessions >= MAX_SESSIONS) { ws.send(JSON.stringify({ t: 'err', msg: 'Too many live sessions.' })); ws.close(); return; }
+  if (!cwd) return fail(`No such directory under ${ROOT}.`);
+  if (sessions.size >= MAX_SESSIONS) return fail('Too many live sessions.');
 
   // Two commands only. `claude` goes through a login shell so the user's PATH
   // (nvm, ~/.local/bin, …) applies — same environment as sitting at the box.
@@ -116,83 +97,73 @@ function startSession(ws, msg) {
 
   const child = spawn('python3', [SHIM, cwd, ...argv], {
     stdio: ['pipe', 'pipe', 'pipe', 'pipe'], // fd3 = resize control
-    detached: false,
   });
-  sessions++;
-  log(`session up (${sessions} live): ${msg.cmd === 'claude' ? 'claude' : 'shell'} in ${cwd}`);
+  sessions.set(sid, child);
+  log(`session ${sid} up (${sessions.size} live): ${msg.cmd === 'claude' ? 'claude' : 'shell'} in ${cwd}`);
 
   let lastActivity = Date.now();
   const idleTimer = setInterval(() => {
     if (Date.now() - lastActivity > IDLE_MS) {
-      ws.send(JSON.stringify({ t: 'err', msg: 'Session closed after inactivity.' }));
+      ws.send(JSON.stringify({ t: 'err', sid, msg: 'Session closed after inactivity.' }));
       child.kill('SIGTERM');
     }
   }, 60_000);
 
-  const resize = (cols, rows) => {
+  child.resize = (cols, rows) => {
     const c = Math.max(2, Math.min(500, cols | 0));
     const r = Math.max(2, Math.min(300, rows | 0));
     try { child.stdio[3].write(`R ${c} ${r}\n`); } catch { /* gone */ }
   };
-  if (msg.cols && msg.rows) resize(msg.cols, msg.rows);
+  child.feed = (b64) => { lastActivity = Date.now(); child.stdin.write(Buffer.from(b64, 'base64')); };
+  if (msg.cols && msg.rows) child.resize(msg.cols, msg.rows);
 
   // Data frames carry base64 — JSON-safe, and the browser hands the raw bytes
   // to xterm so UTF-8 renders correctly.
-  child.stdout.on('data', (d) => {
+  const out = (d) => {
     lastActivity = Date.now();
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ t: 'out', data: d.toString('base64') }));
-  });
-  child.stderr.on('data', (d) => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ t: 'out', data: d.toString('base64') }));
-  });
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'out', sid, data: d.toString('base64') }));
+  };
+  child.stdout.on('data', out);
+  child.stderr.on('data', out);
   child.on('exit', (code) => {
     clearInterval(idleTimer);
-    sessions--;
-    log(`session down (${sessions} live), exit ${code}`);
-    if (ws.readyState === ws.OPEN) {
-      ws.send(JSON.stringify({ t: 'exit', code: code ?? 0 }));
-      ws.close();
-    }
+    sessions.delete(sid);
+    log(`session ${sid} down (${sessions.size} live), exit ${code}`);
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'exit', sid, code: code ?? 0 }));
   });
-  child.on('error', (e) => {
-    clearInterval(idleTimer);
-    if (ws.readyState === ws.OPEN) { ws.send(JSON.stringify({ t: 'err', msg: e.message })); ws.close(); }
-  });
+  child.on('error', (e) => { clearInterval(idleTimer); sessions.delete(sid); fail(e.message); });
 
+  ws.send(JSON.stringify({ t: 'ready', sid, cwd: cwd === ROOT ? '~' : '~/' + cwd.slice(ROOT.length + 1) }));
+}
+
+// ---- the one outbound agent connection, kept alive forever ----
+let backoff = 5_000;
+function connect() {
+  const ws = new WebSocket(AGENT_URL, { headers: { authorization: `Bearer ${TOKEN}` } });
+
+  ws.on('open', () => { backoff = 5_000; log(`connected to ${API}`); });
   ws.on('message', (raw) => {
     let m;
     try { m = JSON.parse(raw.toString()); } catch { return; }
-    if (m.t === 'in' && typeof m.data === 'string') {
-      lastActivity = Date.now();
-      child.stdin.write(Buffer.from(m.data, 'base64'));
-    } else if (m.t === 'resize') {
-      resize(m.cols, m.rows);
-    }
+    const child = sessions.get(m.sid);
+    if (m.t === 'start') startSession(ws, m);
+    else if (m.t === 'in' && child && typeof m.data === 'string') child.feed(m.data);
+    else if (m.t === 'resize' && child) child.resize(m.cols, m.rows);
+    else if (m.t === 'kill' && child) child.kill('SIGTERM');
   });
-  ws.on('close', () => child.kill('SIGTERM'));
-
-  ws.send(JSON.stringify({ t: 'ready', cwd: cwd === ROOT ? '~' : '~/' + cwd.slice(ROOT.length + 1) }));
+  // error and close can both fire (and a failed handshake may emit only
+  // error) — whichever lands first schedules the single reconnect.
+  let retried = false;
+  const retry = () => {
+    if (retried) return;
+    retried = true;
+    for (const child of sessions.values()) child.kill('SIGTERM');
+    sessions.clear();
+    setTimeout(connect, backoff);
+    backoff = Math.min(backoff * 2, 60_000);
+  };
+  ws.on('close', () => { log('disconnected — retrying'); retry(); });
+  ws.on('error', (e) => { log(`connection error: ${e.message}`); retry(); try { ws.terminate(); } catch { /* already gone */ } });
 }
-
-// ---- server ----
-const http = createServer((_req, res) => { res.writeHead(200); res.end('stack-term\n'); });
-const wss = new WebSocketServer({ server: http, path: '/term' });
-
-wss.on('connection', (ws) => {
-  // First frame must be a valid start within 10s, or the socket goes away.
-  const gate = setTimeout(() => ws.close(), 10_000);
-  ws.once('message', async (raw) => {
-    clearTimeout(gate);
-    let msg;
-    try { msg = JSON.parse(raw.toString()); } catch { ws.close(); return; }
-    if (msg.t !== 'start' || !(await tokenValid(msg.token))) {
-      ws.send(JSON.stringify({ t: 'err', msg: 'Not authorised.' }));
-      ws.close();
-      return;
-    }
-    delete msg.token; // never keep it around
-    startSession(ws, msg);
-  });
-});
-
-http.listen(PORT, BIND, () => log(`listening on ${BIND}:${PORT} (root ${ROOT}, api ${API})`));
+connect();
+log(`agent for ${API} (root ${ROOT})`);

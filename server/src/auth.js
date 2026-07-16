@@ -35,6 +35,22 @@ export function verifyPin(pin, stored) {
   }
 }
 
+// The bare credential check (either class), usable outside express — the
+// web-terminal relay validates websocket frames with this.
+export async function tokenValid(token) {
+  if (!TOKEN || !token) return false;
+  if (same(token, TOKEN)) return true;
+  try {
+    // One statement checks and stamps: a live device token bumps last_used_at.
+    const { rows } = await q(
+      'UPDATE auth_tokens SET last_used_at = now() WHERE token_hash = $1 RETURNING id',
+      [sha256(token)]
+    );
+    if (rows.length) return true;
+  } catch { /* fall through to false */ }
+  return false;
+}
+
 export async function requireToken(req, res, next) {
   if (!TOKEN) {
     // Fail closed: if the operator forgot to set a token, don't silently run open.
@@ -42,16 +58,6 @@ export async function requireToken(req, res, next) {
   }
   const header = req.get('authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-  if (token) {
-    if (same(token, TOKEN)) return next();
-    try {
-      // One statement checks and stamps: a live device token bumps last_used_at.
-      const { rows } = await q(
-        'UPDATE auth_tokens SET last_used_at = now() WHERE token_hash = $1 RETURNING id',
-        [sha256(token)]
-      );
-      if (rows.length) return next();
-    } catch { /* fall through to 401 */ }
-  }
+  if (await tokenValid(token)) return next();
   return res.status(401).json({ error: 'Invalid or missing token.' });
 }

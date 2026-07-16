@@ -39,14 +39,17 @@ hook/   Zero-dependency Node ESM. stack-post.mjs is the shared lib (env load, gi
         • stack-checkpoint.mjs — the /checkpoint POSTER (not a hook). Reads a checkpoint JSON on
           stdin and POSTs it (authored:true); `--settings` prints current settings. Installs to
           ~/.stack/ alongside the hooks + stack-post.mjs.
-terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs: a ws server (only
-        npm dep: `ws` — no native modules) that spawns a real login shell or `claude` in a
-        directory jailed to STACK_TERM_ROOT (default $HOME), via pty-shim.py (python3 stdlib owns
-        the PTY + resize, since the host has no build toolchain for node-pty). Auth: the first ws
-        frame's bearer is validated AGAINST THE API (GET /api/settings, 60s cache) so API + PIN
-        device tokens both work and revocation holds; fails CLOSED when the API is unreachable.
-        nginx proxies /term → host.docker.internal:7703 (extra_hosts host-gateway in compose).
-        Runs from crontab (@reboot line); log ~/.stack/term.log. Frames are JSON with base64 data.
+terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (only npm dep: `ws` —
+        no native modules) spawns a real login shell or `claude` in a directory jailed to
+        STACK_TERM_ROOT (default $HOME), via pty-shim.py (python3 stdlib owns the PTY + resize,
+        since the host has no build toolchain for node-pty). The host firewall drops
+        container→host traffic, so the daemon dials OUT: one persistent ws to the server's
+        /term-agent (bearer = STACK_TOKEN from ~/.stack/env, reconnect with backoff); the server
+        relay (server/src/term.js, attached to the same HTTP server as the API) validates each
+        browser session's token (both credential classes) BEFORE bridging and strips it — the
+        daemon never sees browser credentials. nginx proxies /term* → server:4000 with upgrade
+        headers. Runs from crontab (@reboot line); log ~/.stack/term.log. Frames are JSON with
+        base64 data, multiplexed by sid over the agent socket.
 templates/  stack-agent-context.md — the canonical portable agent manual (single source of truth).
 scripts/    stack-context.mjs — prints that template to stdout, optionally stamped with slug + API.
             stack-autopilot.mjs — the overnight autopilot (phase 1): picks ONE eligible roadmap

@@ -20,6 +20,7 @@ import { intake } from './routes/intake.js';
 import { auth } from './routes/auth.js';
 import { control } from './routes/control.js';
 import { polaris } from './routes/polaris.js';
+import { attachTerm } from './term.js';
 
 // Read once at module load: the health endpoint reports the deployed version.
 const { version } = JSON.parse(
@@ -83,7 +84,8 @@ async function start() {
       await new Promise((r) => setTimeout(r, 2000));
     }
   }
-  app.listen(port, () => console.log(`Stack API listening on :${port}`));
+  const httpServer = app.listen(port, () => console.log(`Stack API listening on :${port}`));
+  attachTerm(httpServer); // the web-terminal relay (/term + /term-agent websockets)
 }
 
 start();
