@@ -26,7 +26,7 @@ type Tab = 'overview' | 'bugs' | 'roadmap' | 'futures' | 'notes' | 'activity';
 type BugFilter = 'all' | 'open' | 'fixing' | 'fixed';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Overview' }, { key: 'bugs', label: 'Bugs' },
-  { key: 'roadmap', label: 'Roadmap' }, { key: 'futures', label: 'Futures' },
+  { key: 'roadmap', label: 'Roadmap' }, { key: 'futures', label: 'Polaris' },
   { key: 'notes', label: 'Notes' }, { key: 'activity', label: 'Activity' },
 ];
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
@@ -517,6 +517,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             <span style={{ color: 'var(--faint)' }}>Search…</span>
             <span className="kbd-hint">⌘K</span>
           </button>
+          <button className="btn-repo" onClick={go.control} title="Mission Control — every project's automation">Mission Control</button>
+          <button className="btn-repo" onClick={() => go.terminal(slug)} title={`Open a terminal in ~/${slug}`}>⌨</button>
           <button className="avatar sm" onClick={go.settings} aria-label="Settings" />
         </div>
       </div>

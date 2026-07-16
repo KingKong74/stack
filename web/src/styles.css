@@ -1218,3 +1218,5 @@ a { color: inherit; }
 .mc-term { font-size: 13px; color: var(--chip-ink); border: 1px solid var(--line-2); border-radius: 8px; padding: 2px 8px; }
 .mc-term:hover { border-color: var(--muted); color: var(--ink); }
 .btn-repo.sm { height: 30px; padding: 0 11px; font-size: 12px; }
+.mc-daemon { font-size: 12px; color: var(--muted); }
+.mc-daemon.on { color: var(--green); font-weight: 600; }

@@ -108,6 +108,7 @@ export function Terminal({ initialCwd = '' }: { initialCwd?: string }) {
           <span className="here">Terminal</span>
         </div>
         <div className="right">
+          <button className="btn-repo" onClick={go.control} title="Mission Control">Mission Control</button>
           <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
         </div>
       </div>

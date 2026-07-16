@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { relativeTime, computeProgress, PRESENCE_TTL_MINUTES } from '../util.js';
 import { readSettings } from '../settings.js';
+import { termAgentConnected } from '../term.js';
 
 // GET /api/control — Mission Control: every project's automation state in one
 // payload, computed in aggregate queries (never one request per project).
@@ -131,6 +132,7 @@ control.get('/', async (_req, res) => {
       enabled: appSettings.autopilot_enabled,
       minutes: appSettings.autopilot_minutes,
     },
+    terminal: { connected: termAgentConnected() }, // the host PTY daemon's agent socket
     projects,
     totals: {
       automode: projects.filter((p) => p.automode).length,

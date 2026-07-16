@@ -242,6 +242,7 @@ export interface ControlProject {
 }
 export interface ControlData {
   autopilot: { enabled: boolean; minutes: number };
+  terminal?: { connected: boolean };   // the host PTY daemon's agent socket
   projects: ControlProject[];
   totals: { automode: number; liveSessions: number; claims: number; review: number };
 }

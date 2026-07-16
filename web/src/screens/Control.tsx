@@ -121,6 +121,12 @@ export function Control() {
               <div className="mc-totals">
                 <button className="btn-repo sm" onClick={() => go.terminal()}
                   title="A real shell (or Claude) on the host, from any device">⌨ Terminal</button>
+                <span className={`mc-daemon ${data.terminal?.connected ? 'on' : ''}`}
+                  title={data.terminal?.connected
+                    ? 'stack-term is connected — terminal sessions available'
+                    : 'The host daemon is offline — start stack-term on the host'}>
+                  {data.terminal?.connected ? '● daemon online' : '○ daemon offline'}
+                </span>
                 <span><b>{data.totals.automode}</b> on automode</span>
                 <span><b>{data.totals.liveSessions}</b> live session{data.totals.liveSessions === 1 ? '' : 's'}</span>
                 <span><b>{data.totals.claims}</b> claimed lane{data.totals.claims === 1 ? '' : 's'}</span>

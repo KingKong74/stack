@@ -14,6 +14,11 @@ import { tokenValid } from './auth.js';
 // Sessions are multiplexed over the agent socket by sid; the relay never
 // looks inside the data frames (base64 both ways). No agent = the browser
 // gets a plain "daemon offline" error, nothing else changes.
+// Mission Control asks whether the host daemon is on the line — module-level
+// so routes/control.js can read it without holding the relay.
+let agentConnected = false;
+export const termAgentConnected = () => agentConnected;
+
 export function attachTerm(httpServer) {
   const wss = new WebSocketServer({ noServer: true });
   let agent = null;
@@ -49,6 +54,7 @@ export function attachTerm(httpServer) {
   function acceptAgent(ws) {
     if (agent) { send(agent, { t: 'err', msg: 'Replaced by a newer daemon connection.' }); agent.close(); }
     agent = ws;
+    agentConnected = true;
     console.log('[term] daemon connected');
     ws.on('message', (raw) => {
       let m;
@@ -59,7 +65,7 @@ export function attachTerm(httpServer) {
       if (m.t === 'exit') { send(browser, m); browser.close(); sessions.delete(m.sid); }
     });
     ws.on('close', () => {
-      if (agent === ws) agent = null;
+      if (agent === ws) { agent = null; agentConnected = false; }
       console.log('[term] daemon disconnected');
       for (const [sid, browser] of sessions) {
         send(browser, { t: 'err', msg: 'The terminal daemon disconnected.' });

@@ -16,7 +16,7 @@ const SCOPES: { key: Scope; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'bugs', label: 'Bugs' },
   { key: 'roadmap', label: 'Roadmap' },
-  { key: 'futures', label: 'Futures' },
+  { key: 'futures', label: 'Polaris' },
   { key: 'notes', label: 'Notes' },
   { key: 'activity', label: 'Activity' },
 ];
@@ -26,7 +26,7 @@ const GROUP_ORDER: { key: keyof SearchResponse['groups']; label: string }[] = [
   { key: 'projects', label: 'Projects' },
   { key: 'bugs', label: 'Bugs' },
   { key: 'roadmap', label: 'Roadmap' },
-  { key: 'futures', label: 'Futures' },
+  { key: 'futures', label: 'Polaris' },
   { key: 'notes', label: 'Notes' },
   { key: 'activity', label: 'Activity' },
 ];
