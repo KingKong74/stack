@@ -143,7 +143,7 @@ projects.get('/:slug', async (req, res) => {
 
 // Fields the client may PATCH directly on a project.
 const PATCHABLE = new Set([
-  'name', 'repo', 'repo_url', 'subtitle', 'site_url', 'status', 'pinned',
+  'name', 'repo', 'repo_url', 'subtitle', 'site_url', 'status', 'pinned', 'automode',
   'current_phase', 'summary', 'next_steps', 'blockers',
   'in_progress', 'next_up', 'working_well', 'tint', 'north_star', 'directives',
   'deploy_platform', 'logs_url', 'tech_stack',
@@ -160,8 +160,8 @@ projects.patch('/:slug', async (req, res) => {
     if (JSON_FIELDS.has(key)) {
       fields.push(`${key} = $${i}::jsonb`);
       values.push(JSON.stringify(Array.isArray(val) ? val : []));
-    } else if (key === 'pinned') {
-      fields.push(`pinned = $${i}`);
+    } else if (key === 'pinned' || key === 'automode') {
+      fields.push(`${key} = $${i}`);
       values.push(Boolean(val));
     } else if (key === 'status') {
       fields.push(`status = $${i}`);

@@ -100,6 +100,12 @@ try {
   // ---- 1. Pick the next eligible item: must before should; open, unclaimed,
   //         not parked, and human-approved (manual, or hook-created + reviewed).
   const detail = await api('GET', `/api/projects/${SLUG}`);
+  // Per-project automode: the project itself must opt in (the AUTO badge in the
+  // UI) — the global arm switch alone isn't consent to work this repo.
+  if (!detail.automode && !FORCE) {
+    log(`${SLUG} is not on automode — nothing run. (Toggle it in the app, or --force for a manual test.)`);
+    process.exit(0);
+  }
   const eligible = (it) => !it.done && !it.skipped && !it.claimedBy && (it.source === 'manual' || it.reviewed);
   const item = [...(detail.roadmap?.must || []), ...(detail.roadmap?.should || [])].find(eligible);
   if (!item) { log(`no eligible must/should item on ${SLUG} — nothing to do tonight.`); process.exit(0); }

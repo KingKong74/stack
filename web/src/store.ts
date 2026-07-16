@@ -151,7 +151,8 @@ const repoUrl = (repo: string): string =>
 
 interface ProjectPayload {
   slug: string; name: string; subtitle: string; tint: string | null; status: ProjectStatus;
-  progress: number; metaLine: string; pinned: boolean; siteUrl: string; repo: string; repoUrl: string;
+  progress: number; metaLine: string; pinned: boolean; automode?: boolean;
+  siteUrl: string; repo: string; repoUrl: string;
   pushesThisWeek: number;
   // detail-only:
   summary?: string; currentPhase?: string; northStar?: string;
@@ -184,6 +185,7 @@ function toProject(d: ProjectPayload): Project {
     status: d.status,
     progress: d.progress ?? 0,
     metaLine: d.metaLine || '',
+    automode: !!d.automode,
     siteUrl: d.siteUrl || '',
     repoUrl: d.repoUrl || repoUrl(d.repo || ''),
     deployPlatform: d.deployPlatform || '',
@@ -368,6 +370,7 @@ export async function patchProject(
   slug: string,
   patch: Partial<{
     subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean;
+    automode: boolean;
     name: string; north_star: string; directives: string[]; deploy_platform: string; logs_url: string;
     tech_stack: string[];
   }>,

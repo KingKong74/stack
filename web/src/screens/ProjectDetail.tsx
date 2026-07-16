@@ -449,6 +449,14 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setEditingUrl(null);
     });
 
+  // Automode: opt this project in/out of the overnight autopilot (the runner
+  // refuses projects with this off, on top of the global arm switch).
+  const toggleAutomode = () =>
+    guard(async () => {
+      const updated = await patchProject(slug, { automode: !project.automode });
+      setData({ ...data, project: { ...project, automode: updated.automode } });
+    });
+
   const removeProject = () =>
     guard(async () => { await deleteProject(slug); go.dashboard(); });
 
@@ -519,6 +527,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             <div className="titlerow">
               <div className="detail-title">{project.name}</div>
               <span className={`statusbadge ${project.status}`}><span className="dot" />{STATUS_LABEL[project.status]}</span>
+              <button className={`autobadge ${project.automode ? 'on' : ''}`} onClick={toggleAutomode}
+                title={project.automode
+                  ? 'Automode ON — the overnight autopilot may pick up this project. Click to switch off.'
+                  : 'Automode OFF — the autopilot leaves this project alone. Click to opt in.'}>
+                ⚙ {project.automode ? 'auto' : 'manual'}
+              </button>
             </div>
             {project.subtitle && <div className="detail-sub">{project.subtitle}</div>}
           </div>

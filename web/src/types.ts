@@ -28,6 +28,7 @@ export interface Project {
   status: ProjectStatus;
   progress: number;        // 0–100, computed server-side from roadmap/bug completion
   metaLine: string;        // dashboard card meta e.g. "pushed 2h ago"
+  automode: boolean;       // open to the overnight autopilot — shows the AUTO badge
   siteUrl: string;
   repoUrl: string;
   deployPlatform: string;  // hand-set label on the Deployment panel ("Dokploy", "Vercel", …)

@@ -109,6 +109,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
     progress,
     metaLine,
     pinned: p.pinned,
+    automode: !!p.automode,  // open to the overnight autopilot — drives the AUTO badge
     siteUrl: p.site_url || '',
     repo: p.repo || '',
     repoUrl: p.repo_url || '',

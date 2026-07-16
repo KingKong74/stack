@@ -241,6 +241,10 @@ a { color: inherit; }
   position: absolute; top: 13px; right: 13px; z-index: 2; font-size: 11px; color: #fff;
   background: rgba(255, 255, 255, 0.18); backdrop-filter: blur(4px); padding: 4px 10px; border-radius: 20px;
 }
+.pcard .autopill {
+  position: absolute; top: 13px; left: 13px; z-index: 2; font-size: 11px; color: #fff;
+  background: rgba(28, 26, 23, 0.38); backdrop-filter: blur(4px); padding: 4px 10px; border-radius: 20px;
+}
 .pcard .meta { position: absolute; left: 17px; right: 17px; bottom: 15px; z-index: 2; }
 .pcard .pname { font-family: var(--disp); color: #fff; font-weight: 600; font-size: 17px; line-height: 1.2; }
 .pcard .track { height: 4px; border-radius: 3px; background: rgba(255,255,255,.26); margin-top: 11px; }
@@ -268,6 +272,11 @@ a { color: inherit; }
 .statusbadge.building .dot { background: #9a7a2e; }
 .statusbadge.paused { color: var(--chip-ink); background: #eeebe6; }
 .statusbadge.paused .dot { background: #8f897d; }
+/* Automode toggle in the title row — quiet when manual, sage when the
+   autopilot may pick the project up. */
+.autobadge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 11px; border-radius: 20px; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); }
+.autobadge:hover { border-color: var(--muted); }
+.autobadge.on { color: var(--green); background: var(--green-tint); border-color: transparent; }
 .head-actions { display: flex; gap: 9px; flex: none; }
 .btn-repo {
   height: 38px; padding: 0 15px; border-radius: 10px; background: var(--card); border: 1px solid var(--line-3);

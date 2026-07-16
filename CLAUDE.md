@@ -159,7 +159,10 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     injected by the SessionStart hook, shown/edited on the Futures tab) and `directives` (jsonb
     list — the standing steer instructions, edited on the detail Overview's Directives card,
     injected FIRST by the SessionStart hook and echoed in the exported brief; lines stay until
-    removed in the UI), plus `deploy_platform` + `logs_url` (the hand-edited Deployment panel) and
+    removed in the UI), `automode` (bool, default false — this project is open to the overnight
+    autopilot; the runner refuses a project with it off, on top of the global arm switch; drives
+    the ⚙ auto pill on dashboard cards and the click-toggle badge in the detail title row),
+    plus `deploy_platform` + `logs_url` (the hand-edited Deployment panel) and
     `tech_stack` (jsonb — the hand-edited chips on the Tech stack panel). Status default `building`; legacy `active` rows migrate
     to `live`. `repo` is the `owner/repo` identity; `repo_url` is the browseable URL the Repo button
     opens (filled once by ingest, never overwriting a hand-set value).

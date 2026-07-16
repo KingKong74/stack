@@ -141,6 +141,7 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
                 )}
                 <span className="scrim" />
                 <span className="statuspill">{STATUS_LABEL[p.status]}</span>
+                {p.automode && <span className="autopill" title="Automode — the overnight autopilot may work this project">⚙ auto</span>}
                 <span className="meta">
                   <span className="pname">{p.name}</span>
                   <span className="track"><span className="fill" style={{ width: `${p.progress}%` }} /></span>
