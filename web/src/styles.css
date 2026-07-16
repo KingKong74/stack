@@ -636,6 +636,11 @@ a { color: inherit; }
 .btn-submit { height: 38px; padding: 0 18px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; }
 .btn-submit:hover { background: var(--accent-deep); }
 .optional { text-transform: none; letter-spacing: 0; color: #c0b9ab; }
+.field-hint { font-size: 12px; line-height: 1.5; color: var(--muted); }
+.lane-pick { display: flex; gap: 8px; align-items: center; }
+.lane-pick .field-input { flex: 1; }
+.lane-pick select.field-input { appearance: auto; }
+.lane-pick .btn-cancel.sm { white-space: nowrap; }
 
 /* ---------- misc ---------- */
 .empty-state { background: var(--card); border: 1px dashed var(--line-3); border-radius: 14px; padding: 38px; text-align: center; color: var(--muted); }

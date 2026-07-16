@@ -30,15 +30,16 @@ roadmap.post('/', async (req, res) => {
   const note = String(req.body?.note || '').trim().slice(0, 1000);
   const bucket = oneOf(req.body?.bucket, BUCKETS, 'should');
   const claimedBy = String(req.body?.claimed_by || '').trim().slice(0, 100) || null;
+  const area = String(req.body?.area || '').trim().toLowerCase().slice(0, 40) || null;
 
   const { rows: pos } = await q(
     'SELECT COALESCE(MAX(position), -1) + 1 AS p FROM roadmap_items WHERE project_id = $1 AND bucket = $2',
     [req.project.id, bucket]
   );
   const { rows } = await q(
-    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by)
-     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7) RETURNING *`,
-    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy]
+    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area)
+     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7,$8) RETURNING *`,
+    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy, area]
   );
   res.status(201).json(roadmapItemShape(rows[0]));
 });
@@ -76,6 +77,10 @@ roadmap.patch('/:id', async (req, res) => {
     if (title) { sets.push(`title = $${i++}`); vals.push(title); }
   }
   if (req.body?.note !== undefined) { sets.push(`note = $${i++}`); vals.push(String(req.body.note).slice(0, 1000)); }
+  if (req.body?.area !== undefined) {
+    sets.push(`area = $${i++}`);
+    vals.push(String(req.body.area || '').trim().toLowerCase().slice(0, 40) || null);
+  }
   if (req.body?.position !== undefined && Number.isFinite(req.body.position)) {
     sets.push(`position = $${i++}`); vals.push(Math.trunc(req.body.position));
   }

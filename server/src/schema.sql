@@ -127,6 +127,9 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS claimed_by TEXT;
 -- The archive-review verdict on a completed item: solid | needs-work | rethink.
 -- Tagging needs-work/rethink offers to spin a follow-up item back onto the board.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS review_tag TEXT;
+-- The product area (section of the project) an item relates to — mirrors
+-- futures.area. NULL = untagged; filters the board.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS area TEXT;
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
 -- Per-project futures: loose directional ideas, curated against the north star

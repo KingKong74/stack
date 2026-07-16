@@ -56,7 +56,7 @@ const ROAD_DRAFT_KEY = 'stack.roadDrafts';
 // Drafts are a crash pad, not storage — stale ones self-clear after this long.
 const ROAD_DRAFT_TTL_MS = 30 * 60 * 1000;
 
-export interface RoadDraft { title: string; note: string; priority: Priority; lane: string; savedAt?: number }
+export interface RoadDraft { title: string; note: string; priority: Priority; lane: string; area?: string; savedAt?: number }
 
 function readRoadDrafts(): Record<string, RoadDraft> {
   try { return JSON.parse(localStorage.getItem(ROAD_DRAFT_KEY) || '{}'); } catch { return {}; }
@@ -407,7 +407,7 @@ export async function getRoadmap(slug: string): Promise<Roadmap> {
   return request<Roadmap>(roadmapBase(slug));
 }
 export async function createRoadmapItem(
-  slug: string, input: { title: string; note: string; bucket: Priority; claimed_by?: string },
+  slug: string, input: { title: string; note: string; bucket: Priority; claimed_by?: string; area?: string },
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(roadmapBase(slug), { method: 'POST', body: input });
 }
@@ -415,7 +415,7 @@ export async function patchRoadmapItem(
   slug: string, id: number,
   patch: Partial<{
     done: boolean; bucket: Priority; title: string; note: string; reviewed: boolean;
-    claimed_by: string; review_tag: string; skipped: boolean;
+    claimed_by: string; review_tag: string; skipped: boolean; area: string;
   }>,
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });

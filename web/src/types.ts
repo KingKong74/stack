@@ -56,6 +56,7 @@ export interface RoadmapItem {
   source: Source;
   reviewed: boolean;
   claimedBy: string;   // lane owning this item ('' = free)
+  area: string;        // product-area tag ('' = untagged) — filters the board
   reviewTag: string;   // archive verdict: '' | solid | needs-work | rethink
   skipped: boolean;    // parked — planned, but not to be picked up yet
   updatedAt: string | null; // ISO — latest-first ordering in the archive

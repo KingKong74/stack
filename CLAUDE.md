@@ -173,7 +173,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   - `bugs` — `bug_key` (BUG-N per project), title, severity, status, `link_ref` (commit), `source`,
     `fingerprint`, `reviewed_at`. Partial unique index on (project, fingerprint) WHERE source='hook'.
   - `roadmap_items` — `bucket`, title, note, `done`, `position`, `source`, `fingerprint`,
-    `reviewed_at`, `claimed_by` (the **lane claim** — which parallel session owns an open item;
+    `reviewed_at`, `area` (the product-area tag, mirroring `futures.area` — chips + filter on the
+    board, set from the RoadmapModal's Area field with a datalist of the project's known areas),
+    `claimed_by` (the **lane claim** — which parallel session owns an open item;
     set via POST/PATCH, shown as a ⚑ chip, injected by the SessionStart hook as "Lane claims —
     respect these"; the agent template documents the claim-before-starting protocol) and
     `review_tag` (the **archive verdict**: solid | needs-work | rethink — set from the Archive's

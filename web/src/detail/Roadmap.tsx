@@ -36,6 +36,10 @@ export function Roadmap({
 }) {
   const [pickerFor, setPickerFor] = useState<number | null>(null);
   const [intakeOpen, setIntakeOpen] = useState(false);
+  // Area filter — the product-area chips over the board (mirrors the Futures funnel).
+  const [areaFilter, setAreaFilter] = useState('');
+  const openAll = PRIORITY_META.flatMap((col) => roadmap[col.key].filter((it) => !it.done));
+  const boardAreas = [...new Set(openAll.map((it) => it.area).filter(Boolean))].sort();
   // Done items split into the pipeline: To verify (no verdict yet — test it,
   // verdict it, or send it back) → Archive (verdict given). Latest first.
   const ts = (it: RoadmapItem) => (it.updatedAt ? Date.parse(it.updatedAt) : 0);
@@ -104,13 +108,27 @@ export function Roadmap({
         the dashboard progress is computed from Must/Should completion.
       </div>
 
+      {boardAreas.length > 0 && (
+        <div className="chips" style={{ marginBottom: 18 }}>
+          <button className={`chip-sm ${areaFilter === '' ? 'on' : ''}`} onClick={() => setAreaFilter('')}>
+            All {openAll.length}
+          </button>
+          {boardAreas.map((a) => (
+            <button key={a} className={`chip-sm ${areaFilter === a ? 'on' : ''}`}
+              onClick={() => setAreaFilter(areaFilter === a ? '' : a)}>
+              {a} {openAll.filter((it) => it.area === a).length}
+            </button>
+          ))}
+        </div>
+      )}
+
       {intakeOpen && onSortIntake && onApplyIntake && (
         <IntakePanel onSort={onSortIntake} onApply={onApplyIntake} onClose={() => setIntakeOpen(false)} />
       )}
 
       <div className="road-grid">
         {PRIORITY_META.map((col) => {
-          const open = roadmap[col.key].filter((it) => !it.done);
+          const open = roadmap[col.key].filter((it) => !it.done && (!areaFilter || it.area === areaFilter));
           // Parked items sink to the bottom of their bucket.
           const items = [...open.filter((it) => !it.skipped), ...open.filter((it) => it.skipped)];
           return (
@@ -132,6 +150,7 @@ export function Roadmap({
                       <div className="t">
                         {it.title}
                         {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
+                        {it.area && <span className="area-chip" title="Product area — edit the item to change it">{it.area}</span>}
                         {it.skipped && <span className="skip-chip" title="Parked — not to be picked up yet">⏸ parked</span>}
                       </div>
                       {it.note && <div className="note">{it.note}</div>}
