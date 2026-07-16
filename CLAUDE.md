@@ -421,6 +421,12 @@ the silent metadata backstop so the feed never has gaps.
   (PATCH: title/note/reviewed/`alignment: on-course|tangent|off-course` ('' clears);
   DELETE tombstones a hook idea) · `POST /api/projects/:slug/futures/:id/judge` (Gemini-suggested
   verdict + why — suggestion only, 503 without a server key, 400 without a north star)
+- `POST /api/projects/:slug/polaris` (**Polaris** — the Futures tab's Gemini terminal: `{message,
+  history}` → `{reply}`, grounded in north star/phase/open roadmap/funnel/bug count; replies only,
+  never writes state; 503 without a key. The web terminal sits under the North star box
+  (`components/Polaris.tsx`, click-to-expand) and REPLACED the Roadmap tab's ✧ Intake button — the
+  intake route survives as Polaris's `/sort` command, with apply/move/drop done in-terminal
+  through the normal CRUD paths)
 - `GET|POST /api/projects/:slug/notes` · `PATCH /api/projects/:slug/notes/:id` (text) ·
   `DELETE /api/projects/:slug/notes/:id`
 - `GET|POST /api/projects/:slug/checks` · `DELETE /api/projects/:slug/checks/:id` ·
@@ -451,7 +457,7 @@ won't re-create it.
   Rich checkpoints stay Claude-authored via `/checkpoint` (free, in-session) — don't replace that
   with an API summariser. Surfaces: `hook/stack-gemini-review.mjs` (second-model diff review →
   review inbox; run manually or from the autopilot), `server/src/gemini.js` + judge/intake/
-  semantic-checks/replan routes, and the post-ingest `gemini_note` (a one-line second-model take
+  polaris/semantic-checks/replan routes, and the post-ingest `gemini_note` (a one-line second-model take
   stamped onto each push in the activity feed). Key from server env / `~/.stack/env`; model
   default gemini-2.5-flash for all surfaces.
 - Colour is the named CSS variables at the top of `styles.css` `:root` — add/adjust tones there, not

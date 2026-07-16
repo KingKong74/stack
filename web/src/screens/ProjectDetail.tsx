@@ -6,7 +6,7 @@ import {
   createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture,
   createCheck, deleteCheck, runChecks,
   patchProject, deleteProject, createShareLink, deleteShareLink,
-  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, sortIntake, type IntakeSuggestion,
+  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, sortIntake, polarisChat, type IntakeSuggestion,
   replanProject, AuthError,
 } from '../store';
 import { go } from '../lib/route';
@@ -604,13 +604,14 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
             onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad}
-            onToggleSkip={toggleSkipRoad}
-            onSortIntake={(text) => sortIntake(slug, text)} onApplyIntake={applyIntake} />
+            onToggleSkip={toggleSkipRoad} />
         )}
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId}
             onSaveNorthStar={saveNorthStar} onAdd={addFuture} onEdit={editFuture} onAlign={alignFuture}
             onAskGemini={(id) => judgeFuture(slug, id)}
+            onPolarisChat={(message, history) => polarisChat(slug, message, history)}
+            onSortIntake={(text) => sortIntake(slug, text)} onApplyIntake={applyIntake}
             onDelete={removeFuture} onPromote={promoteFuture} />
         )}
         {tab === 'notes' && (

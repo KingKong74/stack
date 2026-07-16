@@ -19,6 +19,7 @@ import { timeline } from './routes/timeline.js';
 import { intake } from './routes/intake.js';
 import { auth } from './routes/auth.js';
 import { control } from './routes/control.js';
+import { polaris } from './routes/polaris.js';
 
 // Read once at module load: the health endpoint reports the deployed version.
 const { version } = JSON.parse(
@@ -62,6 +63,7 @@ app.use('/api/projects/:slug/notes', requireToken, notes);
 app.use('/api/projects/:slug/futures', requireToken, futures);
 app.use('/api/projects/:slug/checks', requireToken, checks);
 app.use('/api/projects/:slug/intake', requireToken, intake);
+app.use('/api/projects/:slug/polaris', requireToken, polaris);
 app.use('/api/projects', requireToken, projects);
 
 const port = process.env.PORT || 4000;

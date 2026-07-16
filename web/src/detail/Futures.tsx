@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Future } from '../types';
-import type { JudgeSuggestion } from '../store';
+import type { IntakeSuggestion, JudgeSuggestion, PolarisTurn } from '../store';
+import { Polaris } from '../components/Polaris';
 
 export type Alignment = 'on-course' | 'tangent' | 'off-course';
 export const ALIGNMENTS: { key: Alignment; label: string; hint: string }[] = [
@@ -25,7 +26,7 @@ const GROUPS: { key: string; label: string }[] = [
 // promoted into the roadmap (ProjectDetail owns that flow), or get dismissed.
 export function Futures({
   northStar, futures, highlightId, onSaveNorthStar, onAdd, onEdit, onAlign, onDelete, onPromote,
-  onAskGemini,
+  onAskGemini, onPolarisChat, onSortIntake, onApplyIntake,
 }: {
   northStar: string;
   futures: Future[];
@@ -37,6 +38,9 @@ export function Futures({
   onDelete: (id: number) => void;
   onPromote: (future: Future) => void;
   onAskGemini?: (id: number) => Promise<JudgeSuggestion>;
+  onPolarisChat?: (message: string, history: PolarisTurn[]) => Promise<string>;
+  onSortIntake?: (text: string) => Promise<IntakeSuggestion[]>;
+  onApplyIntake?: (items: IntakeSuggestion[]) => Promise<void>;
 }) {
   const [editingStar, setEditingStar] = useState(false);
   const [starDraft, setStarDraft] = useState(northStar);
@@ -109,6 +113,11 @@ export function Futures({
           </div>
         )}
       </div>
+
+      {/* polaris — the Gemini terminal, pinned under the north star */}
+      {onPolarisChat && onSortIntake && onApplyIntake && (
+        <Polaris onChat={onPolarisChat} onSort={onSortIntake} onApply={onApplyIntake} />
+      )}
 
       {/* ideas */}
       <div className="section-bar" style={{ marginBottom: 6 }}>

@@ -321,6 +321,16 @@ export async function sortIntake(slug: string, text: string): Promise<IntakeSugg
   return r.items;
 }
 
+// ---- Polaris (POST .../polaris — the Futures tab's Gemini terminal) ----
+
+export interface PolarisTurn { role: 'you' | 'polaris'; text: string }
+
+export async function polarisChat(slug: string, message: string, history: PolarisTurn[]): Promise<string> {
+  const r = await request<{ reply: string }>(
+    `/projects/${encodeURIComponent(slug)}/polaris`, { method: 'POST', body: { message, history } });
+  return r.reply;
+}
+
 // ---- Gemini judge assist (POST .../futures/:id/judge — suggestion only) ----
 
 export interface JudgeSuggestion { alignment: 'on-course' | 'tangent' | 'off-course'; why: string }
