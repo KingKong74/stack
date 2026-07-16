@@ -103,6 +103,16 @@ Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
 
 - Marking the item `{"done":true}` finishes it; send `{"claimed_by":""}` to
   release one you're abandoning. Never print the token while doing this.
+- **When you finish an item, tell the reviewer what landed.** Include a
+  `built_note` alongside `done:true` — two or three plain sentences on what was
+  actually built, where it lives and how it was verified. It appears on the
+  Roadmap tab's Reviews view, and the human verdicts against it:
+
+  ```bash
+  curl -s -X PATCH "$STACK_API/api/projects/<slug>/roadmap/<id>" \
+    -H "authorization: Bearer $STACK_TOKEN" -H 'content-type: application/json' \
+    -d '{"done":true,"built_note":"<what landed, where, how verified>"}'
+  ```
 
 ## House rules
 

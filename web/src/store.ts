@@ -468,6 +468,7 @@ export async function patchRoadmapItem(
   patch: Partial<{
     done: boolean; bucket: Priority; title: string; note: string; reviewed: boolean;
     claimed_by: string; review_tag: string; skipped: boolean; area: string; position: number;
+    built_note: string;
   }>,
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });

@@ -1226,3 +1226,6 @@ a { color: inherit; }
 .road-item.drag { opacity: 0.45; }
 .road-item.drop-before { box-shadow: 0 -2.5px 0 var(--accent); border-radius: 0 0 12px 12px; }
 .road-items.drop-into { outline: 1.5px dashed var(--accent-tint-border); outline-offset: 3px; border-radius: 10px; }
+/* "what landed" note on Reviews rows — the completing session's account */
+.built { margin-top: 8px; font-size: 12.5px; line-height: 1.55; color: var(--body); background: var(--panel); border-left: 3px solid var(--sage, var(--green)); border-radius: 6px; padding: 8px 11px; white-space: pre-wrap; }
+.built-lbl { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }

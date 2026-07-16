@@ -83,6 +83,10 @@ roadmap.patch('/:id', async (req, res) => {
     sets.push(`area = $${i++}`);
     vals.push(String(req.body.area || '').trim().toLowerCase().slice(0, 40) || null);
   }
+  if (req.body?.built_note !== undefined) {
+    sets.push(`built_note = $${i++}`);
+    vals.push(String(req.body.built_note || '').trim().slice(0, 2000) || null);
+  }
   if (req.body?.position !== undefined && Number.isFinite(req.body.position)) {
     sets.push(`position = $${i++}`); vals.push(Math.trunc(req.body.position));
   }

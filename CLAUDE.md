@@ -197,9 +197,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     `DIRECTIVES` in `lib/brief.ts`). Seeded once on migrate.
   - `bugs` — `bug_key` (BUG-N per project), title, severity, status, `link_ref` (commit), `source`,
     `fingerprint`, `reviewed_at`. Partial unique index on (project, fingerprint) WHERE source='hook'.
-  - `roadmap_items` — `bucket`, title, note, `done`, `position`, `source`, `fingerprint`,
+  - `roadmap_items` — `bucket`, title, note, `done`, `position` (PATCHable — the board is
+    drag-reorderable and its order is the autopilot queue), `source`, `fingerprint`,
     `reviewed_at`, `area` (the product-area tag, mirroring `futures.area` — chips + filter on the
     board, set from the RoadmapModal's Area field with a datalist of the project's known areas),
+    `built_note` (what actually landed — PATCHed by the completing session/agent alongside
+    `done:true`, displayed on the Roadmap tab's **Reviews** view so verdicts are made against
+    what was built; the agent template documents the protocol),
     `claimed_by` (the **lane claim** — which parallel session owns an open item;
     set via POST/PATCH, shown as a ⚑ chip, injected by the SessionStart hook as "Lane claims —
     respect these"; the agent template documents the claim-before-starting protocol) and
@@ -430,9 +434,12 @@ the silent metadata backstop so the feed never has gaps.
 - `GET|POST /api/projects/:slug/bugs` · `PATCH|DELETE /api/projects/:slug/bugs/:bugKey`
   (PATCH also takes `reviewed: bool` — the review-inbox approve)
 - `GET|POST /api/projects/:slug/roadmap` · `PATCH|DELETE /api/projects/:slug/roadmap/:id`
-  (POST takes `claimed_by`; PATCH also takes `reviewed: bool`, `claimed_by` ('' releases),
-  `review_tag: solid|needs-work|rethink` ('' clears) and `skipped: bool` — the parked flag:
-  sinks to the bottom of its bucket, agents never pick it up, still counts toward progress)
+  (POST takes `claimed_by` + `area`; PATCH also takes `reviewed: bool`, `claimed_by` ('' releases),
+  `review_tag: solid|needs-work|rethink` ('' clears), `skipped: bool` — the parked flag:
+  sinks to the bottom of its bucket, agents never pick it up, still counts toward progress —
+  plus `area`, `position` (drag-reorder) and `built_note` (the what-landed account)) ·
+  `POST /api/projects/:slug/roadmap/suggest-title` (Gemini titles an item from its note — the
+  modal's ✧ button; suggestion only, 503 keyless)
 - `GET|POST /api/projects/:slug/futures` · `PATCH|DELETE /api/projects/:slug/futures/:id`
   (PATCH: title/note/reviewed/`alignment: on-course|tangent|off-course` ('' clears);
   DELETE tombstones a hook idea) · `POST /api/projects/:slug/futures/:id/judge` (Gemini-suggested

@@ -54,6 +54,10 @@ export function Roadmap({
   const doneItems = PRIORITY_META.flatMap((col) => roadmap[col.key].filter((it) => it.done));
   const toVerify = doneItems.filter((it) => !it.reviewTag).sort((a, b) => ts(b) - ts(a));
   const archived = doneItems.filter((it) => it.reviewTag).sort((a, b) => ts(b) - ts(a));
+  // The tab's two views: the open board, and Reviews (to-verify + archive).
+  // A deep-link to a done item opens straight on Reviews.
+  const [view, setView] = useState<'board' | 'reviews'>(
+    () => (doneItems.some((it) => String(it.id) === highlightId) ? 'reviews' : 'board'));
   // Open the archive straight away when a deep-link targets an archived item.
   const [archiveOpen, setArchiveOpen] = useState(
     () => archived.some((it) => String(it.id) === highlightId));
@@ -97,6 +101,14 @@ export function Roadmap({
           <div className="subtitle">MoSCoW prioritisation</div>
         </div>
         <div className="bar-actions">
+          <div className="seg-control sm" role="tablist" aria-label="Roadmap view">
+            <button role="tab" aria-selected={view === 'board'}
+              className={`seg-opt ${view === 'board' ? 'on' : ''}`} onClick={() => setView('board')}>Board</button>
+            <button role="tab" aria-selected={view === 'reviews'}
+              className={`seg-opt ${view === 'reviews' ? 'on' : ''}`} onClick={() => setView('reviews')}>
+              Reviews{toVerify.length > 0 ? ` · ${toVerify.length}` : ''}
+            </button>
+          </div>
           {draft && (
             <>
               <button className="draft-chip" onClick={onResumeDraft} title="Resume the unfinished item">
@@ -107,6 +119,7 @@ export function Roadmap({
           )}
         </div>
       </div>
+      {view === 'board' && (<>
       <div className="subtitle" style={{ marginBottom: 20 }}>
         What must ship, what should, what could, and what won't — this round. Tick items off as you go;
         the dashboard progress is computed from Must/Should completion. Drag to reorder — the
@@ -187,6 +200,20 @@ export function Roadmap({
           );
         })}
       </div>
+      </>)}
+
+      {view === 'reviews' && (<>
+      <div className="subtitle" style={{ marginBottom: 20 }}>
+        Everything completed, awaiting your verdict — each row shows what was actually built.
+        Solid closes it out; Rethink (or ↩ Board) sends it back into play.
+      </div>
+
+      {toVerify.length === 0 && archived.length === 0 && (
+        <div className="empty-state">
+          <div className="big">Nothing to review</div>
+          <div>Completed items land here with a note on what was built.</div>
+        </div>
+      )}
 
       {/* to verify — completed but unverdicted: test it, verdict it, or send it back */}
       {toVerify.length > 0 && (
@@ -206,6 +233,7 @@ export function Roadmap({
                   {it.claimedBy && <span className="claim-chip inline" title="Done by this lane">⚑ {it.claimedBy}</span>}
                 </div>
                 {it.note && <div className="note">{it.note}</div>}
+                {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
               </div>
               <button className="verify-back" onClick={() => onToggle(it)}
                 title="Didn't hold up — send it back to the board">↩ Board</button>
@@ -275,6 +303,7 @@ export function Roadmap({
                               {it.claimedBy && <span className="claim-chip inline" title="Done by this lane">⚑ {it.claimedBy}</span>}
                             </div>
                             {it.note && <div className="note">{it.note}</div>}
+                            {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
                             {archActions(it)}
                           </div>
                         </div>
@@ -310,6 +339,7 @@ export function Roadmap({
           )}
         </div>
       )}
+      </>)}
     </div>
   );
 }

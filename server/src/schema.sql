@@ -135,6 +135,10 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS review_tag TEXT;
 -- The product area (section of the project) an item relates to — mirrors
 -- futures.area. NULL = untagged; filters the board.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS area TEXT;
+-- What actually landed: written by the session/agent that completes the item
+-- (PATCH built_note alongside done:true) and shown on the Reviews view, so the
+-- verdict is made against what was built, not just the ask.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS built_note TEXT;
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
 -- Per-project futures: loose directional ideas, curated against the north star
