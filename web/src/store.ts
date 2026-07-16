@@ -337,6 +337,16 @@ export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols:
   return ws;
 }
 
+// Quick commands on the Terminal screen — device-local, like brief prefs.
+export interface TermCmd { label: string; cmd: string }
+const TERM_CMDS_KEY = 'stack.termCmds';
+export function getTermCmds(): TermCmd[] {
+  try { return JSON.parse(localStorage.getItem(TERM_CMDS_KEY) || '[]'); } catch { return []; }
+}
+export function setTermCmds(list: TermCmd[]) {
+  localStorage.setItem(TERM_CMDS_KEY, JSON.stringify(list));
+}
+
 // ---- Polaris (POST .../polaris — the Futures tab's Gemini terminal) ----
 
 export interface PolarisTurn { role: 'you' | 'polaris'; text: string }

@@ -1229,3 +1229,33 @@ a { color: inherit; }
 /* "what landed" note on Reviews rows — the completing session's account */
 .built { margin-top: 8px; font-size: 12.5px; line-height: 1.55; color: var(--body); background: var(--panel); border-left: 3px solid var(--sage, var(--green)); border-radius: 6px; padding: 8px 11px; white-space: pre-wrap; }
 .built-lbl { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+
+/* terminal v2 — session tabs, quick-command rail, git-bash colours */
+.term-layout { display: flex; gap: 14px; align-items: stretch; }
+.term-rail { width: 216px; flex: none; display: flex; flex-direction: column; gap: 6px; align-content: flex-start; }
+.term-rail-head { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 2px 0 2px; }
+.term-cmd { display: block; width: 100%; text-align: left; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--ink); background: var(--card); border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-cmd:hover { border-color: var(--accent); color: var(--accent); }
+.term-cmd.add { color: var(--muted); border-style: dashed; }
+.term-cmd.add:hover { color: var(--accent); }
+.term-cmd-row { display: flex; gap: 4px; align-items: center; }
+.term-cmd-row .term-cmd { flex: 1; min-width: 0; }
+.term-cmd-x { color: var(--faint); font-size: 14px; padding: 2px 5px; border-radius: 5px; }
+.term-cmd-x:hover { color: var(--critical); }
+.term-cmd-add { display: flex; flex-direction: column; gap: 6px; }
+.term-cmd-add .field-input.sm { height: 32px; font-size: 12px; }
+.term-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.term-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.term-tab { display: inline-flex; align-items: center; gap: 2px; background: var(--card); border: 1px solid var(--line-2); border-radius: 9px 9px 0 0; padding: 0 4px 0 0; }
+.term-tab.on { background: #000; border-color: #000; }
+.term-tab.on .term-tab-name, .term-tab.on .term-tab-x { color: #bfbfbf; }
+.term-tab-name { display: inline-flex; align-items: center; gap: 7px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--chip-ink); padding: 7px 6px 7px 11px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-tab .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--faint); }
+.term-tab .dot.live { background: var(--green); }
+.term-tab .dot.connecting { background: #bfbf00; }
+.term-tab .dot.error { background: var(--critical); }
+.term-tab-x { color: var(--faint); font-size: 13px; padding: 2px 6px; border-radius: 5px; }
+.term-tab-x:hover { color: var(--critical); }
+.term-holder.gitbash { background: #000; border-radius: 0 14px 14px 14px; height: calc(100vh - 264px); }
+.term-empty { display: flex; align-items: center; justify-content: center; color: #666; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+@media (max-width: 760px) { .term-layout { flex-direction: column; } .term-rail { width: 100%; flex-direction: row; flex-wrap: wrap; } .term-cmd { width: auto; } }
