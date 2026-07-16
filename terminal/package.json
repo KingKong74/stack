@@ -1,0 +1,14 @@
+{
+  "name": "stack-term",
+  "version": "1.0.0",
+  "description": "Stack's web-terminal daemon — websocket to a PTY on the host",
+  "type": "module",
+  "private": true,
+  "main": "stack-term.mjs",
+  "scripts": {
+    "start": "node stack-term.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

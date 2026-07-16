@@ -119,6 +119,8 @@ export function Control() {
                 </div>
               </div>
               <div className="mc-totals">
+                <button className="btn-repo sm" onClick={() => go.terminal()}
+                  title="A real shell (or Claude) on the host, from any device">⌨ Terminal</button>
                 <span><b>{data.totals.automode}</b> on automode</span>
                 <span><b>{data.totals.liveSessions}</b> live session{data.totals.liveSessions === 1 ? '' : 's'}</span>
                 <span><b>{data.totals.claims}</b> claimed lane{data.totals.claims === 1 ? '' : 's'}</span>
@@ -141,6 +143,8 @@ export function Control() {
                         ● {p.live.branches.join(' · ')}
                       </span>
                     )}
+                    <button className="mc-term" onClick={() => go.terminal(p.slug)}
+                      title={`Open a terminal in ~/${p.slug}`}>⌨</button>
                     <span className="mc-push">{p.lastPush ? `pushed ${p.lastPush}` : 'no pushes yet'}</span>
                     <button role="switch" aria-checked={p.automode} aria-label={`Automode for ${p.name}`}
                       className={`switch sm ${p.automode ? 'on' : ''}`} onClick={() => toggleAutomode(p)}

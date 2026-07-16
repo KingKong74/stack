@@ -36,6 +36,10 @@ services:
     ports:
       # Dokploy / Cloudflare Tunnel point at this. Change the host port if 8787 clashes.
       - "${WEB_PORT:-8787}:80"
+    extra_hosts:
+      # Lets nginx reach the host-side terminal daemon (terminal/stack-term.mjs)
+      # for the /term websocket proxy. Harmless when the daemon isn't running.
+      - "host.docker.internal:host-gateway"
     depends_on:
       - server
 

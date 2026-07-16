@@ -321,6 +321,21 @@ export async function sortIntake(slug: string, text: string): Promise<IntakeSugg
   return r.items;
 }
 
+// ---- web terminal (ws to /term — the host PTY daemon behind nginx) ----
+
+// The only place the terminal's transport and token live — the Terminal screen
+// attaches its handlers to the returned socket but never touches storage. The
+// start frame goes out on open; the daemon validates the token against the API
+// before anything spawns.
+export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number }): WebSocket {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${window.location.host}/term`);
+  ws.addEventListener('open', () => {
+    ws.send(JSON.stringify({ t: 'start', token: getToken() || '', ...opts }));
+  });
+  return ws;
+}
+
 // ---- Polaris (POST .../polaris — the Futures tab's Gemini terminal) ----
 
 export interface PolarisTurn { role: 'you' | 'polaris'; text: string }

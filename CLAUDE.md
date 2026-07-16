@@ -39,6 +39,14 @@ hook/   Zero-dependency Node ESM. stack-post.mjs is the shared lib (env load, gi
         • stack-checkpoint.mjs — the /checkpoint POSTER (not a hook). Reads a checkpoint JSON on
           stdin and POSTs it (authored:true); `--settings` prints current settings. Installs to
           ~/.stack/ alongside the hooks + stack-post.mjs.
+terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs: a ws server (only
+        npm dep: `ws` — no native modules) that spawns a real login shell or `claude` in a
+        directory jailed to STACK_TERM_ROOT (default $HOME), via pty-shim.py (python3 stdlib owns
+        the PTY + resize, since the host has no build toolchain for node-pty). Auth: the first ws
+        frame's bearer is validated AGAINST THE API (GET /api/settings, 60s cache) so API + PIN
+        device tokens both work and revocation holds; fails CLOSED when the API is unreachable.
+        nginx proxies /term → host.docker.internal:7703 (extra_hosts host-gateway in compose).
+        Runs from crontab (@reboot line); log ~/.stack/term.log. Frames are JSON with base64 data.
 templates/  stack-agent-context.md — the canonical portable agent manual (single source of truth).
 scripts/    stack-context.mjs — prints that template to stdout, optionally stamped with slug + API.
             stack-autopilot.mjs — the overnight autopilot (phase 1): picks ONE eligible roadmap
@@ -107,8 +115,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   automode toggle (`patchProject {automode}`), status, live presence, last push, tonight's likely
   pick (deep-links to the roadmap item), last `auto/*` run, claim chips, review/serious-bug
   counts and blockers. Renders `getControl()`; automode projects sort first (`.mc-*` styles).
+- `screens/Terminal.tsx` — the web terminal (`#/terminal[?cwd=<dir>]`, lazy-loaded so xterm.js
+  stays out of the main bundle; entry points on Mission Control — the strip's ⌨ Terminal button
+  and a per-row ⌨ that prefills the project's slug as the cwd). xterm.js + fit addon over
+  `store.openTerminal()` (the only place the ws transport + token live); Shell/Claude seg control,
+  status line, reconnectable.
 - `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router; routes
-  are `#/`, `#/settings`, `#/control`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
+  are `#/`, `#/settings`, `#/control`, `#/terminal`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit
   hash (activity), a bug key (bugs) or a row id (roadmap/notes). `go.settings()` opens Settings.
 - `components/CommandDeck.tsx` — the cross-project deck at the top of the dashboard (resume hero,
@@ -495,6 +508,8 @@ node hook/stack-session-start.mjs --demo   # print the "where you left off" bloc
 node hook/stack-checkpoint.mjs --settings  # print current settings (what /checkpoint reads)
 echo '{"project":{"slug":"stack"},"session":{"summary":"…"}}' | node hook/stack-checkpoint.mjs  # author a checkpoint
 node scripts/stack-context.mjs --slug stack --api https://stack.your-domain  # export agent manual
+node terminal/stack-term.mjs               # the web-terminal daemon (normally via the @reboot cron line)
+tail -f ~/.stack/term.log                  # its log
 node hook/stack-gemini-review.mjs --dry    # second-model review of the last commit (Gemini; --dry = print only)
 node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack --dry  # what would tonight's run pick?
 crontab -l                                 # the autopilot schedule (23:05 nightly; remove the line to disable)

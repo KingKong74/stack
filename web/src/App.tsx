@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useRoute } from './lib/route';
 import { Dashboard } from './screens/Dashboard';
 import { ProjectDetail } from './screens/ProjectDetail';
 import { Settings } from './screens/Settings';
 import { Timeline } from './screens/Timeline';
 import { Control } from './screens/Control';
+
+// xterm.js is heavy and only the terminal needs it — loaded on first visit.
+const Terminal = lazy(() =>
+  import('./screens/Terminal').then((m) => ({ default: m.Terminal })));
 import { TokenGate } from './components/TokenGate';
 import { Showcase } from './screens/Showcase';
 import { CommandPalette } from './components/CommandPalette';
@@ -62,6 +66,8 @@ export default function App() {
         <Timeline />
       ) : route.name === 'control' ? (
         <Control />
+      ) : route.name === 'terminal' ? (
+        <Suspense fallback={null}><Terminal initialCwd={route.cwd} /></Suspense>
       ) : route.name === 'detail' ? (
         <ProjectDetail id={route.id} tab={route.tab} highlight={route.highlight} onOpenSearch={() => setPaletteOpen(true)} />
       ) : (
