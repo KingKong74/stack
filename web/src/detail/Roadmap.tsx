@@ -16,7 +16,7 @@ const tagLabel = (tag: string) => REVIEW_TAGS.find((t) => t.key === tag)?.label 
 // verdict tag (needs-work/rethink offer a follow-up item), restorable by
 // un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onToggleSkip, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onToggleSkip, onReorder, highlightId,
   draft, onResumeDraft, onDiscardDraft,
 }: {
   roadmap: RoadmapData;
@@ -26,12 +26,24 @@ export function Roadmap({
   onDelete: (item: RoadmapItem) => void;
   onReviewTag: (item: RoadmapItem, tag: ReviewTag) => void;
   onToggleSkip: (item: RoadmapItem) => void;
+  onReorder?: (item: RoadmapItem, toBucket: Priority, beforeId: number | null) => void;
   highlightId?: string | null;
   draft?: { title: string } | null;
   onResumeDraft?: () => void;
   onDiscardDraft?: () => void;
 }) {
   const [pickerFor, setPickerFor] = useState<number | null>(null);
+  // Drag-reorder: which item is in flight, and what it's hovering over
+  // (an item id = drop before it; `col-<bucket>` = drop at the bucket's end).
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [overKey, setOverKey] = useState<string | null>(null);
+  const allById = new Map(PRIORITY_META.flatMap((c) => roadmap[c.key]).map((i) => [i.id, i]));
+  const handleDrop = (toBucket: Priority, beforeId: number | null) => {
+    const dragged = dragId != null ? allById.get(dragId) : null;
+    setDragId(null);
+    setOverKey(null);
+    if (dragged && onReorder && dragged.id !== beforeId) onReorder(dragged, toBucket, beforeId);
+  };
   // Area filter — the product-area chips over the board (mirrors the Futures funnel).
   const [areaFilter, setAreaFilter] = useState('');
   const openAll = PRIORITY_META.flatMap((col) => roadmap[col.key].filter((it) => !it.done));
@@ -97,7 +109,8 @@ export function Roadmap({
       </div>
       <div className="subtitle" style={{ marginBottom: 20 }}>
         What must ship, what should, what could, and what won't — this round. Tick items off as you go;
-        the dashboard progress is computed from Must/Should completion.
+        the dashboard progress is computed from Must/Should completion. Drag to reorder — the
+        autopilot works its bucket top-down.
       </div>
 
       {boardAreas.length > 0 && (
@@ -126,9 +139,25 @@ export function Roadmap({
                 <span className="name">{col.label}</span>
                 <span className="count">{items.length}</span>
               </div>
-              <div className="road-items">
+              <div
+                className={`road-items ${overKey === `col-${col.key}` ? 'drop-into' : ''}`}
+                onDragOver={(e) => { if (dragId != null) { e.preventDefault(); setOverKey(`col-${col.key}`); } }}
+                onDragLeave={() => setOverKey((k) => (k === `col-${col.key}` ? null : k))}
+                onDrop={(e) => { e.preventDefault(); handleDrop(col.key, null); }}
+              >
                 {items.map((it) => (
-                  <div className={`road-item ${it.skipped ? 'skipped' : ''} ${highlightId === String(it.id) ? 'hl' : ''}`} key={it.id} data-hl={it.id}>
+                  <div
+                    className={`road-item ${it.skipped ? 'skipped' : ''} ${highlightId === String(it.id) ? 'hl' : ''} ${dragId === it.id ? 'drag' : ''} ${overKey === String(it.id) ? 'drop-before' : ''}`}
+                    key={it.id} data-hl={it.id}
+                    draggable={!!onReorder}
+                    onDragStart={(e) => { setDragId(it.id); e.dataTransfer.effectAllowed = 'move'; }}
+                    onDragEnd={() => { setDragId(null); setOverKey(null); }}
+                    onDragOver={(e) => {
+                      if (dragId != null && dragId !== it.id) { e.preventDefault(); e.stopPropagation(); setOverKey(String(it.id)); }
+                    }}
+                    onDragLeave={() => setOverKey((k) => (k === String(it.id) ? null : k))}
+                    onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDrop(col.key, it.id); }}
+                  >
                     <button
                       className="road-check"
                       onClick={() => onToggle(it)}

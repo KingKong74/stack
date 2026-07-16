@@ -6,7 +6,8 @@ import {
   createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture,
   createCheck, deleteCheck, runChecks,
   patchProject, deleteProject, createShareLink, deleteShareLink,
-  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, sortIntake, polarisChat, type IntakeSuggestion,
+  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, sortIntake, polarisChat, suggestRoadmapTitle,
+  type IntakeSuggestion,
   replanProject, AuthError,
 } from '../store';
 import { go } from '../lib/route';
@@ -248,6 +249,26 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     for (const r of newRoad) road[r.bucket] = [...road[r.bucket], r];
     setData({ ...data, roadmap: road, futures: [...newFutures, ...futures] });
   };
+
+  // Drag-reorder: rebuild the target bucket's open order and renumber it. The
+  // client shape doesn't carry positions, so the whole bucket renumbers 0..n —
+  // buckets are small, and board order IS the autopilot queue.
+  const reorderRoad = (item: RoadmapItem, toBucket: Priority, beforeId: number | null) =>
+    guard(async () => {
+      const target = roadmap[toBucket].filter((i) => !i.done && i.id !== item.id);
+      let idx = beforeId == null ? target.length : target.findIndex((i) => i.id === beforeId);
+      if (idx < 0) idx = target.length;
+      const moved = { ...item, bucket: toBucket };
+      const newOpen = [...target.slice(0, idx), moved, ...target.slice(idx)];
+      const road = { ...roadmap };
+      if (item.bucket !== toBucket) road[item.bucket] = roadmap[item.bucket].filter((i) => i.id !== item.id);
+      road[toBucket] = [...newOpen, ...roadmap[toBucket].filter((i) => i.done)];
+      setData({ ...data, roadmap: road });
+      await Promise.all(newOpen.map((it, i) => patchRoadmapItem(slug, it.id, {
+        position: i,
+        ...(it.id === item.id && item.bucket !== toBucket ? { bucket: toBucket } : {}),
+      })));
+    });
 
   const toggleSkipRoad = (item: RoadmapItem) =>
     guard(async () => {
@@ -606,7 +627,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
             onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad}
-            onToggleSkip={toggleSkipRoad} />
+            onToggleSkip={toggleSkipRoad} onReorder={reorderRoad} />
         )}
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId}
@@ -641,6 +662,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           mode={roadModal.editing ? 'edit' : 'add'}
           onClose={() => { setRoadModal(roadModalClosed); setPendingFuture(null); }}
           onDismiss={(d) => updateRoadDraft(d)}
+          onSuggestTitle={(note) => suggestRoadmapTitle(slug, note)}
           onSubmit={submitRoad} />
       )}
       {(replan !== null || replanErr) && (

@@ -110,6 +110,17 @@ under 180 words unless the task genuinely needs more. Use en-AU spelling. Respon
 this JSON:
 { "reply": "your reply as plain text (\\n for line breaks)" }`;
 
+DEFAULTS.titler = `You are naming a roadmap item for a side project. The author wrote what they
+want done (the note below); distil it into the item's title: a short imperative,
+12 words or fewer, concrete, no trailing punctuation. Use en-AU spelling.
+{{NORTH_STAR_LINE}}
+
+THE NOTE:
+{{NOTE}}
+
+Respond with ONLY this JSON:
+{ "title": "the title" }`;
+
 const ENV_KEYS = {
   judge: 'GEMINI_JUDGE_PROMPT',
   intake: 'GEMINI_INTAKE_PROMPT',
@@ -117,6 +128,7 @@ const ENV_KEYS = {
   replan: 'GEMINI_REPLAN_PROMPT',
   pushnote: 'GEMINI_PUSHNOTE_PROMPT',
   polaris: 'GEMINI_POLARIS_PROMPT',
+  titler: 'GEMINI_TITLER_PROMPT',
 };
 
 export function buildPrompt(name, vars) {

@@ -3,6 +3,8 @@ import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { fingerprint, oneOf, BUCKETS } from '../util.js';
 import { roadmapItemShape, groupRoadmap } from '../shape.js';
+import { askGemini, geminiEnabled } from '../gemini.js';
+import { buildPrompt } from '../prompts.js';
 
 // Mounted at /api/projects/:slug/roadmap.
 export const roadmap = Router({ mergeParams: true });
@@ -94,6 +96,30 @@ roadmap.patch('/:id', async (req, res) => {
   );
   if (!rows.length) return res.status(404).json({ error: 'No such roadmap item.' });
   res.json(roadmapItemShape(rows[0]));
+});
+
+// POST /suggest-title  -> Gemini titles an item from its note (the ✧ button in
+// the modal). Suggestion only — the human applies or ignores it. 503 keyless.
+roadmap.post('/suggest-title', async (req, res) => {
+  if (!geminiEnabled()) {
+    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
+  }
+  const note = String(req.body?.note || '').trim().slice(0, 2000);
+  if (!note) return res.status(400).json({ error: 'Write the note first — the title comes from it.' });
+  const prompt = buildPrompt('titler', {
+    NOTE: note,
+    NORTH_STAR_LINE: req.project.north_star
+      ? `For context, the project's north star: "${String(req.project.north_star).slice(0, 400)}"`
+      : '',
+  });
+  try {
+    const answer = await askGemini(prompt, { timeoutMs: 20_000 });
+    const title = String(answer?.title || '').trim().slice(0, 300);
+    if (!title) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
+    res.json({ title });
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'Gemini call failed.' });
+  }
 });
 
 // DELETE /:id  -> remove; auto (hook) items leave a tombstone

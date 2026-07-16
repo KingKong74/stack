@@ -467,13 +467,18 @@ export async function patchRoadmapItem(
   slug: string, id: number,
   patch: Partial<{
     done: boolean; bucket: Priority; title: string; note: string; reviewed: boolean;
-    claimed_by: string; review_tag: string; skipped: boolean; area: string;
+    claimed_by: string; review_tag: string; skipped: boolean; area: string; position: number;
   }>,
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });
 }
 export async function deleteRoadmapItem(slug: string, id: number): Promise<void> {
   await request<void>(`${roadmapBase(slug)}/${id}`, { method: 'DELETE' });
+}
+// Gemini titles an item from its note (the modal's ✧ button) — suggestion only.
+export async function suggestRoadmapTitle(slug: string, note: string): Promise<string> {
+  const r = await request<{ title: string }>(`${roadmapBase(slug)}/suggest-title`, { method: 'POST', body: { note } });
+  return r.title;
 }
 
 // ---- futures ----

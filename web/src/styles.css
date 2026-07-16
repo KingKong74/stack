@@ -1220,3 +1220,9 @@ a { color: inherit; }
 .btn-repo.sm { height: 30px; padding: 0 11px; font-size: 12px; }
 .mc-daemon { font-size: 12px; color: var(--muted); }
 .mc-daemon.on { color: var(--green); font-weight: 600; }
+.lbl-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+/* drag-reorder on the board */
+.road-item[draggable='true'] { cursor: grab; }
+.road-item.drag { opacity: 0.45; }
+.road-item.drop-before { box-shadow: 0 -2.5px 0 var(--accent); border-radius: 0 0 12px 12px; }
+.road-items.drop-into { outline: 1.5px dashed var(--accent-tint-border); outline-offset: 3px; border-radius: 10px; }
