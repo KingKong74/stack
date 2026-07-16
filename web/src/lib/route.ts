@@ -4,6 +4,7 @@ export type Route =
   | { name: 'dashboard' }
   | { name: 'settings' }
   | { name: 'timeline' }
+  | { name: 'control' }
   | { name: 'share'; slug: string; token: string }
   | { name: 'detail'; id: string; tab?: string; highlight?: string };
 
@@ -11,6 +12,7 @@ function parse(): Route {
   const h = window.location.hash.replace(/^#/, '');
   if (h === '/settings' || h.startsWith('/settings')) return { name: 'settings' };
   if (h === '/timeline' || h.startsWith('/timeline')) return { name: 'timeline' };
+  if (h === '/control' || h.startsWith('/control')) return { name: 'control' };
   // The public showcase — rendered without the token gate (read-only, its own key).
   const s = h.match(/^\/share\/([^/]+)\/([^/?]+)/);
   if (s) return { name: 'share', slug: decodeURIComponent(s[1]), token: decodeURIComponent(s[2]) };
@@ -38,6 +40,7 @@ export const go = {
   dashboard: () => { window.location.hash = '#/'; },
   settings: () => { window.location.hash = '#/settings'; },
   timeline: () => { window.location.hash = '#/timeline'; },
+  control: () => { window.location.hash = '#/control'; },
   // tab picks which collection opens; highlight (when given) flags the matching
   // item/commit on that tab via the existing highlight mechanism. The tab
   // disambiguates what `highlight` means (commit hash, bug key, or row id).

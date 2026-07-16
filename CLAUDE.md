@@ -101,8 +101,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   `store.getThemePref/setThemePref`; App resolves to `<html data-theme>`). The dark palette is one
   `[data-theme='dark']` override block on the same named tokens at the top of `styles.css`, plus a
   short list of literal-background fixups right below it. Stickies keep their paper colours.
+- `screens/Control.tsx` — **Mission Control** (`#/control`, the Dashboard header's "Mission
+  Control" button): every project's automation from one point. The autopilot strip (arm switch +
+  session cap, PATCHed straight to settings, optimistic with rollback) over one row per project:
+  automode toggle (`patchProject {automode}`), status, live presence, last push, tonight's likely
+  pick (deep-links to the roadmap item), last `auto/*` run, claim chips, review/serious-bug
+  counts and blockers. Renders `getControl()`; automode projects sort first (`.mc-*` styles).
 - `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router; routes
-  are `#/`, `#/settings`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
+  are `#/`, `#/settings`, `#/control`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit
   hash (activity), a bug key (bugs) or a row id (roadmap/notes). `go.settings()` opens Settings.
 - `components/CommandDeck.tsx` — the cross-project deck at the top of the dashboard (resume hero,
@@ -381,6 +387,10 @@ the silent metadata backstop so the feed never has gaps.
 
 - `POST /api/ingest` (also the source the SessionStart hook reads back via `GET /api/projects/:slug`)
 - `GET /api/overview` (cross-project command deck — resume, blockers, stale, bugs, activity, totals)
+- `GET /api/control` (Mission Control, `#/control` — per-project automation state in aggregate
+  queries: automode, presence, open lane claims, review counts, serious bugs, blockers, tonight's
+  likely autopilot pick per automode project (mirrors the runner's eligibility rules) and the last
+  `auto/*` push; plus the autopilot arm+cap and cross-project totals)
 - `GET /api/search?q=…` (the ⌘K palette — grouped results across all kinds; see shape below)
 - `GET /api/timeline` (the #/timeline screen — last month of pushes grouped by day + 53 weeks of
   daily counts for the contribution grid; soft-deleted projects excluded)

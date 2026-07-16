@@ -227,6 +227,29 @@ export async function getSearch(query: string): Promise<SearchResponse> {
   };
 }
 
+// ---- mission control ----
+
+export interface ControlProject {
+  slug: string; name: string; tint: string | null; status: ProjectStatus;
+  automode: boolean; progress: number; lastPush: string;
+  live: { count: number; branches: string[] } | null;
+  claims: { id: string; title: string; lane: string }[];
+  reviewCount: number;
+  bugs: { serious: number; open: number };
+  blockers: string[];
+  nextPick: { id: string; bucket: Priority; title: string } | null;
+  lastAuto: { branch: string; summary: string; when: string } | null;
+}
+export interface ControlData {
+  autopilot: { enabled: boolean; minutes: number };
+  projects: ControlProject[];
+  totals: { automode: number; liveSessions: number; claims: number; review: number };
+}
+
+export async function getControl(): Promise<ControlData> {
+  return request<ControlData>('/control');
+}
+
 // ---- settings ----
 
 export async function getSettings(): Promise<Settings> {
