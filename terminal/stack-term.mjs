@@ -142,6 +142,23 @@ function connect() {
   const ws = new WebSocket(AGENT_URL, { headers: { authorization: `Bearer ${TOKEN}` } });
 
   ws.on('open', () => { backoff = 5_000; log(`connected to ${API}`); });
+
+  // A replaced server (redeploy) can leave this outbound socket half-open —
+  // no close, no error, just silence through the tunnel. Ping on an interval
+  // and treat a missing pong as a dead line: terminate() fires close, and the
+  // normal retry path takes it from there.
+  let alive = true;
+  ws.on('pong', () => { alive = true; });
+  const heartbeat = setInterval(() => {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (!alive) {
+      log('heartbeat lost — assuming the server went away');
+      try { ws.terminate(); } catch { /* close still fires */ }
+      return;
+    }
+    alive = false;
+    try { ws.ping(); } catch { /* dead socket — caught on the next tick */ }
+  }, 30_000);
   ws.on('message', (raw) => {
     let m;
     try { m = JSON.parse(raw.toString()); } catch { return; }
@@ -157,6 +174,7 @@ function connect() {
   const retry = () => {
     if (retried) return;
     retried = true;
+    clearInterval(heartbeat);
     for (const child of sessions.values()) child.kill('SIGTERM');
     sessions.clear();
     setTimeout(connect, backoff);
