@@ -146,6 +146,12 @@ export interface OverviewActivity {
 }
 // An open roadmap item claimed by a lane, surfaced on the deck.
 export interface ClaimItem { slug: string; name: string; lane: string; title: string; id: string }
+// One overnight autopilot item attempt — the deck's morning digest.
+export interface OverviewRun {
+  slug: string; name: string; itemId: number | null; itemTitle: string; branch: string;
+  outcome: 'landed' | 'no-commits' | 'failed' | 'limit'; commits: number; tokens: number;
+  summary: string; when: string;
+}
 
 export interface Overview {
   resume: OverviewResume | null;
@@ -157,6 +163,7 @@ export interface Overview {
   review: { total: number; items: ReviewItem[] };
   bugs: { total: number; projects: OverviewBugProject[] };
   activity: OverviewActivity[];
+  autopilotRuns: OverviewRun[]; // last night's runner, per item ([] = quiet night)
   graph: { date: string; count: number }[]; // a year of daily push counts (contribution strip)
   totals: {
     byStatus: Record<ProjectStatus, number>;

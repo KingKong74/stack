@@ -43,7 +43,7 @@
 //   5 23 * * * /usr/bin/node /home/bailey/stack/scripts/stack-autopilot.mjs \
 //     --project stack --repo /home/bailey/stack >> ~/.stack/autopilot.log 2>&1
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -87,6 +87,56 @@ async function api(method, path, body) {
   });
   if (!res.ok) throw new Error(`${method} ${path} → ${res.status}`);
   return res.json();
+}
+
+// The run ledger: one row per item attempt lands in the app (the dashboard's
+// morning digest + Mission Control read it). Best effort — a failed POST only
+// costs the record, never the night.
+async function postRun(payload) {
+  try { await api('POST', `/api/projects/${SLUG}/autopilot/runs`, payload); }
+  catch (e) { log(`run record skipped (${e.message})`); }
+}
+
+// Night-end notification (#79) via ntfy.sh — free, keyless, no account: set
+// STACK_NTFY_TOPIC in ~/.stack/env and subscribe to that topic on your phone.
+// Unset = silent skip.
+async function notify(title, body) {
+  const topic = process.env.STACK_NTFY_TOPIC;
+  if (!topic) return;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10_000);
+    await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}`, {
+      method: 'POST',
+      headers: { Title: title, Click: API },
+      body,
+      signal: ctrl.signal,
+    }).finally(() => clearTimeout(timer));
+    log('notification sent.');
+  } catch (e) { log(`notification skipped (${e.message})`); }
+}
+
+// Token-limit grace (#102/#98): when a session dies on the usage limit, the
+// night stops burning items and schedules its own resume — at the reset time
+// when the message names one ("resets 2:10am"), else a few hours out. The
+// resume is a plain re-run: released items get re-picked, the arm switch and
+// automode still gate it, and the lockfile keeps overlap impossible.
+const LIMIT_RE = /(hit|reached).{0,40}(session|usage|token|rate).{0,20}limit|limit.{0,30}resets/i;
+function minutesUntilReset(text) {
+  const m = /resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i.exec(text || '');
+  if (!m) return 240; // no named time — try again in 4h
+  const now = new Date();
+  let h = parseInt(m[1], 10) % 12;
+  if (m[3].toLowerCase() === 'pm') h += 12;
+  const target = new Date(now);
+  target.setHours(h, parseInt(m[2] || '0', 10), 0, 0);
+  if (target <= now) target.setDate(target.getDate() + 1);
+  return Math.max(30, Math.round((target - now) / 60_000) + 10); // land just past the reset
+}
+function scheduleResume(minutes) {
+  const cmd = `sleep ${minutes * 60} && ${process.execPath} ${process.argv[1]} --project ${SLUG} --repo ${REPO}`;
+  spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore' }).unref();
+  log(`resume scheduled in ~${Math.round(minutes / 60 * 10) / 10}h (detached; the arm switch still gates it).`);
 }
 
 // One bounded Gemini JSON call — the spec pre-pass. Absent key / any failure
@@ -178,6 +228,7 @@ let costSpent = 0;
 async function runItem(item, northStar, capMin) {
   const lane = `auto/item-${item.id}`;
   const branch = lane;
+  const startedAt = new Date().toISOString();
   log(`picked #${item.id} [${item.bucket}] ${item.title} (cap ${Math.round(capMin)}m)`);
 
   // Claim the lane (visible on the deck's lanes strip immediately).
@@ -222,29 +273,42 @@ Rules for this run:
   if (run.error) log(`claude session ended with error: ${run.error.message}`);
 
   let resultText = '';
+  let usedTokens = 0;
+  let usedCost = 0;
   try {
     const out = JSON.parse(run.stdout || '{}');
     const u = out.usage || {};
-    const used = (u.input_tokens || 0) + (u.output_tokens || 0)
+    usedTokens = (u.input_tokens || 0) + (u.output_tokens || 0)
       + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
-    tokensSpent += used;
-    costSpent += out.total_cost_usd || 0;
+    usedCost = out.total_cost_usd || 0;
+    tokensSpent += usedTokens;
+    costSpent += usedCost;
     resultText = String(out.result || '').trim();
-    log(`session finished: ${out.num_turns ?? '?'} turns, ~${Math.round(used / 1000)}k tokens`
-      + (out.total_cost_usd ? ` ($${out.total_cost_usd.toFixed(2)})` : ''));
+    log(`session finished: ${out.num_turns ?? '?'} turns, ~${Math.round(usedTokens / 1000)}k tokens`
+      + (usedCost ? ` ($${usedCost.toFixed(2)})` : ''));
   } catch {
     log(`session finished (status ${run.status ?? 'killed at cap'}) — usage unreadable, wall clock still governs.`);
   }
+  // The graceful close: a session that died on the usage limit is not a
+  // failure of the item — flag it so the night stops and resumes itself.
+  const limitHit = LIMIT_RE.test(resultText);
+  const runRecord = {
+    item_id: item.id, item_title: item.title, branch,
+    tokens: usedTokens, cost_usd: usedCost, started_at: startedAt,
+  };
 
   // What did it produce?
   const nCommits = parseInt(git(wt, ['rev-list', '--count', 'main..HEAD']) || '0', 10) || 0;
   if (nCommits === 0) {
-    // Nothing landed — release the claim so tomorrow retries, tidy the tree.
+    // Nothing landed — release the claim so tomorrow (or the scheduled
+    // resume) retries, tidy the tree.
     await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, { claimed_by: '' });
     git(REPO, ['worktree', 'remove', '--force', wt]);
     git(REPO, ['branch', '-D', branch]);
     log(`#${item.id}: no commits — lane released, worktree removed. Check the checkpoint/blockers for why.`);
-    return false;
+    await postRun({ ...runRecord, outcome: limitHit ? 'limit' : 'no-commits', commits: 0,
+      summary: resultText.slice(0, 1800) });
+    return { landed: false, limitHit };
   }
 
   // Belt-and-braces: make sure the branch is on origin even if the session forgot.
@@ -259,12 +323,17 @@ Rules for this run:
   } catch (e) { log(`built_note skipped (${e.message})`); }
 
   // Checks run (bounded server-side; failures are morning reading).
+  let checksFailing = null;
   try {
     const checks = await api('POST', `/api/projects/${SLUG}/checks/run`, {});
     const rows = Array.isArray(checks) ? checks : (checks.checks || []);
-    const failing = rows.filter((c) => c.lastStatus === 'fail').length;
-    log(`checks run: ${rows.length} total, ${failing} failing.`);
+    checksFailing = rows.filter((c) => c.lastStatus === 'fail').length;
+    log(`checks run: ${rows.length} total, ${checksFailing} failing.`);
   } catch (e) { log(`checks run skipped (${e.message})`); }
+
+  await postRun({ ...runRecord, outcome: limitHit ? 'limit' : 'landed', commits: nCommits,
+    checks_failing: checksFailing,
+    summary: (resultText || `${nCommits} commit(s) on ${branch}.`).slice(0, 1800) });
 
   // Gemini second-model review of the branch diff → review inbox.
   if (GEMINI_KEY) {
@@ -273,13 +342,15 @@ Rules for this run:
     });
     log(review.status === 0 ? 'gemini review posted to the inbox.' : 'gemini review did not post (see above).');
   }
-  return true;
+  return { landed: true, limitHit, resultText };
 }
 
 // ---- the night loop: items until a budget runs dry ----
 try {
   const attempted = new Set();
+  const nightLines = [];
   let landed = 0;
+  let nightLimited = false;
   log(`night budget: ${MINUTES}m wall clock, ${Math.round(TOKEN_BUDGET / 1000)}k tokens, up to ${MAX_ITEMS} item(s).`);
 
   for (let n = 0; n < MAX_ITEMS; n++) {
@@ -305,15 +376,34 @@ try {
 
     attempted.add(item.id);
     try {
-      if (await runItem(item, detail.northStar || '', remainingMin())) landed++;
+      const r = await runItem(item, detail.northStar || '', remainingMin());
+      if (r.landed) landed++;
+      nightLines.push(`#${item.id} ${item.title}: ${r.landed ? `auto/item-${item.id} pushed` : 'no commits'}${r.limitHit ? ' (hit the usage limit)' : ''}`);
+      if (r.limitHit) {
+        // Graceful close: stop starting work, tell the human, and come back
+        // when the allocation does. Partial branches are already pushed.
+        nightLimited = true;
+        log('usage limit hit — closing the night gracefully.');
+        scheduleResume(minutesUntilReset(r.resultText || ''));
+        break;
+      }
     } catch (e) {
       log(`#${item.id} failed (${e.message}) — releasing the lane and moving on.`);
+      nightLines.push(`#${item.id} ${item.title}: failed (${e.message})`);
       try { await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, { claimed_by: '' }); } catch { /* best effort */ }
+      await postRun({ item_id: item.id, item_title: item.title, branch: `auto/item-${item.id}`,
+        outcome: 'failed', summary: String(e.message || '').slice(0, 500) });
     }
   }
 
-  log(`night over: ${landed} branch(es) awaiting the morning verdict, ${attempted.size} item(s) attempted, `
-    + `~${Math.round(tokensSpent / 1000)}k tokens${costSpent ? ` ($${costSpent.toFixed(2)})` : ''}, ${Math.round(elapsedMin())}m elapsed.`);
+  const closing = `${landed} branch(es) awaiting the morning verdict, ${attempted.size} item(s) attempted, `
+    + `~${Math.round(tokensSpent / 1000)}k tokens${costSpent ? ` ($${costSpent.toFixed(2)})` : ''}, ${Math.round(elapsedMin())}m elapsed.`;
+  log(`night over: ${closing}`);
+  if (attempted.size > 0) {
+    await notify(
+      nightLimited ? `Stack autopilot (${SLUG}): paused on the usage limit` : `Stack autopilot (${SLUG}): night done`,
+      `${nightLines.join('\n')}\n\n${closing}${nightLimited ? '\nA resume is scheduled for after the reset.' : ''}`);
+  }
 } catch (err) {
   die(err.message);
 }

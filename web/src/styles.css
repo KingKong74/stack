@@ -971,6 +971,21 @@ a { color: inherit; }
 .lane-arrow { font-size: 11px; color: var(--faint); }
 .lane-title { font-size: 12px; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* the morning digest — last night's autopilot runs */
+.deck-runs { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px 8px; margin-bottom: 16px; }
+.run-row { display: grid; grid-template-columns: 22px 110px 1fr auto; align-items: baseline; gap: 10px; width: 100%; text-align: left; padding: 7px 4px; border-radius: 8px; }
+.run-row:hover { background: var(--panel); }
+.run-row:not(:last-child) { border-bottom: 1px solid var(--line-2); }
+.run-outcome { font-size: 12px; font-weight: 700; text-align: center; }
+.run-outcome.landed { color: var(--sage); }
+.run-outcome.limit { color: var(--building); }
+.run-outcome.failed { color: var(--critical); }
+.run-outcome.no-commits { color: var(--muted); }
+.run-proj { font-size: 12px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-title { font-size: 12.5px; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-meta { margin-left: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.run-when { font-size: 11px; color: var(--faint); white-space: nowrap; }
+
 /* review inbox (needs-review queue) */
 .deck-review { background: var(--card); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 8px 8px 6px; margin-bottom: 16px; }
 .review-head { display: flex; align-items: center; gap: 9px; color: var(--ink); }

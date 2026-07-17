@@ -99,6 +99,33 @@ export function CommandDeck({ data }: { data: Overview }) {
         </div>
       )}
 
+      {/* last night's autopilot — the morning digest; gone on quiet nights */}
+      {(data.autopilotRuns || []).length > 0 && (
+        <div className="deck-runs">
+          <div className="deck-section-head">While you were away</div>
+          {(data.autopilotRuns || []).map((r, i) => (
+            <button className="run-row" key={i}
+              onClick={() => go.detail(r.slug, 'roadmap', r.itemId != null ? String(r.itemId) : undefined)}
+              title={r.summary || r.itemTitle}>
+              <span className={`run-outcome ${r.outcome}`}>
+                {r.outcome === 'landed' ? '✓' : r.outcome === 'limit' ? '◐' : r.outcome === 'failed' ? '✗' : '—'}
+              </span>
+              <span className="run-proj">{r.name}</span>
+              <span className="run-title">
+                {r.itemId != null ? `#${r.itemId} ` : ''}{r.itemTitle}
+                <span className="run-meta">
+                  {r.outcome === 'landed' ? `${r.branch} · ${r.commits} commit${r.commits === 1 ? '' : 's'}`
+                    : r.outcome === 'limit' ? 'paused on the usage limit'
+                    : r.outcome === 'failed' ? 'failed — see the log'
+                    : 'no commits — lane released'}
+                </span>
+              </span>
+              <span className="run-when">{r.when}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* review inbox — auto-extracted items awaiting a look; gone at zero */}
       <ReviewQueue initial={data.review} />
 

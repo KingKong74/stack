@@ -291,3 +291,23 @@ ALTER TABLE checks ADD COLUMN IF NOT EXISTS semantic TEXT;
 -- sort to the bottom of their bucket and agents leave them alone; still count
 -- toward progress (they remain planned work).
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS skipped BOOLEAN NOT NULL DEFAULT false;
+
+-- Autopilot run history: one row per item attempt, POSTed by the overnight
+-- runner. The dashboard's morning digest and Mission Control read from it —
+-- before this the only record was ~/.stack/autopilot.log on the host.
+CREATE TABLE IF NOT EXISTS autopilot_runs (
+  id           BIGSERIAL PRIMARY KEY,
+  project_id   BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  item_id      BIGINT,
+  item_title   TEXT NOT NULL DEFAULT '',
+  branch       TEXT NOT NULL DEFAULT '',
+  outcome      TEXT NOT NULL DEFAULT 'landed',  -- landed | no-commits | failed | limit
+  commits      INT NOT NULL DEFAULT 0,
+  tokens       BIGINT NOT NULL DEFAULT 0,
+  cost_usd     NUMERIC(8,2) NOT NULL DEFAULT 0,
+  checks_failing INT,
+  summary      TEXT NOT NULL DEFAULT '',        -- the session's own account (the night report)
+  started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS autopilot_runs_project_idx ON autopilot_runs (project_id, finished_at DESC);

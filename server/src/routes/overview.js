@@ -29,7 +29,7 @@ overview.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
   // Seven aggregate queries, run together — no per-project fan-out.
-  const [projectsR, bugsR, recentR, weekR, reviewR, presenceR, claimsR, graphR] = await Promise.all([
+  const [projectsR, bugsR, recentR, weekR, reviewR, presenceR, claimsR, graphR, runsR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, summary, current_phase,
               next_up, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
@@ -65,6 +65,12 @@ overview.get('/', async (_req, res) => {
          FROM sessions s JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
         WHERE s.created_at > now() - interval '371 days'
         GROUP BY 1`),
+    // Last night's autopilot runs — the morning digest card. 20h keeps one
+    // night in view through the whole next day without dragging in the last.
+    q(`SELECT r.*, p.slug, p.name FROM autopilot_runs r
+        JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
+       WHERE r.finished_at > now() - interval '20 hours'
+       ORDER BY r.finished_at DESC LIMIT 12`),
   ]);
 
   const projects = projectsR.rows;
@@ -180,6 +186,20 @@ overview.get('/', async (_req, res) => {
   const byStatus = { live: 0, building: 0, paused: 0, archived: 0 };
   for (const p of projects) if (byStatus[p.status] !== undefined) byStatus[p.status]++;
 
+  // last night's autopilot, per item — the deck's morning digest ([] = quiet night)
+  const autopilotRuns = runsR.rows.map((r) => ({
+    slug: r.slug,
+    name: r.name,
+    itemId: r.item_id,
+    itemTitle: r.item_title || '',
+    branch: r.branch || '',
+    outcome: r.outcome,
+    commits: r.commits,
+    tokens: Number(r.tokens) || 0,
+    summary: r.summary || '',
+    when: relativeTime(r.finished_at) || 'just now',
+  }));
+
   res.json({
     resume,
     keepResumeCard: appSettings.keep_resume_card,
@@ -190,6 +210,7 @@ overview.get('/', async (_req, res) => {
     review,
     bugs: { total: seriousTotal, projects: bugProjects },
     activity,
+    autopilotRuns,
     graph: graphR.rows.map((r) => ({ date: r.d, count: r.n })),
     totals: { byStatus, openBugs, pushesThisWeek: weekR.rows[0].n },
   });

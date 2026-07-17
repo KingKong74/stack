@@ -64,7 +64,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             run + Gemini diff review (→ review inbox) — then the next item while budget remains.
             The claim stays until the human merges + ticks the item (that's the don't-re-pick
             marker); a no-commit run releases it. Both the global arm switch AND the project's
-            automode flag must be on. Lockfile ~/.stack/autopilot.lock; log
+            automode flag must be on. Every item attempt lands as a row in `autopilot_runs`
+            (POST /api/projects/:slug/autopilot/runs) — the deck's "While you were away" digest
+            and the run-history panel read from it. A session that dies on the usage limit
+            closes the night GRACEFULLY: the run row says `limit`, pushed branches keep their
+            claims, and the runner schedules its own detached resume for just past the reset
+            time (parsed from the message, else +4h) — still gated by the arm switch + lock.
+            Night end fires an ntfy.sh notification when STACK_NTFY_TOPIC is set in
+            ~/.stack/env (free, keyless; unset = silent). Lockfile ~/.stack/autopilot.lock; log
             ~/.stack/autopilot.log; the crontab line (23:05 nightly) is the on/off switch.
             `skipped` items are how you keep human-only work off its plate.
 .claude/commands/checkpoint.md — the /checkpoint slash command (documented for install to
@@ -467,6 +474,9 @@ the silent metadata backstop so the feed never has gaps.
   `DELETE /api/projects/:slug/notes/:id`
 - `GET|POST /api/projects/:slug/checks` · `DELETE /api/projects/:slug/checks/:id` ·
   `POST /api/projects/:slug/checks/run` (all, or one with `{id}`; returns updated rows)
+- `GET|POST /api/projects/:slug/autopilot/runs` (the overnight runner's ledger — one row per
+  item attempt: outcome landed|no-commits|failed|limit, commits, tokens, cost, checks, the
+  session's own summary; the overview's `autopilotRuns` digest reads the last 20h)
 
 Deleting a `source='hook'` bug, roadmap item or future tombstones its fingerprint so the next push
 won't re-create it.
