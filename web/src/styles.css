@@ -574,6 +574,15 @@ a { color: inherit; }
 .road-archive-head .hint { font-size: 11.5px; font-family: var(--sans); font-weight: 400; color: var(--faint); }
 .road-item.skipped { opacity: 0.62; border-style: dashed; }
 .skip-chip { display: inline-block; margin-left: 8px; font-size: 10.5px; font-weight: 600; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; padding: 1px 7px; vertical-align: 1px; }
+/* claimed = someone's on it right now: dimmed, amber-tagged, read-only */
+.road-item.working { opacity: 0.68; }
+.road-item.working:hover { opacity: 1; }
+.work-chip { display: inline-block; margin-left: 8px; font-size: 10.5px; font-weight: 600; color: var(--building); background: transparent; border: 1px solid var(--building); border-radius: 6px; padding: 1px 7px; vertical-align: 1px; }
+/* the + area chip's inline input */
+.chip-sm.add { border-style: dashed; color: var(--muted); }
+.chip-sm.add:hover { color: var(--accent); border-color: var(--accent-tint-border); }
+.chip-input { height: 30px; width: 120px; border: 1px dashed var(--line-3); border-radius: 20px; padding: 0 13px; font-size: 12.5px; outline: none; color: var(--ink); background: var(--card); }
+.chip-input:focus { border-color: var(--accent); }
 .draft-chip { display: inline-block; font-size: 12px; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 8px; padding: 5px 11px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .draft-chip:hover { border-color: var(--accent); }
 .draft-x { color: var(--faint); font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 6px; }

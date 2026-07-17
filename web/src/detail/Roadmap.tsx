@@ -16,7 +16,7 @@ const tagLabel = (tag: string) => REVIEW_TAGS.find((t) => t.key === tag)?.label 
 // verdict tag (needs-work/rethink offer a follow-up item), restorable by
 // un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onToggleSkip, onReorder, onCleanup, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onToggleSkip, onReorder, onCleanup, slug, highlightId,
   draft, onResumeDraft, onDiscardDraft,
 }: {
   roadmap: RoadmapData;
@@ -28,6 +28,7 @@ export function Roadmap({
   onToggleSkip: (item: RoadmapItem) => void;
   onReorder?: (item: RoadmapItem, toBucket: Priority, beforeId: number | null) => void;
   onCleanup?: () => void;
+  slug?: string;
   highlightId?: string | null;
   draft?: { title: string } | null;
   onResumeDraft?: () => void;
@@ -48,7 +49,30 @@ export function Roadmap({
   // Area filter — the product-area chips over the board (mirrors the Futures funnel).
   const [areaFilter, setAreaFilter] = useState('');
   const openAll = PRIORITY_META.flatMap((col) => roadmap[col.key].filter((it) => !it.done));
-  const boardAreas = [...new Set(openAll.map((it) => it.area).filter(Boolean))].sort();
+  // Hand-added areas live device-local until an item actually carries them —
+  // the + chip mints one, and + Add under its tab pre-tags new items with it.
+  const areasKey = slug ? `stack.areas.${slug}` : '';
+  const [customAreas, setCustomAreas] = useState<string[]>(() => {
+    if (!areasKey) return [];
+    try { return (JSON.parse(localStorage.getItem(areasKey) || '[]') as string[]).filter(Boolean); }
+    catch { return []; }
+  });
+  const [addingArea, setAddingArea] = useState(false);
+  const [areaDraft, setAreaDraft] = useState('');
+  const itemAreas = new Set(openAll.map((it) => it.area).filter(Boolean));
+  const boardAreas = [...new Set([...itemAreas, ...customAreas])].sort();
+  const commitNewArea = () => {
+    const a = areaDraft.trim().toLowerCase().slice(0, 40);
+    setAddingArea(false);
+    setAreaDraft('');
+    if (!a) return;
+    if (!itemAreas.has(a) && !customAreas.includes(a)) {
+      const next = [...customAreas, a];
+      setCustomAreas(next);
+      if (areasKey) { try { localStorage.setItem(areasKey, JSON.stringify(next)); } catch { /* full — fine */ } }
+    }
+    setAreaFilter(a);
+  };
   // Done items split into the pipeline: To verify (no verdict yet — test it,
   // verdict it, or send it back) → Archive (verdict given). Latest first.
   const ts = (it: RoadmapItem) => (it.updatedAt ? Date.parse(it.updatedAt) : 0);
@@ -133,7 +157,7 @@ export function Roadmap({
         autopilot works its bucket top-down.
       </div>
 
-      {boardAreas.length > 0 && (
+      {(boardAreas.length > 0 || openAll.length > 0) && (
         <div className="chips" style={{ marginBottom: 18 }}>
           <button className={`chip-sm ${areaFilter === '' ? 'on' : ''}`} onClick={() => setAreaFilter('')}>
             All {openAll.length}
@@ -144,6 +168,20 @@ export function Roadmap({
               {a} {openAll.filter((it) => it.area === a).length}
             </button>
           ))}
+          {addingArea ? (
+            <input className="chip-input" autoFocus value={areaDraft} placeholder="new area…"
+              onChange={(e) => setAreaDraft(e.target.value)}
+              onBlur={commitNewArea}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitNewArea();
+                if (e.key === 'Escape') { setAddingArea(false); setAreaDraft(''); }
+              }} />
+          ) : (
+            <button className="chip-sm add" onClick={() => setAddingArea(true)}
+              title="Add a project area — new items added under its tab get tagged with it">
+              + area
+            </button>
+          )}
         </div>
       )}
 
@@ -165,12 +203,18 @@ export function Roadmap({
                 onDragLeave={() => setOverKey((k) => (k === `col-${col.key}` ? null : k))}
                 onDrop={(e) => { e.preventDefault(); handleDrop(col.key, null); }}
               >
-                {items.map((it) => (
+                {items.map((it) => {
+                  // A lane claim means a session or agent is on it right now:
+                  // the card dims, wears the amber tag, and goes read-only
+                  // (edits would race the worker). Ticking done stays live —
+                  // that's the human's morning move after merging the lane.
+                  const working = Boolean(it.claimedBy);
+                  return (
                   <div
-                    className={`road-item ${it.skipped ? 'skipped' : ''} ${highlightId === String(it.id) ? 'hl' : ''} ${dragId === it.id ? 'drag' : ''} ${overKey === String(it.id) ? 'drop-before' : ''}`}
+                    className={`road-item ${working ? 'working' : ''} ${it.skipped ? 'skipped' : ''} ${highlightId === String(it.id) ? 'hl' : ''} ${dragId === it.id ? 'drag' : ''} ${overKey === String(it.id) ? 'drop-before' : ''}`}
                     key={it.id} data-hl={it.id}
-                    draggable={!!onReorder}
-                    onDragStart={(e) => { setDragId(it.id); e.dataTransfer.effectAllowed = 'move'; }}
+                    draggable={!!onReorder && !working}
+                    onDragStart={(e) => { if (working) return; setDragId(it.id); e.dataTransfer.effectAllowed = 'move'; }}
                     onDragEnd={() => { setDragId(null); setOverKey(null); }}
                     onDragOver={(e) => {
                       if (dragId != null && dragId !== it.id) { e.preventDefault(); e.stopPropagation(); setOverKey(String(it.id)); }
@@ -188,19 +232,25 @@ export function Roadmap({
                         {it.title}
                         {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
                         {it.area && <span className="area-chip" title="Product area — edit the item to change it">{it.area}</span>}
+                        {working && <span className="work-chip" title={`Claimed by ${it.claimedBy} — read-only while the work is in flight`}>● in progress</span>}
                         {it.skipped && <span className="skip-chip" title="Parked — not to be picked up yet">⏸ parked</span>}
                       </div>
                       {it.note && <div className="note">{it.note}</div>}
                       {it.claimedBy && <div className="claim-chip" title="Claimed by this lane">⚑ {it.claimedBy}</div>}
                     </div>
                     <div className="road-actions">
-                      <button onClick={() => onToggleSkip(it)} aria-label={it.skipped ? 'Unpark item' : 'Park item'}
-                        title={it.skipped ? 'Unpark — back in play' : 'Park — skip for now'}>{it.skipped ? '▶' : '⏸'}</button>
-                      <button onClick={() => onEdit(it)} aria-label="Edit item" title="Edit">✎</button>
-                      <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
+                      {!working && (
+                        <>
+                          <button onClick={() => onToggleSkip(it)} aria-label={it.skipped ? 'Unpark item' : 'Park item'}
+                            title={it.skipped ? 'Unpark — back in play' : 'Park — skip for now'}>{it.skipped ? '▶' : '⏸'}</button>
+                          <button onClick={() => onEdit(it)} aria-label="Edit item" title="Edit">✎</button>
+                          <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
+                        </>
+                      )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
                 {/* An active area chip pre-tags whatever gets added under it. */}
                 <button className="road-add" onClick={() => onAdd(col.key, areaFilter || undefined)}>+ Add</button>
               </div>
