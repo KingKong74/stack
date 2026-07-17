@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Roadmap as RoadmapData, RoadmapItem, Priority } from '../types';
 import { PRIORITY_META } from '../lib/ui';
+import { Modal } from '../components/Modal';
 
 export type ReviewTag = 'solid' | 'needs-work' | 'rethink';
 export const REVIEW_TAGS: { key: ReviewTag; label: string }[] = [
@@ -16,7 +17,7 @@ const tagLabel = (tag: string) => REVIEW_TAGS.find((t) => t.key === tag)?.label 
 // verdict tag (needs-work/rethink offer a follow-up item), restorable by
 // un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onToggleSkip, onReorder, onCleanup, slug, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onToggleSkip, onReorder, onCleanup, onSendToTerminal, slug, highlightId,
   draft, onResumeDraft, onDiscardDraft,
 }: {
   roadmap: RoadmapData;
@@ -28,6 +29,7 @@ export function Roadmap({
   onToggleSkip: (item: RoadmapItem) => void;
   onReorder?: (item: RoadmapItem, toBucket: Priority, beforeId: number | null) => void;
   onCleanup?: () => void;
+  onSendToTerminal?: (brief: string) => void;
   slug?: string;
   highlightId?: string | null;
   draft?: { title: string } | null;
@@ -61,6 +63,25 @@ export function Roadmap({
   const [areaDraft, setAreaDraft] = useState('');
   const itemAreas = new Set(openAll.map((it) => it.area).filter(Boolean));
   const boardAreas = [...new Set([...itemAreas, ...customAreas])].sort();
+  // Send-to-terminal: pick open items (the active area tab scopes the list,
+  // a priority filter narrows it, rows tick on/off), compose a work brief and
+  // hand it to the terminal screen — it lands as a paste, never auto-runs.
+  const [termPick, setTermPick] = useState<Set<number> | null>(null);
+  const [termPrio, setTermPrio] = useState<'all' | Priority>('all');
+  const termScope = openAll.filter((it) => !areaFilter || it.area === areaFilter);
+  const termCandidates = termScope.filter((it) => termPrio === 'all' || it.bucket === termPrio);
+  const openTermPick = () => {
+    setTermPrio('all');
+    // Default selection: workable items — parked and already-claimed ones start unticked.
+    setTermPick(new Set(termScope.filter((it) => !it.skipped && !it.claimedBy).map((it) => it.id)));
+  };
+  const composeBrief = () => {
+    const chosen = termCandidates.filter((it) => termPick?.has(it.id));
+    const lines = chosen.map((it, i) =>
+      `${i + 1}. [${it.bucket}] #${it.id} — ${it.title}${it.note ? `\n   ${it.note.replace(/\n/g, '\n   ')}` : ''}`);
+    return `Work these Stack roadmap items${areaFilter ? ` (area: ${areaFilter})` : ''}, top-down:\n\n${lines.join('\n')}\n\nProtocol: claim each item's lane before starting, work one item at a time, commit each unit, and when an item is finished set built_note (what landed) alongside done:true through the Stack API. Leave items claimed by other lanes alone.`;
+  };
+
   const commitNewArea = () => {
     const a = areaDraft.trim().toLowerCase().slice(0, 40);
     setAddingArea(false);
@@ -126,6 +147,12 @@ export function Roadmap({
           <div className="subtitle">MoSCoW prioritisation</div>
         </div>
         <div className="bar-actions">
+          {onSendToTerminal && view === 'board' && (
+            <button className="gemini-btn sm" onClick={openTermPick}
+              title="Compose a work brief from open items (the active area tab scopes it) and paste it into a terminal session">
+              ⌨ To terminal
+            </button>
+          )}
           {onCleanup && view === 'board' && (
             <button className="gemini-btn sm" onClick={onCleanup}
               title="Gemini reviews the open board — missing areas, sloppy titles, wrong buckets — and suggests fixes for you to apply">
@@ -259,6 +286,52 @@ export function Roadmap({
         })}
       </div>
       </>)}
+
+      {termPick && onSendToTerminal && (
+        <Modal onClose={() => setTermPick(null)} wide>
+          <h3>⌨ Send to a terminal session</h3>
+          <div className="confirm-body" style={{ marginBottom: 12 }}>
+            {areaFilter ? <>Scoped to the <b>{areaFilter}</b> tab. </> : null}
+            The picked items become a work brief, pasted into the terminal for you to review and send.
+          </div>
+          <div className="chips" style={{ marginBottom: 12 }}>
+            {(['all', ...PRIORITY_META.map((p) => p.key)] as ('all' | Priority)[]).map((k) => (
+              <button key={k} className={`chip-sm ${termPrio === k ? 'on' : ''}`} onClick={() => setTermPrio(k)}>
+                {k === 'all' ? `All ${termScope.length}` : `${PRIORITY_META.find((p) => p.key === k)?.label} ${termScope.filter((it) => it.bucket === k).length}`}
+              </button>
+            ))}
+          </div>
+          <div className="cleanup-list">
+            {termCandidates.map((it) => (
+              <label className="cleanup-row" key={it.id}>
+                <input type="checkbox" checked={termPick.has(it.id)}
+                  onChange={() => setTermPick((p) => {
+                    const next = new Set(p);
+                    if (next.has(it.id)) next.delete(it.id); else next.add(it.id);
+                    return next;
+                  })} />
+                <span className="cleanup-body">
+                  <span className="t">
+                    #{it.id} {it.title}
+                    {it.claimedBy && <span className="claim-chip inline">⚑ {it.claimedBy}</span>}
+                    {it.skipped && <span className="skip-chip">⏸ parked</span>}
+                  </span>
+                  <span className="why">[{it.bucket}]{it.area ? ` · ${it.area}` : ''}</span>
+                </span>
+              </label>
+            ))}
+            {termCandidates.length === 0 && <div className="confirm-body">Nothing open under this filter.</div>}
+          </div>
+          <div className="modal-actions" style={{ marginTop: 16 }}>
+            <button className="btn-cancel" onClick={() => setTermPick(null)}>Cancel</button>
+            <button className="btn-submit"
+              disabled={!termCandidates.some((it) => termPick.has(it.id))}
+              onClick={() => { onSendToTerminal(composeBrief()); setTermPick(null); }}>
+              Open in terminal →
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {view === 'reviews' && (<>
       <div className="subtitle" style={{ marginBottom: 20 }}>

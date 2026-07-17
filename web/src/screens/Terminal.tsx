@@ -91,6 +91,23 @@ export function Terminal({ initialCwd = '' }: { initialCwd?: string }) {
     h.sendText(cmd + '\r');
     h.focus();
   };
+
+  // A roadmap brief handed over by the board's ⌨ To terminal (one-shot).
+  // Pasted bracketed so multi-line briefs land in claude/bash as one block —
+  // nothing runs until the human presses Enter.
+  const [brief] = useState<string>(() => {
+    try {
+      const b = sessionStorage.getItem('stack.term.brief') || '';
+      sessionStorage.removeItem('stack.term.brief');
+      return b;
+    } catch { return ''; }
+  });
+  const pasteBrief = () => {
+    const h = handles.current.get(active);
+    if (!h || !brief) return;
+    h.sendText(`\x1b[200~${brief}\x1b[201~`);
+    h.focus();
+  };
   const addCmd = () => {
     const label = newLabel.trim() || newCmd.trim();
     const cmd = newCmd.trim();
@@ -154,6 +171,15 @@ export function Terminal({ initialCwd = '' }: { initialCwd?: string }) {
         <div className="term-layout">
           {/* quick commands — type into the active session */}
           <div className="term-rail">
+            {brief && (
+              <>
+                <div className="term-rail-head">From the roadmap</div>
+                <button className="term-cmd brief" onClick={pasteBrief}
+                  title="Types the roadmap brief into the active session — review it, then press Enter yourself">
+                  ▶ Paste roadmap brief
+                </button>
+              </>
+            )}
             <div className="term-rail-head">Quick commands</div>
             {DEFAULT_CMDS.map((c) => (
               <button key={c.cmd} className="term-cmd" title={c.cmd} onClick={() => runQuick(c.cmd)}>

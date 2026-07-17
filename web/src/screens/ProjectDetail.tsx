@@ -666,7 +666,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
             onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad}
-            onToggleSkip={toggleSkipRoad} onReorder={reorderRoad} onCleanup={openCleanup} />
+            onToggleSkip={toggleSkipRoad} onReorder={reorderRoad} onCleanup={openCleanup}
+            onSendToTerminal={(brief) => {
+              // One-shot handoff — the terminal screen offers it as a paste.
+              try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the button just won't appear */ }
+              go.terminal(slug);
+            }} />
         )}
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId} slug={slug}

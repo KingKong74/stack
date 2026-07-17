@@ -1268,6 +1268,8 @@ a { color: inherit; }
 .term-cmd:hover { border-color: var(--accent); color: var(--accent); }
 .term-cmd.add { color: var(--muted); border-style: dashed; }
 .term-cmd.add:hover { color: var(--accent); }
+.term-cmd.brief { color: var(--accent); border-color: var(--accent-tint-border); background: var(--accent-tint); margin-bottom: 10px; }
+.term-cmd.brief:hover { border-color: var(--accent); }
 .term-cmd-row { display: flex; gap: 4px; align-items: center; }
 .term-cmd-row .term-cmd { flex: 1; min-width: 0; }
 .term-cmd-x { color: var(--faint); font-size: 14px; padding: 2px 5px; border-radius: 5px; }
