@@ -33,7 +33,10 @@ stack/
               backstop; stack-checkpoint.mjs posts Claude-authored /checkpoint JSON;
               stack-post.mjs is the shared lib
   templates/  stack-agent-context.md — portable operating manual for a fresh agent
-  scripts/    stack-context.mjs — prints that template (optionally stamped) to stdout
+  scripts/    stack-context.mjs — prints that template (optionally stamped) to stdout;
+              stack-tree.mjs — the branch navigator (`./stack tree`): the repo's branches +
+              ideas as one textual tree, trunk first, merged branches folded back in
+  stack       the `stack` CLI dispatcher (`stack tree`, more subcommands later)
   .claude/commands/checkpoint.md — the /checkpoint slash command (install to ~/.claude/commands/)
   docker-compose.yml   db + server + web, for the mini-PC deploy
 ```

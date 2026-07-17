@@ -52,6 +52,17 @@ terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (onl
         base64 data, multiplexed by sid over the agent socket.
 templates/  stack-agent-context.md — the canonical portable agent manual (single source of truth).
 scripts/    stack-context.mjs — prints that template to stdout, optionally stamped with slug + API.
+            stack-tree.mjs — the branch navigator, phase 1 (`stack tree` via the root `stack`
+            dispatcher, or `node scripts/stack-tree.mjs`): renders a repo's branch-and-idea
+            structure as one textual tree — main as the trunk, autopilot lanes (auto/item-N) and
+            idea branches (idea/*) hanging off it, other branches grouped, absorbed branches
+            folded back into the trunk (ahead 0 while the trunk has moved on; ahead 0/behind 0 =
+            freshly cut, stays an open lane). Reads git only (local + origin refs, deduped
+            local-first) — no API, no key, no extra persistence. Every node carries a
+            `geminiTake` slot rendered as a placeholder until the stored per-push gemini_note is
+            wired in (a later phase, like promote/park/prune from the tree); empty lane/idea
+            groups render example placeholder nodes so the intended shape is always visible.
+            `--json` emits the underlying model; `--repo <path>` reads another checkout.
             stack-autopilot.mjs — the overnight autopilot (phase 2): works MULTIPLE eligible
             roadmap items per night (must→should; open, unclaimed, not skipped, human-approved;
             up to --max-items, default 3) inside a shared night budget — the wall-clock cap
@@ -541,6 +552,7 @@ node hook/stack-session-start.mjs --demo   # print the "where you left off" bloc
 node hook/stack-checkpoint.mjs --settings  # print current settings (what /checkpoint reads)
 echo '{"project":{"slug":"stack"},"session":{"summary":"…"}}' | node hook/stack-checkpoint.mjs  # author a checkpoint
 node scripts/stack-context.mjs --slug stack --api https://stack.your-domain  # export agent manual
+./stack tree                               # the branch navigator (also --repo <path>, --json)
 node terminal/stack-term.mjs               # the web-terminal daemon (normally via the @reboot cron line)
 tail -f ~/.stack/term.log                  # its log
 node hook/stack-gemini-review.mjs --dry    # second-model review of the last commit (Gemini; --dry = print only)
