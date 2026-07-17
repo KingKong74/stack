@@ -52,14 +52,21 @@ terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (onl
         base64 data, multiplexed by sid over the agent socket.
 templates/  stack-agent-context.md — the canonical portable agent manual (single source of truth).
 scripts/    stack-context.mjs — prints that template to stdout, optionally stamped with slug + API.
-            stack-autopilot.mjs — the overnight autopilot (phase 1): picks ONE eligible roadmap
-            item (must→should; open, unclaimed, not skipped, human-approved), claims the lane,
-            runs an unattended `claude -p` session in a fresh worktree on branch auto/item-N
-            (never main), then a checks run + Gemini diff review (→ review inbox), and leaves the
-            pushed branch for the morning verdict. The claim stays until the human merges + ticks
-            the item (that's the don't-re-pick marker); a no-commit run releases it. Lockfile
-            ~/.stack/autopilot.lock; log ~/.stack/autopilot.log; the crontab line (23:05 nightly)
-            is the on/off switch. `skipped` items are how you keep human-only work off its plate.
+            stack-autopilot.mjs — the overnight autopilot (phase 2): works MULTIPLE eligible
+            roadmap items per night (must→should; open, unclaimed, not skipped, human-approved;
+            up to --max-items, default 3) inside a shared night budget — the wall-clock cap
+            (Settings' autopilotMinutes) AND a token budget (--tokens / STACK_AUTOPILOT_TOKENS,
+            default 1.5M) metered from each session's real usage via `claude -p --output-format
+            json`. Per item: claim the lane, Gemini spec pre-pass (free tier — expands
+            title/note into goal/acceptance/out-of-scope; keyless = silently spec-less), an
+            unattended session in a fresh worktree on branch auto/item-N (never main), push,
+            `built_note` stamped on the item (so the Reviews view shows what landed), a checks
+            run + Gemini diff review (→ review inbox) — then the next item while budget remains.
+            The claim stays until the human merges + ticks the item (that's the don't-re-pick
+            marker); a no-commit run releases it. Both the global arm switch AND the project's
+            automode flag must be on. Lockfile ~/.stack/autopilot.lock; log
+            ~/.stack/autopilot.log; the crontab line (23:05 nightly) is the on/off switch.
+            `skipped` items are how you keep human-only work off its plate.
 .claude/commands/checkpoint.md — the /checkpoint slash command (documented for install to
             ~/.claude/commands/). Tells the session to author the full checkpoint schema and pipe it
             to ~/.stack/stack-checkpoint.mjs (token read from ~/.stack/env, never printed).
