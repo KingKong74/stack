@@ -6,7 +6,8 @@ import {
   createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture,
   createCheck, deleteCheck, runChecks,
   patchProject, deleteProject, createShareLink, deleteShareLink,
-  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, sortIntake, polarisChat, suggestRoadmapTitle,
+  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, sortIntake, polarisChat, assistRoadmapItem,
+  cleanupRoadmap, type RoadmapCleanupSuggestion,
   type IntakeSuggestion,
   replanProject, AuthError,
 } from '../store';
@@ -141,6 +142,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // Gemini's re-entry plan: null = closed, '' = loading, text = the suggestion.
   const [replan, setReplan] = useState<string | null>(null);
   const [replanErr, setReplanErr] = useState('');
+  // Gemini board clean-up: null = closed, 'loading', or the suggestion list.
+  const [cleanup, setCleanup] = useState<RoadmapCleanupSuggestion[] | 'loading' | null>(null);
+  const [cleanupErr, setCleanupErr] = useState('');
+  const [cleanupPicked, setCleanupPicked] = useState<Set<number>>(new Set());
   const [promotedNote, setPromotedNote] = useState<{ id: number; kind: 'bug' | 'roadmap' } | null>(null);
   const [promotedFuture, setPromotedFuture] = useState<number | null>(null);
   const [pendingFuture, setPendingFuture] = useState<number | null>(null);
@@ -274,6 +279,40 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     guard(async () => {
       const updated = await patchRoadmapItem(slug, item.id, { skipped: !item.skipped });
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
+    });
+
+  // Board clean-up: Gemini proposes area/title/bucket fixes over the open
+  // board; the human unticks what they don't want and each applied fix lands
+  // through the normal PATCH path. Gemini proposes, the human disposes.
+  const openCleanup = async () => {
+    setCleanup('loading');
+    setCleanupErr('');
+    try {
+      const items = await cleanupRoadmap(slug);
+      setCleanup(items);
+      setCleanupPicked(new Set(items.map((s) => s.id)));
+    } catch (e) {
+      setCleanup(null);
+      setCleanupErr((e as Error)?.message || 'Gemini call failed.');
+    }
+  };
+  const closeCleanup = () => { setCleanup(null); setCleanupErr(''); };
+  const applyCleanup = () =>
+    guard(async () => {
+      if (!Array.isArray(cleanup)) return;
+      const chosen = cleanup.filter((s) => cleanupPicked.has(s.id));
+      const road = { ...roadmap };
+      for (const s of chosen) {
+        const updated = await patchRoadmapItem(slug, s.id, {
+          ...(s.area ? { area: s.area } : {}),
+          ...(s.title ? { title: s.title } : {}),
+          ...(s.bucket ? { bucket: s.bucket } : {}),
+        });
+        for (const b of Object.keys(road) as Priority[]) road[b] = road[b].filter((i) => i.id !== s.id);
+        road[updated.bucket] = [...road[updated.bucket], updated];
+      }
+      setData({ ...data, roadmap: road });
+      closeCleanup();
     });
 
   // Archive review: store the verdict; needs-work/rethink offer a follow-up
@@ -619,15 +658,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         )}
         {tab === 'roadmap' && (
           <Roadmap roadmap={roadmap} highlightId={highlightId}
-            onAdd={(p) => roadDraft
+            onAdd={(p, area) => roadDraft
               ? openRoadDraft(roadDraft)
-              : setRoadModal({ open: true, priority: p, title: '', note: '', fromNote: null, editing: null })}
+              : setRoadModal({ open: true, priority: p, title: '', note: '', area, fromNote: null, editing: null })}
             draft={roadDraft} onResumeDraft={() => roadDraft && openRoadDraft(roadDraft)}
             onDiscardDraft={() => updateRoadDraft(null)}
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
             onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad}
-            onToggleSkip={toggleSkipRoad} onReorder={reorderRoad} />
+            onToggleSkip={toggleSkipRoad} onReorder={reorderRoad} onCleanup={openCleanup} />
         )}
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId}
@@ -662,8 +701,55 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           mode={roadModal.editing ? 'edit' : 'add'}
           onClose={() => { setRoadModal(roadModalClosed); setPendingFuture(null); }}
           onDismiss={(d) => updateRoadDraft(d)}
-          onSuggestTitle={(note) => suggestRoadmapTitle(slug, note)}
+          onAssist={(note) => assistRoadmapItem(slug, note)}
           onSubmit={submitRoad} />
+      )}
+      {(cleanup !== null || cleanupErr) && (
+        <Modal onClose={closeCleanup} wide>
+          <h3>✧ Board clean-up</h3>
+          {cleanupErr ? (
+            <div className="gemini-suggest err">✧ {cleanupErr}</div>
+          ) : cleanup === 'loading' ? (
+            <div className="confirm-body">Gemini is reading the open board…</div>
+          ) : Array.isArray(cleanup) && cleanup.length === 0 ? (
+            <div className="confirm-body">Nothing to tidy — every open item has an area and reads cleanly.</div>
+          ) : Array.isArray(cleanup) && (
+            <>
+              <div className="confirm-body" style={{ marginBottom: 14 }}>
+                Suggestions only — untick anything you don't want, then apply.
+              </div>
+              <div className="cleanup-list">
+                {cleanup.map((s) => (
+                  <label className="cleanup-row" key={s.id}>
+                    <input type="checkbox" checked={cleanupPicked.has(s.id)}
+                      onChange={() => setCleanupPicked((p) => {
+                        const next = new Set(p);
+                        if (next.has(s.id)) next.delete(s.id); else next.add(s.id);
+                        return next;
+                      })} />
+                    <span className="cleanup-body">
+                      <span className="t">{s.currentTitle}</span>
+                      <span className="changes">
+                        {s.title && <span className="chg">title → “{s.title}”</span>}
+                        {s.area && <span className="chg">area → {s.area}</span>}
+                        {s.bucket && <span className="chg">bucket → {s.bucket}</span>}
+                      </span>
+                      {s.why && <span className="why">{s.why}</span>}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+          <div className="modal-actions" style={{ marginTop: 16 }}>
+            <button className="btn-cancel" onClick={closeCleanup}>Close</button>
+            {Array.isArray(cleanup) && cleanup.length > 0 && (
+              <button className="btn-submit" onClick={applyCleanup} disabled={cleanupPicked.size === 0}>
+                Apply {cleanupPicked.size} fix{cleanupPicked.size === 1 ? '' : 'es'}
+              </button>
+            )}
+          </div>
+        </Modal>
       )}
       {(replan !== null || replanErr) && (
         <Modal onClose={() => { setReplan(null); setReplanErr(''); }}>

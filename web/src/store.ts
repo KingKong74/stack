@@ -492,6 +492,25 @@ export async function suggestRoadmapTitle(slug: string, note: string): Promise<s
   return r.title;
 }
 
+// Gemini fills the whole item from its note — title, tidied note, area, lane,
+// priority. Suggestion only: it prefills the modal, the human saves.
+export interface RoadmapAssist {
+  title: string; note: string; area: string; lane: string; priority: Priority | null;
+}
+export async function assistRoadmapItem(slug: string, note: string): Promise<RoadmapAssist> {
+  return request<RoadmapAssist>(`${roadmapBase(slug)}/assist`, { method: 'POST', body: { note } });
+}
+
+// Gemini reviews the open board and proposes fixes (areas, titles, buckets).
+// Suggestions only — applied per-row by the human through the normal PATCH.
+export interface RoadmapCleanupSuggestion {
+  id: number; currentTitle: string; area?: string; title?: string; bucket?: Priority; why: string;
+}
+export async function cleanupRoadmap(slug: string): Promise<RoadmapCleanupSuggestion[]> {
+  const r = await request<{ items: RoadmapCleanupSuggestion[] }>(`${roadmapBase(slug)}/cleanup`, { method: 'POST', body: {} });
+  return r.items;
+}
+
 // ---- futures ----
 
 const futuresBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/futures`;

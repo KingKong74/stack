@@ -1,21 +1,25 @@
 import { useRef, useState } from 'react';
 import type { Priority } from '../types';
+import type { RoadmapAssist } from '../store';
 import { Modal } from './Modal';
 import { PRIORITY_META } from '../lib/ui';
 
 // Add OR edit a roadmap item — `mode: 'edit'` prefills and relabels.
+// The note leads: it's the first field and the ✧ button reads it to fill
+// everything else (title, tidied note, area, lane, priority) — suggestions
+// the human can still edit before saving.
 // A stray click on the overlay (or Escape) with typed content calls onDismiss
 // with the fields so the caller can keep a draft; the explicit Cancel button
 // stays a genuine discard.
 export function RoadmapModal({
-  initialPriority, onClose, onSubmit, onDismiss, onSuggestTitle,
+  initialPriority, onClose, onSubmit, onDismiss, onAssist,
   initialTitle = '', initialNote = '', initialLane = '', initialArea = '',
   lanes = [], areas = [], mode = 'add',
 }: {
   initialPriority: Priority; onClose: () => void;
   onSubmit: (v: { title: string; note: string; priority: Priority; lane: string; area: string }) => void;
   onDismiss?: (v: { title: string; note: string; priority: Priority; lane: string; area: string }) => void;
-  onSuggestTitle?: (note: string) => Promise<string>;
+  onAssist?: (note: string) => Promise<RoadmapAssist>;
   initialTitle?: string; initialNote?: string; initialLane?: string; initialArea?: string;
   lanes?: string[]; areas?: string[]; mode?: 'add' | 'edit';
 }) {
@@ -32,6 +36,11 @@ export function RoadmapModal({
   // current lane isn't in the list (or there are no lanes yet).
   const knownLanes = [...new Set([...lanes, ...(initialLane ? [initialLane] : [])])].sort();
   const [newLane, setNewLane] = useState(knownLanes.length === 0);
+  // Area combobox: type freely, or pick from the project's known areas.
+  const knownAreas = [...new Set([...areas, ...(initialArea ? [initialArea] : [])])].sort();
+  const [areaOpen, setAreaOpen] = useState(false);
+  const areaMatches = knownAreas.filter(
+    (a) => !area.trim() || a.includes(area.trim().toLowerCase()));
   const fields = () => ({ title, note, priority, lane: lane.trim(), area: area.trim().toLowerCase() });
   const submit = () => { if (title.trim()) onSubmit(fields()); };
   const typed = Boolean(title.trim() || note.trim());
@@ -48,12 +57,17 @@ export function RoadmapModal({
     el.style.height = `${el.scrollHeight + 2}px`;
   };
 
-  const suggest = async () => {
-    if (!onSuggestTitle || !note.trim() || suggesting) return;
+  const assist = async () => {
+    if (!onAssist || !note.trim() || suggesting) return;
     setSuggesting(true);
     setSuggestErr('');
     try {
-      setTitle(await onSuggestTitle(note));
+      const s = await onAssist(note);
+      setTitle(s.title);
+      if (s.note) { setNote(s.note); requestAnimationFrame(growNote); }
+      if (s.area) setArea(s.area);
+      if (s.lane) { setLane(s.lane); setNewLane(false); }
+      if (s.priority) setPriority(s.priority);
     } catch (e) {
       setSuggestErr((e as Error)?.message || 'Gemini call failed.');
     } finally {
@@ -68,32 +82,46 @@ export function RoadmapModal({
     <Modal onClose={dismiss} wide>
       <h3>{mode === 'edit' ? 'Edit roadmap item' : 'Add roadmap item'}</h3>
       <div className="lbl lbl-row">
-        What is it?
-        {onSuggestTitle && (
-          <button type="button" className="gemini-btn sm" onClick={suggest}
+        Note <span className="optional">what you actually want done — start here</span>
+        {onAssist && (
+          <button type="button" className="gemini-btn sm" onClick={assist}
             disabled={!note.trim() || suggesting}
-            title={note.trim() ? 'Gemini titles it from the note' : 'Write the note first — the title comes from it'}>
-            {suggesting ? '✧ Titling…' : '✧ Title from note'}
+            title={note.trim()
+              ? 'Gemini fills the title, area, priority (and tidies the note) from what you wrote'
+              : 'Write the note first — everything comes from it'}>
+            {suggesting ? '✧ Filling…' : '✧ Fill from note'}
           </button>
         )}
       </div>
-      <input className="field-input" style={{ marginBottom: 6 }} value={title} autoFocus
-        placeholder="e.g. Offline map caching" onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
-      {suggestErr && <div className="gemini-suggest err" style={{ marginBottom: 10 }}>✧ {suggestErr}</div>}
-      <div className="lbl" style={{ marginTop: 10 }}>Note <span className="optional">what you actually want done</span></div>
-      <textarea className="field-area" style={{ marginBottom: 18, overflow: 'hidden' }} value={note} ref={noteRef}
+      <textarea className="field-area" style={{ marginBottom: 6, overflow: 'hidden' }} value={note} ref={noteRef}
+        autoFocus={mode === 'add'}
         placeholder="The outcome you're after, acceptance criteria, context…"
         onChange={(e) => { setNote(e.target.value); growNote(); }} />
-      <div className="lbl">Area <span className="optional">optional — which part of the project</span></div>
-      <input className="field-input" style={{ marginBottom: 18 }} value={area} list="road-areas"
-        placeholder="e.g. settings, mobile, api" onChange={(e) => setArea(e.target.value)}
+      {suggestErr && <div className="gemini-suggest err" style={{ marginBottom: 10 }}>✧ {suggestErr}</div>}
+      <div className="lbl" style={{ marginTop: 10 }}>What is it?</div>
+      <input className="field-input" style={{ marginBottom: 18 }} value={title} autoFocus={mode === 'edit'}
+        placeholder="e.g. Offline map caching" onChange={(e) => setTitle(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
-      {areas.length > 0 && (
-        <datalist id="road-areas">
-          {areas.map((a) => <option key={a} value={a} />)}
-        </datalist>
-      )}
+      <div className="lbl">Area <span className="optional">optional — which part of the project</span></div>
+      <div className="combo" style={{ marginBottom: 18 }}>
+        <input className="field-input" value={area}
+          placeholder="e.g. settings, mobile, api"
+          onChange={(e) => { setArea(e.target.value); setAreaOpen(true); }}
+          onFocus={() => setAreaOpen(true)}
+          onBlur={() => setAreaOpen(false)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { setAreaOpen(false); submit(); } if (e.key === 'Escape') setAreaOpen(false); }} />
+        {areaOpen && areaMatches.length > 0 && (
+          <div className="combo-list">
+            {areaMatches.map((a) => (
+              // onMouseDown beats the input's blur, so the pick actually lands.
+              <button type="button" className={`combo-opt ${a === area.trim().toLowerCase() ? 'on' : ''}`} key={a}
+                onMouseDown={(e) => { e.preventDefault(); setArea(a); setAreaOpen(false); }}>
+                {a}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="lbl">Lane <span className="optional">optional — who's claiming this</span></div>
       {!newLane ? (
         <div className="lane-pick" style={{ marginBottom: 8 }}>

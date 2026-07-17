@@ -445,8 +445,14 @@ the silent metadata backstop so the feed never has gaps.
   `review_tag: solid|needs-work|rethink` ('' clears), `skipped: bool` — the parked flag:
   sinks to the bottom of its bucket, agents never pick it up, still counts toward progress —
   plus `area`, `position` (drag-reorder) and `built_note` (the what-landed account)) ·
-  `POST /api/projects/:slug/roadmap/suggest-title` (Gemini titles an item from its note — the
-  modal's ✧ button; suggestion only, 503 keyless)
+  `POST /api/projects/:slug/roadmap/suggest-title` (Gemini titles an item from its note;
+  suggestion only, 503 keyless) ·
+  `POST /api/projects/:slug/roadmap/assist` (the modal's ✧ Fill-from-note: Gemini reads the note
+  and returns title + tidied note + area + lane + priority — prefills the fields, the human
+  saves; lanes only ever suggested from the open set) ·
+  `POST /api/projects/:slug/roadmap/cleanup` (the board's ✧ Clean up: Gemini reviews all open
+  items and suggests missing areas / cleaned titles / honest buckets, only where something's
+  off; the client shows a tickable list and applies through the normal PATCH)
 - `GET|POST /api/projects/:slug/futures` · `PATCH|DELETE /api/projects/:slug/futures/:id`
   (PATCH: title/note/reviewed/`alignment: on-course|tangent|off-course` ('' clears);
   DELETE tombstones a hook idea) · `POST /api/projects/:slug/futures/:id/judge` (Gemini-suggested

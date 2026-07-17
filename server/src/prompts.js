@@ -121,6 +121,47 @@ THE NOTE:
 Respond with ONLY this JSON:
 { "title": "the title" }`;
 
+DEFAULTS.assist = `You are filling in a roadmap item's fields for a side project's planning board.
+The author wrote what they want done (the note below); everything comes from it.
+{{NORTH_STAR_LINE}}
+Known areas on this project: {{AREAS}}
+Open lanes (parallel work streams that claim items): {{LANES}}
+
+Produce:
+- "title": a short imperative, 12 words or fewer, no trailing punctuation. When the work clearly
+  targets one surface of the app, LEAD with it (e.g. "Roadmap modal: …", "Dashboard: …").
+- "note": the author's note tidied — same intent, every concrete requirement kept, but structured
+  and concise (short lines or dot points, typos fixed, filler dropped). Written for the agent
+  that will build it; brevity saves tokens.
+- "area": the product area, lowercase, one or two words. Prefer a known area when one fits;
+  otherwise coin a sensible new one.
+- "lane": one of the open lanes ONLY if the note clearly belongs to that stream, else "".
+- "priority": "must" | "should" | "could" | "wont" — be honest, most things are not must.
+
+THE NOTE:
+{{NOTE}}
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "title": "…", "note": "…", "area": "…", "lane": "…", "priority": "must|should|could|wont" }`;
+
+DEFAULTS.cleanup = `You are tidying a side project's roadmap board. Below are its OPEN items
+(id | bucket | area | title | note). Known areas: {{AREAS}}
+{{NORTH_STAR_LINE}}
+
+Suggest fixes ONLY where something is actually off — an empty list is a fine answer:
+- Missing area (area is "-"): suggest one, lowercase, one or two words; prefer known areas.
+- Sloppy title: typos, vague one-worders, or missing the surface it targets — suggest a cleaned
+  short imperative that keeps the author's intent.
+- Clearly mis-bucketed: suggest the honest bucket ("must|should|could|wont").
+Never invent new work, never merge or drop items, and only include a field you are changing.
+
+THE ITEMS:
+{{ITEMS}}
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "items": [ { "id": 123, "area": "…", "title": "…", "bucket": "…",
+               "why": "one plain sentence, under 15 words" } ] }`;
+
 const ENV_KEYS = {
   judge: 'GEMINI_JUDGE_PROMPT',
   intake: 'GEMINI_INTAKE_PROMPT',
@@ -129,6 +170,8 @@ const ENV_KEYS = {
   pushnote: 'GEMINI_PUSHNOTE_PROMPT',
   polaris: 'GEMINI_POLARIS_PROMPT',
   titler: 'GEMINI_TITLER_PROMPT',
+  assist: 'GEMINI_ASSIST_PROMPT',
+  cleanup: 'GEMINI_CLEANUP_PROMPT',
 };
 
 export function buildPrompt(name, vars) {

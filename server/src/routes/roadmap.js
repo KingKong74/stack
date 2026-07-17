@@ -126,6 +126,101 @@ roadmap.post('/suggest-title', async (req, res) => {
   }
 });
 
+// POST /assist  -> Gemini fills the whole item from its note (the modal's ✧
+// button): title, tidied note, area, lane, priority. Suggestion only — it
+// prefills the fields and the human saves (or doesn't). 503 keyless.
+roadmap.post('/assist', async (req, res) => {
+  if (!geminiEnabled()) {
+    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
+  }
+  const note = String(req.body?.note || '').trim().slice(0, 4000);
+  if (!note) return res.status(400).json({ error: 'Write the note first — everything comes from it.' });
+  const [{ rows: areaRows }, { rows: laneRows }] = await Promise.all([
+    q(
+      `SELECT DISTINCT area FROM roadmap_items WHERE project_id = $1 AND area IS NOT NULL
+       UNION SELECT DISTINCT area FROM futures WHERE project_id = $1 AND area IS NOT NULL`,
+      [req.project.id]
+    ),
+    q(
+      `SELECT DISTINCT claimed_by AS lane FROM roadmap_items
+        WHERE project_id = $1 AND claimed_by IS NOT NULL AND NOT done`,
+      [req.project.id]
+    ),
+  ]);
+  const lanes = laneRows.map((r) => r.lane);
+  const prompt = buildPrompt('assist', {
+    NOTE: note,
+    AREAS: areaRows.map((r) => r.area).join(', ') || '(none yet)',
+    LANES: lanes.join(', ') || '(none)',
+    NORTH_STAR_LINE: req.project.north_star
+      ? `For context, the project's north star: "${String(req.project.north_star).slice(0, 400)}"`
+      : '',
+  });
+  try {
+    const answer = await askGemini(prompt, { timeoutMs: 25_000 });
+    const title = String(answer?.title || '').trim().slice(0, 300);
+    if (!title) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
+    res.json({
+      title,
+      note: String(answer?.note || '').trim().slice(0, 1000) || note,
+      area: String(answer?.area || '').trim().toLowerCase().slice(0, 40),
+      // A lane claims work for a stream — only ever suggest one that already exists.
+      lane: lanes.includes(String(answer?.lane || '').trim()) ? String(answer.lane).trim() : '',
+      priority: BUCKETS.includes(answer?.priority) ? answer.priority : null,
+    });
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'Gemini call failed.' });
+  }
+});
+
+// POST /cleanup  -> Gemini reviews the OPEN board and suggests fixes: areas
+// for untagged items, cleaned titles, honest buckets. Suggestions only — the
+// client shows them for the human to apply through the normal PATCH. 503 keyless.
+roadmap.post('/cleanup', async (req, res) => {
+  if (!geminiEnabled()) {
+    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
+  }
+  const { rows } = await q(
+    `SELECT id, bucket, area, title, note FROM roadmap_items
+      WHERE project_id = $1 AND NOT done ORDER BY bucket, position`,
+    [req.project.id]
+  );
+  if (!rows.length) return res.json({ items: [] });
+  const openById = new Map(rows.map((r) => [r.id, r]));
+  const prompt = buildPrompt('cleanup', {
+    ITEMS: rows.map((r) =>
+      `${r.id} | ${r.bucket} | ${r.area || '-'} | ${r.title} | ${(r.note || '-').slice(0, 300)}`).join('\n'),
+    AREAS: [...new Set(rows.map((r) => r.area).filter(Boolean))].join(', ') || '(none yet)',
+    NORTH_STAR_LINE: req.project.north_star
+      ? `For context, the project's north star: "${String(req.project.north_star).slice(0, 400)}"`
+      : '',
+  });
+  try {
+    const answer = await askGemini(prompt, { timeoutMs: 30_000 });
+    const items = (Array.isArray(answer?.items) ? answer.items : [])
+      .filter((s) => openById.has(Number(s?.id)))
+      .map((s) => {
+        const cur = openById.get(Number(s.id));
+        const area = String(s.area || '').trim().toLowerCase().slice(0, 40);
+        const title = String(s.title || '').trim().slice(0, 300);
+        const bucket = BUCKETS.includes(s.bucket) ? s.bucket : '';
+        return {
+          id: cur.id,
+          currentTitle: cur.title,
+          // Only echo fields that actually change something.
+          ...(area && area !== (cur.area || '') ? { area } : {}),
+          ...(title && title !== cur.title ? { title } : {}),
+          ...(bucket && bucket !== cur.bucket ? { bucket } : {}),
+          why: String(s.why || '').trim().slice(0, 200),
+        };
+      })
+      .filter((s) => s.area || s.title || s.bucket);
+    res.json({ items });
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'Gemini call failed.' });
+  }
+});
+
 // DELETE /:id  -> remove; auto (hook) items leave a tombstone
 roadmap.delete('/:id', async (req, res) => {
   const { rows } = await q(

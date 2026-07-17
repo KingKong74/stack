@@ -16,17 +16,18 @@ const tagLabel = (tag: string) => REVIEW_TAGS.find((t) => t.key === tag)?.label 
 // verdict tag (needs-work/rethink offer a follow-up item), restorable by
 // un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onToggleSkip, onReorder, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onToggleSkip, onReorder, onCleanup, highlightId,
   draft, onResumeDraft, onDiscardDraft,
 }: {
   roadmap: RoadmapData;
-  onAdd: (p: Priority) => void;
+  onAdd: (p: Priority, area?: string) => void;
   onToggle: (item: RoadmapItem) => void;
   onEdit: (item: RoadmapItem) => void;
   onDelete: (item: RoadmapItem) => void;
   onReviewTag: (item: RoadmapItem, tag: ReviewTag) => void;
   onToggleSkip: (item: RoadmapItem) => void;
   onReorder?: (item: RoadmapItem, toBucket: Priority, beforeId: number | null) => void;
+  onCleanup?: () => void;
   highlightId?: string | null;
   draft?: { title: string } | null;
   onResumeDraft?: () => void;
@@ -101,6 +102,12 @@ export function Roadmap({
           <div className="subtitle">MoSCoW prioritisation</div>
         </div>
         <div className="bar-actions">
+          {onCleanup && view === 'board' && (
+            <button className="gemini-btn sm" onClick={onCleanup}
+              title="Gemini reviews the open board — missing areas, sloppy titles, wrong buckets — and suggests fixes for you to apply">
+              ✧ Clean up
+            </button>
+          )}
           <div className="seg-control sm" role="tablist" aria-label="Roadmap view">
             <button role="tab" aria-selected={view === 'board'}
               className={`seg-opt ${view === 'board' ? 'on' : ''}`} onClick={() => setView('board')}>Board</button>
@@ -194,7 +201,8 @@ export function Roadmap({
                     </div>
                   </div>
                 ))}
-                <button className="road-add" onClick={() => onAdd(col.key)}>+ Add</button>
+                {/* An active area chip pre-tags whatever gets added under it. */}
+                <button className="road-add" onClick={() => onAdd(col.key, areaFilter || undefined)}>+ Add</button>
               </div>
             </div>
           );
