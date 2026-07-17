@@ -4,7 +4,6 @@ import { Dashboard } from './screens/Dashboard';
 import { ProjectDetail } from './screens/ProjectDetail';
 import { Settings } from './screens/Settings';
 import { Timeline } from './screens/Timeline';
-import { Control } from './screens/Control';
 
 // xterm.js is heavy and only the terminal needs it — loaded on first visit.
 const Terminal = lazy(() =>
@@ -65,7 +64,7 @@ export default function App() {
       ) : route.name === 'timeline' ? (
         <Timeline />
       ) : route.name === 'control' ? (
-        <Control />
+        <Settings initialTab="control" />
       ) : route.name === 'terminal' ? (
         <Suspense fallback={null}><Terminal initialCwd={route.cwd} /></Suspense>
       ) : route.name === 'detail' ? (

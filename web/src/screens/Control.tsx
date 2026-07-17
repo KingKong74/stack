@@ -4,7 +4,6 @@ import {
   type ControlData, type ControlProject,
 } from '../store';
 import { go } from '../lib/route';
-import { PRODUCT_NAME } from '../lib/ui';
 import type { ProjectStatus } from '../types';
 
 const STATUS_LABEL: Record<ProjectStatus, string> = {
@@ -14,10 +13,11 @@ const CAPS = [
   { minutes: 60, label: '1h' }, { minutes: 120, label: '2h' }, { minutes: 180, label: '3h' },
 ];
 
-// Mission Control — every project's automation state on one screen: the
+// Mission Control — every project's automation state on one panel: the
 // autopilot's arm switch + cap, per-project automode toggles, who's live now,
 // what's lane-claimed, what needs review, and what tonight's run would pick.
-export function Control() {
+// Rendered as a tab of the Settings screen (#/control deep-links to it).
+export function ControlPanel() {
   const [data, setData] = useState<ControlData | null>(null);
   const [error, setError] = useState('');
 
@@ -65,28 +65,7 @@ export function Control() {
 
   return (
     <div>
-      <div className="topbar">
-        <div className="crumb">
-          <span className="chev" onClick={go.dashboard}>‹</span>
-          <span className="back" onClick={go.dashboard}>Projects</span>
-          <span className="sep">/</span>
-          <span className="here">Mission Control</span>
-        </div>
-        <div className="right">
-          <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
-          <button className="avatar sm" onClick={go.settings} aria-label="Settings" />
-        </div>
-      </div>
-
-      <div className="page detail" style={{ maxWidth: 1080 }}>
-        <div className="dash-head" style={{ marginBottom: 20 }}>
-          <div>
-            <div className="dash-title">Mission Control</div>
-            <div className="dash-count">Every project and its automation, from one point.</div>
-          </div>
-        </div>
-
-        {error && <div className="action-error">{error}</div>}
+      {error && <div className="action-error">{error}</div>}
 
         {!data ? (
           !error && <div className="empty-state"><div className="big">Loading…</div></div>
@@ -204,7 +183,6 @@ export function Control() {
             </div>
           </>
         )}
-      </div>
     </div>
   );
 }

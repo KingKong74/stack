@@ -8,6 +8,7 @@ import {
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { DIRECTIVES } from '../lib/brief';
+import { ControlPanel } from './Control';
 
 const THEMES: { key: ThemePref; label: string }[] = [
   { key: 'system', label: 'System' }, { key: 'light', label: 'Light' }, { key: 'dark', label: 'Dark' },
@@ -30,7 +31,10 @@ function maskToken(t: string | null): string {
   return `${'•'.repeat(Math.min(t.length - 4, 16))}${t.slice(-4)}`;
 }
 
-export function Settings() {
+export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' | 'control' }) {
+  // One screen, two tabs: the app's settings, and Mission Control (#/control
+  // deep-links straight onto the control tab).
+  const [screenTab, setScreenTab] = useState<'settings' | 'control'>(initialTab);
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -119,24 +123,35 @@ export function Settings() {
           <span className="chev" onClick={go.dashboard}>‹</span>
           <span className="back" onClick={go.dashboard}>Projects</span>
           <span className="sep">/</span>
-          <span className="here">Settings</span>
+          <span className="here">{screenTab === 'control' ? 'Mission Control' : 'Settings'}</span>
         </div>
         <div className="right">
           <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
         </div>
       </div>
 
-      <div className="page detail" style={{ maxWidth: 760 }}>
-        <div className="dash-head" style={{ marginBottom: 28 }}>
+      <div className="page detail" style={{ maxWidth: screenTab === 'control' ? 1080 : 760 }}>
+        <div className="dash-head" style={{ marginBottom: 16 }}>
           <div>
-            <div className="dash-title">Settings</div>
-            <div className="dash-count">How {PRODUCT_NAME} records your work, and the access it uses.</div>
+            <div className="dash-title">{screenTab === 'control' ? 'Mission Control' : 'Settings'}</div>
+            <div className="dash-count">
+              {screenTab === 'control'
+                ? 'Every project and its automation, from one point.'
+                : `How ${PRODUCT_NAME} records your work, and the access it uses.`}
+            </div>
           </div>
         </div>
 
-        {error && <div className="action-error">{error}</div>}
+        <div className="tabs">
+          <button className={`tab ${screenTab === 'settings' ? 'on' : ''}`} onClick={() => setScreenTab('settings')}>Settings</button>
+          <button className={`tab ${screenTab === 'control' ? 'on' : ''}`} onClick={() => setScreenTab('control')}>Mission Control</button>
+        </div>
 
-        {loading || !settings ? (
+        {screenTab === 'control' && <ControlPanel />}
+
+        {screenTab === 'settings' && (error ? <div className="action-error">{error}</div> : null)}
+
+        {screenTab === 'settings' && (loading || !settings ? (
           <div className="empty-state"><div className="big">Loading…</div></div>
         ) : (
           <>
@@ -382,7 +397,7 @@ export function Settings() {
               </div>
             </section>
           </>
-        )}
+        ))}
       </div>
     </div>
   );
