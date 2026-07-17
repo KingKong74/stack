@@ -98,7 +98,10 @@ export function Timeline() {
                           {e.name}
                         </span>
                         <span className="tld-hash">{e.hash}</span>
-                        <span className="tld-summary">{e.summary || '—'}</span>
+                        <span className="tld-summary">
+                          {e.summary || '—'}
+                          {e.geminiNote && <span className="tld-gem">✦ {e.geminiNote}</span>}
+                        </span>
                         <span className="tld-tags">
                           {e.tags.slice(0, 2).map((t, j) => (
                             <span key={j} className={`tag ${isAccentTag(t) ? 'accent' : ''}`}>{t}</span>

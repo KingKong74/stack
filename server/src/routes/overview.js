@@ -37,7 +37,7 @@ overview.get('/', async (_req, res) => {
               count(*) FILTER (WHERE severity IN ('critical','high') AND status <> 'fixed')::int AS serious,
               count(*) FILTER (WHERE status <> 'fixed')::int AS open_all
          FROM bugs GROUP BY project_id`),
-    q(`SELECT project_id, commit_hash, branch, summary, tags, created_at
+    q(`SELECT project_id, commit_hash, branch, summary, tags, gemini_note, created_at
          FROM sessions ORDER BY created_at DESC LIMIT 12`),
     q(`SELECT count(*)::int AS n FROM sessions s
         JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
@@ -171,6 +171,7 @@ overview.get('/', async (_req, res) => {
       branch: s.branch || 'main',
       summary: s.summary || '',
       tags: asList(s.tags),
+      geminiNote: s.gemini_note || '',
       when: relativeTime(s.created_at) || 'just now',
     };
   });

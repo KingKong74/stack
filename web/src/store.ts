@@ -370,7 +370,7 @@ export async function judgeFuture(slug: string, id: number): Promise<JudgeSugges
 
 export interface TimelineEntry {
   slug: string; name: string; tint: string | null; hash: string; branch: string;
-  summary: string; tags: string[]; authored: boolean; time: string;
+  summary: string; tags: string[]; geminiNote: string; authored: boolean; time: string;
 }
 export interface TimelineDay { date: string; label: string; entries: TimelineEntry[] }
 export interface TimelineData { days: TimelineDay[]; graph: { date: string; count: number }[]; total: number }

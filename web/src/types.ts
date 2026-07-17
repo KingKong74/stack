@@ -142,7 +142,7 @@ export interface OverviewStale { slug: string; name: string; since: string }
 export interface OverviewBugProject { slug: string; name: string; count: number }
 export interface OverviewActivity {
   slug: string; name: string; hash: string; branch: string;
-  summary: string; tags: string[]; when: string;
+  summary: string; tags: string[]; geminiNote: string; when: string;
 }
 // An open roadmap item claimed by a lane, surfaced on the deck.
 export interface ClaimItem { slug: string; name: string; lane: string; title: string; id: string }

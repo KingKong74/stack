@@ -167,6 +167,7 @@ export function CommandDeck({ data }: { data: Overview }) {
                 <span className="feed-proj">{a.name}</span>
                 <span className="feed-summary">{a.summary || '—'}</span>
                 <span className="feed-when">{a.when}</span>
+                {a.geminiNote && <span className="feed-gem">✦ {a.geminiNote}</span>}
               </button>
             ))}
           </div>

@@ -26,10 +26,11 @@ const GROUPS: { key: string; label: string }[] = [
 // promoted into the roadmap (ProjectDetail owns that flow), or get dismissed.
 export function Futures({
   northStar, futures, highlightId, onSaveNorthStar, onAdd, onEdit, onAlign, onDelete, onPromote,
-  onAskGemini, onPolarisChat, onSortIntake, onApplyIntake,
+  onAskGemini, onPolarisChat, onSortIntake, onApplyIntake, slug,
 }: {
   northStar: string;
   futures: Future[];
+  slug?: string;
   highlightId?: string | null;
   onSaveNorthStar: (text: string) => void;
   onAdd: (title: string, note: string) => void;
@@ -116,7 +117,7 @@ export function Futures({
 
       {/* polaris — the Gemini terminal, pinned under the north star */}
       {onPolarisChat && onSortIntake && onApplyIntake && (
-        <Polaris onChat={onPolarisChat} onSort={onSortIntake} onApply={onApplyIntake} />
+        <Polaris onChat={onPolarisChat} onSort={onSortIntake} onApply={onApplyIntake} slug={slug} />
       )}
 
       {/* ideas */}

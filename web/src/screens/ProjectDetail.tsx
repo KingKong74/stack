@@ -669,7 +669,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onToggleSkip={toggleSkipRoad} onReorder={reorderRoad} onCleanup={openCleanup} />
         )}
         {tab === 'futures' && (
-          <Futures northStar={data.northStar} futures={futures} highlightId={highlightId}
+          <Futures northStar={data.northStar} futures={futures} highlightId={highlightId} slug={slug}
             onSaveNorthStar={saveNorthStar} onAdd={addFuture} onEdit={editFuture} onAlign={alignFuture}
             onAskGemini={(id) => judgeFuture(slug, id)}
             onPolarisChat={(message, history) => polarisChat(slug, message, history)}

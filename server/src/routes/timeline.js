@@ -30,7 +30,7 @@ function dayLabel(key) {
 
 timeline.get('/', async (_req, res) => {
   const [entriesR, graphR] = await Promise.all([
-    q(`SELECT s.commit_hash, s.branch, s.summary, s.tags, s.authored, s.created_at,
+    q(`SELECT s.commit_hash, s.branch, s.summary, s.tags, s.authored, s.gemini_note, s.created_at,
               p.slug, p.name, p.tint
          FROM sessions s JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
         WHERE s.created_at > now() - interval '30 days'
@@ -56,6 +56,7 @@ timeline.get('/', async (_req, res) => {
       branch: r.branch || 'main',
       summary: r.summary || '',
       tags: asList(r.tags),
+      geminiNote: r.gemini_note || '',
       authored: !!r.authored,
       time: `${String(created.getUTCHours()).padStart(2, '0')}:${String(created.getUTCMinutes()).padStart(2, '0')}`,
     });

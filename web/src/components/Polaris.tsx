@@ -24,17 +24,35 @@ const HELP = [
 
 const DESTS = ['must', 'should', 'could', 'wont', 'future'] as const;
 
+const GREETING: Line = { role: 'polaris', text: "✦ Polaris online. Ask me anything about this project — or type /help." };
+
+// Scrollback persists per project on this device — a fresh visit picks the
+// conversation back up; /clear wipes the stored copy too.
+const historyKey = (slug: string) => `stack.polaris.${slug}`;
+const loadLines = (slug?: string): Line[] => {
+  if (!slug) return [GREETING];
+  try {
+    const saved = JSON.parse(localStorage.getItem(historyKey(slug)) || '[]') as Line[];
+    if (Array.isArray(saved) && saved.length) return saved;
+  } catch { /* corrupt or absent — start fresh */ }
+  return [GREETING];
+};
+
 export function Polaris({
-  onChat, onSort, onApply,
+  onChat, onSort, onApply, slug,
 }: {
   onChat: (message: string, history: PolarisTurn[]) => Promise<string>;
   onSort: (text: string) => Promise<IntakeSuggestion[]>;
   onApply: (items: IntakeSuggestion[]) => Promise<void>;
+  slug?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [lines, setLines] = useState<Line[]>([
-    { role: 'polaris', text: "✦ Polaris online. Ask me anything about this project — or type /help." },
-  ]);
+  const [lines, setLines] = useState<Line[]>(() => loadLines(slug));
+  useEffect(() => { setLines(loadLines(slug)); }, [slug]);
+  useEffect(() => {
+    if (!slug) return;
+    try { localStorage.setItem(historyKey(slug), JSON.stringify(lines.slice(-200))); } catch { /* full — fine */ }
+  }, [lines, slug]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<IntakeSuggestion[] | null>(null);
