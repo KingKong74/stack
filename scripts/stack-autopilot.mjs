@@ -30,8 +30,10 @@
 // Usage:
 //   node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack
 //     [--minutes N]     the NIGHT's wall-clock cap (default: Settings' autopilotMinutes)
-//     [--tokens N]      the night's token budget (default: env STACK_AUTOPILOT_TOKENS or 1500000)
-//     [--max-items N]   most items attempted per night (default 3)
+//     [--tokens N]      the night's token budget; 0 = unlimited
+//                       (default: env STACK_AUTOPILOT_TOKENS, else Settings' autopilotTokens)
+//     [--max-items N]   most items attempted per night (default: Settings' autopilotMaxItems)
+//     [--item N]        work exactly this roadmap item and stop (scheduled/manual runs)
 //     [--dry]           print what tonight would pick and exit (no claim, no session)
 //     [--force]         run even while the Settings switch / automode is off
 //
@@ -39,9 +41,9 @@
 // (optional — skips the spec pre-pass + second-model review when absent).
 // Never printed.
 //
-// Cron (the schedule IS the on/off switch — remove the line to disable):
-//   5 23 * * * /usr/bin/node /home/bailey/stack/scripts/stack-autopilot.mjs \
-//     --project stack --repo /home/bailey/stack >> ~/.stack/autopilot.log 2>&1
+// Normally invoked by scripts/stack-autopilot-dispatch.mjs (the every-minute
+// cron line), which polls the app's job queue — the nightly time, manual
+// Run-now presses and the Mission Control calendar all arrive that way.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -60,9 +62,11 @@ const FORCE = process.argv.includes('--force');
 const SLUG = arg('project');
 const REPO = arg('repo');
 const MINUTES_ARG = arg('minutes');
-const TOKEN_BUDGET = Math.max(50_000,
-  parseInt(arg('tokens') ?? '', 10) || parseInt(process.env.STACK_AUTOPILOT_TOKENS ?? '', 10) || 1_500_000);
-const MAX_ITEMS = Math.max(1, parseInt(arg('max-items') ?? '', 10) || 3);
+// null = no override; 0 is a real value (unlimited), so no || chains here.
+const intArg = (v) => { const n = parseInt(v ?? '', 10); return Number.isFinite(n) ? n : null; };
+const TOKENS_OVERRIDE = intArg(arg('tokens')) ?? intArg(process.env.STACK_AUTOPILOT_TOKENS);
+const MAX_ITEMS_ARG = intArg(arg('max-items'));
+const ITEM_ID = intArg(arg('item'));
 const MIN_SESSION_MIN = 15; // not worth starting a session with less than this
 
 const API = process.env.STACK_API;
@@ -202,6 +206,11 @@ if (!appSettings.autopilotEnabled && !FORCE) {
   process.exit(0);
 }
 const MINUTES = Math.max(15, parseInt(MINUTES_ARG ?? '', 10) || appSettings.autopilotMinutes || 120);
+// Budgets come from Mission Control unless the CLI/env overrides; a token
+// budget of 0 means UNLIMITED — the wall clock is then the only governor.
+const rawTokens = TOKENS_OVERRIDE ?? (Number.isFinite(appSettings.autopilotTokens) ? appSettings.autopilotTokens : 1_500_000);
+const TOKEN_BUDGET = rawTokens === 0 ? Infinity : Math.max(50_000, rawTokens);
+const MAX_ITEMS = ITEM_ID != null ? 1 : Math.max(1, MAX_ITEMS_ARG ?? (appSettings.autopilotMaxItems || 3));
 const nightStart = Date.now();
 const elapsedMin = () => (Date.now() - nightStart) / 60_000;
 const remainingMin = () => MINUTES - elapsedMin();
@@ -351,7 +360,9 @@ try {
   const nightLines = [];
   let landed = 0;
   let nightLimited = false;
-  log(`night budget: ${MINUTES}m wall clock, ${Math.round(TOKEN_BUDGET / 1000)}k tokens, up to ${MAX_ITEMS} item(s).`);
+  log(`night budget: ${MINUTES}m wall clock, `
+    + `${TOKEN_BUDGET === Infinity ? 'UNLIMITED tokens' : `${Math.round(TOKEN_BUDGET / 1000)}k tokens`}, `
+    + `up to ${MAX_ITEMS} item(s)${ITEM_ID != null ? ` (pinned to #${ITEM_ID})` : ''}.`);
 
   for (let n = 0; n < MAX_ITEMS; n++) {
     if (remainingMin() < MIN_SESSION_MIN) { log(`wall clock nearly spent (${Math.round(remainingMin())}m left) — stopping.`); break; }
@@ -364,9 +375,23 @@ try {
       log(`${SLUG} is not on automode — nothing run. (Toggle it in the app, or --force for a manual test.)`);
       break;
     }
-    const item = [...(detail.roadmap?.must || []), ...(detail.roadmap?.should || [])]
-      .filter((it) => !attempted.has(it.id))
-      .find(eligible);
+    // A pinned run (--item, from a scheduled or Run-now job) targets exactly
+    // that item in any bucket — a human chose it, so skipped/unreviewed pass;
+    // done or already-claimed still refuse.
+    let item;
+    if (ITEM_ID != null) {
+      const all = ['must', 'should', 'could', 'wont'].flatMap((b) => detail.roadmap?.[b] || []);
+      item = all.find((it) => Number(it.id) === ITEM_ID);
+      if (!item) { log(`item #${ITEM_ID} not found on ${SLUG} — nothing run.`); break; }
+      if (item.done || item.claimedBy) {
+        log(`item #${ITEM_ID} is ${item.done ? 'already done' : `claimed by ${item.claimedBy}`} — nothing run.`);
+        break;
+      }
+    } else {
+      item = [...(detail.roadmap?.must || []), ...(detail.roadmap?.should || [])]
+        .filter((it) => !attempted.has(it.id))
+        .find(eligible);
+    }
     if (!item) { log(n === 0 ? `no eligible must/should item on ${SLUG} — nothing to do tonight.` : 'no more eligible items — night complete.'); break; }
 
     if (DRY) {
