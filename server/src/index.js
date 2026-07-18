@@ -21,6 +21,7 @@ import { auth } from './routes/auth.js';
 import { control } from './routes/control.js';
 import { polaris } from './routes/polaris.js';
 import { autopilot, autopilotGlobal } from './routes/autopilot.js';
+import { terminal } from './routes/terminal.js';
 import { attachTerm } from './term.js';
 
 // Read once at module load: the health endpoint reports the deployed version.
@@ -68,6 +69,7 @@ app.use('/api/projects/:slug/intake', requireToken, intake);
 app.use('/api/projects/:slug/polaris', requireToken, polaris);
 app.use('/api/projects/:slug/autopilot', requireToken, autopilot);
 app.use('/api/autopilot', requireToken, autopilotGlobal);
+app.use('/api/terminal', requireToken, terminal);
 app.use('/api/projects', requireToken, projects);
 
 const port = process.env.PORT || 4000;

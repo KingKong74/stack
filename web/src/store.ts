@@ -257,9 +257,14 @@ export interface AutopilotJob {
   status: 'queued' | 'claimed' | 'running' | 'done' | 'failed';
   detail: string; when: string;
 }
+export interface TermSession {
+  sid: string; cwd: string; cmd: 'shell' | 'claude';
+  startedAt: number;       // epoch ms
+  label: string;           // ✧ Gemini's take on what it's doing ('' until asked)
+}
 export interface ControlData {
   autopilot: { enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number };
-  terminal?: { connected: boolean };   // the host PTY daemon's agent socket
+  terminal?: { connected: boolean; sessions?: TermSession[] };  // host daemon + open web terminals
   schedules: AutopilotSchedule[];
   jobs: AutopilotJob[];                // recent first; queued/claimed/running lead the strip
   projects: ControlProject[];
@@ -281,6 +286,13 @@ export async function getControl(): Promise<ControlData> {
     schedules: d.schedules ?? [],
     jobs: d.jobs ?? [],
   };
+}
+
+// ✧ Label the live terminal sessions: one Gemini pass over each session's
+// recent output (annotation only; 503 when the server has no key).
+export async function labelTerminalSessions(): Promise<TermSession[]> {
+  const r = await request<{ sessions: TermSession[] }>('/terminal/label', { method: 'POST' });
+  return r.sessions;
 }
 
 // The Run-now button: queue a manual job the host dispatcher picks up within

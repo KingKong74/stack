@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   getControl, patchProject, patchSettings, startAutopilot,
   createAutopilotSchedule, patchAutopilotSchedule, deleteAutopilotSchedule,
-  AuthError,
+  labelTerminalSessions, AuthError,
   type ControlData, type ControlProject, type AutopilotJob,
 } from '../store';
 import { go } from '../lib/route';
@@ -25,6 +25,11 @@ const OPEN_JOB = new Set(['queued', 'claimed', 'running']);
 
 const fmtDate = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const sessionAge = (startedAt: number) => {
+  const min = Math.max(0, Math.round((Date.now() - startedAt) / 60_000));
+  return min < 1 ? 'just opened' : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`;
+};
 
 const scheduleWhen = (s: { days: number[]; runDate: string | null; atTime: string }) => {
   if (s.runDate) return `once · ${s.runDate} ${s.atTime}`;
@@ -53,6 +58,7 @@ export function ControlPanel() {
   const [schedOpen, setSchedOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
   const [formBusy, setFormBusy] = useState(false);
+  const [labelBusy, setLabelBusy] = useState(false);
 
   const load = useCallback(() => {
     getControl()
@@ -189,6 +195,19 @@ export function ControlPanel() {
     }
   };
 
+  const labelSessions = async () => {
+    if (labelBusy) return;
+    setLabelBusy(true);
+    try {
+      const sessions = await labelTerminalSessions();
+      setData((cur) => cur && { ...cur, terminal: { connected: cur.terminal?.connected ?? true, sessions } });
+    } catch (e) {
+      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not label the sessions.');
+    } finally {
+      setLabelBusy(false);
+    }
+  };
+
   const week = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() + i);
@@ -279,6 +298,21 @@ export function ControlPanel() {
                 <span><b>{data.totals.claims}</b> claimed lane{data.totals.claims === 1 ? '' : 's'}</span>
                 <span><b>{data.totals.review}</b> awaiting review</span>
               </div>
+              {(data.terminal?.sessions?.length ?? 0) > 0 && (
+                <div className="mc-terms" aria-label="Open terminal sessions">
+                  {data.terminal!.sessions!.map((s) => (
+                    <span key={s.sid} className={`mc-termchip ${s.cmd}`}
+                      title={s.label || 'No label yet — ✧ Label asks Gemini what each session is doing'}>
+                      ⌨ {s.cmd} · {s.cwd.replace(/^\/home\/[^/]+/, '~')} · {sessionAge(s.startedAt)}
+                      {s.label && <em> — {s.label}</em>}
+                    </span>
+                  ))}
+                  <button className="btn-repo sm" onClick={labelSessions} disabled={labelBusy}
+                    title="Ask Gemini to name what each open session is doing (needs a server key)">
+                    {labelBusy ? 'Labelling…' : '✧ Label'}
+                  </button>
+                </div>
+              )}
               {data.jobs.length > 0 && (
                 <div className="mc-jobs" aria-label="Recent autopilot jobs">
                   {data.jobs.slice(0, 6).map((j) => (

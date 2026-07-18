@@ -19,6 +19,26 @@ import { tokenValid } from './auth.js';
 let agentConnected = false;
 export const termAgentConnected = () => agentConnected;
 
+// Live-session metadata for Mission Control (#120): what each open terminal
+// is (cwd, shell/claude, age) plus a rolling ANSI-stripped output tail that
+// the Gemini labeller reads. In-memory only — gone with the session.
+const termMeta = new Map(); // sid -> { cwd, cmd, startedAt, tail, label }
+const TAIL_CAP = 2000;
+const stripAnsi = (s) => s
+  .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '') // OSC (titles etc.)
+  .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')       // CSI
+  .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');       // stray control bytes
+export const termSessions = () =>
+  [...termMeta.entries()].map(([sid, m]) => ({
+    sid: String(sid),
+    cwd: m.cwd,
+    cmd: m.cmd,
+    startedAt: m.startedAt,
+    label: m.label || '',
+  }));
+export const termTails = () =>
+  [...termMeta.entries()].map(([sid, m]) => ({ sid: String(sid), meta: m }));
+
 export function attachTerm(httpServer) {
   const wss = new WebSocketServer({ noServer: true });
   let agent = null;
@@ -61,8 +81,16 @@ export function attachTerm(httpServer) {
       try { m = JSON.parse(raw.toString()); } catch { return; }
       const browser = sessions.get(m.sid);
       if (!browser) return;
+      if (m.t === 'out' && m.data) {
+        const meta = termMeta.get(m.sid);
+        if (meta) {
+          try {
+            meta.tail = (meta.tail + stripAnsi(Buffer.from(m.data, 'base64').toString('utf8'))).slice(-TAIL_CAP);
+          } catch { /* bad frame — the tail just misses it */ }
+        }
+      }
       if (m.t === 'out' || m.t === 'ready' || m.t === 'err' || m.t === 'usage') send(browser, m);
-      if (m.t === 'exit') { send(browser, m); browser.close(); sessions.delete(m.sid); }
+      if (m.t === 'exit') { send(browser, m); browser.close(); sessions.delete(m.sid); termMeta.delete(m.sid); }
     });
     ws.on('close', () => {
       if (agent === ws) { agent = null; agentConnected = false; }
@@ -71,6 +99,7 @@ export function attachTerm(httpServer) {
         send(browser, { t: 'err', msg: 'The terminal daemon disconnected.' });
         browser.close();
         sessions.delete(sid);
+        termMeta.delete(sid);
       }
     });
   }
@@ -93,6 +122,13 @@ export function attachTerm(httpServer) {
       }
       const sid = nextSid++;
       sessions.set(sid, ws);
+      termMeta.set(sid, {
+        cwd: String(msg.cwd || '~'),
+        cmd: msg.cmd === 'claude' ? 'claude' : 'shell',
+        startedAt: Date.now(),
+        tail: '',
+        label: '',
+      });
       delete msg.token; // the daemon never sees credentials
       send(agent, { ...msg, sid });
       ws.on('message', (raw2) => {
@@ -102,6 +138,7 @@ export function attachTerm(httpServer) {
       });
       ws.on('close', () => {
         if (sessions.delete(sid)) send(agent, { t: 'kill', sid });
+        termMeta.delete(sid);
       });
     });
   }
