@@ -4,20 +4,27 @@
 // and reaches them via dynamic import, resolved relative to this file so it
 // works from any working directory (or symlinked onto PATH).
 //
-//   stack tree [--repo <path>] [--json]   the branch navigator
+//   stack tree [--repo <path>] [--json]        the branch navigator
+//   stack start-session [<slug>] [--item N]    start an automation session
+//   stack list-sessions [<slug>] [--limit N]   list recent automation sessions
 //   stack help
 const { join } = require('node:path');
 const { pathToFileURL } = require('node:url');
 
+// fn = the module export to call (default `main`); mains may be async and
+// resolve to the exit code.
 const COMMANDS = {
   tree: { script: 'stack-tree.mjs', blurb: 'render the branch navigator tree' },
+  'start-session': { script: 'stack-sessions.mjs', fn: 'mainStart', blurb: 'start an automation session (▶ Run now, from the terminal)' },
+  'list-sessions': { script: 'stack-sessions.mjs', fn: 'mainList', blurb: 'list recent automation sessions' },
+  sessions: { script: 'stack-sessions.mjs', fn: 'mainList', blurb: 'alias for list-sessions' },
 };
 
 const [cmd, ...rest] = process.argv.slice(2);
 
 function usage(code) {
   const lines = ['usage: stack <command> [options]', ''];
-  for (const [name, { blurb }] of Object.entries(COMMANDS)) lines.push(`  ${name.padEnd(8)} ${blurb}`);
+  for (const [name, { blurb }] of Object.entries(COMMANDS)) lines.push(`  ${name.padEnd(15)} ${blurb}`);
   (code ? process.stderr : process.stdout).write(lines.join('\n') + '\n');
   process.exit(code);
 }
@@ -29,7 +36,8 @@ if (!COMMANDS[cmd]) {
 }
 
 import(pathToFileURL(join(__dirname, 'scripts', COMMANDS[cmd].script)).href)
-  .then((m) => process.exit(m.main(rest)))
+  .then((m) => m[COMMANDS[cmd].fn || 'main'](rest))
+  .then((code) => process.exit(code ?? 0))
   .catch((e) => {
     process.stderr.write(`[stack] ${cmd} failed: ${e.message}\n`);
     process.exit(1);
