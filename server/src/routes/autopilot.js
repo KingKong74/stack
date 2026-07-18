@@ -179,6 +179,24 @@ autopilotGlobal.post('/start', async (req, res) => {
   res.status(201).json(jobShape(full.rows[0]));
 });
 
+// GET /jobs?slug=&limit= — recent automation sessions, newest first. The read
+// side of /start: `stack list-sessions` and anything else that wants the job
+// queue without the full Mission Control payload.
+autopilotGlobal.get('/jobs', async (req, res) => {
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+  const slug = String(req.query.slug || '');
+  if (slug) {
+    const project = await projectBySlug(slug);
+    if (!project) return res.status(404).json({ error: 'No such project.' });
+    const { rows } = await q(
+      `${JOB_SELECT} WHERE j.project_id = $1 ORDER BY j.created_at DESC LIMIT $2`,
+      [project.id, limit]);
+    return res.json(rows.map(jobShape));
+  }
+  const { rows } = await q(`${JOB_SELECT} ORDER BY j.created_at DESC LIMIT $1`, [limit]);
+  res.json(rows.map(jobShape));
+});
+
 // GET /next?local=YYYY-MM-DDTHH:MM&dow=N — the host dispatcher's poll.
 // Recovers stale jobs, lazily enqueues due work, then claims at most one job
 // (serialised: nothing is handed out while another job is claimed/running).
