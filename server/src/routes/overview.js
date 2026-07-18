@@ -47,7 +47,7 @@ overview.get('/', async (_req, res) => {
          FROM bugs WHERE source = 'hook' AND reviewed_at IS NULL
        UNION ALL
        SELECT 'roadmap', project_id, id::text, title, bucket, created_at
-         FROM roadmap_items WHERE source = 'hook' AND reviewed_at IS NULL
+         FROM roadmap_items WHERE source = 'hook' AND reviewed_at IS NULL AND NOT done
        UNION ALL
        SELECT 'future', project_id, id::text, title, 'idea', created_at
          FROM futures WHERE source = 'hook' AND reviewed_at IS NULL

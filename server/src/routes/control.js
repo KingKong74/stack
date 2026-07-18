@@ -44,7 +44,7 @@ control.get('/', async (_req, res) => {
     q(`SELECT project_id, count(*)::int AS n FROM (
          SELECT project_id FROM bugs WHERE source = 'hook' AND reviewed_at IS NULL
          UNION ALL
-         SELECT project_id FROM roadmap_items WHERE source = 'hook' AND reviewed_at IS NULL
+         SELECT project_id FROM roadmap_items WHERE source = 'hook' AND reviewed_at IS NULL AND NOT done
          UNION ALL
          SELECT project_id FROM futures WHERE source = 'hook' AND reviewed_at IS NULL
        ) r GROUP BY project_id`),
