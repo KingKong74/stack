@@ -10,6 +10,11 @@ import { tokenValid } from './auth.js';
 //                classes as the API (API token or PIN device token).
 //   /term-agent  the daemon's one persistent outbound connection, bearer in
 //                the upgrade headers. Latest connection wins.
+//   /term-status the global presence channel (#121): any Stack tab may watch.
+//                First frame {t:'watch', token} (same credential classes),
+//                then the relay pushes {t:'status', active, count} immediately
+//                and again on every session start/end — so every open tab
+//                shows whether a terminal is live anywhere, with no polling.
 //
 // Sessions are multiplexed over the agent socket by sid; the relay never
 // looks inside the data frames (base64 both ways). No agent = the browser
@@ -43,9 +48,15 @@ export function attachTerm(httpServer) {
   const wss = new WebSocketServer({ noServer: true });
   let agent = null;
   const sessions = new Map(); // sid -> browser ws
+  const watchers = new Set(); // /term-status subscribers (#121)
   let nextSid = 1;
 
   const send = (ws, obj) => { if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj)); };
+
+  const statusFrame = () => ({ t: 'status', active: termMeta.size > 0, count: termMeta.size });
+  const broadcastStatus = () => {
+    for (const ws of watchers) send(ws, statusFrame());
+  };
 
   httpServer.on('upgrade', async (req, socket, head) => {
     const path = (req.url || '').split('?')[0];
@@ -60,6 +71,8 @@ export function attachTerm(httpServer) {
       wss.handleUpgrade(req, socket, head, (ws) => acceptAgent(ws));
     } else if (path === '/term') {
       wss.handleUpgrade(req, socket, head, (ws) => acceptBrowser(ws));
+    } else if (path === '/term-status') {
+      wss.handleUpgrade(req, socket, head, (ws) => acceptWatcher(ws));
     } else {
       socket.destroy();
     }
@@ -69,6 +82,7 @@ export function attachTerm(httpServer) {
   setInterval(() => {
     if (agent) agent.ping();
     for (const ws of sessions.values()) ws.ping();
+    for (const ws of watchers) ws.ping();
   }, 30_000).unref();
 
   function acceptAgent(ws) {
@@ -90,7 +104,7 @@ export function attachTerm(httpServer) {
         }
       }
       if (m.t === 'out' || m.t === 'ready' || m.t === 'err' || m.t === 'usage') send(browser, m);
-      if (m.t === 'exit') { send(browser, m); browser.close(); sessions.delete(m.sid); termMeta.delete(m.sid); }
+      if (m.t === 'exit') { send(browser, m); browser.close(); sessions.delete(m.sid); termMeta.delete(m.sid); broadcastStatus(); }
     });
     ws.on('close', () => {
       if (agent === ws) { agent = null; agentConnected = false; }
@@ -101,6 +115,7 @@ export function attachTerm(httpServer) {
         sessions.delete(sid);
         termMeta.delete(sid);
       }
+      broadcastStatus();
     });
   }
 
@@ -131,6 +146,7 @@ export function attachTerm(httpServer) {
       });
       delete msg.token; // the daemon never sees credentials
       send(agent, { ...msg, sid });
+      broadcastStatus();
       ws.on('message', (raw2) => {
         let m;
         try { m = JSON.parse(raw2.toString()); } catch { return; }
@@ -139,7 +155,27 @@ export function attachTerm(httpServer) {
       ws.on('close', () => {
         if (sessions.delete(sid)) send(agent, { t: 'kill', sid });
         termMeta.delete(sid);
+        broadcastStatus();
       });
+    });
+  }
+
+  // A /term-status watcher: any signed-in Stack tab. Gets the current state
+  // straight after the token check, then every change until it disconnects.
+  function acceptWatcher(ws) {
+    const gate = setTimeout(() => ws.close(), 10_000);
+    ws.once('message', async (raw) => {
+      clearTimeout(gate);
+      let msg;
+      try { msg = JSON.parse(raw.toString()); } catch { ws.close(); return; }
+      if (msg.t !== 'watch' || !(await tokenValid(msg.token))) {
+        send(ws, { t: 'err', msg: 'Not authorised.' });
+        ws.close();
+        return;
+      }
+      watchers.add(ws);
+      send(ws, statusFrame());
+      ws.on('close', () => watchers.delete(ws));
     });
   }
 }
