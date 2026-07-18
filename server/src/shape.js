@@ -118,12 +118,13 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults, liveBranches }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
     keepResumeCard: keepResumeCard !== false, // global flag; false hides the resume card
     sessionDefaults: sessionDefaults || [],   // global standing-preference lines for the start hook
+    liveBranches: liveBranches || [],         // branches with a live session now (board lock, BUG-2)
     shareToken: p.share_token || '',          // non-empty = the public showcase link is live
     summary: p.summary || '',
     currentPhase: p.current_phase || '',

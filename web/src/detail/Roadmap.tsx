@@ -18,9 +18,10 @@ const tagLabel = (tag: string) => REVIEW_TAGS.find((t) => t.key === tag)?.label 
 // un-ticking.
 export function Roadmap({
   roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onToggleSkip, onReorder, onCleanup, onSendToTerminal, slug, highlightId,
-  draft, onResumeDraft, onDiscardDraft,
+  draft, onResumeDraft, onDiscardDraft, liveBranches,
 }: {
   roadmap: RoadmapData;
+  liveBranches?: string[];
   onAdd: (p: Priority, area?: string) => void;
   onToggle: (item: RoadmapItem) => void;
   onEdit: (item: RoadmapItem) => void;
@@ -231,11 +232,14 @@ export function Roadmap({
                 onDrop={(e) => { e.preventDefault(); handleDrop(col.key, null); }}
               >
                 {items.map((it) => {
-                  // A lane claim means a session or agent is on it right now:
-                  // the card dims, wears the amber tag, and goes read-only
-                  // (edits would race the worker). Ticking done stays live —
-                  // that's the human's morning move after merging the lane.
-                  const working = Boolean(it.claimedBy);
+                  // A claim only reads as "in progress" while a LIVE session is
+                  // on that lane (BUG-2: a half-run or killed session must not
+                  // leave items dimmed and read-only). Live claim: the card
+                  // dims, wears the amber tag and goes read-only (edits would
+                  // race the worker). Stale claim: the ⚑ chip stays — it is
+                  // still the autopilot's don't-re-pick marker — but the item
+                  // is fully editable. Ticking done stays live either way.
+                  const working = Boolean(it.claimedBy) && (liveBranches ?? []).includes(it.claimedBy);
                   return (
                   <div
                     className={`road-item ${working ? 'working' : ''} ${it.skipped ? 'skipped' : ''} ${highlightId === String(it.id) ? 'hl' : ''} ${dragId === it.id ? 'drag' : ''} ${overKey === String(it.id) ? 'drop-before' : ''}`}
@@ -263,7 +267,14 @@ export function Roadmap({
                         {it.skipped && <span className="skip-chip" title="Parked — not to be picked up yet">⏸ parked</span>}
                       </div>
                       {it.note && <div className="note">{it.note}</div>}
-                      {it.claimedBy && <div className="claim-chip" title="Claimed by this lane">⚑ {it.claimedBy}</div>}
+                      {it.claimedBy && (
+                        <div className="claim-chip"
+                          title={working
+                            ? 'Claimed by this lane'
+                            : 'Claimed by this lane — no live session on it; edit the item to clear the claim'}>
+                          ⚑ {it.claimedBy}
+                        </div>
+                      )}
                     </div>
                     <div className="road-actions">
                       {!working && (

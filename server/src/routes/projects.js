@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import {
   slugify, oneOf, relativeTime, computeProgress, TINTS, PROJECT_STATUSES,
+  PRESENCE_TTL_MINUTES,
 } from '../util.js';
 import {
   bugShape, groupRoadmap, noteShape, futureShape, checkShape, activityShape,
@@ -106,7 +107,7 @@ projects.get('/:slug', async (req, res) => {
   const p = rows[0];
 
   const appSettings = await readSettings();
-  const [sessions, bugs, road, notes, futures, checks, weekly] = await Promise.all([
+  const [sessions, bugs, road, notes, futures, checks, weekly, live] = await Promise.all([
     q(
       `SELECT commit_hash, branch, summary, tags, gemini_note, created_at FROM sessions
         WHERE project_id = $1 ORDER BY created_at DESC LIMIT 50`,
@@ -120,6 +121,13 @@ projects.get('/:slug', async (req, res) => {
     q(
       `SELECT count(*)::int AS n FROM sessions
         WHERE project_id = $1 AND created_at > now() - interval '7 days'`,
+      [p.id]
+    ),
+    // Live branches back the board's in-progress lock: a claim only dims/locks
+    // its item while a session on that lane is actually alive (BUG-2).
+    q(
+      `SELECT DISTINCT branch FROM presence
+        WHERE project_id = $1 AND last_seen_at > now() - interval '${PRESENCE_TTL_MINUTES} minutes'`,
       [p.id]
     ),
   ]);
@@ -137,6 +145,7 @@ projects.get('/:slug', async (req, res) => {
       checks: checks.rows.map(checkShape),
       keepResumeCard: appSettings.keep_resume_card,
       sessionDefaults: sessionDefaultLines(appSettings.session_defaults),
+      liveBranches: live.rows.map((r) => r.branch || 'main'),
     })
   );
 });

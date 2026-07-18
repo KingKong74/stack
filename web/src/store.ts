@@ -338,12 +338,13 @@ export interface ProjectDetailData {
   checks: Check[];
   keepResumeCard: boolean;
   shareToken: string;
+  liveBranches: string[];  // branches with a live session right now — backs the board's in-progress lock
 }
 
 export async function getProjectDetail(slug: string): Promise<ProjectDetailData> {
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; futures?: Future[];
-    checks?: Check[]; keepResumeCard?: boolean; shareToken?: string;
+    checks?: Check[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
     project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
@@ -352,6 +353,7 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     checks: d.checks || [],
     keepResumeCard: d.keepResumeCard !== false,
     shareToken: d.shareToken || '',
+    liveBranches: d.liveBranches || [],
   };
 }
 
