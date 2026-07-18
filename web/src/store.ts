@@ -402,6 +402,26 @@ export function setTermCmds(list: TermCmd[]) {
   localStorage.setItem(TERM_CMDS_KEY, JSON.stringify(list));
 }
 
+// The Terminal screen's usage strip — device-local, like the quick commands.
+// dailyLimit is the token budget the bar fills against (a personal estimate;
+// Anthropic doesn't publish the real number). lastAutoKey remembers the last
+// booked reset slot so neither a reload nor the next usage frame double-books.
+export interface TermUsagePrefs { dailyLimit: number; autoSchedule: boolean; lastAutoKey: string }
+const TERM_USAGE_KEY = 'stack.termUsage';
+export function getTermUsagePrefs(): TermUsagePrefs {
+  try {
+    const p = JSON.parse(localStorage.getItem(TERM_USAGE_KEY) || '{}');
+    return {
+      dailyLimit: Number(p.dailyLimit) > 0 ? Number(p.dailyLimit) : 10_000_000,
+      autoSchedule: !!p.autoSchedule,
+      lastAutoKey: typeof p.lastAutoKey === 'string' ? p.lastAutoKey : '',
+    };
+  } catch { return { dailyLimit: 10_000_000, autoSchedule: false, lastAutoKey: '' }; }
+}
+export function setTermUsagePrefs(p: TermUsagePrefs) {
+  localStorage.setItem(TERM_USAGE_KEY, JSON.stringify(p));
+}
+
 // ---- Polaris (POST .../polaris — the Futures tab's Gemini terminal) ----
 
 export interface PolarisTurn { role: 'you' | 'polaris'; text: string }

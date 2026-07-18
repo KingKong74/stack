@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { openTerminal, getTermCmds, setTermCmds, type TermCmd } from '../store';
+import {
+  openTerminal, getTermCmds, setTermCmds, type TermCmd,
+  getTermUsagePrefs, setTermUsagePrefs, type TermUsagePrefs,
+  createAutopilotSchedule,
+} from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 
@@ -13,6 +17,29 @@ import { PRODUCT_NAME } from '../lib/ui';
 // the theme is a mintty/git-bash homage: black, grey foreground, the classic
 // ANSI palette.
 type Status = 'connecting' | 'live' | 'closed' | 'error';
+
+// The daemon's `usage` frame — today's real token count from the host's Claude
+// transcripts, plus the limit-reset details while a usage limit is in force.
+// `sched` is a ready-to-book one-off calendar slot in HOST-local time.
+type TermUsage = {
+  tokens: number;
+  resetAt?: number;
+  resetLabel?: string;
+  sched?: { runDate: string; atTime: string };
+};
+
+const fmtTok = (n: number) =>
+  n >= 1e6 ? `${(n / 1e6).toFixed(n >= 9.95e6 ? 0 : 1)}M`
+  : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
+
+// "10M", "1.5m", "800k" or a plain count → tokens (0 = unparseable).
+const parseTok = (s: string): number => {
+  const m = /^\s*([\d.]+)\s*([mk]?)\s*$/i.exec(s);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round(n * (m[2].toLowerCase() === 'm' ? 1e6 : m[2].toLowerCase() === 'k' ? 1e3 : 1));
+};
 
 const b64encode = (s: string) => {
   const bytes = new TextEncoder().encode(s);
@@ -62,6 +89,18 @@ export function Terminal({ initialCwd = '' }: { initialCwd?: string }) {
   const handles = useRef(new Map<number, Handle>());
 
   const [customCmds, setCustomCmds] = useState<TermCmd[]>(() => getTermCmds());
+
+  // Token usage strip (#111) — fed by every session's usage frames (they all
+  // report the same host-wide numbers; latest wins). The daily limit is a
+  // device-local estimate; the auto/manual toggle decides whether a limit hit
+  // books the next automated session itself or offers a button.
+  const [usage, setUsage] = useState<TermUsage | null>(null);
+  const [usagePrefs, setPrefsState] = useState<TermUsagePrefs>(() => getTermUsagePrefs());
+  const [editLimit, setEditLimit] = useState(false);
+  const [limitDraft, setLimitDraft] = useState('');
+  const [schedNote, setSchedNote] = useState('');
+  const scheduling = useRef(false);
+  const savePrefs = (p: TermUsagePrefs) => { setPrefsState(p); setTermUsagePrefs(p); };
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [newCmd, setNewCmd] = useState('');
@@ -125,6 +164,37 @@ export function Terminal({ initialCwd = '' }: { initialCwd?: string }) {
 
   const activeSess = sessions.find((s) => s.id === active);
 
+  // The project a booked session runs against — the dispatcher resolves repos
+  // as $STACK_AUTOPILOT_ROOT/<slug>, so the cwd's first segment IS the slug.
+  const projectSlug = (activeSess?.cwd || cwd).trim().replace(/^[/\\]+/, '').split('/')[0] || '';
+  const schedKey = usage?.sched ? `${projectSlug} ${usage.sched.runDate} ${usage.sched.atTime}` : '';
+  const booked = !!schedKey && usagePrefs.lastAutoKey === schedKey;
+  const usagePct = usage ? Math.round((usage.tokens / usagePrefs.dailyLimit) * 100) : 0;
+
+  const bookReset = async () => {
+    const sched = usage?.sched;
+    if (!sched || scheduling.current || booked) return;
+    if (!projectSlug) { setSchedNote('Set a project directory to book against.'); return; }
+    scheduling.current = true;
+    try {
+      await createAutopilotSchedule({
+        slug: projectSlug, atTime: sched.atTime, runDate: sched.runDate,
+        note: 'Booked from the terminal — around the usage-limit reset',
+      });
+      savePrefs({ ...usagePrefs, lastAutoKey: schedKey });
+      setSchedNote('');
+    } catch {
+      setSchedNote(`Could not book ${projectSlug} — is it a Stack project?`);
+    } finally { scheduling.current = false; }
+  };
+
+  // Automatic mode: a limit frame with a bookable slot books itself, once per
+  // slot (lastAutoKey survives reloads, so a refresh can't double-book).
+  useEffect(() => {
+    if (usagePrefs.autoSchedule && usage?.sched && !booked) void bookReset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usagePrefs.autoSchedule, usage?.sched?.runDate, usage?.sched?.atTime, projectSlug]);
+
   return (
     <div className="term-screen">
       <div className="topbar">
@@ -167,6 +237,54 @@ export function Terminal({ initialCwd = '' }: { initialCwd?: string }) {
             </button>
           )}
         </div>
+
+        {/* the usage strip — appears with the first usage frame from the daemon */}
+        {usage && (
+          <div className="term-usage">
+            <span className="tu-lbl">tokens today</span>
+            <div className={`tu-bar${usagePct >= 100 ? ' over' : usagePct >= 85 ? ' warn' : ''}`}>
+              <div className="tu-fill" style={{ width: `${Math.min(100, usagePct)}%` }} />
+            </div>
+            <span className="tu-num">
+              ~{fmtTok(usage.tokens)} /{' '}
+              {editLimit ? (
+                <input className="field-input tu-edit" autoFocus value={limitDraft}
+                  onChange={(e) => setLimitDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const v = parseTok(limitDraft);
+                      if (v) savePrefs({ ...usagePrefs, dailyLimit: v });
+                      setEditLimit(false);
+                    } else if (e.key === 'Escape') setEditLimit(false);
+                  }}
+                  onBlur={() => setEditLimit(false)} />
+              ) : (
+                <button className="tu-limit" title="Daily token budget (your estimate, this device only) — click to change"
+                  onClick={() => { setLimitDraft(fmtTok(usagePrefs.dailyLimit)); setEditLimit(true); }}>
+                  {fmtTok(usagePrefs.dailyLimit)}
+                </button>
+              )}
+            </span>
+            {usage.resetLabel && <span className="tu-reset">⏳ limit resets {usage.resetLabel}</span>}
+            {usage.sched && (booked ? (
+              <span className="tu-booked">✓ session booked for {usage.sched.atTime}</span>
+            ) : !usagePrefs.autoSchedule ? (
+              <button className="btn-submit sm" onClick={() => void bookReset()}
+                title={`Book a one-off automated session at ${usage.sched.atTime} (just past the reset) via the Mission Control calendar`}>
+                ▶ Book session at {usage.sched.atTime}
+              </button>
+            ) : null)}
+            <span className="tu-auto" title="When the usage limit hits, book the next automated session just past the reset without asking">
+              auto-book at reset
+              <button role="switch" aria-checked={usagePrefs.autoSchedule} aria-label="Auto-book a session at the limit reset"
+                className={`switch sm ${usagePrefs.autoSchedule ? 'on' : ''}`}
+                onClick={() => savePrefs({ ...usagePrefs, autoSchedule: !usagePrefs.autoSchedule })}>
+                <span className="switch-knob" />
+              </button>
+            </span>
+            {schedNote && <span className="tu-note">{schedNote}</span>}
+          </div>
+        )}
 
         <div className="term-layout">
           {/* quick commands — type into the active session */}
@@ -226,6 +344,7 @@ export function Terminal({ initialCwd = '' }: { initialCwd?: string }) {
             {sessions.map((s) => (
               <TermSession key={s.id} sess={s} visible={s.id === active}
                 onStatus={(st, note) => setStatus(s.id, st, note)}
+                onUsage={setUsage}
                 register={(h) => { if (h) handles.current.set(s.id, h); else handles.current.delete(s.id); }} />
             ))}
             {sessions.length === 0 && (
@@ -240,10 +359,11 @@ export function Terminal({ initialCwd = '' }: { initialCwd?: string }) {
 
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
-function TermSession({ sess, visible, onStatus, register }: {
+function TermSession({ sess, visible, onStatus, onUsage, register }: {
   sess: { id: number; cwd: string; cmd: 'shell' | 'claude' };
   visible: boolean;
   onStatus: (s: Status, note: string) => void;
+  onUsage: (u: TermUsage) => void;
   register: (h: Handle | null) => void;
 }) {
   const holderRef = useRef<HTMLDivElement>(null);
@@ -271,9 +391,15 @@ function TermSession({ sess, visible, onStatus, register }: {
       const ws = openTerminal({ cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows });
       wsRef.current = ws;
       ws.addEventListener('message', (ev) => {
-        let m: { t: string; data?: string; msg?: string; code?: number; cwd?: string };
+        let m: {
+          t: string; data?: string; msg?: string; code?: number; cwd?: string;
+          tokens?: number; resetAt?: number; resetLabel?: string; sched?: { runDate: string; atTime: string };
+        };
         try { m = JSON.parse(ev.data); } catch { return; }
         if (m.t === 'out' && m.data) term.write(b64decode(m.data));
+        else if (m.t === 'usage' && typeof m.tokens === 'number') {
+          onUsage({ tokens: m.tokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched });
+        }
         else if (m.t === 'ready') { onStatus('live', m.cwd || ''); if (visible) term.focus(); }
         else if (m.t === 'exit') { onStatus('closed', `exited (${m.code})`); term.write('\r\n\x1b[90m[session ended — reconnect from the tab bar]\x1b[0m\r\n'); }
         else if (m.t === 'err') { onStatus('error', m.msg || 'terminal error'); term.write(`\r\n\x1b[91m${m.msg || 'terminal error'}\x1b[0m\r\n`); }

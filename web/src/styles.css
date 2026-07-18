@@ -1375,4 +1375,20 @@ a { color: inherit; }
 .term-tab-x:hover { color: var(--critical); }
 .term-holder.gitbash { background: #000; border-radius: 0 14px 14px 14px; height: calc(100vh - 264px); }
 .term-empty { display: flex; align-items: center; justify-content: center; color: #666; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+
+/* the usage strip — today's tokens against the daily budget, limit reset + booking (#111) */
+.term-usage { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 12px; font-size: 12.5px; color: var(--muted); }
+.tu-lbl { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.tu-bar { flex: 1 1 120px; max-width: 260px; height: 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line-3); overflow: hidden; }
+.tu-fill { height: 100%; border-radius: 6px; background: var(--sage, var(--green)); transition: width 0.4s ease; }
+.tu-bar.warn .tu-fill { background: var(--building); }
+.tu-bar.over .tu-fill { background: var(--critical); }
+.tu-num { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--body); white-space: nowrap; }
+.tu-limit { font-family: inherit; font-size: inherit; color: var(--body); text-decoration: underline dotted; text-underline-offset: 3px; }
+.tu-limit:hover { color: var(--accent); }
+.tu-edit { width: 64px; height: 24px; padding: 0 6px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.tu-reset { color: var(--critical); font-weight: 600; }
+.tu-booked { color: var(--green); font-weight: 600; }
+.tu-auto { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
+.tu-note { flex-basis: 100%; color: var(--critical); }
 @media (max-width: 760px) { .term-layout { flex-direction: column; } .term-rail { width: 100%; flex-direction: row; flex-wrap: wrap; } .term-cmd { width: auto; } }
