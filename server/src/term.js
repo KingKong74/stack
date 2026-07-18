@@ -61,7 +61,7 @@ export function attachTerm(httpServer) {
       try { m = JSON.parse(raw.toString()); } catch { return; }
       const browser = sessions.get(m.sid);
       if (!browser) return;
-      if (m.t === 'out' || m.t === 'ready' || m.t === 'err') send(browser, m);
+      if (m.t === 'out' || m.t === 'ready' || m.t === 'err' || m.t === 'usage') send(browser, m);
       if (m.t === 'exit') { send(browser, m); browser.close(); sessions.delete(m.sid); }
     });
     ws.on('close', () => {

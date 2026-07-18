@@ -38,6 +38,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
+import { createUsageMeter } from './usage-meter.mjs';
 
 // ---- env (same loader contract as the hooks: ~/.stack/env, never printed) ----
 const envFile = join(homedir(), '.stack', 'env');
@@ -77,6 +78,67 @@ function resolveCwd(raw) {
   if (real !== ROOT && !real.startsWith(ROOT + sep)) return null;
   try { if (!statSync(real).isDirectory()) return null; } catch { return null; }
   return real;
+}
+
+// ---- token usage + limit watch (#111) ----
+// The meter reads real usage from ~/.claude transcripts; the limit watch greps
+// each session's pty stream for Claude's usage-limit message (same patterns the
+// autopilot runner uses) and derives the reset time. Both ride to the browser
+// as `usage` frames — one per live session, every USAGE_TICK_MS and on ready.
+const meter = createUsageMeter();
+const USAGE_TICK_MS = 15_000;
+// CSI + OSC escape stripper, so the match runs on what the human actually sees.
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?)/g;
+const LIMIT_RE = /(hit|reached).{0,40}(session|usage|token|rate).{0,20}limit|limit.{0,30}resets/i;
+const RESET_RE = /resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i;
+let limitResetAt = null; // epoch ms; account-wide, cleared once the reset passes
+
+function parseReset(text) {
+  const m = RESET_RE.exec(text);
+  if (!m) return null;
+  let h = parseInt(m[1], 10) % 12;
+  if (m[3].toLowerCase() === 'pm') h += 12;
+  const t = new Date();
+  t.setHours(h, m[2] ? parseInt(m[2], 10) : 0, 0, 0);
+  if (t.getTime() <= Date.now()) t.setDate(t.getDate() + 1);
+  return t.getTime();
+}
+
+function noteLimit(plainTail) {
+  if (limitResetAt && limitResetAt > Date.now()) return false; // already known
+  if (!LIMIT_RE.test(plainTail)) return false;
+  limitResetAt = parseReset(plainTail) || Date.now() + 4 * 3_600_000; // unparseable → the runner's +4h guess
+  log(`usage limit seen — reset assumed ${new Date(limitResetAt).toISOString()}`);
+  return true;
+}
+
+const clockLabel = (ms) => {
+  const d = new Date(ms);
+  const h = d.getHours() % 12 || 12;
+  return `${h}:${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
+};
+
+function usageFrame(sid) {
+  if (limitResetAt && limitResetAt <= Date.now()) limitResetAt = null;
+  const f = { t: 'usage', sid, tokens: meter.read() };
+  if (limitResetAt) {
+    f.resetAt = limitResetAt;
+    f.resetLabel = clockLabel(limitResetAt);
+    // A ready-to-book one-off calendar slot just past the reset, in HOST-local
+    // time (the browser's clock may sit in another timezone entirely).
+    const s = new Date(limitResetAt + 5 * 60_000);
+    f.sched = {
+      runDate: `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}-${String(s.getDate()).padStart(2, '0')}`,
+      atTime: `${String(s.getHours()).padStart(2, '0')}:${String(s.getMinutes()).padStart(2, '0')}`,
+    };
+  }
+  return f;
+}
+
+function pushUsage(ws) {
+  if (ws.readyState !== WebSocket.OPEN) return;
+  for (const sid of sessions.keys()) ws.send(JSON.stringify(usageFrame(sid)));
 }
 
 // ---- sessions (sid -> child) ----
@@ -119,8 +181,13 @@ function startSession(ws, msg) {
 
   // Data frames carry base64 — JSON-safe, and the browser hands the raw bytes
   // to xterm so UTF-8 renders correctly.
+  // Rolling stripped tail per session so the limit message matches even when
+  // the TUI paints it across chunks.
+  let plainTail = '';
   const out = (d) => {
     lastActivity = Date.now();
+    plainTail = (plainTail + d.toString('utf8').replace(ANSI_RE, ' ')).slice(-600);
+    if (noteLimit(plainTail)) pushUsage(ws);
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'out', sid, data: d.toString('base64') }));
   };
   child.stdout.on('data', out);
@@ -134,6 +201,7 @@ function startSession(ws, msg) {
   child.on('error', (e) => { clearInterval(idleTimer); sessions.delete(sid); fail(e.message); });
 
   ws.send(JSON.stringify({ t: 'ready', sid, cwd: cwd === ROOT ? '~' : '~/' + cwd.slice(ROOT.length + 1) }));
+  ws.send(JSON.stringify(usageFrame(sid))); // usage snapshot lands with the prompt
 }
 
 // ---- the one outbound agent connection, kept alive forever ----
@@ -142,6 +210,12 @@ function connect() {
   const ws = new WebSocket(AGENT_URL, { headers: { authorization: `Bearer ${TOKEN}` } });
 
   ws.on('open', () => { backoff = 5_000; log(`connected to ${API}`); });
+
+  // Live usage while any session is up — incremental after the first read, so
+  // each tick only parses transcript bytes appended since the last one.
+  const usageTick = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN && sessions.size) pushUsage(ws);
+  }, USAGE_TICK_MS);
 
   // A replaced server (redeploy) can leave this outbound socket half-open —
   // no close, no error, just silence through the tunnel. Ping on an interval
@@ -175,6 +249,7 @@ function connect() {
     if (retried) return;
     retried = true;
     clearInterval(heartbeat);
+    clearInterval(usageTick);
     for (const child of sessions.values()) child.kill('SIGTERM');
     sessions.clear();
     setTimeout(connect, backoff);
