@@ -408,6 +408,43 @@ export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols:
   return ws;
 }
 
+// Global terminal presence (#121): one lightweight ws per tab watching the
+// relay's live-session count, so every open Stack instance shows whether a
+// web terminal is running anywhere. The relay pushes {t:'status'} on connect
+// and on every session start/end — no polling. While disconnected the status
+// reads as quiet (server restarts aren't persisted, by design); a slow retry
+// keeps long-lived tabs current.
+export interface TermStatus { active: boolean; count: number }
+export function watchTermStatus(cb: (s: TermStatus) => void): () => void {
+  let ws: WebSocket | null = null;
+  let retry: number | undefined;
+  let closed = false;
+  const connect = () => {
+    if (closed) return;
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${window.location.host}/term-status`);
+    ws.addEventListener('open', () => {
+      ws?.send(JSON.stringify({ t: 'watch', token: getToken() || '' }));
+    });
+    ws.addEventListener('message', (e) => {
+      try {
+        const m = JSON.parse(String(e.data));
+        if (m.t === 'status') cb({ active: !!m.active, count: Number(m.count) || 0 });
+      } catch { /* not a status frame — ignore */ }
+    });
+    ws.addEventListener('close', () => {
+      cb({ active: false, count: 0 });
+      if (!closed) retry = window.setTimeout(connect, 15_000);
+    });
+  };
+  connect();
+  return () => {
+    closed = true;
+    if (retry) clearTimeout(retry);
+    ws?.close();
+  };
+}
+
 // Quick commands on the Terminal screen — device-local, like brief prefs.
 export interface TermCmd { label: string; cmd: string }
 const TERM_CMDS_KEY = 'stack.termCmds';

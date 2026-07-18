@@ -55,7 +55,10 @@ terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (onl
         stream (ANSI-stripped rolling tail, the autopilot's own limit/reset patterns, +4h when the
         reset time won't parse) and broadcasts `usage` frames — tokens, resetAt/resetLabel and a
         HOST-local one-off calendar slot just past the reset — per live session every 15s, on
-        ready and on limit sight; the relay forwards them like output.
+        ready and on limit sight; the relay forwards them like output. The relay also serves
+        /term-status (#121): any signed-in tab watches ({t:'watch', token} first frame, same
+        credential classes) and gets {t:'status', active, count} on connect and on every session
+        start/end — the push channel behind the app-wide terminal presence pill; no polling.
 templates/  stack-agent-context.md — the canonical portable agent manual (single source of truth).
 scripts/    stack-context.mjs — prints that template to stdout, optionally stamped with slug + API.
             stack-tree.mjs — the branch navigator, phase 1 (`stack tree` via the root `stack`
@@ -220,6 +223,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   edit on the sticky; promote → bug/roadmap prefills the existing modal, then a
   keep/delete-the-note confirm), Activity. ProjectDetail also owns: the Visit-site/Repo buttons (open the URL, or inline-set it when
   unset via `patchProject`), and a quiet delete-project control behind a `ConfirmModal`.
+- `components/TermStatusPill.tsx` — the global terminal presence pill (#121): mounted once in
+  `App.tsx` so every open Stack tab shows when a web-terminal session is live anywhere. Fed by
+  `store.watchTermStatus` (a small ws to the relay's `/term-status` — pushed on connect + every
+  session start/end, 15s reconnect that reads as quiet while down). Renders nothing at zero and on
+  the Terminal screen itself; clicking opens `#/terminal` (`.term-presence` styles).
 - `components/` — `Modal` (scrolls when tall), `ConfirmModal` (delete / keep-or-delete),
   `BugModal`/`RoadmapModal` (both take an optional `initialTitle` for note promotion; RoadmapModal
   also `initialNote` + `mode='edit'`), `NewProjectModal`, `TokenGate`, `ConnectGuide` (the in-app
