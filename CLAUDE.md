@@ -49,7 +49,13 @@ terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (onl
         browser session's token (both credential classes) BEFORE bridging and strips it — the
         daemon never sees browser credentials. nginx proxies /term* → server:4000 with upgrade
         headers. Runs from crontab (@reboot line); log ~/.stack/term.log. Frames are JSON with
-        base64 data, multiplexed by sid over the agent socket.
+        base64 data, multiplexed by sid over the agent socket. usage-meter.mjs (stdlib-only) tails
+        today's real Claude token usage incrementally from ~/.claude/projects transcripts (deduped
+        per message id, day-rollover safe); the daemon pairs it with a limit watch on each pty
+        stream (ANSI-stripped rolling tail, the autopilot's own limit/reset patterns, +4h when the
+        reset time won't parse) and broadcasts `usage` frames — tokens, resetAt/resetLabel and a
+        HOST-local one-off calendar slot just past the reset — per live session every 15s, on
+        ready and on limit sight; the relay forwards them like output.
 templates/  stack-agent-context.md — the canonical portable agent manual (single source of truth).
 scripts/    stack-context.mjs — prints that template to stdout, optionally stamped with slug + API.
             stack-tree.mjs — the branch navigator, phase 1 (`stack tree` via the root `stack`
@@ -165,7 +171,12 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   stays out of the main bundle; entry points on Mission Control — the strip's ⌨ Terminal button
   and a per-row ⌨ that prefills the project's slug as the cwd). xterm.js + fit addon over
   `store.openTerminal()` (the only place the ws transport + token live); Shell/Claude seg control,
-  status line, reconnectable.
+  status line, reconnectable. The **usage strip** renders the daemon's `usage` frames: today's
+  token count as a live bar against an editable device-local daily budget
+  (`store.getTermUsagePrefs/setTermUsagePrefs`), the limit-reset time when a usage limit hits, and
+  session booking around the reset — manual mode is a ▶ Book button, the auto-book toggle books
+  the one-off Mission Control calendar slot itself (once per slot; project = the cwd's first
+  segment, which IS the dispatcher's slug).
 - `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router; routes
   are `#/`, `#/settings`, `#/control`, `#/terminal`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit
