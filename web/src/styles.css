@@ -1239,6 +1239,10 @@ a { color: inherit; }
 }
 .mc-run:hover { color: #fff; background: var(--accent-deep); border-color: var(--accent-deep); }
 
+/* inline text-button (reads as a link) */
+.linklike { color: var(--accent); font-weight: 600; padding: 0; background: none; border: 0; cursor: pointer; }
+.linklike:hover { color: var(--accent-deep); text-decoration: underline; }
+
 /* open terminal sessions (#120) */
 .mc-terms { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; }
 .mc-termchip {
@@ -1279,7 +1283,7 @@ a { color: inherit; }
   background: var(--panel); color: var(--ink); font-size: 12.5px; font-family: inherit;
 }
 .mc-sched-form select:focus, .mc-sched-form input:focus { outline: none; border-color: var(--accent); }
-.mc-item-input { width: 130px; }
+.mc-item-pick { max-width: 320px; }
 .mc-note-input { flex: 1; min-width: 140px; }
 .btn-accent.sm { height: 32px; padding: 0 14px; font-size: 12.5px; }
 .mc-daypick { display: inline-flex; gap: 4px; }

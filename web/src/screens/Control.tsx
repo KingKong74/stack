@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   getControl, patchProject, patchSettings, startAutopilot,
   createAutopilotSchedule, patchAutopilotSchedule, deleteAutopilotSchedule,
-  labelTerminalSessions, AuthError,
+  labelTerminalSessions, getRoadmap, AuthError,
   type ControlData, type ControlProject, type AutopilotJob,
 } from '../store';
 import { go } from '../lib/route';
-import type { ProjectStatus } from '../types';
+import type { ProjectStatus, RoadmapItem } from '../types';
 
 const STATUS_LABEL: Record<ProjectStatus, string> = {
   live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived',
@@ -59,6 +59,9 @@ export function ControlPanel() {
   const [form, setForm] = useState(emptyForm());
   const [formBusy, setFormBusy] = useState(false);
   const [labelBusy, setLabelBusy] = useState(false);
+  // #118 — the composer's item picker: open items for the chosen project,
+  // fetched on selection (null = loading), cached per slug for the visit.
+  const [pickItems, setPickItems] = useState<Record<string, RoadmapItem[] | null>>({});
 
   const load = useCallback(() => {
     getControl()
@@ -193,6 +196,18 @@ export function ControlPanel() {
       setData((cur) => cur && { ...cur, schedules: prev });
       if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not remove the schedule.');
     }
+  };
+
+  const pickProject = (slug: string) => {
+    setForm((f) => ({ ...f, slug, itemId: '' }));
+    if (!slug || pickItems[slug] !== undefined) return;
+    setPickItems((cur) => ({ ...cur, [slug]: null }));
+    getRoadmap(slug)
+      .then((r) => {
+        const open = [...r.must, ...r.should, ...r.could, ...r.wont].filter((it) => !it.done);
+        setPickItems((cur) => ({ ...cur, [slug]: open }));
+      })
+      .catch(() => setPickItems((cur) => ({ ...cur, [slug]: [] })));
   };
 
   const labelSessions = async () => {
@@ -361,7 +376,7 @@ export function ControlPanel() {
 
               {schedOpen && (
                 <div className="mc-sched-form">
-                  <select value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} aria-label="Project">
+                  <select value={form.slug} onChange={(e) => pickProject(e.target.value)} aria-label="Project">
                     <option value="">Project…</option>
                     {data.projects.map((p) => <option key={p.slug} value={p.slug}>{p.name}</option>)}
                   </select>
@@ -394,10 +409,21 @@ export function ControlPanel() {
                       ))}
                     </span>
                   )}
-                  <input className="mc-item-input" inputMode="numeric" placeholder="Item # (optional)"
-                    value={form.itemId} aria-label="Pin to roadmap item"
-                    title="Pin the session to one roadmap item; blank = the night's normal pick"
-                    onChange={(e) => setForm({ ...form, itemId: e.target.value.replace(/\D/g, '') })} />
+                  {form.slug && (
+                    <select className="mc-item-pick" value={form.itemId} aria-label="Pin to roadmap item"
+                      title="Pin the session to one roadmap item; otherwise it takes the night's normal pick"
+                      disabled={pickItems[form.slug] === null}
+                      onChange={(e) => setForm({ ...form, itemId: e.target.value })}>
+                      <option value="">
+                        {pickItems[form.slug] === null ? 'Loading items…' : "item: the night's pick"}
+                      </option>
+                      {(pickItems[form.slug] || []).map((it) => (
+                        <option key={it.id} value={String(it.id)} disabled={Boolean(it.claimedBy)}>
+                          #{it.id} [{it.bucket}] {it.title.slice(0, 60)}{it.claimedBy ? ' — claimed' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <input className="mc-note-input" placeholder="Note (optional)" value={form.note}
                     aria-label="Note" onChange={(e) => setForm({ ...form, note: e.target.value })} />
                   <button className="btn-accent sm" disabled={!form.slug || formBusy} onClick={submitSchedule}>

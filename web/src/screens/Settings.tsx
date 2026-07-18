@@ -14,8 +14,14 @@ const THEMES: { key: ThemePref; label: string }[] = [
   { key: 'system', label: 'System' }, { key: 'light', label: 'Light' }, { key: 'dark', label: 'Dark' },
 ];
 
+// Mirrors Mission Control's knob values — the two surfaces PATCH the same settings.
 const CAPS: { minutes: number; label: string }[] = [
-  { minutes: 60, label: '1 hour' }, { minutes: 120, label: '2 hours' }, { minutes: 180, label: '3 hours' },
+  { minutes: 60, label: '1 hour' }, { minutes: 120, label: '2 hours' },
+  { minutes: 180, label: '3 hours' }, { minutes: 360, label: '6 hours' },
+];
+const BUDGETS: { tokens: number; label: string }[] = [
+  { tokens: 500_000, label: '500k' }, { tokens: 1_500_000, label: '1.5M' },
+  { tokens: 5_000_000, label: '5M' }, { tokens: 0, label: '∞ Unlimited' },
 ];
 
 const DETAILS: { key: CheckpointDetail; label: string; blurb: string }[] = [
@@ -233,14 +239,14 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
               ))}
             </section>
 
-            {/* ---- Autopilot (the overnight runner's arm switch + cap) ---- */}
+            {/* ---- Autopilot (mirrors Mission Control's console — same settings) ---- */}
             <section className="set-card">
               <div className="set-card-head">
                 <div className="set-card-title">Autopilot</div>
                 <div className="set-card-sub">
-                  The overnight runner builds ONE approved roadmap item per night, unattended, on a
-                  reviewable <span className="mono">auto/</span> branch — never main, never marked
-                  done. You steer it with the tools you already have: approve items into the board,
+                  The overnight runner builds approved roadmap items unattended (up to the items-per-night
+                  cap), each on a reviewable <span className="mono">auto/</span> branch — never main, never
+                  marked done. You steer it with the tools you already have: approve items into the board,
                   park human-only ones as skipped, and set direction via the north star and each
                   project's Directives card (injected into every unattended session).
                 </div>
@@ -248,7 +254,7 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
 
               <Switch
                 label="Armed"
-                hint="The nightly schedule only acts while this is on. Off = the run exits immediately."
+                hint="Nightly runs and scheduled sessions only act while this is on. Run now stays manual-only."
                 checked={settings.autopilotEnabled}
                 onChange={(v) => update({ autopilotEnabled: v })}
               />
@@ -267,7 +273,27 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="set-row col">
+                <div className="set-row-text">
+                  <div className="set-row-label">Token budget</div>
+                  <div className="set-row-hint">
+                    Per run, from each session's real usage. Unlimited = the session cap alone governs.
+                  </div>
+                </div>
+                <div className="seg-control" role="tablist" aria-label="Autopilot token budget">
+                  {BUDGETS.map((b) => (
+                    <button key={b.tokens} role="tab" aria-selected={settings.autopilotTokens === b.tokens}
+                      className={`seg-opt ${settings.autopilotTokens === b.tokens ? 'on' : ''}`}
+                      onClick={() => update({ autopilotTokens: b.tokens })}>
+                      {b.label}
+                    </button>
+                  ))}
+                </div>
                 <div className="set-detail-blurb">
+                  The nightly time, items per night, per-project Run now and the session calendar live in
+                  the <button className="linklike" onClick={() => go.control()}>Mission Control</button> tab.
                   In the morning: the review inbox holds Gemini's findings, the activity feed the
                   checkpoint, and the pushed branch waits for your merge-or-discard.
                 </div>
