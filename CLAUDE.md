@@ -72,6 +72,15 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             wired in (a later phase, like promote/park/prune from the tree); empty lane/idea
             groups render example placeholder nodes so the intended shape is always visible.
             `--json` emits the underlying model; `--repo <path>` reads another checkout.
+            stack-sessions.mjs — automation sessions from the terminal (#115):
+            `stack start-session [<slug>] [--item N]` queues a manual autopilot job via the
+            same POST /api/autopilot/start as Mission Control's ▶ Run now (slug derived from
+            the cwd's git remote when omitted; an already-open session is reported as such,
+            never as a fresh start) and prints the session ID; `stack list-sessions [<slug>]
+            [--limit N] [--json]` (alias `sessions`) renders the job queue from
+            GET /api/autopilot/jobs. Token from ~/.stack/env, never printed; bad/missing
+            arguments error out before anything is queued. The root `stack` dispatcher
+            resolves each command to a script export (`fn`) and awaits async mains.
             stack-autopilot.mjs — the overnight autopilot (phase 2): works MULTIPLE eligible
             roadmap items per night (must→should; open, unclaimed, not skipped, human-approved;
             up to --max-items, default Settings' autopilotMaxItems) inside a shared night
@@ -546,8 +555,11 @@ the silent metadata backstop so the feed never has gaps.
 - **Global autopilot scheduling** (`/api/autopilot/…`, routes/autopilot.js `autopilotGlobal`):
   `GET|POST /schedule` + `PATCH|DELETE /schedule/:id` (the Mission Control calendar — one-off
   `runDate` or recurring `days` getDay() ints, host-local `atTime`, optional pinned `itemId`;
-  one-offs disable themselves after firing) · `POST /start` (the ▶ Run now button — queues a
-  manual job; an open job for the project is returned instead of duplicated) ·
+  one-offs disable themselves after firing) · `POST /start` (the ▶ Run now button AND the
+  `stack start-session` CLI — queues a manual job; an open job for the project is returned
+  instead of duplicated) · `GET /jobs?slug=&limit=` (recent automation sessions newest
+  first — the read side of /start, what `stack list-sessions` renders; Mission Control
+  keeps reading jobs off the control payload) ·
   `GET /next?local=YYYY-MM-DDTHH:MM&dow=N` (the host dispatcher's poll: recovers stale jobs,
   lazily enqueues due nightly/scheduled work, hands out at most one claimed job — serialised) ·
   `PATCH /jobs/:id` (the dispatcher's outcome report: running|done|failed|queued + detail)
@@ -619,6 +631,8 @@ node hook/stack-checkpoint.mjs --settings  # print current settings (what /check
 echo '{"project":{"slug":"stack"},"session":{"summary":"…"}}' | node hook/stack-checkpoint.mjs  # author a checkpoint
 node scripts/stack-context.mjs --slug stack --api https://stack.your-domain  # export agent manual
 ./stack tree                               # the branch navigator (also --repo <path>, --json)
+./stack start-session [slug] [--item N]    # start an automation session (▶ Run now from the terminal)
+./stack list-sessions                      # the automation job queue (also [slug], --limit, --json)
 node terminal/stack-term.mjs               # the web-terminal daemon (normally via the @reboot cron line)
 tail -f ~/.stack/term.log                  # its log
 node hook/stack-gemini-review.mjs --dry    # second-model review of the last commit (Gemini; --dry = print only)
