@@ -65,10 +65,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             `--json` emits the underlying model; `--repo <path>` reads another checkout.
             stack-autopilot.mjs — the overnight autopilot (phase 2): works MULTIPLE eligible
             roadmap items per night (must→should; open, unclaimed, not skipped, human-approved;
-            up to --max-items, default 3) inside a shared night budget — the wall-clock cap
-            (Settings' autopilotMinutes) AND a token budget (--tokens / STACK_AUTOPILOT_TOKENS,
-            default 1.5M) metered from each session's real usage via `claude -p --output-format
-            json`. Per item: claim the lane, Gemini spec pre-pass (free tier — expands
+            up to --max-items, default Settings' autopilotMaxItems) inside a shared night
+            budget — the wall-clock cap (Settings' autopilotMinutes) AND a token budget
+            (--tokens / STACK_AUTOPILOT_TOKENS override; default Settings' autopilotTokens,
+            **0 = unlimited** — the wall clock alone governs) metered from each session's real
+            usage via `claude -p --output-format json`. `--item N` pins a run to exactly that
+            roadmap item in any bucket (done/claimed still refuse) — how scheduled + Run-now
+            jobs target one thing. Per item: claim the lane, Gemini spec pre-pass (free tier — expands
             title/note into goal/acceptance/out-of-scope; keyless = silently spec-less), an
             unattended session in a fresh worktree on branch auto/item-N (never main), push,
             `built_note` stamped on the item (so the Reviews view shows what landed), a checks
@@ -83,8 +86,18 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             time (parsed from the message, else +4h) — still gated by the arm switch + lock.
             Night end fires an ntfy.sh notification when STACK_NTFY_TOPIC is set in
             ~/.stack/env (free, keyless; unset = silent). Lockfile ~/.stack/autopilot.lock; log
-            ~/.stack/autopilot.log; the crontab line (23:05 nightly) is the on/off switch.
-            `skipped` items are how you keep human-only work off its plate.
+            ~/.stack/autopilot.log. `skipped` items are how you keep human-only work off its plate.
+            stack-autopilot-dispatch.mjs — the every-minute cron line (the master on/off
+            switch). Polls GET /api/autopilot/next with the HOST's local clock (the server
+            can't reach the host — same dial-out pattern as the terminal daemon); the server
+            lazily enqueues due work — the armed nightly at Settings' autopilotTime per
+            automode project, due Mission Control calendar rows, manual ▶ Run now presses —
+            and hands out at most ONE job at a time. The dispatcher runs it (repo resolved as
+            $STACK_AUTOPILOT_ROOT/<slug>, default $HOME) and PATCHes the outcome back.
+            Manual/scheduled jobs run with --force (explicit human config beats the arm
+            switch + automode); nightly keeps both gates. Silent when idle or the API is
+            unreachable (fail safe). A missed slot stays missed (90-min grace, clamped at
+            midnight) — like the old fixed cron line, but the time is now a setting.
 .claude/commands/checkpoint.md — the /checkpoint slash command (documented for install to
             ~/.claude/commands/). Tells the session to author the full checkpoint schema and pipe it
             to ~/.stack/stack-checkpoint.mjs (token read from ~/.stack/env, never printed).
@@ -138,11 +151,16 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   `[data-theme='dark']` override block on the same named tokens at the top of `styles.css`, plus a
   short list of literal-background fixups right below it. Stickies keep their paper colours.
 - `screens/Control.tsx` — **Mission Control** (`#/control`, the Dashboard header's "Mission
-  Control" button): every project's automation from one point. The autopilot strip (arm switch +
-  session cap, PATCHed straight to settings, optimistic with rollback) over one row per project:
-  automode toggle (`patchProject {automode}`), status, live presence, last push, tonight's likely
-  pick (deep-links to the roadmap item), last `auto/*` run, claim chips, review/serious-bug
-  counts and blockers. Renders `getControl()`; automode projects sort first (`.mc-*` styles).
+  Control" button): every project's automation from one point. The autopilot console (arm switch
+  + session cap up to 6h + **token budget incl. ∞ Unlimited** + **nightly start time** + items
+  per night — all PATCHed straight to settings, optimistic with rollback) over the **scheduled
+  sessions card** (week-ahead strip + standing list: one-off / daily / chosen-days sessions per
+  project, optionally pinned to one roadmap item — `store.createAutopilotSchedule` et al) and
+  one row per project: automode toggle (`patchProject {automode}`), status, live presence, last
+  push, **▶ Run now** (queues a manual job via `store.startAutopilot`; open jobs show as live
+  queued/running/done chips, refreshed on a 30s tick), tonight's likely pick (deep-links to the
+  roadmap item), last `auto/*` run, claim chips, review/serious-bug counts and blockers.
+  Renders `getControl()`; automode projects sort first (`.mc-*` styles).
 - `screens/Terminal.tsx` — the web terminal (`#/terminal[?cwd=<dir>]`, lazy-loaded so xterm.js
   stays out of the main bundle; entry points on Mission Control — the strip's ⌨ Terminal button
   and a per-row ⌨ that prefills the project's slug as the cwd). xterm.js + fit addon over
@@ -249,6 +267,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     url, `expect_status`, optional `contains` keyword) with the last result on the row
     (`last_status/code/ms/error/run_at`). Run on demand, bounded (8s), never scheduled.
   - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap|future`, fingerprint).
+  - `autopilot_schedule` + `autopilot_jobs` — Mission Control's calendar and the job queue the
+    host dispatcher polls (see scripts/stack-autopilot-dispatch.mjs). Schedule rows: host-local
+    `at_time`, one-off `run_date` or recurring `days`, optional pinned `item_id`, `enabled`.
+    Jobs: kind manual|nightly|scheduled, status queued|claimed|running|done|failed; a partial
+    unique index on (project, night_date) makes the nightly enqueue idempotent.
   - `presence` — live sessions, keyed (project, session_id). SessionStart upserts, an authored
     /checkpoint bumps `last_seen_at`, SessionEnd (and ingest's metadata backstop) deletes;
     liveness = within `util.PRESENCE_TTL_MINUTES` (default 240 — the crashed-session backstop,
@@ -403,9 +426,13 @@ Single row, client camelCase. Meanings under the no-API model:
                               // SessionStart hook into EVERY project's block (above directives) via
                               // the detail payload's `sessionDefaults` — permissions granted once,
                               // e.g. "ship" = commits pre-authorised, never re-asked per chat
-  "autopilotEnabled": false,  // the overnight runner's ARM SWITCH — cron fires nightly but the
-                              // runner exits unless this is on (fails SAFE: unreachable API = no run)
+  "autopilotEnabled": false,  // the ARM SWITCH — the dispatcher polls every minute but nightly +
+                              // scheduled jobs only enqueue while this is on (fails SAFE:
+                              // unreachable API = no run); ▶ Run now stays manual-only
   "autopilotMinutes": 120,    // wall-clock cap per unattended session (clamped 15–360)
+  "autopilotTokens": 1500000, // token budget per run; 0 = UNLIMITED (positive values floored at 100k)
+  "autopilotTime": "23:05",   // nightly start, HOST-local HH:MM (the dispatcher supplies its clock)
+  "autopilotMaxItems": 3,     // most items attempted per night (clamped 1–10)
   "accessPinSet": false       // PIN sign-in available; PATCH accepts write-only `accessPin`
                               // ('' disables) — any accessPin change deletes all auth_tokens
                               // (signs out every PIN-connected device)
@@ -435,7 +462,8 @@ the silent metadata backstop so the feed never has gaps.
 - `GET /api/control` (Mission Control, `#/control` — per-project automation state in aggregate
   queries: automode, presence, open lane claims, review counts, serious bugs, blockers, tonight's
   likely autopilot pick per automode project (mirrors the runner's eligibility rules) and the last
-  `auto/*` push; plus the autopilot arm+cap and cross-project totals)
+  `auto/*` push; plus the full autopilot config (arm, cap, tokens, time, maxItems), the schedule
+  rows, the recent job queue and cross-project totals)
 - `GET /api/search?q=…` (the ⌘K palette — grouped results across all kinds; see shape below)
 - `GET /api/timeline` (the #/timeline screen — last month of pushes grouped by day + 53 weeks of
   daily counts for the contribution grid; soft-deleted projects excluded)
@@ -488,6 +516,14 @@ the silent metadata backstop so the feed never has gaps.
 - `GET|POST /api/projects/:slug/autopilot/runs` (the overnight runner's ledger — one row per
   item attempt: outcome landed|no-commits|failed|limit, commits, tokens, cost, checks, the
   session's own summary; the overview's `autopilotRuns` digest reads the last 20h)
+- **Global autopilot scheduling** (`/api/autopilot/…`, routes/autopilot.js `autopilotGlobal`):
+  `GET|POST /schedule` + `PATCH|DELETE /schedule/:id` (the Mission Control calendar — one-off
+  `runDate` or recurring `days` getDay() ints, host-local `atTime`, optional pinned `itemId`;
+  one-offs disable themselves after firing) · `POST /start` (the ▶ Run now button — queues a
+  manual job; an open job for the project is returned instead of duplicated) ·
+  `GET /next?local=YYYY-MM-DDTHH:MM&dow=N` (the host dispatcher's poll: recovers stale jobs,
+  lazily enqueues due nightly/scheduled work, hands out at most one claimed job — serialised) ·
+  `PATCH /jobs/:id` (the dispatcher's outcome report: running|done|failed|queued + detail)
 
 Deleting a `source='hook'` bug, roadmap item or future tombstones its fingerprint so the next push
 won't re-create it.
@@ -557,5 +593,6 @@ node terminal/stack-term.mjs               # the web-terminal daemon (normally v
 tail -f ~/.stack/term.log                  # its log
 node hook/stack-gemini-review.mjs --dry    # second-model review of the last commit (Gemini; --dry = print only)
 node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack --dry  # what would tonight's run pick?
-crontab -l                                 # the autopilot schedule (23:05 nightly; remove the line to disable)
+node scripts/stack-autopilot-dispatch.mjs  # one dispatcher poll by hand (normally the cron line)
+crontab -l                                 # the dispatcher line (every minute; remove it to disable all runs)
 ```
