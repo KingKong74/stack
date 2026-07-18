@@ -504,7 +504,10 @@ the silent metadata backstop so the feed never has gaps.
   (PATCH also takes `reviewed: bool` — the review-inbox approve)
 - `GET|POST /api/projects/:slug/roadmap` · `PATCH|DELETE /api/projects/:slug/roadmap/:id`
   (POST takes `claimed_by` + `area`; PATCH also takes `reviewed: bool`, `claimed_by` ('' releases),
-  `review_tag: solid|needs-work|rethink` ('' clears), `skipped: bool` — the parked flag:
+  `review_tag: solid|needs-work|rethink` ('' clears), `done: bool` — ticking stamps `reviewed_at`;
+  un-ticking also clears `review_tag` + `claimed_by` (unless the same PATCH sets them explicitly)
+  so a sent-back item re-enters play fresh: through To verify on re-completion, pickable by the
+  autopilot again — `skipped: bool` — the parked flag:
   sinks to the bottom of its bucket, agents never pick it up, still counts toward progress —
   plus `area`, `position` (drag-reorder) and `built_note` (the what-landed account)) ·
   `POST /api/projects/:slug/roadmap/suggest-title` (Gemini titles an item from its note;

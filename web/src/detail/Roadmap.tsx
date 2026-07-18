@@ -347,7 +347,8 @@ export function Roadmap({
       {view === 'reviews' && (<>
       <div className="subtitle" style={{ marginBottom: 20 }}>
         Everything completed, awaiting your verdict — each row shows what was actually built.
-        Solid closes it out; Rethink (or ↩ Board) sends it back into play.
+        Solid closes it out; Rethink archives it and spins off a follow-up; ↩ Board sends it
+        back into play, fresh — the old verdict and lane claim don't come with it.
       </div>
 
       {toVerify.length === 0 && archived.length === 0 && (

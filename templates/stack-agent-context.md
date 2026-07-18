@@ -102,7 +102,10 @@ Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
   ```
 
 - Marking the item `{"done":true}` finishes it; send `{"claimed_by":""}` to
-  release one you're abandoning. Never print the token while doing this.
+  release one you're abandoning. Un-ticking (`{"done":false}`) sends an item
+  back into play fresh: the server clears its archive verdict and lane claim
+  so it re-enters the To verify pipeline and is pickable again. Never print
+  the token while doing this.
 - **When you finish an item, tell the reviewer what landed.** Include a
   `built_note` alongside `done:true` — two or three plain sentences on what was
   actually built, where it lives and how it was verified. It appears on the

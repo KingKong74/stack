@@ -72,6 +72,15 @@ roadmap.patch('/:id', async (req, res) => {
     // Completing an item is a human touch — it counts as reviewed, so archived
     // items never linger in the review inbox.
     if (req.body.done) sets.push('reviewed_at = COALESCE(reviewed_at, now())');
+    // Un-ticking sends the item back into play, so stale completion state goes
+    // with it: the old verdict (a redone item must pass To verify again) and
+    // the finished lane's claim (a claimed item is invisible to the autopilot
+    // and can read as in-progress). An explicit value in the same PATCH wins —
+    // these columns are already SET above and can't be assigned twice.
+    else {
+      if (req.body.review_tag === undefined) sets.push('review_tag = NULL');
+      if (req.body.claimed_by === undefined) sets.push('claimed_by = NULL');
+    }
   }
   if (req.body?.bucket !== undefined) { sets.push(`bucket = $${i++}`); vals.push(oneOf(req.body.bucket, BUCKETS, 'should')); }
   if (req.body?.title !== undefined) {
