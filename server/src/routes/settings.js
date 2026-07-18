@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { oneOf } from '../util.js';
 import { hashPin } from '../auth.js';
-import { readSettings, settingsShape, CHECKPOINT_DETAILS, cleanSessionDefaults } from '../settings.js';
+import { readSettings, settingsShape, CHECKPOINT_DETAILS, cleanSessionDefaults, cleanAutopilotTime } from '../settings.js';
 
 // GET/PATCH /api/settings — the single-row app settings behind bearer auth.
 //
@@ -44,6 +44,22 @@ settings.patch('/', async (req, res) => {
     const m = Math.trunc(Number(body.autopilotMinutes));
     fields.push(`autopilot_minutes = $${i++}`);
     values.push(Number.isFinite(m) ? Math.min(360, Math.max(15, m)) : 120);
+  }
+  if ('autopilotTokens' in body) {
+    // 0 = unlimited; any positive budget gets a sane floor so a typo can't
+    // starve the night before the first session finishes.
+    const t = Math.trunc(Number(body.autopilotTokens));
+    fields.push(`autopilot_tokens = $${i++}`);
+    values.push(!Number.isFinite(t) || t < 0 ? 1_500_000 : (t === 0 ? 0 : Math.max(100_000, t)));
+  }
+  if ('autopilotTime' in body) {
+    fields.push(`autopilot_time = $${i++}`);
+    values.push(cleanAutopilotTime(body.autopilotTime));
+  }
+  if ('autopilotMaxItems' in body) {
+    const n = Math.trunc(Number(body.autopilotMaxItems));
+    fields.push(`autopilot_max_items = $${i++}`);
+    values.push(Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : 3);
   }
   if ('accessPin' in body) {
     const pin = String(body.accessPin || '').trim();

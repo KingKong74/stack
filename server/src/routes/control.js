@@ -3,6 +3,7 @@ import { q } from '../db.js';
 import { relativeTime, computeProgress, PRESENCE_TTL_MINUTES } from '../util.js';
 import { readSettings } from '../settings.js';
 import { termAgentConnected } from '../term.js';
+import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 
 // GET /api/control — Mission Control: every project's automation state in one
 // payload, computed in aggregate queries (never one request per project).
@@ -30,7 +31,7 @@ const ms = (ts) => (ts ? new Date(ts).getTime() : -1);
 control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
-  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR] = await Promise.all([
+  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, automode, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
     q(`SELECT project_id, id, bucket, title, done, skipped, claimed_by, source,
@@ -54,6 +55,17 @@ control.get('/', async (_req, res) => {
     q(`SELECT DISTINCT ON (project_id) project_id, branch, summary, created_at
          FROM sessions WHERE branch LIKE 'auto/%'
         ORDER BY project_id, created_at DESC`),
+    // The calendar + the job queue (recent jobs cover the "what happened" strip).
+    q(`SELECT s.*, p.slug, p.name AS project_name, p.tint, ri.title AS item_title
+         FROM autopilot_schedule s
+         JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
+         LEFT JOIN roadmap_items ri ON ri.id = s.item_id
+        ORDER BY s.enabled DESC, s.at_time, s.id`),
+    q(`SELECT j.*, p.slug, p.name AS project_name, ri.title AS item_title
+         FROM autopilot_jobs j
+         JOIN projects p ON p.id = j.project_id AND p.deleted_at IS NULL
+         LEFT JOIN roadmap_items ri ON ri.id = j.item_id
+        ORDER BY j.created_at DESC LIMIT 12`),
   ]);
 
   const roadByP = new Map();
@@ -131,8 +143,13 @@ control.get('/', async (_req, res) => {
     autopilot: {
       enabled: appSettings.autopilot_enabled,
       minutes: appSettings.autopilot_minutes,
+      tokens: appSettings.autopilot_tokens,     // 0 = unlimited
+      time: appSettings.autopilot_time,         // host-local HH:MM
+      maxItems: appSettings.autopilot_max_items,
     },
     terminal: { connected: termAgentConnected() }, // the host PTY daemon's agent socket
+    schedules: scheduleShapeRows(schedR.rows),
+    jobs: jobShapeRows(jobsR.rows),
     projects,
     totals: {
       automode: projects.filter((p) => p.automode).length,

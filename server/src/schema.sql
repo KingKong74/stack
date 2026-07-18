@@ -255,6 +255,13 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_enabled BOOLEAN NOT NULL
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_minutes INTEGER NOT NULL DEFAULT 120;
 -- Access PIN: scrypt hash ("scrypt$<salt>$<hash>"); NULL = PIN sign-in disabled.
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS access_pin_hash TEXT;
+-- Autopilot night controls (Mission Control): the token budget per run
+-- (0 = unlimited), the nightly start time (host-local HH:MM — the dispatcher
+-- supplies its own local clock, so the server's TZ never matters) and how
+-- many items a night may attempt.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_tokens    BIGINT  NOT NULL DEFAULT 1500000;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_time      TEXT    NOT NULL DEFAULT '23:05';
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_max_items INTEGER NOT NULL DEFAULT 3;
 
 -- Device tokens issued by POST /api/auth/login (PIN sign-in). Only the sha256
 -- of each token is stored; the bearer gate accepts API_TOKEN or a live row
@@ -311,3 +318,45 @@ CREATE TABLE IF NOT EXISTS autopilot_runs (
   finished_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS autopilot_runs_project_idx ON autopilot_runs (project_id, finished_at DESC);
+
+-- Scheduled sessions — Mission Control's calendar. A row is "run the autopilot
+-- on this project at this time": one-off (run_date set, days empty) or
+-- recurring (days = ISO getDay() ints 0-6, run_date NULL). item_id optionally
+-- pins the session to one roadmap item instead of the night's normal pick.
+-- Times are host-local HH:MM (see autopilot_jobs). One-offs disable themselves
+-- after they enqueue, so the row survives as visible history.
+CREATE TABLE IF NOT EXISTS autopilot_schedule (
+  id               BIGSERIAL PRIMARY KEY,
+  project_id       BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  item_id          BIGINT,
+  at_time          TEXT NOT NULL,                    -- 'HH:MM' host-local
+  days             JSONB NOT NULL DEFAULT '[]'::jsonb,
+  run_date         DATE,
+  note             TEXT NOT NULL DEFAULT '',
+  enabled          BOOLEAN NOT NULL DEFAULT true,
+  last_enqueued_on DATE,                             -- local date it last fired (recurring dedup)
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- The autopilot job queue. The server cannot reach the host (firewall), so a
+-- host-side dispatcher polls GET /api/autopilot/next every minute: the server
+-- lazily enqueues due work (the armed nightly per automode project, due
+-- schedule rows, manual Run-now presses), then hands over at most one job at a
+-- time — the dispatcher runs it and PATCHes the outcome back.
+CREATE TABLE IF NOT EXISTS autopilot_jobs (
+  id          BIGSERIAL PRIMARY KEY,
+  project_id  BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL DEFAULT 'manual',   -- manual | nightly | scheduled
+  item_id     BIGINT,                           -- pin to one roadmap item (manual/scheduled)
+  schedule_id BIGINT,                           -- the autopilot_schedule row that spawned it
+  night_date  DATE,                             -- nightly dedup: one per project per local date
+  status      TEXT NOT NULL DEFAULT 'queued',   -- queued | claimed | running | done | failed
+  detail      TEXT NOT NULL DEFAULT '',         -- outcome note from the dispatcher
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  claimed_at  TIMESTAMPTZ,
+  started_at  TIMESTAMPTZ,
+  finished_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS autopilot_jobs_nightly_idx
+  ON autopilot_jobs (project_id, night_date) WHERE kind = 'nightly';
+CREATE INDEX IF NOT EXISTS autopilot_jobs_status_idx ON autopilot_jobs (status, created_at);
