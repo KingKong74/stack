@@ -152,7 +152,7 @@ projects.get('/:slug', async (req, res) => {
 
 // Fields the client may PATCH directly on a project.
 const PATCHABLE = new Set([
-  'name', 'repo', 'repo_url', 'subtitle', 'site_url', 'status', 'pinned', 'automode',
+  'name', 'repo', 'repo_url', 'subtitle', 'site_url', 'status', 'pinned', 'automode', 'autopilot_area',
   'current_phase', 'summary', 'next_steps', 'blockers',
   'in_progress', 'next_up', 'working_well', 'tint', 'north_star', 'directives',
   'deploy_platform', 'logs_url', 'tech_stack',

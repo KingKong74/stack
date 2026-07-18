@@ -232,6 +232,8 @@ export async function getSearch(query: string): Promise<SearchResponse> {
 export interface ControlProject {
   slug: string; name: string; tint: string | null; status: ProjectStatus;
   automode: boolean; progress: number; lastPush: string;
+  autopilotArea: string;   // '' = whole board; else the nightly pick's area filter
+  areas: string[];         // target options — areas on this project's open must/should items
   live: { count: number; branches: string[] } | null;
   claims: { id: string; title: string; lane: string }[];
   reviewCount: number;
@@ -506,7 +508,7 @@ export async function patchProject(
   slug: string,
   patch: Partial<{
     subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean;
-    automode: boolean;
+    automode: boolean; autopilot_area: string;
     name: string; north_star: string; directives: string[]; deploy_platform: string; logs_url: string;
     tech_stack: string[];
   }>,

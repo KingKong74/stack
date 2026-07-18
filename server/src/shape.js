@@ -111,6 +111,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
     metaLine,
     pinned: p.pinned,
     automode: !!p.automode,  // open to the overnight autopilot — drives the AUTO badge
+    autopilotArea: p.autopilot_area || '',  // '' = whole board; else the nightly pick's area filter
     siteUrl: p.site_url || '',
     repo: p.repo || '',
     repoUrl: p.repo_url || '',

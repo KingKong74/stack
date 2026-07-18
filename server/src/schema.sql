@@ -278,6 +278,11 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
 -- at GET /api/public/:slug/:token (overview + activity only). NULL = not shared.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS share_token TEXT;
 
+-- Autopilot area targeting (#122): when set, the nightly pick only considers
+-- open items carrying this product-area tag. NULL = the whole board. Set from
+-- Mission Control's per-project target picker; --item pins ignore it.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS autopilot_area TEXT;
+
 -- Soft delete: deleting a project stamps deleted_at instead of dropping the
 -- rows — everything (sessions, bugs, roadmap, notes…) survives for restore.
 -- Deleted projects vanish from every live query; Settings lists them with

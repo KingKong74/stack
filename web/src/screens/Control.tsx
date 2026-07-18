@@ -119,6 +119,22 @@ export function ControlPanel() {
 
   const openJobFor = (slug: string) => data?.jobs.find((j) => j.slug === slug && OPEN_JOB.has(j.status));
 
+  // #122 — the nightly pick's area filter, per project ('' = whole board).
+  const setTargetArea = async (p: ControlProject, area: string) => {
+    const apply = (v: string) => (cur: ControlData | null) => cur && {
+      ...cur,
+      projects: cur.projects.map((x) => (x.slug === p.slug ? { ...x, autopilotArea: v } : x)),
+    };
+    setData(apply(area));
+    try {
+      await patchProject(p.slug, { autopilot_area: area });
+      load(); // nextPick moves with the target — refetch rather than mirror the pick logic here
+    } catch (e) {
+      setData(apply(p.autopilotArea));
+      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not set the target area.');
+    }
+  };
+
   const runNow = async (p: ControlProject) => {
     try {
       const job = await startAutopilot(p.slug);
@@ -425,11 +441,21 @@ export function ControlPanel() {
                       {p.automode ? (
                         p.nextPick
                           ? <>tonight: <button className="mc-pick" onClick={() => go.detail(p.slug, 'roadmap', p.nextPick!.id)}>#{p.nextPick.id} {p.nextPick.title}</button></>
-                          : <span className="quiet">tonight: nothing eligible</span>
+                          : <span className="quiet">tonight: nothing eligible{p.autopilotArea ? ` in ${p.autopilotArea}` : ''}</span>
                       ) : (
                         <span className="quiet">manual only</span>
                       )}
                     </span>
+                    {p.automode && (p.areas.length > 0 || p.autopilotArea) && (
+                      <select className="mc-area" value={p.autopilotArea} aria-label={`Target area for ${p.name}`}
+                        title="Point the nightly pick at one product area; the whole board otherwise"
+                        onChange={(e) => setTargetArea(p, e.target.value)}>
+                        <option value="">target: all areas</option>
+                        {[...new Set([...p.areas, ...(p.autopilotArea ? [p.autopilotArea] : [])])].map((a) => (
+                          <option key={a} value={a}>target: {a}</option>
+                        ))}
+                      </select>
+                    )}
                     {p.lastAuto && (
                       <span className="mc-fact" title={p.lastAuto.summary}>
                         last run: <button className="mc-pick" onClick={() => go.detail(p.slug, 'activity')}>{p.lastAuto.branch}</button> {p.lastAuto.when}

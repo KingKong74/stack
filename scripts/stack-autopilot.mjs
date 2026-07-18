@@ -229,7 +229,12 @@ writeFileSync(lock, `${process.pid} ${stamp()}\n`);
 const unlock = () => { try { rmSync(lock); } catch { /* gone is fine */ } };
 process.on('exit', unlock);
 
-const eligible = (it) => !it.done && !it.skipped && !it.claimedBy && (it.source === 'manual' || it.reviewed);
+// Eligibility: open, unclaimed, not parked, human-approved — and inside the
+// project's target area when one is set (Mission Control's #122 picker).
+// --item pins bypass the area filter: an explicit human choice wins.
+const eligible = (targetArea) => (it) =>
+  !it.done && !it.skipped && !it.claimedBy && (it.source === 'manual' || it.reviewed)
+  && (!targetArea || (it.area || '') === targetArea);
 let tokensSpent = 0;
 let costSpent = 0;
 
@@ -388,9 +393,11 @@ try {
         break;
       }
     } else {
+      const targetArea = detail.autopilotArea || '';
       item = [...(detail.roadmap?.must || []), ...(detail.roadmap?.should || [])]
         .filter((it) => !attempted.has(it.id))
-        .find(eligible);
+        .find(eligible(targetArea));
+      if (!item && targetArea && n === 0) log(`(target area "${targetArea}" — items outside it are ignored)`);
     }
     if (!item) { log(n === 0 ? `no eligible must/should item on ${SLUG} — nothing to do tonight.` : 'no more eligible items — night complete.'); break; }
 

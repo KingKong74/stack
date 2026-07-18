@@ -32,10 +32,10 @@ control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
   const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR] = await Promise.all([
-    q(`SELECT id, slug, name, tint, status, automode, blockers, last_session_at, updated_at
+    q(`SELECT id, slug, name, tint, status, automode, autopilot_area, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
     q(`SELECT project_id, id, bucket, title, done, skipped, claimed_by, source,
-              reviewed_at, position, created_at
+              reviewed_at, position, created_at, area
          FROM roadmap_items WHERE bucket IN ('must','should') OR claimed_by IS NOT NULL`),
     q(`SELECT project_id,
               count(*) FILTER (WHERE severity IN ('critical','high') AND status <> 'fixed')::int AS serious,
@@ -94,11 +94,13 @@ control.get('/', async (_req, res) => {
     || ms(b.updated_at) - ms(a.updated_at));
 
   // Mirrors the autopilot's pick: open, unclaimed, not parked, human-approved
-  // (manual, or hook-created + reviewed); must before should, then board order.
-  const pickFor = (items) => {
+  // (manual, or hook-created + reviewed), inside the project's target area when
+  // one is set (#122); must before should, then board order.
+  const pickFor = (items, area) => {
     const eligible = items
       .filter((it) => !it.done && !it.skipped && !it.claimed_by
-        && (it.source === 'manual' || it.reviewed_at))
+        && (it.source === 'manual' || it.reviewed_at)
+        && (!area || (it.area || '') === area))
       .sort((a, b) => (a.bucket === b.bucket
         ? (a.position - b.position || ms(a.created_at) - ms(b.created_at))
         : (a.bucket === 'must' ? -1 : 1)));
@@ -108,7 +110,7 @@ control.get('/', async (_req, res) => {
   const projects = sorted.map((p) => {
     const road = roadByP.get(p.id) || [];
     const bugRow = bugsByP.get(p.id);
-    const pick = pickFor(road);
+    const pick = pickFor(road, p.autopilot_area || '');
     const lastAuto = autoByP.get(p.id);
     return {
       slug: p.slug,
@@ -116,6 +118,9 @@ control.get('/', async (_req, res) => {
       tint: p.tint || null,
       status: p.status,
       automode: !!p.automode,
+      autopilotArea: p.autopilot_area || '',
+      // Target options: areas carried by this project's open must/should items.
+      areas: [...new Set(road.filter((r) => !r.done && r.area).map((r) => r.area))].sort(),
       // The roadmap query only carries must/should (all computeProgress counts);
       // the aggregated serious count stands in for row-level bugs for the cap.
       progress: computeProgress(
