@@ -77,7 +77,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             **0 = unlimited** — the wall clock alone governs) metered from each session's real
             usage via `claude -p --output-format json`. `--item N` pins a run to exactly that
             roadmap item in any bucket (done/claimed still refuse) — how scheduled + Run-now
-            jobs target one thing. Per item: claim the lane, Gemini spec pre-pass (free tier — expands
+            jobs target one thing. A project's `autopilot_area` (#122, the Mission Control
+            target picker; '' = whole board) filters the normal pick to one product area —
+            --item pins bypass it. Per item: claim the lane, Gemini spec pre-pass (free tier — expands
             title/note into goal/acceptance/out-of-scope; keyless = silently spec-less), an
             unattended session in a fresh worktree on branch auto/item-N (never main), push,
             `built_note` stamped on the item (so the Reviews view shows what landed), a checks
@@ -195,6 +197,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   ProjectDetail (loads project+activity+collections, owns tab/modal state, persists on mutate;
   initial tab comes from the route so the deck can deep-link to e.g. a project's Activity tab;
   the Bugs/Roadmap tab titles carry open-count badges).
+- The detail payload carries `liveBranches` (presence rows inside the TTL): the board's
+  in-progress lock (dim + read-only) only bites while an item's `claimed_by` matches a live
+  branch — a stale claim keeps its ⚑ don't-re-pick chip but stays editable (BUG-2).
 - `detail/` Overview (resume card, the **project-scoped review queue** — same Keep/Dismiss semantics
   as the deck inbox, computed client-side from the collections' `reviewed` flags — the **Directives
   card** (add/remove steer lines, persisted whole via `patchProject {directives}`) and the
@@ -535,6 +540,9 @@ the silent metadata backstop so the feed never has gaps.
   `GET /next?local=YYYY-MM-DDTHH:MM&dow=N` (the host dispatcher's poll: recovers stale jobs,
   lazily enqueues due nightly/scheduled work, hands out at most one claimed job — serialised) ·
   `PATCH /jobs/:id` (the dispatcher's outcome report: running|done|failed|queued + detail)
+- `POST /api/terminal/label` (#120 — ✧ Gemini names what each open web-terminal session is doing,
+  from the relay's rolling ANSI-stripped output tail; annotation only, in-memory, 503 keyless.
+  The live session list itself rides the control payload's `terminal.sessions`.)
 
 Deleting a `source='hook'` bug, roadmap item or future tombstones its fingerprint so the next push
 won't re-create it.
