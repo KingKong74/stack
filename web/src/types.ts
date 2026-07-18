@@ -200,7 +200,10 @@ export interface Settings {
   checkpointDetail: CheckpointDetail;
   includeChores: boolean;
   sessionDefaults: string[];  // DIRECTIVES keys — standing preferences injected into every session
-  autopilotEnabled: boolean;  // the overnight runner's arm switch (cron no-ops while off)
+  autopilotEnabled: boolean;  // the overnight runner's arm switch (the dispatcher no-ops while off)
   autopilotMinutes: number;   // wall-clock cap per unattended session
+  autopilotTokens: number;    // token budget per run; 0 = unlimited
+  autopilotTime: string;      // nightly start, host-local HH:MM
+  autopilotMaxItems: number;  // most items attempted per night
   accessPinSet: boolean;      // PIN sign-in available (the PIN itself never leaves the server)
 }

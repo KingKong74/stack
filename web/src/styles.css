@@ -1213,6 +1213,76 @@ a { color: inherit; }
 .mc-bugs { font-size: 11.5px; font-weight: 600; color: var(--critical); background: transparent; border: 1px solid var(--line-2); border-radius: 20px; padding: 3px 10px; }
 .mc-blocked { color: var(--critical); }
 
+/* the autopilot console's knob rack (session cap · token budget · nightly time · items) */
+.mc-knobs { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; width: 100%; }
+.mc-knob { display: flex; flex-direction: column; gap: 5px; }
+.mc-knob-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.mc-time {
+  height: 30px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 9px;
+  background: var(--panel); color: var(--ink); font-size: 12.5px; font-family: inherit;
+}
+.mc-time:focus { outline: none; border-color: var(--accent); }
+
+/* job chips — the queue's live account (strip + per-row) */
+.mc-jobs { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
+.mc-job {
+  font-size: 11.5px; font-weight: 600; color: var(--chip-ink);
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 20px; padding: 3px 10px;
+}
+.mc-job.queued, .mc-job.claimed { color: var(--accent); border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.mc-job.running { color: var(--green); border-color: var(--green-tint); }
+.mc-job.failed { color: var(--critical); }
+.mc-run {
+  font-size: 11.5px; font-weight: 600; color: var(--accent);
+  border: 1px solid var(--accent-tint-border); background: var(--accent-tint);
+  border-radius: 20px; padding: 3px 10px;
+}
+.mc-run:hover { color: #fff; background: var(--accent-deep); border-color: var(--accent-deep); }
+
+/* scheduled sessions — the week ahead + the standing list */
+.mc-sched {
+  background: var(--card); border: 1px solid var(--line-2); border-radius: 14px;
+  padding: 16px 18px; margin-bottom: 22px;
+}
+.mc-sched-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.mc-sched-title { font-family: var(--disp); font-size: 15px; font-weight: 600; }
+.mc-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 12px; }
+.mc-day { background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; padding: 8px; min-height: 64px; }
+.mc-day.today { border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.mc-day-head { font-size: 11px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.mc-day-head span { font-weight: 400; }
+.mc-day-chip {
+  font-size: 10.5px; font-weight: 600; color: var(--chip-ink); background: var(--card);
+  border: 1px solid var(--line-2); border-radius: 7px; padding: 2px 6px; margin-top: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mc-day-chip.nightly { color: var(--muted); font-weight: 500; border-style: dashed; }
+.mc-sched-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.mc-sched-form select, .mc-sched-form input {
+  height: 32px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 9px;
+  background: var(--panel); color: var(--ink); font-size: 12.5px; font-family: inherit;
+}
+.mc-sched-form select:focus, .mc-sched-form input:focus { outline: none; border-color: var(--accent); }
+.mc-item-input { width: 130px; }
+.mc-note-input { flex: 1; min-width: 140px; }
+.btn-accent.sm { height: 32px; padding: 0 14px; font-size: 12.5px; }
+.mc-daypick { display: inline-flex; gap: 4px; }
+.mc-daybtn {
+  width: 26px; height: 26px; border-radius: 8px; border: 1px solid var(--line-2);
+  background: var(--panel); color: var(--muted); font-size: 11px; font-weight: 600;
+}
+.mc-daybtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.mc-sched-list { display: flex; flex-direction: column; gap: 8px; }
+.mc-sched-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 10px; }
+.mc-sched-row.off { opacity: 0.55; }
+.mc-name.sm { font-size: 13.5px; }
+.mc-sched-when { font-size: 12px; color: var(--body); font-weight: 500; }
+.mc-sched-note { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.mc-sched-del { margin-left: auto; color: var(--muted); font-size: 15px; padding: 0 6px; }
+.mc-sched-del:hover { color: var(--critical); }
+.mc-sched-empty { font-size: 12.5px; color: var(--muted); }
+@media (max-width: 760px) { .mc-week { grid-template-columns: repeat(4, 1fr); } .mc-day:nth-child(n+5) { display: none; } }
+
 /* ---------- polaris (the Futures tab's Gemini terminal) ---------- */
 /* A mock terminal, deliberately dark in both themes — stickies keep their
    paper, Polaris keeps its night sky. */

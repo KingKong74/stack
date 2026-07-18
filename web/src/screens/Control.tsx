@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  getControl, patchProject, patchSettings, AuthError,
-  type ControlData, type ControlProject,
+  getControl, patchProject, patchSettings, startAutopilot,
+  createAutopilotSchedule, patchAutopilotSchedule, deleteAutopilotSchedule,
+  AuthError,
+  type ControlData, type ControlProject, type AutopilotJob,
 } from '../store';
 import { go } from '../lib/route';
 import type { ProjectStatus } from '../types';
@@ -10,25 +12,67 @@ const STATUS_LABEL: Record<ProjectStatus, string> = {
   live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived',
 };
 const CAPS = [
-  { minutes: 60, label: '1h' }, { minutes: 120, label: '2h' }, { minutes: 180, label: '3h' },
+  { minutes: 60, label: '1h' }, { minutes: 120, label: '2h' },
+  { minutes: 180, label: '3h' }, { minutes: 360, label: '6h' },
 ];
+const BUDGETS = [
+  { tokens: 500_000, label: '500k' }, { tokens: 1_500_000, label: '1.5M' },
+  { tokens: 5_000_000, label: '5M' }, { tokens: 0, label: '∞ Unlimited' },
+];
+const NIGHT_ITEMS = [1, 2, 3, 5];
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const OPEN_JOB = new Set(['queued', 'claimed', 'running']);
 
-// Mission Control — every project's automation state on one panel: the
-// autopilot's arm switch + cap, per-project automode toggles, who's live now,
-// what's lane-claimed, what needs review, and what tonight's run would pick.
+const fmtDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const scheduleWhen = (s: { days: number[]; runDate: string | null; atTime: string }) => {
+  if (s.runDate) return `once · ${s.runDate} ${s.atTime}`;
+  if (s.days.length === 7) return `daily · ${s.atTime}`;
+  return `${s.days.map((d) => DAY_LABELS[d]).join(' ')} · ${s.atTime}`;
+};
+
+const JOB_LABEL: Record<AutopilotJob['status'], string> = {
+  queued: 'queued', claimed: 'starting', running: 'running', done: 'done', failed: 'failed',
+};
+
+type SchedMode = 'once' | 'daily' | 'custom';
+const emptyForm = () => ({
+  slug: '', atTime: '21:00', mode: 'once' as SchedMode,
+  runDate: fmtDate(new Date()), days: [] as number[], itemId: '', note: '',
+});
+
+// Mission Control — every project's automation from one point: the autopilot
+// console (arm, session cap, token budget incl. unlimited, nightly time,
+// items/night), manual Run-now per project, the scheduled-sessions calendar,
+// and one row per project (automode, presence, claims, reviews, blockers).
 // Rendered as a tab of the Settings screen (#/control deep-links to it).
 export function ControlPanel() {
   const [data, setData] = useState<ControlData | null>(null);
   const [error, setError] = useState('');
+  const [schedOpen, setSchedOpen] = useState(false);
+  const [form, setForm] = useState(emptyForm());
+  const [formBusy, setFormBusy] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     getControl()
       .then(setData)
       .catch((e) => { if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Failed to load mission control.'); });
   }, []);
 
+  // Refresh on a slow tick so queued → running → done progresses on screen
+  // (the dispatcher polls the queue once a minute).
+  useEffect(() => {
+    load();
+    const t = window.setInterval(load, 30_000);
+    return () => window.clearInterval(t);
+  }, [load]);
+
   // Optimistic with rollback — same contract as Settings.
-  const setAutopilot = async (patch: { autopilotEnabled?: boolean; autopilotMinutes?: number }) => {
+  const setAutopilot = async (patch: {
+    autopilotEnabled?: boolean; autopilotMinutes?: number;
+    autopilotTokens?: number; autopilotTime?: string; autopilotMaxItems?: number;
+  }) => {
     if (!data) return;
     const prev = data.autopilot;
     setData({
@@ -36,11 +80,21 @@ export function ControlPanel() {
       autopilot: {
         enabled: patch.autopilotEnabled ?? prev.enabled,
         minutes: patch.autopilotMinutes ?? prev.minutes,
+        tokens: patch.autopilotTokens ?? prev.tokens,
+        time: patch.autopilotTime ?? prev.time,
+        maxItems: patch.autopilotMaxItems ?? prev.maxItems,
       },
     });
     try {
       const s = await patchSettings(patch);
-      setData((cur) => cur && { ...cur, autopilot: { enabled: s.autopilotEnabled, minutes: s.autopilotMinutes } });
+      setData((cur) => cur && {
+        ...cur,
+        autopilot: {
+          enabled: s.autopilotEnabled, minutes: s.autopilotMinutes,
+          tokens: s.autopilotTokens ?? prev.tokens, time: s.autopilotTime ?? prev.time,
+          maxItems: s.autopilotMaxItems ?? prev.maxItems,
+        },
+      });
     } catch (e) {
       setData((cur) => cur && { ...cur, autopilot: prev });
       if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not update the autopilot.');
@@ -63,6 +117,68 @@ export function ControlPanel() {
     }
   };
 
+  const openJobFor = (slug: string) => data?.jobs.find((j) => j.slug === slug && OPEN_JOB.has(j.status));
+
+  const runNow = async (p: ControlProject) => {
+    try {
+      const job = await startAutopilot(p.slug);
+      setData((cur) => cur && { ...cur, jobs: [job, ...cur.jobs.filter((j) => j.id !== job.id)] });
+    } catch (e) {
+      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not queue the run.');
+    }
+  };
+
+  const submitSchedule = async () => {
+    if (!data || !form.slug || formBusy) return;
+    const days = form.mode === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : form.mode === 'custom' ? form.days : [];
+    if (form.mode === 'custom' && !days.length) { setError('Pick at least one day for a repeating session.'); return; }
+    if (form.mode === 'once' && !form.runDate) { setError('Pick a date for a one-off session.'); return; }
+    setFormBusy(true);
+    setError('');
+    try {
+      const row = await createAutopilotSchedule({
+        slug: form.slug, atTime: form.atTime, days,
+        runDate: form.mode === 'once' ? form.runDate : null,
+        itemId: form.itemId.trim() ? form.itemId.trim() : null,
+        note: form.note.trim(),
+      });
+      setData((cur) => cur && { ...cur, schedules: [...cur.schedules, row] });
+      setForm(emptyForm());
+      setSchedOpen(false);
+    } catch (e) {
+      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not add the schedule.');
+    } finally {
+      setFormBusy(false);
+    }
+  };
+
+  const toggleSchedule = async (id: string, enabled: boolean) => {
+    setData((cur) => cur && { ...cur, schedules: cur.schedules.map((s) => (s.id === id ? { ...s, enabled } : s)) });
+    try {
+      await patchAutopilotSchedule(id, { enabled });
+    } catch (e) {
+      setData((cur) => cur && { ...cur, schedules: cur.schedules.map((s) => (s.id === id ? { ...s, enabled: !enabled } : s)) });
+      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not update the schedule.');
+    }
+  };
+
+  const removeSchedule = async (id: string) => {
+    const prev = data?.schedules || [];
+    setData((cur) => cur && { ...cur, schedules: cur.schedules.filter((s) => s.id !== id) });
+    try {
+      await deleteAutopilotSchedule(id);
+    } catch (e) {
+      setData((cur) => cur && { ...cur, schedules: prev });
+      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not remove the schedule.');
+    }
+  };
+
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    return d;
+  });
+
   return (
     <div>
       {error && <div className="action-error">{error}</div>}
@@ -71,7 +187,7 @@ export function ControlPanel() {
           !error && <div className="empty-state"><div className="big">Loading…</div></div>
         ) : (
           <>
-            {/* the autopilot strip — the global arm switch + cap, and the day's numbers */}
+            {/* ---- the autopilot console: arm switch + every night knob ---- */}
             <div className="mc-strip">
               <div className="mc-arm">
                 <button role="switch" aria-checked={data.autopilot.enabled} aria-label="Autopilot armed"
@@ -83,19 +199,55 @@ export function ControlPanel() {
                   <div className="mc-arm-label">Autopilot {data.autopilot.enabled ? 'armed' : 'off'}</div>
                   <div className="mc-arm-hint">
                     {data.autopilot.enabled
-                      ? 'The nightly run will work one item on each automode project.'
-                      : 'The nightly schedule exits without doing anything.'}
+                      ? `Nightly at ${data.autopilot.time} on every automode project; scheduled sessions run as set below.`
+                      : 'Nightly runs and scheduled sessions are paused. Run now still works.'}
                   </div>
                 </div>
-                <div className="seg-control sm" role="tablist" aria-label="Session cap">
-                  {CAPS.map((c) => (
-                    <button key={c.minutes} role="tab" aria-selected={data.autopilot.minutes === c.minutes}
-                      className={`seg-opt ${data.autopilot.minutes === c.minutes ? 'on' : ''}`}
-                      onClick={() => setAutopilot({ autopilotMinutes: c.minutes })}>
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
+              </div>
+              <div className="mc-knobs">
+                <label className="mc-knob">
+                  <span className="mc-knob-label">Session cap</span>
+                  <span className="seg-control sm" role="tablist" aria-label="Session cap">
+                    {CAPS.map((c) => (
+                      <button key={c.minutes} role="tab" aria-selected={data.autopilot.minutes === c.minutes}
+                        className={`seg-opt ${data.autopilot.minutes === c.minutes ? 'on' : ''}`}
+                        onClick={() => setAutopilot({ autopilotMinutes: c.minutes })}>
+                        {c.label}
+                      </button>
+                    ))}
+                  </span>
+                </label>
+                <label className="mc-knob">
+                  <span className="mc-knob-label">Token budget</span>
+                  <span className="seg-control sm" role="tablist" aria-label="Token budget per run">
+                    {BUDGETS.map((b) => (
+                      <button key={b.tokens} role="tab" aria-selected={data.autopilot.tokens === b.tokens}
+                        className={`seg-opt ${data.autopilot.tokens === b.tokens ? 'on' : ''}`}
+                        title={b.tokens === 0 ? 'No token ceiling — the session cap is the only governor' : `${b.label} tokens per run`}
+                        onClick={() => setAutopilot({ autopilotTokens: b.tokens })}>
+                        {b.label}
+                      </button>
+                    ))}
+                  </span>
+                </label>
+                <label className="mc-knob">
+                  <span className="mc-knob-label">Nightly at</span>
+                  <input type="time" className="mc-time" value={data.autopilot.time}
+                    aria-label="Nightly start time (host local)"
+                    onChange={(e) => e.target.value && setAutopilot({ autopilotTime: e.target.value })} />
+                </label>
+                <label className="mc-knob">
+                  <span className="mc-knob-label">Items / night</span>
+                  <span className="seg-control sm" role="tablist" aria-label="Most items per night">
+                    {NIGHT_ITEMS.map((n) => (
+                      <button key={n} role="tab" aria-selected={data.autopilot.maxItems === n}
+                        className={`seg-opt ${data.autopilot.maxItems === n ? 'on' : ''}`}
+                        onClick={() => setAutopilot({ autopilotMaxItems: n })}>
+                        {n}
+                      </button>
+                    ))}
+                  </span>
+                </label>
               </div>
               <div className="mc-totals">
                 <button className="btn-repo sm" onClick={() => go.terminal()}
@@ -111,11 +263,132 @@ export function ControlPanel() {
                 <span><b>{data.totals.claims}</b> claimed lane{data.totals.claims === 1 ? '' : 's'}</span>
                 <span><b>{data.totals.review}</b> awaiting review</span>
               </div>
+              {data.jobs.length > 0 && (
+                <div className="mc-jobs" aria-label="Recent autopilot jobs">
+                  {data.jobs.slice(0, 6).map((j) => (
+                    <span key={j.id} className={`mc-job ${j.status}`}
+                      title={[j.itemTitle && `#${j.itemId} ${j.itemTitle}`, j.detail].filter(Boolean).join(' — ') || undefined}>
+                      {j.name} · {j.kind}{j.itemId ? ` #${j.itemId}` : ''} · {JOB_LABEL[j.status]}
+                      {OPEN_JOB.has(j.status) ? '' : ` ${j.when}`}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ---- scheduled sessions: the week ahead + the standing list ---- */}
+            <div className="mc-sched">
+              <div className="mc-sched-head">
+                <div className="mc-sched-title">Scheduled sessions</div>
+                <button className="btn-repo sm" onClick={() => setSchedOpen((v) => !v)}>
+                  {schedOpen ? 'Close' : '+ Schedule a session'}
+                </button>
+              </div>
+
+              <div className="mc-week">
+                {week.map((d, i) => {
+                  const date = fmtDate(d);
+                  const todays = data.schedules.filter((s) => s.enabled
+                    && (s.runDate ? s.runDate === date : s.days.includes(d.getDay())));
+                  return (
+                    <div className={`mc-day ${i === 0 ? 'today' : ''}`} key={date}>
+                      <div className="mc-day-head">{i === 0 ? 'Today' : DAY_LABELS[d.getDay()]} <span>{d.getDate()}</span></div>
+                      {data.autopilot.enabled && data.totals.automode > 0 && (
+                        <div className="mc-day-chip nightly" title={`The nightly run: up to ${data.autopilot.maxItems} item(s) on each automode project`}>
+                          {data.autopilot.time} nightly
+                        </div>
+                      )}
+                      {todays.map((s) => (
+                        <div className="mc-day-chip" key={s.id}
+                          title={[s.itemTitle && `#${s.itemId} ${s.itemTitle}`, s.note].filter(Boolean).join(' — ') || undefined}>
+                          {s.atTime} {s.name}{s.itemId ? ` #${s.itemId}` : ''}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {schedOpen && (
+                <div className="mc-sched-form">
+                  <select value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} aria-label="Project">
+                    <option value="">Project…</option>
+                    {data.projects.map((p) => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+                  </select>
+                  <input type="time" value={form.atTime} aria-label="Start time (host local)"
+                    onChange={(e) => setForm({ ...form, atTime: e.target.value })} />
+                  <span className="seg-control sm" role="tablist" aria-label="Repeat">
+                    {(['once', 'daily', 'custom'] as SchedMode[]).map((m) => (
+                      <button key={m} role="tab" aria-selected={form.mode === m}
+                        className={`seg-opt ${form.mode === m ? 'on' : ''}`}
+                        onClick={() => setForm({ ...form, mode: m })}>
+                        {m === 'once' ? 'Once' : m === 'daily' ? 'Daily' : 'Days'}
+                      </button>
+                    ))}
+                  </span>
+                  {form.mode === 'once' && (
+                    <input type="date" value={form.runDate} min={fmtDate(new Date())} aria-label="Date"
+                      onChange={(e) => setForm({ ...form, runDate: e.target.value })} />
+                  )}
+                  {form.mode === 'custom' && (
+                    <span className="mc-daypick" role="group" aria-label="Repeat days">
+                      {DAY_LABELS.map((label, d) => (
+                        <button key={label} className={`mc-daybtn ${form.days.includes(d) ? 'on' : ''}`}
+                          aria-pressed={form.days.includes(d)}
+                          onClick={() => setForm({
+                            ...form,
+                            days: form.days.includes(d) ? form.days.filter((x) => x !== d) : [...form.days, d].sort(),
+                          })}>
+                          {label[0]}
+                        </button>
+                      ))}
+                    </span>
+                  )}
+                  <input className="mc-item-input" inputMode="numeric" placeholder="Item # (optional)"
+                    value={form.itemId} aria-label="Pin to roadmap item"
+                    title="Pin the session to one roadmap item; blank = the night's normal pick"
+                    onChange={(e) => setForm({ ...form, itemId: e.target.value.replace(/\D/g, '') })} />
+                  <input className="mc-note-input" placeholder="Note (optional)" value={form.note}
+                    aria-label="Note" onChange={(e) => setForm({ ...form, note: e.target.value })} />
+                  <button className="btn-accent sm" disabled={!form.slug || formBusy} onClick={submitSchedule}>
+                    {formBusy ? 'Adding…' : 'Add'}
+                  </button>
+                </div>
+              )}
+
+              {data.schedules.length > 0 ? (
+                <div className="mc-sched-list">
+                  {data.schedules.map((s) => (
+                    <div className={`mc-sched-row ${s.enabled ? '' : 'off'}`} key={s.id}>
+                      <button role="switch" aria-checked={s.enabled} aria-label={`Schedule for ${s.name}`}
+                        className={`switch sm ${s.enabled ? 'on' : ''}`}
+                        onClick={() => toggleSchedule(s.id, !s.enabled)}>
+                        <span className="switch-knob" />
+                      </button>
+                      <button className="mc-name sm" onClick={() => go.detail(s.slug)}>
+                        <span className="tintdot" style={{ background: s.tint || 'var(--sand)' }} />
+                        {s.name}
+                      </button>
+                      <span className="mc-sched-when">{scheduleWhen(s)}</span>
+                      {s.itemId && (
+                        <button className="mc-pick" title={s.itemTitle}
+                          onClick={() => go.detail(s.slug, 'roadmap', s.itemId!)}>#{s.itemId} {s.itemTitle || 'roadmap item'}</button>
+                      )}
+                      {s.note && <span className="mc-sched-note" title={s.note}>{s.note}</span>}
+                      <button className="mc-sched-del" aria-label="Remove schedule" onClick={() => removeSchedule(s.id)}>×</button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                !schedOpen && <div className="mc-sched-empty">Nothing scheduled — the nightly run covers automode projects{data.autopilot.enabled ? '' : ' (once armed)'}. Add a session to point a project (or one item) at a time of your choosing.</div>
+              )}
             </div>
 
             {/* one row per project — automode first */}
             <div className="mc-list">
-              {data.projects.map((p) => (
+              {data.projects.map((p) => {
+                const job = openJobFor(p.slug);
+                return (
                 <div className={`mc-row ${p.automode ? 'auto' : ''}`} key={p.slug}>
                   <div className="mc-main">
                     <button className="mc-name" onClick={() => go.detail(p.slug)}>
@@ -131,6 +404,16 @@ export function ControlPanel() {
                     <button className="mc-term" onClick={() => go.terminal(p.slug)}
                       title={`Open a terminal in ~/${p.slug}`}>⌨</button>
                     <span className="mc-push">{p.lastPush ? `pushed ${p.lastPush}` : 'no pushes yet'}</span>
+                    {job ? (
+                      <span className={`mc-job ${job.status}`} title={job.detail || undefined}>
+                        {JOB_LABEL[job.status]}{job.itemId ? ` #${job.itemId}` : ''}
+                      </span>
+                    ) : (
+                      <button className="mc-run" onClick={() => runNow(p)}
+                        title="Queue an autopilot session on this project now — the host picks it up within a minute">
+                        ▶ Run now
+                      </button>
+                    )}
                     <button role="switch" aria-checked={p.automode} aria-label={`Automode for ${p.name}`}
                       className={`switch sm ${p.automode ? 'on' : ''}`} onClick={() => toggleAutomode(p)}
                       title={p.automode ? 'Automode on — the autopilot may work this project' : 'Automode off — hands off'}>
@@ -173,7 +456,8 @@ export function ControlPanel() {
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
               {data.projects.length === 0 && (
                 <div className="empty-state">
                   <div className="big">No projects yet</div>

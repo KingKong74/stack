@@ -240,15 +240,70 @@ export interface ControlProject {
   nextPick: { id: string; bucket: Priority; title: string } | null;
   lastAuto: { branch: string; summary: string; when: string } | null;
 }
+export interface AutopilotSchedule {
+  id: string; slug: string; name: string; tint: string | null;
+  itemId: string | null; itemTitle: string;
+  atTime: string;          // host-local HH:MM
+  days: number[];          // getDay() ints; [] = one-off on runDate
+  runDate: string | null;  // YYYY-MM-DD for one-offs
+  note: string; enabled: boolean;
+}
+export interface AutopilotJob {
+  id: string; slug: string; name: string;
+  kind: 'manual' | 'nightly' | 'scheduled';
+  itemId: string | null; itemTitle: string;
+  status: 'queued' | 'claimed' | 'running' | 'done' | 'failed';
+  detail: string; when: string;
+}
 export interface ControlData {
-  autopilot: { enabled: boolean; minutes: number };
+  autopilot: { enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number };
   terminal?: { connected: boolean };   // the host PTY daemon's agent socket
+  schedules: AutopilotSchedule[];
+  jobs: AutopilotJob[];                // recent first; queued/claimed/running lead the strip
   projects: ControlProject[];
   totals: { automode: number; liveSessions: number; claims: number; review: number };
 }
 
 export async function getControl(): Promise<ControlData> {
-  return request<ControlData>('/control');
+  const d = await request<ControlData>('/control');
+  // Defaults so a not-yet-redeployed server can't blank Mission Control.
+  return {
+    ...d,
+    autopilot: {
+      enabled: d.autopilot?.enabled ?? false,
+      minutes: d.autopilot?.minutes ?? 120,
+      tokens: d.autopilot?.tokens ?? 1_500_000,
+      time: d.autopilot?.time ?? '23:05',
+      maxItems: d.autopilot?.maxItems ?? 3,
+    },
+    schedules: d.schedules ?? [],
+    jobs: d.jobs ?? [],
+  };
+}
+
+// The Run-now button: queue a manual job the host dispatcher picks up within
+// a minute. An already open job for the project comes back instead.
+export async function startAutopilot(slug: string, itemId?: string): Promise<AutopilotJob> {
+  return request<AutopilotJob>('/autopilot/start', {
+    method: 'POST',
+    body: itemId ? { slug, itemId } : { slug },
+  });
+}
+
+export interface SchedulePayload {
+  slug: string; atTime: string; days?: number[]; runDate?: string | null;
+  itemId?: string | null; note?: string;
+}
+export async function createAutopilotSchedule(payload: SchedulePayload): Promise<AutopilotSchedule> {
+  return request<AutopilotSchedule>('/autopilot/schedule', { method: 'POST', body: payload });
+}
+export async function patchAutopilotSchedule(
+  id: string, patch: Partial<Omit<SchedulePayload, 'slug'>> & { enabled?: boolean },
+): Promise<AutopilotSchedule> {
+  return request<AutopilotSchedule>(`/autopilot/schedule/${id}`, { method: 'PATCH', body: patch });
+}
+export async function deleteAutopilotSchedule(id: string): Promise<void> {
+  await request(`/autopilot/schedule/${id}`, { method: 'DELETE' });
 }
 
 // ---- settings ----
