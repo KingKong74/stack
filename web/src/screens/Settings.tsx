@@ -300,6 +300,55 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
               </div>
             </section>
 
+            {/* ---- ✧ Fill from note (#131) — the roadmap modal's Gemini assist ---- */}
+            <section className="set-card">
+              <div className="set-card-head">
+                <div className="set-card-title">✧ Fill from note</div>
+                <div className="set-card-sub">
+                  The roadmap modal's Gemini assist reads your note and prefills the item. Steer it
+                  with a standing guidance line, and choose which fields it may touch — the title is
+                  always its job.
+                </div>
+              </div>
+              <div className="set-row col">
+                <div className="set-row-text">
+                  <div className="set-row-label">Standing guidance</div>
+                  <div className="set-row-hint">
+                    Folded into every fill — e.g. "titles lead with the surface; keep notes under
+                    five lines; never suggest must". Saved when you click away.
+                  </div>
+                </div>
+                <textarea
+                  className="field-area"
+                  rows={2}
+                  defaultValue={settings.assistGuidance}
+                  placeholder="No standing guidance — the assist runs on its defaults."
+                  onBlur={(e) => {
+                    const v = e.target.value.trim().slice(0, 500);
+                    if (v !== settings.assistGuidance) update({ assistGuidance: v });
+                  }}
+                />
+              </div>
+              {([
+                { key: 'note', label: 'Tidy the note', hint: 'Restructure your note for the agent that builds it — intent kept, filler dropped.' },
+                { key: 'area', label: 'Suggest the area', hint: 'Tag the item with a product area, preferring ones the board already uses.' },
+                { key: 'lane', label: 'Suggest a lane', hint: 'Only ever an already-open lane, and only when the note clearly belongs to it.' },
+                { key: 'priority', label: 'Suggest the bucket', hint: 'An honest MoSCoW call — most things are not must.' },
+              ] as { key: string; label: string; hint: string }[]).map((f) => (
+                <Switch
+                  key={f.key}
+                  label={f.label}
+                  hint={f.hint}
+                  checked={settings.assistFields.includes(f.key)}
+                  onChange={(v) => update({
+                    assistFields: v
+                      ? [...settings.assistFields, f.key]
+                      : settings.assistFields.filter((k) => k !== f.key),
+                  })}
+                />
+              ))}
+            </section>
+
             {/* ---- Appearance (device-local) ---- */}
             <section className="set-card">
               <div className="set-card-head">

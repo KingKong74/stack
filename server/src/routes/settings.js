@@ -2,7 +2,10 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { oneOf } from '../util.js';
 import { hashPin } from '../auth.js';
-import { readSettings, settingsShape, CHECKPOINT_DETAILS, cleanSessionDefaults, cleanAutopilotTime } from '../settings.js';
+import {
+  readSettings, settingsShape, CHECKPOINT_DETAILS,
+  cleanSessionDefaults, cleanAutopilotTime, cleanAssistFields,
+} from '../settings.js';
 
 // GET/PATCH /api/settings — the single-row app settings behind bearer auth.
 //
@@ -60,6 +63,14 @@ settings.patch('/', async (req, res) => {
     const n = Math.trunc(Number(body.autopilotMaxItems));
     fields.push(`autopilot_max_items = $${i++}`);
     values.push(Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : 3);
+  }
+  if ('assistGuidance' in body) {
+    fields.push(`assist_guidance = $${i++}`);
+    values.push(String(body.assistGuidance || '').trim().slice(0, 500));
+  }
+  if ('assistFields' in body) {
+    fields.push(`assist_fields = $${i++}::jsonb`);
+    values.push(JSON.stringify(cleanAssistFields(body.assistFields)));
   }
   if ('accessPin' in body) {
     const pin = String(body.accessPin || '').trim();

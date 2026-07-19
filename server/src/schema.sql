@@ -262,6 +262,10 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS access_pin_hash TEXT;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_tokens    BIGINT  NOT NULL DEFAULT 1500000;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_time      TEXT    NOT NULL DEFAULT '23:05';
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_max_items INTEGER NOT NULL DEFAULT 3;
+-- ✧ Fill from note (#131): a standing guidance line folded into the assist
+-- prompt, and which fields the assist is allowed to fill (title always is).
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS assist_guidance TEXT  NOT NULL DEFAULT '';
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS assist_fields   JSONB NOT NULL DEFAULT '["title","note","area","lane","priority"]'::jsonb;
 
 -- Device tokens issued by POST /api/auth/login (PIN sign-in). Only the sha256
 -- of each token is stored; the bearer gate accepts API_TOKEN or a live row

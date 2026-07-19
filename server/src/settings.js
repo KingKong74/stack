@@ -28,6 +28,14 @@ export const cleanSessionDefaults = (v) =>
 export const sessionDefaultLines = (keys) =>
   SESSION_DEFAULTS.filter((d) => (keys || []).includes(d.key)).map((d) => d.line);
 
+// ✧ Fill from note (#131): the fields the assist may fill. Title is the point
+// of the feature and always allowed; the rest can be switched off in Settings.
+export const ASSIST_FIELDS = ['title', 'note', 'area', 'lane', 'priority'];
+export const cleanAssistFields = (v) => {
+  const keys = Array.isArray(v) ? v.map(String).filter((k) => ASSIST_FIELDS.includes(k)) : [];
+  return [...new Set(['title', ...keys])];
+};
+
 const DEFAULTS = {
   auto_record: true,
   keep_resume_card: true,
@@ -39,6 +47,8 @@ const DEFAULTS = {
   autopilot_tokens: 1_500_000, // per-run token budget; 0 = unlimited
   autopilot_time: '23:05',     // nightly start, host-local HH:MM
   autopilot_max_items: 3,
+  assist_guidance: '',
+  assist_fields: [...ASSIST_FIELDS],
   access_pin_hash: null,
 };
 
@@ -63,6 +73,8 @@ export async function readSettings(client) {
     autopilot_tokens: Number.isFinite(Number(r.autopilot_tokens)) ? Number(r.autopilot_tokens) : 1_500_000,
     autopilot_time: cleanAutopilotTime(r.autopilot_time),
     autopilot_max_items: Number.isFinite(r.autopilot_max_items) ? r.autopilot_max_items : 3,
+    assist_guidance: String(r.assist_guidance || ''),
+    assist_fields: cleanAssistFields(r.assist_fields),
     access_pin_hash: r.access_pin_hash || null,
   };
 }
@@ -79,6 +91,8 @@ export function settingsShape(s) {
     autopilotTokens: s.autopilot_tokens,     // 0 = unlimited
     autopilotTime: s.autopilot_time,         // host-local HH:MM
     autopilotMaxItems: s.autopilot_max_items,
+    assistGuidance: s.assist_guidance,       // standing steer for ✧ Fill from note
+    assistFields: s.assist_fields,           // which fields the assist may fill
     accessPinSet: Boolean(s.access_pin_hash), // the hash itself never leaves the server
   };
 }

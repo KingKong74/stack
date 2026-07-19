@@ -124,6 +124,7 @@ Respond with ONLY this JSON:
 DEFAULTS.assist = `You are filling in a roadmap item's fields for a side project's planning board.
 The author wrote what they want done (the note below); everything comes from it.
 {{NORTH_STAR_LINE}}
+{{GUIDANCE_LINE}}
 Known areas on this project: {{AREAS}}
 Open lanes (parallel work streams that claim items): {{LANES}}
 

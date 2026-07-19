@@ -5,6 +5,7 @@ import { fingerprint, oneOf, BUCKETS } from '../util.js';
 import { roadmapItemShape, groupRoadmap } from '../shape.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
+import { readSettings } from '../settings.js';
 
 // Mounted at /api/projects/:slug/roadmap.
 export const roadmap = Router({ mergeParams: true });
@@ -157,10 +158,17 @@ roadmap.post('/assist', async (req, res) => {
     ),
   ]);
   const lanes = laneRows.map((r) => r.lane);
+  // The assist settings (#131): a standing guidance line folded into the
+  // prompt, and which fields the assist may fill (title always may).
+  const appSettings = await readSettings();
+  const allowed = new Set(appSettings.assist_fields);
   const prompt = buildPrompt('assist', {
     NOTE: note,
     AREAS: areaRows.map((r) => r.area).join(', ') || '(none yet)',
     LANES: lanes.join(', ') || '(none)',
+    GUIDANCE_LINE: appSettings.assist_guidance
+      ? `Standing guidance from the owner (follow it): ${appSettings.assist_guidance}`
+      : '',
     NORTH_STAR_LINE: req.project.north_star
       ? `For context, the project's north star: "${String(req.project.north_star).slice(0, 400)}"`
       : '',
@@ -169,13 +177,14 @@ roadmap.post('/assist', async (req, res) => {
     const answer = await askGemini(prompt, { timeoutMs: 25_000 });
     const title = String(answer?.title || '').trim().slice(0, 300);
     if (!title) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
+    // A switched-off field comes back empty — the modal leaves it untouched.
     res.json({
       title,
-      note: String(answer?.note || '').trim().slice(0, 1000) || note,
-      area: String(answer?.area || '').trim().toLowerCase().slice(0, 40),
+      note: allowed.has('note') ? String(answer?.note || '').trim().slice(0, 1000) || note : '',
+      area: allowed.has('area') ? String(answer?.area || '').trim().toLowerCase().slice(0, 40) : '',
       // A lane claims work for a stream — only ever suggest one that already exists.
-      lane: lanes.includes(String(answer?.lane || '').trim()) ? String(answer.lane).trim() : '',
-      priority: BUCKETS.includes(answer?.priority) ? answer.priority : null,
+      lane: allowed.has('lane') && lanes.includes(String(answer?.lane || '').trim()) ? String(answer.lane).trim() : '',
+      priority: allowed.has('priority') && BUCKETS.includes(answer?.priority) ? answer.priority : null,
     });
   } catch (err) {
     res.status(502).json({ error: err.message || 'Gemini call failed.' });
