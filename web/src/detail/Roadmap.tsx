@@ -64,23 +64,48 @@ export function Roadmap({
   const [areaDraft, setAreaDraft] = useState('');
   const itemAreas = new Set(openAll.map((it) => it.area).filter(Boolean));
   const boardAreas = [...new Set([...itemAreas, ...customAreas])].sort();
-  // Send-to-terminal: pick open items (the active area tab scopes the list,
-  // a priority filter narrows it, rows tick on/off), compose a work brief and
-  // hand it to the terminal screen — it lands as a paste, never auto-runs.
+  // Send-to-terminal: pick open items (area chips in the modal scope the list
+  // — several tabs can feed one brief (#133) — a priority filter narrows it,
+  // rows tick on/off), compose a work brief and hand it to the terminal screen
+  // — it lands as a paste, never auto-runs.
   const [termPick, setTermPick] = useState<Set<number> | null>(null);
   const [termPrio, setTermPrio] = useState<'all' | Priority>('all');
-  const termScope = openAll.filter((it) => !areaFilter || it.area === areaFilter);
+  const [termAreas, setTermAreas] = useState<Set<string>>(new Set()); // empty = every area
+  const workable = (it: RoadmapItem) => !it.skipped && !it.claimedBy;
+  const termScope = openAll.filter((it) => termAreas.size === 0 || (!!it.area && termAreas.has(it.area)));
   const termCandidates = termScope.filter((it) => termPrio === 'all' || it.bucket === termPrio);
   const openTermPick = () => {
     setTermPrio('all');
+    // Start from the active area tab; more areas can be ticked in the modal.
+    const areas = new Set(areaFilter ? [areaFilter] : []);
+    setTermAreas(areas);
+    const scope = openAll.filter((it) => areas.size === 0 || (!!it.area && areas.has(it.area)));
     // Default selection: workable items — parked and already-claimed ones start unticked.
-    setTermPick(new Set(termScope.filter((it) => !it.skipped && !it.claimedBy).map((it) => it.id)));
+    setTermPick(new Set(scope.filter(workable).map((it) => it.id)));
+  };
+  const toggleTermArea = (a: string) => {
+    const next = new Set(termAreas);
+    const on = !next.has(a);
+    if (on) next.add(a); else next.delete(a);
+    setTermAreas(next);
+    // Ticks follow the area: adding one ticks its workable items, dropping one unticks them all.
+    setTermPick((p) => {
+      const pick = new Set(p);
+      const areaItems = openAll.filter((it) => it.area === a);
+      if (on) areaItems.filter(workable).forEach((it) => pick.add(it.id));
+      else areaItems.forEach((it) => pick.delete(it.id));
+      return pick;
+    });
+  };
+  const allTermAreas = () => {
+    setTermAreas(new Set());
+    setTermPick(new Set(openAll.filter(workable).map((it) => it.id)));
   };
   const composeBrief = () => {
     const chosen = termCandidates.filter((it) => termPick?.has(it.id));
     const lines = chosen.map((it, i) =>
       `${i + 1}. [${it.bucket}] #${it.id} — ${it.title}${it.note ? `\n   ${it.note.replace(/\n/g, '\n   ')}` : ''}`);
-    return `Work these Stack roadmap items${areaFilter ? ` (area: ${areaFilter})` : ''}, top-down:\n\n${lines.join('\n')}\n\nProtocol: claim each item's lane before starting, work one item at a time, commit each unit, and when an item is finished set built_note (what landed) alongside done:true through the Stack API. Leave items claimed by other lanes alone.`;
+    return `Work these Stack roadmap items${termAreas.size ? ` (areas: ${[...termAreas].sort().join(', ')})` : ''}, top-down:\n\n${lines.join('\n')}\n\nProtocol: claim each item's lane before starting, work one item at a time, commit each unit, and when an item is finished set built_note (what landed) alongside done:true through the Stack API. Leave items claimed by other lanes alone.`;
   };
 
   const commitNewArea = () => {
@@ -160,14 +185,6 @@ export function Roadmap({
               ✧ Clean up
             </button>
           )}
-          <div className="seg-control sm" role="tablist" aria-label="Roadmap view">
-            <button role="tab" aria-selected={view === 'board'}
-              className={`seg-opt ${view === 'board' ? 'on' : ''}`} onClick={() => setView('board')}>Board</button>
-            <button role="tab" aria-selected={view === 'reviews'}
-              className={`seg-opt ${view === 'reviews' ? 'on' : ''}`} onClick={() => setView('reviews')}>
-              Reviews{toVerify.length > 0 ? ` · ${toVerify.length}` : ''}
-            </button>
-          </div>
           {draft && (
             <>
               <button className="draft-chip" onClick={onResumeDraft} title="Resume the unfinished item">
@@ -176,6 +193,18 @@ export function Roadmap({
               <button className="draft-x" onClick={onDiscardDraft} aria-label="Discard draft" title="Discard draft">×</button>
             </>
           )}
+        </div>
+      </div>
+      {/* The view switch sits above the content, on the left (#129) — the first
+          thing the eye lands on, at full seg-control size. */}
+      <div className="road-view-switch">
+        <div className="seg-control" role="tablist" aria-label="Roadmap view">
+          <button role="tab" aria-selected={view === 'board'}
+            className={`seg-opt ${view === 'board' ? 'on' : ''}`} onClick={() => setView('board')}>Board</button>
+          <button role="tab" aria-selected={view === 'reviews'}
+            className={`seg-opt ${view === 'reviews' ? 'on' : ''}`} onClick={() => setView('reviews')}>
+            Reviews{toVerify.length > 0 ? ` · ${toVerify.length}` : ''}
+          </button>
         </div>
       </div>
       {view === 'board' && (<>
@@ -231,6 +260,8 @@ export function Roadmap({
                 onDragLeave={() => setOverKey((k) => (k === `col-${col.key}` ? null : k))}
                 onDrop={(e) => { e.preventDefault(); handleDrop(col.key, null); }}
               >
+                {/* An active area chip pre-tags whatever gets added under it. */}
+                <button className="road-add" onClick={() => onAdd(col.key, areaFilter || undefined)}>+ Add</button>
                 {items.map((it) => {
                   // A claim only reads as "in progress" while a LIVE session is
                   // on that lane (BUG-2: a half-run or killed session must not
@@ -289,8 +320,6 @@ export function Roadmap({
                   </div>
                   );
                 })}
-                {/* An active area chip pre-tags whatever gets added under it. */}
-                <button className="road-add" onClick={() => onAdd(col.key, areaFilter || undefined)}>+ Add</button>
               </div>
             </div>
           );
@@ -302,9 +331,22 @@ export function Roadmap({
         <Modal onClose={() => setTermPick(null)} wide>
           <h3>⌨ Send to a terminal session</h3>
           <div className="confirm-body" style={{ marginBottom: 12 }}>
-            {areaFilter ? <>Scoped to the <b>{areaFilter}</b> tab. </> : null}
-            The picked items become a work brief, pasted into the terminal for you to review and send.
+            Pick area tabs, then items — the picked items become a work brief, pasted into the
+            terminal for you to review and send.
           </div>
+          {boardAreas.length > 0 && (
+            <div className="chips" style={{ marginBottom: 8 }}>
+              <button className={`chip-sm ${termAreas.size === 0 ? 'on' : ''}`} onClick={allTermAreas}>
+                All areas {openAll.length}
+              </button>
+              {boardAreas.map((a) => (
+                <button key={a} className={`chip-sm ${termAreas.has(a) ? 'on' : ''}`}
+                  onClick={() => toggleTermArea(a)}>
+                  {a} {openAll.filter((it) => it.area === a).length}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="chips" style={{ marginBottom: 12 }}>
             {(['all', ...PRIORITY_META.map((p) => p.key)] as ('all' | Priority)[]).map((k) => (
               <button key={k} className={`chip-sm ${termPrio === k ? 'on' : ''}`} onClick={() => setTermPrio(k)}>
