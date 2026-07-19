@@ -27,6 +27,14 @@ export default function App() {
   const route = useRoute();
   const [token, setTokenState] = useState<string | null>(() => getToken());
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // The terminal dock (#137/#139): once visited, the Terminal stays mounted for
+  // the life of the tab — sessions, sockets and scrollback survive navigation.
+  // Away from #/terminal it minimises to a bottom-right dock while sessions
+  // are alive; `termAlive` (reported up by the Terminal) also quiets the
+  // global presence pill so the corner isn't doubled up.
+  const [termMounted, setTermMounted] = useState(false);
+  const [termAlive, setTermAlive] = useState(0);
+  useEffect(() => { if (route.name === 'terminal') setTermMounted(true); }, [route]);
 
   // Re-read the token whenever it changes (set on unlock, cleared on any 401).
   useEffect(() => onAuthChange(() => setTokenState(getToken())), []);
@@ -67,14 +75,20 @@ export default function App() {
       ) : route.name === 'control' ? (
         <Settings initialTab="control" />
       ) : route.name === 'terminal' ? (
-        <Suspense fallback={null}><Terminal initialCwd={route.cwd} /></Suspense>
+        null /* the persistent dock below renders it */
       ) : route.name === 'detail' ? (
         <ProjectDetail id={route.id} tab={route.tab} highlight={route.highlight} onOpenSearch={() => setPaletteOpen(true)} />
       ) : (
         <Dashboard onOpenSearch={() => setPaletteOpen(true)} />
       )}
+      {termMounted && (
+        <Suspense fallback={null}>
+          <Terminal initialCwd={route.name === 'terminal' ? route.cwd : ''}
+            visible={route.name === 'terminal'} onAlive={setTermAlive} />
+        </Suspense>
+      )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
-      <TermStatusPill hidden={route.name === 'terminal'} />
+      <TermStatusPill hidden={route.name === 'terminal' || termAlive > 0} />
     </>
   );
 }

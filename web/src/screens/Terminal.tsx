@@ -84,13 +84,27 @@ const DEFAULT_CMDS: TermCmd[] = [
 type Sess = { id: number; cwd: string; cmd: 'shell' | 'claude'; status: Status; note: string };
 type Handle = { sendText: (s: string) => void; reconnect: () => void; focus: () => void };
 
-export function Terminal({ initialCwd = '' }: { initialCwd?: string }) {
+// Mounted once by App and never unmounted (#137): sessions, sockets and
+// scrollback survive navigation. `visible` = the #/terminal route is showing;
+// away from it the component renders as the floating dock (#139) — minimised
+// to a bottom-right chip by default, expandable to a small floating panel.
+export function Terminal({ initialCwd = '', visible = true, onAlive }: {
+  initialCwd?: string; visible?: boolean; onAlive?: (liveCount: number) => void;
+}) {
   const [cwd, setCwd] = useState(initialCwd);
   const [mode, setMode] = useState<'shell' | 'claude'>('shell');
   const [sessions, setSessions] = useState<Sess[]>([]);
   const [active, setActive] = useState(0);
   const nextId = useRef(1);
   const handles = useRef(new Map<number, Handle>());
+  // The dock state while away from #/terminal: chip (default on navigate) or
+  // the expanded float. Re-minimises each time the user navigates away.
+  const [dock, setDock] = useState<'min' | 'float'>('min');
+  const prevVisible = useRef(visible);
+  useEffect(() => {
+    if (prevVisible.current && !visible) setDock('min');
+    prevVisible.current = visible;
+  }, [visible]);
 
   const [customCmds, setCustomCmds] = useState<TermCmd[]>(() => getTermCmds());
 
@@ -116,6 +130,30 @@ export function Terminal({ initialCwd = '' }: { initialCwd?: string }) {
   };
   // One session opens itself on arrival — the screen is never an empty shell.
   useEffect(() => { openSession(initialCwd, 'shell'); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A later ⌨ press with a project cwd (the component stays mounted, so it
+  // arrives as a prop change): jump to that project's session, or open one.
+  const lastCwdProp = useRef(initialCwd);
+  useEffect(() => {
+    if (!initialCwd || initialCwd === lastCwdProp.current) {
+      if (initialCwd) lastCwdProp.current = initialCwd;
+      return;
+    }
+    lastCwdProp.current = initialCwd;
+    setCwd(initialCwd);
+    const existing = sessions.find((s) => s.cwd === initialCwd && (s.status === 'live' || s.status === 'connecting'));
+    if (existing) setActive(existing.id);
+    else openSession(initialCwd, 'shell');
+  }, [initialCwd]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Liveness, reported up to App: quiets the global presence pill while the
+  // dock owns the corner, and decides whether the dock shows at all.
+  const liveCount = sessions.filter((s) => s.status === 'live' || s.status === 'connecting').length;
+  useEffect(() => { onAlive?.(liveCount); }, [liveCount, onAlive]);
+
+  // Any full/float/hidden transition changes the holder's size out from under
+  // xterm — the sessions' own resize listeners refit on this.
+  useEffect(() => { window.dispatchEvent(new Event('resize')); }, [visible, dock]);
 
   const closeSession = (id: number) => {
     handles.current.delete(id);
@@ -199,8 +237,24 @@ export function Terminal({ initialCwd = '' }: { initialCwd?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usagePrefs.autoSchedule, usage?.sched?.runDate, usage?.sched?.atTime, projectSlug]);
 
+  const dockLabel = activeSess
+    ? `${activeSess.cmd === 'claude' ? 'claude' : 'shell'}${activeSess.cwd ? ` · ${activeSess.cwd}` : ''}`
+    : 'terminal';
+  const floatOpen = !visible && dock === 'float' && liveCount > 0;
+
   return (
-    <div className="term-screen">
+    <>
+    <div className={`term-screen${visible ? '' : floatOpen ? ' term-float' : ' term-hidden'}`}>
+      {floatOpen && (
+        <div className="term-float-head">
+          <span className={`dot ${activeSess?.status || 'closed'}`} />
+          <span className="tf-label">{dockLabel}{liveCount > 1 ? ` · ${liveCount} sessions` : ''}</span>
+          <span className="tf-actions">
+            <button onClick={() => setDock('min')} aria-label="Minimise" title="Minimise to the corner chip">–</button>
+            <button onClick={() => go.terminal()} aria-label="Open full screen" title="Open the full Terminal screen">⤢</button>
+          </span>
+        </div>
+      )}
       <div className="topbar">
         <div className="crumb">
           <span className="chev" onClick={go.dashboard}>‹</span>
@@ -363,6 +417,15 @@ export function Terminal({ initialCwd = '' }: { initialCwd?: string }) {
         </div>
       </div>
     </div>
+    {/* the minimised dock chip (#139) — the default whenever the user
+        navigates away with sessions still running; click to expand */}
+    {!visible && dock === 'min' && liveCount > 0 && (
+      <button className="term-mini" onClick={() => setDock('float')}
+        title="A terminal session is running — expand it here, or open the full screen from its header">
+        <span className="dot" /> {liveCount > 1 ? `${liveCount} terminal sessions` : dockLabel} ▴
+      </button>
+    )}
+    </>
   );
 }
 

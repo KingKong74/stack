@@ -1466,6 +1466,42 @@ a { color: inherit; }
 .tu-edit { width: 64px; height: 24px; padding: 0 6px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .tu-reset { color: var(--critical); font-weight: 600; }
 .tu-total { color: var(--faint); font-size: 11px; white-space: nowrap; } /* #130 — cache-inclusive raw volume */
+/* #137/#139 — the persistent terminal dock. The whole screen stays mounted;
+   these classes re-layout the SAME DOM as hidden, or as a floating panel. */
+.term-screen.term-hidden { display: none; }
+.term-screen.term-float {
+  position: fixed; right: 18px; bottom: 18px; z-index: 60;
+  width: min(560px, calc(100vw - 36px));
+  background: var(--card); border: 1px solid var(--line-3); border-radius: 14px;
+  box-shadow: 0 10px 34px rgba(30, 24, 18, 0.22); overflow: hidden;
+}
+.term-float .topbar, .term-float .term-bar, .term-float .term-usage, .term-float .term-rail { display: none; }
+.term-float .page.term-page { padding: 0; max-width: none; margin: 0; }
+.term-float .term-layout { display: block; }
+.term-float .term-tabs { padding: 6px 8px 0; }
+.term-float .term-holder { height: 300px; min-height: 0; border-radius: 0; }
+.term-float-head {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  background: var(--panel); border-bottom: 1px solid var(--line-2);
+  font-size: 12.5px; font-weight: 600; color: var(--ink);
+}
+.term-float-head .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.term-float-head .dot.live { background: var(--green); }
+.term-float-head .dot.connecting { background: var(--building); }
+.term-float-head .tf-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
+.term-float-head .tf-actions { display: flex; gap: 2px; }
+.term-float-head .tf-actions button { color: var(--muted); font-size: 14px; line-height: 1; padding: 2px 7px; border-radius: 6px; }
+.term-float-head .tf-actions button:hover { color: var(--ink); background: var(--card); }
+/* the minimised chip — same corner + look as the presence pill it replaces */
+.term-mini {
+  position: fixed; right: 18px; bottom: 18px; z-index: 40;
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--card); border: 1px solid var(--line-2); border-radius: 999px;
+  padding: 8px 14px; font-size: 12.5px; font-weight: 600; color: var(--ink);
+  box-shadow: 0 4px 14px rgba(30, 24, 18, 0.12); cursor: pointer;
+}
+.term-mini:hover { border-color: var(--green); }
+.term-mini .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
 .tu-booked { color: var(--green); font-weight: 600; }
 .tu-auto { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
 .tu-note { flex-basis: 100%; color: var(--critical); }
