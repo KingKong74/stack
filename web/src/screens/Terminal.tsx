@@ -20,9 +20,13 @@ type Status = 'connecting' | 'live' | 'closed' | 'error';
 
 // The daemon's `usage` frame — today's real token count from the host's Claude
 // transcripts, plus the limit-reset details while a usage limit is in force.
-// `sched` is a ready-to-book one-off calendar slot in HOST-local time.
+// `tokens` is the FRESH count (input + output + cache write — the number the
+// budget bar measures, #130); `totalTokens` adds cache reads (~97% of raw
+// volume), shown as a secondary figure. `sched` is a ready-to-book one-off
+// calendar slot in HOST-local time.
 type TermUsage = {
   tokens: number;
+  totalTokens?: number;
   resetAt?: number;
   resetLabel?: string;
   sched?: { runDate: string; atTime: string };
@@ -265,6 +269,11 @@ export function Terminal({ initialCwd = '' }: { initialCwd?: string }) {
                 </button>
               )}
             </span>
+            {usage.totalTokens != null && usage.totalTokens > usage.tokens && (
+              <span className="tu-total" title="Raw volume including prompt-cache reads — the fresh count on the bar is what tracks real work">
+                {fmtTok(usage.totalTokens)} incl. cache reads
+              </span>
+            )}
             {usage.resetLabel && <span className="tu-reset">⏳ limit resets {usage.resetLabel}</span>}
             {usage.sched && (booked ? (
               <span className="tu-booked">✓ session booked for {usage.sched.atTime}</span>

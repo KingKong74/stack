@@ -121,7 +121,10 @@ const clockLabel = (ms) => {
 
 function usageFrame(sid) {
   if (limitResetAt && limitResetAt <= Date.now()) limitResetAt = null;
-  const f = { t: 'usage', sid, tokens: meter.read() };
+  // tokens = the fresh count (input + output + cache write — what the budget
+  // bar should measure, #130); totalTokens keeps the cache-read-inclusive sum.
+  const { total, fresh } = meter.read();
+  const f = { t: 'usage', sid, tokens: fresh, totalTokens: total };
   if (limitResetAt) {
     f.resetAt = limitResetAt;
     f.resetLabel = clockLabel(limitResetAt);

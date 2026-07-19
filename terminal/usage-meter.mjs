@@ -20,8 +20,10 @@ export function createUsageMeter({ root } = {}) {
 
   let day = '';            // local YYYY-MM-DD the counters describe
   let files = new Map();   // path -> { offset, tail }
-  let perMsg = new Map();  // message.id -> latest token count for it
-  let total = 0;
+  let perMsg = new Map();  // message.id -> latest { tot, fresh } for it
+  let total = 0;           // input + output + cache write + cache READ
+  let fresh = 0;           // input + output + cache write — the number that
+                           // tracks real work; cache reads dwarf it ~30:1 (#130)
 
   const localDay = (d = new Date()) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -33,6 +35,7 @@ export function createUsageMeter({ root } = {}) {
     files = new Map();
     perMsg = new Map();
     total = 0;
+    fresh = 0;
   }
 
   function addLine(line) {
@@ -44,10 +47,12 @@ export function createUsageMeter({ root } = {}) {
     const id = j.message?.id;
     if (!u || !id) return;
     if (localDay(new Date(j.timestamp || 0)) !== day) return;
-    const tokens = (u.input_tokens || 0) + (u.output_tokens || 0)
-      + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
-    total += tokens - (perMsg.get(id) || 0);
-    perMsg.set(id, tokens);
+    const f = (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_creation_input_tokens || 0);
+    const tokens = f + (u.cache_read_input_tokens || 0);
+    const prev = perMsg.get(id) || { tot: 0, fresh: 0 };
+    total += tokens - prev.tot;
+    fresh += f - prev.fresh;
+    perMsg.set(id, { tot: tokens, fresh: f });
   }
 
   function scanFile(path, size) {
@@ -66,14 +71,17 @@ export function createUsageMeter({ root } = {}) {
     } catch { /* a vanished file just drops out */ } finally { closeSync(fd); }
   }
 
-  // Returns today's total token count. Never throws — an unreadable transcript
-  // tree simply reports what it has (0 on a host with no ~/.claude).
+  // Returns today's counts: { total, fresh } — total includes cache reads,
+  // fresh is input + output + cache writes (the honest "work done" number,
+  // #130: cache reads are ~97% of total and made the strip read as wrong).
+  // Never throws — an unreadable transcript tree simply reports what it has
+  // (zeros on a host with no ~/.claude).
   function read() {
     rollover();
     const dayStart = new Date();
     dayStart.setHours(0, 0, 0, 0);
     let dirs = [];
-    try { dirs = readdirSync(ROOT); } catch { return total; }
+    try { dirs = readdirSync(ROOT); } catch { return { total, fresh }; }
     for (const dir of dirs) {
       let names = [];
       try { names = readdirSync(join(ROOT, dir)); } catch { continue; }
@@ -88,7 +96,7 @@ export function createUsageMeter({ root } = {}) {
         scanFile(path, st.size);
       }
     }
-    return total;
+    return { total, fresh };
   }
 
   return { read };
