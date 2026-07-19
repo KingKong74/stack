@@ -619,6 +619,13 @@ export async function deleteRoadmapItem(slug: string, id: number): Promise<void>
 export async function getAutopilotRuns(slug: string): Promise<AutopilotRun[]> {
   return request<AutopilotRun[]>(`/projects/${encodeURIComponent(slug)}/autopilot/runs`);
 }
+// ✧ Reviewer's brief for a completed item (#134): Gemini reads the item, its
+// built_note, the run that built it and the project's checks — returns what
+// shipped, hands-on test steps and likely risks. Annotation only, never stored.
+export interface ReviewBrief { summary: string; test: string[]; risks: string[] }
+export async function getReviewBrief(slug: string, id: number): Promise<ReviewBrief> {
+  return request<ReviewBrief>(`${roadmapBase(slug)}/${id}/review-brief`, { method: 'POST' });
+}
 // Gemini titles an item from its note (the modal's ✧ button) — suggestion only.
 export async function suggestRoadmapTitle(slug: string, note: string): Promise<string> {
   const r = await request<{ title: string }>(`${roadmapBase(slug)}/suggest-title`, { method: 'POST', body: { note } });

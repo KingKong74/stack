@@ -162,6 +162,29 @@ Use en-AU spelling. Respond with ONLY this JSON:
 { "items": [ { "id": 123, "area": "…", "title": "…", "bucket": "…",
                "why": "one plain sentence, under 15 words" } ] }`;
 
+DEFAULTS.reviewbrief = `You are the reviewer's assistant on a side project command centre. A completed
+roadmap item is awaiting a human verdict (solid / rethink). Write it up so the reviewer can judge
+quickly without re-reading everything.
+{{NORTH_STAR_LINE}}
+
+The item:
+#{{ID}} ({{BUCKET}}) {{TITLE}}
+{{NOTE_LINE}}
+What the builder says landed: {{BUILT_NOTE}}
+{{RUN_BLOCK}}
+{{CHECKS_BLOCK}}
+
+Produce:
+- "summary": 2-3 plain sentences on what actually shipped, in the reviewer's terms — cut through
+  the builder's own framing, note anything claimed but not evidenced.
+- "test": 3-6 concrete hands-on steps to verify it works, most telling first (real clicks,
+  commands or URLs — not "check it works").
+- "risks": up to 3 specific things most likely to be broken or missed, judged from what was
+  described. Omit generic advice; an empty list is fine.
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "summary": "…", "test": ["…"], "risks": ["…"] }`;
+
 const ENV_KEYS = {
   judge: 'GEMINI_JUDGE_PROMPT',
   intake: 'GEMINI_INTAKE_PROMPT',
@@ -172,6 +195,7 @@ const ENV_KEYS = {
   titler: 'GEMINI_TITLER_PROMPT',
   assist: 'GEMINI_ASSIST_PROMPT',
   cleanup: 'GEMINI_CLEANUP_PROMPT',
+  reviewbrief: 'GEMINI_REVIEWBRIEF_PROMPT',
 };
 
 export function buildPrompt(name, vars) {

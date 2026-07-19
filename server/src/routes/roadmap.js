@@ -230,6 +230,59 @@ roadmap.post('/cleanup', async (req, res) => {
   }
 });
 
+// POST /:id/review-brief  -> Gemini writes the reviewer's brief for a completed
+// item (#134): what actually shipped, hands-on test steps, likely risks — from
+// the item, its built_note, the autopilot run that built it and the project's
+// checks. Annotation only, nothing stored. 503 keyless.
+roadmap.post('/:id/review-brief', async (req, res) => {
+  if (!geminiEnabled()) {
+    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
+  }
+  const { rows } = await q(
+    'SELECT * FROM roadmap_items WHERE project_id = $1 AND id = $2',
+    [req.project.id, req.params.id]
+  );
+  const item = rows[0];
+  if (!item) return res.status(404).json({ error: 'No such roadmap item.' });
+  if (!item.done) return res.status(400).json({ error: 'Only completed items get a review brief.' });
+  const [{ rows: runRows }, { rows: checkRows }] = await Promise.all([
+    q(
+      `SELECT branch, commits, summary FROM autopilot_runs
+        WHERE project_id = $1 AND item_id = $2 AND outcome = 'landed'
+        ORDER BY finished_at DESC LIMIT 1`,
+      [req.project.id, item.id]
+    ),
+    q('SELECT name, last_status FROM checks WHERE project_id = $1 ORDER BY id LIMIT 12', [req.project.id]),
+  ]);
+  const run = runRows[0];
+  const prompt = buildPrompt('reviewbrief', {
+    ID: String(item.id),
+    BUCKET: item.bucket,
+    TITLE: item.title,
+    NOTE_LINE: item.note ? `The item's note: ${String(item.note).slice(0, 1000)}` : '',
+    BUILT_NOTE: String(item.built_note || '(none recorded)').slice(0, 2000),
+    RUN_BLOCK: run
+      ? `Built by an unattended session on branch ${run.branch} (${run.commits} commit${run.commits === 1 ? '' : 's'}). The session's own account:\n${String(run.summary || '').slice(0, 3000)}`
+      : 'No autopilot run recorded for it — likely built by hand or an interactive session.',
+    CHECKS_BLOCK: checkRows.length
+      ? `The project's HTTP checks (runnable from the Bugs tab): ${checkRows.map((c) => `${c.name} (${c.last_status || 'never run'})`).join(', ')}`
+      : '',
+    NORTH_STAR_LINE: req.project.north_star
+      ? `For context, the project's north star: "${String(req.project.north_star).slice(0, 400)}"`
+      : '',
+  });
+  try {
+    const answer = await askGemini(prompt, { timeoutMs: 25_000 });
+    const summary = String(answer?.summary || '').trim().slice(0, 1200);
+    if (!summary) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
+    const list = (v, cap) => (Array.isArray(v) ? v : [])
+      .map((s) => String(s).trim().slice(0, 300)).filter(Boolean).slice(0, cap);
+    res.json({ summary, test: list(answer?.test, 6), risks: list(answer?.risks, 3) });
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'Gemini call failed.' });
+  }
+});
+
 // DELETE /:id  -> remove; auto (hook) items leave a tombstone
 roadmap.delete('/:id', async (req, res) => {
   const { rows } = await q(

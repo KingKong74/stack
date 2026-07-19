@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Roadmap as RoadmapData, RoadmapItem, Priority, AutopilotRun } from '../types';
 import { PRIORITY_META, timeAgo, dayLabel } from '../lib/ui';
-import { getAutopilotRuns } from '../store';
+import { getAutopilotRuns, getReviewBrief, ReviewBrief } from '../store';
 import { Modal } from '../components/Modal';
 
 export type ReviewTag = 'solid' | 'needs-work' | 'rethink';
@@ -179,6 +179,46 @@ export function Roadmap({
           </span>
         )}
         {run && run.checksFailing ? <span className="run-warn">{run.checksFailing} check{run.checksFailing === 1 ? '' : 's'} failing</span> : null}
+      </div>
+    );
+  };
+  // ✧ Reviewer's briefs (#134): Gemini's read on a completed item — what
+  // shipped, how to test it, likely risks. In-memory annotation per row;
+  // click toggles, nothing is stored.
+  const [briefs, setBriefs] = useState<Map<number, { loading?: boolean; error?: string; data?: ReviewBrief }>>(new Map());
+  const setBrief = (id: number, v: { loading?: boolean; error?: string; data?: ReviewBrief } | null) =>
+    setBriefs((m) => { const next = new Map(m); if (v) next.set(id, v); else next.delete(id); return next; });
+  const toggleBrief = (it: RoadmapItem) => {
+    if (!slug) return;
+    if (briefs.has(it.id)) { setBrief(it.id, null); return; }
+    setBrief(it.id, { loading: true });
+    getReviewBrief(slug, it.id)
+      .then((data) => setBrief(it.id, { data }))
+      .catch((e) => setBrief(it.id, { error: e instanceof Error ? e.message : 'Gemini call failed.' }));
+  };
+  const briefPanel = (it: RoadmapItem) => {
+    const b = briefs.get(it.id);
+    if (!b) return null;
+    return (
+      <div className="review-brief">
+        {b.loading && <div className="rb-loading">✧ Reading the item, its run and the checks…</div>}
+        {b.error && <div className="rb-err">{b.error}</div>}
+        {b.data && (<>
+          <div className="rb-summary">{b.data.summary}</div>
+          {b.data.test.length > 0 && (
+            <div className="rb-block">
+              <div className="rb-lbl">Test it</div>
+              <ol>{b.data.test.map((s, i) => <li key={i}>{s}</li>)}</ol>
+            </div>
+          )}
+          {b.data.risks.length > 0 && (
+            <div className="rb-block">
+              <div className="rb-lbl">Likely risks</div>
+              <ul>{b.data.risks.map((s, i) => <li key={i}>{s}</li>)}</ul>
+            </div>
+          )}
+          <div className="rb-foot">✧ Gemini's read — verify before trusting it.</div>
+        </>)}
       </div>
     );
   };
@@ -497,7 +537,12 @@ export function Roadmap({
                     {reviewMeta(it)}
                     {it.note && <div className="note">{it.note}</div>}
                     {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
+                    {briefPanel(it)}
                   </div>
+                  <button className="gemini-btn sm" onClick={() => toggleBrief(it)}
+                    title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">
+                    ✧ Brief
+                  </button>
                   <button className="verify-back" onClick={() => onToggle(it)}
                     title="Didn't hold up — send it back to the board">↩ Board</button>
                   {archActions(it)}
