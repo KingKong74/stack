@@ -18,7 +18,7 @@ const tagLabel = (tag: string) => REVIEW_TAGS.find((t) => t.key === tag)?.label 
 // verdict tag (needs-work/rethink offer a follow-up item), restorable by
 // un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onToggleSkip, onReorder, onCleanup, onSendToTerminal, slug, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onRefine, onToggleSkip, onReorder, onCleanup, onSendToTerminal, slug, highlightId,
   draft, onResumeDraft, onDiscardDraft, liveBranches,
 }: {
   roadmap: RoadmapData;
@@ -28,6 +28,7 @@ export function Roadmap({
   onEdit: (item: RoadmapItem) => void;
   onDelete: (item: RoadmapItem) => void;
   onReviewTag: (item: RoadmapItem, tag: ReviewTag) => void;
+  onRefine: (item: RoadmapItem) => void;
   onToggleSkip: (item: RoadmapItem) => void;
   onReorder?: (item: RoadmapItem, toBucket: Priority, beforeId: number | null) => void;
   onCleanup?: () => void;
@@ -248,10 +249,11 @@ export function Roadmap({
   const archSlice = filtered.slice(archPage * ARCH_PAGE_SIZE, (archPage + 1) * ARCH_PAGE_SIZE);
 
   // Verdict controls, shared by both archive views and the verify strip.
-  // Unverdicted rows show Solid/Rethink straight up (no picker step, no
-  // needs-more-work — legacy needs-work verdicts still render); clicking an
-  // existing verdict reopens the same two options.
-  const VISIBLE_TAGS = REVIEW_TAGS.filter((t) => t.key !== 'needs-work');
+  // Solid is the only pickable verdict now (#141) — dissatisfaction goes
+  // through ✎ Refine, which reworks the item and sends it back to the board.
+  // Legacy rethink/needs-work verdicts still render; clicking one reopens the
+  // Solid option (or Refine).
+  const VISIBLE_TAGS = REVIEW_TAGS.filter((t) => t.key === 'solid');
   const verdictButtons = (it: RoadmapItem) => VISIBLE_TAGS.map((t) => (
     <button key={t.key} className={`review-pick-opt ${t.key}`}
       onClick={() => { setPickerFor(null); onReviewTag(it, t.key); }}>
@@ -266,6 +268,10 @@ export function Roadmap({
       ) : (
         verdictButtons(it)
       )}
+      <button className="review-pick-opt refine" onClick={() => onRefine(it)}
+        title="Not right yet — rework the item (title, note, plan, bucket) and send it back to the board">
+        ✎ Refine
+      </button>
       <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
     </div>
   );
@@ -516,8 +522,9 @@ export function Roadmap({
       {view === 'reviews' && (<>
       <div className="subtitle" style={{ marginBottom: 14 }}>
         Everything completed, awaiting your verdict — each row shows who built it, when, and what
-        landed. Solid closes it out; Rethink archives it and spins off a follow-up; ↩ Board sends it
-        back into play, fresh — the old verdict and lane claim don't come with it.
+        landed. Solid closes it out; ✎ Refine reworks the item itself and sends it back to the
+        board; ↩ Board sends it back unchanged. Either way it returns fresh — the old verdict and
+        lane claim don't come with it.
       </div>
 
       {/* who-built-it filter (#117) — only when completions come from more than one origin */}

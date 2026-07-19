@@ -125,6 +125,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const [roadModal, setRoadModal] = useState<{
     open: boolean; priority: Priority; title: string; note: string;
     fromNote: number | null; editing: RoadmapItem | null; lane?: string; area?: string; fromDraft?: boolean;
+    refining?: boolean; // #141 — saving also un-ticks: the item returns to the board reworked
   }>({ open: false, priority: 'should', title: '', note: '', fromNote: null, editing: null });
   const roadModalClosed = { open: false, priority: 'should' as Priority, title: '', note: '', fromNote: null, editing: null };
   // Device-local draft: a half-typed add-modal dismissed by a stray click.
@@ -212,7 +213,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     guard(async () => {
       const editing = roadModal.editing;
       if (editing) {
-        const updated = await patchRoadmapItem(slug, editing.id, { title, note, bucket: priority, claimed_by: lane, area, plan });
+        // Refine (#141): the same save also un-ticks — the server clears the
+        // old verdict and claim, so the reworked item lands back on the board.
+        const patch = roadModal.refining
+          ? { title, note, bucket: priority, claimed_by: lane, area, plan, done: false }
+          : { title, note, bucket: priority, claimed_by: lane, area, plan };
+        const updated = await patchRoadmapItem(slug, editing.id, patch);
         const without = { ...roadmap, [editing.bucket]: roadmap[editing.bucket].filter((i) => i.id !== editing.id) };
         setData({ ...data, roadmap: { ...without, [updated.bucket]: [...without[updated.bucket], updated] } });
         setRoadModal(roadModalClosed);
@@ -315,21 +321,18 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       closeCleanup();
     });
 
-  // Archive review: store the verdict; needs-work/rethink offer a follow-up
-  // item straight back onto the board (prefilled, cancellable).
+  // Archive review: store the verdict. Solid is the only pickable one now —
+  // dissatisfaction goes through Refine (#141), not a rethink tag.
   const reviewTagRoad = (item: RoadmapItem, tag: ReviewTag) =>
     guard(async () => {
       const updated = await patchRoadmapItem(slug, item.id, { review_tag: tag });
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
-      if (tag !== 'solid') {
-        setRoadModal({
-          open: true, priority: 'should',
-          title: `Follow up: ${item.title}`,
-          note: `Spun off while reviewing the archived item (verdict: ${tag === 'needs-work' ? 'needs more work' : 'rethink'}).`,
-          fromNote: null, editing: null,
-        });
-      }
     });
+
+  // Refine (#141, replacing rethink): rework the item itself — title, note,
+  // plan, bucket — and send it back to the board fresh in one save.
+  const refineRoad = (item: RoadmapItem) =>
+    setRoadModal({ open: true, priority: item.bucket, title: item.title, note: item.note, fromNote: null, editing: item, refining: true });
 
   const toggleRoad = (item: RoadmapItem) =>
     guard(async () => {
@@ -665,7 +668,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onDiscardDraft={() => updateRoadDraft(null)}
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
-            onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad}
+            onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad} onRefine={refineRoad}
             onToggleSkip={toggleSkipRoad} onReorder={reorderRoad} onCleanup={openCleanup}
             onSendToTerminal={(brief) => {
               // One-shot handoff — the terminal screen offers it as a paste.
@@ -704,7 +707,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           initialPlan={roadModal.editing?.plan ?? []}
           lanes={[...new Set(allRoadmap.map((i) => i.claimedBy))].filter(Boolean).sort()}
           areas={[...new Set([...allRoadmap.map((i) => i.area), ...futures.map((f) => f.area)])].filter(Boolean).sort()}
-          mode={roadModal.editing ? 'edit' : 'add'}
+          mode={roadModal.refining ? 'refine' : roadModal.editing ? 'edit' : 'add'}
           onClose={() => { setRoadModal(roadModalClosed); setPendingFuture(null); }}
           onDismiss={(d) => updateRoadDraft(d)}
           onAssist={(note) => assistRoadmapItem(slug, note)}

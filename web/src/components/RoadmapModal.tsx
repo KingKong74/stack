@@ -22,7 +22,8 @@ export function RoadmapModal({
   onAssist?: (note: string) => Promise<RoadmapAssist>;
   initialTitle?: string; initialNote?: string; initialLane?: string; initialArea?: string;
   initialPlan?: PlanStep[];
-  lanes?: string[]; areas?: string[]; mode?: 'add' | 'edit';
+  // 'refine' (#141) = edit whose save also sends the item back to the board.
+  lanes?: string[]; areas?: string[]; mode?: 'add' | 'edit' | 'refine';
 }) {
   const [title, setTitle] = useState(initialTitle);
   const [note, setNote] = useState(initialNote);
@@ -93,7 +94,13 @@ export function RoadmapModal({
     // the draft chip on the Roadmap bar brings it back. Cancel is the real
     // discard. (`typed` feeds dismiss(), which decides whether to save.)
     <Modal onClose={dismiss} wide>
-      <h3>{mode === 'edit' ? 'Edit roadmap item' : 'Add roadmap item'}</h3>
+      <h3>{mode === 'refine' ? 'Refine roadmap item' : mode === 'edit' ? 'Edit roadmap item' : 'Add roadmap item'}</h3>
+      {mode === 'refine' && (
+        <div className="field-hint" style={{ marginBottom: 14 }}>
+          Rework what wasn't right — the ask, the note, the plan, the bucket. Saving sends it back
+          to the board fresh: the old verdict and lane claim are cleared.
+        </div>
+      )}
       <div className="lbl lbl-row">
         Note <span className="optional">what you actually want done — start here</span>
         {onAssist && (
@@ -188,7 +195,9 @@ export function RoadmapModal({
       </div>
       <div className="modal-actions">
         <button className="btn-cancel" onClick={onClose}>Cancel</button>
-        <button className="btn-submit" onClick={submit}>{mode === 'edit' ? 'Save changes' : 'Add item'}</button>
+        <button className="btn-submit" onClick={submit}>
+          {mode === 'refine' ? 'Refine → board' : mode === 'edit' ? 'Save changes' : 'Add item'}
+        </button>
       </div>
     </Modal>
   );

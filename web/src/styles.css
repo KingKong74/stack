@@ -531,6 +531,7 @@ a { color: inherit; }
 .review-pick-opt.solid:hover { color: var(--green); border-color: var(--green); background: var(--green-tint); }
 .review-pick-opt.needs-work:hover { color: var(--building); border-color: var(--building); }
 .review-pick-opt.rethink:hover { color: var(--critical); border-color: var(--critical); }
+.review-pick-opt.refine:hover { color: var(--accent); border-color: var(--accent-tint-border); background: var(--accent-tint); } /* #141 */
 
 /* intake — the idea dump box + Gemini's proposed sorting */
 .intake { background: var(--surface); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 16px 18px; margin-bottom: 24px; }
