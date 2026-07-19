@@ -159,6 +159,7 @@ export interface ReviewItem {
   title: string;
   meta: string;            // severity (bug) / bucket (roadmap) / 'idea' (future)
   when: string;
+  batch?: string;          // one ingest's extractions share it — the session group key (#140)
 }
 export interface OverviewStale { slug: string; name: string; since: string }
 export interface OverviewBugProject { slug: string; name: string; count: number }

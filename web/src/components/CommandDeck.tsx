@@ -220,31 +220,75 @@ function ReviewQueue({ initial }: { initial: Overview['review'] }) {
   const [total, setTotal] = useState(initial.total);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState('');
+  // Session groups (#140): one ingest's extractions arrive together, so they
+  // share a batch stamp. Groups collapse vertically; the newest starts open.
+  const [openGroups, setOpenGroups] = useState<Set<string> | null>(null);
   useEffect(() => { setItems(initial.items); setTotal(initial.total); }, [initial]);
 
   if (total === 0) return null;
   const rowKey = (it: ReviewItem) => `${it.slug}:${it.kind}:${it.id}`;
+  const groupKey = (it: ReviewItem) => `${it.slug}|${it.batch || it.when}`;
+
+  const groups: { key: string; name: string; when: string; items: ReviewItem[] }[] = [];
+  for (const it of items) {
+    const key = groupKey(it);
+    const g = groups.find((x) => x.key === key);
+    if (g) g.items.push(it);
+    else groups.push({ key, name: it.name, when: it.when, items: [it] });
+  }
+  const opened = openGroups ?? new Set(groups.length ? [groups[0].key] : []);
+  const toggleGroup = (key: string) =>
+    setOpenGroups(() => {
+      const next = new Set(opened);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+
+  const keepOne = async (it: ReviewItem) => {
+    if (it.kind === 'bug') await patchBug(it.slug, it.id, { reviewed: true });
+    else if (it.kind === 'roadmap') await patchRoadmapItem(it.slug, Number(it.id), { reviewed: true });
+    else await patchFuture(it.slug, Number(it.id), { reviewed: true });
+  };
 
   const act = async (it: ReviewItem, action: 'keep' | 'dismiss') => {
     if (busyKey) return;
     setBusyKey(rowKey(it));
     setError('');
     try {
-      if (it.kind === 'bug') {
-        if (action === 'keep') await patchBug(it.slug, it.id, { reviewed: true });
-        else await deleteBug(it.slug, it.id);
+      if (action === 'keep') {
+        await keepOne(it);
+      } else if (it.kind === 'bug') {
+        await deleteBug(it.slug, it.id);
       } else if (it.kind === 'roadmap') {
-        if (action === 'keep') await patchRoadmapItem(it.slug, Number(it.id), { reviewed: true });
-        else await deleteRoadmapItem(it.slug, Number(it.id));
+        await deleteRoadmapItem(it.slug, Number(it.id));
       } else {
-        if (action === 'keep') await patchFuture(it.slug, Number(it.id), { reviewed: true });
-        else await deleteFuture(it.slug, Number(it.id));
+        await deleteFuture(it.slug, Number(it.id));
       }
       setItems((prev) => prev.filter((x) => rowKey(x) !== rowKey(it)));
       setTotal((t) => Math.max(0, t - 1));
     } catch (e) {
       if (e instanceof AuthError) return; // global handler routes to the gate
       setError((e as Error)?.message || "Couldn't update that item.");
+    }
+    setBusyKey(null);
+  };
+
+  // Bulk approve one session group (#140) — every item marked reviewed, rows
+  // settling as each lands so a mid-list failure leaves the truth visible.
+  const keepAll = async (g: { key: string; items: ReviewItem[] }) => {
+    if (busyKey) return;
+    setBusyKey(g.key);
+    setError('');
+    for (const it of g.items) {
+      try {
+        await keepOne(it);
+        setItems((prev) => prev.filter((x) => rowKey(x) !== rowKey(it)));
+        setTotal((t) => Math.max(0, t - 1));
+      } catch (e) {
+        if (e instanceof AuthError) return;
+        setError((e as Error)?.message || "Couldn't approve the whole session.");
+        break;
+      }
     }
     setBusyKey(null);
   };
@@ -256,24 +300,41 @@ function ReviewQueue({ initial }: { initial: Overview['review'] }) {
         <span className="review-count">{total}</span>
         <span className="auto-badge">✦ auto-extracted</span>
       </div>
-      <div className="review-rows">
-        {items.map((it) => (
-          <div className={`review-row ${busyKey === rowKey(it) ? 'busy' : ''}`} key={rowKey(it)}>
-            <span className={`review-kind ${it.kind}`}>{it.kind === 'bug' ? it.id : it.kind === 'roadmap' ? 'roadmap' : 'idea'}</span>
-            <button className="review-title" title="Open in its tracker"
-              onClick={() => go.detail(it.slug, it.kind === 'bug' ? 'bugs' : it.kind === 'roadmap' ? 'roadmap' : 'futures', it.id)}>
-              {it.title}
+      {groups.map((g) => (
+        <div className="review-group" key={g.key}>
+          <div className="review-group-head">
+            <button className="review-group-toggle" onClick={() => toggleGroup(g.key)}
+              aria-expanded={opened.has(g.key)}>
+              <span className="chev">{opened.has(g.key) ? '▾' : '▸'}</span>
+              <span className="review-proj">{g.name}</span>
+              <span className="review-when">{g.when}</span>
+              <span className="review-count sm">{g.items.length}</span>
             </button>
-            <span className="review-meta">{it.meta}</span>
-            <span className="review-proj">{it.name}</span>
-            <span className="review-when">{it.when}</span>
-            <span className="review-actions">
-              <button className="review-keep" onClick={() => act(it, 'keep')} title="Keep — mark reviewed">✓ Keep</button>
-              <button className="review-dismiss" onClick={() => act(it, 'dismiss')} title="Dismiss — delete and don't re-extract">✕ Dismiss</button>
-            </span>
+            <button className="review-keep" disabled={busyKey !== null}
+              onClick={() => keepAll(g)} title="Approve every item this session extracted">
+              ✓ Keep all
+            </button>
           </div>
-        ))}
-      </div>
+          {opened.has(g.key) && (
+            <div className="review-rows">
+              {g.items.map((it) => (
+                <div className={`review-row ${busyKey === rowKey(it) || busyKey === g.key ? 'busy' : ''}`} key={rowKey(it)}>
+                  <span className={`review-kind ${it.kind}`}>{it.kind === 'bug' ? it.id : it.kind === 'roadmap' ? 'roadmap' : 'idea'}</span>
+                  <button className="review-title" title="Open in its tracker"
+                    onClick={() => go.detail(it.slug, it.kind === 'bug' ? 'bugs' : it.kind === 'roadmap' ? 'roadmap' : 'futures', it.id)}>
+                    {it.title}
+                  </button>
+                  <span className="review-meta">{it.meta}</span>
+                  <span className="review-actions">
+                    <button className="review-keep" onClick={() => act(it, 'keep')} title="Keep — mark reviewed">✓ Keep</button>
+                    <button className="review-dismiss" onClick={() => act(it, 'dismiss')} title="Dismiss — delete and don't re-extract">✕ Dismiss</button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
       {total > items.length && <div className="review-more">+{total - items.length} more after these</div>}
       {error && <div className="review-error">{error}</div>}
     </div>

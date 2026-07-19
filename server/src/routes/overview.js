@@ -43,13 +43,18 @@ overview.get('/', async (_req, res) => {
         JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
        WHERE s.created_at > now() - interval '7 days'`),
     // The review inbox: auto-extracted items no human has looked at yet.
-    q(`SELECT 'bug' AS kind, project_id, bug_key AS ref, title, severity AS meta, created_at
+    // `batch` clusters one ingest's extractions (same push, same minute) so
+    // the deck can group them as a session (#140).
+    q(`SELECT 'bug' AS kind, project_id, bug_key AS ref, title, severity AS meta, created_at,
+              to_char(date_trunc('minute', created_at), 'YYYY-MM-DD HH24:MI') AS batch
          FROM bugs WHERE source = 'hook' AND reviewed_at IS NULL
        UNION ALL
-       SELECT 'roadmap', project_id, id::text, title, bucket, created_at
+       SELECT 'roadmap', project_id, id::text, title, bucket, created_at,
+              to_char(date_trunc('minute', created_at), 'YYYY-MM-DD HH24:MI')
          FROM roadmap_items WHERE source = 'hook' AND reviewed_at IS NULL AND NOT done
        UNION ALL
-       SELECT 'future', project_id, id::text, title, 'idea', created_at
+       SELECT 'future', project_id, id::text, title, 'idea', created_at,
+              to_char(date_trunc('minute', created_at), 'YYYY-MM-DD HH24:MI')
          FROM futures WHERE source = 'hook' AND reviewed_at IS NULL
        ORDER BY created_at DESC`),
     // Live sessions: presence pings still inside the TTL window.
@@ -132,8 +137,9 @@ overview.get('/', async (_req, res) => {
 
   // review: the needs-review queue, newest first, capped for the deck (total
   // still reflects everything outstanding). Rows from soft-deleted projects
-  // (absent from byId) are dropped.
-  const REVIEW_CAP = 8;
+  // (absent from byId) are dropped. The cap is generous now the deck renders
+  // collapsed session groups (#140), not a flat list.
+  const REVIEW_CAP = 40;
   const reviewRows = reviewR.rows.filter((r) => byId.has(r.project_id));
   const review = {
     total: reviewRows.length,
@@ -147,6 +153,7 @@ overview.get('/', async (_req, res) => {
         title: r.title,
         meta: r.meta,
         when: relativeTime(r.created_at) || 'just now',
+        batch: r.batch, // one ingest's extractions share it — the group key
       };
     }),
   };
