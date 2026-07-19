@@ -179,6 +179,35 @@ autopilotGlobal.post('/start', async (req, res) => {
   res.status(201).json(jobShape(full.rows[0]));
 });
 
+// POST /undo — the Reviews view's ⎌ Undo (#128): queue a revert job for a
+// completed item. The host dispatcher (the only thing with the repo) reverts
+// the commits tagged #<itemId> on main in a throwaway worktree, pushes, and
+// un-ticks the item — which sends it back to the board fresh (#116 semantics).
+autopilotGlobal.post('/undo', async (req, res) => {
+  const b = req.body || {};
+  const project = await projectBySlug(String(b.slug || ''));
+  if (!project) return res.status(404).json({ error: 'No such project.' });
+  const itemId = Number(b.itemId);
+  if (!Number.isInteger(itemId) || itemId <= 0) return res.status(400).json({ error: 'itemId required.' });
+  const item = await q('SELECT id, done FROM roadmap_items WHERE project_id = $1 AND id = $2', [project.id, itemId]);
+  if (!item.rows.length) return res.status(404).json({ error: 'No such roadmap item.' });
+  if (!item.rows[0].done) return res.status(400).json({ error: 'Only a completed item can be undone.' });
+  const open = await q(
+    `${JOB_SELECT} WHERE j.project_id = $1 AND j.status IN ('queued','claimed','running')
+      ORDER BY j.created_at LIMIT 1`, [project.id]);
+  if (open.rows.length) {
+    const openJob = jobShape(open.rows[0]);
+    // The same undo asked twice is idempotent; anything else has to finish first.
+    if (openJob.kind === 'revert' && openJob.itemId === String(itemId)) return res.status(200).json(openJob);
+    return res.status(409).json({ error: `An automation job for this project is already ${openJob.status} — undo when it finishes.` });
+  }
+  const { rows } = await q(
+    `INSERT INTO autopilot_jobs (project_id, kind, item_id) VALUES ($1,'revert',$2) RETURNING id`,
+    [project.id, itemId]);
+  const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [rows[0].id]);
+  res.status(201).json(jobShape(full.rows[0]));
+});
+
 // GET /jobs?slug=&limit= — recent automation sessions, newest first. The read
 // side of /start: `stack list-sessions` and anything else that wants the job
 // queue without the full Mission Control payload.

@@ -626,6 +626,12 @@ export interface ReviewBrief { summary: string; test: string[]; risks: string[] 
 export async function getReviewBrief(slug: string, id: number): Promise<ReviewBrief> {
   return request<ReviewBrief>(`${roadmapBase(slug)}/${id}/review-brief`, { method: 'POST' });
 }
+// ⎌ Undo a completed item (#128): queues a revert job — the host dispatcher
+// reverts the item's #N-tagged commits on main in a throwaway worktree, pushes,
+// and un-ticks the item so it returns to the board fresh.
+export async function queueUndo(slug: string, itemId: number): Promise<AutopilotJob> {
+  return request<AutopilotJob>('/autopilot/undo', { method: 'POST', body: { slug, itemId } });
+}
 // Gemini titles an item from its note (the modal's ✧ button) — suggestion only.
 export async function suggestRoadmapTitle(slug: string, note: string): Promise<string> {
   const r = await request<{ title: string }>(`${roadmapBase(slug)}/suggest-title`, { method: 'POST', body: { note } });

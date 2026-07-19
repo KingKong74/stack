@@ -25,8 +25,8 @@
 // lockfile refuses a second night.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, rmSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadStackEnv, logStderr } from '../hook/stack-post.mjs';
@@ -76,6 +76,58 @@ log(`job #${job.id}: ${job.kind} run on ${job.slug}${job.itemId ? ` (item #${job
 if (!existsSync(join(repo, '.git'))) {
   log(`no repo at ${repo} — job failed.`);
   await report('failed', `no repo at ${repo}`);
+  process.exit(0);
+}
+
+// A revert job (#128 — the Reviews view's ⎌ Undo) is handled right here, not
+// by the runner: revert every main commit tagged #<itemId> in a throwaway
+// worktree, push, and un-tick the item so it lands back on the board. The
+// human asked for it explicitly, so no arm-switch / automode gate applies.
+if (job.kind === 'revert') {
+  const git = (dir, ...a) => {
+    const r = spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+    return { ok: r.status === 0, out: (r.stdout || '').trim(), err: (r.stderr || '').trim() };
+  };
+  const revert = async () => {
+    const id = String(job.itemId || '');
+    if (!id) return { ok: false, detail: 'revert job without an item id' };
+    git(repo, 'fetch', 'origin', 'main'); // best effort — fall back to local main below
+    const base = git(repo, 'rev-parse', '--verify', 'origin/main').ok ? 'origin/main' : 'main';
+    const hist = git(repo, 'log', base, '-n', '400', '--format=%H\t%s');
+    if (!hist.ok) return { ok: false, detail: 'git log failed' };
+    const tag = new RegExp(`(^|[^0-9])#${id}([^0-9]|$)`);
+    const hashes = hist.out.split('\n').filter(Boolean)
+      .map((l) => { const [h, ...s] = l.split('\t'); return { h, s: s.join('\t') }; })
+      .filter((c) => tag.test(c.s))
+      .map((c) => c.h); // newest first — the order git revert wants
+    if (!hashes.length) return { ok: false, detail: `no commits tagged #${id} in the last 400 on ${base}` };
+    const wt = join(tmpdir(), `stack-undo-${job.id}-${Date.now()}`);
+    const add = git(repo, 'worktree', 'add', '--detach', wt, base);
+    if (!add.ok) return { ok: false, detail: `worktree failed: ${add.err.slice(0, 180)}` };
+    try {
+      const rev = git(wt, 'revert', '--no-edit', ...hashes);
+      if (!rev.ok) {
+        git(wt, 'revert', '--abort');
+        return { ok: false, detail: `revert of ${hashes.length} commit(s) tagged #${id} conflicted — undo by hand` };
+      }
+      const push = git(wt, 'push', 'origin', 'HEAD:main');
+      if (!push.ok) return { ok: false, detail: `push failed: ${push.err.slice(0, 180)}` };
+    } finally {
+      git(repo, 'worktree', 'remove', '--force', wt);
+      rmSync(wt, { recursive: true, force: true });
+    }
+    // Back to the board: done:false clears the verdict + claim (#116 semantics).
+    try {
+      await api('PATCH', `/api/projects/${job.slug}/roadmap/${id}`, { done: false });
+    } catch {
+      return { ok: true, detail: `reverted ${hashes.length} commit(s) tagged #${id}, but un-ticking failed — untick it in the app` };
+    }
+    return { ok: true, detail: `reverted ${hashes.length} commit(s) tagged #${id} on main` };
+  };
+  await report('running');
+  const out = await revert();
+  await report(out.ok ? 'done' : 'failed', out.detail);
+  log(`job #${job.id}: ${out.ok ? 'done' : 'failed'} — ${out.detail}.`);
   process.exit(0);
 }
 

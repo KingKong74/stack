@@ -351,8 +351,8 @@ CREATE TABLE IF NOT EXISTS autopilot_schedule (
 CREATE TABLE IF NOT EXISTS autopilot_jobs (
   id          BIGSERIAL PRIMARY KEY,
   project_id  BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  kind        TEXT NOT NULL DEFAULT 'manual',   -- manual | nightly | scheduled
-  item_id     BIGINT,                           -- pin to one roadmap item (manual/scheduled)
+  kind        TEXT NOT NULL DEFAULT 'manual',   -- manual | nightly | scheduled | revert (#128)
+  item_id     BIGINT,                           -- pin to one roadmap item (manual/scheduled/revert)
   schedule_id BIGINT,                           -- the autopilot_schedule row that spawned it
   night_date  DATE,                             -- nightly dedup: one per project per local date
   status      TEXT NOT NULL DEFAULT 'queued',   -- queued | claimed | running | done | failed

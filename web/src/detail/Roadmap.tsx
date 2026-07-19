@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Roadmap as RoadmapData, RoadmapItem, Priority, AutopilotRun } from '../types';
 import { PRIORITY_META, timeAgo, dayLabel } from '../lib/ui';
-import { getAutopilotRuns, getReviewBrief, ReviewBrief } from '../store';
+import { getAutopilotRuns, getReviewBrief, queueUndo, ReviewBrief } from '../store';
 import { Modal } from '../components/Modal';
 
 export type ReviewTag = 'solid' | 'needs-work' | 'rethink';
@@ -221,6 +221,22 @@ export function Roadmap({
         </>)}
       </div>
     );
+  };
+  // ⎌ Undo (#128): confirm, then queue a revert job — the host dispatcher
+  // reverts the item's #N-tagged main commits and un-ticks it. The note under
+  // the row is the only feedback needed; the item reappears on the board when
+  // the revert lands.
+  const [undoConfirm, setUndoConfirm] = useState<RoadmapItem | null>(null);
+  const [undoNotes, setUndoNotes] = useState<Map<number, string>>(new Map());
+  const setUndoNote = (id: number, msg: string) =>
+    setUndoNotes((m) => new Map(m).set(id, msg));
+  const confirmUndo = (it: RoadmapItem) => {
+    setUndoConfirm(null);
+    if (!slug) return;
+    setUndoNote(it.id, 'Queuing the revert…');
+    queueUndo(slug, it.id)
+      .then(() => setUndoNote(it.id, `Undo queued — the host reverts every main commit tagged #${it.id} and returns the item to the board within a minute or two.`))
+      .catch((e) => setUndoNote(it.id, e instanceof Error ? e.message : 'Undo failed.'));
   };
   // Archive rendering: the MoSCoW grid, or a dense paginated list + verdict filter.
   const [archView, setArchView] = useState<'grid' | 'list'>('grid');
@@ -475,6 +491,22 @@ export function Roadmap({
         </Modal>
       )}
 
+      {undoConfirm && (
+        <Modal onClose={() => setUndoConfirm(null)}>
+          <h3>⎌ Undo #{undoConfirm.id}</h3>
+          <div className="confirm-body" style={{ marginBottom: 16 }}>
+            Reverts every main-branch commit tagged <b>#{undoConfirm.id}</b> — the host dispatcher
+            adds a revert commit for each and pushes, usually within a minute or two — then sends
+            the item back to the board with its verdict and claim cleared. The original commits
+            stay in history; nothing is rewritten.
+          </div>
+          <div className="modal-actions">
+            <button className="btn-cancel" onClick={() => setUndoConfirm(null)}>Cancel</button>
+            <button className="btn-submit" onClick={() => confirmUndo(undoConfirm)}>Revert the commits</button>
+          </div>
+        </Modal>
+      )}
+
       {view === 'reviews' && (<>
       <div className="subtitle" style={{ marginBottom: 14 }}>
         Everything completed, awaiting your verdict — each row shows who built it, when, and what
@@ -538,7 +570,10 @@ export function Roadmap({
                     {it.note && <div className="note">{it.note}</div>}
                     {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
                     {briefPanel(it)}
+                    {undoNotes.has(it.id) && <div className="undo-note">⎌ {undoNotes.get(it.id)}</div>}
                   </div>
+                  <button className="verify-back" onClick={() => setUndoConfirm(it)}
+                    title="Revert this item's commits on main and send it back to the board">⎌ Undo</button>
                   <button className="gemini-btn sm" onClick={() => toggleBrief(it)}
                     title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">
                     ✧ Brief
