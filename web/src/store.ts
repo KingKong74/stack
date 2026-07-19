@@ -1,6 +1,6 @@
 import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, Overview,
-  ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun,
+  ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -597,7 +597,7 @@ export async function getRoadmap(slug: string): Promise<Roadmap> {
   return request<Roadmap>(roadmapBase(slug));
 }
 export async function createRoadmapItem(
-  slug: string, input: { title: string; note: string; bucket: Priority; claimed_by?: string; area?: string },
+  slug: string, input: { title: string; note: string; bucket: Priority; claimed_by?: string; area?: string; plan?: PlanStep[] },
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(roadmapBase(slug), { method: 'POST', body: input });
 }
@@ -606,7 +606,7 @@ export async function patchRoadmapItem(
   patch: Partial<{
     done: boolean; bucket: Priority; title: string; note: string; reviewed: boolean;
     claimed_by: string; review_tag: string; skipped: boolean; area: string; position: number;
-    built_note: string;
+    built_note: string; plan: PlanStep[];
   }>,
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });

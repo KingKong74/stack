@@ -153,6 +153,7 @@ against. Be concrete and conservative — unattended means no one to ask.
 ${northStar ? `\nThe project's north star: "${northStar.slice(0, 500)}"\n` : ''}
 Roadmap item #${item.id} (${item.bucket}): ${item.title}
 ${item.note ? `The author's note (what they actually want): ${item.note.slice(0, 1200)}` : '(no note)'}
+${item.plan?.length ? `The author's own implementation plan (the spec must serve it, not replace it):\n${item.plan.map((s) => `  ${s.done ? '[x]' : '[ ]'} ${s.text}`).join('\n')}` : ''}
 
 Respond with ONLY this JSON:
 { "goal": "one sentence — the outcome",
@@ -260,12 +261,22 @@ async function runItem(item, northStar, capMin) {
   const added = git(REPO, ['worktree', 'add', wt, '-b', branch]);
   if (!existsSync(join(wt, '.git'))) throw new Error(`worktree add failed (${added || 'no output'})`);
 
+  // The owner's implementation plan (#75), worked top-down — ticked steps are
+  // already done from an earlier pass, so the session starts at the first open one.
+  const planBlock = !item.plan?.length ? '' : `
+The owner's implementation plan — work the unticked steps IN ORDER (ticked ones are already done):
+${item.plan.map((s, idx) => `  ${s.done ? '[x]' : '[ ]'} ${idx + 1}. ${s.text}`).join('\n')}
+As each step lands, record it: PATCH {"plan":[the full updated list with that step's "done":true]}
+to the Stack API at /api/projects/${SLUG}/roadmap/${item.id} (base URL + bearer from ~/.stack/env —
+never print the token). Finishing only some steps is fine; say where you stopped in the checkpoint.
+`;
+
   const prompt = `You are Stack's overnight autopilot, working unattended in a dedicated git worktree on branch ${branch}.
 
 Your single task tonight is roadmap item #${item.id} (bucket: ${item.bucket}):
 
   ${item.title}
-${item.note ? `  Context: ${item.note}\n` : ''}${specBlock(spec)}
+${item.note ? `  Context: ${item.note}\n` : ''}${specBlock(spec)}${planBlock}
 Rules for this run:
 - Work ONLY on this item; do not pick up other roadmap items or ideas.
 - Commit in small complete units with clear messages. Push the branch with \`git push -u origin ${branch}\`. NEVER push or merge main — a human reviews and merges in the morning.

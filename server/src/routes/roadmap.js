@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { fingerprint, oneOf, BUCKETS } from '../util.js';
+import { fingerprint, oneOf, BUCKETS, cleanPlan } from '../util.js';
 import { roadmapItemShape, groupRoadmap } from '../shape.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
@@ -34,15 +34,16 @@ roadmap.post('/', async (req, res) => {
   const bucket = oneOf(req.body?.bucket, BUCKETS, 'should');
   const claimedBy = String(req.body?.claimed_by || '').trim().slice(0, 100) || null;
   const area = String(req.body?.area || '').trim().toLowerCase().slice(0, 40) || null;
+  const plan = cleanPlan(req.body?.plan);
 
   const { rows: pos } = await q(
     'SELECT COALESCE(MAX(position), -1) + 1 AS p FROM roadmap_items WHERE project_id = $1 AND bucket = $2',
     [req.project.id, bucket]
   );
   const { rows } = await q(
-    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area)
-     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7,$8) RETURNING *`,
-    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy, area]
+    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan)
+     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7,$8,$9::jsonb) RETURNING *`,
+    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy, area, JSON.stringify(plan)]
   );
   res.status(201).json(roadmapItemShape(rows[0]));
 });
@@ -67,6 +68,11 @@ roadmap.patch('/:id', async (req, res) => {
   }
   if (req.body?.skipped !== undefined) {
     sets.push(`skipped = $${i++}`); vals.push(Boolean(req.body.skipped));
+  }
+  if (req.body?.plan !== undefined) {
+    // The whole plan comes back each time (#75) — agents tick a step by
+    // re-sending the list with that step's done flipped.
+    sets.push(`plan = $${i++}::jsonb`); vals.push(JSON.stringify(cleanPlan(req.body.plan)));
   }
   if (req.body?.done !== undefined) {
     sets.push(`done = $${i++}`); vals.push(Boolean(req.body.done));

@@ -139,6 +139,11 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS area TEXT;
 -- (PATCH built_note alongside done:true) and shown on the Reviews view, so the
 -- verdict is made against what was built, not just the ask.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS built_note TEXT;
+-- The implementation plan (#75): ordered steps [{text, done}] for larger items.
+-- Edited in the item modal, shown as progress on the card, injected into the
+-- autopilot's session prompt — the runner works unticked steps top-down and
+-- agents tick steps via PATCH as they land.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS plan JSONB NOT NULL DEFAULT '[]'::jsonb;
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
 -- Per-project futures: loose directional ideas, curated against the north star

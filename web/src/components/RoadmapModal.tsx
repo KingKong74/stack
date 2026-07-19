@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import type { Priority } from '../types';
+import type { Priority, PlanStep } from '../types';
 import type { RoadmapAssist } from '../store';
 import { Modal } from './Modal';
 import { PRIORITY_META } from '../lib/ui';
@@ -13,14 +13,15 @@ import { PRIORITY_META } from '../lib/ui';
 // stays a genuine discard.
 export function RoadmapModal({
   initialPriority, onClose, onSubmit, onDismiss, onAssist,
-  initialTitle = '', initialNote = '', initialLane = '', initialArea = '',
+  initialTitle = '', initialNote = '', initialLane = '', initialArea = '', initialPlan = [],
   lanes = [], areas = [], mode = 'add',
 }: {
   initialPriority: Priority; onClose: () => void;
-  onSubmit: (v: { title: string; note: string; priority: Priority; lane: string; area: string }) => void;
-  onDismiss?: (v: { title: string; note: string; priority: Priority; lane: string; area: string }) => void;
+  onSubmit: (v: { title: string; note: string; priority: Priority; lane: string; area: string; plan: PlanStep[] }) => void;
+  onDismiss?: (v: { title: string; note: string; priority: Priority; lane: string; area: string; plan: PlanStep[] }) => void;
   onAssist?: (note: string) => Promise<RoadmapAssist>;
   initialTitle?: string; initialNote?: string; initialLane?: string; initialArea?: string;
+  initialPlan?: PlanStep[];
   lanes?: string[]; areas?: string[]; mode?: 'add' | 'edit';
 }) {
   const [title, setTitle] = useState(initialTitle);
@@ -28,6 +29,18 @@ export function RoadmapModal({
   const [lane, setLane] = useState(initialLane);
   const [area, setArea] = useState(initialArea);
   const [priority, setPriority] = useState<Priority>(initialPriority);
+  // The implementation plan (#75): ordered steps for bigger work. A pending
+  // draft line is folded in on save so a typed-but-not-entered step isn't lost.
+  const [plan, setPlan] = useState<PlanStep[]>(initialPlan);
+  const [planDraft, setPlanDraft] = useState('');
+  const addStep = () => {
+    const text = planDraft.trim().slice(0, 300);
+    if (!text) return;
+    setPlan((p) => [...p, { text, done: false }]);
+    setPlanDraft('');
+  };
+  const fullPlan = () =>
+    planDraft.trim() ? [...plan, { text: planDraft.trim().slice(0, 300), done: false }] : plan;
   const [suggesting, setSuggesting] = useState(false);
   const [suggestErr, setSuggestErr] = useState('');
   const noteRef = useRef<HTMLTextAreaElement>(null);
@@ -41,7 +54,7 @@ export function RoadmapModal({
   const [areaOpen, setAreaOpen] = useState(false);
   const areaMatches = knownAreas.filter(
     (a) => !area.trim() || a.includes(area.trim().toLowerCase()));
-  const fields = () => ({ title, note, priority, lane: lane.trim(), area: area.trim().toLowerCase() });
+  const fields = () => ({ title, note, priority, lane: lane.trim(), area: area.trim().toLowerCase(), plan: fullPlan() });
   const submit = () => { if (title.trim()) onSubmit(fields()); };
   const typed = Boolean(title.trim() || note.trim());
   const dismiss = () => {
@@ -121,6 +134,22 @@ export function RoadmapModal({
             ))}
           </div>
         )}
+      </div>
+      <div className="lbl">Plan <span className="optional">optional — ordered steps for bigger work; whoever builds it ticks them off</span></div>
+      <div className="plan-edit" style={{ marginBottom: 18 }}>
+        {plan.map((s, idx) => (
+          <div className="plan-row" key={idx}>
+            <input type="checkbox" checked={s.done}
+              onChange={() => setPlan(plan.map((p, i) => (i === idx ? { ...p, done: !p.done } : p)))} />
+            <span className={`plan-text ${s.done ? 'done' : ''}`}>{s.text}</span>
+            <button type="button" className="plan-x" aria-label="Remove step" title="Remove step"
+              onClick={() => setPlan(plan.filter((_, i) => i !== idx))}>×</button>
+          </div>
+        ))}
+        <input className="field-input" value={planDraft}
+          placeholder={plan.length ? 'add another step… (Enter)' : 'first step… (Enter to add)'}
+          onChange={(e) => setPlanDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addStep(); } }} />
       </div>
       <div className="lbl">Lane <span className="optional">optional — who's claiming this</span></div>
       {!newLane ? (

@@ -48,6 +48,10 @@ export interface Bug {
   reviewed: boolean;       // hook items with false await review
 }
 
+// One implementation-plan step (#75) — larger items carry an ordered list,
+// ticked off by whoever builds them (the autopilot works them top-down).
+export interface PlanStep { text: string; done: boolean }
+
 export interface RoadmapItem {
   id: number;
   title: string;
@@ -61,6 +65,7 @@ export interface RoadmapItem {
   builtNote: string;   // what actually landed — shown on the Reviews view
   reviewTag: string;   // archive verdict: '' | solid | needs-work | rethink
   skipped: boolean;    // parked — planned, but not to be picked up yet
+  plan: PlanStep[];    // the implementation plan ([] = none)
   updatedAt: string | null; // ISO — latest-first ordering in the archive
 }
 export interface Roadmap { must: RoadmapItem[]; should: RoadmapItem[]; could: RoadmapItem[]; wont: RoadmapItem[] }

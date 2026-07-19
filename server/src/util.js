@@ -62,6 +62,16 @@ export function asList(v, max = 50, len = 400) {
   return v.map((x) => String(x).slice(0, len)).filter(Boolean).slice(0, max);
 }
 
+// Coerce a roadmap item's implementation plan (#75): ordered steps, each
+// { text, done }. Anything malformed is dropped rather than erroring.
+export function cleanPlan(v, max = 30, len = 300) {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((s) => ({ text: String(s?.text ?? '').trim().slice(0, len), done: Boolean(s?.done) }))
+    .filter((s) => s.text)
+    .slice(0, max);
+}
+
 // Human "2h ago" style time, computed server-side so the client never does
 // date maths. Returns 'just now' for very recent and a date for anything old.
 export function relativeTime(input) {

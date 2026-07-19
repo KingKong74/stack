@@ -401,6 +401,12 @@ export function Roadmap({
                         {it.area && <span className="area-chip" title="Product area — edit the item to change it">{it.area}</span>}
                         {working && <span className="work-chip" title={`Claimed by ${it.claimedBy} — read-only while the work is in flight`}>● in progress</span>}
                         {it.skipped && <span className="skip-chip" title="Parked — not to be picked up yet">⏸ parked</span>}
+                        {it.plan.length > 0 && (
+                          <span className="plan-chip"
+                            title={`Implementation plan — ${it.plan.filter((s) => s.done).length} of ${it.plan.length} steps done:\n${it.plan.map((s) => `${s.done ? '☑' : '☐'} ${s.text}`).join('\n')}`}>
+                            ☰ {it.plan.filter((s) => s.done).length}/{it.plan.length}
+                          </span>
+                        )}
                       </div>
                       {it.note && <div className="note">{it.note}</div>}
                       {it.claimedBy && (

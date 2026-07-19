@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Check, Severity, Priority, Bug, BugStatus } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Check, Severity, Priority, Bug, BugStatus, PlanStep } from '../types';
 import {
   getProjectDetail, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
@@ -208,17 +208,17 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     });
 
   // Create, or save an edit, depending on how the modal was opened.
-  const submitRoad = ({ title, note, priority, lane, area }: { title: string; note: string; priority: Priority; lane: string; area: string }) =>
+  const submitRoad = ({ title, note, priority, lane, area, plan }: { title: string; note: string; priority: Priority; lane: string; area: string; plan: PlanStep[] }) =>
     guard(async () => {
       const editing = roadModal.editing;
       if (editing) {
-        const updated = await patchRoadmapItem(slug, editing.id, { title, note, bucket: priority, claimed_by: lane, area });
+        const updated = await patchRoadmapItem(slug, editing.id, { title, note, bucket: priority, claimed_by: lane, area, plan });
         const without = { ...roadmap, [editing.bucket]: roadmap[editing.bucket].filter((i) => i.id !== editing.id) };
         setData({ ...data, roadmap: { ...without, [updated.bucket]: [...without[updated.bucket], updated] } });
         setRoadModal(roadModalClosed);
         return;
       }
-      const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: lane || undefined, area: area || undefined });
+      const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: lane || undefined, area: area || undefined, plan: plan.length ? plan : undefined });
       const fromNote = roadModal.fromNote;
       const fromFuture = pendingFuture;
       if (roadModal.fromDraft) updateRoadDraft(null); // the draft landed — clear it
@@ -701,6 +701,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         <RoadmapModal initialPriority={roadModal.priority} initialTitle={roadModal.title}
           initialNote={roadModal.note} initialLane={roadModal.editing?.claimedBy ?? roadModal.lane ?? ''}
           initialArea={roadModal.editing?.area ?? roadModal.area ?? ''}
+          initialPlan={roadModal.editing?.plan ?? []}
           lanes={[...new Set(allRoadmap.map((i) => i.claimedBy))].filter(Boolean).sort()}
           areas={[...new Set([...allRoadmap.map((i) => i.area), ...futures.map((f) => f.area)])].filter(Boolean).sort()}
           mode={roadModal.editing ? 'edit' : 'add'}

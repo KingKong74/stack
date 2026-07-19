@@ -115,9 +115,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             and hands out at most ONE job at a time. The dispatcher runs it (repo resolved as
             $STACK_AUTOPILOT_ROOT/<slug>, default $HOME) and PATCHes the outcome back.
             Manual/scheduled jobs run with --force (explicit human config beats the arm
-            switch + automode); nightly keeps both gates. Silent when idle or the API is
-            unreachable (fail safe). A missed slot stays missed (90-min grace, clamped at
-            midnight) — like the old fixed cron line, but the time is now a setting.
+            switch + automode); nightly keeps both gates. `revert` jobs (#128 — the Reviews
+            view's ⎌ Undo) are handled by the dispatcher itself, not the runner: revert every
+            main commit tagged #<itemId> (last 400, digit-safe match) in a throwaway worktree,
+            push the revert commits, un-tick the item (which clears verdict + claim). Silent
+            when idle or the API is unreachable (fail safe). A missed slot stays missed
+            (90-min grace, clamped at midnight) — like the old fixed cron line, but the time
+            is now a setting.
 .claude/commands/checkpoint.md — the /checkpoint slash command (documented for install to
             ~/.claude/commands/). Tells the session to author the full checkpoint schema and pipe it
             to ~/.stack/stack-checkpoint.mjs (token read from ~/.stack/env, never printed).
@@ -217,10 +221,18 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   card** (add/remove steer lines, persisted whole via `patchProject {directives}`) and the
   **editable Deployment panel** — status/platform/logs URL via `patchProject` — and the **editable
   Tech stack panel** — chips via `patchProject {tech_stack}`), Bugs (auto cue),
-  Roadmap (tick moves an item to the collapsed **Archive** below the buckets — still counted by
+  Roadmap (the Board/Reviews switch sits above the content, left, full seg size (#129); + Add tops
+  each column (#112); tick moves an item into the Reviews pipeline — still counted by
   progress; hover ✎/× edit + delete, edit reuses RoadmapModal in `mode='edit'` incl. the Lane
-  field; open items show ⚑ claim chips; archived items have a **Review** verdict button —
-  solid/needs-work/rethink, the latter two opening a prefilled follow-up item), Futures (the **north star**
+  field and the **Plan** editor (#75 — ordered `{text, done}` steps; the card wears a ☰ n/m
+  progress chip and the autopilot works unticked steps top-down); open items show ⚑ claim chips;
+  the **Reviews view** (#132/#117) clusters To-verify items under completion-day headers, labels
+  every row with #id + an origin chip (⚙ autopilot — auto/* claim or a landed run — / ⚑ lane /
+  by hand, with an origin filter when mixed) and the run-ledger chip (branch · commits · tokens ·
+  cost, session summary on hover) via `store.getAutopilotRuns`; each To-verify row also has
+  **✧ Brief** (#134 — Gemini's reviewer brief: what shipped, test steps, risks; in-memory) and
+  **⎌ Undo** (#128 — confirm modal → `store.queueUndo` → a `revert` job the host dispatcher runs);
+  verdicts are solid/rethink, the latter opening a prefilled follow-up item), Futures (the **north star**
   — one editable paragraph on what the project is becoming, PATCHed as `north_star` and injected by
   the SessionStart hook — plus the idea funnel: loose ideas added/extracted, promote → prefills the
   RoadmapModal then a keep/delete-the-idea confirm, dismiss deletes + tombstones; ideas are
@@ -466,6 +478,8 @@ Single row, client camelCase. Meanings under the no-API model:
   "autopilotTokens": 1500000, // token budget per run; 0 = UNLIMITED (positive values floored at 100k)
   "autopilotTime": "23:05",   // nightly start, HOST-local HH:MM (the dispatcher supplies its clock)
   "autopilotMaxItems": 3,     // most items attempted per night (clamped 1–10)
+  "assistGuidance": "",       // ✧ Fill from note (#131): standing owner steer folded into the prompt
+  "assistFields": ["title","note","area","lane","priority"], // what the assist may fill (title always)
   "accessPinSet": false       // PIN sign-in available; PATCH accepts write-only `accessPin`
                               // ('' disables) — any accessPin change deletes all auth_tokens
                               // (signs out every PIN-connected device)
@@ -526,12 +540,18 @@ the silent metadata backstop so the feed never has gaps.
   so a sent-back item re-enters play fresh: through To verify on re-completion, pickable by the
   autopilot again — `skipped: bool` — the parked flag:
   sinks to the bottom of its bucket, agents never pick it up, still counts toward progress —
-  plus `area`, `position` (drag-reorder) and `built_note` (the what-landed account)) ·
+  plus `area`, `position` (drag-reorder), `built_note` (the what-landed account) and `plan`
+  (#75 — the implementation plan, a whole-list jsonb of `{text, done}` steps; agents tick a step
+  by re-sending the list, the autopilot injects it into its session prompt)) ·
   `POST /api/projects/:slug/roadmap/suggest-title` (Gemini titles an item from its note;
   suggestion only, 503 keyless) ·
   `POST /api/projects/:slug/roadmap/assist` (the modal's ✧ Fill-from-note: Gemini reads the note
   and returns title + tidied note + area + lane + priority — prefills the fields, the human
-  saves; lanes only ever suggested from the open set) ·
+  saves; lanes only ever suggested from the open set; honours the `assistGuidance` +
+  `assistFields` settings (#131) — switched-off fields come back empty) ·
+  `POST /api/projects/:slug/roadmap/:id/review-brief` (#134 — Gemini's reviewer brief for a
+  completed item: summary + test steps + risks from the item, built_note, its landed run and
+  the checks; annotation only, 503 keyless) ·
   `POST /api/projects/:slug/roadmap/cleanup` (the board's ✧ Clean up: Gemini reviews all open
   items and suggests missing areas / cleaned titles / honest buckets, only where something's
   off; the client shows a tickable list and applies through the normal PATCH)
@@ -557,7 +577,10 @@ the silent metadata backstop so the feed never has gaps.
   `runDate` or recurring `days` getDay() ints, host-local `atTime`, optional pinned `itemId`;
   one-offs disable themselves after firing) · `POST /start` (the ▶ Run now button AND the
   `stack start-session` CLI — queues a manual job; an open job for the project is returned
-  instead of duplicated) · `GET /jobs?slug=&limit=` (recent automation sessions newest
+  instead of duplicated) · `POST /undo` (#128 — the Reviews view's ⎌ Undo: queues a `revert`
+  job for a completed item; idempotent per item, 409 while another job is open. The dispatcher
+  reverts the item's #N-tagged main commits in a throwaway worktree, pushes, then un-ticks the
+  item) · `GET /jobs?slug=&limit=` (recent automation sessions newest
   first — the read side of /start, what `stack list-sessions` renders; Mission Control
   keeps reading jobs off the control payload) ·
   `GET /next?local=YYYY-MM-DDTHH:MM&dow=N` (the host dispatcher's poll: recovers stale jobs,

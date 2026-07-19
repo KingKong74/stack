@@ -2,7 +2,7 @@
 // contract; these keep every route returning the same shapes so store.ts stays
 // a thin mapping layer.
 
-import { relativeTime } from './util.js';
+import { relativeTime, cleanPlan } from './util.js';
 
 export function bugShape(row) {
   return {
@@ -31,6 +31,7 @@ export function roadmapItemShape(row) {
     builtNote: row.built_note || '',   // what actually landed — shown on the Reviews view
     reviewTag: row.review_tag || '',   // archive verdict: solid | needs-work | rethink
     skipped: !!row.skipped,            // parked — planned, but not to be picked up yet
+    plan: cleanPlan(row.plan),         // implementation steps [{text, done}] (#75)
     updatedAt: row.updated_at || null, // ISO — the archive sorts latest-touched first
   };
 }

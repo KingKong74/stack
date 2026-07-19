@@ -116,6 +116,19 @@ Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
     -H "authorization: Bearer $STACK_TOKEN" -H 'content-type: application/json' \
     -d '{"done":true,"built_note":"<what landed, where, how verified>"}'
   ```
+- **Items can carry an implementation plan** — `plan`, an ordered list of
+  `{"text": "…", "done": false}` steps the owner wrote for bigger work. Work the
+  unticked steps top-down. As each step lands, PATCH the FULL updated list back
+  (the whole array replaces, there is no per-step endpoint):
+
+  ```bash
+  curl -s -X PATCH "$STACK_API/api/projects/<slug>/roadmap/<id>" \
+    -H "authorization: Bearer $STACK_TOKEN" -H 'content-type: application/json' \
+    -d '{"plan":[{"text":"first step","done":true},{"text":"second step","done":false}]}'
+  ```
+
+  Stopping partway is fine — ticked steps tell the next session (or the
+  overnight autopilot, which injects the plan into its prompt) where to resume.
 
 ## House rules
 
