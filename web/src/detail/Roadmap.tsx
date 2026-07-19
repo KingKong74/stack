@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Priority } from '../types';
-import { PRIORITY_META } from '../lib/ui';
+import { useEffect, useState } from 'react';
+import type { Roadmap as RoadmapData, RoadmapItem, Priority, AutopilotRun } from '../types';
+import { PRIORITY_META, timeAgo, dayLabel } from '../lib/ui';
+import { getAutopilotRuns } from '../store';
 import { Modal } from '../components/Modal';
 
 export type ReviewTag = 'solid' | 'needs-work' | 'rethink';
@@ -133,11 +134,59 @@ export function Roadmap({
   // Open the archive straight away when a deep-link targets an archived item.
   const [archiveOpen, setArchiveOpen] = useState(
     () => archived.some((it) => String(it.id) === highlightId));
+  // The run ledger labels auto-built rows — branch, commits, tokens, cost —
+  // so a verdict is made against what the session reported (#132). Fetched
+  // once when the Reviews view first opens; silently absent on any failure.
+  const [runs, setRuns] = useState<AutopilotRun[] | null>(null);
+  useEffect(() => {
+    if (view !== 'reviews' || runs !== null || !slug) return;
+    let stale = false;
+    getAutopilotRuns(slug)
+      .then((r) => { if (!stale) setRuns(r); })
+      .catch(() => { if (!stale) setRuns([]); });
+    return () => { stale = true; };
+  }, [view, runs, slug]);
+  const runByItem = new Map<string, AutopilotRun>();
+  for (const r of runs ?? []) {
+    // Newest first — the first landed run per item is the one that built it.
+    if (r.itemId != null && r.outcome === 'landed' && !runByItem.has(String(r.itemId))) {
+      runByItem.set(String(r.itemId), r);
+    }
+  }
+  // Who completed it (#117): the autopilot (auto/* claim or a landed run), a
+  // named lane, or by hand. Claims are cleared on tick, so the run ledger is
+  // what keeps merged autopilot items reading as auto.
+  const originOf = (it: RoadmapItem): 'auto' | 'lane' | 'manual' =>
+    it.claimedBy.startsWith('auto/') || runByItem.has(String(it.id)) ? 'auto'
+      : it.claimedBy ? 'lane' : 'manual';
+  const ORIGIN_LABEL = { auto: '⚙ autopilot', lane: '⚑ lane', manual: 'by hand' } as const;
+  const [originFilter, setOriginFilter] = useState<'all' | 'auto' | 'lane' | 'manual'>('all');
+  const byOrigin = (it: RoadmapItem) => originFilter === 'all' || originOf(it) === originFilter;
+  const fmtTok = (n: number) =>
+    n >= 1e6 ? `${(n / 1e6).toFixed(1)}M tok` : n >= 1000 ? `${Math.round(n / 1000)}k tok` : `${n} tok`;
+  // Completion metadata under a review row: origin, when, and the run stats.
+  const reviewMeta = (it: RoadmapItem) => {
+    const run = runByItem.get(String(it.id));
+    const o = originOf(it);
+    return (
+      <div className="review-meta">
+        <span className={`origin-chip ${o}`}>{o === 'lane' ? `⚑ ${it.claimedBy}` : ORIGIN_LABEL[o]}</span>
+        {it.updatedAt && <span className="review-when">done {timeAgo(it.updatedAt)}</span>}
+        {run && (
+          <span className="run-chip" title={run.summary ? run.summary.slice(0, 600) : undefined}>
+            {run.branch} · {run.commits} commit{run.commits === 1 ? '' : 's'} · {fmtTok(run.tokens)}
+            {run.costUsd ? ` · $${run.costUsd.toFixed(2)}` : ''}
+          </span>
+        )}
+        {run && run.checksFailing ? <span className="run-warn">{run.checksFailing} check{run.checksFailing === 1 ? '' : 's'} failing</span> : null}
+      </div>
+    );
+  };
   // Archive rendering: the MoSCoW grid, or a dense paginated list + verdict filter.
   const [archView, setArchView] = useState<'grid' | 'list'>('grid');
   const [archFilter, setArchFilter] = useState<'all' | ReviewTag>('all');
   const [archPage, setArchPage] = useState(0);
-  const filtered = archived.filter((it) => archFilter === 'all' || it.reviewTag === archFilter);
+  const filtered = archived.filter((it) => (archFilter === 'all' || it.reviewTag === archFilter) && byOrigin(it));
   const ARCH_PAGE_SIZE = 12;
   const archPages = Math.max(1, Math.ceil(filtered.length / ARCH_PAGE_SIZE));
   const archSlice = filtered.slice(archPage * ARCH_PAGE_SIZE, (archPage + 1) * ARCH_PAGE_SIZE);
@@ -387,11 +436,32 @@ export function Roadmap({
       )}
 
       {view === 'reviews' && (<>
-      <div className="subtitle" style={{ marginBottom: 20 }}>
-        Everything completed, awaiting your verdict — each row shows what was actually built.
-        Solid closes it out; Rethink archives it and spins off a follow-up; ↩ Board sends it
+      <div className="subtitle" style={{ marginBottom: 14 }}>
+        Everything completed, awaiting your verdict — each row shows who built it, when, and what
+        landed. Solid closes it out; Rethink archives it and spins off a follow-up; ↩ Board sends it
         back into play, fresh — the old verdict and lane claim don't come with it.
       </div>
+
+      {/* who-built-it filter (#117) — only when completions come from more than one origin */}
+      {(() => {
+        const counts = { auto: 0, lane: 0, manual: 0 };
+        doneItems.forEach((it) => { counts[originOf(it)]++; });
+        const present = (['auto', 'lane', 'manual'] as const).filter((o) => counts[o] > 0);
+        if (present.length < 2) return null;
+        return (
+          <div className="chips" style={{ marginBottom: 16 }}>
+            <button className={`chip-sm ${originFilter === 'all' ? 'on' : ''}`} onClick={() => { setOriginFilter('all'); setArchPage(0); }}>
+              All {doneItems.length}
+            </button>
+            {present.map((o) => (
+              <button key={o} className={`chip-sm ${originFilter === o ? 'on' : ''}`}
+                onClick={() => { setOriginFilter(originFilter === o ? 'all' : o); setArchPage(0); }}>
+                {ORIGIN_LABEL[o]} {counts[o]}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
 
       {toVerify.length === 0 && archived.length === 0 && (
         <div className="empty-state">
@@ -400,29 +470,39 @@ export function Roadmap({
         </div>
       )}
 
-      {/* to verify — completed but unverdicted: test it, verdict it, or send it back */}
-      {toVerify.length > 0 && (
+      {/* to verify — completed but unverdicted, clustered by completion day (#132):
+          test it, verdict it, or send it back */}
+      {toVerify.filter(byOrigin).length > 0 && (
         <div className="verify-strip">
           <div className="verify-head">
             <span className="verify-title">To verify</span>
             <span className="verify-sub">
-              {toVerify.length} completed — test each, give a verdict, or send it back to the board
+              {toVerify.filter(byOrigin).length} completed — test each, give a verdict, or send it back to the board
             </span>
           </div>
-          {toVerify.map((it) => (
-            <div className="verify-row" key={it.id} data-hl={it.id}>
-              <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
-              <div className="verify-body">
-                <div className="t">
-                  {it.title}
-                  {it.claimedBy && <span className="claim-chip inline" title="Done by this lane">⚑ {it.claimedBy}</span>}
+          {toVerify.filter(byOrigin).reduce<{ day: string; items: RoadmapItem[] }[]>((groups, it) => {
+            const day = dayLabel(it.updatedAt);
+            const last = groups[groups.length - 1];
+            if (last && last.day === day) last.items.push(it);
+            else groups.push({ day, items: [it] });
+            return groups;
+          }, []).map((g) => (
+            <div key={g.day}>
+              <div className="review-day">{g.day}</div>
+              {g.items.map((it) => (
+                <div className="verify-row" key={it.id} data-hl={it.id}>
+                  <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
+                  <div className="verify-body">
+                    <div className="t"><span className="item-num">#{it.id}</span>{it.title}</div>
+                    {reviewMeta(it)}
+                    {it.note && <div className="note">{it.note}</div>}
+                    {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
+                  </div>
+                  <button className="verify-back" onClick={() => onToggle(it)}
+                    title="Didn't hold up — send it back to the board">↩ Board</button>
+                  {archActions(it)}
                 </div>
-                {it.note && <div className="note">{it.note}</div>}
-                {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
-              </div>
-              <button className="verify-back" onClick={() => onToggle(it)}
-                title="Didn't hold up — send it back to the board">↩ Board</button>
-              {archActions(it)}
+              ))}
             </div>
           ))}
         </div>
@@ -483,10 +563,10 @@ export function Roadmap({
                             aria-label="Mark not done" title="Restore to the roadmap">✓</button>
                           <div className="road-body">
                             <div className="t">
-                              {it.title}
+                              <span className="item-num">#{it.id}</span>{it.title}
                               {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
-                              {it.claimedBy && <span className="claim-chip inline" title="Done by this lane">⚑ {it.claimedBy}</span>}
                             </div>
+                            {reviewMeta(it)}
                             {it.note && <div className="note">{it.note}</div>}
                             {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
                             {archActions(it)}
@@ -507,9 +587,13 @@ export function Roadmap({
                     aria-label="Mark not done" title="Restore to the roadmap">✓</button>
                   <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
                   <span className="arch-list-text">
-                    <span className="arch-list-title">{it.title}</span>
+                    <span className="arch-list-title"><span className="item-num">#{it.id}</span>{it.title}</span>
                     {it.note && <span className="arch-list-note">{it.note}</span>}
                   </span>
+                  <span className={`origin-chip ${originOf(it)}`}>
+                    {originOf(it) === 'lane' ? `⚑ ${it.claimedBy}` : ORIGIN_LABEL[originOf(it)]}
+                  </span>
+                  {it.updatedAt && <span className="review-when">{timeAgo(it.updatedAt)}</span>}
                   {archActions(it)}
                 </div>
               ))}

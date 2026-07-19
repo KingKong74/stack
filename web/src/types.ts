@@ -65,6 +65,23 @@ export interface RoadmapItem {
 }
 export interface Roadmap { must: RoadmapItem[]; should: RoadmapItem[]; could: RoadmapItem[]; wont: RoadmapItem[] }
 
+// One autopilot item attempt (the run ledger) — the Reviews view joins these
+// onto completed items so a verdict is made against what the session reported.
+export interface AutopilotRun {
+  id: string;
+  itemId: string | null;
+  itemTitle: string;
+  branch: string;
+  outcome: 'landed' | 'no-commits' | 'failed' | 'limit';
+  commits: number;
+  tokens: number;
+  costUsd: number;
+  checksFailing: number | null;
+  summary: string;
+  when: string;
+  finishedAt: string | null;
+}
+
 export interface Note {
   id: number;
   text: string;

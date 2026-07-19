@@ -1,6 +1,6 @@
 import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, Overview,
-  ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings,
+  ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -613,6 +613,11 @@ export async function patchRoadmapItem(
 }
 export async function deleteRoadmapItem(slug: string, id: number): Promise<void> {
   await request<void>(`${roadmapBase(slug)}/${id}`, { method: 'DELETE' });
+}
+// The autopilot's run ledger — the Reviews view labels completed items with
+// the session that built them (branch, commits, tokens, the run's own summary).
+export async function getAutopilotRuns(slug: string): Promise<AutopilotRun[]> {
+  return request<AutopilotRun[]>(`/projects/${encodeURIComponent(slug)}/autopilot/runs`);
 }
 // Gemini titles an item from its note (the modal's ✧ button) — suggestion only.
 export async function suggestRoadmapTitle(slug: string, note: string): Promise<string> {
