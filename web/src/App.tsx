@@ -12,6 +12,7 @@ import { TokenGate } from './components/TokenGate';
 import { Showcase } from './screens/Showcase';
 import { CommandPalette } from './components/CommandPalette';
 import { TermStatusPill } from './components/TermStatusPill';
+import { ToTop } from './components/ToTop';
 import { getToken, onAuthChange, getThemePref, onThemeChange } from './store';
 
 // Resolve the stored preference to a concrete theme on <html data-theme>.
@@ -89,6 +90,7 @@ export default function App() {
       )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <TermStatusPill hidden={route.name === 'terminal' || termAlive > 0} />
+      {route.name !== 'terminal' && <ToTop />}
     </>
   );
 }

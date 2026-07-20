@@ -1553,3 +1553,14 @@ a { color: inherit; }
 .tu-auto { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
 .tu-note { flex-basis: 100%; color: var(--critical); }
 @media (max-width: 760px) { .term-layout { flex-direction: column; } .term-rail { width: 100%; flex-direction: row; flex-wrap: wrap; } .term-cmd { width: auto; } }
+
+/* ---------- #165 to-top button ---------- */
+.totop {
+  position: fixed; bottom: 28px; right: 24px; z-index: 50;
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--surface); border: 1px solid var(--keyline); border-radius: 999px;
+  padding: 7px 14px; font-size: 12px; font-weight: 600; color: var(--muted);
+  box-shadow: 0 3px 12px rgba(28, 26, 23, 0.10);
+  opacity: 0.92; transition: opacity 0.15s, border-color 0.15s, color 0.15s;
+}
+.totop:hover { opacity: 1; border-color: var(--accent-soft); color: var(--ink); }
