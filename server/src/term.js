@@ -93,6 +93,27 @@ export function attachTerm(httpServer) {
     ws.on('message', (raw) => {
       let m;
       try { m = JSON.parse(raw.toString()); } catch { return; }
+
+      // hello — the daemon re-announces sessions that survived an uplink gap.
+      // Each sid in the list is a PTY that kept running while we were
+      // disconnected; the relay must not treat them as errors.  Any sessions
+      // the relay no longer has a browser for (the browser closed while the
+      // daemon was away) are killed with a 'kill' frame sent back, so the PTY
+      // can exit cleanly.  Sessions whose browsers are still waiting are simply
+      // left connected — the buffered output that follows the hello flushes
+      // through the normal 'out' handler below.
+      if (m.t === 'hello' && Array.isArray(m.sids)) {
+        console.log(`[term] daemon re-announced ${m.sids.length} surviving session(s): ${m.sids.join(', ')}`);
+        for (const sid of m.sids) {
+          if (!sessions.has(sid)) {
+            // No browser waiting — tell the daemon to close this orphan PTY.
+            send(ws, { t: 'kill', sid });
+          }
+          // else: browser is still connected — let buffered output through below.
+        }
+        return;
+      }
+
       const browser = sessions.get(m.sid);
       if (!browser) return;
       if (m.t === 'out' && m.data) {
@@ -109,12 +130,9 @@ export function attachTerm(httpServer) {
     ws.on('close', () => {
       if (agent === ws) { agent = null; agentConnected = false; }
       console.log('[term] daemon disconnected');
-      for (const [sid, browser] of sessions) {
-        send(browser, { t: 'err', msg: 'The terminal daemon disconnected.' });
-        browser.close();
-        sessions.delete(sid);
-        termMeta.delete(sid);
-      }
+      // Do NOT kill browser connections here — the daemon may reconnect and
+      // re-announce surviving PTYs (#123).  Browsers will see silence until the
+      // daemon comes back; they can reconnect themselves if needed.
       broadcastStatus();
     });
   }

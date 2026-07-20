@@ -68,6 +68,9 @@ const IDLE_MS = (parseInt(process.env.STACK_TERM_IDLE_MINUTES || '', 10) || 240)
 const MAX_SESSIONS = parseInt(process.env.STACK_TERM_MAX_SESSIONS || '', 10) || 8;
 const SHIM = join(dirname(fileURLToPath(import.meta.url)), 'pty-shim.py');
 
+// Output buffer cap per session: 256 KB.  Drop oldest when full.
+const OUT_BUF_CAP = 256 * 1024;
+
 const log = (...a) => console.log(`[stack-term] ${new Date().toISOString()}`, ...a);
 
 // ---- cwd jail ----
@@ -139,20 +142,41 @@ function usageFrame(sid) {
   return f;
 }
 
-function pushUsage(ws) {
-  if (ws.readyState !== WebSocket.OPEN) return;
-  for (const sid of sessions.keys()) ws.send(JSON.stringify(usageFrame(sid)));
+// ---- uplink — the one live ws to the relay ----
+// Kept at module level so startSession's output handlers can always find the
+// current socket without being bound to the one that existed when they started.
+// On uplink loss the socket is nulled; output is buffered per session instead.
+let uplink = null; // the current open WebSocket to /term-agent, or null
+
+function sendUplink(obj) {
+  if (uplink && uplink.readyState === WebSocket.OPEN) {
+    uplink.send(JSON.stringify(obj));
+  }
 }
 
-// ---- sessions (sid -> child) ----
+function pushUsage(ws) {
+  if (ws && ws.readyState !== WebSocket.OPEN) return;
+  const target = ws || uplink;
+  if (!target || target.readyState !== WebSocket.OPEN) return;
+  for (const sid of sessions.keys()) target.send(JSON.stringify(usageFrame(sid)));
+}
+
+// ---- sessions (sid -> { child, buf, plainTail, idleTimer, cwd }) ----
+// buf is the reconnect output buffer: a plain string of base64 chunks
+// concatenated so they can be replayed as individual 'out' frames.
+// We store them as an array of base64 strings (each is one original chunk)
+// and track total byte size to implement the 256KB cap.
 const sessions = new Map();
 
-function startSession(ws, msg) {
+function startSession(msg) {
   const { sid } = msg;
-  const fail = (m) => { ws.send(JSON.stringify({ t: 'err', sid, msg: m })); ws.send(JSON.stringify({ t: 'exit', sid, code: 1 })); };
+  const failUplink = (m) => {
+    sendUplink({ t: 'err', sid, msg: m });
+    sendUplink({ t: 'exit', sid, code: 1 });
+  };
   const cwd = resolveCwd(msg.cwd);
-  if (!cwd) return fail(`No such directory under ${ROOT}.`);
-  if (sessions.size >= MAX_SESSIONS) return fail('Too many live sessions.');
+  if (!cwd) return failUplink(`No such directory under ${ROOT}.`);
+  if (sessions.size >= MAX_SESSIONS) return failUplink('Too many live sessions.');
 
   // Two commands only. `claude` goes through a login shell so the user's PATH
   // (nvm, ~/.local/bin, …) applies — same environment as sitting at the box.
@@ -163,13 +187,19 @@ function startSession(ws, msg) {
   const child = spawn('python3', [SHIM, cwd, ...argv], {
     stdio: ['pipe', 'pipe', 'pipe', 'pipe'], // fd3 = resize control
   });
-  sessions.set(sid, child);
+
+  // Per-session reconnect output buffer: array of base64 strings, total byte
+  // count tracked.  Old chunks dropped from the front when the cap is hit.
+  const outBuf = { chunks: [], bytes: 0 };
+
+  const sess = { child, outBuf, cwd };
+  sessions.set(sid, sess);
   log(`session ${sid} up (${sessions.size} live): ${msg.cmd === 'claude' ? 'claude' : 'shell'} in ${cwd}`);
 
   let lastActivity = Date.now();
   const idleTimer = setInterval(() => {
     if (Date.now() - lastActivity > IDLE_MS) {
-      ws.send(JSON.stringify({ t: 'err', sid, msg: 'Session closed after inactivity.' }));
+      sendUplink({ t: 'err', sid, msg: 'Session closed after inactivity.' });
       child.kill('SIGTERM');
     }
   }, 60_000);
@@ -190,8 +220,20 @@ function startSession(ws, msg) {
   const out = (d) => {
     lastActivity = Date.now();
     plainTail = (plainTail + d.toString('utf8').replace(ANSI_RE, ' ')).slice(-600);
-    if (noteLimit(plainTail)) pushUsage(ws);
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'out', sid, data: d.toString('base64') }));
+    if (noteLimit(plainTail)) pushUsage(null);
+    const b64 = d.toString('base64');
+    const frame = { t: 'out', sid, data: b64 };
+    if (uplink && uplink.readyState === WebSocket.OPEN) {
+      uplink.send(JSON.stringify(frame));
+    } else {
+      // Uplink is down — buffer this chunk so it can be flushed on reconnect.
+      outBuf.bytes += b64.length;
+      outBuf.chunks.push(b64);
+      // Drop oldest chunks until we're within the cap.
+      while (outBuf.bytes > OUT_BUF_CAP && outBuf.chunks.length > 0) {
+        outBuf.bytes -= outBuf.chunks.shift().length;
+      }
+    }
   };
   child.stdout.on('data', out);
   child.stderr.on('data', out);
@@ -199,12 +241,12 @@ function startSession(ws, msg) {
     clearInterval(idleTimer);
     sessions.delete(sid);
     log(`session ${sid} down (${sessions.size} live), exit ${code}`);
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'exit', sid, code: code ?? 0 }));
+    sendUplink({ t: 'exit', sid, code: code ?? 0 });
   });
-  child.on('error', (e) => { clearInterval(idleTimer); sessions.delete(sid); fail(e.message); });
+  child.on('error', (e) => { clearInterval(idleTimer); sessions.delete(sid); failUplink(e.message); });
 
-  ws.send(JSON.stringify({ t: 'ready', sid, cwd: cwd === ROOT ? '~' : '~/' + cwd.slice(ROOT.length + 1) }));
-  ws.send(JSON.stringify(usageFrame(sid))); // usage snapshot lands with the prompt
+  sendUplink({ t: 'ready', sid, cwd: cwd === ROOT ? '~' : '~/' + cwd.slice(ROOT.length + 1) });
+  sendUplink(usageFrame(sid)); // usage snapshot lands with the prompt
 }
 
 // ---- the one outbound agent connection, kept alive forever ----
@@ -212,7 +254,29 @@ let backoff = 5_000;
 function connect() {
   const ws = new WebSocket(AGENT_URL, { headers: { authorization: `Bearer ${TOKEN}` } });
 
-  ws.on('open', () => { backoff = 5_000; log(`connected to ${API}`); });
+  ws.on('open', () => {
+    backoff = 5_000;
+    uplink = ws;
+    log(`connected to ${API}`);
+
+    // Re-announce any sessions that survived the uplink gap, then flush their
+    // buffered output so browsers can re-attach and catch up.
+    if (sessions.size > 0) {
+      const liveSids = [...sessions.keys()];
+      log(`re-announcing ${liveSids.length} surviving session(s): ${liveSids.join(', ')}`);
+      ws.send(JSON.stringify({ t: 'hello', sids: liveSids }));
+      for (const [sid, sess] of sessions) {
+        // Flush buffered output chunks in order.
+        for (const b64 of sess.outBuf.chunks) {
+          ws.send(JSON.stringify({ t: 'out', sid, data: b64 }));
+        }
+        sess.outBuf.chunks = [];
+        sess.outBuf.bytes = 0;
+        // Send a fresh usage frame so the browser strip is current.
+        ws.send(JSON.stringify(usageFrame(sid)));
+      }
+    }
+  });
 
   // Live usage while any session is up — incremental after the first read, so
   // each tick only parses transcript bytes appended since the last one.
@@ -239,8 +303,9 @@ function connect() {
   ws.on('message', (raw) => {
     let m;
     try { m = JSON.parse(raw.toString()); } catch { return; }
-    const child = sessions.get(m.sid);
-    if (m.t === 'start') startSession(ws, m);
+    const sess = sessions.get(m.sid);
+    const child = sess ? sess.child : undefined;
+    if (m.t === 'start') startSession(m);
     else if (m.t === 'in' && child && typeof m.data === 'string') child.feed(m.data);
     else if (m.t === 'resize' && child) child.resize(m.cols, m.rows);
     else if (m.t === 'kill' && child) child.kill('SIGTERM');
@@ -253,8 +318,10 @@ function connect() {
     retried = true;
     clearInterval(heartbeat);
     clearInterval(usageTick);
-    for (const child of sessions.values()) child.kill('SIGTERM');
-    sessions.clear();
+    if (uplink === ws) uplink = null;
+    // PTY sessions are kept alive — they survive the uplink gap and are
+    // re-announced on reconnect.  Only a shell exit or an explicit kill
+    // terminates a session.
     setTimeout(connect, backoff);
     backoff = Math.min(backoff * 2, 60_000);
   };
