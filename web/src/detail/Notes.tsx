@@ -35,7 +35,10 @@ export function Notes({
           value={draft}
           placeholder="Jot an idea, a thing to fix, anything…"
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); add(); } }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); add(); }
+            else if (e.key === 'Escape') { e.preventDefault(); setDraft(''); }
+          }}
         />
         <div className="row">
           <span className="hint">⏎ to add · ⇧⏎ for newline</span>

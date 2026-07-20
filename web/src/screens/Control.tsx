@@ -538,7 +538,11 @@ export function ControlPanel() {
                     </select>
                   )}
                   <input className="mc-note-input" placeholder="Note (optional)" value={form.note}
-                    aria-label="Note" onChange={(e) => setForm({ ...form, note: e.target.value })} />
+                    aria-label="Note" onChange={(e) => setForm({ ...form, note: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); submitSchedule(); }
+                      else if (e.key === 'Escape') { e.preventDefault(); setSchedOpen(false); setForm(emptyForm()); }
+                    }} />
                   <button className="btn-accent sm" disabled={!form.slug || formBusy} onClick={submitSchedule}>
                     {formBusy ? 'Adding…' : 'Add'}
                   </button>

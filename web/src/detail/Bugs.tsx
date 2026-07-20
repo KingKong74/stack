@@ -113,7 +113,11 @@ function AuditPanel({
           {hasBody && (
             <textarea className="field-input sm check-body" rows={3}
               placeholder='Request body (optional) — JSON is sent as application/json, e.g. {"email": "test@example.com"}'
-              value={d.reqBody} onChange={(e) => set({ reqBody: e.target.value })} />
+              value={d.reqBody} onChange={(e) => set({ reqBody: e.target.value })}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
+                else if (e.key === 'Escape') { e.preventDefault(); close(); }
+              }} />
           )}
           <div className="check-composer-row">
             <input className="field-input sm" placeholder="body contains… (optional)" value={d.contains}
@@ -219,7 +223,11 @@ function BugAuditPanel({
         <div className="audit-brief">
           <textarea className="field-input sm audit-brief-text" rows={3} autoFocus
             placeholder="What should the auditor look for? The flows that matter, known trouble spots, what to ignore…"
-            value={draft} onChange={(e) => setDraft(e.target.value)} />
+            value={draft} onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); onSaveBrief(draft.trim()); setBriefOpen(false); }
+              else if (e.key === 'Escape') { e.preventDefault(); setBriefOpen(false); }
+            }} />
           <div className="audit-brief-actions">
             <button className="btn-submit sm" disabled={draft.trim() === auditContext}
               onClick={() => { onSaveBrief(draft.trim()); setBriefOpen(false); }}>Save brief</button>
