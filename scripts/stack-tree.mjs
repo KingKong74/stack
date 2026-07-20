@@ -31,29 +31,43 @@ const GEMINI_TAKE_PLACEHOLDER = '[Gemini take: not yet wired]';
 // The tree model — plain data, renderable as text now and richer views later.
 
 function listRefs(repo) {
+  // Use NUL-separated records so multi-line subjects and unusual branch names
+  // (spaces, unicode) never confuse the parser (#113). Each record is still
+  // tab-delimited internally; fields that git leaves empty produce empty strings.
   const raw = git(repo, [
     'for-each-ref', 'refs/heads', 'refs/remotes/origin',
     '--sort=-committerdate',
-    '--format=%(refname)%09%(objectname:short)%09%(committerdate:relative)%09%(subject)',
+    // %00 between records so a newline in %(subject) doesn't split mid-record.
+    '--format=%(refname)%09%(objectname:short)%09%(committerdate:relative)%09%(subject)%00',
   ]);
   if (!raw) return [];
   const seen = new Map(); // short name → ref (local wins over remote)
-  for (const line of raw.split('\n')) {
+  for (const record of raw.split('\0')) {
+    const line = record.trim();
+    if (!line) continue;          // trailing NUL produces an empty record — skip
     const [refname, hash, when, ...rest] = line.split('\t');
+    // Guard: must be a real ref under a known namespace, with a hash.
     if (!refname || !hash) continue;
-    const local = refname.startsWith('refs/heads/');
-    const name = local ? refname.slice('refs/heads/'.length) : refname.slice('refs/remotes/origin/'.length);
-    if (!local && name === 'HEAD') continue;
+    const isLocal = refname.startsWith('refs/heads/');
+    const isRemote = refname.startsWith('refs/remotes/origin/');
+    if (!isLocal && !isRemote) continue;   // symbolic-ref or detached HEAD artefact
+    const name = isLocal
+      ? refname.slice('refs/heads/'.length)
+      : refname.slice('refs/remotes/origin/'.length);
+    if (!name || name === 'HEAD') continue; // skip origin/HEAD symbolic ref
     const existing = seen.get(name);
-    if (existing && (existing.local || !local)) continue;
-    seen.set(name, { name, refname, hash, when, subject: rest.join('\t'), local });
+    // Local ref always wins; if we already have local, skip any remote duplicate.
+    if (existing && (existing.local || !isLocal)) continue;
+    seen.set(name, { name, refname, hash, when: when || '', subject: rest.join('\t'), local: isLocal });
   }
   return [...seen.values()];
 }
 
 function trunkName(repo, refs) {
-  const head = git(repo, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']); // "origin/main"
-  const fromOrigin = head ? head.replace(/^origin\//, '') : null;
+  // git symbolic-ref returns e.g. "origin/main" or exits non-zero (detached /
+  // not set); either way git() returns the trimmed string or null — guard both.
+  const headRaw = git(repo, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
+  const fromOrigin = headRaw && headRaw.trim() ? headRaw.trim().replace(/^origin\//, '') : null;
   for (const candidate of [fromOrigin, 'main', 'master']) {
     if (candidate && refs.some((r) => r.name === candidate)) return candidate;
   }
