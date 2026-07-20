@@ -81,6 +81,7 @@ export function ControlPanel() {
   const [data, setData] = useState<ControlData | null>(null);
   const [error, setError] = useState('');
   const [schedOpen, setSchedOpen] = useState(false);
+  const [schedCollapsed, setSchedCollapsed] = useState(false);
   const [form, setForm] = useState(emptyForm());
   const [formBusy, setFormBusy] = useState(false);
   const [labelBusy, setLabelBusy] = useState(false);
@@ -351,76 +352,120 @@ export function ControlPanel() {
                   </div>
                 </div>
               </div>
-              <div className="mc-knobs">
-                <label className="mc-knob">
-                  <span className="mc-knob-label">Session cap</span>
-                  <span className="seg-control sm" role="tablist" aria-label="Session cap">
-                    {CAPS.map((c) => (
-                      <button key={c.minutes} role="tab" aria-selected={data.autopilot.minutes === c.minutes}
-                        className={`seg-opt ${data.autopilot.minutes === c.minutes ? 'on' : ''}`}
-                        onClick={() => setAutopilot({ autopilotMinutes: c.minutes })}>
-                        {c.label}
-                      </button>
-                    ))}
-                  </span>
-                </label>
-                <label className="mc-knob">
-                  <span className="mc-knob-label">Token budget</span>
-                  <span className="seg-control sm" role="tablist" aria-label="Token budget per run">
-                    {BUDGETS.map((b) => (
-                      <button key={b.tokens} role="tab" aria-selected={data.autopilot.tokens === b.tokens}
-                        className={`seg-opt ${data.autopilot.tokens === b.tokens ? 'on' : ''}`}
-                        title={b.tokens === 0 ? 'No token ceiling — the session cap is the only governor' : `${b.label} tokens per run`}
-                        onClick={() => setAutopilot({ autopilotTokens: b.tokens })}>
-                        {b.label}
-                      </button>
-                    ))}
-                  </span>
-                </label>
-                <label className="mc-knob">
-                  <span className="mc-knob-label">Nightly at</span>
-                  <input type="time" className="mc-time" value={data.autopilot.time}
-                    aria-label="Nightly start time (host local)"
-                    onChange={(e) => e.target.value && setAutopilot({ autopilotTime: e.target.value })} />
-                </label>
-                <label className="mc-knob">
-                  <span className="mc-knob-label">Items / night</span>
-                  <span className="seg-control sm" role="tablist" aria-label="Most items per night">
-                    {NIGHT_ITEMS.map((n) => (
-                      <button key={n} role="tab" aria-selected={data.autopilot.maxItems === n}
-                        className={`seg-opt ${data.autopilot.maxItems === n ? 'on' : ''}`}
-                        onClick={() => setAutopilot({ autopilotMaxItems: n })}>
-                        {n}
-                      </button>
-                    ))}
-                  </span>
-                </label>
-                <label className="mc-knob">
-                  <span className="mc-knob-label">Executor</span>
-                  <span className="seg-control sm" role="tablist" aria-label="Executor model — runs the session">
-                    {(data.models?.executors ?? FALLBACK_EXECUTORS).map((m) => (
-                      <button key={m.model} role="tab" aria-selected={data.autopilot.executorModel === m.model}
-                        className={`seg-opt ${data.autopilot.executorModel === m.model ? 'on' : ''}`}
-                        title={m.model === '' ? "The claude CLI's own default model runs the session" : `Sessions run on ${m.label}`}
-                        onClick={() => setAutopilot({ autopilotExecutorModel: m.model })}>
-                        {m.label}
-                      </button>
-                    ))}
-                  </span>
-                </label>
-                <label className="mc-knob">
-                  <span className="mc-knob-label">Advisor</span>
-                  <span className="seg-control sm" role="tablist" aria-label="Advisor model — a stronger model the session consults">
-                    {(data.models?.advisors ?? FALLBACK_ADVISORS).map((m) => (
-                      <button key={m.model} role="tab" aria-selected={data.autopilot.advisorModel === m.model}
-                        className={`seg-opt ${data.autopilot.advisorModel === m.model ? 'on' : ''}`}
-                        title={m.model === '' ? 'No advisor — single-model sessions' : `The executor consults ${m.label} for plans and unblocking`}
-                        onClick={() => setAutopilot({ autopilotAdvisorModel: m.model })}>
-                        {m.label}
-                      </button>
-                    ))}
-                  </span>
-                </label>
+              <div className="mc-console-clusters">
+                {/* Night budget cluster */}
+                <div className="mc-cluster">
+                  <div className="mc-cluster-label">Night budget</div>
+                  <div className="mc-knobs">
+                    <label className="mc-knob">
+                      <span className="mc-knob-label">Session cap</span>
+                      <span className="seg-control sm" role="tablist" aria-label="Session cap">
+                        {CAPS.map((c) => (
+                          <button key={c.minutes} role="tab" aria-selected={data.autopilot.minutes === c.minutes}
+                            className={`seg-opt ${data.autopilot.minutes === c.minutes ? 'on' : ''}`}
+                            onClick={() => setAutopilot({ autopilotMinutes: c.minutes })}>
+                            {c.label}
+                          </button>
+                        ))}
+                      </span>
+                    </label>
+                    <label className="mc-knob">
+                      <span className="mc-knob-label">Token budget</span>
+                      <span className="seg-control sm" role="tablist" aria-label="Token budget per run">
+                        {BUDGETS.map((b) => (
+                          <button key={b.tokens} role="tab" aria-selected={data.autopilot.tokens === b.tokens}
+                            className={`seg-opt ${data.autopilot.tokens === b.tokens ? 'on' : ''}`}
+                            title={b.tokens === 0 ? 'No token ceiling — the session cap is the only governor' : `${b.label} tokens per run`}
+                            onClick={() => setAutopilot({ autopilotTokens: b.tokens })}>
+                            {b.label}
+                          </button>
+                        ))}
+                      </span>
+                    </label>
+                    <label className="mc-knob">
+                      <span className="mc-knob-label">Nightly at</span>
+                      <input type="time" className="mc-time" value={data.autopilot.time}
+                        aria-label="Nightly start time (host local)"
+                        onChange={(e) => e.target.value && setAutopilot({ autopilotTime: e.target.value })} />
+                    </label>
+                    <label className="mc-knob">
+                      <span className="mc-knob-label">Items / night</span>
+                      <span className="seg-control sm" role="tablist" aria-label="Most items per night">
+                        {NIGHT_ITEMS.map((n) => (
+                          <button key={n} role="tab" aria-selected={data.autopilot.maxItems === n}
+                            className={`seg-opt ${data.autopilot.maxItems === n ? 'on' : ''}`}
+                            onClick={() => setAutopilot({ autopilotMaxItems: n })}>
+                            {n}
+                          </button>
+                        ))}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Models cluster with hierarchy viz */}
+                <div className="mc-cluster">
+                  <div className="mc-cluster-label">Models</div>
+                  <div className="mc-knobs">
+                    <label className="mc-knob">
+                      <span className="mc-knob-label">Executor</span>
+                      <span className="seg-control sm" role="tablist" aria-label="Executor model — runs the session">
+                        {(data.models?.executors ?? FALLBACK_EXECUTORS).map((m) => (
+                          <button key={m.model} role="tab" aria-selected={data.autopilot.executorModel === m.model}
+                            className={`seg-opt ${data.autopilot.executorModel === m.model ? 'on' : ''}`}
+                            title={m.model === '' ? "The claude CLI's own default model runs the session" : `Sessions run on ${m.label}`}
+                            onClick={() => setAutopilot({ autopilotExecutorModel: m.model })}>
+                            {m.label}
+                          </button>
+                        ))}
+                      </span>
+                    </label>
+                    <label className="mc-knob">
+                      <span className="mc-knob-label">Advisor</span>
+                      <span className="seg-control sm" role="tablist" aria-label="Advisor model — a stronger model the session consults">
+                        {(data.models?.advisors ?? FALLBACK_ADVISORS).map((m) => (
+                          <button key={m.model} role="tab" aria-selected={data.autopilot.advisorModel === m.model}
+                            className={`seg-opt ${data.autopilot.advisorModel === m.model ? 'on' : ''}`}
+                            title={m.model === '' ? 'No advisor — single-model sessions' : `The executor consults ${m.label} for plans and unblocking`}
+                            onClick={() => setAutopilot({ autopilotAdvisorModel: m.model })}>
+                            {m.label}
+                          </button>
+                        ))}
+                      </span>
+                    </label>
+                  </div>
+                  {/* Hierarchy diagram — shows the dual-model flow when an advisor is set */}
+                  <div className="mc-hierarchy">
+                    {data.autopilot.advisorModel ? (
+                      <>
+                        <div className="mc-hier-node exec" title="Runs every turn of the session">
+                          <span className="mc-hier-role">Executor</span>
+                          <span className="mc-hier-model">
+                            {(data.models?.executors ?? FALLBACK_EXECUTORS).find((m) => m.model === data.autopilot.executorModel)?.label ?? 'Default'}
+                          </span>
+                        </div>
+                        <div className="mc-hier-arrow" aria-hidden>
+                          <span className="mc-hier-edge">consults</span>
+                          <span className="mc-hier-line">→</span>
+                        </div>
+                        <div className="mc-hier-node advisor" title="Read-only counsel — plans, unblocking, sanity check">
+                          <span className="mc-hier-role">Advisor</span>
+                          <span className="mc-hier-model">
+                            {(data.models?.advisors ?? FALLBACK_ADVISORS).find((m) => m.model === data.autopilot.advisorModel)?.label ?? data.autopilot.advisorModel}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mc-hier-node exec single" title="Single-model session — no advisor">
+                        <span className="mc-hier-role">Executor</span>
+                        <span className="mc-hier-model">
+                          {(data.models?.executors ?? FALLBACK_EXECUTORS).find((m) => m.model === data.autopilot.executorModel)?.label ?? 'Default'}
+                        </span>
+                        <span className="mc-hier-sub">single-model</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
               <div className="mc-totals">
                 <button className="btn-repo sm" onClick={() => go.terminal()}
@@ -497,123 +542,139 @@ export function ControlPanel() {
             {/* ---- scheduled sessions: the week ahead + the standing list ---- */}
             <div className="mc-sched">
               <div className="mc-sched-head">
-                <div className="mc-sched-title">Scheduled sessions</div>
-                <button className="btn-repo sm" onClick={() => setSchedOpen((v) => !v)}>
-                  {schedOpen ? 'Close' : '+ Schedule a session'}
+                <button className="mc-sched-toggle" onClick={() => setSchedCollapsed((v) => !v)}
+                  aria-expanded={!schedCollapsed}
+                  title={schedCollapsed ? 'Show scheduled sessions' : 'Collapse scheduled sessions'}>
+                  <span className="mc-sched-chev">{schedCollapsed ? '›' : '‹'}</span>
+                  <div className="mc-sched-title">
+                    Scheduled sessions
+                    {data.schedules.length > 0 && (
+                      <span className="mc-sched-count">{data.schedules.length}</span>
+                    )}
+                  </div>
                 </button>
-              </div>
-
-              <div className="mc-week">
-                {week.map((d, i) => {
-                  const date = fmtDate(d);
-                  const todays = data.schedules.filter((s) => s.enabled
-                    && (s.runDate ? s.runDate === date : s.days.includes(d.getDay())));
-                  return (
-                    <div className={`mc-day ${i === 0 ? 'today' : ''}`} key={date}>
-                      <div className="mc-day-head">{i === 0 ? 'Today' : DAY_LABELS[d.getDay()]} <span>{d.getDate()}</span></div>
-                      {data.autopilot.enabled && data.totals.automode > 0 && (
-                        <div className="mc-day-chip nightly" title={`The nightly run: up to ${data.autopilot.maxItems} item(s) on each automode project`}>
-                          {data.autopilot.time} nightly
-                        </div>
-                      )}
-                      {todays.map((s) => (
-                        <div className="mc-day-chip" key={s.id}
-                          title={[s.itemTitle && `#${s.itemId} ${s.itemTitle}`, s.note].filter(Boolean).join(' — ') || undefined}>
-                          {s.atTime} {s.name}{s.itemId ? ` #${s.itemId}` : ''}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {schedOpen && (
-                <div className="mc-sched-form">
-                  <select value={form.slug} onChange={(e) => pickProject(e.target.value)} aria-label="Project">
-                    <option value="">Project…</option>
-                    {data.projects.map((p) => <option key={p.slug} value={p.slug}>{p.name}</option>)}
-                  </select>
-                  <input type="time" value={form.atTime} aria-label="Start time (host local)"
-                    onChange={(e) => setForm({ ...form, atTime: e.target.value })} />
-                  <span className="seg-control sm" role="tablist" aria-label="Repeat">
-                    {(['once', 'daily', 'custom'] as SchedMode[]).map((m) => (
-                      <button key={m} role="tab" aria-selected={form.mode === m}
-                        className={`seg-opt ${form.mode === m ? 'on' : ''}`}
-                        onClick={() => setForm({ ...form, mode: m })}>
-                        {m === 'once' ? 'Once' : m === 'daily' ? 'Daily' : 'Days'}
-                      </button>
-                    ))}
-                  </span>
-                  {form.mode === 'once' && (
-                    <input type="date" value={form.runDate} min={fmtDate(new Date())} aria-label="Date"
-                      onChange={(e) => setForm({ ...form, runDate: e.target.value })} />
-                  )}
-                  {form.mode === 'custom' && (
-                    <span className="mc-daypick" role="group" aria-label="Repeat days">
-                      {DAY_LABELS.map((label, d) => (
-                        <button key={label} className={`mc-daybtn ${form.days.includes(d) ? 'on' : ''}`}
-                          aria-pressed={form.days.includes(d)}
-                          onClick={() => setForm({
-                            ...form,
-                            days: form.days.includes(d) ? form.days.filter((x) => x !== d) : [...form.days, d].sort(),
-                          })}>
-                          {label[0]}
-                        </button>
-                      ))}
-                    </span>
-                  )}
-                  {form.slug && (
-                    <select className="mc-item-pick" value={form.itemId} aria-label="Pin to roadmap item"
-                      title="Pin the session to one roadmap item; otherwise it takes the night's normal pick"
-                      disabled={pickItems[form.slug] === null}
-                      onChange={(e) => setForm({ ...form, itemId: e.target.value })}>
-                      <option value="">
-                        {pickItems[form.slug] === null ? 'Loading items…' : "item: the night's pick"}
-                      </option>
-                      {(pickItems[form.slug] || []).map((it) => (
-                        <option key={it.id} value={String(it.id)} disabled={Boolean(it.claimedBy)}>
-                          #{it.id} [{it.bucket}] {it.title.slice(0, 60)}{it.claimedBy ? ' — claimed' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  <input className="mc-note-input" placeholder="Note (optional)" value={form.note}
-                    aria-label="Note" onChange={(e) => setForm({ ...form, note: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); submitSchedule(); }
-                      else if (e.key === 'Escape') { e.preventDefault(); setSchedOpen(false); setForm(emptyForm()); }
-                    }} />
-                  <button className="btn-accent sm" disabled={!form.slug || formBusy} onClick={submitSchedule}>
-                    {formBusy ? 'Adding…' : 'Add'}
+                {!schedCollapsed && (
+                  <button className="btn-repo sm" onClick={() => setSchedOpen((v) => !v)}>
+                    {schedOpen ? 'Close' : '+ Schedule a session'}
                   </button>
-                </div>
-              )}
+                )}
+              </div>
 
-              {data.schedules.length > 0 ? (
-                <div className="mc-sched-list">
-                  {data.schedules.map((s) => (
-                    <div className={`mc-sched-row ${s.enabled ? '' : 'off'}`} key={s.id}>
-                      <button role="switch" aria-checked={s.enabled} aria-label={`Schedule for ${s.name}`}
-                        className={`switch sm ${s.enabled ? 'on' : ''}`}
-                        onClick={() => toggleSchedule(s.id, !s.enabled)}>
-                        <span className="switch-knob" />
-                      </button>
-                      <button className="mc-name sm" onClick={() => go.detail(s.slug)}>
-                        <span className="tintdot" style={{ background: s.tint || 'var(--sand)' }} />
-                        {s.name}
-                      </button>
-                      <span className="mc-sched-when">{scheduleWhen(s)}</span>
-                      {s.itemId && (
-                        <button className="mc-pick" title={s.itemTitle}
-                          onClick={() => go.detail(s.slug, 'roadmap', s.itemId!)}>#{s.itemId} {s.itemTitle || 'roadmap item'}</button>
+              {!schedCollapsed && (
+                <>
+                  <div className="mc-week">
+                    {week.map((d, i) => {
+                      const date = fmtDate(d);
+                      const todays = data.schedules.filter((s) => s.enabled
+                        && (s.runDate ? s.runDate === date : s.days.includes(d.getDay())));
+                      return (
+                        <div className={`mc-day ${i === 0 ? 'today' : ''}`} key={date}>
+                          <div className="mc-day-head">{i === 0 ? 'Today' : DAY_LABELS[d.getDay()]} <span>{d.getDate()}</span></div>
+                          {data.autopilot.enabled && data.totals.automode > 0 && (
+                            <div className="mc-day-chip nightly" title={`The nightly run: up to ${data.autopilot.maxItems} item(s) on each automode project`}>
+                              {data.autopilot.time} nightly
+                            </div>
+                          )}
+                          {todays.map((s) => (
+                            <div className="mc-day-chip" key={s.id}
+                              title={[s.itemTitle && `#${s.itemId} ${s.itemTitle}`, s.note].filter(Boolean).join(' — ') || undefined}>
+                              {s.atTime} {s.name}{s.itemId ? ` #${s.itemId}` : ''}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {schedOpen && (
+                    <div className="mc-sched-form">
+                      <select value={form.slug} onChange={(e) => pickProject(e.target.value)} aria-label="Project">
+                        <option value="">Project…</option>
+                        {data.projects.map((p) => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+                      </select>
+                      <input type="time" value={form.atTime} aria-label="Start time (host local)"
+                        onChange={(e) => setForm({ ...form, atTime: e.target.value })} />
+                      <span className="seg-control sm" role="tablist" aria-label="Repeat">
+                        {(['once', 'daily', 'custom'] as SchedMode[]).map((m) => (
+                          <button key={m} role="tab" aria-selected={form.mode === m}
+                            className={`seg-opt ${form.mode === m ? 'on' : ''}`}
+                            onClick={() => setForm({ ...form, mode: m })}>
+                            {m === 'once' ? 'Once' : m === 'daily' ? 'Daily' : 'Days'}
+                          </button>
+                        ))}
+                      </span>
+                      {form.mode === 'once' && (
+                        <input type="date" value={form.runDate} min={fmtDate(new Date())} aria-label="Date"
+                          onChange={(e) => setForm({ ...form, runDate: e.target.value })} />
                       )}
-                      {s.note && <span className="mc-sched-note" title={s.note}>{s.note}</span>}
-                      <button className="mc-sched-del" aria-label="Remove schedule" onClick={() => removeSchedule(s.id)}>×</button>
+                      {form.mode === 'custom' && (
+                        <span className="mc-daypick" role="group" aria-label="Repeat days">
+                          {DAY_LABELS.map((label, d) => (
+                            <button key={label} className={`mc-daybtn ${form.days.includes(d) ? 'on' : ''}`}
+                              aria-pressed={form.days.includes(d)}
+                              onClick={() => setForm({
+                                ...form,
+                                days: form.days.includes(d) ? form.days.filter((x) => x !== d) : [...form.days, d].sort(),
+                              })}>
+                              {label[0]}
+                            </button>
+                          ))}
+                        </span>
+                      )}
+                      {form.slug && (
+                        <select className="mc-item-pick" value={form.itemId} aria-label="Pin to roadmap item"
+                          title="Pin the session to one roadmap item; otherwise it takes the night's normal pick"
+                          disabled={pickItems[form.slug] === null}
+                          onChange={(e) => setForm({ ...form, itemId: e.target.value })}>
+                          <option value="">
+                            {pickItems[form.slug] === null ? 'Loading items…' : "item: the night's pick"}
+                          </option>
+                          {(pickItems[form.slug] || []).map((it) => (
+                            <option key={it.id} value={String(it.id)} disabled={Boolean(it.claimedBy)}>
+                              #{it.id} [{it.bucket}] {it.title.slice(0, 60)}{it.claimedBy ? ' — claimed' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <input className="mc-note-input" placeholder="Note (optional)" value={form.note}
+                        aria-label="Note" onChange={(e) => setForm({ ...form, note: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); submitSchedule(); }
+                          else if (e.key === 'Escape') { e.preventDefault(); setSchedOpen(false); setForm(emptyForm()); }
+                        }} />
+                      <button className="btn-accent sm" disabled={!form.slug || formBusy} onClick={submitSchedule}>
+                        {formBusy ? 'Adding…' : 'Add'}
+                      </button>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                !schedOpen && <div className="mc-sched-empty">Nothing scheduled — the nightly run covers automode projects{data.autopilot.enabled ? '' : ' (once armed)'}. Add a session to point a project (or one item) at a time of your choosing.</div>
+                  )}
+
+                  {data.schedules.length > 0 ? (
+                    <div className="mc-sched-list">
+                      {data.schedules.map((s) => (
+                        <div className={`mc-sched-row ${s.enabled ? '' : 'off'}`} key={s.id}>
+                          <button role="switch" aria-checked={s.enabled} aria-label={`Schedule for ${s.name}`}
+                            className={`switch sm ${s.enabled ? 'on' : ''}`}
+                            onClick={() => toggleSchedule(s.id, !s.enabled)}>
+                            <span className="switch-knob" />
+                          </button>
+                          <button className="mc-name sm" onClick={() => go.detail(s.slug)}>
+                            <span className="tintdot" style={{ background: s.tint || 'var(--sand)' }} />
+                            {s.name}
+                          </button>
+                          <span className="mc-sched-when">{scheduleWhen(s)}</span>
+                          {s.itemId && (
+                            <button className="mc-pick" title={s.itemTitle}
+                              onClick={() => go.detail(s.slug, 'roadmap', s.itemId!)}>#{s.itemId} {s.itemTitle || 'roadmap item'}</button>
+                          )}
+                          {s.note && <span className="mc-sched-note" title={s.note}>{s.note}</span>}
+                          <button className="mc-sched-del" aria-label="Remove schedule" onClick={() => removeSchedule(s.id)}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    !schedOpen && <div className="mc-sched-empty">Nothing scheduled — the nightly run covers automode projects{data.autopilot.enabled ? '' : ' (once armed)'}. Add a session to point a project (or one item) at a time of your choosing.</div>
+                  )}
+                </>
               )}
             </div>
 

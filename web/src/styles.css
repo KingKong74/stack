@@ -1281,6 +1281,10 @@ a { color: inherit; }
 /* ---------- settings ---------- */
 .set-card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 22px 24px; margin-bottom: 18px; }
 .set-card.signature { background: var(--sand); border-color: var(--resume-border); }
+/* Autopilot → Mission Control pointer card */
+.set-card.set-mc-pointer { border-style: dashed; border-color: var(--line-3); background: var(--panel); }
+.set-mc-pointer-body { display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.set-mc-pointer-text { flex: 1; min-width: 0; }
 .set-card-head { margin-bottom: 6px; }
 .set-card-title { font-family: var(--disp); font-size: 18px; font-weight: 600; }
 .set-card-sub { font-size: 13px; line-height: 1.6; color: var(--muted); margin-top: 6px; max-width: 62ch; }
@@ -1370,6 +1374,44 @@ a { color: inherit; }
 .mc-review:hover { color: var(--accent-deep); }
 .mc-bugs { font-size: 11.5px; font-weight: 600; color: var(--critical); background: transparent; border: 1px solid var(--line-2); border-radius: 20px; padding: 3px 10px; }
 .mc-blocked { color: var(--critical); }
+
+/* the autopilot console's grouped knob clusters (Night budget · Models) */
+.mc-console-clusters { display: flex; gap: 20px; flex-wrap: wrap; width: 100%; }
+.mc-cluster {
+  flex: 1; min-width: 260px;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px;
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+}
+.mc-cluster-label {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 2px;
+}
+/* hierarchy visualisation — the dual-model flow diagram */
+.mc-hierarchy {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding-top: 10px; border-top: 1px solid var(--line-2);
+}
+.mc-hier-node {
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--card); border: 1px solid var(--line-2); border-radius: 8px;
+  padding: 6px 10px; min-width: 80px;
+}
+.mc-hier-node.exec { border-color: var(--accent-tint-border); }
+.mc-hier-node.advisor { border-color: var(--sage, var(--green)); }
+.mc-hier-role {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted);
+}
+.mc-hier-node.exec .mc-hier-role { color: var(--accent); }
+.mc-hier-node.advisor .mc-hier-role { color: var(--sage, var(--green)); }
+.mc-hier-model { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.mc-hier-sub { font-size: 10.5px; color: var(--muted); font-style: italic; }
+.mc-hier-arrow {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  color: var(--muted); flex: none;
+}
+.mc-hier-edge { font-size: 10px; font-style: italic; }
+.mc-hier-line { font-size: 14px; line-height: 1; color: var(--keyline); }
 
 /* the autopilot console's knob rack (session cap · token budget · nightly time · items) */
 .mc-knobs { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; width: 100%; }
@@ -1461,6 +1503,18 @@ a { color: inherit; }
   padding: 16px 18px; margin-bottom: 22px;
 }
 .mc-sched-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.mc-sched-toggle {
+  display: inline-flex; align-items: center; gap: 8px; text-align: left;
+  color: inherit; background: none; border: none; cursor: pointer; padding: 0;
+}
+.mc-sched-toggle:hover .mc-sched-title { color: var(--accent); }
+.mc-sched-chev { font-size: 16px; color: var(--muted); line-height: 1; }
+.mc-sched-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--accent-tint); border: 1px solid var(--accent-tint-border);
+  font-size: 10px; font-weight: 700; color: var(--accent); margin-left: 6px; vertical-align: middle;
+}
 .mc-sched-title { font-family: var(--disp); font-size: 15px; font-weight: 600; }
 .mc-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 12px; }
 .mc-day { background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; padding: 8px; min-height: 64px; }

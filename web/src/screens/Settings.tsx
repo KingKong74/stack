@@ -15,16 +15,6 @@ const THEMES: { key: ThemePref; label: string }[] = [
   { key: 'system', label: 'System' }, { key: 'light', label: 'Light' }, { key: 'dark', label: 'Dark' },
 ];
 
-// Mirrors Mission Control's knob values — the two surfaces PATCH the same settings.
-const CAPS: { minutes: number; label: string }[] = [
-  { minutes: 60, label: '1 hour' }, { minutes: 120, label: '2 hours' },
-  { minutes: 180, label: '3 hours' }, { minutes: 360, label: '6 hours' },
-];
-const BUDGETS: { tokens: number; label: string }[] = [
-  { tokens: 500_000, label: '500k' }, { tokens: 1_500_000, label: '1.5M' },
-  { tokens: 5_000_000, label: '5M' }, { tokens: 0, label: '∞ Unlimited' },
-];
-
 const DETAILS: { key: CheckpointDetail; label: string; blurb: string }[] = [
   { key: 'brief', label: 'Brief', blurb: 'A line or two — just enough to re-orient.' },
   { key: 'standard', label: 'Standard', blurb: 'A balanced summary with the next moves.' },
@@ -269,64 +259,17 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
               ))}
             </section>
 
-            {/* ---- Autopilot (mirrors Mission Control's console — same settings) ---- */}
-            <section className="set-card">
-              <div className="set-card-head">
-                <div className="set-card-title">Autopilot</div>
-                <div className="set-card-sub">
-                  The overnight runner builds approved roadmap items unattended (up to the items-per-night
-                  cap), each on a reviewable <span className="mono">auto/</span> branch — never main, never
-                  marked done. You steer it with the tools you already have: approve items into the board,
-                  park human-only ones as skipped, and set direction via the north star and each
-                  project's Directives card (injected into every unattended session).
-                </div>
-              </div>
-
-              <Switch
-                label="Armed"
-                hint="Nightly runs and scheduled sessions only act while this is on. Run now stays manual-only."
-                checked={settings.autopilotEnabled}
-                onChange={(v) => update({ autopilotEnabled: v })}
-              />
-
-              <div className="set-row col">
-                <div className="set-row-text">
-                  <div className="set-row-label">Session cap</div>
-                  <div className="set-row-hint">Wall-clock limit per unattended session — it's stopped at the cap.</div>
-                </div>
-                <div className="seg-control" role="tablist" aria-label="Autopilot session cap">
-                  {CAPS.map((c) => (
-                    <button key={c.minutes} role="tab" aria-selected={settings.autopilotMinutes === c.minutes}
-                      className={`seg-opt ${settings.autopilotMinutes === c.minutes ? 'on' : ''}`}
-                      onClick={() => update({ autopilotMinutes: c.minutes })}>
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="set-row col">
-                <div className="set-row-text">
-                  <div className="set-row-label">Token budget</div>
-                  <div className="set-row-hint">
-                    Per run, from each session's real usage. Unlimited = the session cap alone governs.
+            {/* ---- Autopilot — single source of truth in Mission Control ---- */}
+            <section className="set-card set-mc-pointer">
+              <div className="set-mc-pointer-body">
+                <div className="set-mc-pointer-text">
+                  <div className="set-card-title">Autopilot</div>
+                  <div className="set-card-sub">
+                    The arm switch, session cap, token budget, nightly time, items per night, executor and
+                    advisor models — everything in one place.
                   </div>
                 </div>
-                <div className="seg-control" role="tablist" aria-label="Autopilot token budget">
-                  {BUDGETS.map((b) => (
-                    <button key={b.tokens} role="tab" aria-selected={settings.autopilotTokens === b.tokens}
-                      className={`seg-opt ${settings.autopilotTokens === b.tokens ? 'on' : ''}`}
-                      onClick={() => update({ autopilotTokens: b.tokens })}>
-                      {b.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="set-detail-blurb">
-                  The nightly time, items per night, per-project Run now and the session calendar live in
-                  the <button className="linklike" onClick={() => go.control()}>Mission Control</button> tab.
-                  In the morning: the review inbox holds Gemini's findings, the activity feed the
-                  checkpoint, and the pushed branch waits for your merge-or-discard.
-                </div>
+                <button className="btn-accent" onClick={() => go.control()}>Open Mission Control →</button>
               </div>
             </section>
 
