@@ -566,6 +566,26 @@ a { color: inherit; }
 .verify-back { flex: none; font-size: 11.5px; font-weight: 600; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; padding: 3px 10px; white-space: nowrap; }
 .verify-back:hover { color: var(--ink); border-color: var(--muted); }
 .verify-row .road-actions.arch, .verify-row .review-pick { margin-top: 0; flex: none; }
+/* #140 — session/run groups in the To-verify strip */
+.verify-group { margin-top: 10px; }
+.verify-group:first-child { margin-top: 4px; }
+.verify-group-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 2px; border-bottom: 1px solid var(--line-2); margin-bottom: 2px; }
+.verify-group-toggle { display: flex; align-items: baseline; gap: 7px; flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); text-align: left; padding: 3px 0; }
+.verify-group-toggle:hover { color: var(--ink); }
+.verify-group-toggle .chev { font-size: 10px; color: var(--faint); }
+.vg-label { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.03em; color: var(--ink); }
+.vg-count { font-family: var(--mono); font-size: 10.5px; color: var(--faint); background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; padding: 1px 6px; }
+.vg-sub { font-size: 11px; font-weight: 400; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.verify-bulk-solid { flex: none; font-size: 11px; font-weight: 600; color: var(--sage); border: 1px solid var(--green-tint); background: var(--green-tint); border-radius: 7px; padding: 3px 10px; white-space: nowrap; }
+.verify-bulk-solid:hover { color: var(--ink); border-color: var(--muted); background: var(--panel); }
+/* #166 — collapsed review rows: compact title-only line */
+.verify-row-collapsed { align-items: center; padding: 7px 2px; }
+.verify-row-collapsed .verify-body-compact { flex: 1; min-width: 0; }
+.verify-row-collapsed .verify-body-compact .t { font-size: 13px; font-weight: 500; color: var(--chip-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.verify-collapse-toggle { flex: none; font-size: 10px; color: var(--faint); padding: 2px 5px; border-radius: 5px; line-height: 1; }
+.verify-collapse-toggle:hover { color: var(--ink); background: var(--panel); }
+.vr-tags-inline { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; vertical-align: 1px; }
+.vr-tags-inline .rt { font-size: 10px; font-weight: 600; border: 1px solid var(--accent-tint-border); border-radius: 999px; padding: 1px 7px; color: var(--accent); background: var(--accent-tint); white-space: nowrap; }
 /* #132 — the Reviews view clusters by completion day and labels every row
    with who built it (autopilot / a named lane / by hand) + the run's stats. */
 .review-day { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); margin: 14px 2px 2px; }

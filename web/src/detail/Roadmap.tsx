@@ -54,6 +54,10 @@ export function Roadmap({
   onDiscardDraft?: () => void;
 }) {
   const [pickerFor, setPickerFor] = useState<number | null>(null);
+  // #166 — collapsed individual review rows (session-local; group collapse trumps this)
+  const [collapsedRows, setCollapsedRows] = useState<Set<number>>(new Set());
+  const toggleRowCollapse = (id: number) =>
+    setCollapsedRows((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   // Drag-reorder: which item is in flight, and what it's hovering over
   // (an item id = drop before it; `col-<bucket>` = drop at the bucket's end).
   const [dragId, setDragId] = useState<number | null>(null);
@@ -292,6 +296,49 @@ export function Roadmap({
       .then(() => setUndoNote(it.id, `Undo queued — the host reverts every main commit tagged #${it.id} and returns the item to the board within a minute or two.`))
       .catch((e) => setUndoNote(it.id, e instanceof Error ? e.message : 'Undo failed.'));
   };
+  // #140 — group collapse state (session-local; starts all expanded)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (key: string) =>
+    setCollapsedGroups((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+
+  // #140 — group To-verify items by session/run: autopilot items go under their
+  // run's branch; manual items cluster under their completion day (matching the
+  // pre-existing day-header UX). Groups are newest first.
+  type VerifyGroup = { key: string; label: string; sublabel: string; items: RoadmapItem[]; isRun: boolean; branch?: string };
+  const buildVerifyGroups = (items: RoadmapItem[]): VerifyGroup[] => {
+    const groups = new Map<string, VerifyGroup>();
+    for (const it of items) {
+      const run = runByItem.get(String(it.id));
+      if (run) {
+        // autopilot run — group key is the branch so parallel lanes stay separate
+        const key = `run:${run.branch}`;
+        if (!groups.has(key)) {
+          const tok = fmtTok(run.tokens);
+          groups.set(key, {
+            key, label: run.branch,
+            sublabel: `${run.commits} commit${run.commits === 1 ? '' : 's'} · ${tok}${run.costUsd ? ` · $${run.costUsd.toFixed(2)}` : ''} · finished ${run.when}`,
+            items: [], isRun: true, branch: run.branch,
+          });
+        }
+        groups.get(key)!.items.push(it);
+      } else {
+        // manual completion — group by day
+        const day = dayLabel(it.updatedAt);
+        const key = `day:${day}`;
+        if (!groups.has(key)) {
+          const o = originOf(it);
+          groups.set(key, {
+            key, label: day,
+            sublabel: o === 'lane' ? `⚑ ${it.claimedBy}` : o === 'auto' ? '⚙ autopilot' : 'by hand',
+            items: [], isRun: false,
+          });
+        }
+        groups.get(key)!.items.push(it);
+      }
+    }
+    return [...groups.values()];
+  };
+
   // Archive rendering: the MoSCoW grid, or a dense paginated list + verdict filter.
   const [archView, setArchView] = useState<'grid' | 'list'>('grid');
   const [archFilter, setArchFilter] = useState<'all' | ReviewTag>('all');
@@ -331,39 +378,68 @@ export function Roadmap({
 
   // One unverdicted review row — shared by the To-verify list and the shelf
   // (#148); the only difference is which way the shelve toggle points.
-  const verifyRow = (it: RoadmapItem) => (
-    <div className="verify-row" key={it.id} data-hl={it.id}>
-      <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
-      <div className="verify-body">
-        <div className="t"><span className="item-num">#{it.id}</span>{it.title}</div>
-        {reviewMeta(it)}
-        {it.note && <div className="note">{it.note}</div>}
-        {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
-        {tagRow(it)}
-        {briefPanel(it)}
-        {undoNotes.has(it.id) && <div className="undo-note">⎌ {undoNotes.get(it.id)}</div>}
+  // #166: rows collapse to a compact title+verdict line; group collapse trumps.
+  const verifyRow = (it: RoadmapItem, forceExpanded?: boolean) => {
+    const isCollapsed = !forceExpanded && collapsedRows.has(it.id);
+    if (isCollapsed) {
+      return (
+        <div className="verify-row verify-row-collapsed" key={it.id} data-hl={it.id}>
+          <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
+          <button className="verify-collapse-toggle" onClick={() => toggleRowCollapse(it.id)}
+            title="Expand this review row" aria-expanded={false}>
+            <span className="chev">▸</span>
+          </button>
+          <div className="verify-body verify-body-compact">
+            <div className="t"><span className="item-num">#{it.id}</span>{it.title}
+              {it.reviewTags.length > 0 && (
+                <span className="vr-tags-inline">
+                  {it.reviewTags.map((t) => <span key={t} className="rt on">{noteTagLabel(t)}</span>)}
+                </span>
+              )}
+            </div>
+          </div>
+          {archActions(it)}
+        </div>
+      );
+    }
+    return (
+      <div className="verify-row" key={it.id} data-hl={it.id}>
+        <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
+        <button className="verify-collapse-toggle" onClick={() => toggleRowCollapse(it.id)}
+          title="Collapse this review row" aria-expanded={true}>
+          <span className="chev">▾</span>
+        </button>
+        <div className="verify-body">
+          <div className="t"><span className="item-num">#{it.id}</span>{it.title}</div>
+          {reviewMeta(it)}
+          {it.note && <div className="note">{it.note}</div>}
+          {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
+          {tagRow(it)}
+          {briefPanel(it)}
+          {undoNotes.has(it.id) && <div className="undo-note">⎌ {undoNotes.get(it.id)}</div>}
+        </div>
+        <button className="verify-back" onClick={() => setUndoConfirm(it)}
+          title="Revert this item's commits on main and send it back to the board">⎌ Undo</button>
+        <button className="gemini-btn sm" onClick={() => toggleBrief(it)}
+          title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">
+          ✧ Brief
+        </button>
+        <button className="verify-back" onClick={() => onLogBug(it)}
+          title="Log a bug ticket against this item — prefills the bug modal">＋ Bug</button>
+        <button className="verify-back" onClick={() => onLogAudit(it)}
+          title="Log an audit ticket — a roadmap item in the audit area to check what landed">＋ Audit</button>
+        <button className="verify-back" onClick={() => onShelve(it)}
+          title={it.reviewShelved
+            ? 'Bring it back to the To-verify list'
+            : 'Set aside — good enough for now; waits under Shelved until you bring it back'}>
+          {it.reviewShelved ? '▶ To review' : '⏸ Later'}
+        </button>
+        <button className="verify-back" onClick={() => onToggle(it)}
+          title="Didn't hold up — send it back to the board">↩ Board</button>
+        {archActions(it)}
       </div>
-      <button className="verify-back" onClick={() => setUndoConfirm(it)}
-        title="Revert this item's commits on main and send it back to the board">⎌ Undo</button>
-      <button className="gemini-btn sm" onClick={() => toggleBrief(it)}
-        title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">
-        ✧ Brief
-      </button>
-      <button className="verify-back" onClick={() => onLogBug(it)}
-        title="Log a bug ticket against this item — prefills the bug modal">＋ Bug</button>
-      <button className="verify-back" onClick={() => onLogAudit(it)}
-        title="Log an audit ticket — a roadmap item in the audit area to check what landed">＋ Audit</button>
-      <button className="verify-back" onClick={() => onShelve(it)}
-        title={it.reviewShelved
-          ? 'Bring it back to the To-verify list'
-          : 'Set aside — good enough for now; waits under Shelved until you bring it back'}>
-        {it.reviewShelved ? '▶ To review' : '⏸ Later'}
-      </button>
-      <button className="verify-back" onClick={() => onToggle(it)}
-        title="Didn't hold up — send it back to the board">↩ Board</button>
-      {archActions(it)}
-    </div>
-  );
+    );
+  };
 
   return (
     <div>
@@ -678,8 +754,9 @@ export function Roadmap({
         </div>
       )}
 
-      {/* to verify — completed but unverdicted, clustered by completion day (#132):
-          test it, verdict it, or send it back */}
+      {/* to verify — completed but unverdicted, grouped by session/run (#140):
+          autopilot items group under their branch; manual items under their day.
+          Each group collapses/expands; bulk "Mark all solid" on the header. */}
       {toVerify.filter(byOrigin).length > 0 && (
         <div className="verify-strip">
           <div className="verify-head">
@@ -688,18 +765,30 @@ export function Roadmap({
               {toVerify.filter(byOrigin).length} completed — test each, give a verdict, or send it back to the board
             </span>
           </div>
-          {toVerify.filter(byOrigin).reduce<{ day: string; items: RoadmapItem[] }[]>((groups, it) => {
-            const day = dayLabel(it.updatedAt);
-            const last = groups[groups.length - 1];
-            if (last && last.day === day) last.items.push(it);
-            else groups.push({ day, items: [it] });
-            return groups;
-          }, []).map((g) => (
-            <div key={g.day}>
-              <div className="review-day">{g.day}</div>
-              {g.items.map(verifyRow)}
-            </div>
-          ))}
+          {buildVerifyGroups(toVerify.filter(byOrigin)).map((g) => {
+            const collapsed = collapsedGroups.has(g.key);
+            return (
+              <div key={g.key} className="verify-group">
+                <div className="verify-group-head">
+                  <button className="verify-group-toggle" onClick={() => toggleGroup(g.key)}
+                    aria-expanded={!collapsed} title={collapsed ? 'Expand group' : 'Collapse group'}>
+                    <span className="chev">{collapsed ? '▸' : '▾'}</span>
+                    <span className="vg-label">{g.label}</span>
+                    <span className="vg-count">{g.items.length}</span>
+                    <span className="vg-sub">{g.sublabel}</span>
+                  </button>
+                  {!collapsed && (
+                    <button className="verify-bulk-solid"
+                      title="Mark all items in this group as Solid"
+                      onClick={() => g.items.forEach((it) => { if (!it.reviewTag) onReviewTag(it, 'solid'); })}>
+                      ✓ All solid
+                    </button>
+                  )}
+                </div>
+                {!collapsed && g.items.map((it) => verifyRow(it))}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -717,7 +806,7 @@ export function Roadmap({
           </div>
           {shelfOpen && (
             <div className="verify-strip shelf">
-              {shelved.filter(byOrigin).map(verifyRow)}
+              {shelved.filter(byOrigin).map((it) => verifyRow(it))}
             </div>
           )}
         </div>
