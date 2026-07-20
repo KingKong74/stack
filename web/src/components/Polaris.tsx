@@ -6,7 +6,7 @@ import type { IntakeSuggestion, PolarisTurn } from '../store';
 // replaced the Roadmap tab's Intake panel: dump ideas, review the proposed
 // destinations, apply. Gemini proposes, the human disposes — nothing lands
 // until an explicit `apply`.
-type Line = { role: 'you' | 'polaris' | 'sys'; text: string };
+type Line = { role: 'you' | 'polaris' | 'sys'; text: string; ts?: number };
 
 const HELP = [
   'polaris — a Gemini terminal pinned to this project.',
@@ -20,6 +20,7 @@ const HELP = [
   '  move <n> <dest>  re-aim one (must/should/could/wont/future)',
   '  drop <n>         bin one proposal',
   '  /clear           wipe the screen',
+  '  ↑ / ↓            cycle through command history',
 ].join('\n');
 
 const DESTS = ['must', 'should', 'could', 'wont', 'future'] as const;
@@ -29,6 +30,8 @@ const GREETING: Line = { role: 'polaris', text: "✦ Polaris online. Ask me anyt
 // Scrollback persists per project on this device — a fresh visit picks the
 // conversation back up; /clear wipes the stored copy too.
 const historyKey = (slug: string) => `stack.polaris.${slug}`;
+const cmdHistoryKey = (slug: string) => `stack.polaris.cmd.${slug}`;
+
 const loadLines = (slug?: string): Line[] => {
   if (!slug) return [GREETING];
   try {
@@ -37,6 +40,18 @@ const loadLines = (slug?: string): Line[] => {
   } catch { /* corrupt or absent — start fresh */ }
   return [GREETING];
 };
+
+const loadCmdHistory = (slug?: string): string[] => {
+  if (!slug) return [];
+  try {
+    const saved = JSON.parse(localStorage.getItem(cmdHistoryKey(slug)) || '[]') as string[];
+    if (Array.isArray(saved)) return saved;
+  } catch { /* corrupt or absent */ }
+  return [];
+};
+
+const fmtTime = (ts: number) =>
+  new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
 export function Polaris({
   onChat, onSort, onApply, slug,
@@ -48,11 +63,27 @@ export function Polaris({
 }) {
   const [open, setOpen] = useState(false);
   const [lines, setLines] = useState<Line[]>(() => loadLines(slug));
-  useEffect(() => { setLines(loadLines(slug)); }, [slug]);
+  const [cmdHistory, setCmdHistory] = useState<string[]>(() => loadCmdHistory(slug));
+  const [histIdx, setHistIdx] = useState(-1); // -1 = at the draft input
+  const [draft, setDraft] = useState('');
+
+  useEffect(() => {
+    setLines(loadLines(slug));
+    setCmdHistory(loadCmdHistory(slug));
+    setHistIdx(-1);
+    setDraft('');
+  }, [slug]);
+
   useEffect(() => {
     if (!slug) return;
     try { localStorage.setItem(historyKey(slug), JSON.stringify(lines.slice(-200))); } catch { /* full — fine */ }
   }, [lines, slug]);
+
+  useEffect(() => {
+    if (!slug) return;
+    try { localStorage.setItem(cmdHistoryKey(slug), JSON.stringify(cmdHistory.slice(-50))); } catch { /* full — fine */ }
+  }, [cmdHistory, slug]);
+
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<IntakeSuggestion[] | null>(null);
@@ -74,8 +105,15 @@ export function Polaris({
   const run = async () => {
     const raw = input.trim();
     if (!raw || busy) return;
+    // Push to command history — dedupe consecutive repeats, cap at 50.
+    setCmdHistory((prev) => {
+      const deduped = prev[prev.length - 1] === raw ? prev : [...prev, raw];
+      return deduped.slice(-50);
+    });
+    setHistIdx(-1);
+    setDraft('');
     setInput('');
-    say({ role: 'you', text: raw });
+    say({ role: 'you', text: raw, ts: Date.now() });
 
     // local commands first
     if (raw === '/help' || raw === 'help') { say({ role: 'sys', text: HELP }); return; }
@@ -89,7 +127,7 @@ export function Polaris({
       try {
         const items = await onSort(dump);
         setPending(items);
-        say({ role: 'polaris', text: `proposed destinations:\n${proposalText(items)}\n\napply · apply 1 3 · move 2 could · drop 1` });
+        say({ role: 'polaris', text: `proposed destinations:\n${proposalText(items)}\n\napply · apply 1 3 · move 2 could · drop 1`, ts: Date.now() });
       } catch (e) {
         say({ role: 'sys', text: `✗ ${(e as Error)?.message || 'sorting failed.'}` });
       } finally { setBusy(false); }
@@ -108,7 +146,7 @@ export function Polaris({
           const rest = pending.filter((it) => !chosen.includes(it));
           setPending(rest.length ? rest : null);
           const road = chosen.filter((it) => it.dest !== 'future').length;
-          say({ role: 'polaris', text: `✓ added ${chosen.length} item${chosen.length === 1 ? '' : 's'} (${road} roadmap, ${chosen.length - road} futures)${rest.length ? ` — ${rest.length} still pending` : ''}` });
+          say({ role: 'polaris', text: `✓ added ${chosen.length} item${chosen.length === 1 ? '' : 's'} (${road} roadmap, ${chosen.length - road} futures)${rest.length ? ` — ${rest.length} still pending` : ''}`, ts: Date.now() });
         } catch (e) {
           say({ role: 'sys', text: `✗ ${(e as Error)?.message || 'could not add the items.'}` });
         } finally { setBusy(false); }
@@ -124,7 +162,7 @@ export function Polaris({
         }
         const next = pending.map((it, j) => (j === i ? { ...it, dest, alignment: dest === 'future' ? it.alignment : null } : it));
         setPending(next);
-        say({ role: 'polaris', text: proposalText(next) });
+        say({ role: 'polaris', text: proposalText(next), ts: Date.now() });
         return;
       }
       const dropMatch = raw.match(/^drop\s+(\d+)$/i);
@@ -133,7 +171,7 @@ export function Polaris({
         if (!pending[i]) { say({ role: 'sys', text: 'no such proposal.' }); return; }
         const next = pending.filter((_, j) => j !== i);
         setPending(next.length ? next : null);
-        say({ role: 'polaris', text: next.length ? proposalText(next) : 'all proposals binned.' });
+        say({ role: 'polaris', text: next.length ? proposalText(next) : 'all proposals binned.', ts: Date.now() });
         return;
       }
     }
@@ -143,10 +181,48 @@ export function Polaris({
     try {
       const history = lines.filter((l): l is Line & { role: 'you' | 'polaris' } => l.role !== 'sys').slice(-12);
       const reply = await onChat(raw, history);
-      say({ role: 'polaris', text: reply });
+      say({ role: 'polaris', text: reply, ts: Date.now() });
     } catch (e) {
       say({ role: 'sys', text: `✗ ${(e as Error)?.message || 'Gemini call failed.'}` });
     } finally { setBusy(false); }
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); run(); return; }
+    // ArrowUp/Down: only intercept on single-line input so multiline editing still works.
+    if (e.key === 'ArrowUp' && !input.includes('\n')) {
+      e.preventDefault();
+      if (!cmdHistory.length) return;
+      const next = histIdx === -1 ? cmdHistory.length - 1 : Math.max(0, histIdx - 1);
+      if (histIdx === -1) setDraft(input); // stash the draft on first ascent
+      setHistIdx(next);
+      setInput(cmdHistory[next]);
+      setTimeout(() => {
+        if (inputRef.current) {
+          const len = inputRef.current.value.length;
+          inputRef.current.selectionStart = inputRef.current.selectionEnd = len;
+        }
+      }, 0);
+      return;
+    }
+    if (e.key === 'ArrowDown' && !input.includes('\n')) {
+      e.preventDefault();
+      if (histIdx === -1) return;
+      const next = histIdx + 1;
+      if (next >= cmdHistory.length) {
+        setHistIdx(-1);
+        setInput(draft);
+      } else {
+        setHistIdx(next);
+        setInput(cmdHistory[next]);
+      }
+      setTimeout(() => {
+        if (inputRef.current) {
+          const len = inputRef.current.value.length;
+          inputRef.current.selectionStart = inputRef.current.selectionEnd = len;
+        }
+      }, 0);
+    }
   };
 
   return (
@@ -159,9 +235,15 @@ export function Polaris({
       </button>
       {open && (
         <div className="polaris-body" onClick={() => inputRef.current?.focus()}>
+          <div className="polaris-tbar">
+            <span className="pt-dot" />
+            <span className="pt-label">POLARIS SESSION</span>
+            <span className="pt-hint">gemini · grounded</span>
+          </div>
           <div className="polaris-scroll" ref={scrollRef}>
             {lines.map((l, i) => (
               <div className={`polaris-line ${l.role}`} key={i}>
+                {l.ts !== undefined && <span className="p-ts">{fmtTime(l.ts)}</span>}
                 <span className="p-prompt">{l.role === 'you' ? '❯' : l.role === 'polaris' ? '✦' : '·'}</span>
                 <span className="p-text">{l.text}</span>
               </div>
@@ -172,11 +254,9 @@ export function Polaris({
             <span className="p-prompt">❯</span>
             <textarea
               ref={inputRef} value={input} rows={1} disabled={busy}
-              placeholder={pending ? 'apply · move <n> <dest> · drop <n> — or keep talking' : 'ask, or /help'}
+              placeholder={pending ? 'apply · move <n> <dest> · drop <n> — or keep talking' : 'ask, or /help · ↑↓ history'}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); run(); }
-              }} />
+              onKeyDown={onKeyDown} />
           </div>
         </div>
       )}
