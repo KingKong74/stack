@@ -329,6 +329,99 @@ roadmap.post('/:id/review-brief', async (req, res) => {
   }
 });
 
+// GET /tree  -> branch tree model for #72.
+// Aggregates server-side data (roadmap claims, autopilot_runs ledger,
+// futures funnel, presence rows) into a tree the web renders visually.
+// The server has no git access — purely DB-derived. Registered before /:id.
+roadmap.get('/tree', async (req, res) => {
+  const pid = req.project.id;
+  const [claimRows, runRows, futureRows, presenceRows] = await Promise.all([
+    // Open claimed items: lane branch + item metadata.
+    q(
+      `SELECT id, title, claimed_by, bucket FROM roadmap_items
+        WHERE project_id = $1 AND claimed_by IS NOT NULL AND NOT done AND NOT skipped
+        ORDER BY bucket, position`,
+      [pid]
+    ),
+    // Recent autopilot runs — landed branches become absorbed nodes,
+    // active runs (limit / no-commits) stay as lanes.
+    q(
+      `SELECT branch, item_id, item_title, outcome, commits, tokens, finished_at
+        FROM autopilot_runs
+        WHERE project_id = $1
+        ORDER BY finished_at DESC NULLS LAST
+        LIMIT 40`,
+      [pid]
+    ),
+    // The futures funnel — ideas with alignment.
+    q(
+      `SELECT id, title, alignment FROM futures
+        WHERE project_id = $1 ORDER BY created_at DESC LIMIT 30`,
+      [pid]
+    ),
+    // Live branches (presence within the TTL).
+    q(
+      `SELECT DISTINCT branch FROM presence
+        WHERE project_id = $1 AND last_seen_at > now() - interval '240 minutes'`,
+      [pid]
+    ),
+  ]);
+
+  const liveBranchSet = new Set(presenceRows.rows.map((r) => r.branch || 'main'));
+
+  // Build lanes from claimed items. Dedupe by branch — an item's claimed_by
+  // is the canonical branch name (e.g. auto/item-42 or lane/ui).
+  const laneMap = new Map();
+  for (const row of claimRows.rows) {
+    const branch = row.claimed_by;
+    if (!laneMap.has(branch)) {
+      laneMap.set(branch, {
+        branch,
+        itemId: String(row.id),
+        itemTitle: row.title,
+        bucket: row.bucket,
+        live: liveBranchSet.has(branch),
+        state: 'open',
+        runSummary: null,
+      });
+    }
+  }
+
+  // Fold autopilot runs: landed runs become absorbed nodes; active/limit
+  // runs whose branch is already a lane update state to 'active'.
+  const absorbed = [];
+  const seenAbsorbed = new Set();
+  for (const run of runRows.rows) {
+    if (!run.branch) continue;
+    if (run.outcome === 'landed') {
+      // Only absorb branches that are no longer a live lane claim.
+      if (!laneMap.has(run.branch) && !seenAbsorbed.has(run.branch)) {
+        seenAbsorbed.add(run.branch);
+        absorbed.push({
+          branch: run.branch,
+          itemId: run.item_id ? String(run.item_id) : null,
+          itemTitle: run.item_title || run.branch,
+          commits: run.commits || 0,
+          tokens: run.tokens || 0,
+          when: run.finished_at ? run.finished_at.toISOString() : null,
+        });
+      }
+    } else if ((run.outcome === 'limit' || run.outcome === 'no-commits') && laneMap.has(run.branch)) {
+      laneMap.get(run.branch).state = run.outcome === 'limit' ? 'stale' : 'stale';
+    }
+  }
+
+  res.json({
+    lanes: [...laneMap.values()],
+    ideas: futureRows.rows.map((r) => ({
+      id: String(r.id),
+      title: r.title,
+      alignment: r.alignment || '',
+    })),
+    absorbed: absorbed.slice(0, 12), // cap at 12 recently-landed branches
+  });
+});
+
 // DELETE /:id  -> remove; auto (hook) items leave a tombstone
 roadmap.delete('/:id', async (req, res) => {
   const { rows } = await q(
