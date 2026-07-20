@@ -1519,6 +1519,10 @@ a { color: inherit; }
 .term-mini:hover { border-color: var(--green); }
 .term-mini .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
 .tu-booked { color: var(--green); font-weight: 600; }
+/* #142 — the project's paused session (a limit-hit resume job in the queue) */
+.tu-resume { display: inline-flex; align-items: center; gap: 8px; color: var(--accent); font-weight: 600; }
+.tu-resume.paused { color: var(--muted); }
+.tu-resume .btn-submit.sm, .tu-resume .btn-cancel.sm { padding: 2px 8px; font-size: 11px; }
 .tu-auto { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
 .tu-note { flex-basis: 100%; color: var(--critical); }
 @media (max-width: 760px) { .term-layout { flex-direction: column; } .term-rail { width: 100%; flex-direction: row; flex-wrap: wrap; } .term-cmd { width: auto; } }

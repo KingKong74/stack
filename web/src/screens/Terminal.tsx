@@ -6,6 +6,7 @@ import {
   openTerminal, getTermCmds, setTermCmds, type TermCmd,
   getTermUsagePrefs, setTermUsagePrefs, type TermUsagePrefs,
   createAutopilotSchedule,
+  getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
 } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
@@ -237,6 +238,34 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usagePrefs.autoSchedule, usage?.sched?.runDate, usage?.sched?.atTime, projectSlug]);
 
+  // #142 — this project's paused session, if any: a limit-hit autopilot run
+  // sits in the queue as a kind='resume' job. Polled while the screen is
+  // showing (the component never unmounts), and re-checked when a limit frame
+  // lands. Resume clears the hold; hang-up parks it for later.
+  const [resumeJob, setResumeJob] = useState<AutopilotJob | null>(null);
+  useEffect(() => {
+    if (!visible || !projectSlug) { setResumeJob(null); return; }
+    let gone = false;
+    const check = () => {
+      getAutopilotJobs(projectSlug, 8)
+        .then((jobs) => {
+          if (gone) return;
+          setResumeJob(jobs.find((j) => j.kind === 'resume' && (j.status === 'queued' || j.status === 'paused')) ?? null);
+        })
+        .catch(() => { /* quiet — the chip just stays away */ });
+    };
+    check();
+    const t = window.setInterval(check, 60_000);
+    return () => { gone = true; window.clearInterval(t); };
+  }, [visible, projectSlug, usage?.resetAt]);
+  const resumeAt = resumeJob?.notBefore
+    ? new Date(resumeJob.notBefore).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : '';
+  const actOnResume = async (act: (id: string) => Promise<AutopilotJob>) => {
+    if (!resumeJob) return;
+    try { setResumeJob(await act(resumeJob.id)); } catch { /* next poll corrects */ }
+  };
+
   const dockLabel = activeSess
     ? `${activeSess.cmd === 'claude' ? 'claude' : 'shell'}${activeSess.cwd ? ` · ${activeSess.cwd}` : ''}`
     : 'terminal';
@@ -329,6 +358,27 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
               </span>
             )}
             {usage.resetLabel && <span className="tu-reset">⏳ limit resets {usage.resetLabel}</span>}
+            {resumeJob && (
+              <span className={`tu-resume ${resumeJob.status}`}
+                title={resumeJob.itemTitle ? `#${resumeJob.itemId} ${resumeJob.itemTitle}` : undefined}>
+                ⏸ {resumeJob.status === 'paused'
+                  ? `${resumeJob.slug} hung up — resumes when you say`
+                  : resumeJob.notBefore ? `${resumeJob.slug} paused · resumes ${resumeAt}`
+                  : `${resumeJob.slug} resuming…`}
+                {(resumeJob.status === 'paused' || resumeJob.notBefore) && (
+                  <button className="btn-submit sm" onClick={() => void actOnResume(resumeAutopilotJob)}
+                    title="Resume the paused session now — the host picks it up within a minute">
+                    ▶ Resume now
+                  </button>
+                )}
+                {resumeJob.status === 'queued' && resumeJob.notBefore && (
+                  <button className="btn-cancel sm" onClick={() => void actOnResume(hangupAutopilotJob)}
+                    title="Hang up — hold the session so it only resumes when you say">
+                    Hang up
+                  </button>
+                )}
+              </span>
+            )}
             {usage.sched && (booked ? (
               <span className="tu-booked">✓ session booked for {usage.sched.atTime}</span>
             ) : !usagePrefs.autoSchedule ? (
