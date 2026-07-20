@@ -446,10 +446,14 @@ Rules for this run:
   // The graceful close: a session that died on the usage limit is not a
   // failure of the item — flag it so the night stops and resumes itself.
   const limitHit = LIMIT_RE.test(resultText);
+  // Include the monitoring tmux session name (#171) when the dispatcher started
+  // us inside one — so the web terminal and Reviews view can re-attach.
+  const tmuxSession = process.env.STACK_TMUX_SESSION || null;
   const runRecord = {
     item_id: item.id, item_title: item.title, branch,
     tokens: usedTokens, cost_usd: usedCost, started_at: startedAt,
     ...(modelUsage ? { model_usage: modelUsage } : {}), // per-model breakdown (#167)
+    ...(tmuxSession ? { tmux_session: tmuxSession } : {}), // monitoring session (#171)
   };
 
   // What did it produce?

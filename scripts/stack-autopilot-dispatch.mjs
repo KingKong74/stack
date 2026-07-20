@@ -25,7 +25,7 @@
 // lockfile refuses a second night.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -194,11 +194,64 @@ if (job.itemId) args.push('--item', String(job.itemId));
 // set); a resume whose hold a human cleared (▶ Resume now) is a manual press.
 const autoResume = job.kind === 'resume' && job.notBefore;
 if (job.kind !== 'nightly' && !autoResume) args.push('--force');
-const run = spawnSync(process.execPath, [runner, ...args], { stdio: ['ignore', 'inherit', 'inherit'] });
 
-const ok = run.status === 0;
-const failDetail = run.signal
-  ? `[run/job #${job.id}] runner killed by signal ${run.signal}`
-  : `[run/job #${job.id}] runner exited ${run.status ?? 'unknown'} (${job.kind} on ${job.slug}${job.itemId ? ` item #${job.itemId}` : ''})`;
+// Run the autopilot inside a named tmux session (#171) so the web terminal can
+// attach for live monitoring while the run is active. The session name is passed
+// to the runner via STACK_TMUX_SESSION so it can record it in autopilot_runs.
+// Falls back to the direct spawnSync path when tmux is not installed on the host.
+const hasTmux = spawnSync('tmux', ['-V'], { stdio: 'ignore' }).status === 0;
+const safeName = job.slug.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 30);
+const tmuxName = `stack-auto-${safeName}-j${job.id}`;
+const logFile = join(homedir(), '.stack', 'autopilot.log');
+let ok = false;
+let usedTmux = false;
+
+if (hasTmux) {
+  const tmpBase = join(tmpdir(), tmuxName);
+  const wrapperFile = `${tmpBase}.sh`;
+  const exitFile = `${tmpBase}.exit`;
+  // Shell-quote helper (single-quote wrapping, apostrophe escaped).
+  const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
+  // Wrapper: login shell so node/claude resolve via the user's profile; tee so
+  // output appears in the tmux pane for live monitoring AND still lands in the
+  // autopilot log; PIPESTATUS captures the runner's exit code through the pipe.
+  const nodeCmd = [process.execPath, runner, ...args].map(shq).join(' ');
+  writeFileSync(wrapperFile, `#!/bin/bash -l
+export STACK_TMUX_SESSION=${shq(tmuxName)}
+${nodeCmd} 2>&1 | tee -a ${shq(logFile)}
+echo \${PIPESTATUS[0]} > ${shq(exitFile)}
+`, { mode: 0o755 });
+  const tmuxStart = spawnSync('tmux', ['new-session', '-d', '-s', tmuxName, `bash ${shq(wrapperFile)}`], {
+    stdio: 'ignore',
+  });
+  if (tmuxStart.status === 0) {
+    usedTmux = true;
+    log(`job #${job.id}: tmux session ${tmuxName} started for monitoring.`);
+    // Poll until the session ends (runner exits → bash exits → session destroyed).
+    // Cap at 13h as a safety net (the runner itself caps at Settings' autopilotMinutes).
+    const deadline = Date.now() + 13 * 60 * 60 * 1000;
+    while (spawnSync('tmux', ['has-session', '-t', `=${tmuxName}`], { stdio: 'ignore' }).status === 0) {
+      if (Date.now() > deadline) {
+        spawnSync('tmux', ['kill-session', '-t', `=${tmuxName}`], { stdio: 'ignore' });
+        log(`job #${job.id}: killed tmux session ${tmuxName} at 13h safety cap.`);
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 5_000));
+    }
+    try { ok = parseInt(readFileSync(exitFile, 'utf8').trim(), 10) === 0; } catch { ok = false; }
+    try { unlinkSync(wrapperFile); } catch { /* best effort */ }
+    try { unlinkSync(exitFile); } catch { /* best effort */ }
+  } else {
+    log(`job #${job.id}: tmux session start failed — falling back to direct run.`);
+    try { unlinkSync(wrapperFile); } catch { /* best effort */ }
+  }
+}
+
+if (!usedTmux) {
+  const run = spawnSync(process.execPath, [runner, ...args], { stdio: ['ignore', 'inherit', 'inherit'] });
+  ok = run.status === 0;
+}
+
+const failDetail = `[run/job #${job.id}] runner failed (${job.kind} on ${job.slug}${job.itemId ? ` item #${job.itemId}` : ''})`;
 await report(ok ? 'done' : 'failed', ok ? '' : failDetail);
 log(`job #${job.id}: ${ok ? 'done' : `failed — ${failDetail}`}.`);
