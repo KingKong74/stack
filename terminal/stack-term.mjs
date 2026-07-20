@@ -220,6 +220,7 @@ function wireChild(sid, sess, child) {
   sess.idleTimer = setInterval(() => {
     if (Date.now() - sess.lastActivity > IDLE_MS) {
       sendUplink({ t: 'err', sid, msg: 'Session closed after inactivity.' });
+      sess.hitLimit = false; // prevent switch prompt on an idle-reaped session
       child.kill('SIGTERM');
     }
   }, 60_000);
@@ -509,6 +510,7 @@ function connect() {
         sessions.delete(m.sid);
         log(`session ${m.sid} switch prompt killed by browser`);
       } else if (child) {
+        if (sess) sess.hitLimit = false; // prevent switch prompt on an explicit browser kill
         child.kill('SIGTERM');
       }
     }
