@@ -5,6 +5,7 @@ import { hashPin } from '../auth.js';
 import {
   readSettings, settingsShape, CHECKPOINT_DETAILS,
   cleanSessionDefaults, cleanAutopilotTime, cleanAssistFields,
+  AUTOPILOT_EXECUTOR_MODELS, AUTOPILOT_ADVISOR_MODELS,
 } from '../settings.js';
 
 // GET/PATCH /api/settings — the single-row app settings behind bearer auth.
@@ -63,6 +64,16 @@ settings.patch('/', async (req, res) => {
     const n = Math.trunc(Number(body.autopilotMaxItems));
     fields.push(`autopilot_max_items = $${i++}`);
     values.push(Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : 3);
+  }
+  // Dual-model autopilot (#153): unknown aliases coerce to '' (default / off)
+  // rather than erroring — the picker only offers catalogue values anyway.
+  if ('autopilotExecutorModel' in body) {
+    fields.push(`autopilot_executor_model = $${i++}`);
+    values.push(oneOf(String(body.autopilotExecutorModel || ''), AUTOPILOT_EXECUTOR_MODELS, ''));
+  }
+  if ('autopilotAdvisorModel' in body) {
+    fields.push(`autopilot_advisor_model = $${i++}`);
+    values.push(oneOf(String(body.autopilotAdvisorModel || ''), AUTOPILOT_ADVISOR_MODELS, ''));
   }
   if ('assistGuidance' in body) {
     fields.push(`assist_guidance = $${i++}`);

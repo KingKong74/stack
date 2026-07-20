@@ -87,7 +87,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             budget — the wall-clock cap (Settings' autopilotMinutes) AND a token budget
             (--tokens / STACK_AUTOPILOT_TOKENS override; default Settings' autopilotTokens,
             **0 = unlimited** — the wall clock alone governs) metered from each session's real
-            usage via `claude -p --output-format json`. `--item N` pins a run to exactly that
+            usage via `claude -p --output-format json`. **Dual-model sessions** (#153): the
+            session runs on Settings' autopilotExecutorModel (`claude --model`; '' = the CLI's
+            default) and, when autopilotAdvisorModel is set, a stronger ADVISOR is exposed to
+            it as a read-only custom subagent (`claude --agents`, tools Read/Grep/Glob) the
+            executor consults — an ordinary Agent tool call — for the build plan, unblocking
+            and a pre-finish sanity check; the night log states both roles and logs the
+            session's per-model usage breakdown (`--executor-model`/`--advisor-model`
+            override). `--item N` pins a run to exactly that
             roadmap item in any bucket (done/claimed still refuse) — how scheduled + Run-now
             jobs target one thing. A project's `autopilot_area` (#122, the Mission Control
             target picker; '' = whole board) filters the normal pick to one product area —
@@ -185,7 +192,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 - `screens/Control.tsx` — **Mission Control** (`#/control`, the Dashboard header's "Mission
   Control" button): every project's automation from one point. The autopilot console (arm switch
   + session cap up to 6h + **token budget incl. ∞ Unlimited** + **nightly start time** + items
-  per night — all PATCHed straight to settings, optimistic with rollback) over the **scheduled
+  per night + the **Executor / Advisor model pickers** (#153 — which model runs the session
+  and which stronger one it consults; Default/Off = single-model as before) — all PATCHed
+  straight to settings, optimistic with rollback) over the **scheduled
   sessions card** (week-ahead strip + standing list: one-off / daily / chosen-days sessions per
   project, optionally pinned to one roadmap item — `store.createAutopilotSchedule` et al) and
   one row per project: automode toggle (`patchProject {automode}`), status, live presence, last
@@ -522,6 +531,8 @@ Single row, client camelCase. Meanings under the no-API model:
   "autopilotTokens": 1500000, // token budget per run; 0 = UNLIMITED (positive values floored at 100k)
   "autopilotTime": "23:05",   // nightly start, HOST-local HH:MM (the dispatcher supplies its clock)
   "autopilotMaxItems": 3,     // most items attempted per night (clamped 1–10)
+  "autopilotExecutorModel": "", // #153 — model alias sessions run as ('' = CLI default; haiku|sonnet|opus)
+  "autopilotAdvisorModel": "",  // #153 — stronger model exposed as the "advisor" subagent ('' = off; sonnet|opus|fable)
   "assistGuidance": "",       // ✧ Fill from note (#131): standing owner steer folded into the prompt
   "assistFields": ["title","note","area","lane","priority"], // what the assist may fill (title always)
   "accessPinSet": false       // PIN sign-in available; PATCH accepts write-only `accessPin`

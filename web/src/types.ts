@@ -240,6 +240,8 @@ export interface Settings {
   autopilotTokens: number;    // token budget per run; 0 = unlimited
   autopilotTime: string;      // nightly start, host-local HH:MM
   autopilotMaxItems: number;  // most items attempted per night
+  autopilotExecutorModel: string; // model alias sessions run as; '' = CLI default (#153)
+  autopilotAdvisorModel: string;  // stronger model exposed as the advisor subagent; '' = off
   assistGuidance: string;     // ✧ Fill from note — standing steer folded into the prompt
   assistFields: string[];     // which fields the assist may fill (title always)
   accessPinSet: boolean;      // PIN sign-in available (the PIN itself never leaves the server)

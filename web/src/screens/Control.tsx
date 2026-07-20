@@ -21,6 +21,16 @@ const BUDGETS = [
   { tokens: 5_000_000, label: '5M' }, { tokens: 0, label: '∞ Unlimited' },
 ];
 const NIGHT_ITEMS = [1, 2, 3, 5];
+// Dual-model sessions (#153): the executor runs every turn, the advisor is the
+// stronger model it consults as a subagent. '' = CLI default / no advisor.
+const EXECUTORS = [
+  { model: '', label: 'Default' }, { model: 'haiku', label: 'Haiku' },
+  { model: 'sonnet', label: 'Sonnet' }, { model: 'opus', label: 'Opus' },
+];
+const ADVISORS = [
+  { model: '', label: 'Off' }, { model: 'sonnet', label: 'Sonnet' },
+  { model: 'opus', label: 'Opus' }, { model: 'fable', label: 'Fable' },
+];
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const OPEN_JOB = new Set(['queued', 'claimed', 'running']);
 
@@ -94,6 +104,7 @@ export function ControlPanel() {
   const setAutopilot = async (patch: {
     autopilotEnabled?: boolean; autopilotMinutes?: number;
     autopilotTokens?: number; autopilotTime?: string; autopilotMaxItems?: number;
+    autopilotExecutorModel?: string; autopilotAdvisorModel?: string;
   }) => {
     if (!data) return;
     const prev = data.autopilot;
@@ -105,6 +116,8 @@ export function ControlPanel() {
         tokens: patch.autopilotTokens ?? prev.tokens,
         time: patch.autopilotTime ?? prev.time,
         maxItems: patch.autopilotMaxItems ?? prev.maxItems,
+        executorModel: patch.autopilotExecutorModel ?? prev.executorModel,
+        advisorModel: patch.autopilotAdvisorModel ?? prev.advisorModel,
       },
     });
     try {
@@ -115,6 +128,8 @@ export function ControlPanel() {
           enabled: s.autopilotEnabled, minutes: s.autopilotMinutes,
           tokens: s.autopilotTokens ?? prev.tokens, time: s.autopilotTime ?? prev.time,
           maxItems: s.autopilotMaxItems ?? prev.maxItems,
+          executorModel: s.autopilotExecutorModel ?? prev.executorModel,
+          advisorModel: s.autopilotAdvisorModel ?? prev.advisorModel,
         },
       });
     } catch (e) {
@@ -336,6 +351,32 @@ export function ControlPanel() {
                         className={`seg-opt ${data.autopilot.maxItems === n ? 'on' : ''}`}
                         onClick={() => setAutopilot({ autopilotMaxItems: n })}>
                         {n}
+                      </button>
+                    ))}
+                  </span>
+                </label>
+                <label className="mc-knob">
+                  <span className="mc-knob-label">Executor</span>
+                  <span className="seg-control sm" role="tablist" aria-label="Executor model — runs the session">
+                    {EXECUTORS.map((m) => (
+                      <button key={m.model} role="tab" aria-selected={data.autopilot.executorModel === m.model}
+                        className={`seg-opt ${data.autopilot.executorModel === m.model ? 'on' : ''}`}
+                        title={m.model === '' ? "The claude CLI's own default model runs the session" : `Sessions run on ${m.label}`}
+                        onClick={() => setAutopilot({ autopilotExecutorModel: m.model })}>
+                        {m.label}
+                      </button>
+                    ))}
+                  </span>
+                </label>
+                <label className="mc-knob">
+                  <span className="mc-knob-label">Advisor</span>
+                  <span className="seg-control sm" role="tablist" aria-label="Advisor model — a stronger model the session consults">
+                    {ADVISORS.map((m) => (
+                      <button key={m.model} role="tab" aria-selected={data.autopilot.advisorModel === m.model}
+                        className={`seg-opt ${data.autopilot.advisorModel === m.model ? 'on' : ''}`}
+                        title={m.model === '' ? 'No advisor — single-model sessions' : `The executor consults ${m.label} for plans and unblocking`}
+                        onClick={() => setAutopilot({ autopilotAdvisorModel: m.model })}>
+                        {m.label}
                       </button>
                     ))}
                   </span>

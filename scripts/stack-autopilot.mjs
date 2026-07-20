@@ -34,8 +34,19 @@
 //                       (default: env STACK_AUTOPILOT_TOKENS, else Settings' autopilotTokens)
 //     [--max-items N]   most items attempted per night (default: Settings' autopilotMaxItems)
 //     [--item N]        work exactly this roadmap item and stop (scheduled/manual runs)
+//     [--executor-model M]  claude model alias the session runs as (default: Settings'
+//                           autopilotExecutorModel; '' = the claude CLI's own default)
+//     [--advisor-model M]   stronger model exposed to the session as the read-only
+//                           "advisor" subagent (default: Settings' autopilotAdvisorModel;
+//                           '' = no advisor — single-model session, phase-1 behaviour)
 //     [--dry]           print what tonight would pick and exit (no claim, no session)
 //     [--force]         run even while the Settings switch / automode is off
+//
+// Dual-model sessions (#153): with both models set, the cheap EXECUTOR runs
+// every turn (claude --model) and consults the expensive ADVISOR through a
+// custom subagent (claude --agents) — an ordinary Agent tool call in the
+// trace — for the build plan, unblocking, and a pre-finish sanity check. The
+// session's JSON result carries per-model usage, logged per item.
 //
 // Env (~/.stack/env): STACK_API + STACK_TOKEN (required), GEMINI_API_KEY
 // (optional — skips the spec pre-pass + second-model review when absent).
@@ -241,6 +252,13 @@ const MINUTES = Math.max(15, parseInt(MINUTES_ARG ?? '', 10) || appSettings.auto
 const rawTokens = TOKENS_OVERRIDE ?? (Number.isFinite(appSettings.autopilotTokens) ? appSettings.autopilotTokens : 1_500_000);
 const TOKEN_BUDGET = rawTokens === 0 ? Infinity : Math.max(50_000, rawTokens);
 const MAX_ITEMS = ITEM_ID != null ? 1 : Math.max(1, MAX_ITEMS_ARG ?? (appSettings.autopilotMaxItems || 3));
+// Dual-model config (#153): CLI override beats Settings; anything that isn't a
+// plain model alias coerces to '' (default / off) so a bad value can't reach
+// the claude CLI. The executor is the model the session runs as; the advisor
+// is a stronger model the session consults as a subagent ('' = none).
+const cleanModel = (v) => (/^[a-z0-9][a-z0-9.-]{0,63}$/i.test(String(v ?? '')) ? String(v) : '');
+const EXECUTOR_MODEL = cleanModel(arg('executor-model') ?? appSettings.autopilotExecutorModel);
+const ADVISOR_MODEL = cleanModel(arg('advisor-model') ?? appSettings.autopilotAdvisorModel);
 const nightStart = Date.now();
 const elapsedMin = () => (Date.now() - nightStart) / 60_000;
 const remainingMin = () => MINUTES - elapsedMin();
@@ -312,12 +330,21 @@ The owner's refinement — change ONLY what this asks for, on top of what alread
   ${item.refineNote}
 `;
 
+  // The advisor contract (#153): only present when an advisor model is set —
+  // the executor is told when to consult it, and that advice never expands scope.
+  const advisorBlock = !ADVISOR_MODEL ? '' : `
+A strategic ADVISOR (a stronger model) is available as the subagent named "advisor". Use it deliberately — it is expensive:
+- BEFORE writing any code, consult it once: state the task, your intended approach and the files you plan to touch, and follow its guidance.
+- Consult it again if you get genuinely stuck, and once before finishing to sanity-check the result against the acceptance criteria.
+- The advisor is read-only and only advises; all building, verifying and committing is yours. Its advice never expands the task's scope.
+`;
+
   const prompt = `You are Stack's overnight autopilot, working unattended in a dedicated git worktree on branch ${branch}.
 
 Your single task tonight is roadmap item #${item.id} (bucket: ${item.bucket}):
 
   ${item.title}
-${item.note ? `  Context: ${item.note}\n` : ''}${refineBlock}${specBlock(spec)}${planBlock}
+${item.note ? `  Context: ${item.note}\n` : ''}${refineBlock}${specBlock(spec)}${planBlock}${advisorBlock}
 Rules for this run:
 - Work ONLY on this item; do not pick up other roadmap items or ideas.
 - Commit in small complete units with clear messages. Push the branch with \`git push -u origin ${branch}\`. NEVER push or merge main — a human reviews and merges in the morning.
@@ -327,8 +354,23 @@ Rules for this run:
 - If the item proves impossible or unsafe to do unattended, stop early: leave the tree clean, and say why in the checkpoint summary and blockers.`;
 
   // Bounded session; JSON output so real token usage lands in the night ledger.
-  log(`starting claude session…`);
-  const run = spawnSync('claude', ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'json'], {
+  // Dual-model wiring (#153): --model pins the executor; --agents defines the
+  // advisor subagent on the stronger model (read-only tools — it advises, the
+  // executor executes). Both '' = exactly the old single-model invocation.
+  const claudeArgs = ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'json'];
+  if (EXECUTOR_MODEL) claudeArgs.push('--model', EXECUTOR_MODEL);
+  if (ADVISOR_MODEL) {
+    claudeArgs.push('--agents', JSON.stringify({
+      advisor: {
+        description: 'The strategic advisor — a stronger model. Consult it for the build plan before coding, when genuinely stuck, and to sanity-check the result before finishing.',
+        prompt: 'You are the advisor to a cheaper executor model building one roadmap item unattended overnight. Give decisive, concrete guidance: the approach, the exact files to touch, the traps to avoid, and how to verify. Be concise — the executor pays to read every token. Advise only; never expand the task\'s scope.',
+        model: ADVISOR_MODEL,
+        tools: ['Read', 'Grep', 'Glob'],
+      },
+    }));
+  }
+  log(`starting claude session (executor ${EXECUTOR_MODEL || 'CLI default'}, advisor ${ADVISOR_MODEL || 'off'})…`);
+  const run = spawnSync('claude', claudeArgs, {
     cwd: wt,
     stdio: ['ignore', 'pipe', 'inherit'],
     encoding: 'utf8',
@@ -352,6 +394,16 @@ Rules for this run:
     resultText = String(out.result || '').trim();
     log(`session finished: ${out.num_turns ?? '?'} turns, ~${Math.round(usedTokens / 1000)}k tokens`
       + (usedCost ? ` ($${usedCost.toFixed(2)})` : ''));
+    // Per-model breakdown (#153): with an advisor in play this is the proof
+    // both roles ran on their own models — one line per model in the night log.
+    if (out.modelUsage && typeof out.modelUsage === 'object') {
+      const perModel = Object.entries(out.modelUsage).map(([model, u]) => {
+        const t = (u.inputTokens || 0) + (u.outputTokens || 0)
+          + (u.cacheReadInputTokens || 0) + (u.cacheCreationInputTokens || 0);
+        return `${model} ~${Math.round(t / 1000)}k${u.costUSD ? ` ($${u.costUSD.toFixed(2)})` : ''}`;
+      });
+      if (perModel.length) log(`model usage: ${perModel.join(' · ')}`);
+    }
   } catch {
     log(`session finished (status ${run.status ?? 'killed at cap'}) — usage unreadable, wall clock still governs.`);
   }
@@ -420,6 +472,7 @@ try {
   log(`night budget: ${MINUTES}m wall clock, `
     + `${TOKEN_BUDGET === Infinity ? 'UNLIMITED tokens' : `${Math.round(TOKEN_BUDGET / 1000)}k tokens`}, `
     + `up to ${MAX_ITEMS} item(s)${ITEM_ID != null ? ` (pinned to #${ITEM_ID})` : ''}.`);
+  log(`models: executor ${EXECUTOR_MODEL || 'CLI default'}, advisor ${ADVISOR_MODEL || 'off'}.`);
 
   for (let n = 0; n < MAX_ITEMS; n++) {
     if (remainingMin() < MIN_SESSION_MIN) { log(`wall clock nearly spent (${Math.round(remainingMin())}m left) — stopping.`); break; }

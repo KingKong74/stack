@@ -36,6 +36,12 @@ export const cleanAssistFields = (v) => {
   return [...new Set(['title', ...keys])];
 };
 
+// Dual-model autopilot (#153): claude CLI model aliases the settings accept.
+// The executor is the (cheaper) model that runs the session; the advisor is
+// the stronger model it consults as a subagent. '' = CLI default / no advisor.
+export const AUTOPILOT_EXECUTOR_MODELS = ['', 'haiku', 'sonnet', 'opus'];
+export const AUTOPILOT_ADVISOR_MODELS = ['', 'sonnet', 'opus', 'fable'];
+
 const DEFAULTS = {
   auto_record: true,
   keep_resume_card: true,
@@ -47,6 +53,8 @@ const DEFAULTS = {
   autopilot_tokens: 1_500_000, // per-run token budget; 0 = unlimited
   autopilot_time: '23:05',     // nightly start, host-local HH:MM
   autopilot_max_items: 3,
+  autopilot_executor_model: '', // '' = the claude CLI's own default model
+  autopilot_advisor_model: '',  // '' = no advisor subagent
   assist_guidance: '',
   assist_fields: [...ASSIST_FIELDS],
   access_pin_hash: null,
@@ -73,6 +81,8 @@ export async function readSettings(client) {
     autopilot_tokens: Number.isFinite(Number(r.autopilot_tokens)) ? Number(r.autopilot_tokens) : 1_500_000,
     autopilot_time: cleanAutopilotTime(r.autopilot_time),
     autopilot_max_items: Number.isFinite(r.autopilot_max_items) ? r.autopilot_max_items : 3,
+    autopilot_executor_model: oneOf(r.autopilot_executor_model, AUTOPILOT_EXECUTOR_MODELS, ''),
+    autopilot_advisor_model: oneOf(r.autopilot_advisor_model, AUTOPILOT_ADVISOR_MODELS, ''),
     assist_guidance: String(r.assist_guidance || ''),
     assist_fields: cleanAssistFields(r.assist_fields),
     access_pin_hash: r.access_pin_hash || null,
@@ -91,6 +101,8 @@ export function settingsShape(s) {
     autopilotTokens: s.autopilot_tokens,     // 0 = unlimited
     autopilotTime: s.autopilot_time,         // host-local HH:MM
     autopilotMaxItems: s.autopilot_max_items,
+    autopilotExecutorModel: s.autopilot_executor_model, // '' = CLI default (#153)
+    autopilotAdvisorModel: s.autopilot_advisor_model,   // '' = no advisor
     assistGuidance: s.assist_guidance,       // standing steer for ✧ Fill from note
     assistFields: s.assist_fields,           // which fields the assist may fill
     accessPinSet: Boolean(s.access_pin_hash), // the hash itself never leaves the server
