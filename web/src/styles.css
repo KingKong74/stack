@@ -920,7 +920,7 @@ a { color: inherit; }
   border-radius: 7px; padding: 2px 7px; background: rgba(255,255,255,.4); }
 .note-actions .promote:hover { color: rgba(0,0,0,.78); border-color: rgba(0,0,0,.3); }
 
-/* ---------- checks (the Bugs tab's testing panel) ---------- */
+/* ---------- the testing area (the Bugs tab — probes + function tests) ---------- */
 .checks { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 17px; margin-bottom: 24px; }
 .checks-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .checks-head .left { display: flex; align-items: baseline; gap: 9px; }
@@ -931,10 +931,15 @@ a { color: inherit; }
 .checks-quick:hover { color: var(--accent-deep); }
 .checks-run { height: 32px; padding: 0 13px; font-size: 12.5px; }
 .checks-run:disabled { opacity: .6; cursor: default; }
-.check-composer { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.check-composer { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.check-composer-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .check-composer .field-input.sm { width: 180px; }
 .check-composer .field-input.sm.grow { flex: 1; min-width: 220px; }
-.check-composer .field-input.sm.code { width: 70px; font-family: var(--mono); }
+.check-composer .field-input.sm.code { width: 120px; font-family: var(--mono); }
+.check-composer select.field-input.sm.check-method-pick { width: 88px; }
+.check-body { width: 100%; height: auto; min-height: 60px; padding: 9px 13px; font-family: var(--mono); font-size: 12px; line-height: 1.5; resize: vertical; }
+.check-method { flex: none; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--muted); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 5px; }
+.check-method.fn { color: var(--accent); border-color: var(--accent-tint-border); background: var(--accent-tint); }
 .check-rows { display: flex; flex-direction: column; margin-top: 8px; }
 .check-row { display: flex; align-items: center; gap: 11px; padding: 8px 0; flex-wrap: wrap; }
 .check-row + .check-row { border-top: 1px solid var(--line-2); }

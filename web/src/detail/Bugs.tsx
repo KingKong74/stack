@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { Bug, BugStatus, Check } from '../types';
+import type { Bug, BugStatus, Check, CheckMethod } from '../types';
+import type { CheckInput } from '../store';
 import { STATUS_LABEL } from '../lib/ui';
 
 type BugFilter = 'all' | 'open' | 'fixing' | 'fixed';
@@ -7,57 +8,86 @@ type BugFilter = 'all' | 'open' | 'fixing' | 'fixed';
 const matches = (b: Bug, f: BugFilter) =>
   f === 'all' ? true : f === 'open' ? (b.status === 'open' || b.status === 'investigating') : b.status === f;
 
-// The testing panel: HTTP probes against the project's live application.
-// Run all (or one) with a click; a failing check offers to file the bug.
-function ChecksPanel({
-  checks, siteUrl, busy, onRun, onAdd, onDelete, onFileBug,
+const METHODS: CheckMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'];
+
+// The composer's working copy of a check — strings throughout, snake_cased on save.
+type Draft = {
+  method: CheckMethod; name: string; url: string; expect: string;
+  reqBody: string; contains: string; jsonPath: string; jsonExpect: string; semantic: string;
+};
+const EMPTY_DRAFT: Draft = {
+  method: 'GET', name: '', url: '', expect: '200',
+  reqBody: '', contains: '', jsonPath: '', jsonExpect: '', semantic: '',
+};
+const toDraft = (c: Check): Draft => ({
+  method: c.method, name: c.name, url: c.url, expect: String(c.expectStatus),
+  reqBody: c.reqBody, contains: c.contains, jsonPath: c.jsonPath, jsonExpect: c.jsonExpect, semantic: c.semantic,
+});
+
+// The testing area (#143): HTTP tests against the project's live application —
+// plain probes and function tests (method + body against an endpoint) with
+// assertions on status, a body keyword, a JSON-path value or a Gemini-judged
+// expectation. Run all (or one) with a click; a failing test offers to file
+// the bug; ✎ edits a test in place.
+function TestingPanel({
+  checks, siteUrl, busy, onRun, onAdd, onEdit, onDelete, onFileBug,
 }: {
   checks: Check[]; siteUrl: string; busy: boolean;
   onRun: (id?: number) => void;
-  onAdd: (input: { name: string; url: string; expect_status?: number; contains?: string; semantic?: string }) => void;
+  onAdd: (input: CheckInput) => void;
+  onEdit: (id: number, patch: Partial<CheckInput>) => void;
   onDelete: (id: number) => void;
   onFileBug: (c: Check) => void;
 }) {
-  const [adding, setAdding] = useState(false);
-  const [name, setName] = useState('');
-  const [url, setUrl] = useState('');
-  const [expect, setExpect] = useState('200');
-  const [contains, setContains] = useState('');
-  const [semantic, setSemantic] = useState('');
+  const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [d, setD] = useState<Draft>(EMPTY_DRAFT);
+  const set = (patch: Partial<Draft>) => setD((prev) => ({ ...prev, ...patch }));
 
-  const add = () => {
-    if (!name.trim() || !/^https?:\/\//i.test(url.trim())) return;
-    onAdd({
-      name: name.trim(), url: url.trim(), expect_status: Number(expect) || 200,
-      contains: contains.trim() || undefined,
-      semantic: semantic.trim() || undefined,
-    });
-    setName(''); setUrl(''); setExpect('200'); setContains(''); setSemantic('');
-    setAdding(false);
+  const close = () => { setOpen(false); setEditingId(null); setD(EMPTY_DRAFT); };
+  const startAdd = () => { setD(EMPTY_DRAFT); setEditingId(null); setOpen(true); };
+  const startEdit = (c: Check) => { setD(toDraft(c)); setEditingId(c.id); setOpen(true); };
+
+  const save = () => {
+    if (!d.name.trim() || !/^https?:\/\//i.test(d.url.trim())) return;
+    // Every field goes on the wire — '' clears on edit, the server nulls empties.
+    const input: CheckInput = {
+      name: d.name.trim(), url: d.url.trim(), method: d.method,
+      expect_status: Number(d.expect) || 200,
+      req_body: d.reqBody.trim(), contains: d.contains.trim(),
+      json_path: d.jsonPath.trim(), json_expect: d.jsonExpect.trim(),
+      semantic: d.semantic.trim(),
+    };
+    if (editingId !== null) onEdit(editingId, input); else onAdd(input);
+    close();
+  };
+  const keys = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') save(); else if (e.key === 'Escape') close();
   };
 
   const passing = checks.filter((c) => c.lastStatus === 'pass').length;
   const failing = checks.filter((c) => c.lastStatus === 'fail').length;
   const lastRun = checks.find((c) => c.when)?.when || '';
+  const hasBody = d.method !== 'GET' && d.method !== 'HEAD';
 
   return (
     <div className="checks">
       <div className="checks-head">
         <div className="left">
-          <span className="checks-title">Checks</span>
+          <span className="checks-title">Testing</span>
           <span className="checks-sub">
             {checks.length
               ? `${passing} passing${failing ? ` · ${failing} failing` : ''}${lastRun ? ` · last run ${lastRun}` : ' · never run'}`
-              : 'probe the live app — is it up, does it answer, does it say the right thing'}
+              : 'test the live app — pages up, functions answering, responses saying the right thing'}
           </span>
         </div>
         <div className="checks-actions">
-          {!adding && checks.length === 0 && siteUrl && (
+          {!open && checks.length === 0 && siteUrl && (
             <button className="checks-quick" onClick={() => onAdd({ name: 'Site up', url: siteUrl })}>
               + Site up
             </button>
           )}
-          {!adding && <button className="checks-quick" onClick={() => setAdding(true)}>+ Add check</button>}
+          {!open && <button className="checks-quick" onClick={startAdd}>+ Add test</button>}
           {checks.length > 0 && (
             <button className="btn-repo checks-run" disabled={busy} onClick={() => onRun()}>
               {busy ? 'Running…' : '▸ Run all'}
@@ -66,23 +96,41 @@ function ChecksPanel({
         </div>
       </div>
 
-      {adding && (
+      {open && (
         <div className="check-composer">
-          <input className="field-input sm" autoFocus placeholder="Name — e.g. API health"
-            value={name} onChange={(e) => setName(e.target.value)} />
-          <input className="field-input sm grow" placeholder="https://…"
-            value={url} onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') add(); else if (e.key === 'Escape') setAdding(false); }} />
-          <input className="field-input sm code" placeholder="200" value={expect}
-            onChange={(e) => setExpect(e.target.value)} title="Expected HTTP status" />
-          <input className="field-input sm" placeholder="body contains… (optional)" value={contains}
-            onChange={(e) => setContains(e.target.value)} title="Fail unless the response body contains this text"
-            onKeyDown={(e) => { if (e.key === 'Enter') add(); }} />
-          <input className="field-input sm grow" placeholder="✧ looks right? e.g. shows the dashboard, no error banners (optional)" value={semantic}
-            onChange={(e) => setSemantic(e.target.value)} title="A plain-language expectation — Gemini judges the fetched page against it"
-            onKeyDown={(e) => { if (e.key === 'Enter') add(); }} />
-          <button className="btn-submit sm" onClick={add}>Add</button>
-          <button className="btn-cancel sm" onClick={() => setAdding(false)}>Cancel</button>
+          <div className="check-composer-row">
+            <select className="field-input sm code check-method-pick" value={d.method}
+              onChange={(e) => set({ method: e.target.value as CheckMethod })} title="HTTP method">
+              {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <input className="field-input sm" autoFocus placeholder="Name — e.g. Login endpoint"
+              value={d.name} onChange={(e) => set({ name: e.target.value })} onKeyDown={keys} />
+            <input className="field-input sm grow" placeholder="https://…"
+              value={d.url} onChange={(e) => set({ url: e.target.value })} onKeyDown={keys} />
+            <input className="field-input sm code" placeholder="200" value={d.expect}
+              onChange={(e) => set({ expect: e.target.value })} title="Expected HTTP status" onKeyDown={keys} />
+          </div>
+          {hasBody && (
+            <textarea className="field-input sm check-body" rows={3}
+              placeholder='Request body (optional) — JSON is sent as application/json, e.g. {"email": "test@example.com"}'
+              value={d.reqBody} onChange={(e) => set({ reqBody: e.target.value })} />
+          )}
+          <div className="check-composer-row">
+            <input className="field-input sm" placeholder="body contains… (optional)" value={d.contains}
+              onChange={(e) => set({ contains: e.target.value })} onKeyDown={keys}
+              title="Fail unless the response body contains this text" />
+            <input className="field-input sm code" placeholder="$.path.to.field" value={d.jsonPath}
+              onChange={(e) => set({ jsonPath: e.target.value })} onKeyDown={keys}
+              title="A dot path into the JSON response — fails if missing" />
+            <input className="field-input sm code" placeholder="expected value" value={d.jsonExpect}
+              onChange={(e) => set({ jsonExpect: e.target.value })} onKeyDown={keys}
+              title="What that path should equal (leave empty to only require it exists)" />
+            <input className="field-input sm grow" placeholder="✧ looks right? e.g. shows the dashboard, no error banners (optional)"
+              value={d.semantic} onChange={(e) => set({ semantic: e.target.value })} onKeyDown={keys}
+              title="A plain-language expectation — Gemini judges the response against it" />
+            <button className="btn-submit sm" onClick={save}>{editingId !== null ? 'Save' : 'Add'}</button>
+            <button className="btn-cancel sm" onClick={close}>Cancel</button>
+          </div>
         </div>
       )}
 
@@ -91,10 +139,16 @@ function ChecksPanel({
           {checks.map((c) => (
             <div className={`check-row ${c.lastStatus}`} key={c.id}>
               <span className={`check-dot ${c.lastStatus || 'never'}`} />
+              <span className={`check-method ${c.method === 'GET' ? '' : 'fn'}`}>{c.method}</span>
               <span className="check-name">{c.name}</span>
               <span className="check-url">{c.url}</span>
               {c.contains && <span className="check-contains" title="Body must contain this text">“{c.contains}”</span>}
-              {c.semantic && <span className="check-contains" title="Gemini judges the page against this expectation">✧ {c.semantic}</span>}
+              {c.jsonPath && (
+                <span className="check-contains" title="JSON-path assertion on the response">
+                  {c.jsonPath}{c.jsonExpect ? ` = ${c.jsonExpect}` : ''}
+                </span>
+              )}
+              {c.semantic && <span className="check-contains" title="Gemini judges the response against this expectation">✧ {c.semantic}</span>}
               <span className="check-result">
                 {c.lastStatus
                   ? `${c.lastCode ?? '—'} · ${c.lastMs}ms · ${c.when}`
@@ -105,8 +159,9 @@ function ChecksPanel({
                 {c.lastStatus === 'fail' && (
                   <button className="check-tobug" onClick={() => onFileBug(c)} title="File this failure as a bug">→ Bug</button>
                 )}
-                <button className="check-runone" disabled={busy} onClick={() => onRun(c.id)} title="Run this check">▸</button>
-                <button className="check-x" onClick={() => onDelete(c.id)} aria-label="Delete check" title="Delete">×</button>
+                <button className="check-runone" disabled={busy} onClick={() => onRun(c.id)} title="Run this test">▸</button>
+                <button className="check-runone" onClick={() => startEdit(c)} aria-label="Edit test" title="Edit">✎</button>
+                <button className="check-x" onClick={() => onDelete(c.id)} aria-label="Delete test" title="Delete">×</button>
               </span>
             </div>
           ))}
@@ -120,7 +175,7 @@ const BUG_STATUSES: BugStatus[] = ['open', 'investigating', 'fixing', 'fixed'];
 
 export function Bugs({
   bugs, filter, setFilter, onReport, onOpenLink, highlightId, onSetStatus, onDelete,
-  checks, siteUrl, checksBusy, onRunChecks, onAddCheck, onDeleteCheck, onCheckToBug,
+  checks, siteUrl, checksBusy, onRunChecks, onAddCheck, onEditCheck, onDeleteCheck, onCheckToBug,
 }: {
   bugs: Bug[]; filter: BugFilter; setFilter: (f: BugFilter) => void;
   onReport: () => void; onOpenLink: (hash: string) => void; highlightId?: string | null;
@@ -128,7 +183,8 @@ export function Bugs({
   onDelete: (bug: Bug) => void;
   checks: Check[]; siteUrl: string; checksBusy: boolean;
   onRunChecks: (id?: number) => void;
-  onAddCheck: (input: { name: string; url: string; expect_status?: number }) => void;
+  onAddCheck: (input: CheckInput) => void;
+  onEditCheck: (id: number, patch: Partial<CheckInput>) => void;
   onDeleteCheck: (id: number) => void;
   onCheckToBug: (c: Check) => void;
 }) {
@@ -148,8 +204,8 @@ export function Bugs({
 
   return (
     <div>
-      <ChecksPanel checks={checks} siteUrl={siteUrl} busy={checksBusy}
-        onRun={onRunChecks} onAdd={onAddCheck} onDelete={onDeleteCheck} onFileBug={onCheckToBug} />
+      <TestingPanel checks={checks} siteUrl={siteUrl} busy={checksBusy}
+        onRun={onRunChecks} onAdd={onAddCheck} onEdit={onEditCheck} onDelete={onDeleteCheck} onFileBug={onCheckToBug} />
 
       <div className="section-bar">
         <div className="titles">
