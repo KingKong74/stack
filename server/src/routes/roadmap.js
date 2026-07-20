@@ -49,7 +49,8 @@ roadmap.post('/', async (req, res) => {
 });
 
 // PATCH /:id  -> done toggle, bucket move, title/note edit, reorder, reviewed,
-//                claim/release (claimed_by), archive-review verdict (review_tag)
+//                claim/release (claimed_by), archive-review verdict (review_tag),
+//                review shelving (review_shelved, #148)
 roadmap.patch('/:id', async (req, res) => {
   const sets = [];
   const vals = [];
@@ -63,8 +64,17 @@ roadmap.patch('/:id', async (req, res) => {
   }
   if (req.body?.review_tag !== undefined) {
     const tag = String(req.body.review_tag || '').trim();
+    const verdict = ['solid', 'needs-work', 'rethink'].includes(tag) ? tag : null;
     sets.push(`review_tag = $${i++}`);
-    vals.push(['solid', 'needs-work', 'rethink'].includes(tag) ? tag : null);
+    vals.push(verdict);
+    // A verdict archives the item — it can't also sit on the review shelf
+    // (#148). An explicit value in the same PATCH wins.
+    if (verdict && req.body.review_shelved === undefined) sets.push('review_shelved = false');
+  }
+  if (req.body?.review_shelved !== undefined) {
+    // Shelve a review (#148): the completed row leaves the main To-verify list
+    // for the collapsed Shelved strip — to be reviewed later; false brings it back.
+    sets.push(`review_shelved = $${i++}`); vals.push(Boolean(req.body.review_shelved));
   }
   if (req.body?.review_tags !== undefined) {
     // Review annotations (#146) — the whole list comes back each time, like plan.
@@ -104,6 +114,11 @@ roadmap.patch('/:id', async (req, res) => {
       if (req.body.review_tag === undefined) sets.push('review_tag = NULL');
       if (req.body.claimed_by === undefined) sets.push('claimed_by = NULL');
     }
+    // Either direction leaves the review shelf (#148): a fresh completion
+    // starts its verify round on the main list, and an un-ticked item is back
+    // on the board where shelving means nothing. Explicit values in the same
+    // PATCH win — the column is already SET above and can't go twice.
+    if (req.body.review_shelved === undefined) sets.push('review_shelved = false');
   }
   if (req.body?.bucket !== undefined) { sets.push(`bucket = $${i++}`); vals.push(oneOf(req.body.bucket, BUCKETS, 'should')); }
   if (req.body?.title !== undefined) {

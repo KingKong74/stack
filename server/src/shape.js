@@ -32,6 +32,7 @@ export function roadmapItemShape(row) {
     reviewTag: row.review_tag || '',   // archive verdict: solid | needs-work | rethink
     reviewTags: Array.isArray(row.review_tags) ? row.review_tags : [], // review annotations (#146)
     refineNote: row.refine_note || '', // the refine delta — what to change on top (#146)
+    reviewShelved: !!row.review_shelved, // review set aside for later — off the To-verify list (#148)
     skipped: !!row.skipped,            // parked — planned, but not to be picked up yet
     plan: cleanPlan(row.plan),         // implementation steps [{text, done}] (#75)
     updatedAt: row.updated_at || null, // ISO — the archive sorts latest-touched first

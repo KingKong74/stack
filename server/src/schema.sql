@@ -153,6 +153,12 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS review_tags JSONB NOT NULL DE
 -- on top of what already landed. Cleared when the item completes again (the
 -- refinement was addressed).
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS refine_note TEXT;
+-- Shelved reviews (#148): a completed item the owner has seen but wants to come
+-- back to ("good enough for now — fix a few things later"). Shelved rows leave
+-- the main To-verify list for the collapsed Shelved strip. Cleared whenever the
+-- item completes afresh, goes back to the board or takes a verdict, so a row is
+-- never both awaiting verification and shelved.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS review_shelved BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
 -- Per-project futures: loose directional ideas, curated against the north star

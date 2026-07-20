@@ -66,6 +66,7 @@ export interface RoadmapItem {
   reviewTag: string;   // archive verdict: '' | solid | needs-work | rethink
   reviewTags: string[]; // review annotations ('fix', 'needs-more', …) — #146
   refineNote: string;  // the refine delta — what to change on top ('' = none) — #146
+  reviewShelved: boolean; // review set aside for later — off the To-verify list — #148
   skipped: boolean;    // parked — planned, but not to be picked up yet
   plan: PlanStep[];    // the implementation plan ([] = none)
   updatedAt: string | null; // ISO — latest-first ordering in the archive

@@ -634,7 +634,7 @@ export async function patchRoadmapItem(
   patch: Partial<{
     done: boolean; bucket: Priority; title: string; note: string; reviewed: boolean;
     claimed_by: string; review_tag: string; review_tags: string[]; refine_note: string;
-    skipped: boolean; area: string; position: number;
+    review_shelved: boolean; skipped: boolean; area: string; position: number;
     built_note: string; plan: PlanStep[];
   }>,
 ): Promise<RoadmapItem> {
