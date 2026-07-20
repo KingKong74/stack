@@ -154,6 +154,8 @@ control.get('/', async (_req, res) => {
       tokens: appSettings.autopilot_tokens,     // 0 = unlimited
       time: appSettings.autopilot_time,         // host-local HH:MM
       maxItems: appSettings.autopilot_max_items,
+      executorModel: appSettings.autopilot_executor_model, // '' = CLI default (#153)
+      advisorModel: appSettings.autopilot_advisor_model,   // '' = no advisor
     },
     // The host PTY daemon's agent socket + every open web-terminal session
     // (labels are the ✧ Gemini annotations, '' until asked for).

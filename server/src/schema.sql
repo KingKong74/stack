@@ -276,6 +276,13 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS access_pin_hash TEXT;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_tokens    BIGINT  NOT NULL DEFAULT 1500000;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_time      TEXT    NOT NULL DEFAULT '23:05';
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_max_items INTEGER NOT NULL DEFAULT 3;
+-- Dual-model autopilot (#153): the EXECUTOR model runs the unattended session
+-- (claude --model; '' = the CLI's default) while the ADVISOR — a stronger
+-- model — is exposed to it as a read-only subagent it consults for plans and
+-- unblocking ('' = no advisor, single-model session as before). Model values
+-- are claude CLI aliases (haiku | sonnet | opus | fable).
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_executor_model TEXT NOT NULL DEFAULT '';
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_advisor_model  TEXT NOT NULL DEFAULT '';
 -- ✧ Fill from note (#131): a standing guidance line folded into the assist
 -- prompt, and which fields the assist is allowed to fill (title always is).
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS assist_guidance TEXT  NOT NULL DEFAULT '';
