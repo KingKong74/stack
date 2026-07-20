@@ -212,16 +212,18 @@ if (hasTmux) {
   const exitFile = `${tmpBase}.exit`;
   // Shell-quote helper (single-quote wrapping, apostrophe escaped).
   const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
-  // Wrapper: login shell so node/claude resolve via the user's profile; tee so
-  // output appears in the tmux pane for live monitoring AND still lands in the
-  // autopilot log; PIPESTATUS captures the runner's exit code through the pipe.
+  // Wrapper: login shell (bash -l in the tmux invocation, not just the shebang —
+  // shebang -l is ignored when running `bash script.sh`) so node/claude resolve
+  // via the user's profile. Tee so output appears in the tmux pane for live
+  // monitoring AND still lands in the autopilot log. PIPESTATUS captures the
+  // runner's exit code through the pipe.
   const nodeCmd = [process.execPath, runner, ...args].map(shq).join(' ');
-  writeFileSync(wrapperFile, `#!/bin/bash -l
+  writeFileSync(wrapperFile, `#!/bin/bash
 export STACK_TMUX_SESSION=${shq(tmuxName)}
 ${nodeCmd} 2>&1 | tee -a ${shq(logFile)}
 echo \${PIPESTATUS[0]} > ${shq(exitFile)}
 `, { mode: 0o755 });
-  const tmuxStart = spawnSync('tmux', ['new-session', '-d', '-s', tmuxName, `bash ${shq(wrapperFile)}`], {
+  const tmuxStart = spawnSync('tmux', ['new-session', '-d', '-s', tmuxName, `bash -l ${shq(wrapperFile)}`], {
     stdio: 'ignore',
   });
   if (tmuxStart.status === 0) {
