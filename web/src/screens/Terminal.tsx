@@ -153,6 +153,13 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
     setViewPrefsState(p); setTermViewPrefs(p);
   };
 
+  // #138 — bare-slug cwd resolution: a slug with no path separators (e.g.
+  // "stack") is sent straight to the daemon, which resolves it relative to
+  // STACK_TERM_ROOT ($HOME). So "stack" → "$HOME/stack" — where projects live.
+  // The jail still applies: symlinks that escape $HOME are refused by the
+  // daemon's resolveCwd() regardless of what the browser sends.
+  // Mission Control's per-row ⌨ button and the ProjectDetail ⌨ button both
+  // call go.terminal(slug), so project-context opens already land here.
   const openSession = (dir?: string, kind?: 'shell' | 'claude') => {
     const id = nextId.current++;
     setSessions((s) => [...s, { id, cwd: (dir ?? cwd).trim(), cmd: kind ?? mode, status: 'connecting', note: '' }]);
@@ -329,8 +336,12 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
 
       <div className={`page detail term-page${viewPrefs.wide ? ' term-wide' : ''}`}>
         <div className="term-bar">
+          {/* #138 — bare slug (no /) resolves to $HOME/<slug> on the daemon;
+              a full path like "stack/src" also works within that root.
+              The "~/" label makes the relative-to-home semantics visible. */}
           <span className="term-lbl">~/</span>
-          <input className="field-input term-cwd" value={cwd} placeholder="project directory (blank = home)"
+          <input className="field-input term-cwd" value={cwd} placeholder="project slug or sub-path (blank = home)"
+            title="A project slug (e.g. stack) opens ~/slug. A sub-path (e.g. stack/src) opens ~/stack/src. Leave blank for home."
             onChange={(e) => setCwd(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') openSession(); }} />
           {/* #136 — mode toggle replaces the Shell/Claude seg-control tab bar.
