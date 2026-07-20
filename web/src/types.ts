@@ -257,3 +257,12 @@ export interface Settings {
   assistFields: string[];     // which fields the assist may fill (title always)
   accessPinSet: boolean;      // PIN sign-in available (the PIN itself never leaves the server)
 }
+
+// ---- device manager (GET /api/auth/devices) ----
+export interface AuthDevice {
+  id: number;
+  label: string | null;
+  lastUsed: string | null;   // relativeTime string, e.g. "2h ago"
+  createdAt: string | null;  // ISO timestamp
+  current: boolean;          // true = this is the session's own device token
+}

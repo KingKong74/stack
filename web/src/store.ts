@@ -1,6 +1,7 @@
 import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
+  AuthDevice,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -142,6 +143,21 @@ export async function loginWithPin(pin: string): Promise<void> {
   }
   const { token } = (await res.json()) as { token: string };
   setToken(token);
+}
+
+// ---- device manager ----
+
+// List all PIN-issued device tokens. Returns [] when no PIN is set (no rows
+// exist yet) or when the API is unreachable.
+export async function getAuthDevices(): Promise<AuthDevice[]> {
+  return request<AuthDevice[]>('/auth/devices');
+}
+
+// Revoke one PIN device token by its row id. If the caller revokes their own
+// device (current === true), the calling code should clearToken() to drop back
+// to the gate — the next request would 401 anyway since the token is gone.
+export async function revokeAuthDevice(id: number): Promise<void> {
+  return request<void>(`/auth/devices/${id}`, { method: 'DELETE' });
 }
 
 // ---- shaping (server payload -> frontend types) ----
