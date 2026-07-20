@@ -515,6 +515,20 @@ export function setTermUsagePrefs(p: TermUsagePrefs) {
   localStorage.setItem(TERM_USAGE_KEY, JSON.stringify(p));
 }
 
+// The Terminal screen's view preferences (#136) — device-local, like the
+// usage prefs above: the quick-commands rail collapse and wide mode.
+export interface TermViewPrefs { railOpen: boolean; wide: boolean }
+const TERM_VIEW_KEY = 'stack.termView';
+export function getTermViewPrefs(): TermViewPrefs {
+  try {
+    const p = JSON.parse(localStorage.getItem(TERM_VIEW_KEY) || '{}');
+    return { railOpen: p.railOpen !== false, wide: !!p.wide };
+  } catch { return { railOpen: true, wide: false }; }
+}
+export function setTermViewPrefs(p: TermViewPrefs) {
+  localStorage.setItem(TERM_VIEW_KEY, JSON.stringify(p));
+}
+
 // ---- Polaris (POST .../polaris — the Futures tab's Gemini terminal) ----
 
 export interface PolarisTurn { role: 'you' | 'polaris'; text: string }

@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import {
   openTerminal, getTermCmds, setTermCmds, type TermCmd,
   getTermUsagePrefs, setTermUsagePrefs, type TermUsagePrefs,
+  getTermViewPrefs, setTermViewPrefs,
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
 } from '../store';
@@ -88,22 +89,6 @@ const DEFAULT_CMDS: TermCmd[] = [
   { label: 'autopilot log', cmd: 'tail -40 ~/.stack/autopilot.log' },
   { label: 'disk usage', cmd: 'df -h .' },
 ];
-
-// #136 — device-local preference for the quick-commands rail (collapsed/expanded)
-// and for wide mode. Both survive page reloads.
-const TERM_VIEW_KEY = 'stack.termView';
-function getTermViewPrefs(): { railOpen: boolean; wide: boolean } {
-  try {
-    const p = JSON.parse(localStorage.getItem(TERM_VIEW_KEY) || '{}');
-    return {
-      railOpen: p.railOpen !== false, // default open
-      wide: !!p.wide,
-    };
-  } catch { return { railOpen: true, wide: false }; }
-}
-function setTermViewPrefs(p: { railOpen: boolean; wide: boolean }) {
-  localStorage.setItem(TERM_VIEW_KEY, JSON.stringify(p));
-}
 
 type Sess = { id: number; cwd: string; cmd: 'shell' | 'claude'; status: Status; note: string };
 type Handle = { sendText: (s: string) => void; reconnect: () => void; focus: () => void };
