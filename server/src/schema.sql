@@ -360,11 +360,11 @@ CREATE TABLE IF NOT EXISTS autopilot_schedule (
 CREATE TABLE IF NOT EXISTS autopilot_jobs (
   id          BIGSERIAL PRIMARY KEY,
   project_id  BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  kind        TEXT NOT NULL DEFAULT 'manual',   -- manual | nightly | scheduled | revert (#128)
-  item_id     BIGINT,                           -- pin to one roadmap item (manual/scheduled/revert)
+  kind        TEXT NOT NULL DEFAULT 'manual',   -- manual | nightly | scheduled | revert (#128) | resume (#142)
+  item_id     BIGINT,                           -- pin to one roadmap item (manual/scheduled/revert/resume)
   schedule_id BIGINT,                           -- the autopilot_schedule row that spawned it
   night_date  DATE,                             -- nightly dedup: one per project per local date
-  status      TEXT NOT NULL DEFAULT 'queued',   -- queued | claimed | running | done | failed
+  status      TEXT NOT NULL DEFAULT 'queued',   -- queued | claimed | running | done | failed | paused (#142 — hung up, held for a human)
   detail      TEXT NOT NULL DEFAULT '',         -- outcome note from the dispatcher
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   claimed_at  TIMESTAMPTZ,
@@ -374,3 +374,8 @@ CREATE TABLE IF NOT EXISTS autopilot_jobs (
 CREATE UNIQUE INDEX IF NOT EXISTS autopilot_jobs_nightly_idx
   ON autopilot_jobs (project_id, night_date) WHERE kind = 'nightly';
 CREATE INDEX IF NOT EXISTS autopilot_jobs_status_idx ON autopilot_jobs (status, created_at);
+-- #142 — a limit-paused session becomes a durable `resume` job instead of a
+-- detached sleep on the host: not_before is the earliest hand-out time (the
+-- limit reset). GET /next skips queued jobs before it; a human can clear it
+-- (▶ Resume now), hold the job (status 'paused' — hang up) or dismiss it.
+ALTER TABLE autopilot_jobs ADD COLUMN IF NOT EXISTS not_before TIMESTAMPTZ;

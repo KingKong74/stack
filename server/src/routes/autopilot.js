@@ -83,6 +83,9 @@ function jobShape(r) {
     itemTitle: r.item_title || '',
     status: r.status,
     detail: r.detail || '',
+    // #142 — a resume job's earliest hand-out time (the limit reset); null on
+    // every other kind, and cleared when a human presses ▶ Resume now.
+    notBefore: r.not_before ? new Date(r.not_before).toISOString() : null,
     when: relativeTime(r.finished_at || r.started_at || r.created_at) || 'just now',
   };
 }
@@ -170,7 +173,16 @@ autopilotGlobal.post('/start', async (req, res) => {
   const open = await q(
     `${JOB_SELECT} WHERE j.project_id = $1 AND j.status IN ('queued','claimed','running')
       ORDER BY j.created_at LIMIT 1`, [project.id]);
-  if (open.rows.length) return res.status(200).json(jobShape(open.rows[0]));
+  if (open.rows.length) {
+    // Run now on a project with a pending limit-resume = resume it NOW: clear
+    // the hold so the next dispatcher poll picks it up (#142).
+    const row = open.rows[0];
+    if (row.kind === 'resume' && row.status === 'queued' && row.not_before) {
+      await q('UPDATE autopilot_jobs SET not_before = NULL WHERE id = $1', [row.id]);
+      row.not_before = null;
+    }
+    return res.status(200).json(jobShape(row));
+  }
   const itemId = Number.isFinite(Number(b.itemId)) && b.itemId !== '' && b.itemId != null ? Number(b.itemId) : null;
   const { rows } = await q(
     `INSERT INTO autopilot_jobs (project_id, kind, item_id) VALUES ($1,'manual',$2) RETURNING id`,
@@ -206,6 +218,41 @@ autopilotGlobal.post('/undo', async (req, res) => {
     [project.id, itemId]);
   const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [rows[0].id]);
   res.status(201).json(jobShape(full.rows[0]));
+});
+
+// POST /resume — the runner's graceful pause (#142): a session that died on
+// the usage limit queues its own continuation as a DURABLE job instead of a
+// detached sleep on the host. { slug, itemId?, minutes } → a kind='resume'
+// job held until now()+minutes (the limit reset); minutes is relative so the
+// host/server clock skew never matters. Idempotent per project: an open
+// resume job is re-pointed at the new reset instead of stacking a duplicate.
+// The job is visible in Mission Control and the Terminal, where a human can
+// ▶ Resume now (clear the hold), hang it up (status 'paused') or dismiss it.
+autopilotGlobal.post('/resume', async (req, res) => {
+  const b = req.body || {};
+  const project = await projectBySlug(String(b.slug || ''));
+  if (!project) return res.status(404).json({ error: 'No such project.' });
+  const minutes = Math.min(24 * 60, Math.max(1, Math.round(Number(b.minutes)) || 240));
+  const itemId = Number.isFinite(Number(b.itemId)) && b.itemId !== '' && b.itemId != null ? Number(b.itemId) : null;
+  const openResume = await q(
+    `SELECT id FROM autopilot_jobs
+      WHERE project_id = $1 AND kind = 'resume' AND status IN ('queued','paused')
+      ORDER BY created_at LIMIT 1`, [project.id]);
+  let id;
+  if (openResume.rows.length) {
+    id = openResume.rows[0].id;
+    await q(
+      `UPDATE autopilot_jobs SET not_before = now() + ($1 || ' minutes')::interval,
+              status = 'queued', claimed_at = NULL, item_id = $2 WHERE id = $3`,
+      [minutes, itemId, id]);
+  } else {
+    ({ rows: [{ id }] } = await q(
+      `INSERT INTO autopilot_jobs (project_id, kind, item_id, not_before)
+       VALUES ($1, 'resume', $2, now() + ($3 || ' minutes')::interval) RETURNING id`,
+      [project.id, itemId, minutes]));
+  }
+  const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [id]);
+  res.status(openResume.rows.length ? 200 : 201).json(jobShape(full.rows[0]));
 });
 
 // GET /jobs?slug=&limit= — recent automation sessions, newest first. The read
@@ -285,9 +332,13 @@ autopilotGlobal.get('/next', async (req, res) => {
   // Serialise: one job in flight at a time (the runner's lockfile agrees).
   const busy = await q(`SELECT 1 FROM autopilot_jobs WHERE status IN ('claimed','running') LIMIT 1`);
   if (busy.rows.length) return res.json({ job: null });
+  // A queued resume job stays held until its not_before passes (#142); a
+  // 'paused' (hung-up) job is never handed out at all.
   const claimed = await q(
     `UPDATE autopilot_jobs SET status = 'claimed', claimed_at = now()
-      WHERE id = (SELECT id FROM autopilot_jobs WHERE status = 'queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
+      WHERE id = (SELECT id FROM autopilot_jobs
+                   WHERE status = 'queued' AND (not_before IS NULL OR not_before <= now())
+                   ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
       RETURNING id`);
   if (!claimed.rows.length) return res.json({ job: null });
   const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [claimed.rows[0].id]);
@@ -295,16 +346,47 @@ autopilotGlobal.get('/next', async (req, res) => {
 });
 
 // PATCH /jobs/:id — the dispatcher reports { status: running|done|failed|queued, detail? }.
+// #142 adds the human controls on a pending job: { status: 'paused' } hangs it
+// up (held until resumed by hand — only valid while queued/claimed, a running
+// session has no kill channel), { status: 'queued', notBefore: null } resumes
+// it now (clearing the hold marks it human-pressed — the dispatcher runs a
+// held-then-resumed job with --force, like any manual press).
 autopilotGlobal.patch('/jobs/:id', async (req, res) => {
   const b = req.body || {};
-  const status = ['running', 'done', 'failed', 'queued'].includes(b.status) ? b.status : null;
-  if (!status) return res.status(400).json({ error: 'status must be running|done|failed|queued.' });
+  const status = ['running', 'done', 'failed', 'queued', 'paused'].includes(b.status) ? b.status : null;
+  if (!status) return res.status(400).json({ error: 'status must be running|done|failed|queued|paused.' });
+  const clearHold = 'notBefore' in b && b.notBefore == null;
   const stampCol = status === 'running' ? 'started_at = now()'
-    : status === 'queued' ? 'claimed_at = NULL' : 'finished_at = now()';
+    : status === 'queued' || status === 'paused' ? 'claimed_at = NULL' : 'finished_at = now()';
+  const guard = status === 'paused' ? `AND status IN ('queued','claimed')` : '';
   const r = await q(
-    `UPDATE autopilot_jobs SET status = $1, detail = COALESCE($2, detail), ${stampCol} WHERE id = $3 RETURNING id`,
-    [status, 'detail' in b ? String(b.detail || '').slice(0, 500) : null, req.params.id]);
-  if (!r.rowCount) return res.status(404).json({ error: 'No such job.' });
+    `UPDATE autopilot_jobs SET status = $1, detail = COALESCE($2, detail),
+            not_before = CASE WHEN $4 THEN NULL ELSE not_before END, ${stampCol}
+      WHERE id = $3 ${guard} RETURNING id`,
+    [status, 'detail' in b ? String(b.detail || '').slice(0, 500) : null, req.params.id, clearHold]);
+  if (!r.rowCount) {
+    if (status === 'paused') {
+      const exists = await q('SELECT status FROM autopilot_jobs WHERE id = $1', [req.params.id]);
+      if (exists.rows.length) return res.status(409).json({ error: `A ${exists.rows[0].status} job can't be hung up.` });
+    }
+    return res.status(404).json({ error: 'No such job.' });
+  }
+  const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [req.params.id]);
+  res.json(jobShape(full.rows[0]));
+});
+
+// DELETE /jobs/:id — dismiss a pending job (#142: a hung-up or held resume the
+// human decides against). Only queued/paused rows go; anything claimed,
+// running or finished stays as history.
+autopilotGlobal.delete('/jobs/:id', async (req, res) => {
+  const r = await q(
+    `DELETE FROM autopilot_jobs WHERE id = $1 AND status IN ('queued','paused') RETURNING id`,
+    [req.params.id]);
+  if (!r.rowCount) {
+    const exists = await q('SELECT status FROM autopilot_jobs WHERE id = $1', [req.params.id]);
+    if (exists.rows.length) return res.status(409).json({ error: `A ${exists.rows[0].status} job can't be dismissed.` });
+    return res.status(404).json({ error: 'No such job.' });
+  }
   res.json({ ok: true });
 });
 
