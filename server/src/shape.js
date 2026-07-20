@@ -64,8 +64,12 @@ export function checkShape(row) {
     id: row.id,
     name: row.name,
     url: row.url,
+    method: row.method || 'GET',         // #143 — the testing area: exercise functions, not just pages
     expectStatus: row.expect_status,
+    reqBody: row.req_body || '',         // request payload for non-GET methods
     contains: row.contains || '',
+    jsonPath: row.json_path || '',       // dot-path assertion into a JSON response
+    jsonExpect: row.json_expect || '',   // expected value at that path ('' = just exist)
     semantic: row.semantic || '',        // plain-language expectation, judged by Gemini
     lastStatus: row.last_status || '',   // '' = never run
     lastCode: row.last_code ?? null,
