@@ -34,6 +34,9 @@ export function runShape(r) {
     // Per-model breakdown (#167): { "<model>": { inputTokens, outputTokens, costUSD } }
     // Present only on dual-model sessions; null for single-model or legacy rows.
     modelUsage: r.model_usage || null,
+    // Named tmux session (#171): set when the run was started inside a tmux session
+    // so the web terminal can re-attach for live monitoring while the run is active.
+    tmuxSession: r.tmux_session || null,
     when: relativeTime(r.finished_at) || 'just now',
     finishedAt: r.finished_at,
   };
@@ -471,10 +474,13 @@ autopilot.post('/runs', async (req, res) => {
   // Accept an object, silently reject anything else.
   const modelUsage = (b.model_usage && typeof b.model_usage === 'object' && !Array.isArray(b.model_usage))
     ? b.model_usage : null;
+  // tmux_session (#171): the named tmux session monitoring this run, if any.
+  const tmuxSession = b.tmux_session && typeof b.tmux_session === 'string'
+    ? String(b.tmux_session).slice(0, 120) : null;
   const { rows } = await q(
     `INSERT INTO autopilot_runs
-       (project_id, item_id, item_title, branch, outcome, commits, tokens, cost_usd, checks_failing, summary, model_usage, started_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb, COALESCE($12, now())) RETURNING *`,
+       (project_id, item_id, item_title, branch, outcome, commits, tokens, cost_usd, checks_failing, summary, model_usage, tmux_session, started_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12, COALESCE($13, now())) RETURNING *`,
     [
       req.project.id,
       Number.isFinite(Number(b.item_id)) ? Number(b.item_id) : null,
@@ -487,6 +493,7 @@ autopilot.post('/runs', async (req, res) => {
       Number.isFinite(Number(b.checks_failing)) ? Number(b.checks_failing) : null,
       String(b.summary || '').slice(0, 2000),
       modelUsage ? JSON.stringify(modelUsage) : null,
+      tmuxSession,
       b.started_at ? new Date(b.started_at) : null,
     ]
   );

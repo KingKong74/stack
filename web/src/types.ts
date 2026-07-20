@@ -97,6 +97,9 @@ export interface AutopilotRun {
   summary: string;
   // Per-model breakdown for dual-model sessions (#167); null on single-model runs.
   modelUsage: Record<string, ModelUsageEntry> | null;
+  // Named tmux session (#171); set when the run was started inside tmux.
+  // The web terminal can attach to it while the session is active.
+  tmuxSession: string | null;
   when: string;
   finishedAt: string | null;
 }

@@ -366,6 +366,10 @@ CREATE INDEX IF NOT EXISTS autopilot_runs_project_idx ON autopilot_runs (project
 -- (camelCase to match the claude --output-format json schema). NULL on single-
 -- model runs and on rows pre-dating this column.
 ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS model_usage JSONB;
+-- Named tmux session running this autopilot item (#171): the web terminal can
+-- attach to it for live monitoring while the run is active. NULL = run was not
+-- started inside a tmux session (non-tmux host, or pre-dates this column).
+ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS tmux_session TEXT;
 
 -- Scheduled sessions — Mission Control's calendar. A row is "run the autopilot
 -- on this project at this time": one-off (run_date set, days empty) or
