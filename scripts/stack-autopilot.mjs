@@ -177,10 +177,37 @@ async function scheduleResume(minutes) {
 // returns null and the night simply runs spec-less (phase 1 behaviour).
 async function geminiSpec(item, northStar) {
   if (!GEMINI_KEY) return null;
+  // Ground the spec in the real project structure (#158): a compact listing of
+  // top-level directories and the actual DB table names from schema.sql stop
+  // Gemini from inventing files and tables for vague items. Keep it brief —
+  // the context block is a few hundred chars, not a full code dump.
+  let projectCtx = '';
+  try {
+    const { readdirSync, readFileSync } = await import('node:fs');
+    const skip = new Set(['.git', '.claude', 'node_modules', 'dist', '.env']);
+    const entries = readdirSync(REPO)
+      .filter((e) => !skip.has(e) && !e.startsWith('.') && !e.endsWith('.lock'))
+      .slice(0, 30)
+      .join(', ');
+    let tables = '';
+    try {
+      const sql = readFileSync(join(REPO, 'server', 'src', 'schema.sql'), 'utf8');
+      const names = [...sql.matchAll(/^CREATE TABLE IF NOT EXISTS (\w+)/gm)].map((m) => m[1]);
+      if (names.length) tables = `\nDB tables: ${names.join(', ')}`;
+    } catch { /* no schema.sql — project may be a frontend-only repo */ }
+    projectCtx = `\nProject layout (top-level): ${entries}${tables}\n`;
+  } catch { /* can't read the repo — skip */ }
+
   const prompt = `You are the planning pre-pass for an UNATTENDED overnight coding session on a solo
 side project. Turn this roadmap item into a tight build spec the session can verify itself
 against. Be concrete and conservative — unattended means no one to ask.
-${northStar ? `\nThe project's north star: "${northStar.slice(0, 500)}"\n` : ''}
+${northStar ? `\nThe project's north star: "${northStar.slice(0, 500)}"\n` : ''}${projectCtx}
+IMPORTANT: acceptance criteria must only reference files, directories, tables or APIs that are
+visible in the project context above, or that are named explicitly in the author's note below.
+Do not invent table names, file paths or package names that aren't present in either.
+If the item is too vague to be concrete, write generic criteria (e.g. "the build passes",
+"no TypeScript errors") rather than guessing at specifics.
+
 Roadmap item #${item.id} (${item.bucket}): ${item.title}
 ${item.note ? `The author's note (what they actually want): ${item.note.slice(0, 1200)}` : '(no note)'}
 ${item.plan?.length ? `The author's own implementation plan (the spec must serve it, not replace it):\n${item.plan.map((s) => `  ${s.done ? '[x]' : '[ ]'} ${s.text}`).join('\n')}` : ''}
@@ -252,11 +279,16 @@ const MINUTES = Math.max(15, parseInt(MINUTES_ARG ?? '', 10) || appSettings.auto
 const rawTokens = TOKENS_OVERRIDE ?? (Number.isFinite(appSettings.autopilotTokens) ? appSettings.autopilotTokens : 1_500_000);
 const TOKEN_BUDGET = rawTokens === 0 ? Infinity : Math.max(50_000, rawTokens);
 const MAX_ITEMS = ITEM_ID != null ? 1 : Math.max(1, MAX_ITEMS_ARG ?? (appSettings.autopilotMaxItems || 3));
-// Dual-model config (#153): CLI override beats Settings; anything that isn't a
-// plain model alias coerces to '' (default / off) so a bad value can't reach
-// the claude CLI. The executor is the model the session runs as; the advisor
-// is a stronger model the session consults as a subagent ('' = none).
-const cleanModel = (v) => (/^[a-z0-9][a-z0-9.-]{0,63}$/i.test(String(v ?? '')) ? String(v) : '');
+// Dual-model config (#153/#168): CLI override beats Settings; anything that
+// isn't a safe model alias coerces to '' (default / off) so shell
+// metacharacters never reach the claude CLI. Allowed charset: alphanumerics
+// plus . : / _ - to cover real aliases (e.g. claude-sonnet-4-6,
+// us.anthropic.claude-opus-4, vendor/model). The executor is the model the
+// session runs as; the advisor is a stronger model it consults ('' = none).
+const cleanModel = (v) => {
+  const s = String(v ?? '').trim();
+  return s === '' || /^[a-z0-9][a-z0-9.:/_-]{0,99}$/i.test(s) ? s : '';
+};
 const EXECUTOR_MODEL = cleanModel(arg('executor-model') ?? appSettings.autopilotExecutorModel);
 const ADVISOR_MODEL = cleanModel(arg('advisor-model') ?? appSettings.autopilotAdvisorModel);
 const nightStart = Date.now();
@@ -383,6 +415,7 @@ Rules for this run:
   let resultText = '';
   let usedTokens = 0;
   let usedCost = 0;
+  let modelUsage = null; // per-model breakdown (#167): persisted to the run ledger
   try {
     const out = JSON.parse(run.stdout || '{}');
     const u = out.usage || {};
@@ -394,9 +427,11 @@ Rules for this run:
     resultText = String(out.result || '').trim();
     log(`session finished: ${out.num_turns ?? '?'} turns, ~${Math.round(usedTokens / 1000)}k tokens`
       + (usedCost ? ` ($${usedCost.toFixed(2)})` : ''));
-    // Per-model breakdown (#153): with an advisor in play this is the proof
-    // both roles ran on their own models — one line per model in the night log.
+    // Per-model breakdown (#153/#167): with an advisor in play this is the proof
+    // both roles ran on their own models — one line per model in the night log,
+    // and the raw object is persisted to the run ledger row (model_usage column).
     if (out.modelUsage && typeof out.modelUsage === 'object') {
+      modelUsage = out.modelUsage;
       const perModel = Object.entries(out.modelUsage).map(([model, u]) => {
         const t = (u.inputTokens || 0) + (u.outputTokens || 0)
           + (u.cacheReadInputTokens || 0) + (u.cacheCreationInputTokens || 0);
@@ -413,6 +448,7 @@ Rules for this run:
   const runRecord = {
     item_id: item.id, item_title: item.title, branch,
     tokens: usedTokens, cost_usd: usedCost, started_at: startedAt,
+    ...(modelUsage ? { model_usage: modelUsage } : {}), // per-model breakdown (#167)
   };
 
   // What did it produce?

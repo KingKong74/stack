@@ -360,6 +360,12 @@ CREATE TABLE IF NOT EXISTS autopilot_runs (
   finished_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS autopilot_runs_project_idx ON autopilot_runs (project_id, finished_at DESC);
+-- Per-model token/cost breakdown (#167): with dual-model sessions the run may
+-- span executor + advisor on different models. Stored as
+-- { "<model>": { "inputTokens": N, "outputTokens": N, "costUSD": N }, … }
+-- (camelCase to match the claude --output-format json schema). NULL on single-
+-- model runs and on rows pre-dating this column.
+ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS model_usage JSONB;
 
 -- Scheduled sessions — Mission Control's calendar. A row is "run the autopilot
 -- on this project at this time": one-off (run_date set, days empty) or

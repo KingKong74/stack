@@ -176,7 +176,15 @@ export async function mainList(argv = process.argv.slice(2)) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  // Run directly via `node scripts/stack-sessions.mjs [start|list] …`
+  // Any thrown error (network issue, bug) must still exit non-zero so callers
+  // can distinguish failure from success (#124). The mains use `fail()` for
+  // expected errors; this catch handles unexpected throws.
   const list = process.argv[2] === 'list';
   const rest = process.argv.slice(list || process.argv[2] === 'start' ? 3 : 2);
-  process.exit(await (list ? mainList(rest) : mainStart(rest)));
+  const code = await (list ? mainList(rest) : mainStart(rest)).catch((e) => {
+    process.stderr.write(`[stack] ${list ? 'list-sessions' : 'start-session'} error: ${e.message}\n`);
+    return 1;
+  });
+  process.exit(typeof code === 'number' ? code : 1);
 }

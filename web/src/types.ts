@@ -73,6 +73,15 @@ export interface RoadmapItem {
 }
 export interface Roadmap { must: RoadmapItem[]; should: RoadmapItem[]; could: RoadmapItem[]; wont: RoadmapItem[] }
 
+// Per-model token/cost breakdown for dual-model sessions (#167).
+export interface ModelUsageEntry {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  costUSD?: number;
+}
+
 // One autopilot item attempt (the run ledger) — the Reviews view joins these
 // onto completed items so a verdict is made against what the session reported.
 export interface AutopilotRun {
@@ -86,6 +95,8 @@ export interface AutopilotRun {
   costUsd: number;
   checksFailing: number | null;
   summary: string;
+  // Per-model breakdown for dual-model sessions (#167); null on single-model runs.
+  modelUsage: Record<string, ModelUsageEntry> | null;
   when: string;
   finishedAt: string | null;
 }

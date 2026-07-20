@@ -199,7 +199,20 @@ export function Roadmap({
         <span className={`origin-chip ${o}`}>{o === 'lane' ? `⚑ ${it.claimedBy}` : ORIGIN_LABEL[o]}</span>
         {it.updatedAt && <span className="review-when">done {timeAgo(it.updatedAt)}</span>}
         {run && (
-          <span className="run-chip" title={run.summary ? run.summary.slice(0, 600) : undefined}>
+          <span className="run-chip" title={(() => {
+            const parts: string[] = [];
+            if (run.summary) parts.push(run.summary.slice(0, 600));
+            // Per-model breakdown (#167): append model lines to the hover when present.
+            if (run.modelUsage) {
+              const modelLines = Object.entries(run.modelUsage).map(([model, u]) => {
+                const t = (u.inputTokens ?? 0) + (u.outputTokens ?? 0)
+                  + (u.cacheReadInputTokens ?? 0) + (u.cacheCreationInputTokens ?? 0);
+                return `${model}: ${fmtTok(t)}${u.costUSD ? ` ($${u.costUSD.toFixed(2)})` : ''}`;
+              });
+              if (modelLines.length) parts.push(`Models: ${modelLines.join(', ')}`);
+            }
+            return parts.join('\n\n') || undefined;
+          })()}>
             {run.branch} · {run.commits} commit{run.commits === 1 ? '' : 's'} · {fmtTok(run.tokens)}
             {run.costUsd ? ` · $${run.costUsd.toFixed(2)}` : ''}
           </span>
