@@ -177,10 +177,37 @@ async function scheduleResume(minutes) {
 // returns null and the night simply runs spec-less (phase 1 behaviour).
 async function geminiSpec(item, northStar) {
   if (!GEMINI_KEY) return null;
+  // Ground the spec in the real project structure (#158): a compact listing of
+  // top-level directories and the actual DB table names from schema.sql stop
+  // Gemini from inventing files and tables for vague items. Keep it brief —
+  // the context block is a few hundred chars, not a full code dump.
+  let projectCtx = '';
+  try {
+    const { readdirSync, readFileSync } = await import('node:fs');
+    const skip = new Set(['.git', '.claude', 'node_modules', 'dist', '.env']);
+    const entries = readdirSync(REPO)
+      .filter((e) => !skip.has(e) && !e.startsWith('.') && !e.endsWith('.lock'))
+      .slice(0, 30)
+      .join(', ');
+    let tables = '';
+    try {
+      const sql = readFileSync(join(REPO, 'server', 'src', 'schema.sql'), 'utf8');
+      const names = [...sql.matchAll(/^CREATE TABLE IF NOT EXISTS (\w+)/gm)].map((m) => m[1]);
+      if (names.length) tables = `\nDB tables: ${names.join(', ')}`;
+    } catch { /* no schema.sql — project may be a frontend-only repo */ }
+    projectCtx = `\nProject layout (top-level): ${entries}${tables}\n`;
+  } catch { /* can't read the repo — skip */ }
+
   const prompt = `You are the planning pre-pass for an UNATTENDED overnight coding session on a solo
 side project. Turn this roadmap item into a tight build spec the session can verify itself
 against. Be concrete and conservative — unattended means no one to ask.
-${northStar ? `\nThe project's north star: "${northStar.slice(0, 500)}"\n` : ''}
+${northStar ? `\nThe project's north star: "${northStar.slice(0, 500)}"\n` : ''}${projectCtx}
+IMPORTANT: acceptance criteria must only reference files, directories, tables or APIs that are
+visible in the project context above, or that are named explicitly in the author's note below.
+Do not invent table names, file paths or package names that aren't present in either.
+If the item is too vague to be concrete, write generic criteria (e.g. "the build passes",
+"no TypeScript errors") rather than guessing at specifics.
+
 Roadmap item #${item.id} (${item.bucket}): ${item.title}
 ${item.note ? `The author's note (what they actually want): ${item.note.slice(0, 1200)}` : '(no note)'}
 ${item.plan?.length ? `The author's own implementation plan (the spec must serve it, not replace it):\n${item.plan.map((s) => `  ${s.done ? '[x]' : '[ ]'} ${s.text}`).join('\n')}` : ''}
