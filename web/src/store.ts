@@ -1,7 +1,7 @@
 import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
-  AuthDevice,
+  AuthDevice, ProjectTree,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -429,6 +429,12 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     shareToken: d.shareToken || '',
     liveBranches: d.liveBranches || [],
   };
+}
+
+// ---- branch tree (#72) ----
+
+export async function getProjectTree(slug: string): Promise<ProjectTree> {
+  return request<ProjectTree>(`/projects/${encodeURIComponent(slug)}/roadmap/tree`);
 }
 
 // ---- Gemini re-entry plan (POST .../replan — suggestion only) ----
