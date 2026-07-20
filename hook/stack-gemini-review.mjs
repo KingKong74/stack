@@ -34,7 +34,7 @@ const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 // the fallback (same convention as the server's gemini.js). '' disables.
 const FALLBACK = process.env.GEMINI_FALLBACK_MODEL !== undefined
   ? process.env.GEMINI_FALLBACK_MODEL
-  : 'gemini-2.5-flash-lite';
+  : 'gemini-flash-lite-latest'; // the alias — Google retires pinned lite models for new users (404)
 const KEY = process.env.GEMINI_API_KEY;
 const DIFF_CAP = 60_000; // chars of diff we send; beyond this the tail is cut
 
@@ -71,38 +71,51 @@ Empty arrays are the correct answer when there is nothing real to report.
 DIFF:
 ${diff}`;
 
+let usedModel = MODEL; // which model actually answered — reported in the posted note
+
 async function askGemini() {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 60_000);
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL)}:generateContent`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
-        }),
-        signal: ctrl.signal,
-      }
-    );
-    if (!res.ok) {
-      const detail = await res.text().catch(() => '');
-      die(`Gemini API error ${res.status}: ${detail.slice(0, 300)}`);
-    }
-    const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
+  const models = [MODEL];
+  if (FALLBACK && FALLBACK !== MODEL) models.push(FALLBACK);
+  for (const [i, model] of models.entries()) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60_000);
     try {
-      return JSON.parse(text);
-    } catch {
-      const m = text.match(/\{[\s\S]*\}/); // fence/preamble fallback
-      if (m) return JSON.parse(m[0]);
-      die('Gemini returned something that was not JSON — nothing posted.');
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
+          }),
+          signal: ctrl.signal,
+        }
+      );
+      if (!res.ok) {
+        // 429 = quota exhausted, 404 = model retired — the next model may still answer.
+        if ((res.status === 429 || res.status === 404) && i < models.length - 1) {
+          logStderr(`Gemini ${model} ${res.status === 429 ? 'quota exhausted' : 'unavailable (404)'} — trying ${models[i + 1]}`);
+          continue;
+        }
+        const detail = await res.text().catch(() => '');
+        die(`Gemini API error ${res.status}: ${detail.slice(0, 300)}`);
+      }
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
+      usedModel = model;
+      try {
+        return JSON.parse(text);
+      } catch {
+        const m = text.match(/\{[\s\S]*\}/); // fence/preamble fallback
+        if (m) return JSON.parse(m[0]);
+        die('Gemini returned something that was not JSON — nothing posted.');
+      }
+    } finally {
+      clearTimeout(timer);
     }
-  } finally {
-    clearTimeout(timer);
   }
+  die('Gemini gave no answer on any model — nothing posted.');
 }
 
 const cap = (arr, n) => (Array.isArray(arr) ? arr.slice(0, n) : []);
@@ -134,7 +147,7 @@ const body = {
 
 if (DRY) {
   process.stdout.write(`${JSON.stringify(body, null, 2)}\n`);
-  logStderr(`dry run — nothing posted (model: ${MODEL})`);
+  logStderr(`dry run — nothing posted (model: ${usedModel})`);
   process.exit(0);
 }
 
@@ -143,5 +156,5 @@ if (!result?.ok) die(`Posting the review to Stack failed${result?.reason ? ` (${
 logStderr(
   `gemini review posted for ${project.slug} @ ${commit} — sent ` +
   `${bugs.length} bug${bugs.length === 1 ? '' : 's'}, ${improvements.length} improvement${improvements.length === 1 ? '' : 's'}, ` +
-  `${ideas.length} idea${ideas.length === 1 ? '' : 's'} (model: ${MODEL}; dedup may drop repeats)`
+  `${ideas.length} idea${ideas.length === 1 ? '' : 's'} (model: ${usedModel}; dedup may drop repeats)`
 );

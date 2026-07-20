@@ -77,7 +77,7 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 // the fallback (same convention as the server's gemini.js). '' disables.
 const GEMINI_FALLBACK = process.env.GEMINI_FALLBACK_MODEL !== undefined
   ? process.env.GEMINI_FALLBACK_MODEL
-  : 'gemini-2.5-flash-lite';
+  : 'gemini-flash-lite-latest'; // the alias — Google retires pinned lite models for new users (404)
 
 function die(msg) { logStderr(`autopilot: ${msg}`); process.exit(1); }
 
@@ -197,8 +197,9 @@ Respond with ONLY this JSON:
           signal: ctrl.signal,
         }
       );
-      if (res.status === 429 && i < models.length - 1) {
-        log(`spec pre-pass: ${model} quota exhausted, trying ${models[i + 1]}`);
+      // 429 = quota exhausted, 404 = model retired — either way the next model may still answer.
+      if ((res.status === 429 || res.status === 404) && i < models.length - 1) {
+        log(`spec pre-pass: ${model} ${res.status === 429 ? 'quota exhausted' : 'unavailable (404)'}, trying ${models[i + 1]}`);
         continue;
       }
       if (!res.ok) throw new Error(`Gemini ${res.status}`);

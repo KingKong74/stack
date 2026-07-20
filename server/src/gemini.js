@@ -12,10 +12,13 @@ const MODEL = () => process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 // Free-tier quotas are PER MODEL (and small — 20/day on 2.5-flash as of
 // mid-2026), so when the primary model is exhausted one retry against a
 // different model usually keeps every ✧ surface alive. '' disables.
+// The -latest alias, not a pinned version: Google retires old lite models for
+// new users (gemini-2.5-flash-lite started 404ing), the alias tracks whatever
+// is current.
 const FALLBACK_MODEL = () =>
   process.env.GEMINI_FALLBACK_MODEL !== undefined
     ? process.env.GEMINI_FALLBACK_MODEL
-    : 'gemini-2.5-flash-lite';
+    : 'gemini-flash-lite-latest';
 
 // Default temperature is env-tunable (GEMINI_TEMPERATURE); callers can still
 // override any generationConfig field per call via opts.generation.
@@ -82,7 +85,9 @@ export async function askGemini(prompt, { timeoutMs = 25_000, generation = {} } 
     try {
       return await callModel(fallback, prompt, { timeoutMs, generation });
     } catch (err2) {
-      throw err2.quota ? quotaError() : err2;
+      // The primary's quota is the root cause whatever the fallback did —
+      // surface that as the 503 rather than an opaque fallback error.
+      throw quotaError(err2.quota ? '' : ` (the fallback also failed: ${err2.message})`);
     }
   }
 }
@@ -90,9 +95,9 @@ export async function askGemini(prompt, { timeoutMs = 25_000, generation = {} } 
 // Quota errors travel as 503 (`httpStatus`) so the message survives the proxy
 // chain — Cloudflare swallows origin 502 bodies. Other upstream failures keep
 // the 502 the routes already send.
-const quotaError = () => {
+const quotaError = (detail = '') => {
   const err = new Error(
-    "Gemini's free-tier quota is used up for now (it resets daily) — try again later."
+    `Gemini's free-tier quota is used up for now (it resets daily) — try again later.${detail}`
   );
   err.quota = true;
   err.httpStatus = 503;
