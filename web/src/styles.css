@@ -972,6 +972,17 @@ a { color: inherit; }
 .check-x { color: var(--faint); font-size: 14px; line-height: 1; padding: 2px 5px; }
 .check-x:hover { color: var(--critical); }
 
+/* #173: assertion tab affordance — compact seg below the always-on composer row */
+.check-assert-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.check-assert-tabs { display: flex; gap: 4px; flex: none; }
+.check-assert-tab { font-size: 11.5px; font-weight: 600; color: var(--muted); border: 1px solid var(--line-2);
+  border-radius: 7px; padding: 3px 9px; background: transparent; }
+.check-assert-tab:hover { color: var(--ink); border-color: var(--line); }
+.check-assert-tab.on { color: var(--accent); border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.check-assert-tab.placeholder { opacity: .7; }
+.check-assert-row .field-input.sm.grow { flex: 1; min-width: 200px; }
+.check-assert-row .field-input.sm.code { width: 130px; font-family: var(--mono); }
+
 /* the automated bug audit (#144) — shares the checks card idiom */
 .audit-brief { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .audit-brief-text { width: 100%; resize: vertical; min-height: 64px; line-height: 1.5; }

@@ -24,11 +24,22 @@ const toDraft = (c: Check): Draft => ({
   reqBody: c.reqBody, contains: c.contains, jsonPath: c.jsonPath, jsonExpect: c.jsonExpect, semantic: c.semantic,
 });
 
+// Derive which assertion tab is active from a populated draft (for edit open-with state).
+type AssertionTab = 'none' | 'contains' | 'json' | 'semantic';
+function deriveAssertionTab(d: Draft): AssertionTab {
+  if (d.semantic) return 'semantic';
+  if (d.jsonPath) return 'json';
+  if (d.contains) return 'contains';
+  return 'none';
+}
+
 // The Audit area (#143, named by #145): HTTP tests against the project's live application —
 // plain probes and function tests (method + body against an endpoint) with
 // assertions on status, a body keyword, a JSON-path value or a Gemini-judged
 // expectation. Run all (or one) with a click; a failing test offers to file
 // the bug; ✎ edits a test in place.
+// #173: grouped optional assertions behind a compact tab affordance so only the
+// chosen assertion's fields render — always-on: method/name/url/status.
 function AuditPanel({
   checks, siteUrl, busy, onRun, onAdd, onEdit, onDelete, onFileBug,
 }: {
@@ -42,11 +53,26 @@ function AuditPanel({
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [d, setD] = useState<Draft>(EMPTY_DRAFT);
+  const [assertTab, setAssertTab] = useState<AssertionTab>('none');
   const set = (patch: Partial<Draft>) => setD((prev) => ({ ...prev, ...patch }));
 
-  const close = () => { setOpen(false); setEditingId(null); setD(EMPTY_DRAFT); };
-  const startAdd = () => { setD(EMPTY_DRAFT); setEditingId(null); setOpen(true); };
-  const startEdit = (c: Check) => { setD(toDraft(c)); setEditingId(c.id); setOpen(true); };
+  const close = () => { setOpen(false); setEditingId(null); setD(EMPTY_DRAFT); setAssertTab('none'); };
+  const startAdd = () => { setD(EMPTY_DRAFT); setEditingId(null); setAssertTab('none'); setOpen(true); };
+  const startEdit = (c: Check) => {
+    const draft = toDraft(c);
+    setD(draft);
+    setAssertTab(deriveAssertionTab(draft));
+    setEditingId(c.id);
+    setOpen(true);
+  };
+
+  // When switching assertion tabs, clear stale assertion fields so the save is clean.
+  const switchAssertTab = (tab: AssertionTab) => {
+    setAssertTab(tab);
+    if (tab !== 'contains') set({ contains: '' });
+    if (tab !== 'json') set({ jsonPath: '', jsonExpect: '' });
+    if (tab !== 'semantic') set({ semantic: '' });
+  };
 
   const save = () => {
     if (!d.name.trim() || !/^https?:\/\//i.test(d.url.trim())) return;
@@ -69,6 +95,13 @@ function AuditPanel({
   const failing = checks.filter((c) => c.lastStatus === 'fail').length;
   const lastRun = checks.find((c) => c.when)?.when || '';
   const hasBody = d.method !== 'GET' && d.method !== 'HEAD';
+
+  const ASSERT_TABS: { key: AssertionTab; label: string }[] = [
+    { key: 'none', label: '+ assertion' },
+    { key: 'contains', label: 'Body keyword' },
+    { key: 'json', label: 'JSON path' },
+    { key: 'semantic', label: '✧ Semantic' },
+  ];
 
   return (
     <div className="checks">
@@ -98,6 +131,7 @@ function AuditPanel({
 
       {open && (
         <div className="check-composer">
+          {/* Row 1: always-on fields */}
           <div className="check-composer-row">
             <select className="field-input sm code check-method-pick" value={d.method}
               onChange={(e) => set({ method: e.target.value as CheckMethod })} title="HTTP method">
@@ -110,24 +144,55 @@ function AuditPanel({
             <input className="field-input sm code" placeholder="200" value={d.expect}
               onChange={(e) => set({ expect: e.target.value })} title="Expected HTTP status" onKeyDown={keys} />
           </div>
+
+          {/* Request body — only for methods that carry a payload */}
           {hasBody && (
             <textarea className="field-input sm check-body" rows={3}
               placeholder='Request body (optional) — JSON is sent as application/json, e.g. {"email": "test@example.com"}'
               value={d.reqBody} onChange={(e) => set({ reqBody: e.target.value })} />
           )}
-          <div className="check-composer-row">
-            <input className="field-input sm" placeholder="body contains… (optional)" value={d.contains}
-              onChange={(e) => set({ contains: e.target.value })} onKeyDown={keys}
-              title="Fail unless the response body contains this text" />
-            <input className="field-input sm code" placeholder="$.path.to.field" value={d.jsonPath}
-              onChange={(e) => set({ jsonPath: e.target.value })} onKeyDown={keys}
-              title="A dot path into the JSON response — fails if missing" />
-            <input className="field-input sm code" placeholder="expected value" value={d.jsonExpect}
-              onChange={(e) => set({ jsonExpect: e.target.value })} onKeyDown={keys}
-              title="What that path should equal (leave empty to only require it exists)" />
-            <input className="field-input sm grow" placeholder="✧ looks right? e.g. shows the dashboard, no error banners (optional)"
-              value={d.semantic} onChange={(e) => set({ semantic: e.target.value })} onKeyDown={keys}
-              title="A plain-language expectation — Gemini judges the response against it" />
+
+          {/* Assertion type selector + conditional fields */}
+          <div className="check-assert-row">
+            <div className="check-assert-tabs">
+              {ASSERT_TABS.map(({ key, label }) => (
+                <button
+                  key={key}
+                  className={`check-assert-tab${assertTab === key ? ' on' : ''}${key === 'none' && assertTab === 'none' ? ' placeholder' : ''}`}
+                  onClick={() => switchAssertTab(assertTab === key && key !== 'none' ? 'none' : key)}
+                  title={key === 'none' ? 'Add an optional assertion' : undefined}
+                >
+                  {key === 'none' && assertTab !== 'none' ? '× assertion' : label}
+                </button>
+              ))}
+            </div>
+
+            {assertTab === 'contains' && (
+              <input className="field-input sm grow" autoFocus
+                placeholder="Response body must contain this text"
+                value={d.contains} onChange={(e) => set({ contains: e.target.value })} onKeyDown={keys}
+                title="Fail unless the response body contains this text" />
+            )}
+            {assertTab === 'json' && (
+              <>
+                <input className="field-input sm code" autoFocus
+                  placeholder="$.path.to.field"
+                  value={d.jsonPath} onChange={(e) => set({ jsonPath: e.target.value })} onKeyDown={keys}
+                  title="A dot path into the JSON response — fails if missing" />
+                <input className="field-input sm" placeholder="expected value (optional)"
+                  value={d.jsonExpect} onChange={(e) => set({ jsonExpect: e.target.value })} onKeyDown={keys}
+                  title="What that path should equal (leave empty to only require it exists)" />
+              </>
+            )}
+            {assertTab === 'semantic' && (
+              <input className="field-input sm grow" autoFocus
+                placeholder="e.g. shows the dashboard, no error banners"
+                value={d.semantic} onChange={(e) => set({ semantic: e.target.value })} onKeyDown={keys}
+                title="A plain-language expectation — Gemini judges the response against it" />
+            )}
+          </div>
+
+          <div className="check-composer-row" style={{ justifyContent: 'flex-end' }}>
             <button className="btn-submit sm" onClick={save}>{editingId !== null ? 'Save' : 'Add'}</button>
             <button className="btn-cancel sm" onClick={close}>Cancel</button>
           </div>
@@ -142,7 +207,7 @@ function AuditPanel({
               <span className={`check-method ${c.method === 'GET' ? '' : 'fn'}`}>{c.method}</span>
               <span className="check-name">{c.name}</span>
               <span className="check-url">{c.url}</span>
-              {c.contains && <span className="check-contains" title="Body must contain this text">“{c.contains}”</span>}
+              {c.contains && <span className="check-contains" title="Body must contain this text">"{c.contains}"</span>}
               {c.jsonPath && (
                 <span className="check-contains" title="JSON-path assertion on the response">
                   {c.jsonPath}{c.jsonExpect ? ` = ${c.jsonExpect}` : ''}
