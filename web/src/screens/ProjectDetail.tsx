@@ -5,6 +5,7 @@ import {
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture,
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
+  runAudit, getAuditPrompt, type AuditResult,
   patchProject, deleteProject, createShareLink, deleteShareLink,
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, sortIntake, polarisChat, assistRoadmapItem,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
@@ -153,6 +154,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [checksBusy, setChecksBusy] = useState(false);
+  const [auditBusy, setAuditBusy] = useState(false);
+  const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
+  const [auditError, setAuditError] = useState('');
+  const [claudeCopy, setClaudeCopy] = useState<'idle' | 'busy' | 'copied' | 'failed'>('idle');
   const [editingUrl, setEditingUrl] = useState<'site' | 'repo' | null>(null);
   const [urlDraft, setUrlDraft] = useState('');
   const [actionError, setActionError] = useState('');
@@ -469,6 +474,47 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const checkToBug = (c: Check) =>
     setBugModal({ open: true, title: `Check failing: ${c.name} — ${c.lastError || `HTTP ${c.lastCode}`}`, fromNote: null });
 
+  // ---- the automated bug audit (#144) ----
+  // Re-runs the checks first so Gemini judges fresh evidence, then audits;
+  // logged findings are review-inbox bugs, merged straight into the list.
+  const runProjectAudit = async () => {
+    setAuditBusy(true); setAuditError(''); setAuditResult(null);
+    try {
+      let checks = data.checks;
+      if (checks.length) {
+        const updated = await runChecks(slug);
+        const byId = new Map(updated.map((c) => [c.id, c]));
+        checks = checks.map((c) => byId.get(c.id) ?? c);
+      }
+      const result = await runAudit(slug);
+      const logged = result.findings.flatMap((f) => (f.bug ? [f.bug] : []));
+      setData({ ...data, checks, bugs: [...logged, ...data.bugs] });
+      setAuditResult(result);
+    } catch (e) {
+      setAuditError((e as Error)?.message || 'Audit failed.');
+    } finally {
+      setAuditBusy(false);
+    }
+  };
+
+  const saveAuditContext = (text: string) =>
+    guard(async () => {
+      await patchProject(slug, { audit_context: text });
+      setData({ ...data, auditContext: text });
+    });
+
+  const copyClaudePrompt = async () => {
+    setClaudeCopy('busy');
+    try {
+      const prompt = await getAuditPrompt(slug);
+      await navigator.clipboard.writeText(prompt);
+      setClaudeCopy('copied');
+    } catch {
+      setClaudeCopy('failed');
+    }
+    window.setTimeout(() => setClaudeCopy('idle'), 2600);
+  };
+
   const saveStack = (next: string[]) =>
     guard(async () => {
       await patchProject(slug, { tech_stack: next });
@@ -663,7 +709,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onSetStatus={setBugStatus} onDelete={(b) => setConfirmBugDelete(b)}
             checks={data.checks} siteUrl={project.siteUrl} checksBusy={checksBusy}
             onRunChecks={runProjectChecks} onAddCheck={addCheck} onEditCheck={editCheck}
-            onDeleteCheck={removeCheck} onCheckToBug={checkToBug} />
+            onDeleteCheck={removeCheck} onCheckToBug={checkToBug}
+            auditContext={data.auditContext} onSaveAuditContext={saveAuditContext}
+            auditBusy={auditBusy} auditResult={auditResult} auditError={auditError}
+            onRunAudit={runProjectAudit} claudeCopy={claudeCopy} onCopyClaudePrompt={copyClaudePrompt} />
         )}
         {tab === 'roadmap' && (
           <Roadmap roadmap={roadmap} highlightId={highlightId} slug={slug} liveBranches={data.liveBranches}

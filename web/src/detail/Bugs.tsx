@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Bug, BugStatus, Check, CheckMethod } from '../types';
-import type { CheckInput } from '../store';
+import type { CheckInput, AuditResult } from '../store';
 import { STATUS_LABEL } from '../lib/ui';
 
 type BugFilter = 'all' | 'open' | 'fixing' | 'fixed';
@@ -171,11 +171,93 @@ function AuditPanel({
   );
 }
 
+// The automated bug audit (#144). ✧ Run audit: Gemini reads the owner's audit
+// brief, the check results and the live page, and files suspected bugs straight
+// into the review inbox — keep or dismiss them there. The brief is how you tell
+// it what to look for. ⧉ Claude prompt copies a deeper investigation prompt to
+// paste into a Claude session (the terminal's Claude mode) for the specific,
+// hands-on inquiries Gemini can't do from outside.
+function BugAuditPanel({
+  auditContext, onSaveBrief, busy, result, error, onRun, claudeCopy, onCopyClaude,
+}: {
+  auditContext: string; onSaveBrief: (text: string) => void;
+  busy: boolean; result: AuditResult | null; error: string; onRun: () => void;
+  claudeCopy: 'idle' | 'busy' | 'copied' | 'failed'; onCopyClaude: () => void;
+}) {
+  const [briefOpen, setBriefOpen] = useState(false);
+  const [draft, setDraft] = useState(auditContext);
+
+  const claudeLabel = claudeCopy === 'busy' ? 'Composing…'
+    : claudeCopy === 'copied' ? '✓ Copied' : claudeCopy === 'failed' ? 'Copy failed' : '⧉ Claude prompt';
+
+  return (
+    <div className="checks audit">
+      <div className="checks-head">
+        <div className="left">
+          <span className="checks-title">✧ Bug audit</span>
+          <span className="checks-sub">
+            {result
+              ? `${result.logged} logged to the review inbox${result.skipped ? ` · ${result.skipped} already known` : ''}`
+              : 'Gemini reads the brief, the checks and the live page — suspected bugs land in the review inbox'}
+          </span>
+        </div>
+        <div className="checks-actions">
+          <button className="checks-quick" onClick={() => { setDraft(auditContext); setBriefOpen(!briefOpen); }}>
+            {briefOpen ? 'Close brief' : auditContext ? '✎ Audit brief' : '+ Audit brief'}
+          </button>
+          <button className="checks-quick" disabled={claudeCopy === 'busy'} onClick={onCopyClaude}
+            title="Copy a deep-audit prompt for a Claude session — for the specific investigation Gemini can't do">
+            {claudeLabel}
+          </button>
+          <button className="btn-repo checks-run" disabled={busy} onClick={onRun}>
+            {busy ? 'Auditing…' : '✧ Run audit'}
+          </button>
+        </div>
+      </div>
+
+      {briefOpen && (
+        <div className="audit-brief">
+          <textarea className="field-input sm audit-brief-text" rows={3} autoFocus
+            placeholder="What should the auditor look for? The flows that matter, known trouble spots, what to ignore…"
+            value={draft} onChange={(e) => setDraft(e.target.value)} />
+          <div className="audit-brief-actions">
+            <button className="btn-submit sm" disabled={draft.trim() === auditContext}
+              onClick={() => { onSaveBrief(draft.trim()); setBriefOpen(false); }}>Save brief</button>
+            <button className="btn-cancel sm" onClick={() => setBriefOpen(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {error && <div className="audit-note error">{error}</div>}
+      {result && !result.findings.length && (
+        <div className="audit-note">Audit came back clean — nothing worth logging.</div>
+      )}
+      {result && result.findings.length > 0 && (
+        <div className="check-rows">
+          {result.findings.map((f, i) => (
+            <div className="check-row audit-finding" key={i}>
+              <span className={`sev-pill ${f.severity}`}>{f.severity}</span>
+              <span className="check-name">{f.title}</span>
+              {f.evidence && <span className="check-url">{f.evidence}</span>}
+              <span className="audit-outcome">
+                {f.outcome === 'logged' ? `→ ${f.bug?.id} · review inbox`
+                  : f.outcome === 'duplicate' ? 'already tracked' : 'previously dismissed'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const BUG_STATUSES: BugStatus[] = ['open', 'investigating', 'fixing', 'fixed'];
 
 export function Bugs({
   bugs, filter, setFilter, onReport, onOpenLink, highlightId, onSetStatus, onDelete,
   checks, siteUrl, checksBusy, onRunChecks, onAddCheck, onEditCheck, onDeleteCheck, onCheckToBug,
+  auditContext, onSaveAuditContext, auditBusy, auditResult, auditError, onRunAudit,
+  claudeCopy, onCopyClaudePrompt,
 }: {
   bugs: Bug[]; filter: BugFilter; setFilter: (f: BugFilter) => void;
   onReport: () => void; onOpenLink: (hash: string) => void; highlightId?: string | null;
@@ -187,6 +269,10 @@ export function Bugs({
   onEditCheck: (id: number, patch: Partial<CheckInput>) => void;
   onDeleteCheck: (id: number) => void;
   onCheckToBug: (c: Check) => void;
+  auditContext: string; onSaveAuditContext: (text: string) => void;
+  auditBusy: boolean; auditResult: AuditResult | null; auditError: string;
+  onRunAudit: () => void;
+  claudeCopy: 'idle' | 'busy' | 'copied' | 'failed'; onCopyClaudePrompt: () => void;
 }) {
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const counts = {
@@ -206,6 +292,10 @@ export function Bugs({
     <div>
       <AuditPanel checks={checks} siteUrl={siteUrl} busy={checksBusy}
         onRun={onRunChecks} onAdd={onAddCheck} onEdit={onEditCheck} onDelete={onDeleteCheck} onFileBug={onCheckToBug} />
+
+      <BugAuditPanel auditContext={auditContext} onSaveBrief={onSaveAuditContext}
+        busy={auditBusy} result={auditResult} error={auditError} onRun={onRunAudit}
+        claudeCopy={claudeCopy} onCopyClaude={onCopyClaudePrompt} />
 
       <div className="section-bar">
         <div className="titles">

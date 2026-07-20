@@ -135,6 +135,7 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, acti
     summary: p.summary || '',
     currentPhase: p.current_phase || '',
     northStar: p.north_star || '',
+    auditContext: p.audit_context || '', // the audit brief (#144) — the Testing panel edits this
     deployPlatform: p.deploy_platform || '',
     logsUrl: p.logs_url || '',
     techStack: Array.isArray(p.tech_stack) ? p.tech_stack : [],
