@@ -512,13 +512,36 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
       fit.fit();
       const ws = openTerminal({ cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows });
       wsRef.current = ws;
+      // #135 — write-batching: coalesce rapid incoming frames into one
+      // requestAnimationFrame flush instead of calling term.write() per frame.
+      // High-throughput output (builds, log tails) can arrive in dozens of tiny
+      // frames per ms; merging them into one Uint8Array per rAF cuts xterm's
+      // internal dispatch overhead and eliminates intermediate layout thrashing.
+      let rafPending = false;
+      const writeBuf: Uint8Array[] = [];
+      const flushWrites = () => {
+        rafPending = false;
+        if (!writeBuf.length) return;
+        let total = 0;
+        for (const b of writeBuf) total += b.length;
+        const merged = new Uint8Array(total);
+        let off = 0;
+        for (const b of writeBuf) { merged.set(b, off); off += b.length; }
+        writeBuf.length = 0;
+        term.write(merged);
+      };
+      const scheduleWrite = (data: Uint8Array) => {
+        writeBuf.push(data);
+        if (!rafPending) { rafPending = true; requestAnimationFrame(flushWrites); }
+      };
+
       ws.addEventListener('message', (ev) => {
         let m: {
           t: string; data?: string; msg?: string; code?: number; cwd?: string;
           tokens?: number; resetAt?: number; resetLabel?: string; sched?: { runDate: string; atTime: string };
         };
         try { m = JSON.parse(ev.data); } catch { return; }
-        if (m.t === 'out' && m.data) term.write(b64decode(m.data));
+        if (m.t === 'out' && m.data) scheduleWrite(b64decode(m.data));
         else if (m.t === 'usage' && typeof m.tokens === 'number') {
           onUsage({ tokens: m.tokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched });
         }
@@ -530,14 +553,21 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
     };
     connect();
 
+    // Input goes out immediately — no batching on the keypress path. #135
     const data = term.onData((d) => {
       const ws = wsRef.current;
       if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'in', data: b64encode(d) }));
     });
+    // #135 — debounced resize: the window.resize event fires on every animation
+    // frame while the user drags; debouncing 80 ms sends only the settled size.
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
     const onResize = () => {
       fit.fit();
-      const ws = wsRef.current;
-      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        const ws = wsRef.current;
+        if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
+      }, 80);
     };
     window.addEventListener('resize', onResize);
 
@@ -552,6 +582,7 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
 
     return () => {
       register(null);
+      clearTimeout(resizeTimer);
       window.removeEventListener('resize', onResize);
       data.dispose();
       wsRef.current?.close();
