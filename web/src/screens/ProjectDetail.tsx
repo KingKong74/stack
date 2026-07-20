@@ -382,6 +382,32 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: bucket } });
     });
 
+  // #169 — area management: clear or reassign the area tag across all affected
+  // items via the normal PATCH route. A client-side loop is fine at board scale.
+  const deleteArea = async (_area: string, itemIds: number[]) => {
+    const allItems = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
+    const road = { ...roadmap };
+    for (const id of itemIds) {
+      const item = allItems.find((it) => it.id === id);
+      if (!item) continue;
+      const updated = await patchRoadmapItem(slug, id, { area: '' });
+      road[item.bucket] = road[item.bucket].map((it) => (it.id === id ? updated : it));
+    }
+    setData({ ...data, roadmap: road });
+  };
+
+  const renameArea = async (_from: string, to: string, itemIds: number[]) => {
+    const allItems = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
+    const road = { ...roadmap };
+    for (const id of itemIds) {
+      const item = allItems.find((it) => it.id === id);
+      if (!item) continue;
+      const updated = await patchRoadmapItem(slug, id, { area: to });
+      road[item.bucket] = road[item.bucket].map((it) => (it.id === id ? updated : it));
+    }
+    setData({ ...data, roadmap: road });
+  };
+
   const addNote = (text: string) =>
     guard(async () => {
       const note = await createNote(slug, { text });
@@ -764,6 +790,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onReviewTags={reviewTagsRoad} onRefine={refineRoad} onShelve={shelveRoad}
             onLogBug={logBugFromReview} onLogAudit={logAuditFromReview}
             onToggleSkip={toggleSkipRoad} onReorder={reorderRoad} onCleanup={openCleanup}
+            onDeleteArea={deleteArea} onRenameArea={renameArea}
             onSendToTerminal={(brief) => {
               // One-shot handoff — the terminal screen offers it as a paste.
               try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the button just won't appear */ }
