@@ -223,13 +223,11 @@ function startSession(msg) {
   const idleTimer = setInterval(() => {
     if (Date.now() - lastActivity > IDLE_MS) {
       sendUplink({ t: 'err', sid, msg: 'Session closed after inactivity.' });
+      // Kill the pty-shim; for tmux sessions this detaches the client but leaves
+      // the underlying tmux session (and any running claude process) alive — that
+      // is the whole point of tmux persistence. Do NOT call killSession() here.
+      // The session cleans itself up when the inner process exits naturally.
       child.kill('SIGTERM');
-      // For tmux sessions, also clean up the underlying session so idle claude
-      // processes don't accumulate on the host.
-      if (sess.tmuxSession) {
-        killSession(sess.tmuxSession);
-        log(`session ${sid}: killed idle tmux session ${sess.tmuxSession}`);
-      }
     }
   }, 60_000);
 
