@@ -31,6 +31,9 @@ export function runShape(r) {
     costUsd: Number(r.cost_usd) || 0,
     checksFailing: r.checks_failing,
     summary: r.summary || '',
+    // Per-model breakdown (#167): { "<model>": { inputTokens, outputTokens, costUSD } }
+    // Present only on dual-model sessions; null for single-model or legacy rows.
+    modelUsage: r.model_usage || null,
     when: relativeTime(r.finished_at) || 'just now',
     finishedAt: r.finished_at,
   };
@@ -404,10 +407,14 @@ autopilot.get('/runs', async (req, res) => {
 autopilot.post('/runs', async (req, res) => {
   const b = req.body || {};
   const outcome = OUTCOMES.includes(b.outcome) ? b.outcome : 'landed';
+  // model_usage (#167): { "<model>": { inputTokens, outputTokens, costUSD } } or null.
+  // Accept an object, silently reject anything else.
+  const modelUsage = (b.model_usage && typeof b.model_usage === 'object' && !Array.isArray(b.model_usage))
+    ? b.model_usage : null;
   const { rows } = await q(
     `INSERT INTO autopilot_runs
-       (project_id, item_id, item_title, branch, outcome, commits, tokens, cost_usd, checks_failing, summary, started_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, COALESCE($11, now())) RETURNING *`,
+       (project_id, item_id, item_title, branch, outcome, commits, tokens, cost_usd, checks_failing, summary, model_usage, started_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb, COALESCE($12, now())) RETURNING *`,
     [
       req.project.id,
       Number.isFinite(Number(b.item_id)) ? Number(b.item_id) : null,
@@ -419,6 +426,7 @@ autopilot.post('/runs', async (req, res) => {
       Math.max(0, Number(b.cost_usd) || 0),
       Number.isFinite(Number(b.checks_failing)) ? Number(b.checks_failing) : null,
       String(b.summary || '').slice(0, 2000),
+      modelUsage ? JSON.stringify(modelUsage) : null,
       b.started_at ? new Date(b.started_at) : null,
     ]
   );

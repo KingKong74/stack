@@ -388,6 +388,7 @@ Rules for this run:
   let resultText = '';
   let usedTokens = 0;
   let usedCost = 0;
+  let modelUsage = null; // per-model breakdown (#167): persisted to the run ledger
   try {
     const out = JSON.parse(run.stdout || '{}');
     const u = out.usage || {};
@@ -399,9 +400,11 @@ Rules for this run:
     resultText = String(out.result || '').trim();
     log(`session finished: ${out.num_turns ?? '?'} turns, ~${Math.round(usedTokens / 1000)}k tokens`
       + (usedCost ? ` ($${usedCost.toFixed(2)})` : ''));
-    // Per-model breakdown (#153): with an advisor in play this is the proof
-    // both roles ran on their own models — one line per model in the night log.
+    // Per-model breakdown (#153/#167): with an advisor in play this is the proof
+    // both roles ran on their own models — one line per model in the night log,
+    // and the raw object is persisted to the run ledger row (model_usage column).
     if (out.modelUsage && typeof out.modelUsage === 'object') {
+      modelUsage = out.modelUsage;
       const perModel = Object.entries(out.modelUsage).map(([model, u]) => {
         const t = (u.inputTokens || 0) + (u.outputTokens || 0)
           + (u.cacheReadInputTokens || 0) + (u.cacheCreationInputTokens || 0);
@@ -418,6 +421,7 @@ Rules for this run:
   const runRecord = {
     item_id: item.id, item_title: item.title, branch,
     tokens: usedTokens, cost_usd: usedCost, started_at: startedAt,
+    ...(modelUsage ? { model_usage: modelUsage } : {}), // per-model breakdown (#167)
   };
 
   // What did it produce?
