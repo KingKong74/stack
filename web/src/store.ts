@@ -252,10 +252,13 @@ export interface AutopilotSchedule {
 }
 export interface AutopilotJob {
   id: string; slug: string; name: string;
-  kind: 'manual' | 'nightly' | 'scheduled';
+  kind: 'manual' | 'nightly' | 'scheduled' | 'revert' | 'resume';
   itemId: string | null; itemTitle: string;
-  status: 'queued' | 'claimed' | 'running' | 'done' | 'failed';
-  detail: string; when: string;
+  // 'paused' = hung up (#142): held until a human resumes; never auto-fires.
+  status: 'queued' | 'claimed' | 'running' | 'done' | 'failed' | 'paused';
+  detail: string;
+  notBefore?: string | null;  // a resume job's hold — ISO, null once resumed by hand
+  when: string;
 }
 export interface TermSession {
   sid: string; cwd: string; cmd: 'shell' | 'claude';
@@ -302,6 +305,28 @@ export async function startAutopilot(slug: string, itemId?: string): Promise<Aut
     method: 'POST',
     body: itemId ? { slug, itemId } : { slug },
   });
+}
+
+// #142 — the paused-session controls. A session that hit the usage limit sits
+// in the queue as a kind='resume' job holding until the reset: Resume clears
+// the hold (the dispatcher then treats it as a manual press), hang-up parks it
+// until resumed by hand, dismiss drops it entirely.
+export async function resumeAutopilotJob(id: string): Promise<AutopilotJob> {
+  return request<AutopilotJob>(`/autopilot/jobs/${id}`, {
+    method: 'PATCH', body: { status: 'queued', notBefore: null },
+  });
+}
+export async function hangupAutopilotJob(id: string): Promise<AutopilotJob> {
+  return request<AutopilotJob>(`/autopilot/jobs/${id}`, { method: 'PATCH', body: { status: 'paused' } });
+}
+export async function dismissAutopilotJob(id: string): Promise<void> {
+  await request(`/autopilot/jobs/${id}`, { method: 'DELETE' });
+}
+// The job queue without the full Mission Control payload — the Terminal's
+// pending-resume chip reads it per project.
+export async function getAutopilotJobs(slug?: string, limit = 20): Promise<AutopilotJob[]> {
+  const qs = `${slug ? `slug=${encodeURIComponent(slug)}&` : ''}limit=${limit}`;
+  return request<AutopilotJob[]>(`/autopilot/jobs?${qs}`);
 }
 
 export interface SchedulePayload {

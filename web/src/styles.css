@@ -1286,6 +1286,22 @@ a { color: inherit; }
 }
 .mc-run:hover { color: #fff; background: var(--accent-deep); border-color: var(--accent-deep); }
 
+/* #142 — paused sessions: limit-hit resumes holding for the reset, or hung up */
+.mc-paused { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
+.mc-pause {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11.5px; font-weight: 600; color: var(--accent);
+  background: var(--accent-tint); border: 1px solid var(--accent-tint-border);
+  border-radius: 20px; padding: 3px 6px 3px 10px;
+}
+.mc-pause.paused { color: var(--chip-ink); background: var(--panel); border-color: var(--line-2); }
+.mc-pause .mc-run, .mc-pause .btn-repo.sm { padding: 1px 8px; font-size: 11px; }
+.mc-pause-x {
+  border: 0; background: none; color: var(--muted); font-size: 14px; line-height: 1;
+  padding: 0 2px; cursor: pointer;
+}
+.mc-pause-x:hover { color: var(--critical); }
+
 /* inline text-button (reads as a link) */
 .linklike { color: var(--accent); font-weight: 600; padding: 0; background: none; border: 0; cursor: pointer; }
 .linklike:hover { color: var(--accent-deep); text-decoration: underline; }

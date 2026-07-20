@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   getControl, patchProject, patchSettings, startAutopilot,
   createAutopilotSchedule, patchAutopilotSchedule, deleteAutopilotSchedule,
+  resumeAutopilotJob, hangupAutopilotJob, dismissAutopilotJob,
   labelTerminalSessions, getRoadmap, AuthError,
   type ControlData, type ControlProject, type AutopilotJob,
 } from '../store';
@@ -39,6 +40,18 @@ const scheduleWhen = (s: { days: number[]; runDate: string | null; atTime: strin
 
 const JOB_LABEL: Record<AutopilotJob['status'], string> = {
   queued: 'queued', claimed: 'starting', running: 'running', done: 'done', failed: 'failed',
+  paused: 'hung up',
+};
+
+// #142 — a paused session in the strip: a resume job holding for the limit
+// reset (queued + notBefore) or hung up by hand (status 'paused').
+const isPausedSession = (j: AutopilotJob) =>
+  j.kind === 'resume' && (j.status === 'paused' || j.status === 'queued');
+const resumeWhen = (iso?: string | null) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? t : `${DAY_LABELS[d.getDay()]} ${t}`;
 };
 
 type SchedMode = 'once' | 'daily' | 'custom';
@@ -150,6 +163,35 @@ export function ControlPanel() {
       setData((cur) => cur && { ...cur, jobs: [job, ...cur.jobs.filter((j) => j.id !== job.id)] });
     } catch (e) {
       if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not queue the run.');
+    }
+  };
+
+  // #142 — the paused-session controls: resume clears the hold (the dispatcher
+  // picks it up within a minute), hang-up parks it, dismiss drops it.
+  const replaceJob = (job: AutopilotJob) =>
+    setData((cur) => cur && { ...cur, jobs: cur.jobs.map((j) => (j.id === job.id ? job : j)) });
+  const resumeJob = async (j: AutopilotJob) => {
+    try {
+      replaceJob(await resumeAutopilotJob(j.id));
+    } catch (e) {
+      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not resume the session.');
+    }
+  };
+  const hangupJob = async (j: AutopilotJob) => {
+    try {
+      replaceJob(await hangupAutopilotJob(j.id));
+    } catch (e) {
+      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not hang up the session.');
+    }
+  };
+  const dismissJob = async (j: AutopilotJob) => {
+    const prev = data?.jobs || [];
+    setData((cur) => cur && { ...cur, jobs: cur.jobs.filter((x) => x.id !== j.id) });
+    try {
+      await dismissAutopilotJob(j.id);
+    } catch (e) {
+      setData((cur) => cur && { ...cur, jobs: prev });
+      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not dismiss the session.');
     }
   };
 
@@ -328,9 +370,39 @@ export function ControlPanel() {
                   </button>
                 </div>
               )}
-              {data.jobs.length > 0 && (
+              {/* #142 — paused sessions: limit-hit resumes holding for the reset,
+                  or hung up by hand. Resume clears the hold, hang-up parks it. */}
+              {data.jobs.some(isPausedSession) && (
+                <div className="mc-paused" aria-label="Paused sessions">
+                  {data.jobs.filter(isPausedSession).map((j) => (
+                    <span key={j.id} className={`mc-pause ${j.status}`}
+                      title={[j.itemTitle && `#${j.itemId} ${j.itemTitle}`, j.detail].filter(Boolean).join(' — ') || undefined}>
+                      ⏸ {j.name}{j.itemId ? ` #${j.itemId}` : ''} ·{' '}
+                      {j.status === 'paused' ? 'hung up — resumes only by hand'
+                        : j.notBefore ? `paused on the usage limit · resumes ${resumeWhen(j.notBefore)}`
+                        : 'resuming — the host picks it up within a minute'}
+                      {(j.status === 'paused' || j.notBefore) && (
+                        <button className="mc-run" onClick={() => resumeJob(j)}
+                          title="Resume this session now — the dispatcher picks it up within a minute">
+                          ▶ Resume now
+                        </button>
+                      )}
+                      {j.status === 'queued' && j.notBefore && (
+                        <button className="btn-repo sm" onClick={() => hangupJob(j)}
+                          title="Hang up — hold the session so it only resumes when you say">
+                          ⏸ Hang up
+                        </button>
+                      )}
+                      <button className="mc-pause-x" onClick={() => dismissJob(j)}
+                        aria-label="Dismiss this paused session"
+                        title="Dismiss — drop the pending resume entirely">×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {data.jobs.some((j) => !isPausedSession(j)) && (
                 <div className="mc-jobs" aria-label="Recent autopilot jobs">
-                  {data.jobs.slice(0, 6).map((j) => (
+                  {data.jobs.filter((j) => !isPausedSession(j)).slice(0, 6).map((j) => (
                     <span key={j.id} className={`mc-job ${j.status}`}
                       title={[j.itemTitle && `#${j.itemId} ${j.itemTitle}`, j.detail].filter(Boolean).join(' — ') || undefined}>
                       {j.name} · {j.kind}{j.itemId ? ` #${j.itemId}` : ''} · {JOB_LABEL[j.status]}
@@ -482,7 +554,9 @@ export function ControlPanel() {
                     <span className="mc-push">{p.lastPush ? `pushed ${p.lastPush}` : 'no pushes yet'}</span>
                     {job ? (
                       <span className={`mc-job ${job.status}`} title={job.detail || undefined}>
-                        {JOB_LABEL[job.status]}{job.itemId ? ` #${job.itemId}` : ''}
+                        {job.kind === 'resume' && job.notBefore
+                          ? `resumes ${resumeWhen(job.notBefore)}` : JOB_LABEL[job.status]}
+                        {job.itemId ? ` #${job.itemId}` : ''}
                       </span>
                     ) : (
                       <button className="mc-run" onClick={() => runNow(p)}
