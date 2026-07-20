@@ -102,8 +102,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             (POST /api/projects/:slug/autopilot/runs) — the deck's "While you were away" digest
             and the run-history panel read from it. A session that dies on the usage limit
             closes the night GRACEFULLY: the run row says `limit`, pushed branches keep their
-            claims, and the runner schedules its own detached resume for just past the reset
-            time (parsed from the message, else +4h) — still gated by the arm switch + lock.
+            claims, and the runner queues its own resume as a DURABLE `resume` job (#142 —
+            POST /api/autopilot/resume, held via `not_before` until just past the reset, parsed
+            from the message else +4h; a pinned --item run keeps its pin). The job survives
+            reboots and shows on Mission Control + the Terminal, where a human can ▶ Resume now
+            (clears the hold — the dispatcher then runs it --force like a manual press), ⏸ Hang
+            up (status `paused` — parked until resumed by hand) or × dismiss it; an auto-fired
+            resume (hold intact) keeps the arm-switch + automode gates. Only when the API can't
+            take the job does the old detached-sleep fallback fire.
             Night end fires an ntfy.sh notification when STACK_NTFY_TOPIC is set in
             ~/.stack/env (free, keyless; unset = silent). Lockfile ~/.stack/autopilot.lock; log
             ~/.stack/autopilot.log. `skipped` items are how you keep human-only work off its plate.
@@ -184,6 +190,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   push, **▶ Run now** (queues a manual job via `store.startAutopilot`; open jobs show as live
   queued/running/done chips, refreshed on a 30s tick), tonight's likely pick (deep-links to the
   roadmap item), last `auto/*` run, claim chips, review/serious-bug counts and blockers.
+  The **paused-sessions strip** (#142) sits above the recent-jobs chips: one ⏸ chip per
+  limit-paused `resume` job showing its resume time, with **▶ Resume now**
+  (`store.resumeAutopilotJob`), **⏸ Hang up** (`hangupAutopilotJob` — parks it until resumed
+  by hand) and **× Dismiss** (`dismissAutopilotJob`); a project row with a held resume shows
+  "resumes <time>" in place of ▶ Run now.
   Renders `getControl()`; automode projects sort first (`.mc-*` styles).
 - `screens/Terminal.tsx` — the web terminal (`#/terminal[?cwd=<dir>]`, lazy-loaded so xterm.js
   stays out of the main bundle; entry points on Mission Control — the strip's ⌨ Terminal button
@@ -194,7 +205,10 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   (`store.getTermUsagePrefs/setTermUsagePrefs`), the limit-reset time when a usage limit hits, and
   session booking around the reset — manual mode is a ▶ Book button, the auto-book toggle books
   the one-off Mission Control calendar slot itself (once per slot; project = the cwd's first
-  segment, which IS the dispatcher's slug).
+  segment, which IS the dispatcher's slug). The strip also shows the cwd project's **paused
+  session** (#142) when one sits in the queue — a limit-hit `resume` job with its resume time
+  and in-place ▶ Resume now / Hang up (polled via `store.getAutopilotJobs` while the screen
+  shows, re-checked when a limit frame lands).
 - `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router; routes
   are `#/`, `#/settings`, `#/control`, `#/terminal`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit
@@ -315,8 +329,10 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   - `autopilot_schedule` + `autopilot_jobs` — Mission Control's calendar and the job queue the
     host dispatcher polls (see scripts/stack-autopilot-dispatch.mjs). Schedule rows: host-local
     `at_time`, one-off `run_date` or recurring `days`, optional pinned `item_id`, `enabled`.
-    Jobs: kind manual|nightly|scheduled, status queued|claimed|running|done|failed; a partial
-    unique index on (project, night_date) makes the nightly enqueue idempotent.
+    Jobs: kind manual|nightly|scheduled|revert|resume, status queued|claimed|running|done|
+    failed|paused; a partial unique index on (project, night_date) makes the nightly enqueue
+    idempotent. `resume` jobs (#142) carry `not_before` — GET /next skips a queued job until
+    its hold passes, and a `paused` (hung-up) job is never handed out at all.
   - `presence` — live sessions, keyed (project, session_id). SessionStart upserts, an authored
     /checkpoint bumps `last_seen_at`, SessionEnd (and ingest's metadata backstop) deletes;
     liveness = within `util.PRESENCE_TTL_MINUTES` (default 240 — the crashed-session backstop,
@@ -577,7 +593,10 @@ the silent metadata backstop so the feed never has gaps.
   `runDate` or recurring `days` getDay() ints, host-local `atTime`, optional pinned `itemId`;
   one-offs disable themselves after firing) · `POST /start` (the ▶ Run now button AND the
   `stack start-session` CLI — queues a manual job; an open job for the project is returned
-  instead of duplicated) · `POST /undo` (#128 — the Reviews view's ⎌ Undo: queues a `revert`
+  instead of duplicated — and if that open job is a held `resume`, Run now clears its hold so
+  it fires immediately) · `POST /resume` (#142 — the runner's graceful limit-pause:
+  `{slug, itemId?, minutes}` queues/re-points the project's `resume` job, held for `minutes`
+  — relative, so host/server clock skew never matters) · `POST /undo` (#128 — the Reviews view's ⎌ Undo: queues a `revert`
   job for a completed item; idempotent per item, 409 while another job is open. The dispatcher
   reverts the item's #N-tagged main commits in a throwaway worktree, pushes, then un-ticks the
   item) · `GET /jobs?slug=&limit=` (recent automation sessions newest
@@ -585,7 +604,11 @@ the silent metadata backstop so the feed never has gaps.
   keeps reading jobs off the control payload) ·
   `GET /next?local=YYYY-MM-DDTHH:MM&dow=N` (the host dispatcher's poll: recovers stale jobs,
   lazily enqueues due nightly/scheduled work, hands out at most one claimed job — serialised) ·
-  `PATCH /jobs/:id` (the dispatcher's outcome report: running|done|failed|queued + detail)
+  `PATCH /jobs/:id` (the dispatcher's outcome report: running|done|failed|queued + detail;
+  #142 adds the human controls — `{status:'paused'}` hangs a queued/claimed job up (409
+  otherwise — a running session has no kill channel), `{status:'queued', notBefore:null}`
+  resumes it now; returns the updated job shape) · `DELETE /jobs/:id` (#142 — dismiss a
+  queued/paused job; 409 for anything claimed/running/finished)
 - `POST /api/terminal/label` (#120 — ✧ Gemini names what each open web-terminal session is doing,
   from the relay's rolling ANSI-stripped output tail; annotation only, in-memory, 503 keyless.
   The live session list itself rides the control payload's `terminal.sessions`.)

@@ -61,11 +61,14 @@ control.get('/', async (_req, res) => {
          JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
          LEFT JOIN roadmap_items ri ON ri.id = s.item_id
         ORDER BY s.enabled DESC, s.at_time, s.id`),
+    // Open + paused rows lead so a long-parked hung-up resume (#142) can't be
+    // pushed off the strip by newer finished jobs.
     q(`SELECT j.*, p.slug, p.name AS project_name, ri.title AS item_title
          FROM autopilot_jobs j
          JOIN projects p ON p.id = j.project_id AND p.deleted_at IS NULL
          LEFT JOIN roadmap_items ri ON ri.id = j.item_id
-        ORDER BY j.created_at DESC LIMIT 12`),
+        ORDER BY (j.status IN ('queued','claimed','running','paused')) DESC,
+                 j.created_at DESC LIMIT 12`),
   ]);
 
   const roadByP = new Map();
