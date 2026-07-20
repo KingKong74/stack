@@ -1297,6 +1297,16 @@ a { color: inherit; }
 .set-pin-row .field-input { flex: 1; min-width: 0; }
 .set-pin-row .btn-repo:disabled { opacity: 0.5; cursor: default; }
 
+/* PIN-connected device list (Settings → Access → device manager) */
+.set-devices { border-top: 1px solid var(--line-2); padding-top: 14px; margin-top: 4px; }
+.set-devices-head { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px; }
+.set-device-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--line-2); }
+.set-device-row:last-child { border-bottom: none; }
+.set-device-info { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
+.set-device-label { font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.set-device-badge { font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 6px; padding: 1px 7px; white-space: nowrap; }
+.set-device-meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
 /* ---------- search deep-link highlight (bug / roadmap / note rows) ---------- */
 /* Mirrors the activity card highlight (.tl-card.hl) so a ⌘K result flags its
    row with the same terracotta ring on whichever tab it opens. */

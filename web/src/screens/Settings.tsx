@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { Settings as SettingsData, CheckpointDetail } from '../types';
+import type { Settings as SettingsData, CheckpointDetail, AuthDevice } from '../types';
 import {
   getSettings, patchSettings, getToken, clearToken, verifyToken, AuthError,
   getThemePref, setThemePref, type ThemePref,
   getDeletedProjects, restoreProject, purgeProject, type DeletedProject,
+  getAuthDevices, revokeAuthDevice,
 } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
@@ -50,6 +51,8 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
   const [purgeArmed, setPurgeArmed] = useState<string | null>(null);
   const [pin, setPin] = useState('');
   const [pinMsg, setPinMsg] = useState('');
+  const [devices, setDevices] = useState<AuthDevice[]>([]);
+  const [revokeConfirm, setRevokeConfirm] = useState<number | null>(null);
 
   useEffect(() => {
     getDeletedProjects().then(setDeleted).catch(() => { /* section just stays empty */ });
@@ -71,7 +74,15 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
     let live = true;
     setLoading(true);
     getSettings()
-      .then((s) => { if (live) { setSettings(s); setError(''); } })
+      .then((s) => {
+        if (!live) return;
+        setSettings(s);
+        setError('');
+        // Load the device list only when PIN sign-in is enabled.
+        if (s.accessPinSet) {
+          getAuthDevices().then((d) => { if (live) setDevices(d); }).catch(() => { /* non-fatal */ });
+        }
+      })
       .catch((e) => { if (live && !(e instanceof AuthError)) setError(e?.message || 'Failed to load settings.'); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
@@ -115,10 +126,29 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
       const next = await patchSettings({ accessPin: value });
       setSettings(next);
       setPin('');
+      // PIN change signs out all devices — clear the list; if PIN was set to a
+      // new value the owner can sign back in, but we can't list fresh tokens yet.
+      setDevices([]);
       setPinMsg(value ? 'PIN saved. All PIN-connected devices were signed out — sign back in with the new PIN.' : 'PIN sign-in disabled; PIN-connected devices were signed out.');
     } catch (e) {
       if (e instanceof AuthError) return;
       setError((e as Error)?.message || 'Could not save the PIN.');
+    }
+  };
+
+  // Revoke a single device token. If it's this session's own token, sign out.
+  const revokeDevice = async (device: AuthDevice) => {
+    setRevokeConfirm(null);
+    try {
+      await revokeAuthDevice(device.id);
+      if (device.current) {
+        clearToken(); // 401 on the next request would do the same, but be proactive
+        return;
+      }
+      setDevices((prev) => prev.filter((d) => d.id !== device.id));
+    } catch (e) {
+      if (e instanceof AuthError) return;
+      setError((e as Error)?.message || 'Could not revoke the device.');
     }
   };
 
@@ -456,6 +486,38 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
                   keeps working regardless.
                 </div>
               </div>
+
+              {/* ---- PIN devices (only when PIN is set and devices exist) ---- */}
+              {settings.accessPinSet && devices.length > 0 && (
+                <div className="set-devices">
+                  <div className="set-devices-head">PIN-connected devices</div>
+                  {devices.map((d) => (
+                    <div key={d.id} className="set-device-row">
+                      <div className="set-device-info">
+                        <span className="set-device-label">{d.label || 'Unknown device'}</span>
+                        {d.current && <span className="set-device-badge">this device</span>}
+                        <span className="set-device-meta">
+                          {d.lastUsed ? `last used ${d.lastUsed}` : d.createdAt ? `signed in ${new Date(d.createdAt).toLocaleDateString()}` : 'never used'}
+                        </span>
+                      </div>
+                      <div className="set-row-actions">
+                        {revokeConfirm === d.id ? (
+                          <>
+                            <button className="btn-danger" onClick={() => revokeDevice(d)}>
+                              {d.current ? 'Sign out this device?' : 'Really revoke?'}
+                            </button>
+                            <button className="btn-cancel" onClick={() => setRevokeConfirm(null)}>Cancel</button>
+                          </>
+                        ) : (
+                          <button className="btn-cancel" onClick={() => setRevokeConfirm(d.id)}>
+                            {d.current ? 'Sign out' : 'Revoke'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="set-row">
                 <div className="set-row-text">

@@ -19,6 +19,7 @@ import { publicShowcase } from './routes/public.js';
 import { timeline } from './routes/timeline.js';
 import { intake } from './routes/intake.js';
 import { auth } from './routes/auth.js';
+import { devices } from './routes/devices.js';
 import { control } from './routes/control.js';
 import { polaris } from './routes/polaris.js';
 import { autopilot, autopilotGlobal } from './routes/autopilot.js';
@@ -51,6 +52,8 @@ app.use('/api/public', publicShowcase);
 
 // Open: PIN sign-in (rate-limited; 403 until an access PIN is set in Settings).
 app.use('/api/auth', auth);
+// Authenticated: device manager (list + revoke PIN devices).
+app.use('/api/auth/devices', requireToken, devices);
 
 // Everything else needs the token. Per-project collection routers are mounted
 // at the more specific paths; the projects router handles the rest.
