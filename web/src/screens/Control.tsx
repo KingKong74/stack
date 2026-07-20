@@ -4,7 +4,7 @@ import {
   createAutopilotSchedule, patchAutopilotSchedule, deleteAutopilotSchedule,
   resumeAutopilotJob, hangupAutopilotJob, dismissAutopilotJob,
   labelTerminalSessions, getRoadmap, AuthError,
-  type ControlData, type ControlProject, type AutopilotJob,
+  type ControlData, type ControlProject, type AutopilotJob, type ModelEntry,
 } from '../store';
 import { go } from '../lib/route';
 import type { ProjectStatus, RoadmapItem } from '../types';
@@ -23,11 +23,13 @@ const BUDGETS = [
 const NIGHT_ITEMS = [1, 2, 3, 5];
 // Dual-model sessions (#153): the executor runs every turn, the advisor is the
 // stronger model it consults as a subagent. '' = CLI default / no advisor.
-const EXECUTORS = [
+// These are the FALLBACK lists used before the payload loads (#175 — the live
+// catalogue comes from data.models, served by the backend as a single source of truth).
+const FALLBACK_EXECUTORS: ModelEntry[] = [
   { model: '', label: 'Default' }, { model: 'haiku', label: 'Haiku' },
   { model: 'sonnet', label: 'Sonnet' }, { model: 'opus', label: 'Opus' },
 ];
-const ADVISORS = [
+const FALLBACK_ADVISORS: ModelEntry[] = [
   { model: '', label: 'Off' }, { model: 'sonnet', label: 'Sonnet' },
   { model: 'opus', label: 'Opus' }, { model: 'fable', label: 'Fable' },
 ];
@@ -358,7 +360,7 @@ export function ControlPanel() {
                 <label className="mc-knob">
                   <span className="mc-knob-label">Executor</span>
                   <span className="seg-control sm" role="tablist" aria-label="Executor model — runs the session">
-                    {EXECUTORS.map((m) => (
+                    {(data.models?.executors ?? FALLBACK_EXECUTORS).map((m) => (
                       <button key={m.model} role="tab" aria-selected={data.autopilot.executorModel === m.model}
                         className={`seg-opt ${data.autopilot.executorModel === m.model ? 'on' : ''}`}
                         title={m.model === '' ? "The claude CLI's own default model runs the session" : `Sessions run on ${m.label}`}
@@ -371,7 +373,7 @@ export function ControlPanel() {
                 <label className="mc-knob">
                   <span className="mc-knob-label">Advisor</span>
                   <span className="seg-control sm" role="tablist" aria-label="Advisor model — a stronger model the session consults">
-                    {ADVISORS.map((m) => (
+                    {(data.models?.advisors ?? FALLBACK_ADVISORS).map((m) => (
                       <button key={m.model} role="tab" aria-selected={data.autopilot.advisorModel === m.model}
                         className={`seg-opt ${data.autopilot.advisorModel === m.model ? 'on' : ''}`}
                         title={m.model === '' ? 'No advisor — single-model sessions' : `The executor consults ${m.label} for plans and unblocking`}

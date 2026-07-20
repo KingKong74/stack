@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { relativeTime, computeProgress, PRESENCE_TTL_MINUTES } from '../util.js';
-import { readSettings } from '../settings.js';
+import { readSettings, EXECUTOR_CATALOGUE, ADVISOR_CATALOGUE } from '../settings.js';
 import { termAgentConnected, termSessions } from '../term.js';
 import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 
@@ -157,6 +157,10 @@ control.get('/', async (_req, res) => {
       executorModel: appSettings.autopilot_executor_model, // '' = CLI default (#153)
       advisorModel: appSettings.autopilot_advisor_model,   // '' = no advisor
     },
+    // Model picker catalogue (#175) — the single source of truth for what the
+    // Executor / Advisor pickers show. Served here so the frontend never has a
+    // second hardcoded list to keep in sync.
+    models: { executors: EXECUTOR_CATALOGUE, advisors: ADVISOR_CATALOGUE },
     // The host PTY daemon's agent socket + every open web-terminal session
     // (labels are the ✧ Gemini annotations, '' until asked for).
     terminal: { connected: termAgentConnected(), sessions: termSessions() },
