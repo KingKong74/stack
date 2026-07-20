@@ -92,7 +92,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             jobs target one thing. A project's `autopilot_area` (#122, the Mission Control
             target picker; '' = whole board) filters the normal pick to one product area —
             --item pins bypass it. Per item: claim the lane, Gemini spec pre-pass (free tier — expands
-            title/note into goal/acceptance/out-of-scope; keyless = silently spec-less), an
+            title/note into goal/acceptance/out-of-scope; keyless = silently spec-less; a
+            refine_note item SKIPS it — the refinement is the spec, and the prompt says what
+            landed before and to change only the delta, #146), an
             unattended session in a fresh worktree on branch auto/item-N (never main), push,
             `built_note` stamped on the item (so the Reviews view shows what landed), a checks
             run + Gemini diff review (→ review inbox) — then the next item while budget remains.
@@ -244,9 +246,15 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   every row with #id + an origin chip (⚙ autopilot — auto/* claim or a landed run — / ⚑ lane /
   by hand, with an origin filter when mixed) and the run-ledger chip (branch · commits · tokens ·
   cost, session summary on hover) via `store.getAutopilotRuns`; each To-verify row also has
-  **✧ Brief** (#134 — Gemini's reviewer brief: what shipped, test steps, risks; in-memory) and
-  **⎌ Undo** (#128 — confirm modal → `store.queueUndo` → a `revert` job the host dispatcher runs);
-  verdicts are solid/rethink, the latter opening a prefilled follow-up item), Futures (the **north star**
+  **✧ Brief** (#134 — Gemini's reviewer brief: what shipped, test steps, risks; in-memory),
+  **⎌ Undo** (#128 — confirm modal → `store.queueUndo` → a `revert` job the host dispatcher runs),
+  toggleable **annotation chips** (#146 — Fix / Needs more / Polish / Question, PATCHed whole as
+  `review_tags`; read-only in the archive) and **＋ Bug / ＋ Audit** (#146 — prefill a bug ticket /
+  an audit-area roadmap item referencing the row); Solid is the only pickable verdict — **✎ Refine**
+  (#146, replacing #141's full-rework modal) takes just the delta: PATCH `{done:false, refine_note}`
+  sends the item back as ITSELF (same id, built_note kept, verdict + claim cleared), the board card
+  shows the pending ↻ refinement, and an optional checkbox queues a pinned autopilot session via
+  `store.startAutopilot`), Futures (the **north star**
   — one editable paragraph on what the project is becoming, PATCHed as `north_star` and injected by
   the SessionStart hook — plus the idea funnel: loose ideas added/extracted, promote → prefills the
   RoadmapModal then a keep/delete-the-idea confirm, dismiss deletes + tombstones; ideas are
@@ -314,7 +322,12 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     set via POST/PATCH, shown as a ⚑ chip, injected by the SessionStart hook as "Lane claims —
     respect these"; the agent template documents the claim-before-starting protocol) and
     `review_tag` (the **archive verdict**: solid | needs-work | rethink — set from the Archive's
-    Review button; needs-work/rethink prefill a follow-up item back onto the board).
+    Review button; needs-work/rethink prefill a follow-up item back onto the board),
+    `review_tags` (#146 — jsonb list of short review annotations, 'fix' / 'needs-more' / …,
+    toggled as chips on To-verify rows) and `refine_note` (#146 — the refinement delta: a refine
+    sends the item back to the board as itself carrying just this instruction; the runner builds
+    against it instead of a fresh spec). A fresh completion (`done:true`) clears both — each
+    To-verify round starts unannotated and an addressed refinement retires.
   - `futures` — loose directional ideas: title, `note`, `source`, `fingerprint`, `reviewed_at`,
     `alignment` (the curation verdict against the north star: on-course | tangent | off-course,
     NULL = unsorted; PATCHable, '' clears; the Futures tab groups by it — on-course first,
@@ -564,9 +577,11 @@ the silent metadata backstop so the feed never has gaps.
   so a sent-back item re-enters play fresh: through To verify on re-completion, pickable by the
   autopilot again — `skipped: bool` — the parked flag:
   sinks to the bottom of its bucket, agents never pick it up, still counts toward progress —
-  plus `area`, `position` (drag-reorder), `built_note` (the what-landed account) and `plan`
+  plus `area`, `position` (drag-reorder), `built_note` (the what-landed account), `plan`
   (#75 — the implementation plan, a whole-list jsonb of `{text, done}` steps; agents tick a step
-  by re-sending the list, the autopilot injects it into its session prompt)) ·
+  by re-sending the list, the autopilot injects it into its session prompt), `review_tags`
+  (#146 — whole-list like plan; cleaned + deduped) and `refine_note` (#146 — '' clears; ticking
+  `done:true` clears both unless the same PATCH sets them)) ·
   `POST /api/projects/:slug/roadmap/suggest-title` (Gemini titles an item from its note;
   suggestion only, 503 keyless) ·
   `POST /api/projects/:slug/roadmap/assist` (the modal's ✧ Fill-from-note: Gemini reads the note

@@ -64,6 +64,8 @@ export interface RoadmapItem {
   area: string;        // product-area tag ('' = untagged) — filters the board
   builtNote: string;   // what actually landed — shown on the Reviews view
   reviewTag: string;   // archive verdict: '' | solid | needs-work | rethink
+  reviewTags: string[]; // review annotations ('fix', 'needs-more', …) — #146
+  refineNote: string;  // the refine delta — what to change on top ('' = none) — #146
   skipped: boolean;    // parked — planned, but not to be picked up yet
   plan: PlanStep[];    // the implementation plan ([] = none)
   updatedAt: string | null; // ISO — latest-first ordering in the archive

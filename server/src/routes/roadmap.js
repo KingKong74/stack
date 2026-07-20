@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { fingerprint, oneOf, BUCKETS, cleanPlan } from '../util.js';
+import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags } from '../util.js';
 import { roadmapItemShape, groupRoadmap } from '../shape.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
@@ -66,6 +66,15 @@ roadmap.patch('/:id', async (req, res) => {
     sets.push(`review_tag = $${i++}`);
     vals.push(['solid', 'needs-work', 'rethink'].includes(tag) ? tag : null);
   }
+  if (req.body?.review_tags !== undefined) {
+    // Review annotations (#146) — the whole list comes back each time, like plan.
+    sets.push(`review_tags = $${i++}::jsonb`);
+    vals.push(JSON.stringify(cleanReviewTags(req.body.review_tags)));
+  }
+  if (req.body?.refine_note !== undefined) {
+    sets.push(`refine_note = $${i++}`);
+    vals.push(String(req.body.refine_note || '').trim().slice(0, 2000) || null);
+  }
   if (req.body?.skipped !== undefined) {
     sets.push(`skipped = $${i++}`); vals.push(Boolean(req.body.skipped));
   }
@@ -77,8 +86,15 @@ roadmap.patch('/:id', async (req, res) => {
   if (req.body?.done !== undefined) {
     sets.push(`done = $${i++}`); vals.push(Boolean(req.body.done));
     // Completing an item is a human touch — it counts as reviewed, so archived
-    // items never linger in the review inbox.
-    if (req.body.done) sets.push('reviewed_at = COALESCE(reviewed_at, now())');
+    // items never linger in the review inbox. A fresh completion also clears
+    // the refinement (it was addressed — #146) and last round's review tags
+    // (each To-verify pass starts unannotated). Explicit values in the same
+    // PATCH win — those columns are already SET above and can't go twice.
+    if (req.body.done) {
+      sets.push('reviewed_at = COALESCE(reviewed_at, now())');
+      if (req.body.refine_note === undefined) sets.push('refine_note = NULL');
+      if (req.body.review_tags === undefined) sets.push(`review_tags = '[]'::jsonb`);
+    }
     // Un-ticking sends the item back into play, so stale completion state goes
     // with it: the old verdict (a redone item must pass To verify again) and
     // the finished lane's claim (a claimed item is invisible to the autopilot

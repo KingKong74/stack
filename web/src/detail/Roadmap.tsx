@@ -12,13 +12,23 @@ export const REVIEW_TAGS: { key: ReviewTag; label: string }[] = [
 ];
 const tagLabel = (tag: string) => REVIEW_TAGS.find((t) => t.key === tag)?.label || tag;
 
+// Review annotations (#146): quick labels the reviewer sticks on a To-verify
+// row — lighter than a verdict, they stay while the item sits in the pipeline
+// and clear when it completes afresh.
+export const REVIEW_NOTE_TAGS: { key: string; label: string }[] = [
+  { key: 'fix', label: 'Fix' },
+  { key: 'needs-more', label: 'Needs more' },
+  { key: 'polish', label: 'Polish' },
+  { key: 'question', label: 'Question' },
+];
+const noteTagLabel = (t: string) => REVIEW_NOTE_TAGS.find((x) => x.key === t)?.label || t;
+
 // MoSCoW roadmap. Open items live in their bucket columns (with lane-claim
 // chips and edit/delete on hover); completed items move to the collapsed
 // Archive below — still counted by the progress model, reviewable with a
-// verdict tag (needs-work/rethink offer a follow-up item), restorable by
-// un-ticking.
+// verdict tag, refinable by delta (#146), restorable by un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onRefine, onToggleSkip, onReorder, onCleanup, onSendToTerminal, slug, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, slug, highlightId,
   draft, onResumeDraft, onDiscardDraft, liveBranches,
 }: {
   roadmap: RoadmapData;
@@ -28,7 +38,10 @@ export function Roadmap({
   onEdit: (item: RoadmapItem) => void;
   onDelete: (item: RoadmapItem) => void;
   onReviewTag: (item: RoadmapItem, tag: ReviewTag) => void;
-  onRefine: (item: RoadmapItem) => void;
+  onReviewTags: (item: RoadmapItem, tags: string[]) => void;
+  onRefine: (item: RoadmapItem, refineNote: string, queueNow: boolean) => void;
+  onLogBug: (item: RoadmapItem) => void;
+  onLogAudit: (item: RoadmapItem) => void;
   onToggleSkip: (item: RoadmapItem) => void;
   onReorder?: (item: RoadmapItem, toBucket: Priority, beforeId: number | null) => void;
   onCleanup?: () => void;
@@ -223,6 +236,38 @@ export function Roadmap({
       </div>
     );
   };
+  // Review-annotation chips (#146): toggleable on To-verify rows. The whole
+  // list PATCHes back each time, like plan steps. Tags an agent stuck on via
+  // the API that aren't in the catalogue still render (click removes).
+  const toggleNoteTag = (it: RoadmapItem, key: string) =>
+    onReviewTags(it, it.reviewTags.includes(key) ? it.reviewTags.filter((t) => t !== key) : [...it.reviewTags, key]);
+  const tagRow = (it: RoadmapItem) => (
+    <div className="review-tags">
+      {REVIEW_NOTE_TAGS.map((t) => (
+        <button key={t.key} className={`rt ${it.reviewTags.includes(t.key) ? 'on' : ''}`}
+          onClick={() => toggleNoteTag(it, t.key)}
+          title="Review annotation — sticks to the item while it awaits its verdict">
+          {t.label}
+        </button>
+      ))}
+      {it.reviewTags.filter((t) => !REVIEW_NOTE_TAGS.some((c) => c.key === t)).map((t) => (
+        <button key={t} className="rt on" onClick={() => toggleNoteTag(it, t)}
+          title="Review annotation — click to remove">{t}</button>
+      ))}
+    </div>
+  );
+  // ✎ Refine (#146): the delta-only send-back. The item returns to the board
+  // as ITSELF — same id, built_note kept — carrying just this instruction; the
+  // next session (optionally queued right here) changes only what it asks.
+  const [refineFor, setRefineFor] = useState<RoadmapItem | null>(null);
+  const [refineText, setRefineText] = useState('');
+  const [refineQueue, setRefineQueue] = useState(false);
+  const openRefine = (it: RoadmapItem) => {
+    setPickerFor(null);
+    setRefineFor(it);
+    setRefineText(it.refineNote);
+    setRefineQueue(false);
+  };
   // ⎌ Undo (#128): confirm, then queue a revert job — the host dispatcher
   // reverts the item's #N-tagged main commits and un-ticks it. The note under
   // the row is the only feedback needed; the item reappears on the board when
@@ -268,8 +313,8 @@ export function Roadmap({
       ) : (
         verdictButtons(it)
       )}
-      <button className="review-pick-opt refine" onClick={() => onRefine(it)}
-        title="Not right yet — rework the item (title, note, plan, bucket) and send it back to the board">
+      <button className="review-pick-opt refine" onClick={() => openRefine(it)}
+        title="Not right yet — say what to change on top of what landed and send the item back to the board">
         ✎ Refine
       </button>
       <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
@@ -415,6 +460,12 @@ export function Roadmap({
                         )}
                       </div>
                       {it.note && <div className="note">{it.note}</div>}
+                      {it.refineNote && (
+                        <div className="refine-note"
+                          title="Sent back for refinement — the next session changes only this, on top of what landed">
+                          ↻ {it.refineNote}
+                        </div>
+                      )}
                       {it.claimedBy && (
                         <div className="claim-chip"
                           title={working
@@ -519,12 +570,39 @@ export function Roadmap({
         </Modal>
       )}
 
+      {refineFor && (
+        <Modal onClose={() => setRefineFor(null)}>
+          <h3>✎ Refine #{refineFor.id}</h3>
+          <div className="confirm-body" style={{ marginBottom: 12 }}>
+            Sends <b>#{refineFor.id} {refineFor.title}</b> back to the board as itself — same item,
+            and what landed stays on record. Write only the delta: what should change on top of
+            what's there. The next session builds against that, not a fresh spec.
+          </div>
+          <textarea className="field-area" rows={4} autoFocus value={refineText}
+            placeholder="What to change or add on top of what landed…"
+            onChange={(e) => setRefineText(e.target.value)} />
+          <label className="refine-queue">
+            <input type="checkbox" checked={refineQueue}
+              onChange={(e) => setRefineQueue(e.target.checked)} />
+            Queue an autopilot session on it now
+          </label>
+          <div className="modal-actions">
+            <button className="btn-cancel" onClick={() => setRefineFor(null)}>Cancel</button>
+            <button className="btn-submit" disabled={!refineText.trim()}
+              onClick={() => { onRefine(refineFor, refineText.trim(), refineQueue); setRefineFor(null); }}>
+              {refineQueue ? 'Refine → board + queue' : 'Refine → board'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {view === 'reviews' && (<>
       <div className="subtitle" style={{ marginBottom: 14 }}>
         Everything completed, awaiting your verdict — each row shows who built it, when, and what
-        landed. Solid closes it out; ✎ Refine reworks the item itself and sends it back to the
-        board; ↩ Board sends it back unchanged. Either way it returns fresh — the old verdict and
-        lane claim don't come with it.
+        landed. Tag rows as you test (Fix, Needs more, …). Solid closes it out; ✎ Refine sends it
+        back with just what to change — same item, what landed stays on record; ↩ Board sends it
+        back unchanged. Either way it returns fresh — the old verdict and lane claim don't come
+        with it. ＋ Bug / ＋ Audit log a ticket against the item.
       </div>
 
       {/* who-built-it filter (#117) — only when completions come from more than one origin */}
@@ -582,6 +660,7 @@ export function Roadmap({
                     {reviewMeta(it)}
                     {it.note && <div className="note">{it.note}</div>}
                     {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
+                    {tagRow(it)}
                     {briefPanel(it)}
                     {undoNotes.has(it.id) && <div className="undo-note">⎌ {undoNotes.get(it.id)}</div>}
                   </div>
@@ -591,6 +670,10 @@ export function Roadmap({
                     title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">
                     ✧ Brief
                   </button>
+                  <button className="verify-back" onClick={() => onLogBug(it)}
+                    title="Log a bug ticket against this item — prefills the bug modal">＋ Bug</button>
+                  <button className="verify-back" onClick={() => onLogAudit(it)}
+                    title="Log an audit ticket — a roadmap item in the audit area to check what landed">＋ Audit</button>
                   <button className="verify-back" onClick={() => onToggle(it)}
                     title="Didn't hold up — send it back to the board">↩ Board</button>
                   {archActions(it)}
@@ -662,6 +745,11 @@ export function Roadmap({
                             {reviewMeta(it)}
                             {it.note && <div className="note">{it.note}</div>}
                             {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
+                            {it.reviewTags.length > 0 && (
+                              <div className="review-tags ro">
+                                {it.reviewTags.map((t) => <span key={t} className="rt on">{noteTagLabel(t)}</span>)}
+                              </div>
+                            )}
                             {archActions(it)}
                           </div>
                         </div>

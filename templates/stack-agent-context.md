@@ -129,6 +129,12 @@ Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
 
   Stopping partway is fine — ticked steps tell the next session (or the
   overnight autopilot, which injects the plan into its prompt) where to resume.
+- **An item may come back as a refinement** — if it carries a `refineNote`, it
+  was built before and sent back with a delta. `builtNote` says what already
+  landed; change ONLY what the refinement asks for, on top of that — don't
+  rebuild from the title/note as if it were fresh. Completing the item again
+  (`done:true`) clears the refinement automatically — never PATCH `refine_note`
+  yourself; it's the owner's steer, not yours to edit.
 
 ## House rules
 
