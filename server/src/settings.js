@@ -39,6 +39,18 @@ export const cleanAssistFields = (v) => {
 // Dual-model autopilot (#153): claude CLI model aliases the settings accept.
 // The executor is the (cheaper) model that runs the session; the advisor is
 // the stronger model it consults as a subagent. '' = CLI default / no advisor.
+// #168 — widened from a fixed enum to a safe freeform charset so that real
+// aliases (dots, colons, vendor/model forms such as claude-sonnet-4-6 or
+// us.anthropic.claude-opus-4-8) all pass through. Empty string = use the
+// CLI/session default. Whitespace and shell metacharacters are always rejected.
+export const MODEL_ALIAS_RE = /^[a-z0-9][a-z0-9.:/_-]{0,99}$/i;
+export const cleanModelAlias = (v) => {
+  const s = String(v ?? '').trim();
+  return s === '' || MODEL_ALIAS_RE.test(s) ? s : '';
+};
+
+// Legacy fixed-enum constants kept for backwards compat (no longer used for
+// validation — cleanModelAlias is the gatekeeper).
 export const AUTOPILOT_EXECUTOR_MODELS = ['', 'haiku', 'sonnet', 'opus'];
 export const AUTOPILOT_ADVISOR_MODELS = ['', 'sonnet', 'opus', 'fable'];
 
@@ -81,8 +93,8 @@ export async function readSettings(client) {
     autopilot_tokens: Number.isFinite(Number(r.autopilot_tokens)) ? Number(r.autopilot_tokens) : 1_500_000,
     autopilot_time: cleanAutopilotTime(r.autopilot_time),
     autopilot_max_items: Number.isFinite(r.autopilot_max_items) ? r.autopilot_max_items : 3,
-    autopilot_executor_model: oneOf(r.autopilot_executor_model, AUTOPILOT_EXECUTOR_MODELS, ''),
-    autopilot_advisor_model: oneOf(r.autopilot_advisor_model, AUTOPILOT_ADVISOR_MODELS, ''),
+    autopilot_executor_model: cleanModelAlias(r.autopilot_executor_model),
+    autopilot_advisor_model: cleanModelAlias(r.autopilot_advisor_model),
     assist_guidance: String(r.assist_guidance || ''),
     assist_fields: cleanAssistFields(r.assist_fields),
     access_pin_hash: r.access_pin_hash || null,

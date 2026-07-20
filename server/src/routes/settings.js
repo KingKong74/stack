@@ -5,7 +5,7 @@ import { hashPin } from '../auth.js';
 import {
   readSettings, settingsShape, CHECKPOINT_DETAILS,
   cleanSessionDefaults, cleanAutopilotTime, cleanAssistFields,
-  AUTOPILOT_EXECUTOR_MODELS, AUTOPILOT_ADVISOR_MODELS,
+  cleanModelAlias,
 } from '../settings.js';
 
 // GET/PATCH /api/settings — the single-row app settings behind bearer auth.
@@ -65,15 +65,17 @@ settings.patch('/', async (req, res) => {
     fields.push(`autopilot_max_items = $${i++}`);
     values.push(Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : 3);
   }
-  // Dual-model autopilot (#153): unknown aliases coerce to '' (default / off)
-  // rather than erroring — the picker only offers catalogue values anyway.
+  // Dual-model autopilot (#153/#168): freeform alias (e.g. claude-sonnet-4-6,
+  // us.anthropic.claude-opus-4, vendor/model) — cleanModelAlias strips
+  // anything that isn't [a-z0-9.:/_-] so shell metacharacters never reach the
+  // claude CLI; unknown or empty = '' (CLI default / no advisor).
   if ('autopilotExecutorModel' in body) {
     fields.push(`autopilot_executor_model = $${i++}`);
-    values.push(oneOf(String(body.autopilotExecutorModel || ''), AUTOPILOT_EXECUTOR_MODELS, ''));
+    values.push(cleanModelAlias(body.autopilotExecutorModel));
   }
   if ('autopilotAdvisorModel' in body) {
     fields.push(`autopilot_advisor_model = $${i++}`);
-    values.push(oneOf(String(body.autopilotAdvisorModel || ''), AUTOPILOT_ADVISOR_MODELS, ''));
+    values.push(cleanModelAlias(body.autopilotAdvisorModel));
   }
   if ('assistGuidance' in body) {
     fields.push(`assist_guidance = $${i++}`);

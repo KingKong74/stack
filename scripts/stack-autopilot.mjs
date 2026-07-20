@@ -252,11 +252,16 @@ const MINUTES = Math.max(15, parseInt(MINUTES_ARG ?? '', 10) || appSettings.auto
 const rawTokens = TOKENS_OVERRIDE ?? (Number.isFinite(appSettings.autopilotTokens) ? appSettings.autopilotTokens : 1_500_000);
 const TOKEN_BUDGET = rawTokens === 0 ? Infinity : Math.max(50_000, rawTokens);
 const MAX_ITEMS = ITEM_ID != null ? 1 : Math.max(1, MAX_ITEMS_ARG ?? (appSettings.autopilotMaxItems || 3));
-// Dual-model config (#153): CLI override beats Settings; anything that isn't a
-// plain model alias coerces to '' (default / off) so a bad value can't reach
-// the claude CLI. The executor is the model the session runs as; the advisor
-// is a stronger model the session consults as a subagent ('' = none).
-const cleanModel = (v) => (/^[a-z0-9][a-z0-9.-]{0,63}$/i.test(String(v ?? '')) ? String(v) : '');
+// Dual-model config (#153/#168): CLI override beats Settings; anything that
+// isn't a safe model alias coerces to '' (default / off) so shell
+// metacharacters never reach the claude CLI. Allowed charset: alphanumerics
+// plus . : / _ - to cover real aliases (e.g. claude-sonnet-4-6,
+// us.anthropic.claude-opus-4, vendor/model). The executor is the model the
+// session runs as; the advisor is a stronger model it consults ('' = none).
+const cleanModel = (v) => {
+  const s = String(v ?? '').trim();
+  return s === '' || /^[a-z0-9][a-z0-9.:/_-]{0,99}$/i.test(s) ? s : '';
+};
 const EXECUTOR_MODEL = cleanModel(arg('executor-model') ?? appSettings.autopilotExecutorModel);
 const ADVISOR_MODEL = cleanModel(arg('advisor-model') ?? appSettings.autopilotAdvisorModel);
 const nightStart = Date.now();
