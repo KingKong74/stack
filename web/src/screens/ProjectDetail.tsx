@@ -9,7 +9,7 @@ import {
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, sortIntake, polarisChat, assistRoadmapItem,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
   type IntakeSuggestion,
-  replanProject, AuthError,
+  replanProject, startAutopilot, AuthError,
 } from '../store';
 import { go } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
@@ -125,7 +125,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const [roadModal, setRoadModal] = useState<{
     open: boolean; priority: Priority; title: string; note: string;
     fromNote: number | null; editing: RoadmapItem | null; lane?: string; area?: string; fromDraft?: boolean;
-    refining?: boolean; // #141 — saving also un-ticks: the item returns to the board reworked
   }>({ open: false, priority: 'should', title: '', note: '', fromNote: null, editing: null });
   const roadModalClosed = { open: false, priority: 'should' as Priority, title: '', note: '', fromNote: null, editing: null };
   // Device-local draft: a half-typed add-modal dismissed by a stray click.
@@ -213,12 +212,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     guard(async () => {
       const editing = roadModal.editing;
       if (editing) {
-        // Refine (#141): the same save also un-ticks — the server clears the
-        // old verdict and claim, so the reworked item lands back on the board.
-        const patch = roadModal.refining
-          ? { title, note, bucket: priority, claimed_by: lane, area, plan, done: false }
-          : { title, note, bucket: priority, claimed_by: lane, area, plan };
-        const updated = await patchRoadmapItem(slug, editing.id, patch);
+        const updated = await patchRoadmapItem(slug, editing.id, { title, note, bucket: priority, claimed_by: lane, area, plan });
         const without = { ...roadmap, [editing.bucket]: roadmap[editing.bucket].filter((i) => i.id !== editing.id) };
         setData({ ...data, roadmap: { ...without, [updated.bucket]: [...without[updated.bucket], updated] } });
         setRoadModal(roadModalClosed);
@@ -329,10 +323,35 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
     });
 
-  // Refine (#141, replacing rethink): rework the item itself — title, note,
-  // plan, bucket — and send it back to the board fresh in one save.
-  const refineRoad = (item: RoadmapItem) =>
-    setRoadModal({ open: true, priority: item.bucket, title: item.title, note: item.note, fromNote: null, editing: item, refining: true });
+  // Review annotations (#146): the chip row on a To-verify row — the whole
+  // tag list PATCHes back each time, like plan steps.
+  const reviewTagsRoad = (item: RoadmapItem, tags: string[]) =>
+    guard(async () => {
+      const updated = await patchRoadmapItem(slug, item.id, { review_tags: tags });
+      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
+    });
+
+  // Refine (#146, replacing #141's full rework): delta-only. The item goes
+  // back to the board as itself — the server clears the verdict and claim,
+  // keeps built_note — carrying just the refinement instruction; optionally a
+  // pinned autopilot session is queued on it straight away.
+  const refineRoad = (item: RoadmapItem, refineNote: string, queueNow: boolean) =>
+    guard(async () => {
+      const updated = await patchRoadmapItem(slug, item.id, { done: false, refine_note: refineNote });
+      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
+      if (queueNow) await startAutopilot(slug, String(item.id));
+    });
+
+  // ＋ Bug / ＋ Audit from a review row (#146): log a ticket referencing the
+  // item — the prefilled modal opens, the human finishes and saves it.
+  const logBugFromReview = (item: RoadmapItem) =>
+    setBugModal({ open: true, title: `#${item.id} ${item.title}: `, fromNote: null });
+  const logAuditFromReview = (item: RoadmapItem) =>
+    setRoadModal({
+      open: true, priority: 'should', title: `Audit #${item.id} — ${item.title}`,
+      note: `Audit what landed for #${item.id}: exercise it against the item's intent and log bugs for anything off.`,
+      area: 'audit', fromNote: null, editing: null,
+    });
 
   const toggleRoad = (item: RoadmapItem) =>
     guard(async () => {
@@ -668,7 +687,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onDiscardDraft={() => updateRoadDraft(null)}
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
-            onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad} onRefine={refineRoad}
+            onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad}
+            onReviewTags={reviewTagsRoad} onRefine={refineRoad}
+            onLogBug={logBugFromReview} onLogAudit={logAuditFromReview}
             onToggleSkip={toggleSkipRoad} onReorder={reorderRoad} onCleanup={openCleanup}
             onSendToTerminal={(brief) => {
               // One-shot handoff — the terminal screen offers it as a paste.
@@ -707,7 +728,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           initialPlan={roadModal.editing?.plan ?? []}
           lanes={[...new Set(allRoadmap.map((i) => i.claimedBy))].filter(Boolean).sort()}
           areas={[...new Set([...allRoadmap.map((i) => i.area), ...futures.map((f) => f.area)])].filter(Boolean).sort()}
-          mode={roadModal.refining ? 'refine' : roadModal.editing ? 'edit' : 'add'}
+          mode={roadModal.editing ? 'edit' : 'add'}
           onClose={() => { setRoadModal(roadModalClosed); setPendingFuture(null); }}
           onDismiss={(d) => updateRoadDraft(d)}
           onAssist={(note) => assistRoadmapItem(slug, note)}
