@@ -595,6 +595,7 @@ export function ControlPanel() {
                       </span>
                     )}
                     <button className="mc-term" onClick={() => go.terminal(p.slug)}
+                      aria-label={`Open terminal for ${p.name}`}
                       title={`Open a terminal in ~/${p.slug}`}>⌨</button>
                     <span className="mc-push">{p.lastPush ? `pushed ${p.lastPush}` : 'no pushes yet'}</span>
                     {job ? (

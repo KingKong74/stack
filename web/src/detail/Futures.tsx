@@ -294,7 +294,7 @@ function IdeaRow({
         )}
       </div>
       <div className="future-actions">
-        <button className="edit" onClick={() => { setTitle(f.title); setNote(f.note); setEditing(true); }} title="Edit">✎</button>
+        <button className="edit" onClick={() => { setTitle(f.title); setNote(f.note); setEditing(true); }} aria-label="Edit idea" title="Edit idea">✎</button>
         <button className="promote" onClick={() => onPromote(f)}>→ Roadmap</button>
         <button className="dismiss" onClick={() => onDelete(f.id)}>Dismiss</button>
       </div>

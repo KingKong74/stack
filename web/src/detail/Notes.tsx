@@ -79,7 +79,7 @@ function NoteCard({
   return (
     <div className={`note ${highlighted ? 'hl' : ''}`} data-hl={note.id}
       style={{ '--note-c': note.colour, transform: `rotate(${rotate}deg)` } as React.CSSProperties}>
-      <button className="x" onClick={() => onDelete(note.id)} aria-label="Delete note">×</button>
+      <button className="x" onClick={() => onDelete(note.id)} aria-label="Delete note" title="Delete note">×</button>
       {editing ? (
         <textarea
           className="note-edit"
