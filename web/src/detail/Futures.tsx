@@ -146,7 +146,10 @@ export function Futures({
           value={draft}
           placeholder={'Could this become… ?\nFirst line is the idea — add lines below for the why.'}
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); add(); } }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); add(); }
+            else if (e.key === 'Escape') { e.preventDefault(); setDraft(''); }
+          }}
         />
         <div className="row">
           <span className="hint">⏎ to add · ⇧⏎ for a "why" line</span>
@@ -229,11 +232,15 @@ function IdeaRow({
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') setEditing(false); }} />
           <textarea className="field-area" style={{ marginTop: 8, minHeight: 46 }} value={note}
-            placeholder="Why it might matter…" onChange={(e) => setNote(e.target.value)} />
+            placeholder="Why it might matter…" onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
+              else if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
+            }} />
           <input className="field-input sm" style={{ marginTop: 8, maxWidth: 220 }} value={area}
             placeholder="area — e.g. settings, mobile (optional)"
             onChange={(e) => setArea(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') save(); }} />
+            onKeyDown={(e) => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') setEditing(false); }} />
           <div className="future-edit-row">
             <button className="btn-cancel sm" onClick={() => setEditing(false)}>Cancel</button>
             <button className="btn-submit sm" onClick={save}>Save</button>
@@ -287,7 +294,7 @@ function IdeaRow({
         )}
       </div>
       <div className="future-actions">
-        <button className="edit" onClick={() => { setTitle(f.title); setNote(f.note); setEditing(true); }} title="Edit">✎</button>
+        <button className="edit" onClick={() => { setTitle(f.title); setNote(f.note); setEditing(true); }} aria-label="Edit idea" title="Edit idea">✎</button>
         <button className="promote" onClick={() => onPromote(f)}>→ Roadmap</button>
         <button className="dismiss" onClick={() => onDelete(f.id)}>Dismiss</button>
       </div>

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Priority, PlanStep } from '../types';
 import type { RoadmapAssist } from '../store';
 import { Modal } from './Modal';
@@ -63,12 +63,18 @@ export function RoadmapModal({
   };
 
   // The note grows with its content — no inner scrolling while composing.
-  const growNote = () => {
+  // #147: also called on mount so edit-mode reopens at the right height.
+  const growNote = useCallback(() => {
     const el = noteRef.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight + 2}px`;
-  };
+  }, []);
+
+  // #147: size the textarea to its initial content as soon as the modal mounts.
+  useEffect(() => {
+    growNote();
+  }, [growNote]);
 
   const assist = async () => {
     if (!onAssist || !note.trim() || suggesting) return;
@@ -106,7 +112,7 @@ export function RoadmapModal({
           </button>
         )}
       </div>
-      <textarea className="field-area" style={{ marginBottom: 6, overflow: 'hidden' }} value={note} ref={noteRef}
+      <textarea className="field-area" style={{ marginBottom: 6, overflow: 'hidden', minHeight: 60, maxHeight: 320 }} value={note} ref={noteRef}
         autoFocus={mode === 'add'}
         placeholder="The outcome you're after, acceptance criteria, context…"
         onChange={(e) => { setNote(e.target.value); growNote(); }} />

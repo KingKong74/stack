@@ -35,7 +35,10 @@ export function Notes({
           value={draft}
           placeholder="Jot an idea, a thing to fix, anything…"
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); add(); } }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); add(); }
+            else if (e.key === 'Escape') { e.preventDefault(); setDraft(''); }
+          }}
         />
         <div className="row">
           <span className="hint">⏎ to add · ⇧⏎ for newline</span>
@@ -76,7 +79,7 @@ function NoteCard({
   return (
     <div className={`note ${highlighted ? 'hl' : ''}`} data-hl={note.id}
       style={{ '--note-c': note.colour, transform: `rotate(${rotate}deg)` } as React.CSSProperties}>
-      <button className="x" onClick={() => onDelete(note.id)} aria-label="Delete note">×</button>
+      <button className="x" onClick={() => onDelete(note.id)} aria-label="Delete note" title="Delete note">×</button>
       {editing ? (
         <textarea
           className="note-edit"
