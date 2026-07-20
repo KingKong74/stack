@@ -278,7 +278,9 @@ async function runItem(item, northStar, capMin) {
   await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, { claimed_by: lane });
 
   // The spec pre-pass — Gemini plans, the session builds, the human disposes.
-  const spec = await geminiSpec(item, northStar);
+  // A refined item (#146) skips it: the owner's refine_note IS the spec — a
+  // fresh full-item spec would drown the delta in re-derived scope.
+  const spec = item.refineNote ? null : await geminiSpec(item, northStar);
   if (spec) log(`spec ready: ${spec.goal}`);
 
   // A fresh worktree so the human's checkout is never disturbed.
@@ -299,12 +301,22 @@ to the Stack API at /api/projects/${SLUG}/roadmap/${item.id} (base URL + bearer 
 never print the token). Finishing only some steps is fine; say where you stopped in the checkpoint.
 `;
 
+  // A refinement round (#146): the item landed before and came back with a
+  // delta — the session changes what the note asks for, not a rebuild.
+  const refineBlock = !item.refineNote ? '' : `
+This item was BUILT BEFORE and sent back for refinement.${item.builtNote ? `
+What landed last time (already merged or on its branch — do not redo it):
+  ${item.builtNote}` : ''}
+The owner's refinement — change ONLY what this asks for, on top of what already landed:
+  ${item.refineNote}
+`;
+
   const prompt = `You are Stack's overnight autopilot, working unattended in a dedicated git worktree on branch ${branch}.
 
 Your single task tonight is roadmap item #${item.id} (bucket: ${item.bucket}):
 
   ${item.title}
-${item.note ? `  Context: ${item.note}\n` : ''}${specBlock(spec)}${planBlock}
+${item.note ? `  Context: ${item.note}\n` : ''}${refineBlock}${specBlock(spec)}${planBlock}
 Rules for this run:
 - Work ONLY on this item; do not pick up other roadmap items or ideas.
 - Commit in small complete units with clear messages. Push the branch with \`git push -u origin ${branch}\`. NEVER push or merge main — a human reviews and merges in the morning.
