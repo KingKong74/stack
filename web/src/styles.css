@@ -992,6 +992,17 @@ a { color: inherit; }
 .check-x { color: var(--faint); font-size: 14px; line-height: 1; padding: 2px 5px; }
 .check-x:hover { color: var(--critical); }
 
+/* #173: assertion tab affordance — compact seg below the always-on composer row */
+.check-assert-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.check-assert-tabs { display: flex; gap: 4px; flex: none; }
+.check-assert-tab { font-size: 11.5px; font-weight: 600; color: var(--muted); border: 1px solid var(--line-2);
+  border-radius: 7px; padding: 3px 9px; background: transparent; }
+.check-assert-tab:hover { color: var(--ink); border-color: var(--line); }
+.check-assert-tab.on { color: var(--accent); border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.check-assert-tab.placeholder { opacity: .7; }
+.check-assert-row .field-input.sm.grow { flex: 1; min-width: 200px; }
+.check-assert-row .field-input.sm.code { width: 130px; font-family: var(--mono); }
+
 /* the automated bug audit (#144) — shares the checks card idiom */
 .audit-brief { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .audit-brief-text { width: 100%; resize: vertical; min-height: 64px; line-height: 1.5; }
@@ -1001,6 +1012,27 @@ a { color: inherit; }
 .audit-finding .check-url { font-family: inherit; font-size: 12px; max-width: none; flex: 1; min-width: 200px; }
 .audit-finding .sev-pill { flex: none; }
 .audit-outcome { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+/* #161: quick-add bug composer — one-line inline bar between section-bar and bug list */
+.bug-quick-add { display: flex; align-items: center; gap: 8px; margin: 8px 0 12px; }
+.bug-quick-add .field-input.sm.grow { flex: 1; min-width: 160px; }
+.bug-quick-sevs { display: flex; gap: 3px; flex: none; }
+.bug-quick-sev { font-size: 11px; font-weight: 700; width: 24px; height: 24px; border-radius: 50%;
+  border: 2px solid transparent; display: inline-flex; align-items: center; justify-content: center;
+  opacity: .45; transition: opacity .1s, border-color .1s; }
+.bug-quick-sev:hover { opacity: .75; }
+.bug-quick-sev.on { opacity: 1; }
+.bug-quick-sev.critical { color: var(--critical); border-color: var(--critical); }
+.bug-quick-sev.critical.on { background: #f3e2e0; }
+.bug-quick-sev.high { color: var(--accent); border-color: var(--accent); }
+.bug-quick-sev.high.on { background: var(--accent-tint); }
+.bug-quick-sev.medium { color: #9a7a2e; border-color: #9a7a2e; }
+.bug-quick-sev.medium.on { background: #f1eada; }
+.bug-quick-sev.low { color: #7a746a; border-color: #7a746a; }
+.bug-quick-sev.low.on { background: #eeebe6; }
+[data-theme='dark'] .bug-quick-sev.critical.on { background: #3a2323; }
+[data-theme='dark'] .bug-quick-sev.medium.on { background: #332e1a; }
+[data-theme='dark'] .bug-quick-sev.low.on { background: #2a2926; }
 
 /* ---------- confirm dialog + delete-project control ---------- */
 .confirm-body { font-size: 13.5px; line-height: 1.55; color: var(--muted); margin-bottom: 22px; }
