@@ -266,7 +266,11 @@ export interface TermSession {
   label: string;           // ✧ Gemini's take on what it's doing ('' until asked)
 }
 export interface ControlData {
-  autopilot: { enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number };
+  autopilot: {
+    enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number;
+    executorModel: string;  // '' = the claude CLI's default model (#153)
+    advisorModel: string;   // '' = no advisor subagent
+  };
   terminal?: { connected: boolean; sessions?: TermSession[] };  // host daemon + open web terminals
   schedules: AutopilotSchedule[];
   jobs: AutopilotJob[];                // recent first; queued/claimed/running lead the strip
@@ -285,6 +289,8 @@ export async function getControl(): Promise<ControlData> {
       tokens: d.autopilot?.tokens ?? 1_500_000,
       time: d.autopilot?.time ?? '23:05',
       maxItems: d.autopilot?.maxItems ?? 3,
+      executorModel: d.autopilot?.executorModel ?? '',
+      advisorModel: d.autopilot?.advisorModel ?? '',
     },
     schedules: d.schedules ?? [],
     jobs: d.jobs ?? [],
