@@ -702,17 +702,27 @@ export async function deleteFuture(slug: string, id: number): Promise<void> {
   await request<void>(`${futuresBase(slug)}/${id}`, { method: 'DELETE' });
 }
 
-// ---- checks (the Bugs tab's testing panel) ----
+// ---- checks (the Bugs tab's testing area) ----
 
 const checksBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/checks`;
+
+// What a check is made of, snake_case as the API takes it (#143): method +
+// req_body exercise a function; contains / json_path+json_expect / semantic
+// are the assertions.
+export interface CheckInput {
+  name: string; url: string; method?: string; expect_status?: number;
+  req_body?: string; contains?: string; json_path?: string; json_expect?: string; semantic?: string;
+}
 
 export async function getChecks(slug: string): Promise<Check[]> {
   return request<Check[]>(checksBase(slug));
 }
-export async function createCheck(
-  slug: string, input: { name: string; url: string; expect_status?: number; contains?: string; semantic?: string },
-): Promise<Check> {
+export async function createCheck(slug: string, input: CheckInput): Promise<Check> {
   return request<Check>(checksBase(slug), { method: 'POST', body: input });
+}
+// Edit a check in place; changing anything but the name clears its stored result.
+export async function patchCheck(slug: string, id: number, patch: Partial<CheckInput>): Promise<Check> {
+  return request<Check>(`${checksBase(slug)}/${id}`, { method: 'PATCH', body: patch });
 }
 export async function deleteCheck(slug: string, id: number): Promise<void> {
   await request<void>(`${checksBase(slug)}/${id}`, { method: 'DELETE' });
