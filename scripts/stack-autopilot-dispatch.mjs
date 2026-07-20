@@ -136,8 +136,11 @@ const runner = join(dirname(fileURLToPath(import.meta.url)), 'stack-autopilot.mj
 const args = ['--project', job.slug, '--repo', repo];
 if (job.itemId) args.push('--item', String(job.itemId));
 // A manual press or a calendar row is explicit human config — it runs even
-// while the arm switch / automode are off. The nightly keeps both gates.
-if (job.kind !== 'nightly') args.push('--force');
+// while the arm switch / automode are off. The nightly keeps both gates, and
+// so does a limit-resume that fired on its own clock (#142 — notBefore still
+// set); a resume whose hold a human cleared (▶ Resume now) is a manual press.
+const autoResume = job.kind === 'resume' && job.notBefore;
+if (job.kind !== 'nightly' && !autoResume) args.push('--force');
 const run = spawnSync(process.execPath, [runner, ...args], { stdio: ['ignore', 'inherit', 'inherit'] });
 
 const ok = run.status === 0;

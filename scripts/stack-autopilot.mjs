@@ -142,7 +142,21 @@ function minutesUntilReset(text) {
   if (target <= now) target.setDate(target.getDate() + 1);
   return Math.max(30, Math.round((target - now) / 60_000) + 10); // land just past the reset
 }
-function scheduleResume(minutes) {
+// #142 — the resume is a DURABLE job in the app's queue, not a detached sleep:
+// it survives host reboots, shows in Mission Control / the Terminal with its
+// resume time, and a human can ▶ Resume now, hang it up or dismiss it. A
+// pinned run carries its pin. Only when the API can't take the job does the
+// old in-memory sleep step back in, so a flaky API still gets its resume.
+async function scheduleResume(minutes) {
+  try {
+    const job = await api('POST', '/api/autopilot/resume',
+      ITEM_ID != null ? { slug: SLUG, minutes, itemId: ITEM_ID } : { slug: SLUG, minutes });
+    log(`resume queued as job #${job.id} in ~${Math.round(minutes / 60 * 10) / 10}h — `
+      + 'resume it early or hang it up from Mission Control (the arm switch still gates an automatic resume).');
+    return;
+  } catch (e) {
+    log(`resume job not queued (${e.message}) — falling back to a detached sleep.`);
+  }
   const cmd = `sleep ${minutes * 60} && ${process.execPath} ${process.argv[1]} --project ${SLUG} --repo ${REPO}`;
   spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore' }).unref();
   log(`resume scheduled in ~${Math.round(minutes / 60 * 10) / 10}h (detached; the arm switch still gates it).`);
@@ -441,7 +455,7 @@ try {
         // when the allocation does. Partial branches are already pushed.
         nightLimited = true;
         log('usage limit hit — closing the night gracefully.');
-        scheduleResume(minutesUntilReset(r.resultText || ''));
+        await scheduleResume(minutesUntilReset(r.resultText || ''));
         break;
       }
     } catch (e) {
@@ -459,7 +473,7 @@ try {
   if (attempted.size > 0) {
     await notify(
       nightLimited ? `Stack autopilot (${SLUG}): paused on the usage limit` : `Stack autopilot (${SLUG}): night done`,
-      `${nightLines.join('\n')}\n\n${closing}${nightLimited ? '\nA resume is scheduled for after the reset.' : ''}`);
+      `${nightLines.join('\n')}\n\n${closing}${nightLimited ? '\nA resume is queued for after the reset — resume it early or hang it up in Mission Control.' : ''}`);
   }
 } catch (err) {
   die(err.message);
