@@ -200,6 +200,14 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       if (fromNote != null) setPromotedNote({ id: fromNote, kind: 'bug' });
     });
 
+  // #161: quick-add from the inline composer — same store call, no modal needed.
+  const quickAddBug = (title: string, severity: Severity) =>
+    guard(async () => {
+      const bug = await createBug(slug, { title, severity });
+      setData({ ...data, bugs: [bug, ...bugs] });
+      setBugFilter('all');
+    });
+
   const setBugStatus = (b: Bug, status: BugStatus) =>
     guard(async () => {
       const updated = await patchBug(slug, b.id, { status });
@@ -740,7 +748,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onDeleteCheck={removeCheck} onCheckToBug={checkToBug}
             auditContext={data.auditContext} onSaveAuditContext={saveAuditContext}
             auditBusy={auditBusy} auditResult={auditResult} auditError={auditError}
-            onRunAudit={runProjectAudit} claudeCopy={claudeCopy} onCopyClaudePrompt={copyClaudePrompt} />
+            onRunAudit={runProjectAudit} claudeCopy={claudeCopy} onCopyClaudePrompt={copyClaudePrompt}
+            onQuickAddBug={quickAddBug} />
         )}
         {tab === 'roadmap' && (
           <Roadmap roadmap={roadmap} highlightId={highlightId} slug={slug} liveBranches={data.liveBranches}

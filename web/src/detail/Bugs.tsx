@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { Bug, BugStatus, Check, CheckMethod } from '../types';
+import { useState, useRef } from 'react';
+import type { Bug, BugStatus, Check, CheckMethod, Severity } from '../types';
 import type { CheckInput, AuditResult } from '../store';
 import { STATUS_LABEL } from '../lib/ui';
 
@@ -316,13 +316,55 @@ function BugAuditPanel({
   );
 }
 
+const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low'];
 const BUG_STATUSES: BugStatus[] = ['open', 'investigating', 'fixing', 'fixed'];
+
+// #161: Quick-add bug composer — one-line inline composer, Enter to file.
+// Sits above the bug list, lower friction for jotting failures noticed while auditing.
+function QuickBugComposer({ onAdd }: { onAdd: (title: string, severity: Severity) => void }) {
+  const [title, setTitle] = useState('');
+  const [severity, setSeverity] = useState<Severity>('medium');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const submit = () => {
+    const t = title.trim();
+    if (!t) return;
+    onAdd(t, severity);
+    setTitle('');
+    setSeverity('medium');
+    inputRef.current?.focus();
+  };
+
+  return (
+    <div className="bug-quick-add">
+      <input
+        ref={inputRef}
+        className="field-input sm grow"
+        placeholder="Quick-add a bug…"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+      />
+      <div className="bug-quick-sevs">
+        {SEVERITIES.map((s) => (
+          <button
+            key={s}
+            className={`bug-quick-sev ${s}${severity === s ? ' on' : ''}`}
+            onClick={() => setSeverity(s)}
+            title={s}
+          >{s[0].toUpperCase()}</button>
+        ))}
+      </div>
+      <button className="btn-submit sm" onClick={submit} disabled={!title.trim()}>File</button>
+    </div>
+  );
+}
 
 export function Bugs({
   bugs, filter, setFilter, onReport, onOpenLink, highlightId, onSetStatus, onDelete,
   checks, siteUrl, checksBusy, onRunChecks, onAddCheck, onEditCheck, onDeleteCheck, onCheckToBug,
   auditContext, onSaveAuditContext, auditBusy, auditResult, auditError, onRunAudit,
-  claudeCopy, onCopyClaudePrompt,
+  claudeCopy, onCopyClaudePrompt, onQuickAddBug,
 }: {
   bugs: Bug[]; filter: BugFilter; setFilter: (f: BugFilter) => void;
   onReport: () => void; onOpenLink: (hash: string) => void; highlightId?: string | null;
@@ -338,6 +380,7 @@ export function Bugs({
   auditBusy: boolean; auditResult: AuditResult | null; auditError: string;
   onRunAudit: () => void;
   claudeCopy: 'idle' | 'busy' | 'copied' | 'failed'; onCopyClaudePrompt: () => void;
+  onQuickAddBug: (title: string, severity: Severity) => void;
 }) {
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const counts = {
@@ -376,6 +419,9 @@ export function Bugs({
           <button className="btn-dark" style={{ marginLeft: 4 }} onClick={onReport}>+ Report</button>
         </div>
       </div>
+
+      {/* #161: one-line quick-add composer — Enter to file, severity chips inline */}
+      <QuickBugComposer onAdd={onQuickAddBug} />
 
       {visible.length ? (
         <div className="buglist">
