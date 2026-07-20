@@ -367,6 +367,7 @@ export interface ProjectDetailData {
   project: Project;
   currentPhase: string;
   northStar: string;
+  auditContext: string;  // the audit brief (#144) — the Testing panel's steer for the bug audit
   blockers: string[];
   directives: string[];
   activity: Activity[];
@@ -384,9 +385,11 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; futures?: Future[];
     checks?: Check[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
+    auditContext?: string;
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
     project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
+    auditContext: d.auditContext || '',
     blockers: d.blockers || [], directives: d.directives || [],
     activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes, futures: d.futures || [],
     checks: d.checks || [],
@@ -584,7 +587,7 @@ export async function patchProject(
     subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean;
     automode: boolean; autopilot_area: string;
     name: string; north_star: string; directives: string[]; deploy_platform: string; logs_url: string;
-    tech_stack: string[];
+    tech_stack: string[]; audit_context: string;
   }>,
 ): Promise<Project> {
   return toProject(await request<ProjectPayload>(`/projects/${encodeURIComponent(slug)}`, { method: 'PATCH', body: patch }));
@@ -720,6 +723,32 @@ export async function deleteCheck(slug: string, id: number): Promise<void> {
 // Run all checks (or one, by id); returns the updated rows.
 export async function runChecks(slug: string, id?: number): Promise<Check[]> {
   return request<Check[]>(`${checksBase(slug)}/run`, { method: 'POST', body: id ? { id } : {} });
+}
+
+// ---- automated bug audit (#144) ----
+
+// One audit finding and what happened to it: 'logged' = a new review-inbox bug
+// (carried in `bug`), 'duplicate' = already tracked, 'dismissed' = tombstoned.
+export interface AuditFinding {
+  title: string;
+  severity: Severity;
+  evidence: string;
+  outcome: 'logged' | 'duplicate' | 'dismissed';
+  bug: Bug | null;
+}
+export interface AuditResult { findings: AuditFinding[]; logged: number; skipped: number }
+
+// Gemini audits the project (brief + checks + tracked bugs + the live page)
+// and files suspected bugs straight into the review inbox — the human keeps
+// or dismisses each one from there.
+export async function runAudit(slug: string): Promise<AuditResult> {
+  return request<AuditResult>(`/projects/${encodeURIComponent(slug)}/audit`, { method: 'POST' });
+}
+// The deep-audit hand-off: the same context composed as a prompt for a Claude
+// session (keyless — the client copies it to the clipboard).
+export async function getAuditPrompt(slug: string): Promise<string> {
+  const r = await request<{ prompt: string }>(`/projects/${encodeURIComponent(slug)}/audit/prompt`);
+  return r.prompt;
 }
 
 // ---- notes ----
