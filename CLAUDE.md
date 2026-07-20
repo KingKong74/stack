@@ -249,8 +249,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   **✧ Brief** (#134 — Gemini's reviewer brief: what shipped, test steps, risks; in-memory),
   **⎌ Undo** (#128 — confirm modal → `store.queueUndo` → a `revert` job the host dispatcher runs),
   toggleable **annotation chips** (#146 — Fix / Needs more / Polish / Question, PATCHed whole as
-  `review_tags`; read-only in the archive) and **＋ Bug / ＋ Audit** (#146 — prefill a bug ticket /
-  an audit-area roadmap item referencing the row); Solid is the only pickable verdict — **✎ Refine**
+  `review_tags`; read-only in the archive), **＋ Bug / ＋ Audit** (#146 — prefill a bug ticket /
+  an audit-area roadmap item referencing the row) and **⏸ Later** (#148 — shelves the review:
+  PATCH `{review_shelved:true}` moves the row off the To-verify list into a collapsed **Shelved**
+  strip below it — same row, same actions — and ▶ To review brings it back; the Reviews badge
+  counts only the active list); Solid is the only pickable verdict — **✎ Refine**
   (#146, replacing #141's full-rework modal) takes just the delta: PATCH `{done:false, refine_note}`
   sends the item back as ITSELF (same id, built_note kept, verdict + claim cleared), the board card
   shows the pending ↻ refinement, and an optional checkbox queues a pinned autopilot session via
@@ -324,10 +327,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     `review_tag` (the **archive verdict**: solid | needs-work | rethink — set from the Archive's
     Review button; needs-work/rethink prefill a follow-up item back onto the board),
     `review_tags` (#146 — jsonb list of short review annotations, 'fix' / 'needs-more' / …,
-    toggled as chips on To-verify rows) and `refine_note` (#146 — the refinement delta: a refine
+    toggled as chips on To-verify rows), `refine_note` (#146 — the refinement delta: a refine
     sends the item back to the board as itself carrying just this instruction; the runner builds
-    against it instead of a fresh spec). A fresh completion (`done:true`) clears both — each
-    To-verify round starts unannotated and an addressed refinement retires.
+    against it instead of a fresh spec) and `review_shelved` (#148 — the **review shelf**: a
+    completed item set aside to review later, off the main To-verify list into the collapsed
+    Shelved strip; cleared by `done` in either direction and by a real verdict, so a row is
+    never both awaiting verification and shelved). A fresh completion (`done:true`) clears all
+    three — each To-verify round starts unannotated, unshelved, and an addressed refinement
+    retires.
   - `futures` — loose directional ideas: title, `note`, `source`, `fingerprint`, `reviewed_at`,
     `alignment` (the curation verdict against the north star: on-course | tangent | off-course,
     NULL = unsorted; PATCHable, '' clears; the Futures tab groups by it — on-course first,
@@ -580,8 +587,10 @@ the silent metadata backstop so the feed never has gaps.
   plus `area`, `position` (drag-reorder), `built_note` (the what-landed account), `plan`
   (#75 — the implementation plan, a whole-list jsonb of `{text, done}` steps; agents tick a step
   by re-sending the list, the autopilot injects it into its session prompt), `review_tags`
-  (#146 — whole-list like plan; cleaned + deduped) and `refine_note` (#146 — '' clears; ticking
-  `done:true` clears both unless the same PATCH sets them)) ·
+  (#146 — whole-list like plan; cleaned + deduped), `refine_note` (#146 — '' clears; ticking
+  `done:true` clears both unless the same PATCH sets them) and `review_shelved: bool` (#148 —
+  the review shelf; cleared by `done` in either direction and by a real `review_tag` verdict,
+  unless the same PATCH sets it explicitly)) ·
   `POST /api/projects/:slug/roadmap/suggest-title` (Gemini titles an item from its note;
   suggestion only, 503 keyless) ·
   `POST /api/projects/:slug/roadmap/assist` (the modal's ✧ Fill-from-note: Gemini reads the note
