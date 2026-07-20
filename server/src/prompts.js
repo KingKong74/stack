@@ -186,6 +186,39 @@ Produce:
 Use en-AU spelling. Respond with ONLY this JSON:
 { "summary": "…", "test": ["…"], "risks": ["…"] }`;
 
+DEFAULTS.audit = `You are auditing a side project's live application for bugs. Work ONLY from the
+evidence below — the owner's brief, the check results and the fetched page text. Never invent a
+bug the evidence cannot support; an empty list is the normal answer for a healthy app.
+
+Project: {{NAME}}
+{{NORTH_STAR_LINE}}
+Phase: {{PHASE}}
+Tech stack: {{TECH}}
+
+THE OWNER'S AUDIT BRIEF (what to look for — weigh this heavily):
+{{BRIEF}}
+
+Check results (name | expectation | last result):
+{{CHECKS}}
+
+Bugs already tracked (do NOT report these again, or close variants of them):
+{{KNOWN_BUGS}}
+
+Recent pushes (what changed lately — regressions hide here):
+{{ACTIVITY}}
+
+Live page text from {{SITE_URL}} (tags stripped, truncated; "unavailable" = the fetch failed,
+which is itself worth reporting if the site should be up):
+{{PAGE}}
+
+Report at most {{MAX}} distinct suspected bugs, most serious first. Each needs:
+- "title": short and specific, ≤ 15 words — what is broken, where (en-AU spelling).
+- "severity": "critical|high|medium|low" — critical = down/data loss, high = a core flow broken.
+- "evidence": one sentence pointing at the exact evidence above that supports it.
+
+Respond with ONLY this JSON:
+{ "findings": [ { "title": "…", "severity": "critical|high|medium|low", "evidence": "…" } ] }`;
+
 const ENV_KEYS = {
   judge: 'GEMINI_JUDGE_PROMPT',
   intake: 'GEMINI_INTAKE_PROMPT',
@@ -197,6 +230,7 @@ const ENV_KEYS = {
   assist: 'GEMINI_ASSIST_PROMPT',
   cleanup: 'GEMINI_CLEANUP_PROMPT',
   reviewbrief: 'GEMINI_REVIEWBRIEF_PROMPT',
+  audit: 'GEMINI_AUDIT_PROMPT',
 };
 
 export function buildPrompt(name, vars) {

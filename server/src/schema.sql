@@ -308,6 +308,12 @@ ALTER TABLE futures ADD COLUMN IF NOT EXISTS area TEXT;
 -- Skipped silently when the server has no GEMINI_API_KEY.
 ALTER TABLE checks ADD COLUMN IF NOT EXISTS semantic TEXT;
 
+-- The audit brief (#144): the owner's standing steer for the automated bug
+-- audit — what to look for, what matters, what to ignore. Gemini has no idea
+-- what a project should do without this; it's folded into every audit prompt
+-- (and the Claude hand-off prompt). NULL/'' = audit with generic instructions.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS audit_context TEXT;
+
 -- Skip tag: parked roadmap items — planned but not to be picked up yet. They
 -- sort to the bottom of their bucket and agents leave them alone; still count
 -- toward progress (they remain planned work).
