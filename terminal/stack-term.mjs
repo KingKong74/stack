@@ -31,6 +31,13 @@
 //   STACK_TERM_ROOT           cwd jail, default $HOME
 //   STACK_TERM_IDLE_MINUTES   kill a silent session after this, default 240
 //   STACK_TERM_MAX_SESSIONS   default 8
+//
+// Alternative model switching (#152):
+//   When a Claude session hits a usage limit and exits, the daemon prompts the
+//   user (via in-terminal ANSI text) to switch to an alternative AI provider.
+//   Providers are configured via API keys in ~/.stack/env or ~/.ccm_config:
+//   DEEPSEEK_API_KEY, KIMI_API_KEY, GLM_API_KEY, QWEN_API_KEY, MINIMAX_API_KEY.
+//   The chosen provider is persisted to ~/.stack/term-model.json.
 
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
@@ -39,6 +46,10 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
+import {
+  availableProviders, providerEnv, getProvider,
+  loadPreferredProvider, savePreferredProvider,
+} from './model-switch.mjs';
 
 // ---- env (same loader contract as the hooks: ~/.stack/env, never printed) ----
 const envFile = join(homedir(), '.stack', 'env');
@@ -161,12 +172,222 @@ function pushUsage(ws) {
   for (const sid of sessions.keys()) target.send(JSON.stringify(usageFrame(sid)));
 }
 
-// ---- sessions (sid -> { child, buf, plainTail, idleTimer, cwd }) ----
+// ---- sessions (sid -> { child, outBuf, cwd, cmd, cols, rows, lastActivity,
+//                          idleTimer, hitLimit, provider, switchMode }) ----
 // buf is the reconnect output buffer: a plain string of base64 chunks
 // concatenated so they can be replayed as individual 'out' frames.
 // We store them as an array of base64 strings (each is one original chunk)
 // and track total byte size to implement the 256KB cap.
 const sessions = new Map();
+
+// ---- output buffering helper ----
+// Sends text to the browser as an 'out' frame, buffering when the uplink is down.
+function sendOutText(sid, sess, text) {
+  const b64 = Buffer.from(text).toString('base64');
+  if (uplink && uplink.readyState === WebSocket.OPEN) {
+    uplink.send(JSON.stringify({ t: 'out', sid, data: b64 }));
+  } else {
+    sess.outBuf.bytes += b64.length;
+    sess.outBuf.chunks.push(b64);
+    while (sess.outBuf.bytes > OUT_BUF_CAP && sess.outBuf.chunks.length > 0) {
+      sess.outBuf.bytes -= sess.outBuf.chunks.shift().length;
+    }
+  }
+}
+
+// ---- wireChild — attach I/O handlers to a newly spawned child ----
+// Used by startSession (initial spawn) and respawnWithProvider (model switch).
+// Stores the child + idle timer on sess; each child gets its own plainTail.
+function wireChild(sid, sess, child) {
+  sess.child = child;
+
+  child.resize = (cols, rows) => {
+    const c = Math.max(2, Math.min(500, cols | 0));
+    const r = Math.max(2, Math.min(300, rows | 0));
+    try { child.stdio[3].write(`R ${c} ${r}\n`); } catch { /* gone */ }
+  };
+  child.feed = (b64) => {
+    sess.lastActivity = Date.now();
+    child.stdin.write(Buffer.from(b64, 'base64'));
+  };
+
+  // Apply stored terminal dimensions immediately (set from start/resize frames).
+  if (sess.cols && sess.rows) child.resize(sess.cols, sess.rows);
+
+  // Reset the idle timer for this child (clears any prior timer from a respawn).
+  if (sess.idleTimer) clearInterval(sess.idleTimer);
+  sess.lastActivity = Date.now();
+  sess.idleTimer = setInterval(() => {
+    if (Date.now() - sess.lastActivity > IDLE_MS) {
+      sendUplink({ t: 'err', sid, msg: 'Session closed after inactivity.' });
+      child.kill('SIGTERM');
+    }
+  }, 60_000);
+
+  // Per-child rolling tail for the Claude usage-limit scanner.
+  let plainTail = '';
+  const out = (d) => {
+    sess.lastActivity = Date.now();
+    // Track Claude limit per session. noteLimit() returns false when the limit
+    // is already known globally — use a direct LIMIT_RE match so every session
+    // gets its own hitLimit flag. Skip this entirely for provider sessions to
+    // avoid polluting the account-wide limitResetAt with provider rate-limit
+    // messages that may match the same pattern.
+    if (!sess.provider) {
+      plainTail = (plainTail + d.toString('utf8').replace(ANSI_RE, ' ')).slice(-600);
+      if (!sess.hitLimit && LIMIT_RE.test(plainTail)) sess.hitLimit = true;
+      if (noteLimit(plainTail)) pushUsage(null);
+    }
+    const b64 = d.toString('base64');
+    if (uplink && uplink.readyState === WebSocket.OPEN) {
+      uplink.send(JSON.stringify({ t: 'out', sid, data: b64 }));
+    } else {
+      sess.outBuf.bytes += b64.length;
+      sess.outBuf.chunks.push(b64);
+      while (sess.outBuf.bytes > OUT_BUF_CAP && sess.outBuf.chunks.length > 0) {
+        sess.outBuf.bytes -= sess.outBuf.chunks.shift().length;
+      }
+    }
+  };
+  child.stdout.on('data', out);
+  child.stderr.on('data', out);
+
+  child.on('exit', (code) => {
+    clearInterval(sess.idleTimer);
+    // If a Claude session (not already on a provider) hit a usage limit, offer
+    // the model-switch prompt instead of immediately ending the session.
+    if (sess.cmd === 'claude' && !sess.provider && sess.hitLimit) {
+      log(`session ${sid} claude limit — entering model-switch prompt`);
+      startSwitchMode(sid, sess, code ?? 0);
+    } else {
+      sessions.delete(sid);
+      log(`session ${sid} down (${sessions.size} live), exit ${code}`);
+      sendUplink({ t: 'exit', sid, code: code ?? 0 });
+    }
+  });
+
+  child.on('error', (e) => {
+    clearInterval(sess.idleTimer);
+    sessions.delete(sid);
+    log(`session ${sid} error: ${e.message}`);
+    sendUplink({ t: 'err', sid, msg: e.message });
+    sendUplink({ t: 'exit', sid, code: 1 });
+  });
+}
+
+// ---- startSwitchMode — hold the session open and prompt for a model switch ----
+// Called when a Claude session exits after hitting a usage limit. If no
+// providers are configured, falls through to a normal exit immediately.
+function startSwitchMode(sid, sess, exitCode) {
+  const available = availableProviders();
+  if (available.length === 0) {
+    sessions.delete(sid);
+    log(`session ${sid} down (${sessions.size} live) — no alt providers configured`);
+    sendUplink({ t: 'exit', sid, code: exitCode });
+    return;
+  }
+
+  const preferred = loadPreferredProvider();
+
+  // Build and send the in-terminal prompt (ANSI-coloured, \r\n for raw PTY mode).
+  const lines = [
+    '\r\n\x1b[0m\x1b[33m⚠  Claude usage limit reached.\x1b[0m\r\n',
+    '\x1b[0m   Switch to a free AI model:\r\n\r\n',
+  ];
+  available.forEach((p, i) => {
+    const pref = p.key === preferred ? '  \x1b[32m← preferred\x1b[0m' : '';
+    lines.push(`\x1b[0m   \x1b[1m[${i + 1}]\x1b[0m ${p.label} — ${p.model}${pref}\r\n`);
+  });
+  lines.push('\r\n\x1b[0m   Press \x1b[1m1\x1b[0m–\x1b[1m' + available.length + '\x1b[0m to switch');
+  if (preferred && available.some((p) => p.key === preferred)) {
+    lines.push(', \x1b[1mEnter\x1b[0m for preferred');
+  }
+  lines.push(', or \x1b[1mq\x1b[0m to end session.\r\n');
+  sendOutText(sid, sess, lines.join(''));
+
+  // 5-minute failsafe — clean up an unanswered prompt rather than leaking forever.
+  const switchTimeout = setTimeout(() => {
+    if (!sessions.has(sid) || !sessions.get(sid).switchMode) return;
+    sessions.delete(sid);
+    log(`session ${sid} switch prompt timed out`);
+    sendUplink({ t: 'exit', sid, code: exitCode });
+  }, 5 * 60_000);
+
+  sess.switchMode = {
+    available,
+    preferred,
+    exitCode,
+    timeout: switchTimeout,
+    onInput: (b64) => {
+      const ch = Buffer.from(b64, 'base64').toString('utf8');
+      const byte0 = ch.charCodeAt(0);
+
+      // Ctrl-C / lone Escape / q / n → decline and end the session.
+      if (byte0 === 3 || (byte0 === 0x1b && ch.length === 1) || 'qQnN'.includes(ch[0])) {
+        clearTimeout(switchTimeout);
+        sessions.delete(sid);
+        log(`session ${sid} model switch declined`);
+        sendUplink({ t: 'exit', sid, code: exitCode });
+        return;
+      }
+
+      // Enter → use the preferred provider if one is saved.
+      if (ch === '\r' || ch === '\n') {
+        if (preferred) {
+          const pref = available.find((p) => p.key === preferred);
+          if (pref) {
+            clearTimeout(switchTimeout);
+            respawnWithProvider(sid, sess, pref.key, exitCode);
+            return;
+          }
+        }
+        return; // no preferred set — ignore bare Enter
+      }
+
+      // Digit key → pick by list position.
+      const digit = parseInt(ch, 10);
+      if (digit >= 1 && digit <= available.length) {
+        clearTimeout(switchTimeout);
+        respawnWithProvider(sid, sess, available[digit - 1].key, exitCode);
+        return;
+      }
+      // Ignore everything else (arrow keys arrive as multi-byte escape sequences).
+    },
+  };
+}
+
+// ---- respawnWithProvider — spawn claude with an alternative model's env ----
+function respawnWithProvider(sid, sess, providerKey, prevExitCode) {
+  const env = providerEnv(providerKey);
+  if (!env) {
+    sessions.delete(sid);
+    sendUplink({ t: 'err', sid, msg: `No API key found for ${providerKey} — configure it in ~/.ccm_config.` });
+    sendUplink({ t: 'exit', sid, code: prevExitCode });
+    return;
+  }
+  const provider = getProvider(providerKey);
+  savePreferredProvider(providerKey);
+
+  sendOutText(
+    sid, sess,
+    `\r\n\x1b[32m► Switching to ${provider.label} (${provider.model})…\x1b[0m\r\n\r\n`,
+  );
+
+  // claude --continue resumes the most recent conversation so the context from
+  // the limit-hit session is preserved. Keys are injected via spawn's env option
+  // (never in argv, to keep ps output clean).
+  const child = spawn('python3', [SHIM, sess.cwd, '/bin/bash', '-lc', 'exec claude --continue'], {
+    stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
+    env: { ...process.env, ...env },
+  });
+
+  sess.provider = providerKey;
+  sess.switchMode = null;
+  sess.hitLimit = false;
+  wireChild(sid, sess, child);
+
+  log(`session ${sid} respawned on ${providerKey} (${provider.label} / ${provider.model})`);
+}
 
 function startSession(msg) {
   const { sid } = msg;
@@ -188,62 +409,25 @@ function startSession(msg) {
     stdio: ['pipe', 'pipe', 'pipe', 'pipe'], // fd3 = resize control
   });
 
-  // Per-session reconnect output buffer: array of base64 strings, total byte
-  // count tracked.  Old chunks dropped from the front when the cap is hit.
-  const outBuf = { chunks: [], bytes: 0 };
-
-  const sess = { child, outBuf, cwd };
+  const sess = {
+    outBuf: { chunks: [], bytes: 0 },
+    cwd,
+    cmd: msg.cmd === 'claude' ? 'claude' : 'shell',
+    // Terminal dimensions are stored on the session so respawned children get
+    // the right size from the start (#152).
+    cols: msg.cols || 0,
+    rows: msg.rows || 0,
+    lastActivity: Date.now(),
+    idleTimer: null,
+    hitLimit: false,  // set to true when LIMIT_RE fires on this session's output
+    provider: null,   // non-null after a model switch (prevents re-triggering)
+    switchMode: null, // non-null while awaiting user input for model selection
+    child: null,      // set by wireChild
+  };
   sessions.set(sid, sess);
-  log(`session ${sid} up (${sessions.size} live): ${msg.cmd === 'claude' ? 'claude' : 'shell'} in ${cwd}`);
+  log(`session ${sid} up (${sessions.size} live): ${sess.cmd} in ${cwd}`);
 
-  let lastActivity = Date.now();
-  const idleTimer = setInterval(() => {
-    if (Date.now() - lastActivity > IDLE_MS) {
-      sendUplink({ t: 'err', sid, msg: 'Session closed after inactivity.' });
-      child.kill('SIGTERM');
-    }
-  }, 60_000);
-
-  child.resize = (cols, rows) => {
-    const c = Math.max(2, Math.min(500, cols | 0));
-    const r = Math.max(2, Math.min(300, rows | 0));
-    try { child.stdio[3].write(`R ${c} ${r}\n`); } catch { /* gone */ }
-  };
-  child.feed = (b64) => { lastActivity = Date.now(); child.stdin.write(Buffer.from(b64, 'base64')); };
-  if (msg.cols && msg.rows) child.resize(msg.cols, msg.rows);
-
-  // Data frames carry base64 — JSON-safe, and the browser hands the raw bytes
-  // to xterm so UTF-8 renders correctly.
-  // Rolling stripped tail per session so the limit message matches even when
-  // the TUI paints it across chunks.
-  let plainTail = '';
-  const out = (d) => {
-    lastActivity = Date.now();
-    plainTail = (plainTail + d.toString('utf8').replace(ANSI_RE, ' ')).slice(-600);
-    if (noteLimit(plainTail)) pushUsage(null);
-    const b64 = d.toString('base64');
-    const frame = { t: 'out', sid, data: b64 };
-    if (uplink && uplink.readyState === WebSocket.OPEN) {
-      uplink.send(JSON.stringify(frame));
-    } else {
-      // Uplink is down — buffer this chunk so it can be flushed on reconnect.
-      outBuf.bytes += b64.length;
-      outBuf.chunks.push(b64);
-      // Drop oldest chunks until we're within the cap.
-      while (outBuf.bytes > OUT_BUF_CAP && outBuf.chunks.length > 0) {
-        outBuf.bytes -= outBuf.chunks.shift().length;
-      }
-    }
-  };
-  child.stdout.on('data', out);
-  child.stderr.on('data', out);
-  child.on('exit', (code) => {
-    clearInterval(idleTimer);
-    sessions.delete(sid);
-    log(`session ${sid} down (${sessions.size} live), exit ${code}`);
-    sendUplink({ t: 'exit', sid, code: code ?? 0 });
-  });
-  child.on('error', (e) => { clearInterval(idleTimer); sessions.delete(sid); failUplink(e.message); });
+  wireChild(sid, sess, child);
 
   sendUplink({ t: 'ready', sid, cwd: cwd === ROOT ? '~' : '~/' + cwd.slice(ROOT.length + 1) });
   sendUplink(usageFrame(sid)); // usage snapshot lands with the prompt
@@ -304,11 +488,30 @@ function connect() {
     let m;
     try { m = JSON.parse(raw.toString()); } catch { return; }
     const sess = sessions.get(m.sid);
-    const child = sess ? sess.child : undefined;
+    const child = sess?.child;
     if (m.t === 'start') startSession(m);
-    else if (m.t === 'in' && child && typeof m.data === 'string') child.feed(m.data);
-    else if (m.t === 'resize' && child) child.resize(m.cols, m.rows);
-    else if (m.t === 'kill' && child) child.kill('SIGTERM');
+    else if (m.t === 'in' && sess && typeof m.data === 'string') {
+      // During model-switch mode the child has exited — route input to the
+      // switch handler rather than the dead child's stdin (which would EPIPE).
+      if (sess.switchMode) sess.switchMode.onInput(m.data);
+      else if (child) child.feed(m.data);
+    }
+    else if (m.t === 'resize' && sess) {
+      // Persist dimensions so a respawned child can be sized correctly.
+      if (m.cols) sess.cols = m.cols;
+      if (m.rows) sess.rows = m.rows;
+      if (child) child.resize(m.cols, m.rows);
+    }
+    else if (m.t === 'kill') {
+      if (sess?.switchMode) {
+        // Browser tab closed during the switch prompt — clean up gracefully.
+        clearTimeout(sess.switchMode.timeout);
+        sessions.delete(m.sid);
+        log(`session ${m.sid} switch prompt killed by browser`);
+      } else if (child) {
+        child.kill('SIGTERM');
+      }
+    }
   });
   // error and close can both fire (and a failed handshake may emit only
   // error) — whichever lands first schedules the single reconnect.
