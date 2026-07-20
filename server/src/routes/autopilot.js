@@ -194,6 +194,41 @@ autopilotGlobal.post('/start', async (req, res) => {
   res.status(201).json(jobShape(full.rows[0]));
 });
 
+// POST /merge — Mission Control's branch-merge button (#154): queue a merge job
+// for an open lane branch. The host dispatcher (the only thing with the repo)
+// fetches, merges origin/<branch> into main with --no-ff in a throwaway
+// worktree, pushes main, and deletes the remote lane branch on success.
+// Conflicts are reported as failed — the human must resolve by hand.
+// The itemId (if supplied) is carried in the job detail so the UI can offer
+// "tick #N" after the job completes — the dispatcher does NOT tick it (the human
+// disposes; Gemini/automation never mutates tracker state).
+// Serialised the same way as /undo: 409 while any open job exists for the project.
+autopilotGlobal.post('/merge', async (req, res) => {
+  const b = req.body || {};
+  const project = await projectBySlug(String(b.slug || ''));
+  if (!project) return res.status(404).json({ error: 'No such project.' });
+  const branch = String(b.branch || '').trim();
+  if (!branch) return res.status(400).json({ error: 'branch required.' });
+  // itemId is advisory — carried as metadata, not a hard FK check.
+  const itemId = Number.isFinite(Number(b.itemId)) && b.itemId !== '' && b.itemId != null
+    ? Number(b.itemId) : null;
+  const open = await q(
+    `${JOB_SELECT} WHERE j.project_id = $1 AND j.status IN ('queued','claimed','running')
+      ORDER BY j.created_at LIMIT 1`, [project.id]);
+  if (open.rows.length) {
+    const openJob = jobShape(open.rows[0]);
+    // Same merge already queued = idempotent.
+    if (openJob.kind === 'merge' && openJob.detail.includes(branch)) return res.status(200).json(openJob);
+    return res.status(409).json({ error: `An automation job for this project is already ${openJob.status} — merge when it finishes.` });
+  }
+  const detail = `merge origin/${branch} into main${itemId ? ` (item #${itemId})` : ''}`;
+  const { rows } = await q(
+    `INSERT INTO autopilot_jobs (project_id, kind, item_id, detail) VALUES ($1,'merge',$2,$3) RETURNING id`,
+    [project.id, itemId, detail]);
+  const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [rows[0].id]);
+  res.status(201).json(jobShape(full.rows[0]));
+});
+
 // POST /undo — the Reviews view's ⎌ Undo (#128): queue a revert job for a
 // completed item. The host dispatcher (the only thing with the repo) reverts
 // the commits tagged #<itemId> on main in a throwaway worktree, pushes, and

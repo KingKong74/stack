@@ -79,6 +79,59 @@ if (!existsSync(join(repo, '.git'))) {
   process.exit(0);
 }
 
+// A merge job (#154 — Mission Control's ⇥ Merge button) is handled right here,
+// not by the runner: fetch, merge --no-ff origin/<branch> into main in a
+// throwaway worktree, push main, delete the remote lane branch on success.
+// Conflicts abort safely and report `failed`; the human resolves by hand.
+// The itemId is carried as advisory metadata only — the dispatcher does NOT
+// tick the roadmap item (the human disposes after reviewing what landed).
+if (job.kind === 'merge') {
+  const git = (dir, ...a) => {
+    const r = spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+    return { ok: r.status === 0, out: (r.stdout || '').trim(), err: (r.stderr || '').trim() };
+  };
+  const doMerge = async () => {
+    // Extract the branch name from the pre-stored detail string
+    // ("merge origin/<branch> into main (item #N)") or fall back to itemTitle.
+    // But the branch was stored in detail as "merge origin/<branch> into main…"
+    // We also look at the job's stored detail to pull the branch out of it.
+    const detailMatch = /merge origin\/(\S+) into main/.exec(job.detail || '');
+    const branch = detailMatch ? detailMatch[1] : '';
+    if (!branch) return { ok: false, detail: `[merge/job #${job.id}] could not determine branch from job detail: ${job.detail}` };
+
+    git(repo, 'fetch', 'origin');
+    const refCheck = git(repo, 'rev-parse', '--verify', `origin/${branch}`);
+    if (!refCheck.ok) return { ok: false, detail: `[merge/job #${job.id}] origin/${branch} not found — already merged or deleted?` };
+
+    const wt = join(tmpdir(), `stack-merge-${job.id}-${Date.now()}`);
+    const base = git(repo, 'rev-parse', '--verify', 'origin/main').ok ? 'origin/main' : 'main';
+    const add = git(repo, 'worktree', 'add', '--detach', wt, base);
+    if (!add.ok) return { ok: false, detail: `[merge/job #${job.id}] worktree add failed: ${add.err.slice(0, 180)}` };
+    try {
+      const merge = git(wt, 'merge', '--no-ff', `origin/${branch}`,
+        '-m', `Merge ${branch} into main #154`);
+      if (!merge.ok) {
+        git(wt, 'merge', '--abort');
+        return { ok: false, detail: `[merge/job #${job.id}] conflicts merging origin/${branch} into main — merge by hand` };
+      }
+      const push = git(wt, 'push', 'origin', 'HEAD:main');
+      if (!push.ok) return { ok: false, detail: `[merge/job #${job.id}] push to origin/main failed: ${push.err.slice(0, 150)}` };
+      // Delete the remote lane branch on success.
+      git(repo, 'push', 'origin', '--delete', branch); // best effort — don't fail if it's already gone
+    } finally {
+      git(repo, 'worktree', 'remove', '--force', wt);
+      rmSync(wt, { recursive: true, force: true });
+    }
+    const itemNote = job.itemId ? ` — tick #${job.itemId} in the roadmap when you've verified it` : '';
+    return { ok: true, detail: `merged origin/${branch} into main${itemNote}` };
+  };
+  await report('running');
+  const out = await doMerge();
+  await report(out.ok ? 'done' : 'failed', out.detail);
+  log(`job #${job.id}: ${out.ok ? 'done' : 'failed'} — ${out.detail}.`);
+  process.exit(0);
+}
+
 // A revert job (#128 — the Reviews view's ⎌ Undo) is handled right here, not
 // by the runner: revert every main commit tagged #<itemId> in a throwaway
 // worktree, push, and un-tick the item so it lands back on the board. The

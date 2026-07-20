@@ -3,7 +3,7 @@ import {
   getControl, patchProject, patchSettings, startAutopilot,
   createAutopilotSchedule, patchAutopilotSchedule, deleteAutopilotSchedule,
   resumeAutopilotJob, hangupAutopilotJob, dismissAutopilotJob,
-  labelTerminalSessions, getRoadmap, AuthError,
+  labelTerminalSessions, getRoadmap, queueMerge, AuthError,
   type ControlData, type ControlProject, type AutopilotJob, type ModelEntry,
 } from '../store';
 import { go } from '../lib/route';
@@ -84,6 +84,9 @@ export function ControlPanel() {
   const [form, setForm] = useState(emptyForm());
   const [formBusy, setFormBusy] = useState(false);
   const [labelBusy, setLabelBusy] = useState(false);
+  // #154 — merge confirm: the branch the user has clicked ⇥ Merge on, or null.
+  const [mergePending, setMergePending] = useState<{ slug: string; branch: string; itemId: string; itemTitle: string } | null>(null);
+  const [mergeBusy, setMergeBusy] = useState(false);
   // #118 — the composer's item picker: open items for the chosen project,
   // fetched on selection (null = loading), cached per slug for the visit.
   const [pickItems, setPickItems] = useState<Record<string, RoadmapItem[] | null>>({});
@@ -212,6 +215,22 @@ export function ControlPanel() {
     }
   };
 
+  // #154 — confirm then queue a merge job for the pending branch.
+  const confirmMerge = async () => {
+    if (!mergePending || mergeBusy) return;
+    setMergeBusy(true);
+    setError('');
+    try {
+      const job = await queueMerge(mergePending.slug, mergePending.branch, mergePending.itemId || undefined);
+      setData((cur) => cur && { ...cur, jobs: [job, ...cur.jobs.filter((j) => j.id !== job.id)] });
+      setMergePending(null);
+    } catch (e) {
+      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not queue the merge.');
+    } finally {
+      setMergeBusy(false);
+    }
+  };
+
   const submitSchedule = async () => {
     if (!data || !form.slug || formBusy) return;
     const days = form.mode === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : form.mode === 'custom' ? form.days : [];
@@ -291,6 +310,25 @@ export function ControlPanel() {
   return (
     <div>
       {error && <div className="action-error">{error}</div>}
+      {/* #154 — merge confirm modal */}
+      {mergePending && (
+        <div className="overlay" onClick={() => !mergeBusy && setMergePending(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Merge {mergePending.branch}?</h3>
+            <p style={{ fontSize: 13.5, lineHeight: 1.55, marginBottom: 20 }}>
+              Merges <code>origin/{mergePending.branch}</code> into <code>main</code> on the host, then deletes the remote branch.
+              {mergePending.itemId && <> After the merge, tick item <strong>#{mergePending.itemId}</strong> ({mergePending.itemTitle}) in the roadmap to close it out.</>}
+              {' '}Conflicts fail safely — you will see the error in the job strip.
+            </p>
+            <div className="modal-actions">
+              <button className="btn-cancel" disabled={mergeBusy} onClick={() => setMergePending(null)}>Cancel</button>
+              <button className="btn-submit" disabled={mergeBusy} onClick={confirmMerge}>
+                {mergeBusy ? 'Queueing…' : '⇥ Merge'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
         {!data ? (
           !error && <div className="empty-state"><div className="big">Loading…</div></div>
@@ -663,6 +701,44 @@ export function ControlPanel() {
                       </span>
                     )}
                   </div>
+                  {/* #154 — branch management strip: one chip per open lane branch */}
+                  {p.branches.length > 0 && (
+                    <div className="mc-branches" aria-label={`Open branches for ${p.name}`}>
+                      {p.branches.map((b) => {
+                        const mergeJob = data?.jobs.find(
+                          (j) => j.slug === p.slug && j.kind === 'merge' && j.detail.includes(b.branch),
+                        );
+                        return (
+                          <span key={b.branch} className={`mc-branch ${mergeJob ? mergeJob.status : ''}`}
+                            title={b.itemTitle ? `#${b.itemId} ${b.itemTitle}` : b.branch}>
+                            <button className="mc-branch-name"
+                              onClick={() => go.detail(p.slug, 'roadmap', b.itemId)}>
+                              {b.branch}
+                            </button>
+                            {b.itemId && (
+                              <span className="mc-branch-item">
+                                #{b.itemId}
+                              </span>
+                            )}
+                            {mergeJob ? (
+                              <span className="mc-branch-status">{
+                                mergeJob.status === 'queued' || mergeJob.status === 'claimed' ? 'queuing…'
+                                  : mergeJob.status === 'running' ? 'merging…'
+                                  : mergeJob.status === 'done' ? 'merged'
+                                  : mergeJob.detail.slice(0, 60) || mergeJob.status
+                              }</span>
+                            ) : (
+                              <button className="mc-branch-merge"
+                                title={`Merge origin/${b.branch} into main on the host — conflicts fail safely`}
+                                onClick={() => setMergePending({ slug: p.slug, branch: b.branch, itemId: b.itemId, itemTitle: b.itemTitle })}>
+                                ⇥ Merge
+                              </button>
+                            )}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
                 );
               })}
