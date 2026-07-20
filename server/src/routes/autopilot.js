@@ -400,7 +400,7 @@ autopilotGlobal.get('/next', async (req, res) => {
            last_run.finished_at ASC NULLS FIRST,
            -- Stable tie-break across everything else.
            j.created_at ASC
-         LIMIT 1 FOR UPDATE SKIP LOCKED
+         LIMIT 1 FOR UPDATE OF j SKIP LOCKED
       )
       RETURNING id`);
   if (!claimed.rows.length) return res.json({ job: null });
