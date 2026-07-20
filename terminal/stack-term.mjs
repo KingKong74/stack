@@ -39,6 +39,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, killSession } from './tmux-session.mjs';
 
 // ---- env (same loader contract as the hooks: ~/.stack/env, never printed) ----
 const envFile = join(homedir(), '.stack', 'env');
@@ -178,11 +179,33 @@ function startSession(msg) {
   if (!cwd) return failUplink(`No such directory under ${ROOT}.`);
   if (sessions.size >= MAX_SESSIONS) return failUplink('Too many live sessions.');
 
-  // Two commands only. `claude` goes through a login shell so the user's PATH
-  // (nvm, ~/.local/bin, …) applies — same environment as sitting at the box.
-  const argv = msg.cmd === 'claude'
-    ? ['/bin/bash', '-lc', 'exec claude']
-    : [process.env.SHELL || '/bin/bash', '-l'];
+  // Two commands only. Shell sessions run the login shell directly.
+  // Claude sessions run inside a named tmux session so the process survives
+  // browser disconnects: the pty-shim runs `tmux new-session -A`, which
+  // creates the session (or attaches if it already exists). When the shim is
+  // killed (browser disconnect → kill frame → SIGTERM to shim → HUP to the
+  // tmux client), tmux detaches gracefully but the session (and claude inside)
+  // keeps running. A reconnect re-attaches by passing tmuxSession in the start
+  // frame — `new-session -A` handles both cases without a separate has-session
+  // check, eliminating the create-then-attach race.
+  // When tmux is not installed on the host, falls back to direct claude spawn.
+  let argv;
+  let tmuxSession = null; // set when tmux is in use
+
+  if (msg.cmd === 'claude') {
+    if (tmuxAvailable()) {
+      // Use a validated name from the browser if provided, otherwise generate one.
+      tmuxSession = validName(msg.tmuxSession) ? msg.tmuxSession : generateName('term');
+      argv = sessionArgv(tmuxSession, cwd, '/bin/bash -lc "exec claude"');
+      log(`session ${sid}: tmux session ${tmuxSession} (${validName(msg.tmuxSession) ? 're-attach' : 'new'})`);
+    } else {
+      // Degrade gracefully when tmux is absent — direct spawn, no persistence.
+      argv = ['/bin/bash', '-lc', 'exec claude'];
+      log(`session ${sid}: tmux not available, running claude directly`);
+    }
+  } else {
+    argv = [process.env.SHELL || '/bin/bash', '-l'];
+  }
 
   const child = spawn('python3', [SHIM, cwd, ...argv], {
     stdio: ['pipe', 'pipe', 'pipe', 'pipe'], // fd3 = resize control
@@ -192,7 +215,7 @@ function startSession(msg) {
   // count tracked.  Old chunks dropped from the front when the cap is hit.
   const outBuf = { chunks: [], bytes: 0 };
 
-  const sess = { child, outBuf, cwd };
+  const sess = { child, outBuf, cwd, tmuxSession };
   sessions.set(sid, sess);
   log(`session ${sid} up (${sessions.size} live): ${msg.cmd === 'claude' ? 'claude' : 'shell'} in ${cwd}`);
 
@@ -201,6 +224,12 @@ function startSession(msg) {
     if (Date.now() - lastActivity > IDLE_MS) {
       sendUplink({ t: 'err', sid, msg: 'Session closed after inactivity.' });
       child.kill('SIGTERM');
+      // For tmux sessions, also clean up the underlying session so idle claude
+      // processes don't accumulate on the host.
+      if (sess.tmuxSession) {
+        killSession(sess.tmuxSession);
+        log(`session ${sid}: killed idle tmux session ${sess.tmuxSession}`);
+      }
     }
   }, 60_000);
 
@@ -245,7 +274,10 @@ function startSession(msg) {
   });
   child.on('error', (e) => { clearInterval(idleTimer); sessions.delete(sid); failUplink(e.message); });
 
-  sendUplink({ t: 'ready', sid, cwd: cwd === ROOT ? '~' : '~/' + cwd.slice(ROOT.length + 1) });
+  const cwdLabel = cwd === ROOT ? '~' : '~/' + cwd.slice(ROOT.length + 1);
+  const readyFrame = { t: 'ready', sid, cwd: cwdLabel };
+  if (tmuxSession) readyFrame.tmuxSession = tmuxSession;
+  sendUplink(readyFrame);
   sendUplink(usageFrame(sid)); // usage snapshot lands with the prompt
 }
 
