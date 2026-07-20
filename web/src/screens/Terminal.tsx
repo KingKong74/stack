@@ -332,8 +332,10 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
             <div className={`tu-bar${usagePct >= 100 ? ' over' : usagePct >= 85 ? ' warn' : ''}`}>
               <div className="tu-fill" style={{ width: `${Math.min(100, usagePct)}%` }} />
             </div>
-            <span className="tu-num">
-              ~{fmtTok(usage.tokens)} /{' '}
+            <span className="tu-num"
+              title={`~${fmtTok(usage.tokens)} of ${fmtTok(usagePrefs.dailyLimit)} tokens today`}>
+              {usagePct}%{' '}
+              <span className="tu-of">of{' '}</span>
               {editLimit ? (
                 <input className="field-input tu-edit" autoFocus value={limitDraft}
                   onChange={(e) => setLimitDraft(e.target.value)}

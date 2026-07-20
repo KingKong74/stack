@@ -39,8 +39,27 @@ export const cleanAssistFields = (v) => {
 // Dual-model autopilot (#153): claude CLI model aliases the settings accept.
 // The executor is the (cheaper) model that runs the session; the advisor is
 // the stronger model it consults as a subagent. '' = CLI default / no advisor.
+//
+// These arrays are also the server-side catalogue (#175) — the SINGLE source of
+// truth served via the /api/control payload so the UI pickers never need
+// updating separately. Each entry: { model: alias, label: display string }.
 export const AUTOPILOT_EXECUTOR_MODELS = ['', 'haiku', 'sonnet', 'opus'];
 export const AUTOPILOT_ADVISOR_MODELS = ['', 'sonnet', 'opus', 'fable'];
+
+// The UI catalogue served to Mission Control (#175). Mirrors the alias arrays
+// above but carries human-readable labels for the pickers.
+export const EXECUTOR_CATALOGUE = [
+  { model: '', label: 'Default' },
+  { model: 'haiku', label: 'Haiku' },
+  { model: 'sonnet', label: 'Sonnet' },
+  { model: 'opus', label: 'Opus' },
+];
+export const ADVISOR_CATALOGUE = [
+  { model: '', label: 'Off' },
+  { model: 'sonnet', label: 'Sonnet' },
+  { model: 'opus', label: 'Opus' },
+  { model: 'fable', label: 'Fable' },
+];
 
 const DEFAULTS = {
   auto_record: true,

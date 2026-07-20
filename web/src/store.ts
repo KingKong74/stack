@@ -265,12 +265,18 @@ export interface TermSession {
   startedAt: number;       // epoch ms
   label: string;           // ✧ Gemini's take on what it's doing ('' until asked)
 }
+export interface ModelEntry { model: string; label: string }
+
 export interface ControlData {
   autopilot: {
     enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number;
     executorModel: string;  // '' = the claude CLI's default model (#153)
     advisorModel: string;   // '' = no advisor subagent
   };
+  // Model picker catalogue (#175) — served from the backend so there is one
+  // source of truth. Undefined while loading; the frontend falls back to the
+  // hardcoded lists in Control.tsx.
+  models?: { executors: ModelEntry[]; advisors: ModelEntry[] };
   terminal?: { connected: boolean; sessions?: TermSession[] };  // host daemon + open web terminals
   schedules: AutopilotSchedule[];
   jobs: AutopilotJob[];                // recent first; queued/claimed/running lead the strip
