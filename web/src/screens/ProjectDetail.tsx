@@ -4,7 +4,7 @@ import {
   getProjectDetail, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture,
-  createCheck, deleteCheck, runChecks,
+  createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
   patchProject, deleteProject, createShareLink, deleteShareLink,
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, sortIntake, polarisChat, assistRoadmapItem,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
@@ -435,7 +435,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       });
     });
 
-  // ---- checks (the Bugs tab's testing panel) ----
+  // ---- checks (the Bugs tab's Audit area) ----
   const runProjectChecks = (id?: number) =>
     guard(async () => {
       setChecksBusy(true);
@@ -448,10 +448,16 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       }
     });
 
-  const addCheck = (input: { name: string; url: string; expect_status?: number; contains?: string; semantic?: string }) =>
+  const addCheck = (input: CheckInput) =>
     guard(async () => {
       const c = await createCheck(slug, input);
       setData({ ...data, checks: [...data.checks, c] });
+    });
+
+  const editCheck = (cid: number, patch: Partial<CheckInput>) =>
+    guard(async () => {
+      const c = await patchCheck(slug, cid, patch);
+      setData({ ...data, checks: data.checks.map((x) => (x.id === cid ? c : x)) });
     });
 
   const removeCheck = (cid: number) =>
@@ -656,8 +662,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onReport={() => setBugModal({ open: true, title: '', fromNote: null })} onOpenLink={openBugLink}
             onSetStatus={setBugStatus} onDelete={(b) => setConfirmBugDelete(b)}
             checks={data.checks} siteUrl={project.siteUrl} checksBusy={checksBusy}
-            onRunChecks={runProjectChecks} onAddCheck={addCheck} onDeleteCheck={removeCheck}
-            onCheckToBug={checkToBug} />
+            onRunChecks={runProjectChecks} onAddCheck={addCheck} onEditCheck={editCheck}
+            onDeleteCheck={removeCheck} onCheckToBug={checkToBug} />
         )}
         {tab === 'roadmap' && (
           <Roadmap roadmap={roadmap} highlightId={highlightId} slug={slug} liveBranches={data.liveBranches}

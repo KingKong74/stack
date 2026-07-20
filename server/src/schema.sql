@@ -379,3 +379,11 @@ CREATE INDEX IF NOT EXISTS autopilot_jobs_status_idx ON autopilot_jobs (status, 
 -- limit reset). GET /next skips queued jobs before it; a human can clear it
 -- (▶ Resume now), hold the job (status 'paused' — hang up) or dismiss it.
 ALTER TABLE autopilot_jobs ADD COLUMN IF NOT EXISTS not_before TIMESTAMPTZ;
+
+-- Audit area (#143, named by #145): a check can exercise a function of the app, not just
+-- probe a page — request method + optional body, plus a JSON-path assertion
+-- on the response ("$.status" should equal "ok"). GET probes are unchanged.
+ALTER TABLE checks ADD COLUMN IF NOT EXISTS method TEXT NOT NULL DEFAULT 'GET';
+ALTER TABLE checks ADD COLUMN IF NOT EXISTS req_body TEXT;
+ALTER TABLE checks ADD COLUMN IF NOT EXISTS json_path TEXT;
+ALTER TABLE checks ADD COLUMN IF NOT EXISTS json_expect TEXT;

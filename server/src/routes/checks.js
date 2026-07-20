@@ -5,16 +5,19 @@ import { checkShape } from '../shape.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
 
-// Mounted at /api/projects/:slug/checks — the Bugs tab's testing panel.
-// A check is an HTTP probe against the project's live application: pass =
-// the expected status (and, optionally, a body keyword). Runs are on-demand
-// (the Run button), bounded, and store their result on the row. This is a
-// single-user self-hosted app behind bearer auth, so probing user-supplied
-// URLs from the server is by design.
+// Mounted at /api/projects/:slug/checks — the Bugs tab’s Audit area (#143, named by #145).
+// A check exercises the project's live application over HTTP: a plain probe
+// (GET, expected status) or a function test (method + request body against an
+// API endpoint) with optional assertions — a body keyword, a JSON-path value
+// and a Gemini-judged plain-language expectation. Runs are on-demand (the Run
+// button), bounded, and store their result on the row. This is a single-user
+// self-hosted app behind bearer auth, so probing user-supplied URLs from the
+// server is by design.
 export const checks = Router({ mergeParams: true });
 
 const RUN_TIMEOUT_MS = 8000;
-const BODY_CAP = 262144; // read at most 256KB when checking for a keyword
+const BODY_CAP = 262144; // read at most 256KB when checking the response body
+const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'];
 
 checks.use(async (req, res, next) => {
   const project = await projectBySlug(req.params.slug);
@@ -32,22 +35,73 @@ checks.get('/', async (req, res) => {
   res.json(rows.map(checkShape));
 });
 
-// POST /  -> create { name, url, expect_status?, contains? }
+// Shared field parsing for POST (create) and PATCH (edit). Returns the
+// normalised column values for whichever keys are present on the payload.
+function parseFields(body) {
+  const out = {};
+  if ('name' in body) out.name = String(body.name || '').trim().slice(0, 120);
+  if ('url' in body) out.url = String(body.url || '').trim().slice(0, 500);
+  if ('method' in body) {
+    const m = String(body.method || 'GET').trim().toUpperCase();
+    out.method = METHODS.includes(m) ? m : null; // null = invalid, caller rejects
+  }
+  if ('expect_status' in body) {
+    out.expect_status = Number.isFinite(Number(body.expect_status)) ? Math.trunc(Number(body.expect_status)) : 200;
+  }
+  if ('req_body' in body) out.req_body = String(body.req_body || '').trim().slice(0, 4000) || null;
+  if ('contains' in body) out.contains = String(body.contains || '').trim().slice(0, 200) || null;
+  if ('json_path' in body) out.json_path = String(body.json_path || '').trim().slice(0, 200) || null;
+  if ('json_expect' in body) out.json_expect = String(body.json_expect || '').trim().slice(0, 300) || null;
+  if ('semantic' in body) out.semantic = String(body.semantic || '').trim().slice(0, 300) || null;
+  return out;
+}
+
+// POST /  -> create { name, url, method?, expect_status?, req_body?,
+//                     contains?, json_path?, json_expect?, semantic? }
 checks.post('/', async (req, res) => {
-  const name = String(req.body?.name || '').trim().slice(0, 120);
-  const url = String(req.body?.url || '').trim().slice(0, 500);
-  if (!name) return res.status(400).json({ error: 'Name is required.' });
-  if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'URL must start with http(s)://' });
-  const expect = Number.isFinite(Number(req.body?.expect_status)) ? Math.trunc(Number(req.body.expect_status)) : 200;
-  const contains = String(req.body?.contains || '').trim().slice(0, 200) || null;
-  const semantic = String(req.body?.semantic || '').trim().slice(0, 300) || null;
+  const f = parseFields(req.body || {});
+  if (!f.name) return res.status(400).json({ error: 'Name is required.' });
+  if (!/^https?:\/\//i.test(f.url || '')) return res.status(400).json({ error: 'URL must start with http(s)://' });
+  if (f.method === null) return res.status(400).json({ error: `Method must be one of ${METHODS.join(', ')}.` });
 
   const { rows } = await q(
-    `INSERT INTO checks (project_id, name, url, expect_status, contains, semantic)
-     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [req.project.id, name, url, expect, contains, semantic]
+    `INSERT INTO checks (project_id, name, url, method, expect_status, req_body, contains, json_path, json_expect, semantic)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+    [req.project.id, f.name, f.url, f.method || 'GET', f.expect_status ?? 200,
+     f.req_body ?? null, f.contains ?? null, f.json_path ?? null, f.json_expect ?? null, f.semantic ?? null]
   );
   res.status(201).json(checkShape(rows[0]));
+});
+
+// PATCH /:id  -> edit any subset of the POST fields. Changing what the check
+// actually tests (anything but the name) clears the stored result — a pass
+// against the old definition would be a lie against the new one.
+checks.patch('/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const { rows: [existing] } = await q(
+    'SELECT * FROM checks WHERE project_id = $1 AND id = $2', [req.project.id, id]
+  );
+  if (!existing) return res.status(404).json({ error: 'No such check.' });
+
+  const f = parseFields(req.body || {});
+  if ('name' in f && !f.name) return res.status(400).json({ error: 'Name is required.' });
+  if ('url' in f && !/^https?:\/\//i.test(f.url || '')) return res.status(400).json({ error: 'URL must start with http(s)://' });
+  if (f.method === null) return res.status(400).json({ error: `Method must be one of ${METHODS.join(', ')}.` });
+  if (!Object.keys(f).length) return res.json(checkShape(existing));
+
+  const merged = { ...existing, ...f };
+  const definitionChanged = ['url', 'method', 'expect_status', 'req_body', 'contains', 'json_path', 'json_expect', 'semantic']
+    .some((k) => (merged[k] ?? null) !== (existing[k] ?? null));
+
+  const { rows: [saved] } = await q(
+    `UPDATE checks SET name = $2, url = $3, method = $4, expect_status = $5, req_body = $6,
+                       contains = $7, json_path = $8, json_expect = $9, semantic = $10
+                       ${definitionChanged ? ', last_status = NULL, last_code = NULL, last_ms = NULL, last_error = NULL, last_run_at = NULL' : ''}
+      WHERE id = $1 RETURNING *`,
+    [id, merged.name, merged.url, merged.method, merged.expect_status, merged.req_body,
+     merged.contains, merged.json_path, merged.json_expect, merged.semantic]
+  );
+  res.json(checkShape(saved));
 });
 
 // DELETE /:id
@@ -60,28 +114,73 @@ checks.delete('/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Walk a dot path ("status", "data.items.0.name", optional leading "$.")
+// through a parsed JSON value. Returns undefined when the path falls off.
+function walkPath(value, path) {
+  const parts = path.replace(/^\$\.?/, '').split('.').filter(Boolean);
+  let cur = value;
+  for (const part of parts) {
+    if (cur === null || typeof cur !== 'object') return undefined;
+    cur = cur[part];
+  }
+  return cur;
+}
+
 // One bounded probe. Never throws.
 async function probe(row) {
   const started = Date.now();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), RUN_TIMEOUT_MS);
   try {
+    const method = METHODS.includes(row.method) ? row.method : 'GET';
+    const sendBody = row.req_body && method !== 'GET' && method !== 'HEAD';
+    let contentType = 'text/plain';
+    if (sendBody) {
+      try { JSON.parse(row.req_body); contentType = 'application/json'; } catch { /* plain text */ }
+    }
     const res = await fetch(row.url, {
+      method,
       redirect: 'follow',
       signal: ctrl.signal,
-      headers: { 'user-agent': 'stack-checks/1.0' },
+      headers: {
+        'user-agent': 'stack-checks/1.0',
+        ...(sendBody ? { 'content-type': contentType } : {}),
+      },
+      ...(sendBody ? { body: row.req_body } : {}),
     });
     clearTimeout(timer);
     const ms = Date.now() - started;
     let pass = res.status === row.expect_status;
     let error = pass ? null : `expected ${row.expect_status}, got ${res.status}`;
     let body = null;
-    if (pass && (row.contains || row.semantic)) {
+    if (pass && (row.contains || row.json_path || row.semantic)) {
       body = (await res.text()).slice(0, BODY_CAP);
     }
     if (pass && row.contains && !body.includes(row.contains)) {
       pass = false;
       error = `body missing "${row.contains}"`;
+    }
+    // The JSON assertion: parse the response, walk the dot path, compare
+    // against the expected value as text (objects/arrays via JSON). An empty
+    // expectation just requires the path to exist.
+    if (pass && row.json_path) {
+      let parsed;
+      try { parsed = JSON.parse(body); } catch {
+        pass = false;
+        error = 'response is not JSON';
+      }
+      if (pass) {
+        const value = walkPath(parsed, row.json_path);
+        const got = value === undefined ? undefined
+          : (typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value));
+        if (value === undefined) {
+          pass = false;
+          error = `${row.json_path} missing from response`;
+        } else if (row.json_expect != null && got !== row.json_expect) {
+          pass = false;
+          error = `${row.json_path}: expected "${row.json_expect}", got "${String(got).slice(0, 120)}"`;
+        }
+      }
     }
     // The semantic assertion: Gemini judges the page's visible text against a
     // plain-language expectation. Skipped silently when Gemini isn't
