@@ -380,7 +380,7 @@ CREATE INDEX IF NOT EXISTS autopilot_jobs_status_idx ON autopilot_jobs (status, 
 -- (▶ Resume now), hold the job (status 'paused' — hang up) or dismiss it.
 ALTER TABLE autopilot_jobs ADD COLUMN IF NOT EXISTS not_before TIMESTAMPTZ;
 
--- Testing area (#143): a check can exercise a function of the app, not just
+-- Audit area (#143, named by #145): a check can exercise a function of the app, not just
 -- probe a page — request method + optional body, plus a JSON-path assertion
 -- on the response ("$.status" should equal "ok"). GET probes are unchanged.
 ALTER TABLE checks ADD COLUMN IF NOT EXISTS method TEXT NOT NULL DEFAULT 'GET';

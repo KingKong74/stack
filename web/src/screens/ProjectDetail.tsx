@@ -435,7 +435,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       });
     });
 
-  // ---- checks (the Bugs tab's testing area) ----
+  // ---- checks (the Bugs tab's Audit area) ----
   const runProjectChecks = (id?: number) =>
     guard(async () => {
       setChecksBusy(true);

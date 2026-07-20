@@ -5,7 +5,7 @@ import { checkShape } from '../shape.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
 
-// Mounted at /api/projects/:slug/checks — the Bugs tab's testing area (#143).
+// Mounted at /api/projects/:slug/checks — the Bugs tab’s Audit area (#143, named by #145).
 // A check exercises the project's live application over HTTP: a plain probe
 // (GET, expected status) or a function test (method + request body against an
 // API endpoint) with optional assertions — a body keyword, a JSON-path value

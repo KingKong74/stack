@@ -252,7 +252,8 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   RoadmapModal then a keep/delete-the-idea confirm, dismiss deletes + tombstones; ideas are
   editable in place, the composer takes "first line = idea, rest = why", and each idea carries an
   **alignment verdict** — ✦ Judge → On course / Tangent / Off course, pick the same to clear —
-  which is how the list groups itself), Bugs also hosts the **Testing area** (#143 — HTTP tests
+  which is how the list groups itself), Bugs also hosts the **Audit area** (#143, named by
+  #145 — HTTP tests
   against the live app: plain probes and function tests with a method picker + request body
   (JSON bodies sent as application/json), assertions on status / body keyword / a JSON dot-path
   value / a Gemini-judged expectation; Run all / run one, quick-add "Site up" from site_url,
@@ -325,7 +326,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     roadmap item `done` also sets it (a human touch counts as review — archived items never
     linger in the inbox).
   - `notes` — text, `colour`, `source`.
-  - `checks` — the Bugs tab's testing area: HTTP tests against the project's live app. A row is
+  - `checks` — the Bugs tab's Audit area: HTTP tests against the project's live app. A row is
     a probe or a function test (#143): name, url, `method` (GET|POST|PUT|PATCH|DELETE|HEAD),
     `expect_status`, `req_body` (sent for non-GET/HEAD; JSON bodies as application/json), and
     the assertions — optional `contains` keyword, `json_path` + `json_expect` (dot path into a

@@ -920,7 +920,7 @@ a { color: inherit; }
   border-radius: 7px; padding: 2px 7px; background: rgba(255,255,255,.4); }
 .note-actions .promote:hover { color: rgba(0,0,0,.78); border-color: rgba(0,0,0,.3); }
 
-/* ---------- the testing area (the Bugs tab — probes + function tests) ---------- */
+/* ---------- the Audit area (the Bugs tab — probes + function tests) ---------- */
 .checks { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 17px; margin-bottom: 24px; }
 .checks-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .checks-head .left { display: flex; align-items: baseline; gap: 9px; }

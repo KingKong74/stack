@@ -24,12 +24,12 @@ const toDraft = (c: Check): Draft => ({
   reqBody: c.reqBody, contains: c.contains, jsonPath: c.jsonPath, jsonExpect: c.jsonExpect, semantic: c.semantic,
 });
 
-// The testing area (#143): HTTP tests against the project's live application —
+// The Audit area (#143, named by #145): HTTP tests against the project's live application —
 // plain probes and function tests (method + body against an endpoint) with
 // assertions on status, a body keyword, a JSON-path value or a Gemini-judged
 // expectation. Run all (or one) with a click; a failing test offers to file
 // the bug; ✎ edits a test in place.
-function TestingPanel({
+function AuditPanel({
   checks, siteUrl, busy, onRun, onAdd, onEdit, onDelete, onFileBug,
 }: {
   checks: Check[]; siteUrl: string; busy: boolean;
@@ -74,11 +74,11 @@ function TestingPanel({
     <div className="checks">
       <div className="checks-head">
         <div className="left">
-          <span className="checks-title">Testing</span>
+          <span className="checks-title">Audit</span>
           <span className="checks-sub">
             {checks.length
               ? `${passing} passing${failing ? ` · ${failing} failing` : ''}${lastRun ? ` · last run ${lastRun}` : ' · never run'}`
-              : 'test the live app — pages up, functions answering, responses saying the right thing'}
+              : 'audit the live app — pages up, functions answering, responses saying the right thing'}
           </span>
         </div>
         <div className="checks-actions">
@@ -204,7 +204,7 @@ export function Bugs({
 
   return (
     <div>
-      <TestingPanel checks={checks} siteUrl={siteUrl} busy={checksBusy}
+      <AuditPanel checks={checks} siteUrl={siteUrl} busy={checksBusy}
         onRun={onRunChecks} onAdd={onAddCheck} onEdit={onEditCheck} onDelete={onDeleteCheck} onFileBug={onCheckToBug} />
 
       <div className="section-bar">

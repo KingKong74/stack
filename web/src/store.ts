@@ -702,7 +702,7 @@ export async function deleteFuture(slug: string, id: number): Promise<void> {
   await request<void>(`${futuresBase(slug)}/${id}`, { method: 'DELETE' });
 }
 
-// ---- checks (the Bugs tab's testing area) ----
+// ---- checks (the Bugs tab's Audit area) ----
 
 const checksBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/checks`;
 

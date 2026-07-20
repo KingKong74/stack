@@ -109,11 +109,11 @@ export interface Future {
 }
 
 // The methods a check may use — GET probes a page, the rest exercise an API
-// function (#143, the Bugs tab's testing area).
+// function (#143, the Bugs tab's Audit area).
 export type CheckMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
 
 // A check: an HTTP test against the project's live application, run from the
-// Bugs tab's testing area — a plain probe or a function call (method + body)
+// Bugs tab's Audit area — a plain probe or a function call (method + body)
 // with optional assertions. lastStatus '' = never run.
 export interface Check {
   id: number;

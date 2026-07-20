@@ -64,7 +64,7 @@ export function checkShape(row) {
     id: row.id,
     name: row.name,
     url: row.url,
-    method: row.method || 'GET',         // #143 — the testing area: exercise functions, not just pages
+    method: row.method || 'GET',         // #143 — the Audit area: exercise functions, not just pages
     expectStatus: row.expect_status,
     reqBody: row.req_body || '',         // request payload for non-GET methods
     contains: row.contains || '',
