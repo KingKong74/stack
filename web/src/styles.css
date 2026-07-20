@@ -1117,18 +1117,20 @@ a { color: inherit; }
 .review-group-toggle:hover .review-proj { color: var(--ink); }
 .review-count.sm { min-width: 18px; height: 17px; font-size: 10.5px; }
 .review-group .review-rows { padding: 0 4px; }
-.review-row { display: grid; grid-template-columns: 64px 1fr auto auto; align-items: center; gap: 12px; padding: 8px 11px; border-radius: 9px; }
+.review-row { display: grid; grid-template-columns: 64px 1fr auto auto; align-items: start; gap: 12px; padding: 8px 11px; border-radius: 9px; }
 .review-row:not(:last-child) { border-bottom: 1px solid var(--line-2); }
 .review-row.busy { opacity: 0.55; pointer-events: none; }
-.review-kind { font-family: var(--mono); font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--accent); }
+.review-kind { font-family: var(--mono); font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--accent); padding-top: 3px; }
 .review-kind.roadmap { color: var(--sage); }
 .review-kind.future { color: var(--building); }
+/* #76 — review-row-body: stacks the title + triage annotations in column 2 */
+.review-row-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .review-title { font-size: 13px; color: var(--body); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .review-title:hover { color: var(--accent-deep); }
-.review-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.review-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); padding-top: 3px; }
 .review-proj { font-family: var(--disp); font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
 .review-when { font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; }
-.review-actions { display: flex; gap: 6px; }
+.review-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-start; padding-top: 2px; }
 .review-keep, .review-dismiss { font-size: 11.5px; font-weight: 600; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--line-2); white-space: nowrap; }
 .review-keep { color: var(--green); }
 .review-keep:hover { border-color: var(--green); background: var(--green-tint); }
@@ -1136,6 +1138,26 @@ a { color: inherit; }
 .review-dismiss:hover { color: var(--critical); border-color: var(--critical); }
 .review-more { font-size: 11px; color: var(--faint); padding: 7px 11px 6px; }
 .review-error { font-size: 12px; color: var(--critical); padding: 7px 11px 6px; }
+/* #76 — ✧ Triage: inbox assist button + annotations */
+.triage-btn { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 7px; border: 1px solid var(--accent-tint-border); color: var(--accent); background: var(--accent-tint); margin-left: auto; white-space: nowrap; }
+.triage-btn:hover:not(:disabled) { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+.triage-btn.busy { opacity: 0.6; cursor: wait; }
+.triage-btn.done { color: var(--muted); background: var(--panel); border-color: var(--line-2); }
+.triage-clusters { background: var(--panel); border: 1px solid var(--line-2); border-radius: 9px; padding: 8px 12px; margin-bottom: 8px; font-size: 12px; display: flex; flex-direction: column; gap: 5px; }
+.triage-clusters-label { font-family: var(--disp); font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.triage-cluster { display: flex; align-items: baseline; gap: 8px; }
+.triage-cluster-label { font-size: 12px; color: var(--ink); font-weight: 500; }
+.triage-cluster-refs { font-family: var(--mono); font-size: 10.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* inline annotation chips on each row */
+.triage-ann { font-size: 11px; border-radius: 6px; padding: 1px 7px; border: 1px solid var(--line-2); color: var(--muted); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; max-width: 100%; }
+.triage-ann.cluster { color: var(--building); border-color: color-mix(in srgb, var(--building) 30%, transparent); background: color-mix(in srgb, var(--building) 8%, var(--surface)); }
+.triage-ann.severity { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 30%, transparent); background: color-mix(in srgb, var(--critical) 6%, var(--surface)); }
+.triage-ann.suggest.keep { color: var(--green); border-color: color-mix(in srgb, var(--green) 30%, transparent); background: color-mix(in srgb, var(--green) 7%, var(--surface)); }
+.triage-ann.suggest.dismiss { color: var(--muted); }
+/* Apply button — slots into the actions col, only when a suggestion exists */
+.triage-apply { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 7px; border: 1px solid var(--line-2); white-space: nowrap; color: var(--muted); }
+.triage-apply.keep:hover { color: var(--green); border-color: var(--green); background: var(--green-tint); }
+.triage-apply.dismiss:hover { color: var(--critical); border-color: var(--critical); }
 
 /* attention row */
 .deck-attention { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
