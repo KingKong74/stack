@@ -72,15 +72,38 @@ const GIT_BASH_THEME = {
   brightCyan: '#40ffff', brightWhite: '#ffffff',
 };
 
+// #136 — Expanded starter kit: shell ops first, Claude ops at the bottom.
+// The old list was short and ordered awkwardly (claude before git).
 const DEFAULT_CMDS: TermCmd[] = [
+  { label: 'git status', cmd: 'git status' },
+  { label: 'git log', cmd: 'git log --oneline -15' },
+  { label: 'git diff', cmd: 'git diff --stat' },
+  { label: 'git pull', cmd: 'git pull' },
+  { label: 'npm run build', cmd: 'npm run build' },
+  { label: 'compose up', cmd: 'docker compose up -d --build' },
+  { label: 'compose logs', cmd: 'docker compose logs -f --tail=50' },
   { label: 'claude', cmd: 'claude' },
   { label: 'claude (skip permissions)', cmd: 'claude --dangerously-skip-permissions' },
   { label: 'claude (continue)', cmd: 'claude -c' },
-  { label: 'git status', cmd: 'git status' },
-  { label: 'git log', cmd: 'git log --oneline -10' },
-  { label: 'compose up', cmd: 'docker compose up -d --build' },
   { label: 'autopilot log', cmd: 'tail -40 ~/.stack/autopilot.log' },
+  { label: 'disk usage', cmd: 'df -h .' },
 ];
+
+// #136 — device-local preference for the quick-commands rail (collapsed/expanded)
+// and for wide mode. Both survive page reloads.
+const TERM_VIEW_KEY = 'stack.termView';
+function getTermViewPrefs(): { railOpen: boolean; wide: boolean } {
+  try {
+    const p = JSON.parse(localStorage.getItem(TERM_VIEW_KEY) || '{}');
+    return {
+      railOpen: p.railOpen !== false, // default open
+      wide: !!p.wide,
+    };
+  } catch { return { railOpen: true, wide: false }; }
+}
+function setTermViewPrefs(p: { railOpen: boolean; wide: boolean }) {
+  localStorage.setItem(TERM_VIEW_KEY, JSON.stringify(p));
+}
 
 type Sess = { id: number; cwd: string; cmd: 'shell' | 'claude'; status: Status; note: string };
 type Handle = { sendText: (s: string) => void; reconnect: () => void; focus: () => void };
@@ -124,6 +147,19 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
   const [newLabel, setNewLabel] = useState('');
   const [newCmd, setNewCmd] = useState('');
 
+  // #136 — view prefs: collapsible quick-commands rail + wide mode.
+  const [viewPrefs, setViewPrefsState] = useState(() => getTermViewPrefs());
+  const saveViewPrefs = (p: { railOpen: boolean; wide: boolean }) => {
+    setViewPrefsState(p); setTermViewPrefs(p);
+  };
+
+  // #138 — bare-slug cwd resolution: a slug with no path separators (e.g.
+  // "stack") is sent straight to the daemon, which resolves it relative to
+  // STACK_TERM_ROOT ($HOME). So "stack" → "$HOME/stack" — where projects live.
+  // The jail still applies: symlinks that escape $HOME are refused by the
+  // daemon's resolveCwd() regardless of what the browser sends.
+  // Mission Control's per-row ⌨ button and the ProjectDetail ⌨ button both
+  // call go.terminal(slug), so project-context opens already land here.
   const openSession = (dir?: string, kind?: 'shell' | 'claude') => {
     const id = nextId.current++;
     setSessions((s) => [...s, { id, cwd: (dir ?? cwd).trim(), cmd: kind ?? mode, status: 'connecting', note: '' }]);
@@ -153,8 +189,9 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
   useEffect(() => { onAlive?.(liveCount); }, [liveCount, onAlive]);
 
   // Any full/float/hidden transition changes the holder's size out from under
-  // xterm — the sessions' own resize listeners refit on this.
-  useEffect(() => { window.dispatchEvent(new Event('resize')); }, [visible, dock]);
+  // xterm — the sessions' own resize listeners refit on this. Also fires on
+  // wide-mode toggle (#136).
+  useEffect(() => { window.dispatchEvent(new Event('resize')); }, [visible, dock, viewPrefs.wide]);
 
   const closeSession = (id: number) => {
     handles.current.delete(id);
@@ -297,19 +334,34 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
         </div>
       </div>
 
-      <div className="page detail term-page">
+      <div className={`page detail term-page${viewPrefs.wide ? ' term-wide' : ''}`}>
         <div className="term-bar">
+          {/* #138 — bare slug (no /) resolves to $HOME/<slug> on the daemon;
+              a full path like "stack/src" also works within that root.
+              The "~/" label makes the relative-to-home semantics visible. */}
           <span className="term-lbl">~/</span>
-          <input className="field-input term-cwd" value={cwd} placeholder="project directory (blank = home)"
+          <input className="field-input term-cwd" value={cwd} placeholder="project slug or sub-path (blank = home)"
+            title="A project slug (e.g. stack) opens ~/slug. A sub-path (e.g. stack/src) opens ~/stack/src. Leave blank for home."
             onChange={(e) => setCwd(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') openSession(); }} />
-          <div className="seg-control sm" role="tablist" aria-label="Session command">
-            <button role="tab" aria-selected={mode === 'shell'}
-              className={`seg-opt ${mode === 'shell' ? 'on' : ''}`} onClick={() => setMode('shell')}>Shell</button>
-            <button role="tab" aria-selected={mode === 'claude'}
-              className={`seg-opt ${mode === 'claude' ? 'on' : ''}`} onClick={() => setMode('claude')}>Claude</button>
-          </div>
+          {/* #136 — mode toggle replaces the Shell/Claude seg-control tab bar.
+              The choice is now made at connect-time, not as a standing widget. */}
+          <button
+            className={`btn-repo sm term-mode-btn${mode === 'claude' ? ' on' : ''}`}
+            title={mode === 'shell'
+              ? 'Currently opening shell sessions — click to switch to Claude'
+              : 'Currently opening Claude sessions — click to switch to shell'}
+            onClick={() => setMode((m) => m === 'shell' ? 'claude' : 'shell')}>
+            {mode === 'claude' ? 'Claude' : 'Shell'}
+          </button>
           <button className="btn-submit sm" onClick={() => openSession()}>+ New session</button>
+          {/* #136 — wide mode toggle: the terminal panel expands to the full viewport width */}
+          <button
+            className={`btn-repo sm term-wide-btn${viewPrefs.wide ? ' on' : ''}`}
+            title={viewPrefs.wide ? 'Exit wide mode' : 'Wide mode — expand terminal to the full viewport width'}
+            onClick={() => saveViewPrefs({ ...viewPrefs, wide: !viewPrefs.wide })}>
+            {viewPrefs.wide ? '⊠' : '⊞'}
+          </button>
           {activeSess && (
             <span className={`term-status ${activeSess.status}`}>
               {activeSess.status === 'live' ? `● live ${activeSess.note}`
@@ -402,44 +454,56 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
         )}
 
         <div className="term-layout">
-          {/* quick commands — type into the active session */}
-          <div className="term-rail">
-            {brief && (
+          {/* #136 — quick commands rail, now collapsible. A small ‹/› toggle
+              sits at the top; collapsed the rail shrinks to that button only,
+              reclaiming horizontal space for the terminal canvas. */}
+          <div className={`term-rail${viewPrefs.railOpen ? '' : ' term-rail-collapsed'}`}>
+            <button
+              className="term-rail-toggle"
+              title={viewPrefs.railOpen ? 'Collapse quick commands' : 'Expand quick commands'}
+              onClick={() => saveViewPrefs({ ...viewPrefs, railOpen: !viewPrefs.railOpen })}>
+              <span className="term-rail-toggle-icon">{viewPrefs.railOpen ? '‹' : '›'}</span>
+            </button>
+            {viewPrefs.railOpen && (
               <>
-                <div className="term-rail-head">From the roadmap</div>
-                <button className="term-cmd brief" onClick={pasteBrief}
-                  title="Types the roadmap brief into the active session — review it, then press Enter yourself">
-                  ▶ Paste roadmap brief
-                </button>
+                {brief && (
+                  <>
+                    <div className="term-rail-head">From the roadmap</div>
+                    <button className="term-cmd brief" onClick={pasteBrief}
+                      title="Types the roadmap brief into the active session — review it, then press Enter yourself">
+                      ▶ Paste roadmap brief
+                    </button>
+                  </>
+                )}
+                <div className="term-rail-head">Quick commands</div>
+                {DEFAULT_CMDS.map((c) => (
+                  <button key={c.cmd} className="term-cmd" title={c.cmd} onClick={() => runQuick(c.cmd)}>
+                    {c.label}
+                  </button>
+                ))}
+                {customCmds.length > 0 && <div className="term-rail-head" style={{ marginTop: 10 }}>Yours</div>}
+                {customCmds.map((c, i) => (
+                  <span className="term-cmd-row" key={`${c.cmd}-${i}`}>
+                    <button className="term-cmd" title={c.cmd} onClick={() => runQuick(c.cmd)}>{c.label}</button>
+                    <button className="term-cmd-x" onClick={() => dropCmd(i)} aria-label={`Remove ${c.label}`} title="Remove">×</button>
+                  </span>
+                ))}
+                {adding ? (
+                  <div className="term-cmd-add">
+                    <input className="field-input sm" value={newLabel} placeholder="label (optional)"
+                      onChange={(e) => setNewLabel(e.target.value)} />
+                    <input className="field-input sm" value={newCmd} placeholder="command" autoFocus
+                      onChange={(e) => setNewCmd(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') addCmd(); else if (e.key === 'Escape') setAdding(false); }} />
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn-cancel sm" onClick={() => setAdding(false)}>Cancel</button>
+                      <button className="btn-submit sm" onClick={addCmd} disabled={!newCmd.trim()}>Add</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button className="term-cmd add" onClick={() => setAdding(true)}>+ Add a command</button>
+                )}
               </>
-            )}
-            <div className="term-rail-head">Quick commands</div>
-            {DEFAULT_CMDS.map((c) => (
-              <button key={c.cmd} className="term-cmd" title={c.cmd} onClick={() => runQuick(c.cmd)}>
-                {c.label}
-              </button>
-            ))}
-            {customCmds.length > 0 && <div className="term-rail-head" style={{ marginTop: 10 }}>Yours</div>}
-            {customCmds.map((c, i) => (
-              <span className="term-cmd-row" key={`${c.cmd}-${i}`}>
-                <button className="term-cmd" title={c.cmd} onClick={() => runQuick(c.cmd)}>{c.label}</button>
-                <button className="term-cmd-x" onClick={() => dropCmd(i)} aria-label={`Remove ${c.label}`} title="Remove">×</button>
-              </span>
-            ))}
-            {adding ? (
-              <div className="term-cmd-add">
-                <input className="field-input sm" value={newLabel} placeholder="label (optional)"
-                  onChange={(e) => setNewLabel(e.target.value)} />
-                <input className="field-input sm" value={newCmd} placeholder="command" autoFocus
-                  onChange={(e) => setNewCmd(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') addCmd(); else if (e.key === 'Escape') setAdding(false); }} />
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="btn-cancel sm" onClick={() => setAdding(false)}>Cancel</button>
-                  <button className="btn-submit sm" onClick={addCmd} disabled={!newCmd.trim()}>Add</button>
-                </div>
-              </div>
-            ) : (
-              <button className="term-cmd add" onClick={() => setAdding(true)}>+ Add a command</button>
             )}
           </div>
 
@@ -514,13 +578,36 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
       fit.fit();
       const ws = openTerminal({ cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows });
       wsRef.current = ws;
+      // #135 — write-batching: coalesce rapid incoming frames into one
+      // requestAnimationFrame flush instead of calling term.write() per frame.
+      // High-throughput output (builds, log tails) can arrive in dozens of tiny
+      // frames per ms; merging them into one Uint8Array per rAF cuts xterm's
+      // internal dispatch overhead and eliminates intermediate layout thrashing.
+      let rafPending = false;
+      const writeBuf: Uint8Array[] = [];
+      const flushWrites = () => {
+        rafPending = false;
+        if (!writeBuf.length) return;
+        let total = 0;
+        for (const b of writeBuf) total += b.length;
+        const merged = new Uint8Array(total);
+        let off = 0;
+        for (const b of writeBuf) { merged.set(b, off); off += b.length; }
+        writeBuf.length = 0;
+        term.write(merged);
+      };
+      const scheduleWrite = (data: Uint8Array) => {
+        writeBuf.push(data);
+        if (!rafPending) { rafPending = true; requestAnimationFrame(flushWrites); }
+      };
+
       ws.addEventListener('message', (ev) => {
         let m: {
           t: string; data?: string; msg?: string; code?: number; cwd?: string;
           tokens?: number; resetAt?: number; resetLabel?: string; sched?: { runDate: string; atTime: string };
         };
         try { m = JSON.parse(ev.data); } catch { return; }
-        if (m.t === 'out' && m.data) term.write(b64decode(m.data));
+        if (m.t === 'out' && m.data) scheduleWrite(b64decode(m.data));
         else if (m.t === 'usage' && typeof m.tokens === 'number') {
           onUsage({ tokens: m.tokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched });
         }
@@ -532,14 +619,21 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
     };
     connect();
 
+    // Input goes out immediately — no batching on the keypress path. #135
     const data = term.onData((d) => {
       const ws = wsRef.current;
       if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'in', data: b64encode(d) }));
     });
+    // #135 — debounced resize: the window.resize event fires on every animation
+    // frame while the user drags; debouncing 80 ms sends only the settled size.
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
     const onResize = () => {
       fit.fit();
-      const ws = wsRef.current;
-      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        const ws = wsRef.current;
+        if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
+      }, 80);
     };
     window.addEventListener('resize', onResize);
 
@@ -554,6 +648,7 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
 
     return () => {
       register(null);
+      clearTimeout(resizeTimer);
       window.removeEventListener('resize', onResize);
       data.dispose();
       wsRef.current?.close();

@@ -1519,7 +1519,20 @@ a { color: inherit; }
 
 /* terminal v2 — session tabs, quick-command rail, git-bash colours */
 .term-layout { display: flex; gap: 14px; align-items: stretch; }
+/* #136 — wide mode: terminal page expands past the 1080px max-width */
+.term-page.term-wide { max-width: none; }
+/* #136 — collapsible quick-commands rail */
 .term-rail { width: 216px; flex: none; display: flex; flex-direction: column; gap: 6px; align-content: flex-start; }
+.term-rail.term-rail-collapsed { width: 30px; overflow: hidden; }
+.term-rail-toggle { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; align-self: flex-end; background: var(--card); border: 1px solid var(--line-2); color: var(--muted); flex: none; margin-bottom: 2px; }
+.term-rail-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.term-rail-toggle-icon { font-size: 13px; line-height: 1; }
+/* #136 — connect-time mode toggle + wide mode button */
+.term-mode-btn { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.term-mode-btn.on { color: var(--accent); border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.term-mode-btn.on:hover { border-color: var(--accent); }
+.term-wide-btn { font-size: 16px; line-height: 1; padding: 0 8px; }
+.term-wide-btn.on { color: var(--accent); border-color: var(--accent-tint-border); }
 .term-rail-head { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 2px 0 2px; }
 .term-cmd { display: block; width: 100%; text-align: left; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--ink); background: var(--card); border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .term-cmd:hover { border-color: var(--accent); color: var(--accent); }
@@ -1604,7 +1617,7 @@ a { color: inherit; }
 .tu-resume .btn-submit.sm, .tu-resume .btn-cancel.sm { padding: 2px 8px; font-size: 11px; }
 .tu-auto { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
 .tu-note { flex-basis: 100%; color: var(--critical); }
-@media (max-width: 760px) { .term-layout { flex-direction: column; } .term-rail { width: 100%; flex-direction: row; flex-wrap: wrap; } .term-cmd { width: auto; } }
+@media (max-width: 760px) { .term-layout { flex-direction: column; } .term-rail { width: 100%; flex-direction: row; flex-wrap: wrap; } .term-rail.term-rail-collapsed { width: 100%; height: 30px; overflow: hidden; } .term-cmd { width: auto; } }
 
 /* ---------- #165 to-top button ---------- */
 .totop {
