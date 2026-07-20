@@ -360,6 +360,7 @@ What landed last time (already merged or on its branch — do not redo it):
   ${item.builtNote}` : ''}
 The owner's refinement — change ONLY what this asks for, on top of what already landed:
   ${item.refineNote}
+Do NOT treat the title/note above as a fresh spec and rebuild from scratch — the previous work stands. Apply only the delta the refinement describes.
 `;
 
   // The advisor contract (#153): only present when an advisor model is set —
