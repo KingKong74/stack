@@ -243,7 +243,7 @@ export function Polaris({
           <div className="polaris-scroll" ref={scrollRef}>
             {lines.map((l, i) => (
               <div className={`polaris-line ${l.role}`} key={i}>
-                {l.ts !== undefined && <span className="p-ts">{fmtTime(l.ts)}</span>}
+                <span className="p-ts">{l.ts !== undefined ? fmtTime(l.ts) : ''}</span>
                 <span className="p-prompt">{l.role === 'you' ? '❯' : l.role === 'polaris' ? '✦' : '·'}</span>
                 <span className="p-text">{l.text}</span>
               </div>
