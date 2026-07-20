@@ -1401,6 +1401,28 @@ a { color: inherit; }
 }
 .mc-area:focus { outline: none; border-color: var(--accent); }
 
+/* #154 — branch management strip: open lane branches per project row */
+.mc-branches { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.mc-branch {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11.5px; font-weight: 600; color: var(--chip-ink);
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 20px;
+  padding: 3px 8px 3px 10px;
+}
+.mc-branch.running { color: var(--green); border-color: var(--green-tint); background: var(--panel); }
+.mc-branch.done { color: var(--muted); }
+.mc-branch.failed { color: var(--critical); }
+.mc-branch-name { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; color: var(--accent); font-size: 11px; font-weight: 600; }
+.mc-branch-name:hover { color: var(--accent-deep); text-decoration: underline; }
+.mc-branch-item { color: var(--muted); font-size: 11px; font-weight: 500; }
+.mc-branch-status { color: var(--muted); font-size: 11px; font-style: italic; }
+.mc-branch-merge {
+  font-size: 11px; font-weight: 600; color: var(--accent);
+  border: 1px solid var(--accent-tint-border); background: var(--accent-tint);
+  border-radius: 12px; padding: 1px 8px;
+}
+.mc-branch-merge:hover { color: #fff; background: var(--accent-deep); border-color: var(--accent-deep); }
+
 /* scheduled sessions — the week ahead + the standing list */
 .mc-sched {
   background: var(--card); border: 1px solid var(--line-2); border-radius: 14px;

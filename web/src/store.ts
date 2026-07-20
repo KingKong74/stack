@@ -236,6 +236,8 @@ export interface ControlProject {
   areas: string[];         // target options — areas on this project's open must/should items
   live: { count: number; branches: string[] } | null;
   claims: { id: string; title: string; lane: string }[];
+  // #154 — open lane branches with the item each one owns; powers the merge strip.
+  branches: { branch: string; itemId: string; itemTitle: string }[];
   reviewCount: number;
   bugs: { serious: number; open: number };
   blockers: string[];
@@ -252,7 +254,7 @@ export interface AutopilotSchedule {
 }
 export interface AutopilotJob {
   id: string; slug: string; name: string;
-  kind: 'manual' | 'nightly' | 'scheduled' | 'revert' | 'resume';
+  kind: 'manual' | 'nightly' | 'scheduled' | 'revert' | 'resume' | 'merge';
   itemId: string | null; itemTitle: string;
   // 'paused' = hung up (#142): held until a human resumes; never auto-fires.
   status: 'queued' | 'claimed' | 'running' | 'done' | 'failed' | 'paused';
@@ -300,6 +302,8 @@ export async function getControl(): Promise<ControlData> {
     },
     schedules: d.schedules ?? [],
     jobs: d.jobs ?? [],
+    // #154 — default branches so a pre-deploy server can't break the strip.
+    projects: (d.projects ?? []).map((p) => ({ ...p, branches: p.branches ?? [] })),
   };
 }
 
@@ -672,6 +676,16 @@ export async function getReviewBrief(slug: string, id: number): Promise<ReviewBr
 // and un-ticks the item so it returns to the board fresh.
 export async function queueUndo(slug: string, itemId: number): Promise<AutopilotJob> {
   return request<AutopilotJob>('/autopilot/undo', { method: 'POST', body: { slug, itemId } });
+}
+// ⇥ Merge a lane branch (#154): queues a merge job — the host dispatcher fetches,
+// merges origin/<branch> into main with --no-ff in a throwaway worktree, pushes
+// main, and deletes the remote lane branch on success. Conflicts fail safely.
+// itemId is advisory metadata only — the dispatcher does NOT tick the item.
+export async function queueMerge(slug: string, branch: string, itemId?: string): Promise<AutopilotJob> {
+  return request<AutopilotJob>('/autopilot/merge', {
+    method: 'POST',
+    body: itemId ? { slug, branch, itemId } : { slug, branch },
+  });
 }
 // Gemini titles an item from its note (the modal's ✧ button) — suggestion only.
 export async function suggestRoadmapTitle(slug: string, note: string): Promise<string> {

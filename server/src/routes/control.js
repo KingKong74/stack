@@ -34,6 +34,9 @@ control.get('/', async (_req, res) => {
   const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, automode, autopilot_area, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
+    // claimed_by that starts with 'auto/' or 'lane/' is an open lane branch; we
+    // also need must/should for progress + pick, so pull everything that's
+    // relevant in one query.
     q(`SELECT project_id, id, bucket, title, done, skipped, claimed_by, source,
               reviewed_at, position, created_at, area
          FROM roadmap_items WHERE bucket IN ('must','should') OR claimed_by IS NOT NULL`),
@@ -115,6 +118,14 @@ control.get('/', async (_req, res) => {
     const bugRow = bugsByP.get(p.id);
     const pick = pickFor(road, p.autopilot_area || '');
     const lastAuto = autoByP.get(p.id);
+    // Open lane branches: items with a claimed_by that's not yet done.
+    // We expose each unique branch name + the item it owns (id + title) so the
+    // UI can offer a ⇥ Merge button per branch without a second round-trip.
+    const branches = [...new Map(
+      road
+        .filter((r) => r.claimed_by && !r.done)
+        .map((r) => [r.claimed_by, { branch: r.claimed_by, itemId: String(r.id), itemTitle: r.title }]),
+    ).values()];
     return {
       slug: p.slug,
       name: p.name,
@@ -124,6 +135,8 @@ control.get('/', async (_req, res) => {
       autopilotArea: p.autopilot_area || '',
       // Target options: areas carried by this project's open must/should items.
       areas: [...new Set(road.filter((r) => !r.done && r.area).map((r) => r.area))].sort(),
+      // Open lane branches with the item they own — for the merge strip (#154).
+      branches,
       // The roadmap query only carries must/should (all computeProgress counts);
       // the aggregated serious count stands in for row-level bugs for the cap.
       progress: computeProgress(
