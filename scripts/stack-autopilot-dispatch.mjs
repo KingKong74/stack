@@ -68,7 +68,7 @@ if (!job) process.exit(0);
 const log = (msg) => logStderr(`dispatch ${new Date().toISOString()} · ${msg}`);
 const report = (status, detail) =>
   api('PATCH', `/api/autopilot/jobs/${job.id}`, detail === undefined ? { status } : { status, detail })
-    .catch((e) => log(`job report failed (${e.message})`));
+    .catch((e) => log(`[report] job #${job.id} status=${status} — PATCH failed (${e.message})`));
 
 const root = process.env.STACK_AUTOPILOT_ROOT || homedir();
 const repo = join(root, job.slug);
@@ -90,28 +90,28 @@ if (job.kind === 'revert') {
   };
   const revert = async () => {
     const id = String(job.itemId || '');
-    if (!id) return { ok: false, detail: 'revert job without an item id' };
+    if (!id) return { ok: false, detail: `[revert/job #${job.id}] no item id on revert job` };
     git(repo, 'fetch', 'origin', 'main'); // best effort — fall back to local main below
     const base = git(repo, 'rev-parse', '--verify', 'origin/main').ok ? 'origin/main' : 'main';
     const hist = git(repo, 'log', base, '-n', '400', '--format=%H\t%s');
-    if (!hist.ok) return { ok: false, detail: 'git log failed' };
+    if (!hist.ok) return { ok: false, detail: `[revert/job #${job.id}] git log on ${base} failed` };
     const tag = new RegExp(`(^|[^0-9])#${id}([^0-9]|$)`);
     const hashes = hist.out.split('\n').filter(Boolean)
       .map((l) => { const [h, ...s] = l.split('\t'); return { h, s: s.join('\t') }; })
       .filter((c) => tag.test(c.s))
       .map((c) => c.h); // newest first — the order git revert wants
-    if (!hashes.length) return { ok: false, detail: `no commits tagged #${id} in the last 400 on ${base}` };
+    if (!hashes.length) return { ok: false, detail: `[revert/job #${job.id}] no commits tagged #${id} in the last 400 on ${base}` };
     const wt = join(tmpdir(), `stack-undo-${job.id}-${Date.now()}`);
     const add = git(repo, 'worktree', 'add', '--detach', wt, base);
-    if (!add.ok) return { ok: false, detail: `worktree failed: ${add.err.slice(0, 180)}` };
+    if (!add.ok) return { ok: false, detail: `[revert/job #${job.id}] worktree add failed: ${add.err.slice(0, 180)}` };
     try {
       const rev = git(wt, 'revert', '--no-edit', ...hashes);
       if (!rev.ok) {
         git(wt, 'revert', '--abort');
-        return { ok: false, detail: `revert of ${hashes.length} commit(s) tagged #${id} conflicted — undo by hand` };
+        return { ok: false, detail: `[revert/job #${job.id}] revert of ${hashes.length} commit(s) tagged #${id} conflicted — undo by hand` };
       }
       const push = git(wt, 'push', 'origin', 'HEAD:main');
-      if (!push.ok) return { ok: false, detail: `push failed: ${push.err.slice(0, 180)}` };
+      if (!push.ok) return { ok: false, detail: `[revert/job #${job.id}] push to origin/main failed (HTTP ${push.err.match(/\d{3}/)?.[0] ?? 'unknown'}): ${push.err.slice(0, 150)}` };
     } finally {
       git(repo, 'worktree', 'remove', '--force', wt);
       rmSync(wt, { recursive: true, force: true });
@@ -119,8 +119,8 @@ if (job.kind === 'revert') {
     // Back to the board: done:false clears the verdict + claim (#116 semantics).
     try {
       await api('PATCH', `/api/projects/${job.slug}/roadmap/${id}`, { done: false });
-    } catch {
-      return { ok: true, detail: `reverted ${hashes.length} commit(s) tagged #${id}, but un-ticking failed — untick it in the app` };
+    } catch (e) {
+      return { ok: true, detail: `[revert/job #${job.id}] reverted ${hashes.length} commit(s) tagged #${id}, but un-ticking failed (${e.message}) — untick it in the app` };
     }
     return { ok: true, detail: `reverted ${hashes.length} commit(s) tagged #${id} on main` };
   };
@@ -144,5 +144,8 @@ if (job.kind !== 'nightly' && !autoResume) args.push('--force');
 const run = spawnSync(process.execPath, [runner, ...args], { stdio: ['ignore', 'inherit', 'inherit'] });
 
 const ok = run.status === 0;
-await report(ok ? 'done' : 'failed', ok ? '' : `runner exited ${run.status ?? `on ${run.signal || 'error'}`}`);
-log(`job #${job.id}: ${ok ? 'done' : `failed (exit ${run.status ?? run.signal})`}.`);
+const failDetail = run.signal
+  ? `[run/job #${job.id}] runner killed by signal ${run.signal}`
+  : `[run/job #${job.id}] runner exited ${run.status ?? 'unknown'} (${job.kind} on ${job.slug}${job.itemId ? ` item #${job.itemId}` : ''})`;
+await report(ok ? 'done' : 'failed', ok ? '' : failDetail);
+log(`job #${job.id}: ${ok ? 'done' : `failed — ${failDetail}`}.`);
