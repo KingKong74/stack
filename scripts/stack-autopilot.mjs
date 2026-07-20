@@ -73,6 +73,11 @@ const API = process.env.STACK_API;
 const TOKEN = process.env.STACK_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+// Free-tier quotas are per model, so a 429 on the primary is retried once on
+// the fallback (same convention as the server's gemini.js). '' disables.
+const GEMINI_FALLBACK = process.env.GEMINI_FALLBACK_MODEL !== undefined
+  ? process.env.GEMINI_FALLBACK_MODEL
+  : 'gemini-2.5-flash-lite';
 
 function die(msg) { logStderr(`autopilot: ${msg}`); process.exit(1); }
 
@@ -160,33 +165,42 @@ Respond with ONLY this JSON:
   "acceptance": ["3-6 verifiable criteria, each checkable from the terminal"],
   "outOfScope": ["what NOT to touch tonight"],
   "risks": ["traps to avoid — max 3"] }`;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 45_000);
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-goog-api-key': GEMINI_KEY },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
-        }),
-        signal: ctrl.signal,
+  const models = [GEMINI_MODEL];
+  if (GEMINI_FALLBACK && GEMINI_FALLBACK !== GEMINI_MODEL) models.push(GEMINI_FALLBACK);
+  for (const [i, model] of models.entries()) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 45_000);
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': GEMINI_KEY },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
+          }),
+          signal: ctrl.signal,
+        }
+      );
+      if (res.status === 429 && i < models.length - 1) {
+        log(`spec pre-pass: ${model} quota exhausted, trying ${models[i + 1]}`);
+        continue;
       }
-    );
-    if (!res.ok) throw new Error(`Gemini ${res.status}`);
-    const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
-    const spec = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || text);
-    if (!spec?.goal || !Array.isArray(spec.acceptance)) return null;
-    return spec;
-  } catch (e) {
-    log(`spec pre-pass skipped (${e.message})`);
-    return null;
-  } finally {
-    clearTimeout(timer);
+      if (!res.ok) throw new Error(`Gemini ${res.status}`);
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
+      const spec = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || text);
+      if (!spec?.goal || !Array.isArray(spec.acceptance)) return null;
+      return spec;
+    } catch (e) {
+      log(`spec pre-pass skipped (${e.message})`);
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  return null;
 }
 
 const specBlock = (spec) => !spec ? '' : `

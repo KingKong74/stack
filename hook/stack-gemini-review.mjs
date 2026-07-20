@@ -30,6 +30,11 @@ const rangeIdx = process.argv.indexOf('--range');
 const RANGE = rangeIdx > -1 ? process.argv[rangeIdx + 1] : null;
 
 const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+// Free-tier quotas are per model, so a 429 on the primary is retried once on
+// the fallback (same convention as the server's gemini.js). '' disables.
+const FALLBACK = process.env.GEMINI_FALLBACK_MODEL !== undefined
+  ? process.env.GEMINI_FALLBACK_MODEL
+  : 'gemini-2.5-flash-lite';
 const KEY = process.env.GEMINI_API_KEY;
 const DIFF_CAP = 60_000; // chars of diff we send; beyond this the tail is cut
 

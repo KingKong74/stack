@@ -9,6 +9,14 @@
 
 const MODEL = () => process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
+// Free-tier quotas are PER MODEL (and small — 20/day on 2.5-flash as of
+// mid-2026), so when the primary model is exhausted one retry against a
+// different model usually keeps every ✧ surface alive. '' disables.
+const FALLBACK_MODEL = () =>
+  process.env.GEMINI_FALLBACK_MODEL !== undefined
+    ? process.env.GEMINI_FALLBACK_MODEL
+    : 'gemini-2.5-flash-lite';
+
 // Default temperature is env-tunable (GEMINI_TEMPERATURE); callers can still
 // override any generationConfig field per call via opts.generation.
 const defaultTemperature = () => {
@@ -18,16 +26,17 @@ const defaultTemperature = () => {
 
 export const geminiEnabled = () => Boolean(process.env.GEMINI_API_KEY);
 
-// One bounded generateContent call, JSON-mode. Returns the parsed object or
-// throws with a short, key-free message.
-export async function askGemini(prompt, { timeoutMs = 25_000, generation = {} } = {}) {
+// One bounded generateContent call against one model, JSON-mode. Throws with
+// a short, key-free message; a 429 gets `quota = true` so the caller can try
+// another model.
+async function callModel(model, prompt, { timeoutMs, generation }) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('Gemini is not configured on this server.');
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL())}:generateContent`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
@@ -38,7 +47,11 @@ export async function askGemini(prompt, { timeoutMs = 25_000, generation = {} } 
         signal: ctrl.signal,
       }
     );
-    if (!res.ok) throw new Error(`Gemini API error (${res.status}).`);
+    if (!res.ok) {
+      const err = new Error(`Gemini API error (${res.status}).`);
+      if (res.status === 429) err.quota = true;
+      throw err;
+    }
     const data = await res.json();
     const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
     try {
@@ -54,3 +67,34 @@ export async function askGemini(prompt, { timeoutMs = 25_000, generation = {} } 
     clearTimeout(timer);
   }
 }
+
+// The call every route makes. Tries the primary model; when its free-tier
+// quota is exhausted, retries once on the fallback model (quotas are per
+// model). Both exhausted → a 503-tagged error with a message worth showing
+// (502 would be swallowed by Cloudflare in front of the deployment).
+export async function askGemini(prompt, { timeoutMs = 25_000, generation = {} } = {}) {
+  try {
+    return await callModel(MODEL(), prompt, { timeoutMs, generation });
+  } catch (err) {
+    if (!err.quota) throw err;
+    const fallback = FALLBACK_MODEL();
+    if (!fallback || fallback === MODEL()) throw quotaError();
+    try {
+      return await callModel(fallback, prompt, { timeoutMs, generation });
+    } catch (err2) {
+      throw err2.quota ? quotaError() : err2;
+    }
+  }
+}
+
+// Quota errors travel as 503 (`httpStatus`) so the message survives the proxy
+// chain — Cloudflare swallows origin 502 bodies. Other upstream failures keep
+// the 502 the routes already send.
+const quotaError = () => {
+  const err = new Error(
+    "Gemini's free-tier quota is used up for now (it resets daily) — try again later."
+  );
+  err.quota = true;
+  err.httpStatus = 503;
+  return err;
+};

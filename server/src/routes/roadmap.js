@@ -138,7 +138,7 @@ roadmap.post('/suggest-title', async (req, res) => {
     if (!title) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
     res.json({ title });
   } catch (err) {
-    res.status(502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
   }
 });
 
@@ -193,7 +193,7 @@ roadmap.post('/assist', async (req, res) => {
       priority: allowed.has('priority') && BUCKETS.includes(answer?.priority) ? answer.priority : null,
     });
   } catch (err) {
-    res.status(502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
   }
 });
 
@@ -241,7 +241,7 @@ roadmap.post('/cleanup', async (req, res) => {
       .filter((s) => s.area || s.title || s.bucket);
     res.json({ items });
   } catch (err) {
-    res.status(502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
   }
 });
 
@@ -294,7 +294,7 @@ roadmap.post('/:id/review-brief', async (req, res) => {
       .map((s) => String(s).trim().slice(0, 300)).filter(Boolean).slice(0, cap);
     res.json({ summary, test: list(answer?.test, 6), risks: list(answer?.risks, 3) });
   } catch (err) {
-    res.status(502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
   }
 });
 

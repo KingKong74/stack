@@ -62,6 +62,6 @@ polaris.post('/', async (req, res) => {
     if (!reply) return res.status(502).json({ error: 'Gemini returned an empty reply.' });
     res.json({ reply });
   } catch (err) {
-    res.status(502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
   }
 });

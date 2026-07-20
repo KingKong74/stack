@@ -109,7 +109,7 @@ futures.post('/:id/judge', async (req, res) => {
     if (!alignment) return res.status(502).json({ error: 'Gemini gave an unusable answer — try again.' });
     res.json({ alignment, why: String(answer.why || '').slice(0, 300) });
   } catch (err) {
-    res.status(502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
   }
 });
 

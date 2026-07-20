@@ -32,7 +32,7 @@ Respond with ONLY this JSON: { "labels": { "<session id>": "<label>", ... } }`,
         if (typeof label === 'string' && label.trim()) meta.label = label.trim().slice(0, 60);
       }
     } catch (e) {
-      return res.status(502).json({ error: e.message || 'Labelling failed.' });
+      return res.status(e.httpStatus || 502).json({ error: e.message || 'Labelling failed.' });
     }
   }
   res.json({ sessions: termSessions() });

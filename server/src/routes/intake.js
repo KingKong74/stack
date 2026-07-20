@@ -51,6 +51,6 @@ intake.post('/', async (req, res) => {
     if (!items.length) return res.status(502).json({ error: 'Gemini found nothing sortable — try rewording.' });
     res.json({ items });
   } catch (err) {
-    res.status(502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
   }
 });

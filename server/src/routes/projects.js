@@ -275,7 +275,7 @@ projects.post('/:slug/replan', async (req, res) => {
     if (!plan) return res.status(502).json({ error: 'Gemini gave an unusable answer — try again.' });
     res.json({ plan });
   } catch (err) {
-    res.status(502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
   }
 });
 
