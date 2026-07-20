@@ -72,6 +72,19 @@ export function cleanPlan(v, max = 30, len = 300) {
     .slice(0, max);
 }
 
+// Coerce review-annotation tags (#146): short lowercase labels, deduped.
+// Anything malformed is dropped rather than erroring.
+export function cleanReviewTags(v, max = 8, len = 40) {
+  if (!Array.isArray(v)) return [];
+  const out = [];
+  for (const t of v) {
+    const tag = String(t ?? '').trim().toLowerCase().slice(0, len);
+    if (tag && !out.includes(tag)) out.push(tag);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
 // Human "2h ago" style time, computed server-side so the client never does
 // date maths. Returns 'just now' for very recent and a date for anything old.
 export function relativeTime(input) {

@@ -144,6 +144,15 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS built_note TEXT;
 -- autopilot's session prompt — the runner works unticked steps top-down and
 -- agents tick steps via PATCH as they land.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS plan JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- Review annotations (#146): quick tags the reviewer sticks on a completed item
+-- while it sits in the Reviews pipeline ("fix", "needs-more", …). Cleared when
+-- the item completes afresh — each review round starts unannotated.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS review_tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- The refinement delta (#146): a refine sends the item back to the board as
+-- ITSELF (same id, built_note kept) with just this instruction — what to change
+-- on top of what already landed. Cleared when the item completes again (the
+-- refinement was addressed).
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS refine_note TEXT;
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
 -- Per-project futures: loose directional ideas, curated against the north star
