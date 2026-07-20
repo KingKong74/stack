@@ -372,11 +372,36 @@ autopilotGlobal.get('/next', async (req, res) => {
   if (busy.rows.length) return res.json({ job: null });
   // A queued resume job stays held until its not_before passes (#142); a
   // 'paused' (hung-up) job is never handed out at all.
+  //
+  // Rotation ordering (#82): nightly jobs for all automode projects are enqueued
+  // at the same instant, so a plain created_at ORDER BY would always hand the
+  // same project out first. Instead we pick the project whose last COMPLETED
+  // nightly run is oldest (NULL = never run → goes first), breaking ties by
+  // created_at. Non-nightly jobs (manual / scheduled / revert / resume) carry
+  // their own created_at and slot into the queue normally in front of nightly
+  // batches when they arrive first, preserving the one-job-at-a-time guarantee.
   const claimed = await q(
     `UPDATE autopilot_jobs SET status = 'claimed', claimed_at = now()
-      WHERE id = (SELECT id FROM autopilot_jobs
-                   WHERE status = 'queued' AND (not_before IS NULL OR not_before <= now())
-                   ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
+      WHERE id = (
+        SELECT j.id FROM autopilot_jobs j
+        LEFT JOIN LATERAL (
+          SELECT finished_at FROM autopilot_jobs
+           WHERE project_id = j.project_id
+             AND kind = 'nightly'
+             AND status = 'done'
+           ORDER BY finished_at DESC LIMIT 1
+        ) last_run ON j.kind = 'nightly'
+         WHERE j.status = 'queued' AND (j.not_before IS NULL OR j.not_before <= now())
+         ORDER BY
+           -- Non-nightly jobs first (they have a specific creation time and
+           -- priority; nightly batch jobs rank behind them in the same tick).
+           (j.kind = 'nightly') ASC,
+           -- Rotate nightly projects: least recently run goes first (NULL = never run).
+           last_run.finished_at ASC NULLS FIRST,
+           -- Stable tie-break across everything else.
+           j.created_at ASC
+         LIMIT 1 FOR UPDATE SKIP LOCKED
+      )
       RETURNING id`);
   if (!claimed.rows.length) return res.json({ job: null });
   const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [claimed.rows[0].id]);
