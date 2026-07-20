@@ -151,6 +151,7 @@
 [data-theme='dark'] .chip.on { color: var(--paper); }
 [data-theme='dark'] .road-check { color: transparent; }
 [data-theme='dark'] .road-check.on { color: #fff; }
+[data-theme='dark'] .area-pop-action.danger:hover { background: #3a2323; }
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; min-height: 100%; }
@@ -653,6 +654,28 @@ a { color: inherit; }
 .chip-sm.add { border-style: dashed; color: var(--muted); }
 .chip-sm.add:hover { color: var(--accent); border-color: var(--accent-tint-border); }
 .chip-input { height: 30px; width: 120px; border: 1px dashed var(--line-3); border-radius: 20px; padding: 0 13px; font-size: 12.5px; outline: none; color: var(--ink); background: var(--card); }
+/* #169 — area management: the ⋯ manage button + popover */
+.area-manage-btn { opacity: 0; padding: 1px 5px; font-size: 12px; color: var(--muted); border-radius: 6px; transition: opacity 0.1s; line-height: 1.4; }
+.area-chip-group:hover .area-manage-btn { opacity: 1; }
+.area-manage-btn:hover { color: var(--ink); background: var(--panel); }
+.area-manage-pop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 120; background: var(--card); border: 1px solid var(--line-3); border-radius: 10px; box-shadow: 0 4px 14px rgba(0,0,0,.10); padding: 4px; min-width: 130px; display: flex; flex-direction: column; gap: 2px; }
+.area-pop-action { display: block; width: 100%; text-align: left; padding: 6px 10px; border-radius: 7px; font-size: 12.5px; color: var(--ink); }
+.area-pop-action:hover { background: var(--panel); }
+.area-pop-action.danger { color: var(--critical); }
+.area-pop-action.danger:hover { background: #fdf0f0; }
+.area-rename-row { display: flex; align-items: center; gap: 4px; padding: 2px; }
+.area-rename-input { flex: 1; min-width: 0; border: 1px solid var(--line-3); border-radius: 7px; padding: 4px 8px; font-size: 12.5px; outline: none; color: var(--ink); background: var(--card); }
+.area-rename-input:focus { border-color: var(--accent); }
+/* #174 — refine-note rendered with markdown-lite */
+.refine-note-rich { display: flex; align-items: flex-start; gap: 5px; }
+.refine-note-icon { flex: none; }
+.refine-note-body { flex: 1; min-width: 0; }
+.refine-note-body p { margin: 0 0 4px; }
+.refine-note-body p:last-child { margin-bottom: 0; }
+.refine-note-body ul { margin: 3px 0 4px; padding-left: 16px; }
+.refine-note-body li + li { margin-top: 1px; }
+.refine-note-body strong { font-weight: 600; }
+.refine-note-body code { font-family: var(--mono); font-size: 10.5px; background: var(--accent-tint); border-radius: 3px; padding: 0 3px; }
 .chip-input:focus { border-color: var(--accent); }
 .draft-chip { display: inline-block; font-size: 12px; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 8px; padding: 5px 11px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .draft-chip:hover { border-color: var(--accent); }

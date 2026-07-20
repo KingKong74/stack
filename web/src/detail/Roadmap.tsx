@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Roadmap as RoadmapData, RoadmapItem, Priority, AutopilotRun } from '../types';
 import { PRIORITY_META, timeAgo, dayLabel } from '../lib/ui';
 import { getAutopilotRuns, getReviewBrief, queueUndo, ReviewBrief } from '../store';
 import { Modal } from '../components/Modal';
+import { renderMarkdownLite } from '../lib/markdownLite';
 
 export type ReviewTag = 'solid' | 'needs-work' | 'rethink';
 export const REVIEW_TAGS: { key: ReviewTag; label: string }[] = [
@@ -28,7 +29,7 @@ const noteTagLabel = (t: string) => REVIEW_NOTE_TAGS.find((x) => x.key === t)?.l
 // Archive below — still counted by the progress model, reviewable with a
 // verdict tag, refinable by delta (#146), restorable by un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onShelve, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, slug, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onShelve, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onDeleteArea, onRenameArea, slug, highlightId,
   draft, onResumeDraft, onDiscardDraft, liveBranches,
 }: {
   roadmap: RoadmapData;
@@ -47,6 +48,9 @@ export function Roadmap({
   onReorder?: (item: RoadmapItem, toBucket: Priority, beforeId: number | null) => void;
   onCleanup?: () => void;
   onSendToTerminal?: (brief: string) => void;
+  // #169 — area management: delete (clears area from all items) and rename
+  onDeleteArea?: (area: string, itemIds: number[]) => Promise<void>;
+  onRenameArea?: (from: string, to: string, itemIds: number[]) => Promise<void>;
   slug?: string;
   highlightId?: string | null;
   draft?: { title: string } | null;
@@ -140,6 +144,70 @@ export function Roadmap({
     }
     setAreaFilter(a);
   };
+
+  // #169 — area management: delete (with confirm) and rename.
+  // Areas are just strings on roadmap_items — deleting an area clears/reassigns
+  // the area tag across the project's items via the existing PATCH route.
+  const [areaManage, setAreaManage] = useState<string | null>(null); // area being managed (popover open)
+  const [areaDeleteConfirm, setAreaDeleteConfirm] = useState<string | null>(null); // area in delete-confirm modal
+  const [areaDeleteTyped, setAreaDeleteTyped] = useState('');
+  const [areaRename, setAreaRename] = useState<string | null>(null); // area being renamed
+  const [areaRenameDraft, setAreaRenameDraft] = useState('');
+  const areaPopoverRef = useRef<HTMLDivElement>(null);
+
+  // Close the manage-popover when the user clicks outside it.
+  useEffect(() => {
+    if (!areaManage) return;
+    const handler = (e: MouseEvent) => {
+      if (areaPopoverRef.current && !areaPopoverRef.current.contains(e.target as Node)) {
+        setAreaManage(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [areaManage]);
+
+  // All items (open + done) that carry this area — used for the safety check and
+  // the actual clear pass. Open items only get their area cleared; done items too.
+  const allRoadmapItems = PRIORITY_META.flatMap((col) => roadmap[col.key]);
+  const itemsForArea = (a: string) => allRoadmapItems.filter((it) => it.area === a);
+  const openItemsForArea = (a: string) => allRoadmapItems.filter((it) => it.area === a && !it.done);
+
+  const doDeleteArea = async (area: string) => {
+    // Clear area from every item carrying it (client-side loop; fine at board scale).
+    const affected = itemsForArea(area);
+    if (affected.length > 0 && onDeleteArea) {
+      await onDeleteArea(area, affected.map((it) => it.id));
+    }
+    // Also drop from the device-local custom areas list.
+    const next = customAreas.filter((a) => a !== area);
+    setCustomAreas(next);
+    if (areasKey) { try { localStorage.setItem(areasKey, JSON.stringify(next)); } catch { /* full */ } }
+    if (areaFilter === area) setAreaFilter('');
+    setAreaDeleteConfirm(null);
+    setAreaDeleteTyped('');
+    setAreaManage(null);
+  };
+
+  const doRenameArea = async (from: string, to: string) => {
+    const normalised = to.trim().toLowerCase().slice(0, 40);
+    if (!normalised || normalised === from) { setAreaRename(null); setAreaRenameDraft(''); return; }
+    const affected = itemsForArea(from);
+    if (affected.length > 0 && onRenameArea) {
+      await onRenameArea(from, normalised, affected.map((it) => it.id));
+    }
+    // Repoint the device-local custom list.
+    setCustomAreas((prev) => {
+      const next = prev.map((a) => a === from ? normalised : a);
+      if (areasKey) { try { localStorage.setItem(areasKey, JSON.stringify(next)); } catch { /* full */ } }
+      return next;
+    });
+    if (areaFilter === from) setAreaFilter(normalised);
+    setAreaRename(null);
+    setAreaRenameDraft('');
+    setAreaManage(null);
+  };
+
   // Done items split into the pipeline: To verify (no verdict yet — test it,
   // verdict it, or send it back) → Archive (verdict given). Latest first.
   // Unverdicted items the owner has set aside (#148) sit on the shelf instead
@@ -509,10 +577,54 @@ export function Roadmap({
             All {openAll.length}
           </button>
           {boardAreas.map((a) => (
-            <button key={a} className={`chip-sm ${areaFilter === a ? 'on' : ''}`}
-              onClick={() => setAreaFilter(areaFilter === a ? '' : a)}>
-              {a} {openAll.filter((it) => it.area === a).length}
-            </button>
+            <span key={a} className="area-chip-group" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              <button className={`chip-sm ${areaFilter === a ? 'on' : ''}`}
+                onClick={() => setAreaFilter(areaFilter === a ? '' : a)}>
+                {a} {openAll.filter((it) => it.area === a).length}
+              </button>
+              {/* #169 — manage-area button: opens a small popover with Delete / Rename */}
+              <button
+                className="area-manage-btn"
+                title={`Manage area "${a}" — delete or rename`}
+                onClick={(e) => { e.stopPropagation(); setAreaManage(areaManage === a ? null : a); }}
+                aria-label={`Manage area ${a}`}
+              >⋯</button>
+              {areaManage === a && (
+                <div className="area-manage-pop" ref={areaPopoverRef}>
+                  {areaRename === a ? (
+                    <div className="area-rename-row">
+                      <input
+                        className="area-rename-input"
+                        autoFocus
+                        value={areaRenameDraft}
+                        placeholder="new name…"
+                        maxLength={40}
+                        onChange={(e) => setAreaRenameDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') doRenameArea(a, areaRenameDraft);
+                          if (e.key === 'Escape') { setAreaRename(null); setAreaRenameDraft(''); }
+                        }}
+                      />
+                      <button className="area-pop-action" onClick={() => doRenameArea(a, areaRenameDraft)}>✓</button>
+                      <button className="area-pop-action" onClick={() => { setAreaRename(null); setAreaRenameDraft(''); }}>✕</button>
+                    </div>
+                  ) : (
+                    <>
+                      <button className="area-pop-action" onClick={() => { setAreaRename(a); setAreaRenameDraft(a); }}>
+                        ✎ Rename
+                      </button>
+                      <button className="area-pop-action danger" onClick={() => {
+                        setAreaManage(null);
+                        setAreaDeleteConfirm(a);
+                        setAreaDeleteTyped('');
+                      }}>
+                        × Delete area
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </span>
           ))}
           {addingArea ? (
             <input className="chip-input" autoFocus value={areaDraft} placeholder="new area…"
@@ -594,9 +706,10 @@ export function Roadmap({
                       </div>
                       {it.note && <div className="note">{it.note}</div>}
                       {it.refineNote && (
-                        <div className="refine-note"
+                        <div className="refine-note refine-note-rich"
                           title="Sent back for refinement — the next session changes only this, on top of what landed">
-                          ↻ {it.refineNote}
+                          <span className="refine-note-icon">↻</span>
+                          <span className="refine-note-body">{renderMarkdownLite(it.refineNote)}</span>
                         </div>
                       )}
                       {it.claimedBy && (
@@ -687,6 +800,60 @@ export function Roadmap({
         </Modal>
       )}
 
+      {/* #169 — area delete confirm modal */}
+      {areaDeleteConfirm && (
+        <Modal onClose={() => { setAreaDeleteConfirm(null); setAreaDeleteTyped(''); }}>
+          <h3>Delete area "{areaDeleteConfirm}"</h3>
+          {(() => {
+            const open = openItemsForArea(areaDeleteConfirm);
+            const all = itemsForArea(areaDeleteConfirm);
+            if (open.length > 0) {
+              return (
+                <>
+                  <div className="confirm-body" style={{ marginBottom: 14 }}>
+                    This area has <b>{open.length} open item{open.length === 1 ? '' : 's'}</b>
+                    {all.length > open.length ? ` (${all.length} total including done)` : ''}.
+                    Deleting it will clear the area tag from all of them — the items stay on the board,
+                    just untagged. This cannot be undone. Type the area name to confirm.
+                  </div>
+                  <input
+                    className="field-input"
+                    autoFocus
+                    placeholder={areaDeleteConfirm}
+                    value={areaDeleteTyped}
+                    onChange={(e) => setAreaDeleteTyped(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && areaDeleteTyped === areaDeleteConfirm) doDeleteArea(areaDeleteConfirm);
+                    }}
+                    style={{ marginBottom: 16 }}
+                  />
+                  <div className="modal-actions">
+                    <button className="btn-cancel" onClick={() => { setAreaDeleteConfirm(null); setAreaDeleteTyped(''); }}>Cancel</button>
+                    <button className="btn-submit" disabled={areaDeleteTyped !== areaDeleteConfirm}
+                      onClick={() => doDeleteArea(areaDeleteConfirm)}>
+                      Delete area
+                    </button>
+                  </div>
+                </>
+              );
+            }
+            return (
+              <>
+                <div className="confirm-body" style={{ marginBottom: 14 }}>
+                  {all.length > 0
+                    ? <>No open items carry this area, but <b>{all.length} done item{all.length === 1 ? '' : 's'}</b> will have their tag cleared.</>
+                    : 'This area has no items. It will be removed from the filter bar.'}
+                </div>
+                <div className="modal-actions">
+                  <button className="btn-cancel" onClick={() => { setAreaDeleteConfirm(null); setAreaDeleteTyped(''); }}>Cancel</button>
+                  <button className="btn-submit" onClick={() => doDeleteArea(areaDeleteConfirm)}>Delete area</button>
+                </div>
+              </>
+            );
+          })()}
+        </Modal>
+      )}
+
       {undoConfirm && (
         <Modal onClose={() => setUndoConfirm(null)}>
           <h3>⎌ Undo #{undoConfirm.id}</h3>
@@ -714,6 +881,9 @@ export function Roadmap({
           <textarea className="field-area" rows={4} autoFocus value={refineText}
             placeholder="What to change or add on top of what landed…"
             onChange={(e) => setRefineText(e.target.value)} />
+          <div className="field-hint" style={{ marginBottom: 10 }}>
+            **bold**, <code>`code`</code>, - lists supported
+          </div>
           <label className="refine-queue">
             <input type="checkbox" checked={refineQueue}
               onChange={(e) => setRefineQueue(e.target.checked)} />
