@@ -336,6 +336,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
     });
 
+  // Shelve a review (#148): the completed row steps out of the To-verify list
+  // onto the collapsed shelf — good enough for now, reviewed properly later.
+  // Nothing else about the item changes; the same call brings it back.
+  const shelveRoad = (item: RoadmapItem) =>
+    guard(async () => {
+      const updated = await patchRoadmapItem(slug, item.id, { review_shelved: !item.reviewShelved });
+      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
+    });
+
   // Refine (#146, replacing #141's full rework): delta-only. The item goes
   // back to the board as itself — the server clears the verdict and claim,
   // keeps built_note — carrying just the refinement instruction; optionally a
@@ -743,7 +752,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
             onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad}
-            onReviewTags={reviewTagsRoad} onRefine={refineRoad}
+            onReviewTags={reviewTagsRoad} onRefine={refineRoad} onShelve={shelveRoad}
             onLogBug={logBugFromReview} onLogAudit={logAuditFromReview}
             onToggleSkip={toggleSkipRoad} onReorder={reorderRoad} onCleanup={openCleanup}
             onSendToTerminal={(brief) => {

@@ -28,7 +28,7 @@ const noteTagLabel = (t: string) => REVIEW_NOTE_TAGS.find((x) => x.key === t)?.l
 // Archive below — still counted by the progress model, reviewable with a
 // verdict tag, refinable by delta (#146), restorable by un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, slug, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onShelve, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, slug, highlightId,
   draft, onResumeDraft, onDiscardDraft, liveBranches,
 }: {
   roadmap: RoadmapData;
@@ -40,6 +40,7 @@ export function Roadmap({
   onReviewTag: (item: RoadmapItem, tag: ReviewTag) => void;
   onReviewTags: (item: RoadmapItem, tags: string[]) => void;
   onRefine: (item: RoadmapItem, refineNote: string, queueNow: boolean) => void;
+  onShelve: (item: RoadmapItem) => void;
   onLogBug: (item: RoadmapItem) => void;
   onLogAudit: (item: RoadmapItem) => void;
   onToggleSkip: (item: RoadmapItem) => void;
@@ -137,9 +138,13 @@ export function Roadmap({
   };
   // Done items split into the pipeline: To verify (no verdict yet — test it,
   // verdict it, or send it back) → Archive (verdict given). Latest first.
+  // Unverdicted items the owner has set aside (#148) sit on the shelf instead
+  // of the main list — same rows, same actions, out of the way until recalled.
   const ts = (it: RoadmapItem) => (it.updatedAt ? Date.parse(it.updatedAt) : 0);
   const doneItems = PRIORITY_META.flatMap((col) => roadmap[col.key].filter((it) => it.done));
-  const toVerify = doneItems.filter((it) => !it.reviewTag).sort((a, b) => ts(b) - ts(a));
+  const unverdicted = doneItems.filter((it) => !it.reviewTag);
+  const toVerify = unverdicted.filter((it) => !it.reviewShelved).sort((a, b) => ts(b) - ts(a));
+  const shelved = unverdicted.filter((it) => it.reviewShelved).sort((a, b) => ts(b) - ts(a));
   const archived = doneItems.filter((it) => it.reviewTag).sort((a, b) => ts(b) - ts(a));
   // The tab's two views: the open board, and Reviews (to-verify + archive).
   // A deep-link to a done item opens straight on Reviews.
@@ -148,6 +153,9 @@ export function Roadmap({
   // Open the archive straight away when a deep-link targets an archived item.
   const [archiveOpen, setArchiveOpen] = useState(
     () => archived.some((it) => String(it.id) === highlightId));
+  // Same for the shelf (#148) — a deep-linked shelved item unfolds it.
+  const [shelfOpen, setShelfOpen] = useState(
+    () => shelved.some((it) => String(it.id) === highlightId));
   // The run ledger labels auto-built rows — branch, commits, tokens, cost —
   // so a verdict is made against what the session reported (#132). Fetched
   // once when the Reviews view first opens; silently absent on any failure.
@@ -318,6 +326,42 @@ export function Roadmap({
         ✎ Refine
       </button>
       <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
+    </div>
+  );
+
+  // One unverdicted review row — shared by the To-verify list and the shelf
+  // (#148); the only difference is which way the shelve toggle points.
+  const verifyRow = (it: RoadmapItem) => (
+    <div className="verify-row" key={it.id} data-hl={it.id}>
+      <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
+      <div className="verify-body">
+        <div className="t"><span className="item-num">#{it.id}</span>{it.title}</div>
+        {reviewMeta(it)}
+        {it.note && <div className="note">{it.note}</div>}
+        {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
+        {tagRow(it)}
+        {briefPanel(it)}
+        {undoNotes.has(it.id) && <div className="undo-note">⎌ {undoNotes.get(it.id)}</div>}
+      </div>
+      <button className="verify-back" onClick={() => setUndoConfirm(it)}
+        title="Revert this item's commits on main and send it back to the board">⎌ Undo</button>
+      <button className="gemini-btn sm" onClick={() => toggleBrief(it)}
+        title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">
+        ✧ Brief
+      </button>
+      <button className="verify-back" onClick={() => onLogBug(it)}
+        title="Log a bug ticket against this item — prefills the bug modal">＋ Bug</button>
+      <button className="verify-back" onClick={() => onLogAudit(it)}
+        title="Log an audit ticket — a roadmap item in the audit area to check what landed">＋ Audit</button>
+      <button className="verify-back" onClick={() => onShelve(it)}
+        title={it.reviewShelved
+          ? 'Bring it back to the To-verify list'
+          : 'Set aside — good enough for now; waits under Shelved until you bring it back'}>
+        {it.reviewShelved ? '▶ To review' : '⏸ Later'}
+      </button>
+      <button className="verify-back" onClick={() => onToggle(it)}
+        title="Didn't hold up — send it back to the board">↩ Board</button>
+      {archActions(it)}
     </div>
   );
 
@@ -602,7 +646,8 @@ export function Roadmap({
         landed. Tag rows as you test (Fix, Needs more, …). Solid closes it out; ✎ Refine sends it
         back with just what to change — same item, what landed stays on record; ↩ Board sends it
         back unchanged. Either way it returns fresh — the old verdict and lane claim don't come
-        with it. ＋ Bug / ＋ Audit log a ticket against the item.
+        with it. ＋ Bug / ＋ Audit log a ticket against the item; ⏸ Later shelves the review for
+        another day.
       </div>
 
       {/* who-built-it filter (#117) — only when completions come from more than one origin */}
@@ -626,7 +671,7 @@ export function Roadmap({
         );
       })()}
 
-      {toVerify.length === 0 && archived.length === 0 && (
+      {toVerify.length === 0 && shelved.length === 0 && archived.length === 0 && (
         <div className="empty-state">
           <div className="big">Nothing to review</div>
           <div>Completed items land here with a note on what was built.</div>
@@ -652,35 +697,29 @@ export function Roadmap({
           }, []).map((g) => (
             <div key={g.day}>
               <div className="review-day">{g.day}</div>
-              {g.items.map((it) => (
-                <div className="verify-row" key={it.id} data-hl={it.id}>
-                  <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
-                  <div className="verify-body">
-                    <div className="t"><span className="item-num">#{it.id}</span>{it.title}</div>
-                    {reviewMeta(it)}
-                    {it.note && <div className="note">{it.note}</div>}
-                    {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
-                    {tagRow(it)}
-                    {briefPanel(it)}
-                    {undoNotes.has(it.id) && <div className="undo-note">⎌ {undoNotes.get(it.id)}</div>}
-                  </div>
-                  <button className="verify-back" onClick={() => setUndoConfirm(it)}
-                    title="Revert this item's commits on main and send it back to the board">⎌ Undo</button>
-                  <button className="gemini-btn sm" onClick={() => toggleBrief(it)}
-                    title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">
-                    ✧ Brief
-                  </button>
-                  <button className="verify-back" onClick={() => onLogBug(it)}
-                    title="Log a bug ticket against this item — prefills the bug modal">＋ Bug</button>
-                  <button className="verify-back" onClick={() => onLogAudit(it)}
-                    title="Log an audit ticket — a roadmap item in the audit area to check what landed">＋ Audit</button>
-                  <button className="verify-back" onClick={() => onToggle(it)}
-                    title="Didn't hold up — send it back to the board">↩ Board</button>
-                  {archActions(it)}
-                </div>
-              ))}
+              {g.items.map(verifyRow)}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* the shelf (#148) — reviews set aside on purpose: out of the To-verify
+          list, collapsed here until brought back (or verdicted in place) */}
+      {shelved.filter(byOrigin).length > 0 && (
+        <div className="road-archive shelf">
+          <div className="road-archive-bar">
+            <button className="road-archive-head" onClick={() => setShelfOpen((o) => !o)}
+              aria-expanded={shelfOpen}>
+              <span className="chev">{shelfOpen ? '▾' : '▸'}</span>
+              Shelved <span className="count">{shelved.filter(byOrigin).length}</span>
+              <span className="hint">set aside to review later — ▶ To review brings one back</span>
+            </button>
+          </div>
+          {shelfOpen && (
+            <div className="verify-strip shelf">
+              {shelved.filter(byOrigin).map(verifyRow)}
+            </div>
+          )}
         </div>
       )}
 
