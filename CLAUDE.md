@@ -252,9 +252,12 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   RoadmapModal then a keep/delete-the-idea confirm, dismiss deletes + tombstones; ideas are
   editable in place, the composer takes "first line = idea, rest = why", and each idea carries an
   **alignment verdict** — ✦ Judge → On course / Tangent / Off course, pick the same to clear —
-  which is how the list groups itself), Bugs also hosts the **Checks panel** (HTTP probes against
-  the live app: Run all / run one, quick-add "Site up" from site_url, add name+URL+expected
-  status, failing checks offer "→ Bug" prefilled into the BugModal), Notes (inline
+  which is how the list groups itself), Bugs also hosts the **Testing area** (#143 — HTTP tests
+  against the live app: plain probes and function tests with a method picker + request body
+  (JSON bodies sent as application/json), assertions on status / body keyword / a JSON dot-path
+  value / a Gemini-judged expectation; Run all / run one, quick-add "Site up" from site_url,
+  ✎ edit-in-place via `patchCheck` — editing anything but the name clears the stored result —
+  failing tests offer "→ Bug" prefilled into the BugModal), Notes (inline
   edit on the sticky; promote → bug/roadmap prefills the existing modal, then a
   keep/delete-the-note confirm), Activity. ProjectDetail also owns: the Visit-site/Repo buttons (open the URL, or inline-set it when
   unset via `patchProject`), and a quiet delete-project control behind a `ConfirmModal`.
@@ -322,9 +325,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     roadmap item `done` also sets it (a human touch counts as review — archived items never
     linger in the inbox).
   - `notes` — text, `colour`, `source`.
-  - `checks` — the Bugs tab's testing panel: HTTP probes against the project's live app (name,
-    url, `expect_status`, optional `contains` keyword) with the last result on the row
-    (`last_status/code/ms/error/run_at`). Run on demand, bounded (8s), never scheduled.
+  - `checks` — the Bugs tab's testing area: HTTP tests against the project's live app. A row is
+    a probe or a function test (#143): name, url, `method` (GET|POST|PUT|PATCH|DELETE|HEAD),
+    `expect_status`, `req_body` (sent for non-GET/HEAD; JSON bodies as application/json), and
+    the assertions — optional `contains` keyword, `json_path` + `json_expect` (dot path into a
+    JSON response; empty expect = the path just has to exist) and the Gemini-judged `semantic`
+    line — with the last result on the row (`last_status/code/ms/error/run_at`). Run on demand,
+    bounded (8s), never scheduled.
   - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap|future`, fingerprint).
   - `autopilot_schedule` + `autopilot_jobs` — Mission Control's calendar and the job queue the
     host dispatcher polls (see scripts/stack-autopilot-dispatch.mjs). Schedule rows: host-local
@@ -583,7 +590,9 @@ the silent metadata backstop so the feed never has gaps.
   through the normal CRUD paths)
 - `GET|POST /api/projects/:slug/notes` · `PATCH /api/projects/:slug/notes/:id` (text) ·
   `DELETE /api/projects/:slug/notes/:id`
-- `GET|POST /api/projects/:slug/checks` · `DELETE /api/projects/:slug/checks/:id` ·
+- `GET|POST /api/projects/:slug/checks` · `PATCH /api/projects/:slug/checks/:id` (#143 — edit
+  any subset of the POST fields; changing anything but the name clears the stored result) ·
+  `DELETE /api/projects/:slug/checks/:id` ·
   `POST /api/projects/:slug/checks/run` (all, or one with `{id}`; returns updated rows)
 - `GET|POST /api/projects/:slug/autopilot/runs` (the overnight runner's ledger — one row per
   item attempt: outcome landed|no-commits|failed|limit, commits, tokens, cost, checks, the
