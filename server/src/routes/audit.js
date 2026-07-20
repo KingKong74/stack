@@ -114,7 +114,7 @@ const contextVars = (p, ctx) => ({
 // against EVERY existing bug (not just hook ones — a manually tracked bug must
 // not come back as a suggestion) and honour tombstones. Returns per-finding
 // outcomes for the UI.
-async function landFindings(projectId, findings) {
+export async function landFindings(projectId, findings) {
   const out = [];
   const { rows: maxr } = await q(
     `SELECT COALESCE(MAX((substring(bug_key from '^BUG-([0-9]+)$'))::int), 0) AS n
