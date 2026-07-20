@@ -186,6 +186,39 @@ Produce:
 Use en-AU spelling. Respond with ONLY this JSON:
 { "summary": "…", "test": ["…"], "risks": ["…"] }`;
 
+DEFAULTS.triage = `You are a triage assistant for a side project command centre's review inbox.
+The inbox holds auto-extracted bugs, roadmap items and ideas that no human has approved yet.
+Your job is purely advisory — the human keeps or dismisses each item themselves.
+
+INBOX ITEMS (id | kind | project | title | meta):
+{{ITEMS}}
+
+Produce three kinds of annotation:
+
+1. "clusters": groups of items that look like the SAME underlying thing (same root cause, same
+   feature, or clearly duplicated title). Only cluster items across different projects when it is
+   unmistakeable. Omit clusters of one. Each cluster lists the item refs.
+   A ref is "<kind>:<slug>:<id>" — use EXACTLY the format from the input.
+
+2. "severityFlags": items where the recorded severity looks wrong (bugs only). For each flag:
+   the ref, the recorded severity, your suggested severity and one reason sentence.
+   Only flag clear mis-calls — minor differences are not worth flagging.
+
+3. "suggestions": one keep/dismiss lean per item, with a one-line reason (≤ 20 words).
+   "keep" = the item looks actionable and genuinely distinct.
+   "dismiss" = likely noise, a duplicate of something tracked elsewhere, or too vague to act on.
+   Include EVERY item in this list.
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{
+  "clusters":      [ { "label": "short description of the shared theme",
+                       "refs": ["bug:slug:BUG-1", "roadmap:slug:42"] } ],
+  "severityFlags": [ { "ref": "bug:slug:BUG-2", "current": "low", "suggested": "high",
+                       "reason": "one sentence" } ],
+  "suggestions":   [ { "ref": "bug:slug:BUG-3", "action": "keep|dismiss",
+                       "reason": "one sentence, under 20 words" } ]
+}`;
+
 DEFAULTS.audit = `You are auditing a side project's live application for bugs. Work ONLY from the
 evidence below — the owner's brief, the check results and the fetched page text. Never invent a
 bug the evidence cannot support; an empty list is the normal answer for a healthy app.
@@ -231,6 +264,7 @@ const ENV_KEYS = {
   cleanup: 'GEMINI_CLEANUP_PROMPT',
   reviewbrief: 'GEMINI_REVIEWBRIEF_PROMPT',
   audit: 'GEMINI_AUDIT_PROMPT',
+  triage: 'GEMINI_TRIAGE_PROMPT',
 };
 
 export function buildPrompt(name, vars) {

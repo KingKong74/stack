@@ -3,7 +3,8 @@ import type { Overview, ReviewItem } from '../types';
 import { go } from '../lib/route';
 import {
   getProjectDetail, patchBug, deleteBug, patchRoadmapItem, deleteRoadmapItem,
-  patchFuture, deleteFuture, AuthError,
+  patchFuture, deleteFuture, triageInbox, AuthError,
+  type TriageAnnotation, type TriageResult,
 } from '../store';
 import { ExportBriefModal } from './ExportBriefModal';
 import { buildWeeks, contribLevel } from '../lib/contrib';
@@ -211,10 +212,17 @@ export function CommandDeck({ data }: { data: Overview }) {
   );
 }
 
+// Build the ref string the triage server uses, matching kind:slug:id.
+function triageRef(it: ReviewItem): string {
+  return `${it.kind}:${it.slug}:${it.id}`;
+}
+
 // The needs-review queue: everything the hooks extracted that no human has
 // looked at yet. Keep marks it reviewed (it's already in the trackers); Dismiss
 // deletes it (tombstoning the fingerprint so the next push won't re-create it).
 // Rows settle optimistically; the whole block disappears at zero.
+// ✧ Triage (≥4 items): Gemini annotates clusters, severity flags and keep/dismiss
+// suggestions in-memory — the human applies them through the same existing handlers.
 function ReviewQueue({ initial }: { initial: Overview['review'] }) {
   const [items, setItems] = useState(initial.items);
   const [total, setTotal] = useState(initial.total);
@@ -223,6 +231,10 @@ function ReviewQueue({ initial }: { initial: Overview['review'] }) {
   // Session groups (#140): one ingest's extractions arrive together, so they
   // share a batch stamp. Groups collapse vertically; the newest starts open.
   const [openGroups, setOpenGroups] = useState<Set<string> | null>(null);
+  // #76 — triage state (in-memory only; cleared on reload)
+  const [triaging, setTriaging] = useState(false);
+  const [triageResult, setTriageResult] = useState<TriageResult | null>(null);
+  const [triageError, setTriageError] = useState('');
   useEffect(() => { setItems(initial.items); setTotal(initial.total); }, [initial]);
 
   if (total === 0) return null;
@@ -293,13 +305,64 @@ function ReviewQueue({ initial }: { initial: Overview['review'] }) {
     setBusyKey(null);
   };
 
+  // #76 — ✧ Triage: ask Gemini for clusters, severity flags and suggestions.
+  const runTriage = async () => {
+    if (triaging) return;
+    setTriaging(true);
+    setTriageError('');
+    setTriageResult(null);
+    try {
+      const result = await triageInbox();
+      setTriageResult(result);
+    } catch (e) {
+      if (e instanceof AuthError) return;
+      setTriageError((e as Error)?.message || 'Triage call failed.');
+    }
+    setTriaging(false);
+  };
+
+  // Convenience: apply the suggested action for one item (the human still
+  // triggers it — no auto-application without a click).
+  const applySuggestion = async (it: ReviewItem, ann: TriageAnnotation) => {
+    if (!ann.action || busyKey) return;
+    await act(it, ann.action);
+  };
+
+  const annotations = triageResult?.annotations ?? {};
+
   return (
     <div className="deck-review">
       <div className="deck-section-head review-head">
         <span>Needs review</span>
         <span className="review-count">{total}</span>
         <span className="auto-badge">✦ auto-extracted</span>
+        {total >= 4 && (
+          <button
+            className={`triage-btn${triaging ? ' busy' : ''}${triageResult ? ' done' : ''}`}
+            onClick={runTriage}
+            disabled={triaging || busyKey !== null}
+            title="Ask Gemini to cluster near-duplicates, flag suspicious severities and suggest keep/dismiss for each item">
+            {triaging ? '✦ Triaging…' : triageResult ? '✦ Triaged' : '✧ Triage'}
+          </button>
+        )}
       </div>
+
+      {/* cluster summary: when Gemini found near-duplicate groups, surface them
+          as a quick read so the human knows what to look for below */}
+      {triageResult && triageResult.clusters.length > 0 && (
+        <div className="triage-clusters">
+          <span className="triage-clusters-label">Near-duplicates found</span>
+          {triageResult.clusters.map((c, i) => (
+            <div className="triage-cluster" key={i}>
+              <span className="triage-cluster-label">{c.label}</span>
+              <span className="triage-cluster-refs">{c.refs.join(' · ')}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {triageError && <div className="review-error">{triageError}</div>}
+
       {groups.map((g) => (
         <div className="review-group" key={g.key}>
           <div className="review-group-head">
@@ -317,20 +380,51 @@ function ReviewQueue({ initial }: { initial: Overview['review'] }) {
           </div>
           {opened.has(g.key) && (
             <div className="review-rows">
-              {g.items.map((it) => (
-                <div className={`review-row ${busyKey === rowKey(it) || busyKey === g.key ? 'busy' : ''}`} key={rowKey(it)}>
-                  <span className={`review-kind ${it.kind}`}>{it.kind === 'bug' ? it.id : it.kind === 'roadmap' ? 'roadmap' : 'idea'}</span>
-                  <button className="review-title" title="Open in its tracker"
-                    onClick={() => go.detail(it.slug, it.kind === 'bug' ? 'bugs' : it.kind === 'roadmap' ? 'roadmap' : 'futures', it.id)}>
-                    {it.title}
-                  </button>
-                  <span className="review-meta">{it.meta}</span>
-                  <span className="review-actions">
-                    <button className="review-keep" onClick={() => act(it, 'keep')} title="Keep — mark reviewed">✓ Keep</button>
-                    <button className="review-dismiss" onClick={() => act(it, 'dismiss')} title="Dismiss — delete and don't re-extract">✕ Dismiss</button>
-                  </span>
-                </div>
-              ))}
+              {g.items.map((it) => {
+                const ref = triageRef(it);
+                const ann: TriageAnnotation = annotations[ref] ?? {};
+                const hasAnn = ann.action || ann.clusterLabel || ann.suggestedSeverity;
+                return (
+                  <div className={`review-row${busyKey === rowKey(it) || busyKey === g.key ? ' busy' : ''}${hasAnn ? ' has-triage' : ''}`} key={rowKey(it)}>
+                    <span className={`review-kind ${it.kind}`}>{it.kind === 'bug' ? it.id : it.kind === 'roadmap' ? 'roadmap' : 'idea'}</span>
+                    <span className="review-row-body">
+                      <button className="review-title" title="Open in its tracker"
+                        onClick={() => go.detail(it.slug, it.kind === 'bug' ? 'bugs' : it.kind === 'roadmap' ? 'roadmap' : 'futures', it.id)}>
+                        {it.title}
+                      </button>
+                      {/* #76 — triage annotations */}
+                      {ann.clusterLabel && (
+                        <span className="triage-ann cluster" title={`Near-duplicate: ${ann.clusterLabel}`}>
+                          ≈ {ann.clusterLabel}
+                        </span>
+                      )}
+                      {ann.suggestedSeverity && (
+                        <span className="triage-ann severity" title={ann.severityReason || ''}>
+                          severity: {ann.currentSeverity} → {ann.suggestedSeverity}
+                        </span>
+                      )}
+                      {ann.action && (
+                        <span className={`triage-ann suggest ${ann.action}`} title={ann.reason || ''}>
+                          {ann.action === 'keep' ? '✓ keep' : '✕ dismiss'}{ann.reason ? ` — ${ann.reason}` : ''}
+                        </span>
+                      )}
+                    </span>
+                    <span className="review-meta">{it.meta}</span>
+                    <span className="review-actions">
+                      {ann.action && (
+                        <button
+                          className={`triage-apply ${ann.action}`}
+                          onClick={() => applySuggestion(it, ann)}
+                          title={`Apply suggestion: ${ann.action}`}>
+                          Apply
+                        </button>
+                      )}
+                      <button className="review-keep" onClick={() => act(it, 'keep')} title="Keep — mark reviewed">✓ Keep</button>
+                      <button className="review-dismiss" onClick={() => act(it, 'dismiss')} title="Dismiss — delete and don't re-extract">✕ Dismiss</button>
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

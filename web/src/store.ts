@@ -824,6 +824,33 @@ export async function getAuditPrompt(slug: string): Promise<string> {
   return r.prompt;
 }
 
+// ---- inbox triage (#76 — Gemini's cross-project review assist) ----
+
+// One annotation entry in the triage result, keyed by ref (kind:slug:id).
+export interface TriageAnnotation {
+  action?: 'keep' | 'dismiss' | null;  // Gemini's suggestion
+  reason?: string;                       // one-liner for that suggestion
+  clusterLabel?: string;                 // near-duplicate cluster this item belongs to
+  currentSeverity?: string;             // bug's current severity (when flagged)
+  suggestedSeverity?: string;           // Gemini's suggested severity
+  severityReason?: string;              // why the severity looks wrong
+}
+
+export interface TriageResult {
+  clusters: { label: string; refs: string[] }[];
+  severityFlags: { ref: string; current: string; suggested: string; reason: string }[];
+  suggestions: { ref: string; action: 'keep' | 'dismiss'; reason: string }[];
+  annotations: Record<string, TriageAnnotation>;
+}
+
+// Gathers the current review inbox (up to 40 items) and asks Gemini for
+// clusters, severity sanity flags and keep/dismiss suggestions. Never writes
+// state — all annotations are in-memory, the human applies them via the
+// existing Keep/Dismiss handlers. 503 when the server has no Gemini key.
+export async function triageInbox(): Promise<TriageResult> {
+  return request<TriageResult>('/triage', { method: 'POST' });
+}
+
 // ---- notes ----
 
 const notesBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/notes`;
