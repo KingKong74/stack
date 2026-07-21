@@ -123,6 +123,8 @@ export interface Future {
   reviewed: boolean;
   alignment: string;   // north-star verdict: '' | on-course | tangent | off-course
   area: string;        // product-area tag ('' = untagged) — filters the funnel
+  canvasX: number | null;  // visual canvas position (null = auto-layout)
+  canvasY: number | null;
 }
 
 // The methods a check may use — GET probes a page, the rest exercise an API

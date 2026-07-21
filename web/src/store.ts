@@ -761,7 +761,7 @@ export async function createFuture(slug: string, input: { title: string; note?: 
 }
 export async function patchFuture(
   slug: string, id: number,
-  patch: Partial<{ title: string; note: string; reviewed: boolean; alignment: string; area: string }>,
+  patch: Partial<{ title: string; note: string; reviewed: boolean; alignment: string; area: string; canvasX: number | null; canvasY: number | null }>,
 ): Promise<Future> {
   return request<Future>(`${futuresBase(slug)}/${id}`, { method: 'PATCH', body: patch });
 }
