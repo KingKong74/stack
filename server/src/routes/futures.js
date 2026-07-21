@@ -65,6 +65,16 @@ futures.patch('/:id', async (req, res) => {
     sets.push(`area = $${i++}`);
     vals.push(String(req.body.area || '').trim().toLowerCase().slice(0, 40) || null);
   }
+  if (req.body?.canvasX !== undefined) {
+    const v = req.body.canvasX === null ? null : Number(req.body.canvasX);
+    sets.push(`x_coord = $${i++}`);
+    vals.push(v !== null && Number.isFinite(v) && v >= 0 && v <= 20000 ? v : null);
+  }
+  if (req.body?.canvasY !== undefined) {
+    const v = req.body.canvasY === null ? null : Number(req.body.canvasY);
+    sets.push(`y_coord = $${i++}`);
+    vals.push(v !== null && Number.isFinite(v) && v >= 0 && v <= 20000 ? v : null);
+  }
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
 
   vals.push(req.project.id, Number(req.params.id));
