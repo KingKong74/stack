@@ -693,12 +693,17 @@ the silent metadata backstop so the feed never has gaps.
   (PATCH: title/note/reviewed/`alignment: on-course|tangent|off-course` ('' clears);
   DELETE tombstones a hook idea) · `POST /api/projects/:slug/futures/:id/judge` (Gemini-suggested
   verdict + why — suggestion only, 503 without a server key, 400 without a north star)
-- `POST /api/projects/:slug/polaris` (**Polaris** — the Futures tab's Gemini terminal: `{message,
-  history}` → `{reply}`, grounded in north star/phase/open roadmap/funnel/bug count; replies only,
-  never writes state; 503 without a key. The web terminal sits under the North star box
-  (`components/Polaris.tsx`, click-to-expand) and REPLACED the Roadmap tab's ✧ Intake button — the
-  intake route survives as Polaris's `/sort` command, with apply/move/drop done in-terminal
-  through the normal CRUD paths)
+- **Polaris** (#209) is NOT a server route any more — the old Gemini `polaris` + `intake` routes
+  were culled. It's a real `claude` session over the web-terminal transport: the Futures tab's
+  click-to-expand panel (`components/Polaris.tsx`, head only in the main bundle) lazy-loads
+  `components/PolarisTerm.tsx` (xterm — shares the Terminal screen's chunk) which opens
+  `store.openTerminal({cwd: slug, cmd: 'claude'})` — tmux-backed via a device-local mapping
+  keyed `polaris:<slug>` (never colliding with the Terminal screen's cwd map), honouring the
+  skip-permissions device pref. On a FRESH spawn it auto-types the Polaris kickoff once the TUI
+  settles (~1.5s output quiet, 15s cap): planning-only copilot, grounded by the SessionStart
+  hook's injected context, which creates agreed work as roadmap items / futures via the Stack
+  API — always confirming with the human first; manual-source items are immediately eligible
+  for the overnight autopilot. Re-attach skips the kickoff; a real exit forgets the mapping.
 - `GET|POST /api/projects/:slug/notes` · `PATCH /api/projects/:slug/notes/:id` (text) ·
   `DELETE /api/projects/:slug/notes/:id`
 - `GET|POST /api/projects/:slug/checks` · `PATCH /api/projects/:slug/checks/:id` (#143 — edit
@@ -779,8 +784,8 @@ won't re-create it.
     `GEMINI_API_KEY`; nothing blocks, nothing errors user-visibly.
   Rich checkpoints stay Claude-authored via `/checkpoint` (free, in-session) — don't replace that
   with an API summariser. Surfaces: `hook/stack-gemini-review.mjs` (second-model diff review →
-  review inbox; run manually or from the autopilot), `server/src/gemini.js` + judge/intake/
-  polaris/semantic-checks/replan routes, and the post-ingest `gemini_note` (a one-line second-model take
+  review inbox; run manually or from the autopilot), `server/src/gemini.js` + judge/
+  semantic-checks/replan routes, and the post-ingest `gemini_note` (a one-line second-model take
   stamped onto each push in the activity feed). Key from server env / `~/.stack/env`; model
   default gemini-2.5-flash for all surfaces.
 - Colour is the named CSS variables at the top of `styles.css` `:root` — add/adjust tones there, not

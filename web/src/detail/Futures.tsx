@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Future } from '../types';
-import type { IntakeSuggestion, JudgeSuggestion, PolarisTurn } from '../store';
+import type { JudgeSuggestion } from '../store';
 import { Polaris } from '../components/Polaris';
 import { FuturesCanvas } from '../components/FuturesCanvas';
 
@@ -27,7 +27,7 @@ const GROUPS: { key: string; label: string }[] = [
 // promoted into the roadmap (ProjectDetail owns that flow), or get dismissed.
 export function Futures({
   northStar, futures, highlightId, onSaveNorthStar, onAdd, onEdit, onAlign, onDelete, onPromote,
-  onMove, onAskGemini, onPolarisChat, onSortIntake, onApplyIntake, slug,
+  onMove, onAskGemini, slug,
 }: {
   northStar: string;
   futures: Future[];
@@ -41,9 +41,6 @@ export function Futures({
   onPromote: (future: Future) => void;
   onMove: (id: number, x: number, y: number) => void;
   onAskGemini?: (id: number) => Promise<JudgeSuggestion>;
-  onPolarisChat?: (message: string, history: PolarisTurn[]) => Promise<string>;
-  onSortIntake?: (text: string) => Promise<IntakeSuggestion[]>;
-  onApplyIntake?: (items: IntakeSuggestion[]) => Promise<void>;
 }) {
   const [editingStar, setEditingStar] = useState(false);
   const [starDraft, setStarDraft] = useState(northStar);
@@ -118,10 +115,8 @@ export function Futures({
         )}
       </div>
 
-      {/* polaris — the Gemini terminal, pinned under the north star */}
-      {onPolarisChat && onSortIntake && onApplyIntake && (
-        <Polaris onChat={onPolarisChat} onSort={onSortIntake} onApply={onApplyIntake} slug={slug} />
-      )}
+      {/* polaris (#209) — the claude planning session, pinned under the north star */}
+      {slug && <Polaris slug={slug} />}
 
       {/* ideas */}
       <div className="section-bar" style={{ marginBottom: 6 }}>

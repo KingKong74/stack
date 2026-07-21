@@ -474,21 +474,6 @@ export async function replanProject(slug: string): Promise<string> {
   return r.plan;
 }
 
-// ---- Gemini intake sorter (POST .../intake — suggestions only) ----
-
-export interface IntakeSuggestion {
-  title: string; note: string;
-  dest: 'must' | 'should' | 'could' | 'wont' | 'future';
-  alignment: 'on-course' | 'tangent' | 'off-course' | null;
-  why: string;
-}
-
-export async function sortIntake(slug: string, text: string): Promise<IntakeSuggestion[]> {
-  const r = await request<{ items: IntakeSuggestion[] }>(
-    `/projects/${encodeURIComponent(slug)}/intake`, { method: 'POST', body: { text } });
-  return r.items;
-}
-
 // ---- web terminal (ws to /term — the host PTY daemon behind nginx) ----
 
 // The only place the terminal's transport and token live — the Terminal screen
@@ -671,15 +656,9 @@ export function clearTermTmuxName(cwd: string, name: string) {
   localStorage.setItem(TERM_TMUX_KEY, JSON.stringify(m));
 }
 
-// ---- Polaris (POST .../polaris — the Futures tab's Gemini terminal) ----
-
-export interface PolarisTurn { role: 'you' | 'polaris'; text: string }
-
-export async function polarisChat(slug: string, message: string, history: PolarisTurn[]): Promise<string> {
-  const r = await request<{ reply: string }>(
-    `/projects/${encodeURIComponent(slug)}/polaris`, { method: 'POST', body: { message, history } });
-  return r.reply;
-}
+// Polaris (#209) is no longer a server chat route — it's a claude session over
+// openTerminal() above (components/PolarisTerm.tsx); the Gemini polaris/intake
+// routes were culled with it.
 
 // ---- Gemini judge assist (POST .../futures/:id/judge — suggestion only) ----
 

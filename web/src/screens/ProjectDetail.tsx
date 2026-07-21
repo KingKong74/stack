@@ -7,9 +7,8 @@ import {
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
   runAudit, getAuditPrompt, type AuditResult,
   patchProject, deleteProject, createShareLink, deleteShareLink,
-  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, sortIntake, polarisChat, assistRoadmapItem,
+  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, assistRoadmapItem,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
-  type IntakeSuggestion,
   replanProject, startAutopilot, AuthError,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
@@ -250,26 +249,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       await deleteRoadmapItem(slug, item.id);
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].filter((i) => i.id !== item.id) } });
     });
-
-  // Intake apply: create everything the human kept, through the normal CRUD
-  // paths — roadmap items into their buckets, futures with any accepted
-  // alignment — then patch the loaded state once. Errors surface in the panel.
-  const applyIntake = async (items: IntakeSuggestion[]) => {
-    const newRoad: RoadmapItem[] = [];
-    const newFutures: Future[] = [];
-    for (const it of items) {
-      if (it.dest === 'future') {
-        let f = await createFuture(slug, { title: it.title, note: it.note });
-        if (it.alignment) f = await patchFuture(slug, f.id, { alignment: it.alignment });
-        newFutures.push(f);
-      } else {
-        newRoad.push(await createRoadmapItem(slug, { title: it.title, note: it.note, bucket: it.dest }));
-      }
-    }
-    const road = { ...roadmap };
-    for (const r of newRoad) road[r.bucket] = [...road[r.bucket], r];
-    setData({ ...data, roadmap: road, futures: [...newFutures, ...futures] });
-  };
 
   // Drag-reorder: rebuild the target bucket's open order and renumber it. The
   // client shape doesn't carry positions, so the whole bucket renumbers 0..n —
@@ -813,8 +792,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId} slug={slug}
             onSaveNorthStar={saveNorthStar} onAdd={addFuture} onEdit={editFuture} onAlign={alignFuture}
             onAskGemini={(id) => judgeFuture(slug, id)}
-            onPolarisChat={(message, history) => polarisChat(slug, message, history)}
-            onSortIntake={(text) => sortIntake(slug, text)} onApplyIntake={applyIntake}
             onDelete={removeFuture} onPromote={promoteFuture} onMove={moveFuture} />
         )}
         {tab === 'notes' && (
