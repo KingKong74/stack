@@ -50,6 +50,7 @@ import { fileURLToPath } from 'node:url';
 import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
+import { createPlanUsage } from './plan-usage.mjs';
 import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, paneTail } from './tmux-session.mjs';
 import {
   availableProviders, providerEnv, getProvider,
@@ -151,6 +152,11 @@ function resolveCwd(raw) {
 // autopilot runner uses) and derives the reset time. Both ride to the browser
 // as `usage` frames — one per live session, every USAGE_TICK_MS and on ready.
 const meter = createUsageMeter();
+// Real Plan usage limits (#195) — the numbers Claude shows in-app, from the
+// account's OAuth usage endpoint via the CLI's own credentials. get() serves
+// a ≤10-min cache and refreshes itself in the background; null degrades to
+// the old transcript-count-only frame.
+const planUsage = createPlanUsage();
 const USAGE_TICK_MS = 15_000;
 // CSI + OSC escape stripper, so the match runs on what the human actually sees.
 // eslint-disable-next-line no-control-regex
@@ -173,7 +179,11 @@ function parseReset(text) {
 function noteLimit(plainTail) {
   if (limitResetAt && limitResetAt > Date.now()) return false; // already known
   if (!LIMIT_RE.test(plainTail)) return false;
-  limitResetAt = parseReset(plainTail) || Date.now() + 4 * 3_600_000; // unparseable → the runner's +4h guess
+  // Unparseable message → the session window's real reset (#195) beats the
+  // runner's old +4h guess; the guess survives as the offline last resort.
+  const planReset = planUsage.get()?.session?.resetAt;
+  limitResetAt = parseReset(plainTail)
+    || (planReset && planReset > Date.now() ? planReset : Date.now() + 4 * 3_600_000);
   log(`usage limit seen — reset assumed ${new Date(limitResetAt).toISOString()}`);
   return true;
 }
@@ -190,6 +200,14 @@ function usageFrame(sid) {
   // bar should measure, #130); totalTokens keeps the cache-read-inclusive sum.
   const { total, fresh } = meter.read();
   const f = { t: 'usage', sid, tokens: fresh, totalTokens: total };
+  // Plan windows (#195): session/week percentages + reset times, verbatim what
+  // the app's /usage shows. A limit the API marks active gives the REAL reset
+  // time — it beats the pty-scrape guess (which stays as the offline fallback).
+  const plan = planUsage.get();
+  if (plan) {
+    f.plan = { session: plan.session, week: plan.week, weekModel: plan.weekModel };
+    if (plan.activeResetAt && plan.activeResetAt > Date.now()) limitResetAt = plan.activeResetAt;
+  }
   if (limitResetAt) {
     f.resetAt = limitResetAt;
     f.resetLabel = clockLabel(limitResetAt);
@@ -580,7 +598,9 @@ function connect() {
   });
 
   // Live usage while any session is up — incremental after the first read, so
-  // each tick only parses transcript bytes appended since the last one.
+  // each tick only parses transcript bytes appended since the last one. Warm
+  // the plan-limit cache up front so the first frame already carries it.
+  void planUsage.refresh();
   const usageTick = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN && sessions.size) pushUsage(ws);
   }, USAGE_TICK_MS);

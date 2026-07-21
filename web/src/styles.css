@@ -1843,6 +1843,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tu-edit { width: 64px; height: 24px; padding: 0 6px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .tu-reset { color: var(--critical); font-weight: 600; }
 .tu-total { color: var(--faint); font-size: 11px; white-space: nowrap; } /* #130 — cache-inclusive raw volume */
+.tu-total.warn { color: var(--critical); font-weight: 600; } /* #195 — a plan weekly window running hot */
 /* ✧ the rail's Gemini command help — ask, get one command, type/save it */
 .term-assist { display: flex; flex-direction: column; gap: 6px; }
 .ta-note { font-size: 11.5px; color: var(--muted); }

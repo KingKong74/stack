@@ -38,6 +38,22 @@ type TermUsage = {
   resetAt?: number;
   resetLabel?: string;
   sched?: { runDate: string; atTime: string };
+  // Real Plan windows (#195) — the same session/week percentages + reset times
+  // Claude shows in-app, read by the daemon from the account's usage endpoint.
+  plan?: {
+    session?: { pct: number; resetAt: number | null } | null;
+    week?: { pct: number; resetAt: number | null } | null;
+    weekModel?: { pct: number; resetAt: number | null; model?: string } | null;
+  };
+};
+
+// "1:50 pm" / "Mon 2 pm" for a plan-window reset in the viewer's own clock.
+const fmtReset = (ms: number | null | undefined, withDay = false): string => {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const h = d.getHours() % 12 || 12;
+  const t = `${h}:${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
+  return withDay ? `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${t}` : t;
 };
 
 const fmtTok = (n: number) =>
@@ -521,45 +537,72 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
         </div>
 
         {/* the usage strip — visible once the daemon sends a frame OR the server
-            endpoint responds, whichever comes first. Shows Tokens: used / limit
-            where the limit is the nightly autopilot budget from settings (server-
-            sourced) or the user's device-local estimate when the budget is 0
-            (unlimited). Daemon frames update the used count every 15s. */}
+            endpoint responds, whichever comes first. With plan data (#195) the
+            bar IS the Plan session window — the same percentages + reset times
+            Claude's in-app /usage shows — and the transcript token count drops
+            to a secondary figure. Without it (no credentials on the host, or
+            offline) the old tokens-vs-budget estimate carries the strip. */}
         {(usage || serverUsage) && (
           <div className="term-usage">
-            <span className="tu-lbl">Tokens</span>
-            <div className={`tu-bar${usagePct >= 100 ? ' over' : usagePct >= 85 ? ' warn' : ''}`}>
-              <div className="tu-fill" style={{ width: `${Math.min(100, usagePct)}%` }} />
-            </div>
-            <span className="tu-num"
-              title={`${fmtTok(usedTokens)} / ${serverUsage && serverUsage.tokenBudget > 0 ? fmtTok(serverUsage.tokenBudget) + ' nightly budget' : fmtTok(usagePrefs.dailyLimit) + ' estimate'} (24h)`}>
-              {fmtTok(usedTokens)} /{' '}
-              {serverUsage && serverUsage.tokenBudget > 0
-                ? <span>{fmtTok(serverUsage.tokenBudget)}</span>
-                : editLimit
-                  ? (
-                    <input className="field-input tu-edit" autoFocus value={limitDraft}
-                      onChange={(e) => setLimitDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          const v = parseTok(limitDraft);
-                          if (v) savePrefs({ ...usagePrefs, dailyLimit: v });
-                          setEditLimit(false);
-                        } else if (e.key === 'Escape') setEditLimit(false);
-                      }}
-                      onBlur={() => setEditLimit(false)} />
-                  ) : (
-                    <button className="tu-limit" title="Daily token estimate (this device only) — click to change"
-                      onClick={() => { setLimitDraft(fmtTok(usagePrefs.dailyLimit)); setEditLimit(true); }}>
-                      {fmtTok(usagePrefs.dailyLimit)}
-                    </button>
-                  )
-              }
-            </span>
-            {usage?.totalTokens != null && usage.totalTokens > (usage?.tokens ?? 0) && (
-              <span className="tu-total" title="Raw volume including prompt-cache reads — the fresh count on the bar is what tracks real work">
-                {fmtTok(usage.totalTokens)} incl. cache reads
-              </span>
+            {usage?.plan?.session ? (
+              <>
+                <span className="tu-lbl">Session</span>
+                <div className={`tu-bar${usage.plan.session.pct >= 100 ? ' over' : usage.plan.session.pct >= 85 ? ' warn' : ''}`}>
+                  <div className="tu-fill" style={{ width: `${Math.min(100, usage.plan.session.pct)}%` }} />
+                </div>
+                <span className="tu-num"
+                  title="The Plan's 5-hour session window — the same number Claude's /usage shows in-app">
+                  {usage.plan.session.pct}%
+                  {usage.plan.session.resetAt ? ` · resets ${fmtReset(usage.plan.session.resetAt)}` : ''}
+                </span>
+                {usage.plan.week && (
+                  <span className={`tu-total${usage.plan.week.pct >= 85 || (usage.plan.weekModel?.pct ?? 0) >= 85 ? ' warn' : ''}`}
+                    title={`The Plan's weekly window — resets ${fmtReset(usage.plan.week.resetAt, true)}`}>
+                    week {usage.plan.week.pct}%
+                    {usage.plan.weekModel ? ` · ${(usage.plan.weekModel.model || 'model').toLowerCase()} ${usage.plan.weekModel.pct}%` : ''}
+                  </span>
+                )}
+                <span className="tu-total" title="Fresh tokens today (input + output + cache writes) from this host's transcripts">
+                  {fmtTok(usedTokens)} tok today
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="tu-lbl">Tokens</span>
+                <div className={`tu-bar${usagePct >= 100 ? ' over' : usagePct >= 85 ? ' warn' : ''}`}>
+                  <div className="tu-fill" style={{ width: `${Math.min(100, usagePct)}%` }} />
+                </div>
+                <span className="tu-num"
+                  title={`${fmtTok(usedTokens)} / ${serverUsage && serverUsage.tokenBudget > 0 ? fmtTok(serverUsage.tokenBudget) + ' nightly budget' : fmtTok(usagePrefs.dailyLimit) + ' estimate'} (24h)`}>
+                  {fmtTok(usedTokens)} /{' '}
+                  {serverUsage && serverUsage.tokenBudget > 0
+                    ? <span>{fmtTok(serverUsage.tokenBudget)}</span>
+                    : editLimit
+                      ? (
+                        <input className="field-input tu-edit" autoFocus value={limitDraft}
+                          onChange={(e) => setLimitDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              const v = parseTok(limitDraft);
+                              if (v) savePrefs({ ...usagePrefs, dailyLimit: v });
+                              setEditLimit(false);
+                            } else if (e.key === 'Escape') setEditLimit(false);
+                          }}
+                          onBlur={() => setEditLimit(false)} />
+                      ) : (
+                        <button className="tu-limit" title="Daily token estimate (this device only) — click to change"
+                          onClick={() => { setLimitDraft(fmtTok(usagePrefs.dailyLimit)); setEditLimit(true); }}>
+                          {fmtTok(usagePrefs.dailyLimit)}
+                        </button>
+                      )
+                  }
+                </span>
+                {usage?.totalTokens != null && usage.totalTokens > (usage?.tokens ?? 0) && (
+                  <span className="tu-total" title="Raw volume including prompt-cache reads — the fresh count on the bar is what tracks real work">
+                    {fmtTok(usage.totalTokens)} incl. cache reads
+                  </span>
+                )}
+              </>
             )}
             {usage?.resetLabel && <span className="tu-reset">⏳ limit resets {usage.resetLabel}</span>}
             {resumeJob && (
@@ -837,11 +880,12 @@ function TermSession({ sess, visible, onStatus, onUsage, onTmux, onExit, registe
           t: string; data?: string; msg?: string; code?: number; cwd?: string;
           tmuxSession?: string;
           tokens?: number; resetAt?: number; resetLabel?: string; sched?: { runDate: string; atTime: string };
+          totalTokens?: number; plan?: TermUsage['plan'];
         };
         try { m = JSON.parse(ev.data); } catch { return; }
         if (m.t === 'out' && m.data) scheduleWrite(b64decode(m.data));
         else if (m.t === 'usage' && typeof m.tokens === 'number') {
-          onUsage({ tokens: m.tokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched });
+          onUsage({ tokens: m.tokens, totalTokens: m.totalTokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched, plan: m.plan });
         }
         else if (m.t === 'ready') {
           if (m.tmuxSession) { tmuxRef.current = m.tmuxSession; onTmux(m.tmuxSession); }
