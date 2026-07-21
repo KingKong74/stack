@@ -11,6 +11,7 @@ import {
   getTerminalUsage, type TerminalUsageData,
   getDetachedSessions, killDetachedSession, type DetachedSession,
   getTermTmuxName, setTermTmuxName, clearTermTmuxName,
+  getTermSessionPrefs, termAssist, type TermAssistSuggestion,
 } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
@@ -77,21 +78,18 @@ const GIT_BASH_THEME = {
   brightCyan: '#40ffff', brightWhite: '#ffffff',
 };
 
-// #136 — Expanded starter kit: shell ops first, Claude ops at the bottom.
-// The old list was short and ordered awkwardly (claude before git).
+// The essentials only. Claude is NOT a quick command any more — typing claude
+// into a shell tab bypasses tmux persistence entirely (the daemon only wraps
+// sessions opened in Claude mode), which is exactly the trap #188 closed.
+// Claude tabs are the seg control / the auto-opened session.
 const DEFAULT_CMDS: TermCmd[] = [
   { label: 'git status', cmd: 'git status' },
   { label: 'git log', cmd: 'git log --oneline -15' },
   { label: 'git diff', cmd: 'git diff --stat' },
   { label: 'git pull', cmd: 'git pull' },
-  { label: 'npm run build', cmd: 'npm run build' },
   { label: 'compose up', cmd: 'docker compose up -d --build' },
   { label: 'compose logs', cmd: 'docker compose logs -f --tail=50' },
-  { label: 'claude', cmd: 'claude' },
-  { label: 'claude (skip permissions)', cmd: 'claude --dangerously-skip-permissions' },
-  { label: 'claude (continue)', cmd: 'claude -c' },
   { label: 'autopilot log', cmd: 'tail -40 ~/.stack/autopilot.log' },
-  { label: 'disk usage', cmd: 'df -h .' },
 ];
 
 // tmux is the host-side tmux session a claude tab runs inside (#188): seeded
@@ -108,7 +106,9 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
   initialCwd?: string; visible?: boolean; onAlive?: (liveCount: number) => void;
 }) {
   const [cwd, setCwd] = useState(initialCwd);
-  const [mode, setMode] = useState<'shell' | 'claude'>('shell');
+  // The seg control starts on the device's preferred session kind (Settings →
+  // Terminal; default claude — that's what this screen is for).
+  const [mode, setMode] = useState<'shell' | 'claude'>(() => getTermSessionPrefs().autoStart);
   const [sessions, setSessions] = useState<Sess[]>([]);
   const [active, setActive] = useState(0);
   const nextId = useRef(1);
@@ -172,8 +172,10 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
     });
     setActive(id);
   };
-  // One session opens itself on arrival — the screen is never an empty shell.
-  useEffect(() => { openSession(initialCwd, 'shell'); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // One session opens itself on arrival — the screen is never empty. The kind
+  // comes from the device pref (default claude, in skip-permissions mode via
+  // the start frame; a surviving tmux session for the cwd re-attaches).
+  useEffect(() => { openSession(initialCwd, getTermSessionPrefs().autoStart); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A later ⌨ press with a project cwd (the component stays mounted, so it
   // arrives as a prop change): jump to that project's session, or open one.
@@ -187,7 +189,7 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
     setCwd(initialCwd);
     const existing = sessions.find((s) => s.cwd === initialCwd && (s.status === 'live' || s.status === 'connecting'));
     if (existing) setActive(existing.id);
-    else openSession(initialCwd, 'shell');
+    else openSession(initialCwd, getTermSessionPrefs().autoStart);
   }, [initialCwd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Liveness, reported up to App: quiets the global presence pill while the
@@ -296,6 +298,37 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
   };
 
   const activeSess = sessions.find((s) => s.id === active);
+
+  // ✧ Gemini command help (the rail's side assist): describe the goal, get one
+  // command back. Suggestion only — ⌨ types it into the active session without
+  // Enter, + Save keeps it as a quick command. Silent 503 when keyless.
+  const [askText, setAskText] = useState('');
+  const [askBusy, setAskBusy] = useState(false);
+  const [askErr, setAskErr] = useState('');
+  const [suggestion, setSuggestion] = useState<TermAssistSuggestion | null>(null);
+  const runAssist = async () => {
+    const q = askText.trim();
+    if (!q || askBusy) return;
+    setAskBusy(true); setAskErr(''); setSuggestion(null);
+    try { setSuggestion(await termAssist(q, (activeSess?.cwd || cwd).trim())); }
+    catch (e) { setAskErr(e instanceof Error ? e.message : 'Assist failed.'); }
+    finally { setAskBusy(false); }
+  };
+  const typeSuggestion = () => {
+    if (!suggestion) return;
+    const h = handles.current.get(active);
+    if (!h) return;
+    h.sendText(suggestion.command); // no Enter — the human runs it
+    h.focus();
+  };
+  const saveSuggestion = () => {
+    if (!suggestion) return;
+    const next = [...customCmds, { label: suggestion.label, cmd: suggestion.command }];
+    setCustomCmds(next);
+    setTermCmds(next);
+    setSuggestion(null);
+    setAskText('');
+  };
 
   // The project a booked session runs against — the dispatcher resolves repos
   // as $STACK_AUTOPILOT_ROOT/<slug>, so the cwd's first segment IS the slug.
@@ -606,6 +639,33 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
                 ) : (
                   <button className="term-cmd add" onClick={() => setAdding(true)}>+ Add a command</button>
                 )}
+
+                {/* ✧ side gemini — command help. Suggestion only; nothing runs
+                    until the human presses Enter in the terminal. */}
+                <div className="term-rail-head" style={{ marginTop: 10 }}>✧ Command help</div>
+                <div className="term-assist">
+                  <input className="field-input sm" value={askText} placeholder="what do you want to do?"
+                    onChange={(e) => setAskText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') void runAssist(); }} />
+                  {askBusy && <div className="ta-note">thinking…</div>}
+                  {askErr && <div className="ta-note err">{askErr}</div>}
+                  {suggestion && (
+                    <div className="ta-card">
+                      <code className="ta-cmd">{suggestion.command}</code>
+                      {suggestion.explanation && <div className="ta-why">{suggestion.explanation}</div>}
+                      <div className="ta-actions">
+                        <button className="btn-submit sm" onClick={typeSuggestion}
+                          title="Types the command into the active session — press Enter yourself to run it">
+                          ⌨ Type it
+                        </button>
+                        <button className="btn-cancel sm" onClick={saveSuggestion} title="Save as a quick command">
+                          + Save
+                        </button>
+                        <button className="term-cmd-x" onClick={() => setSuggestion(null)} aria-label="Dismiss suggestion">×</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -703,6 +763,9 @@ function TermSession({ sess, visible, onStatus, onUsage, onTmux, onExit, registe
       const ws = openTerminal({
         cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows,
         tmuxSession: sess.cmd === 'claude' && tmuxRef.current ? tmuxRef.current : undefined,
+        // Device pref (Settings → Terminal): claude without permission prompts.
+        // A boolean only — the daemon maps it to its one allow-listed flag.
+        skipPerms: sess.cmd === 'claude' && getTermSessionPrefs().skipPermissions ? true : undefined,
       });
       wsRef.current = ws;
       // #135 — write-batching: coalesce rapid incoming frames into one

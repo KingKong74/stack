@@ -5,6 +5,7 @@ import {
   getThemePref, setThemePref, type ThemePref,
   getDeletedProjects, restoreProject, purgeProject, type DeletedProject,
   getAuthDevices, revokeAuthDevice,
+  getTermSessionPrefs, setTermSessionPrefs, type TermSessionPrefs,
 } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
@@ -37,6 +38,9 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
   const [error, setError] = useState('');
   const [test, setTest] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
   const [theme, setTheme] = useState<ThemePref>(() => getThemePref());
+  // Terminal behaviour — device-local, like the theme.
+  const [termPrefs, setTermPrefsState] = useState<TermSessionPrefs>(() => getTermSessionPrefs());
+  const saveTermPrefs = (p: TermSessionPrefs) => { setTermPrefsState(p); setTermSessionPrefs(p); };
   const [deleted, setDeleted] = useState<DeletedProject[]>([]);
   const [purgeArmed, setPurgeArmed] = useState<string | null>(null);
   const [pin, setPin] = useState('');
@@ -320,6 +324,38 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
                   })}
                 />
               ))}
+            </section>
+
+            {/* ---- Terminal (device-local, like Appearance) ---- */}
+            <section className="set-card">
+              <div className="set-card-head">
+                <div className="set-card-title">Terminal</div>
+                <div className="set-card-sub">How the web terminal opens sessions on this device.</div>
+              </div>
+              <div className="set-row col">
+                <div className="set-row-text">
+                  <div className="set-row-label">Opens with</div>
+                  <div className="set-row-hint">
+                    What the Terminal screen (and a project’s ⌨ button) starts. Claude sessions run
+                    inside tmux on the host, so they survive reloads and disconnects — shells don’t.
+                  </div>
+                </div>
+                <div className="seg-control" role="tablist" aria-label="Terminal opens with">
+                  {(['claude', 'shell'] as const).map((k) => (
+                    <button key={k} role="tab" aria-selected={termPrefs.autoStart === k}
+                      className={`seg-opt ${termPrefs.autoStart === k ? 'on' : ''}`}
+                      onClick={() => saveTermPrefs({ ...termPrefs, autoStart: k })}>
+                      {k === 'claude' ? 'Claude' : 'Shell'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <Switch
+                label="Skip permission prompts"
+                hint="Claude sessions run with --dangerously-skip-permissions — no per-action approval. Your call on your own host."
+                checked={termPrefs.skipPermissions}
+                onChange={(v) => saveTermPrefs({ ...termPrefs, skipPermissions: v })}
+              />
             </section>
 
             {/* ---- Appearance (device-local) ---- */}

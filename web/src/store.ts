@@ -481,7 +481,7 @@ export async function sortIntake(slug: string, text: string): Promise<IntakeSugg
 // attaches its handlers to the returned socket but never touches storage. The
 // start frame goes out on open; the daemon validates the token against the API
 // before anything spawns.
-export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number; tmuxSession?: string }): WebSocket {
+export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number; tmuxSession?: string; skipPerms?: boolean }): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${window.location.host}/term`);
   ws.addEventListener('open', () => {
@@ -564,11 +564,41 @@ const TERM_VIEW_KEY = 'stack.termView';
 export function getTermViewPrefs(): TermViewPrefs {
   try {
     const p = JSON.parse(localStorage.getItem(TERM_VIEW_KEY) || '{}');
-    return { railOpen: p.railOpen !== false, wide: !!p.wide };
-  } catch { return { railOpen: true, wide: false }; }
+    // Rail defaults COLLAPSED — the terminal canvas is the point of the screen;
+    // expand it when you want the quick commands (the choice sticks per device).
+    return { railOpen: p.railOpen === true, wide: !!p.wide };
+  } catch { return { railOpen: false, wide: false }; }
 }
 export function setTermViewPrefs(p: TermViewPrefs) {
   localStorage.setItem(TERM_VIEW_KEY, JSON.stringify(p));
+}
+
+// How the Terminal screen opens sessions — device-local, edited from the
+// Settings screen's Terminal card (like the theme). autoStart is what the
+// screen opens on arrival and what a Mission Control ⌨ press opens;
+// skipPermissions runs claude sessions with --dangerously-skip-permissions
+// (the daemon allow-lists the flag — the browser only ever sends a boolean).
+export interface TermSessionPrefs { autoStart: 'claude' | 'shell'; skipPermissions: boolean }
+const TERM_SESSION_KEY = 'stack.termSession';
+export function getTermSessionPrefs(): TermSessionPrefs {
+  try {
+    const p = JSON.parse(localStorage.getItem(TERM_SESSION_KEY) || '{}');
+    return {
+      autoStart: p.autoStart === 'shell' ? 'shell' : 'claude',
+      skipPermissions: p.skipPermissions !== false,
+    };
+  } catch { return { autoStart: 'claude', skipPermissions: true }; }
+}
+export function setTermSessionPrefs(p: TermSessionPrefs) {
+  localStorage.setItem(TERM_SESSION_KEY, JSON.stringify(p));
+}
+
+// ✧ Gemini command help in the terminal rail — describe what you want to do,
+// get one shell command back. Suggestion only: nothing runs until the human
+// types it into the terminal themselves. 503 when the server has no key.
+export interface TermAssistSuggestion { command: string; label: string; explanation: string }
+export async function termAssist(prompt: string, cwd: string): Promise<TermAssistSuggestion> {
+  return request<TermAssistSuggestion>('/terminal/assist', { method: 'POST', body: { prompt, cwd } });
 }
 
 // Detached tmux sessions (#188 follow-up) — claude sessions still running on

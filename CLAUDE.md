@@ -62,7 +62,8 @@ terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (npm
         start/end — the push channel behind the app-wide terminal presence pill; no polling.
         Claude sessions run inside named `stack-term-*` tmux sessions (#171/#188, when tmux is
         installed — direct spawn otherwise): a browser disconnect only detaches, the process
-        keeps running. The daemon advertises the detached list (`detached` frames — on connect,
+        keeps running. The start frame may carry `skipPerms: true` (a boolean the daemon maps to
+        its one allow-listed flag, `--dangerously-skip-permissions` — no path for arbitrary args). The daemon advertises the detached list (`detached` frames — on connect,
         session start/end and a 60s tick) to the relay, which caches it for
         GET /api/terminal/detached and forwards browser kill requests (`killDetached`) back —
         only names actually detached are killable.
@@ -169,7 +170,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   optimistic with rollback), **Session defaults** (switches over the `DIRECTIVES` catalogue from
   `lib/brief.ts` — app-wide standing preferences PATCHed as `sessionDefaults` and injected into
   every session by the start hook, e.g. commits pre-authorised), **Autopilot** (the overnight
-  runner's arm switch + 1h/2h/3h session cap — the cron no-ops while disarmed), **Appearance**
+  runner's arm switch + 1h/2h/3h session cap — the cron no-ops while disarmed), **Terminal**
+  (device-local like Appearance: opens-with Claude/Shell seg + the skip-permissions switch,
+  `store.getTermSessionPrefs/setTermSessionPrefs`), **Appearance**
   (theme) and **Access** (masked token, Test connection, the **access PIN** — set/change/disable;
   any change signs out all PIN-connected devices — and Sign out). Uses `getSettings/patchSettings`;
   a 401 anywhere returns to the gate. The TokenGate offers "Sign in with a PIN instead"
@@ -232,7 +235,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   kills the host process behind a ConfirmModal via `store.killDetachedSession`). A claude tab
   also remembers its tmux session name device-locally (`store.getTermTmuxName` et al, keyed by
   cwd) so a plain page reload re-attaches the same session automatically; an exit frame while
-  attached — the process really ending — forgets the mapping.
+  attached — the process really ending — forgets the mapping. The screen auto-opens a session on
+  arrival per the device's **Terminal prefs** (Settings → Terminal, `store.getTermSessionPrefs`:
+  opens-with claude|shell, default claude; skip-permissions default on — sent as the start
+  frame's `skipPerms` boolean). The quick-commands rail defaults COLLAPSED, its starter kit is
+  essentials-only (git/compose/autopilot-log — deliberately NO claude commands: claude typed
+  into a shell tab bypasses tmux persistence), and it hosts the **✧ command help**
+  (`store.termAssist` → POST /api/terminal/assist): describe a goal, Gemini returns one command
+  — ⌨ types it into the active session without Enter, + Save adds it to the quick commands.
 - `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router; routes
   are `#/`, `#/settings`, `#/control`, `#/terminal`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit
@@ -687,7 +697,9 @@ the silent metadata backstop so the feed never has gaps.
   attached, from the relay's cache of the daemon's advertisements; empty while the daemon is
   offline) · `POST /api/terminal/detached/kill` (`{name}` — kill an orphaned tmux session on the
   host; the daemon refuses names that aren't actually detached, so a live session is unkillable
-  through this route)
+  through this route) · `POST /api/terminal/assist` (`{prompt, cwd}` — ✧ the rail's command help:
+  Gemini suggests one shell command + a save-label + a caveat line; suggestion only, the client
+  types it without Enter; 503 keyless)
 
 Deleting a `source='hook'` bug, roadmap item or future tombstones its fingerprint so the next push
 won't re-create it.

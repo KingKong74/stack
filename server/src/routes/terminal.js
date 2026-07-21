@@ -45,6 +45,44 @@ terminal.post('/detached/kill', (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/terminal/assist {prompt, cwd} — ✧ command help for the terminal
+// rail: the user says what they want to do, Gemini suggests ONE shell command
+// (plus a short label so it can be saved as a quick command). Suggestion only —
+// the client types it into the terminal for the human to run, never executes.
+// 503 without a key (silent degrade upstream).
+terminal.post('/assist', async (req, res) => {
+  if (!geminiEnabled()) return res.status(503).json({ error: 'Gemini is not configured on the server.' });
+  const ask = String(req.body?.prompt || '').trim().slice(0, 500);
+  if (!ask) return res.status(400).json({ error: 'Say what you want to do.' });
+  const cwd = String(req.body?.cwd || '').replace(/[^\w\s./~-]/g, '').slice(0, 200);
+  try {
+    const out = await askGemini(
+      `A solo developer is at a bash terminal on their own Linux host (Debian, git, docker compose,
+node/npm installed), working in ${cwd ? `~/${cwd}` : 'their home directory'}. They asked:
+
+"${ask}"
+
+Suggest the single best shell command for that. Prefer plain, widely-known commands; no sudo unless
+the task truly needs it; never suggest anything destructive without an explicit flag the user would
+recognise (and say so in the explanation).
+
+Respond with ONLY this JSON:
+{ "command": "<the one-line command>", "label": "<2-4 word label for saving it as a quick command>",
+  "explanation": "<one short sentence on what it does / any caveat>" }`,
+      { generation: { temperature: 0.2 } }
+    );
+    const command = typeof out?.command === 'string' ? out.command.trim() : '';
+    if (!command) return res.status(502).json({ error: 'No suggestion came back — try rewording.' });
+    res.json({
+      command: command.slice(0, 300),
+      label: (typeof out?.label === 'string' ? out.label.trim() : '').slice(0, 40) || command.slice(0, 24),
+      explanation: (typeof out?.explanation === 'string' ? out.explanation.trim() : '').slice(0, 200),
+    });
+  } catch (e) {
+    res.status(e.httpStatus || 502).json({ error: e.message || 'Assist failed.' });
+  }
+});
+
 terminal.post('/label', async (_req, res) => {
   if (!geminiEnabled()) return res.status(503).json({ error: 'Gemini is not configured on the server.' });
   const tails = termTails().filter(({ meta }) => (meta.tail || '').trim().length > 0);

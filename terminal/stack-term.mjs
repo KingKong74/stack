@@ -492,14 +492,18 @@ function startSession(msg) {
   let tmuxSession = null; // set when tmux is in use
 
   if (msg.cmd === 'claude') {
+    // The browser may ask for permission prompts to be skipped — a boolean
+    // only, mapped to the one allow-listed flag here. There is no path for
+    // arbitrary arguments to reach the spawn.
+    const claudeCmd = msg.skipPerms === true ? 'exec claude --dangerously-skip-permissions' : 'exec claude';
     if (tmuxAvailable()) {
       // Use a validated name from the browser if provided, otherwise generate one.
       tmuxSession = validName(msg.tmuxSession) ? msg.tmuxSession : generateName('term');
-      argv = sessionArgv(tmuxSession, cwd, '/bin/bash -lc "exec claude"');
+      argv = sessionArgv(tmuxSession, cwd, `/bin/bash -lc "${claudeCmd}"`);
       log(`session ${sid}: tmux session ${tmuxSession} (${validName(msg.tmuxSession) ? 're-attach' : 'new'})`);
     } else {
       // Degrade gracefully when tmux is absent — direct spawn, no persistence.
-      argv = ['/bin/bash', '-lc', 'exec claude'];
+      argv = ['/bin/bash', '-lc', claudeCmd];
       log(`session ${sid}: tmux not available, running claude directly`);
     }
   } else {
