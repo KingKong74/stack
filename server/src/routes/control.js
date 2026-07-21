@@ -91,7 +91,8 @@ control.get('/', async (_req, res) => {
     // (#207) The host dispatcher's git branch report per project — the merge
     // strip's real state (ahead/behind, conflict probe). Missing rows are fine:
     // the strip falls back to claim-derived chips until the first report lands.
-    q(`SELECT project_id, report, reported_at FROM branch_reports`),
+    // ::int so the BIGINT key matches projects.id as a JS number in the Map.
+    q(`SELECT project_id::int AS project_id, report, reported_at FROM branch_reports`),
   ]);
 
   const roadByP = new Map();
