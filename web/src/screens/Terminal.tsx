@@ -543,6 +543,10 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  // Tmux session name received from the daemon on the first ready frame.
+  // Passed back on reconnect so the daemon re-attaches to the surviving session
+  // rather than spawning a new one. Only set for claude sessions (shell never uses tmux).
+  const tmuxRef = useRef<string | null>(null);
 
   useEffect(() => {
     const term = new XTerm({
@@ -561,7 +565,10 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
       wsRef.current?.close();
       onStatus('connecting', '');
       fit.fit();
-      const ws = openTerminal({ cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows });
+      const ws = openTerminal({
+        cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows,
+        tmuxSession: sess.cmd === 'claude' && tmuxRef.current ? tmuxRef.current : undefined,
+      });
       wsRef.current = ws;
       // #135 — write-batching: coalesce rapid incoming frames into one
       // requestAnimationFrame flush instead of calling term.write() per frame.
@@ -589,6 +596,7 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
       ws.addEventListener('message', (ev) => {
         let m: {
           t: string; data?: string; msg?: string; code?: number; cwd?: string;
+          tmuxSession?: string;
           tokens?: number; resetAt?: number; resetLabel?: string; sched?: { runDate: string; atTime: string };
         };
         try { m = JSON.parse(ev.data); } catch { return; }
@@ -596,7 +604,11 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
         else if (m.t === 'usage' && typeof m.tokens === 'number') {
           onUsage({ tokens: m.tokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched });
         }
-        else if (m.t === 'ready') { onStatus('live', m.cwd || ''); if (visible) term.focus(); }
+        else if (m.t === 'ready') {
+          if (m.tmuxSession) tmuxRef.current = m.tmuxSession;
+          onStatus('live', m.cwd || '');
+          if (visible) term.focus();
+        }
         else if (m.t === 'exit') { onStatus('closed', `exited (${m.code})`); term.write('\r\n\x1b[90m[session ended — reconnect from the tab bar]\x1b[0m\r\n'); }
         else if (m.t === 'err') { onStatus('error', m.msg || 'terminal error'); term.write(`\r\n\x1b[91m${m.msg || 'terminal error'}\x1b[0m\r\n`); }
       });

@@ -459,7 +459,7 @@ export async function sortIntake(slug: string, text: string): Promise<IntakeSugg
 // attaches its handlers to the returned socket but never touches storage. The
 // start frame goes out on open; the daemon validates the token against the API
 // before anything spawns.
-export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number }): WebSocket {
+export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number; tmuxSession?: string }): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${window.location.host}/term`);
   ws.addEventListener('open', () => {
