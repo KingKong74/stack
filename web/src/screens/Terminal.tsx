@@ -90,6 +90,7 @@ const DEFAULT_CMDS: TermCmd[] = [
   { label: 'compose up', cmd: 'docker compose up -d --build' },
   { label: 'compose logs', cmd: 'docker compose logs -f --tail=50' },
   { label: 'autopilot log', cmd: 'tail -40 ~/.stack/autopilot.log' },
+  { label: 'tmux sessions', cmd: 'tmux ls' },
 ];
 
 // tmux is the host-side tmux session a claude tab runs inside (#188): seeded
