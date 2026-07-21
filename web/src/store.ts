@@ -282,6 +282,8 @@ export interface TermSession {
   sid: string; cwd: string; cmd: 'shell' | 'claude';
   startedAt: number;       // epoch ms
   label: string;           // ✧ Gemini's take on what it's doing ('' until asked)
+  tmux?: string;           // the host tmux session behind a claude tab ('' for
+                           // shells / pre-tmux daemons) — the jump-in target
 }
 export interface ModelEntry { model: string; label: string }
 
@@ -307,7 +309,7 @@ export interface ControlData {
   // source of truth. Undefined while loading; the frontend falls back to the
   // hardcoded lists in Control.tsx.
   models?: { executors: ModelEntry[]; advisors: ModelEntry[] };
-  terminal?: { connected: boolean; sessions?: TermSession[] };  // host daemon + open web terminals
+  terminal?: { connected: boolean; sessions?: TermSession[]; detached?: DetachedSession[] };  // host daemon + open web terminals + orphaned tmux survivors
   schedules: AutopilotSchedule[];
   jobs: AutopilotJob[];                // recent first; queued/claimed/running lead the strip
   projects: ControlProject[];
@@ -338,11 +340,12 @@ export async function getControl(): Promise<ControlData> {
   };
 }
 
-// ✧ Label the live terminal sessions: one Gemini pass over each session's
-// recent output (annotation only; 503 when the server has no key).
-export async function labelTerminalSessions(): Promise<TermSession[]> {
-  const r = await request<{ sessions: TermSession[] }>('/terminal/label', { method: 'POST' });
-  return r.sessions;
+// ✧ Label the terminal sessions — live ones AND the detached tmux survivors —
+// in one Gemini pass over each session's recent output (annotation only; 503
+// when the server has no key).
+export async function labelTerminalSessions(): Promise<{ sessions: TermSession[]; detached: DetachedSession[] }> {
+  const r = await request<{ sessions: TermSession[]; detached?: DetachedSession[] }>('/terminal/label', { method: 'POST' });
+  return { sessions: r.sessions, detached: r.detached ?? [] };
 }
 
 // The Run-now button: queue a manual job the host dispatcher picks up within
@@ -606,7 +609,7 @@ export async function termAssist(prompt: string, cwd: string): Promise<TermAssis
 // comes from the relay's cache of the daemon's advertisements; killing goes
 // back through the same channel, and the daemon refuses names that aren't
 // actually detached.
-export interface DetachedSession { name: string; cwd: string; created: number }
+export interface DetachedSession { name: string; cwd: string; created: number; label?: string }
 export async function getDetachedSessions(): Promise<DetachedSession[]> {
   const r = await request<{ sessions: DetachedSession[] }>('/terminal/detached');
   return r.sessions;

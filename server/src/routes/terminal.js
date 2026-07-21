@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { q } from '../db.js';
-import { termSessions, termTails, termDetached, killDetachedTmux } from '../term.js';
+import { termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux } from '../term.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { readSettings } from '../settings.js';
 
@@ -83,15 +83,24 @@ Respond with ONLY this JSON:
   }
 });
 
+// One Gemini pass over EVERY session with content — the browser-attached ones
+// (relay output tail) and the detached tmux survivors (the daemon captures a
+// pane tail with each advertisement). Detached labels stick to the relay's
+// name-keyed cache so they ride every later GET too.
 terminal.post('/label', async (_req, res) => {
   if (!geminiEnabled()) return res.status(503).json({ error: 'Gemini is not configured on the server.' });
   const tails = termTails().filter(({ meta }) => (meta.tail || '').trim().length > 0);
-  if (tails.length) {
-    const blocks = tails.map(({ sid, meta }) =>
-      `Session ${sid} (${meta.cmd} in ${meta.cwd}) — recent output:\n${meta.tail.trim().slice(-1200)}`).join('\n\n---\n\n');
+  const orphans = termDetachedTails().filter((d) => (d.tail || '').trim().length > 0);
+  if (tails.length || orphans.length) {
+    const blocks = [
+      ...tails.map(({ sid, meta }) =>
+        `Session ${sid} (${meta.cmd} in ${meta.cwd}) — recent output:\n${meta.tail.trim().slice(-1200)}`),
+      ...orphans.map((d) =>
+        `Session ${d.name} (claude in ${d.cwd || '~'}, running detached — no one watching) — recent output:\n${d.tail.trim().slice(-1200)}`),
+    ].join('\n\n---\n\n');
     try {
       const out = await askGemini(
-        `These are live terminal sessions on a solo developer's machine. From each session's recent
+        `These are terminal sessions on a solo developer's machine. From each session's recent
 output, write one SHORT label (max 8 words, plain, no punctuation flourishes) saying what the
 session appears to be doing right now — e.g. "editing the deploy config", "claude building the
 roadmap board", "idle shell".
@@ -105,9 +114,13 @@ Respond with ONLY this JSON: { "labels": { "<session id>": "<label>", ... } }`,
         const label = out?.labels?.[sid];
         if (typeof label === 'string' && label.trim()) meta.label = label.trim().slice(0, 60);
       }
+      for (const d of orphans) {
+        const label = out?.labels?.[d.name];
+        if (typeof label === 'string' && label.trim()) setDetachedLabel(d.name, label.trim().slice(0, 60));
+      }
     } catch (e) {
       return res.status(e.httpStatus || 502).json({ error: e.message || 'Labelling failed.' });
     }
   }
-  res.json({ sessions: termSessions() });
+  res.json({ sessions: termSessions(), detached: termDetached() });
 });

@@ -103,8 +103,8 @@ type Handle = { sendText: (s: string) => void; reconnect: () => void; focus: () 
 // scrollback survive navigation. `visible` = the #/terminal route is showing;
 // away from it the component renders as the floating dock (#139) — minimised
 // to a bottom-right chip by default, expandable to a small floating panel.
-export function Terminal({ initialCwd = '', visible = true, onAlive }: {
-  initialCwd?: string; visible?: boolean; onAlive?: (liveCount: number) => void;
+export function Terminal({ initialCwd = '', initialAttach, visible = true, onAlive }: {
+  initialCwd?: string; initialAttach?: string; visible?: boolean; onAlive?: (liveCount: number) => void;
 }) {
   const [cwd, setCwd] = useState(initialCwd);
   // The seg control starts on the device's preferred session kind (Settings →
@@ -175,23 +175,35 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
   };
   // One session opens itself on arrival — the screen is never empty. The kind
   // comes from the device pref (default claude, in skip-permissions mode via
-  // the start frame; a surviving tmux session for the cwd re-attaches).
-  useEffect(() => { openSession(initialCwd, getTermSessionPrefs().autoStart); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // A later ⌨ press with a project cwd (the component stays mounted, so it
-  // arrives as a prop change): jump to that project's session, or open one.
-  const lastCwdProp = useRef(initialCwd);
+  // the start frame; a surviving tmux session for the cwd re-attaches). An
+  // ?attach=<tmux name> route (Mission Control's ▶ jump-in) overrides the
+  // pref: attach straight to that running claude session instead.
   useEffect(() => {
-    if (!initialCwd || initialCwd === lastCwdProp.current) {
-      if (initialCwd) lastCwdProp.current = initialCwd;
+    if (initialAttach) openSession(initialCwd, 'claude', initialAttach);
+    else openSession(initialCwd, getTermSessionPrefs().autoStart);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A later ⌨ press with a project cwd, or a ▶ jump-in with an attach name
+  // (the component stays mounted, so both arrive as prop changes): jump to
+  // the session a tab here already holds, or open/attach one.
+  const lastNavProp = useRef(`${initialCwd}|${initialAttach ?? ''}`);
+  useEffect(() => {
+    const key = `${initialCwd}|${initialAttach ?? ''}`;
+    if (key === lastNavProp.current) return;
+    lastNavProp.current = key;
+    if (initialAttach) {
+      const held = sessions.find((s) => s.tmux === initialAttach && (s.status === 'live' || s.status === 'connecting'));
+      if (held) { setActive(held.id); return; }
+      if (initialCwd) setCwd(initialCwd);
+      openSession(initialCwd, 'claude', initialAttach);
       return;
     }
-    lastCwdProp.current = initialCwd;
+    if (!initialCwd) return;
     setCwd(initialCwd);
     const existing = sessions.find((s) => s.cwd === initialCwd && (s.status === 'live' || s.status === 'connecting'));
     if (existing) setActive(existing.id);
     else openSession(initialCwd, getTermSessionPrefs().autoStart);
-  }, [initialCwd]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initialCwd, initialAttach]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Liveness, reported up to App: quiets the global presence pill while the
   // dock owns the corner, and decides whether the dock shows at all.
@@ -581,7 +593,7 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
                 <button className="td-attach"
                   title={`Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`}
                   onClick={() => attachDetached(d)}>
-                  ▶ claude · {d.cwd ? `~/${d.cwd}` : '~'}
+                  ▶ claude · {d.cwd ? `~/${d.cwd}` : '~'}{d.label ? ` — ${d.label}` : ''}
                 </button>
                 <button className="td-x" aria-label="Kill this detached session"
                   title="Kill this session on the host" onClick={() => setKillTarget(d)}>×</button>

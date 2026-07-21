@@ -1559,13 +1559,18 @@ a { color: inherit; }
 .linklike { color: var(--accent); font-weight: 600; padding: 0; background: none; border: 0; cursor: pointer; }
 .linklike:hover { color: var(--accent-deep); text-decoration: underline; }
 
-/* open terminal sessions (#120) */
+/* running terminal sessions (#120) — every chip is a ▶ jump-in button */
 .mc-terms { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; }
 .mc-termchip {
-  font-size: 11.5px; font-weight: 600; color: var(--chip-ink);
+  font: inherit; font-size: 11.5px; font-weight: 600; color: var(--chip-ink);
   background: var(--panel); border: 1px solid var(--line-2); border-radius: 20px; padding: 3px 10px;
+  cursor: pointer; transition: border-color 0.15s ease, color 0.15s ease;
 }
+.mc-termchip:hover { color: var(--accent-deep); border-color: var(--accent-deep); }
 .mc-termchip.claude { color: var(--accent); border-color: var(--accent-tint-border); }
+.mc-termchip.claude:hover { color: var(--accent-deep); border-color: var(--accent-deep); }
+.mc-termchip.detached { color: var(--muted); border-style: dashed; }
+.mc-termchip.detached:hover { color: var(--accent-deep); border-color: var(--accent-deep); }
 .mc-termchip em { font-style: normal; font-weight: 500; color: var(--muted); }
 
 /* (#194) 7-day usage summary card — sits between the arm console and the schedule */

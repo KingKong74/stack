@@ -50,7 +50,7 @@ import { fileURLToPath } from 'node:url';
 import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, paneTail } from './tmux-session.mjs';
 import {
   availableProviders, providerEnv, getProvider,
   loadPreferredProvider, savePreferredProvider,
@@ -231,6 +231,8 @@ function pushDetached() {
     // Jail-relative cwd, the same form the browser sends in start frames
     // ('' = the root). A path outside the jail (shouldn't happen) maps to ''.
     cwd: s.path === ROOT ? '' : s.path.startsWith(ROOT + sep) ? s.path.slice(ROOT.length + 1) : '',
+    // The pane's recent content — what the Gemini labeller reads relay-side.
+    tail: paneTail(s.name),
   }));
   sendUplink({ t: 'detached', sessions: sessionsList });
 }

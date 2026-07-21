@@ -85,6 +85,7 @@ export default function App() {
       {termMounted && (
         <Suspense fallback={null}>
           <Terminal initialCwd={route.name === 'terminal' ? route.cwd : ''}
+            initialAttach={route.name === 'terminal' ? route.attach : undefined}
             visible={route.name === 'terminal'} onAlive={setTermAlive} />
         </Suspense>
       )}

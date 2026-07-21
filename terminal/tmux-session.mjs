@@ -61,6 +61,21 @@ export function killSession(name) {
   spawnSync('tmux', ['kill-session', '-t', `=${name}`], { stdio: 'ignore' });
 }
 
+// Last visible lines of a session's active pane — plain text (capture-pane
+// without -e emits no escape sequences). Feeds the Gemini labeller so even a
+// detached session can be named by what it's doing. Empty string on any miss.
+export function paneTail(name, lines = 30) {
+  // `=name:` — exact-match session (same reason as sessionExists), trailing
+  // colon so tmux parses it as a pane target (bare `=name` doesn't).
+  const r = spawnSync(
+    'tmux',
+    ['capture-pane', '-p', '-t', `=${name}:`, '-S', `-${lines}`],
+    { encoding: 'utf8' },
+  );
+  if (r.status !== 0) return '';
+  return (r.stdout || '').replace(/\s+$/, '').slice(-1500);
+}
+
 // List surviving web-terminal sessions with no client attached — the sessions
 // a page reload orphans. Only stack-term-* names (the daemon's own prefix):
 // autopilot/test sessions are not the browser's to re-attach or kill.

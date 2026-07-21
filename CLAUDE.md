@@ -64,9 +64,12 @@ terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (npm
         installed — direct spawn otherwise): a browser disconnect only detaches, the process
         keeps running. The start frame may carry `skipPerms: true` (a boolean the daemon maps to
         its one allow-listed flag, `--dangerously-skip-permissions` — no path for arbitrary args). The daemon advertises the detached list (`detached` frames — on connect,
-        session start/end and a 60s tick) to the relay, which caches it for
-        GET /api/terminal/detached and forwards browser kill requests (`killDetached`) back —
-        only names actually detached are killable.
+        session start/end and a 60s tick, each entry carrying a `tmux capture-pane` tail so the
+        Gemini labeller can name unattended sessions) to the relay, which caches it (labels held
+        name-keyed across re-pushes) for GET /api/terminal/detached and forwards browser kill
+        requests (`killDetached`) back — only names actually detached are killable. The relay
+        also notes each claude tab's tmux name from the ready frame, so Mission Control's
+        session chips can deep-link an attach.
 templates/  stack-agent-context.md — the canonical portable agent manual (single source of truth).
 scripts/    stack-context.mjs — prints that template to stdout, optionally stamped with slug + API.
             stack-tree.mjs — the branch navigator, phase 1 (`stack tree` via the root `stack`
@@ -216,6 +219,12 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   (`store.resumeAutopilotJob`), **⏸ Hang up** (`hangupAutopilotJob` — parks it until resumed
   by hand) and **× Dismiss** (`dismissAutopilotJob`); a project row with a held resume shows
   "resumes <time>" in place of ▶ Run now.
+  The **running-sessions strip** (below the totals row) is one ▶ chip per terminal session —
+  web-attached ones and detached tmux survivors alike — each a jump-in that opens
+  `go.terminal(cwd, tmuxName)` (`#/terminal?cwd=…&attach=…`; the Terminal screen switches to the
+  tab that already holds the session or re-attaches it), wearing Gemini's label of what the
+  session is doing: labelling fires automatically whenever unlabelled sessions appear
+  (`labelTerminalSessions`, silent when keyless; ✧ Re-label re-asks by hand).
   Renders `getControl()`; automode projects sort first (`.mc-*` styles).
 - `screens/Terminal.tsx` — the web terminal (`#/terminal[?cwd=<dir>]`, lazy-loaded so xterm.js
   stays out of the main bundle; entry points on Mission Control — the strip's ⌨ Terminal button
@@ -690,12 +699,16 @@ the silent metadata backstop so the feed never has gaps.
   otherwise — a running session has no kill channel), `{status:'queued', notBefore:null}`
   resumes it now; returns the updated job shape) · `DELETE /jobs/:id` (#142 — dismiss a
   queued/paused job; 409 for anything claimed/running/finished)
-- `POST /api/terminal/label` (#120 — ✧ Gemini names what each open web-terminal session is doing,
-  from the relay's rolling ANSI-stripped output tail; annotation only, in-memory, 503 keyless.
-  The live session list itself rides the control payload's `terminal.sessions`.) ·
+- `POST /api/terminal/label` (#120 — ✧ Gemini names what each running terminal session is doing:
+  the open web sessions (relay's rolling ANSI-stripped output tail) AND the detached tmux
+  survivors (the daemon's captured pane tails) in one pass; annotation only, in-memory, 503
+  keyless. Returns `{sessions, detached}`; both lists also ride the control payload's
+  `terminal.{sessions,detached}`, where Mission Control renders them as ▶ jump-in chips —
+  `#/terminal?cwd=…&attach=<tmux name>` — and auto-fires this route whenever unlabelled
+  sessions appear.) ·
   `GET /api/terminal/detached` (#188 — the surviving `stack-term-*` tmux sessions with no client
-  attached, from the relay's cache of the daemon's advertisements; empty while the daemon is
-  offline) · `POST /api/terminal/detached/kill` (`{name}` — kill an orphaned tmux session on the
+  attached, from the relay's cache of the daemon's advertisements, each with its Gemini `label`
+  when one has been made; empty while the daemon is offline) · `POST /api/terminal/detached/kill` (`{name}` — kill an orphaned tmux session on the
   host; the daemon refuses names that aren't actually detached, so a live session is unkillable
   through this route) · `POST /api/terminal/assist` (`{prompt, cwd}` — ✧ the rail's command help:
   Gemini suggests one shell command + a save-label + a caveat line; suggestion only, the client

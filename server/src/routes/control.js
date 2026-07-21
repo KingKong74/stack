@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { relativeTime, computeProgress, PRESENCE_TTL_MINUTES } from '../util.js';
 import { readSettings, EXECUTOR_CATALOGUE, ADVISOR_CATALOGUE } from '../settings.js';
-import { termAgentConnected, termSessions } from '../term.js';
+import { termAgentConnected, termSessions, termDetached } from '../term.js';
 import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 
 // GET /api/control — Mission Control: every project's automation state in one
@@ -240,7 +240,7 @@ control.get('/', async (_req, res) => {
     usage,
     // The host PTY daemon's agent socket + every open web-terminal session
     // (labels are the ✧ Gemini annotations, '' until asked for).
-    terminal: { connected: termAgentConnected(), sessions: termSessions() },
+    terminal: { connected: termAgentConnected(), sessions: termSessions(), detached: termDetached() },
     schedules: scheduleShapeRows(schedR.rows),
     jobs: jobShapeRows(jobsR.rows),
     projects,

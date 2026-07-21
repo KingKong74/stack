@@ -5,7 +5,7 @@ export type Route =
   | { name: 'settings' }
   | { name: 'timeline' }
   | { name: 'control' }
-  | { name: 'terminal'; cwd?: string }
+  | { name: 'terminal'; cwd?: string; attach?: string }
   | { name: 'share'; slug: string; token: string }
   | { name: 'detail'; id: string; tab?: string; highlight?: string };
 
@@ -16,7 +16,7 @@ function parse(): Route {
   if (h === '/control' || h.startsWith('/control')) return { name: 'control' };
   if (h.startsWith('/terminal')) {
     const params = new URLSearchParams(h.split('?')[1] || '');
-    return { name: 'terminal', cwd: params.get('cwd') || undefined };
+    return { name: 'terminal', cwd: params.get('cwd') || undefined, attach: params.get('attach') || undefined };
   }
   // The public showcase — rendered without the token gate (read-only, its own key).
   const s = h.match(/^\/share\/([^/]+)\/([^/?]+)/);
@@ -46,8 +46,14 @@ export const go = {
   settings: () => { window.location.hash = '#/settings'; },
   timeline: () => { window.location.hash = '#/timeline'; },
   control: () => { window.location.hash = '#/control'; },
-  terminal: (cwd?: string) => {
-    window.location.hash = `#/terminal${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ''}`;
+  // attach (a stack-term-* tmux name) jumps straight into that running claude
+  // session — Mission Control's ▶ chips use it.
+  terminal: (cwd?: string, attach?: string) => {
+    const q = [
+      cwd ? `cwd=${encodeURIComponent(cwd)}` : '',
+      attach ? `attach=${encodeURIComponent(attach)}` : '',
+    ].filter(Boolean).join('&');
+    window.location.hash = `#/terminal${q ? `?${q}` : ''}`;
   },
   // tab picks which collection opens; highlight (when given) flags the matching
   // item/commit on that tab via the existing highlight mechanism. The tab

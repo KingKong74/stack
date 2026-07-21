@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getControl, patchProject, patchSettings, startAutopilot,
   createAutopilotSchedule, patchAutopilotSchedule, deleteAutopilotSchedule,
@@ -292,18 +292,37 @@ export function ControlPanel() {
       .catch(() => setPickItems((cur) => ({ ...cur, [slug]: [] })));
   };
 
-  const labelSessions = async () => {
+  const labelSessions = async (silent = false) => {
     if (labelBusy) return;
     setLabelBusy(true);
     try {
-      const sessions = await labelTerminalSessions();
-      setData((cur) => cur && { ...cur, terminal: { connected: cur.terminal?.connected ?? true, sessions } });
+      const { sessions, detached } = await labelTerminalSessions();
+      setData((cur) => cur && { ...cur, terminal: { connected: cur.terminal?.connected ?? true, sessions, detached } });
     } catch (e) {
-      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not label the sessions.');
+      // silent = the auto-label pass — a keyless server (503) just leaves the
+      // chips unlabelled, no error banner.
+      if (!silent && !(e instanceof AuthError)) setError((e as Error)?.message || 'Could not label the sessions.');
     } finally {
       setLabelBusy(false);
     }
   };
+
+  // ✧ Auto-label: whenever sessions without a Gemini label show up (a fresh
+  // load, a new session, a new detached survivor), ask once. The tried-key
+  // guard stops the 30s tick re-asking for sessions Gemini already saw but
+  // couldn't name (no output yet, or no server key).
+  const labelTried = useRef('');
+  useEffect(() => {
+    const t = data?.terminal;
+    if (!t) return;
+    const unlabelled = [
+      ...(t.sessions ?? []).filter((s) => !s.label).map((s) => `s${s.sid}`),
+      ...(t.detached ?? []).filter((d) => !d.label).map((d) => d.name),
+    ].sort().join(',');
+    if (!unlabelled || unlabelled === labelTried.current) return;
+    labelTried.current = unlabelled;
+    void labelSessions(true);
+  }, [data?.terminal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const week = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
@@ -491,18 +510,33 @@ export function ControlPanel() {
                 <span><b>{data.totals.claims}</b> claimed lane{data.totals.claims === 1 ? '' : 's'}</span>
                 <span><b>{data.totals.review}</b> awaiting review</span>
               </div>
-              {(data.terminal?.sessions?.length ?? 0) > 0 && (
-                <div className="mc-terms" aria-label="Open terminal sessions">
-                  {data.terminal!.sessions!.map((s) => (
-                    <span key={s.sid} className={`mc-termchip ${s.cmd}`}
-                      title={s.label || 'No label yet — ✧ Label asks Gemini what each session is doing'}>
-                      ⌨ {s.cmd} · {s.cwd.replace(/^\/home\/[^/]+/, '~')} · {sessionAge(s.startedAt)}
+              {/* Running sessions — the web-attached ones and the detached tmux
+                  survivors. Every chip is a ▶ jump-in: it opens #/terminal
+                  attached to that session (by tmux name when there is one —
+                  same-tab jumps just switch to the tab that holds it; a shell
+                  or pre-tmux session falls back to a cwd match). Labels are
+                  Gemini's, applied automatically as unlabelled sessions appear. */}
+              {((data.terminal?.sessions?.length ?? 0) > 0 || (data.terminal?.detached?.length ?? 0) > 0) && (
+                <div className="mc-terms" aria-label="Running terminal sessions">
+                  {(data.terminal?.sessions ?? []).map((s) => (
+                    <button key={s.sid} className={`mc-termchip ${s.cmd}`}
+                      title={`Jump into this session${s.label ? ` — ${s.label}` : ''}`}
+                      onClick={() => go.terminal(s.cwd === '~' ? undefined : s.cwd, s.tmux || undefined)}>
+                      ▶ {s.cmd} · {s.cwd.replace(/^\/home\/[^/]+/, '~')} · {sessionAge(s.startedAt)}
                       {s.label && <em> — {s.label}</em>}
-                    </span>
+                    </button>
                   ))}
-                  <button className="btn-repo sm" onClick={labelSessions} disabled={labelBusy}
-                    title="Ask Gemini to name what each open session is doing (needs a server key)">
-                    {labelBusy ? 'Labelling…' : '✧ Label'}
+                  {(data.terminal?.detached ?? []).map((d) => (
+                    <button key={d.name} className="mc-termchip detached"
+                      title={`Running unattended on the host (tmux ${d.name}) — jump back in${d.label ? ` — ${d.label}` : ''}`}
+                      onClick={() => go.terminal(d.cwd || undefined, d.name)}>
+                      ▶ claude · {d.cwd ? `~/${d.cwd}` : '~'} · detached
+                      {d.label && <em> — {d.label}</em>}
+                    </button>
+                  ))}
+                  <button className="btn-repo sm" onClick={() => labelSessions()} disabled={labelBusy}
+                    title="Ask Gemini again what each running session is doing (needs a server key)">
+                    {labelBusy ? 'Labelling…' : '✧ Re-label'}
                   </button>
                 </div>
               )}

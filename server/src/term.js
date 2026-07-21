@@ -27,7 +27,7 @@ export const termAgentConnected = () => agentConnected;
 // Live-session metadata for Mission Control (#120): what each open terminal
 // is (cwd, shell/claude, age) plus a rolling ANSI-stripped output tail that
 // the Gemini labeller reads. In-memory only — gone with the session.
-const termMeta = new Map(); // sid -> { cwd, cmd, startedAt, tail, label }
+const termMeta = new Map(); // sid -> { cwd, cmd, startedAt, tail, label, tmux }
 const TAIL_CAP = 2000;
 const stripAnsi = (s) => s
   .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '') // OSC (titles etc.)
@@ -40,6 +40,8 @@ export const termSessions = () =>
     cmd: m.cmd,
     startedAt: m.startedAt,
     label: m.label || '',
+    tmux: m.tmux || '', // the host tmux session behind a claude tab — Mission
+                        // Control's ▶ jump-in attaches by this name
   }));
 export const termTails = () =>
   [...termMeta.entries()].map(([sid, m]) => ({ sid: String(sid), meta: m }));
@@ -49,8 +51,16 @@ export const termTails = () =>
 // the list (on connect, on session start/end, on a slow tick); the relay just
 // caches it for GET /api/terminal/detached. Cleared when the daemon drops —
 // nothing is attachable without it anyway, and a reconnect re-seeds the cache.
-let detachedSessions = []; // [{ name, cwd, created }]
-export const termDetached = () => detachedSessions;
+let detachedSessions = []; // [{ name, cwd, created, tail }]
+// Gemini labels survive the 60s list re-push (the daemon only sends
+// name/cwd/created/tail); pruned when a name leaves the list.
+const detachedLabels = new Map(); // name -> label
+export const termDetached = () =>
+  detachedSessions.map(({ name, cwd, created }) => ({
+    name, cwd, created, label: detachedLabels.get(name) || '',
+  }));
+export const termDetachedTails = () => detachedSessions;
+export const setDetachedLabel = (name, label) => { detachedLabels.set(name, label); };
 // Set inside attachTerm so the kill route can reach the live agent socket.
 let agentSend = null;
 export function killDetachedTmux(name) {
@@ -127,7 +137,10 @@ export function attachTerm(httpServer) {
             name: s.name,
             cwd: typeof s.cwd === 'string' ? s.cwd : '',
             created: Number(s.created) || 0,
+            tail: typeof s.tail === 'string' ? s.tail.slice(-TAIL_CAP) : '',
           }));
+        const alive = new Set(detachedSessions.map((s) => s.name));
+        for (const name of detachedLabels.keys()) if (!alive.has(name)) detachedLabels.delete(name);
         return;
       }
 
@@ -152,6 +165,12 @@ export function attachTerm(httpServer) {
             meta.tail = (meta.tail + stripAnsi(Buffer.from(m.data, 'base64').toString('utf8'))).slice(-TAIL_CAP);
           } catch { /* bad frame — the tail just misses it */ }
         }
+      }
+      if (m.t === 'ready' && typeof m.tmuxSession === 'string') {
+        // The daemon confirmed (or assigned) the tab's tmux session — keep the
+        // name on the meta row so Mission Control can offer a jump-in attach.
+        const meta = termMeta.get(m.sid);
+        if (meta) meta.tmux = m.tmuxSession;
       }
       if (m.t === 'out' || m.t === 'ready' || m.t === 'err' || m.t === 'usage') send(browser, m);
       if (m.t === 'exit') { send(browser, m); browser.close(); sessions.delete(m.sid); termMeta.delete(m.sid); broadcastStatus(); }
@@ -190,6 +209,7 @@ export function attachTerm(httpServer) {
         startedAt: Date.now(),
         tail: '',
         label: '',
+        tmux: '',
       });
       delete msg.token; // the daemon never sees credentials
       send(agent, { ...msg, sid });
