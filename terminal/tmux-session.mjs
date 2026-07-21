@@ -51,8 +51,15 @@ export function sessionExists(name) {
 // eliminating the race between separate create + attach calls.
 // shellCmd is a single string that tmux passes to sh -c (tmux's convention
 // for one-arg shell commands; multi-arg joining varies between versions).
+// The trailing command sequence (`;` args) turns mouse mode on server-wide —
+// without it the wheel can't scroll: tmux repaints a fixed viewport, so the
+// outer xterm never accumulates scrollback; with it, wheel-up scrolls tmux's
+// own history in copy-mode. history-limit raises the ceiling for panes
+// created after the first (the global default is only 2000 lines).
 export function sessionArgv(name, cwd, shellCmd) {
-  return ['tmux', 'new-session', '-A', '-s', name, '-c', cwd, shellCmd];
+  return ['tmux', 'new-session', '-A', '-s', name, '-c', cwd, shellCmd,
+    ';', 'set-option', '-g', 'mouse', 'on',
+    ';', 'set-option', '-g', 'history-limit', '20000'];
 }
 
 // Kill a named tmux session — used on idle timeout to prevent zombie sessions
@@ -76,11 +83,12 @@ export function paneTail(name, lines = 30) {
   return (r.stdout || '').replace(/\s+$/, '').slice(-1500);
 }
 
-// List surviving web-terminal sessions with no client attached — the sessions
-// a page reload orphans. Only stack-term-* names (the daemon's own prefix):
-// autopilot/test sessions are not the browser's to re-attach or kill.
-// created is epoch ms; path is the session's start directory on the host.
-export function listDetached() {
+// List every stack-term-* tmux session on the host — the web daemon's own and
+// any started by hand (ssh + `stack term`), with whether a client is attached
+// anywhere. Only stack-term-* names: autopilot/test sessions are not the
+// browser's to view, mirror or kill. created is epoch ms; path is the
+// session's start directory on the host.
+export function listStackSessions() {
   const r = spawnSync(
     'tmux',
     ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}'],
@@ -91,8 +99,13 @@ export function listDetached() {
   for (const line of r.stdout.split('\n')) {
     const [name, attached, created, path] = line.split('\t');
     if (!validName(name) || !name.startsWith('stack-term-')) continue;
-    if (attached !== '0') continue;
-    out.push({ name, created: (parseInt(created, 10) || 0) * 1000, path: path || '' });
+    out.push({ name, attached: attached !== '0', created: (parseInt(created, 10) || 0) * 1000, path: path || '' });
   }
   return out;
+}
+
+// The subset with no client attached — what a page reload orphans, and the
+// only names the browser's kill request may touch.
+export function listDetached() {
+  return listStackSessions().filter((s) => !s.attached);
 }

@@ -620,7 +620,11 @@ export async function termAssist(prompt: string, cwd: string): Promise<TermAssis
 // comes from the relay's cache of the daemon's advertisements; killing goes
 // back through the same channel, and the daemon refuses names that aren't
 // actually detached.
-export interface DetachedSession { name: string; cwd: string; created: number; label?: string }
+export interface DetachedSession {
+  name: string; cwd: string; created: number;
+  attached?: boolean;  // a client holds it elsewhere (another browser / laptop ssh) — attach mirrors it
+  label?: string;      // ✧ Gemini's take on what it's doing
+}
 export async function getDetachedSessions(): Promise<DetachedSession[]> {
   const r = await request<{ sessions: DetachedSession[] }>('/terminal/detached');
   return r.sessions;

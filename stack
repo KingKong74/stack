@@ -18,6 +18,7 @@ const COMMANDS = {
   'start-session': { script: 'stack-sessions.mjs', fn: 'mainStart', blurb: 'start an automation session (▶ Run now, from the terminal)' },
   'list-sessions': { script: 'stack-sessions.mjs', fn: 'mainList', blurb: 'list recent automation sessions' },
   sessions: { script: 'stack-sessions.mjs', fn: 'mainList', blurb: 'alias for list-sessions' },
+  term: { script: 'stack-term-cli.mjs', blurb: 'claude in a stack-term tmux session (visible on Mission Control; --shell, --safe)' },
 };
 
 const [cmd, ...rest] = process.argv.slice(2);

@@ -12,6 +12,7 @@ import {
   getDetachedSessions, killDetachedSession, type DetachedSession,
   getTermTmuxName, setTermTmuxName, clearTermTmuxName,
   getTermSessionPrefs, termAssist, type TermAssistSuggestion,
+  getOverview,
 } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
@@ -177,25 +178,45 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   // comes from the device pref (default claude, in skip-permissions mode via
   // the start frame; a surviving tmux session for the cwd re-attaches). An
   // ?attach=<tmux name> route (Mission Control's ▶ jump-in) overrides the
-  // pref: attach straight to that running claude session instead.
+  // pref: attach straight to that running claude session instead. A bare open
+  // (no cwd, no attach) lands in the most recently touched project rather
+  // than $HOME — claude in the home directory helps nobody; overview's resume
+  // slug is the "current" project. Falls back to home if the fetch misses.
   useEffect(() => {
-    if (initialAttach) openSession(initialCwd, 'claude', initialAttach);
-    else openSession(initialCwd, getTermSessionPrefs().autoStart);
+    if (initialAttach) { openSession(initialCwd, 'claude', initialAttach); return; }
+    if (initialCwd) { openSession(initialCwd, getTermSessionPrefs().autoStart); return; }
+    let gone = false;
+    getOverview()
+      .then((o) => o.resume?.slug ?? '')
+      .catch(() => '')
+      .then((slug) => {
+        if (gone) return;
+        if (slug) setCwd(slug);
+        openSession(slug, getTermSessionPrefs().autoStart);
+      });
+    return () => { gone = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A later ⌨ press with a project cwd, or a ▶ jump-in with an attach name
-  // (the component stays mounted, so both arrive as prop changes): jump to
-  // the session a tab here already holds, or open/attach one.
+  // (the component stays mounted, so both arrive as prop changes — and a
+  // REVISIT with the same cwd re-fires via `visible`, so coming back through
+  // a project's ⌨ always focuses that project's session instead of leaving
+  // whatever tab was last active on top).
+  const navReady = useRef(false);
   const lastNavProp = useRef(`${initialCwd}|${initialAttach ?? ''}`);
   useEffect(() => {
+    if (!visible) return;
     const key = `${initialCwd}|${initialAttach ?? ''}`;
-    if (key === lastNavProp.current) return;
+    const changed = key !== lastNavProp.current;
     lastNavProp.current = key;
+    if (!navReady.current) { navReady.current = true; return; } // mount effect owns the first open
     if (initialAttach) {
       const held = sessions.find((s) => s.tmux === initialAttach && (s.status === 'live' || s.status === 'connecting'));
       if (held) { setActive(held.id); return; }
-      if (initialCwd) setCwd(initialCwd);
-      openSession(initialCwd, 'claude', initialAttach);
+      if (changed) {
+        if (initialCwd) setCwd(initialCwd);
+        openSession(initialCwd, 'claude', initialAttach);
+      }
       return;
     }
     if (!initialCwd) return;
@@ -203,7 +224,7 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
     const existing = sessions.find((s) => s.cwd === initialCwd && (s.status === 'live' || s.status === 'connecting'));
     if (existing) setActive(existing.id);
     else openSession(initialCwd, getTermSessionPrefs().autoStart);
-  }, [initialCwd, initialAttach]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [visible, initialCwd, initialAttach]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Liveness, reported up to App: quiets the global presence pill while the
   // dock owns the corner, and decides whether the dock shows at all.
@@ -582,21 +603,28 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
           </div>
         )}
 
-        {/* #188 — detached sessions strip: claude sessions still running on the
-            host with no browser attached. ▶ re-attaches in a new tab; × kills
-            the host-side process (confirmed first). */}
+        {/* #188 — running-on-the-host strip: claude tmux sessions this tab
+            doesn't hold. Detached ones (a page reload's orphans) ▶ re-attach,
+            × kills (confirmed first — and only detached ones are killable);
+            ones attached elsewhere (another browser, the laptop over ssh via
+            `stack term`) ▶ mirror — tmux fans the same session out to every
+            client, so this tab watches/drives the same screen. */}
         {detachedShown.length > 0 && (
           <div className="term-detached">
-            <span className="td-lbl">Detached on the host</span>
+            <span className="td-lbl">Running on the host</span>
             {detachedShown.map((d) => (
               <span key={d.name} className="td-chip">
                 <button className="td-attach"
-                  title={`Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`}
+                  title={d.attached
+                    ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
+                    : `Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`}
                   onClick={() => attachDetached(d)}>
-                  ▶ claude · {d.cwd ? `~/${d.cwd}` : '~'}{d.label ? ` — ${d.label}` : ''}
+                  ▶ claude · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}{d.label ? ` — ${d.label}` : ''}
                 </button>
-                <button className="td-x" aria-label="Kill this detached session"
-                  title="Kill this session on the host" onClick={() => setKillTarget(d)}>×</button>
+                {!d.attached && (
+                  <button className="td-x" aria-label="Kill this detached session"
+                    title="Kill this session on the host" onClick={() => setKillTarget(d)}>×</button>
+                )}
               </span>
             ))}
           </div>

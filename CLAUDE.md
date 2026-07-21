@@ -63,13 +63,18 @@ terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (npm
         Claude sessions run inside named `stack-term-*` tmux sessions (#171/#188, when tmux is
         installed — direct spawn otherwise): a browser disconnect only detaches, the process
         keeps running. The start frame may carry `skipPerms: true` (a boolean the daemon maps to
-        its one allow-listed flag, `--dangerously-skip-permissions` — no path for arbitrary args). The daemon advertises the detached list (`detached` frames — on connect,
-        session start/end and a 60s tick, each entry carrying a `tmux capture-pane` tail so the
-        Gemini labeller can name unattended sessions) to the relay, which caches it (labels held
-        name-keyed across re-pushes) for GET /api/terminal/detached and forwards browser kill
-        requests (`killDetached`) back — only names actually detached are killable. The relay
-        also notes each claude tab's tmux name from the ready frame, so Mission Control's
-        session chips can deep-link an attach.
+        its one allow-listed flag, `--dangerously-skip-permissions` — no path for arbitrary args). The daemon advertises EVERY `stack-term-*` tmux session (`detached`
+        frames — on connect, session start/end and a 60s tick), each entry carrying an
+        `attached` flag (a client holds it elsewhere — another browser, or a laptop over ssh via
+        `stack term`; attaching again just mirrors it, tmux fans one session out to every
+        client) and a `tmux capture-pane` tail so the Gemini labeller can name unattended
+        sessions. The relay caches the list (labels held name-keyed across re-pushes) for
+        GET /api/terminal/detached and forwards browser kill requests (`killDetached`) back —
+        only names actually detached are killable. The relay also notes each claude tab's tmux
+        name from the ready frame, so Mission Control's session chips can deep-link an attach.
+        tmux sessions run with `mouse on` (set server-wide by `sessionArgv`'s command sequence):
+        tmux repaints a fixed viewport so the outer xterm never accumulates scrollback — mouse
+        mode makes the wheel scroll tmux's own history instead.
 templates/  stack-agent-context.md — the canonical portable agent manual (single source of truth).
 scripts/    stack-context.mjs — prints that template to stdout, optionally stamped with slug + API.
             stack-tree.mjs — the branch navigator, phase 1 (`stack tree` via the root `stack`
@@ -233,14 +238,19 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   by hand) and **× Dismiss** (`dismissAutopilotJob`); a project row with a held resume shows
   "resumes <time>" in place of ▶ Run now.
   The **running-sessions strip** (below the totals row) is one ▶ chip per terminal session —
-  web-attached ones and detached tmux survivors alike — each a jump-in that opens
-  `go.terminal(cwd, tmuxName)` (`#/terminal?cwd=…&attach=…`; the Terminal screen switches to the
-  tab that already holds the session or re-attaches it), wearing Gemini's label of what the
-  session is doing: labelling fires automatically whenever unlabelled sessions appear
-  (`labelTerminalSessions`, silent when keyless; ✧ Re-label re-asks by hand).
+  web-attached ones, detached tmux survivors AND sessions attached on another device (a laptop
+  over ssh via `stack term`; deduped against the web chips by tmux name, `.away` green-dashed) —
+  each a jump-in that opens `go.terminal(cwd, tmuxName)` (`#/terminal?cwd=…&attach=…`; the
+  Terminal screen switches to the tab that already holds the session, re-attaches, or mirrors an
+  attached one), wearing Gemini's label of what the session is doing: labelling fires
+  automatically whenever unlabelled sessions appear (`labelTerminalSessions`, silent when
+  keyless; ✧ Re-label re-asks by hand). The ⌨ Terminal button sits beside the screen's
+  Settings / Mission Control tabs (`.tab-term`, in `Settings.tsx`), not in the totals row.
   Renders `getControl()`; automode projects sort first (`.mc-*` styles).
-- `screens/Terminal.tsx` — the web terminal (`#/terminal[?cwd=<dir>]`, lazy-loaded so xterm.js
-  stays out of the main bundle; entry points on Mission Control — the strip's ⌨ Terminal button
+- `screens/Terminal.tsx` — the web terminal (`#/terminal[?cwd=<dir>][&attach=<tmux>]`,
+  lazy-loaded so xterm.js stays out of the main bundle; a bare open — no cwd, no attach —
+  resolves its auto-session cwd to the overview's resume slug, the most recently touched
+  project, falling back to home on any miss; entry points on Mission Control — the strip's ⌨ Terminal button
   and a per-row ⌨ that prefills the project's slug as the cwd). xterm.js + fit addon over
   `store.openTerminal()` (the only place the ws transport + token live); Shell/Claude seg control,
   status line, reconnectable. The **usage strip** renders the daemon's `usage` frames: today's
@@ -805,6 +815,8 @@ node scripts/stack-context.mjs --slug stack --api https://stack.your-domain  # e
 ./stack tree                               # the branch navigator (also --repo <path>, --json)
 ./stack start-session [slug] [--item N]    # start an automation session (▶ Run now from the terminal)
 ./stack list-sessions                      # the automation job queue (also [slug], --limit, --json)
+./stack term [dir]                         # claude in a stack-term tmux session (laptop/ssh — shows on
+                                           # Mission Control, mirrorable from the web; --shell, --safe)
 node terminal/stack-term.mjs               # the web-terminal daemon (normally via the @reboot cron line)
 tail -f ~/.stack/term.log                  # its log
 node hook/stack-gemini-review.mjs --dry    # second-model review of the last commit (Gemini; --dry = print only)

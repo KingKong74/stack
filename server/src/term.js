@@ -51,13 +51,13 @@ export const termTails = () =>
 // the list (on connect, on session start/end, on a slow tick); the relay just
 // caches it for GET /api/terminal/detached. Cleared when the daemon drops —
 // nothing is attachable without it anyway, and a reconnect re-seeds the cache.
-let detachedSessions = []; // [{ name, cwd, created, tail }]
+let detachedSessions = []; // [{ name, cwd, created, attached, tail }]
 // Gemini labels survive the 60s list re-push (the daemon only sends
-// name/cwd/created/tail); pruned when a name leaves the list.
+// name/cwd/created/attached/tail); pruned when a name leaves the list.
 const detachedLabels = new Map(); // name -> label
 export const termDetached = () =>
-  detachedSessions.map(({ name, cwd, created }) => ({
-    name, cwd, created, label: detachedLabels.get(name) || '',
+  detachedSessions.map(({ name, cwd, created, attached }) => ({
+    name, cwd, created, attached, label: detachedLabels.get(name) || '',
   }));
 export const termDetachedTails = () => detachedSessions;
 export const setDetachedLabel = (name, label) => { detachedLabels.set(name, label); };
@@ -128,8 +128,9 @@ export function attachTerm(httpServer) {
       // can exit cleanly.  Sessions whose browsers are still waiting are simply
       // left connected — the buffered output that follows the hello flushes
       // through the normal 'out' handler below.
-      // detached — the daemon's current list of orphaned tmux sessions. Cache
-      // it whole; the API route serves it read-only.
+      // detached — the daemon's current list of stack-term-* tmux sessions
+      // (detached survivors AND ones attached elsewhere — another browser, a
+      // laptop over ssh). Cache it whole; the API route serves it read-only.
       if (m.t === 'detached' && Array.isArray(m.sessions)) {
         detachedSessions = m.sessions
           .filter((s) => s && typeof s.name === 'string')
@@ -137,6 +138,7 @@ export function attachTerm(httpServer) {
             name: s.name,
             cwd: typeof s.cwd === 'string' ? s.cwd : '',
             created: Number(s.created) || 0,
+            attached: s.attached === true,
             tail: typeof s.tail === 'string' ? s.tail.slice(-TAIL_CAP) : '',
           }));
         const alive = new Set(detachedSessions.map((s) => s.name));

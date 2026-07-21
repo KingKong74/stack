@@ -175,6 +175,13 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
         <div className="tabs">
           <button className={`tab ${screenTab === 'settings' ? 'on' : ''}`} onClick={() => setScreenTab('settings')}>Settings</button>
           <button className={`tab ${screenTab === 'control' ? 'on' : ''}`} onClick={() => setScreenTab('control')}>Mission Control</button>
+          {/* Not a tab — the jump to the host terminal, up here beside them.
+              Opens in the most recently touched project (the Terminal screen
+              resolves the cwd itself when none is given). */}
+          <button className="tab tab-term" onClick={() => go.terminal()}
+            title="A real shell (or Claude) on the host, from any device — opens in your current project">
+            ⌨ Terminal
+          </button>
         </div>
 
         {screenTab === 'control' && <ControlPanel />}

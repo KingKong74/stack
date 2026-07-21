@@ -96,7 +96,7 @@ terminal.post('/label', async (_req, res) => {
       ...tails.map(({ sid, meta }) =>
         `Session ${sid} (${meta.cmd} in ${meta.cwd}) — recent output:\n${meta.tail.trim().slice(-1200)}`),
       ...orphans.map((d) =>
-        `Session ${d.name} (claude in ${d.cwd || '~'}, running detached — no one watching) — recent output:\n${d.tail.trim().slice(-1200)}`),
+        `Session ${d.name} (claude in ${d.cwd || '~'}, ${d.attached ? 'attached on another device' : 'running detached — no one watching'}) — recent output:\n${d.tail.trim().slice(-1200)}`),
     ].join('\n\n---\n\n');
     try {
       const out = await askGemini(

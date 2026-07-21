@@ -505,8 +505,6 @@ export function ControlPanel() {
                 </div>
               </div>
               <div className="mc-totals">
-                <button className="btn-repo sm" onClick={() => go.terminal()}
-                  title="A real shell (or Claude) on the host, from any device">⌨ Terminal</button>
                 <span className={`mc-daemon ${data.terminal?.connected ? 'on' : ''}`}
                   title={data.terminal?.connected
                     ? 'stack-term is connected — terminal sessions available'
@@ -534,11 +532,18 @@ export function ControlPanel() {
                       {s.label && <em> — {s.label}</em>}
                     </button>
                   ))}
-                  {(data.terminal?.detached ?? []).map((d) => (
-                    <button key={d.name} className="mc-termchip detached"
-                      title={`Running unattended on the host (tmux ${d.name}) — jump back in${d.label ? ` — ${d.label}` : ''}`}
+                  {(data.terminal?.detached ?? [])
+                    // A web session's own tmux name would double up with its
+                    // live chip above — skip those; keep true orphans and
+                    // sessions attached elsewhere (laptop ssh, another browser).
+                    .filter((d) => !(data.terminal?.sessions ?? []).some((s) => s.tmux === d.name))
+                    .map((d) => (
+                    <button key={d.name} className={`mc-termchip ${d.attached ? 'away' : 'detached'}`}
+                      title={d.attached
+                        ? `Attached on another device (tmux ${d.name}) — open it here too; both screens mirror the same session${d.label ? ` — ${d.label}` : ''}`
+                        : `Running unattended on the host (tmux ${d.name}) — jump back in${d.label ? ` — ${d.label}` : ''}`}
                       onClick={() => go.terminal(d.cwd || undefined, d.name)}>
-                      ▶ claude · {d.cwd ? `~/${d.cwd}` : '~'} · detached
+                      ▶ claude · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}
                       {d.label && <em> — {d.label}</em>}
                     </button>
                   ))}

@@ -50,7 +50,7 @@ import { fileURLToPath } from 'node:url';
 import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, paneTail } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, paneTail } from './tmux-session.mjs';
 import {
   availableProviders, providerEnv, getProvider,
   loadPreferredProvider, savePreferredProvider,
@@ -216,18 +216,21 @@ function sendUplink(obj) {
   }
 }
 
-// ---- detached-session advertising (#188 follow-up) ----
+// ---- tmux-session advertising (#188 follow-up) ----
 // A page reload orphans its tmux session: the claude process keeps running but
-// no browser knows the session name any more. The daemon advertises surviving
-// detached stack-term-* sessions to the relay, which caches the list for
-// GET /api/terminal/detached — the Terminal screen renders them as re-attach
-// chips. Pushed on connect, on every session start/end (attach consumes one,
-// detach creates one) and on a slow tick as a catch-all.
+// no browser knows the session name any more. The daemon advertises EVERY
+// stack-term-* session to the relay — detached survivors and ones attached
+// elsewhere (another browser, or a laptop over ssh via `stack term`) — which
+// caches the list for GET /api/terminal/detached; the Terminal screen and
+// Mission Control render them as re-attach / mirror chips. Pushed on connect,
+// on every session start/end (attach consumes a detached entry, detach
+// creates one) and on a slow tick as a catch-all.
 function pushDetached() {
   if (!tmuxAvailable()) return;
-  const sessionsList = listDetached().map((s) => ({
+  const sessionsList = listStackSessions().map((s) => ({
     name: s.name,
     created: s.created,
+    attached: s.attached,
     // Jail-relative cwd, the same form the browser sends in start frames
     // ('' = the root). A path outside the jail (shouldn't happen) maps to ''.
     cwd: s.path === ROOT ? '' : s.path.startsWith(ROOT + sep) ? s.path.slice(ROOT.length + 1) : '',
