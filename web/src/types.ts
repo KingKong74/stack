@@ -202,37 +202,6 @@ export interface OverviewRun {
   summary: string; when: string;
 }
 
-// ---- branch tree (#72) ----
-// A lane is an open roadmap item's claimed branch — live, stale, or open.
-export interface TreeLane {
-  branch: string;
-  itemId: string;
-  itemTitle: string;
-  bucket: Priority;
-  live: boolean;           // presence row within TTL
-  state: 'open' | 'stale'; // stale = hit the usage limit or no commits
-  runSummary: string | null;
-}
-// An absorbed lane: a landed autopilot run whose branch is no longer claimed.
-export interface TreeAbsorbed {
-  branch: string;
-  itemId: string | null;
-  itemTitle: string;
-  commits: number;
-  tokens: number;
-  when: string | null;  // ISO timestamp of the run's finish
-}
-// A future idea in the idea funnel.
-export interface TreeIdea {
-  id: string;
-  title: string;
-  alignment: string;  // '' | on-course | tangent | off-course
-}
-export interface ProjectTree {
-  lanes: TreeLane[];
-  ideas: TreeIdea[];
-  absorbed: TreeAbsorbed[];
-}
 
 export interface Overview {
   resume: OverviewResume | null;

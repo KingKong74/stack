@@ -3,7 +3,6 @@ import type { Roadmap as RoadmapData, RoadmapItem, Priority, AutopilotRun } from
 import { PRIORITY_META, timeAgo, dayLabel } from '../lib/ui';
 import { getAutopilotRuns, getReviewBrief, queueUndo, ReviewBrief } from '../store';
 import { Modal } from '../components/Modal';
-import { BranchTree } from './BranchTree';
 import { renderMarkdownLite } from '../lib/markdownLite';
 
 export type ReviewTag = 'solid' | 'needs-work' | 'rethink';
@@ -219,9 +218,9 @@ export function Roadmap({
   const toVerify = unverdicted.filter((it) => !it.reviewShelved).sort((a, b) => ts(b) - ts(a));
   const shelved = unverdicted.filter((it) => it.reviewShelved).sort((a, b) => ts(b) - ts(a));
   const archived = doneItems.filter((it) => it.reviewTag).sort((a, b) => ts(b) - ts(a));
-  // The tab's three views: Board, Reviews (to-verify + archive), and Tree (#72).
+  // The tab's two views: Board and Reviews (to-verify + archive).
   // A deep-link to a done item opens straight on Reviews.
-  const [view, setView] = useState<'board' | 'reviews' | 'tree'>(
+  const [view, setView] = useState<'board' | 'reviews'>(
     () => (doneItems.some((it) => String(it.id) === highlightId) ? 'reviews' : 'board'));
   // Open the archive straight away when a deep-link targets an archived item.
   const [archiveOpen, setArchiveOpen] = useState(
@@ -234,7 +233,7 @@ export function Roadmap({
   // once when the Reviews view first opens; silently absent on any failure.
   const [runs, setRuns] = useState<AutopilotRun[] | null>(null);
   useEffect(() => {
-    if (view !== 'reviews' || runs !== null || !slug) return; // tree view fetches independently
+    if (view !== 'reviews' || runs !== null || !slug) return;
     let stale = false;
     getAutopilotRuns(slug)
       .then((r) => { if (!stale) setRuns(r); })
@@ -562,10 +561,6 @@ export function Roadmap({
           <button role="tab" aria-selected={view === 'reviews'}
             className={`seg-opt ${view === 'reviews' ? 'on' : ''}`} onClick={() => setView('reviews')}>
             Reviews{toVerify.length > 0 ? ` · ${toVerify.length}` : ''}
-          </button>
-          <button role="tab" aria-selected={view === 'tree'}
-            className={`seg-opt ${view === 'tree' ? 'on' : ''}`} onClick={() => setView('tree')}>
-            Tree
           </button>
         </div>
       </div>
@@ -1107,8 +1102,6 @@ export function Roadmap({
       )}
       </>)}
 
-      {/* Branch tree view (#72): main as trunk, lane branches + idea funnel + absorbed nodes. */}
-      {view === 'tree' && slug && <BranchTree slug={slug} />}
     </div>
   );
 }
