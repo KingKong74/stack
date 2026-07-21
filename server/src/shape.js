@@ -59,6 +59,8 @@ export function futureShape(row) {
     reviewed: !!row.reviewed_at,
     alignment: row.alignment || '',  // north-star verdict: on-course | tangent | off-course
     area: row.area || '',            // product-area tag ('' = untagged) — filters the funnel
+    canvasX: row.x_coord ?? null,   // visual canvas position (null = auto-layout)
+    canvasY: row.y_coord ?? null,
   };
 }
 

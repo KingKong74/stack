@@ -350,6 +350,54 @@ a { color: inherit; }
 .review-pick-opt.tangent:hover { color: var(--building); border-color: var(--building); }
 .review-pick-opt.off-course:hover { color: var(--critical); border-color: var(--critical); }
 
+/* ---------- futures canvas ---------- */
+.fcanvas-viewport {
+  width: 100%; overflow: auto; border: 1px solid var(--line-2);
+  border-radius: 14px; background: var(--paper); position: relative;
+  touch-action: none; cursor: default; min-height: 400px; max-height: 72vh;
+}
+.fcanvas-inner { position: relative; }
+.fcanvas-zone {
+  position: absolute; border-radius: 12px; border: 1px dashed var(--line-3);
+  background: var(--surface);
+}
+.fcanvas-zone.on-course { background: var(--green-tint); border-color: var(--sage); opacity: 0.6; }
+.fcanvas-zone.unsorted  { background: var(--panel);      border-color: var(--line-3); opacity: 0.5; }
+.fcanvas-zone.tangent   { background: var(--accent-tint); border-color: var(--accent-tint-border); opacity: 0.6; }
+.fcanvas-zone.off-course { background: #fce8e8;           border-color: var(--critical); opacity: 0.4; }
+[data-theme='dark'] .fcanvas-zone.off-course { background: #2c1818; }
+.fcanvas-zone-label {
+  position: absolute; top: 10px; left: 0; right: 0; text-align: center;
+  font-family: var(--disp); font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.06em; pointer-events: none;
+}
+.fcanvas-zone.on-course .fcanvas-zone-label { color: var(--green); }
+.fcanvas-zone.off-course .fcanvas-zone-label { color: var(--critical); }
+.fcanvas-node {
+  position: absolute; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 11px; padding: 11px 13px; cursor: grab; user-select: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06); transition: box-shadow 0.12s ease, border-color 0.12s ease;
+}
+.fcanvas-node:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.1); border-color: var(--line-3); }
+.fcanvas-node.dragging { cursor: grabbing; box-shadow: 0 6px 18px rgba(0,0,0,0.15); z-index: 10; }
+.fcanvas-node.on-course { border-color: var(--sage); }
+.fcanvas-node.tangent   { border-color: var(--accent-soft); }
+.fcanvas-node.off-course { border-color: var(--critical); opacity: 0.85; }
+.fcanvas-node.hl { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(196,98,61,0.16); }
+.fcanvas-node-title { font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.4; margin-bottom: 4px; }
+.fcanvas-node-note { font-size: 11.5px; color: var(--muted); line-height: 1.45; margin-bottom: 6px;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.fcanvas-node-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.fcanvas-align { font-size: 10.5px; font-weight: 600; border-radius: 6px; padding: 2px 7px;
+  border: 1px solid var(--line-2); color: var(--muted); }
+.fcanvas-align.on-course  { color: var(--green);    background: var(--green-tint);  border-color: var(--green-tint); }
+.fcanvas-align.tangent    { color: var(--building);  background: var(--accent-tint); border-color: var(--accent-tint-border); }
+.fcanvas-align.off-course { color: var(--critical);  border-color: var(--critical); }
+.fcanvas-area-chip { font-size: 10.5px; color: var(--chip-ink); background: var(--panel);
+  border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 7px; }
+.fcanvas-empty { padding: 40px 24px; text-align: center; color: var(--muted); font-size: 13.5px; }
+.fcanvas-empty .big { font-family: var(--disp); font-size: 17px; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
+
 /* ---------- connect guide (in-app onboarding) ---------- */
 .guide { display: flex; flex-direction: column; gap: 24px; margin-bottom: 24px; }
 .guide-step-title { display: flex; align-items: center; gap: 9px; font-family: var(--disp); font-size: 14.5px; font-weight: 600; margin-bottom: 7px; }

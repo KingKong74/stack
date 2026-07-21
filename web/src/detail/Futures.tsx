@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Future } from '../types';
 import type { IntakeSuggestion, JudgeSuggestion, PolarisTurn } from '../store';
 import { Polaris } from '../components/Polaris';
+import { FuturesCanvas } from '../components/FuturesCanvas';
 
 export type Alignment = 'on-course' | 'tangent' | 'off-course';
 export const ALIGNMENTS: { key: Alignment; label: string; hint: string }[] = [
@@ -26,7 +27,7 @@ const GROUPS: { key: string; label: string }[] = [
 // promoted into the roadmap (ProjectDetail owns that flow), or get dismissed.
 export function Futures({
   northStar, futures, highlightId, onSaveNorthStar, onAdd, onEdit, onAlign, onDelete, onPromote,
-  onAskGemini, onPolarisChat, onSortIntake, onApplyIntake, slug,
+  onMove, onAskGemini, onPolarisChat, onSortIntake, onApplyIntake, slug,
 }: {
   northStar: string;
   futures: Future[];
@@ -38,6 +39,7 @@ export function Futures({
   onAlign: (id: number, alignment: Alignment | '') => void;
   onDelete: (id: number) => void;
   onPromote: (future: Future) => void;
+  onMove: (id: number, x: number, y: number) => void;
   onAskGemini?: (id: number) => Promise<JudgeSuggestion>;
   onPolarisChat?: (message: string, history: PolarisTurn[]) => Promise<string>;
   onSortIntake?: (text: string) => Promise<IntakeSuggestion[]>;
@@ -46,6 +48,7 @@ export function Futures({
   const [editingStar, setEditingStar] = useState(false);
   const [starDraft, setStarDraft] = useState(northStar);
   const [draft, setDraft] = useState('');
+  const [view, setView] = useState<'list' | 'canvas'>('list');
 
   const saveStar = () => {
     const t = starDraft.trim();
@@ -126,19 +129,25 @@ export function Futures({
           <div className="h">Ideas</div>
           <div className="subtitle">Judge each against the north star — promote what's on course, park the tangents</div>
         </div>
-        {areas.length > 0 && (
-          <div className="chips">
-            <button className={`chip-sm ${areaFilter === '' ? 'on' : ''}`} onClick={() => setAreaFilter('')}>
-              All {futures.length}
-            </button>
-            {areas.map((a) => (
-              <button key={a} className={`chip-sm ${areaFilter === a ? 'on' : ''}`}
-                onClick={() => setAreaFilter(areaFilter === a ? '' : a)}>
-                {a} {futures.filter((f) => f.area === a).length}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {view === 'list' && areas.length > 0 && (
+            <div className="chips">
+              <button className={`chip-sm ${areaFilter === '' ? 'on' : ''}`} onClick={() => setAreaFilter('')}>
+                All {futures.length}
               </button>
-            ))}
+              {areas.map((a) => (
+                <button key={a} className={`chip-sm ${areaFilter === a ? 'on' : ''}`}
+                  onClick={() => setAreaFilter(areaFilter === a ? '' : a)}>
+                  {a} {futures.filter((f) => f.area === a).length}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="seg-control sm" role="tablist" aria-label="Ideas view">
+            <button className={`seg-opt ${view === 'list' ? 'on' : ''}`} onClick={() => setView('list')}>List</button>
+            <button className={`seg-opt ${view === 'canvas' ? 'on' : ''}`} onClick={() => setView('canvas')}>Canvas</button>
           </div>
-        )}
+        </div>
       </div>
 
       <div className="composer">
@@ -157,7 +166,9 @@ export function Futures({
         </div>
       </div>
 
-      {futures.length ? (
+      {view === 'canvas' ? (
+        <FuturesCanvas futures={futures} onMove={onMove} highlightId={highlightId} />
+      ) : futures.length ? (
         groups.map((g) => (
           <div className="futures-group" key={g.key || 'unsorted'}>
             {judged && <div className={`futures-group-head ${g.key || 'unsorted'}`}>{g.label} <span className="n">{g.items.length}</span></div>}
