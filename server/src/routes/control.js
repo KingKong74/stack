@@ -11,6 +11,12 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 // Response shape:
 // {
 //   autopilot: { enabled, minutes },        // the global arm switch + session cap
+//   usage: {                                // (#194) 7-day + today token/cost totals
+//     weekTokens, weekCostUsd, weekRuns,
+//     todayTokens, todayCostUsd,
+//     budgetPerRun,                         // echo of settings.autopilot_tokens; 0 = unlimited
+//     models: [ { model, tokens, costUsd } ] // per-model agg; '' model = single-model runs
+//   },
 //   projects: [ {
 //     slug, name, tint, status, automode, progress, lastPush,
 //     live: { count, branches[] } | null,   // presence inside the TTL window
@@ -31,7 +37,7 @@ const ms = (ts) => (ts ? new Date(ts).getTime() : -1);
 control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
-  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR] = await Promise.all([
+  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, automode, autopilot_area, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
     // claimed_by that starts with 'auto/' or 'lane/' is an open lane branch; we
@@ -72,6 +78,12 @@ control.get('/', async (_req, res) => {
          LEFT JOIN roadmap_items ri ON ri.id = j.item_id
         ORDER BY (j.status IN ('queued','claimed','running','paused')) DESC,
                  j.created_at DESC LIMIT 12`),
+    // (#194) Usage aggregation — last 7 days of autopilot runs for the weekly
+    // summary card. Aggregate in JS to avoid JSONB gymnastics. Rows are tiny.
+    // BIGINT/NUMERIC come back as strings from node-postgres; use Number().
+    q(`SELECT tokens, cost_usd, model_usage, finished_at
+         FROM autopilot_runs
+        WHERE finished_at > now() - interval '7 days'`),
   ]);
 
   const roadByP = new Map();
@@ -91,6 +103,50 @@ control.get('/', async (_req, res) => {
     const branch = r.branch || 'main';
     if (!entry.branches.includes(branch)) entry.branches.push(branch);
   }
+
+  // (#194) — aggregate last-7-days usage in JS; model_usage is already parsed
+  // as an object by node-postgres. Rows with null model_usage (single-model runs)
+  // contribute to an unattributed bucket so the total always reconciles.
+  const todayCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  let weekTokens = 0, weekCost = 0, todayTokens = 0, todayCost = 0;
+  const modelTotals = new Map();
+  let unattribTokens = 0, unattribCost = 0;
+  for (const r of usageR.rows) {
+    const tok = Number(r.tokens || 0);
+    const cost = Number(r.cost_usd || 0);
+    weekTokens += tok;
+    weekCost += cost;
+    if (new Date(r.finished_at) > todayCutoff) { todayTokens += tok; todayCost += cost; }
+    if (r.model_usage && typeof r.model_usage === 'object') {
+      for (const [model, entry] of Object.entries(r.model_usage)) {
+        const t = (Number(entry.inputTokens) || 0) + (Number(entry.outputTokens) || 0)
+                + (Number(entry.cacheReadInputTokens) || 0) + (Number(entry.cacheCreationInputTokens) || 0);
+        const c = Number(entry.costUSD) || 0;
+        if (!modelTotals.has(model)) modelTotals.set(model, { tokens: 0, costUsd: 0 });
+        const m = modelTotals.get(model);
+        m.tokens += t;
+        m.costUsd += c;
+      }
+    } else {
+      unattribTokens += tok;
+      unattribCost += cost;
+    }
+  }
+  const usageModels = [...modelTotals.entries()]
+    .map(([model, v]) => ({ model, tokens: v.tokens, costUsd: v.costUsd }))
+    .sort((a, b) => b.tokens - a.tokens);
+  if (unattribTokens > 0) {
+    usageModels.push({ model: '', tokens: unattribTokens, costUsd: unattribCost });
+  }
+  const usage = {
+    weekTokens,
+    weekCostUsd: weekCost,
+    weekRuns: usageR.rows.length,
+    todayTokens,
+    todayCostUsd: todayCost,
+    budgetPerRun: appSettings.autopilot_tokens, // 0 = unlimited
+    models: usageModels,
+  };
 
   // Automode projects first, then recency — the screen is about what agents
   // may touch, so opted-in projects lead.
@@ -174,6 +230,7 @@ control.get('/', async (_req, res) => {
     // Executor / Advisor pickers show. Served here so the frontend never has a
     // second hardcoded list to keep in sync.
     models: { executors: EXECUTOR_CATALOGUE, advisors: ADVISOR_CATALOGUE },
+    usage,
     // The host PTY daemon's agent socket + every open web-terminal session
     // (labels are the ✧ Gemini annotations, '' until asked for).
     terminal: { connected: termAgentConnected(), sessions: termSessions() },

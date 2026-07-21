@@ -285,6 +285,17 @@ export interface TermSession {
 }
 export interface ModelEntry { model: string; label: string }
 
+// (#194) Weekly + today token/cost summary for Mission Control's usage card.
+export interface UsageSummary {
+  weekTokens: number;
+  weekCostUsd: number;
+  weekRuns: number;
+  todayTokens: number;
+  todayCostUsd: number;
+  budgetPerRun: number;    // echo of settings.autopilot_tokens; 0 = unlimited
+  models: { model: string; tokens: number; costUsd: number }[];
+}
+
 export interface ControlData {
   autopilot: {
     enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number;
@@ -300,6 +311,7 @@ export interface ControlData {
   jobs: AutopilotJob[];                // recent first; queued/claimed/running lead the strip
   projects: ControlProject[];
   totals: { automode: number; liveSessions: number; claims: number; review: number };
+  usage?: UsageSummary | null;
 }
 
 export async function getControl(): Promise<ControlData> {
@@ -320,6 +332,8 @@ export async function getControl(): Promise<ControlData> {
     jobs: d.jobs ?? [],
     // #154 — default branches so a pre-deploy server can't break the strip.
     projects: (d.projects ?? []).map((p) => ({ ...p, branches: p.branches ?? [] })),
+    // #194 — null when the server pre-dates this feature; the usage card hides.
+    usage: d.usage ?? null,
   };
 }
 

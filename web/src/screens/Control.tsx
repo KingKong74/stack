@@ -39,6 +39,9 @@ const OPEN_JOB = new Set(['queued', 'claimed', 'running']);
 const fmtDate = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+const fmtTok = (n: number) =>
+  n >= 1e6 ? `${(n / 1e6).toFixed(1)}M tok` : n >= 1000 ? `${Math.round(n / 1000)}k tok` : `${n} tok`;
+
 const sessionAge = (startedAt: number) => {
   const min = Math.max(0, Math.round((Date.now() - startedAt) / 60_000));
   return min < 1 ? 'just opened' : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`;
@@ -308,6 +311,11 @@ export function ControlPanel() {
     return d;
   });
 
+  // (#194) Budget bar fill — % of total budget consumed this week; null hides the bar.
+  const usageBar = data?.usage && data.usage.budgetPerRun > 0 && data.usage.weekRuns > 0
+    ? Math.min(100, Math.round(data.usage.weekTokens / (data.usage.budgetPerRun * data.usage.weekRuns) * 100))
+    : null;
+
   return (
     <div>
       {error && <div className="action-error">{error}</div>}
@@ -538,6 +546,50 @@ export function ControlPanel() {
                 </div>
               )}
             </div>
+
+            {/* ---- (#194) usage summary: 7-day tokens + per-model breakdown ---- */}
+            {data.usage && data.usage.weekRuns > 0 && (
+              <div className="mc-usage">
+                <div className="mc-usage-head">
+                  <span className="mc-usage-label">Usage — last 7 days</span>
+                  <span className="mc-usage-total">
+                    {fmtTok(data.usage.weekTokens)}
+                    {data.usage.weekCostUsd > 0.005 && ` · $${data.usage.weekCostUsd.toFixed(2)}`}
+                    {' '}· {data.usage.weekRuns} run{data.usage.weekRuns === 1 ? '' : 's'}
+                    {data.usage.budgetPerRun > 0 && (
+                      <span className="mc-usage-budget"> · budget {fmtTok(data.usage.budgetPerRun)}/run</span>
+                    )}
+                    {data.usage.budgetPerRun === 0 && (
+                      <span className="mc-usage-budget"> · ∞ Unlimited budget</span>
+                    )}
+                  </span>
+                  {data.usage.todayTokens > 0 && (
+                    <span className="mc-usage-today">
+                      today: {fmtTok(data.usage.todayTokens)}
+                      {data.usage.todayCostUsd > 0.005 && ` · $${data.usage.todayCostUsd.toFixed(2)}`}
+                    </span>
+                  )}
+                </div>
+                {usageBar !== null && (
+                  <div className="mc-usage-bar-wrap"
+                    title={`${fmtTok(data.usage.weekTokens)} of ${fmtTok(data.usage.budgetPerRun * data.usage.weekRuns)} budgeted this week (${data.usage.weekRuns} × ${fmtTok(data.usage.budgetPerRun)}/run) — ${usageBar}%`}
+                    aria-label={`${usageBar}% of weekly budget used`}>
+                    <div className="mc-usage-bar" style={{ width: `${usageBar}%` }} />
+                  </div>
+                )}
+                {data.usage.models.length > 0 && (
+                  <div className="mc-usage-models">
+                    {data.usage.models.map((m) => (
+                      <span key={m.model || '__unattrib'} className="mc-usage-model">
+                        <span className="mc-usage-model-name">{m.model || 'other / single-model'}</span>
+                        <span className="mc-usage-model-tok">{fmtTok(m.tokens)}</span>
+                        {m.costUsd > 0.005 && <span className="mc-usage-model-cost">${m.costUsd.toFixed(2)}</span>}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ---- scheduled sessions: the week ahead + the standing list ---- */}
             <div className="mc-sched">
