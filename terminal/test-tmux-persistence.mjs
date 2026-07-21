@@ -10,7 +10,7 @@
 //
 // Run: node terminal/test-tmux-persistence.mjs
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -81,8 +81,14 @@ const child2 = spawn('python3', [SHIM, HOME, ...argv2], {
   stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
 });
 
-const reattached = await poll(() => sessionExists(name));
-if (!reattached) fail('re-attach did not find the session within 5s');
+// Verify the second shim actually attached a client to the session (not just
+// that the session exists — that was already true from phase 1).
+const hasClient = () => {
+  const r = spawnSync('tmux', ['list-clients', '-t', `=${name}`], { encoding: 'utf8' });
+  return r.status === 0 && r.stdout.trim() !== '';
+};
+const reattached = await poll(hasClient);
+if (!reattached) fail('second shim did not attach a client to the surviving session within 5s');
 log('re-attach succeeded ✓');
 
 child2.kill('SIGTERM');
