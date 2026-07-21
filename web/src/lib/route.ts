@@ -41,6 +41,21 @@ export function useRoute(): Route {
   return route;
 }
 
+// Href twins of go.* for anchor-based navigation: a real href lets
+// middle/ctrl-click open a new tab, while a plain left click just changes the
+// hash — which IS the router, so no onClick is needed for pure navigation.
+export const hrefTo = {
+  control: '#/control',
+  settings: '#/settings',
+  terminal: (cwd?: string, attach?: string) => {
+    const q = [
+      cwd ? `cwd=${encodeURIComponent(cwd)}` : '',
+      attach ? `attach=${encodeURIComponent(attach)}` : '',
+    ].filter(Boolean).join('&');
+    return `#/terminal${q ? `?${q}` : ''}`;
+  },
+};
+
 export const go = {
   dashboard: () => { window.location.hash = '#/'; },
   settings: () => { window.location.hash = '#/settings'; },
@@ -49,11 +64,7 @@ export const go = {
   // attach (a stack-term-* tmux name) jumps straight into that running claude
   // session — Mission Control's ▶ chips use it.
   terminal: (cwd?: string, attach?: string) => {
-    const q = [
-      cwd ? `cwd=${encodeURIComponent(cwd)}` : '',
-      attach ? `attach=${encodeURIComponent(attach)}` : '',
-    ].filter(Boolean).join('&');
-    window.location.hash = `#/terminal${q ? `?${q}` : ''}`;
+    window.location.hash = hrefTo.terminal(cwd, attach);
   },
   // tab picks which collection opens; highlight (when given) flags the matching
   // item/commit on that tab via the existing highlight mechanism. The tab

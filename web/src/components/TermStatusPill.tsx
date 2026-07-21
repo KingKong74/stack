@@ -10,17 +10,30 @@ import { go } from '../lib/route';
 // the Terminal screen. Hidden on the Terminal screen itself, which has its own
 // status line — the watch stays subscribed so navigating back is instant.
 export function TermStatusPill({ hidden }: { hidden?: boolean }) {
-  const [status, setStatus] = useState<TermStatus>({ active: false, count: 0 });
+  const [status, setStatus] = useState<TermStatus>({ active: false, count: 0, claude: 0, unattended: 0 });
   useEffect(() => watchTermStatus(setStatus), []);
   if (hidden || !status.active) return null;
+  // Claude activity outranks plain shells in the wording — and claude running
+  // unattended (no browser anywhere) still shows, so a walked-away session is
+  // never invisible. An anchor, not a button: middle/ctrl-click opens the
+  // Terminal screen in its own tab.
+  const claudeish = status.claude > 0 || status.unattended > 0;
+  const label =
+    status.claude > 1 ? `${status.claude} claude sessions active`
+    : status.claude === 1 ? 'Claude session active'
+    : status.unattended > 0 ? (status.unattended > 1 ? `${status.unattended} claude sessions unattended` : 'Claude running unattended')
+    : status.count > 1 ? `${status.count} terminal sessions active` : 'Terminal session active';
   return (
-    <button
-      className="term-presence"
-      onClick={() => go.terminal()}
-      title="A web terminal is running — open the Terminal screen"
+    <a
+      className={`term-presence${claudeish ? ' claude' : ''}`}
+      href="#/terminal"
+      onClick={(e) => { e.preventDefault(); go.terminal(); }}
+      title={status.unattended > 0 && status.claude === 0 && status.count === 0
+        ? 'Claude is running on the host with no tab attached — open the Terminal screen to jump back in'
+        : 'A web terminal is running — open the Terminal screen'}
     >
       <span className="dot" />
-      {status.count > 1 ? `${status.count} terminal sessions active` : 'Terminal session active'}
-    </button>
+      {label}
+    </a>
   );
 }

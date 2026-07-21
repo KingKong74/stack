@@ -78,7 +78,22 @@ export function attachTerm(httpServer) {
 
   const send = (ws, obj) => { if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj)); };
 
-  const statusFrame = () => ({ t: 'status', active: termMeta.size > 0, count: termMeta.size });
+  // The pill's frame: what kind of activity, not just whether. claude counts
+  // browser-attached claude tabs; unattended counts claude running on the host
+  // with no client anywhere (a reload orphan or a deliberate walk-away) — that
+  // still deserves the pill even with every browser tab closed.
+  const statusFrame = () => {
+    let claude = 0;
+    for (const m of termMeta.values()) if (m.cmd === 'claude') claude++;
+    const unattended = detachedSessions.filter((s) => !s.attached).length;
+    return {
+      t: 'status',
+      active: termMeta.size > 0 || unattended > 0,
+      count: termMeta.size,
+      claude,
+      unattended,
+    };
+  };
   const broadcastStatus = () => {
     for (const ws of watchers) send(ws, statusFrame());
   };
@@ -143,6 +158,7 @@ export function attachTerm(httpServer) {
           }));
         const alive = new Set(detachedSessions.map((s) => s.name));
         for (const name of detachedLabels.keys()) if (!alive.has(name)) detachedLabels.delete(name);
+        broadcastStatus(); // unattended claude count may have changed
         return;
       }
 

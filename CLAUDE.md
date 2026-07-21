@@ -311,6 +311,8 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   by hand, with an origin filter when mixed) and the run-ledger chip (branch · commits · tokens ·
   cost, session summary on hover) via `store.getAutopilotRuns`; each To-verify row also has
   **✧ Brief** (#134 — Gemini's reviewer brief: what shipped, test steps, risks; in-memory),
+  **⌨ Session** (opens a terminal in the project primed with the review — item, built_note and
+  verify instructions ride the board's one-shot `stack.term.brief` handoff),
   **⎌ Undo** (#128 — confirm modal → `store.queueUndo` → a `revert` job the host dispatcher runs),
   toggleable **annotation chips** (#146 — Fix / Needs more / Polish / Question, PATCHed whole as
   `review_tags`; read-only in the archive), **＋ Bug / ＋ Audit** (#146 — prefill a bug ticket /
@@ -346,8 +348,12 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 - `components/TermStatusPill.tsx` — the global terminal presence pill (#121): mounted once in
   `App.tsx` so every open Stack tab shows when a web-terminal session is live anywhere. Fed by
   `store.watchTermStatus` (a small ws to the relay's `/term-status` — pushed on connect + every
-  session start/end, 15s reconnect that reads as quiet while down). Renders nothing at zero and on
-  the Terminal screen itself; clicking opens `#/terminal` (`.term-presence` styles).
+  session start/end + detached-list change, 15s reconnect that reads as quiet while down). The
+  status frame is claude-aware: `{active, count, claude, unattended}` — claude tabs outrank shells
+  in the wording ("Claude session active"), and claude running on the host with NO client anywhere
+  still shows ("Claude running unattended"), so a walked-away session is never invisible. Renders
+  nothing at zero and on the Terminal screen itself; an anchor to `#/terminal` (middle-click opens
+  a new tab; `.term-presence` styles, terracotta dot via `.claude`).
 - `components/` — `Modal` (scrolls when tall), `ConfirmModal` (delete / keep-or-delete),
   `BugModal`/`RoadmapModal` (both take an optional `initialTitle` for note promotion; RoadmapModal
   also `initialNote` + `mode='edit'`), `NewProjectModal`, `TokenGate`, `ConnectGuide` (the in-app

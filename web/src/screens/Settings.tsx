@@ -173,15 +173,20 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
         </div>
 
         <div className="tabs">
-          <button className={`tab ${screenTab === 'settings' ? 'on' : ''}`} onClick={() => setScreenTab('settings')}>Settings</button>
-          <button className={`tab ${screenTab === 'control' ? 'on' : ''}`} onClick={() => setScreenTab('control')}>Mission Control</button>
+          {/* Anchors with real hrefs so middle/ctrl-click opens a new tab; the
+              onClick still flips the local tab state (the component stays
+              mounted, so a same-page hash change alone wouldn't switch). */}
+          <a className={`tab ${screenTab === 'settings' ? 'on' : ''}`} href="#/settings"
+            onClick={() => setScreenTab('settings')}>Settings</a>
+          <a className={`tab ${screenTab === 'control' ? 'on' : ''}`} href="#/control"
+            onClick={() => setScreenTab('control')}>Mission Control</a>
           {/* Not a tab — the jump to the host terminal, up here beside them.
               Opens in the most recently touched project (the Terminal screen
               resolves the cwd itself when none is given). */}
-          <button className="tab tab-term" onClick={() => go.terminal()}
+          <a className="tab tab-term" href="#/terminal"
             title="A real shell (or Claude) on the host, from any device — opens in your current project">
             ⌨ Terminal
-          </button>
+          </a>
         </div>
 
         {screenTab === 'control' && <ControlPanel />}
@@ -280,7 +285,7 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
                     advisor models — everything in one place.
                   </div>
                 </div>
-                <button className="btn-accent" onClick={() => go.control()}>Open Mission Control →</button>
+                <a className="btn-accent" href="#/control" onClick={() => setScreenTab('control')}>Open Mission Control →</a>
               </div>
             </section>
 

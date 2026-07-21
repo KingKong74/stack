@@ -6,7 +6,7 @@ import {
   labelTerminalSessions, getRoadmap, queueMerge, AuthError,
   type ControlData, type ControlProject, type AutopilotJob, type ModelEntry,
 } from '../store';
-import { go } from '../lib/route';
+import { go, hrefTo } from '../lib/route';
 import type { ProjectStatus, RoadmapItem } from '../types';
 
 const STATUS_LABEL: Record<ProjectStatus, string> = {
@@ -525,12 +525,12 @@ export function ControlPanel() {
               {((data.terminal?.sessions?.length ?? 0) > 0 || (data.terminal?.detached?.length ?? 0) > 0) && (
                 <div className="mc-terms" aria-label="Running terminal sessions">
                   {(data.terminal?.sessions ?? []).map((s) => (
-                    <button key={s.sid} className={`mc-termchip ${s.cmd}`}
+                    <a key={s.sid} className={`mc-termchip ${s.cmd}`}
                       title={`Jump into this session${s.label ? ` — ${s.label}` : ''}`}
-                      onClick={() => go.terminal(s.cwd === '~' ? undefined : s.cwd, s.tmux || undefined)}>
+                      href={hrefTo.terminal(s.cwd === '~' ? undefined : s.cwd, s.tmux || undefined)}>
                       ▶ {s.cmd} · {s.cwd.replace(/^\/home\/[^/]+/, '~')} · {sessionAge(s.startedAt)}
                       {s.label && <em> — {s.label}</em>}
-                    </button>
+                    </a>
                   ))}
                   {(data.terminal?.detached ?? [])
                     // A web session's own tmux name would double up with its
@@ -538,17 +538,17 @@ export function ControlPanel() {
                     // sessions attached elsewhere (laptop ssh, another browser).
                     .filter((d) => !(data.terminal?.sessions ?? []).some((s) => s.tmux === d.name))
                     .map((d) => (
-                    <button key={d.name} className={`mc-termchip ${d.attached ? 'away' : 'detached'}`}
+                    <a key={d.name} className={`mc-termchip ${d.attached ? 'away' : 'detached'}`}
                       title={d.attached
                         ? `Attached on another device (tmux ${d.name}) — open it here too; both screens mirror the same session${d.label ? ` — ${d.label}` : ''}`
                         : `Running unattended on the host (tmux ${d.name}) — jump back in${d.label ? ` — ${d.label}` : ''}`}
-                      onClick={() => go.terminal(d.cwd || undefined, d.name)}>
+                      href={hrefTo.terminal(d.cwd || undefined, d.name)}>
                       ▶ claude · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}
                       {d.label && <em> — {d.label}</em>}
-                    </button>
+                    </a>
                   ))}
                   <button className="btn-repo sm" onClick={() => labelSessions()} disabled={labelBusy}
-                    title="Ask Gemini again what each running session is doing (needs a server key)">
+                    title="Ask Gemini again what each running session is doing">
                     {labelBusy ? 'Labelling…' : '✧ Re-label'}
                   </button>
                 </div>
@@ -796,9 +796,9 @@ export function ControlPanel() {
                         ● {p.live.branches.join(' · ')}
                       </span>
                     )}
-                    <button className="mc-term" onClick={() => go.terminal(p.slug)}
+                    <a className="mc-term" href={hrefTo.terminal(p.slug)}
                       aria-label={`Open terminal for ${p.name}`}
-                      title={`Open a terminal in ~/${p.slug}`}>⌨</button>
+                      title={`Open a terminal in ~/${p.slug}`}>⌨</a>
                     <span className="mc-push">{p.lastPush ? `pushed ${p.lastPush}` : 'no pushes yet'}</span>
                     {job ? (
                       <span className={`mc-job ${job.status}`} title={job.detail || undefined}>

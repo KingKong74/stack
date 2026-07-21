@@ -510,7 +510,10 @@ export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols:
 // and on every session start/end — no polling. While disconnected the status
 // reads as quiet (server restarts aren't persisted, by design); a slow retry
 // keeps long-lived tabs current.
-export interface TermStatus { active: boolean; count: number }
+// claude = browser-attached claude tabs; unattended = claude running on the
+// host with no client anywhere (the pill shows it so a walked-away session is
+// never invisible).
+export interface TermStatus { active: boolean; count: number; claude: number; unattended: number }
 export function watchTermStatus(cb: (s: TermStatus) => void): () => void {
   let ws: WebSocket | null = null;
   let retry: number | undefined;
@@ -525,11 +528,18 @@ export function watchTermStatus(cb: (s: TermStatus) => void): () => void {
     ws.addEventListener('message', (e) => {
       try {
         const m = JSON.parse(String(e.data));
-        if (m.t === 'status') cb({ active: !!m.active, count: Number(m.count) || 0 });
+        if (m.t === 'status') {
+          cb({
+            active: !!m.active,
+            count: Number(m.count) || 0,
+            claude: Number(m.claude) || 0,
+            unattended: Number(m.unattended) || 0,
+          });
+        }
       } catch { /* not a status frame — ignore */ }
     });
     ws.addEventListener('close', () => {
-      cb({ active: false, count: 0 });
+      cb({ active: false, count: 0, claude: 0, unattended: 0 });
       if (!closed) retry = window.setTimeout(connect, 15_000);
     });
   };

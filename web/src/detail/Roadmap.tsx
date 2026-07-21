@@ -457,6 +457,17 @@ export function Roadmap({
     </div>
   );
 
+  // The ⌨ Session handoff: opens a terminal in this project primed with the
+  // review context (same one-shot paste as the board's ⌨ To terminal), so
+  // verifying starts from the review point instead of a blank prompt.
+  const reviewSessionBrief = (it: RoadmapItem) => [
+    `Review roadmap item #${it.id} — ${it.title}`,
+    it.note ? `\nThe item:\n${it.note}` : '',
+    it.builtNote ? `\nWhat the building session says landed:\n${it.builtNote}` : '',
+    '\nVerify it: read the relevant code, run or build the app where useful, and check what landed',
+    'matches the item. Report what holds up and what does not — no fixes without asking first.',
+  ].filter(Boolean).join('\n');
+
   // One unverdicted review row — shared by the To-verify list and the shelf
   // (#148); the only difference is which way the shelve toggle points.
   // #166: rows collapse to a compact title+verdict line; group collapse trumps.
@@ -508,6 +519,12 @@ export function Roadmap({
               title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">
               ✧ Brief
             </button>
+            {onSendToTerminal && (
+              <button className="verify-back" onClick={() => onSendToTerminal(reviewSessionBrief(it))}
+                title="Open a terminal session in this project primed with this review — paste the brief and verify what landed">
+                ⌨ Session
+              </button>
+            )}
             <button className="verify-back" onClick={() => onLogBug(it)}
               title="Log a bug ticket against this item — prefills the bug modal">＋ Bug</button>
             <button className="verify-back" onClick={() => onLogAudit(it)}

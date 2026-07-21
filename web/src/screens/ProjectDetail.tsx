@@ -12,7 +12,7 @@ import {
   type IntakeSuggestion,
   replanProject, startAutopilot, AuthError,
 } from '../store';
-import { go } from '../lib/route';
+import { go, hrefTo } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Bugs } from '../detail/Bugs';
@@ -704,7 +704,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             <span className="kbd-hint">⌘K</span>
           </button>
           <button className="btn-repo" onClick={go.control} title="Mission Control — every project's automation">Mission Control</button>
-          <button className="btn-repo" onClick={() => go.terminal(slug)} title={`Open a terminal in ~/${slug}`}>⌨</button>
+          <a className="btn-repo" href={hrefTo.terminal(slug)} title={`Open a terminal in ~/${slug}`}>⌨</a>
           <button className="avatar sm" onClick={go.settings} aria-label="Settings" />
         </div>
       </div>

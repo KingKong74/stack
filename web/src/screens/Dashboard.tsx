@@ -91,7 +91,8 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
             <span style={{ color: 'var(--faint)' }}>Search everything…</span>
             <span className="kbd-hint">⌘K</span>
           </button>
-          <button className="btn-repo" onClick={go.control} title="Every project's automation from one point">Mission Control</button>
+          {/* An anchor, not a button — middle/ctrl-click opens it in a new tab */}
+          <a className="btn-repo" href="#/control" title="Every project's automation from one point">Mission Control</a>
           <button className="btn-repo" onClick={() => setHowToOpen(true)}>Guide</button>
           <button className="btn-repo" onClick={() => setGuideOpen(true)}>Connect</button>
           <button className="btn-accent" onClick={() => setNewOpen(true)}>New project</button>
