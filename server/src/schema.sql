@@ -428,3 +428,18 @@ ALTER TABLE checks ADD COLUMN IF NOT EXISTS method TEXT NOT NULL DEFAULT 'GET';
 ALTER TABLE checks ADD COLUMN IF NOT EXISTS req_body TEXT;
 ALTER TABLE checks ADD COLUMN IF NOT EXISTS json_path TEXT;
 ALTER TABLE checks ADD COLUMN IF NOT EXISTS json_expect TEXT;
+
+-- Audit tab run history: one row per Run-all (or run-one) of a project's
+-- checks — the dashboard's trend strip and last-run stats read from it.
+-- Summary only; per-check results stay on the checks rows themselves.
+CREATE TABLE IF NOT EXISTS check_runs (
+  id          SERIAL PRIMARY KEY,
+  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  scope       TEXT NOT NULL DEFAULT 'all',              -- all | one
+  total       INTEGER NOT NULL,
+  passed      INTEGER NOT NULL,
+  failed      INTEGER NOT NULL,
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  run_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_check_runs_project ON check_runs (project_id, run_at DESC);

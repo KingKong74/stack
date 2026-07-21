@@ -128,12 +128,12 @@ export interface Future {
 }
 
 // The methods a check may use — GET probes a page, the rest exercise an API
-// function (#143, the Bugs tab's Audit area).
+// function (#143, the Audit tab).
 export type CheckMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
 
 // A check: an HTTP test against the project's live application, run from the
-// Bugs tab's Audit area — a plain probe or a function call (method + body)
-// with optional assertions. lastStatus '' = never run.
+// Audit tab — a plain probe or a function call (method + body) with optional
+// assertions. lastStatus '' = never run.
 export interface Check {
   id: number;
   name: string;
@@ -150,6 +150,19 @@ export interface Check {
   lastMs: number | null;
   lastError: string;
   when: string;
+}
+
+// One Audit-tab run-history row — the summary of a Run-all (or run-one),
+// newest first from the API. Feeds the dashboard's trend strip.
+export interface CheckRun {
+  id: number;
+  scope: 'all' | 'one';
+  total: number;
+  passed: number;
+  failed: number;
+  durationMs: number;
+  at: string;    // ISO timestamp
+  when: string;  // relative, server-rendered
 }
 
 export interface Activity {

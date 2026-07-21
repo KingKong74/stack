@@ -16,6 +16,7 @@ import { go } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Bugs } from '../detail/Bugs';
+import { Audit } from '../detail/Audit';
 import { Roadmap, type ReviewTag } from '../detail/Roadmap';
 import { Futures, type Alignment } from '../detail/Futures';
 import { Notes } from '../detail/Notes';
@@ -25,10 +26,11 @@ import { BugModal } from '../components/BugModal';
 import { RoadmapModal } from '../components/RoadmapModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 
-type Tab = 'overview' | 'bugs' | 'roadmap' | 'futures' | 'notes' | 'activity';
+type Tab = 'overview' | 'bugs' | 'audit' | 'roadmap' | 'futures' | 'notes' | 'activity';
 type BugFilter = 'all' | 'open' | 'fixing' | 'fixed';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Overview' }, { key: 'bugs', label: 'Bugs' },
+  { key: 'audit', label: 'Audit' },
   { key: 'roadmap', label: 'Roadmap' }, { key: 'futures', label: 'Polaris' },
   { key: 'notes', label: 'Notes' }, { key: 'activity', label: 'Activity' },
 ];
@@ -36,7 +38,7 @@ const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', arc
 
 const roadmapTotal = (r: RoadmapData) => r.must.length + r.should.length + r.could.length + r.wont.length;
 
-const TAB_KEYS = new Set<Tab>(['overview', 'bugs', 'roadmap', 'futures', 'notes', 'activity']);
+const TAB_KEYS = new Set<Tab>(['overview', 'bugs', 'audit', 'roadmap', 'futures', 'notes', 'activity']);
 const asTab = (t: string | undefined): Tab => (t && TAB_KEYS.has(t as Tab) ? (t as Tab) : 'overview');
 
 export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
@@ -181,6 +183,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const openRoadCount = allRoadmap.filter((r) => !r.done).length;
   const unsortedFutures = futures.filter((f) => !f.alignment).length;
   const fixingCount = bugs.filter((b) => b.status === 'fixing').length;
+  const failingChecks = data.checks.filter((c) => c.lastStatus === 'fail').length;
   const roadmapCount = roadmapTotal(roadmap);
   const linkedBugId = bugs.find((b) => b.linkRef === highlightRef)?.id ?? null;
 
@@ -508,7 +511,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       });
     });
 
-  // ---- checks (the Bugs tab's Audit area) ----
+  // ---- checks (the Audit tab's test suite) ----
   const runProjectChecks = (id?: number) =>
     guard(async () => {
       setChecksBusy(true);
@@ -753,7 +756,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
 
         <div className="tabs">
           {TABS.map((t) => {
-            const n = t.key === 'bugs' ? openBugCount : t.key === 'roadmap' ? openRoadCount : t.key === 'futures' ? unsortedFutures : 0;
+            const n = t.key === 'bugs' ? openBugCount : t.key === 'audit' ? failingChecks
+              : t.key === 'roadmap' ? openRoadCount : t.key === 'futures' ? unsortedFutures : 0;
             return (
               <button key={t.key} className={`tab ${tab === t.key ? 'on' : ''}`} onClick={() => setTab(t.key)}>
                 {t.label}{n > 0 && <span className="tab-n">{n}</span>}
@@ -775,13 +779,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           <Bugs bugs={bugs} filter={bugFilter} setFilter={setBugFilter} highlightId={highlightId}
             onReport={() => setBugModal({ open: true, title: '', fromNote: null })} onOpenLink={openBugLink}
             onSetStatus={setBugStatus} onDelete={(b) => setConfirmBugDelete(b)}
-            checks={data.checks} siteUrl={project.siteUrl} checksBusy={checksBusy}
+            onQuickAddBug={quickAddBug} />
+        )}
+        {tab === 'audit' && (
+          <Audit slug={slug} checks={data.checks} siteUrl={project.siteUrl} checksBusy={checksBusy}
             onRunChecks={runProjectChecks} onAddCheck={addCheck} onEditCheck={editCheck}
             onDeleteCheck={removeCheck} onCheckToBug={checkToBug}
             auditContext={data.auditContext} onSaveAuditContext={saveAuditContext}
             auditBusy={auditBusy} auditResult={auditResult} auditError={auditError}
-            onRunAudit={runProjectAudit} claudeCopy={claudeCopy} onCopyClaudePrompt={copyClaudePrompt}
-            onQuickAddBug={quickAddBug} />
+            onRunAudit={runProjectAudit} claudeCopy={claudeCopy} onCopyClaudePrompt={copyClaudePrompt} />
         )}
         {tab === 'roadmap' && (
           <Roadmap roadmap={roadmap} highlightId={highlightId} slug={slug} liveBranches={data.liveBranches}

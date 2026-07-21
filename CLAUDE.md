@@ -285,13 +285,19 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   RoadmapModal then a keep/delete-the-idea confirm, dismiss deletes + tombstones; ideas are
   editable in place, the composer takes "first line = idea, rest = why", and each idea carries an
   **alignment verdict** — ✦ Judge → On course / Tangent / Off course, pick the same to clear —
-  which is how the list groups itself), Bugs also hosts the **Audit area** (#143, named by
+  which is how the list groups itself), Audit (`detail/Audit.tsx` — the dedicated testing +
+  audit dashboard, moved out of the Bugs tab: a health header (pass rate, per-state counts,
+  avg response, last run) over a **run-history trend strip** (each bar one Run-all, from the
+  `check_runs` ledger via `store.getCheckRuns` — the tab's own fetch, refreshed when a run
+  settles), a **failing-now callout** (every red test with its error, → Bug and re-run in
+  place; gone at zero — the Audit tab badge counts these), the test suite (#143, named by
   #145 — HTTP tests
   against the live app: plain probes and function tests with a method picker + request body
   (JSON bodies sent as application/json), assertions on status / body keyword / a JSON dot-path
   value / a Gemini-judged expectation; Run all / run one, quick-add "Site up" from site_url,
   ✎ edit-in-place via `patchCheck` — editing anything but the name clears the stored result —
-  failing tests offer "→ Bug" prefilled into the BugModal), Notes (inline
+  failing tests offer "→ Bug" prefilled into the BugModal) and the ✧ Bug audit panel (#144 —
+  Gemini + the Claude-prompt hand-off)), Notes (inline
   edit on the sticky; promote → bug/roadmap prefills the existing modal, then a
   keep/delete-the-note confirm), Activity. ProjectDetail also owns: the Visit-site/Repo buttons (open the URL, or inline-set it when
   unset via `patchProject`), and a quiet delete-project control behind a `ConfirmModal`.
@@ -368,13 +374,17 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     roadmap item `done` also sets it (a human touch counts as review — archived items never
     linger in the inbox).
   - `notes` — text, `colour`, `source`.
-  - `checks` — the Bugs tab's Audit area: HTTP tests against the project's live app. A row is
+  - `checks` — the Audit tab's test suite: HTTP tests against the project's live app. A row is
     a probe or a function test (#143): name, url, `method` (GET|POST|PUT|PATCH|DELETE|HEAD),
     `expect_status`, `req_body` (sent for non-GET/HEAD; JSON bodies as application/json), and
     the assertions — optional `contains` keyword, `json_path` + `json_expect` (dot path into a
     JSON response; empty expect = the path just has to exist) and the Gemini-judged `semantic`
     line — with the last result on the row (`last_status/code/ms/error/run_at`). Run on demand,
     bounded (8s), never scheduled.
+  - `check_runs` — the Audit tab's run history: one summary row per POST /checks/run
+    (scope all|one, total/passed/failed, duration_ms) — the dashboard's trend strip and
+    last-run stat. Written best-effort after the checks save their results (an insert hiccup
+    never fails the run); the autopilot's nightly checks run lands here too.
   - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap|future`, fingerprint).
   - `autopilot_schedule` + `autopilot_jobs` — Mission Control's calendar and the job queue the
     host dispatcher polls (see scripts/stack-autopilot-dispatch.mjs). Schedule rows: host-local
@@ -642,7 +652,10 @@ the silent metadata backstop so the feed never has gaps.
 - `GET|POST /api/projects/:slug/checks` · `PATCH /api/projects/:slug/checks/:id` (#143 — edit
   any subset of the POST fields; changing anything but the name clears the stored result) ·
   `DELETE /api/projects/:slug/checks/:id` ·
-  `POST /api/projects/:slug/checks/run` (all, or one with `{id}`; returns updated rows)
+  `POST /api/projects/:slug/checks/run` (all, or one with `{id}`; returns updated rows — and
+  lands a summary row in `check_runs`) ·
+  `GET /api/projects/:slug/checks/runs?limit=` (the run history, newest first — the Audit
+  dashboard's trend strip)
 - `GET|POST /api/projects/:slug/autopilot/runs` (the overnight runner's ledger — one row per
   item attempt: outcome landed|no-commits|failed|limit, commits, tokens, cost, checks, the
   session's own summary; the overview's `autopilotRuns` digest reads the last 20h)

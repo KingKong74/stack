@@ -84,6 +84,20 @@ export function checkShape(row) {
   };
 }
 
+// One Audit-tab run-history row: the summary of a Run-all (or run-one).
+export function checkRunShape(row) {
+  return {
+    id: row.id,
+    scope: row.scope,                    // all | one
+    total: row.total,
+    passed: row.passed,
+    failed: row.failed,
+    durationMs: row.duration_ms,
+    at: row.run_at,
+    when: relativeTime(row.run_at) || '',
+  };
+}
+
 export function noteShape(row) {
   return {
     id: row.id,

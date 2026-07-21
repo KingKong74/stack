@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { checkShape } from '../shape.js';
+import { checkShape, checkRunShape } from '../shape.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
 
@@ -216,7 +216,8 @@ async function probe(row) {
   }
 }
 
-// POST /run  -> run every check (or one, with body {id}); returns updated shapes
+// POST /run  -> run every check (or one, with body {id}); returns updated shapes.
+// Every run also lands a summary row in check_runs — the Audit tab's history.
 checks.post('/run', async (req, res) => {
   const one = Number(req.body?.id);
   const { rows } = await q(
@@ -225,6 +226,7 @@ checks.post('/run', async (req, res) => {
   );
   if (!rows.length) return res.status(404).json({ error: 'Nothing to run.' });
 
+  const started = Date.now();
   const updated = await Promise.all(rows.map(async (row) => {
     const r = await probe(row);
     const { rows: [saved] } = await q(
@@ -235,5 +237,29 @@ checks.post('/run', async (req, res) => {
     );
     return checkShape(saved);
   }));
+
+  // The history row never blocks the response — a hiccup here is a log line,
+  // not a failed run (the checks themselves already saved their results).
+  const passed = updated.filter((c) => c.lastStatus === 'pass').length;
+  try {
+    await q(
+      `INSERT INTO check_runs (project_id, scope, total, passed, failed, duration_ms)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [req.project.id, Number.isFinite(one) && one > 0 ? 'one' : 'all',
+       updated.length, passed, updated.length - passed, Date.now() - started]
+    );
+  } catch (e) {
+    console.error('check_runs insert failed:', e.message);
+  }
   res.json(updated);
+});
+
+// GET /runs  -> the run history, newest first (the Audit tab's trend strip)
+checks.get('/runs', async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 40, 1), 200);
+  const { rows } = await q(
+    'SELECT * FROM check_runs WHERE project_id = $1 ORDER BY run_at DESC LIMIT $2',
+    [req.project.id, limit]
+  );
+  res.json(rows.map(checkRunShape));
 });

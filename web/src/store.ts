@@ -1,5 +1,5 @@
 import type {
-  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, Overview,
+  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice,
 } from './types';
@@ -826,7 +826,7 @@ export async function deleteFuture(slug: string, id: number): Promise<void> {
   await request<void>(`${futuresBase(slug)}/${id}`, { method: 'DELETE' });
 }
 
-// ---- checks (the Bugs tab's Audit area) ----
+// ---- checks (the Audit tab) ----
 
 const checksBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/checks`;
 
@@ -854,6 +854,10 @@ export async function deleteCheck(slug: string, id: number): Promise<void> {
 // Run all checks (or one, by id); returns the updated rows.
 export async function runChecks(slug: string, id?: number): Promise<Check[]> {
   return request<Check[]>(`${checksBase(slug)}/run`, { method: 'POST', body: id ? { id } : {} });
+}
+// The run history, newest first — the Audit dashboard's trend strip.
+export async function getCheckRuns(slug: string, limit = 40): Promise<CheckRun[]> {
+  return request<CheckRun[]>(`${checksBase(slug)}/runs?limit=${limit}`);
 }
 
 // ---- automated bug audit (#144) ----
