@@ -60,6 +60,12 @@ terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (npm
         /term-status (#121): any signed-in tab watches ({t:'watch', token} first frame, same
         credential classes) and gets {t:'status', active, count} on connect and on every session
         start/end — the push channel behind the app-wide terminal presence pill; no polling.
+        Claude sessions run inside named `stack-term-*` tmux sessions (#171/#188, when tmux is
+        installed — direct spawn otherwise): a browser disconnect only detaches, the process
+        keeps running. The daemon advertises the detached list (`detached` frames — on connect,
+        session start/end and a 60s tick) to the relay, which caches it for
+        GET /api/terminal/detached and forwards browser kill requests (`killDetached`) back —
+        only names actually detached are killable.
 templates/  stack-agent-context.md — the canonical portable agent manual (single source of truth).
 scripts/    stack-context.mjs — prints that template to stdout, optionally stamped with slug + API.
             stack-tree.mjs — the branch navigator, phase 1 (`stack tree` via the root `stack`
@@ -220,7 +226,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   segment, which IS the dispatcher's slug). The strip also shows the cwd project's **paused
   session** (#142) when one sits in the queue — a limit-hit `resume` job with its resume time
   and in-place ▶ Resume now / Hang up (polled via `store.getAutopilotJobs` while the screen
-  shows, re-checked when a limit frame lands).
+  shows, re-checked when a limit frame lands). **Detached sessions** (#188): a strip of ▶
+  re-attach chips for claude sessions still running on the host with no browser attached
+  (`store.getDetachedSessions`, refreshed when the screen shows and on live-count changes; ×
+  kills the host process behind a ConfirmModal via `store.killDetachedSession`). A claude tab
+  also remembers its tmux session name device-locally (`store.getTermTmuxName` et al, keyed by
+  cwd) so a plain page reload re-attaches the same session automatically; an exit frame while
+  attached — the process really ending — forgets the mapping.
 - `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router; routes
   are `#/`, `#/settings`, `#/control`, `#/terminal`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit
@@ -657,7 +669,12 @@ the silent metadata backstop so the feed never has gaps.
   queued/paused job; 409 for anything claimed/running/finished)
 - `POST /api/terminal/label` (#120 — ✧ Gemini names what each open web-terminal session is doing,
   from the relay's rolling ANSI-stripped output tail; annotation only, in-memory, 503 keyless.
-  The live session list itself rides the control payload's `terminal.sessions`.)
+  The live session list itself rides the control payload's `terminal.sessions`.) ·
+  `GET /api/terminal/detached` (#188 — the surviving `stack-term-*` tmux sessions with no client
+  attached, from the relay's cache of the daemon's advertisements; empty while the daemon is
+  offline) · `POST /api/terminal/detached/kill` (`{name}` — kill an orphaned tmux session on the
+  host; the daemon refuses names that aren't actually detached, so a live session is unkillable
+  through this route)
 
 Deleting a `source='hook'` bug, roadmap item or future tombstones its fingerprint so the next push
 won't re-create it.

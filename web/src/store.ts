@@ -571,6 +571,48 @@ export function setTermViewPrefs(p: TermViewPrefs) {
   localStorage.setItem(TERM_VIEW_KEY, JSON.stringify(p));
 }
 
+// Detached tmux sessions (#188 follow-up) — claude sessions still running on
+// the host with no browser attached (what a page reload orphans). The list
+// comes from the relay's cache of the daemon's advertisements; killing goes
+// back through the same channel, and the daemon refuses names that aren't
+// actually detached.
+export interface DetachedSession { name: string; cwd: string; created: number }
+export async function getDetachedSessions(): Promise<DetachedSession[]> {
+  const r = await request<{ sessions: DetachedSession[] }>('/terminal/detached');
+  return r.sessions;
+}
+export async function killDetachedSession(name: string): Promise<void> {
+  await request<{ ok: boolean }>('/terminal/detached/kill', { method: 'POST', body: { name } });
+}
+
+// Device-local cwd → tmux session name memory, so a page reload re-attaches
+// the same claude session automatically instead of spawning a fresh one.
+// Written on the daemon's ready frame, cleared when the session really ends
+// (an exit frame while attached — a detach never sends one).
+const TERM_TMUX_KEY = 'stack.termTmux';
+function readTmuxMap(): Record<string, string> {
+  try {
+    const m = JSON.parse(localStorage.getItem(TERM_TMUX_KEY) || '{}');
+    return m && typeof m === 'object' ? m : {};
+  } catch { return {}; }
+}
+export function getTermTmuxName(cwd: string): string | null {
+  return readTmuxMap()[cwd] || null;
+}
+export function setTermTmuxName(cwd: string, name: string) {
+  const m = readTmuxMap();
+  m[cwd] = name;
+  localStorage.setItem(TERM_TMUX_KEY, JSON.stringify(m));
+}
+// Clears only when the mapping still points at this name — a newer session in
+// the same cwd must not lose its entry to an older tab's exit.
+export function clearTermTmuxName(cwd: string, name: string) {
+  const m = readTmuxMap();
+  if (m[cwd] !== name) return;
+  delete m[cwd];
+  localStorage.setItem(TERM_TMUX_KEY, JSON.stringify(m));
+}
+
 // ---- Polaris (POST .../polaris — the Futures tab's Gemini terminal) ----
 
 export interface PolarisTurn { role: 'you' | 'polaris'; text: string }

@@ -9,9 +9,12 @@ import {
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
+  getDetachedSessions, killDetachedSession, type DetachedSession,
+  getTermTmuxName, setTermTmuxName, clearTermTmuxName,
 } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 // The web terminal (#/terminal[?cwd=…]) — xterm.js over websocket to the host
 // PTY daemon (via the server relay at /term). Parallel sessions live in tabs
@@ -91,7 +94,10 @@ const DEFAULT_CMDS: TermCmd[] = [
   { label: 'disk usage', cmd: 'df -h .' },
 ];
 
-type Sess = { id: number; cwd: string; cmd: 'shell' | 'claude'; status: Status; note: string };
+// tmux is the host-side tmux session a claude tab runs inside (#188): seeded
+// from a detached-session chip or the device-local cwd map, confirmed by the
+// daemon's ready frame. Shell tabs never have one.
+type Sess = { id: number; cwd: string; cmd: 'shell' | 'claude'; status: Status; note: string; tmux?: string };
 type Handle = { sendText: (s: string) => void; reconnect: () => void; focus: () => void };
 
 // Mounted once by App and never unmounted (#137): sessions, sockets and
@@ -147,9 +153,23 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
   // daemon's resolveCwd() regardless of what the browser sends.
   // Mission Control's per-row ⌨ button and the ProjectDetail ⌨ button both
   // call go.terminal(slug), so project-context opens already land here.
-  const openSession = (dir?: string, kind?: 'shell' | 'claude') => {
+  const openSession = (dir?: string, kind?: 'shell' | 'claude', tmux?: string) => {
     const id = nextId.current++;
-    setSessions((s) => [...s, { id, cwd: (dir ?? cwd).trim(), cmd: kind ?? mode, status: 'connecting', note: '' }]);
+    const cwdKey = (dir ?? cwd).trim();
+    const cmd = kind ?? mode;
+    setSessions((s) => {
+      // #188 — resume-through-reload: a claude session with no explicit tmux
+      // name reuses this device's remembered session for the cwd, unless a
+      // live tab already holds it (attaching twice would mirror the terminal).
+      let name = tmux;
+      if (!name && cmd === 'claude') {
+        const stored = getTermTmuxName(cwdKey);
+        if (stored && !s.some((x) => x.tmux === stored && (x.status === 'live' || x.status === 'connecting'))) {
+          name = stored;
+        }
+      }
+      return [...s, { id, cwd: cwdKey, cmd, status: 'connecting', note: '', tmux: name }];
+    });
     setActive(id);
   };
   // One session opens itself on arrival — the screen is never an empty shell.
@@ -190,6 +210,52 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
   };
   const setStatus = (id: number, status: Status, note: string) =>
     setSessions((s) => s.map((x) => (x.id === id ? { ...x, status, note } : x)));
+
+  // #188 — detached claude sessions still running on the host (what a page
+  // reload orphans). Fetched when the screen shows and whenever the live
+  // count changes (a close just detached one; an attach consumed one), with a
+  // short follow-up fetch so the daemon's push has time to land in the cache.
+  const [detached, setDetached] = useState<DetachedSession[]>([]);
+  const refreshDetached = async () => {
+    try { setDetached(await getDetachedSessions()); } catch { /* daemon offline — strip stays as-is */ }
+  };
+  useEffect(() => {
+    if (!visible) return;
+    void refreshDetached();
+    const t = setTimeout(() => void refreshDetached(), 1500);
+    return () => clearTimeout(t);
+  }, [visible, liveCount]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const attachDetached = (d: DetachedSession) => {
+    setDetached((l) => l.filter((x) => x.name !== d.name));
+    openSession(d.cwd, 'claude', d.name);
+  };
+  const [killTarget, setKillTarget] = useState<DetachedSession | null>(null);
+  const confirmKill = async () => {
+    const d = killTarget;
+    setKillTarget(null);
+    if (!d) return;
+    setDetached((l) => l.filter((x) => x.name !== d.name));
+    clearTermTmuxName(d.cwd, d.name);
+    try { await killDetachedSession(d.name); } catch { void refreshDetached(); }
+  };
+
+  // The daemon confirmed (or assigned) a tab's tmux session — remember it on
+  // the tab and in the device-local cwd map so a reload can resume it.
+  const noteTmux = (id: number, cwdKey: string, name: string) => {
+    setSessions((s) => s.map((x) => (x.id === id ? { ...x, tmux: name } : x)));
+    setTermTmuxName(cwdKey, name);
+  };
+  // An exit frame while attached means the underlying process really ended
+  // (a detach never sends one) — forget the mapping so the next open is fresh.
+  const noteTmuxEnded = (cwdKey: string, name: string | null) => {
+    if (name) clearTermTmuxName(cwdKey, name);
+  };
+
+  // Chips for sessions a live tab already holds would be re-attach traps —
+  // hide them (the daemon's next push drops them anyway).
+  const detachedShown = detached.filter(
+    (d) => !sessions.some((s) => s.tmux === d.name && (s.status === 'live' || s.status === 'connecting')));
 
   const runQuick = (cmd: string) => {
     const h = handles.current.get(active);
@@ -470,6 +536,26 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
           </div>
         )}
 
+        {/* #188 — detached sessions strip: claude sessions still running on the
+            host with no browser attached. ▶ re-attaches in a new tab; × kills
+            the host-side process (confirmed first). */}
+        {detachedShown.length > 0 && (
+          <div className="term-detached">
+            <span className="td-lbl">Detached on the host</span>
+            {detachedShown.map((d) => (
+              <span key={d.name} className="td-chip">
+                <button className="td-attach"
+                  title={`Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`}
+                  onClick={() => attachDetached(d)}>
+                  ▶ claude · {d.cwd ? `~/${d.cwd}` : '~'}
+                </button>
+                <button className="td-x" aria-label="Kill this detached session"
+                  title="Kill this session on the host" onClick={() => setKillTarget(d)}>×</button>
+              </span>
+            ))}
+          </div>
+        )}
+
         <div className="term-layout">
           {/* #136 — quick commands rail, now collapsible. A small ‹/› toggle
               sits at the top; collapsed the rail shrinks to that button only,
@@ -541,6 +627,8 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
               <TermSession key={s.id} sess={s} visible={s.id === active}
                 onStatus={(st, note) => setStatus(s.id, st, note)}
                 onUsage={setUsage}
+                onTmux={(name) => noteTmux(s.id, s.cwd, name)}
+                onExit={(name) => noteTmuxEnded(s.cwd, name)}
                 register={(h) => { if (h) handles.current.set(s.id, h); else handles.current.delete(s.id); }} />
             ))}
             {sessions.length === 0 && (
@@ -550,6 +638,17 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
         </div>
       </div>
     </div>
+    {killTarget && (
+      <ConfirmModal
+        title="Kill detached session?"
+        body={<>The claude session in <b>{killTarget.cwd ? `~/${killTarget.cwd}` : '~'}</b> is still running
+          on the host. Killing it ends the process — anything unfinished in that conversation is lost.</>}
+        confirmLabel="Kill session"
+        danger
+        onConfirm={() => void confirmKill()}
+        onCancel={() => setKillTarget(null)}
+      />
+    )}
     {/* the minimised dock chip (#139) — the default whenever the user
         navigates away with sessions still running; click to expand */}
     {!visible && dock === 'min' && liveCount > 0 && (
@@ -564,21 +663,25 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
 
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
-function TermSession({ sess, visible, onStatus, onUsage, register }: {
-  sess: { id: number; cwd: string; cmd: 'shell' | 'claude' };
+function TermSession({ sess, visible, onStatus, onUsage, onTmux, onExit, register }: {
+  sess: { id: number; cwd: string; cmd: 'shell' | 'claude'; tmux?: string };
   visible: boolean;
   onStatus: (s: Status, note: string) => void;
   onUsage: (u: TermUsage) => void;
+  onTmux: (name: string) => void;
+  onExit: (tmuxName: string | null) => void;
   register: (h: Handle | null) => void;
 }) {
   const holderRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  // Tmux session name received from the daemon on the first ready frame.
-  // Passed back on reconnect so the daemon re-attaches to the surviving session
-  // rather than spawning a new one. Only set for claude sessions (shell never uses tmux).
-  const tmuxRef = useRef<string | null>(null);
+  // Tmux session name for claude tabs (shell never uses tmux): seeded from the
+  // parent (a detached-session chip or the device-local cwd map, #188), then
+  // confirmed/assigned by the daemon's first ready frame. Passed in the start
+  // frame so the daemon re-attaches to the surviving session instead of
+  // spawning a new one.
+  const tmuxRef = useRef<string | null>(sess.tmux ?? null);
 
   useEffect(() => {
     const term = new XTerm({
@@ -637,11 +740,19 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
           onUsage({ tokens: m.tokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched });
         }
         else if (m.t === 'ready') {
-          if (m.tmuxSession) tmuxRef.current = m.tmuxSession;
+          if (m.tmuxSession) { tmuxRef.current = m.tmuxSession; onTmux(m.tmuxSession); }
           onStatus('live', m.cwd || '');
           if (visible) term.focus();
         }
-        else if (m.t === 'exit') { onStatus('closed', `exited (${m.code})`); term.write('\r\n\x1b[90m[session ended — reconnect from the tab bar]\x1b[0m\r\n'); }
+        else if (m.t === 'exit') {
+          // An exit while attached = the underlying process really ended (a
+          // detach kills only the shim and no frame reaches us) — let the
+          // parent forget the tmux mapping so the next open starts fresh.
+          onExit(tmuxRef.current);
+          tmuxRef.current = null;
+          onStatus('closed', `exited (${m.code})`);
+          term.write('\r\n\x1b[90m[session ended — reconnect from the tab bar]\x1b[0m\r\n');
+        }
         else if (m.t === 'err') { onStatus('error', m.msg || 'terminal error'); term.write(`\r\n\x1b[91m${m.msg || 'terminal error'}\x1b[0m\r\n`); }
       });
       ws.addEventListener('error', () => onStatus('error', 'Could not reach the terminal relay.'));

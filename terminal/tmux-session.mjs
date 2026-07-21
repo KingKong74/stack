@@ -60,3 +60,24 @@ export function sessionArgv(name, cwd, shellCmd) {
 export function killSession(name) {
   spawnSync('tmux', ['kill-session', '-t', `=${name}`], { stdio: 'ignore' });
 }
+
+// List surviving web-terminal sessions with no client attached — the sessions
+// a page reload orphans. Only stack-term-* names (the daemon's own prefix):
+// autopilot/test sessions are not the browser's to re-attach or kill.
+// created is epoch ms; path is the session's start directory on the host.
+export function listDetached() {
+  const r = spawnSync(
+    'tmux',
+    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}'],
+    { encoding: 'utf8' },
+  );
+  if (r.status !== 0) return []; // no server running = no sessions
+  const out = [];
+  for (const line of r.stdout.split('\n')) {
+    const [name, attached, created, path] = line.split('\t');
+    if (!validName(name) || !name.startsWith('stack-term-')) continue;
+    if (attached !== '0') continue;
+    out.push({ name, created: (parseInt(created, 10) || 0) * 1000, path: path || '' });
+  }
+  return out;
+}

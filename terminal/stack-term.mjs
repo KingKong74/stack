@@ -50,7 +50,7 @@ import { fileURLToPath } from 'node:url';
 import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, killSession } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached } from './tmux-session.mjs';
 import {
   availableProviders, providerEnv, getProvider,
   loadPreferredProvider, savePreferredProvider,
@@ -216,6 +216,26 @@ function sendUplink(obj) {
   }
 }
 
+// ---- detached-session advertising (#188 follow-up) ----
+// A page reload orphans its tmux session: the claude process keeps running but
+// no browser knows the session name any more. The daemon advertises surviving
+// detached stack-term-* sessions to the relay, which caches the list for
+// GET /api/terminal/detached — the Terminal screen renders them as re-attach
+// chips. Pushed on connect, on every session start/end (attach consumes one,
+// detach creates one) and on a slow tick as a catch-all.
+function pushDetached() {
+  if (!tmuxAvailable()) return;
+  const sessionsList = listDetached().map((s) => ({
+    name: s.name,
+    created: s.created,
+    // Jail-relative cwd, the same form the browser sends in start frames
+    // ('' = the root). A path outside the jail (shouldn't happen) maps to ''.
+    cwd: s.path === ROOT ? '' : s.path.startsWith(ROOT + sep) ? s.path.slice(ROOT.length + 1) : '',
+  }));
+  sendUplink({ t: 'detached', sessions: sessionsList });
+}
+setInterval(pushDetached, 60_000);
+
 function pushUsage(ws) {
   if (ws && ws.readyState !== WebSocket.OPEN) return;
   const target = ws || uplink;
@@ -319,6 +339,9 @@ function wireChild(sid, sess, child) {
       sessions.delete(sid);
       log(`session ${sid} down (${sessions.size} live), exit ${code}`);
       sendUplink({ t: 'exit', sid, code: code ?? 0 });
+      // A killed shim leaves its tmux session running detached; a real claude
+      // exit removes it. Either way the detached list just changed.
+      if (sess.tmuxSession) pushDetached();
     }
   });
 
@@ -513,6 +536,7 @@ function startSession(msg) {
   if (tmuxSession) readyFrame.tmuxSession = tmuxSession;
   sendUplink(readyFrame);
   sendUplink(usageFrame(sid)); // usage snapshot lands with the prompt
+  if (tmuxSession) pushDetached(); // a re-attach just consumed a detached entry
 }
 
 // ---- the one outbound agent connection, kept alive forever ----
@@ -527,6 +551,8 @@ function connect() {
 
     // Re-announce any sessions that survived the uplink gap, then flush their
     // buffered output so browsers can re-attach and catch up.
+    pushDetached(); // seed the relay's detached-session cache straight away
+
     if (sessions.size > 0) {
       const liveSids = [...sessions.keys()];
       log(`re-announcing ${liveSids.length} surviving session(s): ${liveSids.join(', ')}`);
@@ -583,6 +609,16 @@ function connect() {
       if (m.cols) sess.cols = m.cols;
       if (m.rows) sess.rows = m.rows;
       if (child) child.resize(m.cols, m.rows);
+    }
+    else if (m.t === 'killDetached') {
+      // Browser asked to kill an orphaned tmux session (via the relay). Only
+      // names currently in the detached list are killable — a name attached to
+      // a live sid never matches, so a live session can't be killed this way.
+      if (validName(m.name) && listDetached().some((s) => s.name === m.name)) {
+        log(`killing detached tmux session ${m.name} (browser request)`);
+        killSession(m.name);
+      }
+      pushDetached();
     }
     else if (m.t === 'kill') {
       if (sess?.switchMode) {

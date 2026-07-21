@@ -44,6 +44,21 @@ export const termSessions = () =>
 export const termTails = () =>
   [...termMeta.entries()].map(([sid, m]) => ({ sid: String(sid), meta: m }));
 
+// Detached tmux sessions on the host (#188 follow-up): claude sessions that
+// survived a browser disconnect but have no client attached. The daemon pushes
+// the list (on connect, on session start/end, on a slow tick); the relay just
+// caches it for GET /api/terminal/detached. Cleared when the daemon drops —
+// nothing is attachable without it anyway, and a reconnect re-seeds the cache.
+let detachedSessions = []; // [{ name, cwd, created }]
+export const termDetached = () => detachedSessions;
+// Set inside attachTerm so the kill route can reach the live agent socket.
+let agentSend = null;
+export function killDetachedTmux(name) {
+  if (!agentSend) return false;
+  agentSend({ t: 'killDetached', name });
+  return true;
+}
+
 export function attachTerm(httpServer) {
   const wss = new WebSocketServer({ noServer: true });
   let agent = null;
@@ -89,6 +104,7 @@ export function attachTerm(httpServer) {
     if (agent) { send(agent, { t: 'err', msg: 'Replaced by a newer daemon connection.' }); agent.close(); }
     agent = ws;
     agentConnected = true;
+    agentSend = (obj) => send(agent, obj);
     console.log('[term] daemon connected');
     ws.on('message', (raw) => {
       let m;
@@ -102,6 +118,19 @@ export function attachTerm(httpServer) {
       // can exit cleanly.  Sessions whose browsers are still waiting are simply
       // left connected — the buffered output that follows the hello flushes
       // through the normal 'out' handler below.
+      // detached — the daemon's current list of orphaned tmux sessions. Cache
+      // it whole; the API route serves it read-only.
+      if (m.t === 'detached' && Array.isArray(m.sessions)) {
+        detachedSessions = m.sessions
+          .filter((s) => s && typeof s.name === 'string')
+          .map((s) => ({
+            name: s.name,
+            cwd: typeof s.cwd === 'string' ? s.cwd : '',
+            created: Number(s.created) || 0,
+          }));
+        return;
+      }
+
       if (m.t === 'hello' && Array.isArray(m.sids)) {
         console.log(`[term] daemon re-announced ${m.sids.length} surviving session(s): ${m.sids.join(', ')}`);
         for (const sid of m.sids) {
@@ -128,7 +157,7 @@ export function attachTerm(httpServer) {
       if (m.t === 'exit') { send(browser, m); browser.close(); sessions.delete(m.sid); termMeta.delete(m.sid); broadcastStatus(); }
     });
     ws.on('close', () => {
-      if (agent === ws) { agent = null; agentConnected = false; }
+      if (agent === ws) { agent = null; agentConnected = false; agentSend = null; detachedSessions = []; }
       console.log('[term] daemon disconnected');
       // Do NOT kill browser connections here — the daemon may reconnect and
       // re-announce surviving PTYs (#123).  Browsers will see silence until the

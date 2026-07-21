@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { q } from '../db.js';
-import { termSessions, termTails } from '../term.js';
+import { termSessions, termTails, termDetached, killDetachedTmux } from '../term.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { readSettings } from '../settings.js';
 
@@ -26,6 +26,23 @@ terminal.get('/usage', async (_req, res) => {
     tokensToday: Number(runRow.rows[0]?.tokens_today ?? 0),
     tokenBudget: Number(appSettings.autopilot_tokens ?? 0),
   });
+});
+
+// GET /api/terminal/detached — surviving tmux sessions with no client attached
+// (#188 follow-up): what a page reload orphans. Served from the relay's cache
+// (the daemon pushes updates); empty while the daemon is offline.
+terminal.get('/detached', (_req, res) => {
+  res.json({ sessions: termDetached() });
+});
+
+// POST /api/terminal/detached/kill {name} — kill an orphaned tmux session on
+// the host. The daemon double-checks the name is actually detached before
+// killing, so a live session can never be killed through this route.
+terminal.post('/detached/kill', (req, res) => {
+  const name = String(req.body?.name || '');
+  if (!/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(name)) return res.status(400).json({ error: 'Bad session name.' });
+  if (!killDetachedTmux(name)) return res.status(503).json({ error: 'The terminal daemon is not connected.' });
+  res.json({ ok: true });
 });
 
 terminal.post('/label', async (_req, res) => {
