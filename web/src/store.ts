@@ -361,6 +361,13 @@ export async function getAutopilotJobs(slug?: string, limit = 20): Promise<Autop
   return request<AutopilotJob[]>(`/autopilot/jobs?${qs}`);
 }
 
+// Token usage for the terminal header: autopilot_runs total for the last 24h
+// and the nightly token budget from settings (0 = unlimited).
+export interface TerminalUsageData { tokensToday: number; tokenBudget: number }
+export async function getTerminalUsage(): Promise<TerminalUsageData> {
+  return request<TerminalUsageData>('/terminal/usage');
+}
+
 export interface SchedulePayload {
   slug: string; atTime: string; days?: number[]; runDate?: string | null;
   itemId?: string | null; note?: string;
@@ -459,7 +466,7 @@ export async function sortIntake(slug: string, text: string): Promise<IntakeSugg
 // attaches its handlers to the returned socket but never touches storage. The
 // start frame goes out on open; the daemon validates the token against the API
 // before anything spawns.
-export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number }): WebSocket {
+export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number; tmuxSession?: string }): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${window.location.host}/term`);
   ws.addEventListener('open', () => {

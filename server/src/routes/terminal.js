@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import { q } from '../db.js';
 import { termSessions, termTails } from '../term.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
+import { readSettings } from '../settings.js';
 
 // Mounted at /api/terminal — Mission Control's view of the live web-terminal
 // sessions (#120). The relay already tracks per-sid metadata + a rolling
@@ -8,6 +10,23 @@ import { askGemini, geminiEnabled } from '../gemini.js';
 // session appears to be doing. Annotation only — labels sit on the in-memory
 // session rows and die with them. 503 without a key (silent degrade upstream).
 export const terminal = Router();
+
+// GET /api/terminal/usage — token consumption and budget for the terminal header.
+// tokensToday: sum of autopilot_runs.tokens over the last 24 hours (BIGINT → Number).
+// tokenBudget: settings.autopilot_tokens (0 = unlimited).
+// COALESCE guards against an empty autopilot_runs table (fresh install).
+terminal.get('/usage', async (_req, res) => {
+  const [runRow, appSettings] = await Promise.all([
+    q(`SELECT COALESCE(SUM(tokens), 0) AS tokens_today
+         FROM autopilot_runs
+        WHERE finished_at >= now() - interval '24 hours'`),
+    readSettings(),
+  ]);
+  res.json({
+    tokensToday: Number(runRow.rows[0]?.tokens_today ?? 0),
+    tokenBudget: Number(appSettings.autopilot_tokens ?? 0),
+  });
+});
 
 terminal.post('/label', async (_req, res) => {
   if (!geminiEnabled()) return res.status(503).json({ error: 'Gemini is not configured on the server.' });

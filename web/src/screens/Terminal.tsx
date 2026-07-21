@@ -8,6 +8,7 @@ import {
   getTermViewPrefs, setTermViewPrefs,
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
+  getTerminalUsage, type TerminalUsageData,
 } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
@@ -122,6 +123,7 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
   // device-local estimate; the auto/manual toggle decides whether a limit hit
   // books the next automated session itself or offers a button.
   const [usage, setUsage] = useState<TermUsage | null>(null);
+  const [serverUsage, setServerUsage] = useState<TerminalUsageData | null>(null);
   const [usagePrefs, setPrefsState] = useState<TermUsagePrefs>(() => getTermUsagePrefs());
   const [editLimit, setEditLimit] = useState(false);
   const [limitDraft, setLimitDraft] = useState('');
@@ -234,7 +236,15 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
   const projectSlug = (activeSess?.cwd || cwd).trim().replace(/^[/\\]+/, '').split('/')[0] || '';
   const schedKey = usage?.sched ? `${projectSlug} ${usage.sched.runDate} ${usage.sched.atTime}` : '';
   const booked = !!schedKey && usagePrefs.lastAutoKey === schedKey;
-  const usagePct = usage ? Math.round((usage.tokens / usagePrefs.dailyLimit) * 100) : 0;
+  // Daemon frames are the real-time numerator; server 24h total is the fallback
+  // before the first frame arrives (no active PTY session). Denominator: the
+  // nightly autopilot budget when set (server-side); user's device-local
+  // estimate when the budget is 0 (unlimited) or the server is unreachable.
+  const usedTokens = usage?.tokens ?? serverUsage?.tokensToday ?? 0;
+  const effectiveLimit = serverUsage && serverUsage.tokenBudget > 0
+    ? serverUsage.tokenBudget
+    : usagePrefs.dailyLimit;
+  const usagePct = usedTokens > 0 ? Math.round((usedTokens / effectiveLimit) * 100) : 0;
 
   const bookReset = async () => {
     const sched = usage?.sched;
@@ -287,6 +297,21 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
     if (!resumeJob) return;
     try { setResumeJob(await act(resumeJob.id)); } catch { /* next poll corrects */ }
   };
+
+  // Poll /api/terminal/usage for the nightly token budget and 24h autopilot totals.
+  // Gated on visible; silent on error (strip just falls back to daemon data alone).
+  useEffect(() => {
+    if (!visible) return;
+    let gone = false;
+    const fetch = () => {
+      getTerminalUsage()
+        .then((u) => { if (!gone) setServerUsage(u); })
+        .catch(() => { /* silent — strip shows daemon data when server is unreachable */ });
+    };
+    fetch();
+    const t = window.setInterval(fetch, 30_000);
+    return () => { gone = true; window.clearInterval(t); };
+  }, [visible]);
 
   const dockLabel = activeSess
     ? `${activeSess.cmd === 'claude' ? 'claude' : 'shell'}${activeSess.cwd ? ` · ${activeSess.cwd}` : ''}`
@@ -362,41 +387,48 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
           )}
         </div>
 
-        {/* the usage strip — appears with the first usage frame from the daemon */}
-        {usage && (
+        {/* the usage strip — visible once the daemon sends a frame OR the server
+            endpoint responds, whichever comes first. Shows Tokens: used / limit
+            where the limit is the nightly autopilot budget from settings (server-
+            sourced) or the user's device-local estimate when the budget is 0
+            (unlimited). Daemon frames update the used count every 15s. */}
+        {(usage || serverUsage) && (
           <div className="term-usage">
-            <span className="tu-lbl">tokens today</span>
+            <span className="tu-lbl">Tokens</span>
             <div className={`tu-bar${usagePct >= 100 ? ' over' : usagePct >= 85 ? ' warn' : ''}`}>
               <div className="tu-fill" style={{ width: `${Math.min(100, usagePct)}%` }} />
             </div>
             <span className="tu-num"
-              title={`~${fmtTok(usage.tokens)} of ${fmtTok(usagePrefs.dailyLimit)} tokens today`}>
-              {usagePct}%{' '}
-              <span className="tu-of">of{' '}</span>
-              {editLimit ? (
-                <input className="field-input tu-edit" autoFocus value={limitDraft}
-                  onChange={(e) => setLimitDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      const v = parseTok(limitDraft);
-                      if (v) savePrefs({ ...usagePrefs, dailyLimit: v });
-                      setEditLimit(false);
-                    } else if (e.key === 'Escape') setEditLimit(false);
-                  }}
-                  onBlur={() => setEditLimit(false)} />
-              ) : (
-                <button className="tu-limit" title="Daily token budget (your estimate, this device only) — click to change"
-                  onClick={() => { setLimitDraft(fmtTok(usagePrefs.dailyLimit)); setEditLimit(true); }}>
-                  {fmtTok(usagePrefs.dailyLimit)}
-                </button>
-              )}
+              title={`${fmtTok(usedTokens)} / ${serverUsage && serverUsage.tokenBudget > 0 ? fmtTok(serverUsage.tokenBudget) + ' nightly budget' : fmtTok(usagePrefs.dailyLimit) + ' estimate'} (24h)`}>
+              {fmtTok(usedTokens)} /{' '}
+              {serverUsage && serverUsage.tokenBudget > 0
+                ? <span>{fmtTok(serverUsage.tokenBudget)}</span>
+                : editLimit
+                  ? (
+                    <input className="field-input tu-edit" autoFocus value={limitDraft}
+                      onChange={(e) => setLimitDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const v = parseTok(limitDraft);
+                          if (v) savePrefs({ ...usagePrefs, dailyLimit: v });
+                          setEditLimit(false);
+                        } else if (e.key === 'Escape') setEditLimit(false);
+                      }}
+                      onBlur={() => setEditLimit(false)} />
+                  ) : (
+                    <button className="tu-limit" title="Daily token estimate (this device only) — click to change"
+                      onClick={() => { setLimitDraft(fmtTok(usagePrefs.dailyLimit)); setEditLimit(true); }}>
+                      {fmtTok(usagePrefs.dailyLimit)}
+                    </button>
+                  )
+              }
             </span>
-            {usage.totalTokens != null && usage.totalTokens > usage.tokens && (
+            {usage?.totalTokens != null && usage.totalTokens > (usage?.tokens ?? 0) && (
               <span className="tu-total" title="Raw volume including prompt-cache reads — the fresh count on the bar is what tracks real work">
                 {fmtTok(usage.totalTokens)} incl. cache reads
               </span>
             )}
-            {usage.resetLabel && <span className="tu-reset">⏳ limit resets {usage.resetLabel}</span>}
+            {usage?.resetLabel && <span className="tu-reset">⏳ limit resets {usage.resetLabel}</span>}
             {resumeJob && (
               <span className={`tu-resume ${resumeJob.status}`}
                 title={resumeJob.itemTitle ? `#${resumeJob.itemId} ${resumeJob.itemTitle}` : undefined}>
@@ -418,7 +450,7 @@ export function Terminal({ initialCwd = '', visible = true, onAlive }: {
                 )}
               </span>
             )}
-            {usage.sched && (booked ? (
+            {usage?.sched && (booked ? (
               <span className="tu-booked">✓ session booked for {usage.sched.atTime}</span>
             ) : !usagePrefs.autoSchedule ? (
               <button className="btn-submit sm" onClick={() => void bookReset()}
@@ -543,6 +575,10 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  // Tmux session name received from the daemon on the first ready frame.
+  // Passed back on reconnect so the daemon re-attaches to the surviving session
+  // rather than spawning a new one. Only set for claude sessions (shell never uses tmux).
+  const tmuxRef = useRef<string | null>(null);
 
   useEffect(() => {
     const term = new XTerm({
@@ -561,7 +597,10 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
       wsRef.current?.close();
       onStatus('connecting', '');
       fit.fit();
-      const ws = openTerminal({ cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows });
+      const ws = openTerminal({
+        cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows,
+        tmuxSession: sess.cmd === 'claude' && tmuxRef.current ? tmuxRef.current : undefined,
+      });
       wsRef.current = ws;
       // #135 — write-batching: coalesce rapid incoming frames into one
       // requestAnimationFrame flush instead of calling term.write() per frame.
@@ -589,6 +628,7 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
       ws.addEventListener('message', (ev) => {
         let m: {
           t: string; data?: string; msg?: string; code?: number; cwd?: string;
+          tmuxSession?: string;
           tokens?: number; resetAt?: number; resetLabel?: string; sched?: { runDate: string; atTime: string };
         };
         try { m = JSON.parse(ev.data); } catch { return; }
@@ -596,7 +636,11 @@ function TermSession({ sess, visible, onStatus, onUsage, register }: {
         else if (m.t === 'usage' && typeof m.tokens === 'number') {
           onUsage({ tokens: m.tokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched });
         }
-        else if (m.t === 'ready') { onStatus('live', m.cwd || ''); if (visible) term.focus(); }
+        else if (m.t === 'ready') {
+          if (m.tmuxSession) tmuxRef.current = m.tmuxSession;
+          onStatus('live', m.cwd || '');
+          if (visible) term.focus();
+        }
         else if (m.t === 'exit') { onStatus('closed', `exited (${m.code})`); term.write('\r\n\x1b[90m[session ended — reconnect from the tab bar]\x1b[0m\r\n'); }
         else if (m.t === 'err') { onStatus('error', m.msg || 'terminal error'); term.write(`\r\n\x1b[91m${m.msg || 'terminal error'}\x1b[0m\r\n`); }
       });
