@@ -499,25 +499,29 @@ export function Roadmap({
           {briefPanel(it)}
           {undoNotes.has(it.id) && <div className="undo-note">⎌ {undoNotes.get(it.id)}</div>}
         </div>
-        <button className="verify-back" onClick={() => setUndoConfirm(it)}
-          title="Revert this item's commits on main and send it back to the board">⎌ Undo</button>
-        <button className="gemini-btn sm" onClick={() => toggleBrief(it)}
-          title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">
-          ✧ Brief
-        </button>
-        <button className="verify-back" onClick={() => onLogBug(it)}
-          title="Log a bug ticket against this item — prefills the bug modal">＋ Bug</button>
-        <button className="verify-back" onClick={() => onLogAudit(it)}
-          title="Log an audit ticket — a roadmap item in the audit area to check what landed">＋ Audit</button>
-        <button className="verify-back" onClick={() => onShelve(it)}
-          title={it.reviewShelved
-            ? 'Bring it back to the To-verify list'
-            : 'Set aside — good enough for now; waits under Shelved until you bring it back'}>
-          {it.reviewShelved ? '▶ To review' : '⏸ Later'}
-        </button>
-        <button className="verify-back" onClick={() => onToggle(it)}
-          title="Didn't hold up — send it back to the board">↩ Board</button>
-        {archActions(it)}
+        <div className="verify-btn-group">
+          {archActions(it)}
+          <div className="verify-actions">
+            <button className="verify-back" onClick={() => setUndoConfirm(it)}
+              title="Revert this item's commits on main and send it back to the board">⎌ Undo</button>
+            <button className="gemini-btn sm" onClick={() => toggleBrief(it)}
+              title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">
+              ✧ Brief
+            </button>
+            <button className="verify-back" onClick={() => onLogBug(it)}
+              title="Log a bug ticket against this item — prefills the bug modal">＋ Bug</button>
+            <button className="verify-back" onClick={() => onLogAudit(it)}
+              title="Log an audit ticket — a roadmap item in the audit area to check what landed">＋ Audit</button>
+            <button className="verify-back" onClick={() => onShelve(it)}
+              title={it.reviewShelved
+                ? 'Bring it back to the To-verify list'
+                : 'Set aside — good enough for now; waits under Shelved until you bring it back'}>
+              {it.reviewShelved ? '▶ To review' : '⏸ Later'}
+            </button>
+            <button className="verify-back" onClick={() => onToggle(it)}
+              title="Didn't hold up — send it back to the board">↩ Board</button>
+          </div>
+        </div>
       </div>
     );
   };

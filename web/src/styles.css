@@ -564,9 +564,11 @@ a { color: inherit; }
 .verify-body { flex: 1; min-width: 0; }
 .verify-body .t { font-size: 13.5px; font-weight: 500; line-height: 1.35; }
 .verify-body .note { font-size: 11.5px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
-.verify-back { flex: none; font-size: 11.5px; font-weight: 600; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; padding: 3px 10px; white-space: nowrap; }
+.verify-back { flex: none; font-size: 11.5px; font-weight: 600; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; padding: 3px 9px; white-space: nowrap; }
 .verify-back:hover { color: var(--ink); border-color: var(--muted); }
 .verify-row .road-actions.arch, .verify-row .review-pick { margin-top: 0; flex: none; }
+.verify-btn-group { flex: none; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; max-width: 220px; }
+.verify-actions { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; align-items: center; }
 /* #140 — session/run groups in the To-verify strip */
 .verify-group { margin-top: 10px; }
 .verify-group:first-child { margin-top: 4px; }
