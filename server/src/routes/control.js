@@ -110,6 +110,7 @@ control.get('/', async (_req, res) => {
   const todayCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   let weekTokens = 0, weekCost = 0, todayTokens = 0, todayCost = 0;
   const modelTotals = new Map();
+  const nightSet = new Set(); // distinct YYYY-MM-DD dates — the bar denominator
   let unattribTokens = 0, unattribCost = 0;
   for (const r of usageR.rows) {
     const tok = Number(r.tokens || 0);
@@ -117,6 +118,8 @@ control.get('/', async (_req, res) => {
     weekTokens += tok;
     weekCost += cost;
     if (new Date(r.finished_at) > todayCutoff) { todayTokens += tok; todayCost += cost; }
+    // Use ISO date of the run's finish time to count distinct nights.
+    nightSet.add(new Date(r.finished_at).toISOString().slice(0, 10));
     if (r.model_usage && typeof r.model_usage === 'object') {
       for (const [model, entry] of Object.entries(r.model_usage)) {
         const t = (Number(entry.inputTokens) || 0) + (Number(entry.outputTokens) || 0)
@@ -142,9 +145,13 @@ control.get('/', async (_req, res) => {
     weekTokens,
     weekCostUsd: weekCost,
     weekRuns: usageR.rows.length,
+    weekNights: nightSet.size,
     todayTokens,
     todayCostUsd: todayCost,
-    budgetPerRun: appSettings.autopilot_tokens, // 0 = unlimited
+    // autopilot_tokens is a PER-NIGHT budget (shared across all items that night).
+    // Use budgetPerNight × weekNights for the bar so a multi-item night doesn't
+    // appear over-budget against a per-run denominator.
+    budgetPerNight: appSettings.autopilot_tokens, // 0 = unlimited
     models: usageModels,
   };
 

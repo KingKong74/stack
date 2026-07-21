@@ -290,9 +290,10 @@ export interface UsageSummary {
   weekTokens: number;
   weekCostUsd: number;
   weekRuns: number;
+  weekNights: number;      // distinct calendar nights that had at least one run
   todayTokens: number;
   todayCostUsd: number;
-  budgetPerRun: number;    // echo of settings.autopilot_tokens; 0 = unlimited
+  budgetPerNight: number;  // echo of settings.autopilot_tokens; 0 = unlimited
   models: { model: string; tokens: number; costUsd: number }[];
 }
 

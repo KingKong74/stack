@@ -311,9 +311,11 @@ export function ControlPanel() {
     return d;
   });
 
-  // (#194) Budget bar fill — % of total budget consumed this week; null hides the bar.
-  const usageBar = data?.usage && data.usage.budgetPerRun > 0 && data.usage.weekRuns > 0
-    ? Math.min(100, Math.round(data.usage.weekTokens / (data.usage.budgetPerRun * data.usage.weekRuns) * 100))
+  // (#194) Budget bar fill — % of per-night budget consumed across active nights this week;
+  // null hides the bar. Uses weekNights (not weekRuns) because autopilot_tokens is a
+  // per-night cap shared across all items that night, not per item attempt.
+  const usageBar = data?.usage && data.usage.budgetPerNight > 0 && data.usage.weekNights > 0
+    ? Math.min(100, Math.round(data.usage.weekTokens / (data.usage.budgetPerNight * data.usage.weekNights) * 100))
     : null;
 
   return (
@@ -556,23 +558,23 @@ export function ControlPanel() {
                     {fmtTok(data.usage.weekTokens)}
                     {data.usage.weekCostUsd > 0.005 && ` · $${data.usage.weekCostUsd.toFixed(2)}`}
                     {' '}· {data.usage.weekRuns} run{data.usage.weekRuns === 1 ? '' : 's'}
-                    {data.usage.budgetPerRun > 0 && (
-                      <span className="mc-usage-budget"> · budget {fmtTok(data.usage.budgetPerRun)}/run</span>
+                    {data.usage.budgetPerNight > 0 && (
+                      <span className="mc-usage-budget"> · budget {fmtTok(data.usage.budgetPerNight)}/night</span>
                     )}
-                    {data.usage.budgetPerRun === 0 && (
+                    {data.usage.budgetPerNight === 0 && (
                       <span className="mc-usage-budget"> · ∞ Unlimited budget</span>
                     )}
                   </span>
                   {data.usage.todayTokens > 0 && (
                     <span className="mc-usage-today">
-                      today: {fmtTok(data.usage.todayTokens)}
+                      24h: {fmtTok(data.usage.todayTokens)}
                       {data.usage.todayCostUsd > 0.005 && ` · $${data.usage.todayCostUsd.toFixed(2)}`}
                     </span>
                   )}
                 </div>
                 {usageBar !== null && (
                   <div className="mc-usage-bar-wrap"
-                    title={`${fmtTok(data.usage.weekTokens)} of ${fmtTok(data.usage.budgetPerRun * data.usage.weekRuns)} budgeted this week (${data.usage.weekRuns} × ${fmtTok(data.usage.budgetPerRun)}/run) — ${usageBar}%`}
+                    title={`${fmtTok(data.usage.weekTokens)} of ${fmtTok(data.usage.budgetPerNight * data.usage.weekNights)} budgeted this week (${data.usage.weekNights} night${data.usage.weekNights === 1 ? '' : 's'} × ${fmtTok(data.usage.budgetPerNight)}/night) — ${usageBar}%`}
                     aria-label={`${usageBar}% of weekly budget used`}>
                     <div className="mc-usage-bar" style={{ width: `${usageBar}%` }} />
                   </div>
