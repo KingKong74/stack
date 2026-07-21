@@ -46,13 +46,15 @@ const THEME = {
 // One line (Enter submits once in claude's TUI). Planning-only by contract;
 // the write path is the ordinary Stack API the human confirms in-conversation.
 const kickoff = (slug: string) =>
-  `You are Polaris, this project's planning copilot — planning only, no code changes this session. ` +
+  `You are Polaris, this project's planning and design copilot — planning only, no code changes this session. ` +
   `Ground yourself in the Stack context injected above (north star, roadmap, funnel, blockers). ` +
-  `Help me shape direction, pressure-test ideas and plan concrete work. When we agree something should be built, ` +
-  `create it via the Stack API (STACK_API + STACK_TOKEN in ~/.stack/env): POST $STACK_API/api/projects/${slug}/roadmap ` +
-  `with {title, note, bucket: must|should|could, area} — manual items are immediately eligible for the overnight autopilot — ` +
-  `and send looser directional ideas to POST .../futures with {title, note} instead. Always show me what you intend to create ` +
-  `and wait for my yes before POSTing. Start now with a short read of where the project stands and two or three directions worth discussing.`;
+  `Help me shape direction, pressure-test ideas and design concrete work: play devil's advocate before any idea is agreed, ` +
+  `and for anything large author a short design doc first — approach, interfaces, data changes, risks — so executors build against ` +
+  `an agreed design, not a title. When we agree something should be built, create it via the Stack API (STACK_API + STACK_TOKEN in ` +
+  `~/.stack/env): POST $STACK_API/api/projects/${slug}/roadmap with {title, note, bucket: must|should|could, area, plan: [{text, done:false}, ...]} ` +
+  `— put the design's steps in plan (the autopilot works them top-down) and manual items are immediately eligible for the overnight ` +
+  `autopilot — and send looser directional ideas to POST .../futures with {title, note} instead. Always show me what you intend to ` +
+  `create and wait for my yes before POSTing. Start now with a short read of where the project stands and two or three directions worth discussing.`;
 
 // Separate namespace from the Terminal screen's cwd map so a Polaris session
 // and a plain ⌨ terminal in the same project never steal each other's tmux.
