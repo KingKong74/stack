@@ -443,3 +443,17 @@ CREATE TABLE IF NOT EXISTS check_runs (
   run_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_check_runs_project ON check_runs (project_id, run_at DESC);
+
+-- Branch report (#207): the host dispatcher's git snapshot per project — every
+-- origin branch with ahead/behind counts vs origin/main, a merge-tree conflict
+-- probe (git ≥2.38; null when unsupported) and the item id parsed from the
+-- lane name. One row per project, replaced whole on each report (~10 min);
+-- Mission Control's merge strip (#154) reads it off the control payload. The
+-- server never touches git itself — the repos live on the host, behind the
+-- firewall, so the dispatcher pushes the truth up (same dial-out pattern as
+-- the terminal daemon).
+CREATE TABLE IF NOT EXISTS branch_reports (
+  project_id  BIGINT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  report      JSONB NOT NULL DEFAULT '[]',
+  reported_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

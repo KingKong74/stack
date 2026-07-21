@@ -1638,6 +1638,17 @@ a { color: inherit; }
   border-radius: 12px; padding: 1px 8px;
 }
 .mc-branch-merge:hover { color: #fff; background: var(--accent-deep); border-color: var(--accent-deep); }
+/* #207 — git state on the branch chips: ahead/behind + the conflict probe */
+.mc-branch-diff { color: var(--muted); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mc-branch-clean { color: var(--sage); font-size: 11px; font-weight: 700; }
+.mc-branch-conflict { color: var(--critical); font-size: 12px; }
+.mc-branch-absorbed { color: var(--muted); font-size: 11px; font-weight: 500; align-self: center; }
+.mc-merge-warn {
+  font-size: 12.5px; line-height: 1.5; color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--critical) 25%, transparent);
+  border-radius: 8px; padding: 8px 12px; margin: -8px 0 18px;
+}
 
 /* scheduled sessions — the week ahead + the standing list */
 .mc-sched {

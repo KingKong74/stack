@@ -21,6 +21,10 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //     slug, name, tint, status, automode, progress, lastPush,
 //     live: { count, branches[] } | null,   // presence inside the TTL window
 //     claims: [ { id, title, lane } ],      // open lane-claimed items
+//     branches: [ { branch, itemId, itemTitle,      // the merge strip (#154);
+//                   ahead?, behind?, mergeClean?,   // git state via the host's
+//                   subject?, when? } ],            // branch report (#207)
+//     absorbedBranches, branchesWhen,       // prune count + report freshness
 //     reviewCount,                          // hook items awaiting review
 //     bugs: { serious, open },
 //     blockers: [ "…" ],
@@ -37,7 +41,7 @@ const ms = (ts) => (ts ? new Date(ts).getTime() : -1);
 control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
-  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR] = await Promise.all([
+  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR, branchR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, automode, autopilot_area, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
     // claimed_by that starts with 'auto/' or 'lane/' is an open lane branch; we
@@ -84,6 +88,10 @@ control.get('/', async (_req, res) => {
     q(`SELECT tokens, cost_usd, model_usage, finished_at
          FROM autopilot_runs
         WHERE finished_at > now() - interval '7 days'`),
+    // (#207) The host dispatcher's git branch report per project — the merge
+    // strip's real state (ahead/behind, conflict probe). Missing rows are fine:
+    // the strip falls back to claim-derived chips until the first report lands.
+    q(`SELECT project_id, report, reported_at FROM branch_reports`),
   ]);
 
   const roadByP = new Map();
@@ -94,6 +102,7 @@ control.get('/', async (_req, res) => {
   const bugsByP = new Map(bugsR.rows.map((r) => [r.project_id, r]));
   const reviewByP = new Map(reviewR.rows.map((r) => [r.project_id, r.n]));
   const autoByP = new Map(autoR.rows.map((r) => [r.project_id, r]));
+  const branchesByP = new Map(branchR.rows.map((r) => [r.project_id, r]));
 
   const liveByP = new Map();
   for (const r of presenceR.rows) {
@@ -181,14 +190,44 @@ control.get('/', async (_req, res) => {
     const bugRow = bugsByP.get(p.id);
     const pick = pickFor(road, p.autopilot_area || '');
     const lastAuto = autoByP.get(p.id);
-    // Open lane branches: items with a claimed_by that's not yet done.
-    // We expose each unique branch name + the item it owns (id + title) so the
-    // UI can offer a ⇥ Merge button per branch without a second round-trip.
-    const branches = [...new Map(
-      road
-        .filter((r) => r.claimed_by && !r.done)
-        .map((r) => [r.claimed_by, { branch: r.claimed_by, itemId: String(r.id), itemTitle: r.title }]),
-    ).values()];
+    // The merge strip (#154, git-aware since #207). The host's branch report
+    // is the truth where it exists: every unmerged origin branch (ahead > 0)
+    // gets a chip with real state — ahead/behind, the merge-tree conflict
+    // probe, last subject — and its item resolved via the open claim on that
+    // branch name, else the id parsed from the lane name. Claims the report
+    // hasn't seen (stale/missing report, or a local-only lane) keep the old
+    // claim-derived chip. Fully-absorbed branches (ahead 0, no open claim)
+    // surface only as a prune count.
+    const rep = branchesByP.get(p.id);
+    const repList = asList(rep && rep.report);
+    const claimByBranch = new Map(
+      road.filter((r) => r.claimed_by && !r.done).map((r) => [r.claimed_by, r]));
+    const itemById = new Map(road.map((r) => [String(r.id), r]));
+    const gitBranches = repList
+      .filter((b) => b.ahead > 0 || claimByBranch.has(b.branch))
+      .map((b) => {
+        const owner = claimByBranch.get(b.branch)
+          || (b.itemId != null ? itemById.get(String(b.itemId)) : null);
+        return {
+          branch: b.branch,
+          itemId: owner ? String(owner.id) : (b.itemId != null ? String(b.itemId) : ''),
+          itemTitle: owner ? owner.title : '',
+          ahead: b.ahead,
+          behind: b.behind,
+          mergeClean: b.mergeClean, // true | false (conflicts) | null (not probed)
+          subject: b.subject || '',
+          when: relativeTime(b.committedAt) || '',
+        };
+      });
+    const seenBranches = new Set(gitBranches.map((b) => b.branch));
+    const branches = [
+      ...gitBranches,
+      ...[...claimByBranch.entries()]
+        .filter(([branch]) => !seenBranches.has(branch))
+        .map(([branch, r]) => ({ branch, itemId: String(r.id), itemTitle: r.title })),
+    ];
+    const absorbedBranches = repList
+      .filter((b) => b.ahead === 0 && !claimByBranch.has(b.branch)).length;
     return {
       slug: p.slug,
       name: p.name,
@@ -200,6 +239,9 @@ control.get('/', async (_req, res) => {
       areas: [...new Set(road.filter((r) => !r.done && r.area).map((r) => r.area))].sort(),
       // Open lane branches with the item they own — for the merge strip (#154).
       branches,
+      // (#207) fully-merged origin branches never deleted, and report freshness.
+      absorbedBranches,
+      branchesWhen: rep ? relativeTime(rep.reported_at) || '' : '',
       // The roadmap query only carries must/should (all computeProgress counts);
       // the aggregated serious count stands in for row-level bugs for the cap.
       progress: computeProgress(

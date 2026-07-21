@@ -253,7 +253,18 @@ export interface ControlProject {
   live: { count: number; branches: string[] } | null;
   claims: { id: string; title: string; lane: string }[];
   // #154 — open lane branches with the item each one owns; powers the merge strip.
-  branches: { branch: string; itemId: string; itemTitle: string }[];
+  // #207 — the host's git branch report enriches each chip where it exists:
+  // ahead/behind vs main, the merge-tree conflict probe and the last subject.
+  // Claim-only chips (no report yet) carry just the first three fields.
+  branches: {
+    branch: string; itemId: string; itemTitle: string;
+    ahead?: number; behind?: number;
+    mergeClean?: boolean | null;  // false = conflicts with main; null/absent = not probed
+    subject?: string; when?: string;
+  }[];
+  // #207 — fully-merged origin branches never deleted (prune hint) + report age.
+  absorbedBranches?: number;
+  branchesWhen?: string;
   reviewCount: number;
   bugs: { serious: number; open: number };
   blockers: string[];

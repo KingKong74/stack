@@ -89,7 +89,9 @@ export function ControlPanel() {
   const [formBusy, setFormBusy] = useState(false);
   const [labelBusy, setLabelBusy] = useState(false);
   // #154 — merge confirm: the branch the user has clicked ⇥ Merge on, or null.
-  const [mergePending, setMergePending] = useState<{ slug: string; branch: string; itemId: string; itemTitle: string } | null>(null);
+  // mergeClean rides along from the branch report (#207) so the modal can warn
+  // about a probe-known conflict before the job is queued.
+  const [mergePending, setMergePending] = useState<{ slug: string; branch: string; itemId: string; itemTitle: string; mergeClean?: boolean | null } | null>(null);
   const [mergeBusy, setMergeBusy] = useState(false);
   // #118 — the composer's item picker: open items for the chosen project,
   // fetched on selection (null = loading), cached per slug for the visit.
@@ -350,6 +352,12 @@ export function ControlPanel() {
               {mergePending.itemId && <> After the merge, tick item <strong>#{mergePending.itemId}</strong> ({mergePending.itemTitle}) in the roadmap to close it out.</>}
               {' '}Conflicts fail safely — you will see the error in the job strip.
             </p>
+            {mergePending.mergeClean === false && (
+              <p className="mc-merge-warn">
+                ⚠ The host's last probe found <strong>conflicts with main</strong> — this merge will fail
+                and need resolving by hand (or rebase the branch first).
+              </p>
+            )}
             <div className="modal-actions">
               <button className="btn-cancel" disabled={mergeBusy} onClick={() => setMergePending(null)}>Cancel</button>
               <button className="btn-submit" disabled={mergeBusy} onClick={confirmMerge}>
@@ -850,16 +858,22 @@ export function ControlPanel() {
                       </span>
                     )}
                   </div>
-                  {/* #154 — branch management strip: one chip per open lane branch */}
-                  {p.branches.length > 0 && (
-                    <div className="mc-branches" aria-label={`Open branches for ${p.name}`}>
+                  {/* #154 — branch management strip: one chip per open branch,
+                      enriched with the host's git report where it exists (#207) */}
+                  {(p.branches.length > 0 || (p.absorbedBranches ?? 0) > 0) && (
+                    <div className="mc-branches" aria-label={`Open branches for ${p.name}`}
+                      title={p.branchesWhen ? `git state as of ${p.branchesWhen}` : undefined}>
                       {p.branches.map((b) => {
                         const mergeJob = data?.jobs.find(
                           (j) => j.slug === p.slug && j.kind === 'merge' && j.detail.includes(b.branch),
                         );
+                        const chipTitle = [
+                          b.itemTitle ? `#${b.itemId} ${b.itemTitle}` : b.branch,
+                          b.subject ? `Last commit: ${b.subject}${b.when ? ` (${b.when})` : ''}` : '',
+                        ].filter(Boolean).join('\n');
                         return (
                           <span key={b.branch} className={`mc-branch ${mergeJob ? mergeJob.status : ''}`}
-                            title={b.itemTitle ? `#${b.itemId} ${b.itemTitle}` : b.branch}>
+                            title={chipTitle}>
                             <button className="mc-branch-name"
                               onClick={() => go.detail(p.slug, 'roadmap', b.itemId)}>
                               {b.branch}
@@ -868,6 +882,18 @@ export function ControlPanel() {
                               <span className="mc-branch-item">
                                 #{b.itemId}
                               </span>
+                            )}
+                            {typeof b.ahead === 'number' && (
+                              <span className="mc-branch-diff"
+                                title={`${b.ahead} commit${b.ahead === 1 ? '' : 's'} ahead of main${b.behind ? `, ${b.behind} behind` : ''}`}>
+                                ↑{b.ahead}{(b.behind ?? 0) > 0 && <> ↓{b.behind}</>}
+                              </span>
+                            )}
+                            {b.mergeClean === true && (
+                              <span className="mc-branch-clean" title="Merges cleanly into main">✓</span>
+                            )}
+                            {b.mergeClean === false && (
+                              <span className="mc-branch-conflict" title="Conflicts with main — rebase or merge by hand">⚠</span>
                             )}
                             {mergeJob ? (
                               <span className="mc-branch-status">{
@@ -879,13 +905,19 @@ export function ControlPanel() {
                             ) : (
                               <button className="mc-branch-merge"
                                 title={`Merge origin/${b.branch} into main on the host — conflicts fail safely`}
-                                onClick={() => setMergePending({ slug: p.slug, branch: b.branch, itemId: b.itemId, itemTitle: b.itemTitle })}>
+                                onClick={() => setMergePending({ slug: p.slug, branch: b.branch, itemId: b.itemId, itemTitle: b.itemTitle, mergeClean: b.mergeClean })}>
                                 ⇥ Merge
                               </button>
                             )}
                           </span>
                         );
                       })}
+                      {(p.absorbedBranches ?? 0) > 0 && (
+                        <span className="mc-branch-absorbed"
+                          title="Fully merged into main but never deleted on origin — prune with: git push origin --delete <branch>">
+                          🧹 {p.absorbedBranches} merged branch{p.absorbedBranches === 1 ? '' : 'es'} to prune
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>

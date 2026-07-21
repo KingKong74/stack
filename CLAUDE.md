@@ -144,8 +144,16 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             switch + automode); nightly keeps both gates. `revert` jobs (#128 — the Reviews
             view's ⎌ Undo) are handled by the dispatcher itself, not the runner: revert every
             main commit tagged #<itemId> (last 400, digit-safe match) in a throwaway worktree,
-            push the revert commits, un-tick the item (which clears verdict + claim). Silent
-            when idle or the API is unreachable (fail safe). A missed slot stays missed
+            push the revert commits, un-tick the item (which clears verdict + claim). `merge`
+            jobs (#154 — Mission Control's ⇥ Merge) too: fetch, merge --no-ff origin/<branch>
+            into main in a throwaway worktree, push, delete the remote branch; conflicts abort
+            + report failed, and the item is NEVER ticked (the human disposes). The dispatcher
+            also pushes the **branch report** (#207) every ~10 min (stamp file
+            ~/.stack/branch-report.stamp): per repo it can find, fetch --prune then every
+            origin branch's ahead/behind vs origin/main, a `git merge-tree --write-tree`
+            conflict probe (null when git <2.38) and the item id parsed from the lane name,
+            POSTed to /api/projects/:slug/branches — the git truth behind the merge strip.
+            Silent when idle or the API is unreachable (fail safe). A missed slot stays missed
             (90-min grace, clamped at midnight) — like the old fixed cron line, but the time
             is now a setting.
 .claude/commands/checkpoint.md — the /checkpoint slash command (documented for install to
@@ -214,6 +222,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   push, **▶ Run now** (queues a manual job via `store.startAutopilot`; open jobs show as live
   queued/running/done chips, refreshed on a 30s tick), tonight's likely pick (deep-links to the
   roadmap item), last `auto/*` run, claim chips, review/serious-bug counts and blockers.
+  The **merge strip** (#154, git-aware via #207): one chip per open branch — the host's branch
+  report supplies real state (↑ahead/↓behind, ✓ merges clean / ⚠ conflicts with main, last
+  subject on hover), claims the report hasn't seen fall back to plain chips, and a 🧹 count
+  flags fully-merged origin branches never deleted; **⇥ Merge** (`store.queueMerge`) queues a
+  `merge` job with a probe-known-conflict warning in the confirm modal.
   The **paused-sessions strip** (#142) sits above the recent-jobs chips: one ⏸ chip per
   limit-paused `resume` job showing its resume time, with **▶ Resume now**
   (`store.resumeAutopilotJob`), **⏸ Hang up** (`hangupAutopilotJob` — parks it until resumed
@@ -408,10 +421,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   - `autopilot_schedule` + `autopilot_jobs` — Mission Control's calendar and the job queue the
     host dispatcher polls (see scripts/stack-autopilot-dispatch.mjs). Schedule rows: host-local
     `at_time`, one-off `run_date` or recurring `days`, optional pinned `item_id`, `enabled`.
-    Jobs: kind manual|nightly|scheduled|revert|resume, status queued|claimed|running|done|
-    failed|paused; a partial unique index on (project, night_date) makes the nightly enqueue
-    idempotent. `resume` jobs (#142) carry `not_before` — GET /next skips a queued job until
-    its hold passes, and a `paused` (hung-up) job is never handed out at all.
+    Jobs: kind manual|nightly|scheduled|revert|resume|merge, status queued|claimed|running|
+    done|failed|paused; a partial unique index on (project, night_date) makes the nightly
+    enqueue idempotent. `resume` jobs (#142) carry `not_before` — GET /next skips a queued job
+    until its hold passes, and a `paused` (hung-up) job is never handed out at all.
+  - `branch_reports` — the host dispatcher's git snapshot (#207), one row per project replaced
+    whole every ~10 min: jsonb list of origin branches with ahead/behind vs main, the
+    merge-tree conflict probe (`mergeClean` true|false|null) and the parsed item id, plus
+    `reported_at`. Read only by the control payload — Mission Control's merge strip.
   - `presence` — live sessions, keyed (project, session_id). SessionStart upserts, an authored
     /checkpoint bumps `last_seen_at`, SessionEnd (and ingest's metadata backstop) deletes;
     liveness = within `util.PRESENCE_TTL_MINUTES` (default 240 — the crashed-session backstop,
@@ -678,13 +695,21 @@ the silent metadata backstop so the feed never has gaps.
 - `GET|POST /api/projects/:slug/autopilot/runs` (the overnight runner's ledger — one row per
   item attempt: outcome landed|no-commits|failed|limit, commits, tokens, cost, checks, the
   session's own summary; the overview's `autopilotRuns` digest reads the last 20h)
+- `POST /api/projects/:slug/branches` (#207 — the host dispatcher's branch report, replacing
+  the project's `branch_reports` row whole; write side only, Mission Control reads it folded
+  into the control payload: enriched `branches` chips (ahead/behind/mergeClean/subject/when),
+  `absorbedBranches` (fully-merged origin branches never deleted — prune hint) and
+  `branchesWhen` (report freshness))
 - **Global autopilot scheduling** (`/api/autopilot/…`, routes/autopilot.js `autopilotGlobal`):
   `GET|POST /schedule` + `PATCH|DELETE /schedule/:id` (the Mission Control calendar — one-off
   `runDate` or recurring `days` getDay() ints, host-local `atTime`, optional pinned `itemId`;
   one-offs disable themselves after firing) · `POST /start` (the ▶ Run now button AND the
   `stack start-session` CLI — queues a manual job; an open job for the project is returned
   instead of duplicated — and if that open job is a held `resume`, Run now clears its hold so
-  it fires immediately) · `POST /resume` (#142 — the runner's graceful limit-pause:
+  it fires immediately) · `POST /merge` (#154 — the merge strip's ⇥ Merge: `{slug, branch,
+  itemId?}` queues a `merge` job the dispatcher runs — merge --no-ff into main in a throwaway
+  worktree, push, delete the remote branch; idempotent per branch, 409 while another job is
+  open, and the item is never auto-ticked) · `POST /resume` (#142 — the runner's graceful limit-pause:
   `{slug, itemId?, minutes}` queues/re-points the project's `resume` job, held for `minutes`
   — relative, so host/server clock skew never matters) · `POST /undo` (#128 — the Reviews view's ⎌ Undo: queues a `revert`
   job for a completed item; idempotent per item, 409 while another job is open. The dispatcher

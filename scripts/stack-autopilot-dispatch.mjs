@@ -25,7 +25,7 @@
 // lockfile refuses a second night.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, rmSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync, readFileSync, unlinkSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,6 +63,63 @@ try {
 } catch {
   process.exit(0); // unreachable API = no run, silently (fail safe)
 }
+
+const root = process.env.STACK_AUTOPILOT_ROOT || homedir();
+
+// Branch report (#207) — every ~10 minutes, push each repo's git branch state
+// up to the server: every origin branch with ahead/behind counts vs
+// origin/main, a merge-tree conflict probe (git ≥2.38 — exit 0 clean, 1
+// conflicts; anything else = null, unprobed) and the item id parsed from the
+// lane name. Mission Control's merge strip renders it. Quiet by design: the
+// stamp file is written up front so a wedged repo can't make every minute's
+// poll retry, and any failure just waits for the next cycle.
+async function reportBranches() {
+  const gitq = (dir, ...a) => {
+    const r = spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', timeout: 60_000 });
+    return { ok: r.status === 0, status: r.status, out: (r.stdout || '').trim() };
+  };
+  const projects = await api('GET', '/api/projects');
+  for (const p of Array.isArray(projects) ? projects : []) {
+    const dir = join(root, p.slug);
+    if (!existsSync(join(dir, '.git'))) continue;
+    gitq(dir, 'fetch', 'origin', '--prune', '--quiet'); // best effort — stale refs still report
+    if (!gitq(dir, 'rev-parse', '--verify', 'origin/main').ok) continue;
+    const refs = gitq(dir, 'for-each-ref', 'refs/remotes/origin', '--sort=-committerdate',
+      '--format=%(refname:short)\t%(committerdate:iso8601-strict)\t%(contents:subject)');
+    if (!refs.ok) continue;
+    const list = [];
+    for (const line of refs.out.split('\n').filter(Boolean)) {
+      const [ref, committedAt, ...rest] = line.split('\t');
+      const branch = ref.replace(/^origin\//, '');
+      if (!branch || branch === 'origin' || branch === 'HEAD' || branch === 'main') continue;
+      const counts = gitq(dir, 'rev-list', '--left-right', '--count', `origin/main...${ref}`);
+      if (!counts.ok) continue;
+      const [behind, ahead] = counts.out.split(/\s+/).map((n) => parseInt(n, 10) || 0);
+      let mergeClean = null;
+      if (ahead > 0) {
+        const probe = gitq(dir, 'merge-tree', '--write-tree', 'origin/main', ref);
+        if (probe.status === 0) mergeClean = true;
+        else if (probe.status === 1) mergeClean = false;
+      }
+      const item = /(?:^|\/)item-(\d+)/.exec(branch);
+      list.push({ branch, ahead, behind, mergeClean, subject: rest.join('\t'),
+        committedAt, itemId: item ? Number(item[1]) : null });
+      if (list.length >= 50) break;
+    }
+    await api('POST', `/api/projects/${p.slug}/branches`, { branches: list });
+  }
+}
+
+const REPORT_EVERY_MS = 10 * 60 * 1000;
+const reportStamp = join(homedir(), '.stack', 'branch-report.stamp');
+const reportDue = (() => {
+  try { return Date.now() - statSync(reportStamp).mtimeMs > REPORT_EVERY_MS; } catch { return true; }
+})();
+if (reportDue) {
+  try { writeFileSync(reportStamp, new Date().toISOString()); } catch { /* best effort */ }
+  try { await reportBranches(); } catch { /* next cycle retries */ }
+}
+
 if (!job) process.exit(0);
 
 const log = (msg) => logStderr(`dispatch ${new Date().toISOString()} · ${msg}`);
@@ -70,7 +127,6 @@ const report = (status, detail) =>
   api('PATCH', `/api/autopilot/jobs/${job.id}`, detail === undefined ? { status } : { status, detail })
     .catch((e) => log(`[report] job #${job.id} status=${status} — PATCH failed (${e.message})`));
 
-const root = process.env.STACK_AUTOPILOT_ROOT || homedir();
 const repo = join(root, job.slug);
 log(`job #${job.id}: ${job.kind} run on ${job.slug}${job.itemId ? ` (item #${job.itemId})` : ''}`);
 if (!existsSync(join(repo, '.git'))) {
