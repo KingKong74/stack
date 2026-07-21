@@ -118,8 +118,8 @@ const cli = meow(`
 // through to the default just as the original parseInt(...) || default did.
 const envInt = (k) => { const n = parseInt(process.env[k] || '', 10); return (n || undefined); };
 const ROOT = realpathSync(cli.flags.root || process.env.STACK_TERM_ROOT || homedir());
-const IDLE_MS = (Number.isFinite(cli.flags.idleMinutes) ? cli.flags.idleMinutes : (envInt('STACK_TERM_IDLE_MINUTES') ?? 240)) * 60_000;
-const MAX_SESSIONS = Number.isFinite(cli.flags.maxSessions) ? cli.flags.maxSessions : (envInt('STACK_TERM_MAX_SESSIONS') ?? 8);
+const IDLE_MS = (cli.flags.idleMinutes > 0 ? cli.flags.idleMinutes : (envInt('STACK_TERM_IDLE_MINUTES') ?? 240)) * 60_000;
+const MAX_SESSIONS = cli.flags.maxSessions > 0 ? cli.flags.maxSessions : (envInt('STACK_TERM_MAX_SESSIONS') ?? 8);
 
 const API = (process.env.STACK_API || '').replace(/\/$/, '');
 const TOKEN = process.env.STACK_TOKEN || '';
