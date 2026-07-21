@@ -39,8 +39,9 @@ hook/   Zero-dependency Node ESM. stack-post.mjs is the shared lib (env load, gi
         • stack-checkpoint.mjs — the /checkpoint POSTER (not a hook). Reads a checkpoint JSON on
           stdin and POSTs it (authored:true); `--settings` prints current settings. Installs to
           ~/.stack/ alongside the hooks + stack-post.mjs.
-terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (only npm dep: `ws` —
-        no native modules) spawns a real login shell or `claude` in a directory jailed to
+terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (npm deps: `ws` + `meow` —
+        no native modules; `meow` adds a proper CLI interface with --help and type-safe flags) spawns a real
+        login shell or `claude` in a directory jailed to
         STACK_TERM_ROOT (default $HOME), via pty-shim.py (python3 stdlib owns the PTY + resize,
         since the host has no build toolchain for node-pty). The host firewall drops
         container→host traffic, so the daemon dials OUT: one persistent ws to the server's
