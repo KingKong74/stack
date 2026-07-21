@@ -9,6 +9,7 @@
     "start": "node stack-term.mjs"
   },
   "dependencies": {
+    "meow": "^14.0.0",
     "ws": "^8.18.0"
   }
 }

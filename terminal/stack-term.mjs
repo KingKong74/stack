@@ -25,12 +25,15 @@
 //   node stack-term.mjs                       # foreground
 //   (crontab) @reboot /usr/bin/node /home/you/stack/terminal/stack-term.mjs >> ~/.stack/term.log 2>&1
 //
-// Config (~/.stack/env or real env):
-//   STACK_API                 the app origin, e.g. https://stack.example (required)
-//   STACK_TOKEN               the API token the agent connects with (required)
-//   STACK_TERM_ROOT           cwd jail, default $HOME
-//   STACK_TERM_IDLE_MINUTES   kill a silent session after this, default 240
-//   STACK_TERM_MAX_SESSIONS   default 8
+// Config (~/.stack/env or real env; CLI flags override individual values — run with --help):
+//   STACK_API                 the app origin, e.g. https://stack.example (required, env only)
+//   STACK_TOKEN               the API token the agent connects with (required, env only)
+//   STACK_TERM_ROOT           cwd jail, default $HOME  (--root)
+//   STACK_TERM_IDLE_MINUTES   close inactive sessions after this many minutes, default 240  (--idle-minutes)
+//   STACK_TERM_MAX_SESSIONS   default 8  (--max-sessions)
+//
+// STACK_API and STACK_TOKEN are env-only — passing credentials as CLI flags would expose
+// them in process listings, which is against the project's security conventions.
 //
 // Alternative model switching (#152):
 //   When a Claude session hits a usage limit and exits, the daemon prompts the
@@ -44,6 +47,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
 import { tmuxAvailable, validName, generateName, sessionArgv, killSession } from './tmux-session.mjs';
@@ -68,6 +72,55 @@ if (existsSync(envFile)) {
   } catch { /* ignore */ }
 }
 
+// ---- CLI flags (parsed after env load so --help works without credentials) ----
+// Flags override the corresponding env vars. STACK_API and STACK_TOKEN are deliberately
+// excluded — exposing credentials in process listings (ps, /proc) is against this
+// project's security conventions. Run `node stack-term.mjs --help` for usage.
+const cli = meow(`
+	Usage
+	  $ node stack-term.mjs [options]
+
+	Options
+	  --root <directory>     Jail all sessions to this path (default: $HOME)
+	  --idle-minutes <n>     Close a session idle for this many minutes (default: 240)
+	  --max-sessions <n>     Maximum number of concurrent sessions (default: 8)
+
+	Required environment variables (never passed as flags)
+	  STACK_API              App origin, e.g. https://stack.example
+	  STACK_TOKEN            Bearer token this daemon authenticates with
+
+	  Set both in ~/.stack/env. The daemon refuses to start if either is absent.
+	  Passing them as CLI flags would expose credentials in process listings.
+
+	Examples
+	  $ node stack-term.mjs
+	  $ node stack-term.mjs --idle-minutes 60
+	  $ node stack-term.mjs --root /home/me/projects --max-sessions 4
+`, {
+  importMeta: import.meta,
+  autoVersion: false,
+  flags: {
+    root: {
+      type: 'string',
+    },
+    idleMinutes: {
+      type: 'number',
+    },
+    maxSessions: {
+      type: 'number',
+    },
+  },
+});
+
+// Resolve each value: CLI flag wins, then env var, then hardcoded default.
+// envInt preserves the original || semantics — 0 is not a valid value for either
+// setting (0 idle minutes or 0 max sessions would be nonsensical), so it falls
+// through to the default just as the original parseInt(...) || default did.
+const envInt = (k) => { const n = parseInt(process.env[k] || '', 10); return (n || undefined); };
+const ROOT = realpathSync(cli.flags.root || process.env.STACK_TERM_ROOT || homedir());
+const IDLE_MS = (cli.flags.idleMinutes > 0 ? cli.flags.idleMinutes : (envInt('STACK_TERM_IDLE_MINUTES') ?? 240)) * 60_000;
+const MAX_SESSIONS = cli.flags.maxSessions > 0 ? cli.flags.maxSessions : (envInt('STACK_TERM_MAX_SESSIONS') ?? 8);
+
 const API = (process.env.STACK_API || '').replace(/\/$/, '');
 const TOKEN = process.env.STACK_TOKEN || '';
 if (!API || !TOKEN) {
@@ -75,9 +128,6 @@ if (!API || !TOKEN) {
   process.exit(1);
 }
 const AGENT_URL = API.replace(/^http/, 'ws') + '/term-agent';
-const ROOT = realpathSync(process.env.STACK_TERM_ROOT || homedir());
-const IDLE_MS = (parseInt(process.env.STACK_TERM_IDLE_MINUTES || '', 10) || 240) * 60_000;
-const MAX_SESSIONS = parseInt(process.env.STACK_TERM_MAX_SESSIONS || '', 10) || 8;
 const SHIM = join(dirname(fileURLToPath(import.meta.url)), 'pty-shim.py');
 
 // Output buffer cap per session: 256 KB.  Drop oldest when full.
