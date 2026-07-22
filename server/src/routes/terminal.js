@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { q } from '../db.js';
-import { termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux } from '../term.js';
+import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux } from '../term.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { readSettings } from '../settings.js';
 
@@ -26,6 +26,13 @@ terminal.get('/usage', async (_req, res) => {
     tokensToday: Number(runRow.rows[0]?.tokens_today ?? 0),
     tokenBudget: Number(appSettings.autopilot_tokens ?? 0),
   });
+});
+
+// GET /api/terminal/agent — is the host daemon's uplink live right now? The
+// watchdog cron (#221) polls this: an unambiguous connected flag, unlike
+// /detached whose empty list also just means "no orphans".
+terminal.get('/agent', (_req, res) => {
+  res.json({ connected: termAgentConnected() });
 });
 
 // GET /api/terminal/detached — surviving tmux sessions with no client attached

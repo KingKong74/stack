@@ -49,7 +49,13 @@ terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (npm
         relay (server/src/term.js, attached to the same HTTP server as the API) validates each
         browser session's token (both credential classes) BEFORE bridging and strips it — the
         daemon never sees browser credentials. nginx proxies /term* → server:4000 with upgrade
-        headers. Runs from crontab (@reboot line); log ~/.stack/term.log. Frames are JSON with
+        headers. Runs from crontab (@reboot line); log ~/.stack/term.log. stack-term-watchdog.mjs
+        (#221, its own */5 crontab line, log ~/.stack/term-watchdog.log) polls the relay's
+        GET /api/terminal/agent — the only honest health signal, since a zombie daemon can
+        hold a dead uplink while pgrep says fine — and on two confirmed-down probes 30s
+        apart kills every daemon spelling (script path AND the retitled bare name) and
+        relaunches like the @reboot line; a 10-min cool-down stamp prevents kill loops and
+        an unreachable API stands down (fail safe). Frames are JSON with
         base64 data, multiplexed by sid over the agent socket. usage-meter.mjs (stdlib-only) tails
         today's real Claude token usage incrementally from ~/.claude/projects transcripts (deduped
         per message id, day-rollover safe); the daemon pairs it with a limit watch on each pty
