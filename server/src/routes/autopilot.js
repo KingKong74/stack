@@ -417,11 +417,14 @@ autopilotGlobal.get('/next', async (req, res) => {
 });
 
 // PATCH /jobs/:id — the dispatcher reports { status: running|done|failed|queued, detail? }.
-// #142 adds the human controls on a pending job: { status: 'paused' } hangs it
-// up (held until resumed by hand — only valid while queued/claimed, a running
-// session has no kill channel), { status: 'queued', notBefore: null } resumes
-// it now (clearing the hold marks it human-pressed — the dispatcher runs a
+// #142 adds the human controls: { status: 'paused' } hangs a job up (held until
+// resumed by hand), { status: 'queued', notBefore: null } resumes it now
+// (clearing the hold marks it human-pressed — the dispatcher runs a
 // held-then-resumed job with --force, like any manual press).
+// #150: pausing a RUNNING job is the kill request — the dispatcher polls its
+// job's status mid-run and kills the session (tmux path) within ~30s; the job
+// stays paused with partial work on its branch. (A pre-#150 dispatcher just
+// finishes and overwrites the status — nothing breaks, nothing dies.)
 autopilotGlobal.patch('/jobs/:id', async (req, res) => {
   const b = req.body || {};
   const status = ['running', 'done', 'failed', 'queued', 'paused'].includes(b.status) ? b.status : null;
@@ -429,7 +432,7 @@ autopilotGlobal.patch('/jobs/:id', async (req, res) => {
   const clearHold = 'notBefore' in b && b.notBefore == null;
   const stampCol = status === 'running' ? 'started_at = now()'
     : status === 'queued' || status === 'paused' ? 'claimed_at = NULL' : 'finished_at = now()';
-  const guard = status === 'paused' ? `AND status IN ('queued','claimed')` : '';
+  const guard = status === 'paused' ? `AND status IN ('queued','claimed','running')` : '';
   const r = await q(
     `UPDATE autopilot_jobs SET status = $1, detail = COALESCE($2, detail),
             not_before = CASE WHEN $4 THEN NULL ELSE not_before END, ${stampCol}

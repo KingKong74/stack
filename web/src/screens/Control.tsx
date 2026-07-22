@@ -604,6 +604,15 @@ export function ControlPanel() {
                       title={[j.itemTitle && `#${j.itemId} ${j.itemTitle}`, j.detail].filter(Boolean).join(' — ') || undefined}>
                       {j.name} · {j.kind}{j.itemId ? ` #${j.itemId}` : ''} · {JOB_LABEL[j.status]}
                       {OPEN_JOB.has(j.status) ? '' : ` ${j.when}`}
+                      {/* #150 — the kill channel: pausing a RUNNING job asks the
+                          dispatcher to kill the session (within ~30s); partial
+                          work stays on the branch, the job parks as paused. */}
+                      {j.status === 'running' && (
+                        <button className="btn-repo sm" onClick={() => hangupJob(j)}
+                          title="Hang up this running session — the host kills it within ~30s; partial commits stay on its branch">
+                          ⏸ Hang up
+                        </button>
+                      )}
                     </span>
                   ))}
                 </div>

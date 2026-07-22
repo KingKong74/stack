@@ -287,14 +287,40 @@ echo \${PIPESTATUS[0]} > ${shq(exitFile)}
     log(`job #${job.id}: tmux session ${tmuxName} started for monitoring.`);
     // Poll until the session ends (runner exits → bash exits → session destroyed).
     // Cap at 13h as a safety net (the runner itself caps at Settings' autopilotMinutes).
+    // #150 — the kill channel: every ~30s also ask the API whether a human hung
+    // this job up (Mission Control's ⏸ on a running chip flips it to 'paused').
+    // Seen → kill the tmux session (SIGHUP fells the runner and its claude
+    // child together), clear the runner's lockfile (its exit handler never ran)
+    // and leave the job PAUSED — partial commits stay on the item's branch and
+    // the lane claim stays for the human to release or resume.
     const deadline = Date.now() + 13 * 60 * 60 * 1000;
+    let statusTick = 0;
+    let hungUp = false;
     while (spawnSync('tmux', ['has-session', '-t', `=${tmuxName}`], { stdio: 'ignore' }).status === 0) {
       if (Date.now() > deadline) {
         spawnSync('tmux', ['kill-session', '-t', `=${tmuxName}`], { stdio: 'ignore' });
         log(`job #${job.id}: killed tmux session ${tmuxName} at 13h safety cap.`);
         break;
       }
+      if (++statusTick % 6 === 0) {
+        try {
+          const jobs = await api('GET', `/api/autopilot/jobs?slug=${encodeURIComponent(job.slug)}&limit=20`);
+          const mine = (Array.isArray(jobs) ? jobs : jobs.jobs || []).find((j) => String(j.id) === String(job.id));
+          if (mine && mine.status === 'paused') {
+            hungUp = true;
+            spawnSync('tmux', ['kill-session', '-t', `=${tmuxName}`], { stdio: 'ignore' });
+            try { rmSync(join(homedir(), '.stack', 'autopilot.lock')); } catch { /* already gone */ }
+            log(`job #${job.id}: hung up from the app — session ${tmuxName} killed; partial work stays on the branch.`);
+            break;
+          }
+        } catch { /* API blip — keep monitoring; next tick retries */ }
+      }
       await new Promise((r) => setTimeout(r, 5_000));
+    }
+    if (hungUp) {
+      try { unlinkSync(wrapperFile); } catch { /* best effort */ }
+      try { unlinkSync(exitFile); } catch { /* best effort */ }
+      process.exit(0); // the job stays 'paused' — never overwrite with done/failed
     }
     try { ok = parseInt(readFileSync(exitFile, 'utf8').trim(), 10) === 0; } catch { ok = false; }
     try { unlinkSync(wrapperFile); } catch { /* best effort */ }
