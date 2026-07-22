@@ -596,6 +596,52 @@ export function ControlPanel() {
               )}
             </div>
 
+            {/* ---- (#220) Plan windows: the account's real session/week usage,
+                 via the daemon's cached snapshot — same numbers as the Terminal
+                 strip (#195). Hidden when absent or stale (daemon gone >10m). */}
+            {data.planUsage && Date.now() - data.planUsage.at < 10 * 60_000 && (() => {
+              const p = data.planUsage.plan;
+              const fmtReset = (ms: number | null | undefined, withDay = false): string => {
+                if (!ms) return '';
+                const d = new Date(ms);
+                const h = d.getHours() % 12 || 12;
+                const t = `${h}:${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
+                return withDay ? `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${t}` : t;
+              };
+              return (
+                <div className="mc-usage mc-plan">
+                  <div className="mc-usage-head">
+                    <span className="mc-usage-label">Claude plan — right now</span>
+                    <span className="mc-usage-total">
+                      {p.session && (
+                        <span className={p.session.pct >= 85 ? 'mc-plan-warn' : undefined}>
+                          session {p.session.pct}%{p.session.resetAt ? ` · resets ${fmtReset(p.session.resetAt)}` : ''}
+                        </span>
+                      )}
+                      {p.week && (
+                        <span className={p.week.pct >= 85 ? 'mc-plan-warn' : undefined}>
+                          {p.session ? ' · ' : ''}week {p.week.pct}%{p.week.resetAt ? ` · resets ${fmtReset(p.week.resetAt, true)}` : ''}
+                        </span>
+                      )}
+                      {p.weekModel && (
+                        <span className={p.weekModel.pct >= 85 ? 'mc-plan-warn' : undefined}>
+                          {' '}· {(p.weekModel.model || 'model').toLowerCase()} {p.weekModel.pct}%
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {p.session && (
+                    <div className="mc-usage-bar-wrap"
+                      title={`Session window ${p.session.pct}% used${p.session.resetAt ? ` — resets ${fmtReset(p.session.resetAt)}` : ''}`}
+                      aria-label={`${p.session.pct}% of the session window used`}>
+                      <div className={`mc-usage-bar${p.session.pct >= 85 ? ' warn' : ''}`}
+                        style={{ width: `${Math.min(100, p.session.pct)}%` }} />
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* ---- (#194) usage summary: 7-day tokens + per-model breakdown ---- */}
             {data.usage && data.usage.weekRuns > 0 && (
               <div className="mc-usage">

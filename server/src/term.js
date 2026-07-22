@@ -61,6 +61,14 @@ export const termDetached = () =>
   }));
 export const termDetachedTails = () => detachedSessions;
 export const setDetachedLabel = (name, label) => { detachedLabels.set(name, label); };
+// Plan usage snapshot (#220): the account-level Plan windows (#195) the daemon
+// already folds into usage frames, cached relay-side so Mission Control's
+// console can show session/week % over plain HTTP. Fed by every usage frame
+// (15s while a session is live) and by the daemon's dedicated 'plan' push on
+// the 60s tick (so the numbers survive quiet spells with no sessions open).
+let planSnapshot = null; // { plan, tokens, at }
+export const termPlanUsage = () => planSnapshot;
+
 // Set inside attachTerm so the kill route can reach the live agent socket.
 let agentSend = null;
 export function killDetachedTmux(name) {
@@ -161,6 +169,11 @@ export function attachTerm(httpServer) {
         broadcastStatus(); // unattended claude count may have changed
         return;
       }
+
+      // Plan windows (#220): cache account-level usage whenever it rides past —
+      // the sid-less 'plan' tick and every per-session usage frame both count.
+      if (m.plan) planSnapshot = { plan: m.plan, tokens: Number(m.tokens) || 0, at: Date.now() };
+      if (m.t === 'plan') return; // cache-only frame — nothing to forward
 
       if (m.t === 'hello' && Array.isArray(m.sids)) {
         console.log(`[term] daemon re-announced ${m.sids.length} surviving session(s): ${m.sids.join(', ')}`);

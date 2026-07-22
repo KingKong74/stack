@@ -310,6 +310,18 @@ export interface UsageSummary {
   models: { model: string; tokens: number; costUsd: number }[];
 }
 
+// Account-level Plan windows (#220) — the daemon's cached snapshot of the
+// same session/week percentages the Terminal strip shows (#195).
+export interface PlanUsageSnapshot {
+  plan: {
+    session?: { pct: number; resetAt: number | null } | null;
+    week?: { pct: number; resetAt: number | null } | null;
+    weekModel?: { pct: number; resetAt: number | null; model?: string } | null;
+  };
+  tokens: number; // today's fresh transcript tokens at snapshot time
+  at: number;     // epoch ms the relay cached it — staleness gate
+}
+
 export interface ControlData {
   autopilot: {
     enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number;
@@ -326,6 +338,7 @@ export interface ControlData {
   projects: ControlProject[];
   totals: { automode: number; liveSessions: number; claims: number; review: number };
   usage?: UsageSummary | null;
+  planUsage?: PlanUsageSnapshot | null; // Plan windows via the daemon (#220)
 }
 
 export async function getControl(): Promise<ControlData> {

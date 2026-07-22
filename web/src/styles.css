@@ -1631,6 +1631,9 @@ a.tab { display: inline-block; }
   height: 100%; background: var(--accent); border-radius: 2px;
   transition: width 0.3s ease;
 }
+/* Plan windows (#220): the real session/week percentages on the console */
+.mc-usage-bar.warn { background: var(--critical); }
+.mc-plan-warn { color: var(--critical); font-weight: 600; }
 .mc-usage-models { display: flex; gap: 6px; flex-wrap: wrap; }
 .mc-usage-model {
   display: inline-flex; align-items: center; gap: 6px;

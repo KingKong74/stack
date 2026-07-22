@@ -259,6 +259,21 @@ function pushDetached() {
 }
 setInterval(pushDetached, 60_000);
 
+// Plan-window push (#220): the account-level Plan usage (#195) rides to the
+// relay even with NO session open, so Mission Control's console can show the
+// session/week bars over plain HTTP. planUsage self-throttles (60s cache),
+// so a 60s tick costs at most one OAuth fetch a minute — usually none.
+function pushPlan() {
+  const plan = planUsage.get();
+  if (!plan) return;
+  const { fresh } = meter.read();
+  sendUplink({
+    t: 'plan', tokens: fresh,
+    plan: { session: plan.session, week: plan.week, weekModel: plan.weekModel },
+  });
+}
+setInterval(pushPlan, 60_000);
+
 function pushUsage(ws) {
   if (ws && ws.readyState !== WebSocket.OPEN) return;
   const target = ws || uplink;
@@ -579,6 +594,7 @@ function connect() {
     // Re-announce any sessions that survived the uplink gap, then flush their
     // buffered output so browsers can re-attach and catch up.
     pushDetached(); // seed the relay's detached-session cache straight away
+    pushPlan();     // …and its plan-usage snapshot (#220)
 
     if (sessions.size > 0) {
       const liveSids = [...sessions.keys()];
