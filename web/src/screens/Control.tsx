@@ -94,6 +94,8 @@ export function ControlPanel() {
   const [mergePending, setMergePending] = useState<{ slug: string; branch: string; itemId: string; itemTitle: string; mergeClean?: boolean | null } | null>(null);
   // #193 — a dirty branch may opt into the dispatcher's AI conflict resolution.
   const [mergeAiResolve, setMergeAiResolve] = useState(false);
+  // #177 — the usage card's per-session agent breakdown, collapsed by default.
+  const [agentBreakdown, setAgentBreakdown] = useState(false);
   const [mergeBusy, setMergeBusy] = useState(false);
   // #118 — the composer's item picker: open items for the chosen project,
   // fetched on selection (null = loading), cached per slug for the visit.
@@ -725,6 +727,45 @@ export function ControlPanel() {
                         {m.costUsd > 0.005 && <span className="mc-usage-model-cost">${m.costUsd.toFixed(2)}</span>}
                       </span>
                     ))}
+                  </div>
+                )}
+                {/* #177 — agent breakdown: the newest runs, each with its
+                    executor/advisor (per-model) split, collapsed by default */}
+                {(data.usage.recentRuns?.length ?? 0) > 0 && (
+                  <div className="mc-agents">
+                    <button className="mc-agents-toggle" onClick={() => setAgentBreakdown((v) => !v)}
+                      aria-expanded={agentBreakdown}
+                      title="Per-session agent breakdown — which model did what in each recent run">
+                      {agentBreakdown ? '▾' : '▸'} Agent breakdown — last {data.usage.recentRuns!.length} session{data.usage.recentRuns!.length === 1 ? '' : 's'}
+                    </button>
+                    {agentBreakdown && (
+                      <div className="mc-agents-list">
+                        {data.usage.recentRuns!.map((r, i) => (
+                          <div className="mc-agents-row" key={i}>
+                            <button className="mc-agents-run"
+                              title={r.itemTitle || undefined}
+                              onClick={() => r.itemId && go.detail(r.slug, 'roadmap', r.itemId)}>
+                              {r.name}{r.itemId ? ` #${r.itemId}` : ''} · {r.outcome} · {r.when}
+                            </button>
+                            <span className="mc-agents-models">
+                              {r.models.length > 0 ? r.models.map((m) => (
+                                <span key={m.model} className="mc-usage-model">
+                                  <span className="mc-usage-model-name">{m.model}</span>
+                                  <span className="mc-usage-model-tok">{fmtTok(m.tokens)}</span>
+                                  {m.costUsd > 0.005 && <span className="mc-usage-model-cost">${m.costUsd.toFixed(2)}</span>}
+                                </span>
+                              )) : (
+                                <span className="mc-usage-model">
+                                  <span className="mc-usage-model-name">single-model</span>
+                                  <span className="mc-usage-model-tok">{fmtTok(r.tokens)}</span>
+                                  {r.costUsd > 0.005 && <span className="mc-usage-model-cost">${r.costUsd.toFixed(2)}</span>}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

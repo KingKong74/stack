@@ -1641,6 +1641,14 @@ a.tab { display: inline-block; }
 .mc-usage-bar.warn { background: var(--critical); }
 .mc-plan-warn { color: var(--critical); font-weight: 600; }
 .mc-usage-models { display: flex; gap: 6px; flex-wrap: wrap; }
+/* #177 — the per-session agent breakdown under the usage card */
+.mc-agents-toggle { font-size: 11.5px; font-weight: 600; color: var(--muted); background: none; border: none; padding: 2px 0; cursor: pointer; }
+.mc-agents-toggle:hover { color: var(--accent-deep); }
+.mc-agents-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.mc-agents-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mc-agents-run { font-size: 11.5px; color: var(--chip-ink); background: none; border: none; padding: 0; cursor: pointer; text-align: left; }
+.mc-agents-run:hover { color: var(--accent-deep); }
+.mc-agents-models { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .mc-usage-model {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 11.5px; color: var(--chip-ink);

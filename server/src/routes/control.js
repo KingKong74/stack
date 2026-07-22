@@ -85,9 +85,13 @@ control.get('/', async (_req, res) => {
     // (#194) Usage aggregation — last 7 days of autopilot runs for the weekly
     // summary card. Aggregate in JS to avoid JSONB gymnastics. Rows are tiny.
     // BIGINT/NUMERIC come back as strings from node-postgres; use Number().
-    q(`SELECT tokens, cost_usd, model_usage, finished_at
-         FROM autopilot_runs
-        WHERE finished_at > now() - interval '7 days'`),
+    // (#177) item/project identity rides along so the newest rows can double
+    // as the per-session agent breakdown — no second query.
+    q(`SELECT r.tokens, r.cost_usd, r.model_usage, r.finished_at,
+              r.item_id, r.item_title, r.outcome, p.slug, p.name AS project_name
+         FROM autopilot_runs r JOIN projects p ON p.id = r.project_id
+        WHERE r.finished_at > now() - interval '7 days'
+        ORDER BY r.finished_at DESC`),
     // (#207) The host dispatcher's git branch report per project — the merge
     // strip's real state (ahead/behind, conflict probe). Missing rows are fine:
     // the strip falls back to claim-derived chips until the first report lands.
@@ -181,6 +185,26 @@ control.get('/', async (_req, res) => {
     monthTokens: Number(monthR.rows[0]?.tokens) || 0,
     monthCostUsd: Number(monthR.rows[0]?.cost) || 0,
     monthRuns: monthR.rows[0]?.runs || 0,
+    // (#177) Agent breakdown — the newest runs with their per-model split
+    // (executor vs advisor when dual-model; one entry for single-model runs).
+    recentRuns: usageR.rows.slice(0, 12).map((r) => ({
+      slug: r.slug,
+      name: r.project_name,
+      itemId: r.item_id != null ? String(r.item_id) : null,
+      itemTitle: r.item_title || '',
+      outcome: r.outcome,
+      when: relativeTime(r.finished_at) || 'just now',
+      tokens: Number(r.tokens) || 0,
+      costUsd: Number(r.cost_usd) || 0,
+      models: r.model_usage && typeof r.model_usage === 'object'
+        ? Object.entries(r.model_usage).map(([model, u]) => ({
+            model,
+            tokens: (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0)
+              + (Number(u.cacheReadInputTokens) || 0) + (Number(u.cacheCreationInputTokens) || 0),
+            costUsd: Number(u.costUSD) || 0,
+          })).sort((a, b) => b.tokens - a.tokens)
+        : [],
+    })),
   };
   const checksByP = new Map(checksR.rows.map((r) => [r.project_id, r]));
 

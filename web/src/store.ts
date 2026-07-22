@@ -332,6 +332,12 @@ export interface UsageSummary {
   monthTokens?: number;
   monthCostUsd?: number;
   monthRuns?: number;
+  // #177 — the newest runs with their per-model (agent) split for the breakdown.
+  recentRuns?: {
+    slug: string; name: string; itemId: string | null; itemTitle: string;
+    outcome: string; when: string; tokens: number; costUsd: number;
+    models: { model: string; tokens: number; costUsd: number }[];
+  }[];
 }
 
 // Account-level Plan windows (#220) — the daemon's cached snapshot of the
