@@ -51,6 +51,11 @@ function parseTranscript(path) {
   const tools = new Set();
   const files = new Set();
   let model = null;
+  // Real token usage (#178): each assistant event carries message.usage —
+  // summed here (deduped by message id, same rule as the terminal's
+  // usage-meter) so manual sessions report usage like autopilot runs do.
+  let tokens = 0;
+  const seenUsage = new Set();
 
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
@@ -60,6 +65,13 @@ function parseTranscript(path) {
     const role = msg.role || ev.type;
     if (ev.model) model = ev.model;
     if (msg.model) model = msg.model;
+
+    const u = msg.usage;
+    if (u && typeof u === 'object' && (!msg.id || !seenUsage.has(msg.id))) {
+      if (msg.id) seenUsage.add(msg.id);
+      tokens += (Number(u.input_tokens) || 0) + (Number(u.output_tokens) || 0)
+        + (Number(u.cache_creation_input_tokens) || 0);
+    }
 
     const content = msg.content;
     if (typeof content === 'string') {
@@ -79,7 +91,7 @@ function parseTranscript(path) {
       }
     }
   }
-  return { turns, tools: [...tools], files: [...files], model, messageCount: turns.length };
+  return { turns, tools: [...tools], files: [...files], model, messageCount: turns.length, tokens };
 }
 
 // The last assistant message with real substance (not a one-line tool ack),
@@ -127,6 +139,7 @@ function lastSubstantiveMessage(turns) {
       files: ['web/src/store.ts', 'server/src/routes/ingest.js'],
       model: null,
       messageCount: 12,
+      tokens: 0,
     };
   } else {
     t = parseTranscript(payload.transcript_path);
@@ -155,6 +168,7 @@ function lastSubstantiveMessage(turns) {
       model: t.model,
       reason: payload.reason || (DEMO ? 'demo' : 'exit'),
       message_count: t.messageCount,
+      tokens_used: t.tokens || 0, // real transcript usage (#178)
       authored: false,
       summary,
       files_touched: t.files,

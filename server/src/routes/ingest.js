@@ -106,6 +106,8 @@ ingest.post('/', async (req, res) => {
     model: str(s.model, 100),
     reason: str(s.reason, 100),
     message_count: Number.isFinite(s.message_count) ? Math.trunc(s.message_count) : null,
+    // Real transcript token usage from the SessionEnd hook (#178) — 0 = unknown.
+    tokens_used: Number.isFinite(s.tokens_used) && s.tokens_used > 0 ? Math.trunc(s.tokens_used) : 0,
   };
 
   const bugCandidates = asBugCandidates(extract.bugs);
@@ -198,25 +200,26 @@ ingest.post('/', async (req, res) => {
            tags          = CASE WHEN $10::jsonb = '[]'::jsonb THEN tags          ELSE $10::jsonb END,
            branch=COALESCE($11, branch), cwd=COALESCE($12, cwd), model=COALESCE($13, model),
            reason=$14, message_count=COALESCE($16, message_count),
+           tokens_used = GREATEST(tokens_used, $17),  -- keep the fullest count (#178)
            authored = (authored OR $15)
          WHERE id=$1`,
-        // $1=id, $2..$14 as listed, $15=authored (boolean), $16=message_count
+        // $1=id, $2..$14 as listed, $15=authored (boolean), $16=message_count, $17=tokens_used
         [existingSession.id, session.session_id, session.commit_hash, session.summary,
          session.current_phase, JSON.stringify(session.next_steps), JSON.stringify(session.blockers),
          JSON.stringify(session.files_touched), JSON.stringify(session.tools_used),
          JSON.stringify(session.tags), session.branch, session.cwd, session.model,
-         session.reason, authored, session.message_count]
+         session.reason, authored, session.message_count, session.tokens_used]
       );
     } else {
       const ins = await client.query(
         `INSERT INTO sessions
            (project_id, session_id, commit_hash, summary, current_phase, next_steps,
             blockers, files_touched, tools_used, tags, branch, cwd, model, reason,
-            message_count, authored, source)
+            message_count, authored, tokens_used, source)
          VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,
-                 $11,$12,$13,$14,$15,$16,'hook')
+                 $11,$12,$13,$14,$15,$16,$17,'hook')
          RETURNING id`,
-        [projectId, ...sessionCols]
+        [projectId, ...sessionCols, session.tokens_used]
       );
       sessionRowId = ins.rows[0].id;
     }

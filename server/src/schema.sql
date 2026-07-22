@@ -83,6 +83,10 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS authored    BOOLEAN NOT NULL DEFAU
 -- gemini_note = the second model's one-line take on the push, stamped after
 -- ingest commits (fire-and-forget; an annotation, never state).
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS gemini_note TEXT;
+-- Real transcript token usage (#178): summed by the SessionEnd hook (deduped
+-- per message id), so manual sessions report usage like autopilot runs do.
+-- 0 = unknown (pre-#178 rows, or a hook that couldn't read the transcript).
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS tokens_used BIGINT NOT NULL DEFAULT 0;
 
 -- Per-project bug tracker. bug_key is the human "BUG-N" id, unique per project.
 CREATE TABLE IF NOT EXISTS bugs (

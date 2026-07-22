@@ -173,6 +173,7 @@ export interface Activity {
   summary: string;
   tags: string[];
   geminiNote: string; // the second model's one-line take on the push ('' until stamped)
+  tokens?: number;    // real session usage from the transcript (#178); 0/absent = unknown
 }
 
 export interface Collections {

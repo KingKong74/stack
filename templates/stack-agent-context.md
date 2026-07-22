@@ -116,6 +116,16 @@ Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
     -H "authorization: Bearer $STACK_TOKEN" -H 'content-type: application/json' \
     -d '{"done":true,"built_note":"<what landed, where, how verified>"}'
   ```
+- **Manual execution sessions report usage like autopilot runs do.** When you
+  complete a roadmap item outside the overnight runner, also land a run-ledger
+  row so the Reviews view shows the same branch/commits/tokens chip for manual
+  work (tokens/cost optional — include them when you know them):
+
+  ```bash
+  curl -s -X POST "$STACK_API/api/projects/<slug>/autopilot/runs" \
+    -H "authorization: Bearer $STACK_TOKEN" -H 'content-type: application/json' \
+    -d '{"item_id":<id>,"item_title":"<title>","branch":"<branch>","outcome":"landed","commits":<n>,"summary":"<one paragraph on what landed>"}'
+  ```
 - **Items can carry an implementation plan** — `plan`, an ordered list of
   `{"text": "…", "done": false}` steps the owner wrote for bigger work. Work the
   unticked steps top-down. As each step lands, PATCH the FULL updated list back

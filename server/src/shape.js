@@ -120,6 +120,7 @@ export function activityShape(row) {
     summary: row.summary || '',
     tags: Array.isArray(row.tags) ? row.tags : [],
     geminiNote: row.gemini_note || '', // the second model's take, '' until stamped
+    tokens: Number(row.tokens_used) || 0, // real session usage (#178); 0 = unknown
   };
 }
 

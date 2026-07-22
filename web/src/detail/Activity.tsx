@@ -36,6 +36,11 @@ export function Activity({
                   <div className="top">
                     <span className="hash">{a.hash}</span>
                     <span className="branch">on {a.branch}</span>
+                    {(a.tokens ?? 0) > 0 && (
+                      <span className="branch" title="Real token usage for the session, from its transcript (#178)">
+                        · {a.tokens! >= 1e6 ? `${(a.tokens! / 1e6).toFixed(1)}M` : `${Math.round(a.tokens! / 1000)}k`} tok
+                      </span>
+                    )}
                     <span className="when">{a.when}</span>
                   </div>
                   <div className="body">{a.summary}</div>
