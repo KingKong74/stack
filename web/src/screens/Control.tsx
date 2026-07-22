@@ -678,6 +678,14 @@ export function ControlPanel() {
                       {data.usage.todayCostUsd > 0.005 && ` · $${data.usage.todayCostUsd.toFixed(2)}`}
                     </span>
                   )}
+                  {/* #200 — month-to-date rollup across all projects */}
+                  {(data.usage.monthTokens ?? 0) > 0 && (
+                    <span className="mc-usage-today"
+                      title={`Month to date: ${data.usage.monthRuns ?? 0} run${(data.usage.monthRuns ?? 0) === 1 ? '' : 's'} across all projects (UTC calendar month)`}>
+                      month: {fmtTok(data.usage.monthTokens!)}
+                      {(data.usage.monthCostUsd ?? 0) > 0.005 && ` · $${data.usage.monthCostUsd!.toFixed(2)}`}
+                    </span>
+                  )}
                 </div>
                 {usageBar !== null && (
                   <div className="mc-usage-bar-wrap"
@@ -918,6 +926,15 @@ export function ControlPanel() {
                     {p.bugs.serious > 0 && (
                       <button className="mc-bugs" onClick={() => go.detail(p.slug, 'bugs')}>
                         {p.bugs.serious} serious bug{p.bugs.serious === 1 ? '' : 's'}
+                      </button>
+                    )}
+                    {/* #206 — audit pass rate from the checks' stored results */}
+                    {p.audit && (
+                      <button
+                        className={`mc-fact mc-audit${p.audit.passing < p.audit.run ? ' warn' : ''}`}
+                        title={`${p.audit.passing} of ${p.audit.run} checks passing (last stored results) — open the Audit tab`}
+                        onClick={() => go.detail(p.slug, 'audit')}>
+                        ⚗ {Math.round((p.audit.passing / p.audit.run) * 100)}% audit
                       </button>
                     )}
                     {p.blockers.length > 0 && (

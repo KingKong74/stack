@@ -1506,6 +1506,9 @@ a.tab { display: inline-block; }
 .mc-review { font-size: 11.5px; font-weight: 600; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 20px; padding: 3px 10px; }
 .mc-review:hover { color: var(--accent-deep); }
 .mc-bugs { font-size: 11.5px; font-weight: 600; color: var(--critical); background: transparent; border: 1px solid var(--line-2); border-radius: 20px; padding: 3px 10px; }
+/* #206 — audit pass-rate chip: sage when green, critical while anything fails */
+.mc-audit { font-size: 11.5px; font-weight: 600; color: var(--sage); background: transparent; border: 1px solid var(--line-2); border-radius: 20px; padding: 3px 10px; cursor: pointer; }
+.mc-audit.warn { color: var(--critical); }
 .mc-blocked { color: var(--critical); }
 
 /* the autopilot console's grouped knob clusters (Night budget · Models) */

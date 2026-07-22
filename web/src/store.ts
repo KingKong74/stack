@@ -283,6 +283,8 @@ export interface ControlProject {
   branchesWhen?: string;
   reviewCount: number;
   bugs: { serious: number; open: number };
+  // #206 — audit pass rate from the checks' stored results; null/absent = never run.
+  audit?: { run: number; passing: number } | null;
   blockers: string[];
   nextPick: { id: string; bucket: Priority; title: string } | null;
   lastAuto: { branch: string; summary: string; when: string } | null;
@@ -326,6 +328,10 @@ export interface UsageSummary {
   todayCostUsd: number;
   budgetPerNight: number;  // echo of settings.autopilot_tokens; 0 = unlimited
   models: { model: string; tokens: number; costUsd: number }[];
+  // #200 — month-to-date rollup (calendar month, UTC), across all projects.
+  monthTokens?: number;
+  monthCostUsd?: number;
+  monthRuns?: number;
 }
 
 // Account-level Plan windows (#220) — the daemon's cached snapshot of the

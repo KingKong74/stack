@@ -41,7 +41,7 @@ const ms = (ts) => (ts ? new Date(ts).getTime() : -1);
 control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
-  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR, branchR] = await Promise.all([
+  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR, branchR, checksR, monthR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, automode, autopilot_area, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
     // claimed_by that starts with 'auto/' or 'lane/' is an open lane branch; we
@@ -93,6 +93,16 @@ control.get('/', async (_req, res) => {
     // the strip falls back to claim-derived chips until the first report lands.
     // ::int so the BIGINT key matches projects.id as a JS number in the Map.
     q(`SELECT project_id::int AS project_id, report, reported_at FROM branch_reports`),
+    // (#206) Audit pass rate per project — the checks' stored last results.
+    // never-run rows don't count against the rate; zero run rows = no rate.
+    q(`SELECT project_id,
+              count(*) FILTER (WHERE last_status IS NOT NULL)::int AS run,
+              count(*) FILTER (WHERE last_status = 'pass')::int AS passing
+         FROM checks GROUP BY project_id`),
+    // (#200) Month-to-date rollup across all projects (calendar month, UTC —
+    // same convention as every server-side date bucket).
+    q(`SELECT COALESCE(SUM(tokens), 0) AS tokens, COALESCE(SUM(cost_usd), 0) AS cost, count(*)::int AS runs
+         FROM autopilot_runs WHERE finished_at >= date_trunc('month', now())`),
   ]);
 
   const roadByP = new Map();
@@ -166,7 +176,13 @@ control.get('/', async (_req, res) => {
     // appear over-budget against a per-run denominator.
     budgetPerNight: appSettings.autopilot_tokens, // 0 = unlimited
     models: usageModels,
+    // (#200) Month-to-date rollup, calendar month UTC. NUMERIC/BIGINT arrive
+    // as strings from node-postgres.
+    monthTokens: Number(monthR.rows[0]?.tokens) || 0,
+    monthCostUsd: Number(monthR.rows[0]?.cost) || 0,
+    monthRuns: monthR.rows[0]?.runs || 0,
   };
+  const checksByP = new Map(checksR.rows.map((r) => [r.project_id, r]));
 
   // Automode projects first, then recency — the screen is about what agents
   // may touch, so opted-in projects lead.
@@ -259,6 +275,12 @@ control.get('/', async (_req, res) => {
         .map((r) => ({ id: String(r.id), title: r.title, lane: r.claimed_by })),
       reviewCount: reviewByP.get(p.id) || 0,
       bugs: { serious: bugRow ? bugRow.serious : 0, open: bugRow ? bugRow.open_all : 0 },
+      // (#206) Audit pass rate from the checks' stored results; null = no
+      // checks have ever run on this project (nothing to rate).
+      audit: (() => {
+        const c = checksByP.get(p.id);
+        return c && c.run > 0 ? { run: c.run, passing: c.passing } : null;
+      })(),
       blockers: asList(p.blockers).map((b) => String(b).trim()).filter(Boolean),
       nextPick: pick ? { id: String(pick.id), bucket: pick.bucket, title: pick.title } : null,
       lastAuto: lastAuto ? {
