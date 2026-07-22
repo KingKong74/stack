@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Priority, PlanStep } from '../types';
+import type { Priority, PlanStep, RoadmapItem } from '../types';
 import type { RoadmapAssist } from '../store';
 import { Modal } from './Modal';
 import { PRIORITY_META } from '../lib/ui';
@@ -14,14 +14,14 @@ import { PRIORITY_META } from '../lib/ui';
 export function RoadmapModal({
   initialPriority, onClose, onSubmit, onDismiss, onAssist,
   initialTitle = '', initialNote = '', initialLane = '', initialArea = '', initialPlan = [],
-  lanes = [], areas = [], mode = 'add',
+  initialRisk = 'normal', lanes = [], areas = [], mode = 'add',
 }: {
   initialPriority: Priority; onClose: () => void;
-  onSubmit: (v: { title: string; note: string; priority: Priority; lane: string; area: string; plan: PlanStep[] }) => void;
-  onDismiss?: (v: { title: string; note: string; priority: Priority; lane: string; area: string; plan: PlanStep[] }) => void;
+  onSubmit: (v: { title: string; note: string; priority: Priority; lane: string; area: string; plan: PlanStep[]; risk: RoadmapItem['risk'] }) => void;
+  onDismiss?: (v: { title: string; note: string; priority: Priority; lane: string; area: string; plan: PlanStep[]; risk: RoadmapItem['risk'] }) => void;
   onAssist?: (note: string) => Promise<RoadmapAssist>;
   initialTitle?: string; initialNote?: string; initialLane?: string; initialArea?: string;
-  initialPlan?: PlanStep[];
+  initialPlan?: PlanStep[]; initialRisk?: RoadmapItem['risk'];
   lanes?: string[]; areas?: string[]; mode?: 'add' | 'edit';
 }) {
   const [title, setTitle] = useState(initialTitle);
@@ -29,6 +29,7 @@ export function RoadmapModal({
   const [lane, setLane] = useState(initialLane);
   const [area, setArea] = useState(initialArea);
   const [priority, setPriority] = useState<Priority>(initialPriority);
+  const [risk, setRisk] = useState<RoadmapItem['risk']>(initialRisk);
   // The implementation plan (#75): ordered steps for bigger work. A pending
   // draft line is folded in on save so a typed-but-not-entered step isn't lost.
   const [plan, setPlan] = useState<PlanStep[]>(initialPlan);
@@ -54,7 +55,7 @@ export function RoadmapModal({
   const [areaOpen, setAreaOpen] = useState(false);
   const areaMatches = knownAreas.filter(
     (a) => !area.trim() || a.includes(area.trim().toLowerCase()));
-  const fields = () => ({ title, note, priority, lane: lane.trim(), area: area.trim().toLowerCase(), plan: fullPlan() });
+  const fields = () => ({ title, note, priority, lane: lane.trim(), area: area.trim().toLowerCase(), plan: fullPlan(), risk });
   const submit = () => { if (title.trim()) onSubmit(fields()); };
   const typed = Boolean(title.trim() || note.trim());
   const dismiss = () => {
@@ -189,6 +190,16 @@ export function RoadmapModal({
         {PRIORITY_META.map((p) => (
           <button key={p.key} className={`opt prio ${p.key} ${priority === p.key ? 'on' : ''}`} onClick={() => setPriority(p.key)}>
             {p.short}
+          </button>
+        ))}
+      </div>
+      <div className="lbl" style={{ marginBottom: 9 }}>
+        Risk <span className="optional">low = a green overnight run merges itself; you still give the verdict</span>
+      </div>
+      <div className="seg" style={{ marginBottom: 26 }}>
+        {(['low', 'normal', 'high'] as const).map((r) => (
+          <button key={r} type="button" className={`opt risk-${r} ${risk === r ? 'on' : ''}`} onClick={() => setRisk(r)}>
+            {r === 'low' ? 'Low' : r === 'normal' ? 'Normal' : 'High'}
           </button>
         ))}
       </div>

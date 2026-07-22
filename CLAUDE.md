@@ -127,6 +127,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             unattended session in a fresh worktree on branch auto/item-N (never main), push,
             `built_note` stamped on the item (so the Reviews view shows what landed), a checks
             run + Gemini diff review (→ review inbox) — then the next item while budget remains.
+            **Risk-tiered auto-merge** (#212): an item marked `risk:'low'` (the modal's Risk
+            seg; default normal) whose run lands with ≥1 check all green AND a clean Gemini
+            review (zero bugs — the review script's `--verdict-file`) queues its own `merge`
+            job (`auto:true` bypasses the human-UX 409, since the night's own job holds the
+            queue; /next stays serialised so the merge runs after the night ends). Any signal
+            absent = no auto-merge, reason logged; the item is never auto-ticked — the human
+            still verdicts it in Reviews.
             The claim stays until the human merges + ticks the item (that's the don't-re-pick
             marker); a no-commit run releases it. Both the global arm switch AND the project's
             automode flag must be on. Every item attempt lands as a row in `autopilot_runs`

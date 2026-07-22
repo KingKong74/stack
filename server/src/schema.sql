@@ -159,6 +159,12 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS refine_note TEXT;
 -- item completes afresh, goes back to the board or takes a verdict, so a row is
 -- never both awaiting verification and shelved.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS review_shelved BOOLEAN NOT NULL DEFAULT false;
+-- Risk tier (#212): the graduated-trust lever. low | normal | high, set by the
+-- human (modal) or at creation. A LOW-risk item whose overnight run lands with
+-- green checks and a clean Gemini review auto-queues its own merge job — code
+-- reaches main without a human click, but the item is still ticked (and the
+-- work verdicted) by the human in Reviews. normal/high never auto-merge.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS risk TEXT NOT NULL DEFAULT 'normal';
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
 -- Per-project futures: loose directional ideas, curated against the north star

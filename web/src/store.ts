@@ -772,7 +772,7 @@ export async function getRoadmap(slug: string): Promise<Roadmap> {
   return request<Roadmap>(roadmapBase(slug));
 }
 export async function createRoadmapItem(
-  slug: string, input: { title: string; note: string; bucket: Priority; claimed_by?: string; area?: string; plan?: PlanStep[] },
+  slug: string, input: { title: string; note: string; bucket: Priority; claimed_by?: string; area?: string; plan?: PlanStep[]; risk?: RoadmapItem['risk'] },
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(roadmapBase(slug), { method: 'POST', body: input });
 }
@@ -782,7 +782,7 @@ export async function patchRoadmapItem(
     done: boolean; bucket: Priority; title: string; note: string; reviewed: boolean;
     claimed_by: string; review_tag: string; review_tags: string[]; refine_note: string;
     review_shelved: boolean; skipped: boolean; area: string; position: number;
-    built_note: string; plan: PlanStep[];
+    built_note: string; plan: PlanStep[]; risk: RoadmapItem['risk'];
   }>,
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });

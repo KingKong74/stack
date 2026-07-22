@@ -725,6 +725,10 @@ a.tab { display: inline-block; }
 .road-archive-head .hint { font-size: 11.5px; font-family: var(--sans); font-weight: 400; color: var(--faint); }
 .road-item.skipped { opacity: 0.62; border-style: dashed; }
 .skip-chip { display: inline-block; margin-left: 8px; font-size: 10.5px; font-weight: 600; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; padding: 1px 7px; vertical-align: 1px; }
+/* risk tier (#212): low = trusted to auto-merge a green run, high = handle with care */
+.risk-chip { display: inline-block; margin-left: 8px; font-size: 10.5px; font-weight: 600; border-radius: 6px; padding: 1px 7px; vertical-align: 1px; }
+.risk-chip.low { color: var(--sage); background: transparent; border: 1px solid var(--sage); }
+.risk-chip.high { color: var(--critical); background: transparent; border: 1px solid var(--critical); }
 /* claimed = someone's on it right now: dimmed, amber-tagged, read-only */
 .road-item.working { opacity: 0.68; }
 .road-item.working:hover { opacity: 1; }

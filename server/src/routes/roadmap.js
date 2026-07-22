@@ -2,6 +2,10 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags } from '../util.js';
+
+// Risk tiers (#212) — graduated trust. 'low' lets a green overnight run
+// auto-queue its own merge; anything else keeps the human on the merge button.
+const RISKS = ['low', 'normal', 'high'];
 import { roadmapItemShape, groupRoadmap } from '../shape.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
@@ -35,15 +39,16 @@ roadmap.post('/', async (req, res) => {
   const claimedBy = String(req.body?.claimed_by || '').trim().slice(0, 100) || null;
   const area = String(req.body?.area || '').trim().toLowerCase().slice(0, 40) || null;
   const plan = cleanPlan(req.body?.plan);
+  const risk = oneOf(req.body?.risk, RISKS, 'normal');
 
   const { rows: pos } = await q(
     'SELECT COALESCE(MAX(position), -1) + 1 AS p FROM roadmap_items WHERE project_id = $1 AND bucket = $2',
     [req.project.id, bucket]
   );
   const { rows } = await q(
-    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan)
-     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7,$8,$9::jsonb) RETURNING *`,
-    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy, area, JSON.stringify(plan)]
+    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk)
+     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7,$8,$9::jsonb,$10) RETURNING *`,
+    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy, area, JSON.stringify(plan), risk]
   );
   res.status(201).json(roadmapItemShape(rows[0]));
 });
@@ -129,6 +134,9 @@ roadmap.patch('/:id', async (req, res) => {
   if (req.body?.area !== undefined) {
     sets.push(`area = $${i++}`);
     vals.push(String(req.body.area || '').trim().toLowerCase().slice(0, 40) || null);
+  }
+  if (req.body?.risk !== undefined) {
+    sets.push(`risk = $${i++}`); vals.push(oneOf(req.body.risk, RISKS, 'normal'));
   }
   if (req.body?.built_note !== undefined) {
     sets.push(`built_note = $${i++}`);

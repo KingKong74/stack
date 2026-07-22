@@ -28,6 +28,12 @@ loadStackEnv();
 const DRY = process.argv.includes('--dry');
 const rangeIdx = process.argv.indexOf('--range');
 const RANGE = rangeIdx > -1 ? process.argv[rangeIdx + 1] : null;
+// --verdict-file <path> (#212): also write a small machine-readable verdict
+// ({bugs, improvements, ideas, summary}) so a caller (the autopilot's
+// risk-tiered auto-merge) can tell a clean review from a flagged one without
+// scraping stderr. Written on success only — no file means no verdict.
+const verdictIdx = process.argv.indexOf('--verdict-file');
+const VERDICT_FILE = verdictIdx > -1 ? process.argv[verdictIdx + 1] : null;
 
 const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 // Free-tier quotas are per model, so a 429 on the primary is retried once on
@@ -153,6 +159,15 @@ if (DRY) {
 
 const result = await postIngest(body);
 if (!result?.ok) die(`Posting the review to Stack failed${result?.reason ? ` (${result.reason})` : ''}.`);
+if (VERDICT_FILE) {
+  try {
+    const { writeFileSync } = await import('node:fs');
+    writeFileSync(VERDICT_FILE, JSON.stringify({
+      bugs: bugs.length, improvements: improvements.length, ideas: ideas.length,
+      summary: summaryLine, model: usedModel,
+    }));
+  } catch (e) { logStderr(`verdict file not written (${e.message})`); }
+}
 logStderr(
   `gemini review posted for ${project.slug} @ ${commit} — sent ` +
   `${bugs.length} bug${bugs.length === 1 ? '' : 's'}, ${improvements.length} improvement${improvements.length === 1 ? '' : 's'}, ` +

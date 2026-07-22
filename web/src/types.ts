@@ -68,6 +68,7 @@ export interface RoadmapItem {
   refineNote: string;  // the refine delta — what to change on top ('' = none) — #146
   reviewShelved: boolean; // review set aside for later — off the To-verify list — #148
   skipped: boolean;    // parked — planned, but not to be picked up yet
+  risk: 'low' | 'normal' | 'high'; // graduated trust (#212): low auto-merges a green run
   plan: PlanStep[];    // the implementation plan ([] = none)
   updatedAt: string | null; // ISO — latest-first ordering in the archive
 }

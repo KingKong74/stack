@@ -223,17 +223,17 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     });
 
   // Create, or save an edit, depending on how the modal was opened.
-  const submitRoad = ({ title, note, priority, lane, area, plan }: { title: string; note: string; priority: Priority; lane: string; area: string; plan: PlanStep[] }) =>
+  const submitRoad = ({ title, note, priority, lane, area, plan, risk }: { title: string; note: string; priority: Priority; lane: string; area: string; plan: PlanStep[]; risk: RoadmapItem['risk'] }) =>
     guard(async () => {
       const editing = roadModal.editing;
       if (editing) {
-        const updated = await patchRoadmapItem(slug, editing.id, { title, note, bucket: priority, claimed_by: lane, area, plan });
+        const updated = await patchRoadmapItem(slug, editing.id, { title, note, bucket: priority, claimed_by: lane, area, plan, risk });
         const without = { ...roadmap, [editing.bucket]: roadmap[editing.bucket].filter((i) => i.id !== editing.id) };
         setData({ ...data, roadmap: { ...without, [updated.bucket]: [...without[updated.bucket], updated] } });
         setRoadModal(roadModalClosed);
         return;
       }
-      const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: lane || undefined, area: area || undefined, plan: plan.length ? plan : undefined });
+      const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: lane || undefined, area: area || undefined, plan: plan.length ? plan : undefined, risk: risk !== 'normal' ? risk : undefined });
       const fromNote = roadModal.fromNote;
       const fromFuture = pendingFuture;
       if (roadModal.fromDraft) updateRoadDraft(null); // the draft landed — clear it
@@ -819,6 +819,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           initialNote={roadModal.note} initialLane={roadModal.editing?.claimedBy ?? roadModal.lane ?? ''}
           initialArea={roadModal.editing?.area ?? roadModal.area ?? ''}
           initialPlan={roadModal.editing?.plan ?? []}
+          initialRisk={roadModal.editing?.risk ?? 'normal'}
           lanes={[...new Set(allRoadmap.map((i) => i.claimedBy))].filter(Boolean).sort()}
           areas={[...new Set([...allRoadmap.map((i) => i.area), ...futures.map((f) => f.area)])].filter(Boolean).sort()}
           mode={roadModal.editing ? 'edit' : 'add'}

@@ -598,9 +598,11 @@ Rules for this run:
 
   // Checks run (bounded server-side; failures are morning reading).
   let checksFailing = null;
+  let checksRan = 0; // how many actually ran — zero checks is NOT a green signal (#212)
   try {
     const checks = await api('POST', `/api/projects/${SLUG}/checks/run`, {});
     const rows = Array.isArray(checks) ? checks : (checks.checks || []);
+    checksRan = rows.length;
     checksFailing = rows.filter((c) => c.lastStatus === 'fail').length;
     log(`checks run: ${rows.length} total, ${checksFailing} failing.`);
   } catch (e) { log(`checks run skipped (${e.message})`); }
@@ -609,12 +611,44 @@ Rules for this run:
     checks_failing: checksFailing,
     summary: (resultText || `${nCommits} commit(s) on ${branch}.`).slice(0, 1800) });
 
-  // Gemini second-model review of the branch diff → review inbox.
+  // Gemini second-model review of the branch diff → review inbox. The verdict
+  // file (#212) is how a clean review becomes machine-readable for auto-merge.
+  let reviewVerdict = null;
   if (GEMINI_KEY) {
-    const review = spawnSync('node', [join(REPO, 'hook', 'stack-gemini-review.mjs'), '--range', 'main..HEAD'], {
+    const verdictFile = join(lockDir, 'autopilot', `${SLUG}-item-${item.id}-verdict.json`);
+    try { rmSync(verdictFile); } catch { /* none from a previous attempt */ }
+    const review = spawnSync('node', [join(REPO, 'hook', 'stack-gemini-review.mjs'),
+      '--range', 'main..HEAD', '--verdict-file', verdictFile], {
       cwd: wt, stdio: ['ignore', 'inherit', 'inherit'], timeout: 120_000,
     });
     log(review.status === 0 ? 'gemini review posted to the inbox.' : 'gemini review did not post (see above).');
+    try {
+      const { readFileSync } = await import('node:fs');
+      reviewVerdict = JSON.parse(readFileSync(verdictFile, 'utf8'));
+      rmSync(verdictFile);
+    } catch { /* no verdict — treated as not-clean below */ }
+  }
+
+  // Risk-tiered auto-merge (#212) — the graduated-trust lever. A LOW-risk item
+  // whose run is green on every signal queues its own merge job (the same
+  // dispatcher path as Mission Control's ⇥ Merge — conflicts still abort, the
+  // item is never auto-ticked, and the human still verdicts it in Reviews).
+  // Every gate is positive evidence; anything absent (no checks, no review,
+  // no verdict) means NO auto-merge, with the reason in the night log.
+  if ((item.risk || 'normal') === 'low' && !limitHit) {
+    const checksGreen = checksRan > 0 && checksFailing === 0;
+    const reviewClean = reviewVerdict != null && reviewVerdict.bugs === 0;
+    if (checksGreen && reviewClean) {
+      try {
+        const job = await api('POST', '/api/autopilot/merge',
+          { slug: SLUG, branch, itemId: item.id, auto: true });
+        log(`#${item.id} is low risk with green checks + a clean review — auto-merge queued as job #${job.id} (the dispatcher merges after this night ends; ticking stays yours).`);
+      } catch (e) { log(`auto-merge not queued (${e.message}) — merge by hand from Mission Control.`); }
+    } else {
+      log(`#${item.id} is low risk but NOT auto-merging: `
+        + `${checksGreen ? 'checks green' : checksRan > 0 ? `${checksFailing} check(s) failing` : 'no checks ran'}, `
+        + `${reviewClean ? 'review clean' : reviewVerdict ? `review flagged ${reviewVerdict.bugs} bug(s)` : 'no review verdict'}.`);
+    }
   }
   return { landed: true, limitHit, resultText };
 }

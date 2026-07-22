@@ -222,9 +222,14 @@ autopilotGlobal.post('/merge', async (req, res) => {
     const openJob = jobShape(open.rows[0]);
     // Same merge already queued = idempotent.
     if (openJob.kind === 'merge' && openJob.detail.includes(branch)) return res.status(200).json(openJob);
-    return res.status(409).json({ error: `An automation job for this project is already ${openJob.status} — merge when it finishes.` });
+    // Auto-merge (#212) arrives FROM a running night — its own job is the one
+    // holding the lock, so the human-UX 409 would deadlock it. The queue stays
+    // safe: /next is serialised, so the merge waits its turn regardless.
+    if (!b.auto) {
+      return res.status(409).json({ error: `An automation job for this project is already ${openJob.status} — merge when it finishes.` });
+    }
   }
-  const detail = `merge origin/${branch} into main${itemId ? ` (item #${itemId})` : ''}`;
+  const detail = `${b.auto ? 'auto-' : ''}merge origin/${branch} into main${itemId ? ` (item #${itemId})` : ''}${b.auto ? ' — low risk, green checks, clean review' : ''}`;
   const { rows } = await q(
     `INSERT INTO autopilot_jobs (project_id, kind, item_id, detail) VALUES ($1,'merge',$2,$3) RETURNING id`,
     [project.id, itemId, detail]);
