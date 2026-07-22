@@ -217,19 +217,24 @@ autopilotGlobal.post('/merge', async (req, res) => {
     ? Number(b.itemId) : null;
   const open = await q(
     `${JOB_SELECT} WHERE j.project_id = $1 AND j.status IN ('queued','claimed','running')
-      ORDER BY j.created_at LIMIT 1`, [project.id]);
-  if (open.rows.length) {
-    const openJob = jobShape(open.rows[0]);
-    // Same merge already queued = idempotent.
-    if (openJob.kind === 'merge' && openJob.detail.includes(branch)) return res.status(200).json(openJob);
-    // Auto-merge (#212) arrives FROM a running night — its own job is the one
-    // holding the lock, so the human-UX 409 would deadlock it. The queue stays
-    // safe: /next is serialised, so the merge waits its turn regardless.
-    if (!b.auto) {
-      return res.status(409).json({ error: `An automation job for this project is already ${openJob.status} — merge when it finishes.` });
-    }
+      ORDER BY j.created_at`, [project.id]);
+  const openJobs = open.rows.map(jobShape);
+  // Same merge already queued = idempotent.
+  const same = openJobs.find((j) => j.kind === 'merge' && j.detail.includes(`origin/${branch} into`));
+  if (same) return res.status(200).json(same);
+  // Merge TRAINS (#193): other queued merges never block a new one — /next is
+  // serialised, so they run one after another and each starts from the fresh
+  // origin/main the previous one pushed (rebase-on-the-last for free). Only a
+  // NON-merge open job blocks a human press. Auto-merge (#212) arrives FROM a
+  // running night — its own job holds the queue, so it bypasses even that.
+  const blocker = openJobs.find((j) => j.kind !== 'merge');
+  if (blocker && !b.auto) {
+    return res.status(409).json({ error: `An automation job for this project is already ${blocker.status} — merge when it finishes.` });
   }
-  const detail = `${b.auto ? 'auto-' : ''}merge origin/${branch} into main${itemId ? ` (item #${itemId})` : ''}${b.auto ? ' — low risk, green checks, clean review' : ''}`;
+  // AI-assisted conflict resolution (#193): the human opted in on a branch the
+  // probe called dirty — the dispatcher lets claude resolve in the worktree,
+  // and still aborts safely if the resolution doesn't come out clean.
+  const detail = `${b.auto ? 'auto-' : ''}merge origin/${branch} into main${itemId ? ` (item #${itemId})` : ''}${b.auto ? ' — low risk, green checks, clean review' : ''}${b.aiResolve === true ? ' [ai-resolve]' : ''}`;
   const { rows } = await q(
     `INSERT INTO autopilot_jobs (project_id, kind, item_id, detail) VALUES ($1,'merge',$2,$3) RETURNING id`,
     [project.id, itemId, detail]);

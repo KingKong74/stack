@@ -166,9 +166,42 @@ if (job.kind === 'merge') {
     try {
       const merge = git(wt, 'merge', '--no-ff', `origin/${branch}`,
         '-m', `Merge ${branch} into main #154`);
+      let aiNote = '';
       if (!merge.ok) {
-        git(wt, 'merge', '--abort');
-        return { ok: false, detail: `[merge/job #${job.id}] conflicts merging origin/${branch} into main — merge by hand` };
+        // AI-assisted resolution (#193): only when the human opted in on this
+        // job ([ai-resolve] in the detail) and claude is on the host. The
+        // conflicted worktree is handed to a bounded claude session; anything
+        // short of a fully clean result still aborts exactly like before.
+        const wantAi = /\[ai-resolve\]/.test(job.detail || '')
+          && spawnSync('claude', ['--version'], { stdio: 'ignore' }).status === 0;
+        let resolved = false;
+        if (wantAi) {
+          const conflicted = git(wt, 'diff', '--name-only', '--diff-filter=U').out;
+          log(`job #${job.id}: conflicts in ${conflicted.split('\n').filter(Boolean).length} file(s) — attempting AI-assisted resolution.`);
+          spawnSync('claude', ['-p',
+            `You are resolving a git merge IN PROGRESS in this worktree (merging origin/${branch} into main). ` +
+            `Conflicted files:\n${conflicted}\n\n` +
+            'Resolve every conflict by combining BOTH sides\' intent — never just pick one side without reading what each change does. ' +
+            'Remove all conflict markers, `git add` each resolved file, and STOP. Do NOT commit, do NOT push, do NOT touch files without conflicts.',
+            '--dangerously-skip-permissions'], {
+            cwd: wt, stdio: ['ignore', 'ignore', 'inherit'], timeout: 15 * 60_000, killSignal: 'SIGTERM',
+          });
+          const unmerged = git(wt, 'diff', '--name-only', '--diff-filter=U');
+          const markers = git(wt, 'grep', '-lE', '^(<{7}|={7}|>{7})');
+          if (unmerged.ok && !unmerged.out && !(markers.ok && markers.out)) {
+            const commit = git(wt, 'commit', '--no-edit');
+            if (commit.ok) {
+              resolved = true;
+              aiNote = ` (AI-resolved ${conflicted.split('\n').filter(Boolean).length} conflicted file(s) — read the merge commit before trusting it)`;
+              log(`job #${job.id}: AI resolution came out clean — merge commit created.`);
+            }
+          }
+          if (!resolved) log(`job #${job.id}: AI resolution did not come out clean — aborting the merge as usual.`);
+        }
+        if (!resolved) {
+          git(wt, 'merge', '--abort');
+          return { ok: false, detail: `[merge/job #${job.id}] conflicts merging origin/${branch} into main — ${wantAi ? 'AI resolution failed; ' : ''}merge by hand` };
+        }
       }
       const push = git(wt, 'push', 'origin', 'HEAD:main');
       if (!push.ok) return { ok: false, detail: `[merge/job #${job.id}] push to origin/main failed: ${push.err.slice(0, 150)}` };
@@ -179,7 +212,7 @@ if (job.kind === 'merge') {
       rmSync(wt, { recursive: true, force: true });
     }
     const itemNote = job.itemId ? ` — tick #${job.itemId} in the roadmap when you've verified it` : '';
-    return { ok: true, detail: `merged origin/${branch} into main${itemNote}` };
+    return { ok: true, detail: `merged origin/${branch} into main${aiNote}${itemNote}` };
   };
   await report('running');
   const out = await doMerge();

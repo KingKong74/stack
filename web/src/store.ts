@@ -837,10 +837,13 @@ export async function queueUndo(slug: string, itemId: number): Promise<Autopilot
 // merges origin/<branch> into main with --no-ff in a throwaway worktree, pushes
 // main, and deletes the remote lane branch on success. Conflicts fail safely.
 // itemId is advisory metadata only — the dispatcher does NOT tick the item.
-export async function queueMerge(slug: string, branch: string, itemId?: string): Promise<AutopilotJob> {
+// #193: other queued merges never block a new one (trains run sequentially via
+// /next, each from the fresh main the last one pushed); aiResolve opts a dirty
+// branch into the dispatcher's claude conflict-resolution pass.
+export async function queueMerge(slug: string, branch: string, itemId?: string, aiResolve?: boolean): Promise<AutopilotJob> {
   return request<AutopilotJob>('/autopilot/merge', {
     method: 'POST',
-    body: itemId ? { slug, branch, itemId } : { slug, branch },
+    body: { slug, branch, ...(itemId ? { itemId } : {}), ...(aiResolve ? { aiResolve: true } : {}) },
   });
 }
 // Gemini titles an item from its note (the modal's ✧ button) — suggestion only.

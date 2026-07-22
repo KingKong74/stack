@@ -92,6 +92,8 @@ export function ControlPanel() {
   // mergeClean rides along from the branch report (#207) so the modal can warn
   // about a probe-known conflict before the job is queued.
   const [mergePending, setMergePending] = useState<{ slug: string; branch: string; itemId: string; itemTitle: string; mergeClean?: boolean | null } | null>(null);
+  // #193 — a dirty branch may opt into the dispatcher's AI conflict resolution.
+  const [mergeAiResolve, setMergeAiResolve] = useState(false);
   const [mergeBusy, setMergeBusy] = useState(false);
   // #118 — the composer's item picker: open items for the chosen project,
   // fetched on selection (null = loading), cached per slug for the visit.
@@ -227,9 +229,11 @@ export function ControlPanel() {
     setMergeBusy(true);
     setError('');
     try {
-      const job = await queueMerge(mergePending.slug, mergePending.branch, mergePending.itemId || undefined);
+      const job = await queueMerge(mergePending.slug, mergePending.branch, mergePending.itemId || undefined,
+        mergePending.mergeClean === false && mergeAiResolve ? true : undefined);
       setData((cur) => cur && { ...cur, jobs: [job, ...cur.jobs.filter((j) => j.id !== job.id)] });
       setMergePending(null);
+      setMergeAiResolve(false);
     } catch (e) {
       if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not queue the merge.');
     } finally {
@@ -353,10 +357,19 @@ export function ControlPanel() {
               {' '}Conflicts fail safely — you will see the error in the job strip.
             </p>
             {mergePending.mergeClean === false && (
-              <p className="mc-merge-warn">
-                ⚠ The host's last probe found <strong>conflicts with main</strong> — this merge will fail
-                and need resolving by hand (or rebase the branch first).
-              </p>
+              <>
+                <p className="mc-merge-warn">
+                  ⚠ The host's last probe found <strong>conflicts with main</strong> — this merge will fail
+                  and need resolving by hand (or rebase the branch first).
+                </p>
+                {/* #193 — AI-assisted resolution: claude resolves in the throwaway
+                    worktree; anything short of fully clean still aborts safely. */}
+                <label className="mc-merge-ai" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13, marginBottom: 16, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={mergeAiResolve} onChange={(e) => setMergeAiResolve(e.target.checked)} />
+                  <span>Let claude attempt the conflict resolution on the host (bounded; an unclean result
+                  still aborts — the merge commit is flagged for your review).</span>
+                </label>
+              </>
             )}
             <div className="modal-actions">
               <button className="btn-cancel" disabled={mergeBusy} onClick={() => setMergePending(null)}>Cancel</button>
@@ -1006,6 +1019,28 @@ export function ControlPanel() {
                           </span>
                         );
                       })}
+                      {/* #193 — the merge train: queue every probe-clean branch in one
+                          press; they run sequentially (one dispatcher job at a time),
+                          each merging into the main the previous one pushed. */}
+                      {p.branches.filter((b) => b.mergeClean === true
+                        && !data.jobs.some((j) => j.slug === p.slug && j.kind === 'merge' && j.detail.includes(`origin/${b.branch} into`) && ['queued', 'claimed', 'running'].includes(j.status))).length >= 2 && (
+                        <button className="mc-branch-merge mc-train"
+                          title="Queue a merge for every branch the probe calls clean — they merge one after another, each onto the main the last one produced"
+                          onClick={async () => {
+                            const clean = p.branches.filter((b) => b.mergeClean === true);
+                            for (const b of clean) {
+                              try {
+                                const job = await queueMerge(p.slug, b.branch, b.itemId || undefined);
+                                setData((cur) => cur && { ...cur, jobs: [job, ...cur.jobs.filter((j) => j.id !== job.id)] });
+                              } catch (e) {
+                                if (!(e instanceof AuthError)) setError((e as Error)?.message || `Could not queue ${b.branch}.`);
+                                break;
+                              }
+                            }
+                          }}>
+                          ⇥ Merge train ({p.branches.filter((b) => b.mergeClean === true).length} clean)
+                        </button>
+                      )}
                       {(p.absorbedBranches ?? 0) > 0 && (
                         <span className="mc-branch-absorbed"
                           title="Fully merged into main but never deleted on origin — prune with: git push origin --delete <branch>">
