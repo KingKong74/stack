@@ -54,8 +54,10 @@ const kickoff = (slug: string) =>
   `an agreed design, not a title. When we agree something should be built, create it via the Stack API (STACK_API + STACK_TOKEN in ` +
   `~/.stack/env): POST $STACK_API/api/projects/${slug}/roadmap with {title, note, bucket: must|should|could, area, plan: [{text, done:false}, ...]} ` +
   `— put the design's steps in plan (the autopilot works them top-down) and manual items are immediately eligible for the overnight ` +
-  `autopilot — and send looser directional ideas to POST .../futures with {title, note} instead. Always show me what you intend to ` +
-  `create and wait for my yes before POSTing. Start now with a short read of where the project stands and two or three directions worth discussing.`;
+  `autopilot — and send looser directional ideas to POST .../futures with {title, note} instead. You can also dispatch executors from ` +
+  `this chair: POST $STACK_API/api/autopilot/start with {slug: "${slug}", itemId} queues an executor session for an agreed item now, and ` +
+  `POST $STACK_API/api/autopilot/schedule with {slug, atTime: "HH:MM", runDate: "YYYY-MM-DD" or days: [0-6], itemId} books one on the calendar. ` +
+  `Always show me what you intend to create or dispatch and wait for my yes before POSTing. Start now with a short read of where the project stands and two or three directions worth discussing.`;
 
 // Separate namespace from the Terminal screen's cwd map so a Polaris session
 // and a plain ⌨ terminal in the same project never steal each other's tmux.
