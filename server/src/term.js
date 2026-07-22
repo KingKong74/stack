@@ -42,6 +42,7 @@ export const termSessions = () =>
     label: m.label || '',
     tmux: m.tmux || '', // the host tmux session behind a claude tab — Mission
                         // Control's ▶ jump-in attaches by this name
+    polaris: m.polaris === true, // planning session (#213) — chips say so
   }));
 export const termTails = () =>
   [...termMeta.entries()].map(([sid, m]) => ({ sid: String(sid), meta: m }));
@@ -241,6 +242,7 @@ export function attachTerm(httpServer) {
         tail: '',
         label: '',
         tmux: '',
+        polaris: msg.polaris === true, // a planning session (#213)
       });
       delete msg.token; // the daemon never sees credentials
       send(agent, { ...msg, sid });

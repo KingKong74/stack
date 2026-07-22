@@ -295,6 +295,8 @@ export interface TermSession {
   label: string;           // ✧ Gemini's take on what it's doing ('' until asked)
   tmux?: string;           // the host tmux session behind a claude tab ('' for
                            // shells / pre-tmux daemons) — the jump-in target
+  polaris?: boolean;       // a Polaris planning session (#213) — the strip
+                           // labels it planning and jumps to the studio
 }
 export interface ModelEntry { model: string; label: string }
 
@@ -493,7 +495,7 @@ export async function replanProject(slug: string): Promise<string> {
 // attaches its handlers to the returned socket but never touches storage. The
 // start frame goes out on open; the daemon validates the token against the API
 // before anything spawns.
-export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number; tmuxSession?: string; skipPerms?: boolean }): WebSocket {
+export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number; tmuxSession?: string; skipPerms?: boolean; polaris?: boolean }): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${window.location.host}/term`);
   ws.addEventListener('open', () => {

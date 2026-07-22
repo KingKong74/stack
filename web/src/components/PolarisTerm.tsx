@@ -108,6 +108,7 @@ export default function PolarisTerm({ slug }: { slug: string }) {
       cwd: slug, cmd: 'claude', cols: term.cols, rows: term.rows,
       tmuxSession: tmuxRef.current || undefined,
       skipPerms: getTermSessionPrefs().skipPermissions ? true : undefined,
+      polaris: true, // #213 — presence surfaces label it planning, not building
     });
     wsRef.current = ws;
 

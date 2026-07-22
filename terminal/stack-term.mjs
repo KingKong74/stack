@@ -536,7 +536,11 @@ function startSession(msg) {
     const claudeCmd = msg.skipPerms === true ? 'exec claude --dangerously-skip-permissions' : 'exec claude';
     if (tmuxAvailable()) {
       // Use a validated name from the browser if provided, otherwise generate one.
-      tmuxSession = validName(msg.tmuxSession) ? msg.tmuxSession : generateName('term');
+      // Polaris planning sessions (#213) get a distinct name shape
+      // (stack-term-pol-*) so a detached one is still recognisable as
+      // planning after the browser that started it is gone.
+      tmuxSession = validName(msg.tmuxSession) ? msg.tmuxSession
+        : generateName(msg.polaris === true ? 'term-pol' : 'term');
       argv = sessionArgv(tmuxSession, cwd, `/bin/bash -lc "${claudeCmd}"`);
       log(`session ${sid}: tmux session ${tmuxSession} (${validName(msg.tmuxSession) ? 're-attach' : 'new'})`);
     } else {

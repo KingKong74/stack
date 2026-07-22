@@ -524,7 +524,16 @@ export function ControlPanel() {
                   Gemini's, applied automatically as unlabelled sessions appear. */}
               {((data.terminal?.sessions?.length ?? 0) > 0 || (data.terminal?.detached?.length ?? 0) > 0) && (
                 <div className="mc-terms" aria-label="Running terminal sessions">
-                  {(data.terminal?.sessions ?? []).map((s) => (
+                  {(data.terminal?.sessions ?? []).map((s) => s.polaris ? (
+                    // A Polaris planning session (#213): labelled as planning and
+                    // jumping to the studio, where the same tmux session re-attaches.
+                    <a key={s.sid} className="mc-termchip claude polaris"
+                      title={`A Polaris planning session — open the studio${s.label ? ` — ${s.label}` : ''}`}
+                      href={hrefTo.polaris(s.cwd.split('/')[0] || s.cwd)}>
+                      ✦ planning · {s.cwd.replace(/^\/home\/[^/]+/, '~')} · {sessionAge(s.startedAt)}
+                      {s.label && <em> — {s.label}</em>}
+                    </a>
+                  ) : (
                     <a key={s.sid} className={`mc-termchip ${s.cmd}`}
                       title={`Jump into this session${s.label ? ` — ${s.label}` : ''}`}
                       href={hrefTo.terminal(s.cwd === '~' ? undefined : s.cwd, s.tmux || undefined)}>
@@ -537,16 +546,21 @@ export function ControlPanel() {
                     // live chip above — skip those; keep true orphans and
                     // sessions attached elsewhere (laptop ssh, another browser).
                     .filter((d) => !(data.terminal?.sessions ?? []).some((s) => s.tmux === d.name))
-                    .map((d) => (
-                    <a key={d.name} className={`mc-termchip ${d.attached ? 'away' : 'detached'}`}
+                    .map((d) => {
+                    // The name shape marks a planning session even after the
+                    // browser that started it is gone (#213).
+                    const polaris = d.name.startsWith('stack-term-pol-');
+                    return (
+                    <a key={d.name} className={`mc-termchip ${d.attached ? 'away' : 'detached'}${polaris ? ' polaris' : ''}`}
                       title={d.attached
                         ? `Attached on another device (tmux ${d.name}) — open it here too; both screens mirror the same session${d.label ? ` — ${d.label}` : ''}`
                         : `Running unattended on the host (tmux ${d.name}) — jump back in${d.label ? ` — ${d.label}` : ''}`}
                       href={hrefTo.terminal(d.cwd || undefined, d.name)}>
-                      ▶ claude · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}
+                      {polaris ? '✦ planning' : '▶ claude'} · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}
                       {d.label && <em> — {d.label}</em>}
                     </a>
-                  ))}
+                    );
+                  })}
                   <button className="btn-repo sm" onClick={() => labelSessions()} disabled={labelBusy}
                     title="Ask Gemini again what each running session is doing">
                     {labelBusy ? 'Labelling…' : '✧ Re-label'}

@@ -1605,6 +1605,9 @@ a.tab { display: inline-block; }
 .mc-termchip.detached { color: var(--muted); border-style: dashed; }
 .mc-termchip.detached:hover { color: var(--accent-deep); border-color: var(--accent-deep); }
 .mc-termchip.away { color: var(--live); border-color: var(--live); border-style: dashed; }
+/* Polaris planning sessions (#213): sage — thinking, not building */
+.mc-termchip.polaris { color: var(--sage); border-color: var(--sage); }
+.mc-termchip.polaris:hover { color: var(--accent-deep); border-color: var(--accent-deep); }
 .mc-termchip.away:hover { color: var(--accent-deep); border-color: var(--accent-deep); }
 .mc-termchip em { font-style: normal; font-weight: 500; color: var(--muted); }
 
