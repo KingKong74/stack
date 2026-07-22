@@ -715,6 +715,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
               </div>
             ) : (
               <>
+                <a className="btn-repo" href={hrefTo.polaris(slug)}
+                  title="Polaris — the planning studio: shape direction and design work with the live board beside the session">
+                  ✦ Polaris
+                </a>
                 {project.siteUrl
                   ? <button className="btn-accent btn-visit" onClick={() => open(project.siteUrl)}>Visit site <span style={{ fontSize: 12 }}>↗</span></button>
                   : <button className="btn-visit btn-muted" onClick={() => startUrl('site')}>Set site URL</button>}

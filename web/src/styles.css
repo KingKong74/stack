@@ -1766,6 +1766,49 @@ a.tab { display: inline-block; }
 .polaris-holder { height: 480px; padding: 6px 4px 6px 10px; cursor: text; }
 .polaris-holder .xterm { height: 100%; }
 
+/* #226 — the Futures tab head is now an entry link to the studio */
+a.polaris { display: block; text-decoration: none; }
+a.polaris:hover { border-color: var(--accent-tint-border); }
+a.polaris .polaris-head { cursor: pointer; }
+
+/* ---------- polaris studio (#226 — #/polaris/<slug>) ---------- */
+.pol-page { max-width: 1440px; margin: 0 auto; padding: 20px 26px 30px; }
+.pol-head { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+.pol-title { font-family: var(--disp); font-size: 21px; font-weight: 700; color: var(--ink); }
+.pol-title .glyph { color: var(--accent); margin-right: 8px; }
+.pol-tag { font-size: 12.5px; color: var(--muted); }
+.pol-sync { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--faint); }
+.pol-refresh { color: var(--muted); font-size: 13px; padding: 2px 8px; border: 1px solid var(--line-2); border-radius: 10px; }
+.pol-refresh:hover { color: var(--accent); border-color: var(--accent-tint-border); }
+.pol-grid { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 18px; align-items: start; }
+.pol-main .polaris-term { border-radius: 14px; overflow: hidden; border: 1px solid var(--line-2); }
+.pol-main .polaris-holder { height: calc(100vh - 200px); min-height: 420px; }
+/* the planning panel — scrolls on its own so the terminal never moves */
+.pol-side { display: flex; flex-direction: column; gap: 14px; max-height: calc(100vh - 160px); overflow-y: auto; padding-right: 2px; }
+.pol-card { background: var(--card); border: 1px solid var(--line-2); border-radius: 14px; padding: 14px 16px; }
+.pol-card.north { background: var(--sand); border-color: var(--resume-border); }
+.pol-lbl { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+.pol-north-text { font-size: 13px; line-height: 1.55; color: var(--body); }
+.pol-group { margin-bottom: 10px; }
+.pol-group:last-child { margin-bottom: 0; }
+.pol-group-head { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: var(--chip-ink); margin-bottom: 3px; }
+.pol-group-head .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--fainter); flex: none; }
+.pol-group-head .n { font-weight: 600; color: var(--faint); }
+.pol-group-head.sage .dot { background: var(--sage); }
+.pol-group-head.building .dot { background: var(--building); }
+.pol-group-head.critical .dot { background: var(--critical); }
+.pol-item { display: flex; align-items: center; gap: 6px; padding: 4px 6px; margin: 0 -6px; border-radius: 8px; text-decoration: none; color: var(--body); font-size: 12.5px; min-width: 0; }
+.pol-item:hover { background: var(--panel); }
+.pol-item-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pol-claim { color: var(--building); font-size: 11px; flex: none; }
+.pol-more { font-size: 11.5px; color: var(--faint); padding: 2px 0 0 6px; }
+.pol-empty { font-size: 12.5px; color: var(--faint); line-height: 1.5; }
+.pol-verify { display: block; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12.5px; font-weight: 600; color: var(--accent); text-decoration: none; }
+.pol-verify:hover { color: var(--accent-deep); }
+.pol-blocker { font-size: 12.5px; color: var(--body); padding: 3px 0; }
+.pol-blocker::before { content: '⛔ '; font-size: 11px; }
+@media (max-width: 1020px) { .pol-grid { grid-template-columns: 1fr; } .pol-side { max-height: none; } }
+
 /* ---------- web terminal (#/terminal) ---------- */
 .term-page { display: flex; flex-direction: column; max-width: 1080px; }
 .term-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }

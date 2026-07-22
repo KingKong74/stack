@@ -799,6 +799,9 @@ export function ControlPanel() {
                     <a className="mc-term" href={hrefTo.terminal(p.slug)}
                       aria-label={`Open terminal for ${p.name}`}
                       title={`Open a terminal in ~/${p.slug}`}>⌨</a>
+                    <a className="mc-term" href={hrefTo.polaris(p.slug)}
+                      aria-label={`Open Polaris for ${p.name}`}
+                      title={`Polaris planning studio for ${p.name}`}>✦</a>
                     <span className="mc-push">{p.lastPush ? `pushed ${p.lastPush}` : 'no pushes yet'}</span>
                     {job ? (
                       <span className={`mc-job ${job.status}`} title={job.detail || undefined}>

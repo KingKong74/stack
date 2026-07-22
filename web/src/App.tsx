@@ -8,6 +8,9 @@ import { Timeline } from './screens/Timeline';
 // xterm.js is heavy and only the terminal needs it — loaded on first visit.
 const Terminal = lazy(() =>
   import('./screens/Terminal').then((m) => ({ default: m.Terminal })));
+// The Polaris studio (#226) hosts a terminal too — same deal, lazy so its
+// xterm dependency stays in the shared terminal chunk.
+const PolarisStudio = lazy(() => import('./screens/PolarisStudio'));
 import { TokenGate } from './components/TokenGate';
 import { Showcase } from './screens/Showcase';
 import { CommandPalette } from './components/CommandPalette';
@@ -77,6 +80,8 @@ export default function App() {
         <Settings initialTab="control" />
       ) : route.name === 'terminal' ? (
         null /* the persistent dock below renders it */
+      ) : route.name === 'polaris' ? (
+        <Suspense fallback={null}><PolarisStudio slug={route.slug} /></Suspense>
       ) : route.name === 'detail' ? (
         <ProjectDetail id={route.id} tab={route.tab} highlight={route.highlight} onOpenSearch={() => setPaletteOpen(true)} />
       ) : (
@@ -90,7 +95,7 @@ export default function App() {
         </Suspense>
       )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
-      <TermStatusPill hidden={route.name === 'terminal' || termAlive > 0} />
+      <TermStatusPill hidden={route.name === 'terminal' || route.name === 'polaris' || termAlive > 0} />
       {route.name !== 'terminal' && <ToTop />}
     </>
   );

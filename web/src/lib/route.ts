@@ -6,6 +6,7 @@ export type Route =
   | { name: 'timeline' }
   | { name: 'control' }
   | { name: 'terminal'; cwd?: string; attach?: string }
+  | { name: 'polaris'; slug: string }
   | { name: 'share'; slug: string; token: string }
   | { name: 'detail'; id: string; tab?: string; highlight?: string };
 
@@ -18,6 +19,9 @@ function parse(): Route {
     const params = new URLSearchParams(h.split('?')[1] || '');
     return { name: 'terminal', cwd: params.get('cwd') || undefined, attach: params.get('attach') || undefined };
   }
+  // The Polaris studio (#226) — the planning session on its own screen.
+  const pol = h.match(/^\/polaris\/([^/?]+)/);
+  if (pol) return { name: 'polaris', slug: decodeURIComponent(pol[1]) };
   // The public showcase — rendered without the token gate (read-only, its own key).
   const s = h.match(/^\/share\/([^/]+)\/([^/?]+)/);
   if (s) return { name: 'share', slug: decodeURIComponent(s[1]), token: decodeURIComponent(s[2]) };
@@ -54,6 +58,7 @@ export const hrefTo = {
     ].filter(Boolean).join('&');
     return `#/terminal${q ? `?${q}` : ''}`;
   },
+  polaris: (slug: string) => `#/polaris/${encodeURIComponent(slug)}`,
 };
 
 export const go = {
@@ -66,6 +71,7 @@ export const go = {
   terminal: (cwd?: string, attach?: string) => {
     window.location.hash = hrefTo.terminal(cwd, attach);
   },
+  polaris: (slug: string) => { window.location.hash = hrefTo.polaris(slug); },
   // tab picks which collection opens; highlight (when given) flags the matching
   // item/commit on that tab via the existing highlight mechanism. The tab
   // disambiguates what `highlight` means (commit hash, bug key, or row id).
