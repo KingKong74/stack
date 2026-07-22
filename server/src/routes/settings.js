@@ -93,10 +93,39 @@ settings.patch('/', async (req, res) => {
     fields.push(`access_pin_hash = $${i++}`);
     values.push(pin ? hashPin(pin) : null);
   }
+  // Google Calendar sync (#222): write-only credential fields — '' clears.
+  for (const [camel, col] of [
+    ['gcalClientId', 'gcal_client_id'],
+    ['gcalClientSecret', 'gcal_client_secret'],
+    ['gcalRefreshToken', 'gcal_refresh_token'],
+    ['gcalCalendarId', 'gcal_calendar_id'],
+  ]) {
+    if (camel in body) {
+      fields.push(`${col} = $${i++}`);
+      values.push(String(body[camel] || '').trim().slice(0, 500));
+    }
+  }
   if (fields.length) {
     await q(`UPDATE settings SET ${fields.join(', ')}, updated_at = now() WHERE id = true`, values);
   }
   // A PIN change (set, rotate or clear) signs out every PIN-issued device.
   if ('accessPin' in body) await q('DELETE FROM auth_tokens');
   res.json(settingsShape(await readSettings()));
+});
+
+// GET /gcal — raw GCal credentials for the host-side sync script (bearer-
+// protected, same trust level as the API_TOKEN). Returns 404 when unconfigured
+// so the caller can bail early with a clear message.
+settings.get('/gcal', async (_req, res) => {
+  const s = await readSettings();
+  if (!s.gcal_client_id || !s.gcal_client_secret || !s.gcal_refresh_token) {
+    return res.status(404).json({ error: 'Google Calendar credentials not configured. PATCH /api/settings with gcalClientId, gcalClientSecret, gcalRefreshToken (and optionally gcalCalendarId).' });
+  }
+  res.json({
+    clientId: s.gcal_client_id,
+    clientSecret: s.gcal_client_secret,
+    refreshToken: s.gcal_refresh_token,
+    calendarId: s.gcal_calendar_id || 'primary',
+    autopilotMinutes: s.autopilot_minutes,
+  });
 });

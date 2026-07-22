@@ -81,6 +81,11 @@ const DEFAULTS = {
   assist_guidance: '',
   assist_fields: [...ASSIST_FIELDS],
   access_pin_hash: null,
+  // Google Calendar sync (#222)
+  gcal_client_id: '',
+  gcal_client_secret: '',
+  gcal_refresh_token: '',
+  gcal_calendar_id: '',
 };
 
 export const cleanAutopilotTime = (v) =>
@@ -109,6 +114,11 @@ export async function readSettings(client) {
     assist_guidance: String(r.assist_guidance || ''),
     assist_fields: cleanAssistFields(r.assist_fields),
     access_pin_hash: r.access_pin_hash || null,
+    // Google Calendar sync (#222) — raw values for server-internal use only
+    gcal_client_id: String(r.gcal_client_id || ''),
+    gcal_client_secret: String(r.gcal_client_secret || ''),
+    gcal_refresh_token: String(r.gcal_refresh_token || ''),
+    gcal_calendar_id: String(r.gcal_calendar_id || ''),
   };
 }
 
@@ -129,5 +139,9 @@ export function settingsShape(s) {
     assistGuidance: s.assist_guidance,       // standing steer for ✧ Fill from note
     assistFields: s.assist_fields,           // which fields the assist may fill
     accessPinSet: Boolean(s.access_pin_hash), // the hash itself never leaves the server
+    // Google Calendar sync (#222): client_id/secret/refresh_token never leave
+    // the server; gcalConfigured tells the UI whether credentials are set.
+    gcalConfigured: Boolean(s.gcal_client_id && s.gcal_client_secret && s.gcal_refresh_token),
+    gcalCalendarId: s.gcal_calendar_id || '',
   };
 }
