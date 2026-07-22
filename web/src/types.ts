@@ -89,7 +89,7 @@ export interface AutopilotRun {
   itemId: string | null;
   itemTitle: string;
   branch: string;
-  outcome: 'landed' | 'no-commits' | 'failed' | 'limit';
+  outcome: 'landed' | 'no-commits' | 'failed' | 'limit' | 'planned';
   commits: number;
   tokens: number;
   costUsd: number;
@@ -213,7 +213,7 @@ export interface ClaimItem { slug: string; name: string; lane: string; title: st
 // One overnight autopilot item attempt — the deck's morning digest.
 export interface OverviewRun {
   slug: string; name: string; itemId: number | null; itemTitle: string; branch: string;
-  outcome: 'landed' | 'no-commits' | 'failed' | 'limit'; commits: number; tokens: number;
+  outcome: 'landed' | 'no-commits' | 'failed' | 'limit' | 'planned'; commits: number; tokens: number;
   summary: string; when: string;
 }
 

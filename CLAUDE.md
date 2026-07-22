@@ -112,7 +112,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             session's per-model usage breakdown (`--executor-model`/`--advisor-model`
             override). `--item N` pins a run to exactly that
             roadmap item in any bucket (done/claimed still refuse) — how scheduled + Run-now
-            jobs target one thing. A project's `autopilot_area` (#122, the Mission Control
+            jobs target one thing. **Plan nights** (#219, `--plan-only`): no branches, no
+            builds — each picked item (must/should with no plan steps; a pinned --item may
+            replace an untouched plan but never one with ticked steps) gets a bounded design
+            session in a detached throwaway worktree, and the RUNNER PATCHes the result onto
+            the item as plan steps + a design section in the note; run rows say `planned`.
+            Build nights gate the other way: a Must item with no plan is told to author +
+            save its design FIRST, then build against it. A project's `autopilot_area` (#122, the Mission Control
             target picker; '' = whole board) filters the normal pick to one product area —
             --item pins bypass it. Per item: claim the lane, Gemini spec pre-pass (free tier — expands
             title/note into goal/acceptance/out-of-scope; keyless = silently spec-less; a

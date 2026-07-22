@@ -353,7 +353,7 @@ CREATE TABLE IF NOT EXISTS autopilot_runs (
   item_id      BIGINT,
   item_title   TEXT NOT NULL DEFAULT '',
   branch       TEXT NOT NULL DEFAULT '',
-  outcome      TEXT NOT NULL DEFAULT 'landed',  -- landed | no-commits | failed | limit
+  outcome      TEXT NOT NULL DEFAULT 'landed',  -- landed | no-commits | failed | limit | planned (#219 plan nights)
   commits      INT NOT NULL DEFAULT 0,
   tokens       BIGINT NOT NULL DEFAULT 0,
   cost_usd     NUMERIC(8,2) NOT NULL DEFAULT 0,

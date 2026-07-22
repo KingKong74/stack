@@ -34,6 +34,12 @@
 //                       (default: env STACK_AUTOPILOT_TOKENS, else Settings' autopilotTokens)
 //     [--max-items N]   most items attempted per night (default: Settings' autopilotMaxItems)
 //     [--item N]        work exactly this roadmap item and stop (scheduled/manual runs)
+//     [--plan-only]     a PLAN night (#219): no branches, no builds — each picked item
+//                       (must/should with no plan steps yet; --item pins one) gets a
+//                       short design session whose output is PATCHed onto the item as
+//                       its plan steps + a design section in the note. Cheap to run
+//                       (pair with --executor-model haiku), reviewable in minutes —
+//                       build nights then execute against agreed designs.
 //     [--executor-model M]  claude model alias the session runs as (default: Settings'
 //                           autopilotExecutorModel; '' = the claude CLI's own default)
 //     [--advisor-model M]   stronger model exposed to the session as the read-only
@@ -70,6 +76,7 @@ const arg = (name, fallback = null) => {
 };
 const DRY = process.argv.includes('--dry');
 const FORCE = process.argv.includes('--force');
+const PLAN_ONLY = process.argv.includes('--plan-only');
 const SLUG = arg('project');
 const REPO = arg('repo');
 const MINUTES_ARG = arg('minutes');
@@ -278,7 +285,10 @@ const MINUTES = Math.max(15, parseInt(MINUTES_ARG ?? '', 10) || appSettings.auto
 // budget of 0 means UNLIMITED — the wall clock is then the only governor.
 const rawTokens = TOKENS_OVERRIDE ?? (Number.isFinite(appSettings.autopilotTokens) ? appSettings.autopilotTokens : 1_500_000);
 const TOKEN_BUDGET = rawTokens === 0 ? Infinity : Math.max(50_000, rawTokens);
-const MAX_ITEMS = ITEM_ID != null ? 1 : Math.max(1, MAX_ITEMS_ARG ?? (appSettings.autopilotMaxItems || 3));
+// A plan night defaults to a bigger batch — designs are cheap and the point
+// is reviewing five in minutes, not building three.
+const MAX_ITEMS = ITEM_ID != null ? 1
+  : Math.max(1, MAX_ITEMS_ARG ?? (PLAN_ONLY ? 5 : (appSettings.autopilotMaxItems || 3)));
 // Dual-model config (#153/#168): CLI override beats Settings; anything that
 // isn't a safe model alias coerces to '' (default / off) so shell
 // metacharacters never reach the claude CLI. Allowed charset: alphanumerics
@@ -318,6 +328,101 @@ const eligible = (targetArea) => (it) =>
 let tokensSpent = 0;
 let costSpent = 0;
 
+// ---- #219: one item, one bounded DESIGN session (plan night) ----
+// No branch, no claim, no commits: the session reads the code from a detached
+// throwaway worktree (so stray edits can never touch the human's checkout or
+// any branch) and answers with a design doc as JSON. The RUNNER does the
+// write — plan steps + a design section appended to the note — so the
+// "saved as plan steps + note" contract holds even when the model waffles.
+async function runPlanItem(item, northStar, capMin) {
+  const startedAt = new Date().toISOString();
+  log(`planning #${item.id} [${item.bucket}] ${item.title} (cap ${Math.round(capMin)}m)`);
+
+  const wt = join(lockDir, 'autopilot', `${SLUG}-plan`);
+  git(REPO, ['worktree', 'remove', '--force', wt]);
+  mkdirSync(join(lockDir, 'autopilot'), { recursive: true });
+  const added = git(REPO, ['worktree', 'add', '--detach', wt]);
+  if (!existsSync(join(wt, '.git'))) throw new Error(`plan worktree add failed (${added || 'no output'})`);
+
+  const prompt = `You are Stack's overnight PLANNER on a design-doc night. Do NOT write or change any code, do NOT commit, do NOT touch the tracker — you read the codebase and author a short design doc for ONE roadmap item, so a later build session executes against an agreed design instead of a title.
+
+Roadmap item #${item.id} (bucket: ${item.bucket}): ${item.title}
+${item.note ? `The author's note: ${item.note.slice(0, 1500)}\n` : ''}${northStar ? `The project's north star: "${northStar.slice(0, 400)}"\n` : ''}
+Read the relevant code first — real file paths, real tables, real routes. Then answer with ONLY this JSON as your final output (no prose around it):
+{ "approach": "2-4 sentences — how to build it and where it hooks in",
+  "interfaces": ["the routes/functions/props touched or added — file paths included"],
+  "dataChanges": ["schema/storage changes, or 'none'"],
+  "risks": ["what could bite — max 3"],
+  "steps": ["4-8 ordered implementation steps, each one commit-sized"] }`;
+
+  const claudeArgs = ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'json'];
+  if (EXECUTOR_MODEL) claudeArgs.push('--model', EXECUTOR_MODEL);
+  const run = spawnSync('claude', claudeArgs, {
+    cwd: wt,
+    stdio: ['ignore', 'pipe', 'inherit'],
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+    timeout: capMin * 60_000,
+    killSignal: 'SIGTERM',
+  });
+  if (run.error) log(`plan session ended with error: ${run.error.message}`);
+  git(REPO, ['worktree', 'remove', '--force', wt]);
+
+  let resultText = '';
+  let usedTokens = 0;
+  let usedCost = 0;
+  try {
+    const out = JSON.parse(run.stdout || '{}');
+    const u = out.usage || {};
+    usedTokens = (u.input_tokens || 0) + (u.output_tokens || 0)
+      + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+    usedCost = out.total_cost_usd || 0;
+    tokensSpent += usedTokens;
+    costSpent += usedCost;
+    resultText = String(out.result || '').trim();
+    log(`plan session finished: ${out.num_turns ?? '?'} turns, ~${Math.round(usedTokens / 1000)}k tokens`
+      + (usedCost ? ` ($${usedCost.toFixed(2)})` : ''));
+  } catch {
+    log(`plan session finished (status ${run.status ?? 'killed at cap'}) — output unreadable.`);
+  }
+  const limitHit = LIMIT_RE.test(resultText);
+  const runRecord = {
+    item_id: item.id, item_title: item.title, branch: '',
+    tokens: usedTokens, cost_usd: usedCost, started_at: startedAt,
+  };
+
+  let design = null;
+  try {
+    design = JSON.parse(resultText.match(/\{[\s\S]*\}/)?.[0] || '');
+  } catch { /* no parseable design */ }
+  const steps = Array.isArray(design?.steps)
+    ? design.steps.map((s) => String(s).trim()).filter(Boolean).slice(0, 12) : [];
+  if (!design?.approach || steps.length === 0) {
+    log(`#${item.id}: no usable design came back — item left untouched.`);
+    await postRun({ ...runRecord, outcome: limitHit ? 'limit' : 'failed', commits: 0,
+      summary: (resultText || 'plan session produced no design').slice(0, 1800) });
+    return { landed: false, limitHit };
+  }
+
+  const list = (v) => (Array.isArray(v) ? v : [v]).map((x) => String(x).trim()).filter(Boolean);
+  const docLines = [
+    `— Design (plan night ${startedAt.slice(0, 10)}):`,
+    `Approach: ${String(design.approach).trim()}`,
+    ...(list(design.interfaces).length ? [`Interfaces: ${list(design.interfaces).join('; ')}`] : []),
+    ...(list(design.dataChanges).length ? [`Data: ${list(design.dataChanges).join('; ')}`] : []),
+    ...(list(design.risks).length ? [`Risks: ${list(design.risks).join('; ')}`] : []),
+  ];
+  const note = `${(item.note || '').trim()}\n\n${docLines.join('\n')}`.trim().slice(0, 4000);
+  await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, {
+    note,
+    plan: steps.map((text) => ({ text, done: false })),
+  });
+  log(`#${item.id}: design saved — ${steps.length} plan step(s) + design note. Review it on the board, then a build night executes it.`);
+  await postRun({ ...runRecord, outcome: limitHit ? 'limit' : 'planned', commits: 0,
+    summary: `Design authored: ${String(design.approach).trim()}`.slice(0, 1800) });
+  return { landed: true, limitHit };
+}
+
 // ---- one item, one branch, one bounded session ----
 async function runItem(item, northStar, capMin) {
   const lane = `auto/item-${item.id}`;
@@ -352,6 +457,16 @@ to the Stack API at /api/projects/${SLUG}/roadmap/${item.id} (base URL + bearer 
 never print the token). Finishing only some steps is fine; say where you stopped in the checkpoint.
 `;
 
+  // The plan-before-build gate (#219): a Must item arriving with no plan gets
+  // its design authored FIRST, in-session, and saved back — so even unplanned
+  // work leaves an agreed-shape record and the build follows a written design.
+  const designFirstBlock = (item.plan?.length || item.refineNote || item.bucket !== 'must') ? '' : `
+This is a Must item with NO implementation plan yet. BEFORE you write any code:
+1. Read the relevant code and author a short design — approach, interfaces touched, data changes, risks — plus 4-8 ordered commit-sized steps.
+2. Save it to the item so the design outlives tonight: PATCH {"plan":[{"text":"…","done":false}, …]} (and append the design summary to the note via {"note":"…"}) at /api/projects/${SLUG}/roadmap/${item.id} — base URL + bearer token from ~/.stack/env, never print the token.
+3. Then build against your own design, ticking steps off as they land (re-send the full plan list with "done":true).
+`;
+
   // A refinement round (#146): the item landed before and came back with a
   // delta — the session changes what the note asks for, not a rebuild.
   const refineBlock = !item.refineNote ? '' : `
@@ -377,7 +492,7 @@ A strategic ADVISOR (a stronger model) is available as the subagent named "advis
 Your single task tonight is roadmap item #${item.id} (bucket: ${item.bucket}):
 
   ${item.title}
-${item.note ? `  Context: ${item.note}\n` : ''}${refineBlock}${specBlock(spec)}${planBlock}${advisorBlock}
+${item.note ? `  Context: ${item.note}\n` : ''}${refineBlock}${specBlock(spec)}${designFirstBlock}${planBlock}${advisorBlock}
 Rules for this run:
 - Work ONLY on this item; do not pick up other roadmap items or ideas.
 - Commit in small complete units with clear messages. Push the branch with \`git push -u origin ${branch}\`. NEVER push or merge main — a human reviews and merges in the morning.
@@ -510,7 +625,7 @@ try {
   const nightLines = [];
   let landed = 0;
   let nightLimited = false;
-  log(`night budget: ${MINUTES}m wall clock, `
+  log(`${PLAN_ONLY ? 'PLAN night (#219 — designs only, no builds): ' : ''}night budget: ${MINUTES}m wall clock, `
     + `${TOKEN_BUDGET === Infinity ? 'UNLIMITED tokens' : `${Math.round(TOKEN_BUDGET / 1000)}k tokens`}, `
     + `up to ${MAX_ITEMS} item(s)${ITEM_ID != null ? ` (pinned to #${ITEM_ID})` : ''}.`);
   log(`models: executor ${EXECUTOR_MODEL || 'CLI default'}, advisor ${ADVISOR_MODEL || 'off'}.`);
@@ -538,31 +653,52 @@ try {
         log(`item #${ITEM_ID} is ${item.done ? 'already done' : `claimed by ${item.claimedBy}`} — nothing run.`);
         break;
       }
+      // A pinned replan may replace an untouched plan, but never one a session
+      // has already worked — ticked steps mean the design is in play.
+      if (PLAN_ONLY && item.plan?.some((s) => s.done)) {
+        log(`item #${ITEM_ID} has ticked plan steps — not replanning over work in progress.`);
+        break;
+      }
     } else {
       const targetArea = detail.autopilotArea || '';
       item = [...(detail.roadmap?.must || []), ...(detail.roadmap?.should || [])]
         .filter((it) => !attempted.has(it.id))
+        // A plan night wants the items still missing a design (#219).
+        .filter((it) => !PLAN_ONLY || !(it.plan?.length))
         .find(eligible(targetArea));
       if (!item && targetArea && n === 0) log(`(target area "${targetArea}" — items outside it are ignored)`);
     }
-    if (!item) { log(n === 0 ? `no eligible must/should item on ${SLUG} — nothing to do tonight.` : 'no more eligible items — night complete.'); break; }
+    if (!item) {
+      log(n === 0
+        ? `no eligible ${PLAN_ONLY ? 'plan-less ' : ''}must/should item on ${SLUG} — nothing to do tonight.`
+        : 'no more eligible items — night complete.');
+      break;
+    }
 
     if (DRY) {
-      log(`dry run — would claim auto/item-${item.id} for "${item.title}" (then keep going while budget lasts).`);
+      log(PLAN_ONLY
+        ? `dry run — would author a design for #${item.id} "${item.title}" (then keep going while budget lasts).`
+        : `dry run — would claim auto/item-${item.id} for "${item.title}" (then keep going while budget lasts).`);
       process.exit(0);
     }
 
     attempted.add(item.id);
     try {
-      const r = await runItem(item, detail.northStar || '', remainingMin());
+      // Designs are quick — cap each plan session well under the night so one
+      // rambler can't eat the batch.
+      const r = PLAN_ONLY
+        ? await runPlanItem(item, detail.northStar || '', Math.min(remainingMin(), 20))
+        : await runItem(item, detail.northStar || '', remainingMin());
       if (r.landed) landed++;
-      nightLines.push(`#${item.id} ${item.title}: ${r.landed ? `auto/item-${item.id} pushed` : 'no commits'}${r.limitHit ? ' (hit the usage limit)' : ''}`);
+      nightLines.push(`#${item.id} ${item.title}: ${r.landed ? (PLAN_ONLY ? 'design saved' : `auto/item-${item.id} pushed`) : (PLAN_ONLY ? 'no design' : 'no commits')}${r.limitHit ? ' (hit the usage limit)' : ''}`);
       if (r.limitHit) {
         // Graceful close: stop starting work, tell the human, and come back
         // when the allocation does. Partial branches are already pushed.
+        // A plan night just ends — the resume job re-runs as a BUILD night,
+        // which is not what was asked for; re-run --plan-only by hand.
         nightLimited = true;
         log('usage limit hit — closing the night gracefully.');
-        await scheduleResume(minutesUntilReset(r.resultText || ''));
+        if (!PLAN_ONLY) await scheduleResume(minutesUntilReset(r.resultText || ''));
         break;
       }
     } catch (e) {
@@ -574,13 +710,13 @@ try {
     }
   }
 
-  const closing = `${landed} branch(es) awaiting the morning verdict, ${attempted.size} item(s) attempted, `
+  const closing = `${landed} ${PLAN_ONLY ? 'design(s) awaiting review' : 'branch(es) awaiting the morning verdict'}, ${attempted.size} item(s) attempted, `
     + `~${Math.round(tokensSpent / 1000)}k tokens${costSpent ? ` ($${costSpent.toFixed(2)})` : ''}, ${Math.round(elapsedMin())}m elapsed.`;
   log(`night over: ${closing}`);
   if (attempted.size > 0) {
     await notify(
       nightLimited ? `Stack autopilot (${SLUG}): paused on the usage limit` : `Stack autopilot (${SLUG}): night done`,
-      `${nightLines.join('\n')}\n\n${closing}${nightLimited ? '\nA resume is queued for after the reset — resume it early or hang it up in Mission Control.' : ''}`);
+      `${nightLines.join('\n')}\n\n${closing}${nightLimited && !PLAN_ONLY ? '\nA resume is queued for after the reset — resume it early or hang it up in Mission Control.' : ''}`);
   }
 } catch (err) {
   die(err.message);

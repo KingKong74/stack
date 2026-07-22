@@ -713,7 +713,7 @@ export function Roadmap({
                     />
                     <div className="road-body">
                       <div className="t">
-                        {it.title}
+                        <span className="item-num">#{it.id}</span>{it.title}
                         {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
                         {it.area && <span className="area-chip" title="Product area — edit the item to change it">{it.area}</span>}
                         {working && <span className="work-chip" title={`Claimed by ${it.claimedBy} — read-only while the work is in flight`}>● in progress</span>}

@@ -10,7 +10,7 @@ import { readSettings, cleanAutopilotTime } from '../settings.js';
 // itself — humans never write here.
 export const autopilot = Router({ mergeParams: true });
 
-const OUTCOMES = ['landed', 'no-commits', 'failed', 'limit'];
+const OUTCOMES = ['landed', 'no-commits', 'failed', 'limit', 'planned'];
 
 autopilot.use(async (req, res, next) => {
   const project = await projectBySlug(req.params.slug);

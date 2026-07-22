@@ -97,6 +97,27 @@
   --chip-ink: #b0a89b;
   --panel: #262320;
 }
+
+/* ============================================================
+   Scrollbars — themed to the palette instead of browser chrome.
+   Thin keyline-toned thumb on a transparent track; terracotta
+   while dragging. The standard properties cover Firefox +
+   Chromium 121+; the -webkit pseudos cover Safari. Both ride
+   the named tokens, so dark mode follows automatically.
+   ============================================================ */
+* { scrollbar-width: thin; scrollbar-color: var(--keyline) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--keyline);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--fainter); background-clip: padding-box; }
+::-webkit-scrollbar-thumb:active { background: var(--accent-soft); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
 /* Literal light backgrounds that don't ride the tokens */
 [data-theme='dark'] .auto-badge { background: var(--panel); }
 [data-theme='dark'] .auto-cue { background: var(--accent-tint); }

@@ -109,13 +109,14 @@ export function CommandDeck({ data }: { data: Overview }) {
               onClick={() => go.detail(r.slug, 'roadmap', r.itemId != null ? String(r.itemId) : undefined)}
               title={r.summary || r.itemTitle}>
               <span className={`run-outcome ${r.outcome}`}>
-                {r.outcome === 'landed' ? '✓' : r.outcome === 'limit' ? '◐' : r.outcome === 'failed' ? '✗' : '—'}
+                {r.outcome === 'landed' ? '✓' : r.outcome === 'planned' ? '✎' : r.outcome === 'limit' ? '◐' : r.outcome === 'failed' ? '✗' : '—'}
               </span>
               <span className="run-proj">{r.name}</span>
               <span className="run-title">
                 {r.itemId != null ? `#${r.itemId} ` : ''}{r.itemTitle}
                 <span className="run-meta">
                   {r.outcome === 'landed' ? `${r.branch} · ${r.commits} commit${r.commits === 1 ? '' : 's'}`
+                    : r.outcome === 'planned' ? 'design saved — review the plan'
                     : r.outcome === 'limit' ? 'paused on the usage limit'
                     : r.outcome === 'failed' ? 'failed — see the log'
                     : 'no commits — lane released'}
