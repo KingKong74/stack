@@ -111,3 +111,26 @@ export function listStackSessions() {
 export function listDetached() {
   return listStackSessions().filter((s) => !s.attached);
 }
+
+// Garbage-collect truly dead sessions (#197): a detached stack-term-* session
+// whose active pane is DEAD — the process inside already exited, tmux is just
+// holding the corpse (remain-on-exit leftovers and crashed shims). Detached
+// sessions with a LIVE process are never touched: a walked-away claude session
+// is a feature (#188), not a leak. Returns the names reaped.
+export function reapDeadSessions() {
+  const r = spawnSync(
+    'tmux',
+    ['list-panes', '-a', '-F', '#{session_name}\t#{session_attached}\t#{pane_dead}'],
+    { encoding: 'utf8' },
+  );
+  if (r.status !== 0) return [];
+  const reaped = [];
+  for (const line of r.stdout.split('\n')) {
+    const [name, attached, dead] = line.split('\t');
+    if (typeof name !== 'string' || !/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(name)) continue;
+    if (attached !== '0' || dead !== '1') continue;
+    killSession(name);
+    reaped.push(name);
+  }
+  return reaped;
+}

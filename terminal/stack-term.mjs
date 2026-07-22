@@ -51,7 +51,7 @@ import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, paneTail } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, paneTail, reapDeadSessions } from './tmux-session.mjs';
 import {
   availableProviders, providerEnv, getProvider,
   loadPreferredProvider, savePreferredProvider,
@@ -258,6 +258,22 @@ function pushDetached() {
   sendUplink({ t: 'detached', sessions: sessionsList });
 }
 setInterval(pushDetached, 60_000);
+
+// Orphan GC (#197): every 10 minutes reap detached stack-term-* sessions whose
+// pane is DEAD (the process inside already exited — tmux holding a corpse).
+// Sessions normally clean themselves up when their command exits; this is the
+// explicit backstop for remain-on-exit leftovers and crashed shims. Detached
+// sessions with a live process are sacred (#188) and never touched.
+function gcOrphans() {
+  if (!tmuxAvailable()) return;
+  const reaped = reapDeadSessions();
+  if (reaped.length) {
+    log(`orphan GC: reaped ${reaped.length} dead session(s): ${reaped.join(', ')}`);
+    pushDetached(); // the advertised list just changed
+  }
+}
+setInterval(gcOrphans, 10 * 60_000);
+gcOrphans(); // and once at startup — reboots are when corpses accumulate
 
 // Plan-window push (#220): the account-level Plan usage (#195) rides to the
 // relay even with NO session open, so Mission Control's console can show the
