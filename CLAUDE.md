@@ -85,7 +85,7 @@ templates/  stack-agent-context.md — the canonical portable agent manual (sing
 scripts/    stack-context.mjs — prints that template to stdout, optionally stamped with slug + API.
             stack-tree.mjs — the branch navigator, phase 1 (`stack tree` via the root `stack`
             dispatcher, or `node scripts/stack-tree.mjs`): renders a repo's branch-and-idea
-            structure as one textual tree — main as the trunk, autopilot lanes (auto/item-N) and
+            structure as one textual tree — main as the trunk, autopilot lanes (auto/item-N-<slug>) and
             idea branches (idea/*) hanging off it, other branches grouped, absorbed branches
             folded back into the trunk (ahead 0 while the trunk has moved on; ahead 0/behind 0 =
             freshly cut, stays an open lane). Reads git only (local + origin refs, deduped
@@ -130,7 +130,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             title/note into goal/acceptance/out-of-scope; keyless = silently spec-less; a
             refine_note item SKIPS it — the refinement is the spec, and the prompt says what
             landed before and to change only the delta, #146), an
-            unattended session in a fresh worktree on branch auto/item-N (never main), push,
+            unattended session in a fresh worktree on branch auto/item-N-<slug> (never main), push,
             `built_note` stamped on the item (so the Reviews view shows what landed), a checks
             run + Gemini diff review (→ review inbox) — then the next item while budget remains.
             **Risk-tiered auto-merge** (#212): an item marked `risk:'low'` (the modal's Risk
