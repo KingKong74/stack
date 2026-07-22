@@ -29,7 +29,7 @@ const noteTagLabel = (t: string) => REVIEW_NOTE_TAGS.find((x) => x.key === t)?.l
 // Archive below — still counted by the progress model, reviewable with a
 // verdict tag, refinable by delta (#146), restorable by un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onShelve, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onDeleteArea, onRenameArea, slug, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onShelve, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onBranch, onDeleteArea, onRenameArea, slug, highlightId,
   draft, onResumeDraft, onDiscardDraft, liveBranches,
 }: {
   roadmap: RoadmapData;
@@ -48,6 +48,8 @@ export function Roadmap({
   onReorder?: (item: RoadmapItem, toBucket: Priority, beforeId: number | null) => void;
   onCleanup?: () => void;
   onSendToTerminal?: (brief: string) => void;
+  // ⎇ Branch an item for focused work (#205): claim its lane + open a primed session.
+  onBranch?: (item: RoadmapItem) => void;
   // #169 — area management: delete (clears area from all items) and rename
   onDeleteArea?: (area: string, itemIds: number[]) => Promise<void>;
   onRenameArea?: (from: string, to: string, itemIds: number[]) => Promise<void>;
@@ -768,6 +770,10 @@ export function Roadmap({
                     <div className="road-actions">
                       {!working && (
                         <>
+                          {onBranch && !it.claimedBy && !it.skipped && (
+                            <button onClick={() => onBranch(it)} aria-label="Branch for focused work"
+                              title={`Branch for focused work (#205) — claims lane/item-${it.id} and opens a terminal session primed to build it on that branch; merge back from Mission Control when it lands`}>⎇</button>
+                          )}
                           <button onClick={() => onToggleSkip(it)} aria-label={it.skipped ? 'Unpark item' : 'Park item'}
                             title={it.skipped ? 'Unpark — back in play' : 'Park — skip for now'}>{it.skipped ? '▶' : '⏸'}</button>
                           <button onClick={() => onEdit(it)} aria-label="Edit item" title="Edit">✎</button>

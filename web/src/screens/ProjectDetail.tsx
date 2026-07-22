@@ -250,6 +250,28 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].filter((i) => i.id !== item.id) } });
     });
 
+  // ⎇ Branch for focused work (#205): claim the item's lane, then open a
+  // terminal session primed with a build brief for that branch. The claim is
+  // the board's in-progress marker (and the autopilot's keep-off signal); the
+  // merge back home is Mission Control's merge strip, like any other lane.
+  const branchItem = (item: RoadmapItem) =>
+    guard(async () => {
+      const lane = `lane/item-${item.id}`;
+      const updated = await patchRoadmapItem(slug, item.id, { claimed_by: lane });
+      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
+      const brief = [
+        `Build roadmap item #${item.id} — ${item.title} — on its own branch (${lane}).`,
+        item.note ? `\nThe item:\n${item.note}` : '',
+        item.plan.length ? `\nThe plan (work unticked steps top-down, PATCH the full list back as each lands):\n${item.plan.map((s) => `${s.done ? '[x]' : '[ ]'} ${s.text}`).join('\n')}` : '',
+        `\nWork it in a worktree so this checkout stays free: git worktree add ../wt-item-${item.id} -b ${lane}`,
+        `Commit in small units and push with: git push -u origin ${lane}`,
+        `When it lands: PATCH built_note + done:true on the item (the lane claim is already ${lane}),`,
+        'then merge the branch back from Mission Control’s merge strip (⇥ Merge) — or keep it open if it needs more nights.',
+      ].filter(Boolean).join('\n');
+      try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the handoff just won't appear */ }
+      go.terminal(slug);
+    });
+
   // Drag-reorder: rebuild the target bucket's open order and renumber it. The
   // client shape doesn't carry positions, so the whole bucket renumbers 0..n —
   // buckets are small, and board order IS the autopilot queue.
@@ -790,7 +812,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
               // One-shot handoff — the terminal screen offers it as a paste.
               try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the button just won't appear */ }
               go.terminal(slug);
-            }} />
+            }}
+            onBranch={(it) => branchItem(it)} />
         )}
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId} slug={slug}
