@@ -184,8 +184,9 @@ function activityForPrompt(activity) {
 }
 
 function bugsForPrompt(bugs) {
-  if (!bugs.length) return '(none)';
-  return bugs.map((b) => `${b.severity.toUpperCase()} #${b.id}: ${b.title}`).join('\n');
+  const open = bugs.filter((b) => b.status !== 'fixed');
+  if (!open.length) return '(none)';
+  return open.map((b) => `${b.severity.toUpperCase()} #${b.id}: ${b.title}`).join('\n');
 }
 
 function futuresForPrompt(futures) {
