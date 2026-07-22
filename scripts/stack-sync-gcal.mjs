@@ -122,8 +122,9 @@ function buildEventBody(row, durationMin) {
   let recurrence;
 
   if (row.runDate) {
-    // One-off
-    startDate = new Date(row.runDate);
+    // One-off — parse as LOCAL date to avoid UTC-midnight shifting the day.
+    const [yr, mo, dy] = row.runDate.split('-').map(Number);
+    startDate = new Date(yr, mo - 1, dy);
   } else {
     // Recurring — pick the next occurrence
     const days = Array.isArray(row.days) ? row.days : [];
