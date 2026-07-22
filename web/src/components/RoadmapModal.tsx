@@ -83,10 +83,14 @@ export function RoadmapModal({
     setSuggestErr('');
     try {
       const s = await onAssist(note);
-      setTitle(s.title);
+      // Never overwrite a field the human already filled (#211) — the assist
+      // fills gaps, it doesn't re-decide. The note is the exception by design
+      // (it's the input; tidying it is the feature), and priority always
+      // carries a value so a suggestion may still refine it.
+      if (!title.trim()) setTitle(s.title);
       if (s.note) { setNote(s.note); requestAnimationFrame(growNote); }
-      if (s.area) setArea(s.area);
-      if (s.lane) { setLane(s.lane); setNewLane(false); }
+      if (s.area && !area.trim()) setArea(s.area);
+      if (s.lane && !lane.trim()) { setLane(s.lane); setNewLane(false); }
       if (s.priority) setPriority(s.priority);
     } catch (e) {
       setSuggestErr((e as Error)?.message || 'Gemini call failed.');
