@@ -74,7 +74,13 @@ export function Roadmap({
     if (dragged && onReorder && dragged.id !== beforeId) onReorder(dragged, toBucket, beforeId);
   };
   // Area filter — the product-area chips over the board (mirrors the Futures funnel).
+  // UNCAT (#198) is the Uncategorised tab's sentinel: the leading space can
+  // never collide with a real area (area input is trimmed + lowercased), and
+  // it filters to items with NO area so nothing untagged hides behind the tabs.
+  const UNCAT = ' uncategorised';
   const [areaFilter, setAreaFilter] = useState('');
+  const inAreaTab = (it: RoadmapItem) =>
+    areaFilter === UNCAT ? !it.area : (!areaFilter || it.area === areaFilter);
   const openAll = PRIORITY_META.flatMap((col) => roadmap[col.key].filter((it) => !it.done));
   // Hand-added areas live device-local until an item actually carries them —
   // the + chip mints one, and + Add under its tab pre-tags new items with it.
@@ -101,7 +107,7 @@ export function Roadmap({
   const openTermPick = () => {
     setTermPrio('all');
     // Start from the active area tab; more areas can be ticked in the modal.
-    const areas = new Set(areaFilter ? [areaFilter] : []);
+    const areas = new Set(areaFilter && areaFilter !== UNCAT ? [areaFilter] : []);
     setTermAreas(areas);
     const scope = openAll.filter((it) => areas.size === 0 || (!!it.area && areas.has(it.area)));
     // Default selection: workable items — parked and already-claimed ones start unticked.
@@ -597,6 +603,15 @@ export function Roadmap({
           <button className={`chip-sm ${areaFilter === '' ? 'on' : ''}`} onClick={() => setAreaFilter('')}>
             All {openAll.length}
           </button>
+          {/* Uncategorised (#198): shown whenever untagged open items exist, so
+              nothing slips out of sight once the board lives by area tabs. */}
+          {openAll.some((it) => !it.area) && (
+            <button className={`chip-sm ${areaFilter === UNCAT ? 'on' : ''}`}
+              title="Open items with no area tag — give them one from ✎ edit"
+              onClick={() => setAreaFilter(areaFilter === UNCAT ? '' : UNCAT)}>
+              uncategorised {openAll.filter((it) => !it.area).length}
+            </button>
+          )}
           {boardAreas.map((a) => (
             <span key={a} className="area-chip-group" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
               <button className={`chip-sm ${areaFilter === a ? 'on' : ''}`}
@@ -666,7 +681,7 @@ export function Roadmap({
 
       <div className="road-grid">
         {PRIORITY_META.map((col) => {
-          const open = roadmap[col.key].filter((it) => !it.done && (!areaFilter || it.area === areaFilter));
+          const open = roadmap[col.key].filter((it) => !it.done && inAreaTab(it));
           // Parked items sink to the bottom of their bucket.
           const items = [...open.filter((it) => !it.skipped), ...open.filter((it) => it.skipped)];
           return (
@@ -683,7 +698,7 @@ export function Roadmap({
                 onDrop={(e) => { e.preventDefault(); handleDrop(col.key, null); }}
               >
                 {/* An active area chip pre-tags whatever gets added under it. */}
-                <button className="road-add" onClick={() => onAdd(col.key, areaFilter || undefined)}>+ Add</button>
+                <button className="road-add" onClick={() => onAdd(col.key, areaFilter && areaFilter !== UNCAT ? areaFilter : undefined)}>+ Add</button>
                 {items.map((it) => {
                   // A claim only reads as "in progress" while a LIVE session is
                   // on that lane (BUG-2: a half-run or killed session must not
