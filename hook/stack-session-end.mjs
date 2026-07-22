@@ -102,7 +102,9 @@ function lastSubstantiveMessage(turns) {
 
   let payload = {};
   if (!DEMO) {
-    try { payload = JSON.parse(readStdin() || '{}'); } catch { payload = {}; }
+    // Still proceed on bad stdin (the hook must never block), but say so —
+    // a silent {} here made hook-payload issues invisible (#185/#218).
+    try { payload = JSON.parse(readStdin() || '{}'); } catch { logStderr('hook stdin was not valid JSON — proceeding without it.'); payload = {}; }
   }
 
   const cwd = DEMO ? process.cwd() : (payload.cwd || process.cwd());

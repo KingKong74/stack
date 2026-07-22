@@ -98,7 +98,9 @@ export function listStackSessions() {
   const out = [];
   for (const line of r.stdout.split('\n')) {
     const [name, attached, created, path] = line.split('\t');
-    if (!validName(name) || !name.startsWith('stack-term-')) continue;
+    // One strict pattern (#218: #199) instead of the old two-step
+    // validName() + startsWith() pair, whose rules could drift apart.
+    if (typeof name !== 'string' || !/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(name)) continue;
     out.push({ name, attached: attached !== '0', created: (parseInt(created, 10) || 0) * 1000, path: path || '' });
   }
   return out;

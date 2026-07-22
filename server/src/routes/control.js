@@ -128,7 +128,10 @@ control.get('/', async (_req, res) => {
     weekTokens += tok;
     weekCost += cost;
     if (new Date(r.finished_at) > todayCutoff) { todayTokens += tok; todayCost += cost; }
-    // Use ISO date of the run's finish time to count distinct nights.
+    // Count distinct nights by the UTC calendar date of the finish time
+    // (#218: #201 — deliberate: every server-side date bucket uses UTC, so the
+    // denominator can't drift with the server's timezone; an AEST night run
+    // finishes mid-UTC-day, so nights never split across the UTC midnight).
     nightSet.add(new Date(r.finished_at).toISOString().slice(0, 10));
     if (r.model_usage && typeof r.model_usage === 'object') {
       for (const [model, entry] of Object.entries(r.model_usage)) {

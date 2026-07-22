@@ -30,6 +30,25 @@ export class AuthError extends Error {
   constructor() { super('Unauthorised'); this.name = 'AuthError'; }
 }
 
+// Typed localStorage reader (#218: #192 + #185) — every device-local
+// preference parses through here. `shape` receives the parsed value (null when
+// absent) and returns the typed result, so each pref keeps its own defaults;
+// a corrupted entry is logged instead of silently swallowed, then shaped from
+// null exactly like a missing one.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function readStoredJSON<T>(key: string, shape: (p: any) => T): T {
+  let raw: string | null = null;
+  try { raw = localStorage.getItem(key); } catch { /* storage unavailable (private mode) — treat as unset */ }
+  if (raw != null) {
+    try {
+      return shape(JSON.parse(raw));
+    } catch (e) {
+      console.warn(`[stack] preference ${key} is corrupted — falling back to defaults.`, e);
+    }
+  }
+  return shape(null);
+}
+
 // ---- export-brief preferences (device-local, like the token) ----
 
 const BRIEF_PREFS_KEY = 'stack.briefPrefs';
@@ -37,13 +56,10 @@ const BRIEF_PREFS_KEY = 'stack.briefPrefs';
 export interface BriefPrefs { compact: boolean; directives: string[] }
 
 export function getBriefPrefs(): BriefPrefs {
-  try {
-    const raw = localStorage.getItem(BRIEF_PREFS_KEY);
-    const p = raw ? JSON.parse(raw) : null;
-    return { compact: p?.compact === true, directives: Array.isArray(p?.directives) ? p.directives : [] };
-  } catch {
-    return { compact: false, directives: [] };
-  }
+  return readStoredJSON(BRIEF_PREFS_KEY, (p) => ({
+    compact: p?.compact === true,
+    directives: Array.isArray(p?.directives) ? p.directives : [],
+  }));
 }
 
 export function setBriefPrefs(prefs: BriefPrefs) {
@@ -60,7 +76,7 @@ const ROAD_DRAFT_TTL_MS = 30 * 60 * 1000;
 export interface RoadDraft { title: string; note: string; priority: Priority; lane: string; area?: string; savedAt?: number }
 
 function readRoadDrafts(): Record<string, RoadDraft> {
-  try { return JSON.parse(localStorage.getItem(ROAD_DRAFT_KEY) || '{}'); } catch { return {}; }
+  return readStoredJSON(ROAD_DRAFT_KEY, (p) => (p && typeof p === 'object' ? p : {}));
 }
 
 export function getRoadDraft(slug: string): RoadDraft | null {
@@ -555,7 +571,7 @@ export function watchTermStatus(cb: (s: TermStatus) => void): () => void {
 export interface TermCmd { label: string; cmd: string }
 const TERM_CMDS_KEY = 'stack.termCmds';
 export function getTermCmds(): TermCmd[] {
-  try { return JSON.parse(localStorage.getItem(TERM_CMDS_KEY) || '[]'); } catch { return []; }
+  return readStoredJSON(TERM_CMDS_KEY, (p) => (Array.isArray(p) ? p : []));
 }
 export function setTermCmds(list: TermCmd[]) {
   localStorage.setItem(TERM_CMDS_KEY, JSON.stringify(list));
@@ -568,14 +584,11 @@ export function setTermCmds(list: TermCmd[]) {
 export interface TermUsagePrefs { dailyLimit: number; autoSchedule: boolean; lastAutoKey: string }
 const TERM_USAGE_KEY = 'stack.termUsage';
 export function getTermUsagePrefs(): TermUsagePrefs {
-  try {
-    const p = JSON.parse(localStorage.getItem(TERM_USAGE_KEY) || '{}');
-    return {
-      dailyLimit: Number(p.dailyLimit) > 0 ? Number(p.dailyLimit) : 10_000_000,
-      autoSchedule: !!p.autoSchedule,
-      lastAutoKey: typeof p.lastAutoKey === 'string' ? p.lastAutoKey : '',
-    };
-  } catch { return { dailyLimit: 10_000_000, autoSchedule: false, lastAutoKey: '' }; }
+  return readStoredJSON(TERM_USAGE_KEY, (p) => ({
+    dailyLimit: Number(p?.dailyLimit) > 0 ? Number(p.dailyLimit) : 10_000_000,
+    autoSchedule: !!p?.autoSchedule,
+    lastAutoKey: typeof p?.lastAutoKey === 'string' ? p.lastAutoKey : '',
+  }));
 }
 export function setTermUsagePrefs(p: TermUsagePrefs) {
   localStorage.setItem(TERM_USAGE_KEY, JSON.stringify(p));
@@ -586,12 +599,9 @@ export function setTermUsagePrefs(p: TermUsagePrefs) {
 export interface TermViewPrefs { railOpen: boolean; wide: boolean }
 const TERM_VIEW_KEY = 'stack.termView';
 export function getTermViewPrefs(): TermViewPrefs {
-  try {
-    const p = JSON.parse(localStorage.getItem(TERM_VIEW_KEY) || '{}');
-    // Rail defaults COLLAPSED — the terminal canvas is the point of the screen;
-    // expand it when you want the quick commands (the choice sticks per device).
-    return { railOpen: p.railOpen === true, wide: !!p.wide };
-  } catch { return { railOpen: false, wide: false }; }
+  // Rail defaults COLLAPSED — the terminal canvas is the point of the screen;
+  // expand it when you want the quick commands (the choice sticks per device).
+  return readStoredJSON(TERM_VIEW_KEY, (p) => ({ railOpen: p?.railOpen === true, wide: !!p?.wide }));
 }
 export function setTermViewPrefs(p: TermViewPrefs) {
   localStorage.setItem(TERM_VIEW_KEY, JSON.stringify(p));
@@ -605,13 +615,10 @@ export function setTermViewPrefs(p: TermViewPrefs) {
 export interface TermSessionPrefs { autoStart: 'claude' | 'shell'; skipPermissions: boolean }
 const TERM_SESSION_KEY = 'stack.termSession';
 export function getTermSessionPrefs(): TermSessionPrefs {
-  try {
-    const p = JSON.parse(localStorage.getItem(TERM_SESSION_KEY) || '{}');
-    return {
-      autoStart: p.autoStart === 'shell' ? 'shell' : 'claude',
-      skipPermissions: p.skipPermissions !== false,
-    };
-  } catch { return { autoStart: 'claude', skipPermissions: true }; }
+  return readStoredJSON(TERM_SESSION_KEY, (p) => ({
+    autoStart: p?.autoStart === 'shell' ? 'shell' as const : 'claude' as const,
+    skipPermissions: p?.skipPermissions !== false,
+  }));
 }
 export function setTermSessionPrefs(p: TermSessionPrefs) {
   localStorage.setItem(TERM_SESSION_KEY, JSON.stringify(p));
@@ -649,10 +656,7 @@ export async function killDetachedSession(name: string): Promise<void> {
 // (an exit frame while attached — a detach never sends one).
 const TERM_TMUX_KEY = 'stack.termTmux';
 function readTmuxMap(): Record<string, string> {
-  try {
-    const m = JSON.parse(localStorage.getItem(TERM_TMUX_KEY) || '{}');
-    return m && typeof m === 'object' ? m : {};
-  } catch { return {}; }
+  return readStoredJSON(TERM_TMUX_KEY, (m) => (m && typeof m === 'object' ? m : {}));
 }
 export function getTermTmuxName(cwd: string): string | null {
   return readTmuxMap()[cwd] || null;

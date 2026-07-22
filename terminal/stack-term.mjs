@@ -304,6 +304,24 @@ function sendOutText(sid, sess, text) {
   }
 }
 
+// PTY size bounds (#218: #186): resize requests are clamped to what the shim
+// can sanely handle — the floor stops zero/negative sizes, the caps stop a
+// rogue frame asking for absurd buffers.
+const MIN_COLS = 2;
+const MAX_COLS = 500;
+const MIN_ROWS = 2;
+const MAX_ROWS = 300;
+
+// ANSI styling for the daemon's own in-terminal prompts (#218: #187): one
+// vocabulary instead of escape soup at every call site. Lines start from
+// reset so claude's own colours never bleed into ours.
+const ANSI_RESET = '\x1b[0m';
+const ansi = {
+  warn: (s) => `\x1b[33m${s}${ANSI_RESET}`, // yellow — attention
+  ok: (s) => `\x1b[32m${s}${ANSI_RESET}`,   // green — confirmation
+  bold: (s) => `\x1b[1m${s}${ANSI_RESET}`,
+};
+
 // ---- wireChild — attach I/O handlers to a newly spawned child ----
 // Used by startSession (initial spawn) and respawnWithProvider (model switch).
 // Stores the child + idle timer on sess; each child gets its own plainTail.
@@ -311,8 +329,8 @@ function wireChild(sid, sess, child) {
   sess.child = child;
 
   child.resize = (cols, rows) => {
-    const c = Math.max(2, Math.min(500, cols | 0));
-    const r = Math.max(2, Math.min(300, rows | 0));
+    const c = Math.max(MIN_COLS, Math.min(MAX_COLS, cols | 0));
+    const r = Math.max(MIN_ROWS, Math.min(MAX_ROWS, rows | 0));
     try { child.stdio[3].write(`R ${c} ${r}\n`); } catch { /* gone */ }
   };
   child.feed = (b64) => {
@@ -408,18 +426,18 @@ function startSwitchMode(sid, sess, exitCode) {
 
   // Build and send the in-terminal prompt (ANSI-coloured, \r\n for raw PTY mode).
   const lines = [
-    '\r\n\x1b[0m\x1b[33m⚠  Claude usage limit reached.\x1b[0m\r\n',
-    '\x1b[0m   Switch to a free AI model:\r\n\r\n',
+    `\r\n${ANSI_RESET}${ansi.warn('⚠  Claude usage limit reached.')}\r\n`,
+    `${ANSI_RESET}   Switch to a free AI model:\r\n\r\n`,
   ];
   available.forEach((p, i) => {
-    const pref = p.key === preferred ? '  \x1b[32m← preferred\x1b[0m' : '';
-    lines.push(`\x1b[0m   \x1b[1m[${i + 1}]\x1b[0m ${p.label} — ${p.model}${pref}\r\n`);
+    const pref = p.key === preferred ? `  ${ansi.ok('← preferred')}` : '';
+    lines.push(`${ANSI_RESET}   ${ansi.bold(`[${i + 1}]`)} ${p.label} — ${p.model}${pref}\r\n`);
   });
-  lines.push('\r\n\x1b[0m   Press \x1b[1m1\x1b[0m–\x1b[1m' + available.length + '\x1b[0m to switch');
+  lines.push(`\r\n${ANSI_RESET}   Press ${ansi.bold('1')}–${ansi.bold(String(available.length))} to switch`);
   if (preferred && available.some((p) => p.key === preferred)) {
-    lines.push(', \x1b[1mEnter\x1b[0m for preferred');
+    lines.push(`, ${ansi.bold('Enter')} for preferred`);
   }
-  lines.push(', or \x1b[1mq\x1b[0m to end session.\r\n');
+  lines.push(`, or ${ansi.bold('q')} to end session.\r\n`);
   sendOutText(sid, sess, lines.join(''));
 
   // 5-minute failsafe — clean up an unanswered prompt rather than leaking forever.
@@ -487,7 +505,7 @@ function respawnWithProvider(sid, sess, providerKey, prevExitCode) {
 
   sendOutText(
     sid, sess,
-    `\r\n\x1b[32m► Switching to ${provider.label} (${provider.model})…\x1b[0m\r\n\r\n`,
+    `\r\n${ansi.ok(`► Switching to ${provider.label} (${provider.model})…`)}\r\n\r\n`,
   );
 
   // claude --continue resumes the most recent conversation so the context from

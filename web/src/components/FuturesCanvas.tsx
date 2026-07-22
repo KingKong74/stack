@@ -32,17 +32,36 @@ function defaultPos(future: Future, futures: Future[]): { x: number; y: number }
   };
 }
 
+const CANVAS_W = PAD * 2 + 4 * (NODE_W + COL_GAP);
+// Tall enough for any sane board; a stored coordinate beyond this is corrupt.
+const MAX_Y = 20_000;
+
+// Coordinate guard (#218: #203): stored coords come off the wire — NaN,
+// Infinity or absurd values (a corrupted row, a bad client) must never place
+// a node off-canvas or wreck layout. Invalid input reads as "no stored
+// position" so the deterministic default takes over.
+function validCoords(x: unknown, y: unknown): { x: number; y: number } | null {
+  const nx = Number(x);
+  const ny = Number(y);
+  if (!Number.isFinite(nx) || !Number.isFinite(ny)) return null;
+  return {
+    x: Math.min(Math.max(0, Math.round(nx)), CANVAS_W - NODE_W),
+    y: Math.min(Math.max(0, Math.round(ny)), MAX_Y),
+  };
+}
+
 function resolvePos(
   f: Future,
   positions: Map<number, { x: number; y: number }>,
   futures: Future[],
 ): { x: number; y: number } {
   if (positions.has(f.id)) return positions.get(f.id)!;
-  if (f.canvasX != null && f.canvasY != null) return { x: f.canvasX, y: f.canvasY };
+  if (f.canvasX != null && f.canvasY != null) {
+    const v = validCoords(f.canvasX, f.canvasY);
+    if (v) return v;
+  }
   return defaultPos(f, futures);
 }
-
-const CANVAS_W = PAD * 2 + 4 * (NODE_W + COL_GAP);
 
 // The visual canvas: futures rendered as draggable node cards over alignment
 // column zones. Positions are persisted via onMove after each drag.
@@ -57,7 +76,9 @@ export function FuturesCanvas({
   const [positions, setPositions] = useState<Map<number, { x: number; y: number }>>(() => {
     const m = new Map<number, { x: number; y: number }>();
     for (const f of futures) {
-      if (f.canvasX != null && f.canvasY != null) m.set(f.id, { x: f.canvasX, y: f.canvasY });
+      if (f.canvasX == null || f.canvasY == null) continue;
+      const v = validCoords(f.canvasX, f.canvasY); // corrupt coords fall back to defaults (#203)
+      if (v) m.set(f.id, v);
     }
     return m;
   });
@@ -91,8 +112,14 @@ export function FuturesCanvas({
     const container = containerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
-    const x = Math.max(0, Math.round(e.clientX - rect.left + container.scrollLeft - dragging.current.ox));
-    const y = Math.max(0, Math.round(e.clientY - rect.top + container.scrollTop - dragging.current.oy));
+    // Same guard as stored coords (#203): a drag can't produce NaN in practice,
+    // but the clamp keeps saved positions inside the canvas either way.
+    const v = validCoords(
+      e.clientX - rect.left + container.scrollLeft - dragging.current.ox,
+      e.clientY - rect.top + container.scrollTop - dragging.current.oy,
+    );
+    if (!v) return;
+    const { x, y } = v;
     lastDragPos.current = { x, y };
     const id = dragging.current.id;
     setPositions((prev) => {
