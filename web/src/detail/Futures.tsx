@@ -66,7 +66,14 @@ export function Futures({
   // area filters (where it lives).
   const [areaFilter, setAreaFilter] = useState('');
   const areas = [...new Set(futures.map((f) => f.area).filter(Boolean))].sort();
-  const visible = areaFilter ? futures.filter((f) => f.area === areaFilter) : futures;
+  // Source filter (#182): generated = auto-extracted from pushes / Gemini
+  // (source 'hook'), manual = typed or agreed with Polaris. Only offered when
+  // the funnel actually holds both kinds.
+  const [sourceFilter, setSourceFilter] = useState<'' | 'hook' | 'manual'>('');
+  const mixedSources = futures.some((f) => f.source === 'hook') && futures.some((f) => f.source !== 'hook');
+  const bySource = futures
+    .filter((f) => !sourceFilter || (sourceFilter === 'hook' ? f.source === 'hook' : f.source !== 'hook'));
+  const visible = bySource.filter((f) => !areaFilter || f.area === areaFilter);
 
   const judged = futures.some((f) => f.alignment);
   const groups = GROUPS
@@ -138,6 +145,15 @@ export function Futures({
               ))}
             </div>
           )}
+          {mixedSources && (
+            <div className="seg-control sm" role="tablist" aria-label="Idea sources">
+              <button className={`seg-opt ${sourceFilter === '' ? 'on' : ''}`} onClick={() => setSourceFilter('')}>All</button>
+              <button className={`seg-opt ${sourceFilter === 'hook' ? 'on' : ''}`} onClick={() => setSourceFilter('hook')}
+                title="Ideas auto-extracted from pushes and reviews">Generated</button>
+              <button className={`seg-opt ${sourceFilter === 'manual' ? 'on' : ''}`} onClick={() => setSourceFilter('manual')}
+                title="Ideas you typed (or agreed with Polaris)">Manual</button>
+            </div>
+          )}
           <div className="seg-control sm" role="tablist" aria-label="Ideas view">
             <button className={`seg-opt ${view === 'list' ? 'on' : ''}`} onClick={() => setView('list')}>List</button>
             <button className={`seg-opt ${view === 'canvas' ? 'on' : ''}`} onClick={() => setView('canvas')}>Canvas</button>
@@ -162,7 +178,9 @@ export function Futures({
       </div>
 
       {view === 'canvas' ? (
-        <FuturesCanvas futures={futures} onMove={onMove} highlightId={highlightId} />
+        // The source filter (#182) applies here too; the area chips stay
+        // list-only (columns already give the canvas its structure).
+        <FuturesCanvas futures={bySource} onMove={onMove} highlightId={highlightId} />
       ) : futures.length ? (
         groups.map((g) => (
           <div className="futures-group" key={g.key || 'unsorted'}>
