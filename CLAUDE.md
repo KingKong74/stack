@@ -104,8 +104,10 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             arguments error out before anything is queued. The root `stack` dispatcher
             resolves each command to a script export (`fn`) and awaits async mains.
             stack-autopilot.mjs — the overnight autopilot (phase 2): works MULTIPLE eligible
-            roadmap items per night (must→should; open, unclaimed, not skipped, human-approved;
-            up to --max-items, default Settings' autopilotMaxItems) inside a shared night
+            roadmap items per night (desire TIER first (#227 — S→A→B→C, unranked last), then
+            must→should; open, unclaimed, not skipped, human-approved;
+            up to --max-items, default Settings' autopilotMaxItems — **0 = unlimited** (#260),
+            the wall clock and the token budget then governing alone) inside a shared night
             budget. **Session kinds** (#228, from the session planner): `--kind build|plan|
             debug|audit` + `--items a,b,c` (an ORDERED roadmap agenda — worked exactly in that
             order, done/claimed skipped) / `--bugs BUG-1,BUG-2` / `--area X` (scopes the
@@ -214,7 +216,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   optimistic with rollback), **Session defaults** (switches over the `DIRECTIVES` catalogue from
   `lib/brief.ts` — app-wide standing preferences PATCHed as `sessionDefaults` and injected into
   every session by the start hook, e.g. commits pre-authorised), **Autopilot** (the overnight
-  runner's arm switch + 1h/2h/3h session cap — the cron no-ops while disarmed), **Terminal**
+  runner's arm switch + 1h/2h/3h session cap — the cron no-ops while disarmed), **Roadmap**
+  (#247 — the parked-item stale threshold, `staleItemDays`, 7/14/21/30/60d; surfacing only),
+  **Terminal**
   (device-local like Appearance: opens-with Claude/Shell seg + the skip-permissions switch,
   `store.getTermSessionPrefs/setTermSessionPrefs`), **Appearance**
   (theme) and **Access** (masked token, Test connection, the **access PIN** — set/change/disable;
@@ -265,17 +269,25 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   load strip, a click-open night detail card (runs → Reviews; bookings → ✎ the SessionPlanModal;
   ▶ Run now) and the standing schedule list (the editing surface) below. **Plan** is 16a (the
   design's 15a+15b, superseding the 12b tree): the **ordered schedule with the inbox beside
-  it**. TONIGHT AND AFTER lists exactly what the runner would work, in its real order (musts
-  then shoulds, board order, eligibility mirrored client-side), broken into nights by the real
-  capacity — Settings' items/night, editable in the header seg — each row wearing the night it
+  it**. TONIGHT AND AFTER lists exactly what the runner would work, in its real order (desire
+  TIER first (#227), then musts before shoulds, then board order — eligibility mirrored
+  client-side), broken into nights by the real
+  capacity — Settings' items/night (1/2/3/5/8/**∞**, editable in the header seg) times the
+  **lanes** you plan to run in parallel (#260 — 1–4, device-local via
+  `store.getPlanLanes/setPlanLanes`; rows wear an L1/L2 chip and a note states plainly that lane 1
+  is the overnight runner and the rest are sessions you start with ⎇, so the projected dates never
+  imply parallelism the machine does alone) — each row wearing the night it
   lands on; the header projects the milestones ("musts land Wed 30", "the board clears …") with
-  ▲/▼ deltas while a reorder is unsaved. Under the header sits the **MODELS line** (#153 — the
+  ▲/▼ deltas while a reorder is unsaved. Under the queue, **✧ Plan the N unplanned items** hands
+  exactly those ids, in the shown order, to the planning agent (the #255 push). OUT OF THE
+  SCHEDULE no longer truncates silently — it folds behind an honest count. Under the header sits the **MODELS line** (#153 — the
   Executor / Advisor pickers, the same app-wide settings the Now room's console writes, mirrored
   here because this is where the plan is decided: the queue below, the hands and the mind that
   work it above; the catalogue rides the control payload, and a mono summary reads
   "Opus builds · consults Opus 5"). ⠿/▲▼ reorder is a dirty overlay (revert = exact);
-  moving across the must/should boundary re-buckets the MOVED item (shown as a → flag); Save
-  order renumbers positions (+ flipped buckets) through the normal PATCH — the same write the
+  moving across the must/should boundary re-buckets the MOVED item, and crossing a TIER boundary
+  re-tiers it (both shown as → flags); Save
+  order renumbers positions (+ flipped buckets and tiers) through the normal PATCH — the same write the
   board's drag makes, because the board IS the run queue. Ineligible open items sit under OUT
   OF THE SCHEDULE with the honest why (⚑ lane / parked / outside area / below the line). The
   **Inbox** holds what the sessions found — hook-extracted unreviewed items as FOUND cards
@@ -378,11 +390,27 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   card** (add/remove steer lines, persisted whole via `patchProject {directives}`) and the
   **editable Deployment panel** — status/platform/logs URL via `patchProject` — and the **editable
   Tech stack panel** — chips via `patchProject {tech_stack}`), Bugs (auto cue),
-  Roadmap (the Board/Reviews switch sits above the content, left, full seg size (#129); + Add tops
+  Roadmap (the Board/**Tiers**/**Parked**/Reviews switch sits above the content, left, full seg size
+  (#129); + Add tops
   each column (#112); tick moves an item into the Reviews pipeline — still counted by
   progress; hover ✎/× edit + delete, edit reuses RoadmapModal in `mode='edit'` incl. the Lane
   field and the **Plan** editor (#75 — ordered `{text, done}` steps; the card wears a ☰ n/m
   progress chip and the autopilot works unticked steps top-down); open items show ⚑ claim chips;
+  a bucket column **expands to fill the board** (#251 — click its name or ⤢; the others fold away,
+  cards get the full width) or **folds to its header** (▾), both session-local;
+  the bar's **✧ To planning agent** (#255, replacing ⌨ To terminal) picks open items — pre-ticked
+  to everything with no plan, bulk ticks for all-workable / only-unplanned / none — and queues a
+  **plan-kind autopilot session whose ordered agenda IS the picked list** via
+  `store.startAutopilot(slug, {kind:'plan', agenda})`; the old terminal handoff survives as the
+  modal's second destination;
+  the **Tiers view** (#227) is the desire ranking over the whole open board — S/A/B/C rows plus
+  Unranked, drag a card between them (or use its S/A/B/C buttons) → `patchRoadmapItem {tier}`.
+  Tier is the PRIMARY sort of the run queue (Plan room + the runner both apply it) and unranked
+  sorts last, so an unranked board behaves exactly as before; board columns sort tier-first and
+  cards wear the tier chip.
+  The **Parked view** (#247) lists every open ⏸ item oldest-park-first with its age in days (from
+  `skipped_at`, falling back to `updated_at` shown as `~n days`) and a stale flag past Settings'
+  `staleItemDays`; unpark/edit/delete per row, the tab badge counts parked + stale;
   the **Reviews view** (#132/#117) clusters To-verify items under completion-day headers, labels
   every row with #id + an origin chip (⚙ autopilot — auto/* claim or a landed run — / ⚑ lane /
   by hand, with an origin filter when mixed) and the run-ledger chip (branch · commits · tokens ·
@@ -522,7 +550,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     Shelved strip; cleared by `done` in either direction and by a real verdict, so a row is
     never both awaiting verification and shelved). A fresh completion (`done:true`) clears all
     three — each To-verify round starts unannotated, unshelved, and an addressed refinement
-    retires.
+    retires. Plus `tier` (#227 — the **desire tier**: S | A | B | C, NULL = unranked. Deliberately
+    distinct from `bucket`: bucket is how necessary the work is, tier is how much the owner wants
+    it NEXT. It is the PRIMARY sort of the run queue — the Plan room's TONIGHT AND AFTER and the
+    runner's candidate sort both apply it, bucket and position tiebreak, unranked ranks last — so
+    an unranked board queues exactly as before. Set only from the Tiers view; agents are told never
+    to change it) and `skipped_at` (#247 — when the item was parked, stamped COALESCE-style as
+    `skipped` flips true and cleared as it flips false, so the Parked view ages the park rather
+    than the last edit; NULL on a pre-existing parked row falls back to `updated_at`, shown as ~n).
   - `futures` — loose directional ideas: title, `note`, `source`, `fingerprint`, `reviewed_at`,
     `alignment` (the curation verdict against the north star: on-course | tangent | off-course,
     NULL = unsorted; PATCHable, '' clears; the Futures tab groups by it — on-course first,
@@ -728,7 +763,11 @@ Single row, client camelCase. Meanings under the no-API model:
   "autopilotMinutes": 120,    // wall-clock cap per unattended session (clamped 15–360)
   "autopilotTokens": 1500000, // token budget per run; 0 = UNLIMITED (positive values floored at 100k)
   "autopilotTime": "23:05",   // nightly start, HOST-local HH:MM (the dispatcher supplies its clock)
-  "autopilotMaxItems": 3,     // most items attempted per night (clamped 1–10)
+  "autopilotMaxItems": 3,     // most items attempted per night; 0 = UNLIMITED (#260 — the wall
+                              // clock and the token budget are then the only governors), positive
+                              // values clamped 1–20
+  "staleItemDays": 21,        // #247 — a parked roadmap item reads as stale past this many days
+                              // (clamped 1–365; surfacing only, nothing is auto-changed)
   "autopilotExecutorModel": "", // #153 — model alias sessions run as ('' = CLI default; haiku|sonnet|opus|claude-opus-5)
   "autopilotAdvisorModel": "claude-opus-5", // #153 — stronger model exposed as the "advisor" subagent
                               // (DEFAULT: Opus 5; '' = off; sonnet|opus|claude-opus-5|fable). A database
@@ -802,7 +841,9 @@ the silent metadata backstop so the feed never has gaps.
   (#146 — whole-list like plan; cleaned + deduped), `refine_note` (#146 — '' clears; ticking
   `done:true` clears both unless the same PATCH sets them) and `review_shelved: bool` (#148 —
   the review shelf; cleared by `done` in either direction and by a real `review_tag` verdict,
-  unless the same PATCH sets it explicitly)) ·
+  unless the same PATCH sets it explicitly) and `tier` (#227 — S|A|B|C, anything else unranks it;
+  POST takes it too). `skipped` also stamps/clears `skipped_at` (#247) so the Parked view can age
+  the park honestly) ·
   `POST /api/projects/:slug/roadmap/suggest-title` (Gemini titles an item from its note;
   suggestion only, 503 keyless) ·
   `POST /api/projects/:slug/roadmap/assist` (the modal's ✧ Fill-from-note: Gemini reads the note
