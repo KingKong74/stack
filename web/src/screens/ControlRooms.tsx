@@ -608,7 +608,10 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
     setPlanBusy(true); setPlanNote(''); setRoomErr('');
     try {
       const job = await startAutopilot(pickSlug, { kind: 'plan', agenda: unplannedIds });
-      setPlanNote(job.sessionKind === 'plan' && (job.agenda?.length ?? 0) === unplannedIds.length
+      // /start hands back an already-open job instead of stacking one, so check
+      // the agenda itself rather than its size before claiming the push landed.
+      setPlanNote(job.sessionKind === 'plan'
+        && (job.agenda ?? []).map(String).join(',') === unplannedIds.join(',')
         ? `queued — ${unplannedIds.length} design${unplannedIds.length === 1 ? '' : 's'}, in this order`
         : `an open ${job.kind} session (${job.status}) already holds the queue — nothing new queued`);
     } catch (e) {

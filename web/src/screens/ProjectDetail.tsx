@@ -387,8 +387,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // so the reply says which of the two happened.
   const planItems = async (ids: number[]): Promise<string> => {
     const job = await startAutopilot(slug, { kind: 'plan', agenda: ids });
-    const planned = Array.isArray(job.agenda) && job.agenda.length === ids.length
-      && job.sessionKind === 'plan';
+    // The route returns the EXISTING open job rather than stacking a second one,
+    // so "did mine land?" is "is this job exactly the one I asked for?" — compare
+    // the agenda itself, not just its length.
+    const planned = job.sessionKind === 'plan'
+      && (job.agenda ?? []).map(String).join(',') === ids.join(',');
     return planned
       ? `Planning session queued for ${ids.length} item${ids.length === 1 ? '' : 's'} — the host picks it up within a minute.`
       : `This project already has an open ${job.kind} session (${job.status}); nothing new was queued. Let it finish, then push again.`;
