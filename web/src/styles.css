@@ -2264,3 +2264,69 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .spm-err { font-size: 12px; color: var(--critical); }
 .spm-foot { display: flex; justify-content: flex-end; gap: 8px; }
 @media (max-width: 720px) { .spm { min-width: 0; } .spm-agenda { flex-direction: column; } }
+
+/* ---- the Tips tab (the Stack Planning design's recipe library) ---- */
+.tips-count { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-right: 12px; white-space: nowrap; }
+.tips-loading { padding: 28px 0; font-size: 13px; color: var(--muted); }
+.tips-empty { max-width: 520px; margin: 26px auto; padding: 22px 26px; border: 1px dashed var(--keyline); border-radius: 12px; font-size: 13px; line-height: 1.7; color: var(--muted); text-align: center; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+
+.tips-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 900px) { .tips-layout { grid-template-columns: 1fr; } }
+
+.tips-rail { background: var(--card); border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden; }
+.tips-search { display: flex; align-items: center; gap: 8px; margin: 12px 12px 10px; padding: 7px 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line-3); }
+.tips-search .glyph { font-family: var(--mono); font-size: 11px; color: var(--paused); }
+.tips-search input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; font-size: 12.5px; color: var(--ink); }
+.tips-cats { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 12px 12px; border-bottom: 1px solid var(--line-2); }
+.tips-cat { padding: 4px 11px; border-radius: 20px; border: 1px solid var(--line-3); background: transparent; font-size: 11px; font-weight: 500; color: var(--muted); cursor: pointer; }
+.tips-cat:hover { border-color: var(--accent); }
+.tips-cat.on { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-deep); }
+.tips-list { max-height: 560px; overflow-y: auto; padding: 8px; }
+.tips-row { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; padding: 10px 11px; border-radius: 8px; background: transparent; border: 1px solid transparent; cursor: pointer; margin-bottom: 3px; }
+.tips-row:hover { border-color: var(--accent); }
+.tips-row.on { background: var(--accent-tint); border-color: var(--accent-tint-border); }
+.tips-row .top { display: flex; align-items: baseline; gap: 8px; }
+.tips-row .name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--ink); }
+.tips-row .pin { color: var(--accent); }
+.tips-row .uses { font-family: var(--mono); font-size: 9.5px; color: var(--paused); white-space: nowrap; }
+.tips-row .sub { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.tips-row .tag { flex: none; padding: 2px 6px; border-radius: 4px; background: var(--bg); font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
+.tips-row.on .tag { background: var(--card); }
+.tips-row .blurb { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted); }
+.tips-none { padding: 18px 12px; font-size: 12px; line-height: 1.6; color: var(--muted); }
+
+.tips-detail { background: var(--card); border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden; }
+.tips-head { padding: 20px 24px 18px; border-bottom: 1px solid var(--line-2); background: var(--sand); }
+.tips-head .meta { display: flex; align-items: center; gap: 8px; }
+.tips-head .stage { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.08em; }
+.tips-head .quiet { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.tips-head-row { display: flex; align-items: flex-start; gap: 16px; margin-top: 7px; }
+.tips-head-row .grow { flex: 1; min-width: 0; }
+.tips-head .name { font-family: var(--disp); font-size: 20px; font-weight: 600; line-height: 1.3; color: var(--ink); }
+.tips-head .when { font-size: 13px; line-height: 1.6; color: var(--muted); margin-top: 6px; max-width: 620px; }
+.tips-head .acts { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: none; }
+.tips-run { padding: 9px 18px; border-radius: 7px; background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 500; cursor: pointer; border: none; white-space: nowrap; }
+.tips-run:hover { background: var(--accent-deep); }
+.tips-pin { font-family: var(--mono); font-size: 10.5px; color: var(--paused); background: none; border: none; cursor: pointer; }
+.tips-pin:hover { color: var(--accent); }
+
+.tips-body { padding: 20px 24px 22px; display: flex; flex-direction: column; gap: 20px; }
+.tips-cap { font-family: var(--mono); font-size: 10px; font-weight: 500; color: var(--muted); letter-spacing: 0.08em; margin-bottom: 4px; }
+.tips-block { display: flex; flex-direction: column; gap: 7px; }
+.tips-prompt { padding: 15px 17px; border-radius: 9px; background: var(--bg); border: 1px solid var(--line-3); font-family: var(--mono); font-size: 12.5px; line-height: 1.85; color: var(--ink); white-space: pre-wrap; }
+.tip-slot { padding: 1px 5px; border-radius: 4px; background: var(--accent-tint); color: var(--accent-deep); font-family: inherit; }
+.tips-slot-hint { font-size: 11px; line-height: 1.9; color: var(--paused); }
+.tips-cols { display: flex; gap: 24px; align-items: flex-start; }
+@media (max-width: 720px) { .tips-cols { flex-direction: column; } }
+.tips-cols .grow { flex: 1; min-width: 0; }
+.tips-best { display: flex; gap: 9px; align-items: baseline; font-size: 12.5px; line-height: 1.6; color: var(--ink); }
+.tips-best .arrow { font-family: var(--mono); font-size: 10px; color: var(--accent); }
+.tips-who { width: 280px; flex: none; padding: 13px 15px; border-radius: 9px; background: var(--bg); border: 1px solid var(--line-3); }
+@media (max-width: 720px) { .tips-who { width: auto; } }
+.tips-who .txt { font-size: 12px; line-height: 1.6; color: var(--muted); }
+.tips-idle { padding: 14px 17px; border-radius: 9px; border: 1px dashed var(--keyline); font-size: 12px; line-height: 1.65; color: var(--muted); }
+.tips-manage { display: flex; gap: 12px; }
+.tips-edit, .tips-delete { font-size: 11.5px; color: var(--muted); background: none; border: none; cursor: pointer; padding: 0; }
+.tips-edit:hover { color: var(--accent-deep); }
+.tips-delete:hover { color: var(--critical); }
+.lbl-opt { font-weight: 400; color: var(--faint); text-transform: none; letter-spacing: 0; }

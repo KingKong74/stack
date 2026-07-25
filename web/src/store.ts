@@ -1,7 +1,7 @@
 import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
-  AuthDevice,
+  AuthDevice, Tip,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -970,6 +970,33 @@ export async function runChecks(slug: string, id?: number): Promise<Check[]> {
 // The run history, newest first — the Audit dashboard's trend strip.
 export async function getCheckRuns(slug: string, limit = 40): Promise<CheckRun[]> {
   return request<CheckRun[]>(`${checksBase(slug)}/runs?limit=${limit}`);
+}
+
+// ---- tips (the app-wide recipe library — the Tips tab) ----
+
+// What a recipe is made of, as the API takes it. `best` is the whole
+// "works best when" list; PATCH takes any subset (incl. { pinned }).
+export interface TipInput {
+  name: string; stage?: string; surface?: string; blurb?: string;
+  when?: string; prompt: string; best?: string[]; who?: string; pinned?: boolean;
+}
+
+export async function getTips(): Promise<Tip[]> {
+  return request<Tip[]>('/tips');
+}
+export async function createTip(input: TipInput): Promise<Tip> {
+  return request<Tip>('/tips', { method: 'POST', body: input });
+}
+export async function patchTip(id: number, patch: Partial<TipInput>): Promise<Tip> {
+  return request<Tip>(`/tips/${id}`, { method: 'PATCH', body: patch });
+}
+export async function deleteTip(id: number): Promise<void> {
+  await request<void>(`/tips/${id}`, { method: 'DELETE' });
+}
+// Record a run (uses + last-run stamp); the run itself is the terminal
+// session the caller opens with the recipe's prompt.
+export async function runTip(id: number): Promise<Tip> {
+  return request<Tip>(`/tips/${id}/run`, { method: 'POST', body: {} });
 }
 
 // ---- automated bug audit (#144) ----

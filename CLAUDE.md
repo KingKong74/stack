@@ -199,7 +199,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   `createProject/patchProject/deleteProject`, `getBugs/createBug/patchBug/deleteBug`,
   `getRoadmap/createRoadmapItem/patchRoadmapItem/deleteRoadmapItem`,
   `getFutures/createFuture/patchFuture/deleteFuture`,
-  `getNotes/createNote/patchNote/deleteNote`. `request()` attaches the bearer and throws `AuthError`
+  `getNotes/createNote/patchNote/deleteNote`,
+  `getTips/createTip/patchTip/deleteTip/runTip` (the app-wide recipe library — the Tips tab).
+  `request()` attaches the bearer and throws `AuthError`
   on 401 (which clears the token).
 - `components/CommandPalette.tsx` — the global ⌘K palette. Centred modal over a dimmed/blurred
   backdrop: debounced query, scope chips (All/Bugs/Roadmap/Notes/Activity with counts), grouped
@@ -394,7 +396,17 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   value / a Gemini-judged expectation; Run all / run one, quick-add "Site up" from site_url,
   ✎ edit-in-place via `patchCheck` — editing anything but the name clears the stored result —
   failing tests offer "→ Bug" prefilled into the BugModal) and the ✧ Bug audit panel (#144 —
-  Gemini + the Claude-prompt hand-off)), Notes (inline
+  Gemini + the Claude-prompt hand-off)), Tips (`detail/Tips.tsx` — the recipe library from the
+  Stack Planning design's Tips tab: kept Claude prompts with the context of WHEN to reach for
+  them. The library is **app-wide** (`store.getTips` et al hit the global `/api/tips` — every
+  project's tab shows the same recipes; the tab fetches its own data like Audit). Left rail =
+  search + stage chips (Diverge/Converge/Judge/Ship) + the list (pinned first, then most-run);
+  the detail pane shows the prompt with its `[square-bracket]` fill-in slots highlighted, the
+  works-best-when list and provenance. **▶ Run in a session** records the run (`store.runTip`
+  — uses + last-run, best-effort) and opens a terminal in THIS project with the prompt handed
+  over via the board's one-shot `stack.term.brief` paste — slots get filled in the session,
+  nothing runs until Enter. + New recipe / ✎ Edit share a TipModal; pin sorts to the top;
+  delete warns it's library-wide (`.tips-*` styles)), Notes (inline
   edit on the sticky; promote → bug/roadmap prefills the existing modal, then a
   keep/delete-the-note confirm), Activity. ProjectDetail also owns: the Visit-site/Repo buttons (open the URL, or inline-set it when
   unset via `patchProject`), and a quiet delete-project control behind a `ConfirmModal`.
@@ -502,6 +514,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     whole every ~10 min: jsonb list of origin branches with ahead/behind vs main, the
     merge-tree conflict probe (`mergeClean` true|false|null) and the parsed item id, plus
     `reported_at`. Read only by the control payload — Mission Control's merge strip.
+  - `tips` — the **app-wide** recipe library (the Tips tab; no project_id — one library, every
+    project reads it): name, `stage` (diverge|converge|judge|ship), `surface` (where it runs
+    best), `blurb`, `when_note`, `prompt` ([square-bracket] slots = fill-ins), `best` (jsonb
+    "works best when" lines), `who_note` (provenance), `pinned`, `uses` + `last_run_at` (the
+    run ledger — POST /api/tips/:id/run bumps them; the run itself is the terminal session the
+    client opens). A starter kit of 7 recipes seeds ONCE, guarded by `settings.tips_seeded`
+    (not table-emptiness — deleting every recipe never resurrects them).
   - `presence` — live sessions, keyed (project, session_id). SessionStart upserts, an authored
     /checkpoint bumps `last_seen_at`, SessionEnd (and ingest's metadata backstop) deletes;
     liveness = within `util.PRESENCE_TTL_MINUTES` (default 240 — the crashed-session backstop,
@@ -775,6 +794,10 @@ the silent metadata backstop so the feed never has gaps.
   lands a summary row in `check_runs`) ·
   `GET /api/projects/:slug/checks/runs?limit=` (the run history, newest first — the Audit
   dashboard's trend strip)
+- `GET|POST /api/tips` · `PATCH|DELETE /api/tips/:id` · `POST /api/tips/:id/run` (the app-wide
+  recipe library behind every project's Tips tab — GLOBAL, no slug. PATCH takes any subset
+  incl. `{pinned}`; `/run` is just the ledger (uses + last_run_at) — the actual run is the
+  terminal session the client opens with the prompt via the `stack.term.brief` handoff)
 - `GET|POST /api/projects/:slug/autopilot/runs` (the overnight runner's ledger — one row per
   item attempt: outcome landed|no-commits|failed|limit, commits, tokens, cost, checks, the
   session's own summary; the overview's `autopilotRuns` digest reads the last 20h)

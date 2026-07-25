@@ -20,25 +20,27 @@ import { Audit } from '../detail/Audit';
 import { Roadmap, type ReviewTag } from '../detail/Roadmap';
 import { Futures, type Alignment } from '../detail/Futures';
 import { Notes } from '../detail/Notes';
+import { Tips } from '../detail/Tips';
 import { Activity } from '../detail/Activity';
 import { Modal } from '../components/Modal';
 import { BugModal } from '../components/BugModal';
 import { RoadmapModal } from '../components/RoadmapModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 
-type Tab = 'overview' | 'bugs' | 'audit' | 'roadmap' | 'futures' | 'notes' | 'activity';
+type Tab = 'overview' | 'bugs' | 'audit' | 'roadmap' | 'futures' | 'tips' | 'notes' | 'activity';
 type BugFilter = 'all' | 'open' | 'fixing' | 'fixed';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Overview' }, { key: 'bugs', label: 'Bugs' },
   { key: 'audit', label: 'Audit' },
   { key: 'roadmap', label: 'Roadmap' }, { key: 'futures', label: 'Polaris' },
+  { key: 'tips', label: 'Tips' },
   { key: 'notes', label: 'Notes' }, { key: 'activity', label: 'Activity' },
 ];
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
 
 const roadmapTotal = (r: RoadmapData) => r.must.length + r.should.length + r.could.length + r.wont.length;
 
-const TAB_KEYS = new Set<Tab>(['overview', 'bugs', 'audit', 'roadmap', 'futures', 'notes', 'activity']);
+const TAB_KEYS = new Set<Tab>(['overview', 'bugs', 'audit', 'roadmap', 'futures', 'tips', 'notes', 'activity']);
 const asTab = (t: string | undefined): Tab => (t && TAB_KEYS.has(t as Tab) ? (t as Tab) : 'overview');
 
 export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
@@ -850,6 +852,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onConvergeCreate={convergeCreate}
             onDelete={removeFuture} onPromote={promoteFuture} />
         )}
+        {tab === 'tips' && <Tips slug={slug} />}
         {tab === 'notes' && (
           <Notes notes={notes} highlightId={highlightId} onAdd={addNote} onEdit={editNote} onDelete={removeNote} onPromote={promoteNote} />
         )}

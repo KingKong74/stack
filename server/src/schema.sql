@@ -488,3 +488,71 @@ CREATE TABLE IF NOT EXISTS branch_reports (
   report      JSONB NOT NULL DEFAULT '[]',
   reported_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- The Tips library (the Stack Planning design's Tips tab): Claude recipes —
+-- prompts that worked, kept with the context of WHEN to reach for them.
+-- App-wide by design (one library, every project's Tips tab reads it); Run
+-- hands the prompt to a claude session in that project via the terminal's
+-- one-shot brief handoff, so a recipe is runnable in place without any API.
+CREATE TABLE IF NOT EXISTS tips (
+  id          SERIAL PRIMARY KEY,
+  name        TEXT NOT NULL,
+  stage       TEXT NOT NULL DEFAULT 'ship',   -- diverge | converge | judge | ship
+  surface     TEXT NOT NULL DEFAULT '',       -- where it runs best (Polaris / Roadmap / …)
+  blurb       TEXT NOT NULL DEFAULT '',       -- the one-line list-row pitch
+  when_note   TEXT NOT NULL DEFAULT '',       -- when to reach for it
+  prompt      TEXT NOT NULL,                  -- [square-bracket] slots are fill-ins
+  best        JSONB NOT NULL DEFAULT '[]',    -- "works best when" lines
+  who_note    TEXT NOT NULL DEFAULT '',       -- provenance — who kept it, where output lands
+  pinned      BOOLEAN NOT NULL DEFAULT false, -- pinned recipes sort first
+  uses        INTEGER NOT NULL DEFAULT 0,     -- bumped by POST /api/tips/:id/run
+  last_run_at TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Starter kit: seeded exactly once. The settings flag — not table-emptiness —
+-- guards it, so deleting every recipe never resurrects these on reboot.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS tips_seeded BOOLEAN NOT NULL DEFAULT false;
+DO $$
+BEGIN
+  IF NOT (SELECT tips_seeded FROM settings WHERE id) THEN
+    INSERT INTO tips (name, stage, surface, blurb, when_note, prompt, best, who_note, pinned) VALUES
+    ('Stress-test this plan', 'judge', 'Polaris', 'Find where the plan breaks before the plan breaks',
+     'Before a plan leaves the room. Claude argues against it once, hard, so the first objection you hear is not in the review.',
+     'Read [the current plan] and the [north star]. Give me the three ways this fails in the next quarter, ranked by how likely they are. For each: the earliest signal we would see, and the cheapest thing we could do now to find out. No reassurance.',
+     '["The plan is written down — a vague plan gets vague objections.", "You name the horizon. Next quarter beats eventually.", "You ask for the signal, not just the risk — that is the part you can act on."]'::jsonb,
+     'Starter recipe. Point it at a roadmap item''s plan steps, or the whole board, before tickets harden.', true),
+    ('Judge against the north star', 'judge', 'Polaris', 'One verdict per idea, with the reason in one sentence',
+     'When the funnel has more ideas than opinions. You keep the override; Claude just makes sure nothing sits unjudged.',
+     'For each unjudged idea in [the funnel], decide: on course, off course, or too early — measured only against [the north star], not against how good the idea is. One sentence of reasoning each. Flag any idea where the north star does not actually settle it.',
+     '["You separate good idea from on course in the instruction — they get conflated otherwise.", "You ask it to flag the undecidable ones; those are the ones worth your time.", "Your north star is one sentence. If it is a paragraph, the verdicts get mushy."]'::jsonb,
+     'Starter recipe. Verdicts stay yours — the judge queue takes an override in one click.', false),
+    ('Find the missing work', 'ship', 'Roadmap', 'The tickets nobody wrote because everyone assumed someone had',
+     'Right after a plan turns into roadmap items. Claude reads the plan and the board side by side and reports the gap.',
+     'Compare [the plan] to [the open roadmap]. List work the plan implies that has no item. Include the boring kinds — migrations, docs, rollback, monitoring. For each, say which existing item it blocks or is blocked by.',
+     '["You name the boring categories explicitly — otherwise you only get feature work.", "You ask for the dependency, so the new items land in the right bucket.", "You run it again after scope changes, not once."]'::jsonb,
+     'Starter recipe. Run it after a plan night lands its design sections.', true),
+    ('Write the handoff', 'ship', 'Roadmap', 'Context an agent — or a person — can start from cold',
+     'Before an item goes to an overnight session. Most agent failures are missing context, not missing capability.',
+     'Write the starting brief for [this roadmap item] as if the reader has never seen this repo. Include: what exists already, the files it will touch, the one decision that was made and must not be relitigated, and what done looks like. Cut anything you cannot ground in the plan or the code.',
+     '["You name the settled decision explicitly — agents relitigate what you leave open.", "You define done in the brief, not in review.", "You tell it to cut ungrounded claims, or it will invent a helpful-sounding file path."]'::jsonb,
+     'Starter recipe. The output belongs in the item''s note — the autopilot folds it into its session prompt.', false),
+    ('What did we decide?', 'converge', 'Notes', 'Pull the decisions out of a long session, with what changed',
+     'End of a working session, before the context is gone. The output is the thing you keep while you can still correct it.',
+     'Read back over [this session]. List only decisions that were actually made — not options discussed. For each: what was decided, and what is now true that was not true before. Then list the open questions nobody closed.',
+     '["You force the decision/option split, or you get a summary instead of a record.", "You ask for the open questions in the same pass — they are the agenda for next time.", "A /checkpoint straight after keeps the record on the activity feed."]'::jsonb,
+     'Starter recipe. Pairs with /checkpoint — decisions land in the summary, open questions as next steps.', false),
+    ('Argue the other side', 'diverge', 'Polaris', 'A real counter-case, not a list of caveats',
+     'When you agree with yourself too fast. Claude takes the opposite position and makes the best version of it.',
+     'I have converged on [the current direction]. Make the strongest case for the opposite. Argue it as someone who believes it — no hedging, no on-the-other-hand. Then say what would have to be true for that case to win.',
+     '["You ban hedging in the prompt, or you get a balanced summary of both sides.", "You ask what would have to be true — that turns an argument into a test.", "You run it before the plan hardens, not after items exist."]'::jsonb,
+     'Starter recipe. Solo planning''s missing colleague.', false),
+    ('Seed the funnel', 'diverge', 'Polaris', 'Fifteen starting ideas so nobody stares at an empty sky',
+     'Minute one of planning something new. Disposable by design — the ideas exist to be disagreed with.',
+     'We are planning [the topic]. Give me 15 short ideas for the funnel: 5 things that will obviously be needed, 5 that are usually forgotten, 5 that are questions rather than answers. One line each. Do not rank them.',
+     '["You ask for questions as well as answers — a funnel of answers converges too early.", "You forbid ranking; ordering is the judge queue''s job.", "You treat the output as disposable. Dismissing ten of fifteen is a good session."]'::jsonb,
+     'Starter recipe. Ideas land on the Polaris sky as futures — judge them against the star after.', false);
+    UPDATE settings SET tips_seeded = true WHERE id;
+  END IF;
+END $$;

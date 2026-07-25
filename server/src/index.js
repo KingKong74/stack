@@ -24,6 +24,7 @@ import { autopilot, autopilotGlobal } from './routes/autopilot.js';
 import { branches } from './routes/branches.js';
 import { terminal } from './routes/terminal.js';
 import { triage } from './routes/triage.js';
+import { tips } from './routes/tips.js';
 import { attachTerm } from './term.js';
 
 // Read once at module load: the health endpoint reports the deployed version.
@@ -75,6 +76,7 @@ app.use('/api/projects/:slug/branches', requireToken, branches);
 app.use('/api/autopilot', requireToken, autopilotGlobal);
 app.use('/api/terminal', requireToken, terminal);
 app.use('/api/triage', requireToken, triage);
+app.use('/api/tips', requireToken, tips);
 app.use('/api/projects', requireToken, projects);
 
 const port = process.env.PORT || 4000;

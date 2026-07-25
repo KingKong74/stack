@@ -109,6 +109,25 @@ export function noteShape(row) {
   };
 }
 
+// One Tips-library recipe: a kept Claude prompt plus the context of when to
+// reach for it. `when`/`who` are the human framing; `best` the checklist.
+export function tipShape(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    stage: row.stage,           // diverge | converge | judge | ship
+    surface: row.surface || '', // where it runs best (Polaris / Roadmap / …)
+    blurb: row.blurb || '',
+    when: row.when_note || '',
+    prompt: row.prompt,
+    best: Array.isArray(row.best) ? row.best : [],
+    who: row.who_note || '',
+    pinned: !!row.pinned,
+    uses: row.uses,
+    lastRun: relativeTime(row.last_run_at) || '',
+  };
+}
+
 // A session row mapped to the activity-feed shape: hash, branch, summary, tags,
 // relative time. The hash is the commit the push landed on, so a bug's linkRef
 // (also the commit) matches an activity row's hash and the chip resolves.
