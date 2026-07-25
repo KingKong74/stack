@@ -170,6 +170,57 @@ futures.post('/cluster', async (req, res) => {
   }
 });
 
+// POST /converge  -> Gemini drafts roadmap tickets from a picked set of ideas
+// (the sky's converge tray): body {ids, mode: 'tickets'|'epic'}. Drafts only —
+// the client shows them editable and creates through the normal roadmap POST;
+// keyless the client falls back to direct-mapped drafts, so this route is the
+// ✧ enrichment, not the flow. 503 keyless.
+futures.post('/converge', async (req, res) => {
+  if (!geminiEnabled()) {
+    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
+  }
+  const ids = (Array.isArray(req.body?.ids) ? req.body.ids : [])
+    .map(Number).filter(Number.isFinite).slice(0, 20);
+  if (!ids.length) return res.status(400).json({ error: 'Pick at least one idea.' });
+  const mode = req.body?.mode === 'epic' ? 'epic' : 'tickets';
+  const { rows } = await q(
+    'SELECT id, area, alignment, title, note FROM futures WHERE project_id = $1 AND id = ANY($2::int[])',
+    [req.project.id, ids]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'No such ideas.' });
+  const okIds = new Set(rows.map((r) => r.id));
+  const prompt = buildPrompt('converge', {
+    ITEMS: rows.map((r) =>
+      `${r.id} | ${r.area || '-'} | ${r.alignment || 'unjudged'} | ${r.title} | ${(r.note || '-').slice(0, 300)}`).join('\n'),
+    MODE_LINE: mode === 'epic'
+      ? 'MODE: merge ALL the ideas into ONE epic — a single ticket whose plan steps cover the set.'
+      : 'MODE: one ticket per idea, each standing alone.',
+    NORTH_STAR_LINE: req.project.north_star
+      ? `The project's north star: "${String(req.project.north_star).slice(0, 400)}"`
+      : '',
+  });
+  try {
+    const answer = await askGemini(prompt, { timeoutMs: 30_000 });
+    const items = (Array.isArray(answer?.items) ? answer.items : [])
+      .map((s) => ({
+        title: String(s?.title || '').trim().slice(0, 300),
+        note: String(s?.note || '').trim().slice(0, 1000),
+        bucket: ['must', 'should', 'could'].includes(s?.bucket) ? s.bucket : 'should',
+        area: String(s?.area || '').trim().toLowerCase().slice(0, 40),
+        plan: (Array.isArray(s?.plan) ? s.plan : [])
+          .map((p) => String(p || '').trim().slice(0, 200)).filter(Boolean).slice(0, 8),
+        sources: (Array.isArray(s?.sources) ? s.sources : [])
+          .map(Number).filter((n) => okIds.has(n)),
+      }))
+      .filter((s) => s.title)
+      .slice(0, mode === 'epic' ? 1 : 20);
+    if (!items.length) return res.status(502).json({ error: 'Gemini gave an unusable answer — try again.' });
+    res.json({ items });
+  } catch (err) {
+    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+  }
+});
+
 // DELETE /:id  -> remove; auto (hook) ideas leave a tombstone
 futures.delete('/:id', async (req, res) => {
   const { rows } = await q(

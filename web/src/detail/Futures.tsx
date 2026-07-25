@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Future } from '../types';
-import type { ClusterSuggestion, JudgeSuggestion } from '../store';
+import type { ClusterSuggestion, ConvergeDraft, JudgeSuggestion } from '../store';
 import { Modal } from '../components/Modal';
 import { go } from '../lib/route';
 
@@ -66,7 +66,7 @@ type SkyBubble = { key: string; label: string; count: number; x: number; y: numb
 
 export function Futures({
   northStar, futures, highlightId, onSaveNorthStar, onAdd, onEdit, onAlign, onDelete, onPromote,
-  onAskGemini, onCluster, onSetAreas, slug,
+  onAskGemini, onCluster, onSetAreas, onConvergeDraft, onConvergeCreate, slug,
 }: {
   northStar: string;
   futures: Future[];
@@ -81,6 +81,8 @@ export function Futures({
   onAskGemini?: (id: number) => Promise<JudgeSuggestion>;
   onCluster?: () => Promise<ClusterSuggestion[]>;
   onSetAreas: (pairs: { id: number; area: string }[]) => void;
+  onConvergeDraft?: (ids: number[], mode: 'tickets' | 'epic') => Promise<ConvergeDraft[]>;
+  onConvergeCreate: (drafts: ConvergeDraft[], retire: number[]) => void;
 }) {
   // ---- north star strip (collapsible band, always on top) ----
   const [nsOpen, setNsOpen] = useState(true);
@@ -324,6 +326,81 @@ export function Futures({
     setClusterSugs(null);
   };
 
+  // ---- the converge tray: pick ideas across the sky, converge into tickets ----
+  const [tray, setTray] = useState<Set<number>>(new Set());
+  const [convergeOpen, setConvergeOpen] = useState(false);
+  const [convergeMode, setConvergeMode] = useState<'tickets' | 'epic'>('tickets');
+  const [convergeDrafts, setConvergeDrafts] = useState<ConvergeDraft[]>([]);
+  const [convergeBusy, setConvergeBusy] = useState(false);
+  const [convergeErr, setConvergeErr] = useState('');
+  const [retire, setRetire] = useState(true);
+  const trayIdeas = bySource.filter((f) => tray.has(f.id));
+  const toggleTray = (id: number) =>
+    setTray((t) => { const n = new Set(t); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
+  // The keyless drafts: a direct mapping of the picked ideas — Gemini is the
+  // enrichment on top, never the gate.
+  const directDrafts = (mode: 'tickets' | 'epic'): ConvergeDraft[] => {
+    if (!trayIdeas.length) return [];
+    if (mode === 'epic') {
+      return [{
+        title: trayIdeas[0].title,
+        note: trayIdeas.map((f) => `- ${f.title}${f.note ? ` — ${f.note}` : ''}`).join('\n'),
+        bucket: 'should',
+        area: trayIdeas.find((f) => f.area)?.area || '',
+        plan: trayIdeas.map((f) => f.title),
+        sources: trayIdeas.map((f) => f.id),
+      }];
+    }
+    return trayIdeas.map((f) => ({
+      title: f.title, note: f.note, bucket: 'should' as const, area: f.area, plan: [], sources: [f.id],
+    }));
+  };
+  const openConverge = () => {
+    setConvergeMode('tickets');
+    setConvergeDrafts(directDrafts('tickets'));
+    setConvergeErr('');
+    setRetire(true);
+    setConvergeOpen(true);
+  };
+  const switchConvergeMode = (mode: 'tickets' | 'epic') => {
+    setConvergeMode(mode);
+    setConvergeDrafts(directDrafts(mode));
+    setConvergeErr('');
+  };
+  const draftWithGemini = async () => {
+    if (!onConvergeDraft || convergeBusy) return;
+    setConvergeBusy(true);
+    setConvergeErr('');
+    try {
+      setConvergeDrafts(await onConvergeDraft(trayIdeas.map((f) => f.id), convergeMode));
+    } catch (e) {
+      setConvergeErr((e as Error)?.message || 'Gemini call failed.');
+    } finally {
+      setConvergeBusy(false);
+    }
+  };
+  const editDraft = (i: number, patch: Partial<ConvergeDraft>) =>
+    setConvergeDrafts((ds) => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+  const createConverged = () => {
+    const drafts = convergeDrafts.filter((d) => d.title.trim());
+    if (!drafts.length) return;
+    // Retire only ideas that actually fed a created ticket.
+    const used = new Set(drafts.flatMap((d) => d.sources));
+    onConvergeCreate(drafts, retire ? trayIdeas.map((f) => f.id).filter((id) => used.has(id)) : []);
+    setConvergeOpen(false);
+    setTray(new Set());
+  };
+  const convergeInStudio = () => {
+    if (!slug) return;
+    try {
+      sessionStorage.setItem('stack.polaris.thought',
+        `Let's converge these ideas into concrete roadmap tickets (design first, then create via the API after my yes): ` +
+        trayIdeas.map((f) => `"${f.title}"${f.note ? ` (${f.note.slice(0, 120)})` : ''}`).join('; '));
+    } catch { /* private mode — the handoff just won't appear */ }
+    go.polaris(slug);
+  };
+
   // ---- composers ----
   const [draft, setDraft] = useState('');
   const add = () => {
@@ -544,13 +621,13 @@ export function Futures({
                   </button>
                 ))}
                 {nodes.map((n) => (
-                  <button key={n.f.id} className="psky-node"
+                  <button key={n.f.id} className={`psky-node ${tray.has(n.f.id) ? 'tray' : ''}`}
                     style={{
                       left: n.x, top: n.y, width: n.d, height: n.d, opacity: n.opacity,
                       background: n.bg, borderWidth: n.bw, borderColor: n.border,
                       borderStyle: n.dashed ? 'dashed' : 'solid',
                     }}
-                    onClick={() => setSelId(n.f.id)}>
+                    onClick={(e) => { if (e.shiftKey) toggleTray(n.f.id); else setSelId(n.f.id); }}>
                     {n.showLabel && (
                       <span className={`psky-caption ${n.sel ? 'sel' : ''}`}
                         style={{ transform: `translate(${n.lx}px,${n.ly}px) translate(-50%,-50%)` }}>
@@ -565,6 +642,21 @@ export function Futures({
               </div>
             </div>
 
+            {trayIdeas.length > 0 && (
+              <div className="psky-tray">
+                <span className="label">CONVERGE</span>
+                {trayIdeas.map((f) => (
+                  <span className="psky-tray-chip" key={f.id}>
+                    {f.title.length > 26 ? f.title.slice(0, 25).trim() + '…' : f.title}
+                    <button onClick={() => toggleTray(f.id)} aria-label="Remove from the tray">×</button>
+                  </span>
+                ))}
+                <span className="hint">shift-click stars to add more</span>
+                <div style={{ flex: 1 }} />
+                <button className="psky-tray-clear" onClick={() => setTray(new Set())}>clear</button>
+                <button className="psky-tray-go" onClick={openConverge}>Converge → tickets</button>
+              </div>
+            )}
             <div className="psky-composer">
               <span className="plus">+</span>
               <input value={draft}
@@ -585,6 +677,8 @@ export function Futures({
             </div>
 
             <SelectedPanel selected={selected} themeLabel={selected ? (selected.area || LOOSE) : ''}
+              inTray={selected ? tray.has(selected.id) : false}
+              onToggleTray={selected ? () => toggleTray(selected.id) : undefined}
               onPromote={onPromote} onEdit={onEdit} onAlign={onAlign} onDelete={onDelete}
               onBuildOn={slug ? () => {
                 if (selected) {
@@ -635,6 +729,81 @@ export function Futures({
             <QueueCard big cur={cur} unjudgedCount={unjudged.length} judgedCount={judgedCount}
               hint={hint} hintBusy={hintBusy} hintErr={hintErr} canAsk={!!onAskGemini}
               onJudge={judge} onAsk={askPolaris} onSkip={skipCur} onReset={resetSkips} />
+          </div>
+        </Modal>
+      )}
+
+      {/* the converge panel — picked ideas become editable ticket drafts */}
+      {convergeOpen && (
+        <Modal onClose={() => setConvergeOpen(false)} closeOnOverlay={false} wide>
+          <div className="psky-pop cvg">
+            <div className="psky-pop-head">
+              <span className="name">Converge → tickets</span>
+              <span className="cvg-count">{trayIdeas.length} idea{trayIdeas.length === 1 ? '' : 's'}</span>
+              <button className="psky-pop-close" onClick={() => setConvergeOpen(false)} aria-label="Close">×</button>
+            </div>
+            <div className="cvg-bar">
+              <div className="seg-control sm" role="tablist" aria-label="Converge mode">
+                <button className={`seg-opt ${convergeMode === 'tickets' ? 'on' : ''}`}
+                  onClick={() => switchConvergeMode('tickets')}>Ticket per idea</button>
+                <button className={`seg-opt ${convergeMode === 'epic' ? 'on' : ''}`}
+                  onClick={() => switchConvergeMode('epic')}>One epic</button>
+              </div>
+              <div style={{ flex: 1 }} />
+              {onConvergeDraft && (
+                <button className="psky-all" onClick={draftWithGemini} disabled={convergeBusy}
+                  title="Gemini drafts the tickets against the north star — everything stays editable">
+                  {convergeBusy ? '✧ drafting…' : '✧ Draft with Gemini'}
+                </button>
+              )}
+            </div>
+            {convergeErr && <div className="psky-cluster-err">✧ {convergeErr}</div>}
+            <div className="cvg-list">
+              {convergeDrafts.map((d, i) => (
+                <div className="cvg-card" key={i}>
+                  <div className="cvg-row">
+                    <input className="field-input sm cvg-title" value={d.title}
+                      placeholder="Ticket title" onChange={(e) => editDraft(i, { title: e.target.value })} />
+                    <div className="seg-control sm" role="tablist" aria-label="Bucket">
+                      {(['must', 'should', 'could'] as const).map((b) => (
+                        <button key={b} className={`seg-opt ${d.bucket === b ? 'on' : ''}`}
+                          onClick={() => editDraft(i, { bucket: b })}>{b}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <textarea className="field-area" value={d.note} placeholder="What does done look like?"
+                    onChange={(e) => editDraft(i, { note: e.target.value })} />
+                  <div className="cvg-row">
+                    <input className="field-input sm" style={{ maxWidth: 180 }} value={d.area}
+                      placeholder="area (optional)" onChange={(e) => editDraft(i, { area: e.target.value })} />
+                    <span className="cvg-sources">
+                      from {d.sources.length ? d.sources.map((s) => `#${s}`).join(' ') : 'the tray'}
+                    </span>
+                  </div>
+                  <textarea className="field-area cvg-plan" value={d.plan.join('\n')}
+                    placeholder={'plan steps — one per line (optional)'}
+                    onChange={(e) => editDraft(i, { plan: e.target.value.split('\n') })} />
+                </div>
+              ))}
+            </div>
+            <div className="psky-pop-foot cvg-foot">
+              {slug && (
+                <button className="cvg-studio" onClick={convergeInStudio}
+                  title="Take the set to the Polaris studio and design it in conversation instead">
+                  ✦ Design in the studio instead
+                </button>
+              )}
+              <label className="cvg-retire">
+                <input type="checkbox" checked={retire} onChange={() => setRetire((r) => !r)} />
+                retire the converged ideas from the funnel
+              </label>
+              <div style={{ flex: 1 }} />
+              <button className="btn-cancel sm" onClick={() => setConvergeOpen(false)}>Cancel</button>
+              <button className="btn-submit sm" onClick={createConverged}
+                disabled={!convergeDrafts.some((d) => d.title.trim())}>
+                Create {convergeDrafts.filter((d) => d.title.trim()).length} ticket{convergeDrafts.filter((d) => d.title.trim()).length === 1 ? '' : 's'}
+              </button>
+            </div>
           </div>
         </Modal>
       )}
@@ -760,10 +929,12 @@ function QueueCard({
 // dispositions (promote / build on / edit / dismiss). Judging an unjudged
 // selection happens right here too — the queue is just the other door in.
 function SelectedPanel({
-  selected, themeLabel, onPromote, onEdit, onAlign, onDelete, onBuildOn,
+  selected, themeLabel, inTray, onToggleTray, onPromote, onEdit, onAlign, onDelete, onBuildOn,
 }: {
   selected: Future | null;
   themeLabel: string;
+  inTray: boolean;
+  onToggleTray?: () => void;
   onPromote: (future: Future) => void;
   onEdit: (id: number, patch: { title: string; note: string; area: string }) => void;
   onAlign: (id: number, alignment: Alignment | '') => void;
@@ -846,6 +1017,12 @@ function SelectedPanel({
       {f.note && <div className="psky-sel-note">{f.note}</div>}
       <div className="psky-sel-actions">
         <button className="act primary" onClick={() => onPromote(f)}>→ Roadmap</button>
+        {onToggleTray && (
+          <button className={`act ${inTray ? 'in-tray' : ''}`} onClick={onToggleTray}
+            title="The converge tray — pick ideas across the sky, then converge the set into tickets">
+            {inTray ? '✓ In tray' : '⊕ Converge'}
+          </button>
+        )}
         {onBuildOn && <button className="act" onClick={onBuildOn}>Build on it</button>}
         <button className="act" onClick={() => { setTitle(f.title); setNote(f.note); setArea(f.area); setEditing(true); }}>✎ Edit</button>
         <button className="act quiet" onClick={() => onDelete(f.id)}>Dismiss</button>

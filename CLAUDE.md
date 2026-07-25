@@ -358,6 +358,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   `alignment`, ✦ "What would Polaris say?" = the Gemini judge suggestion, skip is
   session-local; ⤢ pops the queue out into a modal with roomier controls, same state), a
   computed ✦ POLARIS observation (arithmetic, no API) and the think-out-loud
+  — plus **Converge → tickets** (the design's board→converge→tickets flow, realised in the
+  sky): shift-click stars (or ⊕ Converge on the selected idea) into a tray strip, then the
+  converge panel drafts tickets — Ticket-per-idea or One-epic mode, keyless direct-mapped
+  drafts with ✧ Draft-with-Gemini enrichment (POST `futures/converge`), every field editable
+  — and creates through the normal roadmap POST (plan steps included), optionally retiring
+  the converged ideas (tombstone-safe delete); "✦ Design in the studio instead" hands the
+  set to the Polaris studio via the thought handoff
   input (stashes the thought, opens the studio). The pre-sky list view survives behind a
   Sky/List seg (promote/dismiss/edit/judge per row, area chips, "first line = idea" composer);
   the old drag-canvas (`FuturesCanvas`) is retired), Audit (`detail/Audit.tsx` — the dedicated testing +
@@ -724,6 +731,9 @@ the silent metadata backstop so the feed never has gaps.
   (PATCH: title/note/reviewed/`alignment: on-course|tangent|off-course` ('' clears);
   DELETE tombstones a hook idea) · `POST /api/projects/:slug/futures/cluster` (Gemini groups the
   funnel into themes — a suggested `area` per unthemed idea; suggestion only, 503 keyless) ·
+  `POST /api/projects/:slug/futures/converge` (`{ids, mode: tickets|epic}` — Gemini drafts
+  roadmap tickets from picked ideas; drafts only, the client creates via the roadmap POST;
+  503 keyless and the client's direct-mapped drafts carry the flow) ·
   `POST /api/projects/:slug/futures/:id/judge` (Gemini-suggested
   verdict + why — suggestion only, 503 without a server key, 400 without a north star)
 - **Polaris** (#209) is NOT a server route any more — the old Gemini `polaris` + `intake` routes

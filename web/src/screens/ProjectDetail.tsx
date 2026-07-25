@@ -7,7 +7,8 @@ import {
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
   runAudit, getAuditPrompt, type AuditResult,
   patchProject, deleteProject, createShareLink, deleteShareLink,
-  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, assistRoadmapItem,
+  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, convergeFutures,
+  type ConvergeDraft, assistRoadmapItem,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
   replanProject, startAutopilot, AuthError,
 } from '../store';
@@ -464,6 +465,28 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, futures: futures.map((f) => byId.get(f.id) || f) });
     });
 
+  // Converge (the sky's tray → tickets): create every draft through the normal
+  // roadmap POST, retire the converged ideas, then one state write for both.
+  const convergeCreate = (drafts: ConvergeDraft[], retireIds: number[]) =>
+    guard(async () => {
+      const created: RoadmapItem[] = [];
+      for (const d of drafts) {
+        created.push(await createRoadmapItem(slug, {
+          title: d.title.trim(), note: d.note.trim(), bucket: d.bucket,
+          area: d.area.trim().toLowerCase() || undefined,
+          plan: (() => {
+            const steps = d.plan.map((t) => t.trim()).filter(Boolean);
+            return steps.length ? steps.map((text) => ({ text, done: false })) : undefined;
+          })(),
+        }));
+      }
+      for (const id of retireIds) await deleteFuture(slug, id);
+      const retired = new Set(retireIds);
+      const nextRoadmap = { ...roadmap };
+      for (const it of created) nextRoadmap[it.bucket] = [...nextRoadmap[it.bucket], it];
+      setData({ ...data, roadmap: nextRoadmap, futures: futures.filter((f) => !retired.has(f.id)) });
+    });
+
   const saveNorthStar = (text: string) =>
     guard(async () => {
       await patchProject(slug, { north_star: text });
@@ -823,6 +846,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onSaveNorthStar={saveNorthStar} onAdd={addFuture} onEdit={editFuture} onAlign={alignFuture}
             onAskGemini={(id) => judgeFuture(slug, id)} onCluster={() => clusterFutures(slug)}
             onSetAreas={applyFutureAreas}
+            onConvergeDraft={(ids, mode) => convergeFutures(slug, ids, mode)}
+            onConvergeCreate={convergeCreate}
             onDelete={removeFuture} onPromote={promoteFuture} />
         )}
         {tab === 'notes' && (

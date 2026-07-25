@@ -711,6 +711,26 @@ export async function clusterFutures(slug: string): Promise<ClusterSuggestion[]>
   return r.items;
 }
 
+// ---- converge (POST .../futures/converge — Gemini drafts tickets from picked
+// ideas; drafts only, the client creates through the normal roadmap POST) ----
+
+export interface ConvergeDraft {
+  title: string;
+  note: string;
+  bucket: 'must' | 'should' | 'could';
+  area: string;
+  plan: string[];
+  sources: number[];
+}
+
+export async function convergeFutures(
+  slug: string, ids: number[], mode: 'tickets' | 'epic',
+): Promise<ConvergeDraft[]> {
+  const r = await request<{ items: ConvergeDraft[] }>(
+    `/projects/${encodeURIComponent(slug)}/futures/converge`, { method: 'POST', body: { ids, mode } });
+  return r.items;
+}
+
 // ---- timeline (GET /api/timeline — cross-project pushes + contribution graph) ----
 
 export interface TimelineEntry {

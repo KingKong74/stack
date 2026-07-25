@@ -131,6 +131,25 @@ THE IDEAS:
 Use en-AU spelling. Respond with ONLY this JSON:
 { "items": [ { "id": 123, "area": "…" } ] }`;
 
+DEFAULTS.converge = `You are converging a side project's judged ideas into concrete roadmap tickets.
+{{NORTH_STAR_LINE}}
+
+{{MODE_LINE}}
+
+Ground every ticket in the ideas below — never invent unrelated work. Titles are short
+imperatives naming the surface they touch; notes say what "done" looks like in one or two
+sentences; "plan" is 2-6 short build steps (omit it when the ticket is trivial). Buckets:
+"must" only when the north star clearly demands it now, otherwise "should" (or "could" for
+nice-to-haves). Keep each idea's theme as its "area" unless it is plainly wrong. "sources"
+lists the id(s) of the idea(s) each ticket came from.
+
+THE IDEAS (id | theme | verdict | title | note):
+{{ITEMS}}
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "items": [ { "title": "…", "note": "…", "bucket": "must|should|could", "area": "…",
+               "plan": ["step", "…"], "sources": [123] } ] }`;
+
 DEFAULTS.reviewbrief = `You are the reviewer's assistant on a side project command centre. A completed
 roadmap item is awaiting a human verdict (solid / rethink). Write it up so the reviewer can judge
 quickly without re-reading everything.
@@ -229,6 +248,7 @@ const ENV_KEYS = {
   assist: 'GEMINI_ASSIST_PROMPT',
   cleanup: 'GEMINI_CLEANUP_PROMPT',
   cluster: 'GEMINI_CLUSTER_PROMPT',
+  converge: 'GEMINI_CONVERGE_PROMPT',
   reviewbrief: 'GEMINI_REVIEWBRIEF_PROMPT',
   audit: 'GEMINI_AUDIT_PROMPT',
   triage: 'GEMINI_TRIAGE_PROMPT',
