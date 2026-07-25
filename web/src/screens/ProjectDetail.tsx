@@ -371,6 +371,32 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       if (queueNow) await startAutopilot(slug, String(item.id));
     });
 
+  // #227 — set (or clear) an item's desire tier from the Tiers view. An ordinary
+  // PATCH like every other board mutation; the tier then leads the run queue in
+  // the Plan room and in the overnight runner's pick.
+  const setTierRoad = (item: RoadmapItem, tier: RoadmapItem['tier']) =>
+    guard(async () => {
+      const updated = await patchRoadmapItem(slug, item.id, { tier });
+      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
+    });
+
+  // #255 — push picked items to the planning agent: one plan-kind session whose
+  // ordered agenda is exactly these ids. The runner designs each item and PATCHes
+  // the result back as plan steps — no branches, no builds, nothing ticked. An
+  // already-open job for the project comes back instead of stacking a second one,
+  // so the reply says which of the two happened.
+  const planItems = async (ids: number[]): Promise<string> => {
+    const job = await startAutopilot(slug, { kind: 'plan', agenda: ids });
+    // The route returns the EXISTING open job rather than stacking a second one,
+    // so "did mine land?" is "is this job exactly the one I asked for?" — compare
+    // the agenda itself, not just its length.
+    const planned = job.sessionKind === 'plan'
+      && (job.agenda ?? []).map(String).join(',') === ids.join(',');
+    return planned
+      ? `Planning session queued for ${ids.length} item${ids.length === 1 ? '' : 's'} — the host picks it up within a minute.`
+      : `This project already has an open ${job.kind} session (${job.status}); nothing new was queued. Let it finish, then push again.`;
+  };
+
   // ＋ Bug / ＋ Audit from a review row (#146): log a ticket referencing the
   // item — the prefilled modal opens, the human finishes and saves it.
   const logBugFromReview = (item: RoadmapItem) =>
@@ -824,6 +850,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         )}
         {tab === 'roadmap' && (
           <Roadmap roadmap={roadmap} highlightId={highlightId} slug={slug} liveBranches={data.liveBranches}
+            staleItemDays={data.staleItemDays}
             onAdd={(p, area) => roadDraft
               ? openRoadDraft(roadDraft)
               : setRoadModal({ open: true, priority: p, title: '', note: '', area, fromNote: null, editing: null })}
@@ -841,6 +868,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
               try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the button just won't appear */ }
               go.terminal(slug);
             }}
+            onPlanItems={planItems} onSetTier={setTierRoad}
             onBranch={(it) => branchItem(it)} />
         )}
         {tab === 'futures' && (

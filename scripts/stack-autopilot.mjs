@@ -312,11 +312,16 @@ const TOKEN_BUDGET = rawTokens === 0 ? Infinity : Math.max(50_000, rawTokens);
 // A plan night defaults to a bigger batch — designs are cheap and the point
 // is reviewing five in minutes, not building three. An agenda (#228) sets the
 // batch to exactly its own length; an audit is always one session.
+// The Settings items-per-night is UNLIMITED at 0 (#260), exactly like the token
+// budget above: the wall clock and the token budget are then the only governors.
+// `?? 3` (not `|| 3`) so a stored 0 survives as a real value.
+const settingsMaxItems = Number.isFinite(appSettings.autopilotMaxItems) ? appSettings.autopilotMaxItems : 3;
+const capItems = (v) => (v === 0 ? Infinity : Math.max(1, v));
 const MAX_ITEMS = KIND === 'audit' ? 1
   : ITEM_ID != null ? 1
-  : KIND === 'debug' ? (BUG_AGENDA.length || Math.max(1, MAX_ITEMS_ARG ?? (appSettings.autopilotMaxItems || 3)))
+  : KIND === 'debug' ? (BUG_AGENDA.length || capItems(MAX_ITEMS_ARG ?? settingsMaxItems))
   : AGENDA.length ? AGENDA.length
-  : Math.max(1, MAX_ITEMS_ARG ?? (PLAN_ONLY ? 5 : (appSettings.autopilotMaxItems || 3)));
+  : capItems(MAX_ITEMS_ARG ?? (PLAN_ONLY ? 5 : settingsMaxItems));
 // Dual-model config (#153/#168): CLI override beats Settings; anything that
 // isn't a safe model alias coerces to '' (default / off) so shell
 // metacharacters never reach the claude CLI. Allowed charset: alphanumerics
@@ -353,6 +358,11 @@ process.on('exit', unlock);
 const eligible = (targetArea) => (it) =>
   !it.done && !it.skipped && !it.claimedBy && (it.source === 'manual' || it.reviewed)
   && (!targetArea || (it.area || '') === targetArea);
+// The desire tier (#227): S/A/B/C is the owner's ranking of what they want
+// next, sorted ahead of the MoSCoW bucket. Unranked = 4, so it lands after
+// every ranked item and a board nobody has tiered is untouched.
+const TIER_RANK = { S: 0, A: 1, B: 2, C: 3 };
+const tierRank = (t) => TIER_RANK[String(t || '').toUpperCase()] ?? 4;
 let tokensSpent = 0;
 let costSpent = 0;
 
@@ -496,7 +506,7 @@ async function debugNight() {
   let nightLimited = false;
   const sevOrder = { critical: 0, high: 1, medium: 2, low: 3 };
   log(`DEBUG session: ${BUG_AGENDA.length ? `agenda ${BUG_AGENDA.join(' → ')}` : 'open bugs, serious first'} — `
-    + `budget ${MINUTES}m, up to ${MAX_ITEMS} bug(s).`);
+    + `budget ${MINUTES}m, ${MAX_ITEMS === Infinity ? 'unlimited bugs (the clock governs)' : `up to ${MAX_ITEMS} bug(s)`}.`);
 
   for (let n = 0; n < MAX_ITEMS; n++) {
     if (remainingMin() < MIN_SESSION_MIN) { log(`wall clock nearly spent (${Math.round(remainingMin())}m left) — stopping.`); break; }
@@ -945,7 +955,7 @@ try {
   let nightLimited = false;
   log(`${PLAN_ONLY ? 'PLAN night (#219 — designs only, no builds): ' : ''}night budget: ${MINUTES}m wall clock, `
     + `${TOKEN_BUDGET === Infinity ? 'UNLIMITED tokens' : `${Math.round(TOKEN_BUDGET / 1000)}k tokens`}, `
-    + `up to ${MAX_ITEMS} item(s)${ITEM_ID != null ? ` (pinned to #${ITEM_ID})`
+    + `${MAX_ITEMS === Infinity ? 'UNLIMITED items (the clock and the token budget govern)' : `up to ${MAX_ITEMS} item(s)`}${ITEM_ID != null ? ` (pinned to #${ITEM_ID})`
       : AGENDA.length ? ` (agenda: ${AGENDA.map((i) => `#${i}`).join(' → ')})` : ''}.`);
   log(`models: executor ${EXECUTOR_MODEL || 'CLI default'}, advisor ${ADVISOR_MODEL || 'off'}.`);
 
@@ -1007,6 +1017,12 @@ try {
     } else {
       const targetArea = AREA_ARG != null ? String(AREA_ARG).toLowerCase() : (detail.autopilotArea || '');
       item = [...(detail.roadmap?.must || []), ...(detail.roadmap?.should || [])]
+        // The desire tier (#227) is the PRIMARY sort — what the owner actually
+        // wants next beats MoSCoW sizing. Unranked items keep their old place
+        // (tier rank 4, after every ranked one), and the array arrives already
+        // ordered must-then-should within bucket position, so a stable sort by
+        // tier alone leaves an unranked board picking exactly as it always did.
+        .sort((a, b) => tierRank(a.tier) - tierRank(b.tier))
         .filter((it) => !attempted.has(it.id))
         // A plan night wants the items still missing a design (#219).
         .filter((it) => !PLAN_ONLY || !(it.plan?.length))

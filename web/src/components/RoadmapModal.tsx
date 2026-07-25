@@ -200,9 +200,10 @@ export function RoadmapModal({
       <div className="lbl" style={{ marginBottom: 9 }}>
         Risk <span className="optional">low = a green overnight run merges itself; you still give the verdict</span>
       </div>
-      <div className="seg" style={{ marginBottom: 26 }}>
+      <div className="seg" style={{ marginBottom: 26 }} role="tablist" aria-label="Risk">
         {(['low', 'normal', 'high'] as const).map((r) => (
-          <button key={r} type="button" className={`opt risk-${r} ${risk === r ? 'on' : ''}`} onClick={() => setRisk(r)}>
+          <button key={r} type="button" role="tab" aria-selected={risk === r}
+            className={`opt risk-${r} ${risk === r ? 'on' : ''}`} onClick={() => setRisk(r)}>
             {r === 'low' ? 'Low' : r === 'normal' ? 'Normal' : 'High'}
           </button>
         ))}

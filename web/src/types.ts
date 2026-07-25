@@ -52,6 +52,14 @@ export interface Bug {
 // ticked off by whoever builds them (the autopilot works them top-down).
 export interface PlanStep { text: string; done: boolean }
 
+// The desire tier (#227): how much the owner wants an item NEXT, deliberately
+// distinct from the MoSCoW bucket's sizing. '' = unranked and sorts last, so a
+// board nobody has ranked keeps its existing order everywhere.
+export type Tier = '' | 'S' | 'A' | 'B' | 'C';
+export const TIERS: Exclude<Tier, ''>[] = ['S', 'A', 'B', 'C'];
+export const TIER_RANK: Record<string, number> = { S: 0, A: 1, B: 2, C: 3 };
+export const tierRank = (t: string) => TIER_RANK[t] ?? 4;
+
 export interface RoadmapItem {
   id: number;
   title: string;
@@ -68,7 +76,9 @@ export interface RoadmapItem {
   refineNote: string;  // the refine delta — what to change on top ('' = none) — #146
   reviewShelved: boolean; // review set aside for later — off the To-verify list — #148
   skipped: boolean;    // parked — planned, but not to be picked up yet
+  skippedAt: string | null; // ISO — when it was parked; ages the Parked view (#247)
   risk: 'low' | 'normal' | 'high'; // graduated trust (#212): low auto-merges a green run
+  tier: Tier;          // desire tier (#227) — what the owner wants NEXT; '' = unranked (sorts last)
   plan: PlanStep[];    // the implementation plan ([] = none)
   updatedAt: string | null; // ISO — latest-first ordering in the archive
 }
@@ -295,6 +305,7 @@ export interface Settings {
   autopilotTokens: number;    // token budget per run; 0 = unlimited
   autopilotTime: string;      // nightly start, host-local HH:MM
   autopilotMaxItems: number;  // most items attempted per night
+  staleItemDays: number;      // a parked roadmap item reads as stale past this many days (#247)
   autopilotExecutorModel: string; // model alias sessions run as; '' = CLI default (#153)
   autopilotAdvisorModel: string;  // stronger model exposed as the advisor subagent; '' = off
   assistGuidance: string;     // ✧ Fill from note — standing steer folded into the prompt

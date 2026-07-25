@@ -581,13 +581,33 @@ a.tab { display: inline-block; }
 .road-col { background: var(--panel); border: 1px solid var(--line-panel); border-radius: 14px; padding: 13px; }
 .road-col-head { display: flex; align-items: center; gap: 8px; margin-bottom: 13px; padding: 0 3px; }
 .road-col-head .dot { width: 9px; height: 9px; border-radius: 50%; }
-.road-col-head .name { font-family: var(--disp); font-size: 14px; font-weight: 600; }
+.road-col-head .name { font-family: var(--disp); font-size: 14px; font-weight: 600; text-align: left; color: var(--ink); }
+.road-col-head .name:hover { color: var(--accent-deep); }
 .road-col-head .count { font-size: 12px; color: var(--faint); margin-left: auto; }
 .road-items { display: flex; flex-direction: column; gap: 9px; }
 .road-item { display: flex; align-items: flex-start; gap: 9px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; }
-.road-item .road-body { flex: 1; min-width: 0; }
-.road-item .t { font-size: 13px; font-weight: 500; line-height: 1.35; }
-.road-item .note { font-size: 11.5px; color: var(--muted); margin-top: 5px; line-height: 1.4; }
+/* the body takes every pixel the card isn't using for the check + hover actions,
+   and long words break rather than spilling past the card (#251) */
+.road-item .road-body { flex: 1 1 auto; min-width: 0; }
+.road-item .t { font-size: 13px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
+.road-item .note { font-size: 11.5px; color: var(--muted); margin-top: 5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* #251 — section expand / fold. Folding leaves the header as a hairline row;
+   expanding drops the grid to one column so the section fills the board and
+   its cards get the full width for their text. */
+.road-col-btn { flex: none; color: var(--fainter); font-size: 12px; line-height: 1; padding: 3px 5px; border-radius: 6px; }
+.road-col-btn:hover { color: var(--accent-deep); background: var(--card); }
+.road-col-btn.on { color: var(--accent); }
+.road-col-head .count + .road-col-btn { margin-left: 2px; }
+.road-col.folded { padding-bottom: 11px; }
+.road-col.folded .road-col-head { margin-bottom: 0; }
+.road-grid.focused { grid-template-columns: 1fr; }
+.road-grid.focused .road-item { padding: 13px 15px; }
+.road-grid.focused .road-item .t { font-size: 14px; }
+.road-grid.focused .road-item .note { font-size: 12.5px; margin-top: 7px; }
+.road-grid.focused .road-actions { opacity: 1; }
+.road-focus-back { font-size: 12px; color: var(--faint); padding: 0 0 10px; }
+.road-focus-back:hover { color: var(--accent-deep); }
 .road-item.done .t { text-decoration: line-through; color: var(--faint); }
 .road-item.done .note { text-decoration: line-through; }
 .road-check { flex: none; width: 18px; height: 18px; margin-top: 1px; border: 1.5px solid var(--line-3); border-radius: 6px; color: #fff; font-size: 11px; line-height: 1; display: flex; align-items: center; justify-content: center; transition: background .12s, border-color .12s; }
@@ -791,6 +811,63 @@ a.tab { display: inline-block; }
 .arch-pager button:hover:not(:disabled) { color: var(--ink); background: var(--panel); }
 .arch-pager button:disabled { opacity: 0.35; }
 
+/* #227 — the tier list: a desire ranking over the whole open board. One row
+   per tier, cards dragged between them; S wears the accent, unranked is dashed. */
+.tier-chip { display: inline-block; margin-left: 7px; min-width: 16px; text-align: center; font-family: var(--mono); font-size: 9.5px; font-weight: 700; border-radius: 5px; padding: 1px 5px; vertical-align: 1px; color: #fff; background: var(--paused); }
+.tier-chip.tS { background: var(--accent); }
+.tier-chip.tA { background: var(--building); }
+.tier-chip.tB { background: var(--sage); }
+.tier-chip.tC { background: #8f897d; }
+.tier-board { display: flex; flex-direction: column; gap: 10px; }
+.tier-row { display: flex; gap: 14px; align-items: flex-start; background: var(--panel); border: 1px solid var(--line-panel); border-radius: 14px; padding: 12px 14px; }
+.tier-row.tnone { background: transparent; border-style: dashed; }
+.tier-row.over { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+.tier-label { flex: none; width: 128px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.tier-label .k { font-family: var(--disp); font-size: 20px; font-weight: 700; color: var(--ink); }
+.tier-row.tS .tier-label .k { color: var(--accent); }
+.tier-row.tA .tier-label .k { color: var(--building); }
+.tier-row.tB .tier-label .k { color: var(--sage); }
+.tier-row.tnone .tier-label .k { font-size: 13px; color: var(--faint); }
+.tier-label .n { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.tier-label .blurb { flex-basis: 100%; font-size: 10.5px; line-height: 1.4; color: var(--faint); }
+.tier-items { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.tier-card { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; max-width: 100%; cursor: grab; }
+.tier-card.drag { opacity: 0.45; }
+.tier-card.hl { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+.tier-card .body { display: flex; flex-direction: column; gap: 2px; text-align: left; min-width: 0; max-width: 330px; }
+.tier-card .t { font-size: 12.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.tier-card .body:hover .t { color: var(--accent-deep); }
+.tier-card .m { font-family: var(--mono); font-size: 9.5px; color: var(--paused); }
+.tier-pick { display: flex; gap: 2px; opacity: 0; transition: opacity .12s ease; }
+.tier-card:hover .tier-pick { opacity: 1; }
+.tier-pick .tp { font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--fainter); border: 1px solid var(--line-2); border-radius: 5px; padding: 2px 5px; line-height: 1; }
+.tier-pick .tp:hover { color: var(--accent-deep); border-color: var(--accent-tint-border); }
+.tier-pick .tp.on { color: #fff; background: var(--accent); border-color: var(--accent); }
+.tier-empty { font-size: 11px; color: var(--fainter); padding: 8px 2px; }
+
+/* #247 — the Parked view: everything set aside, aged, with stale flagged.
+   Deliberately a plain list, not the board grid — this is a shelf to clear. */
+.seg-opt .seg-warn { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; color: #fff; background: #9a7a2e; border-radius: 6px; padding: 0 5px; vertical-align: 1px; }
+.seg-opt.on .seg-warn { background: rgba(0,0,0,.28); }
+.parked-head { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
+.parked-head .cap-sm { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.1em; color: var(--faint); }
+.parked-head .n { font-size: 12px; color: var(--faint); }
+.stale-pill { font-size: 10.5px; font-weight: 600; color: #9a7a2e; background: #f1eada; border-radius: 6px; padding: 1px 7px; }
+.parked-list { border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.parked-row { display: flex; align-items: flex-start; gap: 11px; padding: 11px 14px; }
+.parked-row + .parked-row { border-top: 1px solid var(--line-2); }
+.parked-row .arch-list-bucket { margin-top: 2px; }
+.parked-row.stale { background: linear-gradient(90deg, #f1eada22, transparent 220px); }
+.parked-body { flex: 1 1 auto; min-width: 0; }
+.parked-body .t { font-size: 13px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
+.parked-body .note { font-size: 11.5px; color: var(--muted); margin-top: 5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+.parked-age { flex: none; display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 2px; }
+.parked-age.stale { color: #9a7a2e; }
+.stale-flag { font-family: var(--sans, inherit); font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #fff; background: #9a7a2e; border-radius: 5px; padding: 1px 5px; }
+.parked-row .road-actions.arch { margin-top: 0; flex: none; opacity: 1; }
+.parked-row .road-actions.arch button { font-size: 12px; }
+.parked-row.hl { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 12px; }
+
 /* ---------- notes ---------- */
 .note-intro { font-size: 13px; color: var(--muted); margin-bottom: 22px; }
 .composer { background: #fef4a8; border: 1px solid #ecdf8a; border-radius: 14px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.09); max-width: 540px; margin-bottom: 28px; transform: rotate(-0.5deg); }
@@ -938,6 +1015,12 @@ a.tab { display: inline-block; }
 .seg .opt.prio.on.should { background: var(--building); border-color: var(--building); color: #fff; }
 .seg .opt.prio.on.could  { background: var(--sage); border-color: var(--sage); color: #fff; }
 .seg .opt.prio.on.wont   { background: #8f897d; border-color: #8f897d; color: #fff; }
+
+/* risk chips in the roadmap modal (#249) — the selected tier reads at a glance,
+   in the same tones the board's risk chip uses (sage = low, critical = high). */
+.seg .opt.risk-low.on    { background: var(--sage); border-color: var(--sage); color: #fff; }
+.seg .opt.risk-normal.on { background: #8f897d; border-color: #8f897d; color: #fff; }
+.seg .opt.risk-high.on   { background: var(--critical); border-color: var(--critical); color: #fff; }
 
 /* status segmented control in the new-project modal */
 .seg .opt.pstatus.on.live     { background: var(--live); border-color: var(--live); color: #fff; }
@@ -2682,6 +2765,20 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc16-heldrow .tag { font-family: var(--mono); font-size: 10px; color: var(--paused); width: 40px; flex: none; }
 .mc16-heldrow .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
 .mc16-heldrow .why { font-family: var(--mono); font-size: 10px; color: var(--paused); white-space: nowrap; }
+/* #260 — no silent truncation: the held list folds behind an honest count */
+.mc16-heldmore { align-self: flex-start; font-family: var(--mono); font-size: 10px; color: var(--muted); padding: 4px 2px; }
+.mc16-heldmore:hover { color: var(--accent); }
+/* #260 — parallel-session planning: the lane note above the queue and the
+   per-row lane chip. Lane 1 (the overnight runner) wears the accent. */
+.mc16-lanenote { font-size: 11.5px; line-height: 1.5; color: var(--muted); background: var(--panel); border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 12px; margin-bottom: 10px; }
+.mc16-lanenote b { color: var(--ink); font-weight: 600; }
+.mc16-lane { flex: none; font-family: var(--mono); font-size: 9.5px; font-weight: 600; padding: 2px 6px; border-radius: 5px; border: 1px solid var(--line-3); color: var(--paused); }
+.mc16-lane.l0 { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent-deep); }
+.mc16-row .flag.noplan { background: var(--panel); color: var(--paused); border: 1px solid var(--line-2); }
+.mc16-head .capnote.lanes { margin-left: 4px; }
+/* #260 — ✧ push the queue to the planning agent */
+.mc16-planpush { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.mc16-planpush .note { font-family: var(--mono); font-size: 10px; color: var(--paused); }
 
 .mc16-inbox { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); display: flex; flex-direction: column; overflow: hidden; }
 .mc16-inbox .head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); }

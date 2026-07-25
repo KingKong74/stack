@@ -414,11 +414,25 @@ export async function labelTerminalSessions(): Promise<{ sessions: TermSession[]
 
 // The Run-now button: queue a manual job the host dispatcher picks up within
 // a minute. An already open job for the project comes back instead.
-export async function startAutopilot(slug: string, itemId?: string): Promise<AutopilotJob> {
-  return request<AutopilotJob>('/autopilot/start', {
-    method: 'POST',
-    body: itemId ? { slug, itemId } : { slug },
-  });
+// A session plan can ride along (#228/#255): `kind` picks the runner mode
+// (build | plan | debug | audit), `agenda` is the ORDERED list of roadmap ids
+// (or BUG-N keys for debug) it must work, `area` scopes an agenda-less pick.
+export interface SessionPlanInput {
+  itemId?: string;
+  kind?: 'build' | 'plan' | 'debug' | 'audit';
+  agenda?: (string | number)[];
+  area?: string;
+}
+export async function startAutopilot(
+  slug: string, opts?: string | SessionPlanInput,
+): Promise<AutopilotJob> {
+  const plan: SessionPlanInput = typeof opts === 'string' ? { itemId: opts } : (opts ?? {});
+  const body: Record<string, unknown> = { slug };
+  if (plan.itemId) body.itemId = plan.itemId;
+  if (plan.kind) body.kind = plan.kind;
+  if (plan.agenda?.length) body.agenda = plan.agenda.map(String);
+  if (plan.area) body.area = plan.area;
+  return request<AutopilotJob>('/autopilot/start', { method: 'POST', body });
 }
 
 // #142 — the paused-session controls. A session that hit the usage limit sits
@@ -499,6 +513,7 @@ export interface ProjectDetailData {
   futures: Future[];
   checks: Check[];
   keepResumeCard: boolean;
+  staleItemDays: number;   // parked-item stale threshold in days (#247) — ages the Parked view
   shareToken: string;
   liveBranches: string[];  // branches with a live session right now — backs the board's in-progress lock
 }
@@ -507,7 +522,7 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; futures?: Future[];
     checks?: Check[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
-    auditContext?: string;
+    auditContext?: string; staleItemDays?: number;
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
     project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
@@ -516,6 +531,8 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes, futures: d.futures || [],
     checks: d.checks || [],
     keepResumeCard: d.keepResumeCard !== false,
+    // An older server that doesn't send it falls back to the same default (#247).
+    staleItemDays: Number.isFinite(d.staleItemDays) ? Number(d.staleItemDays) : 21,
     shareToken: d.shareToken || '',
     liveBranches: d.liveBranches || [],
   };
@@ -845,7 +862,7 @@ export async function getRoadmap(slug: string): Promise<Roadmap> {
   return request<Roadmap>(roadmapBase(slug));
 }
 export async function createRoadmapItem(
-  slug: string, input: { title: string; note: string; bucket: Priority; claimed_by?: string; area?: string; plan?: PlanStep[]; risk?: RoadmapItem['risk'] },
+  slug: string, input: { title: string; note: string; bucket: Priority; claimed_by?: string; area?: string; plan?: PlanStep[]; risk?: RoadmapItem['risk']; tier?: RoadmapItem['tier'] },
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(roadmapBase(slug), { method: 'POST', body: input });
 }
@@ -856,6 +873,7 @@ export async function patchRoadmapItem(
     claimed_by: string; review_tag: string; review_tags: string[]; refine_note: string;
     review_shelved: boolean; skipped: boolean; area: string; position: number;
     built_note: string; plan: PlanStep[]; risk: RoadmapItem['risk'];
+    tier: RoadmapItem['tier'];   // #227 — desire rank; '' unranks it
   }>,
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });
@@ -971,6 +989,22 @@ export async function runChecks(slug: string, id?: number): Promise<Check[]> {
 // The run history, newest first — the Audit dashboard's trend strip.
 export async function getCheckRuns(slug: string, limit = 40): Promise<CheckRun[]> {
   return request<CheckRun[]>(`${checksBase(slug)}/runs?limit=${limit}`);
+}
+
+// #260 — how many sessions the Plan room assumes you run in parallel. A
+// PLANNING lens, not a runner setting: the overnight autopilot is one lane, the
+// rest are sessions you (or another machine) start, and Stack's lane claims
+// already keep them off each other's items. Device-local, because it describes
+// how you intend to work rather than what the server does.
+const PLAN_LANES_KEY = 'stack.planLanes';
+export const PLAN_LANE_CHOICES = [1, 2, 3, 4] as const;
+
+export function getPlanLanes(): number {
+  return readStoredJSON(PLAN_LANES_KEY, (v) =>
+    (typeof v === 'number' && PLAN_LANE_CHOICES.includes(v as 1 | 2 | 3 | 4) ? v : 1));
+}
+export function setPlanLanes(n: number) {
+  localStorage.setItem(PLAN_LANES_KEY, JSON.stringify(n));
 }
 
 // ---- tips (the app-wide recipe library — the Tips tab) ----

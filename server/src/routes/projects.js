@@ -145,6 +145,9 @@ projects.get('/:slug', async (req, res) => {
       checks: checks.rows.map(checkShape),
       keepResumeCard: appSettings.keep_resume_card,
       sessionDefaults: sessionDefaultLines(appSettings.session_defaults),
+      // The parked-item stale threshold (#247) rides the detail payload so the
+      // Roadmap tab's Parked view ages items without a second settings fetch.
+      staleItemDays: appSettings.stale_item_days,
       liveBranches: live.rows.map((r) => r.branch || 'main'),
     })
   );

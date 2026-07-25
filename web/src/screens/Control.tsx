@@ -23,7 +23,10 @@ const BUDGETS = [
   { tokens: 500_000, label: '500k' }, { tokens: 1_500_000, label: '1.5M' },
   { tokens: 5_000_000, label: '5M' }, { tokens: 0, label: '∞ Unlimited' },
 ];
-const NIGHT_ITEMS = [1, 2, 3, 5];
+// Items per night. 0 = UNLIMITED (#260) — the wall-clock cap and the token
+// budget are then the only governors, exactly like a 0 token budget.
+const NIGHT_ITEMS = [1, 2, 3, 5, 8, 0];
+export const nightItemsLabel = (n: number) => (n === 0 ? '∞' : String(n));
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const OPEN_JOB = new Set(['queued', 'claimed', 'running']);
 
@@ -330,7 +333,7 @@ export function ControlPanel() {
         out.push({
           key: `n${date}`, day, time: data.autopilot.time,
           what: `nightly — ${data.totals.automode} automode project${data.totals.automode === 1 ? '' : 's'}`,
-          count: `≤${data.autopilot.maxItems}`,
+          count: data.autopilot.maxItems === 0 ? '∞' : `≤${data.autopilot.maxItems}`,
         });
       }
       for (const s of data.schedules) {
@@ -472,7 +475,7 @@ export function ControlPanel() {
                 <span className="lbl">Autopilot {data.autopilot.enabled ? 'armed' : 'off'}</span>
                 <span className="sum">
                   {data.autopilot.enabled
-                    ? `nightly ${data.autopilot.time} · ≤${data.autopilot.maxItems}/night · ${data.autopilot.minutes % 60 === 0 ? `${data.autopilot.minutes / 60}h` : `${data.autopilot.minutes}m`} cap · ${data.autopilot.tokens === 0 ? '∞ tokens' : fmtTok(data.autopilot.tokens)}${data.autopilot.executorModel ? ` · ${data.autopilot.executorModel}` : ''}${data.autopilot.advisorModel ? ` → ${data.autopilot.advisorModel}` : ''}`
+                    ? `nightly ${data.autopilot.time} · ${data.autopilot.maxItems === 0 ? '∞' : `≤${data.autopilot.maxItems}`}/night · ${data.autopilot.minutes % 60 === 0 ? `${data.autopilot.minutes / 60}h` : `${data.autopilot.minutes}m`} cap · ${data.autopilot.tokens === 0 ? '∞ tokens' : fmtTok(data.autopilot.tokens)}${data.autopilot.executorModel ? ` · ${data.autopilot.executorModel}` : ''}${data.autopilot.advisorModel ? ` → ${data.autopilot.advisorModel}` : ''}`
                     : 'nightly + scheduled sessions paused — Run now still works'}
                 </span>
                 <button className="cfg" onClick={() => setCfgOpen((v) => !v)} aria-expanded={cfgOpen}>
@@ -523,8 +526,11 @@ export function ControlPanel() {
                         {NIGHT_ITEMS.map((n) => (
                           <button key={n} role="tab" aria-selected={data.autopilot.maxItems === n}
                             className={`seg-opt ${data.autopilot.maxItems === n ? 'on' : ''}`}
+                            title={n === 0
+                              ? 'Unlimited — the night works items until the wall-clock cap or the token budget runs out'
+                              : `At most ${n} item${n === 1 ? '' : 's'} a night`}
                             onClick={() => setAutopilot({ autopilotMaxItems: n })}>
-                            {n}
+                            {nightItemsLabel(n)}
                           </button>
                         ))}
                       </span>

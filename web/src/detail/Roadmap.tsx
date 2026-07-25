@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Priority, AutopilotRun } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Priority, AutopilotRun, Tier } from '../types';
+import { TIERS, tierRank } from '../types';
 import { PRIORITY_META, timeAgo, dayLabel } from '../lib/ui';
 import { getAutopilotRuns, getReviewBrief, queueUndo, ReviewBrief } from '../store';
 import { Modal } from '../components/Modal';
@@ -29,11 +30,13 @@ const noteTagLabel = (t: string) => REVIEW_NOTE_TAGS.find((x) => x.key === t)?.l
 // Archive below — still counted by the progress model, reviewable with a
 // verdict tag, refinable by delta (#146), restorable by un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onShelve, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onBranch, onDeleteArea, onRenameArea, slug, highlightId,
-  draft, onResumeDraft, onDiscardDraft, liveBranches,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onShelve, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onPlanItems, onSetTier, onBranch, onDeleteArea, onRenameArea, slug, highlightId,
+  draft, onResumeDraft, onDiscardDraft, liveBranches, staleItemDays,
 }: {
   roadmap: RoadmapData;
   liveBranches?: string[];
+  // #247 — days a parked item may sit before the Parked view calls it stale.
+  staleItemDays?: number;
   onAdd: (p: Priority, area?: string) => void;
   onToggle: (item: RoadmapItem) => void;
   onEdit: (item: RoadmapItem) => void;
@@ -48,6 +51,12 @@ export function Roadmap({
   onReorder?: (item: RoadmapItem, toBucket: Priority, beforeId: number | null) => void;
   onCleanup?: () => void;
   onSendToTerminal?: (brief: string) => void;
+  // #255 — hand an ORDERED list of open items to the planning agent: queues a
+  // plan-kind autopilot session whose agenda is exactly these ids. Resolves to
+  // a line about what was queued (or an already-open job).
+  onPlanItems?: (ids: number[]) => Promise<string>;
+  // #227 — set (or clear, with '') an item's desire tier from the Tiers view.
+  onSetTier?: (item: RoadmapItem, tier: Tier) => void;
   // ⎇ Branch an item for focused work (#205): claim its lane + open a primed session.
   onBranch?: (item: RoadmapItem) => void;
   // #169 — area management: delete (clears area from all items) and rename
@@ -75,6 +84,23 @@ export function Roadmap({
     setOverKey(null);
     if (dragged && onReorder && dragged.id !== beforeId) onReorder(dragged, toBucket, beforeId);
   };
+  // #251 — section expansion. A bucket column can be FOCUSED (it fills the board
+  // width and the other three are hidden, so long titles and notes get room to
+  // breathe) or COLLAPSED (header only, items folded away). Focus wins over
+  // collapse: a focused column always shows its items. Session-local, like the
+  // review-row collapse above.
+  const [focusCol, setFocusCol] = useState<Priority | null>(null);
+  const [collapsedCols, setCollapsedCols] = useState<Set<Priority>>(new Set());
+  const toggleColCollapse = (k: Priority) =>
+    setCollapsedCols((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const toggleColFocus = (k: Priority) =>
+    setFocusCol((f) => {
+      const next = f === k ? null : k;
+      // Expanding a folded column unfolds it — the expand gesture means "show me this".
+      if (next) setCollapsedCols((s) => { const n = new Set(s); n.delete(next); return n; });
+      return next;
+    });
+
   // Area filter — the product-area chips over the board (mirrors the Futures funnel).
   // UNCAT (#198) is the Uncategorised tab's sentinel: the leading space can
   // never collide with a real area (area input is trimmed + lowercased), and
@@ -103,17 +129,30 @@ export function Roadmap({
   const [termPick, setTermPick] = useState<Set<number> | null>(null);
   const [termPrio, setTermPrio] = useState<'all' | Priority>('all');
   const [termAreas, setTermAreas] = useState<Set<string>>(new Set()); // empty = every area
+  // #255 — where the picked items go. The planning agent is the default: a
+  // plan-kind autopilot session that designs each item in the picked order and
+  // saves the result back as plan steps. The terminal remains as the hands-on
+  // alternative (the old ⌨ To terminal, now a destination rather than a button).
+  const [termDest, setTermDest] = useState<'planner' | 'terminal'>('planner');
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planNote, setPlanNote] = useState('');
   const workable = (it: RoadmapItem) => !it.skipped && !it.claimedBy;
+  // The planner's natural default: work that has no design yet.
+  const unplanned = (it: RoadmapItem) => workable(it) && it.plan.length === 0;
   const termScope = openAll.filter((it) => termAreas.size === 0 || (!!it.area && termAreas.has(it.area)));
   const termCandidates = termScope.filter((it) => termPrio === 'all' || it.bucket === termPrio);
   const openTermPick = () => {
     setTermPrio('all');
+    setTermDest('planner');
+    setPlanNote('');
     // Start from the active area tab; more areas can be ticked in the modal.
     const areas = new Set(areaFilter && areaFilter !== UNCAT ? [areaFilter] : []);
     setTermAreas(areas);
     const scope = openAll.filter((it) => areas.size === 0 || (!!it.area && areas.has(it.area)));
-    // Default selection: workable items — parked and already-claimed ones start unticked.
-    setTermPick(new Set(scope.filter(workable).map((it) => it.id)));
+    // Default selection: the work that has no design yet — parked, claimed and
+    // already-planned items start unticked. That makes the default press
+    // "plan everything that isn't planned", which is the point of the feature.
+    setTermPick(new Set(scope.filter(unplanned).map((it) => it.id)));
   };
   const toggleTermArea = (a: string) => {
     const next = new Set(termAreas);
@@ -226,10 +265,47 @@ export function Roadmap({
   const toVerify = unverdicted.filter((it) => !it.reviewShelved).sort((a, b) => ts(b) - ts(a));
   const shelved = unverdicted.filter((it) => it.reviewShelved).sort((a, b) => ts(b) - ts(a));
   const archived = doneItems.filter((it) => it.reviewTag).sort((a, b) => ts(b) - ts(a));
-  // The tab's two views: Board and Reviews (to-verify + archive).
-  // A deep-link to a done item opens straight on Reviews.
-  const [view, setView] = useState<'board' | 'reviews'>(
+  // The tab's four views: Board, Tiers (#227), Parked (#247) and Reviews
+  // (to-verify + archive). A deep-link to a done item opens straight on Reviews.
+  const [view, setView] = useState<'board' | 'tiers' | 'parked' | 'reviews'>(
     () => (doneItems.some((it) => String(it.id) === highlightId) ? 'reviews' : 'board'));
+
+  // #247 — the parked shelf. Every open item somebody pressed ⏸ on, oldest park
+  // first, aged from the park stamp (falling back to the last edit for rows
+  // parked before skipped_at existed — flagged as approximate rather than
+  // quietly presented as exact). Past the Settings threshold it reads STALE.
+  const DAY_MS = 86_400_000;
+  const parkedAge = (it: RoadmapItem) => {
+    const stamp = it.skippedAt || it.updatedAt;
+    if (!stamp) return null;
+    const ms = Date.parse(stamp);
+    if (!Number.isFinite(ms)) return null;
+    return { days: Math.max(0, Math.floor((Date.now() - ms) / DAY_MS)), exact: Boolean(it.skippedAt) };
+  };
+  const parked = PRIORITY_META
+    .flatMap((col) => roadmap[col.key].filter((it) => !it.done && it.skipped))
+    .map((it) => ({ it, age: parkedAge(it) }))
+    .sort((a, b) => (b.age?.days ?? -1) - (a.age?.days ?? -1));
+  const staleDays = Math.max(1, staleItemDays ?? 21);
+  const staleCount = parked.filter((p) => (p.age?.days ?? 0) >= staleDays).length;
+
+  // #227 — the tier list. A desire ranking across the whole open board: drag an
+  // item into S/A/B/C to say how much you want it NEXT, independently of the
+  // MoSCoW bucket's sizing. The tier is the primary sort of the run queue — the
+  // Plan room and the overnight runner both apply it — and unranked items sort
+  // last, so a board nobody has ranked behaves exactly as it always did.
+  const tierRows: { key: Tier; label: string; blurb: string }[] = [
+    { key: 'S', label: 'S', blurb: 'what I want next, above everything' },
+    { key: 'A', label: 'A', blurb: 'clearly wanted — right after S' },
+    { key: 'B', label: 'B', blurb: 'worth doing when the top is clear' },
+    { key: 'C', label: 'C', blurb: 'someday — keep it on the board' },
+    { key: '', label: 'Unranked', blurb: 'no desire call yet — runs after everything ranked' },
+  ];
+  const [tierDrag, setTierDrag] = useState<number | null>(null);
+  const [tierOver, setTierOver] = useState<Tier | null>(null);
+  const openForTiers = openAll.filter(inAreaTab);
+  const inTier = (t: Tier) => openForTiers.filter((it) => (it.tier || '') === t);
+  const rankedCount = openForTiers.filter((it) => it.tier).length;
   // Open the archive straight away when a deep-link targets an archived item.
   const [archiveOpen, setArchiveOpen] = useState(
     () => archived.some((it) => String(it.id) === highlightId));
@@ -559,10 +635,10 @@ export function Roadmap({
           <div className="subtitle">MoSCoW prioritisation</div>
         </div>
         <div className="bar-actions">
-          {onSendToTerminal && view === 'board' && (
+          {(onPlanItems || onSendToTerminal) && view === 'board' && (
             <button className="gemini-btn sm" onClick={openTermPick}
-              title="Compose a work brief from open items (the active area tab scopes it) and paste it into a terminal session">
-              ⌨ To terminal
+              title="Pick open items and hand them to the planning agent — an unattended plan session designs each one and saves the steps back onto the item">
+              ✧ To planning agent
             </button>
           )}
           {onCleanup && view === 'board' && (
@@ -587,6 +663,19 @@ export function Roadmap({
         <div className="seg-control" role="tablist" aria-label="Roadmap view">
           <button role="tab" aria-selected={view === 'board'}
             className={`seg-opt ${view === 'board' ? 'on' : ''}`} onClick={() => setView('board')}>Board</button>
+          {onSetTier && (
+            <button role="tab" aria-selected={view === 'tiers'}
+              className={`seg-opt ${view === 'tiers' ? 'on' : ''}`} onClick={() => setView('tiers')}
+              title="Rank the open board by what you actually want next — the tier order leads the run queue">
+              Tiers{rankedCount > 0 ? ` · ${rankedCount}` : ''}
+            </button>
+          )}
+          <button role="tab" aria-selected={view === 'parked'}
+            className={`seg-opt ${view === 'parked' ? 'on' : ''}`} onClick={() => setView('parked')}
+            title="Every parked item, oldest park first — with how long it's been sitting">
+            Parked{parked.length > 0 ? ` · ${parked.length}` : ''}
+            {staleCount > 0 && <span className="seg-warn" title={`${staleCount} past the ${staleDays}-day stale threshold`}>{staleCount}</span>}
+          </button>
           <button role="tab" aria-selected={view === 'reviews'}
             className={`seg-opt ${view === 'reviews' ? 'on' : ''}`} onClick={() => setView('reviews')}>
             Reviews{toVerify.length > 0 ? ` · ${toVerify.length}` : ''}
@@ -681,18 +770,45 @@ export function Roadmap({
         </div>
       )}
 
-      <div className="road-grid">
-        {PRIORITY_META.map((col) => {
+      {focusCol && (
+        <button className="road-focus-back" onClick={() => setFocusCol(null)}>
+          ← all sections
+        </button>
+      )}
+      <div className={`road-grid ${focusCol ? 'focused' : ''}`}>
+        {PRIORITY_META.filter((col) => !focusCol || col.key === focusCol).map((col) => {
           const open = roadmap[col.key].filter((it) => !it.done && inAreaTab(it));
-          // Parked items sink to the bottom of their bucket.
-          const items = [...open.filter((it) => !it.skipped), ...open.filter((it) => it.skipped)];
+          // Parked items sink to the bottom of their bucket; within the live
+          // ones the desire tier leads (#227), so the column reads in the order
+          // the queue would work it. Unranked items keep their drag position.
+          const live = [...open.filter((it) => !it.skipped)]
+            .sort((a, b) => tierRank(a.tier) - tierRank(b.tier));
+          const items = [...live, ...open.filter((it) => it.skipped)];
+          const folded = focusCol !== col.key && collapsedCols.has(col.key);
           return (
-            <div className="road-col" key={col.key}>
+            <div className={`road-col ${folded ? 'folded' : ''} ${focusCol === col.key ? 'focus' : ''}`} key={col.key}>
               <div className="road-col-head">
                 <span className="dot" style={{ background: col.color }} />
-                <span className="name">{col.label}</span>
+                <button className="name" onClick={() => toggleColFocus(col.key)}
+                  title={focusCol === col.key
+                    ? 'Back to all four sections'
+                    : `Expand ${col.label} — it fills the board and the other sections fold away`}>
+                  {col.label}
+                </button>
                 <span className="count">{items.length}</span>
+                <button className="road-col-btn" aria-expanded={!folded}
+                  onClick={() => toggleColCollapse(col.key)}
+                  title={folded ? 'Unfold this section' : 'Fold this section away'}>
+                  {folded ? '▸' : '▾'}
+                </button>
+                <button className={`road-col-btn ${focusCol === col.key ? 'on' : ''}`}
+                  aria-pressed={focusCol === col.key}
+                  onClick={() => toggleColFocus(col.key)}
+                  title={focusCol === col.key ? 'Back to all four sections' : 'Expand this section to fill the board'}>
+                  {focusCol === col.key ? '⤡' : '⤢'}
+                </button>
               </div>
+              {folded ? null : (
               <div
                 className={`road-items ${overKey === `col-${col.key}` ? 'drop-into' : ''}`}
                 onDragOver={(e) => { if (dragId != null) { e.preventDefault(); setOverKey(`col-${col.key}`); } }}
@@ -731,6 +847,12 @@ export function Roadmap({
                     <div className="road-body">
                       <div className="t">
                         <span className="item-num">#{it.id}</span>{it.title}
+                        {it.tier && (
+                          <span className={`tier-chip t${it.tier}`}
+                            title={`Desire tier ${it.tier} (#227) — the run queue works S, then A, B, C, then unranked`}>
+                            {it.tier}
+                          </span>
+                        )}
                         {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
                         {it.area && <span className="area-chip" title="Product area — edit the item to change it">{it.area}</span>}
                         {working && <span className="work-chip" title={`Claimed by ${it.claimedBy} — read-only while the work is in flight`}>● in progress</span>}
@@ -785,19 +907,155 @@ export function Roadmap({
                   );
                 })}
               </div>
+              )}
             </div>
           );
         })}
       </div>
       </>)}
 
-      {termPick && onSendToTerminal && (
+      {/* #227 — the tier list: a desire ranking over the whole open board,
+          distinct from must/should sizing. Drag a card into a tier (or use the
+          S/A/B/C buttons on it); the tier leads the run queue everywhere. */}
+      {view === 'tiers' && onSetTier && (<>
+        <div className="subtitle" style={{ marginBottom: 18 }}>
+          What you actually want done next, ranked — separate from must/should, which is about how
+          necessary the work is rather than how much you want it now. Drag a card into a tier, or use
+          its S/A/B/C buttons. The tier leads the run queue: Mission Control's Plan room and the
+          overnight runner both work S first, then A, B, C, then everything unranked in board order.
+          {areaFilter && <> Showing the <b>{areaFilter === UNCAT ? 'uncategorised' : areaFilter}</b> tab only —
+            switch to All on the Board view to rank the whole project.</>}
+        </div>
+        <div className="tier-board">
+          {tierRows.map((row) => {
+            const rowItems = inTier(row.key);
+            return (
+              <div className={`tier-row t${row.key || 'none'} ${tierOver === row.key ? 'over' : ''}`} key={row.key || 'none'}
+                onDragOver={(e) => { if (tierDrag != null) { e.preventDefault(); setTierOver(row.key); } }}
+                onDragLeave={() => setTierOver((t) => (t === row.key ? null : t))}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const it = tierDrag != null ? openForTiers.find((x) => x.id === tierDrag) : null;
+                  setTierDrag(null); setTierOver(null);
+                  if (it && (it.tier || '') !== row.key) onSetTier(it, row.key);
+                }}>
+                <div className="tier-label">
+                  <span className="k">{row.label}</span>
+                  <span className="n">{rowItems.length}</span>
+                  <span className="blurb">{row.blurb}</span>
+                </div>
+                <div className="tier-items">
+                  {rowItems.map((it) => (
+                    <div className={`tier-card ${tierDrag === it.id ? 'drag' : ''} ${highlightId === String(it.id) ? 'hl' : ''}`}
+                      key={it.id} data-hl={it.id} draggable
+                      onDragStart={(e) => { setTierDrag(it.id); e.dataTransfer.effectAllowed = 'move'; }}
+                      onDragEnd={() => { setTierDrag(null); setTierOver(null); }}>
+                      <button className="body" onClick={() => onEdit(it)} title="Edit this item">
+                        <span className="t"><span className="item-num">#{it.id}</span>{it.title}</span>
+                        <span className="m">
+                          {it.bucket}{it.area ? ` · ${it.area}` : ''}
+                          {it.skipped ? ' · ⏸ parked' : ''}
+                          {it.claimedBy ? ` · ⚑ ${it.claimedBy}` : ''}
+                        </span>
+                      </button>
+                      <div className="tier-pick">
+                        {TIERS.map((t) => (
+                          <button key={t} className={`tp ${it.tier === t ? 'on' : ''}`}
+                            title={`Move #${it.id} to tier ${t}`}
+                            onClick={() => onSetTier(it, it.tier === t ? '' : t)}>{t}</button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {rowItems.length === 0 && (
+                    <div className="tier-empty">
+                      {row.key === '' ? 'everything open is ranked' : 'drop items here'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {openForTiers.length === 0 && (
+          <div className="empty-state" style={{ marginTop: 14 }}>Nothing open to rank.</div>
+        )}
+      </>)}
+
+      {/* #247 — the parked shelf: everything that's been set aside, how long
+          it's been sitting, and which of it has gone stale. Nothing here is
+          automatic — the view surfaces the age, the human decides. */}
+      {view === 'parked' && (<>
+        <div className="subtitle" style={{ marginBottom: 18 }}>
+          Items you've parked with ⏸ — off the board's run queue and invisible to the autopilot,
+          but still counted by progress. Anything sitting longer than {staleDays} day{staleDays === 1 ? '' : 's'} reads
+          as stale; change that threshold in Settings → Roadmap.
+        </div>
+        {parked.length === 0 ? (
+          <div className="empty-state">Nothing parked — every open item is in play.</div>
+        ) : (
+          <>
+            <div className="parked-head">
+              <span className="cap-sm">PARKED</span>
+              <span className="n">{parked.length}</span>
+              {staleCount > 0 && <span className="stale-pill">{staleCount} stale</span>}
+            </div>
+            <div className="parked-list">
+              {parked.map(({ it, age }) => {
+                const stale = (age?.days ?? 0) >= staleDays;
+                return (
+                  <div className={`parked-row ${stale ? 'stale' : ''} ${highlightId === String(it.id) ? 'hl' : ''}`}
+                    key={it.id} data-hl={it.id}>
+                    <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
+                    <div className="parked-body">
+                      <div className="t">
+                        <span className="item-num">#{it.id}</span>{it.title}
+                        {it.area && <span className="area-chip">{it.area}</span>}
+                        {it.claimedBy && <span className="claim-chip inline">⚑ {it.claimedBy}</span>}
+                      </div>
+                      {it.note && <div className="note">{it.note}</div>}
+                    </div>
+                    <span className={`parked-age ${stale ? 'stale' : ''}`}
+                      title={age?.exact === false
+                        ? 'Parked before Stack recorded park dates — aged from the last edit instead'
+                        : 'Days since this item was parked'}>
+                      {age === null
+                        ? 'parked'
+                        : `${age.exact ? '' : '~'}${age.days} day${age.days === 1 ? '' : 's'}`}
+                      {stale && <span className="stale-flag">stale</span>}
+                    </span>
+                    <div className="road-actions arch">
+                      <button onClick={() => onToggleSkip(it)} title="Unpark — back in play">▶ Unpark</button>
+                      <button onClick={() => onEdit(it)} aria-label="Edit item" title="Edit">✎</button>
+                      <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </>)}
+
+      {termPick && (onPlanItems || onSendToTerminal) && (
         <Modal onClose={() => setTermPick(null)} wide>
-          <h3>⌨ Send to a terminal session</h3>
+          <h3>✧ Push items to the planning agent</h3>
           <div className="confirm-body" style={{ marginBottom: 12 }}>
-            Pick area tabs, then items — the picked items become a work brief, pasted into the
-            terminal for you to review and send.
+            {termDest === 'planner'
+              ? 'Pick the items to have designed. An unattended plan session works them in this order — one bounded design session each, in a throwaway worktree — and saves the result back onto each item as plan steps plus a design note. It never builds and never ticks anything.'
+              : 'Pick area tabs, then items — the picked items become a work brief, pasted into the terminal for you to review and send.'}
           </div>
+          {onPlanItems && onSendToTerminal && (
+            <div className="seg-control sm" role="tablist" aria-label="Where the picked items go"
+              style={{ marginBottom: 12 }}>
+              <button role="tab" aria-selected={termDest === 'planner'}
+                className={`seg-opt ${termDest === 'planner' ? 'on' : ''}`}
+                onClick={() => { setTermDest('planner'); setPlanNote(''); }}>✧ Planning agent</button>
+              <button role="tab" aria-selected={termDest === 'terminal'}
+                className={`seg-opt ${termDest === 'terminal' ? 'on' : ''}`}
+                onClick={() => { setTermDest('terminal'); setPlanNote(''); }}>⌨ Terminal session</button>
+            </div>
+          )}
           {boardAreas.length > 0 && (
             <div className="chips" style={{ marginBottom: 8 }}>
               <button className={`chip-sm ${termAreas.size === 0 ? 'on' : ''}`} onClick={allTermAreas}>
@@ -818,6 +1076,17 @@ export function Roadmap({
               </button>
             ))}
           </div>
+          {/* Bulk ticks — the whole board is a legitimate agenda for the planner,
+              so "everything unplanned" is one press away (#255). */}
+          <div className="chips" style={{ marginBottom: 10 }}>
+            <button className="chip-sm" onClick={() => setTermPick(new Set(termCandidates.filter(workable).map((it) => it.id)))}>
+              tick all workable
+            </button>
+            <button className="chip-sm" onClick={() => setTermPick(new Set(termCandidates.filter(unplanned).map((it) => it.id)))}>
+              only unplanned {termCandidates.filter(unplanned).length}
+            </button>
+            <button className="chip-sm" onClick={() => setTermPick(new Set())}>none</button>
+          </div>
           <div className="cleanup-list">
             {termCandidates.map((it) => (
               <label className="cleanup-row" key={it.id}>
@@ -832,6 +1101,11 @@ export function Roadmap({
                     #{it.id} {it.title}
                     {it.claimedBy && <span className="claim-chip inline">⚑ {it.claimedBy}</span>}
                     {it.skipped && <span className="skip-chip">⏸ parked</span>}
+                    {it.plan.length > 0 && (
+                      <span className="plan-chip" title="Already has an implementation plan — the planner would replace it (untouched plans only)">
+                        ☰ {it.plan.filter((s) => s.done).length}/{it.plan.length}
+                      </span>
+                    )}
                   </span>
                   <span className="why">[{it.bucket}]{it.area ? ` · ${it.area}` : ''}</span>
                 </span>
@@ -839,12 +1113,39 @@ export function Roadmap({
             ))}
             {termCandidates.length === 0 && <div className="confirm-body">Nothing open under this filter.</div>}
           </div>
+          {termDest === 'planner' && (
+            <div className="field-hint" style={{ marginTop: 12 }}>
+              The session runs on the host within a minute of queuing and works down the list until the
+              night's wall-clock cap or token budget runs out — anything it doesn't reach keeps its place
+              for the next push. Claimed items are skipped, as are plans a session has already ticked
+              steps on; nothing in flight is replanned over. Watch it land on Mission Control.
+            </div>
+          )}
+          {planNote && <div className="gemini-suggest" style={{ marginTop: 10 }}>✧ {planNote}</div>}
           <div className="modal-actions" style={{ marginTop: 16 }}>
             <button className="btn-cancel" onClick={() => setTermPick(null)}>Cancel</button>
             <button className="btn-submit"
-              disabled={!termCandidates.some((it) => termPick.has(it.id))}
-              onClick={() => { onSendToTerminal(composeBrief()); setTermPick(null); }}>
-              Open in terminal →
+              disabled={planBusy || !termCandidates.some((it) => termPick.has(it.id))}
+              onClick={() => {
+                // The agenda is the board's own order — the list the runner works
+                // top-down — restricted to what's ticked.
+                const ids = termCandidates.filter((it) => termPick.has(it.id)).map((it) => it.id);
+                if (termDest === 'terminal' && onSendToTerminal) {
+                  onSendToTerminal(composeBrief());
+                  setTermPick(null);
+                  return;
+                }
+                if (!onPlanItems) return;
+                setPlanBusy(true);
+                setPlanNote('');
+                onPlanItems(ids)
+                  .then((note) => setPlanNote(note))
+                  .catch((e) => setPlanNote((e as Error)?.message || 'Could not queue the planning session.'))
+                  .finally(() => setPlanBusy(false));
+              }}>
+              {termDest === 'terminal'
+                ? 'Open in terminal →'
+                : planBusy ? 'Queuing…' : `Plan ${termCandidates.filter((it) => termPick.has(it.id)).length} item${termCandidates.filter((it) => termPick.has(it.id)).length === 1 ? '' : 's'} →`}
             </button>
           </div>
         </Modal>

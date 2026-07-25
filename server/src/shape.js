@@ -34,7 +34,9 @@ export function roadmapItemShape(row) {
     refineNote: row.refine_note || '', // the refine delta — what to change on top (#146)
     reviewShelved: !!row.review_shelved, // review set aside for later — off the To-verify list (#148)
     skipped: !!row.skipped,            // parked — planned, but not to be picked up yet
+    skippedAt: row.skipped_at || null, // ISO — when it was parked; ages the Parked view (#247)
     risk: row.risk || 'normal',        // graduated trust (#212): low auto-merges a green run
+    tier: row.tier || '',              // desire tier S|A|B|C ('' = unranked, sorts last) — #227
     plan: cleanPlan(row.plan),         // implementation steps [{text, done}] (#75)
     updatedAt: row.updated_at || null, // ISO — the archive sorts latest-touched first
   };
@@ -165,12 +167,13 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults, liveBranches }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
     keepResumeCard: keepResumeCard !== false, // global flag; false hides the resume card
     sessionDefaults: sessionDefaults || [],   // global standing-preference lines for the start hook
+    staleItemDays: Number.isFinite(staleItemDays) ? staleItemDays : 21, // parked-item stale line (#247)
     liveBranches: liveBranches || [],         // branches with a live session now (board lock, BUG-2)
     shareToken: p.share_token || '',          // non-empty = the public showcase link is live
     summary: p.summary || '',

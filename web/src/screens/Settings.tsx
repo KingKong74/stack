@@ -289,6 +289,35 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
               </div>
             </section>
 
+            {/* ---- Roadmap (#247) — the parked-item stale threshold ---- */}
+            <section className="set-card">
+              <div className="set-card-head">
+                <div className="set-card-title">Roadmap</div>
+                <div className="set-card-sub">
+                  How the board treats work you've set aside.
+                </div>
+              </div>
+              <div className="set-row col">
+                <div className="set-row-text">
+                  <div className="set-row-label">Parked items go stale after</div>
+                  <div className="set-row-hint">
+                    The Roadmap tab's Parked view counts the days since each item was parked and flags
+                    anything past this line as stale. Surfacing only — nothing is auto-changed, unparked
+                    or deleted.
+                  </div>
+                </div>
+                <div className="seg-control" role="tablist" aria-label="Stale threshold in days">
+                  {[7, 14, 21, 30, 60].map((d) => (
+                    <button key={d} role="tab" aria-selected={settings.staleItemDays === d}
+                      className={`seg-opt ${settings.staleItemDays === d ? 'on' : ''}`}
+                      onClick={() => update({ staleItemDays: d })}>
+                      {d}d
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+
             {/* ---- ✧ Fill from note (#131) — the roadmap modal's Gemini assist ---- */}
             <section className="set-card">
               <div className="set-card-head">
