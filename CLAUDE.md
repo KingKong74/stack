@@ -342,13 +342,21 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   (#146, replacing #141's full-rework modal) takes just the delta: PATCH `{done:false, refine_note}`
   sends the item back as ITSELF (same id, built_note kept, verdict + claim cleared), the board card
   shows the pending ↻ refinement, and an optional checkbox queues a pinned autopilot session via
-  `store.startAutopilot`), Futures (the **north star**
-  — one editable paragraph on what the project is becoming, PATCHed as `north_star` and injected by
-  the SessionStart hook — plus the idea funnel: loose ideas added/extracted, promote → prefills the
-  RoadmapModal then a keep/delete-the-idea confirm, dismiss deletes + tombstones; ideas are
-  editable in place, the composer takes "first line = idea, rest = why", and each idea carries an
-  **alignment verdict** — ✦ Judge → On course / Tangent / Off course, pick the same to clear —
-  which is how the list groups itself), Audit (`detail/Audit.tsx` — the dedicated testing +
+  `store.startAutopilot`), Futures — the **Polaris tab** (#227, from the Stack Planning design):
+  the collapsible **north star band** (one editable paragraph, PATCHed as `north_star`, injected
+  by the SessionStart hook) over the **constellation sky** — the north star at the centre, one
+  dashed ring per alignment verdict (on course 132 / tangent 224 / off course 296; unjudged
+  ideas float dashed at 178), themes = the ideas' `area` tags as bearings (no area = `loose`),
+  theme bubbles when collapsed, zoom (0.7–1.7×, ≥1.2 expands + labels everything, with a
+  collision pass on captions), pan + Recentre, an All-ideas/Themes toggle and theme chips —
+  beside the **Polaris rail**: the selected idea (verdict pill, → Roadmap promote, Build on it
+  → the studio primed via the one-shot `stack.polaris.thought` handoff PolarisTerm types in,
+  ✎ edit, dismiss), the **judge queue** (unsorted ideas one at a time — verdict buttons PATCH
+  `alignment`, ✦ "What would Polaris say?" = the Gemini judge suggestion, skip is
+  session-local), a computed ✦ POLARIS observation (arithmetic, no API) and the think-out-loud
+  input (stashes the thought, opens the studio). The pre-sky list view survives behind a
+  Sky/List seg (promote/dismiss/edit/judge per row, area chips, "first line = idea" composer);
+  the old drag-canvas (`FuturesCanvas`) is retired), Audit (`detail/Audit.tsx` — the dedicated testing +
   audit dashboard, moved out of the Bugs tab: a health header (pass rate, per-state counts,
   avg response, last run) over a **run-history trend strip** (each bar one Run-all, from the
   `check_runs` ledger via `store.getCheckRuns` — the tab's own fetch, refreshed when a run

@@ -26,6 +26,11 @@
   --critical: #b23b3b;
   --paused: #a39c90;
 
+  /* semantic washes (the Polaris sky's verdict tints) */
+  --live-tint: #e4efe8;
+  --building-tint: #f3ead3;
+  --paused-tint: #ecebe6;
+
   /* ---- derived / supporting tokens (kept for the existing UI) ---- */
   --bg: var(--paper);
   --card: var(--surface);
@@ -82,6 +87,11 @@
   --sage: #8ab48d;
   --critical: #d76c6c;
   --paused: #857e73;
+
+  /* semantic washes */
+  --live-tint: #1e2b23;
+  --building-tint: #2e2817;
+  --paused-tint: #2a2823;
 
   /* supporting literals re-based for dark */
   --resume-border: #3b3226;
@@ -2001,3 +2011,145 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
   opacity: 0.92; transition: opacity 0.15s, border-color 0.15s, color 0.15s;
 }
 .totop:hover { opacity: 1; border-color: var(--accent-soft); color: var(--ink); }
+
+/* ============================================================
+   Polaris tab (from the Stack Planning design, turn 9a) — the
+   constellation sky + the Polaris rail. North star band on top,
+   verdict rings around the star, themes as bearings, judge
+   queue + selected idea in the rail.
+   ============================================================ */
+
+/* -- north star band -- */
+.pns { background: var(--sand); border: 1px solid var(--resume-border); border-radius: 14px; margin-bottom: 18px; overflow: hidden; }
+.pns-open { padding: 16px 22px 18px; }
+.pns-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.pns-label { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.1em; color: var(--muted); }
+.pns-rule { flex: 1; height: 1px; background: var(--keyline); }
+.pns-ctl { font-family: var(--mono); font-size: 10px; color: var(--muted); padding: 2px 6px; border-radius: 4px; }
+.pns-ctl:hover { color: var(--accent-deep); background: var(--accent-tint); }
+.pns-text { font-size: 13.5px; line-height: 1.6; color: var(--ink); max-width: 700px; text-wrap: pretty; }
+.pns-empty { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.pns-closed { display: flex; align-items: center; gap: 12px; padding: 0 22px; height: 42px; width: 100%; cursor: pointer; text-align: left; }
+.pns-closed:hover { background: var(--accent-tint); }
+.pns-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--ink); }
+.pns-chev { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+/* -- control row above the sky -- */
+.psky-top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.psky-total { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.psky-all { padding: 5px 11px; border-radius: 6px; border: 1px solid var(--keyline); font-size: 11px; font-weight: 500; color: var(--muted); }
+.psky-all:hover { border-color: var(--accent); }
+.psky-all.on { background: var(--accent-tint); color: var(--accent-deep); border-color: var(--accent-tint-border); }
+
+/* -- layout: sky + rail -- */
+.psky { display: flex; border: 1px solid var(--line-2); border-radius: 14px; background: var(--card); overflow: hidden; }
+.psky-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
+
+.psky-chips { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-bottom: 1px solid var(--line-2); flex-wrap: wrap; }
+.psky-chip { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--keyline); background: transparent; cursor: pointer; }
+.psky-chip:hover { border-color: var(--accent); }
+.psky-chip .name { font-size: 11px; font-weight: 500; color: var(--muted); }
+.psky-chip .n { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.psky-chip.on { background: var(--accent-tint); border-color: var(--accent-tint-border); }
+.psky-chip.on .name { color: var(--accent-deep); }
+.psky-lod { font-size: 11px; color: var(--muted); }
+.psky-zoom { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--keyline); background: var(--card); }
+.psky-zoom .zbtn { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--muted); line-height: 1; }
+.psky-zoom .zbtn:hover { color: var(--accent); }
+.psky-zoom .zticks { display: flex; align-items: center; gap: 3px; }
+.psky-zoom .ztick { width: 5px; height: 5px; border-radius: 50%; background: var(--keyline); padding: 0; }
+.psky-zoom .ztick.on { background: var(--accent); }
+.psky-zoom .zpct { font-family: var(--mono); font-size: 10px; color: var(--paused); width: 34px; text-align: right; }
+.psky-recentre { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--keyline); background: var(--card); font-size: 11px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+.psky-recentre:hover { color: var(--accent-deep); border-color: var(--accent); }
+
+/* -- the sky itself -- */
+.psky-viewport { flex: 1; min-height: 640px; overflow: hidden; display: flex; justify-content: center; align-items: center; }
+.psky-field { width: 700px; height: 700px; flex: none; position: relative; cursor: grab; transition: transform 0.18s ease-out; }
+.psky-field:active { cursor: grabbing; }
+.psky-ring { position: absolute; border-radius: 50%; border: 1px dashed var(--keyline); pointer-events: none; }
+.psky-ring-name { position: absolute; text-align: center; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; pointer-events: none; }
+.psky-star { position: absolute; width: 92px; height: 92px; border-radius: 50%; background: var(--sand); border: 1.5px solid var(--accent); display: grid; place-items: center; }
+.psky-star span { font-family: var(--mono); font-size: 9.5px; font-weight: 500; color: var(--accent-deep); letter-spacing: 0.08em; text-align: center; line-height: 1.5; }
+.psky-bubble { position: absolute; border-radius: 50%; background: var(--sand); border: 1px solid var(--keyline); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: opacity 0.3s ease; }
+.psky-bubble:hover { border-color: var(--accent); }
+.psky-bubble .count { font-family: var(--disp); font-size: 13px; font-weight: 600; color: var(--ink); }
+.psky-bubble .name { font-family: var(--mono); font-size: 9px; color: var(--muted); }
+.psky-node { position: absolute; border-radius: 50%; cursor: pointer; display: grid; place-items: center; transition: opacity 0.3s ease; padding: 0; }
+.psky-node:hover { border-color: var(--accent) !important; }
+.psky-caption { position: absolute; left: 50%; top: 50%; white-space: nowrap; background: var(--bg); padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: 10.5px; font-weight: 400; color: var(--muted); pointer-events: none; }
+.psky-caption.sel { font-weight: 600; color: var(--ink); }
+.psky-empty { position: absolute; left: 50%; top: 72%; transform: translateX(-50%); width: 340px; text-align: center; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
+
+/* -- sky composer -- */
+.psky-composer { flex: none; display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: var(--card); border-top: 1px solid var(--line-2); }
+.psky-composer .plus { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--accent); flex: none; }
+.psky-composer input { flex: 1; background: transparent; border: none; outline: none; font-size: 13px; color: var(--ink); }
+.psky-composer input::placeholder { color: var(--placeholder); }
+
+/* -- the rail -- */
+.psky-rail { width: 392px; flex: none; border-left: 1px solid var(--line-2); background: var(--card); display: flex; flex-direction: column; }
+.psky-rail-head { padding: 16px 20px 14px; border-bottom: 1px solid var(--line-2); display: flex; align-items: baseline; gap: 9px; }
+.psky-rail-head .name { font-family: var(--disp); font-size: 15px; font-weight: 600; color: var(--ink); }
+.psky-rail-head .sub { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+
+.psky-sel { padding: 18px 20px; border-bottom: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 10px; }
+.psky-sel-empty { font-size: 12.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+.psky-sel-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.psky-pill { padding: 4px 9px; border-radius: 5px; font-family: var(--mono); font-size: 10.5px; font-weight: 500; }
+.psky-sel-meta .theme { font-family: var(--mono); font-size: 10.5px; color: var(--paused); }
+.psky-sel-meta .when { font-size: 11px; color: var(--faint); margin-left: auto; }
+.psky-sel-title { font-family: var(--disp); font-size: 16px; font-weight: 600; line-height: 1.35; color: var(--ink); text-wrap: pretty; }
+.psky-sel-note { font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+.psky-sel-actions { display: flex; gap: 7px; margin-top: 2px; flex-wrap: wrap; }
+.psky-sel-actions .act { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--keyline); color: var(--ink); font-size: 11.5px; font-weight: 500; }
+.psky-sel-actions .act:hover { border-color: var(--accent); color: var(--accent-deep); }
+.psky-sel-actions .act.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.psky-sel-actions .act.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
+.psky-sel-actions .act.quiet { border-color: transparent; color: var(--muted); }
+.psky-sel-actions .act.quiet:hover { color: var(--critical); border-color: var(--critical); }
+
+.psky-rail-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.psky-queue { padding: 16px 20px; border-bottom: 1px solid var(--line-2); background: var(--sand); }
+.psky-queue-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.psky-queue-head .label { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; color: var(--muted); }
+.psky-queue-head .progress { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.psky-queue-title { font-size: 13.5px; font-weight: 500; line-height: 1.4; color: var(--ink); text-wrap: pretty; }
+.psky-queue-note { font-size: 11.5px; line-height: 1.5; color: var(--muted); margin-top: 4px; }
+.psky-queue-opts { display: flex; gap: 6px; margin-top: 12px; }
+.psky-verdict { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 6px; border-radius: 7px; border: 1px solid var(--keyline); background: var(--card); cursor: pointer; font-size: 11.5px; font-weight: 500; color: var(--ink); }
+.psky-verdict .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.psky-verdict.on-course .dot { background: var(--live); }
+.psky-verdict.tangent .dot { background: var(--building); }
+.psky-verdict.off-course .dot { background: var(--paused); }
+.psky-verdict.on-course:hover { border-color: var(--live); background: var(--live-tint); }
+.psky-verdict.tangent:hover { border-color: var(--building); background: var(--building-tint); }
+.psky-verdict.off-course:hover { border-color: var(--paused); background: var(--paused-tint); }
+.psky-queue-foot { display: flex; align-items: flex-start; gap: 12px; margin-top: 11px; }
+.psky-ask { font-size: 11px; font-weight: 500; color: var(--accent-deep); }
+.psky-ask:hover { color: var(--accent); }
+.psky-hint { flex: 1; border-left: 2px solid var(--accent); padding-left: 10px; }
+.psky-hint .verdict { font-family: var(--mono); font-size: 10.5px; font-weight: 500; }
+.psky-hint .why { font-size: 11.5px; line-height: 1.5; color: var(--muted); margin-top: 3px; text-wrap: pretty; }
+.psky-hint-err { font-size: 11px; color: var(--critical); }
+.psky-skip { font-family: var(--mono); font-size: 10.5px; color: var(--paused); }
+.psky-skip:hover { color: var(--ink); }
+.psky-queue-done { font-size: 12.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+.psky-queue-done .link { color: var(--accent-deep); }
+.psky-queue-done .link:hover { color: var(--accent); }
+
+.psky-note { padding: 16px 20px; }
+.psky-note .label { font-family: var(--mono); font-size: 10.5px; font-weight: 500; letter-spacing: 0.06em; color: var(--accent); }
+.psky-note .text { font-size: 12.5px; line-height: 1.6; color: var(--ink); margin-top: 6px; text-wrap: pretty; }
+
+.psky-think { padding: 14px 18px; border-top: 1px solid var(--line-2); }
+.psky-think .box { display: flex; align-items: center; gap: 10px; background: var(--bg); border: 1px solid var(--keyline); border-radius: 9px; padding: 10px 12px; }
+.psky-think .mark { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+.psky-think input { flex: 1; background: transparent; border: none; outline: none; font-size: 12.5px; color: var(--ink); }
+.psky-think input::placeholder { color: var(--placeholder); }
+
+@media (max-width: 1080px) {
+  .psky { flex-direction: column; }
+  .psky-rail { width: auto; border-left: none; border-top: 1px solid var(--line-2); }
+  .psky-viewport { min-height: 540px; }
+}

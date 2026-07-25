@@ -94,10 +94,19 @@ export default function PolarisTerm({ slug }: { slug: string }) {
     // Kickoff only on a session WE spawned fresh: re-attaching (a stored tmux
     // name went out with the start frame) means the conversation already exists.
     const freshSpawn = !tmuxRef.current;
+    // One-shot thought handoff from the Polaris tab's "think out loud" input —
+    // typed after the kickoff (fresh spawn) or straight in (re-attach).
+    let thought = '';
+    try {
+      thought = sessionStorage.getItem('stack.polaris.thought') || '';
+      sessionStorage.removeItem('stack.polaris.thought');
+    } catch { /* private mode — nothing to hand off */ }
+    const toType: string[] = [];
+    if (freshSpawn) toType.push(kickoff(slug));
+    if (thought) toType.push(thought);
     let kickoffTimer: number | undefined;
     let lastOutputAt = 0;
     let sawOutput = false;
-    let kickoffSent = !freshSpawn;
 
     const sendText = (s: string) => {
       const ws = wsRef.current;
@@ -126,19 +135,21 @@ export default function PolarisTerm({ slug }: { slug: string }) {
         }
         setStatus('live');
         term.focus();
-        if (!kickoffSent) {
-          // Type the kickoff once claude's TUI has painted and gone quiet —
-          // too early and the input is lost to the boot screen. 15s cap so a
-          // chatty boot can't starve it forever.
-          const started = Date.now();
+        if (toType.length && kickoffTimer === undefined) {
+          // Type each queued line once claude's TUI has painted and gone quiet —
+          // too early and the input is lost to the boot screen. 15s cap per line
+          // so a chatty boot can't starve the queue forever.
+          let started = Date.now();
           kickoffTimer = window.setInterval(() => {
+            if (!toType.length) { window.clearInterval(kickoffTimer); return; }
             const settled = sawOutput && Date.now() - lastOutputAt > 1500;
             if (!settled && Date.now() - started < 15_000) return;
-            window.clearInterval(kickoffTimer);
-            if (kickoffSent) return;
-            kickoffSent = true;
-            sendText(kickoff(slug));
+            const line = toType.shift()!;
+            sendText(line);
             window.setTimeout(() => sendText('\r'), 150);
+            // Force a fresh settle window before the next line goes out.
+            lastOutputAt = Date.now() + 800;
+            started = Date.now();
           }, 300);
         }
       } else if (m.t === 'exit') {

@@ -455,12 +455,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, futures: futures.filter((f) => f.id !== fid) });
     });
 
-  const moveFuture = (fid: number, x: number, y: number) =>
-    guard(async () => {
-      const updated = await patchFuture(slug, fid, { canvasX: x, canvasY: y });
-      setData({ ...data, futures: futures.map((f) => (f.id === fid ? updated : f)) });
-    });
-
   const saveNorthStar = (text: string) =>
     guard(async () => {
       await patchProject(slug, { north_star: text });
@@ -819,7 +813,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId} slug={slug}
             onSaveNorthStar={saveNorthStar} onAdd={addFuture} onEdit={editFuture} onAlign={alignFuture}
             onAskGemini={(id) => judgeFuture(slug, id)}
-            onDelete={removeFuture} onPromote={promoteFuture} onMove={moveFuture} />
+            onDelete={removeFuture} onPromote={promoteFuture} />
         )}
         {tab === 'notes' && (
           <Notes notes={notes} highlightId={highlightId} onAdd={addNote} onEdit={editNote} onDelete={removeNote} onPromote={promoteNote} />
