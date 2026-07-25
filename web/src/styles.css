@@ -939,6 +939,12 @@ a.tab { display: inline-block; }
 .seg .opt.prio.on.could  { background: var(--sage); border-color: var(--sage); color: #fff; }
 .seg .opt.prio.on.wont   { background: #8f897d; border-color: #8f897d; color: #fff; }
 
+/* risk chips in the roadmap modal (#249) — the selected tier reads at a glance,
+   in the same tones the board's risk chip uses (sage = low, critical = high). */
+.seg .opt.risk-low.on    { background: var(--sage); border-color: var(--sage); color: #fff; }
+.seg .opt.risk-normal.on { background: #8f897d; border-color: #8f897d; color: #fff; }
+.seg .opt.risk-high.on   { background: var(--critical); border-color: var(--critical); color: #fff; }
+
 /* status segmented control in the new-project modal */
 .seg .opt.pstatus.on.live     { background: var(--live); border-color: var(--live); color: #fff; }
 .seg .opt.pstatus.on.building { background: #9a7a2e; border-color: #9a7a2e; color: #fff; }
