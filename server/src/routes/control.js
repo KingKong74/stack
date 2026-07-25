@@ -187,12 +187,16 @@ control.get('/', async (_req, res) => {
     monthRuns: monthR.rows[0]?.runs || 0,
     // (#177) Agent breakdown — the newest runs with their per-model split
     // (executor vs advisor when dual-model; one entry for single-model runs).
-    recentRuns: usageR.rows.slice(0, 12).map((r) => ({
+    // The cap covers a full week of nights so the Nights calendar (14a) can
+    // place every run on its day; `day` is the UTC calendar date, the same
+    // bucket convention as weekNights above.
+    recentRuns: usageR.rows.slice(0, 60).map((r) => ({
       slug: r.slug,
       name: r.project_name,
       itemId: r.item_id != null ? String(r.item_id) : null,
       itemTitle: r.item_title || '',
       outcome: r.outcome,
+      day: new Date(r.finished_at).toISOString().slice(0, 10),
       when: relativeTime(r.finished_at) || 'just now',
       tokens: Number(r.tokens) || 0,
       costUsd: Number(r.cost_usd) || 0,

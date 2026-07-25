@@ -342,9 +342,10 @@ export interface UsageSummary {
   monthCostUsd?: number;
   monthRuns?: number;
   // #177 — the newest runs with their per-model (agent) split for the breakdown.
+  // `day` (#14a) = the UTC calendar date, so the Nights room can place each run.
   recentRuns?: {
     slug: string; name: string; itemId: string | null; itemTitle: string;
-    outcome: string; when: string; tokens: number; costUsd: number;
+    outcome: string; day?: string; when: string; tokens: number; costUsd: number;
     models: { model: string; tokens: number; costUsd: number }[];
   }[];
 }

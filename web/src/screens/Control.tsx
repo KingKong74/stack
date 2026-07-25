@@ -7,6 +7,7 @@ import {
   type ControlData, type ControlProject, type AutopilotJob, type AutopilotSchedule, type ModelEntry,
 } from '../store';
 import { SessionPlanModal } from '../components/SessionPlanModal';
+import { NightsRoom, PlanRoom, BuildRoom } from './ControlRooms';
 import { go, hrefTo } from '../lib/route';
 import type { ProjectStatus } from '../types';
 
@@ -48,12 +49,6 @@ const sessionAge = (startedAt: number) => {
   return min < 1 ? 'just opened' : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`;
 };
 
-const scheduleWhen = (s: { days: number[]; runDate: string | null; atTime: string }) => {
-  if (s.runDate) return `once · ${s.runDate} ${s.atTime}`;
-  if (s.days.length === 7) return `daily · ${s.atTime}`;
-  return `${s.days.map((d) => DAY_LABELS[d]).join(' ')} · ${s.atTime}`;
-};
-
 const JOB_LABEL: Record<AutopilotJob['status'], string> = {
   queued: 'queued', claimed: 'starting', running: 'running', done: 'done', failed: 'failed',
   paused: 'hung up',
@@ -70,10 +65,6 @@ const resumeWhen = (iso?: string | null) => {
   return d.toDateString() === new Date().toDateString() ? t : `${DAY_LABELS[d.getDay()]} ${t}`;
 };
 
-// #228 — a session's kind on the calendar chips + schedule rows ('build' is
-// the unmarked default; the others announce themselves).
-const KIND_CHIP: Record<string, string> = { plan: 'plan', debug: 'debug', audit: 'audit' };
-
 // Mission Control — every project's automation from one point: the autopilot
 // console (arm, session cap, token budget incl. unlimited, nightly time,
 // items/night), manual Run-now per project, the scheduled-sessions calendar,
@@ -82,7 +73,6 @@ const KIND_CHIP: Record<string, string> = { plan: 'plan', debug: 'debug', audit:
 export function ControlPanel() {
   const [data, setData] = useState<ControlData | null>(null);
   const [error, setError] = useState('');
-  const [schedCollapsed, setSchedCollapsed] = useState(false);
   // #228 — the session planner: null = closed; row = editing; row: null = new.
   const [planner, setPlanner] = useState<{ row: AutopilotSchedule | null } | null>(null);
   const [labelBusy, setLabelBusy] = useState(false);
@@ -95,6 +85,12 @@ export function ControlPanel() {
   // #177 — the usage card's per-session agent breakdown, collapsed by default.
   const [agentBreakdown, setAgentBreakdown] = useState(false);
   const [mergeBusy, setMergeBusy] = useState(false);
+  // 14a — the shell: Now / Nights / Plan / Build are rooms behind one pinned
+  // live strip and a persistent rail; the autopilot config folds away.
+  const [room, setRoom] = useState<'now' | 'nights' | 'plan' | 'build'>('now');
+  const [cfgOpen, setCfgOpen] = useState(false);
+  const [projFilter, setProjFilter] = useState<'all' | 'auto' | 'live'>('all');
+  const [pickSlug, setPickSlug] = useState(''); // the Plan/Build rooms' project
   const load = useCallback(() => {
     getControl()
       .then(setData)
@@ -298,11 +294,6 @@ export function ControlPanel() {
     void labelSessions(true);
   }, [data?.terminal]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const week = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() + i);
-    return d;
-  });
 
   // (#194) Budget bar fill — % of per-night budget consumed across active nights this week;
   // null hides the bar. Uses weekNights (not weekRuns) because autopilot_tokens is a
@@ -310,6 +301,62 @@ export function ControlPanel() {
   const usageBar = data?.usage && data.usage.budgetPerNight > 0 && data.usage.weekNights > 0
     ? Math.min(100, Math.round(data.usage.weekTokens / (data.usage.budgetPerNight * data.usage.weekNights) * 100))
     : null;
+
+  // ---- 14a derived bits ----
+  useEffect(() => {
+    if (!pickSlug && data?.projects.length) setPickSlug(data.projects[0].slug);
+  }, [data, pickSlug]);
+  const runNowSlug = (slug: string) => {
+    const p = data?.projects.find((x) => x.slug === slug);
+    if (p) void runNow(p);
+  };
+  // The live strip's primary session: a claude tab first, any web session next,
+  // then a detached survivor. Everything else is "N more" + the Now-room chips.
+  const sess = data?.terminal?.sessions ?? [];
+  const det = (data?.terminal?.detached ?? []).filter((d) => !sess.some((s) => s.tmux === d.name));
+  const primary = sess.find((s) => s.cmd === 'claude') ?? sess[0] ?? null;
+  const primaryDet = primary ? null : det[0] ?? null;
+  const liveCount = sess.length + det.length;
+  const homely = (cwd: string) => cwd.replace(/^\/home\/[^/]+\/?/, '') || '~';
+  const projectNameOf = (cwd: string) => {
+    const seg = homely(cwd).split('/')[0];
+    return data?.projects.find((p) => p.slug === seg)?.name ?? (seg === '~' ? 'home' : seg);
+  };
+  const seriousTotal = data?.projects.reduce((n, p) => n + p.bugs.serious, 0) ?? 0;
+  const shownProjects = (data?.projects ?? []).filter((p) =>
+    projFilter === 'auto' ? p.automode : projFilter === 'live' ? !!p.live : true);
+  // Per-project run history for the row bars — oldest → newest, this week.
+  const historyFor = (slug: string) =>
+    (data?.usage?.recentRuns ?? []).filter((r) => r.slug === slug).slice(0, 6).reverse();
+  // The rail's NEXT UP: the coming week's bookings, tonight's nightly first.
+  const upcoming = (() => {
+    if (!data) return [] as { key: string; day: string; time: string; what: string; count: string }[];
+    const out: { key: string; day: string; time: string; what: string; count: string }[] = [];
+    for (let i = 0; i < 7 && out.length < 5; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      const date = fmtDate(d);
+      const day = i === 0 ? 'Tonight' : i === 1 ? 'Tomorrow' : DAY_LABELS[d.getDay()];
+      if (i === 0 && data.autopilot.enabled && data.totals.automode > 0) {
+        out.push({
+          key: `n${date}`, day, time: data.autopilot.time,
+          what: `nightly — ${data.totals.automode} automode project${data.totals.automode === 1 ? '' : 's'}`,
+          count: `≤${data.autopilot.maxItems}`,
+        });
+      }
+      for (const s of data.schedules) {
+        if (!s.enabled || out.length >= 5) continue;
+        if (s.runDate ? s.runDate === date : s.days.includes(d.getDay())) {
+          out.push({
+            key: `${s.id}·${date}`, day, time: s.atTime,
+            what: `${s.name}${s.kind !== 'build' ? ` · ${s.kind}` : ''}`,
+            count: s.agenda.length ? `☰${s.agenda.length}` : s.itemId ? `#${s.itemId}` : '',
+          });
+        }
+      }
+    }
+    return out;
+  })();
 
   return (
     <div>
@@ -353,23 +400,98 @@ export function ControlPanel() {
           !error && <div className="empty-state"><div className="big">Loading…</div></div>
         ) : (
           <>
-            {/* ---- the autopilot console: arm switch + every night knob ---- */}
-            <div className="mc-strip">
-              <div className="mc-arm">
+            {/* ---- 14a: the shell — rooms behind one live strip + rail ---- */}
+            <div className="mc14-tabs" role="tablist" aria-label="Mission Control rooms">
+              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', 0], ['build', 'Build', 0]] as const).map(([key, label, n]) => (
+                <button key={key} role="tab" aria-selected={room === key}
+                  className={`mc14-tab ${room === key ? 'on' : ''}`} onClick={() => setRoom(key)}>
+                  {label}{n > 0 && <span className="n">{n}</span>}
+                </button>
+              ))}
+              <div style={{ flex: 1 }} />
+              <a className="mc14-headlink" href={hrefTo.terminal()}>▸ Terminal</a>
+            </div>
+
+            {/* the live strip — pinned above every room */}
+            <div className={`mc14-livebar ${primary || primaryDet ? 'live' : ''}`}>
+              {primary ? (<>
+                <span className="dot" />
+                <span className="state">LIVE</span>
+                <span className="proj">{projectNameOf(primary.cwd)}</span>
+                <span className="tail">{primary.label || `${primary.cmd} session in ~/${homely(primary.cwd)}`}</span>
+                <span className="when">{sessionAge(primary.startedAt)}</span>
+                {liveCount > 1 && <span className="more">+{liveCount - 1} more</span>}
+                <a className="attach" href={hrefTo.terminal(primary.cwd === '~' ? undefined : primary.cwd, primary.tmux || undefined)}>Attach</a>
+              </>) : primaryDet ? (<>
+                <span className="dot" />
+                <span className="state">UNATTENDED</span>
+                <span className="proj">{projectNameOf(primaryDet.cwd || '~')}</span>
+                <span className="tail">{primaryDet.label || `claude running detached (tmux ${primaryDet.name})`}</span>
+                {liveCount > 1 && <span className="more">+{liveCount - 1} more</span>}
+                <a className="attach" href={hrefTo.terminal(primaryDet.cwd || undefined, primaryDet.name)}>Attach</a>
+              </>) : (<>
+                <span className="dot quiet" />
+                <span className="state quiet">ALL QUIET</span>
+                <span className="tail">no sessions live{data.autopilot.enabled && data.totals.automode > 0 ? ` — the next window is the nightly at ${data.autopilot.time}` : ''}</span>
+                <a className="attach" href={hrefTo.terminal()}>⌨ Terminal</a>
+              </>)}
+            </div>
+
+            <div className="mc14-cols">
+              <div className="mc14-body">
+                {room === 'now' && (<>
+            {/* the live session card + the tiles (11a) */}
+            <div className="mc14-toprow">
+              <div className={`mc14-livecard ${primary || primaryDet ? 'live' : ''}`}>
+                <div className="cap-row">
+                  <span className="cap">LIVE SESSION</span>
+                  <span className="host">{data.terminal?.connected ? 'host daemon online' : 'host daemon offline'}</span>
+                </div>
+                {(primary || primaryDet) ? (<>
+                  <div className="name-row">
+                    <span className="nm">{projectNameOf((primary?.cwd ?? primaryDet?.cwd) || '~')}</span>
+                    <span className="path">~/{homely((primary?.cwd ?? primaryDet?.cwd) || '')}</span>
+                  </div>
+                  <div className="task">{(primary?.label ?? primaryDet?.label) || 'Working — ✧ labelling names the task as output arrives.'}</div>
+                  {liveCount > 1 && <span className="others">{liveCount - 1} other session{liveCount === 2 ? '' : 's'} live — the chips below jump in</span>}
+                </>) : (
+                  <div className="task quiet">Nothing running. ▶ Run now on a project queues an unattended session; the terminal is one key away.</div>
+                )}
+              </div>
+              <div className="mc14-tiles">
+                <button className="mc14-review" onClick={() => go.dashboard()}
+                  title="Auto-extracted items waiting for keep/dismiss — the deck's review inbox">
+                  <span className="n">{data.totals.review}</span>
+                  <span className="l">awaiting review</span>
+                  <span className="note">{data.totals.review > 0 ? 'keep or dismiss from the deck — approvals stick across pushes' : 'inbox clear'}</span>
+                </button>
+                <div className="mc14-minis">
+                  <div className="mc14-mini"><span className="n">{seriousTotal}</span><span className={`l ${seriousTotal ? 'bad' : ''}`}>serious bugs</span></div>
+                  <div className="mc14-mini"><span className="n">{data.totals.claims}</span><span className="l">claimed lanes</span></div>
+                </div>
+              </div>
+            </div>
+
+            {/* the autopilot, settled into one line — config folds open (11a) */}
+            <div className="mc14-settle">
+              <div className="row">
                 <button role="switch" aria-checked={data.autopilot.enabled} aria-label="Autopilot armed"
                   className={`switch ${data.autopilot.enabled ? 'on' : ''}`}
                   onClick={() => setAutopilot({ autopilotEnabled: !data.autopilot.enabled })}>
                   <span className="switch-knob" />
                 </button>
-                <div className="mc-arm-text">
-                  <div className="mc-arm-label">Autopilot {data.autopilot.enabled ? 'armed' : 'off'}</div>
-                  <div className="mc-arm-hint">
-                    {data.autopilot.enabled
-                      ? `Nightly at ${data.autopilot.time} on every automode project; scheduled sessions run as set below.`
-                      : 'Nightly runs and scheduled sessions are paused. Run now still works.'}
-                  </div>
-                </div>
+                <span className="lbl">Autopilot {data.autopilot.enabled ? 'armed' : 'off'}</span>
+                <span className="sum">
+                  {data.autopilot.enabled
+                    ? `nightly ${data.autopilot.time} · ≤${data.autopilot.maxItems}/night · ${data.autopilot.minutes % 60 === 0 ? `${data.autopilot.minutes / 60}h` : `${data.autopilot.minutes}m`} cap · ${data.autopilot.tokens === 0 ? '∞ tokens' : fmtTok(data.autopilot.tokens)}${data.autopilot.executorModel ? ` · ${data.autopilot.executorModel}` : ''}${data.autopilot.advisorModel ? ` → ${data.autopilot.advisorModel}` : ''}`
+                    : 'nightly + scheduled sessions paused — Run now still works'}
+                </span>
+                <button className="cfg" onClick={() => setCfgOpen((v) => !v)} aria-expanded={cfgOpen}>
+                  {cfgOpen ? '▾ close' : '▸ configure'}
+                </button>
               </div>
+              {cfgOpen && (
+              <div className="mc14-cfg">
               <div className="mc-console-clusters">
                 {/* Night budget cluster */}
                 <div className="mc-cluster">
@@ -485,18 +607,9 @@ export function ControlPanel() {
                   </div>
                 </div>
               </div>
-              <div className="mc-totals">
-                <span className={`mc-daemon ${data.terminal?.connected ? 'on' : ''}`}
-                  title={data.terminal?.connected
-                    ? 'stack-term is connected — terminal sessions available'
-                    : 'The host daemon is offline — start stack-term on the host'}>
-                  {data.terminal?.connected ? '● daemon online' : '○ daemon offline'}
-                </span>
-                <span><b>{data.totals.automode}</b> on automode</span>
-                <span><b>{data.totals.liveSessions}</b> live session{data.totals.liveSessions === 1 ? '' : 's'}</span>
-                <span><b>{data.totals.claims}</b> claimed lane{data.totals.claims === 1 ? '' : 's'}</span>
-                <span><b>{data.totals.review}</b> awaiting review</span>
               </div>
+              )}
+            </div>
               {/* Running sessions — the web-attached ones and the detached tmux
                   survivors. Every chip is a ▶ jump-in: it opens #/terminal
                   attached to that session (by tmux name when there is one —
@@ -598,241 +711,20 @@ export function ControlPanel() {
                   ))}
                 </div>
               )}
+
+            {/* the projects become the page (11a) — hairline + filters, then rows */}
+            <div className="mc14-projhead">
+              <span className="cap">PROJECTS</span>
+              <span className="hair" />
+              {([['all', 'All'], ['auto', 'Automode'], ['live', 'Live']] as const).map(([key, label]) => (
+                <button key={key} className={`mc14-filter ${projFilter === key ? 'on' : ''}`}
+                  onClick={() => setProjFilter(key)}>{label}</button>
+              ))}
             </div>
-
-            {/* ---- (#220) Plan windows: the account's real session/week usage,
-                 via the daemon's cached snapshot — same numbers as the Terminal
-                 strip (#195). Hidden when absent or stale (daemon gone >10m). */}
-            {data.planUsage && Date.now() - data.planUsage.at < 10 * 60_000 && (() => {
-              const p = data.planUsage.plan;
-              const fmtReset = (ms: number | null | undefined, withDay = false): string => {
-                if (!ms) return '';
-                const d = new Date(ms);
-                const h = d.getHours() % 12 || 12;
-                const t = `${h}:${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
-                return withDay ? `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${t}` : t;
-              };
-              return (
-                <div className="mc-usage mc-plan">
-                  <div className="mc-usage-head">
-                    <span className="mc-usage-label">Claude plan — right now</span>
-                    <span className="mc-usage-total">
-                      {p.session && (
-                        <span className={p.session.pct >= 85 ? 'mc-plan-warn' : undefined}>
-                          session {p.session.pct}%{p.session.resetAt ? ` · resets ${fmtReset(p.session.resetAt)}` : ''}
-                        </span>
-                      )}
-                      {p.week && (
-                        <span className={p.week.pct >= 85 ? 'mc-plan-warn' : undefined}>
-                          {p.session ? ' · ' : ''}week {p.week.pct}%{p.week.resetAt ? ` · resets ${fmtReset(p.week.resetAt, true)}` : ''}
-                        </span>
-                      )}
-                      {p.weekModel && (
-                        <span className={p.weekModel.pct >= 85 ? 'mc-plan-warn' : undefined}>
-                          {' '}· {(p.weekModel.model || 'model').toLowerCase()} {p.weekModel.pct}%
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                  {p.session && (
-                    <div className="mc-usage-bar-wrap"
-                      title={`Session window ${p.session.pct}% used${p.session.resetAt ? ` — resets ${fmtReset(p.session.resetAt)}` : ''}`}
-                      aria-label={`${p.session.pct}% of the session window used`}>
-                      <div className={`mc-usage-bar${p.session.pct >= 85 ? ' warn' : ''}`}
-                        style={{ width: `${Math.min(100, p.session.pct)}%` }} />
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* ---- (#194) usage summary: 7-day tokens + per-model breakdown ---- */}
-            {data.usage && data.usage.weekRuns > 0 && (
-              <div className="mc-usage">
-                <div className="mc-usage-head">
-                  <span className="mc-usage-label">Usage — last 7 days</span>
-                  <span className="mc-usage-total">
-                    {fmtTok(data.usage.weekTokens)}
-                    {data.usage.weekCostUsd > 0.005 && ` · $${data.usage.weekCostUsd.toFixed(2)}`}
-                    {' '}· {data.usage.weekRuns} run{data.usage.weekRuns === 1 ? '' : 's'}
-                    {data.usage.budgetPerNight > 0 && (
-                      <span className="mc-usage-budget"> · budget {fmtTok(data.usage.budgetPerNight)}/night</span>
-                    )}
-                    {data.usage.budgetPerNight === 0 && (
-                      <span className="mc-usage-budget"> · ∞ Unlimited budget</span>
-                    )}
-                  </span>
-                  {data.usage.todayTokens > 0 && (
-                    <span className="mc-usage-today">
-                      24h: {fmtTok(data.usage.todayTokens)}
-                      {data.usage.todayCostUsd > 0.005 && ` · $${data.usage.todayCostUsd.toFixed(2)}`}
-                    </span>
-                  )}
-                  {/* #200 — month-to-date rollup across all projects */}
-                  {(data.usage.monthTokens ?? 0) > 0 && (
-                    <span className="mc-usage-today"
-                      title={`Month to date: ${data.usage.monthRuns ?? 0} run${(data.usage.monthRuns ?? 0) === 1 ? '' : 's'} across all projects (UTC calendar month)`}>
-                      month: {fmtTok(data.usage.monthTokens!)}
-                      {(data.usage.monthCostUsd ?? 0) > 0.005 && ` · $${data.usage.monthCostUsd!.toFixed(2)}`}
-                    </span>
-                  )}
-                </div>
-                {usageBar !== null && (
-                  <div className="mc-usage-bar-wrap"
-                    title={`${fmtTok(data.usage.weekTokens)} of ${fmtTok(data.usage.budgetPerNight * data.usage.weekNights)} budgeted this week (${data.usage.weekNights} night${data.usage.weekNights === 1 ? '' : 's'} × ${fmtTok(data.usage.budgetPerNight)}/night) — ${usageBar}%`}
-                    aria-label={`${usageBar}% of weekly budget used`}>
-                    <div className="mc-usage-bar" style={{ width: `${usageBar}%` }} />
-                  </div>
-                )}
-                {data.usage.models.length > 0 && (
-                  <div className="mc-usage-models">
-                    {data.usage.models.map((m) => (
-                      <span key={m.model || '__unattrib'} className="mc-usage-model">
-                        <span className="mc-usage-model-name">{m.model || 'other / single-model'}</span>
-                        <span className="mc-usage-model-tok">{fmtTok(m.tokens)}</span>
-                        {m.costUsd > 0.005 && <span className="mc-usage-model-cost">${m.costUsd.toFixed(2)}</span>}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {/* #177 — agent breakdown: the newest runs, each with its
-                    executor/advisor (per-model) split, collapsed by default */}
-                {(data.usage.recentRuns?.length ?? 0) > 0 && (
-                  <div className="mc-agents">
-                    <button className="mc-agents-toggle" onClick={() => setAgentBreakdown((v) => !v)}
-                      aria-expanded={agentBreakdown}
-                      title="Per-session agent breakdown — which model did what in each recent run">
-                      {agentBreakdown ? '▾' : '▸'} Agent breakdown — last {data.usage.recentRuns!.length} session{data.usage.recentRuns!.length === 1 ? '' : 's'}
-                    </button>
-                    {agentBreakdown && (
-                      <div className="mc-agents-list">
-                        {data.usage.recentRuns!.map((r, i) => (
-                          <div className="mc-agents-row" key={i}>
-                            <button className="mc-agents-run"
-                              title={r.itemTitle || undefined}
-                              onClick={() => r.itemId && go.detail(r.slug, 'roadmap', r.itemId)}>
-                              {r.name}{r.itemId ? ` #${r.itemId}` : ''} · {r.outcome} · {r.when}
-                            </button>
-                            <span className="mc-agents-models">
-                              {r.models.length > 0 ? r.models.map((m) => (
-                                <span key={m.model} className="mc-usage-model">
-                                  <span className="mc-usage-model-name">{m.model}</span>
-                                  <span className="mc-usage-model-tok">{fmtTok(m.tokens)}</span>
-                                  {m.costUsd > 0.005 && <span className="mc-usage-model-cost">${m.costUsd.toFixed(2)}</span>}
-                                </span>
-                              )) : (
-                                <span className="mc-usage-model">
-                                  <span className="mc-usage-model-name">single-model</span>
-                                  <span className="mc-usage-model-tok">{fmtTok(r.tokens)}</span>
-                                  {r.costUsd > 0.005 && <span className="mc-usage-model-cost">${r.costUsd.toFixed(2)}</span>}
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ---- scheduled sessions: the week ahead + the standing list ---- */}
-            <div className="mc-sched">
-              <div className="mc-sched-head">
-                <button className="mc-sched-toggle" onClick={() => setSchedCollapsed((v) => !v)}
-                  aria-expanded={!schedCollapsed}
-                  title={schedCollapsed ? 'Show scheduled sessions' : 'Collapse scheduled sessions'}>
-                  <span className="mc-sched-chev">{schedCollapsed ? '›' : '‹'}</span>
-                  <div className="mc-sched-title">
-                    Scheduled sessions
-                    {data.schedules.length > 0 && (
-                      <span className="mc-sched-count">{data.schedules.length}</span>
-                    )}
-                  </div>
-                </button>
-                {!schedCollapsed && (
-                  <button className="btn-repo sm" onClick={() => setPlanner({ row: null })}>
-                    + Plan a session
-                  </button>
-                )}
-              </div>
-
-              {!schedCollapsed && (
-                <>
-                  <div className="mc-week">
-                    {week.map((d, i) => {
-                      const date = fmtDate(d);
-                      const todays = data.schedules.filter((s) => s.enabled
-                        && (s.runDate ? s.runDate === date : s.days.includes(d.getDay())));
-                      return (
-                        <div className={`mc-day ${i === 0 ? 'today' : ''}`} key={date}>
-                          <div className="mc-day-head">{i === 0 ? 'Today' : DAY_LABELS[d.getDay()]} <span>{d.getDate()}</span></div>
-                          {data.autopilot.enabled && data.totals.automode > 0 && (
-                            <div className="mc-day-chip nightly" title={`The nightly run: up to ${data.autopilot.maxItems} item(s) on each automode project`}>
-                              {data.autopilot.time} nightly
-                            </div>
-                          )}
-                          {todays.map((s) => (
-                            <button className="mc-day-chip" key={s.id} onClick={() => setPlanner({ row: s })}
-                              title={[KIND_CHIP[s.kind] && `${s.kind} session`,
-                                s.agenda.length && `${s.agenda.length} on the agenda`,
-                                s.itemTitle && `#${s.itemId} ${s.itemTitle}`, s.note].filter(Boolean).join(' — ') || 'Open the session plan'}>
-                              {s.atTime} {s.name}
-                              {KIND_CHIP[s.kind] ? ` · ${KIND_CHIP[s.kind]}` : ''}
-                              {s.agenda.length ? ` ☰${s.agenda.length}` : s.itemId ? ` #${s.itemId}` : ''}
-                            </button>
-                          ))}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {data.schedules.length > 0 ? (
-                    <div className="mc-sched-list">
-                      {data.schedules.map((s) => (
-                        <div className={`mc-sched-row ${s.enabled ? '' : 'off'}`} key={s.id}>
-                          <button role="switch" aria-checked={s.enabled} aria-label={`Schedule for ${s.name}`}
-                            className={`switch sm ${s.enabled ? 'on' : ''}`}
-                            onClick={() => toggleSchedule(s.id, !s.enabled)}>
-                            <span className="switch-knob" />
-                          </button>
-                          <button className="mc-name sm" onClick={() => go.detail(s.slug)}>
-                            <span className="tintdot" style={{ background: s.tint || 'var(--sand)' }} />
-                            {s.name}
-                          </button>
-                          <button className="mc-sched-open" onClick={() => setPlanner({ row: s })}
-                            title="Open the session plan — kind, agenda, scope">
-                            <span className="mc-sched-when">{scheduleWhen(s)}</span>
-                            {KIND_CHIP[s.kind] && <span className={`mc-kind ${s.kind}`}>{KIND_CHIP[s.kind]}</span>}
-                            {s.agenda.length > 0 && (
-                              <span className="mc-agenda-n" title={`${s.agenda.length} on the agenda, worked in order`}>
-                                ☰ {s.agenda.length}
-                              </span>
-                            )}
-                            {s.area && !s.agenda.length && <span className="mc-agenda-n">{s.area}</span>}
-                            <span className="mc-sched-edit">✎</span>
-                          </button>
-                          {s.itemId && !s.agenda.length && (
-                            <button className="mc-pick" title={s.itemTitle}
-                              onClick={() => go.detail(s.slug, 'roadmap', s.itemId!)}>#{s.itemId} {s.itemTitle || 'roadmap item'}</button>
-                          )}
-                          {s.note && <span className="mc-sched-note" title={s.note}>{s.note}</span>}
-                          <button className="mc-sched-del" aria-label="Remove schedule" onClick={() => removeSchedule(s.id)}>×</button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mc-sched-empty">Nothing scheduled — the nightly run covers automode projects{data.autopilot.enabled ? '' : ' (once armed)'}. Plan a session to point a project (or a picked agenda of items or bugs) at a time of your choosing.</div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* one row per project — automode first */}
             <div className="mc-list">
-              {data.projects.map((p) => {
+              {shownProjects.map((p) => {
                 const job = openJobFor(p.slug);
+                const hist = historyFor(p.slug);
                 return (
                 <div className={`mc-row ${p.automode ? 'auto' : ''}`} key={p.slug}>
                   <div className="mc-main">
@@ -841,6 +733,14 @@ export function ControlPanel() {
                       {p.name}
                     </button>
                     <span className={`statusbadge ${p.status}`}><span className="dot" />{STATUS_LABEL[p.status]}</span>
+                    {hist.length > 0 && (
+                      <span className="mc14-hist" title="This week's runs, oldest first">
+                        {hist.map((r, i) => (
+                          <i key={i} className={r.outcome}
+                            title={`${r.itemId ? `#${r.itemId} ` : ''}${r.itemTitle || 'general'} — ${r.outcome} ${r.when}`} />
+                        ))}
+                      </span>
+                    )}
                     {p.live && (
                       <span className="mc-live" title={`${p.live.count} live session${p.live.count === 1 ? '' : 's'}`}>
                         ● {p.live.branches.join(' · ')}
@@ -1018,6 +918,149 @@ export function ControlPanel() {
                   <div>Connect a repo from the dashboard and it'll appear here.</div>
                 </div>
               )}
+            </div>
+                </>)}
+
+                {room === 'nights' && (
+                  <NightsRoom data={data} onOpenPlanner={(row) => setPlanner({ row })} onRunNow={runNowSlug}
+                    onToggleSchedule={toggleSchedule} onRemoveSchedule={removeSchedule} />
+                )}
+                {room === 'plan' && pickSlug && <PlanRoom data={data} pickSlug={pickSlug} onPick={setPickSlug} />}
+                {room === 'build' && pickSlug && (
+                  <BuildRoom data={data} pickSlug={pickSlug} onPick={setPickSlug} onGoNow={() => setRoom('now')} />
+                )}
+              </div>
+
+              {/* ---- the rail: plan windows, usage, next up — stays put across rooms ---- */}
+              <div className="mc14-rail">
+                {data.planUsage && Date.now() - data.planUsage.at < 10 * 60_000 && (() => {
+                  const p = data.planUsage.plan;
+                  const fmtReset = (msAt: number | null | undefined, withDay = false): string => {
+                    if (!msAt) return '';
+                    const d = new Date(msAt);
+                    const h = d.getHours() % 12 || 12;
+                    const t = `${h}:${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
+                    return withDay ? `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${t}` : t;
+                  };
+                  const meters = [
+                    p.session && { name: 'Session window', pct: p.session.pct, reset: p.session.resetAt ? `resets ${fmtReset(p.session.resetAt)}` : '' },
+                    p.week && { name: 'Week', pct: p.week.pct, reset: p.week.resetAt ? `resets ${fmtReset(p.week.resetAt, true)}` : '' },
+                    p.weekModel && { name: `Week · ${(p.weekModel.model || 'model').toLowerCase()}`, pct: p.weekModel.pct, reset: '' },
+                  ].filter(Boolean) as { name: string; pct: number; reset: string }[];
+                  if (!meters.length) return null;
+                  return (
+                    <div className="mc14-rail-sec">
+                      <div className="cap-row"><span className="cap">CLAUDE PLAN</span><span className="sub">right now</span></div>
+                      {meters.map((m) => (
+                        <div key={m.name} className="mc14-meter">
+                          <div className="row"><span className="nm">{m.name}</span><span className={`pct ${m.pct >= 85 ? 'warn' : ''}`}>{m.pct}%</span></div>
+                          <div className="bar"><span className={m.pct >= 85 ? 'warn' : ''} style={{ width: `${Math.min(100, m.pct)}%` }} /></div>
+                          {m.reset && <span className="reset">{m.reset}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                {data.usage && data.usage.weekRuns > 0 && (
+                  <div className="mc14-rail-sec">
+                    <div className="cap-row">
+                      <span className="cap">USAGE</span><span className="sub">last 7 days</span>
+                      <div style={{ flex: 1 }} />
+                      {data.usage.weekCostUsd > 0.005 && <span className="spend">${data.usage.weekCostUsd.toFixed(2)}</span>}
+                    </div>
+                    <div className="mc14-tok">
+                      <span className="big">{fmtTok(data.usage.weekTokens)}</span>
+                      <span className="sub">{data.usage.weekRuns} run{data.usage.weekRuns === 1 ? '' : 's'} · {data.usage.weekNights} night{data.usage.weekNights === 1 ? '' : 's'}</span>
+                    </div>
+                    {usageBar !== null && (
+                      <div className="mc14-budgetbar"
+                        title={`${fmtTok(data.usage.weekTokens)} of ${fmtTok(data.usage.budgetPerNight * data.usage.weekNights)} budgeted this week — ${usageBar}%`}>
+                        <span style={{ width: `${usageBar}%` }} />
+                      </div>
+                    )}
+                    {data.usage.models.length > 0 && (
+                      <>
+                        <div className="mc14-stack">
+                          {data.usage.models.map((m, i) => (
+                            <span key={m.model || '__x'} className={`seg c${i % 4}`}
+                              style={{ width: `${Math.max(2, Math.round((m.tokens / data.usage!.weekTokens) * 100))}%` }} />
+                          ))}
+                        </div>
+                        {data.usage.models.map((m, i) => (
+                          <div key={m.model || '__x'} className="mc14-model">
+                            <span className={`sw c${i % 4}`} />
+                            <span className="nm">{m.model || 'single-model'}</span>
+                            <span className="tok">{fmtTok(m.tokens)}</span>
+                            {m.costUsd > 0.005 && <span className="cost">${m.costUsd.toFixed(2)}</span>}
+                          </div>
+                        ))}
+                      </>
+                    )}
+                    {(data.usage.monthTokens ?? 0) > 0 && (
+                      <div className="mc14-month" title={`Month to date, UTC calendar month — ${data.usage.monthRuns ?? 0} runs`}>
+                        <span className="nm">month to date</span>
+                        <span className="tok">{fmtTok(data.usage.monthTokens!)}</span>
+                        {(data.usage.monthCostUsd ?? 0) > 0.005 && <span className="cost">${data.usage.monthCostUsd!.toFixed(2)}</span>}
+                      </div>
+                    )}
+                    {/* #177 — agent breakdown, collapsed; the newest runs' model split */}
+                    {(data.usage.recentRuns?.length ?? 0) > 0 && (
+                      <div className="mc-agents">
+                        <button className="mc-agents-toggle" onClick={() => setAgentBreakdown((v) => !v)}
+                          aria-expanded={agentBreakdown}>
+                          {agentBreakdown ? '▾' : '▸'} agent breakdown
+                        </button>
+                        {agentBreakdown && (
+                          <div className="mc-agents-list">
+                            {data.usage.recentRuns!.slice(0, 12).map((r, i) => (
+                              <div className="mc-agents-row" key={i}>
+                                <button className="mc-agents-run" title={r.itemTitle || undefined}
+                                  onClick={() => r.itemId && go.detail(r.slug, 'roadmap', r.itemId)}>
+                                  {r.name}{r.itemId ? ` #${r.itemId}` : ''} · {r.outcome} · {r.when}
+                                </button>
+                                <span className="mc-agents-models">
+                                  {r.models.length > 0 ? r.models.map((m) => (
+                                    <span key={m.model} className="mc-usage-model">
+                                      <span className="mc-usage-model-name">{m.model}</span>
+                                      <span className="mc-usage-model-tok">{fmtTok(m.tokens)}</span>
+                                    </span>
+                                  )) : (
+                                    <span className="mc-usage-model">
+                                      <span className="mc-usage-model-name">single-model</span>
+                                      <span className="mc-usage-model-tok">{fmtTok(r.tokens)}</span>
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="mc14-rail-sec grow">
+                  <div className="cap-row">
+                    <span className="cap">NEXT UP</span>
+                    <div style={{ flex: 1 }} />
+                    <button className="link" onClick={() => setRoom('nights')}>all nights →</button>
+                  </div>
+                  {upcoming.map((u) => (
+                    <div key={u.key} className="mc14-up">
+                      <span className="when"><b>{u.day}</b><i>{u.time}</i></span>
+                      <span className="what">{u.what}</span>
+                      {u.count && <span className="cnt">{u.count}</span>}
+                    </div>
+                  ))}
+                  {upcoming.length === 0 && <span className="mc14-quiet">Nothing booked this week — the Nights room plans one.</span>}
+                  <div className="daemon-row">
+                    <span className={`ddot ${data.terminal?.connected ? 'on' : ''}`} />
+                    <span>{data.terminal?.connected ? 'stack-term connected' : 'host daemon offline'}</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* #228 — the session planner: a scheduled session opened into its own thing */}

@@ -160,7 +160,7 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
         </div>
       </div>
 
-      <div className="page detail" style={{ maxWidth: screenTab === 'control' ? 1080 : 760 }}>
+      <div className="page detail" style={{ maxWidth: screenTab === 'control' ? 1280 : 760 }}>
         <div className="dash-head" style={{ marginBottom: 16 }}>
           <div>
             <div className="dash-title">{screenTab === 'control' ? 'Mission Control' : 'Settings'}</div>

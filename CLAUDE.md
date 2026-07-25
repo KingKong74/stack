@@ -243,13 +243,37 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   `store.getThemePref/setThemePref`; App resolves to `<html data-theme>`). The dark palette is one
   `[data-theme='dark']` override block on the same named tokens at the top of `styles.css`, plus a
   short list of literal-background fixups right below it. Stickies keep their paper colours.
-- `screens/Control.tsx` — **Mission Control** (`#/control`, the Dashboard header's "Mission
-  Control" button): every project's automation from one point. The autopilot console (arm switch
-  + session cap up to 6h + **token budget incl. ∞ Unlimited** + **nightly start time** + items
-  per night + the **Executor / Advisor model pickers** (#153 — which model runs the session
-  and which stronger one it consults; Default/Off = single-model as before) — all PATCHed
-  straight to settings, optimistic with rollback) over the **scheduled
-  sessions card** (week-ahead strip + standing list: one-off / daily / chosen-days sessions per
+- `screens/Control.tsx` (+ `screens/ControlRooms.tsx`) — **Mission Control** (`#/control`, the
+  Dashboard header's "Mission Control" button): every project's automation from one point,
+  restructured to the Stack Planning design's **14a shell**: four rooms — **Now / Nights /
+  Plan / Build** — behind one **pinned live strip** (the primary claude/web session, or the
+  first detached survivor, with Attach; ALL QUIET when nothing runs) and a **persistent right
+  rail** that stays put across rooms (the #220 CLAUDE PLAN window meters, the compact #194/#200
+  7-day usage — spend, tokens, per-model stacked bar, month-to-date, the collapsed #177 agent
+  breakdown — the NEXT UP list of the week's bookings with tonight's nightly first, and the
+  daemon status line). **Now** is 11a's dashboard: the LIVE SESSION card beside the terracotta
+  awaiting-review tile (→ the deck inbox) + serious-bugs/claimed-lanes minis, then the
+  autopilot **settled into one line** — arm switch + a mono summary — whose ▸ configure folds
+  open the full console (session cap up to 6h + **token budget incl. ∞ Unlimited** + **nightly
+  start time** + items per night + the **Executor / Advisor model pickers** (#153) — all
+  PATCHed straight to settings, optimistic with rollback), then the running/paused/jobs strips
+  and the PROJECTS hairline (All/Automode/Live filter chips; each row wears this week's
+  run-history bars from `usage.recentRuns`). **Nights** is 12a's calendar: a 7-day window
+  (3 back, 3 ahead) of per-project lanes — past cells carry real run outcomes (landed/failed/
+  limit, coloured, with tokens; `recentRuns` now carries a UTC `day` for the placement),
+  future cells their bookings (schedule rows + the armed nightly) — with a legend, a per-day
+  load strip, a click-open night detail card (runs → Reviews; bookings → ✎ the SessionPlanModal;
+  ▶ Run now) and the standing schedule list (the editing surface) below. **Plan** is 12b on real
+  data: a project picker, the north-star card, the area→item tree (chips: ✓/⚑/↻/☰/⏭; "tonight's
+  path" filter) beside TONIGHT'S PICK ORDER (mirrors the runner's eligibility client-side — the
+  board IS the priority list) and WHY NOT THE REST (honest per-item reasons: claimed / parked /
+  unapproved hook item / outside the target area). **Build** is 12c grounded in Stack's real
+  gates: every roadmap item carrying #75 plan steps as a phase card (building / queued /
+  awaiting verdict / landed) with step marks, and GATE rows for the two crossings the autopilot
+  never makes alone — the human verdict (→ Reviews) and the merge (→ the merge strip) — plus
+  LAST NIGHTS MOVED THE PLAN from the run ledger. Plan/Build fetch the picked project's detail
+  via `getProjectDetail` (60s in-module cache). The **scheduled
+  sessions** system is unchanged underneath (one-off / daily / chosen-days sessions per
   project — `store.createAutopilotSchedule` et al). Every scheduled session is a **session
   plan** (#228): clicking a row (or a week-strip chip, or + Plan a session) opens
   `components/SessionPlanModal.tsx` — kind seg (Build / Plan / Debug / Audit), time +
