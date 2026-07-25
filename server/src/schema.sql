@@ -484,6 +484,15 @@ ALTER TABLE checks ADD COLUMN IF NOT EXISTS method TEXT NOT NULL DEFAULT 'GET';
 ALTER TABLE checks ADD COLUMN IF NOT EXISTS req_body TEXT;
 ALTER TABLE checks ADD COLUMN IF NOT EXISTS json_path TEXT;
 ALTER TABLE checks ADD COLUMN IF NOT EXISTS json_expect TEXT;
+-- Authenticated checks (#261). Every Stack route but GET /api/health sits behind
+-- bearer auth, so a suite that cannot authenticate can only ever probe the front
+-- door — and "checks green" then carries no information for the trust ladder
+-- (#212 auto-merge, #263 auto-verdict). An opt-in check has the server attach its
+-- OWN API_TOKEN at run time. The token is never stored on the row, never returned
+-- to the client, and is attached ONLY when the check's origin is the project's own
+-- site_url (or a loopback/compose-internal host) — a check pointed anywhere else
+-- runs unauthenticated rather than leaking the token to a third-party URL.
+ALTER TABLE checks ADD COLUMN IF NOT EXISTS auth BOOLEAN NOT NULL DEFAULT false;
 
 -- Audit tab run history: one row per Run-all (or run-one) of a project's
 -- checks — the dashboard's trend strip and last-run stats read from it.
