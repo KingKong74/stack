@@ -94,6 +94,12 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             wired in (a later phase, like promote/park/prune from the tree); empty lane/idea
             groups render example placeholder nodes so the intended shape is always visible.
             `--json` emits the underlying model; `--repo <path>` reads another checkout.
+            stack-seed-checks.mjs — the regression suite AS CODE (#261, `stack seed-checks`):
+            the ~30 checks that make "green" mean something, matched by name so a re-run
+            updates in place and never duplicates; `--dry` writes nothing, `--run` fires the
+            suite and exits 1 on red. Checks left alone if not in the suite. Its design rules
+            (assert contracts not data, read-only, auth for gated routes, URLs reachable from
+            the server container) are in the file header — read them before adding a check.
             stack-sessions.mjs — automation sessions from the terminal (#115):
             `stack start-session [<slug>] [--item N]` queues a manual autopilot job via the
             same POST /api/autopilot/start as Mission Control's ▶ Run now (slug derived from
@@ -969,6 +975,7 @@ node hook/stack-checkpoint.mjs --settings  # print current settings (what /check
 echo '{"project":{"slug":"stack"},"session":{"summary":"…"}}' | node hook/stack-checkpoint.mjs  # author a checkpoint
 node scripts/stack-context.mjs --slug stack --api https://stack.your-domain  # export agent manual
 ./stack tree                               # the branch navigator (also --repo <path>, --json)
+./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
 ./stack start-session [slug] [--item N]    # start an automation session (▶ Run now from the terminal)
 ./stack list-sessions                      # the automation job queue (also [slug], --limit, --json)
 ./stack term [dir]                         # claude in a stack-term tmux session (laptop/ssh — shows on
