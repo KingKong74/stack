@@ -400,7 +400,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   Stack Planning design's Tips tab: kept Claude prompts with the context of WHEN to reach for
   them. The library is **app-wide** (`store.getTips` et al hit the global `/api/tips` — every
   project's tab shows the same recipes; the tab fetches its own data like Audit). Left rail =
-  search + stage chips (Diverge/Converge/Judge/Ship) + the list (pinned first, then most-run);
+  search + stage chips (Diverge/Converge/Judge/Ship) + the list (pinned first, then most-run) —
+  collapsible to a slim re-open strip so the recipe gets the full width, remembered
+  device-local via `store.getTipsRailCollapsed/setTipsRailCollapsed`;
   the detail pane shows the prompt with its `[square-bracket]` fill-in slots highlighted, the
   works-best-when list and provenance. **▶ Run in a session** records the run (`store.runTip`
   — uses + last-run, best-effort) and opens a terminal in THIS project with the prompt handed

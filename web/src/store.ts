@@ -974,6 +974,17 @@ export async function getCheckRuns(slug: string, limit = 40): Promise<CheckRun[]
 
 // ---- tips (the app-wide recipe library — the Tips tab) ----
 
+// The recipe rail's collapsed state — device-local, like the theme. Collapsed
+// = the detail pane takes the full width; a slim strip re-opens the list.
+const TIPS_RAIL_KEY = 'stack.tipsRail';
+
+export function getTipsRailCollapsed(): boolean {
+  return readStoredJSON(TIPS_RAIL_KEY, (p) => p === true);
+}
+export function setTipsRailCollapsed(collapsed: boolean) {
+  localStorage.setItem(TIPS_RAIL_KEY, JSON.stringify(collapsed));
+}
+
 // What a recipe is made of, as the API takes it. `best` is the whole
 // "works best when" list; PATCH takes any subset (incl. { pinned }).
 export interface TipInput {

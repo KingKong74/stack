@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Tip, TipStage } from '../types';
-import { getTips, createTip, patchTip, deleteTip, runTip, type TipInput } from '../store';
+import {
+  getTips, createTip, patchTip, deleteTip, runTip, type TipInput,
+  getTipsRailCollapsed, setTipsRailCollapsed,
+} from '../store';
 import { go } from '../lib/route';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -38,6 +41,14 @@ export function Tips({ slug }: { slug: string }) {
   const [selId, setSelId] = useState<number | null>(null);
   const [modal, setModal] = useState<{ open: boolean; editing: Tip | null }>({ open: false, editing: null });
   const [confirmDelete, setConfirmDelete] = useState<Tip | null>(null);
+  // The rail folds away so the selected recipe gets the full width — a
+  // device-local preference, remembered like the theme.
+  const [railOpen, setRailOpen] = useState(() => !getTipsRailCollapsed());
+  const toggleRail = () => {
+    const next = !railOpen;
+    setRailOpen(next);
+    setTipsRailCollapsed(!next);
+  };
 
   useEffect(() => {
     let alive = true;
@@ -121,11 +132,21 @@ export function Tips({ slug }: { slug: string }) {
           <button className="btn-repo" onClick={() => setModal({ open: true, editing: null })}>+ Keep the first one</button>
         </div>
       ) : (
-        <div className="tips-layout">
+        <div className={`tips-layout ${railOpen ? '' : 'rail-closed'}`}>
+          {!railOpen && (
+            <button className="tips-rail-strip" onClick={toggleRail}
+              title="Expand the recipe list" aria-label="Expand the recipe list">
+              <span className="glyph">▸</span>
+              <span className="vlabel">Recipes · {list.length}</span>
+            </button>
+          )}
+          {railOpen && (
           <div className="tips-rail">
             <div className="tips-search">
               <span className="glyph">⌕</span>
               <input value={query} placeholder="Search recipes…" onChange={(e) => setQuery(e.target.value)} />
+              <button className="tips-rail-fold" onClick={toggleRail}
+                title="Collapse the recipe list" aria-label="Collapse the recipe list">◂</button>
             </div>
             <div className="tips-cats">
               {STAGES.map((s) => (
@@ -154,6 +175,7 @@ export function Tips({ slug }: { slug: string }) {
               )}
             </div>
           </div>
+          )}
 
           {sel && (
             <div className="tips-detail">
