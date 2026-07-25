@@ -10,7 +10,7 @@
 // to a target instead of a title. No key = the pre-pass silently skips.
 //
 // The human keeps final say: the autopilot NEVER touches main, never ticks an
-// item done, never merges — each item leaves a pushed `auto/item-N` branch, a
+// item done, never merges — each item leaves a pushed `auto/item-N-<slug>` branch, a
 // Gemini second-model review in the review inbox, a checks run, a checkpoint
 // on the activity feed, and a `built_note` stamped on the item (so the
 // Reviews view shows what landed when the human ticks it).
@@ -20,7 +20,7 @@
 // keep or release the claim. Then the next item, while budget remains.
 //
 // The claim doubles as the "don't re-pick" marker: a successful run leaves
-// `auto/item-N` claimed until the human merges and ticks the item done; a
+// `auto/item-N-<slug>` claimed until the human merges and ticks the item done; a
 // run that produced no commits releases it so the next night retries.
 //
 // The ARM SWITCH lives in the app: Settings → Autopilot, and each project
@@ -67,6 +67,7 @@ import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadStackEnv, logStderr, git } from '../hook/stack-post.mjs';
+import { laneFor } from './lib/lane.mjs';
 
 loadStackEnv();
 
@@ -425,7 +426,7 @@ Read the relevant code first — real file paths, real tables, real routes. Then
 
 // ---- one item, one branch, one bounded session ----
 async function runItem(item, northStar, capMin) {
-  const lane = `auto/item-${item.id}`;
+  const lane = laneFor(item);
   const branch = lane;
   const startedAt = new Date().toISOString();
   log(`picked #${item.id} [${item.bucket}] ${item.title} (cap ${Math.round(capMin)}m)`);
@@ -712,7 +713,7 @@ try {
     if (DRY) {
       log(PLAN_ONLY
         ? `dry run — would author a design for #${item.id} "${item.title}" (then keep going while budget lasts).`
-        : `dry run — would claim auto/item-${item.id} for "${item.title}" (then keep going while budget lasts).`);
+        : `dry run — would claim ${laneFor(item)} for "${item.title}" (then keep going while budget lasts).`);
       process.exit(0);
     }
 
@@ -724,7 +725,7 @@ try {
         ? await runPlanItem(item, detail.northStar || '', Math.min(remainingMin(), 20))
         : await runItem(item, detail.northStar || '', remainingMin());
       if (r.landed) landed++;
-      nightLines.push(`#${item.id} ${item.title}: ${r.landed ? (PLAN_ONLY ? 'design saved' : `auto/item-${item.id} pushed`) : (PLAN_ONLY ? 'no design' : 'no commits')}${r.limitHit ? ' (hit the usage limit)' : ''}`);
+      nightLines.push(`#${item.id} ${item.title}: ${r.landed ? (PLAN_ONLY ? 'design saved' : `${laneFor(item)} pushed`) : (PLAN_ONLY ? 'no design' : 'no commits')}${r.limitHit ? ' (hit the usage limit)' : ''}`);
       if (r.limitHit) {
         // Graceful close: stop starting work, tell the human, and come back
         // when the allocation does. Partial branches are already pushed.
@@ -739,7 +740,7 @@ try {
       log(`#${item.id} failed (${e.message}) — releasing the lane and moving on.`);
       nightLines.push(`#${item.id} ${item.title}: failed (${e.message})`);
       try { await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, { claimed_by: '' }); } catch { /* best effort */ }
-      await postRun({ item_id: item.id, item_title: item.title, branch: `auto/item-${item.id}`,
+      await postRun({ item_id: item.id, item_title: item.title, branch: laneFor(item),
         outcome: 'failed', summary: String(e.message || '').slice(0, 500) });
     }
   }
