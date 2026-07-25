@@ -811,6 +811,29 @@ a.tab { display: inline-block; }
 .arch-pager button:hover:not(:disabled) { color: var(--ink); background: var(--panel); }
 .arch-pager button:disabled { opacity: 0.35; }
 
+/* #247 — the Parked view: everything set aside, aged, with stale flagged.
+   Deliberately a plain list, not the board grid — this is a shelf to clear. */
+.seg-opt .seg-warn { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; color: #fff; background: #9a7a2e; border-radius: 6px; padding: 0 5px; vertical-align: 1px; }
+.seg-opt.on .seg-warn { background: rgba(0,0,0,.28); }
+.parked-head { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
+.parked-head .cap-sm { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.1em; color: var(--faint); }
+.parked-head .n { font-size: 12px; color: var(--faint); }
+.stale-pill { font-size: 10.5px; font-weight: 600; color: #9a7a2e; background: #f1eada; border-radius: 6px; padding: 1px 7px; }
+.parked-list { border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.parked-row { display: flex; align-items: flex-start; gap: 11px; padding: 11px 14px; }
+.parked-row + .parked-row { border-top: 1px solid var(--line-2); }
+.parked-row .arch-list-bucket { margin-top: 2px; }
+.parked-row.stale { background: linear-gradient(90deg, #f1eada22, transparent 220px); }
+.parked-body { flex: 1 1 auto; min-width: 0; }
+.parked-body .t { font-size: 13px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
+.parked-body .note { font-size: 11.5px; color: var(--muted); margin-top: 5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+.parked-age { flex: none; display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 2px; }
+.parked-age.stale { color: #9a7a2e; }
+.stale-flag { font-family: var(--sans, inherit); font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #fff; background: #9a7a2e; border-radius: 5px; padding: 1px 5px; }
+.parked-row .road-actions.arch { margin-top: 0; flex: none; opacity: 1; }
+.parked-row .road-actions.arch button { font-size: 12px; }
+.parked-row.hl { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 12px; }
+
 /* ---------- notes ---------- */
 .note-intro { font-size: 13px; color: var(--muted); margin-bottom: 22px; }
 .composer { background: #fef4a8; border: 1px solid #ecdf8a; border-radius: 14px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.09); max-width: 540px; margin-bottom: 28px; transform: rotate(-0.5deg); }

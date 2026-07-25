@@ -499,6 +499,7 @@ export interface ProjectDetailData {
   futures: Future[];
   checks: Check[];
   keepResumeCard: boolean;
+  staleItemDays: number;   // parked-item stale threshold in days (#247) — ages the Parked view
   shareToken: string;
   liveBranches: string[];  // branches with a live session right now — backs the board's in-progress lock
 }
@@ -507,7 +508,7 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; futures?: Future[];
     checks?: Check[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
-    auditContext?: string;
+    auditContext?: string; staleItemDays?: number;
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
     project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
@@ -516,6 +517,8 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes, futures: d.futures || [],
     checks: d.checks || [],
     keepResumeCard: d.keepResumeCard !== false,
+    // An older server that doesn't send it falls back to the same default (#247).
+    staleItemDays: Number.isFinite(d.staleItemDays) ? Number(d.staleItemDays) : 21,
     shareToken: d.shareToken || '',
     liveBranches: d.liveBranches || [],
   };

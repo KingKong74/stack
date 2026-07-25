@@ -169,6 +169,11 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS review_shelved BOOLEAN NOT NU
 -- reaches main without a human click, but the item is still ticked (and the
 -- work verdicted) by the human in Reviews. normal/high never auto-merge.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS risk TEXT NOT NULL DEFAULT 'normal';
+-- When the item was PARKED (#247). Stamped as `skipped` flips true, cleared as
+-- it flips false, so "parked 34 days" is the honest age of the park rather than
+-- of the last edit. NULL on a parked row = parked before this column existed;
+-- the UI falls back to updated_at and says so.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS skipped_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
 -- Per-project futures: loose directional ideas, curated against the north star
@@ -295,6 +300,10 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS access_pin_hash TEXT;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_tokens    BIGINT  NOT NULL DEFAULT 1500000;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_time      TEXT    NOT NULL DEFAULT '23:05';
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_max_items INTEGER NOT NULL DEFAULT 3;
+-- How long a parked roadmap item may sit before it reads as STALE (#247). The
+-- Roadmap tab's Parked view counts days since the park and flags anything past
+-- this threshold; purely a surfacing rule, nothing is auto-changed.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS stale_item_days INTEGER NOT NULL DEFAULT 21;
 -- Dual-model autopilot (#153): the EXECUTOR model runs the unattended session
 -- (claude --model; '' = the CLI's default) while the ADVISOR — a stronger
 -- model — is exposed to it as a read-only subagent it consults for plans and

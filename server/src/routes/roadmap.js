@@ -92,6 +92,10 @@ roadmap.patch('/:id', async (req, res) => {
   }
   if (req.body?.skipped !== undefined) {
     sets.push(`skipped = $${i++}`); vals.push(Boolean(req.body.skipped));
+    // Stamp the park so the Parked view can age it honestly (#247). Re-parking
+    // an already-parked item keeps the original stamp — COALESCE — so a stray
+    // PATCH doesn't reset the clock; unparking clears it.
+    sets.push(req.body.skipped ? 'skipped_at = COALESCE(skipped_at, now())' : 'skipped_at = NULL');
   }
   if (req.body?.plan !== undefined) {
     // The whole plan comes back each time (#75) — agents tick a step by

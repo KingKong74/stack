@@ -30,10 +30,12 @@ const noteTagLabel = (t: string) => REVIEW_NOTE_TAGS.find((x) => x.key === t)?.l
 // verdict tag, refinable by delta (#146), restorable by un-ticking.
 export function Roadmap({
   roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onShelve, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onBranch, onDeleteArea, onRenameArea, slug, highlightId,
-  draft, onResumeDraft, onDiscardDraft, liveBranches,
+  draft, onResumeDraft, onDiscardDraft, liveBranches, staleItemDays,
 }: {
   roadmap: RoadmapData;
   liveBranches?: string[];
+  // #247 — days a parked item may sit before the Parked view calls it stale.
+  staleItemDays?: number;
   onAdd: (p: Priority, area?: string) => void;
   onToggle: (item: RoadmapItem) => void;
   onEdit: (item: RoadmapItem) => void;
@@ -243,10 +245,29 @@ export function Roadmap({
   const toVerify = unverdicted.filter((it) => !it.reviewShelved).sort((a, b) => ts(b) - ts(a));
   const shelved = unverdicted.filter((it) => it.reviewShelved).sort((a, b) => ts(b) - ts(a));
   const archived = doneItems.filter((it) => it.reviewTag).sort((a, b) => ts(b) - ts(a));
-  // The tab's two views: Board and Reviews (to-verify + archive).
+  // The tab's three views: Board, Parked (#247) and Reviews (to-verify + archive).
   // A deep-link to a done item opens straight on Reviews.
-  const [view, setView] = useState<'board' | 'reviews'>(
+  const [view, setView] = useState<'board' | 'parked' | 'reviews'>(
     () => (doneItems.some((it) => String(it.id) === highlightId) ? 'reviews' : 'board'));
+
+  // #247 — the parked shelf. Every open item somebody pressed ⏸ on, oldest park
+  // first, aged from the park stamp (falling back to the last edit for rows
+  // parked before skipped_at existed — flagged as approximate rather than
+  // quietly presented as exact). Past the Settings threshold it reads STALE.
+  const DAY_MS = 86_400_000;
+  const parkedAge = (it: RoadmapItem) => {
+    const stamp = it.skippedAt || it.updatedAt;
+    if (!stamp) return null;
+    const ms = Date.parse(stamp);
+    if (!Number.isFinite(ms)) return null;
+    return { days: Math.max(0, Math.floor((Date.now() - ms) / DAY_MS)), exact: Boolean(it.skippedAt) };
+  };
+  const parked = PRIORITY_META
+    .flatMap((col) => roadmap[col.key].filter((it) => !it.done && it.skipped))
+    .map((it) => ({ it, age: parkedAge(it) }))
+    .sort((a, b) => (b.age?.days ?? -1) - (a.age?.days ?? -1));
+  const staleDays = Math.max(1, staleItemDays ?? 21);
+  const staleCount = parked.filter((p) => (p.age?.days ?? 0) >= staleDays).length;
   // Open the archive straight away when a deep-link targets an archived item.
   const [archiveOpen, setArchiveOpen] = useState(
     () => archived.some((it) => String(it.id) === highlightId));
@@ -604,6 +625,12 @@ export function Roadmap({
         <div className="seg-control" role="tablist" aria-label="Roadmap view">
           <button role="tab" aria-selected={view === 'board'}
             className={`seg-opt ${view === 'board' ? 'on' : ''}`} onClick={() => setView('board')}>Board</button>
+          <button role="tab" aria-selected={view === 'parked'}
+            className={`seg-opt ${view === 'parked' ? 'on' : ''}`} onClick={() => setView('parked')}
+            title="Every parked item, oldest park first — with how long it's been sitting">
+            Parked{parked.length > 0 ? ` · ${parked.length}` : ''}
+            {staleCount > 0 && <span className="seg-warn" title={`${staleCount} past the ${staleDays}-day stale threshold`}>{staleCount}</span>}
+          </button>
           <button role="tab" aria-selected={view === 'reviews'}
             className={`seg-opt ${view === 'reviews' ? 'on' : ''}`} onClick={() => setView('reviews')}>
             Reviews{toVerify.length > 0 ? ` · ${toVerify.length}` : ''}
@@ -830,6 +857,61 @@ export function Roadmap({
           );
         })}
       </div>
+      </>)}
+
+      {/* #247 — the parked shelf: everything that's been set aside, how long
+          it's been sitting, and which of it has gone stale. Nothing here is
+          automatic — the view surfaces the age, the human decides. */}
+      {view === 'parked' && (<>
+        <div className="subtitle" style={{ marginBottom: 18 }}>
+          Items you've parked with ⏸ — off the board's run queue and invisible to the autopilot,
+          but still counted by progress. Anything sitting longer than {staleDays} day{staleDays === 1 ? '' : 's'} reads
+          as stale; change that threshold in Settings → Roadmap.
+        </div>
+        {parked.length === 0 ? (
+          <div className="empty-state">Nothing parked — every open item is in play.</div>
+        ) : (
+          <>
+            <div className="parked-head">
+              <span className="cap-sm">PARKED</span>
+              <span className="n">{parked.length}</span>
+              {staleCount > 0 && <span className="stale-pill">{staleCount} stale</span>}
+            </div>
+            <div className="parked-list">
+              {parked.map(({ it, age }) => {
+                const stale = (age?.days ?? 0) >= staleDays;
+                return (
+                  <div className={`parked-row ${stale ? 'stale' : ''} ${highlightId === String(it.id) ? 'hl' : ''}`}
+                    key={it.id} data-hl={it.id}>
+                    <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
+                    <div className="parked-body">
+                      <div className="t">
+                        <span className="item-num">#{it.id}</span>{it.title}
+                        {it.area && <span className="area-chip">{it.area}</span>}
+                        {it.claimedBy && <span className="claim-chip inline">⚑ {it.claimedBy}</span>}
+                      </div>
+                      {it.note && <div className="note">{it.note}</div>}
+                    </div>
+                    <span className={`parked-age ${stale ? 'stale' : ''}`}
+                      title={age?.exact === false
+                        ? 'Parked before Stack recorded park dates — aged from the last edit instead'
+                        : 'Days since this item was parked'}>
+                      {age === null
+                        ? 'parked'
+                        : `${age.exact ? '' : '~'}${age.days} day${age.days === 1 ? '' : 's'}`}
+                      {stale && <span className="stale-flag">stale</span>}
+                    </span>
+                    <div className="road-actions arch">
+                      <button onClick={() => onToggleSkip(it)} title="Unpark — back in play">▶ Unpark</button>
+                      <button onClick={() => onEdit(it)} aria-label="Edit item" title="Edit">✎</button>
+                      <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </>)}
 
       {termPick && onSendToTerminal && (

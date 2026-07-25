@@ -68,6 +68,7 @@ export interface RoadmapItem {
   refineNote: string;  // the refine delta — what to change on top ('' = none) — #146
   reviewShelved: boolean; // review set aside for later — off the To-verify list — #148
   skipped: boolean;    // parked — planned, but not to be picked up yet
+  skippedAt: string | null; // ISO — when it was parked; ages the Parked view (#247)
   risk: 'low' | 'normal' | 'high'; // graduated trust (#212): low auto-merges a green run
   plan: PlanStep[];    // the implementation plan ([] = none)
   updatedAt: string | null; // ISO — latest-first ordering in the archive
@@ -295,6 +296,7 @@ export interface Settings {
   autopilotTokens: number;    // token budget per run; 0 = unlimited
   autopilotTime: string;      // nightly start, host-local HH:MM
   autopilotMaxItems: number;  // most items attempted per night
+  staleItemDays: number;      // a parked roadmap item reads as stale past this many days (#247)
   autopilotExecutorModel: string; // model alias sessions run as; '' = CLI default (#153)
   autopilotAdvisorModel: string;  // stronger model exposed as the advisor subagent; '' = off
   assistGuidance: string;     // ✧ Fill from note — standing steer folded into the prompt

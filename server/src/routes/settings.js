@@ -65,6 +65,13 @@ settings.patch('/', async (req, res) => {
     fields.push(`autopilot_max_items = $${i++}`);
     values.push(Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : 3);
   }
+  if ('staleItemDays' in body) {
+    // The parked-item stale threshold (#247) — days. Clamped to a sane window:
+    // a day at the tightest, a year at the loosest.
+    const d = Math.trunc(Number(body.staleItemDays));
+    fields.push(`stale_item_days = $${i++}`);
+    values.push(Number.isFinite(d) ? Math.min(365, Math.max(1, d)) : 21);
+  }
   // Dual-model autopilot (#153/#168): freeform alias (e.g. claude-sonnet-4-6,
   // us.anthropic.claude-opus-4, vendor/model) — cleanModelAlias strips
   // anything that isn't [a-z0-9.:/_-] so shell metacharacters never reach the

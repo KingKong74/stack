@@ -824,6 +824,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         )}
         {tab === 'roadmap' && (
           <Roadmap roadmap={roadmap} highlightId={highlightId} slug={slug} liveBranches={data.liveBranches}
+            staleItemDays={data.staleItemDays}
             onAdd={(p, area) => roadDraft
               ? openRoadDraft(roadDraft)
               : setRoadModal({ open: true, priority: p, title: '', note: '', area, fromNote: null, editing: null })}
