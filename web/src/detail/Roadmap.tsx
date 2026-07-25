@@ -75,6 +75,23 @@ export function Roadmap({
     setOverKey(null);
     if (dragged && onReorder && dragged.id !== beforeId) onReorder(dragged, toBucket, beforeId);
   };
+  // #251 — section expansion. A bucket column can be FOCUSED (it fills the board
+  // width and the other three are hidden, so long titles and notes get room to
+  // breathe) or COLLAPSED (header only, items folded away). Focus wins over
+  // collapse: a focused column always shows its items. Session-local, like the
+  // review-row collapse above.
+  const [focusCol, setFocusCol] = useState<Priority | null>(null);
+  const [collapsedCols, setCollapsedCols] = useState<Set<Priority>>(new Set());
+  const toggleColCollapse = (k: Priority) =>
+    setCollapsedCols((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const toggleColFocus = (k: Priority) =>
+    setFocusCol((f) => {
+      const next = f === k ? null : k;
+      // Expanding a folded column unfolds it — the expand gesture means "show me this".
+      if (next) setCollapsedCols((s) => { const n = new Set(s); n.delete(next); return n; });
+      return next;
+    });
+
   // Area filter — the product-area chips over the board (mirrors the Futures funnel).
   // UNCAT (#198) is the Uncategorised tab's sentinel: the leading space can
   // never collide with a real area (area input is trimmed + lowercased), and
@@ -681,18 +698,41 @@ export function Roadmap({
         </div>
       )}
 
-      <div className="road-grid">
-        {PRIORITY_META.map((col) => {
+      {focusCol && (
+        <button className="road-focus-back" onClick={() => setFocusCol(null)}>
+          ← all sections
+        </button>
+      )}
+      <div className={`road-grid ${focusCol ? 'focused' : ''}`}>
+        {PRIORITY_META.filter((col) => !focusCol || col.key === focusCol).map((col) => {
           const open = roadmap[col.key].filter((it) => !it.done && inAreaTab(it));
           // Parked items sink to the bottom of their bucket.
           const items = [...open.filter((it) => !it.skipped), ...open.filter((it) => it.skipped)];
+          const folded = focusCol !== col.key && collapsedCols.has(col.key);
           return (
-            <div className="road-col" key={col.key}>
+            <div className={`road-col ${folded ? 'folded' : ''} ${focusCol === col.key ? 'focus' : ''}`} key={col.key}>
               <div className="road-col-head">
                 <span className="dot" style={{ background: col.color }} />
-                <span className="name">{col.label}</span>
+                <button className="name" onClick={() => toggleColFocus(col.key)}
+                  title={focusCol === col.key
+                    ? 'Back to all four sections'
+                    : `Expand ${col.label} — it fills the board and the other sections fold away`}>
+                  {col.label}
+                </button>
                 <span className="count">{items.length}</span>
+                <button className="road-col-btn" aria-expanded={!folded}
+                  onClick={() => toggleColCollapse(col.key)}
+                  title={folded ? 'Unfold this section' : 'Fold this section away'}>
+                  {folded ? '▸' : '▾'}
+                </button>
+                <button className={`road-col-btn ${focusCol === col.key ? 'on' : ''}`}
+                  aria-pressed={focusCol === col.key}
+                  onClick={() => toggleColFocus(col.key)}
+                  title={focusCol === col.key ? 'Back to all four sections' : 'Expand this section to fill the board'}>
+                  {focusCol === col.key ? '⤡' : '⤢'}
+                </button>
               </div>
+              {folded ? null : (
               <div
                 className={`road-items ${overKey === `col-${col.key}` ? 'drop-into' : ''}`}
                 onDragOver={(e) => { if (dragId != null) { e.preventDefault(); setOverKey(`col-${col.key}`); } }}
@@ -785,6 +825,7 @@ export function Roadmap({
                   );
                 })}
               </div>
+              )}
             </div>
           );
         })}

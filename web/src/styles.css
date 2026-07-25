@@ -581,13 +581,33 @@ a.tab { display: inline-block; }
 .road-col { background: var(--panel); border: 1px solid var(--line-panel); border-radius: 14px; padding: 13px; }
 .road-col-head { display: flex; align-items: center; gap: 8px; margin-bottom: 13px; padding: 0 3px; }
 .road-col-head .dot { width: 9px; height: 9px; border-radius: 50%; }
-.road-col-head .name { font-family: var(--disp); font-size: 14px; font-weight: 600; }
+.road-col-head .name { font-family: var(--disp); font-size: 14px; font-weight: 600; text-align: left; color: var(--ink); }
+.road-col-head .name:hover { color: var(--accent-deep); }
 .road-col-head .count { font-size: 12px; color: var(--faint); margin-left: auto; }
 .road-items { display: flex; flex-direction: column; gap: 9px; }
 .road-item { display: flex; align-items: flex-start; gap: 9px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; }
-.road-item .road-body { flex: 1; min-width: 0; }
-.road-item .t { font-size: 13px; font-weight: 500; line-height: 1.35; }
-.road-item .note { font-size: 11.5px; color: var(--muted); margin-top: 5px; line-height: 1.4; }
+/* the body takes every pixel the card isn't using for the check + hover actions,
+   and long words break rather than spilling past the card (#251) */
+.road-item .road-body { flex: 1 1 auto; min-width: 0; }
+.road-item .t { font-size: 13px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
+.road-item .note { font-size: 11.5px; color: var(--muted); margin-top: 5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* #251 — section expand / fold. Folding leaves the header as a hairline row;
+   expanding drops the grid to one column so the section fills the board and
+   its cards get the full width for their text. */
+.road-col-btn { flex: none; color: var(--fainter); font-size: 12px; line-height: 1; padding: 3px 5px; border-radius: 6px; }
+.road-col-btn:hover { color: var(--accent-deep); background: var(--card); }
+.road-col-btn.on { color: var(--accent); }
+.road-col-head .count + .road-col-btn { margin-left: 2px; }
+.road-col.folded { padding-bottom: 11px; }
+.road-col.folded .road-col-head { margin-bottom: 0; }
+.road-grid.focused { grid-template-columns: 1fr; }
+.road-grid.focused .road-item { padding: 13px 15px; }
+.road-grid.focused .road-item .t { font-size: 14px; }
+.road-grid.focused .road-item .note { font-size: 12.5px; margin-top: 7px; }
+.road-grid.focused .road-actions { opacity: 1; }
+.road-focus-back { font-size: 12px; color: var(--faint); padding: 0 0 10px; }
+.road-focus-back:hover { color: var(--accent-deep); }
 .road-item.done .t { text-decoration: line-through; color: var(--faint); }
 .road-item.done .note { text-decoration: line-through; }
 .road-check { flex: none; width: 18px; height: 18px; margin-top: 1px; border: 1.5px solid var(--line-3); border-radius: 6px; color: #fff; font-size: 11px; line-height: 1; display: flex; align-items: center; justify-content: center; transition: background .12s, border-color .12s; }
