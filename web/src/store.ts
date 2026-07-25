@@ -289,6 +289,9 @@ export interface ControlProject {
   nextPick: { id: string; bucket: Priority; title: string } | null;
   lastAuto: { branch: string; summary: string; when: string } | null;
 }
+// #228 — the session planner: what a scheduled session IS, beyond a time slot.
+export type SessionKind = 'build' | 'plan' | 'debug' | 'audit';
+
 export interface AutopilotSchedule {
   id: string; slug: string; name: string; tint: string | null;
   itemId: string | null; itemTitle: string;
@@ -296,6 +299,9 @@ export interface AutopilotSchedule {
   days: number[];          // getDay() ints; [] = one-off on runDate
   runDate: string | null;  // YYYY-MM-DD for one-offs
   note: string; enabled: boolean;
+  kind: SessionKind;             // #228 — runner mode
+  agenda: (number | string)[];   // ordered work list: item ids, or bug keys (debug)
+  area: string;                  // scope the general pick ('' = whole board)
 }
 export interface AutopilotJob {
   id: string; slug: string; name: string;
@@ -305,6 +311,9 @@ export interface AutopilotJob {
   status: 'queued' | 'claimed' | 'running' | 'done' | 'failed' | 'paused';
   detail: string;
   notBefore?: string | null;  // a resume job's hold — ISO, null once resumed by hand
+  sessionKind?: SessionKind;           // #228 — the session plan the job carries
+  agenda?: (number | string)[];
+  area?: string;
   when: string;
 }
 export interface TermSession {
@@ -443,6 +452,7 @@ export async function getTerminalUsage(): Promise<TerminalUsageData> {
 export interface SchedulePayload {
   slug: string; atTime: string; days?: number[]; runDate?: string | null;
   itemId?: string | null; note?: string;
+  kind?: SessionKind; agenda?: (number | string)[]; area?: string; // #228
 }
 export async function createAutopilotSchedule(payload: SchedulePayload): Promise<AutopilotSchedule> {
   return request<AutopilotSchedule>('/autopilot/schedule', { method: 'POST', body: payload });

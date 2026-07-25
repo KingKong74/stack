@@ -277,6 +277,14 @@ await report('running');
 const runner = join(dirname(fileURLToPath(import.meta.url)), 'stack-autopilot.mjs');
 const args = ['--project', job.slug, '--repo', repo];
 if (job.itemId) args.push('--item', String(job.itemId));
+// #228 — the session plan: kind picks the runner mode, the agenda rides as an
+// ordered list (item ids → --items, bug keys → --bugs), area scopes the pick.
+const sessionKind = job.sessionKind || 'build';
+if (sessionKind === 'plan') args.push('--plan-only');
+else if (sessionKind === 'debug' || sessionKind === 'audit') args.push('--kind', sessionKind);
+const agenda = Array.isArray(job.agenda) ? job.agenda : [];
+if (agenda.length) args.push(sessionKind === 'debug' ? '--bugs' : '--items', agenda.join(','));
+if (job.area) args.push('--area', String(job.area));
 // A manual press or a calendar row is explicit human config — it runs even
 // while the arm switch / automode are off. The nightly keeps both gates, and
 // so does a limit-resume that fired on its own clock (#142 — notBefore still

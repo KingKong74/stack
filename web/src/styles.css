@@ -2202,3 +2202,65 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .cvg-studio:hover { color: var(--accent); }
 .cvg-retire { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); cursor: pointer; }
 .cvg-retire input { accent-color: var(--accent); }
+
+/* ============================================================
+   Session planner (#228) — Mission Control's scheduled sessions
+   opened into their own thing: kind, ordered agenda, area scope.
+   ============================================================ */
+.mc-sched-open { display: inline-flex; align-items: center; gap: 8px; padding: 2px 6px; border-radius: 6px; }
+.mc-sched-open:hover { background: var(--accent-tint); }
+.mc-sched-open:hover .mc-sched-edit { opacity: 1; }
+.mc-sched-edit { font-size: 11px; color: var(--accent-deep); opacity: 0; transition: opacity 0.12s; }
+.mc-kind { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 5px; }
+.mc-kind.plan { background: var(--accent-tint); color: var(--accent-deep); }
+.mc-kind.debug { background: var(--paused-tint); color: var(--critical); }
+.mc-kind.audit { background: var(--building-tint); color: var(--building); }
+.mc-agenda-n { font-family: var(--mono); font-size: 10px; color: var(--muted); background: var(--panel); padding: 2px 7px; border-radius: 5px; }
+button.mc-day-chip { cursor: pointer; text-align: left; }
+button.mc-day-chip:hover { border-color: var(--accent); }
+
+.spm { display: flex; flex-direction: column; gap: 12px; min-width: 620px; max-width: 760px; }
+.spm-head { display: flex; align-items: baseline; gap: 10px; }
+.spm-head .name { font-family: var(--disp); font-size: 16px; font-weight: 600; color: var(--ink); }
+.spm-head .sub { font-family: var(--mono); font-size: 11px; color: var(--paused); flex: 1; }
+.spm-close { font-size: 16px; color: var(--muted); line-height: 1; }
+.spm-close:hover { color: var(--ink); }
+.spm-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.spm-row select, .spm-row input[type='time'], .spm-row input[type='date'], .spm-area {
+  border: 1px solid var(--line-3); border-radius: 8px; background: var(--card); color: var(--ink);
+  padding: 6px 9px; font: inherit; font-size: 12.5px;
+}
+.spm-kinds { display: flex; gap: 6px; }
+.spm-kind { flex: 1; padding: 8px 6px; border-radius: 8px; border: 1px solid var(--keyline); background: var(--card); font-size: 12px; font-weight: 500; color: var(--muted); }
+.spm-kind:hover { border-color: var(--accent-soft); }
+.spm-kind.on { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-deep); }
+.spm-kind-hint { font-size: 11.5px; line-height: 1.5; color: var(--muted); min-height: 2.4em; text-wrap: pretty; }
+.spm-agenda { display: flex; gap: 12px; }
+.spm-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.spm-col-head { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.07em; color: var(--muted); text-transform: uppercase; }
+.spm-col-head .spm-area { margin-left: auto; font-size: 11px; padding: 3px 6px; text-transform: none; letter-spacing: 0; }
+.spm-list { border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg); min-height: 180px; max-height: 260px; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 3px; }
+.spm-empty { font-size: 12px; line-height: 1.6; color: var(--muted); padding: 10px; text-wrap: pretty; }
+.spm-empty .preview { display: block; margin-top: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--paused); }
+.spm-pick { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border-radius: 7px; text-align: left; font-size: 12px; color: var(--ink); }
+.spm-pick:hover { background: var(--accent-tint); }
+.spm-pick:disabled { opacity: 0.45; cursor: default; }
+.spm-pick .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spm-pick .plus { color: var(--accent); font-weight: 600; }
+.spm-pick .ar { font-family: var(--mono); font-size: 9.5px; color: var(--paused); }
+.spm-pick .bkt, .spm-pick .sev { font-family: var(--mono); font-size: 9px; padding: 2px 6px; border-radius: 4px; background: var(--panel); color: var(--chip-ink); flex: none; }
+.spm-pick .bkt.must, .spm-pick .sev.critical { background: var(--accent-tint); color: var(--accent-deep); }
+.spm-pick .sev.high { background: var(--building-tint); color: var(--building); }
+.spm-agenda-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 7px; background: var(--card); border: 1px solid var(--line-2); font-size: 12px; color: var(--ink); }
+.spm-agenda-row .n { font-family: var(--mono); font-size: 10px; color: var(--accent-deep); width: 14px; flex: none; }
+.spm-agenda-row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spm-agenda-row button { font-size: 11px; color: var(--muted); padding: 1px 3px; }
+.spm-agenda-row button:hover:not(:disabled) { color: var(--ink); }
+.spm-agenda-row button:disabled { opacity: 0.3; }
+.spm-agenda-row .x:hover { color: var(--critical); }
+.spm-audit { font-size: 12.5px; line-height: 1.7; color: var(--muted); }
+.spm-audit code { font-family: var(--mono); font-size: 11px; }
+.spm-note { border: 1px solid var(--line-3); border-radius: 8px; background: var(--card); color: var(--ink); padding: 8px 10px; font: inherit; font-size: 12.5px; }
+.spm-err { font-size: 12px; color: var(--critical); }
+.spm-foot { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 720px) { .spm { min-width: 0; } .spm-agenda { flex-direction: column; } }

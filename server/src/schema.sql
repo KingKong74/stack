@@ -439,6 +439,19 @@ CREATE INDEX IF NOT EXISTS autopilot_jobs_status_idx ON autopilot_jobs (status, 
 -- (▶ Resume now), hold the job (status 'paused' — hang up) or dismiss it.
 ALTER TABLE autopilot_jobs ADD COLUMN IF NOT EXISTS not_before TIMESTAMPTZ;
 
+-- Session planner (#228): a scheduled session is a first-class plan, not just
+-- a time slot. session_kind picks the runner mode (build | plan | debug |
+-- audit), agenda is the ORDERED work list — roadmap item ids (build/plan) or
+-- bug keys (debug); [] = the board's own priority order — and area scopes the
+-- general pick to one product area. Jobs carry copies so the dispatcher gets
+-- the whole plan from GET /next.
+ALTER TABLE autopilot_schedule ADD COLUMN IF NOT EXISTS session_kind TEXT  NOT NULL DEFAULT 'build';
+ALTER TABLE autopilot_schedule ADD COLUMN IF NOT EXISTS agenda       JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE autopilot_schedule ADD COLUMN IF NOT EXISTS area         TEXT  NOT NULL DEFAULT '';
+ALTER TABLE autopilot_jobs     ADD COLUMN IF NOT EXISTS session_kind TEXT  NOT NULL DEFAULT 'build';
+ALTER TABLE autopilot_jobs     ADD COLUMN IF NOT EXISTS agenda       JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE autopilot_jobs     ADD COLUMN IF NOT EXISTS area         TEXT  NOT NULL DEFAULT '';
+
 -- Audit area (#143, named by #145): a check can exercise a function of the app, not just
 -- probe a page — request method + optional body, plus a JSON-path assertion
 -- on the response ("$.status" should equal "ok"). GET probes are unchanged.

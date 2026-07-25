@@ -63,6 +63,22 @@ const timeToMin = (hhmm) => {
 const GRACE_MIN = 90;
 const within = (startMin, nowMin) => startMin != null && nowMin >= startMin && nowMin < Math.min(startMin + GRACE_MIN, 24 * 60);
 
+// Session planner (#228): a session's kind picks the runner mode; the agenda
+// is the ORDERED work list (roadmap item ids for build/plan, bug keys for
+// debug; [] = the board's own priority order); area scopes the general pick.
+const SESSION_KINDS = ['build', 'plan', 'debug', 'audit'];
+const cleanKind = (v) => (SESSION_KINDS.includes(v) ? v : 'build');
+const cleanAgenda = (v) => (Array.isArray(v) ? v : [])
+  .map((x) => {
+    const s = String(x ?? '').trim();
+    if (/^BUG-\d+$/i.test(s)) return s.toUpperCase();          // debug agendas: bug keys
+    const n = Number(s);
+    return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null; // build/plan: item ids
+  })
+  .filter((x) => x != null)
+  .slice(0, 20);
+const cleanArea = (v) => String(v || '').trim().toLowerCase().slice(0, 40);
+
 function scheduleShape(r) {
   return {
     id: String(r.id),
@@ -76,6 +92,10 @@ function scheduleShape(r) {
     runDate: r.run_date ? new Date(r.run_date).toISOString().slice(0, 10) : null,
     note: r.note || '',
     enabled: !!r.enabled,
+    // #228 — the session plan
+    kind: cleanKind(r.session_kind),
+    agenda: Array.isArray(r.agenda) ? r.agenda : [],
+    area: r.area || '',
   };
 }
 
@@ -92,6 +112,10 @@ function jobShape(r) {
     // #142 — a resume job's earliest hand-out time (the limit reset); null on
     // every other kind, and cleared when a human presses ▶ Resume now.
     notBefore: r.not_before ? new Date(r.not_before).toISOString() : null,
+    // #228 — the session plan the dispatcher passes to the runner as flags.
+    sessionKind: cleanKind(r.session_kind),
+    agenda: Array.isArray(r.agenda) ? r.agenda : [],
+    area: r.area || '',
     when: relativeTime(r.finished_at || r.started_at || r.created_at) || 'just now',
   };
 }
@@ -118,7 +142,8 @@ autopilotGlobal.get('/schedule', async (_req, res) => {
   res.json(rows.map(scheduleShape));
 });
 
-// POST /schedule — { slug, atTime, days?|runDate?, itemId?, note? }
+// POST /schedule — { slug, atTime, days?|runDate?, itemId?, note?,
+//                    kind?, agenda?, area? } (#228 — the session plan)
 autopilotGlobal.post('/schedule', async (req, res) => {
   const b = req.body || {};
   const project = await projectBySlug(String(b.slug || ''));
@@ -127,11 +152,13 @@ autopilotGlobal.post('/schedule', async (req, res) => {
   const days = DAY_LIST(b.days);
   const runDate = /^\d{4}-\d{2}-\d{2}$/.test(String(b.runDate || '')) ? b.runDate : null;
   if (!days.length && !runDate) return res.status(400).json({ error: 'Pick repeat days or a one-off date.' });
+  const kind = cleanKind(b.kind);
   const { rows } = await q(
-    `INSERT INTO autopilot_schedule (project_id, item_id, at_time, days, run_date, note)
-     VALUES ($1,$2,$3,$4::jsonb,$5,$6) RETURNING id`,
+    `INSERT INTO autopilot_schedule (project_id, item_id, at_time, days, run_date, note, session_kind, agenda, area)
+     VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8::jsonb,$9) RETURNING id`,
     [project.id, Number.isFinite(Number(b.itemId)) ? Number(b.itemId) : null,
-     cleanAutopilotTime(b.atTime), JSON.stringify(days), runDate, String(b.note || '').slice(0, 300)]
+     cleanAutopilotTime(b.atTime), JSON.stringify(days), runDate, String(b.note || '').slice(0, 300),
+     kind, JSON.stringify(cleanAgenda(b.agenda)), cleanArea(b.area)]
   );
   const full = await q(`${SCHEDULE_SELECT} WHERE s.id = $1`, [rows[0].id]);
   res.status(201).json(scheduleShape(full.rows[0]));
@@ -155,6 +182,10 @@ autopilotGlobal.patch('/schedule/:id', async (req, res) => {
     values.push(Number.isFinite(Number(b.itemId)) && b.itemId !== '' && b.itemId !== null ? Number(b.itemId) : null);
   }
   if ('note' in b) { fields.push(`note = $${i++}`); values.push(String(b.note || '').slice(0, 300)); }
+  // #228 — the session plan.
+  if ('kind' in b) { fields.push(`session_kind = $${i++}`); values.push(cleanKind(b.kind)); }
+  if ('agenda' in b) { fields.push(`agenda = $${i++}::jsonb`); values.push(JSON.stringify(cleanAgenda(b.agenda))); }
+  if ('area' in b) { fields.push(`area = $${i++}`); values.push(cleanArea(b.area)); }
   if (!fields.length) return res.status(400).json({ error: 'Nothing to update.' });
   values.push(req.params.id);
   const r = await q(`UPDATE autopilot_schedule SET ${fields.join(', ')} WHERE id = $${i} RETURNING id`, values);
@@ -190,9 +221,11 @@ autopilotGlobal.post('/start', async (req, res) => {
     return res.status(200).json(jobShape(row));
   }
   const itemId = Number.isFinite(Number(b.itemId)) && b.itemId !== '' && b.itemId != null ? Number(b.itemId) : null;
+  // #228 — Run now can carry a full session plan (kind / ordered agenda / area).
   const { rows } = await q(
-    `INSERT INTO autopilot_jobs (project_id, kind, item_id) VALUES ($1,'manual',$2) RETURNING id`,
-    [project.id, itemId]);
+    `INSERT INTO autopilot_jobs (project_id, kind, item_id, session_kind, agenda, area)
+     VALUES ($1,'manual',$2,$3,$4::jsonb,$5) RETURNING id`,
+    [project.id, itemId, cleanKind(b.kind), JSON.stringify(cleanAgenda(b.agenda)), cleanArea(b.area)]);
   const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [rows[0].id]);
   res.status(201).json(jobShape(full.rows[0]));
 });
@@ -369,8 +402,10 @@ autopilotGlobal.get('/next', async (req, res) => {
         && (!s.last_enqueued_on || new Date(s.last_enqueued_on).toISOString().slice(0, 10) < localDate);
       if (!onceToday && !recursToday) continue;
       await q(
-        `INSERT INTO autopilot_jobs (project_id, kind, item_id, schedule_id) VALUES ($1,'scheduled',$2,$3)`,
-        [s.project_id, s.item_id, s.id]);
+        `INSERT INTO autopilot_jobs (project_id, kind, item_id, schedule_id, session_kind, agenda, area)
+         VALUES ($1,'scheduled',$2,$3,$4,$5::jsonb,$6)`,
+        [s.project_id, s.item_id, s.id, cleanKind(s.session_kind),
+         JSON.stringify(Array.isArray(s.agenda) ? s.agenda : []), s.area || '']);
       // One-offs retire themselves; recurring rows just stamp the local date.
       await q(
         onceToday

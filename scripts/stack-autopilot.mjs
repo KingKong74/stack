@@ -40,6 +40,20 @@
 //                       its plan steps + a design section in the note. Cheap to run
 //                       (pair with --executor-model haiku), reviewable in minutes —
 //                       build nights then execute against agreed designs.
+//     [--kind K]        session kind (#228 — the session planner's modes):
+//                       build (default) | plan (= --plan-only) | debug | audit.
+//                       debug = fix bugs (each on branch auto/bug-N-<slug>, never
+//                       marked fixed — status moves to 'fixing', the human closes);
+//                       audit = one hardening session that runs the suites, hunts
+//                       verified defects, files them as bugs via the API and
+//                       commits test hardening on auto/audit-<date>.
+//     [--items a,b,c]   an ORDERED agenda of roadmap item ids — the session works
+//                       exactly these in order (done/claimed skipped), instead of
+//                       the board's own priority order
+//     [--bugs K1,K2]    a debug session's agenda of bug keys (BUG-3,…); without it
+//                       open bugs are taken serious-first
+//     [--area A]        scope the general pick to one product area (overrides the
+//                       project's autopilot_area; pins and agendas bypass it)
 //     [--executor-model M]  claude model alias the session runs as (default: Settings'
 //                           autopilotExecutorModel; '' = the claude CLI's own default)
 //     [--advisor-model M]   stronger model exposed to the session as the read-only
@@ -67,7 +81,7 @@ import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadStackEnv, logStderr, git } from '../hook/stack-post.mjs';
-import { laneFor } from './lib/lane.mjs';
+import { laneFor, branchSlug } from './lib/lane.mjs';
 
 loadStackEnv();
 
@@ -77,7 +91,10 @@ const arg = (name, fallback = null) => {
 };
 const DRY = process.argv.includes('--dry');
 const FORCE = process.argv.includes('--force');
-const PLAN_ONLY = process.argv.includes('--plan-only');
+// #228 — session kinds: build (default) | plan | debug | audit.
+const KIND_RAW = String(arg('kind') || '').toLowerCase();
+const PLAN_ONLY = process.argv.includes('--plan-only') || KIND_RAW === 'plan';
+const KIND = KIND_RAW === 'debug' ? 'debug' : KIND_RAW === 'audit' ? 'audit' : PLAN_ONLY ? 'plan' : 'build';
 const SLUG = arg('project');
 const REPO = arg('repo');
 const MINUTES_ARG = arg('minutes');
@@ -86,6 +103,12 @@ const intArg = (v) => { const n = parseInt(v ?? '', 10); return Number.isFinite(
 const TOKENS_OVERRIDE = intArg(arg('tokens')) ?? intArg(process.env.STACK_AUTOPILOT_TOKENS);
 const MAX_ITEMS_ARG = intArg(arg('max-items'));
 const ITEM_ID = intArg(arg('item'));
+// #228 — ordered agendas from the session planner.
+const AGENDA = String(arg('items') || '').split(',')
+  .map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isFinite(n) && n > 0).slice(0, 20);
+const BUG_AGENDA = String(arg('bugs') || '').split(',')
+  .map((s) => s.trim().toUpperCase()).filter((s) => /^BUG-\d+$/.test(s)).slice(0, 20);
+const AREA_ARG = arg('area'); // null = no override; '' = whole board
 const MIN_SESSION_MIN = 15; // not worth starting a session with less than this
 
 const API = process.env.STACK_API;
@@ -287,8 +310,12 @@ const MINUTES = Math.max(15, parseInt(MINUTES_ARG ?? '', 10) || appSettings.auto
 const rawTokens = TOKENS_OVERRIDE ?? (Number.isFinite(appSettings.autopilotTokens) ? appSettings.autopilotTokens : 1_500_000);
 const TOKEN_BUDGET = rawTokens === 0 ? Infinity : Math.max(50_000, rawTokens);
 // A plan night defaults to a bigger batch — designs are cheap and the point
-// is reviewing five in minutes, not building three.
-const MAX_ITEMS = ITEM_ID != null ? 1
+// is reviewing five in minutes, not building three. An agenda (#228) sets the
+// batch to exactly its own length; an audit is always one session.
+const MAX_ITEMS = KIND === 'audit' ? 1
+  : ITEM_ID != null ? 1
+  : KIND === 'debug' ? (BUG_AGENDA.length || Math.max(1, MAX_ITEMS_ARG ?? (appSettings.autopilotMaxItems || 3)))
+  : AGENDA.length ? AGENDA.length
   : Math.max(1, MAX_ITEMS_ARG ?? (PLAN_ONLY ? 5 : (appSettings.autopilotMaxItems || 3)));
 // Dual-model config (#153/#168): CLI override beats Settings; anything that
 // isn't a safe model alias coerces to '' (default / off) so shell
@@ -328,6 +355,258 @@ const eligible = (targetArea) => (it) =>
   && (!targetArea || (it.area || '') === targetArea);
 let tokensSpent = 0;
 let costSpent = 0;
+
+// The advisor contract, shared by the #228 session kinds (runItem keeps its own copy).
+const advisorPromptBlock = !ADVISOR_MODEL ? '' : `
+A strategic ADVISOR (a stronger model) is available as the subagent named "advisor". Use it deliberately — it is expensive:
+- BEFORE any changes, consult it once with your intended approach; consult again if genuinely stuck, and once before finishing.
+- The advisor is read-only and only advises; all work is yours. Its advice never expands the task's scope.
+`;
+
+// One bounded claude session (#228 — shared by the debug/audit kinds): spawn,
+// meter real usage into the night budget, hand back the parsed result.
+function execSession(prompt, cwd, capMin) {
+  const claudeArgs = ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'json'];
+  if (EXECUTOR_MODEL) claudeArgs.push('--model', EXECUTOR_MODEL);
+  if (ADVISOR_MODEL) {
+    claudeArgs.push('--agents', JSON.stringify({
+      advisor: {
+        description: 'The strategic advisor — a stronger model. Consult it for the plan before starting, when genuinely stuck, and to sanity-check the result before finishing.',
+        prompt: 'You are the advisor to a cheaper executor model working unattended overnight. Give decisive, concrete guidance: the approach, the exact files to touch, the traps to avoid, and how to verify. Be concise — the executor pays to read every token. Advise only; never expand the task\'s scope.',
+        model: ADVISOR_MODEL,
+        tools: ['Read', 'Grep', 'Glob'],
+      },
+    }));
+  }
+  log(`starting claude session (executor ${EXECUTOR_MODEL || 'CLI default'}, advisor ${ADVISOR_MODEL || 'off'})…`);
+  const run = spawnSync('claude', claudeArgs, {
+    cwd,
+    stdio: ['ignore', 'pipe', 'inherit'],
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+    timeout: capMin * 60_000,
+    killSignal: 'SIGTERM',
+  });
+  if (run.error) log(`claude session ended with error: ${run.error.message}`);
+  let resultText = '';
+  let usedTokens = 0;
+  let usedCost = 0;
+  let modelUsage = null;
+  try {
+    const out = JSON.parse(run.stdout || '{}');
+    const u = out.usage || {};
+    usedTokens = (u.input_tokens || 0) + (u.output_tokens || 0)
+      + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+    usedCost = out.total_cost_usd || 0;
+    tokensSpent += usedTokens;
+    costSpent += usedCost;
+    resultText = String(out.result || '').trim();
+    log(`session finished: ${out.num_turns ?? '?'} turns, ~${Math.round(usedTokens / 1000)}k tokens`
+      + (usedCost ? ` ($${usedCost.toFixed(2)})` : ''));
+    if (out.modelUsage && typeof out.modelUsage === 'object') modelUsage = out.modelUsage;
+  } catch {
+    log(`session finished (status ${run.status ?? 'killed at cap'}) — usage unreadable, wall clock still governs.`);
+  }
+  return { resultText, usedTokens, usedCost, modelUsage, limitHit: LIMIT_RE.test(resultText) };
+}
+
+// ---- #228: one bug, one branch, one bounded DEBUG session ----
+// Mirrors runItem's shape without the roadmap machinery: no claim, no spec
+// pre-pass (the bug IS the spec), branch auto/bug-N-<slug>. The bug is never
+// marked fixed — a pushed fix moves its status to 'fixing'; the human closes.
+async function runBug(bug, capMin) {
+  const key = String(bug.id); // client shape: id IS the bug key (BUG-N)
+  const slugPart = branchSlug(bug.title);
+  const branch = `auto/${key.toLowerCase()}${slugPart ? `-${slugPart}` : ''}`;
+  const startedAt = new Date().toISOString();
+  log(`picked ${key} [${bug.severity}] ${bug.title} (cap ${Math.round(capMin)}m)`);
+
+  const wt = join(lockDir, 'autopilot', `${SLUG}-${key.toLowerCase()}`);
+  git(REPO, ['worktree', 'remove', '--force', wt]);
+  git(REPO, ['branch', '-D', branch]);
+  mkdirSync(join(lockDir, 'autopilot'), { recursive: true });
+  const added = git(REPO, ['worktree', 'add', wt, '-b', branch]);
+  if (!existsSync(join(wt, '.git'))) throw new Error(`worktree add failed (${added || 'no output'})`);
+
+  const prompt = `You are Stack's overnight DEBUGGER, working unattended in a dedicated git worktree on branch ${branch}.
+
+Your single task tonight is bug ${key} (severity: ${bug.severity}):
+
+  ${bug.title}
+${bug.linkRef ? `  First seen around commit ${bug.linkRef} — start the hunt there.\n` : ''}${advisorPromptBlock}
+Rules for this run:
+- REPRODUCE the bug first — find the failing path and prove it (a failing test where the project has tests, else a script or a documented manual trace). If you cannot reproduce it, stop early: leave the tree clean and say exactly what you tried in the checkpoint.
+- Fix the ROOT CAUSE, not the symptom; keep the fix minimal and in keeping with the codebase.
+- Add or update a test/check that would have caught this, where the project has any testing surface.
+- Commit in small complete units with clear messages. Push the branch with \`git push -u origin ${branch}\`. NEVER push or merge main — a human reviews and merges.
+- Verify before finishing: run the project's build/typecheck (and tests) and fix what you broke.
+- Do NOT mark the bug fixed — once the fix is pushed, PATCH {"status":"fixing"} to /api/projects/${SLUG}/bugs/${key} (base URL + bearer from ~/.stack/env, never print the token); the human verifies and closes it.
+- When you finish (or must stop), author a rich checkpoint (see ~/.claude/commands/checkpoint.md) and pipe it to \`node ~/.stack/stack-checkpoint.mjs\`, naming the branch and ${key} in the summary.`;
+
+  const r = execSession(prompt, wt, capMin);
+  const tmuxSession = process.env.STACK_TMUX_SESSION || null;
+  const runRecord = {
+    item_id: null, item_title: `${key}: ${bug.title}`.slice(0, 300), branch,
+    tokens: r.usedTokens, cost_usd: r.usedCost, started_at: startedAt,
+    ...(r.modelUsage ? { model_usage: r.modelUsage } : {}),
+    ...(tmuxSession ? { tmux_session: tmuxSession } : {}),
+  };
+
+  const nCommits = parseInt(git(wt, ['rev-list', '--count', 'main..HEAD']) || '0', 10) || 0;
+  if (nCommits === 0) {
+    git(REPO, ['worktree', 'remove', '--force', wt]);
+    git(REPO, ['branch', '-D', branch]);
+    log(`${key}: no commits — worktree removed. Check the checkpoint for what it tried.`);
+    await postRun({ ...runRecord, outcome: r.limitHit ? 'limit' : 'no-commits', commits: 0,
+      summary: r.resultText.slice(0, 1800) });
+    return { landed: false, limitHit: r.limitHit };
+  }
+
+  git(wt, ['push', '-u', 'origin', branch]);
+  log(`${key}: ${nCommits} commit(s) on ${branch}, pushed — the human verifies and closes the bug.`);
+  try { await api('PATCH', `/api/projects/${SLUG}/bugs/${key}`, { status: 'fixing' }); }
+  catch (e) { log(`bug status not updated (${e.message})`); }
+
+  let checksFailing = null;
+  try {
+    const checks = await api('POST', `/api/projects/${SLUG}/checks/run`, {});
+    const rows = Array.isArray(checks) ? checks : (checks.checks || []);
+    checksFailing = rows.filter((c) => c.lastStatus === 'fail').length;
+    log(`checks run: ${rows.length} total, ${checksFailing} failing.`);
+  } catch (e) { log(`checks run skipped (${e.message})`); }
+
+  await postRun({ ...runRecord, outcome: r.limitHit ? 'limit' : 'landed', commits: nCommits,
+    checks_failing: checksFailing,
+    summary: (r.resultText || `${nCommits} commit(s) on ${branch}.`).slice(0, 1800) });
+
+  if (GEMINI_KEY) {
+    const review = spawnSync('node', [join(REPO, 'hook', 'stack-gemini-review.mjs'), '--range', 'main..HEAD'], {
+      cwd: wt, stdio: ['ignore', 'inherit', 'inherit'], timeout: 120_000,
+    });
+    log(review.status === 0 ? 'gemini review posted to the inbox.' : 'gemini review did not post (see above).');
+  }
+  return { landed: true, limitHit: r.limitHit, resultText: r.resultText };
+}
+
+// ---- #228: the DEBUG night — bugs instead of roadmap items ----
+async function debugNight() {
+  const attempted = new Set();
+  const nightLines = [];
+  let landed = 0;
+  let nightLimited = false;
+  const sevOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+  log(`DEBUG session: ${BUG_AGENDA.length ? `agenda ${BUG_AGENDA.join(' → ')}` : 'open bugs, serious first'} — `
+    + `budget ${MINUTES}m, up to ${MAX_ITEMS} bug(s).`);
+
+  for (let n = 0; n < MAX_ITEMS; n++) {
+    if (remainingMin() < MIN_SESSION_MIN) { log(`wall clock nearly spent (${Math.round(remainingMin())}m left) — stopping.`); break; }
+    if (tokensSpent >= TOKEN_BUDGET) { log(`token budget spent (~${Math.round(tokensSpent / 1000)}k) — stopping.`); break; }
+
+    const detail = await api('GET', `/api/projects/${SLUG}`);
+    if (!detail.automode && !FORCE) {
+      log(`${SLUG} is not on automode — nothing run. (Toggle it in the app, or --force for a manual test.)`);
+      break;
+    }
+    const open = (detail.bugs || []).filter((b) => b.status !== 'fixed' && !attempted.has(String(b.id)));
+    let bug = null;
+    if (BUG_AGENDA.length) {
+      for (const key of BUG_AGENDA) {
+        if (attempted.has(key)) continue;
+        const cand = open.find((b) => String(b.id) === key);
+        if (!cand) { log(`agenda bug ${key} not found or already fixed — skipping.`); attempted.add(key); continue; }
+        bug = cand;
+        break;
+      }
+      if (!bug) { log(n === 0 ? 'nothing on the bug agenda is open — nothing to do.' : 'bug agenda exhausted — session complete.'); break; }
+    } else {
+      bug = [...open].sort((a, b) => (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9))[0] || null;
+      if (!bug) { log(n === 0 ? `no open bugs on ${SLUG} — nothing to fix tonight.` : 'no more open bugs — session complete.'); break; }
+    }
+
+    if (DRY) { log(`dry run — would debug ${bug.id} "${bug.title}" (then keep going while budget lasts).`); process.exit(0); }
+
+    attempted.add(String(bug.id));
+    try {
+      const r = await runBug(bug, remainingMin());
+      if (r.landed) landed++;
+      nightLines.push(`${bug.id} ${bug.title}: ${r.landed ? 'fix pushed' : 'no commits'}${r.limitHit ? ' (hit the usage limit)' : ''}`);
+      if (r.limitHit) {
+        nightLimited = true;
+        log('usage limit hit — closing the session gracefully.');
+        break;
+      }
+    } catch (e) {
+      log(`${bug.id} failed (${e.message}) — moving on.`);
+      nightLines.push(`${bug.id} ${bug.title}: failed (${e.message})`);
+      await postRun({ item_id: null, item_title: `${bug.id}: ${bug.title}`.slice(0, 300), branch: '',
+        outcome: 'failed', summary: String(e.message || '').slice(0, 500) });
+    }
+  }
+
+  const closing = `${landed} fix branch(es) awaiting review, ${attempted.size} bug(s) attempted, `
+    + `~${Math.round(tokensSpent / 1000)}k tokens${costSpent ? ` ($${costSpent.toFixed(2)})` : ''}, ${Math.round(elapsedMin())}m elapsed.`;
+  log(`debug session over: ${closing}`);
+  if (attempted.size > 0) {
+    await notify(
+      nightLimited ? `Stack autopilot (${SLUG}): debug paused on the usage limit` : `Stack autopilot (${SLUG}): debug session done`,
+      `${nightLines.join('\n')}\n\n${closing}`);
+  }
+}
+
+// ---- #228: the AUDIT session — one hardening pass, findings filed as bugs ----
+async function auditNight() {
+  const detail = await api('GET', `/api/projects/${SLUG}`);
+  if (!detail.automode && !FORCE) {
+    log(`${SLUG} is not on automode — nothing run. (Toggle it in the app, or --force for a manual test.)`);
+    return;
+  }
+  const scope = AREA_ARG ? String(AREA_ARG).toLowerCase() : '';
+  if (DRY) { log(`dry run — would run an audit session${scope ? ` scoped to "${scope}"` : ''}.`); process.exit(0); }
+  log(`AUDIT session${scope ? ` (area "${scope}")` : ''}: budget ${MINUTES}m.`);
+
+  const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const branch = `auto/audit-${day}`;
+  const startedAt = new Date().toISOString();
+  const wt = join(lockDir, 'autopilot', `${SLUG}-audit`);
+  git(REPO, ['worktree', 'remove', '--force', wt]);
+  git(REPO, ['branch', '-D', branch]);
+  mkdirSync(join(lockDir, 'autopilot'), { recursive: true });
+  const added = git(REPO, ['worktree', 'add', wt, '-b', branch]);
+  if (!existsSync(join(wt, '.git'))) throw new Error(`worktree add failed (${added || 'no output'})`);
+
+  const prompt = `You are Stack's overnight AUDITOR, working unattended in a dedicated git worktree on branch ${branch}. Tonight is an AUDIT session: hunt for real defects and harden the safety net — no feature work.
+${scope ? `\nScope: the "${scope}" product area — audit that surface first and stay close to it.\n` : ''}${detail.northStar ? `The project's north star: "${detail.northStar.slice(0, 400)}"\n` : ''}${advisorPromptBlock}
+Work through, in order:
+1. Run the project's build/typecheck and tests; note anything red.
+2. Read the code for REAL defects — error handling, auth gaps, race conditions, data-loss paths, broken flows. Verify every suspicion against the actual code before calling it a bug; no speculative findings.
+3. File each VERIFIED bug via the Stack API: POST /api/projects/${SLUG}/bugs with {"title":"<what breaks, where>","severity":"critical|high|medium|low"} (base URL + bearer from ~/.stack/env — never print the token). Honest severities; skip anything already tracked in the bug list.
+4. Where the project has a test surface, add or strengthen tests/checks covering what you found — commit those in small complete units on this branch and push with \`git push -u origin ${branch}\`. NEVER push or merge main.
+5. Author a rich checkpoint (see ~/.claude/commands/checkpoint.md) piped to \`node ~/.stack/stack-checkpoint.mjs\`: what was checked, what was filed, what was hardened.`;
+
+  const r = execSession(prompt, wt, remainingMin());
+  const nCommits = parseInt(git(wt, ['rev-list', '--count', 'main..HEAD']) || '0', 10) || 0;
+  if (nCommits > 0) {
+    git(wt, ['push', '-u', 'origin', branch]);
+    log(`audit: ${nCommits} hardening commit(s) on ${branch}, pushed.`);
+  } else {
+    git(REPO, ['worktree', 'remove', '--force', wt]);
+    git(REPO, ['branch', '-D', branch]);
+    log('audit: no commits — findings (if any) were filed straight to the bug tracker.');
+  }
+  const tmuxSession = process.env.STACK_TMUX_SESSION || null;
+  await postRun({
+    item_id: null, item_title: `Audit session${scope ? ` — ${scope}` : ''}`,
+    branch: nCommits ? branch : '',
+    outcome: r.limitHit ? 'limit' : nCommits ? 'landed' : 'no-commits', commits: nCommits,
+    tokens: r.usedTokens, cost_usd: r.usedCost, started_at: startedAt,
+    checks_failing: null,
+    summary: (r.resultText || 'Audit session finished.').slice(0, 1800),
+    ...(r.modelUsage ? { model_usage: r.modelUsage } : {}),
+    ...(tmuxSession ? { tmux_session: tmuxSession } : {}),
+  });
+  await notify(`Stack autopilot (${SLUG}): audit ${r.limitHit ? 'paused on the usage limit' : 'done'}`,
+    (r.resultText || 'Audit session finished.').slice(0, 800));
+}
 
 // ---- #219: one item, one bounded DESIGN session (plan night) ----
 // No branch, no claim, no commits: the session reads the code from a detached
@@ -656,13 +935,18 @@ Rules for this run:
 
 // ---- the night loop: items until a budget runs dry ----
 try {
+  // #228 — debug and audit sessions have their own loops; build/plan continue below.
+  if (KIND === 'debug') { await debugNight(); process.exit(0); }
+  if (KIND === 'audit') { await auditNight(); process.exit(0); }
+
   const attempted = new Set();
   const nightLines = [];
   let landed = 0;
   let nightLimited = false;
   log(`${PLAN_ONLY ? 'PLAN night (#219 — designs only, no builds): ' : ''}night budget: ${MINUTES}m wall clock, `
     + `${TOKEN_BUDGET === Infinity ? 'UNLIMITED tokens' : `${Math.round(TOKEN_BUDGET / 1000)}k tokens`}, `
-    + `up to ${MAX_ITEMS} item(s)${ITEM_ID != null ? ` (pinned to #${ITEM_ID})` : ''}.`);
+    + `up to ${MAX_ITEMS} item(s)${ITEM_ID != null ? ` (pinned to #${ITEM_ID})`
+      : AGENDA.length ? ` (agenda: ${AGENDA.map((i) => `#${i}`).join(' → ')})` : ''}.`);
   log(`models: executor ${EXECUTOR_MODEL || 'CLI default'}, advisor ${ADVISOR_MODEL || 'off'}.`);
 
   for (let n = 0; n < MAX_ITEMS; n++) {
@@ -694,8 +978,34 @@ try {
         log(`item #${ITEM_ID} has ticked plan steps — not replanning over work in progress.`);
         break;
       }
+    } else if (AGENDA.length) {
+      // #228 — an ordered agenda from the session planner: work exactly these,
+      // in this order. Unrunnable entries (missing / done / claimed) are
+      // skipped with a note rather than sinking the session.
+      const all = ['must', 'should', 'could', 'wont'].flatMap((b) => detail.roadmap?.[b] || []);
+      for (const id of AGENDA) {
+        if (attempted.has(id)) continue;
+        const cand = all.find((it) => Number(it.id) === id);
+        if (!cand) { log(`agenda item #${id} not found on ${SLUG} — skipping.`); attempted.add(id); continue; }
+        if (cand.done || cand.claimedBy) {
+          log(`agenda item #${id} is ${cand.done ? 'already done' : `claimed by ${cand.claimedBy}`} — skipping.`);
+          attempted.add(id);
+          continue;
+        }
+        if (PLAN_ONLY && cand.plan?.some((s) => s.done)) {
+          log(`agenda item #${id} has ticked plan steps — not replanning over work in progress.`);
+          attempted.add(id);
+          continue;
+        }
+        item = cand;
+        break;
+      }
+      if (!item) {
+        log(n === 0 ? 'nothing on the agenda is runnable — nothing to do.' : 'agenda exhausted — session complete.');
+        break;
+      }
     } else {
-      const targetArea = detail.autopilotArea || '';
+      const targetArea = AREA_ARG != null ? String(AREA_ARG).toLowerCase() : (detail.autopilotArea || '');
       item = [...(detail.roadmap?.must || []), ...(detail.roadmap?.should || [])]
         .filter((it) => !attempted.has(it.id))
         // A plan night wants the items still missing a design (#219).

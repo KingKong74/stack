@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getControl, patchProject, patchSettings, startAutopilot,
-  createAutopilotSchedule, patchAutopilotSchedule, deleteAutopilotSchedule,
+  patchAutopilotSchedule, deleteAutopilotSchedule,
   resumeAutopilotJob, hangupAutopilotJob, dismissAutopilotJob,
-  labelTerminalSessions, getRoadmap, queueMerge, AuthError,
-  type ControlData, type ControlProject, type AutopilotJob, type ModelEntry,
+  labelTerminalSessions, queueMerge, AuthError,
+  type ControlData, type ControlProject, type AutopilotJob, type AutopilotSchedule, type ModelEntry,
 } from '../store';
+import { SessionPlanModal } from '../components/SessionPlanModal';
 import { go, hrefTo } from '../lib/route';
-import type { ProjectStatus, RoadmapItem } from '../types';
+import type { ProjectStatus } from '../types';
 
 const STATUS_LABEL: Record<ProjectStatus, string> = {
   live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived',
@@ -69,11 +70,9 @@ const resumeWhen = (iso?: string | null) => {
   return d.toDateString() === new Date().toDateString() ? t : `${DAY_LABELS[d.getDay()]} ${t}`;
 };
 
-type SchedMode = 'once' | 'daily' | 'custom';
-const emptyForm = () => ({
-  slug: '', atTime: '21:00', mode: 'once' as SchedMode,
-  runDate: fmtDate(new Date()), days: [] as number[], itemId: '', note: '',
-});
+// #228 — a session's kind on the calendar chips + schedule rows ('build' is
+// the unmarked default; the others announce themselves).
+const KIND_CHIP: Record<string, string> = { plan: 'plan', debug: 'debug', audit: 'audit' };
 
 // Mission Control — every project's automation from one point: the autopilot
 // console (arm, session cap, token budget incl. unlimited, nightly time,
@@ -83,10 +82,9 @@ const emptyForm = () => ({
 export function ControlPanel() {
   const [data, setData] = useState<ControlData | null>(null);
   const [error, setError] = useState('');
-  const [schedOpen, setSchedOpen] = useState(false);
   const [schedCollapsed, setSchedCollapsed] = useState(false);
-  const [form, setForm] = useState(emptyForm());
-  const [formBusy, setFormBusy] = useState(false);
+  // #228 — the session planner: null = closed; row = editing; row: null = new.
+  const [planner, setPlanner] = useState<{ row: AutopilotSchedule | null } | null>(null);
   const [labelBusy, setLabelBusy] = useState(false);
   // #154 — merge confirm: the branch the user has clicked ⇥ Merge on, or null.
   // mergeClean rides along from the branch report (#207) so the modal can warn
@@ -97,10 +95,6 @@ export function ControlPanel() {
   // #177 — the usage card's per-session agent breakdown, collapsed by default.
   const [agentBreakdown, setAgentBreakdown] = useState(false);
   const [mergeBusy, setMergeBusy] = useState(false);
-  // #118 — the composer's item picker: open items for the chosen project,
-  // fetched on selection (null = loading), cached per slug for the visit.
-  const [pickItems, setPickItems] = useState<Record<string, RoadmapItem[] | null>>({});
-
   const load = useCallback(() => {
     getControl()
       .then(setData)
@@ -243,29 +237,13 @@ export function ControlPanel() {
     }
   };
 
-  const submitSchedule = async () => {
-    if (!data || !form.slug || formBusy) return;
-    const days = form.mode === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : form.mode === 'custom' ? form.days : [];
-    if (form.mode === 'custom' && !days.length) { setError('Pick at least one day for a repeating session.'); return; }
-    if (form.mode === 'once' && !form.runDate) { setError('Pick a date for a one-off session.'); return; }
-    setFormBusy(true);
-    setError('');
-    try {
-      const row = await createAutopilotSchedule({
-        slug: form.slug, atTime: form.atTime, days,
-        runDate: form.mode === 'once' ? form.runDate : null,
-        itemId: form.itemId.trim() ? form.itemId.trim() : null,
-        note: form.note.trim(),
-      });
-      setData((cur) => cur && { ...cur, schedules: [...cur.schedules, row] });
-      setForm(emptyForm());
-      setSchedOpen(false);
-    } catch (e) {
-      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not add the schedule.');
-    } finally {
-      setFormBusy(false);
-    }
-  };
+  // #228 — the planner modal saves through the schedule API itself; this just
+  // folds the returned row back into the list.
+  const plannerSaved = (row: AutopilotSchedule, isNew: boolean) =>
+    setData((cur) => cur && {
+      ...cur,
+      schedules: isNew ? [...cur.schedules, row] : cur.schedules.map((s) => (s.id === row.id ? row : s)),
+    });
 
   const toggleSchedule = async (id: string, enabled: boolean) => {
     setData((cur) => cur && { ...cur, schedules: cur.schedules.map((s) => (s.id === id ? { ...s, enabled } : s)) });
@@ -286,18 +264,6 @@ export function ControlPanel() {
       setData((cur) => cur && { ...cur, schedules: prev });
       if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not remove the schedule.');
     }
-  };
-
-  const pickProject = (slug: string) => {
-    setForm((f) => ({ ...f, slug, itemId: '' }));
-    if (!slug || pickItems[slug] !== undefined) return;
-    setPickItems((cur) => ({ ...cur, [slug]: null }));
-    getRoadmap(slug)
-      .then((r) => {
-        const open = [...r.must, ...r.should, ...r.could, ...r.wont].filter((it) => !it.done);
-        setPickItems((cur) => ({ ...cur, [slug]: open }));
-      })
-      .catch(() => setPickItems((cur) => ({ ...cur, [slug]: [] })));
   };
 
   const labelSessions = async (silent = false) => {
@@ -786,8 +752,8 @@ export function ControlPanel() {
                   </div>
                 </button>
                 {!schedCollapsed && (
-                  <button className="btn-repo sm" onClick={() => setSchedOpen((v) => !v)}>
-                    {schedOpen ? 'Close' : '+ Schedule a session'}
+                  <button className="btn-repo sm" onClick={() => setPlanner({ row: null })}>
+                    + Plan a session
                   </button>
                 )}
               </div>
@@ -808,77 +774,19 @@ export function ControlPanel() {
                             </div>
                           )}
                           {todays.map((s) => (
-                            <div className="mc-day-chip" key={s.id}
-                              title={[s.itemTitle && `#${s.itemId} ${s.itemTitle}`, s.note].filter(Boolean).join(' — ') || undefined}>
-                              {s.atTime} {s.name}{s.itemId ? ` #${s.itemId}` : ''}
-                            </div>
+                            <button className="mc-day-chip" key={s.id} onClick={() => setPlanner({ row: s })}
+                              title={[KIND_CHIP[s.kind] && `${s.kind} session`,
+                                s.agenda.length && `${s.agenda.length} on the agenda`,
+                                s.itemTitle && `#${s.itemId} ${s.itemTitle}`, s.note].filter(Boolean).join(' — ') || 'Open the session plan'}>
+                              {s.atTime} {s.name}
+                              {KIND_CHIP[s.kind] ? ` · ${KIND_CHIP[s.kind]}` : ''}
+                              {s.agenda.length ? ` ☰${s.agenda.length}` : s.itemId ? ` #${s.itemId}` : ''}
+                            </button>
                           ))}
                         </div>
                       );
                     })}
                   </div>
-
-                  {schedOpen && (
-                    <div className="mc-sched-form">
-                      <select value={form.slug} onChange={(e) => pickProject(e.target.value)} aria-label="Project">
-                        <option value="">Project…</option>
-                        {data.projects.map((p) => <option key={p.slug} value={p.slug}>{p.name}</option>)}
-                      </select>
-                      <input type="time" value={form.atTime} aria-label="Start time (host local)"
-                        onChange={(e) => setForm({ ...form, atTime: e.target.value })} />
-                      <span className="seg-control sm" role="tablist" aria-label="Repeat">
-                        {(['once', 'daily', 'custom'] as SchedMode[]).map((m) => (
-                          <button key={m} role="tab" aria-selected={form.mode === m}
-                            className={`seg-opt ${form.mode === m ? 'on' : ''}`}
-                            onClick={() => setForm({ ...form, mode: m })}>
-                            {m === 'once' ? 'Once' : m === 'daily' ? 'Daily' : 'Days'}
-                          </button>
-                        ))}
-                      </span>
-                      {form.mode === 'once' && (
-                        <input type="date" value={form.runDate} min={fmtDate(new Date())} aria-label="Date"
-                          onChange={(e) => setForm({ ...form, runDate: e.target.value })} />
-                      )}
-                      {form.mode === 'custom' && (
-                        <span className="mc-daypick" role="group" aria-label="Repeat days">
-                          {DAY_LABELS.map((label, d) => (
-                            <button key={label} className={`mc-daybtn ${form.days.includes(d) ? 'on' : ''}`}
-                              aria-pressed={form.days.includes(d)}
-                              onClick={() => setForm({
-                                ...form,
-                                days: form.days.includes(d) ? form.days.filter((x) => x !== d) : [...form.days, d].sort(),
-                              })}>
-                              {label[0]}
-                            </button>
-                          ))}
-                        </span>
-                      )}
-                      {form.slug && (
-                        <select className="mc-item-pick" value={form.itemId} aria-label="Pin to roadmap item"
-                          title="Pin the session to one roadmap item; otherwise it takes the night's normal pick"
-                          disabled={pickItems[form.slug] === null}
-                          onChange={(e) => setForm({ ...form, itemId: e.target.value })}>
-                          <option value="">
-                            {pickItems[form.slug] === null ? 'Loading items…' : "item: the night's pick"}
-                          </option>
-                          {(pickItems[form.slug] || []).map((it) => (
-                            <option key={it.id} value={String(it.id)} disabled={Boolean(it.claimedBy)}>
-                              #{it.id} [{it.bucket}] {it.title.slice(0, 60)}{it.claimedBy ? ' — claimed' : ''}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                      <input className="mc-note-input" placeholder="Note (optional)" value={form.note}
-                        aria-label="Note" onChange={(e) => setForm({ ...form, note: e.target.value })}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') { e.preventDefault(); submitSchedule(); }
-                          else if (e.key === 'Escape') { e.preventDefault(); setSchedOpen(false); setForm(emptyForm()); }
-                        }} />
-                      <button className="btn-accent sm" disabled={!form.slug || formBusy} onClick={submitSchedule}>
-                        {formBusy ? 'Adding…' : 'Add'}
-                      </button>
-                    </div>
-                  )}
 
                   {data.schedules.length > 0 ? (
                     <div className="mc-sched-list">
@@ -893,8 +801,19 @@ export function ControlPanel() {
                             <span className="tintdot" style={{ background: s.tint || 'var(--sand)' }} />
                             {s.name}
                           </button>
-                          <span className="mc-sched-when">{scheduleWhen(s)}</span>
-                          {s.itemId && (
+                          <button className="mc-sched-open" onClick={() => setPlanner({ row: s })}
+                            title="Open the session plan — kind, agenda, scope">
+                            <span className="mc-sched-when">{scheduleWhen(s)}</span>
+                            {KIND_CHIP[s.kind] && <span className={`mc-kind ${s.kind}`}>{KIND_CHIP[s.kind]}</span>}
+                            {s.agenda.length > 0 && (
+                              <span className="mc-agenda-n" title={`${s.agenda.length} on the agenda, worked in order`}>
+                                ☰ {s.agenda.length}
+                              </span>
+                            )}
+                            {s.area && !s.agenda.length && <span className="mc-agenda-n">{s.area}</span>}
+                            <span className="mc-sched-edit">✎</span>
+                          </button>
+                          {s.itemId && !s.agenda.length && (
                             <button className="mc-pick" title={s.itemTitle}
                               onClick={() => go.detail(s.slug, 'roadmap', s.itemId!)}>#{s.itemId} {s.itemTitle || 'roadmap item'}</button>
                           )}
@@ -904,7 +823,7 @@ export function ControlPanel() {
                       ))}
                     </div>
                   ) : (
-                    !schedOpen && <div className="mc-sched-empty">Nothing scheduled — the nightly run covers automode projects{data.autopilot.enabled ? '' : ' (once armed)'}. Add a session to point a project (or one item) at a time of your choosing.</div>
+                    <div className="mc-sched-empty">Nothing scheduled — the nightly run covers automode projects{data.autopilot.enabled ? '' : ' (once armed)'}. Plan a session to point a project (or a picked agenda of items or bugs) at a time of your choosing.</div>
                   )}
                 </>
               )}
@@ -1100,6 +1019,12 @@ export function ControlPanel() {
                 </div>
               )}
             </div>
+
+            {/* #228 — the session planner: a scheduled session opened into its own thing */}
+            {planner && (
+              <SessionPlanModal projects={data.projects.map((p) => ({ slug: p.slug, name: p.name }))}
+                initial={planner.row} onClose={() => setPlanner(null)} onSaved={plannerSaved} />
+            )}
           </>
         )}
     </div>

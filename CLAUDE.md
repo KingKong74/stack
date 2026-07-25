@@ -106,7 +106,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             stack-autopilot.mjs — the overnight autopilot (phase 2): works MULTIPLE eligible
             roadmap items per night (must→should; open, unclaimed, not skipped, human-approved;
             up to --max-items, default Settings' autopilotMaxItems) inside a shared night
-            budget — the wall-clock cap (Settings' autopilotMinutes) AND a token budget
+            budget. **Session kinds** (#228, from the session planner): `--kind build|plan|
+            debug|audit` + `--items a,b,c` (an ORDERED roadmap agenda — worked exactly in that
+            order, done/claimed skipped) / `--bugs BUG-1,BUG-2` / `--area X` (scopes the
+            general pick, overriding autopilot_area). Debug sessions fix bugs — each on branch
+            auto/bug-N-<slug>, reproduce-first prompt, never marked fixed (status moves to
+            'fixing'; the human closes); no agenda = open bugs serious-first. Audit sessions
+            are ONE hardening pass: run the suites, hunt verified defects, file them as bugs
+            via the API, push test hardening on auto/audit-<date> — the wall-clock cap (Settings' autopilotMinutes) AND a token budget
             (--tokens / STACK_AUTOPILOT_TOKENS override; default Settings' autopilotTokens,
             **0 = unlimited** — the wall clock alone governs) metered from each session's real
             usage via `claude -p --output-format json`. **Dual-model sessions** (#153): the
@@ -241,7 +248,15 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   and which stronger one it consults; Default/Off = single-model as before) — all PATCHed
   straight to settings, optimistic with rollback) over the **scheduled
   sessions card** (week-ahead strip + standing list: one-off / daily / chosen-days sessions per
-  project, optionally pinned to one roadmap item — `store.createAutopilotSchedule` et al) and
+  project — `store.createAutopilotSchedule` et al). Every scheduled session is a **session
+  plan** (#228): clicking a row (or a week-strip chip, or + Plan a session) opens
+  `components/SessionPlanModal.tsx` — kind seg (Build / Plan / Debug / Audit), time +
+  recurrence, an **ordered agenda** picked straight off the open roadmap (or the bug tracker
+  for Debug, severity-tagged), ↑↓ reorder, an area scope for agenda-less sessions, and a live
+  preview of what a general session would take (the board's own priority order — the board IS
+  the priority list). Rows and chips wear the kind chip + ☰ agenda count; kind/agenda/area
+  land on the schedule row, ride the job through GET /next, and become runner flags
+  (`--kind`, `--items`/`--bugs`, `--area`) via the dispatcher. And
   one row per project: automode toggle (`patchProject {automode}`), status, live presence, last
   push, **▶ Run now** (queues a manual job via `store.startAutopilot`; open jobs show as live
   queued/running/done chips, refreshed on a 30s tick), tonight's likely pick (deep-links to the
@@ -474,7 +489,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap|future`, fingerprint).
   - `autopilot_schedule` + `autopilot_jobs` — Mission Control's calendar and the job queue the
     host dispatcher polls (see scripts/stack-autopilot-dispatch.mjs). Schedule rows: host-local
-    `at_time`, one-off `run_date` or recurring `days`, optional pinned `item_id`, `enabled`.
+    `at_time`, one-off `run_date` or recurring `days`, optional pinned `item_id`, `enabled`,
+    plus the session plan (#228): `session_kind` (build|plan|debug|audit), `agenda` (ordered
+    jsonb — item ids, or BUG-N keys for debug; [] = the board's priority order) and `area`
+    (scope the general pick). Jobs carry copies of all three so the dispatcher gets the whole
+    plan from GET /next and turns it into runner flags.
     Jobs: kind manual|nightly|scheduled|revert|resume|merge, status queued|claimed|running|
     done|failed|paused; a partial unique index on (project, night_date) makes the nightly
     enqueue idempotent. `resume` jobs (#142) carry `not_before` — GET /next skips a queued job
