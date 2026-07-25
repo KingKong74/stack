@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   getProjectDetail, patchRoadmapItem, deleteRoadmapItem, cleanupRoadmap,
+  getPlanLanes, setPlanLanes, startAutopilot, PLAN_LANE_CHOICES,
   type ProjectDetailData, type ControlData, type AutopilotSchedule, type RoadmapCleanupSuggestion,
 } from '../store';
 import { go } from '../lib/route';
@@ -246,7 +247,9 @@ export function NightsRoom({ data, onOpenPlanner, onRunNow, onToggleSchedule, on
                 {!selCell.past && selCell.nightly && (
                   <div className="item quiet">
                     <span className="tag nightly">NIGHTLY</span>
-                    <span className="t">the armed nightly — up to {data.autopilot.maxItems} item{data.autopilot.maxItems === 1 ? '' : 's'}, must before should</span>
+                    <span className="t">the armed nightly — {data.autopilot.maxItems === 0
+                      ? 'unlimited items (the clock and token budget govern)'
+                      : `up to ${data.autopilot.maxItems} item${data.autopilot.maxItems === 1 ? '' : 's'}`}, must before should</span>
                     <span className="m">{data.autopilot.time}</span>
                   </div>
                 )}
@@ -369,6 +372,11 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
   const [cleanups, setCleanups] = useState<RoadmapCleanupSuggestion[] | null>(null);
   const [cleanupBusy, setCleanupBusy] = useState(false);
   const [roomErr, setRoomErr] = useState('');
+  // #260 — parallel-session planning (device-local) and the plan-session push.
+  const [lanes, setLanes] = useState<number>(() => getPlanLanes());
+  const [heldAll, setHeldAll] = useState(false);   // OUT OF THE SCHEDULE: show every held item
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planNote, setPlanNote] = useState('');
 
   // Local working copy of the roadmap — mutations land here AND via PATCH;
   // switching projects resets everything, including the one-step undo.
@@ -382,7 +390,15 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
 
   const proj = data.projects.find((p) => p.slug === pickSlug);
   const area = proj?.autopilotArea || '';
-  const cap = Math.max(1, data.autopilot.maxItems);
+  // Items a session works, 0 = unlimited (#260) — the night's clock and token
+  // budget are then the only governors, so the whole queue projects onto tonight.
+  const cap = data.autopilot.maxItems === 0 ? Infinity : Math.max(1, data.autopilot.maxItems);
+  // How many sessions you intend to run in parallel (#260). A planning lens, not
+  // a promise: the overnight runner is one lane; the rest are sessions you (or
+  // another machine) start — Stack's lane claims already keep them from
+  // colliding. Device-local, because it's how YOU intend to work.
+  const lanesLabel = lanes === 1 ? 'one lane' : `${lanes} lanes`;
+  const perNight = cap === Infinity ? Infinity : cap * lanes;
 
   if (err) return <div className="mc14-empty">{err}</div>;
   if (!detail || !items) return <div className="mc14-empty">Loading the plan…</div>;
@@ -400,15 +416,25 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
     : savedOrder;
   const dirty = flips.size > 0 || (order !== null && cur.join(',') !== savedOrder.join(','));
 
-  const held = items
+  // Everything open the nights would pass by. No slice (#260): a hidden
+  // remainder reads as "that's all of it" when it isn't — long lists collapse
+  // behind a count you can open instead.
+  const heldAllItems = items
     .filter((it) => !it.done && !schedulable(it, area)
-      && !(it.source === 'hook' && !it.reviewed && (it.bucket === 'must' || it.bucket === 'should')))
-    .slice(0, 8);
+      && !(it.source === 'hook' && !it.reviewed && (it.bucket === 'must' || it.bucket === 'should')));
+  const HELD_FOLD = 8;
+  const held = heldAll ? heldAllItems : heldAllItems.slice(0, HELD_FOLD);
 
-  // Projection: night k = today+k, cap items a night. Milestone = the night
-  // the last must (and the last item) lands. Deltas compare against the
-  // saved order while a reorder is unsaved.
-  const nightOf = (idx: number) => Math.floor(idx / cap);
+  // Projection: night k = today+k, `perNight` items a night (the session cap
+  // times the lanes you plan to run). Milestone = the night the last must (and
+  // the last item) lands. Deltas compare against the saved order while a
+  // reorder is unsaved.
+  const nightOf = (idx: number) => (perNight === Infinity ? 0 : Math.floor(idx / perNight));
+  // Which parallel lane a row falls in, round-robin within its night — so lane
+  // 1 always holds the highest-priority work.
+  // (idx % Infinity === idx, so the unlimited-capacity case falls out for free:
+  // one night, still split across the lanes.)
+  const laneOf = (idx: number) => (lanes === 1 ? 0 : (idx % perNight) % lanes);
   const lastNight = (ids: number[], pred: (it: RoadmapItem) => boolean) => {
     let last = -1;
     ids.forEach((id, i) => { const it = byId.get(id); if (it && pred(it)) last = i; });
@@ -544,6 +570,26 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
       setCleanupBusy(false);
     }
   };
+  // #260 — ✧ AI assistance for the plan: hand the queue's undesigned items to
+  // the planning agent in the order shown. Same push as the board's ✧ To
+  // planning agent (#255) — one plan-kind session, ordered agenda, results
+  // saved back as plan steps. Nothing is built and nothing is ticked.
+  const unplannedIds = cur.filter((id) => (byId.get(id)?.plan.length ?? 0) === 0);
+  const pushToPlanner = async () => {
+    if (planBusy || unplannedIds.length === 0) return;
+    setPlanBusy(true); setPlanNote(''); setRoomErr('');
+    try {
+      const job = await startAutopilot(pickSlug, { kind: 'plan', agenda: unplannedIds });
+      setPlanNote(job.sessionKind === 'plan' && (job.agenda?.length ?? 0) === unplannedIds.length
+        ? `queued — ${unplannedIds.length} design${unplannedIds.length === 1 ? '' : 's'}, in this order`
+        : `an open ${job.kind} session (${job.status}) already holds the queue — nothing new queued`);
+    } catch (e) {
+      setPlanNote((e as Error)?.message || 'Could not queue the planning session.');
+    } finally {
+      setPlanBusy(false);
+    }
+  };
+
   const acceptAllSafe = () => {
     for (const p of proposals) {
       if (settled.has(p.key)) continue;
@@ -577,12 +623,28 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
           </div>
         ))}
         <div style={{ flex: 1 }} />
-        <span className="capnote">{cap}/night · nightly {data.autopilot.time}</span>
-        <div className="mc16-caps" role="tablist" aria-label="Items per night">
-          {[1, 2, 3, 5].map((n) => (
+        <span className="capnote">
+          {cap === Infinity ? '∞' : cap}/session × {lanesLabel} · nightly {data.autopilot.time}
+        </span>
+        <div className="mc16-caps" role="tablist" aria-label="Items per session">
+          {[1, 2, 3, 5, 8, 0].map((n) => (
             <button key={n} role="tab" aria-selected={data.autopilot.maxItems === n}
               className={`mc16-cap ${data.autopilot.maxItems === n ? 'on' : ''}`}
-              onClick={() => onSetMaxItems(n)}>{n}</button>
+              title={n === 0
+                ? 'Unlimited — a session works the queue until its wall clock or token budget runs out'
+                : `At most ${n} item${n === 1 ? '' : 's'} per session`}
+              onClick={() => onSetMaxItems(n)}>{n === 0 ? '∞' : n}</button>
+          ))}
+        </div>
+        <span className="capnote lanes">lanes</span>
+        <div className="mc16-caps" role="tablist" aria-label="Parallel sessions you plan to run">
+          {PLAN_LANE_CHOICES.map((n) => (
+            <button key={n} role="tab" aria-selected={lanes === n}
+              className={`mc16-cap ${lanes === n ? 'on' : ''}`}
+              title={n === 1
+                ? 'One session at a time — the overnight runner alone'
+                : `Plan for ${n} sessions in parallel: lane 1 is the overnight runner, the rest are sessions you start`}
+              onClick={() => { setLanes(n); setPlanLanes(n); }}>{n}</button>
           ))}
         </div>
         {dirty && <button className="mc16-revert" onClick={() => { setOrder(null); setFlips(new Map()); }}>revert</button>}
@@ -646,9 +708,17 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
             <span className="hair" />
             <span className="meta">order is the plan — the list is the run queue</span>
           </div>
+          {lanes > 1 && (
+            <div className="mc16-lanenote">
+              Split across {lanes} parallel sessions. <b>Lane 1 is the overnight runner</b> — the rest
+              are sessions you start yourself (⎇ on the board claims the item's lane and opens one),
+              and the lane claims keep them off each other's work. The dates below assume all {lanes} run.
+            </div>
+          )}
           {cur.map((id, idx) => {
             const it = byId.get(id)!;
             const night = nightOf(idx);
+            const lane = laneOf(idx);
             const showBreak = idx === 0 || nightOf(idx - 1) !== night;
             return (
               <div key={id}>
@@ -661,12 +731,21 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
                 <div className={`mc16-row ${night === 0 ? 'tonight' : ''}`}>
                   <span className="grip">⠿</span>
                   <span className="n">{idx + 1}</span>
+                  {lanes > 1 && (
+                    <span className={`mc16-lane l${lane}`}
+                      title={lane === 0
+                        ? 'Lane 1 — the overnight runner works this one'
+                        : `Lane ${lane + 1} — a session you start in parallel`}>
+                      L{lane + 1}
+                    </span>
+                  )}
                   <button className="body" onClick={() => go.detail(pickSlug, 'roadmap', String(id))}>
                     <span className="t">{it.title}</span>
                     <span className="p">{it.area || 'board'} · {bucketOf(it)}{it.plan.length ? ` · ☰ ${it.plan.filter((s) => s.done).length}/${it.plan.length}` : ''}</span>
                   </button>
                   {flips.has(id) && <span className="flag move">→ {flips.get(id)}</span>}
                   {it.refineNote && <span className="flag refine">↻ refine</span>}
+                  {it.plan.length === 0 && <span className="flag noplan" title="No implementation plan yet — ✧ Plan the queue designs it">no plan</span>}
                   {it.risk === 'low' && <span className="flag low">auto-merge</span>}
                   <span className={`when ${night === 0 ? 'tonight' : ''}`}>{nightLabel(night)}</span>
                   <span className="arrows">
@@ -680,6 +759,22 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
           {cur.length === 0 && (
             <div className="mc14-empty">Nothing schedulable{area ? ` in ${area}` : ''} — the nights would pass this project by.</div>
           )}
+          {/* ✧ AI assistance for the plan itself (#260/#255): hand the queue's
+              unplanned items to the planning agent, in the order shown. */}
+          {cur.length > 0 && (
+            <div className="mc16-planpush">
+              <button className="mc16-ask" disabled={planBusy || unplannedIds.length === 0}
+                onClick={() => void pushToPlanner()}
+                title={unplannedIds.length === 0
+                  ? 'Every item in the queue already has an implementation plan'
+                  : 'Queue a plan session that designs each unplanned item in the order shown and saves the steps back onto it'}>
+                {planBusy ? '✧ Queuing…'
+                  : unplannedIds.length === 0 ? '✧ Whole queue is planned'
+                  : `✧ Plan the ${unplannedIds.length} unplanned item${unplannedIds.length === 1 ? '' : 's'}`}
+              </button>
+              {planNote && <span className="note">{planNote}</span>}
+            </div>
+          )}
           {held.length > 0 && (
             <div className="mc16-held">
               <span className="cap-sm">OUT OF THE SCHEDULE</span>
@@ -690,6 +785,13 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
                   <span className="why">{heldWhy(it, area)}</span>
                 </button>
               ))}
+              {heldAllItems.length > HELD_FOLD && (
+                <button className="mc16-heldmore" onClick={() => setHeldAll((v) => !v)}>
+                  {heldAll
+                    ? `show fewer — ${heldAllItems.length} held in total`
+                    : `show all ${heldAllItems.length} held (${heldAllItems.length - HELD_FOLD} more)`}
+                </button>
+              )}
             </div>
           )}
         </div>

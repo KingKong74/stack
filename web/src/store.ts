@@ -990,6 +990,22 @@ export async function getCheckRuns(slug: string, limit = 40): Promise<CheckRun[]
   return request<CheckRun[]>(`${checksBase(slug)}/runs?limit=${limit}`);
 }
 
+// #260 — how many sessions the Plan room assumes you run in parallel. A
+// PLANNING lens, not a runner setting: the overnight autopilot is one lane, the
+// rest are sessions you (or another machine) start, and Stack's lane claims
+// already keep them off each other's items. Device-local, because it describes
+// how you intend to work rather than what the server does.
+const PLAN_LANES_KEY = 'stack.planLanes';
+export const PLAN_LANE_CHOICES = [1, 2, 3, 4] as const;
+
+export function getPlanLanes(): number {
+  return readStoredJSON(PLAN_LANES_KEY, (v) =>
+    (typeof v === 'number' && PLAN_LANE_CHOICES.includes(v as 1 | 2 | 3 | 4) ? v : 1));
+}
+export function setPlanLanes(n: number) {
+  localStorage.setItem(PLAN_LANES_KEY, JSON.stringify(n));
+}
+
 // ---- tips (the app-wide recipe library — the Tips tab) ----
 
 // The recipe rail's collapsed state — device-local, like the theme. Collapsed

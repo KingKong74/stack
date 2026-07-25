@@ -61,9 +61,11 @@ settings.patch('/', async (req, res) => {
     values.push(cleanAutopilotTime(body.autopilotTime));
   }
   if ('autopilotMaxItems' in body) {
+    // 0 = UNLIMITED (#260) — like autopilotTokens above, the wall clock and the
+    // token budget are then the only governors. Positive values clamp to 1–20.
     const n = Math.trunc(Number(body.autopilotMaxItems));
     fields.push(`autopilot_max_items = $${i++}`);
-    values.push(Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : 3);
+    values.push(!Number.isFinite(n) || n < 0 ? 3 : (n === 0 ? 0 : Math.min(20, Math.max(1, n))));
   }
   if ('staleItemDays' in body) {
     // The parked-item stale threshold (#247) — days. Clamped to a sane window:
