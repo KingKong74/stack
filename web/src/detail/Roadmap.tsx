@@ -29,7 +29,7 @@ const noteTagLabel = (t: string) => REVIEW_NOTE_TAGS.find((x) => x.key === t)?.l
 // Archive below — still counted by the progress model, reviewable with a
 // verdict tag, refinable by delta (#146), restorable by un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onShelve, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onBranch, onDeleteArea, onRenameArea, slug, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onShelve, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onPlanItems, onBranch, onDeleteArea, onRenameArea, slug, highlightId,
   draft, onResumeDraft, onDiscardDraft, liveBranches, staleItemDays,
 }: {
   roadmap: RoadmapData;
@@ -50,6 +50,10 @@ export function Roadmap({
   onReorder?: (item: RoadmapItem, toBucket: Priority, beforeId: number | null) => void;
   onCleanup?: () => void;
   onSendToTerminal?: (brief: string) => void;
+  // #255 — hand an ORDERED list of open items to the planning agent: queues a
+  // plan-kind autopilot session whose agenda is exactly these ids. Resolves to
+  // a line about what was queued (or an already-open job).
+  onPlanItems?: (ids: number[]) => Promise<string>;
   // ⎇ Branch an item for focused work (#205): claim its lane + open a primed session.
   onBranch?: (item: RoadmapItem) => void;
   // #169 — area management: delete (clears area from all items) and rename
@@ -122,17 +126,30 @@ export function Roadmap({
   const [termPick, setTermPick] = useState<Set<number> | null>(null);
   const [termPrio, setTermPrio] = useState<'all' | Priority>('all');
   const [termAreas, setTermAreas] = useState<Set<string>>(new Set()); // empty = every area
+  // #255 — where the picked items go. The planning agent is the default: a
+  // plan-kind autopilot session that designs each item in the picked order and
+  // saves the result back as plan steps. The terminal remains as the hands-on
+  // alternative (the old ⌨ To terminal, now a destination rather than a button).
+  const [termDest, setTermDest] = useState<'planner' | 'terminal'>('planner');
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planNote, setPlanNote] = useState('');
   const workable = (it: RoadmapItem) => !it.skipped && !it.claimedBy;
+  // The planner's natural default: work that has no design yet.
+  const unplanned = (it: RoadmapItem) => workable(it) && it.plan.length === 0;
   const termScope = openAll.filter((it) => termAreas.size === 0 || (!!it.area && termAreas.has(it.area)));
   const termCandidates = termScope.filter((it) => termPrio === 'all' || it.bucket === termPrio);
   const openTermPick = () => {
     setTermPrio('all');
+    setTermDest('planner');
+    setPlanNote('');
     // Start from the active area tab; more areas can be ticked in the modal.
     const areas = new Set(areaFilter && areaFilter !== UNCAT ? [areaFilter] : []);
     setTermAreas(areas);
     const scope = openAll.filter((it) => areas.size === 0 || (!!it.area && areas.has(it.area)));
-    // Default selection: workable items — parked and already-claimed ones start unticked.
-    setTermPick(new Set(scope.filter(workable).map((it) => it.id)));
+    // Default selection: the work that has no design yet — parked, claimed and
+    // already-planned items start unticked. That makes the default press
+    // "plan everything that isn't planned", which is the point of the feature.
+    setTermPick(new Set(scope.filter(unplanned).map((it) => it.id)));
   };
   const toggleTermArea = (a: string) => {
     const next = new Set(termAreas);
@@ -597,10 +614,10 @@ export function Roadmap({
           <div className="subtitle">MoSCoW prioritisation</div>
         </div>
         <div className="bar-actions">
-          {onSendToTerminal && view === 'board' && (
+          {(onPlanItems || onSendToTerminal) && view === 'board' && (
             <button className="gemini-btn sm" onClick={openTermPick}
-              title="Compose a work brief from open items (the active area tab scopes it) and paste it into a terminal session">
-              ⌨ To terminal
+              title="Pick open items and hand them to the planning agent — an unattended plan session designs each one and saves the steps back onto the item">
+              ✧ To planning agent
             </button>
           )}
           {onCleanup && view === 'board' && (
@@ -914,13 +931,25 @@ export function Roadmap({
         )}
       </>)}
 
-      {termPick && onSendToTerminal && (
+      {termPick && (onPlanItems || onSendToTerminal) && (
         <Modal onClose={() => setTermPick(null)} wide>
-          <h3>⌨ Send to a terminal session</h3>
+          <h3>✧ Push items to the planning agent</h3>
           <div className="confirm-body" style={{ marginBottom: 12 }}>
-            Pick area tabs, then items — the picked items become a work brief, pasted into the
-            terminal for you to review and send.
+            {termDest === 'planner'
+              ? 'Pick the items to have designed. An unattended plan session works them in this order — one bounded design session each, in a throwaway worktree — and saves the result back onto each item as plan steps plus a design note. It never builds and never ticks anything.'
+              : 'Pick area tabs, then items — the picked items become a work brief, pasted into the terminal for you to review and send.'}
           </div>
+          {onPlanItems && onSendToTerminal && (
+            <div className="seg-control sm" role="tablist" aria-label="Where the picked items go"
+              style={{ marginBottom: 12 }}>
+              <button role="tab" aria-selected={termDest === 'planner'}
+                className={`seg-opt ${termDest === 'planner' ? 'on' : ''}`}
+                onClick={() => { setTermDest('planner'); setPlanNote(''); }}>✧ Planning agent</button>
+              <button role="tab" aria-selected={termDest === 'terminal'}
+                className={`seg-opt ${termDest === 'terminal' ? 'on' : ''}`}
+                onClick={() => { setTermDest('terminal'); setPlanNote(''); }}>⌨ Terminal session</button>
+            </div>
+          )}
           {boardAreas.length > 0 && (
             <div className="chips" style={{ marginBottom: 8 }}>
               <button className={`chip-sm ${termAreas.size === 0 ? 'on' : ''}`} onClick={allTermAreas}>
@@ -941,6 +970,17 @@ export function Roadmap({
               </button>
             ))}
           </div>
+          {/* Bulk ticks — the whole board is a legitimate agenda for the planner,
+              so "everything unplanned" is one press away (#255). */}
+          <div className="chips" style={{ marginBottom: 10 }}>
+            <button className="chip-sm" onClick={() => setTermPick(new Set(termCandidates.filter(workable).map((it) => it.id)))}>
+              tick all workable
+            </button>
+            <button className="chip-sm" onClick={() => setTermPick(new Set(termCandidates.filter(unplanned).map((it) => it.id)))}>
+              only unplanned {termCandidates.filter(unplanned).length}
+            </button>
+            <button className="chip-sm" onClick={() => setTermPick(new Set())}>none</button>
+          </div>
           <div className="cleanup-list">
             {termCandidates.map((it) => (
               <label className="cleanup-row" key={it.id}>
@@ -955,6 +995,11 @@ export function Roadmap({
                     #{it.id} {it.title}
                     {it.claimedBy && <span className="claim-chip inline">⚑ {it.claimedBy}</span>}
                     {it.skipped && <span className="skip-chip">⏸ parked</span>}
+                    {it.plan.length > 0 && (
+                      <span className="plan-chip" title="Already has an implementation plan — the planner would replace it (untouched plans only)">
+                        ☰ {it.plan.filter((s) => s.done).length}/{it.plan.length}
+                      </span>
+                    )}
                   </span>
                   <span className="why">[{it.bucket}]{it.area ? ` · ${it.area}` : ''}</span>
                 </span>
@@ -962,12 +1007,39 @@ export function Roadmap({
             ))}
             {termCandidates.length === 0 && <div className="confirm-body">Nothing open under this filter.</div>}
           </div>
+          {termDest === 'planner' && (
+            <div className="field-hint" style={{ marginTop: 12 }}>
+              The session runs on the host within a minute of queuing and works down the list until the
+              night's wall-clock cap or token budget runs out — anything it doesn't reach keeps its place
+              for the next push. Claimed items are skipped, as are plans a session has already ticked
+              steps on; nothing in flight is replanned over. Watch it land on Mission Control.
+            </div>
+          )}
+          {planNote && <div className="gemini-suggest" style={{ marginTop: 10 }}>✧ {planNote}</div>}
           <div className="modal-actions" style={{ marginTop: 16 }}>
             <button className="btn-cancel" onClick={() => setTermPick(null)}>Cancel</button>
             <button className="btn-submit"
-              disabled={!termCandidates.some((it) => termPick.has(it.id))}
-              onClick={() => { onSendToTerminal(composeBrief()); setTermPick(null); }}>
-              Open in terminal →
+              disabled={planBusy || !termCandidates.some((it) => termPick.has(it.id))}
+              onClick={() => {
+                // The agenda is the board's own order — the list the runner works
+                // top-down — restricted to what's ticked.
+                const ids = termCandidates.filter((it) => termPick.has(it.id)).map((it) => it.id);
+                if (termDest === 'terminal' && onSendToTerminal) {
+                  onSendToTerminal(composeBrief());
+                  setTermPick(null);
+                  return;
+                }
+                if (!onPlanItems) return;
+                setPlanBusy(true);
+                setPlanNote('');
+                onPlanItems(ids)
+                  .then((note) => setPlanNote(note))
+                  .catch((e) => setPlanNote((e as Error)?.message || 'Could not queue the planning session.'))
+                  .finally(() => setPlanBusy(false));
+              }}>
+              {termDest === 'terminal'
+                ? 'Open in terminal →'
+                : planBusy ? 'Queuing…' : `Plan ${termCandidates.filter((it) => termPick.has(it.id)).length} item${termCandidates.filter((it) => termPick.has(it.id)).length === 1 ? '' : 's'} →`}
             </button>
           </div>
         </Modal>

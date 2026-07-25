@@ -371,6 +371,20 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       if (queueNow) await startAutopilot(slug, String(item.id));
     });
 
+  // #255 — push picked items to the planning agent: one plan-kind session whose
+  // ordered agenda is exactly these ids. The runner designs each item and PATCHes
+  // the result back as plan steps — no branches, no builds, nothing ticked. An
+  // already-open job for the project comes back instead of stacking a second one,
+  // so the reply says which of the two happened.
+  const planItems = async (ids: number[]): Promise<string> => {
+    const job = await startAutopilot(slug, { kind: 'plan', agenda: ids });
+    const planned = Array.isArray(job.agenda) && job.agenda.length === ids.length
+      && job.sessionKind === 'plan';
+    return planned
+      ? `Planning session queued for ${ids.length} item${ids.length === 1 ? '' : 's'} — the host picks it up within a minute.`
+      : `This project already has an open ${job.kind} session (${job.status}); nothing new was queued. Let it finish, then push again.`;
+  };
+
   // ＋ Bug / ＋ Audit from a review row (#146): log a ticket referencing the
   // item — the prefilled modal opens, the human finishes and saves it.
   const logBugFromReview = (item: RoadmapItem) =>
@@ -842,6 +856,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
               try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the button just won't appear */ }
               go.terminal(slug);
             }}
+            onPlanItems={planItems}
             onBranch={(it) => branchItem(it)} />
         )}
         {tab === 'futures' && (

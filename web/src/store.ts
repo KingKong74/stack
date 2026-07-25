@@ -414,11 +414,25 @@ export async function labelTerminalSessions(): Promise<{ sessions: TermSession[]
 
 // The Run-now button: queue a manual job the host dispatcher picks up within
 // a minute. An already open job for the project comes back instead.
-export async function startAutopilot(slug: string, itemId?: string): Promise<AutopilotJob> {
-  return request<AutopilotJob>('/autopilot/start', {
-    method: 'POST',
-    body: itemId ? { slug, itemId } : { slug },
-  });
+// A session plan can ride along (#228/#255): `kind` picks the runner mode
+// (build | plan | debug | audit), `agenda` is the ORDERED list of roadmap ids
+// (or BUG-N keys for debug) it must work, `area` scopes an agenda-less pick.
+export interface SessionPlanInput {
+  itemId?: string;
+  kind?: 'build' | 'plan' | 'debug' | 'audit';
+  agenda?: (string | number)[];
+  area?: string;
+}
+export async function startAutopilot(
+  slug: string, opts?: string | SessionPlanInput,
+): Promise<AutopilotJob> {
+  const plan: SessionPlanInput = typeof opts === 'string' ? { itemId: opts } : (opts ?? {});
+  const body: Record<string, unknown> = { slug };
+  if (plan.itemId) body.itemId = plan.itemId;
+  if (plan.kind) body.kind = plan.kind;
+  if (plan.agenda?.length) body.agenda = plan.agenda.map(String);
+  if (plan.area) body.area = plan.area;
+  return request<AutopilotJob>('/autopilot/start', { method: 'POST', body });
 }
 
 // #142 — the paused-session controls. A session that hit the usage limit sits
