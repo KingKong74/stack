@@ -16,7 +16,13 @@ import { buildPrompt } from '../prompts.js';
 export const checks = Router({ mergeParams: true });
 
 const RUN_TIMEOUT_MS = 8000;
-const BODY_CAP = 262144; // read at most 256KB when checking the response body
+// How much of a response body an assertion may inspect. 1MB, not 256KB: the
+// project detail payload for a real board is ~280KB and grows with the roadmap,
+// and the old cap silently truncated it mid-JSON so every JSON assertion on it
+// failed as "response is not JSON" — a lie about what actually happened. The
+// body is fully read either way (res.text()), so the cap only bounds what we
+// hold; a response over it now says so instead of being mis-parsed.
+const BODY_CAP = 1048576;
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'];
 
 checks.use(async (req, res, next) => {
@@ -186,8 +192,11 @@ async function probe(row, project) {
     let pass = res.status === row.expect_status;
     let error = pass ? null : `expected ${row.expect_status}, got ${res.status}`;
     let body = null;
+    let truncated = false;
     if (pass && (row.contains || row.json_path || row.semantic)) {
-      body = (await res.text()).slice(0, BODY_CAP);
+      const raw = await res.text();
+      truncated = raw.length > BODY_CAP;
+      body = raw.slice(0, BODY_CAP);
     }
     if (pass && row.contains && !body.includes(row.contains)) {
       pass = false;
@@ -200,7 +209,12 @@ async function probe(row, project) {
       let parsed;
       try { parsed = JSON.parse(body); } catch {
         pass = false;
-        error = 'response is not JSON';
+        // Distinguish "not JSON" from "JSON we refused to finish reading" —
+        // reporting a truncation as malformed JSON sends you hunting the
+        // wrong bug.
+        error = truncated
+          ? `response exceeds the ${Math.round(BODY_CAP / 1024)}KB read cap, so the JSON assertion cannot be applied`
+          : 'response is not JSON';
       }
       if (pass) {
         const value = walkPath(parsed, row.json_path);
