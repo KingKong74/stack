@@ -123,6 +123,53 @@ futures.post('/:id/judge', async (req, res) => {
   }
 });
 
+// POST /cluster  -> Gemini groups the funnel into themes: a suggested `area`
+// for every idea whose theme is missing or clearly wrong (the Polaris sky's
+// bearings). Suggestions only — the client shows them grouped and the human
+// applies through the normal PATCH. 503 keyless.
+futures.post('/cluster', async (req, res) => {
+  if (!geminiEnabled()) {
+    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
+  }
+  const { rows } = await q(
+    'SELECT id, area, title, note FROM futures WHERE project_id = $1 ORDER BY created_at DESC',
+    [req.project.id]
+  );
+  if (!rows.length) return res.json({ items: [] });
+  const roadAreas = await q(
+    `SELECT DISTINCT area FROM roadmap_items
+      WHERE project_id = $1 AND area IS NOT NULL AND area <> ''`,
+    [req.project.id]
+  );
+  const known = [...new Set([
+    ...roadAreas.rows.map((r) => r.area),
+    ...rows.map((r) => r.area).filter(Boolean),
+  ])];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const prompt = buildPrompt('cluster', {
+    ITEMS: rows.map((r) =>
+      `${r.id} | ${r.area || '-'} | ${r.title} | ${(r.note || '-').slice(0, 200)}`).join('\n'),
+    AREAS: known.join(', ') || '(none yet)',
+    NORTH_STAR_LINE: req.project.north_star
+      ? `For context, the project's north star: "${String(req.project.north_star).slice(0, 400)}"`
+      : '',
+  });
+  try {
+    const answer = await askGemini(prompt, { timeoutMs: 30_000 });
+    const items = (Array.isArray(answer?.items) ? answer.items : [])
+      .filter((s) => byId.has(Number(s?.id)))
+      .map((s) => {
+        const cur = byId.get(Number(s.id));
+        const area = String(s.area || '').trim().toLowerCase().slice(0, 40);
+        return { id: cur.id, currentTitle: cur.title, area };
+      })
+      .filter((s) => s.area && s.area !== (byId.get(s.id).area || ''));
+    res.json({ items });
+  } catch (err) {
+    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+  }
+});
+
 // DELETE /:id  -> remove; auto (hook) ideas leave a tombstone
 futures.delete('/:id', async (req, res) => {
   const { rows } = await q(

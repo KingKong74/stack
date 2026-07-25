@@ -115,6 +115,22 @@ Use en-AU spelling. Respond with ONLY this JSON:
 { "items": [ { "id": 123, "area": "…", "title": "…", "bucket": "…",
                "why": "one plain sentence, under 15 words" } ] }`;
 
+DEFAULTS.cluster = `You are clustering a side project's idea funnel into themes. Below are the
+project's loose ideas (id | current theme | title | note). Known themes on the project: {{AREAS}}
+{{NORTH_STAR_LINE}}
+
+Give EVERY unthemed idea a theme: lowercase, one or two words. Aim for 3–7 coherent themes across
+the whole funnel — prefer the known themes where they fit, and coin a new one only when a real
+cluster has no name yet. Ideas already carrying a sensible theme keep it (omit them from the
+answer); answer only for ideas whose theme is missing ("-") or clearly wrong. Never invent, merge
+or drop ideas.
+
+THE IDEAS:
+{{ITEMS}}
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "items": [ { "id": 123, "area": "…" } ] }`;
+
 DEFAULTS.reviewbrief = `You are the reviewer's assistant on a side project command centre. A completed
 roadmap item is awaiting a human verdict (solid / rethink). Write it up so the reviewer can judge
 quickly without re-reading everything.
@@ -212,6 +228,7 @@ const ENV_KEYS = {
   titler: 'GEMINI_TITLER_PROMPT',
   assist: 'GEMINI_ASSIST_PROMPT',
   cleanup: 'GEMINI_CLEANUP_PROMPT',
+  cluster: 'GEMINI_CLUSTER_PROMPT',
   reviewbrief: 'GEMINI_REVIEWBRIEF_PROMPT',
   audit: 'GEMINI_AUDIT_PROMPT',
   triage: 'GEMINI_TRIAGE_PROMPT',

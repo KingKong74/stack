@@ -7,7 +7,7 @@ import {
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
   runAudit, getAuditPrompt, type AuditResult,
   patchProject, deleteProject, createShareLink, deleteShareLink,
-  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, assistRoadmapItem,
+  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, assistRoadmapItem,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
   replanProject, startAutopilot, AuthError,
 } from '../store';
@@ -455,6 +455,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, futures: futures.filter((f) => f.id !== fid) });
     });
 
+  // Applies a ✧ Cluster batch in one go — one state write, so N area patches
+  // never clobber each other on the shared snapshot.
+  const applyFutureAreas = (pairs: { id: number; area: string }[]) =>
+    guard(async () => {
+      const updated = await Promise.all(pairs.map((p) => patchFuture(slug, p.id, { area: p.area })));
+      const byId = new Map(updated.map((u) => [u.id, u]));
+      setData({ ...data, futures: futures.map((f) => byId.get(f.id) || f) });
+    });
+
   const saveNorthStar = (text: string) =>
     guard(async () => {
       await patchProject(slug, { north_star: text });
@@ -812,7 +821,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId} slug={slug}
             onSaveNorthStar={saveNorthStar} onAdd={addFuture} onEdit={editFuture} onAlign={alignFuture}
-            onAskGemini={(id) => judgeFuture(slug, id)}
+            onAskGemini={(id) => judgeFuture(slug, id)} onCluster={() => clusterFutures(slug)}
+            onSetAreas={applyFutureAreas}
             onDelete={removeFuture} onPromote={promoteFuture} />
         )}
         {tab === 'notes' && (

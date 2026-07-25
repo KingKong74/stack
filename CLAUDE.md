@@ -347,13 +347,17 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   by the SessionStart hook) over the **constellation sky** — the north star at the centre, one
   dashed ring per alignment verdict (on course 132 / tangent 224 / off course 296; unjudged
   ideas float dashed at 178), themes = the ideas' `area` tags as bearings (no area = `loose`),
-  theme bubbles when collapsed, zoom (0.7–1.7×, ≥1.2 expands + labels everything, with a
-  collision pass on captions), pan + Recentre, an All-ideas/Themes toggle and theme chips —
+  theme bubbles when collapsed, seamless wheel zoom (continuous 0.5–2.4× toward the cursor;
+  buttons/ticks glide, wheel/drag track raw; ≥1.2 expands + labels everything, with a
+  collision pass on captions), pan + Recentre, an All-ideas/Themes toggle, theme chips and
+  **✧ Cluster** (POST `futures/cluster` — Gemini groups the funnel into themes; a tickable
+  preview modal applies via the normal area PATCH, batched in one state write) —
   beside the **Polaris rail**: the selected idea (verdict pill, → Roadmap promote, Build on it
   → the studio primed via the one-shot `stack.polaris.thought` handoff PolarisTerm types in,
   ✎ edit, dismiss), the **judge queue** (unsorted ideas one at a time — verdict buttons PATCH
   `alignment`, ✦ "What would Polaris say?" = the Gemini judge suggestion, skip is
-  session-local), a computed ✦ POLARIS observation (arithmetic, no API) and the think-out-loud
+  session-local; ⤢ pops the queue out into a modal with roomier controls, same state), a
+  computed ✦ POLARIS observation (arithmetic, no API) and the think-out-loud
   input (stashes the thought, opens the studio). The pre-sky list view survives behind a
   Sky/List seg (promote/dismiss/edit/judge per row, area chips, "first line = idea" composer);
   the old drag-canvas (`FuturesCanvas`) is retired), Audit (`detail/Audit.tsx` — the dedicated testing +
@@ -718,7 +722,9 @@ the silent metadata backstop so the feed never has gaps.
   off; the client shows a tickable list and applies through the normal PATCH)
 - `GET|POST /api/projects/:slug/futures` · `PATCH|DELETE /api/projects/:slug/futures/:id`
   (PATCH: title/note/reviewed/`alignment: on-course|tangent|off-course` ('' clears);
-  DELETE tombstones a hook idea) · `POST /api/projects/:slug/futures/:id/judge` (Gemini-suggested
+  DELETE tombstones a hook idea) · `POST /api/projects/:slug/futures/cluster` (Gemini groups the
+  funnel into themes — a suggested `area` per unthemed idea; suggestion only, 503 keyless) ·
+  `POST /api/projects/:slug/futures/:id/judge` (Gemini-suggested
   verdict + why — suggestion only, 503 without a server key, 400 without a north star)
 - **Polaris** (#209) is NOT a server route any more — the old Gemini `polaris` + `intake` routes
   were culled. It's a real `claude` session over the web-terminal transport: the Futures tab's

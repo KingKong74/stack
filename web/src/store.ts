@@ -700,6 +700,17 @@ export async function judgeFuture(slug: string, id: number): Promise<JudgeSugges
     `/projects/${encodeURIComponent(slug)}/futures/${id}/judge`, { method: 'POST' });
 }
 
+// ---- Gemini theme clustering (POST .../futures/cluster — suggestions only;
+// the human applies each through the normal PATCH) ----
+
+export interface ClusterSuggestion { id: number; currentTitle: string; area: string }
+
+export async function clusterFutures(slug: string): Promise<ClusterSuggestion[]> {
+  const r = await request<{ items: ClusterSuggestion[] }>(
+    `/projects/${encodeURIComponent(slug)}/futures/cluster`, { method: 'POST' });
+  return r.items;
+}
+
 // ---- timeline (GET /api/timeline — cross-project pushes + contribution graph) ----
 
 export interface TimelineEntry {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Future } from '../types';
-import type { JudgeSuggestion } from '../store';
+import type { ClusterSuggestion, JudgeSuggestion } from '../store';
+import { Modal } from '../components/Modal';
 import { go } from '../lib/route';
 
 export type Alignment = 'on-course' | 'tangent' | 'off-course';
@@ -32,7 +33,8 @@ const RING_COLOR: Record<string, string> = {
 const RING_TINT: Record<string, string> = {
   'on-course': 'var(--live-tint)', tangent: 'var(--building-tint)', 'off-course': 'var(--paused-tint)', '': 'var(--paused-tint)',
 };
-const Z_STEPS = [0.7, 0.85, 1, 1.2, 1.45, 1.7];
+const Z_TICKS = [0.7, 0.85, 1, 1.2, 1.45, 1.7]; // preset dots — wheel zoom is continuous
+const Z_MIN = 0.5, Z_MAX = 2.4;
 const LOOSE = 'loose'; // theme key for ideas with no area tag
 
 type Theme = { key: string; label: string; a0: number; span: number; items: Future[] };
@@ -64,7 +66,7 @@ type SkyBubble = { key: string; label: string; count: number; x: number; y: numb
 
 export function Futures({
   northStar, futures, highlightId, onSaveNorthStar, onAdd, onEdit, onAlign, onDelete, onPromote,
-  onAskGemini, slug,
+  onAskGemini, onCluster, onSetAreas, slug,
 }: {
   northStar: string;
   futures: Future[];
@@ -77,6 +79,8 @@ export function Futures({
   onDelete: (id: number) => void;
   onPromote: (future: Future) => void;
   onAskGemini?: (id: number) => Promise<JudgeSuggestion>;
+  onCluster?: () => Promise<ClusterSuggestion[]>;
+  onSetAreas: (pairs: { id: number; area: string }[]) => void;
 }) {
   // ---- north star strip (collapsible band, always on top) ----
   const [nsOpen, setNsOpen] = useState(true);
@@ -98,10 +102,17 @@ export function Futures({
   // ---- sky state ----
   const [z, setZ] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  // Buttons/ticks glide (CSS transition); wheel + drag track the pointer raw.
+  const [glide, setGlide] = useState(true);
   const [allIdeas, setAllIdeas] = useState(false);
   const [openTheme, setOpenTheme] = useState<string | null>(null);
   const [selId, setSelId] = useState<number | null>(null);
   const panRef = useRef<{ x0: number; y0: number; px: number; py: number } | null>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const zRef = useRef(z);
+  zRef.current = z;
+  const panLive = useRef(pan);
+  panLive.current = pan;
 
   const themes = useMemo(() => buildThemes(bySource), [bySource]);
   const selected = selId != null ? bySource.find((f) => f.id === selId) || null : null;
@@ -174,6 +185,7 @@ export function Futures({
   }, [themes, expandAll, labelAll, openTheme, selId]);
 
   const startPan = (e: React.MouseEvent) => {
+    setGlide(false);
     panRef.current = { x0: e.clientX, y0: e.clientY, px: pan.x, py: pan.y };
     const move = (ev: MouseEvent) => {
       const p = panRef.current;
@@ -187,9 +199,35 @@ export function Futures({
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
   };
-  const zoomBy = (dir: 1 | -1) =>
-    setZ((cur) => Z_STEPS[Math.min(Z_STEPS.length - 1, Math.max(0, Z_STEPS.indexOf(cur) + dir))]);
-  const offCentre = pan.x !== 0 || pan.y !== 0 || z !== 1;
+  const zoomBy = (dir: 1 | -1) => {
+    setGlide(true);
+    setZ((cur) => Math.min(Z_MAX, Math.max(Z_MIN, dir > 0 ? cur * 1.18 : cur / 1.18)));
+  };
+  // Wheel = continuous zoom toward the cursor: the point under the pointer
+  // stays put while the sky scales around it. Native listener (passive:false)
+  // so the page never scrolls behind the sky.
+  useEffect(() => {
+    if (view !== 'sky') return;
+    const el = viewportRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const z0 = zRef.current;
+      const nz = Math.min(Z_MAX, Math.max(Z_MIN, z0 * Math.exp(-e.deltaY * 0.0016)));
+      if (nz === z0) return;
+      const r = el.getBoundingClientRect();
+      const p = panLive.current;
+      // Cursor position in field space (origin = the field's centre).
+      const fx = (e.clientX - (r.left + r.width / 2) - p.x) / z0;
+      const fy = (e.clientY - (r.top + r.height / 2) - p.y) / z0;
+      setGlide(false);
+      setZ(nz);
+      setPan({ x: p.x + fx * (z0 - nz), y: p.y + fy * (z0 - nz) });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [view]);
+  const offCentre = pan.x !== 0 || pan.y !== 0 || Math.abs(z - 1) > 0.01;
   const lodNote = z < 0.85 ? 'Zoomed out — themes only.'
     : z < 1.2 ? 'Theme bodies. Open one, or keep zooming.'
     : 'Every idea, every name — drag the sky to move around it.';
@@ -221,6 +259,13 @@ export function Futures({
       setHintBusy(false);
     }
   };
+  const skipCur = () => {
+    if (!cur) return;
+    setSkipped(new Set([...skipped, cur.id]));
+    setHint(null);
+    setHintErr('');
+  };
+  const resetSkips = () => setSkipped(new Set());
 
   // ---- Polaris's computed observation — honest arithmetic, no API ----
   const observation = useMemo(() => {
@@ -245,6 +290,39 @@ export function Futures({
     }
     return '';
   }, [themes, unjudged.length]);
+
+  // ---- judge queue pop-out + Gemini theme clustering ----
+  const [queueOut, setQueueOut] = useState(false);
+  const [clusterBusy, setClusterBusy] = useState(false);
+  const [clusterErr, setClusterErr] = useState('');
+  const [clusterSugs, setClusterSugs] = useState<ClusterSuggestion[] | null>(null);
+  const [clusterPicks, setClusterPicks] = useState<Set<number>>(new Set());
+  const runCluster = async () => {
+    if (!onCluster || clusterBusy) return;
+    setClusterBusy(true);
+    setClusterErr('');
+    try {
+      const items = await onCluster();
+      if (!items.length) {
+        setClusterErr('Gemini had no theme suggestions — the funnel may already be sorted.');
+      } else {
+        setClusterSugs(items);
+        setClusterPicks(new Set(items.map((s) => s.id)));
+      }
+    } catch (e) {
+      setClusterErr((e as Error)?.message || 'Gemini call failed.');
+    } finally {
+      setClusterBusy(false);
+    }
+  };
+  const applyCluster = () => {
+    if (!clusterSugs) return;
+    const pairs = clusterSugs
+      .filter((s) => clusterPicks.has(s.id))
+      .map((s) => ({ id: s.id, area: s.area }));
+    if (pairs.length) onSetAreas(pairs);
+    setClusterSugs(null);
+  };
 
   // ---- composers ----
   const [draft, setDraft] = useState('');
@@ -338,6 +416,12 @@ export function Futures({
               title="Ideas you typed (or agreed with Polaris)">Manual</button>
           </div>
         )}
+        {view === 'sky' && onCluster && bySource.length > 0 && (
+          <button className="psky-all" onClick={runCluster} disabled={clusterBusy}
+            title="Gemini groups the funnel into themes — you review before anything is written">
+            {clusterBusy ? '✧ clustering…' : '✧ Cluster'}
+          </button>
+        )}
         {view === 'sky' && (
           <button className={`psky-all ${allIdeas ? 'on' : ''}`}
             onClick={() => { setAllIdeas((v) => !v); setOpenTheme(null); }}>
@@ -349,6 +433,8 @@ export function Futures({
           <button className={`seg-opt ${view === 'list' ? 'on' : ''}`} onClick={() => setView('list')}>List</button>
         </div>
       </div>
+
+      {clusterErr && <div className="psky-cluster-err">✧ {clusterErr}</div>}
 
       {view === 'list' ? (
         <>
@@ -417,8 +503,9 @@ export function Futures({
               <div className="psky-zoom">
                 <button className="zbtn" onClick={() => zoomBy(-1)} aria-label="Zoom out">−</button>
                 <span className="zticks">
-                  {Z_STEPS.map((v) => (
-                    <button key={v} className={`ztick ${v <= z ? 'on' : ''}`} onClick={() => setZ(v)}
+                  {Z_TICKS.map((v) => (
+                    <button key={v} className={`ztick ${v <= z + 0.001 ? 'on' : ''}`}
+                      onClick={() => { setGlide(true); setZ(v); }}
                       aria-label={`Zoom ${Math.round(v * 100)}%`} />
                   ))}
                 </span>
@@ -426,13 +513,17 @@ export function Futures({
                 <span className="zpct">{Math.round(z * 100)}%</span>
               </div>
               {offCentre && (
-                <button className="psky-recentre" onClick={() => { setPan({ x: 0, y: 0 }); setZ(1); }}>Recentre</button>
+                <button className="psky-recentre"
+                  onClick={() => { setGlide(true); setPan({ x: 0, y: 0 }); setZ(1); }}>Recentre</button>
               )}
             </div>
 
-            <div className="psky-viewport">
+            <div className="psky-viewport" ref={viewportRef}>
               <div className="psky-field" onMouseDown={startPan}
-                style={{ transform: `translate(${pan.x}px,${pan.y}px) scale(${z})` }}>
+                style={{
+                  transform: `translate(${pan.x}px,${pan.y}px) scale(${z})`,
+                  transition: glide ? undefined : 'none',
+                }}>
                 {(['on-course', 'tangent', 'off-course'] as const).map((v) => (
                   <div key={v}>
                     <div className="psky-ring" style={{ left: C - RING[v], top: C - RING[v], width: RING[v] * 2, height: RING[v] * 2 }} />
@@ -506,54 +597,10 @@ export function Futures({
               } : undefined} />
 
             <div className="psky-rail-scroll">
-              <div className="psky-queue">
-                <div className="psky-queue-head">
-                  <span className="label">JUDGE QUEUE</span>
-                  <div style={{ flex: 1 }} />
-                  <span className="progress">{judgedCount} of {judgedCount + unjudged.length} judged</span>
-                </div>
-                {cur ? (
-                  <div>
-                    <div className="psky-queue-title">{cur.title}</div>
-                    {cur.note && <div className="psky-queue-note">{cur.note}</div>}
-                    <div className="psky-queue-opts">
-                      {ALIGNMENTS.map((a) => (
-                        <button key={a.key} className={`psky-verdict ${a.key}`} title={a.hint}
-                          onClick={() => judge(cur, a.key)}>
-                          <span className="dot" />
-                          <span>{a.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="psky-queue-foot">
-                      {onAskGemini && (!hint || hint.id !== cur.id) && !hintErr && (
-                        <button className="psky-ask" onClick={() => askPolaris(cur)} disabled={hintBusy}>
-                          {hintBusy ? '✦ asking…' : '✦ What would Polaris say?'}
-                        </button>
-                      )}
-                      {hintErr && <span className="psky-hint-err">✦ {hintErr}</span>}
-                      {hint && hint.id === cur.id && (
-                        <div className="psky-hint">
-                          <div className="verdict" style={{ color: RING_COLOR[hint.s.alignment] }}>✦ {alignLabel(hint.s.alignment)}</div>
-                          <div className="why">{hint.s.why}</div>
-                        </div>
-                      )}
-                      <div style={{ flex: 1 }} />
-                      <button className="psky-skip"
-                        onClick={() => { setSkipped(new Set([...skipped, cur.id])); setHint(null); setHintErr(''); }}>
-                        skip →
-                      </button>
-                    </div>
-                  </div>
-                ) : unjudged.length ? (
-                  <div className="psky-queue-done">
-                    {unjudged.length} skipped this pass.{' '}
-                    <button className="link" onClick={() => setSkipped(new Set())}>Bring them back</button>
-                  </div>
-                ) : (
-                  <div className="psky-queue-done">Queue clear — every idea carries a verdict, yours where you gave one.</div>
-                )}
-              </div>
+              <QueueCard cur={cur} unjudgedCount={unjudged.length} judgedCount={judgedCount}
+                hint={hint} hintBusy={hintBusy} hintErr={hintErr} canAsk={!!onAskGemini}
+                onJudge={judge} onAsk={askPolaris} onSkip={skipCur} onReset={resetSkips}
+                onPopOut={() => setQueueOut(true)} />
 
               {observation && (
                 <div className="psky-note">
@@ -575,6 +622,135 @@ export function Futures({
             )}
           </div>
         </div>
+      )}
+
+      {/* judge queue, popped out — same state, roomier controls */}
+      {queueOut && (
+        <Modal onClose={() => setQueueOut(false)}>
+          <div className="psky-pop">
+            <div className="psky-pop-head">
+              <span className="name">Judge queue</span>
+              <button className="psky-pop-close" onClick={() => setQueueOut(false)} aria-label="Close">×</button>
+            </div>
+            <QueueCard big cur={cur} unjudgedCount={unjudged.length} judgedCount={judgedCount}
+              hint={hint} hintBusy={hintBusy} hintErr={hintErr} canAsk={!!onAskGemini}
+              onJudge={judge} onAsk={askPolaris} onSkip={skipCur} onReset={resetSkips} />
+          </div>
+        </Modal>
+      )}
+
+      {/* Gemini's suggested clustering — nothing is written until Apply */}
+      {clusterSugs && (
+        <Modal onClose={() => setClusterSugs(null)} closeOnOverlay={false}>
+          <div className="psky-pop">
+            <div className="psky-pop-head">
+              <span className="name">✧ Suggested themes</span>
+              <button className="psky-pop-close" onClick={() => setClusterSugs(null)} aria-label="Close">×</button>
+            </div>
+            <div className="psky-cluster-hint">
+              Gemini's grouping of the funnel against the north star. Untick anything that's wrong —
+              nothing is written until you apply.
+            </div>
+            <div className="psky-cluster-list">
+              {[...new Set(clusterSugs.map((s) => s.area))].sort().map((a) => (
+                <div className="psky-cluster-group" key={a}>
+                  <div className="theme">{a}</div>
+                  {clusterSugs.filter((s) => s.area === a).map((s) => (
+                    <label className="psky-cluster-row" key={s.id}>
+                      <input type="checkbox" checked={clusterPicks.has(s.id)}
+                        onChange={() => setClusterPicks((p) => {
+                          const n = new Set(p);
+                          if (n.has(s.id)) n.delete(s.id); else n.add(s.id);
+                          return n;
+                        })} />
+                      <span>{s.currentTitle}</span>
+                    </label>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <div className="psky-pop-foot">
+              <button className="btn-cancel sm" onClick={() => setClusterSugs(null)}>Cancel</button>
+              <button className="btn-submit sm" onClick={applyCluster} disabled={clusterPicks.size === 0}>
+                Apply {clusterPicks.size} theme{clusterPicks.size === 1 ? '' : 's'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// The judge queue's card — one unsorted idea at a time, three verdicts, the
+// Gemini hint behind "What would Polaris say?". Rendered small in the rail
+// (with the ⤢ pop-out) and big inside the pop-out modal; same state both ways.
+function QueueCard({
+  cur, unjudgedCount, judgedCount, hint, hintBusy, hintErr, canAsk,
+  onJudge, onAsk, onSkip, onReset, onPopOut, big,
+}: {
+  cur: Future | null;
+  unjudgedCount: number;
+  judgedCount: number;
+  hint: { id: number; s: JudgeSuggestion } | null;
+  hintBusy: boolean;
+  hintErr: string;
+  canAsk: boolean;
+  onJudge: (f: Future, v: Alignment) => void;
+  onAsk: (f: Future) => void;
+  onSkip: () => void;
+  onReset: () => void;
+  onPopOut?: () => void;
+  big?: boolean;
+}) {
+  return (
+    <div className={`psky-queue ${big ? 'big' : ''}`}>
+      <div className="psky-queue-head">
+        <span className="label">JUDGE QUEUE</span>
+        <div style={{ flex: 1 }} />
+        <span className="progress">{judgedCount} of {judgedCount + unjudgedCount} judged</span>
+        {onPopOut && (
+          <button className="psky-pop-btn" onClick={onPopOut} title="Pop the queue out" aria-label="Pop the queue out">⤢</button>
+        )}
+      </div>
+      {cur ? (
+        <div>
+          <div className="psky-queue-title">{cur.title}</div>
+          {cur.note && <div className="psky-queue-note">{cur.note}</div>}
+          {big && cur.area && <div className="psky-queue-theme">{cur.area}</div>}
+          <div className="psky-queue-opts">
+            {ALIGNMENTS.map((a) => (
+              <button key={a.key} className={`psky-verdict ${a.key}`} title={a.hint}
+                onClick={() => onJudge(cur, a.key)}>
+                <span className="dot" />
+                <span>{a.label}</span>
+              </button>
+            ))}
+          </div>
+          <div className="psky-queue-foot">
+            {canAsk && (!hint || hint.id !== cur.id) && !hintErr && (
+              <button className="psky-ask" onClick={() => onAsk(cur)} disabled={hintBusy}>
+                {hintBusy ? '✦ asking…' : '✦ What would Polaris say?'}
+              </button>
+            )}
+            {hintErr && <span className="psky-hint-err">✦ {hintErr}</span>}
+            {hint && hint.id === cur.id && (
+              <div className="psky-hint">
+                <div className="verdict" style={{ color: RING_COLOR[hint.s.alignment] }}>✦ {alignLabel(hint.s.alignment)}</div>
+                <div className="why">{hint.s.why}</div>
+              </div>
+            )}
+            <div style={{ flex: 1 }} />
+            <button className="psky-skip" onClick={onSkip}>skip →</button>
+          </div>
+        </div>
+      ) : unjudgedCount ? (
+        <div className="psky-queue-done">
+          {unjudgedCount} skipped this pass.{' '}
+          <button className="link" onClick={onReset}>Bring them back</button>
+        </div>
+      ) : (
+        <div className="psky-queue-done">Queue clear — every idea carries a verdict, yours where you gave one.</div>
       )}
     </div>
   );
