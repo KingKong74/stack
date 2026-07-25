@@ -540,7 +540,16 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     the assertions — optional `contains` keyword, `json_path` + `json_expect` (dot path into a
     JSON response; empty expect = the path just has to exist) and the Gemini-judged `semantic`
     line — with the last result on the row (`last_status/code/ms/error/run_at`). Run on demand,
-    bounded (8s), never scheduled.
+    bounded (8s), never scheduled. `auth` (#261) is the opt-in that makes a real suite possible:
+    every route but GET /api/health is behind bearer auth, so the runner attaches the server's
+    **own** `API_TOKEN` for flagged checks. The token is never stored on the row and never sent to
+    the client; `authAllowedFor()` attaches it ONLY when the check's origin is the project's own
+    `site_url` (or a loopback/compose-internal host), and such requests use `redirect: 'manual'`
+    so a redirect can't replay the Authorization header off-origin. An authenticated check pointed
+    anywhere else fails with a stated reason rather than leaking the token or lying about a 401.
+    **The bar (#261):** a green suite is the evidence that risk-tiered auto-merge (#212) and
+    auto-verdict (#263) spend. Checks are Stack's only automated regression net — when a route's
+    payload contract changes, change its check in the same commit.
   - `check_runs` — the Audit tab's run history: one summary row per POST /checks/run
     (scope all|one, total/passed/failed, duration_ms) — the dashboard's trend strip and
     last-run stat. Written best-effort after the checks save their results (an insert hiccup
@@ -837,8 +846,9 @@ the silent metadata backstop so the feed never has gaps.
   for the overnight autopilot. Re-attach skips the kickoff; a real exit forgets the mapping.
 - `GET|POST /api/projects/:slug/notes` · `PATCH /api/projects/:slug/notes/:id` (text) ·
   `DELETE /api/projects/:slug/notes/:id`
-- `GET|POST /api/projects/:slug/checks` · `PATCH /api/projects/:slug/checks/:id` (#143 — edit
-  any subset of the POST fields; changing anything but the name clears the stored result) ·
+- `GET|POST /api/projects/:slug/checks` (POST/PATCH also take `auth: bool` — #261, run the check
+  with the server's own token, same-origin only) · `PATCH /api/projects/:slug/checks/:id` (#143 — edit
+  any subset of the POST fields; changing anything but the name — `auth` included — clears the stored result) ·
   `DELETE /api/projects/:slug/checks/:id` ·
   `POST /api/projects/:slug/checks/run` (all, or one with `{id}`; returns updated rows — and
   lands a summary row in `check_runs`) ·

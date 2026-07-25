@@ -53,7 +53,25 @@ function parseFields(body) {
   if ('json_path' in body) out.json_path = String(body.json_path || '').trim().slice(0, 200) || null;
   if ('json_expect' in body) out.json_expect = String(body.json_expect || '').trim().slice(0, 300) || null;
   if ('semantic' in body) out.semantic = String(body.semantic || '').trim().slice(0, 300) || null;
+  if ('auth' in body) out.auth = !!body.auth;
   return out;
+}
+
+// #261 — may this check's URL be trusted with the server's own API_TOKEN?
+// The token only ever goes to the project's OWN application (its site_url
+// origin) or to a loopback / compose-internal host. Anything else — a check
+// someone pointed at a third-party URL — runs unauthenticated instead, so an
+// authenticated check can never become a token exfiltration channel.
+const INTERNAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', 'server', 'web']);
+
+export function authAllowedFor(url, project) {
+  let target;
+  try { target = new URL(url); } catch { return false; }
+  if (INTERNAL_HOSTS.has(target.hostname)) return true;
+  try {
+    const site = new URL(String(project?.site_url || ''));
+    return site.origin === target.origin;
+  } catch { return false; }
 }
 
 // POST /  -> create { name, url, method?, expect_status?, req_body?,
@@ -65,10 +83,11 @@ checks.post('/', async (req, res) => {
   if (f.method === null) return res.status(400).json({ error: `Method must be one of ${METHODS.join(', ')}.` });
 
   const { rows } = await q(
-    `INSERT INTO checks (project_id, name, url, method, expect_status, req_body, contains, json_path, json_expect, semantic)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+    `INSERT INTO checks (project_id, name, url, method, expect_status, req_body, contains, json_path, json_expect, semantic, auth)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
     [req.project.id, f.name, f.url, f.method || 'GET', f.expect_status ?? 200,
-     f.req_body ?? null, f.contains ?? null, f.json_path ?? null, f.json_expect ?? null, f.semantic ?? null]
+     f.req_body ?? null, f.contains ?? null, f.json_path ?? null, f.json_expect ?? null, f.semantic ?? null,
+     f.auth ?? false]
   );
   res.status(201).json(checkShape(rows[0]));
 });
@@ -90,16 +109,16 @@ checks.patch('/:id', async (req, res) => {
   if (!Object.keys(f).length) return res.json(checkShape(existing));
 
   const merged = { ...existing, ...f };
-  const definitionChanged = ['url', 'method', 'expect_status', 'req_body', 'contains', 'json_path', 'json_expect', 'semantic']
+  const definitionChanged = ['url', 'method', 'expect_status', 'req_body', 'contains', 'json_path', 'json_expect', 'semantic', 'auth']
     .some((k) => (merged[k] ?? null) !== (existing[k] ?? null));
 
   const { rows: [saved] } = await q(
     `UPDATE checks SET name = $2, url = $3, method = $4, expect_status = $5, req_body = $6,
-                       contains = $7, json_path = $8, json_expect = $9, semantic = $10
+                       contains = $7, json_path = $8, json_expect = $9, semantic = $10, auth = $11
                        ${definitionChanged ? ', last_status = NULL, last_code = NULL, last_ms = NULL, last_error = NULL, last_run_at = NULL' : ''}
       WHERE id = $1 RETURNING *`,
     [id, merged.name, merged.url, merged.method, merged.expect_status, merged.req_body,
-     merged.contains, merged.json_path, merged.json_expect, merged.semantic]
+     merged.contains, merged.json_path, merged.json_expect, merged.semantic, merged.auth]
   );
   res.json(checkShape(saved));
 });
@@ -126,11 +145,19 @@ function walkPath(value, path) {
   return cur;
 }
 
-// One bounded probe. Never throws.
-async function probe(row) {
+// One bounded probe. Never throws. `project` is the owning row — it decides
+// whether an authenticated check's URL may carry the server's token (#261).
+async function probe(row, project) {
   const started = Date.now();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), RUN_TIMEOUT_MS);
+  // An authenticated check whose URL is off-origin would silently 401; say so
+  // instead, so the suite never reports a misconfiguration as a real failure.
+  if (row.auth && !authAllowedFor(row.url, project)) {
+    clearTimeout(timer);
+    return { pass: false, code: null, ms: 0,
+      error: 'authenticated check must target this project\'s own site URL' };
+  }
   try {
     const method = METHODS.includes(row.method) ? row.method : 'GET';
     const sendBody = row.req_body && method !== 'GET' && method !== 'HEAD';
@@ -138,12 +165,18 @@ async function probe(row) {
     if (sendBody) {
       try { JSON.parse(row.req_body); contentType = 'application/json'; } catch { /* plain text */ }
     }
+    // An authenticated check (#261) carries the server's own API_TOKEN, but only
+    // to the project's own origin — authAllowedFor is the gate. `redirect:
+    // 'manual'` for these: following a redirect off-origin would replay the
+    // Authorization header at whatever host the redirect names.
+    const authed = !!row.auth && !!process.env.API_TOKEN && authAllowedFor(row.url, project);
     const res = await fetch(row.url, {
       method,
-      redirect: 'follow',
+      redirect: authed ? 'manual' : 'follow',
       signal: ctrl.signal,
       headers: {
         'user-agent': 'stack-checks/1.0',
+        ...(authed ? { authorization: `Bearer ${process.env.API_TOKEN}` } : {}),
         ...(sendBody ? { 'content-type': contentType } : {}),
       },
       ...(sendBody ? { body: row.req_body } : {}),
@@ -228,7 +261,7 @@ checks.post('/run', async (req, res) => {
 
   const started = Date.now();
   const updated = await Promise.all(rows.map(async (row) => {
-    const r = await probe(row);
+    const r = await probe(row, req.project);
     const { rows: [saved] } = await q(
       `UPDATE checks SET last_status = $2, last_code = $3, last_ms = $4,
                          last_error = $5, last_run_at = now()

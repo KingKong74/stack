@@ -8,14 +8,16 @@ const METHODS: CheckMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']
 type Draft = {
   method: CheckMethod; name: string; url: string; expect: string;
   reqBody: string; contains: string; jsonPath: string; jsonExpect: string; semantic: string;
+  auth: boolean;
 };
 const EMPTY_DRAFT: Draft = {
   method: 'GET', name: '', url: '', expect: '200',
-  reqBody: '', contains: '', jsonPath: '', jsonExpect: '', semantic: '',
+  reqBody: '', contains: '', jsonPath: '', jsonExpect: '', semantic: '', auth: false,
 };
 const toDraft = (c: Check): Draft => ({
   method: c.method, name: c.name, url: c.url, expect: String(c.expectStatus),
   reqBody: c.reqBody, contains: c.contains, jsonPath: c.jsonPath, jsonExpect: c.jsonExpect, semantic: c.semantic,
+  auth: c.auth,
 });
 
 // Derive which assertion tab is active from a populated draft (for edit open-with state).
@@ -161,7 +163,7 @@ function TestsPanel({
       expect_status: Number(d.expect) || 200,
       req_body: d.reqBody.trim(), contains: d.contains.trim(),
       json_path: d.jsonPath.trim(), json_expect: d.jsonExpect.trim(),
-      semantic: d.semantic.trim(),
+      semantic: d.semantic.trim(), auth: d.auth,
     };
     if (editingId !== null) onEdit(editingId, input); else onAdd(input);
     close();
@@ -267,7 +269,20 @@ function TestsPanel({
             )}
           </div>
 
-          <div className="check-composer-row" style={{ justifyContent: 'flex-end' }}>
+          <div className="check-composer-row check-auth-row">
+            {/* #261 — authenticated checks. The token lives on the server and only
+                ever goes to this project's own origin, so say exactly that. */}
+            <label className="check-auth" title={siteUrl
+              ? `Sends the app's own token. Only works against ${siteUrl} — the server refuses any other host.`
+              : "Sends the app's own token. Needs the project's site URL set."}>
+              <input type="checkbox" checked={d.auth}
+                onChange={(e) => set({ auth: e.target.checked })} />
+              <span>Authenticated</span>
+              <span className="check-auth-hint">
+                signed with the app&rsquo;s own token — this project&rsquo;s origin only
+              </span>
+            </label>
+            <span className="grow" />
             <button className="btn-submit sm" onClick={save}>{editingId !== null ? 'Save' : 'Add'}</button>
             <button className="btn-cancel sm" onClick={close}>Cancel</button>
           </div>
@@ -280,6 +295,11 @@ function TestsPanel({
             <div className={`check-row ${c.lastStatus}`} key={c.id}>
               <span className={`check-dot ${c.lastStatus || 'never'}`} />
               <span className={`check-method ${c.method === 'GET' ? '' : 'fn'}`}>{c.method}</span>
+              {c.auth && (
+                <span className="check-authed" title="Runs with the app's own token — this project's origin only">
+                  🔒
+                </span>
+              )}
               <span className="check-name">{c.name}</span>
               <span className="check-url">{c.url}</span>
               {c.contains && <span className="check-contains" title="Body must contain this text">"{c.contains}"</span>}

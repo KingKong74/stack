@@ -148,6 +148,7 @@ export interface Check {
   jsonPath: string;    // dot-path assertion into a JSON response ('' = none)
   jsonExpect: string;  // expected value at that path ('' = just exist)
   semantic: string;    // plain-language expectation, judged by Gemini on run
+  auth: boolean;       // #261 — run with the app's own token (same-origin only)
   lastStatus: '' | 'pass' | 'fail';
   lastCode: number | null;
   lastMs: number | null;

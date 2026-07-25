@@ -966,6 +966,7 @@ const checksBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/chec
 export interface CheckInput {
   name: string; url: string; method?: string; expect_status?: number;
   req_body?: string; contains?: string; json_path?: string; json_expect?: string; semantic?: string;
+  auth?: boolean;      // #261 — the server attaches its own bearer token (same-origin URLs only)
 }
 
 export async function getChecks(slug: string): Promise<Check[]> {
