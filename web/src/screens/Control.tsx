@@ -402,7 +402,7 @@ export function ControlPanel() {
           <>
             {/* ---- 14a: the shell — rooms behind one live strip + rail ---- */}
             <div className="mc14-tabs" role="tablist" aria-label="Mission Control rooms">
-              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', 0], ['build', 'Build', 0]] as const).map(([key, label, n]) => (
+              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0], ['build', 'Build', 0]] as const).map(([key, label, n]) => (
                 <button key={key} role="tab" aria-selected={room === key}
                   className={`mc14-tab ${room === key ? 'on' : ''}`} onClick={() => setRoom(key)}>
                   {label}{n > 0 && <span className="n">{n}</span>}
@@ -925,7 +925,10 @@ export function ControlPanel() {
                   <NightsRoom data={data} onOpenPlanner={(row) => setPlanner({ row })} onRunNow={runNowSlug}
                     onToggleSchedule={toggleSchedule} onRemoveSchedule={removeSchedule} />
                 )}
-                {room === 'plan' && pickSlug && <PlanRoom data={data} pickSlug={pickSlug} onPick={setPickSlug} />}
+                {room === 'plan' && pickSlug && (
+                  <PlanRoom data={data} pickSlug={pickSlug} onPick={setPickSlug}
+                    onSetMaxItems={(n) => void setAutopilot({ autopilotMaxItems: n })} />
+                )}
                 {room === 'build' && pickSlug && (
                   <BuildRoom data={data} pickSlug={pickSlug} onPick={setPickSlug} onGoNow={() => setRoom('now')} />
                 )}

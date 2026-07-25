@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  getProjectDetail, type ProjectDetailData, type ControlData, type AutopilotSchedule,
+  getProjectDetail, patchRoadmapItem, deleteRoadmapItem, cleanupRoadmap,
+  type ProjectDetailData, type ControlData, type AutopilotSchedule, type RoadmapCleanupSuggestion,
 } from '../store';
 import { go } from '../lib/route';
-import type { RoadmapItem } from '../types';
+import type { RoadmapItem, Priority } from '../types';
 
 // The Nights / Plan / Build rooms of Mission Control (Stack Planning design,
 // turn 14a). Each room is a different lens on data the shell already holds —
@@ -305,134 +306,406 @@ export function NightsRoom({ data, onOpenPlanner, onRunNow, onToggleSchedule, on
 }
 
 // ---------------------------------------------------------------------------
-// Plan — the hierarchy (12b inside 14a): north star → areas → items, beside
-// tonight's actual pick order and the honest reasons the rest won't be picked.
-// Mirrors the runner's eligibility rule; computed client-side, no API.
+// Plan — the ordered schedule with the inbox beside it (16a = 15a + 15b).
+// Order IS the plan: the list is the runner's actual queue (board order,
+// musts first), each row wearing the night it lands on under the real
+// capacity (Settings' items/night). Reorder with the handles — moving across
+// the must/should boundary re-buckets the moved item — and Save writes it
+// back through the normal position/bucket PATCH. The inbox holds what the
+// sessions found (hook-extracted items awaiting review) and what Claude
+// proposes (✧ the board's cleanup pass); accepting visibly moves the dates,
+// and every accept is one undo away. Dismissing a found item tombstones it.
 // ---------------------------------------------------------------------------
 
-const pickable = (it: RoadmapItem, area: string) =>
+const DAY_MS = 86400000;
+
+// Mirrors the runner's pick rule (open, unclaimed, not parked, approved,
+// inside the target area) — the schedule holds exactly what it would work.
+const schedulable = (it: RoadmapItem, area: string) =>
   !it.done && !it.skipped && !it.claimedBy
+  && (it.bucket === 'must' || it.bucket === 'should')
   && (it.source === 'manual' || it.reviewed)
   && (!area || (it.area || '') === area);
 
-const whyNot = (it: RoadmapItem, area: string): string => {
-  if (it.claimedBy) return `claimed by ${it.claimedBy}`;
-  if (it.skipped) return 'parked — skipped stays off the autopilot’s plate';
-  if (it.source === 'hook' && !it.reviewed) return 'auto-extracted and not yet approved in the review inbox';
-  if (area && (it.area || '') !== area) return `outside the target area (${area})`;
-  return 'behind the items above in board order';
+const heldWhy = (it: RoadmapItem, area: string): string => {
+  if (it.claimedBy) return `⚑ ${it.claimedBy}`;
+  if (it.skipped) return 'parked';
+  if (it.source === 'hook' && !it.reviewed) return 'in the inbox →';
+  if (area && (it.area || '') !== area) return `outside ${area}`;
+  return 'below the line';
 };
 
-export function PlanRoom({ data, pickSlug, onPick }: {
+const nightDate = (night: number) => new Date(Date.now() + night * DAY_MS);
+const nightLabel = (night: number) => {
+  if (night === 0) return 'tonight';
+  if (night === 1) return 'tomorrow';
+  const d = nightDate(night);
+  return night < 7
+    ? `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()]} ${d.getDate()}`
+    : `≈ ${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
+};
+
+type PlanProposal =
+  | { key: string; kind: 'found'; it: RoadmapItem }
+  | { key: string; kind: 'cleanup'; s: RoadmapCleanupSuggestion };
+type Settled = { note: string; undo?: () => void };
+
+export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems }: {
   data: ControlData; pickSlug: string; onPick: (slug: string) => void;
+  onSetMaxItems: (n: number) => void;
 }) {
   const { detail, err } = useProjectDetail(pickSlug);
-  const [pathOnly, setPathOnly] = useState(false);
+  const [items, setItems] = useState<RoadmapItem[] | null>(null);
+  const [order, setOrder] = useState<number[] | null>(null); // dirty overlay; null = saved order
+  // Unsaved cross-boundary moves: the moved item's pending bucket. A separate
+  // overlay (not a mutation of items) so revert is exact.
+  const [flips, setFlips] = useState<Map<number, Priority>>(new Map());
+  const [saving, setSaving] = useState(false);
+  const [banner, setBanner] = useState<Settled | null>(null);
+  const [settled, setSettled] = useState<Map<string, Settled>>(new Map());
+  const [dropped, setDropped] = useState<Set<string>>(new Set());
+  const [cleanups, setCleanups] = useState<RoadmapCleanupSuggestion[] | null>(null);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [roomErr, setRoomErr] = useState('');
+
+  // Local working copy of the roadmap — mutations land here AND via PATCH;
+  // switching projects resets everything, including the one-step undo.
+  useEffect(() => {
+    if (detail) {
+      setItems([...detail.roadmap.must, ...detail.roadmap.should, ...detail.roadmap.could, ...detail.roadmap.wont]);
+      setOrder(null); setFlips(new Map()); setBanner(null); setSettled(new Map()); setDropped(new Set());
+      setCleanups(null); setRoomErr('');
+    }
+  }, [detail]);
+
   const proj = data.projects.find((p) => p.slug === pickSlug);
   const area = proj?.autopilotArea || '';
+  const cap = Math.max(1, data.autopilot.maxItems);
 
   if (err) return <div className="mc14-empty">{err}</div>;
-  if (!detail) return <div className="mc14-empty">Loading the plan…</div>;
+  if (!detail || !items) return <div className="mc14-empty">Loading the plan…</div>;
 
-  const { roadmap, northStar } = detail;
-  const open = [...roadmap.must, ...roadmap.should, ...roadmap.could].filter((it) => !it.done);
-  const done = [...roadmap.must, ...roadmap.should, ...roadmap.could].filter((it) => it.done);
-  const queue = [...roadmap.must.filter((it) => pickable(it, area)), ...roadmap.should.filter((it) => pickable(it, area))]
-    .slice(0, Math.max(data.autopilot.maxItems, 3));
-  const queueIds = new Set(queue.map((it) => it.id));
-  const excluded = [...roadmap.must, ...roadmap.should]
-    .filter((it) => !it.done && !queueIds.has(it.id) && !pickable(it, area))
-    .slice(0, 6);
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const bucketOf = (it: RoadmapItem) => flips.get(it.id) ?? it.bucket;
+  // The saved order: musts in board order, then shoulds — the runner's queue.
+  const savedOrder = [
+    ...items.filter((it) => schedulable(it, area) && it.bucket === 'must'),
+    ...items.filter((it) => schedulable(it, area) && it.bucket === 'should'),
+  ].map((it) => it.id);
+  // The dirty overlay survives item churn: keep known ids, append newcomers.
+  const cur = order
+    ? [...order.filter((id) => savedOrder.includes(id)), ...savedOrder.filter((id) => !order.includes(id))]
+    : savedOrder;
+  const dirty = flips.size > 0 || (order !== null && cur.join(',') !== savedOrder.join(','));
 
-  const shown = pathOnly ? open.filter((it) => queueIds.has(it.id)) : [...open, ...done];
-  const areas = [...new Set(shown.map((it) => it.area || ''))]
-    .sort((a, b) => (a === '' ? 1 : 0) - (b === '' ? 1 : 0) || a.localeCompare(b));
+  const held = items
+    .filter((it) => !it.done && !schedulable(it, area)
+      && !(it.source === 'hook' && !it.reviewed && (it.bucket === 'must' || it.bucket === 'should')))
+    .slice(0, 8);
 
-  const chip = (it: RoadmapItem) => {
-    if (it.done) return { cls: 'done', t: '✓ done' };
-    if (it.claimedBy) return { cls: 'lane', t: `⚑ ${it.claimedBy}` };
-    if (it.refineNote) return { cls: 'refine', t: '↻ refine' };
-    if (it.skipped) return { cls: 'parked', t: '⏭ parked' };
-    if (it.plan.length) return { cls: 'plan', t: `☰ ${it.plan.filter((s) => s.done).length}/${it.plan.length}` };
-    return null;
+  // Projection: night k = today+k, cap items a night. Milestone = the night
+  // the last must (and the last item) lands. Deltas compare against the
+  // saved order while a reorder is unsaved.
+  const nightOf = (idx: number) => Math.floor(idx / cap);
+  const lastNight = (ids: number[], pred: (it: RoadmapItem) => boolean) => {
+    let last = -1;
+    ids.forEach((id, i) => { const it = byId.get(id); if (it && pred(it)) last = i; });
+    return last < 0 ? null : nightOf(last);
   };
+  const milestone = (name: string, pred: (it: RoadmapItem) => boolean) => {
+    const now = lastNight(cur, pred);
+    const was = lastNight(savedOrder, pred);
+    return {
+      name,
+      date: now === null ? '—' : nightLabel(now),
+      delta: dirty && was !== null && now !== null && now !== was
+        ? `${now < was ? '▲' : '▼'} ${Math.abs(now - was)} night${Math.abs(now - was) === 1 ? '' : 's'} ${now < was ? 'earlier' : 'later'}`
+        : '',
+      earlier: now !== null && was !== null && now < was,
+    };
+  };
+  const milestones = [
+    milestone('musts land', (it) => bucketOf(it) === 'must'),
+    milestone('the board clears', () => true),
+  ];
+
+  // ▲▼ move one slot; crossing the must/should boundary re-buckets the moved
+  // item (it takes its swap partner's bucket) so the shown order stays the
+  // truth about what runs first.
+  const move = (idx: number, dir: -1 | 1) => {
+    const j = idx + dir;
+    if (j < 0 || j >= cur.length) return;
+    const next = [...cur];
+    [next[idx], next[j]] = [next[j], next[idx]];
+    const moved = byId.get(cur[idx]);
+    const partner = byId.get(cur[j]);
+    if (moved && partner && bucketOf(moved) !== bucketOf(partner)) {
+      const target = bucketOf(partner);
+      setFlips((m) => {
+        const n = new Map(m);
+        if (moved.bucket === target) n.delete(moved.id); else n.set(moved.id, target);
+        return n;
+      });
+    }
+    setOrder(next);
+  };
+
+  const saveOrder = async () => {
+    if (saving) return;
+    setSaving(true); setRoomErr('');
+    try {
+      // Renumber per bucket in the shown order — the same PATCH the board's
+      // drag-reorder uses; bucket rides along where a move re-bucketed.
+      const updated = await Promise.all(cur.map((id, i) => {
+        const flip = flips.get(id);
+        return patchRoadmapItem(pickSlug, id, { position: i, ...(flip ? { bucket: flip } : {}) });
+      }));
+      setItems((prev) => prev && prev.map((it) => updated.find((u) => u.id === it.id) ?? it));
+      setOrder(null); setFlips(new Map());
+      detailCache.delete(pickSlug);
+      setBanner({ note: `Order saved — ${milestones[0].date === '—' ? 'the schedule' : `musts land ${milestones[0].date}`}.` });
+    } catch (e) {
+      setRoomErr((e as Error)?.message || 'Could not save the order.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ---- the inbox ----
+  const found = items.filter((it) => it.source === 'hook' && !it.reviewed && !it.done);
+  const proposals: PlanProposal[] = [
+    ...found.map((it) => ({ key: `f${it.id}`, kind: 'found' as const, it })),
+    ...(cleanups ?? [])
+      .filter((s) => s.title || s.bucket || s.area)
+      .map((s, i) => ({ key: `c${s.id}·${i}`, kind: 'cleanup' as const, s })),
+  ].filter((p) => !dropped.has(p.key));
+  const pendingCount = proposals.filter((p) => !settled.has(p.key)).length;
+
+  const apply = async (key: string, patch: Parameters<typeof patchRoadmapItem>[2], id: number, note: string, undoPatch?: Parameters<typeof patchRoadmapItem>[2]) => {
+    setRoomErr('');
+    try {
+      const upd = await patchRoadmapItem(pickSlug, id, patch);
+      setItems((prev) => prev && prev.map((it) => (it.id === id ? upd : it)));
+      detailCache.delete(pickSlug);
+      const undo = undoPatch ? () => {
+        void patchRoadmapItem(pickSlug, id, undoPatch).then((back) => {
+          setItems((prev) => prev && prev.map((it) => (it.id === id ? back : it)));
+          setSettled((m) => { const n = new Map(m); n.delete(key); return n; });
+          setBanner(null);
+          detailCache.delete(pickSlug);
+        }).catch((e) => setRoomErr((e as Error)?.message || 'Could not undo.'));
+      } : undefined;
+      setSettled((m) => new Map(m).set(key, { note, undo }));
+      setBanner({ note, undo });
+    } catch (e) {
+      setRoomErr((e as Error)?.message || 'That didn’t land.');
+    }
+  };
+
+  const acceptFound = (p: Extract<PlanProposal, { kind: 'found' }>) => {
+    // The milestone header re-projects the moment items updates — that IS the
+    // "watch the dates move" moment, so the banner just names the change.
+    void apply(p.key, { reviewed: true }, p.it.id,
+      `Accepted #${p.it.id} into the schedule as a ${p.it.bucket}.`,
+      { reviewed: false });
+  };
+  const dismissFound = async (p: Extract<PlanProposal, { kind: 'found' }>) => {
+    setRoomErr('');
+    try {
+      await deleteRoadmapItem(pickSlug, p.it.id);
+      setItems((prev) => prev && prev.filter((it) => it.id !== p.it.id));
+      detailCache.delete(pickSlug);
+      setSettled((m) => new Map(m).set(p.key, { note: 'dismissed — tombstoned, the next push won’t re-create it' }));
+    } catch (e) {
+      setRoomErr((e as Error)?.message || 'Could not dismiss it.');
+    }
+  };
+  const acceptCleanup = (p: Extract<PlanProposal, { kind: 'cleanup' }>) => {
+    const old = byId.get(p.s.id);
+    if (!old) return;
+    const patch: Parameters<typeof patchRoadmapItem>[2] = {};
+    const back: Parameters<typeof patchRoadmapItem>[2] = {};
+    if (p.s.title) { patch.title = p.s.title; back.title = old.title; }
+    if (p.s.bucket) { patch.bucket = p.s.bucket; back.bucket = old.bucket; }
+    if (p.s.area !== undefined) { patch.area = p.s.area; back.area = old.area; }
+    void apply(p.key, patch, p.s.id,
+      `Applied to #${p.s.id}${p.s.bucket ? ` — moved to ${p.s.bucket}` : p.s.title ? ' — retitled' : ' — area set'}.`, back);
+  };
+  const askForProposals = async () => {
+    if (cleanupBusy) return;
+    setCleanupBusy(true); setRoomErr('');
+    try {
+      setCleanups(await cleanupRoadmap(pickSlug));
+    } catch (e) {
+      setRoomErr((e as Error)?.message || 'Gemini call failed — cleanup proposals unavailable.');
+    } finally {
+      setCleanupBusy(false);
+    }
+  };
+  const acceptAllSafe = () => {
+    for (const p of proposals) {
+      if (settled.has(p.key)) continue;
+      if (p.kind === 'found') acceptFound(p); else acceptCleanup(p);
+    }
+  };
+
+  const kindChip = (p: PlanProposal) =>
+    p.kind === 'found' ? 'FOUND'
+    : p.s.bucket ? 'MOVE' : p.s.title ? 'RETITLE' : 'AREA';
 
   return (
     <div className="mc14-plan">
       <ProjectPicker data={data} pickSlug={pickSlug} onPick={onPick} />
-      <div className="mc14-plan-cols">
-        <div className="mc14-tree">
+
+      {/* header: projected milestones · capacity · save/revert (16a) */}
+      <div className="mc16-head">
+        {milestones.map((m) => (
+          <div className="mc16-ms" key={m.name}>
+            <span className="nm">{m.name}</span>
+            <span className={`date ${m.date === '—' ? 'quiet' : ''}`}>{m.date}</span>
+            {m.delta && <span className={`delta ${m.earlier ? 'up' : 'down'}`}>{m.delta}</span>}
+          </div>
+        ))}
+        <div style={{ flex: 1 }} />
+        <span className="capnote">{cap}/night · nightly {data.autopilot.time}</span>
+        <div className="mc16-caps" role="tablist" aria-label="Items per night">
+          {[1, 2, 3, 5].map((n) => (
+            <button key={n} role="tab" aria-selected={data.autopilot.maxItems === n}
+              className={`mc16-cap ${data.autopilot.maxItems === n ? 'on' : ''}`}
+              onClick={() => onSetMaxItems(n)}>{n}</button>
+          ))}
+        </div>
+        {dirty && <button className="mc16-revert" onClick={() => { setOrder(null); setFlips(new Map()); }}>revert</button>}
+        <button className={`mc16-save ${dirty ? 'on' : ''}`} disabled={!dirty || saving} onClick={() => void saveOrder()}>
+          {saving ? 'Saving…' : dirty ? 'Save order' : 'Order saved'}
+        </button>
+      </div>
+
+      {roomErr && <div className="action-error">{roomErr}</div>}
+      {banner && (
+        <div className="mc16-banner">
+          <span className="cap">JUST CHANGED</span>
+          <span className="t">{banner.note}</span>
+          {banner.undo && <button onClick={() => banner.undo!()}>undo</button>}
+        </div>
+      )}
+
+      <div className="mc16-cols">
+        <div className="mc16-sched">
           <div className="mc14-room-head">
-            <span className="title">{detail.project.name} · plan tree</span>
-            <span className="meta">
-              {roadmap.must.filter((i) => !i.done).length} must · {roadmap.should.filter((i) => !i.done).length} should · {done.length} done
-            </span>
-            <div style={{ flex: 1 }} />
-            <button className={`mc14-only ${pathOnly ? 'on' : ''}`} onClick={() => setPathOnly((v) => !v)}>
-              {pathOnly ? "tonight's path" : 'everything'}
-            </button>
+            <span className="cap-sm">TONIGHT AND AFTER</span>
+            <span className="hair" />
+            <span className="meta">order is the plan — the list is the run queue</span>
           </div>
-          <div className="mc14-star">
-            <span className="cap">NORTH STAR</span>
-            {northStar
-              ? <div className="txt">{northStar}</div>
-              : <button className="txt quiet" onClick={() => go.detail(pickSlug, 'futures')}>No north star yet — set one on the Polaris tab and every verdict gets a bearing.</button>}
-          </div>
-          {areas.map((a) => {
-            const items = shown.filter((it) => (it.area || '') === a);
-            if (!items.length) return null;
+          {cur.map((id, idx) => {
+            const it = byId.get(id)!;
+            const night = nightOf(idx);
+            const showBreak = idx === 0 || nightOf(idx - 1) !== night;
             return (
-              <div key={a || '__none'} className="mc14-branch">
-                <div className="mc14-node epic">
-                  <span className="nm">{a || 'no area'}</span>
-                  <span className="meta">{items.filter((i) => !i.done).length} open</span>
+              <div key={id}>
+                {showBreak && (
+                  <div className="mc16-break">
+                    <span className={night === 0 ? 'tonight' : ''}>{nightLabel(night).toUpperCase()}</span>
+                    <span className="hair" />
+                  </div>
+                )}
+                <div className={`mc16-row ${night === 0 ? 'tonight' : ''}`}>
+                  <span className="grip">⠿</span>
+                  <span className="n">{idx + 1}</span>
+                  <button className="body" onClick={() => go.detail(pickSlug, 'roadmap', String(id))}>
+                    <span className="t">{it.title}</span>
+                    <span className="p">{it.area || 'board'} · {bucketOf(it)}{it.plan.length ? ` · ☰ ${it.plan.filter((s) => s.done).length}/${it.plan.length}` : ''}</span>
+                  </button>
+                  {flips.has(id) && <span className="flag move">→ {flips.get(id)}</span>}
+                  {it.refineNote && <span className="flag refine">↻ refine</span>}
+                  {it.risk === 'low' && <span className="flag low">auto-merge</span>}
+                  <span className={`when ${night === 0 ? 'tonight' : ''}`}>{nightLabel(night)}</span>
+                  <span className="arrows">
+                    <button onClick={() => move(idx, -1)} aria-label="Move up">▲</button>
+                    <button onClick={() => move(idx, 1)} aria-label="Move down">▼</button>
+                  </span>
                 </div>
-                {items.map((it) => {
-                  const c = chip(it);
-                  return (
-                    <button key={it.id} className={`mc14-node item ${it.done ? 'done' : ''} ${queueIds.has(it.id) ? 'picked' : ''}`}
-                      onClick={() => go.detail(pickSlug, 'roadmap', String(it.id))}>
-                      <span className="nm">#{it.id} {it.title}</span>
-                      {c && <span className={`chip ${c.cls}`}>{c.t}</span>}
-                      <span className="meta">{it.bucket}</span>
-                    </button>
-                  );
-                })}
               </div>
             );
           })}
-          {shown.length === 0 && <div className="mc14-empty">Nothing on the board{pathOnly ? "'s path tonight" : ''}.</div>}
-        </div>
-
-        <div className="mc14-plan-rail">
-          <div className="mc14-card">
-            <span className="cap">TONIGHT'S PICK ORDER</span>
-            <span className="rule">
-              Open must items in board order, then shoulds — skipping claimed, parked and unapproved hook items{area ? `, inside ${area}` : ''}. The board IS the priority list.
-            </span>
-            {queue.map((it, i) => (
-              <button key={it.id} className={`mc14-q ${i === 0 ? 'first' : ''}`}
-                onClick={() => go.detail(pickSlug, 'roadmap', String(it.id))}>
-                <span className="n">{i + 1}</span>
-                <span className="body">
-                  <span className="t">#{it.id} {it.title}</span>
-                  <span className="p">{it.area || 'board'} · {it.bucket}{it.plan.length ? ` · ☰ ${it.plan.length} steps` : ''}</span>
-                </span>
-              </button>
-            ))}
-            {queue.length === 0 && <span className="rule quiet">Nothing eligible{area ? ` in ${area}` : ''} — the night would pass this project by.</span>}
-          </div>
-          {excluded.length > 0 && (
-            <div className="mc14-card">
-              <span className="cap">WHY NOT THE REST</span>
-              {excluded.map((it) => (
-                <div key={it.id} className="mc14-whynot">
-                  <span className="x">✕</span>
-                  <span className="t"><b>#{it.id}</b> {whyNot(it, area)}</span>
-                </div>
+          {cur.length === 0 && (
+            <div className="mc14-empty">Nothing schedulable{area ? ` in ${area}` : ''} — the nights would pass this project by.</div>
+          )}
+          {held.length > 0 && (
+            <div className="mc16-held">
+              <span className="cap-sm">OUT OF THE SCHEDULE</span>
+              {held.map((it) => (
+                <button className="mc16-heldrow" key={it.id} onClick={() => go.detail(pickSlug, 'roadmap', String(it.id))}>
+                  <span className="tag">#{it.id}</span>
+                  <span className="t">{it.title}</span>
+                  <span className="why">{heldWhy(it, area)}</span>
+                </button>
               ))}
             </div>
           )}
+        </div>
+
+        {/* the inbox — what the nights found + what Claude proposes */}
+        <div className="mc16-inbox">
+          <div className="head">
+            <span className="title">Inbox</span>
+            {pendingCount > 0 && <span className="count">{pendingCount}</span>}
+            <div style={{ flex: 1 }} />
+            {pendingCount > 1 && <button className="all" onClick={acceptAllSafe}>accept all safe</button>}
+          </div>
+          <div className="scroll">
+            <span className="intro">
+              What the sessions found, and what Claude proposes. Nothing lands until you accept it;
+              accepting moves the dates on the left.
+            </span>
+            {proposals.map((p) => {
+              const done = settled.get(p.key);
+              return (
+                <div key={p.key} className={`mc16-prop ${done ? 'settled' : ''}`}>
+                  <div className="toprow">
+                    <span className={`kind ${p.kind === 'found' ? 'found' : 'clean'}`}>{kindChip(p)}</span>
+                    <div style={{ flex: 1 }} />
+                    <span className="impact">
+                      {p.kind === 'found' ? (p.it.bucket === 'must' ? 'moves the must line' : `lands as ${p.it.bucket}`) : `#${p.s.id}`}
+                    </span>
+                  </div>
+                  <span className="t">{p.kind === 'found' ? p.it.title : (p.s.title ? `“${p.s.title}”` : p.s.bucket ? `${p.s.currentTitle} → ${p.s.bucket}` : `${p.s.currentTitle} → ${p.s.area}`)}</span>
+                  <span className="why">
+                    {p.kind === 'found'
+                      ? `A session filed this as a next step${p.it.note ? ` — ${p.it.note.slice(0, 120)}` : ''}. Accept to schedule it; dismiss tombstones it.`
+                      : p.s.why}
+                  </span>
+                  <span className="src">{p.kind === 'found' ? 'auto-extracted from a push' : '✧ the board’s cleanup pass'}</span>
+                  {!done ? (
+                    <div className="acts">
+                      <button className="ok" onClick={() => (p.kind === 'found' ? acceptFound(p) : acceptCleanup(p))}>
+                        {p.kind === 'found' ? 'Accept into the schedule' : 'Apply'}
+                      </button>
+                      <button className="no" onClick={() => (p.kind === 'found' ? void dismissFound(p) : setDropped((s) => new Set(s).add(p.key)))}>
+                        Dismiss
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="done">
+                      <span>{done.note}</span>
+                      {done.undo && <button onClick={() => done.undo!()}>undo</button>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {proposals.length === 0 && (
+              <div className="mc16-prop quiet"><span className="why">Inbox clear — new pushes file their findings here.</span></div>
+            )}
+            <button className="mc16-ask" disabled={cleanupBusy} onClick={() => void askForProposals()}>
+              {cleanupBusy ? '✧ Asking…' : cleanups ? '✧ Ask again' : '✧ Ask Claude for proposals'}
+            </button>
+            <div className="rule">
+              Accepts are ordinary PATCHes — reviewed, bucket, title, area — so everything here is
+              visible on the board too. The one no-undo move is Dismiss on a found item: it tombstones
+              the fingerprint so the next push cannot re-file it.
+            </div>
+          </div>
         </div>
       </div>
     </div>

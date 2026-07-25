@@ -2616,3 +2616,95 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc14-diff { display: flex; gap: 11px; align-items: baseline; text-align: left; width: 100%; padding: 4px 2px; border-radius: 6px; }
 .mc14-diff:hover { background: var(--bg); }
 .mc14-diff .t { flex: 1; font-size: 12px; line-height: 1.55; color: var(--ink); }
+
+/* ---- Plan room 16a: the ordered schedule + the inbox ---- */
+.mc16-head { display: flex; align-items: center; gap: 18px; padding: 11px 15px; border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); flex-wrap: wrap; }
+.mc16-ms { display: flex; align-items: baseline; gap: 8px; }
+.mc16-ms .nm { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.mc16-ms .date { font-family: var(--disp); font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.mc16-ms .date.quiet { color: var(--paused); }
+.mc16-ms .delta { font-family: var(--mono); font-size: 10px; white-space: nowrap; }
+.mc16-ms .delta.up { color: var(--live); }
+.mc16-ms .delta.down { color: var(--building); }
+.mc16-head .capnote { font-family: var(--mono); font-size: 10.5px; color: var(--paused); white-space: nowrap; }
+.mc16-caps { display: flex; gap: 4px; }
+.mc16-cap { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line-3); font-size: 10.5px; font-weight: 500; color: var(--muted); }
+.mc16-cap:hover { border-color: var(--accent); }
+.mc16-cap.on { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-deep); }
+.mc16-revert { font-family: var(--mono); font-size: 10.5px; color: var(--paused); }
+.mc16-revert:hover { color: var(--ink); }
+.mc16-save { padding: 5px 13px; border-radius: 6px; border: 1px solid var(--line-3); background: var(--card); font-size: 11px; font-weight: 500; color: var(--paused); }
+.mc16-save.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.mc16-save.on:hover { background: var(--accent-deep); }
+.mc16-banner { display: flex; align-items: center; gap: 11px; padding: 9px 15px; border-radius: 9px; border: 1px solid var(--accent-tint-border); background: var(--accent-tint); }
+.mc16-banner .cap { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; color: var(--accent-deep); }
+.mc16-banner .t { flex: 1; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--ink); }
+.mc16-banner button { font-family: var(--mono); font-size: 10.5px; color: var(--accent-deep); }
+.mc16-banner button:hover { color: var(--accent); }
+
+.mc16-cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+@media (max-width: 950px) { .mc16-cols { grid-template-columns: 1fr; } }
+.mc16-sched { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mc16-sched .cap-sm, .mc16-held .cap-sm { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.1em; color: var(--faint); }
+.mc16-sched .mc14-room-head .hair { flex: 1; height: 1px; background: var(--line-2); }
+.mc16-break { display: flex; align-items: center; gap: 10px; padding: 12px 4px 5px; }
+.mc16-break span:first-child { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.08em; color: var(--paused); }
+.mc16-break span.tonight { color: var(--accent-deep); }
+.mc16-break .hair { flex: 1; height: 1px; background: var(--line-2); }
+.mc16-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--card); }
+.mc16-row.tonight { border-color: var(--accent-tint-border); }
+.mc16-row .grip { font-family: var(--mono); font-size: 11px; color: var(--fainter); cursor: grab; }
+.mc16-row .n { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--paused); width: 18px; flex: none; }
+.mc16-row.tonight .n { color: var(--accent-deep); }
+.mc16-row .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.mc16-row .t { font-size: 12.5px; line-height: 1.4; color: var(--ink); }
+.mc16-row .body:hover .t { color: var(--accent-deep); }
+.mc16-row .p { font-family: var(--mono); font-size: 9.5px; color: var(--paused); }
+.mc16-row .flag { padding: 2px 8px; border-radius: 5px; font-family: var(--mono); font-size: 9.5px; font-weight: 500; white-space: nowrap; }
+.mc16-row .flag.refine { background: var(--building-tint); color: var(--building); }
+.mc16-row .flag.low { background: var(--green-tint); color: var(--live); }
+.mc16-row .flag.move { background: var(--accent-tint); color: var(--accent-deep); }
+.mc16-row .when { font-family: var(--mono); font-size: 10px; color: var(--paused); width: 84px; text-align: right; white-space: nowrap; }
+.mc16-row .when.tonight { color: var(--accent-deep); }
+.mc16-row .arrows { display: flex; flex-direction: column; gap: 2px; }
+.mc16-row .arrows button { font-family: var(--mono); font-size: 8px; line-height: 1; color: var(--paused); padding: 1px 2px; }
+.mc16-row .arrows button:hover { color: var(--accent); }
+.mc16-held { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.mc16-heldrow { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 9px; border: 1px dashed var(--keyline); text-align: left; }
+.mc16-heldrow:hover { border-color: var(--accent); }
+.mc16-heldrow .tag { font-family: var(--mono); font-size: 10px; color: var(--paused); width: 40px; flex: none; }
+.mc16-heldrow .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
+.mc16-heldrow .why { font-family: var(--mono); font-size: 10px; color: var(--paused); white-space: nowrap; }
+
+.mc16-inbox { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); display: flex; flex-direction: column; overflow: hidden; }
+.mc16-inbox .head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); }
+.mc16-inbox .head .title { font-family: var(--disp); font-size: 13px; font-weight: 600; color: var(--ink); }
+.mc16-inbox .head .count { padding: 2px 8px; border-radius: 20px; background: var(--accent-tint); color: var(--accent-deep); font-family: var(--mono); font-size: 10px; font-weight: 500; }
+.mc16-inbox .head .all { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.mc16-inbox .head .all:hover { color: var(--accent); }
+.mc16-inbox .scroll { max-height: 640px; overflow-y: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 9px; }
+.mc16-inbox .intro { font-size: 11px; line-height: 1.6; color: var(--muted); }
+.mc16-prop { border-radius: 10px; border: 1px solid var(--line-2); background: var(--bg); padding: 12px 13px; display: flex; flex-direction: column; gap: 7px; }
+.mc16-prop.settled { opacity: 0.72; }
+.mc16-prop.quiet { border-style: dashed; background: transparent; }
+.mc16-prop .toprow { display: flex; align-items: center; gap: 8px; }
+.mc16-prop .kind { padding: 2px 8px; border-radius: 5px; font-family: var(--mono); font-size: 9.5px; font-weight: 500; }
+.mc16-prop .kind.found { background: var(--accent-tint); color: var(--accent-deep); }
+.mc16-prop .kind.clean { background: var(--building-tint); color: var(--building); }
+.mc16-prop .impact { font-family: var(--mono); font-size: 9.5px; color: var(--paused); }
+.mc16-prop .t { font-size: 12.5px; font-weight: 500; line-height: 1.4; color: var(--ink); }
+.mc16-prop .why { font-size: 11px; line-height: 1.55; color: var(--muted); }
+.mc16-prop .src { font-family: var(--mono); font-size: 9.5px; color: var(--paused); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc16-prop .acts { display: flex; gap: 7px; }
+.mc16-prop .ok { padding: 6px 12px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 500; }
+.mc16-prop .ok:hover { background: var(--accent-deep); }
+.mc16-prop .no { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line-3); color: var(--muted); font-size: 11px; font-weight: 500; }
+.mc16-prop .no:hover { border-color: var(--critical); color: var(--critical); }
+.mc16-prop .done { display: flex; align-items: center; gap: 9px; }
+.mc16-prop .done span { flex: 1; font-family: var(--mono); font-size: 10.5px; line-height: 1.5; color: var(--sage); }
+.mc16-prop .done button { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.mc16-prop .done button:hover { color: var(--ink); }
+.mc16-ask { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line-3); font-size: 11.5px; font-weight: 500; color: var(--ink); }
+.mc16-ask:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-deep); }
+.mc16-ask:disabled { opacity: 0.6; }
+.mc16-inbox .rule { padding: 11px 12px; border-radius: 9px; border: 1px dashed var(--keyline); font-size: 10.5px; line-height: 1.6; color: var(--paused); }

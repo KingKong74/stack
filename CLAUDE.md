@@ -263,11 +263,24 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   limit, coloured, with tokens; `recentRuns` now carries a UTC `day` for the placement),
   future cells their bookings (schedule rows + the armed nightly) — with a legend, a per-day
   load strip, a click-open night detail card (runs → Reviews; bookings → ✎ the SessionPlanModal;
-  ▶ Run now) and the standing schedule list (the editing surface) below. **Plan** is 12b on real
-  data: a project picker, the north-star card, the area→item tree (chips: ✓/⚑/↻/☰/⏭; "tonight's
-  path" filter) beside TONIGHT'S PICK ORDER (mirrors the runner's eligibility client-side — the
-  board IS the priority list) and WHY NOT THE REST (honest per-item reasons: claimed / parked /
-  unapproved hook item / outside the target area). **Build** is 12c grounded in Stack's real
+  ▶ Run now) and the standing schedule list (the editing surface) below. **Plan** is 16a (the
+  design's 15a+15b, superseding the 12b tree): the **ordered schedule with the inbox beside
+  it**. TONIGHT AND AFTER lists exactly what the runner would work, in its real order (musts
+  then shoulds, board order, eligibility mirrored client-side), broken into nights by the real
+  capacity — Settings' items/night, editable in the header seg — each row wearing the night it
+  lands on; the header projects the milestones ("musts land Wed 30", "the board clears …") with
+  ▲/▼ deltas while a reorder is unsaved. ⠿/▲▼ reorder is a dirty overlay (revert = exact);
+  moving across the must/should boundary re-buckets the MOVED item (shown as a → flag); Save
+  order renumbers positions (+ flipped buckets) through the normal PATCH — the same write the
+  board's drag makes, because the board IS the run queue. Ineligible open items sit under OUT
+  OF THE SCHEDULE with the honest why (⚑ lane / parked / outside area / below the line). The
+  **Inbox** holds what the sessions found — hook-extracted unreviewed items as FOUND cards
+  (Accept = `{reviewed:true}`, one-step undo; Dismiss = the tombstoning DELETE, labelled as
+  such, no undo) — and what Claude proposes: ✧ Ask for proposals runs the board's cleanup
+  route and lists MOVE/RETITLE/AREA cards (Apply = the delta PATCH, undo = the reverse PATCH,
+  old values kept client-side); "accept all safe" sweeps the pending accepts. Every accept
+  updates the schedule + milestones in place and lands in the JUST CHANGED banner with its
+  undo. The Plan tab wears the picked project's review count as its badge. **Build** is 12c grounded in Stack's real
   gates: every roadmap item carrying #75 plan steps as a phase card (building / queued /
   awaiting verdict / landed) with step marks, and GATE rows for the two crossings the autopilot
   never makes alone — the human verdict (→ Reviews) and the merge (→ the merge strip) — plus
