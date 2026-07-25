@@ -36,6 +36,17 @@ const RING_TINT: Record<string, string> = {
 const Z_TICKS = [0.7, 0.85, 1, 1.2, 1.45, 1.7]; // preset dots — wheel zoom is continuous
 const Z_MIN = 0.5, Z_MAX = 2.4;
 const LOOSE = 'loose'; // theme key for ideas with no area tag
+const TL_TICKS = 6;    // scrub points along the sky's history (design 6b/7a)
+
+// Short relative label for the scrub ticks ("3w ago" … "now").
+function ago(ms: number): string {
+  const d = Math.round(ms / 86400000);
+  if (d < 1) return 'today';
+  if (d < 7) return `${d}d ago`;
+  if (d < 60) return `${Math.round(d / 7)}w ago`;
+  if (d < 365) return `${Math.round(d / 30)}mo ago`;
+  return `${(d / 365).toFixed(1)}y ago`;
+}
 
 type Theme = { key: string; label: string; a0: number; span: number; items: Future[] };
 
@@ -58,7 +69,7 @@ function buildThemes(list: Future[]): Theme[] {
 
 type SkyNode = {
   f: Future; theme: string; x: number; y: number; d: number; opacity: number;
-  border: string; bw: number; bg: string; dashed: boolean; sel: boolean;
+  border: string; bw: number; bg: string; dashed: boolean; sel: boolean; fresh: boolean;
   wants: boolean; showLabel: boolean; label: string; halfW: number;
   nx: number; ny: number; ca: number; sa: number; rad: number; lx: number; ly: number;
 };
@@ -133,34 +144,72 @@ export function Futures({
   const expandAll = allIdeas || z >= 1.2;
   const labelAll = z >= 1.2;
 
+  // ---- the time scrub (design 6b/7a): the same sky over time ----
+  // Ticks are evenly spaced across the sky's real history (idea created_at);
+  // scrubbing back hides ideas that hadn't arrived yet and glows the ones
+  // born since the previous tick. View-only and session-local — the queue,
+  // list and composer keep working on today's data.
+  const [tlStep, setTlStep] = useState<number | null>(null); // null = now
+  const timeline = useMemo(() => {
+    const times = bySource.map((f) => Date.parse(f.createdAt)).filter(Number.isFinite);
+    if (times.length < 4) return null; // not enough history to be worth a scrub
+    const first = Math.min(...times);
+    const now = Date.now();
+    if (now - first < 2 * 86400000) return null; // a days-old sky has no past to visit
+    const ticks = Array.from({ length: TL_TICKS }, (_, i) => {
+      const at = first + ((now - first) * i) / (TL_TICKS - 1);
+      return { at, label: i === TL_TICKS - 1 ? 'now' : ago(now - at) };
+    });
+    return { ticks, spanLabel: ago(now - first) };
+  }, [bySource]);
+  // Any change to the population snaps back to now, so a fresh idea is never
+  // hidden behind an old cutoff.
+  useEffect(() => { setTlStep(null); }, [futures.length]);
+  const scrub = timeline && tlStep != null && tlStep < timeline.ticks.length - 1
+    ? {
+        cutoff: timeline.ticks[tlStep].at,
+        prev: tlStep > 0 ? timeline.ticks[tlStep - 1].at : Infinity, // the origin tick glows nothing
+        label: timeline.ticks[tlStep].label,
+      }
+    : null;
+  const arrivedCount = scrub ? bySource.filter((f) => Date.parse(f.createdAt) <= scrub.cutoff).length : 0;
+  const freshCount = scrub
+    ? bySource.filter((f) => { const t = Date.parse(f.createdAt); return t <= scrub.cutoff && t > scrub.prev; }).length
+    : 0;
+
   // Nodes, bubbles and the caption collision pass (ported from the design).
   const { nodes, bubbles } = useMemo(() => {
     const nodes: SkyNode[] = [];
     const bubbles: SkyBubble[] = [];
     for (const t of themes) {
+      // A scrubbed sky only holds the ideas that had arrived by the cutoff.
+      const items = scrub ? t.items.filter((f) => Date.parse(f.createdAt) <= scrub.cutoff) : t.items;
+      if (!items.length) continue;
       const mid = ((t.a0 + t.span / 2) * Math.PI) / 180;
       const expanded = expandAll || openTheme === t.key;
       if (!expanded) {
-        const r = 178, rad = 26 + Math.min(16, t.items.length * 1.8);
+        const r = 178, rad = 26 + Math.min(16, items.length * 1.8);
         bubbles.push({
-          key: t.key, label: t.label, count: t.items.length,
+          key: t.key, label: t.label, count: items.length,
           x: C + Math.cos(mid) * r - rad, y: C + Math.sin(mid) * r - rad, d: rad * 2,
           opacity: openTheme ? 0.3 : 1,
         });
         continue;
       }
       const dim = openTheme && openTheme !== t.key ? 0.28 : 1;
-      t.items.forEach((f, i) => {
-        const a = ((t.a0 + (t.span * (i + 0.5)) / t.items.length) * Math.PI) / 180;
+      items.forEach((f, i) => {
+        const a = ((t.a0 + (t.span * (i + 0.5)) / items.length) * Math.PI) / 180;
         const v = f.alignment || '';
         const r = RING[v], rad = 10;
         const nx = C + Math.cos(a) * r, ny = C + Math.sin(a) * r;
         const on = selId === f.id;
+        const fresh = !!scrub && Date.parse(f.createdAt) > scrub.prev;
         const disp = f.title.length > 20 ? f.title.slice(0, 19).trim() + '…' : f.title;
         nodes.push({
           f, theme: t.label, x: nx - rad, y: ny - rad, d: rad * 2, opacity: dim,
-          border: v ? RING_COLOR[v] : 'var(--keyline)', bw: on ? 3 : 2, dashed: !v,
-          bg: on ? RING_TINT[v] : 'var(--surface)', sel: on,
+          border: fresh && !on ? 'var(--accent-soft)' : v ? RING_COLOR[v] : 'var(--keyline)',
+          bw: on ? 3 : 2, dashed: !v && !fresh,
+          bg: on ? RING_TINT[v] : 'var(--surface)', sel: on, fresh,
           wants: labelAll || on, showLabel: false, label: disp, halfW: disp.length * 3.2 + 6,
           nx, ny, ca: Math.cos(a), sa: Math.sin(a), rad, lx: 0, ly: 0,
         });
@@ -184,7 +233,7 @@ export function Futures({
       }
     });
     return { nodes, bubbles };
-  }, [themes, expandAll, labelAll, openTheme, selId]);
+  }, [themes, expandAll, labelAll, openTheme, selId, scrub]);
 
   const startPan = (e: React.MouseEvent) => {
     setGlide(false);
@@ -621,7 +670,7 @@ export function Futures({
                   </button>
                 ))}
                 {nodes.map((n) => (
-                  <button key={n.f.id} className={`psky-node ${tray.has(n.f.id) ? 'tray' : ''}`}
+                  <button key={n.f.id} className={`psky-node ${tray.has(n.f.id) ? 'tray' : ''} ${n.fresh ? 'fresh' : ''}`}
                     style={{
                       left: n.x, top: n.y, width: n.d, height: n.d, opacity: n.opacity,
                       background: n.bg, borderWidth: n.bw, borderColor: n.border,
@@ -641,6 +690,37 @@ export function Futures({
                 )}
               </div>
             </div>
+
+            {/* The growth scrub (design 6b/7a): the same sky along its own history. */}
+            {timeline && (
+              <div className="psky-scrub">
+                <span className="edge">{timeline.spanLabel}</span>
+                <div className="hairline">
+                  <div className="hair" />
+                  {timeline.ticks.map((t, i) => {
+                    const curIdx = tlStep ?? timeline.ticks.length - 1;
+                    return (
+                      <button key={i}
+                        className={`ptick ${i === curIdx ? 'cur' : i < curIdx ? 'past' : ''}`}
+                        style={{ left: `${(i / (timeline.ticks.length - 1)) * 100}%` }}
+                        onClick={() => setTlStep(i === timeline.ticks.length - 1 ? null : i)}
+                        title={t.label} aria-label={`The sky as of ${t.label}`} />
+                    );
+                  })}
+                </div>
+                <button className={`nowlbl ${scrub ? 'then' : ''}`} onClick={() => setTlStep(null)}
+                  title={scrub ? 'Back to now' : 'The sky as it stands'}>
+                  {scrub ? scrub.label : 'now'}
+                </button>
+              </div>
+            )}
+            {scrub && (
+              <div className="psky-scrub-caption">
+                The sky as it stood {scrub.label} — {arrivedCount} of {bySource.length} idea{bySource.length === 1 ? '' : 's'} had
+                arrived{freshCount > 0 ? `; the ${freshCount} newest glow terracotta` : ''}.
+                <button onClick={() => setTlStep(null)}>▸ Back to now</button>
+              </div>
+            )}
 
             {trayIdeas.length > 0 && (
               <div className="psky-tray">

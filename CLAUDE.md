@@ -366,7 +366,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   ideas float dashed at 178), themes = the ideas' `area` tags as bearings (no area = `loose`),
   theme bubbles when collapsed, seamless wheel zoom (continuous 0.5–2.4× toward the cursor;
   buttons/ticks glide, wheel/drag track raw; ≥1.2 expands + labels everything, with a
-  collision pass on captions), pan + Recentre, an All-ideas/Themes toggle, theme chips and
+  collision pass on captions), pan + Recentre, the **growth scrub** (design 6b/7a — a hairline
+  of ticks across the funnel's real history, computed client-side from each idea's `createdAt`
+  (now on the future shape): scrub back and the sky shows only the ideas that had arrived by
+  that tick, the newest aglow, with an honest arithmetic caption; view-only, snaps to now when
+  the population changes; hidden under 4 ideas / 2 days), an All-ideas/Themes toggle, theme chips and
   **✧ Cluster** (POST `futures/cluster` — Gemini groups the funnel into themes; a tickable
   preview modal applies via the normal area PATCH, batched in one state write) —
   beside the **Polaris rail**: the selected idea (verdict pill, → Roadmap promote, Build on it

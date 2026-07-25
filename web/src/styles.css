@@ -2345,3 +2345,20 @@ button.mc-day-chip:hover { border-color: var(--accent); }
   .tips-rail-strip { flex-direction: row; justify-content: center; padding: 9px 14px; }
   .tips-rail-strip .vlabel { writing-mode: horizontal-tb; }
 }
+
+/* The sky's growth scrub (design 6b/7a): ticks along the funnel's real history. */
+.psky-scrub { display: flex; align-items: center; gap: 14px; padding: 10px 18px 0; }
+.psky-scrub .edge { font-family: var(--mono); font-size: 10px; color: var(--paused); white-space: nowrap; }
+.psky-scrub .hairline { flex: 1; position: relative; height: 16px; }
+.psky-scrub .hair { position: absolute; left: 0; right: 0; top: 7.5px; height: 1px; background: var(--keyline); }
+.psky-scrub .ptick { position: absolute; top: 8px; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; padding: 0; border-radius: 50%; background: var(--keyline); cursor: pointer; transition: all 0.25s ease; }
+.psky-scrub .ptick:hover { background: var(--accent-soft); }
+.psky-scrub .ptick.past { background: var(--accent-soft); }
+.psky-scrub .ptick.cur { width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; background: var(--accent); }
+.psky-scrub .nowlbl { font-family: var(--mono); font-size: 10px; font-weight: 500; color: var(--muted); white-space: nowrap; min-width: 52px; text-align: right; padding: 0; }
+.psky-scrub .nowlbl.then { color: var(--accent-deep); }
+.psky-scrub .nowlbl:hover { color: var(--accent); }
+.psky-scrub-caption { display: flex; align-items: baseline; gap: 10px; padding: 7px 18px 0; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+.psky-scrub-caption button { font-family: var(--mono); font-size: 10px; color: var(--accent-deep); padding: 0; white-space: nowrap; }
+.psky-scrub-caption button:hover { color: var(--accent); }
+.psky-node.fresh { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 9%, transparent); }

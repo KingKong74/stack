@@ -56,6 +56,7 @@ export function futureShape(row) {
     title: row.title,
     note: row.note || '',
     when: relativeTime(row.created_at) || 'just now',
+    createdAt: row.created_at,       // raw ISO — the sky's time scrub buckets on it
     source: row.source,
     reviewed: !!row.reviewed_at,
     alignment: row.alignment || '',  // north-star verdict: on-course | tangent | off-course

@@ -120,6 +120,7 @@ export interface Future {
   title: string;
   note: string;
   when: string;
+  createdAt: string;   // raw ISO — the sky's time scrub buckets on it
   source: Source;
   reviewed: boolean;
   alignment: string;   // north-star verdict: '' | on-course | tangent | off-course
