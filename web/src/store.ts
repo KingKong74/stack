@@ -862,7 +862,7 @@ export async function getRoadmap(slug: string): Promise<Roadmap> {
   return request<Roadmap>(roadmapBase(slug));
 }
 export async function createRoadmapItem(
-  slug: string, input: { title: string; note: string; bucket: Priority; claimed_by?: string; area?: string; plan?: PlanStep[]; risk?: RoadmapItem['risk'] },
+  slug: string, input: { title: string; note: string; bucket: Priority; claimed_by?: string; area?: string; plan?: PlanStep[]; risk?: RoadmapItem['risk']; tier?: RoadmapItem['tier'] },
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(roadmapBase(slug), { method: 'POST', body: input });
 }
@@ -873,6 +873,7 @@ export async function patchRoadmapItem(
     claimed_by: string; review_tag: string; review_tags: string[]; refine_note: string;
     review_shelved: boolean; skipped: boolean; area: string; position: number;
     built_note: string; plan: PlanStep[]; risk: RoadmapItem['risk'];
+    tier: RoadmapItem['tier'];   // #227 — desire rank; '' unranks it
   }>,
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });

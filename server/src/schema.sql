@@ -169,6 +169,12 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS review_shelved BOOLEAN NOT NU
 -- reaches main without a human click, but the item is still ticked (and the
 -- work verdicted) by the human in Reviews. normal/high never auto-merge.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS risk TEXT NOT NULL DEFAULT 'normal';
+-- The desire tier (#227): S | A | B | C, NULL = unranked. Deliberately distinct
+-- from the MoSCoW bucket — bucket is how big/necessary the work is, tier is how
+-- much the owner wants it NEXT. It is the PRIMARY sort of the run queue, with
+-- the bucket and position as tiebreaks and unranked items sorting last, so a
+-- board nobody has ranked behaves exactly as it always did.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS tier TEXT;
 -- When the item was PARKED (#247). Stamped as `skipped` flips true, cleared as
 -- it flips false, so "parked 34 days" is the honest age of the park rather than
 -- of the last edit. NULL on a parked row = parked before this column existed;

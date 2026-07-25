@@ -52,6 +52,14 @@ export interface Bug {
 // ticked off by whoever builds them (the autopilot works them top-down).
 export interface PlanStep { text: string; done: boolean }
 
+// The desire tier (#227): how much the owner wants an item NEXT, deliberately
+// distinct from the MoSCoW bucket's sizing. '' = unranked and sorts last, so a
+// board nobody has ranked keeps its existing order everywhere.
+export type Tier = '' | 'S' | 'A' | 'B' | 'C';
+export const TIERS: Exclude<Tier, ''>[] = ['S', 'A', 'B', 'C'];
+export const TIER_RANK: Record<string, number> = { S: 0, A: 1, B: 2, C: 3 };
+export const tierRank = (t: string) => TIER_RANK[t] ?? 4;
+
 export interface RoadmapItem {
   id: number;
   title: string;
@@ -70,6 +78,7 @@ export interface RoadmapItem {
   skipped: boolean;    // parked — planned, but not to be picked up yet
   skippedAt: string | null; // ISO — when it was parked; ages the Parked view (#247)
   risk: 'low' | 'normal' | 'high'; // graduated trust (#212): low auto-merges a green run
+  tier: Tier;          // desire tier (#227) — what the owner wants NEXT; '' = unranked (sorts last)
   plan: PlanStep[];    // the implementation plan ([] = none)
   updatedAt: string | null; // ISO — latest-first ordering in the archive
 }

@@ -6,6 +6,13 @@ import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags } from '../util
 // Risk tiers (#212) — graduated trust. 'low' lets a green overnight run
 // auto-queue its own merge; anything else keeps the human on the merge button.
 const RISKS = ['low', 'normal', 'high'];
+// Desire tiers (#227) — the owner's ranking of what they want NEXT, distinct
+// from the MoSCoW bucket's sizing. '' (→ NULL) = unranked, which sorts last.
+const TIERS = ['S', 'A', 'B', 'C'];
+const cleanTier = (v) => {
+  const t = String(v ?? '').trim().toUpperCase();
+  return TIERS.includes(t) ? t : null;
+};
 import { roadmapItemShape, groupRoadmap } from '../shape.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
@@ -40,15 +47,16 @@ roadmap.post('/', async (req, res) => {
   const area = String(req.body?.area || '').trim().toLowerCase().slice(0, 40) || null;
   const plan = cleanPlan(req.body?.plan);
   const risk = oneOf(req.body?.risk, RISKS, 'normal');
+  const tier = cleanTier(req.body?.tier);
 
   const { rows: pos } = await q(
     'SELECT COALESCE(MAX(position), -1) + 1 AS p FROM roadmap_items WHERE project_id = $1 AND bucket = $2',
     [req.project.id, bucket]
   );
   const { rows } = await q(
-    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk)
-     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7,$8,$9::jsonb,$10) RETURNING *`,
-    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy, area, JSON.stringify(plan), risk]
+    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, tier)
+     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7,$8,$9::jsonb,$10,$11) RETURNING *`,
+    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy, area, JSON.stringify(plan), risk, tier]
   );
   res.status(201).json(roadmapItemShape(rows[0]));
 });
@@ -141,6 +149,10 @@ roadmap.patch('/:id', async (req, res) => {
   }
   if (req.body?.risk !== undefined) {
     sets.push(`risk = $${i++}`); vals.push(oneOf(req.body.risk, RISKS, 'normal'));
+  }
+  if (req.body?.tier !== undefined) {
+    // #227 — the desire tier. '' (or anything outside S/A/B/C) unranks it.
+    sets.push(`tier = $${i++}`); vals.push(cleanTier(req.body.tier));
   }
   if (req.body?.built_note !== undefined) {
     sets.push(`built_note = $${i++}`);

@@ -371,6 +371,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       if (queueNow) await startAutopilot(slug, String(item.id));
     });
 
+  // #227 — set (or clear) an item's desire tier from the Tiers view. An ordinary
+  // PATCH like every other board mutation; the tier then leads the run queue in
+  // the Plan room and in the overnight runner's pick.
+  const setTierRoad = (item: RoadmapItem, tier: RoadmapItem['tier']) =>
+    guard(async () => {
+      const updated = await patchRoadmapItem(slug, item.id, { tier });
+      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
+    });
+
   // #255 — push picked items to the planning agent: one plan-kind session whose
   // ordered agenda is exactly these ids. The runner designs each item and PATCHes
   // the result back as plan steps — no branches, no builds, nothing ticked. An
@@ -856,7 +865,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
               try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the button just won't appear */ }
               go.terminal(slug);
             }}
-            onPlanItems={planItems}
+            onPlanItems={planItems} onSetTier={setTierRoad}
             onBranch={(it) => branchItem(it)} />
         )}
         {tab === 'futures' && (

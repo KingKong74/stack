@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Priority, AutopilotRun } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Priority, AutopilotRun, Tier } from '../types';
+import { TIERS, tierRank } from '../types';
 import { PRIORITY_META, timeAgo, dayLabel } from '../lib/ui';
 import { getAutopilotRuns, getReviewBrief, queueUndo, ReviewBrief } from '../store';
 import { Modal } from '../components/Modal';
@@ -29,7 +30,7 @@ const noteTagLabel = (t: string) => REVIEW_NOTE_TAGS.find((x) => x.key === t)?.l
 // Archive below — still counted by the progress model, reviewable with a
 // verdict tag, refinable by delta (#146), restorable by un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onShelve, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onPlanItems, onBranch, onDeleteArea, onRenameArea, slug, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onShelve, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onPlanItems, onSetTier, onBranch, onDeleteArea, onRenameArea, slug, highlightId,
   draft, onResumeDraft, onDiscardDraft, liveBranches, staleItemDays,
 }: {
   roadmap: RoadmapData;
@@ -54,6 +55,8 @@ export function Roadmap({
   // plan-kind autopilot session whose agenda is exactly these ids. Resolves to
   // a line about what was queued (or an already-open job).
   onPlanItems?: (ids: number[]) => Promise<string>;
+  // #227 — set (or clear, with '') an item's desire tier from the Tiers view.
+  onSetTier?: (item: RoadmapItem, tier: Tier) => void;
   // ⎇ Branch an item for focused work (#205): claim its lane + open a primed session.
   onBranch?: (item: RoadmapItem) => void;
   // #169 — area management: delete (clears area from all items) and rename
@@ -262,9 +265,9 @@ export function Roadmap({
   const toVerify = unverdicted.filter((it) => !it.reviewShelved).sort((a, b) => ts(b) - ts(a));
   const shelved = unverdicted.filter((it) => it.reviewShelved).sort((a, b) => ts(b) - ts(a));
   const archived = doneItems.filter((it) => it.reviewTag).sort((a, b) => ts(b) - ts(a));
-  // The tab's three views: Board, Parked (#247) and Reviews (to-verify + archive).
-  // A deep-link to a done item opens straight on Reviews.
-  const [view, setView] = useState<'board' | 'parked' | 'reviews'>(
+  // The tab's four views: Board, Tiers (#227), Parked (#247) and Reviews
+  // (to-verify + archive). A deep-link to a done item opens straight on Reviews.
+  const [view, setView] = useState<'board' | 'tiers' | 'parked' | 'reviews'>(
     () => (doneItems.some((it) => String(it.id) === highlightId) ? 'reviews' : 'board'));
 
   // #247 — the parked shelf. Every open item somebody pressed ⏸ on, oldest park
@@ -285,6 +288,24 @@ export function Roadmap({
     .sort((a, b) => (b.age?.days ?? -1) - (a.age?.days ?? -1));
   const staleDays = Math.max(1, staleItemDays ?? 21);
   const staleCount = parked.filter((p) => (p.age?.days ?? 0) >= staleDays).length;
+
+  // #227 — the tier list. A desire ranking across the whole open board: drag an
+  // item into S/A/B/C to say how much you want it NEXT, independently of the
+  // MoSCoW bucket's sizing. The tier is the primary sort of the run queue — the
+  // Plan room and the overnight runner both apply it — and unranked items sort
+  // last, so a board nobody has ranked behaves exactly as it always did.
+  const tierRows: { key: Tier; label: string; blurb: string }[] = [
+    { key: 'S', label: 'S', blurb: 'what I want next, above everything' },
+    { key: 'A', label: 'A', blurb: 'clearly wanted — right after S' },
+    { key: 'B', label: 'B', blurb: 'worth doing when the top is clear' },
+    { key: 'C', label: 'C', blurb: 'someday — keep it on the board' },
+    { key: '', label: 'Unranked', blurb: 'no desire call yet — runs after everything ranked' },
+  ];
+  const [tierDrag, setTierDrag] = useState<number | null>(null);
+  const [tierOver, setTierOver] = useState<Tier | null>(null);
+  const openForTiers = openAll.filter(inAreaTab);
+  const inTier = (t: Tier) => openForTiers.filter((it) => (it.tier || '') === t);
+  const rankedCount = openForTiers.filter((it) => it.tier).length;
   // Open the archive straight away when a deep-link targets an archived item.
   const [archiveOpen, setArchiveOpen] = useState(
     () => archived.some((it) => String(it.id) === highlightId));
@@ -642,6 +663,13 @@ export function Roadmap({
         <div className="seg-control" role="tablist" aria-label="Roadmap view">
           <button role="tab" aria-selected={view === 'board'}
             className={`seg-opt ${view === 'board' ? 'on' : ''}`} onClick={() => setView('board')}>Board</button>
+          {onSetTier && (
+            <button role="tab" aria-selected={view === 'tiers'}
+              className={`seg-opt ${view === 'tiers' ? 'on' : ''}`} onClick={() => setView('tiers')}
+              title="Rank the open board by what you actually want next — the tier order leads the run queue">
+              Tiers{rankedCount > 0 ? ` · ${rankedCount}` : ''}
+            </button>
+          )}
           <button role="tab" aria-selected={view === 'parked'}
             className={`seg-opt ${view === 'parked' ? 'on' : ''}`} onClick={() => setView('parked')}
             title="Every parked item, oldest park first — with how long it's been sitting">
@@ -750,8 +778,12 @@ export function Roadmap({
       <div className={`road-grid ${focusCol ? 'focused' : ''}`}>
         {PRIORITY_META.filter((col) => !focusCol || col.key === focusCol).map((col) => {
           const open = roadmap[col.key].filter((it) => !it.done && inAreaTab(it));
-          // Parked items sink to the bottom of their bucket.
-          const items = [...open.filter((it) => !it.skipped), ...open.filter((it) => it.skipped)];
+          // Parked items sink to the bottom of their bucket; within the live
+          // ones the desire tier leads (#227), so the column reads in the order
+          // the queue would work it. Unranked items keep their drag position.
+          const live = [...open.filter((it) => !it.skipped)]
+            .sort((a, b) => tierRank(a.tier) - tierRank(b.tier));
+          const items = [...live, ...open.filter((it) => it.skipped)];
           const folded = focusCol !== col.key && collapsedCols.has(col.key);
           return (
             <div className={`road-col ${folded ? 'folded' : ''} ${focusCol === col.key ? 'focus' : ''}`} key={col.key}>
@@ -815,6 +847,12 @@ export function Roadmap({
                     <div className="road-body">
                       <div className="t">
                         <span className="item-num">#{it.id}</span>{it.title}
+                        {it.tier && (
+                          <span className={`tier-chip t${it.tier}`}
+                            title={`Desire tier ${it.tier} (#227) — the run queue works S, then A, B, C, then unranked`}>
+                            {it.tier}
+                          </span>
+                        )}
                         {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
                         {it.area && <span className="area-chip" title="Product area — edit the item to change it">{it.area}</span>}
                         {working && <span className="work-chip" title={`Claimed by ${it.claimedBy} — read-only while the work is in flight`}>● in progress</span>}
@@ -874,6 +912,74 @@ export function Roadmap({
           );
         })}
       </div>
+      </>)}
+
+      {/* #227 — the tier list: a desire ranking over the whole open board,
+          distinct from must/should sizing. Drag a card into a tier (or use the
+          S/A/B/C buttons on it); the tier leads the run queue everywhere. */}
+      {view === 'tiers' && onSetTier && (<>
+        <div className="subtitle" style={{ marginBottom: 18 }}>
+          What you actually want done next, ranked — separate from must/should, which is about how
+          necessary the work is rather than how much you want it now. Drag a card into a tier, or use
+          its S/A/B/C buttons. The tier leads the run queue: Mission Control's Plan room and the
+          overnight runner both work S first, then A, B, C, then everything unranked in board order.
+          {areaFilter && <> Showing the <b>{areaFilter === UNCAT ? 'uncategorised' : areaFilter}</b> tab only —
+            switch to All on the Board view to rank the whole project.</>}
+        </div>
+        <div className="tier-board">
+          {tierRows.map((row) => {
+            const rowItems = inTier(row.key);
+            return (
+              <div className={`tier-row t${row.key || 'none'} ${tierOver === row.key ? 'over' : ''}`} key={row.key || 'none'}
+                onDragOver={(e) => { if (tierDrag != null) { e.preventDefault(); setTierOver(row.key); } }}
+                onDragLeave={() => setTierOver((t) => (t === row.key ? null : t))}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const it = tierDrag != null ? openForTiers.find((x) => x.id === tierDrag) : null;
+                  setTierDrag(null); setTierOver(null);
+                  if (it && (it.tier || '') !== row.key) onSetTier(it, row.key);
+                }}>
+                <div className="tier-label">
+                  <span className="k">{row.label}</span>
+                  <span className="n">{rowItems.length}</span>
+                  <span className="blurb">{row.blurb}</span>
+                </div>
+                <div className="tier-items">
+                  {rowItems.map((it) => (
+                    <div className={`tier-card ${tierDrag === it.id ? 'drag' : ''} ${highlightId === String(it.id) ? 'hl' : ''}`}
+                      key={it.id} data-hl={it.id} draggable
+                      onDragStart={(e) => { setTierDrag(it.id); e.dataTransfer.effectAllowed = 'move'; }}
+                      onDragEnd={() => { setTierDrag(null); setTierOver(null); }}>
+                      <button className="body" onClick={() => onEdit(it)} title="Edit this item">
+                        <span className="t"><span className="item-num">#{it.id}</span>{it.title}</span>
+                        <span className="m">
+                          {it.bucket}{it.area ? ` · ${it.area}` : ''}
+                          {it.skipped ? ' · ⏸ parked' : ''}
+                          {it.claimedBy ? ` · ⚑ ${it.claimedBy}` : ''}
+                        </span>
+                      </button>
+                      <div className="tier-pick">
+                        {TIERS.map((t) => (
+                          <button key={t} className={`tp ${it.tier === t ? 'on' : ''}`}
+                            title={`Move #${it.id} to tier ${t}`}
+                            onClick={() => onSetTier(it, it.tier === t ? '' : t)}>{t}</button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {rowItems.length === 0 && (
+                    <div className="tier-empty">
+                      {row.key === '' ? 'everything open is ranked' : 'drop items here'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {openForTiers.length === 0 && (
+          <div className="empty-state" style={{ marginTop: 14 }}>Nothing open to rank.</div>
+        )}
       </>)}
 
       {/* #247 — the parked shelf: everything that's been set aside, how long

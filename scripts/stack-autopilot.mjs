@@ -358,6 +358,11 @@ process.on('exit', unlock);
 const eligible = (targetArea) => (it) =>
   !it.done && !it.skipped && !it.claimedBy && (it.source === 'manual' || it.reviewed)
   && (!targetArea || (it.area || '') === targetArea);
+// The desire tier (#227): S/A/B/C is the owner's ranking of what they want
+// next, sorted ahead of the MoSCoW bucket. Unranked = 4, so it lands after
+// every ranked item and a board nobody has tiered is untouched.
+const TIER_RANK = { S: 0, A: 1, B: 2, C: 3 };
+const tierRank = (t) => TIER_RANK[String(t || '').toUpperCase()] ?? 4;
 let tokensSpent = 0;
 let costSpent = 0;
 
@@ -1012,6 +1017,12 @@ try {
     } else {
       const targetArea = AREA_ARG != null ? String(AREA_ARG).toLowerCase() : (detail.autopilotArea || '');
       item = [...(detail.roadmap?.must || []), ...(detail.roadmap?.should || [])]
+        // The desire tier (#227) is the PRIMARY sort — what the owner actually
+        // wants next beats MoSCoW sizing. Unranked items keep their old place
+        // (tier rank 4, after every ranked one), and the array arrives already
+        // ordered must-then-should within bucket position, so a stable sort by
+        // tier alone leaves an unranked board picking exactly as it always did.
+        .sort((a, b) => tierRank(a.tier) - tierRank(b.tier))
         .filter((it) => !attempted.has(it.id))
         // A plan night wants the items still missing a design (#219).
         .filter((it) => !PLAN_ONLY || !(it.plan?.length))

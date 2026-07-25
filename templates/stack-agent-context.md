@@ -90,7 +90,13 @@ Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
 
 - **Never start an item claimed by another lane.**
 - **Never start an item with `skipped: true`** — it's parked on purpose; the
-  owner unparks it from the UI when it's back in play.
+  owner unparks it from the UI when it's back in play. (The Roadmap tab's Parked
+  view ages every parked item and flags the stale ones, so nothing rots unseen.)
+- **Respect the desire tier.** Open items may carry `tier` — `S`/`A`/`B`/`C`,
+  the owner's ranking of what they want NEXT, deliberately separate from the
+  MoSCoW bucket's sizing. It is the primary sort of the run queue: work S before
+  A before B before C, and unranked items last. Never set or change a tier
+  yourself — it's the owner's ground truth for what matters.
 - If you're one of several parallel sessions and you pick up a roadmap item,
   **claim it first** (your claim label = your branch name):
 

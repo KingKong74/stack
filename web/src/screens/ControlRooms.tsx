@@ -6,7 +6,8 @@ import {
 } from '../store';
 import { go } from '../lib/route';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
-import type { RoadmapItem, Priority } from '../types';
+import type { RoadmapItem, Priority, Tier } from '../types';
+import { tierRank } from '../types';
 
 // The Nights / Plan / Build rooms of Mission Control (Stack Planning design,
 // turn 14a). Each room is a different lens on data the shell already holds —
@@ -365,6 +366,9 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
   // Unsaved cross-boundary moves: the moved item's pending bucket. A separate
   // overlay (not a mutation of items) so revert is exact.
   const [flips, setFlips] = useState<Map<number, Priority>>(new Map());
+  // #227 — the same overlay for desire tiers: moving a row across a tier
+  // boundary re-tiers the moved item, exactly as crossing must/should re-buckets it.
+  const [tierFlips, setTierFlips] = useState<Map<number, Tier>>(new Map());
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<Settled | null>(null);
   const [settled, setSettled] = useState<Map<string, Settled>>(new Map());
@@ -383,7 +387,7 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
   useEffect(() => {
     if (detail) {
       setItems([...detail.roadmap.must, ...detail.roadmap.should, ...detail.roadmap.could, ...detail.roadmap.wont]);
-      setOrder(null); setFlips(new Map()); setBanner(null); setSettled(new Map()); setDropped(new Set());
+      setOrder(null); setFlips(new Map()); setTierFlips(new Map()); setBanner(null); setSettled(new Map()); setDropped(new Set());
       setCleanups(null); setRoomErr('');
     }
   }, [detail]);
@@ -405,16 +409,21 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
 
   const byId = new Map(items.map((it) => [it.id, it]));
   const bucketOf = (it: RoadmapItem) => flips.get(it.id) ?? it.bucket;
-  // The saved order: musts in board order, then shoulds — the runner's queue.
+  const tierOf = (it: RoadmapItem): Tier => tierFlips.get(it.id) ?? it.tier;
+  // The saved order: musts in board order, then shoulds — with the DESIRE TIER
+  // leading (#227). Tier is the primary sort in the runner's pick too, and
+  // unranked items rank last, so an unranked board is exactly must-then-should
+  // as before. Stable sort, so board position survives inside a tier.
   const savedOrder = [
     ...items.filter((it) => schedulable(it, area) && it.bucket === 'must'),
     ...items.filter((it) => schedulable(it, area) && it.bucket === 'should'),
-  ].map((it) => it.id);
+  ].sort((a, b) => tierRank(a.tier) - tierRank(b.tier)).map((it) => it.id);
   // The dirty overlay survives item churn: keep known ids, append newcomers.
   const cur = order
     ? [...order.filter((id) => savedOrder.includes(id)), ...savedOrder.filter((id) => !order.includes(id))]
     : savedOrder;
-  const dirty = flips.size > 0 || (order !== null && cur.join(',') !== savedOrder.join(','));
+  const dirty = flips.size > 0 || tierFlips.size > 0
+    || (order !== null && cur.join(',') !== savedOrder.join(','));
 
   // Everything open the nights would pass by. No slice (#260): a hidden
   // remainder reads as "that's all of it" when it isn't — long lists collapse
@@ -475,6 +484,17 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
         return n;
       });
     }
+    // #227 — crossing a tier boundary re-tiers the moved item the same way,
+    // because tier is what the queue sorts on first: without this the row would
+    // snap back the moment the order was saved.
+    if (moved && partner && tierOf(moved) !== tierOf(partner)) {
+      const target = tierOf(partner);
+      setTierFlips((m) => {
+        const n = new Map(m);
+        if (moved.tier === target) n.delete(moved.id); else n.set(moved.id, target);
+        return n;
+      });
+    }
     setOrder(next);
   };
 
@@ -486,10 +506,15 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
       // drag-reorder uses; bucket rides along where a move re-bucketed.
       const updated = await Promise.all(cur.map((id, i) => {
         const flip = flips.get(id);
-        return patchRoadmapItem(pickSlug, id, { position: i, ...(flip ? { bucket: flip } : {}) });
+        const tierFlip = tierFlips.get(id);
+        return patchRoadmapItem(pickSlug, id, {
+          position: i,
+          ...(flip ? { bucket: flip } : {}),
+          ...(tierFlip !== undefined ? { tier: tierFlip } : {}),
+        });
       }));
       setItems((prev) => prev && prev.map((it) => updated.find((u) => u.id === it.id) ?? it));
-      setOrder(null); setFlips(new Map());
+      setOrder(null); setFlips(new Map()); setTierFlips(new Map());
       detailCache.delete(pickSlug);
       setBanner({ note: `Order saved — ${milestones[0].date === '—' ? 'the schedule' : `musts land ${milestones[0].date}`}.` });
     } catch (e) {
@@ -575,6 +600,9 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
   // planning agent (#255) — one plan-kind session, ordered agenda, results
   // saved back as plan steps. Nothing is built and nothing is ticked.
   const unplannedIds = cur.filter((id) => (byId.get(id)?.plan.length ?? 0) === 0);
+  // How much of the visible queue carries a desire tier (#227) — the header says
+  // "tier leads" only when a tier is actually doing work in the order.
+  const rankedHere = cur.filter((id) => byId.get(id)?.tier).length;
   const pushToPlanner = async () => {
     if (planBusy || unplannedIds.length === 0) return;
     setPlanBusy(true); setPlanNote(''); setRoomErr('');
@@ -647,7 +675,7 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
               onClick={() => { setLanes(n); setPlanLanes(n); }}>{n}</button>
           ))}
         </div>
-        {dirty && <button className="mc16-revert" onClick={() => { setOrder(null); setFlips(new Map()); }}>revert</button>}
+        {dirty && <button className="mc16-revert" onClick={() => { setOrder(null); setFlips(new Map()); setTierFlips(new Map()); }}>revert</button>}
         <button className={`mc16-save ${dirty ? 'on' : ''}`} disabled={!dirty || saving} onClick={() => void saveOrder()}>
           {saving ? 'Saving…' : dirty ? 'Save order' : 'Order saved'}
         </button>
@@ -706,7 +734,9 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
           <div className="mc14-room-head">
             <span className="cap-sm">TONIGHT AND AFTER</span>
             <span className="hair" />
-            <span className="meta">order is the plan — the list is the run queue</span>
+            <span className="meta">
+              order is the plan — the list is the run queue{rankedHere > 0 ? ' · tier leads' : ''}
+            </span>
           </div>
           {lanes > 1 && (
             <div className="mc16-lanenote">
@@ -739,11 +769,20 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
                       L{lane + 1}
                     </span>
                   )}
+                  {tierOf(it) && (
+                    <span className={`tier-chip t${tierOf(it)}`}
+                      title={`Desire tier ${tierOf(it)} (#227) — the queue works S, then A, B, C, then unranked`}>
+                      {tierOf(it)}
+                    </span>
+                  )}
                   <button className="body" onClick={() => go.detail(pickSlug, 'roadmap', String(id))}>
                     <span className="t">{it.title}</span>
                     <span className="p">{it.area || 'board'} · {bucketOf(it)}{it.plan.length ? ` · ☰ ${it.plan.filter((s) => s.done).length}/${it.plan.length}` : ''}</span>
                   </button>
                   {flips.has(id) && <span className="flag move">→ {flips.get(id)}</span>}
+                  {tierFlips.has(id) && (
+                    <span className="flag move">→ {tierFlips.get(id) || 'unranked'}</span>
+                  )}
                   {it.refineNote && <span className="flag refine">↻ refine</span>}
                   {it.plan.length === 0 && <span className="flag noplan" title="No implementation plan yet — ✧ Plan the queue designs it">no plan</span>}
                   {it.risk === 'low' && <span className="flag low">auto-merge</span>}
