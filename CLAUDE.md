@@ -269,7 +269,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   then shoulds, board order, eligibility mirrored client-side), broken into nights by the real
   capacity — Settings' items/night, editable in the header seg — each row wearing the night it
   lands on; the header projects the milestones ("musts land Wed 30", "the board clears …") with
-  ▲/▼ deltas while a reorder is unsaved. ⠿/▲▼ reorder is a dirty overlay (revert = exact);
+  ▲/▼ deltas while a reorder is unsaved. Under the header sits the **MODELS line** (#153 — the
+  Executor / Advisor pickers, the same app-wide settings the Now room's console writes, mirrored
+  here because this is where the plan is decided: the queue below, the hands and the mind that
+  work it above; the catalogue rides the control payload, and a mono summary reads
+  "Opus builds · consults Opus 5"). ⠿/▲▼ reorder is a dirty overlay (revert = exact);
   moving across the must/should boundary re-buckets the MOVED item (shown as a → flag); Save
   order renumbers positions (+ flipped buckets) through the normal PATCH — the same write the
   board's drag makes, because the board IS the run queue. Ineligible open items sit under OUT
@@ -725,8 +729,11 @@ Single row, client camelCase. Meanings under the no-API model:
   "autopilotTokens": 1500000, // token budget per run; 0 = UNLIMITED (positive values floored at 100k)
   "autopilotTime": "23:05",   // nightly start, HOST-local HH:MM (the dispatcher supplies its clock)
   "autopilotMaxItems": 3,     // most items attempted per night (clamped 1–10)
-  "autopilotExecutorModel": "", // #153 — model alias sessions run as ('' = CLI default; haiku|sonnet|opus)
-  "autopilotAdvisorModel": "",  // #153 — stronger model exposed as the "advisor" subagent ('' = off; sonnet|opus|fable)
+  "autopilotExecutorModel": "", // #153 — model alias sessions run as ('' = CLI default; haiku|sonnet|opus|claude-opus-5)
+  "autopilotAdvisorModel": "claude-opus-5", // #153 — stronger model exposed as the "advisor" subagent
+                              // (DEFAULT: Opus 5; '' = off; sonnet|opus|claude-opus-5|fable). A database
+                              // that predates the default is upgraded once, guarded by advisor_default_applied,
+                              // so an advisor turned off by hand survives every boot
   "assistGuidance": "",       // ✧ Fill from note (#131): standing owner steer folded into the prompt
   "assistFields": ["title","note","area","lane","priority"], // what the assist may fill (title always)
   "accessPinSet": false       // PIN sign-in available; PATCH accepts write-only `accessPin`

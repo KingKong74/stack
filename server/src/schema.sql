@@ -299,9 +299,19 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_max_items INTEGER NOT NU
 -- (claude --model; '' = the CLI's default) while the ADVISOR — a stronger
 -- model — is exposed to it as a read-only subagent it consults for plans and
 -- unblocking ('' = no advisor, single-model session as before). Model values
--- are claude CLI aliases (haiku | sonnet | opus | fable).
+-- are claude CLI aliases or full model ids (haiku | sonnet | opus |
+-- claude-opus-5 | fable).
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_executor_model TEXT NOT NULL DEFAULT '';
-ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_advisor_model  TEXT NOT NULL DEFAULT '';
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_advisor_model  TEXT NOT NULL DEFAULT 'claude-opus-5';
+-- Opus 5 as the STANDING advisor: a fresh install gets it from the column
+-- default above; a database that predates it and never picked an advisor is
+-- upgraded ONCE, guarded by its own flag — so an advisor deliberately turned
+-- off in Mission Control survives every boot (same shape as tips_seeded).
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS advisor_default_applied BOOLEAN NOT NULL DEFAULT false;
+UPDATE settings
+   SET autopilot_advisor_model = 'claude-opus-5'
+ WHERE id AND NOT advisor_default_applied AND COALESCE(autopilot_advisor_model, '') = '';
+UPDATE settings SET advisor_default_applied = true WHERE id AND NOT advisor_default_applied;
 -- ✧ Fill from note (#131): a standing guidance line folded into the assist
 -- prompt, and which fields the assist is allowed to fill (title always is).
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS assist_guidance TEXT  NOT NULL DEFAULT '';

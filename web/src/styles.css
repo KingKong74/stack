@@ -2636,6 +2636,13 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc16-save { padding: 5px 13px; border-radius: 6px; border: 1px solid var(--line-3); background: var(--card); font-size: 11px; font-weight: 500; color: var(--paused); }
 .mc16-save.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .mc16-save.on:hover { background: var(--accent-deep); }
+/* the executor / advisor line (#153) — the models the schedule runs on */
+.mc16-models { display: flex; align-items: center; gap: 16px; padding: 9px 15px; border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); flex-wrap: wrap; }
+.mc16-models > .cap-sm { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; color: var(--paused); }
+.mc16-models .grp { display: flex; align-items: center; gap: 8px; }
+.mc16-models .grp .l { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.mc16-models .seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.mc16-models .flow { font-family: var(--mono); font-size: 10.5px; color: var(--paused); white-space: nowrap; }
 .mc16-banner { display: flex; align-items: center; gap: 11px; padding: 9px 15px; border-radius: 9px; border: 1px solid var(--accent-tint-border); background: var(--accent-tint); }
 .mc16-banner .cap { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; color: var(--accent-deep); }
 .mc16-banner .t { flex: 1; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--ink); }

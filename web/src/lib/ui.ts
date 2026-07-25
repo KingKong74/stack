@@ -15,6 +15,28 @@ export const PRIORITY_META: { key: Priority; label: string; color: string; short
   { key: 'wont', label: "Won't (now)", color: '#a39c90', short: "Won't" },
 ];
 
+// Dual-model sessions (#153): the executor runs every turn, the advisor is the
+// stronger model it consults as a subagent. '' = CLI default / no advisor.
+// These are the FALLBACK lists used before the control payload loads (#175 —
+// the live catalogue is `data.models`, served by the backend as the single
+// source of truth). Shared by the Now room's console and the Plan room's
+// header so both pickers offer the same models.
+export type ModelChoice = { model: string; label: string };
+export const FALLBACK_EXECUTORS: ModelChoice[] = [
+  { model: '', label: 'Default' }, { model: 'haiku', label: 'Haiku' },
+  { model: 'sonnet', label: 'Sonnet' }, { model: 'opus', label: 'Opus' },
+  { model: 'claude-opus-5', label: 'Opus 5' },
+];
+export const FALLBACK_ADVISORS: ModelChoice[] = [
+  { model: '', label: 'Off' }, { model: 'sonnet', label: 'Sonnet' },
+  { model: 'opus', label: 'Opus' }, { model: 'claude-opus-5', label: 'Opus 5' },
+  { model: 'fable', label: 'Fable' },
+];
+// The label for a stored value, so a hand-set alias outside the catalogue
+// still reads as itself rather than vanishing.
+export const modelLabel = (list: ModelChoice[], model: string, fallback = 'Default') =>
+  list.find((m) => m.model === model)?.label ?? (model || fallback);
+
 // Activity tags read as "accent" when they signal unfinished work.
 export const isAccentTag = (label: string) => /progress|needs|todo/i.test(label);
 

@@ -57,11 +57,14 @@ export const EXECUTOR_CATALOGUE = [
   { model: 'haiku', label: 'Haiku' },
   { model: 'sonnet', label: 'Sonnet' },
   { model: 'opus', label: 'Opus' },
+  { model: 'claude-opus-5', label: 'Opus 5' },
 ];
 export const ADVISOR_CATALOGUE = [
   { model: '', label: 'Off' },
   { model: 'sonnet', label: 'Sonnet' },
   { model: 'opus', label: 'Opus' },
+  // Opus 5 is the STANDING advisor — the strong mind the cheap hands consult.
+  { model: 'claude-opus-5', label: 'Opus 5' },
   { model: 'fable', label: 'Fable' },
 ];
 
@@ -76,8 +79,8 @@ const DEFAULTS = {
   autopilot_tokens: 1_500_000, // per-run token budget; 0 = unlimited
   autopilot_time: '23:05',     // nightly start, host-local HH:MM
   autopilot_max_items: 3,
-  autopilot_executor_model: '', // '' = the claude CLI's own default model
-  autopilot_advisor_model: '',  // '' = no advisor subagent
+  autopilot_executor_model: '',            // '' = the claude CLI's own default model
+  autopilot_advisor_model: 'claude-opus-5', // the default advisor ('' = no advisor subagent)
   assist_guidance: '',
   assist_fields: [...ASSIST_FIELDS],
   access_pin_hash: null,

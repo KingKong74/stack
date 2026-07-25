@@ -4,6 +4,7 @@ import {
   type ProjectDetailData, type ControlData, type AutopilotSchedule, type RoadmapCleanupSuggestion,
 } from '../store';
 import { go } from '../lib/route';
+import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
 import type { RoadmapItem, Priority } from '../types';
 
 // The Nights / Plan / Build rooms of Mission Control (Stack Planning design,
@@ -350,9 +351,10 @@ type PlanProposal =
   | { key: string; kind: 'cleanup'; s: RoadmapCleanupSuggestion };
 type Settled = { note: string; undo?: () => void };
 
-export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems }: {
+export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
   data: ControlData; pickSlug: string; onPick: (slug: string) => void;
   onSetMaxItems: (n: number) => void;
+  onSetModel: (patch: { autopilotExecutorModel?: string; autopilotAdvisorModel?: string }) => void;
 }) {
   const { detail, err } = useProjectDetail(pickSlug);
   const [items, setItems] = useState<RoadmapItem[] | null>(null);
@@ -549,6 +551,14 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems }: {
     }
   };
 
+  // The models the nights run on (#153) — the same app-wide settings the Now
+  // room's console writes, surfaced here because this is where the plan is
+  // decided: the queue on the left, the hands and the mind that work it above.
+  const executors = data.models?.executors ?? FALLBACK_EXECUTORS;
+  const advisors = data.models?.advisors ?? FALLBACK_ADVISORS;
+  const execLabel = modelLabel(executors, data.autopilot.executorModel);
+  const advLabel = modelLabel(advisors, data.autopilot.advisorModel, 'Off');
+
   const kindChip = (p: PlanProposal) =>
     p.kind === 'found' ? 'FOUND'
     : p.s.bucket ? 'MOVE' : p.s.title ? 'RETITLE' : 'AREA';
@@ -579,6 +589,45 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems }: {
         <button className={`mc16-save ${dirty ? 'on' : ''}`} disabled={!dirty || saving} onClick={() => void saveOrder()}>
           {saving ? 'Saving…' : dirty ? 'Save order' : 'Order saved'}
         </button>
+      </div>
+
+      {/* the models the schedule runs on — executor hands, advisor mind (#153) */}
+      <div className="mc16-models">
+        <span className="cap-sm">MODELS</span>
+        <div className="grp">
+          <span className="l">Executor</span>
+          <div className="seg" role="tablist" aria-label="Executor model — runs every session">
+            {executors.map((m) => (
+              <button key={m.model || '__default'} role="tab"
+                aria-selected={data.autopilot.executorModel === m.model}
+                className={`mc16-cap ${data.autopilot.executorModel === m.model ? 'on' : ''}`}
+                title={m.model === '' ? "The claude CLI's own default model runs the session" : `Sessions run on ${m.label}`}
+                onClick={() => onSetModel({ autopilotExecutorModel: m.model })}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grp">
+          <span className="l">Advisor</span>
+          <div className="seg" role="tablist" aria-label="Advisor model — the stronger model the session consults">
+            {advisors.map((m) => (
+              <button key={m.model || '__off'} role="tab"
+                aria-selected={data.autopilot.advisorModel === m.model}
+                className={`mc16-cap ${data.autopilot.advisorModel === m.model ? 'on' : ''}`}
+                title={m.model === '' ? 'No advisor — single-model sessions' : `The executor consults ${m.label} for plans, unblocking and the pre-finish check`}
+                onClick={() => onSetModel({ autopilotAdvisorModel: m.model })}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ flex: 1 }} />
+        <span className="flow">
+          {data.autopilot.advisorModel
+            ? `${execLabel} builds · consults ${advLabel}`
+            : `${execLabel} builds · single-model`}
+        </span>
       </div>
 
       {roomErr && <div className="action-error">{roomErr}</div>}

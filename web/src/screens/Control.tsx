@@ -4,10 +4,11 @@ import {
   patchAutopilotSchedule, deleteAutopilotSchedule,
   resumeAutopilotJob, hangupAutopilotJob, dismissAutopilotJob,
   labelTerminalSessions, queueMerge, AuthError,
-  type ControlData, type ControlProject, type AutopilotJob, type AutopilotSchedule, type ModelEntry,
+  type ControlData, type ControlProject, type AutopilotJob, type AutopilotSchedule,
 } from '../store';
 import { SessionPlanModal } from '../components/SessionPlanModal';
 import { NightsRoom, PlanRoom, BuildRoom } from './ControlRooms';
+import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
 import { go, hrefTo } from '../lib/route';
 import type { ProjectStatus } from '../types';
 
@@ -23,18 +24,6 @@ const BUDGETS = [
   { tokens: 5_000_000, label: '5M' }, { tokens: 0, label: '∞ Unlimited' },
 ];
 const NIGHT_ITEMS = [1, 2, 3, 5];
-// Dual-model sessions (#153): the executor runs every turn, the advisor is the
-// stronger model it consults as a subagent. '' = CLI default / no advisor.
-// These are the FALLBACK lists used before the payload loads (#175 — the live
-// catalogue comes from data.models, served by the backend as a single source of truth).
-const FALLBACK_EXECUTORS: ModelEntry[] = [
-  { model: '', label: 'Default' }, { model: 'haiku', label: 'Haiku' },
-  { model: 'sonnet', label: 'Sonnet' }, { model: 'opus', label: 'Opus' },
-];
-const FALLBACK_ADVISORS: ModelEntry[] = [
-  { model: '', label: 'Off' }, { model: 'sonnet', label: 'Sonnet' },
-  { model: 'opus', label: 'Opus' }, { model: 'fable', label: 'Fable' },
-];
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const OPEN_JOB = new Set(['queued', 'claimed', 'running']);
 
@@ -581,7 +570,7 @@ export function ControlPanel() {
                         <div className="mc-hier-node exec" title="Runs every turn of the session">
                           <span className="mc-hier-role">Executor</span>
                           <span className="mc-hier-model">
-                            {(data.models?.executors ?? FALLBACK_EXECUTORS).find((m) => m.model === data.autopilot.executorModel)?.label ?? 'Default'}
+                            {modelLabel(data.models?.executors ?? FALLBACK_EXECUTORS, data.autopilot.executorModel)}
                           </span>
                         </div>
                         <div className="mc-hier-arrow" aria-hidden>
@@ -591,7 +580,7 @@ export function ControlPanel() {
                         <div className="mc-hier-node advisor" title="Read-only counsel — plans, unblocking, sanity check">
                           <span className="mc-hier-role">Advisor</span>
                           <span className="mc-hier-model">
-                            {(data.models?.advisors ?? FALLBACK_ADVISORS).find((m) => m.model === data.autopilot.advisorModel)?.label ?? data.autopilot.advisorModel}
+                            {modelLabel(data.models?.advisors ?? FALLBACK_ADVISORS, data.autopilot.advisorModel, 'Off')}
                           </span>
                         </div>
                       </>
@@ -599,7 +588,7 @@ export function ControlPanel() {
                       <div className="mc-hier-node exec single" title="Single-model session — no advisor">
                         <span className="mc-hier-role">Executor</span>
                         <span className="mc-hier-model">
-                          {(data.models?.executors ?? FALLBACK_EXECUTORS).find((m) => m.model === data.autopilot.executorModel)?.label ?? 'Default'}
+                          {modelLabel(data.models?.executors ?? FALLBACK_EXECUTORS, data.autopilot.executorModel)}
                         </span>
                         <span className="mc-hier-sub">single-model</span>
                       </div>
@@ -927,7 +916,8 @@ export function ControlPanel() {
                 )}
                 {room === 'plan' && pickSlug && (
                   <PlanRoom data={data} pickSlug={pickSlug} onPick={setPickSlug}
-                    onSetMaxItems={(n) => void setAutopilot({ autopilotMaxItems: n })} />
+                    onSetMaxItems={(n) => void setAutopilot({ autopilotMaxItems: n })}
+                    onSetModel={(p) => void setAutopilot(p)} />
                 )}
                 {room === 'build' && pickSlug && (
                   <BuildRoom data={data} pickSlug={pickSlug} onPick={setPickSlug} onGoNow={() => setRoom('now')} />
