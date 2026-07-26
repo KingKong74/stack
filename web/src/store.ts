@@ -397,7 +397,39 @@ export interface FleetStatus {
   fix: { kind: 'arm' | 'resume' | 'plan'; label: string } | null;
 }
 
+// (#269) The throughput ledger — is the automation getting better? Every metric
+// is a pair: `now` (last 7 days) against `prev` (the 7 before), so the rail can
+// render a direction rather than a table. Plan nights are excluded throughout —
+// they never commit by design.
+export interface LedgerWindow {
+  landed: number;
+  perNight: number;       // landed items per ACTIVE night (idle nights excluded)
+  tokensPerItem: number;
+  costPerItem: number;
+  noCommitRate: number;   // 0–1
+}
+
+export interface Ledger {
+  // 14 daily buckets, oldest first; empty days are present as zeroes.
+  days: { day: string; landed: number; runs: number; tokens: number; costUsd: number }[];
+  now: LedgerWindow;
+  prev: LedgerWindow;
+  // Completed merge jobs split by who queued them — the runner's own low-risk
+  // auto-merges (#212) vs a human ⇥ Merge.
+  merges: { now: { total: number; auto: number }; prev: { total: number; auto: number } };
+  reverts: { now: number; prev: number };
+  // Of items a run landed and a human has since verdicted, how many were called
+  // solid. Current state, so a refined-then-passed item counts — this is the
+  // CEILING of the true first-pass rate.
+  firstPass: { solid: number; verdicted: number };
+  // Executor vs advisor spend (#153). Roles are not recorded per run, so the
+  // highest-token model in each run is taken as the executor. A heuristic.
+  roles: { executor: { tokens: number; costUsd: number }; advisor: { tokens: number; costUsd: number } };
+}
+
 export interface ControlData {
+  // (#269) The throughput ledger; absent on a server that pre-dates it.
+  ledger?: Ledger;
   // (#268) The fleet: how many workers the host may run at once, and what each
   // busy one holds. Slots below capacity are idle — the strip renders them.
   // (#270) …plus why it is or is not running, and the dispatcher's pulse.

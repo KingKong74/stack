@@ -39,6 +39,13 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //                tokens, costUsd, tmux } ], // in-flight only; client pads idle
 //     status: { code, tone, text, hint, fix },   // (#270) why it is/isn't running
 //     heartbeat: { ageSec, silent, hostLocal }   // (#270) the dispatcher's pulse
+//   },
+//   ledger: {                               // (#269) the throughput trend
+//     days: [ { day, landed, runs, tokens, costUsd } ],   // 14, oldest first
+//     now, prev,                            // 7-day windows → direction
+//     merges: { now: { total, auto }, prev }, reverts: { now, prev },
+//     firstPass: { solid, verdicted },
+//     roles: { executor, advisor }          // spend split (heuristic — see below)
 //   }
 // }
 export const control = Router();
@@ -62,7 +69,8 @@ const tmuxNameFor = (slug, jobId) =>
 control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
-  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR, branchR, checksR, monthR, hbR] = await Promise.all([
+  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR, branchR, checksR, monthR, hbR,
+         ledgerR, ledgerJobsR, verdictR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, automode, autopilot_area, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
     // claimed_by that starts with 'auto/' or 'lane/' is an open lane branch; we
@@ -133,6 +141,25 @@ control.get('/', async (_req, res) => {
     // rather than as silent (see the resolver below).
     q(`SELECT last_poll_at, host_local FROM dispatcher_heartbeat WHERE id`)
       .catch(() => ({ rows: [] })),
+    // (#269) The throughput ledger — 14 days of runs. Mission Control shows
+    // what IS; these rows are the only record of whether the machine is
+    // getting BETTER, and until now nothing read them.
+    q(`SELECT r.item_id, r.outcome, r.tokens, r.cost_usd, r.model_usage, r.finished_at
+         FROM autopilot_runs r
+         JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
+        WHERE r.finished_at > now() - interval '14 days'
+        ORDER BY r.finished_at`),
+    // Merge + revert jobs over the same window: the auto-merge share and the
+    // revert rate are the two signals of whether the machine can be trusted
+    // to close its own loop.
+    q(`SELECT kind, status, detail, created_at FROM autopilot_jobs
+        WHERE created_at > now() - interval '14 days' AND kind IN ('merge','revert')`),
+    // Verdicts on items the runner landed in the window — the first-pass rate.
+    q(`SELECT DISTINCT ri.id, ri.review_tag
+         FROM roadmap_items ri
+         JOIN autopilot_runs r ON r.item_id = ri.id
+        WHERE r.finished_at > now() - interval '14 days' AND r.outcome = 'landed'
+          AND COALESCE(ri.review_tag, '') <> ''`),
   ]);
 
   const roadByP = new Map();
@@ -475,7 +502,110 @@ control.get('/', async (_req, res) => {
     };
   })();
 
+  // (#269) The throughput ledger — is the automation getting better? Every
+  // number is current-value-plus-direction (last 7 days against the 7 before),
+  // never a table: the question is the trend, not the row.
+  const ledger = (() => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const dayKey = (ts) => new Date(ts).toISOString().slice(0, 10); // UTC, as everywhere
+    // Plan nights (#219) never commit by design — counting them as no-commit
+    // runs would slander the build throughput. They are excluded throughout.
+    const runs = ledgerR.rows.filter((r) => r.outcome !== 'planned');
+    const half = (rows, recent) => rows.filter((r) => {
+      const age = now - new Date(r.finished_at || r.created_at).getTime();
+      return recent ? age <= 7 * DAY_MS : age > 7 * DAY_MS;
+    });
+
+    // 14 daily buckets, oldest first — the sparkline's spine. Days with no
+    // runs are present as zeroes so the shape reads as time, not as samples.
+    const days = [];
+    for (let i = 13; i >= 0; i--) {
+      const key = dayKey(now - i * DAY_MS);
+      const onDay = runs.filter((r) => dayKey(r.finished_at) === key);
+      days.push({
+        day: key,
+        landed: onDay.filter((r) => r.outcome === 'landed').length,
+        runs: onDay.length,
+        tokens: onDay.reduce((n, r) => n + Number(r.tokens || 0), 0),
+        costUsd: onDay.reduce((n, r) => n + Number(r.cost_usd || 0), 0),
+      });
+    }
+
+    // A metric is {now, prev} — the client renders the delta as direction.
+    const window = (rows) => {
+      const landed = rows.filter((r) => r.outcome === 'landed');
+      const nights = new Set(rows.map((r) => dayKey(r.finished_at))).size;
+      const tokens = landed.reduce((n, r) => n + Number(r.tokens || 0), 0);
+      const cost = landed.reduce((n, r) => n + Number(r.cost_usd || 0), 0);
+      return {
+        landed: landed.length,
+        // Items landed per ACTIVE night — nights the fleet did not run at all
+        // would otherwise drag the average toward zero and hide real gains.
+        perNight: nights ? landed.length / nights : 0,
+        tokensPerItem: landed.length ? tokens / landed.length : 0,
+        costPerItem: landed.length ? cost / landed.length : 0,
+        noCommitRate: rows.length
+          ? rows.filter((r) => r.outcome === 'no-commits').length / rows.length : 0,
+      };
+    };
+
+    // Auto-merge share. The runner's own low-risk merges (#212) are recorded
+    // by the 'auto-merge …' detail prefix that POST /merge writes; a human
+    // ⇥ Merge writes plain 'merge …'. That string IS the only distinguishing
+    // record, so it is what we read.
+    const merges = ledgerJobsR.rows.filter((j) => j.kind === 'merge');
+    const reverts = ledgerJobsR.rows.filter((j) => j.kind === 'revert');
+    const mergeSplit = (rows) => {
+      const done = rows.filter((j) => j.status === 'done');
+      return {
+        total: done.length,
+        auto: done.filter((j) => String(j.detail || '').startsWith('auto-merge')).length,
+      };
+    };
+
+    // First pass: of the items a run landed and a human has since verdicted,
+    // how many were called solid. Verdicts are current state, so an item
+    // refined and later passed counts as solid — this is the ceiling of the
+    // true first-pass rate, and the client says so.
+    const verdicted = verdictR.rows;
+    const solid = verdicted.filter((r) => r.review_tag === 'solid').length;
+
+    // Executor vs advisor spend (#153's "cheap hands, strong minds" claim,
+    // finally measurable). Roles are not recorded per run, so within each run
+    // the highest-token model is taken as the executor (it runs every turn)
+    // and the rest as advisors (consulted). Documented as a heuristic because
+    // it is one — historical runs used whatever the settings said at the time.
+    const roles = { executor: { tokens: 0, costUsd: 0 }, advisor: { tokens: 0, costUsd: 0 } };
+    for (const r of ledgerR.rows) {
+      if (!r.model_usage || typeof r.model_usage !== 'object') continue;
+      const entries = Object.entries(r.model_usage).map(([model, u]) => ({
+        model,
+        tokens: (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0)
+          + (Number(u.cacheReadInputTokens) || 0) + (Number(u.cacheCreationInputTokens) || 0),
+        costUsd: Number(u.costUSD) || 0,
+      })).sort((a, b) => b.tokens - a.tokens);
+      entries.forEach((e, i) => {
+        const bucket = i === 0 ? roles.executor : roles.advisor;
+        bucket.tokens += e.tokens;
+        bucket.costUsd += e.costUsd;
+      });
+    }
+
+    return {
+      days,
+      now: window(half(runs, true)),
+      prev: window(half(runs, false)),
+      merges: { now: mergeSplit(half(merges, true)), prev: mergeSplit(half(merges, false)) },
+      reverts: { now: half(reverts, true).length, prev: half(reverts, false).length },
+      firstPass: { solid, verdicted: verdicted.length },
+      roles,
+    };
+  })();
+
   res.json({
+    // (#269) The throughput ledger — the trend behind the numbers.
+    ledger,
     // (#268) The fleet: capacity plus every in-flight worker.
     // (#270) …and the honest reason it is or is not running.
     fleet: {

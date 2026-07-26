@@ -41,6 +41,25 @@ const sessionAge = (startedAt: number) => {
   return min < 1 ? 'just opened' : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`;
 };
 
+// #269 — a metric's direction: the arrow, whether the movement is good, and a
+// plain-language delta for the tooltip. A metric with no prior period reads as
+// "from nothing" rather than as an infinite improvement.
+function trend(now: number, prev: number, higherIsBetter: boolean) {
+  const eps = 1e-9;
+  if (Math.abs(now - prev) < eps) return { mark: '·', cls: 'flat', delta: 'unchanged from the week before' };
+  const up = now > prev;
+  const pct = prev > eps ? Math.round(((now - prev) / prev) * 100) : null;
+  return {
+    mark: up ? '▲' : '▼',
+    cls: up === higherIsBetter ? 'good' : 'bad',
+    delta: pct === null
+      ? `${up ? 'up' : 'down'} from nothing the week before`
+      : `${up ? 'up' : 'down'} ${Math.abs(pct)}% on the week before`,
+  };
+}
+
+const pct1 = (n: number) => `${Math.round(n * 100)}%`;
+
 const JOB_LABEL: Record<AutopilotJob['status'], string> = {
   queued: 'queued', claimed: 'starting', running: 'running', done: 'done', failed: 'failed',
   paused: 'hung up',
@@ -1146,6 +1165,87 @@ export function ControlPanel() {
                     )}
                   </div>
                 )}
+
+                {/* #269 — the throughput ledger. Mission Control shows what IS;
+                    this is the only place that says whether the machine is
+                    getting BETTER. Current number and direction, never a table. */}
+                {data.ledger && data.ledger.days.some((d) => d.runs > 0) && (() => {
+                  const L = data.ledger;
+                  const maxLanded = Math.max(1, ...L.days.map((d) => d.landed));
+                  const mergeShare = (m: { total: number; auto: number }) => (m.total ? m.auto / m.total : 0);
+                  const stats: { key: string; label: string; value: string; t: ReturnType<typeof trend>; title: string }[] = [
+                    {
+                      key: 'perNight', label: 'landed / night', value: L.now.perNight.toFixed(1),
+                      t: trend(L.now.perNight, L.prev.perNight, true),
+                      title: `${L.now.landed} item${L.now.landed === 1 ? '' : 's'} landed over the last 7 days, averaged across the nights that actually ran (idle nights are not counted against it).`,
+                    },
+                    {
+                      key: 'costPerItem', label: 'cost / item', value: `$${L.now.costPerItem.toFixed(2)}`,
+                      t: trend(L.now.costPerItem, L.prev.costPerItem, false),
+                      title: `Spend per landed item over the last 7 days — ${fmtTok(Math.round(L.now.tokensPerItem))} each. Down is better.`,
+                    },
+                    {
+                      key: 'noCommit', label: 'no-commit runs', value: pct1(L.now.noCommitRate),
+                      t: trend(L.now.noCommitRate, L.prev.noCommitRate, false),
+                      title: 'Share of build runs that finished without committing anything — wasted nights. Plan nights are excluded; they never commit by design.',
+                    },
+                    {
+                      key: 'autoMerge', label: 'merges by machine', value: pct1(mergeShare(L.merges.now)),
+                      t: trend(mergeShare(L.merges.now), mergeShare(L.merges.prev), true),
+                      title: `${L.merges.now.auto} of ${L.merges.now.total} completed merges over the last 7 days were the runner's own low-risk auto-merges rather than a hand-pressed ⇥ Merge.`,
+                    },
+                    {
+                      key: 'reverts', label: 'reverts', value: String(L.reverts.now),
+                      t: trend(L.reverts.now, L.reverts.prev, false),
+                      title: 'Undo jobs queued in the last 7 days — work that landed and had to be taken back out.',
+                    },
+                  ];
+                  return (
+                    <div className="mc14-rail-sec">
+                      <div className="cap-row">
+                        <span className="cap">THROUGHPUT</span><span className="sub">14 days</span>
+                      </div>
+                      <div className="mc-led-spark" aria-label="Items landed per day, oldest left">
+                        {L.days.map((d) => (
+                          <i key={d.day} className={d.landed ? '' : 'zero'}
+                            style={{ height: `${Math.max(8, (d.landed / maxLanded) * 100)}%` }}
+                            title={`${d.day}: ${d.landed} landed of ${d.runs} run${d.runs === 1 ? '' : 's'}`} />
+                        ))}
+                      </div>
+                      {stats.map((s) => (
+                        <div key={s.key} className="mc-led-stat" title={`${s.title}\n\n${s.t.delta}`}>
+                          <span className="l">{s.label}</span>
+                          <span className="v">{s.value}</span>
+                          <span className={`d ${s.t.cls}`}>{s.t.mark}</span>
+                        </div>
+                      ))}
+                      {L.firstPass.verdicted > 0 && (
+                        <div className="mc-led-stat"
+                          title={`${L.firstPass.solid} of ${L.firstPass.verdicted} landed items you have verdicted came back solid. Verdicts are read as they stand now, so an item that was refined and later passed still counts — treat this as the ceiling of the true first-pass rate.`}>
+                          <span className="l">verdicted solid</span>
+                          <span className="v">{pct1(L.firstPass.solid / L.firstPass.verdicted)}</span>
+                          <span className="d flat">of {L.firstPass.verdicted}</span>
+                        </div>
+                      )}
+                      {/* #153's claim — cheap hands, strong minds — made measurable */}
+                      {L.roles.advisor.tokens > 0 && (
+                        <div className="mc-led-roles"
+                          title="Executor vs advisor spend over 14 days. Roles are not recorded per run, so the highest-token model in each run is taken as the executor — a heuristic, since the session's models are whatever the settings said at the time.">
+                          <div className="row">
+                            <span className="rl">hands</span>
+                            <span className="rt">{fmtTok(L.roles.executor.tokens)}</span>
+                            <span className="rc">${L.roles.executor.costUsd.toFixed(2)}</span>
+                          </div>
+                          <div className="row">
+                            <span className="rl">minds</span>
+                            <span className="rt">{fmtTok(L.roles.advisor.tokens)}</span>
+                            <span className="rc">${L.roles.advisor.costUsd.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div className="mc14-rail-sec grow">
                   <div className="cap-row">
