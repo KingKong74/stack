@@ -15,6 +15,9 @@
 //   node ~/.stack/stack-gemini-review.mjs               # review the last commit
 //   node ~/.stack/stack-gemini-review.mjs --range A..B  # review a range
 //   node ~/.stack/stack-gemini-review.mjs --dry         # print, don't post
+//   node ~/.stack/stack-gemini-review.mjs --architect   # the structural read (#284),
+//                                                      # printed or written to
+//                                                      # --verdict-file; posts nothing
 //
 // Env (~/.stack/env — never printed, never committed):
 //   GEMINI_API_KEY  required   an AI Studio key (free tier is fine)
@@ -34,6 +37,14 @@ const RANGE = rangeIdx > -1 ? process.argv[rangeIdx + 1] : null;
 // tell a clean review from a flagged one without scraping stderr. `verdict` is
 // clean | concerns | blocked — blocked meaning at least one critical/high
 // finding. Written on success only — no file means no verdict.
+// --architect (#284): the SECOND pair of eyes, asking a different question. The
+// reviewer asks "is this change correct?"; the architect asks "where is this
+// codebase going?" — duplication introduced, boundaries crossed, drift from the
+// patterns already there. It files NOTHING: structure notes are not bugs, and
+// pretending they are would clog the review inbox with things no one can close.
+// It writes only a verdict file, which the runner stores on the run row.
+const MODE = process.argv.includes('--architect') ? 'architect' : 'review';
+
 const verdictIdx = process.argv.indexOf('--verdict-file');
 const VERDICT_FILE = verdictIdx > -1 ? process.argv[verdictIdx + 1] : null;
 
@@ -62,7 +73,46 @@ let diff = git(cwd, ['diff', range]);
 if (!diff) die(`Nothing to review in ${range}.`);
 if (diff.length > DIFF_CAP) diff = `${diff.slice(0, DIFF_CAP)}\n… (diff truncated at ${DIFF_CAP} chars)`;
 
-const prompt = `You are a senior software engineer doing a second-opinion code review.
+// The architect judges a change against what is ALREADY there, so a diff alone is
+// not enough: duplication of an untouched file is invisible in it. Paths are the
+// cheapest possible context for that — a few hundred tokens buys "you put this in
+// render/ but mail/format.ts already does it". Capped, and tests/lockfiles out.
+const treePaths = MODE !== 'architect' ? '' : (git(cwd, ['ls-files']) || '')
+  .split('\n')
+  .filter((f) => f && !/(^|\/)(node_modules|dist|\.min\.)|package-lock\.json$/.test(f))
+  .slice(0, 400)
+  .join('\n');
+
+const architectPrompt = `You are the ARCHITECT on a small software team, reading one change to
+say where the codebase is heading — not whether the change is correct. Someone else
+reviews correctness; do not repeat that job and do not report bugs.
+Read the following git diff (commit "${subject}", range ${range}) and judge STRUCTURE:
+does it follow the patterns already in this codebase, does it duplicate something that
+already exists, does it cross a boundary it should not, does it put logic where that
+kind of logic does not live? Only what the diff evidences — no speculation, no style
+nitpicks, no praise. Use en-AU spelling.
+
+Respond with ONLY a JSON object, no markdown fences, in exactly this shape:
+{
+  "verdict": "aligned | drifting | concerning",
+  "note": "one or two sentences: where this change takes the codebase",
+  "observations": ["at most four short lines, each one concrete and structural"]
+}
+"aligned" = it fits what is already there. "drifting" = it diverges in a way worth
+knowing about but nothing is broken. "concerning" = a structural problem that will
+cost more the longer it stays. Say "aligned" when it is aligned; an architect who
+always finds something is no use.
+
+Every file already in this repository (so you can see what exists and where things live —
+if this change duplicates or bypasses something on this list, that is exactly the kind of
+thing to report):
+${treePaths}
+
+The diff:
+${diff}
+`;
+
+const reviewPrompt = `You are a senior software engineer doing a second-opinion code review.
 Review the following git diff (commit "${subject}", range ${range}). Be precise and only
 report findings the diff actually evidences — no speculation, no style nitpicks.
 Use en-AU spelling. Titles at most 15 words.
@@ -94,7 +144,7 @@ async function askGemini() {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
+            contents: [{ parts: [{ text: MODE === 'architect' ? architectPrompt : reviewPrompt }] }],
             generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
           }),
           signal: ctrl.signal,
@@ -127,6 +177,26 @@ async function askGemini() {
 }
 
 const cap = (arr, n) => (Array.isArray(arr) ? arr.slice(0, n) : []);
+
+// The architect's whole output is its verdict — it never posts to the tracker.
+if (MODE === 'architect') {
+  const a = await askGemini();
+  const VERDICTS = ['aligned', 'drifting', 'concerning'];
+  const verdict = VERDICTS.includes(a.verdict) ? a.verdict : '';
+  const note = String(a.note || '').trim().slice(0, 800);
+  const observations = cap(a.observations, 4).map((o) => String(o).trim().slice(0, 200)).filter(Boolean);
+  const out = { verdict, note, observations, model: usedModel };
+  if (VERDICT_FILE) {
+    try {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(VERDICT_FILE, JSON.stringify(out));
+    } catch (e) { logStderr(`architect verdict file not written (${e.message})`); }
+  } else {
+    process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
+  }
+  logStderr(`architect read ${commit} on ${branch}: ${verdict || 'no verdict'}${note ? ` — ${note}` : ''} (model: ${usedModel})`);
+  process.exit(0);
+}
 
 const review = await askGemini();
 const bugs = cap(review.bugs, 10).filter((b) => b?.title);

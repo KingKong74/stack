@@ -71,6 +71,10 @@ function itemShape(row) {
       reviewVerdict: row.review_verdict || '',
       reviewNote: row.review_note || '',
       reviewFindings: row.review_findings ?? null,
+      // #284 — the architect's structural read, beside the reviewer's.
+      architectVerdict: row.architect_verdict || '',
+      architectNote: row.architect_note || '',
+      architectObs: Array.isArray(row.architect_obs) ? row.architect_obs : [],
       when: relativeTime(row.run_finished) || '',
       finishedAt: row.run_finished,
     } : null,
@@ -87,6 +91,7 @@ const ITEM_SQL = `
          r.commits AS run_commits, r.tokens AS run_tokens, r.cost_usd AS run_cost,
          r.checks_failing AS run_checks, r.summary AS run_summary,
          r.review_verdict, r.review_note, r.review_findings,
+         r.architect_verdict, r.architect_note, r.architect_obs,
          r.finished_at AS run_finished
     FROM roadmap_items i
     JOIN projects p ON p.id = i.project_id AND p.deleted_at IS NULL
@@ -137,6 +142,9 @@ review.get('/', async (req, res) => {
       reviewVerdict: r.review_verdict || '',
       reviewNote: r.review_note || '',
       reviewFindings: r.review_findings ?? null,
+      architectVerdict: r.architect_verdict || '',
+      architectNote: r.architect_note || '',
+      architectObs: Array.isArray(r.architect_obs) ? r.architect_obs : [],
       // The UTC calendar day the run finished — the client groups nights on it,
       // the same convention Mission Control's week strip already uses.
       day: r.finished_at ? new Date(r.finished_at).toISOString().slice(0, 10) : '',

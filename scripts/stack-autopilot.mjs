@@ -56,17 +56,19 @@
 //                       project's autopilot_area; pins and agendas bypass it)
 //     [--executor-model M]  claude model alias the session runs as (default: Settings'
 //                           autopilotExecutorModel; '' = the claude CLI's own default)
-//     [--advisor-model M]   stronger model exposed to the session as the read-only
-//                           "advisor" subagent (default: Settings' autopilotAdvisorModel;
-//                           '' = no advisor — single-model session, phase-1 behaviour)
+//     [--advisor-model M]   the model the session RUNS AS — the director (#285).
+//                           (default: Settings' autopilotAdvisorModel; '' = no
+//                           director, so the session runs single-model on the
+//                           executor exactly as it did before #153)
 //     [--dry]           print what tonight would pick and exit (no claim, no session)
 //     [--force]         run even while the Settings switch / automode is off
 //
-// Dual-model sessions (#153): with both models set, the cheap EXECUTOR runs
-// every turn (claude --model) and consults the expensive ADVISOR through a
-// custom subagent (claude --agents) — an ordinary Agent tool call in the
-// trace — for the build plan, unblocking, and a pre-finish sanity check. The
-// session's JSON result carries per-model usage, logged per item.
+// Dual-model sessions (#153, inverted by #285): the strong ADVISOR model runs the session as the DIRECTOR
+// (claude --model) and delegates the building to a cheap EXECUTOR subagent with
+// write access (claude --agents). Context accumulates in the main loop and
+// subagent contexts are isolated, so this puts judgement on the strong model and
+// the bulk — file reads, retries, test output — on the cheap one. It only pays
+// off if the director delegates instead of building; the prompt says so plainly.
 //
 // Env (~/.stack/env): STACK_API + STACK_TOKEN (required), GEMINI_API_KEY
 // (optional — skips the spec pre-pass + second-model review when absent).
@@ -77,7 +79,7 @@
 // Run-now presses and the Mission Control calendar all arrive that way.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadStackEnv, logStderr, git } from '../hook/stack-post.mjs';
@@ -152,15 +154,45 @@ async function postRun(payload) {
 // in before the Gemini review so a crash mid-review costs only the review; this
 // is the narrow second write that stops the verdict evaporating the moment the
 // auto-merge gate has read it. Best effort, like the record itself.
-async function attachReview(runId, verdict) {
-  if (!runId || !verdict) return;
+async function attachReview(runId, verdict, architect) {
+  if (!runId || (!verdict && !architect)) return;
   try {
     await api('PATCH', `/api/projects/${SLUG}/autopilot/runs/${runId}`, {
-      review_verdict: verdict.verdict || (verdict.bugs === 0 ? 'clean' : 'concerns'),
-      review_note: verdict.summary || '',
-      review_findings: verdict.bugs ?? null,
+      ...(verdict ? {
+        review_verdict: verdict.verdict || (verdict.bugs === 0 ? 'clean' : 'concerns'),
+        review_note: verdict.summary || '',
+        review_findings: verdict.bugs ?? null,
+      } : {}),
+      // #284 — the architect's structural read rides the same write.
+      ...(architect ? {
+        architect_verdict: architect.verdict || '',
+        architect_note: architect.note || '',
+        architect_obs: architect.observations || [],
+      } : {}),
     });
-  } catch (e) { log(`reviewer verdict not stored (${e.message})`); }
+  } catch (e) { log(`agent verdicts not stored (${e.message})`); }
+}
+
+// #284 — the ARCHITECT pass: the same diff, a different question. Where the
+// reviewer asks whether the change is correct, this asks where the codebase is
+// going — duplication, boundaries, drift from what is already there. It files
+// nothing and gates nothing; it is a second opinion for the morning's review.
+// Keyless = skipped silently, like every other Gemini surface here.
+function runArchitect(wt, tag) {
+  if (!GEMINI_KEY) return null;
+  const file = join(lockDir, 'autopilot', `${SLUG}-${tag}-architect.json`);
+  try { rmSync(file); } catch { /* none from a previous attempt */ }
+  const pass = spawnSync('node', [join(REPO, 'hook', 'stack-gemini-review.mjs'),
+    '--architect', '--range', 'main..HEAD', '--verdict-file', file], {
+    cwd: wt, stdio: ['ignore', 'inherit', 'inherit'], timeout: 120_000,
+  });
+  if (pass.status !== 0) { log('architect pass did not complete (see above).'); return null; }
+  try {
+    const read = JSON.parse(readFileSync(file, 'utf8'));
+    rmSync(file);
+    log(`architect: ${read.verdict || 'no verdict'}${read.note ? ` — ${read.note}` : ''}`);
+    return read;
+  } catch { return null; }
 }
 
 // Night-end notification (#79) via ntfy.sh — free, keyless, no account: set
@@ -381,29 +413,71 @@ const tierRank = (t) => TIER_RANK[String(t || '').toUpperCase()] ?? 4;
 let tokensSpent = 0;
 let costSpent = 0;
 
-// The advisor contract, shared by the #228 session kinds (runItem keeps its own copy).
-const advisorPromptBlock = !ADVISOR_MODEL ? '' : `
-A strategic ADVISOR (a stronger model) is available as the subagent named "advisor". Use it deliberately — it is expensive:
-- BEFORE any changes, consult it once with your intended approach; consult again if genuinely stuck, and once before finishing.
-- The advisor is read-only and only advises; all work is yours. Its advice never expands the task's scope.
+// #285 — the roles, inverted. The ADVISOR now runs the session: the strong model
+// holds the main loop as the DIRECTOR (it plans, delegates, reads results and
+// commits) and the cheap EXECUTOR model does the actual code in subagents.
+//
+// Why this way round: the main loop is where context accumulates — every file
+// read, every test run, every retry — and subagent contexts are isolated. With
+// the cheap model in the loop, all that bulk was billed cheaply but every
+// judgement was cheap too. With the strong model in the loop, judgement is
+// strong and the bulk moves into executor subagents at the cheap rate — but ONLY
+// if the director actually delegates. A director that reads and edits files
+// itself is the most expensive arrangement of all, so the contract below says so
+// in as many words.
+//
+// No advisor set = no strong model to direct with, so the session runs
+// single-model on the executor exactly as it did before #153.
+const directorBlock = !ADVISOR_MODEL ? '' : `
+YOU ARE THE DIRECTOR. You are the expensive model; the cheap work is not yours to do.
+A subagent named "executor" (a cheaper model, with full write access to this worktree)
+does the building. How to work:
+- PLAN first: read only what you need to decide the approach, then write the plan as
+  concrete, commit-sized units of work.
+- DELEGATE each unit to the executor in one Agent call: give it the exact files, the
+  intended change, the constraints, and how to verify. Ask it to report back briefly
+  what it changed and anything it could not do.
+- Do NOT write or edit code yourself, and do not read files the executor has already
+  summarised for you. Every token you spend on bulk is spent at the expensive rate.
+- VERIFY what comes back: read \`git diff --stat\`, then only the hunks that matter.
+  If it is wrong, send it back with specifics rather than fixing it yourself.
+- COMMIT and push the units yourself, and write the checkpoint. Judgement, sequencing
+  and the record are yours; typing is not.
+An executor that is stuck is your problem to unstick with a better instruction — not a
+reason to take over.
 `;
+// Kept under the old name so the #228 session kinds read unchanged.
+const advisorPromptBlock = directorBlock;
+
+// The executor subagent (#285): the cheap model with the write access. Defined
+// once so every session kind spawns the same worker. Tools are deliberately the
+// full building set — a read-only executor could not build anything, which was
+// the point of the old arrangement and is not the point of this one.
+const executorAgent = () => ({
+  executor: {
+    description: 'The executor — a cheaper model that does the building. Delegate each commit-sized unit of work to it with the exact files, the intended change and how to verify.',
+    prompt: 'You are the executor working under a director model on one unit of work in a git worktree. '
+      + 'Do exactly what you are asked and nothing more: no refactors nobody asked for, no scope you were not given. '
+      + 'Read what you need, make the change, run whatever verifies it, and report back BRIEFLY — what you changed, '
+      + 'what you verified, and anything you could not do. Do not commit; the director commits. '
+      + 'If the instruction is ambiguous or wrong, say so in your report instead of guessing.',
+    model: EXECUTOR_MODEL || undefined,
+    tools: ['Read', 'Grep', 'Glob', 'Edit', 'Write', 'Bash'],
+  },
+});
 
 // One bounded claude session (#228 — shared by the debug/audit kinds): spawn,
 // meter real usage into the night budget, hand back the parsed result.
 function execSession(prompt, cwd, capMin) {
+  // #285 — same inversion for the debug and audit kinds: the advisor directs,
+  // the executor subagent builds.
   const claudeArgs = ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'json'];
-  if (EXECUTOR_MODEL) claudeArgs.push('--model', EXECUTOR_MODEL);
-  if (ADVISOR_MODEL) {
-    claudeArgs.push('--agents', JSON.stringify({
-      advisor: {
-        description: 'The strategic advisor — a stronger model. Consult it for the plan before starting, when genuinely stuck, and to sanity-check the result before finishing.',
-        prompt: 'You are the advisor to a cheaper executor model working unattended overnight. Give decisive, concrete guidance: the approach, the exact files to touch, the traps to avoid, and how to verify. Be concise — the executor pays to read every token. Advise only; never expand the task\'s scope.',
-        model: ADVISOR_MODEL,
-        tools: ['Read', 'Grep', 'Glob'],
-      },
-    }));
-  }
-  log(`starting claude session (executor ${EXECUTOR_MODEL || 'CLI default'}, advisor ${ADVISOR_MODEL || 'off'})…`);
+  if (ADVISOR_MODEL) claudeArgs.push('--model', ADVISOR_MODEL);
+  else if (EXECUTOR_MODEL) claudeArgs.push('--model', EXECUTOR_MODEL);
+  if (ADVISOR_MODEL) claudeArgs.push('--agents', JSON.stringify(executorAgent()));
+  log(ADVISOR_MODEL
+    ? `starting claude session (director ${ADVISOR_MODEL}, executor subagent ${EXECUTOR_MODEL || 'CLI default'})…`
+    : `starting claude session (single model ${EXECUTOR_MODEL || 'CLI default'})…`);
   const run = spawnSync('claude', claudeArgs, {
     cwd,
     stdio: ['ignore', 'pipe', 'inherit'],
@@ -660,8 +734,12 @@ Read the relevant code first — real file paths, real tables, real routes. Then
   "risks": ["what could bite — max 3"],
   "steps": ["4-8 ordered implementation steps, each one commit-sized"] }`;
 
+  // #285 — a plan night writes a design and nothing else: all judgement, no
+  // typing. So it runs on the advisor when there is one (and spawns no executor
+  // — there is nothing to delegate), falling back to the executor model.
   const claudeArgs = ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'json'];
-  if (EXECUTOR_MODEL) claudeArgs.push('--model', EXECUTOR_MODEL);
+  const planModel = ADVISOR_MODEL || EXECUTOR_MODEL;
+  if (planModel) claudeArgs.push('--model', planModel);
   const run = spawnSync('claude', claudeArgs, {
     cwd: wt,
     stdio: ['ignore', 'pipe', 'inherit'],
@@ -783,14 +861,9 @@ The owner's refinement — change ONLY what this asks for, on top of what alread
 Do NOT treat the title/note above as a fresh spec and rebuild from scratch — the previous work stands. Apply only the delta the refinement describes.
 `;
 
-  // The advisor contract (#153): only present when an advisor model is set —
-  // the executor is told when to consult it, and that advice never expands scope.
-  const advisorBlock = !ADVISOR_MODEL ? '' : `
-A strategic ADVISOR (a stronger model) is available as the subagent named "advisor". Use it deliberately — it is expensive:
-- BEFORE writing any code, consult it once: state the task, your intended approach and the files you plan to touch, and follow its guidance.
-- Consult it again if you get genuinely stuck, and once before finishing to sanity-check the result against the acceptance criteria.
-- The advisor is read-only and only advises; all building, verifying and committing is yours. Its advice never expands the task's scope.
-`;
+  // #285 — the build session's copy of the director contract. Same inversion:
+  // the strong model directs, the cheap executor subagent builds.
+  const advisorBlock = directorBlock;
 
   const prompt = `You are Stack's overnight autopilot, working unattended in a dedicated git worktree on branch ${branch}.
 
@@ -807,22 +880,18 @@ Rules for this run:
 - If the item proves impossible or unsafe to do unattended, stop early: leave the tree clean, and say why in the checkpoint summary and blockers.`;
 
   // Bounded session; JSON output so real token usage lands in the night ledger.
-  // Dual-model wiring (#153): --model pins the executor; --agents defines the
-  // advisor subagent on the stronger model (read-only tools — it advises, the
-  // executor executes). Both '' = exactly the old single-model invocation.
+  // #285 — the invocation, inverted. `--model` is the ADVISOR: the strong model
+  // holds the main loop and directs. `--agents` defines the EXECUTOR subagent on
+  // the cheap model, with the write tools it needs to actually build. With no
+  // advisor set there is nothing to direct with, so it falls back to exactly the
+  // pre-#153 single-model session on the executor model.
   const claudeArgs = ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'json'];
-  if (EXECUTOR_MODEL) claudeArgs.push('--model', EXECUTOR_MODEL);
-  if (ADVISOR_MODEL) {
-    claudeArgs.push('--agents', JSON.stringify({
-      advisor: {
-        description: 'The strategic advisor — a stronger model. Consult it for the build plan before coding, when genuinely stuck, and to sanity-check the result before finishing.',
-        prompt: 'You are the advisor to a cheaper executor model building one roadmap item unattended overnight. Give decisive, concrete guidance: the approach, the exact files to touch, the traps to avoid, and how to verify. Be concise — the executor pays to read every token. Advise only; never expand the task\'s scope.',
-        model: ADVISOR_MODEL,
-        tools: ['Read', 'Grep', 'Glob'],
-      },
-    }));
-  }
-  log(`starting claude session (executor ${EXECUTOR_MODEL || 'CLI default'}, advisor ${ADVISOR_MODEL || 'off'})…`);
+  if (ADVISOR_MODEL) claudeArgs.push('--model', ADVISOR_MODEL);
+  else if (EXECUTOR_MODEL) claudeArgs.push('--model', EXECUTOR_MODEL);
+  if (ADVISOR_MODEL) claudeArgs.push('--agents', JSON.stringify(executorAgent()));
+  log(ADVISOR_MODEL
+    ? `starting claude session (director ${ADVISOR_MODEL}, executor subagent ${EXECUTOR_MODEL || 'CLI default'})…`
+    : `starting claude session (single model ${EXECUTOR_MODEL || 'CLI default'})…`);
   const run = spawnSync('claude', claudeArgs, {
     cwd: wt,
     stdio: ['ignore', 'pipe', 'inherit'],
@@ -928,12 +997,11 @@ Rules for this run:
     });
     log(review.status === 0 ? 'gemini review posted to the inbox.' : 'gemini review did not post (see above).');
     try {
-      const { readFileSync } = await import('node:fs');
       reviewVerdict = JSON.parse(readFileSync(verdictFile, 'utf8'));
       rmSync(verdictFile);
     } catch { /* no verdict — treated as not-clean below */ }
-    // Keep it: the morning's review queue reads this instead of starting blank.
-    await attachReview(runRow?.id, reviewVerdict);
+    // Keep both reads: the morning's review queue starts from them instead of blank.
+    await attachReview(runRow?.id, reviewVerdict, runArchitect(wt, `item-${item.id}`));
   }
 
   // Risk-tiered auto-merge (#212) — the graduated-trust lever. A LOW-risk item

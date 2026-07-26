@@ -31,6 +31,11 @@ type Filter = 'todo' | 'flagged' | 'shelved' | 'settled';
 const VERDICT_LABEL: Record<string, string> = {
   clean: 'CLEAN', concerns: 'CONCERNS', blocked: 'BLOCKED', '': 'NO REVIEW',
 };
+// #284 — the architect's reads. It answers a different question from the
+// reviewer's, so it gets its own vocabulary and its own chip.
+const ARCH_LABEL: Record<string, string> = {
+  aligned: 'ALIGNED', drifting: 'DRIFTING', concerning: 'CONCERNING', '': '',
+};
 const ORIGIN_LABEL = { auto: '⚙ autopilot', lane: '⚑ branch', manual: 'by hand' } as const;
 
 // Review annotations (#146), unchanged: quick labels you stick on while testing.
@@ -343,6 +348,11 @@ export function ReviewRoom({ onCount }: { onCount?: (n: number) => void }) {
                       {(it.run?.checksFailing ?? 0) > 0 && (
                         <span className="rv-flag" title="The run finished with checks red">CHECKS</span>
                       )}
+                      {/* #284 — ARCH only when the architect had something to say;
+                          "aligned" is not news and would just add noise. */}
+                      {it.run?.architectVerdict && it.run.architectVerdict !== 'aligned' && (
+                        <span className="rv-arch" title={it.run.architectNote || 'The architect flagged structure'}>ARCH</span>
+                      )}
                       {it.reviewTag && <span className="rv-settled-chip">{it.reviewTag}</span>}
                       <span className="rv-spacer" />
                       <span className="age">{it.when}</span>
@@ -539,13 +549,29 @@ function Detail({
                 That is not the same as nothing being wrong with it.
               </div>
             )}
-            {/* No architect on the roster: the design's second opinion is absent
-                rather than faked. Absent, not dead — the same rule as every
-                other AI surface here. */}
-            <div className="rv-quiet dashed">
-              No architect on the roster — a second agent reading structure rather than correctness
-              would post its take here.
-            </div>
+            {/* #284 — the architect, when it ran. Different question from the
+                reviewer's: not "is this correct" but "where is this going". */}
+            {it.run?.architectVerdict ? (
+              <div className={`rv-opinion arch ${it.run.architectVerdict}`}>
+                <span className="agent arch">ARCHITECT</span>
+                <div className="body">
+                  <span className="t">{it.run.architectNote || 'No note — only the verdict.'}</span>
+                  {it.run.architectObs.length > 0 && (
+                    <ul className="rv-obs">
+                      {it.run.architectObs.map((o, i) => <li key={i}>{o}</li>)}
+                    </ul>
+                  )}
+                  <span className="meta">
+                    ✧ Gemini on the same diff · structure, not correctness · {ARCH_LABEL[it.run.architectVerdict].toLowerCase()}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="rv-quiet dashed">
+                No architect read this change{it.origin === 'manual' ? ' — it was built by hand' : ''}. The
+                structural pass runs at the end of an autopilot run and needs a Gemini key.
+              </div>
+            )}
             {brief && (
               <div className="review-brief">
                 {brief.loading && <div className="rb-loading">✧ Reading the item, its run and the checks…</div>}
@@ -709,6 +735,14 @@ function Debrief({ nights, shown, onPickNight, onOpenItem, onReview }: {
             {reviewed.length
               ? `. The reviewer read ${reviewed.length} of them and called ${clean} clean.`
               : '. No second-model review ran, so nothing arrived pre-verdicted.'}
+            {(() => {
+              const arch = n.runs.filter((r) => r.architectVerdict);
+              const drift = arch.filter((r) => r.architectVerdict !== 'aligned').length;
+              if (!arch.length) return '';
+              return drift
+                ? ` The architect flagged ${drift} for structure.`
+                : ' The architect found nothing drifting.';
+            })()}
           </p>
         </div>
         <div className="stats">
@@ -738,6 +772,12 @@ function Debrief({ nights, shown, onPickNight, onOpenItem, onReview }: {
                   <div className={`rv-opinion ${r.reviewVerdict || 'none'} tight`}>
                     <span className="agent">REVIEWER</span>
                     <span className="t">{r.reviewNote}</span>
+                  </div>
+                )}
+                {r.architectVerdict && r.architectVerdict !== 'aligned' && (
+                  <div className={`rv-opinion arch ${r.architectVerdict} tight`}>
+                    <span className="agent arch">ARCHITECT</span>
+                    <span className="t">{r.architectNote || ARCH_LABEL[r.architectVerdict]}</span>
                   </div>
                 )}
                 {r.summary && (
@@ -798,10 +838,44 @@ function Debrief({ nights, shown, onPickNight, onOpenItem, onReview }: {
 
           <div className="rv-panel">
             <div className="rv-lbl">ARCHITECT</div>
-            <div className="rv-quiet">
-              Not on the roster. A second agent reading structure — where the codebase is drifting,
-              rather than whether one change is correct — would report here.
-            </div>
+            {(() => {
+              // #284 — the night's structural reads. Drifting and concerning are
+              // the news; a night that is entirely aligned says so in one line
+              // rather than listing every change that was fine.
+              const read = n.runs.filter((r) => r.architectVerdict);
+              const flagged = read.filter((r) => r.architectVerdict !== 'aligned');
+              if (!read.length) {
+                return (
+                  <div className="rv-quiet">
+                    No structural pass ran on this night's work. The architect reads each branch diff
+                    at run end and needs a Gemini key.
+                  </div>
+                );
+              }
+              return (<>
+                <div className={`rv-verdict-big ${flagged.length ? 'concerns' : 'clean'}`}>
+                  {flagged.length
+                    ? `${flagged.length} of ${read.length} drifting`
+                    : `All ${read.length} aligned`}
+                </div>
+                {flagged.length === 0 && (
+                  <div className="rv-quiet">Nothing this night pushed the codebase anywhere it wasn't already going.</div>
+                )}
+                {flagged.map((r) => (
+                  <div className="rv-revline" key={r.id}>
+                    <span className={`mark ${r.architectVerdict}`}>
+                      {r.architectVerdict === 'concerning' ? '✕' : '~'}
+                    </span>
+                    <span className="t">
+                      {r.itemTitle || `#${r.itemId}`}{r.architectNote ? ` — ${r.architectNote}` : ''}
+                      {r.architectObs.length > 0 && (
+                        <ul className="rv-obs">{r.architectObs.map((o, i) => <li key={i}>{o}</li>)}</ul>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </>);
+            })()}
           </div>
 
           <div className="rv-panel">
