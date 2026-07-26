@@ -2511,6 +2511,35 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc14-mini .l { font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
 .mc14-mini .l.bad { color: var(--critical); }
 
+/* Now — the fleet strip (#268): one tile per worker slot, busy or idle. The
+   strip's width IS the fleet's size, so idle slots are drawn, never omitted. */
+.mc-fleet { display: flex; flex-direction: column; gap: 8px; }
+.mc-fleet-head { display: flex; align-items: center; gap: 10px; }
+.mc-fleet-head .cap { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.1em; color: var(--faint); }
+.mc-fleet-head .hair { flex: 1; height: 1px; background: var(--line-2); }
+.mc-fleet-head .sum { font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; }
+.mc-fleet-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.mc-slot { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); padding: 11px 13px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.mc-slot.running { border-color: var(--green-tint); }
+.mc-slot.idle { background: var(--bg); border-style: dashed; }
+.mc-slot .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mc-slot .tintdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.mc-slot .tintdot.idle { background: var(--line-3); }
+.mc-slot .nm { font-size: 12.5px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.mc-slot .nm.quiet { font-weight: 500; color: var(--muted); }
+.mc-slot button.nm:hover { color: var(--accent-deep); }
+.mc-slot .mc-kind.build { background: var(--panel); color: var(--muted); }
+.mc-slot .state { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; color: var(--live); white-space: nowrap; }
+.mc-slot .state.quiet { color: var(--paused); }
+.mc-slot .age { font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; }
+.mc-slot .holds .item { font-size: 11.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; min-width: 0; }
+.mc-slot .holds button.item:hover { color: var(--accent-deep); }
+.mc-slot .holds .item.quiet { color: var(--muted); font-style: italic; }
+.mc-slot .branch { font-family: var(--mono); font-size: 9.5px; padding: 2px 7px; border-radius: 5px; background: var(--panel); color: var(--muted); white-space: nowrap; flex: none; }
+.mc-slot .burn .tok { font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; }
+.mc-slot .burn .tok b { font-weight: 600; color: var(--ink); }
+.mc-slot .tmux { font-family: var(--mono); font-size: 9.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
+
 /* Now — the settled autopilot line */
 .mc14-settle { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); overflow: hidden; }
 .mc14-settle .row { display: flex; align-items: center; gap: 11px; padding: 11px 15px; }

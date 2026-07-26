@@ -362,7 +362,28 @@ export interface PlanUsageSnapshot {
   at: number;     // epoch ms the relay cached it — staleness gate
 }
 
+// (#268) A worker slot — one in-flight autopilot job. `branch` is the lane
+// claim the runner holds ('' until a general night claims its first item);
+// `tokens`/`costUsd` are spend BANKED by items this job already finished, so
+// the first in-flight item honestly reads 0. `tmux` is the host session name
+// (#171) — not browser-attachable, offered as a `tmux attach -t` hint.
+export interface FleetSlot {
+  jobId: string; slug: string; name: string; tint: string | null;
+  status: 'claimed' | 'running';
+  kind: AutopilotJob['kind'];
+  sessionKind: SessionKind;
+  itemId: string; itemTitle: string;
+  branch: string;
+  startedAt: string | null;
+  since: string;
+  tokens: number; costUsd: number;
+  tmux: string;
+}
+
 export interface ControlData {
+  // (#268) The fleet: how many workers the host may run at once, and what each
+  // busy one holds. Slots below capacity are idle — the strip renders them.
+  fleet?: { capacity: number; slots: FleetSlot[] };
   autopilot: {
     enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number;
     executorModel: string;  // '' = the claude CLI's default model (#153)
@@ -401,6 +422,9 @@ export async function getControl(): Promise<ControlData> {
     projects: (d.projects ?? []).map((p) => ({ ...p, branches: p.branches ?? [] })),
     // #194 — null when the server pre-dates this feature; the usage card hides.
     usage: d.usage ?? null,
+    // #268 — a pre-deploy server sends no fleet; one idle slot is the honest
+    // default, since the dispatcher has always been one worker wide.
+    fleet: d.fleet ?? { capacity: 1, slots: [] },
   };
 }
 

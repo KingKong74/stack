@@ -31,12 +31,31 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //     nextPick: { id, bucket, title } | null,  // what the autopilot would pick tonight
 //     lastAuto: { branch, summary, when } | null // most recent auto/* push
 //   } ],
-//   totals: { automode, liveSessions, claims, review }
+//   totals: { automode, liveSessions, claims, review },
+//   fleet: {                                // (#268) the worker slots
+//     capacity,                             // how many jobs may run at once
+//     slots: [ { jobId, slug, name, tint, status, kind, sessionKind,
+//                itemId, itemTitle, branch, startedAt, since,
+//                tokens, costUsd, tmux } ]  // in-flight only; client pads idle
+//   }
 // }
 export const control = Router();
 
 const asList = (v) => (Array.isArray(v) ? v : []);
 const ms = (ts) => (ts ? new Date(ts).getTime() : -1);
+
+// (#268) How many autopilot jobs the host may have in flight at once. The
+// dispatcher serialises today — GET /next refuses to hand out a second job
+// while one is claimed or running — so the fleet is one worker wide. #265
+// turns this into a real setting; this constant becomes its default, and the
+// strip below already renders N slots the moment N grows.
+const FLEET_CAPACITY = 1;
+
+// (#268) The dispatcher's tmux name for a job, mirroring the one
+// scripts/stack-autopilot-dispatch.mjs builds (`stack-auto-<safe>-j<id>`).
+// Kept in step with that file — it is the only other place this shape exists.
+const tmuxNameFor = (slug, jobId) =>
+  `stack-auto-${String(slug).replace(/[^A-Za-z0-9_]/g, '_').slice(0, 30)}-j${jobId}`;
 
 control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
@@ -319,7 +338,65 @@ control.get('/', async (_req, res) => {
     };
   });
 
+  // (#268) The fleet strip — the worker slots. Once there are N workers you
+  // need to see N workers, so the payload states capacity as well as what is
+  // in flight: the client renders every slot and reads an empty one as IDLE
+  // rather than as absent. In-flight jobs always lead the jobs query (open
+  // rows sort first), so no extra query is needed.
+  const projById = new Map(projectsR.rows.map((p) => [p.id, p]));
+  const fleetSlots = jobsR.rows
+    .filter((j) => j.status === 'claimed' || j.status === 'running')
+    .map((j) => {
+      const p = projById.get(j.project_id);
+      const road = roadByP.get(j.project_id) || [];
+      const item = j.item_id != null
+        ? road.find((r) => String(r.id) === String(j.item_id)) : null;
+      // The lane claim IS the branch the runner is on. A general night that
+      // has not claimed its first item yet has none — say so rather than guess.
+      const claim = item
+        ? item.claimed_by
+        : (road.find((r) => r.claimed_by && !r.done) || {}).claimed_by;
+      const startedAt = j.started_at || j.claimed_at;
+      // Tokens burned so far: the runs this job has already landed. A run row
+      // lands per finished item, so the first in-flight item honestly reads 0
+      // until it completes — this is spend banked, not spend estimated.
+      const since = startedAt ? new Date(startedAt).getTime() : Infinity;
+      let tokens = 0;
+      let costUsd = 0;
+      for (const r of usageR.rows) {
+        if (p && r.slug === p.slug && new Date(r.finished_at).getTime() >= since) {
+          tokens += Number(r.tokens || 0);
+          costUsd += Number(r.cost_usd || 0);
+        }
+      }
+      return {
+        jobId: String(j.id),
+        slug: p ? p.slug : '',
+        name: p ? p.name : '',
+        tint: (p && p.tint) || null,
+        status: j.status,                      // claimed (starting) | running
+        kind: j.kind,                          // manual | nightly | scheduled | …
+        sessionKind: j.session_kind || 'build', // #228 — build | plan | debug | audit
+        itemId: j.item_id != null ? String(j.item_id) : '',
+        itemTitle: item ? item.title : '',
+        branch: claim || '',
+        startedAt: startedAt ? new Date(startedAt).toISOString() : null,
+        since: relativeTime(startedAt) || 'just now',
+        tokens,
+        costUsd,
+        // The host tmux session (#171). NOT browser-attachable — the terminal
+        // daemon advertises stack-term-* only — so the client offers it as a
+        // `tmux attach -t <name>` hint rather than a dead link.
+        tmux: p ? tmuxNameFor(p.slug, j.id) : '',
+      };
+    });
+  // Deliberately NOT truncated to capacity: if a stale-recovery race ever
+  // leaves more in flight than the fleet is meant to hold, the strip must
+  // show it. The client pads with idle slots up to capacity instead.
+
   res.json({
+    // (#268) The fleet: capacity plus every in-flight worker.
+    fleet: { capacity: FLEET_CAPACITY, slots: fleetSlots },
     autopilot: {
       enabled: appSettings.autopilot_enabled,
       minutes: appSettings.autopilot_minutes,
