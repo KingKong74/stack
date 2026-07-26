@@ -7,9 +7,12 @@ import type { AutopilotSchedule, ControlData, ControlProject, RunRow } from '../
 // card that used to sit under the grid, not the grid.
 //
 // The design's roster is a REVIEWER and an ARCHITECT. Stack has one of them.
-// The reviewer is real — `hook/stack-gemini-review.mjs` reads each auto/* push
-// and stamps a one-line take onto the session — so its column is its actual
-// output. The architect is not a thing Stack runs: there is no standing model
+// The reviewer is real, and since #282 its read is STORED on the run row
+// (review_verdict / review_note / review_findings) rather than thrown away
+// after the auto-merge gate — so the column is the reviewer's own verdict on
+// each change, not an inference from it. A run with no stored verdict says "no
+// review ran", which is deliberately not the same as "nothing found".
+// The architect is not a thing Stack runs: there is no standing model
 // watching the codebase across weeks, and no drift metric behind the design's
 // bars. That column renders as an explicit absent state, and WHERE THEY
 // DISAGREE does not render at all, because one opinion cannot disagree.
@@ -69,6 +72,14 @@ export function NightDebrief({
   // for display rather than used as the join, since a general night can push
   // more than one lane.
   const notes = (data.reviewNotes ?? []).filter((n) => n.slug === project.slug && n.day === date);
+  // (#282) The reviewer's stored reads for this night. `worst` leads the rail
+  // with the most serious thing it said, since that is what decides whether you
+  // look now or later.
+  const reviewed = runs.filter((r) => r.reviewVerdict);
+  const unreviewed = runs.length - reviewed.length;
+  const filed = reviewed.reduce((n, r) => n + (r.reviewFindings ?? 0), 0);
+  const worst = reviewed.some((r) => r.reviewVerdict === 'blocked') ? 'blocked'
+    : reviewed.some((r) => r.reviewVerdict === 'concerns') ? 'concerns' : 'clean';
   const noteFor = (r: RunRow) =>
     notes.find((n) => r.branch && n.branch === r.branch) ?? null;
 
@@ -91,6 +102,14 @@ export function NightDebrief({
       text: `${b.branch} is still open${b.ahead != null ? ` — ${b.ahead} ahead of main` : ''}${b.mergeClean === false ? ', and the host\'s probe says it conflicts' : b.mergeClean ? ' and merges clean' : ''}.`,
       act: '⇥ Merge',
       onAct: () => onMerge(b.branch, b.itemId, b.itemTitle, b.mergeClean),
+    });
+  }
+  const blocked = runs.filter((r) => r.reviewVerdict === 'blocked');
+  if (blocked.length > 0) {
+    decisions.push({
+      key: 'blocked', tag: 'REVIEWER', tone: 'warn',
+      text: `The reviewer marked ${blocked.length === 1 ? 'a change' : `${blocked.length} changes`} BLOCKED. It only annotates — nothing was held back on its say-so, so this is yours to act on.`,
+      act: '→ Review', onAct: () => go.detail(project.slug, 'roadmap'),
     });
   }
   const red = runs.reduce((n, r) => n + (r.checksFailing ?? 0), 0);
@@ -249,13 +268,21 @@ export function NightDebrief({
                       <span className="t">{r.summary}</span>
                     </div>
                   )}
-                  {note?.note && (
+                  {r.reviewNote ? (
+                    <div className={`n reviewer ${r.reviewVerdict}`}>
+                      <span className="agent">REVIEWER</span>
+                      <span className="t">
+                        <b>{(r.reviewVerdict || 'reviewed').toUpperCase()}</b>
+                        {r.reviewFindings ? ` · ${r.reviewFindings} filed` : ''} — {r.reviewNote}
+                      </span>
+                    </div>
+                  ) : note?.note ? (
                     <div className="n reviewer">
                       <span className="agent">REVIEWER</span>
                       <span className="t">{note.note}</span>
                     </div>
-                  )}
-                  {!r.summary && !note?.note && (
+                  ) : null}
+                  {!r.summary && !r.reviewNote && !note?.note && (
                     <div className="n quiet">
                       <span className="t">No account from the session and no reviewer note on this push.</span>
                     </div>
@@ -308,28 +335,47 @@ export function NightDebrief({
               <span className="chip reviewer">REVIEWER</span>
               <span className="model">{data.geminiReady === false ? 'no key configured' : 'gemini · per push'}</span>
             </div>
-            {notes.length > 0 ? (<>
-              <div className="verdictcard">
-                <span className="v">{notes.length} note{notes.length === 1 ? '' : 's'} on this night</span>
+            {reviewed.length > 0 ? (<>
+              <div className={`verdictcard ${worst}`}>
+                <span className="v">
+                  {worst === 'blocked' ? 'Blocked — the reviewer wants a look'
+                    : worst === 'concerns' ? 'Concerns raised'
+                    : 'Clean across the night'}
+                </span>
                 <span className="s">
-                  The reviewer reads each auto/* push as a diff and leaves one line. Its findings
-                  become review-inbox items; the structured verdict it produces is consumed by the
-                  auto-merge gate and not kept, so these lines are what survives.
+                  {reviewed.length} of {runs.length} run{runs.length === 1 ? '' : 's'} carry a stored
+                  review{filed > 0 ? `, and ${filed} finding${filed === 1 ? '' : 's'} went to the review inbox` : ''}.
+                  These are the reviewer's own verdicts on the diffs — suggestions, not state: the
+                  item's verdict is still yours to give.
                 </span>
               </div>
-              {notes.map((n) => (
-                <div className="revline" key={n.hash}>
-                  <span className="mark">·</span>
-                  <span className="t"><code>{n.hash}</code> {n.note}</span>
+              {reviewed.map((r, i) => (
+                <div className="revline" key={`${r.itemId ?? 'gen'}${i}`}>
+                  <span className={`mark ${r.reviewVerdict}`}>
+                    {r.reviewVerdict === 'blocked' ? '✕' : r.reviewVerdict === 'concerns' ? '!' : '✓'}
+                  </span>
+                  <span className="t">
+                    <code>{r.itemId ? `#${r.itemId}` : r.branch || 'run'}</code> {r.reviewNote || r.reviewVerdict}
+                  </span>
                 </div>
               ))}
+              {unreviewed > 0 && (
+                <div className="revline">
+                  <span className="mark">·</span>
+                  <span className="t">
+                    {unreviewed} run{unreviewed === 1 ? '' : 's'} carr{unreviewed === 1 ? 'ies' : 'y'} no
+                    stored review — no review ran on {unreviewed === 1 ? 'it' : 'them'}, which is not
+                    the same as nothing found.
+                  </span>
+                </div>
+              )}
             </>) : (
               <div className="verdictcard quiet">
                 <span className="v">No note on this night</span>
                 <span className="s">
                   {data.geminiReady === false
                     ? 'No Gemini key is configured, so no review ran. Every Gemini surface is absent rather than broken.'
-                    : 'The reviewer runs from the autopilot after a push. No note here means no auto/* push this night carried one.'}
+                    : 'No run this night carries a stored review — the reviewer runs from the autopilot after a push, and rows from before #282 never kept one. That is not the same as nothing found.'}
                 </span>
               </div>
             )}

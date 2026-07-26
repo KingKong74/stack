@@ -360,6 +360,12 @@ export interface RunRow {
   checksFailing?: number | null; // null = the run never ran the checks
   verdict?: string;              // '' = awaiting your verdict
   itemDone?: boolean;
+  // (#282) The reviewer's stored read on this run: clean | concerns | blocked.
+  // '' = no review ran — keyless, no diff, or a row from before it was kept.
+  // That is NOT the same as "nothing found", and the debrief says so.
+  reviewVerdict?: string;
+  reviewNote?: string;
+  reviewFindings?: number | null;
 }
 
 // (#286) The reviewer's per-push line — the second model's take on one auto/*

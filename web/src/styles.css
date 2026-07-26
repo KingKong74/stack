@@ -2971,6 +2971,14 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc-debrief .verdictcard.quiet .v { color: var(--muted); }
 .mc-debrief .verdictcard .s { font-size: 11px; line-height: 1.65; color: var(--ink); }
 .mc-debrief .verdictcard.quiet .s { color: var(--muted); }
+.mc-debrief .verdictcard.clean { border-color: var(--green-tint); background: var(--card); }
+.mc-debrief .verdictcard.clean .v { color: var(--live); }
+.mc-debrief .verdictcard.blocked .v { color: var(--critical); }
+.mc-debrief .revline .mark.clean { color: var(--live); }
+.mc-debrief .revline .mark.concerns { color: var(--accent-deep); }
+.mc-debrief .revline .mark.blocked { color: var(--critical); }
+.mc-debrief .db-change .n.reviewer.blocked { background: rgba(178, 59, 59, 0.1); }
+.mc-debrief .db-change .n.reviewer .t b { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.04em; }
 .mc-debrief .revline { display: flex; gap: 9px; align-items: baseline; }
 .mc-debrief .revline .mark { font-family: var(--mono); font-size: 10px; color: var(--paused); width: 10px; flex: none; }
 .mc-debrief .revline .t { flex: 1; font-size: 11px; line-height: 1.55; color: var(--muted); }

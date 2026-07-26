@@ -306,15 +306,17 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   a cell opens the **night DEBRIEF** (#286, design 24a — `screens/ControlDebrief.tsx`), which
   replaced the thin detail card: night tabs across the week, a hero with the night's stats, **WHAT
   LANDED** (one card per run — branch, commits, tokens/cost, the item's current verdict or
-  AWAITING VERDICT, the session's own account and the Gemini **reviewer's** note on that push) and
+  AWAITING VERDICT, the session's own account and the **reviewer's** stored verdict from #282 — `clean`/`concerns`/`blocked` with its own sentence
+  and how many findings it filed; no stored verdict reads as "no review ran", deliberately NOT as
+  "nothing found") and
   **DECISIONS THIS DEBRIEF ASKS FOR** — the crossings the autopilot cannot make alone: items
   awaiting a verdict (→ Reviews), branches the host still reports open (⇥ Merge, through the same
   confirm modal as the merge strip), red checks (→ Quality) and a limit-held resume. A night in
   the FUTURE has nothing to debrief, so the same panel becomes **Planned** — what is booked, with
   ✎ Edit the plan reaching the SessionPlanModal exactly as the old card did. The design's roster is
-  a reviewer AND an architect; **Stack has only the reviewer** (the per-push `gemini_note` — the
-  diff review's structured verdict is consumed by the auto-merge gate and deleted, so those lines
-  are what survives), and the ARCHITECT seat renders as an explicit absent state saying what
+  a reviewer AND an architect; **Stack has only the reviewer** (whose read #282 now stores on the
+  run row, so the column is its actual verdict rather than an inference; the per-push `gemini_note`
+  remains the fallback for rows that pre-date it), and the ARCHITECT seat renders as an explicit absent state saying what
   filling it would take, with WHERE THEY DISAGREE omitted entirely because one opinion cannot
   disagree. There is no revert-the-night button: reverting is per item from Reviews (#128), since
   a night is several independent items and undoing them as a block would take back work already

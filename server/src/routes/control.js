@@ -376,6 +376,7 @@ control.get('/', async (_req, res) => {
     q(`SELECT r.tokens, r.cost_usd, r.model_usage, r.finished_at, r.started_at,
               r.item_id, r.item_title, r.outcome, r.branch, r.commits,
               r.summary, r.checks_failing,
+              r.review_verdict, r.review_note, r.review_findings,
               ri.review_tag, ri.done AS item_done,
               p.slug, p.name AS project_name
          FROM autopilot_runs r
@@ -530,6 +531,12 @@ control.get('/', async (_req, res) => {
       checksFailing: r.checks_failing == null ? null : Number(r.checks_failing),
       verdict: r.review_tag || '',
       itemDone: !!r.item_done,
+      // (#282) The REVIEWER's stored read on this run — kept since #282 rather
+      // than discarded after the auto-merge gate. '' = no review ran (keyless,
+      // no diff, or a pre-#282 row); deliberately NOT "nothing found".
+      reviewVerdict: r.review_verdict || '',
+      reviewNote: r.review_note || '',
+      reviewFindings: r.review_findings == null ? null : Number(r.review_findings),
       day: new Date(r.finished_at).toISOString().slice(0, 10),
       when: relativeTime(r.finished_at) || 'just now',
       tokens: Number(r.tokens) || 0,
