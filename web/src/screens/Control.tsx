@@ -939,7 +939,14 @@ export function ControlPanel() {
                 {room === 'nights' && (
                   <NightsRoom data={data} pickSlug={pickSlug} onPick={setPickSlug}
                     onOpenPlanner={(row) => setPlanner({ row })} onRunNow={runNowSlug}
-                    onToggleSchedule={toggleSchedule} onRemoveSchedule={removeSchedule} />
+                    onToggleSchedule={toggleSchedule} onRemoveSchedule={removeSchedule}
+                    onMerge={(branch, itemId, itemTitle, mergeClean) => {
+                      // #286 — the debrief's MERGE decision. The slug comes from
+                      // the branch's own project, not the room's picker, since
+                      // the calendar shows the whole house when nothing is picked.
+                      const owner = data.projects.find((p) => (p.branches ?? []).some((b) => b.branch === branch));
+                      setMergePending({ slug: owner?.slug ?? pickSlug, branch, itemId, itemTitle, mergeClean });
+                    }} />
                 )}
                 {room === 'plan' && (
                   <PlanRoom data={data} pickSlug={pickSlug} onPick={setPickSlug}

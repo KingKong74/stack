@@ -343,11 +343,33 @@ export interface UsageSummary {
   monthRuns?: number;
   // #177 — the newest runs with their per-model (agent) split for the breakdown.
   // `day` (#14a) = the UTC calendar date, so the Nights room can place each run.
-  recentRuns?: {
-    slug: string; name: string; itemId: string | null; itemTitle: string;
-    outcome: string; day?: string; when: string; tokens: number; costUsd: number;
-    models: { model: string; tokens: number; costUsd: number }[];
-  }[];
+  recentRuns?: RunRow[];
+}
+
+// One row of the run ledger. #286 added what the run PRODUCED (branch, commits,
+// its own account, the checks it left red) and the item's current `verdict` —
+// '' meaning nobody has dispositioned it, which is what the night debrief asks
+// you to do. All optional: an older server sends the #177 shape alone.
+export interface RunRow {
+  slug: string; name: string; itemId: string | null; itemTitle: string;
+  outcome: string; day?: string; when: string; tokens: number; costUsd: number;
+  models: { model: string; tokens: number; costUsd: number }[];
+  branch?: string;
+  commits?: number;
+  summary?: string;              // the session's own account of the item
+  checksFailing?: number | null; // null = the run never ran the checks
+  verdict?: string;              // '' = awaiting your verdict
+  itemDone?: boolean;
+}
+
+// (#286) The reviewer's per-push line — the second model's take on one auto/*
+// push, and the only durable trace of the diff review (its structured verdict
+// is consumed by the auto-merge gate and deleted). Empty list = no reviewer
+// ran, which the debrief states rather than drawing an empty reviewer.
+export interface ReviewNote {
+  slug: string; hash: string; branch: string;
+  day: string; when: string;
+  summary: string; note: string;
 }
 
 // Account-level Plan windows (#220) — the daemon's cached snapshot of the
@@ -554,6 +576,11 @@ export interface ControlData {
   // (#281) Undefined on a pre-#281 server — the Roles room says so rather than
   // rendering an empty fleet as if nothing had ever run.
   roles?: FleetRoles | null;
+  // (#286) The reviewer's per-push notes, for the night debrief, and whether a
+  // Gemini key exists at all — false lets the debrief say "no reviewer ran"
+  // instead of drawing a reviewer with nothing to say.
+  reviewNotes?: ReviewNote[];
+  geminiReady?: boolean;
 }
 
 export async function getControl(): Promise<ControlData> {

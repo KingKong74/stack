@@ -302,8 +302,23 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   (3 back, 3 ahead) of per-project lanes — past cells carry real run outcomes (landed/failed/
   limit, coloured, with tokens; `recentRuns` now carries a UTC `day` for the placement),
   future cells their bookings (schedule rows + the armed nightly) — with a legend, a per-day
-  load strip, a click-open night detail card (runs → Reviews; bookings → ✎ the SessionPlanModal;
-  ▶ Run now) and the standing schedule list (the editing surface) below. **Plan** is 16a (the
+  load strip and the standing schedule list (the editing surface) below — all unchanged. Clicking
+  a cell opens the **night DEBRIEF** (#286, design 24a — `screens/ControlDebrief.tsx`), which
+  replaced the thin detail card: night tabs across the week, a hero with the night's stats, **WHAT
+  LANDED** (one card per run — branch, commits, tokens/cost, the item's current verdict or
+  AWAITING VERDICT, the session's own account and the Gemini **reviewer's** note on that push) and
+  **DECISIONS THIS DEBRIEF ASKS FOR** — the crossings the autopilot cannot make alone: items
+  awaiting a verdict (→ Reviews), branches the host still reports open (⇥ Merge, through the same
+  confirm modal as the merge strip), red checks (→ Quality) and a limit-held resume. A night in
+  the FUTURE has nothing to debrief, so the same panel becomes **Planned** — what is booked, with
+  ✎ Edit the plan reaching the SessionPlanModal exactly as the old card did. The design's roster is
+  a reviewer AND an architect; **Stack has only the reviewer** (the per-push `gemini_note` — the
+  diff review's structured verdict is consumed by the auto-merge gate and deleted, so those lines
+  are what survives), and the ARCHITECT seat renders as an explicit absent state saying what
+  filling it would take, with WHERE THEY DISAGREE omitted entirely because one opinion cannot
+  disagree. There is no revert-the-night button: reverting is per item from Reviews (#128), since
+  a night is several independent items and undoing them as a block would take back work already
+  accepted. **Plan** is 16a (the
   design's 15a+15b, superseding the 12b tree): the **ordered schedule with the inbox beside
   it**. TONIGHT AND AFTER lists exactly what the runner would work, in its real order (desire
   TIER first (#227), then musts before shoulds, then board order — eligibility mirrored

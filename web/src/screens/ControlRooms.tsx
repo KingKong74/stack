@@ -5,6 +5,7 @@ import {
   type ProjectDetailData, type ControlData, type AutopilotSchedule, type RoadmapCleanupSuggestion,
 } from '../store';
 import { go } from '../lib/route';
+import { NightDebrief } from './ControlDebrief';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
 import type { RoadmapItem, Priority, Tier } from '../types';
 import { tierRank } from '../types';
@@ -165,13 +166,16 @@ const scheduleWhen = (s: { days: number[]; runDate: string | null; atTime: strin
   return `${s.days.map((d) => DAY_LABELS[d]).join(' ')} · ${s.atTime}`;
 };
 
-export function NightsRoom({ data, pickSlug, onPick, onOpenPlanner, onRunNow, onToggleSchedule, onRemoveSchedule }: {
+export function NightsRoom({ data, pickSlug, onPick, onOpenPlanner, onRunNow, onToggleSchedule, onRemoveSchedule, onMerge }: {
   data: ControlData;
   pickSlug: string; onPick: (slug: string) => void;
   onOpenPlanner: (row: AutopilotSchedule | null) => void;
   onRunNow: (slug: string) => void;
   onToggleSchedule: (id: string, enabled: boolean) => void;
   onRemoveSchedule: (id: string) => void;
+  // #286 — the debrief's MERGE decision goes through the same confirm modal
+  // the merge strip uses, rather than queueing a merge from a second place.
+  onMerge: (branch: string, itemId: string, itemTitle: string, mergeClean?: boolean | null) => void;
 }) {
   const [sel, setSel] = useState<{ slug: string; date: string } | null>(null);
 
@@ -221,7 +225,6 @@ export function NightsRoom({ data, pickSlug, onPick, onOpenPlanner, onRunNow, on
 
   const selRow = sel && rows.find((p) => p.slug === sel.slug);
   const selCell = sel && selRow ? cellFor(sel.slug, new Date(`${sel.date}T12:00:00`)) : null;
-  const selDate = sel ? new Date(`${sel.date}T12:00:00`) : null;
 
   return (
     <div className="mc14-nights">
@@ -309,60 +312,37 @@ export function NightsRoom({ data, pickSlug, onPick, onOpenPlanner, onRunNow, on
             })}
           </div>
 
-          {selCell && selRow && selDate && (
-            <div className="mc14-night-detail">
-              <div className="head">
-                <span className="title">{selRow.name} — {DAY_LABELS[selDate.getDay()]} {selDate.getDate()}</span>
-                <span className={`badge ${selCell.runs.length ? outcomeOf(selCell) : selCell.books.length || selCell.nightly ? 'booked' : 'empty'}`}>
-                  {selCell.runs.length ? outcomeOf(selCell) : selCell.past ? 'quiet' : selCell.books.length ? 'booked' : selCell.nightly ? 'nightly' : 'open'}
-                </span>
-                <div style={{ flex: 1 }} />
-                <span className="meta">
-                  {selCell.runs.length > 0 && `${selCell.runs.length} run${selCell.runs.length === 1 ? '' : 's'} · ${fmtTok(selCell.runs.reduce((n, r) => n + r.tokens, 0))} tok`}
-                </span>
-              </div>
-              <div className="items">
-                {selCell.runs.map((r, i) => (
-                  <button key={`r${i}`} className="item" onClick={() => r.itemId && go.detail(r.slug, 'roadmap', r.itemId)}>
-                    <span className={`tag ${r.outcome}`}>{r.outcome.toUpperCase()}</span>
-                    <span className="t">{r.itemId ? `#${r.itemId} ` : ''}{r.itemTitle || 'general session'}</span>
-                    <span className="m">{fmtTok(r.tokens)} tok · {r.when}</span>
-                  </button>
-                ))}
-                {!selCell.past && selCell.books.map((s) => (
-                  <button key={s.id} className="item" onClick={() => onOpenPlanner(s)} title="Open the session plan">
-                    <span className="tag booked">{s.kind.toUpperCase()}</span>
-                    <span className="t">
-                      {s.agenda.length ? `${s.agenda.length} on the agenda, in order`
-                        : s.itemId ? `#${s.itemId} ${s.itemTitle || 'pinned item'}`
-                        : s.area ? `the board, scoped to ${s.area}` : "the board's own priority order"}
-                    </span>
-                    <span className="m">{s.atTime} ✎</span>
-                  </button>
-                ))}
-                {!selCell.past && selCell.nightly && (
-                  <div className="item quiet">
-                    <span className="tag nightly">NIGHTLY</span>
-                    <span className="t">the armed nightly — {data.autopilot.maxItems === 0
-                      ? 'unlimited items (the clock and token budget govern)'
-                      : `up to ${data.autopilot.maxItems} item${data.autopilot.maxItems === 1 ? '' : 's'}`}, must before should</span>
-                    <span className="m">{data.autopilot.time}</span>
-                  </div>
-                )}
-                {selCell.runs.length === 0 && selCell.books.length === 0 && !selCell.nightly && (
-                  <div className="item quiet"><span className="t">{selCell.past ? 'Nothing ran this night.' : 'Nothing booked — plan a session or Run now.'}</span></div>
-                )}
-              </div>
-              <div className="acts">
-                {!selCell.past && (
-                  <button className="mc-run" onClick={() => onRunNow(selRow.slug)}
-                    title="Queue a session on this project now — the host picks it up within a minute">▶ Run now</button>
-                )}
-                {selCell.runs.length > 0 && (
-                  <button className="btn-repo sm" onClick={() => go.detail(selRow.slug, 'roadmap')}>→ Reviews</button>
-                )}
-              </div>
-            </div>
+          {/* #286 (design 24a) — the night DEBRIEF, opened from a cell above.
+              The calendar is untouched; this replaces the thin detail card that
+              used to sit here with what happened, what the reviewer said, and
+              what the night is waiting on you to decide. */}
+          {selCell && selRow && sel && (
+            <NightDebrief
+              data={data}
+              project={selRow}
+              date={sel.date}
+              runs={selCell.runs}
+              books={selCell.books}
+              nightly={selCell.nightly}
+              past={selCell.past}
+              onOpenPlanner={onOpenPlanner}
+              days={days.map((d) => {
+                const date = fmtDate(d);
+                const c = cellFor(sel.slug, d);
+                return {
+                  date,
+                  label: date === todayStr ? 'Today' : `${DAY_LABELS[d.getDay()]} ${d.getDate()}`,
+                  sub: c.runs.length ? `${c.runs.length} run${c.runs.length === 1 ? '' : 's'}`
+                    : c.books.length ? 'booked'
+                    : c.nightly ? 'nightly' : '',
+                  on: date === sel.date,
+                };
+              })}
+              onPickDay={(date) => setSel({ slug: sel.slug, date })}
+              onClose={() => setSel(null)}
+              onRunNow={() => onRunNow(selRow.slug)}
+              onMerge={onMerge}
+            />
           )}
 
           {/* The standing list — the editing surface behind the grid. */}

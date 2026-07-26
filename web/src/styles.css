@@ -2885,28 +2885,110 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc14-cal-load .bar { height: 3px; border-radius: 3px; background: var(--panel); overflow: hidden; }
 .mc14-cal-load .bar span { display: block; height: 3px; background: var(--accent-soft); }
 .mc14-cal-load i { font-family: var(--mono); font-size: 8.5px; font-style: normal; color: var(--paused); text-align: center; }
-.mc14-night-detail { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); overflow: hidden; }
-.mc14-night-detail .head { display: flex; align-items: center; gap: 10px; padding: 11px 15px; border-bottom: 1px solid var(--line-2); background: var(--sand); }
-.mc14-night-detail .head .title { font-family: var(--disp); font-size: 13px; font-weight: 600; color: var(--ink); }
-.mc14-night-detail .head .meta { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
-.mc14-night-detail .badge, .mc14-phase .badge { padding: 2px 8px; border-radius: 20px; font-family: var(--mono); font-size: 9.5px; font-weight: 500; background: var(--panel); color: var(--chip-ink); }
-.mc14-night-detail .badge.landed { background: var(--green-tint); color: var(--live); }
-.mc14-night-detail .badge.failed { background: #f3dcdc; color: var(--critical); }
-.mc14-night-detail .badge.limit { background: var(--building-tint); color: var(--building); }
-.mc14-night-detail .badge.booked { background: var(--accent-tint); color: var(--accent-deep); }
-.mc14-night-detail .items { padding: 9px 12px; display: flex; flex-direction: column; gap: 2px; }
-.mc14-night-detail .item { display: flex; align-items: baseline; gap: 11px; padding: 7px 9px; border-radius: 7px; text-align: left; width: 100%; }
-.mc14-night-detail .item:hover:not(.quiet) { background: var(--bg); }
-.mc14-night-detail .item .tag, .mc14-diff .tag { width: 58px; flex: none; font-family: var(--mono); font-size: 9px; letter-spacing: 0.05em; color: var(--muted); }
-.mc14-night-detail .tag.landed, .mc14-diff .tag.landed { color: var(--live); }
-.mc14-night-detail .tag.failed, .mc14-diff .tag.failed { color: var(--critical); }
-.mc14-night-detail .tag.limit, .mc14-diff .tag.limit { color: var(--building); }
-.mc14-night-detail .tag.booked { color: var(--accent-deep); }
-.mc14-night-detail .tag.nightly { color: var(--paused); }
-.mc14-night-detail .item .t { flex: 1; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--ink); }
-.mc14-night-detail .item.quiet .t { color: var(--muted); }
-.mc14-night-detail .item .m { font-family: var(--mono); font-size: 9.5px; color: var(--paused); white-space: nowrap; }
-.mc14-night-detail .acts { display: flex; gap: 8px; padding: 0 15px 13px; }
+/* #286 (design 24a) — the night DEBRIEF, opened from a Nights cell. All scoped
+   under .mc-debrief / .db-*: `.tag`, `.badge`, `.note` and `.big` are names the
+   rest of the app already owns. */
+.mc-debrief { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); overflow: hidden; }
+.mc-debrief .db-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 15px; min-height: 50px; border-bottom: 1px solid var(--line-2); background: var(--card); }
+.mc-debrief .db-head .title { font-family: var(--disp); font-size: 13px; font-weight: 600; color: var(--ink); }
+.mc-debrief .db-head .roster { font-family: var(--mono); font-size: 10px; color: var(--muted); cursor: help; }
+.mc-debrief .db-close { font-family: var(--mono); font-size: 15px; color: var(--muted); padding: 0 4px; }
+.mc-debrief .db-close:hover { color: var(--accent-deep); }
+.mc-debrief .db-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.mc-debrief .db-tab { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 11px; border-radius: 7px; border: 1px solid var(--line-3); background: var(--bg); }
+.mc-debrief .db-tab:hover { border-color: var(--accent); }
+.mc-debrief .db-tab.on { border-color: var(--accent); background: var(--accent-tint); }
+.mc-debrief .db-tab b { font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--ink); }
+.mc-debrief .db-tab i { font-family: var(--mono); font-size: 9px; font-style: normal; color: var(--paused); }
+
+.mc-debrief .db-hero { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; padding: 16px 15px; border-bottom: 1px solid var(--line-2); background: var(--sand); }
+.mc-debrief .db-hero .l { flex: 1; min-width: 240px; }
+.mc-debrief .db-hero .row { display: flex; align-items: center; gap: 9px; }
+.mc-debrief .db-hero .t { font-family: var(--disp); font-size: 17px; font-weight: 600; color: var(--ink); }
+.mc-debrief .db-hero .badge { padding: 2px 9px; border-radius: 20px; font-family: var(--mono); font-size: 10px; font-weight: 500; background: var(--panel); color: var(--muted); }
+.mc-debrief .db-hero .badge.landed { background: var(--green-tint); color: var(--live); }
+.mc-debrief .db-hero .badge.failed { background: rgba(178, 59, 59, 0.12); color: var(--critical); }
+.mc-debrief .db-hero .badge.limit { background: var(--accent-tint); color: var(--building); }
+.mc-debrief .db-hero .badge.booked { background: var(--accent-tint); color: var(--accent-deep); }
+.mc-debrief .db-change.booked { border-style: dashed; }
+.mc-debrief .db-change .dot.booked { background: var(--accent); }
+.mc-debrief .db-hero .sum { font-size: 12.5px; line-height: 1.6; color: var(--muted); margin-top: 7px; max-width: 620px; }
+.mc-debrief .db-hero .stats { display: flex; gap: 10px; flex: none; }
+.mc-debrief .db-hero .st { width: 82px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--card); padding: 10px 11px; display: flex; flex-direction: column; gap: 2px; }
+.mc-debrief .db-hero .st b { font-family: var(--disp); font-size: 17px; font-weight: 600; color: var(--ink); }
+.mc-debrief .db-hero .st b.good { color: var(--live); }
+.mc-debrief .db-hero .st span { font-family: var(--mono); font-size: 9px; color: var(--paused); }
+
+.mc-debrief .db-body { display: flex; align-items: stretch; }
+.mc-debrief .db-main { flex: 1; min-width: 0; padding: 15px; display: flex; flex-direction: column; gap: 12px; }
+.mc-debrief .db-cap { display: flex; align-items: center; gap: 10px; }
+.mc-debrief .db-cap .cap { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.1em; color: var(--paused); }
+.mc-debrief .db-cap .hair { flex: 1; height: 1px; background: var(--line-2); }
+.mc-debrief .db-cap .note { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.mc-debrief .db-none { padding: 12px 13px; border-radius: 10px; border: 1px dashed var(--line-3); font-size: 11.5px; line-height: 1.6; color: var(--muted); }
+
+.mc-debrief .db-change { border-radius: 11px; border: 1px solid var(--line-2); background: var(--bg); overflow: hidden; }
+.mc-debrief .db-change.landed { border-color: var(--green-tint); }
+.mc-debrief .db-change.failed { border-color: var(--critical); }
+.mc-debrief .db-change > .row { display: flex; align-items: center; gap: 10px; padding: 11px 14px; min-width: 0; }
+.mc-debrief .db-change .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--paused); }
+.mc-debrief .db-change .dot.landed { background: var(--live); }
+.mc-debrief .db-change .dot.failed { background: var(--critical); }
+.mc-debrief .db-change .dot.limit { background: var(--building); }
+.mc-debrief .db-change .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mc-debrief .db-change .who .t { font-size: 12.5px; font-weight: 500; color: var(--ink); }
+.mc-debrief .db-change .who .w { font-family: var(--mono); font-size: 10px; color: var(--paused); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-debrief .db-change .diff { font-family: var(--mono); font-size: 10.5px; color: var(--muted); flex: none; white-space: nowrap; }
+.mc-debrief .db-change .verdict { padding: 2px 9px; border-radius: 5px; font-family: var(--mono); font-size: 9.5px; font-weight: 500; flex: none; white-space: nowrap; background: var(--panel); color: var(--muted); }
+.mc-debrief .db-change .verdict.solid { background: var(--green-tint); color: var(--live); }
+.mc-debrief .db-change .verdict.awaiting { background: var(--accent-tint); color: var(--accent-deep); }
+.mc-debrief .db-change .verdict.needs-work, .mc-debrief .db-change .verdict.rethink { background: var(--accent-tint); color: var(--critical); }
+.mc-debrief .db-change .notes { padding: 0 14px 12px; display: flex; flex-direction: column; gap: 7px; }
+.mc-debrief .db-change .n { display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px; border-radius: 8px; background: var(--card); }
+.mc-debrief .db-change .n.reviewer { background: var(--accent-tint); }
+.mc-debrief .db-change .n .agent { padding: 1px 7px; border-radius: 4px; font-family: var(--mono); font-size: 8.5px; font-weight: 500; flex: none; margin-top: 1px; background: var(--panel); color: var(--muted); }
+.mc-debrief .db-change .n.reviewer .agent { background: var(--card); color: var(--accent-deep); }
+.mc-debrief .db-change .n .t { flex: 1; font-size: 11.5px; line-height: 1.6; color: var(--ink); }
+.mc-debrief .db-change .n.quiet .t { color: var(--muted); font-style: italic; }
+.mc-debrief .db-change .acts { display: flex; align-items: center; gap: 7px; }
+.mc-debrief .db-change .acts .meta { font-family: var(--mono); font-size: 9.5px; color: var(--paused); }
+
+.mc-debrief .db-decision { display: flex; align-items: center; gap: 11px; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--bg); }
+.mc-debrief .db-decision.warn { border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.mc-debrief .db-decision .tag { padding: 2px 8px; border-radius: 5px; font-family: var(--mono); font-size: 9px; font-weight: 500; flex: none; background: var(--card); color: var(--muted); border: none; }
+.mc-debrief .db-decision.warn .tag { color: var(--accent-deep); }
+.mc-debrief .db-decision .t { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.55; color: var(--ink); }
+
+.mc-debrief .db-rail { width: 310px; flex: none; border-left: 1px solid var(--line-2); background: var(--card); padding: 15px 16px; display: flex; flex-direction: column; gap: 14px; }
+.mc-debrief .db-agent { display: flex; flex-direction: column; gap: 9px; }
+.mc-debrief .db-agent .hd { display: flex; align-items: center; gap: 8px; }
+.mc-debrief .db-agent .chip { padding: 2px 8px; border-radius: 5px; font-family: var(--mono); font-size: 9px; font-weight: 500; background: var(--accent-tint); color: var(--accent-deep); }
+.mc-debrief .db-agent .chip.off { background: var(--panel); color: var(--paused); }
+.mc-debrief .db-agent .model { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.mc-debrief .verdictcard { padding: 12px 13px; border-radius: 10px; border: 1px solid var(--accent-tint-border); background: var(--accent-tint); display: flex; flex-direction: column; gap: 6px; }
+.mc-debrief .verdictcard.quiet { border-color: var(--line-3); background: var(--bg); border-style: dashed; }
+.mc-debrief .verdictcard .v { font-family: var(--disp); font-size: 12.5px; font-weight: 600; color: var(--accent-deep); }
+.mc-debrief .verdictcard.quiet .v { color: var(--muted); }
+.mc-debrief .verdictcard .s { font-size: 11px; line-height: 1.65; color: var(--ink); }
+.mc-debrief .verdictcard.quiet .s { color: var(--muted); }
+.mc-debrief .revline { display: flex; gap: 9px; align-items: baseline; }
+.mc-debrief .revline .mark { font-family: var(--mono); font-size: 10px; color: var(--paused); width: 10px; flex: none; }
+.mc-debrief .revline .t { flex: 1; font-size: 11px; line-height: 1.55; color: var(--muted); }
+.mc-debrief .revline code { font-family: var(--mono); font-size: 10px; color: var(--accent-deep); }
+.mc-debrief .db-sep { height: 1px; background: var(--line-2); }
+
+.mc-debrief .db-foot { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 12px 15px; border-top: 1px solid var(--line-2); background: var(--bg); }
+.mc-debrief .db-foot .note { flex: 1 1 320px; min-width: 0; font-size: 10.5px; line-height: 1.6; color: var(--paused); }
+
+@media (max-width: 900px) {
+  .mc-debrief .db-body { flex-direction: column; }
+  .mc-debrief .db-rail { width: auto; border-left: none; border-top: 1px solid var(--line-2); }
+}
+
+.mc14-diff .tag { width: 58px; flex: none; font-family: var(--mono); font-size: 9px; letter-spacing: 0.05em; color: var(--muted); }
+.mc14-diff .tag.landed { color: var(--live); }
+.mc14-diff .tag.failed { color: var(--critical); }
+.mc14-diff .tag.limit { color: var(--building); }
 .mc14-standing { margin-top: 2px; }
 
 /* Plan — the tree + pick order */

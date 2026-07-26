@@ -3,6 +3,7 @@ import { q } from '../db.js';
 import { relativeTime, computeProgress, PRESENCE_TTL_MINUTES } from '../util.js';
 import { readSettings, EXECUTOR_CATALOGUE, ADVISOR_CATALOGUE } from '../settings.js';
 import { termAgentConnected, termSessions, termDetached, termPlanUsage } from '../term.js';
+import { geminiEnabled } from '../gemini.js';
 import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 
 // GET /api/control — Mission Control: every project's automation state in one
@@ -322,7 +323,7 @@ control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
   const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR, branchR, checksR, monthR, hbR,
-         ledgerR, ledgerJobsR, verdictR] = await Promise.all([
+         ledgerR, ledgerJobsR, reviewNotesR, verdictR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, automode, autopilot_area, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
     // claimed_by that starts with 'auto/' or 'lane/' is an open lane branch; we
@@ -368,9 +369,18 @@ control.get('/', async (_req, res) => {
     // BIGINT/NUMERIC come back as strings from node-postgres; use Number().
     // (#177) item/project identity rides along so the newest rows can double
     // as the per-session agent breakdown — no second query.
-    q(`SELECT r.tokens, r.cost_usd, r.model_usage, r.finished_at,
-              r.item_id, r.item_title, r.outcome, p.slug, p.name AS project_name
-         FROM autopilot_runs r JOIN projects p ON p.id = r.project_id
+    // (#286) …and the columns the night debrief reads: what the run actually
+    // produced (branch, commits, its own account, the checks it left red) plus
+    // the item's current verdict, so "what landed" can say whether it has been
+    // dispositioned without a second round trip.
+    q(`SELECT r.tokens, r.cost_usd, r.model_usage, r.finished_at, r.started_at,
+              r.item_id, r.item_title, r.outcome, r.branch, r.commits,
+              r.summary, r.checks_failing,
+              ri.review_tag, ri.done AS item_done,
+              p.slug, p.name AS project_name
+         FROM autopilot_runs r
+         JOIN projects p ON p.id = r.project_id
+         LEFT JOIN roadmap_items ri ON ri.id = r.item_id
         WHERE r.finished_at > now() - interval '7 days'
         ORDER BY r.finished_at DESC`),
     // (#207) The host dispatcher's git branch report per project — the merge
@@ -406,6 +416,16 @@ control.get('/', async (_req, res) => {
     // to close its own loop.
     q(`SELECT kind, status, detail, created_at FROM autopilot_jobs
         WHERE created_at > now() - interval '14 days' AND kind IN ('merge','revert')`),
+    // (#286) The REVIEWER's actual output: the second model's one-line take on
+    // each auto/* push. This is the only durable trace of it — the diff
+    // review's structured verdict is written to a temp file for the auto-merge
+    // gate (#212) and deleted, so the debrief reads what survives rather than
+    // implying a stored review that does not exist.
+    q(`SELECT p.slug, s.commit_hash, s.branch, s.summary, s.gemini_note, s.created_at
+         FROM sessions s JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
+        WHERE s.created_at > now() - interval '7 days'
+          AND s.branch LIKE 'auto/%' AND COALESCE(s.gemini_note, '') <> ''
+        ORDER BY s.created_at DESC LIMIT 80`),
     // Verdicts on items the runner landed in the window — the first-pass rate.
     q(`SELECT DISTINCT ri.id, ri.review_tag
          FROM roadmap_items ri
@@ -501,6 +521,15 @@ control.get('/', async (_req, res) => {
       itemId: r.item_id != null ? String(r.item_id) : null,
       itemTitle: r.item_title || '',
       outcome: r.outcome,
+      // (#286) What the run produced, for the night debrief. `verdict` is the
+      // item's CURRENT review_tag — '' means nobody has dispositioned it yet,
+      // which is exactly what the debrief asks you to do.
+      branch: r.branch || '',
+      commits: Number(r.commits) || 0,
+      summary: r.summary || '',
+      checksFailing: r.checks_failing == null ? null : Number(r.checks_failing),
+      verdict: r.review_tag || '',
+      itemDone: !!r.item_done,
       day: new Date(r.finished_at).toISOString().slice(0, 10),
       when: relativeTime(r.finished_at) || 'just now',
       tokens: Number(r.tokens) || 0,
@@ -964,6 +993,23 @@ control.get('/', async (_req, res) => {
   });
 
   res.json({
+    // (#286) Is a Gemini key configured at all? The debrief's reviewer column
+    // reads "no key configured" rather than "the reviewer said nothing" — the
+    // same absent-not-broken rule the Quality page follows (#278).
+    geminiReady: geminiEnabled(),
+    // (#286) The reviewer's per-push line, for the night debrief. One entry per
+    // auto/* push that Gemini actually annotated; absent entirely when no key
+    // is configured, which the debrief renders as "no reviewer ran" rather than
+    // as a reviewer with nothing to say.
+    reviewNotes: reviewNotesR.rows.map((r) => ({
+      slug: r.slug,
+      hash: (r.commit_hash || '').slice(0, 7),
+      branch: r.branch || '',
+      day: new Date(r.created_at).toISOString().slice(0, 10),
+      when: relativeTime(r.created_at) || 'just now',
+      summary: r.summary || '',
+      note: r.gemini_note || '',
+    })),
     // (#281) Roles across the fleet — the policy beside what actually ran.
     roles: fleetRoles,
     // (#269) The throughput ledger — the trend behind the numbers.
