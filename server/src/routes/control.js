@@ -377,6 +377,7 @@ control.get('/', async (_req, res) => {
               r.item_id, r.item_title, r.outcome, r.branch, r.commits,
               r.summary, r.checks_failing,
               r.review_verdict, r.review_note, r.review_findings,
+              r.architect_verdict, r.architect_note, r.architect_obs,
               ri.review_tag, ri.done AS item_done,
               p.slug, p.name AS project_name
          FROM autopilot_runs r
@@ -537,6 +538,12 @@ control.get('/', async (_req, res) => {
       reviewVerdict: r.review_verdict || '',
       reviewNote: r.review_note || '',
       reviewFindings: r.review_findings == null ? null : Number(r.review_findings),
+      // (#284) The ARCHITECT's structural read, beside the reviewer's. Separate
+      // because a change can be correct and still drift — collapsing them would
+      // hide exactly that. '' = no pass ran; it files nothing and closes nothing.
+      architectVerdict: r.architect_verdict || '',
+      architectNote: r.architect_note || '',
+      architectObs: Array.isArray(r.architect_obs) ? r.architect_obs : [],
       day: new Date(r.finished_at).toISOString().slice(0, 10),
       when: relativeTime(r.finished_at) || 'just now',
       tokens: Number(r.tokens) || 0,

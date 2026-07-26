@@ -12,10 +12,11 @@ import type { AutopilotSchedule, ControlData, ControlProject, RunRow } from '../
 // after the auto-merge gate — so the column is the reviewer's own verdict on
 // each change, not an inference from it. A run with no stored verdict says "no
 // review ran", which is deliberately not the same as "nothing found".
-// The architect is not a thing Stack runs: there is no standing model
-// watching the codebase across weeks, and no drift metric behind the design's
-// bars. That column renders as an explicit absent state, and WHERE THEY
-// DISAGREE does not render at all, because one opinion cannot disagree.
+// The architect became real with #284 — a separate pass asking "where is this
+// codebase going?" rather than "is this change correct?" — so its column is its
+// stored read too, and WHERE THEY DISAGREE renders when the two land on
+// opposite sides of the SAME change. When either has not run, its panel says
+// "no pass ran" rather than implying it looked and found nothing.
 //
 // The other half of the design is the part Stack can answer completely: what
 // landed, and what the night is waiting on you to decide.
@@ -80,6 +81,19 @@ export function NightDebrief({
   const filed = reviewed.reduce((n, r) => n + (r.reviewFindings ?? 0), 0);
   const worst = reviewed.some((r) => r.reviewVerdict === 'blocked') ? 'blocked'
     : reviewed.some((r) => r.reviewVerdict === 'concerns') ? 'concerns' : 'clean';
+  // (#284) The architect's reads for this night, and where the two roles land
+  // on opposite sides of the SAME change — which is the only honest basis for
+  // a "where they disagree" panel.
+  const arched = runs.filter((r) => r.architectVerdict);
+  const drifted = arched.filter((r) => r.architectVerdict !== 'aligned').length;
+  const arcWorst = arched.some((r) => r.architectVerdict === 'concerning') ? 'concerning'
+    : arched.some((r) => r.architectVerdict === 'drifting') ? 'drifting' : 'aligned';
+  const split = runs.find((r) =>
+    (r.reviewVerdict === 'clean' && r.architectVerdict && r.architectVerdict !== 'aligned')
+    || (r.reviewVerdict === 'blocked' && r.architectVerdict === 'aligned'));
+  const disagreement = !split ? '' : split.reviewVerdict === 'clean'
+    ? `On ${split.itemId ? `#${split.itemId}` : split.branch || 'one change'} the reviewer says the change is clean, while the architect reads it as ${split.architectVerdict}.`
+    : `On ${split.itemId ? `#${split.itemId}` : split.branch || 'one change'} the reviewer wants it blocked, while the architect finds the structure aligned.`;
   const noteFor = (r: RunRow) =>
     notes.find((n) => r.branch && n.branch === r.branch) ?? null;
 
@@ -156,8 +170,8 @@ export function NightDebrief({
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        <span className="roster" title="Stack runs a reviewer over each push. It runs no architect — there is no standing model watching the codebase across weeks.">
-          roster: reviewer{data.autopilot.advisorModel ? ' · advisor on builds' : ''} · no architect
+        <span className="roster" title="Two Gemini passes per run: the reviewer asks whether the change is correct, the architect asks where it takes the codebase. Both annotate; neither decides.">
+          roster: reviewer · architect{data.autopilot.advisorModel ? ' · advisor on builds' : ''}
         </span>
         <button className="db-close" onClick={onClose} aria-label="Close the debrief">×</button>
       </div>
@@ -383,24 +397,70 @@ export function NightDebrief({
 
           <div className="db-sep" />
 
-          {/* The design's second seat. Stack does not fill it, and drawing a
-              plausible architect would be inventing output — so the seat is
-              shown empty, with what filling it would actually require. */}
+          {/* #284 filled the design's second seat: a separate Gemini pass asking
+              "where is this codebase going?" rather than "is this correct?". */}
           <div className="db-agent">
             <div className="hd">
-              <span className="chip architect off">ARCHITECT</span>
-              <span className="model">not on the roster</span>
+              <span className={`chip architect ${arched.length ? '' : 'off'}`}>ARCHITECT</span>
+              <span className="model">{arched.length ? 'gemini · per run' : 'no pass on this night'}</span>
             </div>
-            <div className="verdictcard quiet">
-              <span className="v">No architect runs</span>
-              <span className="s">
-                Stack reviews each change but nothing watches the codebase across weeks, so there
-                is no drift to report and nothing here to disagree with the reviewer. Filling this
-                seat means a standing pass over the accumulated diff, on its own schedule — a
-                different job from reviewing one push, and one nothing currently does.
-              </span>
-            </div>
+            {arched.length > 0 ? (<>
+              <div className={`verdictcard arch ${arcWorst}`}>
+                <span className="v">
+                  {arcWorst === 'concerning' ? 'Concerning drift'
+                    : arcWorst === 'drifting' ? 'Drifting'
+                    : 'Aligned'}
+                </span>
+                <span className="s">
+                  {drifted > 0
+                    ? `${drifted} of ${arched.length} change${arched.length === 1 ? '' : 's'} took the codebase somewhere it was not already going.`
+                    : `${arched.length} change${arched.length === 1 ? '' : 's'} read as aligned with the patterns already there.`}
+                  {' '}It files nothing — structure notes are not bugs, and nobody could close them.
+                </span>
+              </div>
+              {arched.filter((r) => r.architectNote).map((r, i) => (
+                <div className="revline" key={`a${r.itemId ?? 'gen'}${i}`}>
+                  <span className={`mark ${r.architectVerdict}`}>
+                    {r.architectVerdict === 'concerning' ? '✕' : r.architectVerdict === 'drifting' ? '~' : '✓'}
+                  </span>
+                  <span className="t">
+                    <code>{r.itemId ? `#${r.itemId}` : r.branch || 'run'}</code> {r.architectNote}
+                  </span>
+                </div>
+              ))}
+              {arched.flatMap((r) => r.architectObs ?? []).slice(0, 4).map((o, i) => (
+                <div className="revline obs" key={`o${i}`}>
+                  <span className="mark">·</span>
+                  <span className="t">{o}</span>
+                </div>
+              ))}
+            </>) : (
+              <div className="verdictcard quiet">
+                <span className="v">No structural pass on this night</span>
+                <span className="s">
+                  The architect runs at the end of a run, beside the reviewer. Nothing here means no
+                  pass ran on this night's changes — not that the structure is fine.
+                </span>
+              </div>
+            )}
           </div>
+
+          {/* Two opinions can disagree; one cannot. This only renders when both
+              actually spoke and landed on different sides of the same change. */}
+          {disagreement && (<>
+            <div className="db-sep" />
+            <div className="db-agent">
+              <span className="cap">WHERE THEY DISAGREE</span>
+              <div className="disagree">
+                <span className="t">{disagreement}</span>
+                <span className="n">
+                  Correct and drifting are not a contradiction — the reviewer reads the change, the
+                  architect reads where it leaves the codebase. Both are suggestions; the verdict is
+                  still yours.
+                </span>
+              </div>
+            </div>
+          </>)}
         </div>
       </div>
 

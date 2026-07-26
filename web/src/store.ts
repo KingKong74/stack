@@ -366,6 +366,12 @@ export interface RunRow {
   reviewVerdict?: string;
   reviewNote?: string;
   reviewFindings?: number | null;
+  // (#284) The architect's structural read: aligned | drifting | concerning.
+  // '' = no pass ran. A change can be correct and still drift, which is why
+  // this is a separate verdict from the reviewer's rather than folded into it.
+  architectVerdict?: string;
+  architectNote?: string;
+  architectObs?: string[];
 }
 
 // (#286) The reviewer's per-push line — the second model's take on one auto/*
