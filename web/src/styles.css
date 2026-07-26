@@ -824,6 +824,12 @@ a.tab { display: inline-block; }
 .tier-chip.tA { background: var(--building); }
 .tier-chip.tB { background: var(--sage); }
 .tier-chip.tC { background: #8f897d; }
+/* #277 — the tier seg in the roadmap modal: the selected tier wears its own
+   colour, so the modal and the Tiers view read as the same ranking. */
+.seg .opt.tier-S.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.seg .opt.tier-A.on { background: var(--building); border-color: var(--building); color: #fff; }
+.seg .opt.tier-B.on { background: var(--sage); border-color: var(--sage); color: #fff; }
+.seg .opt.tier-C.on { background: #8f897d; border-color: #8f897d; color: #fff; }
 .tier-board { display: flex; flex-direction: column; gap: 10px; }
 .tier-row { display: flex; gap: 14px; align-items: flex-start; background: var(--panel); border: 1px solid var(--line-panel); border-radius: 14px; padding: 12px 14px; }
 .tier-row.tnone { background: transparent; border-style: dashed; }

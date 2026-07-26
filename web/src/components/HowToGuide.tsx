@@ -32,7 +32,7 @@ export function HowToGuide({ onClose }: { onClose: () => void }) {
           <div className="guide-step-body">
             The top of the dashboard is the cross-project glance: a <b>pick up where you left
             off</b> hero, <b>Live now</b> (sessions running at this moment, with their branches),
-            ⚑ <b>lane claims</b> (which parallel session owns which roadmap item), the <b>review
+            ⚑ <b>branch claims</b> (which parallel session owns which roadmap item), the <b>review
             inbox</b>, and an attention row — blocked, stale, bugs — that goes calm at zero.
             Everything clicks through to the project it belongs to.
           </div>
@@ -79,7 +79,7 @@ export function HowToGuide({ onClose }: { onClose: () => void }) {
             activity — and jumps straight to the match. Any resume card exports a <b>brief</b>:
             curated markdown for handing a project's state to an agent anywhere. And{' '}
             <b>Connect</b> in the dashboard header walks through wiring a new machine or repo in —
-            including running parallel lanes on one project.
+            including running parallel branches on one project.
           </div>
         </div>
       </div>

@@ -198,8 +198,10 @@ roadmap.post('/suggest-title', async (req, res) => {
 });
 
 // POST /assist  -> Gemini fills the whole item from its note (the modal's ✧
-// button): title, tidied note, area, lane, priority. Suggestion only — it
-// prefills the fields and the human saves (or doesn't). 503 keyless.
+// button): title, tidied note, area, branch claim, priority and tier (#277).
+// Suggestion only — it prefills the fields and the human saves (or doesn't),
+// and the modal only takes a tier into an EMPTY tier, so a rank you set by
+// hand is never re-decided by the model. 503 keyless.
 roadmap.post('/assist', async (req, res) => {
   if (!geminiEnabled()) {
     return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
@@ -246,6 +248,9 @@ roadmap.post('/assist', async (req, res) => {
       // A lane claims work for a stream — only ever suggest one that already exists.
       lane: allowed.has('lane') && lanes.includes(String(answer?.lane || '').trim()) ? String(answer.lane).trim() : '',
       priority: allowed.has('priority') && BUCKETS.includes(answer?.priority) ? answer.priority : null,
+      // #277 — a desire tier, only ever S/A/B/C; anything else means "no view".
+      tier: allowed.has('tier') && TIERS.includes(String(answer?.tier || '').trim().toUpperCase())
+        ? String(answer.tier).trim().toUpperCase() : '',
     });
   } catch (err) {
     res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });

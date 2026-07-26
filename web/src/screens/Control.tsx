@@ -526,7 +526,7 @@ export function ControlPanel() {
                         </span>
                       )}
                       {s.branch && (
-                        <span className="branch" title={`The lane claim this worker holds: ${s.branch}`}>
+                        <span className="branch" title={`The branch claim this worker holds: ${s.branch}`}>
                           {s.branch}
                         </span>
                       )}
@@ -588,7 +588,7 @@ export function ControlPanel() {
                 </button>
                 <div className="mc14-minis">
                   <div className="mc14-mini"><span className="n">{seriousTotal}</span><span className={`l ${seriousTotal ? 'bad' : ''}`}>serious bugs</span></div>
-                  <div className="mc14-mini"><span className="n">{data.totals.claims}</span><span className="l">claimed lanes</span></div>
+                  <div className="mc14-mini"><span className="n">{data.totals.claims}</span><span className="l">claimed branches</span></div>
                 </div>
               </div>
             </div>

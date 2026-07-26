@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Severity, Priority, Bug, BugStatus, PlanStep } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Severity, Priority, Bug, BugStatus } from '../types';
 import {
   getProjectDetail, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
@@ -23,7 +23,7 @@ import { Tips } from '../detail/Tips';
 import { Activity } from '../detail/Activity';
 import { Modal } from '../components/Modal';
 import { BugModal } from '../components/BugModal';
-import { RoadmapModal } from '../components/RoadmapModal';
+import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
@@ -231,17 +231,17 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     });
 
   // Create, or save an edit, depending on how the modal was opened.
-  const submitRoad = ({ title, note, priority, lane, area, plan, risk }: { title: string; note: string; priority: Priority; lane: string; area: string; plan: PlanStep[]; risk: RoadmapItem['risk'] }) =>
+  const submitRoad = ({ title, note, priority, lane, area, plan, risk, tier }: RoadmapFields) =>
     guard(async () => {
       const editing = roadModal.editing;
       if (editing) {
-        const updated = await patchRoadmapItem(slug, editing.id, { title, note, bucket: priority, claimed_by: lane, area, plan, risk });
+        const updated = await patchRoadmapItem(slug, editing.id, { title, note, bucket: priority, claimed_by: lane, area, plan, risk, tier });
         const without = { ...roadmap, [editing.bucket]: roadmap[editing.bucket].filter((i) => i.id !== editing.id) };
         setData({ ...data, roadmap: { ...without, [updated.bucket]: [...without[updated.bucket], updated] } });
         setRoadModal(roadModalClosed);
         return;
       }
-      const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: lane || undefined, area: area || undefined, plan: plan.length ? plan : undefined, risk: risk !== 'normal' ? risk : undefined });
+      const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: lane || undefined, area: area || undefined, plan: plan.length ? plan : undefined, risk: risk !== 'normal' ? risk : undefined, tier: tier || undefined });
       const fromNote = roadModal.fromNote;
       const fromFuture = pendingFuture;
       if (roadModal.fromDraft) updateRoadDraft(null); // the draft landed — clear it
@@ -905,6 +905,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           initialArea={roadModal.editing?.area ?? roadModal.area ?? ''}
           initialPlan={roadModal.editing?.plan ?? []}
           initialRisk={roadModal.editing?.risk ?? 'normal'}
+          initialTier={roadModal.editing?.tier ?? ''}
           lanes={[...new Set(allRoadmap.map((i) => i.claimedBy))].filter(Boolean).sort()}
           areas={[...new Set([...allRoadmap.map((i) => i.area), ...futures.map((f) => f.area)])].filter(Boolean).sort()}
           mode={roadModal.editing ? 'edit' : 'add'}
