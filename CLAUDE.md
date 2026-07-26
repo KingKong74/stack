@@ -373,7 +373,8 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 - `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router; routes
   are `#/`, `#/settings`, `#/control`, `#/terminal`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit
-  hash (activity), a bug key (bugs) or a row id (roadmap/notes). `go.settings()` opens Settings.
+  hash (activity), a bug key (quality) or a row id (roadmap/notes). Legacy `bugs`/`audit` tabs
+  both resolve to `quality` (#278), so old deep links keep working. `go.settings()` opens Settings.
 - `components/CommandDeck.tsx` — the cross-project deck at the top of the dashboard (resume hero,
   the **live-now strip** — green presence chips per project with branches and session count, gone
   when quiet — the **lanes strip** — ⚑ chips for open lane-claimed roadmap items, deep-linking to
@@ -387,7 +388,8 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   grid; renders the deck above the "All projects" grid; status filters, computed progress on cards),
   ProjectDetail (loads project+activity+collections, owns tab/modal state, persists on mutate;
   initial tab comes from the route so the deck can deep-link to e.g. a project's Activity tab;
-  the Bugs/Roadmap tab titles carry open-count badges).
+  the Quality/Roadmap tab titles carry count badges — Quality's is the one "wrong now" number,
+  red checks + serious open bugs, toned critical).
 - The detail payload carries `liveBranches` (presence rows inside the TTL): the board's
   in-progress lock (dim + read-only) only bites while an item's `claimed_by` matches a live
   branch — a stale claim keeps its ⚑ don't-re-pick chip but stays editable (BUG-2).
@@ -395,7 +397,28 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   as the deck inbox, computed client-side from the collections' `reviewed` flags — the **Directives
   card** (add/remove steer lines, persisted whole via `patchProject {directives}`) and the
   **editable Deployment panel** — status/platform/logs URL via `patchProject` — and the **editable
-  Tech stack panel** — chips via `patchProject {tech_stack}`), Bugs (auto cue),
+  Tech stack panel** — chips via `patchProject {tech_stack}`),
+  **Quality** (`detail/Quality.tsx` — #278, the Stack Planning design's 20b: the old **Bugs and
+  Audit tabs merged into one page**, because they were halves of one loop — run the checks → see
+  what's red → file what's real → fix → re-run → close — that used to cross a tab boundary twice.
+  One health verdict (Good / Needs work / Down / Untested, read over checks AND bugs, with the
+  30-run pass-rate trend) over four KPI cards, then three **segments**: **Now** is the card grid —
+  **Needs you** (red checks and serious open bugs in ONE list, each row wearing its other half,
+  ▸ re-run the red ones), the **✧ Bug audit** card (brief fold, ⧉ Claude prompt, findings with
+  outcomes), the compact **Checks** card (failing first; past eight it shows the red ones and folds
+  the rest into a count) and the **Bugs** card (open by severity capped at ten, `show fixed`,
+  status pill = the inline editor, ✓ fix / × delete, the ↳ commit chip still jumping to Activity);
+  **Suite** is every check with the composer (method/name/URL/expected status, request body,
+  the assertion tabs — ✧ Semantic absent when keyless — the #261 **Authenticated** opt-in, and
+  ▸ ✎ × / → Bug per row, authenticated rows wearing 🔒); **History** is
+  the `check_runs` ledger (when · scope · pass bar · note · duration). `+ Report` is an inline
+  composer (title + C/H/M/L, Enter files, esc closes), and `→ Bug` on a red check opens it
+  prefilled with the failure AND links the two (#278). Distinct states are drawn, not implied:
+  virgin teaches (no KPIs until there's a number), clean goes calm rather than empty, **all red
+  with one shared error signature reads as the host, not N bugs** (nothing is auto-filed), a run
+  in flight greys the numbers instead of blanking them, and every Gemini surface is ABSENT (not
+  disabled) when `geminiReady` is false. `.q-*` styles; narrow stacks the cards in priority order
+  with the KPIs 2×2),
   Roadmap (the Board/**Tiers**/**Parked**/Reviews switch sits above the content, left, full seg size
   (#129); + Add tops
   each column (#112); tick moves an item into the Reviews pipeline — still counted by
@@ -463,19 +486,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   set to the Polaris studio via the thought handoff
   input (stashes the thought, opens the studio). The pre-sky list view survives behind a
   Sky/List seg (promote/dismiss/edit/judge per row, area chips, "first line = idea" composer);
-  the old drag-canvas (`FuturesCanvas`) is retired), Audit (`detail/Audit.tsx` — the dedicated testing +
-  audit dashboard, moved out of the Bugs tab: a health header (pass rate, per-state counts,
-  avg response, last run) over a **run-history trend strip** (each bar one Run-all, from the
-  `check_runs` ledger via `store.getCheckRuns` — the tab's own fetch, refreshed when a run
-  settles), a **failing-now callout** (every red test with its error, → Bug and re-run in
-  place; gone at zero — the Audit tab badge counts these), the test suite (#143, named by
-  #145 — HTTP tests
-  against the live app: plain probes and function tests with a method picker + request body
-  (JSON bodies sent as application/json), assertions on status / body keyword / a JSON dot-path
-  value / a Gemini-judged expectation; Run all / run one, quick-add "Site up" from site_url,
-  ✎ edit-in-place via `patchCheck` — editing anything but the name clears the stored result —
-  failing tests offer "→ Bug" prefilled into the BugModal) and the ✧ Bug audit panel (#144 —
-  Gemini + the Claude-prompt hand-off)), Tips (`detail/Tips.tsx` — the recipe library from the
+  the old drag-canvas (`FuturesCanvas`) is retired), Tips (`detail/Tips.tsx` — the recipe library from the
   Stack Planning design's Tips tab: kept Claude prompts with the context of WHEN to reach for
   them. The library is **app-wide** (`store.getTips` et al hit the global `/api/tips` — every
   project's tab shows the same recipes; the tab fetches its own data like Audit). Left rail =
@@ -535,7 +546,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     pre-authorised; the catalogue lives in `settings.js` `SESSION_DEFAULTS`, keys mirror the web's
     `DIRECTIVES` in `lib/brief.ts`). Seeded once on migrate.
   - `bugs` — `bug_key` (BUG-N per project), title, severity, status, `link_ref` (commit), `source`,
-    `fingerprint`, `reviewed_at`. Partial unique index on (project, fingerprint) WHERE source='hook'.
+    `fingerprint`, `reviewed_at`, plus `check_id` (#278 — **the bug↔check link**, the one data change
+    the merged Quality page needed: which check caught this bug. NULL = filed by hand. Declared
+    after the `checks` table in schema.sql because it references it, `ON DELETE SET NULL` so
+    deleting a check never takes its bug with it. The Quality page renders it BOTH ways — a red
+    check wears `↳ BUG-7 open`, the bug wears `↳ <check name>`, each chip jumping to the other
+    half — and `→ Bug` on a red check sets it. A red check whose linked bug is already *fixed*
+    offers → Bug again: that's a regression, not a tracked failure). Partial unique index on
+    (project, fingerprint) WHERE source='hook'.
   - `roadmap_items` — `bucket`, title, note, `done`, `position` (PATCHable — the board is
     drag-reorderable and its order is the autopilot queue), `source`, `fingerprint`,
     `reviewed_at`, `area` (the product-area tag, mirroring `futures.area` — chips + filter on the
@@ -575,7 +593,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     roadmap item `done` also sets it (a human touch counts as review — archived items never
     linger in the inbox).
   - `notes` — text, `colour`, `source`.
-  - `checks` — the Audit tab's test suite: HTTP tests against the project's live app. A row is
+  - `checks` — the Quality tab's test suite (the Suite segment): HTTP tests against the project's live app. A row is
     a probe or a function test (#143): name, url, `method` (GET|POST|PUT|PATCH|DELETE|HEAD),
     `expect_status`, `req_body` (sent for non-GET/HEAD; JSON bodies as application/json), and
     the assertions — optional `contains` keyword, `json_path` + `json_expect` (dot path into a
@@ -591,9 +609,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     **The bar (#261):** a green suite is the evidence that risk-tiered auto-merge (#212) and
     auto-verdict (#263) spend. Checks are Stack's only automated regression net — when a route's
     payload contract changes, change its check in the same commit.
-  - `check_runs` — the Audit tab's run history: one summary row per POST /checks/run
-    (scope all|one, total/passed/failed, duration_ms) — the dashboard's trend strip and
-    last-run stat. Written best-effort after the checks save their results (an insert hiccup
+  - `check_runs` — the Quality tab's run history (the History segment): one summary row per POST /checks/run
+    (scope all|one, total/passed/failed, duration_ms) — the health card's pass-rate trend, the
+    KPI deltas and the History ledger. Written best-effort after the checks save their results (an insert hiccup
     never fails the run); the autopilot's nightly checks run lands here too.
   - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap|future`, fingerprint).
   - `autopilot_schedule` + `autopilot_jobs` — Mission Control's calendar and the job queue the
@@ -743,7 +761,7 @@ navigation target. An empty query returns empty groups.
     "projects": [ { "kind": "project", "slug": "…", "name": "…", "tint": "#…|null",
                     "title": "…", "meta": "…",
                     "target": { "slug": "…", "tab": "overview", "highlight": null } } ],
-    "bugs":     [ { …, "target": { "slug": "…", "tab": "bugs",     "highlight": "BUG-3" } } ],
+    "bugs":     [ { …, "target": { "slug": "…", "tab": "quality",  "highlight": "BUG-3" } } ],
     "roadmap":  [ { …, "target": { "slug": "…", "tab": "roadmap",  "highlight": "42" } } ],
     "notes":    [ { …, "target": { "slug": "…", "tab": "notes",    "highlight": "7" } } ],
     "activity": [ { …, "target": { "slug": "…", "tab": "activity", "highlight": "6234a79" } } ]
@@ -834,7 +852,9 @@ the silent metadata backstop so the feed never has gaps.
   `POST /api/presence/end` (idempotent clear from the SessionEnd hook)
 - `GET /api/projects` · `POST /api/projects` · `GET /api/projects/:slug` (project + activity +
   collections + progress; the detail payload includes `blockers` for the start hook,
-  `keepResumeCard`, `sessionDefaults` (rendered lines) and `shareToken`) ·
+  `keepResumeCard`, `sessionDefaults` (rendered lines), `shareToken` and `geminiReady` (#278 —
+  whether a key is configured, so the Quality page's AI surfaces are absent rather than dead;
+  an older server that omits it is read as ready, since those surfaces 503 honestly)) ·
   `PATCH /api/projects/:slug` (subtitle, site_url, repo_url, status, pin, …) ·
   `DELETE /api/projects/:slug` (**soft** — stamps `deleted_at`, clears the share link, keeps every
   row; deleted projects vanish from all live queries and their collection routes 404) ·
@@ -842,7 +862,9 @@ the silent metadata backstop so the feed never has gaps.
   `DELETE /api/projects/:slug/purge` (the real cascade delete — only valid on binned projects) ·
   `POST /api/projects/:slug/share` (mint/rotate the showcase token) · `DELETE .../share` (disable)
 - `GET|POST /api/projects/:slug/bugs` · `PATCH|DELETE /api/projects/:slug/bugs/:bugKey`
-  (PATCH also takes `reviewed: bool` — the review-inbox approve)
+  (PATCH also takes `reviewed: bool` — the review-inbox approve — and `check_id` (#278: link the
+  check that caught it, null/'' unlinks); POST takes `check_id` too. Only THIS project's checks
+  are linkable — a bogus or foreign id lands as NULL rather than erroring)
 - `GET|POST /api/projects/:slug/roadmap` · `PATCH|DELETE /api/projects/:slug/roadmap/:id`
   (POST takes `claimed_by` + `area`; PATCH also takes `reviewed: bool`, `claimed_by` ('' releases),
   `review_tag: solid|needs-work|rethink` ('' clears), `done: bool` — ticking stamps `reviewed_at`;

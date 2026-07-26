@@ -149,6 +149,8 @@ projects.get('/:slug', async (req, res) => {
       // Roadmap tab's Parked view ages items without a second settings fetch.
       staleItemDays: appSettings.stale_item_days,
       liveBranches: live.rows.map((r) => r.branch || 'main'),
+      // #278 — the Quality page hides its Gemini surfaces entirely when keyless.
+      geminiReady: geminiEnabled(),
     })
   );
 });

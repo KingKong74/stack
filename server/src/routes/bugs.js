@@ -24,11 +24,22 @@ bugs.get('/', async (req, res) => {
   res.json(rows.map(bugShape));
 });
 
+// #278 — resolve a bug↔check link. Only this project's checks are linkable, so a
+// bogus (or another project's) id lands as NULL rather than a cross-project link.
+async function ownCheckId(projectId, raw) {
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const { rows } = await q('SELECT id FROM checks WHERE id = $1 AND project_id = $2', [id, projectId]);
+  return rows.length ? id : null;
+}
+
 // POST /  -> create a manual bug
 bugs.post('/', async (req, res) => {
   const title = String(req.body?.title || '').trim().slice(0, 300);
   if (!title) return res.status(400).json({ error: 'Title is required.' });
   const severity = oneOf(req.body?.severity, SEVERITIES, 'medium');
+  // The check this bug was filed from (the Quality page's → Bug on a red check).
+  const checkId = req.body?.check_id == null ? null : await ownCheckId(req.project.id, req.body.check_id);
 
   const { rows: maxr } = await q(
     `SELECT COALESCE(MAX((substring(bug_key from '^BUG-([0-9]+)$'))::int), 0) AS n
@@ -38,9 +49,9 @@ bugs.post('/', async (req, res) => {
   const bugKey = `BUG-${maxr[0].n + 1}`;
 
   const { rows } = await q(
-    `INSERT INTO bugs (project_id, bug_key, title, severity, status, source, fingerprint)
-     VALUES ($1,$2,$3,$4,'open','manual',$5) RETURNING *`,
-    [req.project.id, bugKey, title, severity, fingerprint(title)]
+    `INSERT INTO bugs (project_id, bug_key, title, severity, status, source, fingerprint, check_id)
+     VALUES ($1,$2,$3,$4,'open','manual',$5,$6) RETURNING *`,
+    [req.project.id, bugKey, title, severity, fingerprint(title), checkId]
   );
   res.status(201).json(bugShape(rows[0]));
 });
@@ -62,6 +73,12 @@ bugs.patch('/:bugKey', async (req, res) => {
   if (req.body?.title !== undefined) {
     const title = String(req.body.title).trim().slice(0, 300);
     if (title) { sets.push(`title = $${i++}`); vals.push(title); }
+  }
+  // #278 — link or unlink the check that caught this bug (null/'' unlinks).
+  if (req.body?.check_id !== undefined) {
+    const checkId = req.body.check_id === null || req.body.check_id === ''
+      ? null : await ownCheckId(req.project.id, req.body.check_id);
+    sets.push(`check_id = $${i++}`); vals.push(checkId);
   }
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
 

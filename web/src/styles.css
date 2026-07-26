@@ -30,6 +30,10 @@
   --live-tint: #e4efe8;
   --building-tint: #f3ead3;
   --paused-tint: #ecebe6;
+  /* the critical wash + hairline — the Quality page's "something is wrong" tone
+     (#278). Named tokens rather than rgba literals, so dark overrides them once. */
+  --critical-tint: #f7eae9;
+  --critical-line: #e5cbc9;
 
   /* ---- derived / supporting tokens (kept for the existing UI) ---- */
   --bg: var(--paper);
@@ -92,6 +96,8 @@
   --live-tint: #1e2b23;
   --building-tint: #2e2817;
   --paused-tint: #2a2823;
+  --critical-tint: #2b1c1a;
+  --critical-line: #4a2e2c;
 
   /* supporting literals re-based for dark */
   --resume-border: #3b3226;
@@ -2820,3 +2826,226 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc16-ask:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-deep); }
 .mc16-ask:disabled { opacity: 0.6; }
 .mc16-inbox .rule { padding: 11px 12px; border-radius: 9px; border: 1px dashed var(--keyline); font-size: 10.5px; line-height: 1.6; color: var(--paused); }
+
+/* ============================================================
+   Quality (#278, design 20b) — Bugs + Audit as one card grid.
+   One health verdict, one "Needs you" list mixing red checks with
+   serious bugs, and the long tails behind Now / Suite / History.
+   Reuses .check-*, .audit-*, .sev-pill, .status-pill and the
+   composer families; everything here is the dashboard around them.
+   ============================================================ */
+.quality { display: flex; flex-direction: column; gap: 14px; }
+.q-spacer { flex: 1; }
+.q-eyebrow { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.1em; color: var(--paused); }
+.q-hint { font-family: var(--mono); font-size: 10px; color: var(--paused); margin-right: auto; }
+
+/* the bar: title, the three segments, Run all + Report */
+.q-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.q-bar-title { font-family: var(--disp); font-size: 20px; font-weight: 600; color: var(--ink); }
+.q-segs { flex: none; }
+.q-seg-n { font-family: var(--mono); font-size: 9.5px; color: var(--paused); }
+.seg-opt.on .q-seg-n { color: var(--accent); }
+
+/* the inline report composer — + Report, or → Bug off a red check */
+.q-report { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border-radius: 11px;
+  border: 1px solid var(--accent-tint-border); background: var(--sand); flex-wrap: wrap; }
+.q-report .field-input.sm.grow { flex: 1; min-width: 200px; }
+.q-report-link { font-family: var(--mono); font-size: 10px; color: var(--accent-deep);
+  background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 5px; padding: 2px 7px; }
+.q-esc { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.q-esc:hover { color: var(--ink); }
+
+/* health band + KPI row */
+.q-top { display: flex; align-items: stretch; gap: 12px; flex-wrap: wrap; }
+.q-health { width: 300px; flex: none; display: flex; flex-direction: column; gap: 6px;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--card); padding: 16px 18px; }
+.q-health .q-verdict { font-family: var(--disp); font-size: 26px; font-weight: 600; line-height: 1.1; color: var(--muted); }
+.q-health .q-why { font-size: 11.5px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+.q-health.good { border-color: color-mix(in srgb, var(--live) 34%, transparent); background: var(--live-tint); }
+.q-health.good .q-verdict, .q-health.good .q-eyebrow { color: var(--live); }
+.q-health.needs-work, .q-health.down { border-color: var(--critical-line); background: var(--critical-tint); }
+.q-health.needs-work .q-verdict, .q-health.needs-work .q-eyebrow,
+.q-health.down .q-verdict, .q-health.down .q-eyebrow { color: var(--critical); }
+.q-trend { display: flex; align-items: flex-end; gap: 2px; height: 34px; margin-top: auto; padding-top: 10px; }
+.q-trend.inline { height: 22px; margin: 0; padding: 0; flex: 1; min-width: 90px; max-width: 260px; }
+.q-trend-bar { flex: 1; min-width: 2px; border-radius: 1px; background: var(--green); }
+.q-trend-bar.bad { background: var(--critical); }
+
+.q-kpis { flex: 1; min-width: 320px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; }
+.q-kpis.waiting .q-kpi { opacity: 0.6; }
+.q-kpi { border-radius: 12px; border: 1px solid var(--line); background: var(--card); padding: 13px 15px;
+  display: flex; flex-direction: column; gap: 4px; }
+.q-kpi.bad { border-color: var(--critical-line); background: var(--critical-tint); }
+.q-kpi-n { display: flex; align-items: baseline; gap: 7px; }
+.q-kpi-n b { font-family: var(--disp); font-size: 23px; font-weight: 600; line-height: 1; color: var(--ink); }
+.q-kpi.bad .q-kpi-n b { color: var(--critical); }
+.q-kpi-n span { font-family: var(--mono); font-size: 9.5px; }
+.q-kpi-n .up { color: var(--live); }
+.q-kpi-n .down { color: var(--critical); }
+.q-kpi-l { font-size: 11px; font-weight: 500; color: var(--ink); }
+.q-kpi.bad .q-kpi-l { color: var(--critical); }
+.q-kpi-s { font-family: var(--mono); font-size: 9.5px; color: var(--paused); }
+
+/* the virgin state's teaching card — no KPIs until there's a number */
+.q-teach { flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 10px; justify-content: center;
+  border-radius: 12px; border: 1px solid var(--accent-tint-border); background: var(--sand); padding: 15px 17px; }
+.q-teach p { margin: 0; font-size: 12.5px; line-height: 1.65; color: var(--ink); text-wrap: pretty; }
+.q-teach-acts { display: flex; gap: 7px; flex-wrap: wrap; }
+
+/* a suite run in flight — numbers grey out above, nothing blanks */
+.q-running { display: flex; align-items: center; gap: 11px; padding: 11px 14px; border-radius: 11px;
+  border: 1px solid var(--accent-tint-border); background: var(--accent-tint); flex-wrap: wrap; }
+.q-running-t { font-size: 11.5px; font-weight: 500; color: var(--accent-deep); }
+.q-running-m { flex: 1; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.q-running-bar { width: 120px; height: 4px; border-radius: 3px; background: var(--card); overflow: hidden; }
+.q-running-bar span { display: block; width: 40%; height: 4px; border-radius: 3px; background: var(--accent);
+  animation: q-slide 1.4s ease-in-out infinite; }
+@keyframes q-slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .q-running-bar span { animation: none; margin-left: 0; } }
+
+/* the card grid: Needs you + audit above, checks + bugs below */
+.q-grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; align-items: start; }
+.q-card { border-radius: 12px; border: 1px solid var(--line); background: var(--card); overflow: hidden; }
+.q-card.span { grid-column: 1 / -1; }
+.q-card.wrong { border-color: var(--critical-line); background: var(--critical-tint); }
+.q-card.calm { border-style: dashed; background: transparent; }
+.q-card-head { display: flex; align-items: baseline; gap: 9px; padding: 12px 15px; border-bottom: 1px solid var(--line-2); flex-wrap: wrap; }
+.q-card.wrong .q-card-head { border-bottom-color: var(--critical-line); }
+.q-card-title { font-family: var(--disp); font-size: 13px; font-weight: 600; color: var(--ink); }
+.q-card.wrong .q-card-title { color: var(--critical); }
+.q-card-sub { font-size: 10.5px; color: var(--muted); }
+.q-card-act { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.q-card-act:hover:not(:disabled) { color: var(--accent); }
+.q-card-act.red { color: var(--critical); }
+.q-card-act.red:hover:not(:disabled) { color: var(--accent-deep); }
+.q-card-act:disabled { opacity: 0.5; }
+.q-card-body { padding: 12px 15px; display: flex; flex-direction: column; gap: 8px; }
+.q-card .check-composer, .q-card .audit-brief { padding: 12px 15px; border-bottom: 1px solid var(--line-2);
+  background: var(--sand); margin: 0; }
+.q-card .audit-brief-actions { align-items: center; }
+.q-foot { display: flex; align-items: baseline; gap: 12px; padding: 12px 15px; border-top: 1px solid var(--line-2);
+  background: var(--panel); font-size: 11px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+
+.q-rows { padding: 6px 9px 10px; display: flex; flex-direction: column; gap: 2px; }
+.q-rows.tight { gap: 1px; }
+.q-note { padding: 10px 11px; font-size: 12px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+.q-note.bad { color: var(--critical); }
+.q-note.dashed { margin: 4px; border: 1px dashed var(--line-3); border-radius: 10px; }
+.q-more { padding: 8px 11px; font-family: var(--mono); font-size: 10.5px; color: var(--paused); }
+
+/* Needs-you rows: CHECK and BUG in one list, each with its other half */
+.q-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; }
+.q-row:hover { background: var(--card); }
+.q-card.wrong .q-row:hover { background: color-mix(in srgb, var(--card) 60%, transparent); }
+.q-row.bug { border-left: 3px solid var(--paused); }
+.q-row.bug.critical { border-left-color: var(--critical); }
+.q-row.bug.high { border-left-color: var(--accent-soft); }
+.q-kind { width: 42px; flex: none; font-family: var(--mono); font-size: 9px; font-weight: 600; color: var(--critical); }
+.q-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.q-row-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.q-row-title .t { font-size: 12px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-row-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-row-sub.bad { color: var(--critical); }
+.q-row-acts { display: flex; align-items: center; gap: 6px; flex: none; }
+.q-act { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line-3); color: var(--ink);
+  font-size: 10.5px; font-weight: 500; white-space: nowrap; }
+.q-act:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-deep); }
+.q-act:disabled { opacity: 0.5; }
+.q-act.red { color: var(--critical); border-color: var(--critical-line); }
+.q-act.red:hover { border-color: var(--critical); background: var(--card); }
+.q-icon { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 2px 5px; border-radius: 5px; }
+.q-icon:hover:not(:disabled) { color: var(--accent); background: var(--panel); }
+.q-icon.danger:hover { color: var(--critical); }
+.q-icon:disabled { opacity: 0.45; }
+
+/* the link chip — the bug↔check pointer, clickable in both directions */
+.q-link { flex: none; font-family: var(--mono); font-size: 9.5px; font-weight: 500; color: var(--accent-deep);
+  background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 5px; padding: 1px 7px; }
+.q-link:hover { background: var(--accent-tint-border); }
+.q-link.flat { border-color: transparent; }
+.q-link.mono { color: var(--muted); background: var(--panel); }
+
+/* the one-cause read: all red, same signature */
+.q-onecause { padding: 12px 15px; display: flex; flex-direction: column; gap: 9px; }
+.q-onecause p { margin: 0; font-size: 11.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+.q-onecause code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
+
+/* the audit card */
+.q-audit-run { font-size: 11.5px; color: var(--accent-deep); }
+.q-skel { height: 11px; border-radius: 4px; background: var(--panel); }
+.q-finding { display: flex; align-items: baseline; gap: 9px; }
+.q-finding .t { flex: 1; min-width: 0; font-size: 11.5px; line-height: 1.5; color: var(--ink); text-wrap: pretty; }
+.q-finding .t em { font-style: normal; color: var(--muted); }
+.q-finding .q-out { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--muted); white-space: nowrap; }
+
+/* the compact checks card (Now) */
+.q-crow { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 8px; }
+.q-crow:hover { background: var(--panel); }
+.q-crow.fail { background: var(--critical-tint); }
+.q-crow-name { flex: 1; min-width: 0; font-size: 12px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-assert { flex: none; max-width: 150px; font-family: var(--mono); font-size: 9px; font-weight: 500; color: var(--chip-ink);
+  background: var(--panel); border-radius: 4px; padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-assert.ai { color: var(--accent-deep); background: var(--accent-tint); }
+.q-crow-result { flex: none; width: 132px; text-align: right; font-family: var(--mono); font-size: 9.5px; color: var(--muted); white-space: nowrap; }
+.q-crow-result.pass { color: var(--live); }
+.q-crow-result.fail { color: var(--critical); }
+.q-crow-result.never { color: var(--paused); }
+.q-fold { display: flex; align-items: center; gap: 9px; margin-top: 6px; padding: 9px 11px; border-radius: 9px;
+  border: 1px dashed var(--line-3); width: 100%; text-align: left; }
+.q-fold:hover { border-color: var(--accent-tint-border); }
+.q-fold-caret { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.q-fold-t { flex: 1; font-size: 11.5px; color: var(--muted); }
+.q-fold-m { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+
+/* the bugs card (Now) */
+.q-brow { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; border-left: 3px solid var(--paused); }
+.q-brow:hover { background: var(--panel); }
+.q-brow.critical { border-left-color: var(--critical); }
+.q-brow.high { border-left-color: var(--accent-soft); }
+.q-brow.medium { border-left-color: var(--building); }
+.q-brow.done { opacity: 0.6; }
+.q-brow.done .q-brow-title { text-decoration: line-through; }
+.q-brow-title { flex: 1; min-width: 0; font-size: 12px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-brow-meta { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--paused); }
+.q-brow .sev-pill, .q-brow .status-pill { font-size: 9px; padding: 2px 8px; min-width: 0; }
+.q-row .sev-pill, .q-row .status-pill { font-size: 9px; padding: 2px 8px; min-width: 0; }
+.q-brow-quick { display: flex; align-items: center; gap: 2px; flex: none; opacity: 0; transition: opacity 0.12s ease; }
+.q-brow:hover .q-brow-quick { opacity: 1; }
+.q-brow-quick button { color: var(--faint); font-size: 13px; line-height: 1; padding: 2px 5px; border-radius: 5px; }
+.q-brow-quick .bug-resolve:hover { color: var(--green); background: var(--green-tint); }
+.q-brow-quick .bug-x:hover { color: var(--critical); }
+
+/* the Suite segment's full rows */
+.q-srow { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 8px; }
+.q-srow:hover { background: var(--panel); }
+.q-srow.fail { background: var(--critical-tint); }
+.q-srow .check-method { flex: none; }
+
+/* the History segment's ledger */
+.q-hrow { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 8px; }
+.q-hrow:hover { background: var(--panel); }
+.q-hrow-when { width: 92px; flex: none; font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--ink); }
+.q-hrow-scope { width: 54px; flex: none; font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.q-hrow-bar { width: 110px; flex: none; height: 5px; border-radius: 3px; background: var(--panel); overflow: hidden; }
+.q-hrow-bar span { display: block; height: 5px; border-radius: 3px; background: var(--green); }
+.q-hrow-bar span.bad { background: var(--critical); }
+.q-hrow-rate { flex: none; font-family: var(--mono); font-size: 11px; color: var(--live); }
+.q-hrow-rate.bad { color: var(--critical); }
+.q-hrow-note { flex: 1; min-width: 0; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-hrow-dur { width: 60px; flex: none; text-align: right; font-family: var(--mono); font-size: 10px; color: var(--paused); }
+
+/* the single Quality badge is a "wrong now" count, not a neutral tally */
+.tab-n.bad { color: var(--critical); background: var(--critical-tint); border-color: var(--critical-line); }
+
+/* narrow: KPIs go 2×2, the grid stacks in priority order, rows fold to two
+   lines with their chips underneath. Nothing is removed. */
+@media (max-width: 900px) {
+  .q-grid { grid-template-columns: 1fr; }
+  .q-health { width: 100%; }
+  .q-kpis { grid-template-columns: 1fr 1fr; min-width: 0; }
+  .q-segs { order: 3; width: 100%; overflow-x: auto; }
+  .q-row, .q-crow, .q-brow, .q-srow, .q-hrow { flex-wrap: wrap; }
+  .q-crow-result { width: auto; text-align: left; }
+  .q-hrow-note { flex-basis: 100%; }
+  .q-assert { max-width: 100%; }
+}

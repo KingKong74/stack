@@ -44,6 +44,7 @@ export interface Bug {
   status: BugStatus;
   meta: string;            // "reported 2h ago"
   linkRef: string | null;  // commit hash
+  checkId: number | null;  // #278 — the check that caught it (null = filed by hand)
   source: Source;
   reviewed: boolean;       // hook items with false await review
 }

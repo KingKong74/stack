@@ -67,6 +67,11 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Project — roadmap buckets', url: u(`/api/projects/${slug}`), auth: true, json_path: 'roadmap.must' },
     { name: 'Project — unknown slug 404s', url: u('/api/projects/no-such-project-xyz'), auth: true, expect_status: 404 },
     { name: 'Bugs — collection', url: u(`/api/projects/${slug}/bugs`), auth: true, json_path: '0.id' },
+    // #278 — the Quality page's two contract additions. `checkId` is the bug↔check
+    // link the merged page renders both ways; the path only has to EXIST (it is
+    // null on a hand-filed bug, which is the common case).
+    { name: 'Bugs — bug↔check link present', url: u(`/api/projects/${slug}/bugs`), auth: true, json_path: '0.checkId' },
+    { name: 'Project — Gemini readiness flag', url: u(`/api/projects/${slug}`), auth: true, json_path: 'geminiReady' },
     { name: 'Roadmap — collection', url: u(`/api/projects/${slug}/roadmap`), auth: true, json_path: 'must' },
     { name: 'Futures — collection', url: u(`/api/projects/${slug}/futures`), auth: true, json_path: '0.title' },
     { name: 'Notes — collection', url: u(`/api/projects/${slug}/notes`), auth: true, expect_status: 200 },

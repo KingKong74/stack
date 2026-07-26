@@ -12,6 +12,7 @@ export function bugShape(row) {
     status: row.status,
     meta: `reported ${relativeTime(row.created_at) || 'recently'}`,
     linkRef: row.link_ref || null,
+    checkId: row.check_id ?? null, // #278 — the check that caught it (null = filed by hand)
     source: row.source, // 'hook' | 'manual' — drives the "auto" cue
     reviewed: !!row.reviewed_at, // hook items with false await the review inbox
   };
@@ -168,13 +169,17 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
     keepResumeCard: keepResumeCard !== false, // global flag; false hides the resume card
     sessionDefaults: sessionDefaults || [],   // global standing-preference lines for the start hook
     staleItemDays: Number.isFinite(staleItemDays) ? staleItemDays : 21, // parked-item stale line (#247)
+    // #278 — is a Gemini key configured on this server. The Quality page reads
+    // it to make its AI surfaces ABSENT rather than dead when there's no key:
+    // no error, no button that can only 503.
+    geminiReady: geminiReady !== false,
     liveBranches: liveBranches || [],         // branches with a live session now (board lock, BUG-2)
     shareToken: p.share_token || '',          // non-empty = the public showcase link is live
     summary: p.summary || '',

@@ -514,6 +514,7 @@ export interface ProjectDetailData {
   checks: Check[];
   keepResumeCard: boolean;
   staleItemDays: number;   // parked-item stale threshold in days (#247) — ages the Parked view
+  geminiReady: boolean;    // #278 — a key is configured; keyless hides the Quality page's AI surfaces
   shareToken: string;
   liveBranches: string[];  // branches with a live session right now — backs the board's in-progress lock
 }
@@ -522,7 +523,7 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; futures?: Future[];
     checks?: Check[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
-    auditContext?: string; staleItemDays?: number;
+    auditContext?: string; staleItemDays?: number; geminiReady?: boolean;
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
     project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
@@ -533,6 +534,9 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     keepResumeCard: d.keepResumeCard !== false,
     // An older server that doesn't send it falls back to the same default (#247).
     staleItemDays: Number.isFinite(d.staleItemDays) ? Number(d.staleItemDays) : 21,
+    // Default TRUE: an older server that doesn't report it keeps the AI surfaces
+    // visible (they 503 honestly), rather than hiding features that do work.
+    geminiReady: d.geminiReady !== false,
     shareToken: d.shareToken || '',
     liveBranches: d.liveBranches || [],
   };
@@ -841,12 +845,16 @@ const bugsBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/bugs`;
 export async function getBugs(slug: string): Promise<Bug[]> {
   return request<Bug[]>(bugsBase(slug));
 }
-export async function createBug(slug: string, input: { title: string; severity: Severity }): Promise<Bug> {
+// `check_id` (#278) links the bug to the check that caught it — set when the
+// Quality page files a bug straight off a red check.
+export async function createBug(
+  slug: string, input: { title: string; severity: Severity; check_id?: number | null },
+): Promise<Bug> {
   return request<Bug>(bugsBase(slug), { method: 'POST', body: input });
 }
 export async function patchBug(
   slug: string, bugKey: string,
-  patch: Partial<{ status: BugStatus; severity: Severity; title: string; reviewed: boolean }>,
+  patch: Partial<{ status: BugStatus; severity: Severity; title: string; reviewed: boolean; check_id: number | null }>,
 ): Promise<Bug> {
   return request<Bug>(`${bugsBase(slug)}/${encodeURIComponent(bugKey)}`, { method: 'PATCH', body: patch });
 }

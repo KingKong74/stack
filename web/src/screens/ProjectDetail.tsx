@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Check, Severity, Priority, Bug, BugStatus, PlanStep } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Severity, Priority, Bug, BugStatus, PlanStep } from '../types';
 import {
   getProjectDetail, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
@@ -15,8 +15,7 @@ import {
 import { go, hrefTo } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
-import { Bugs } from '../detail/Bugs';
-import { Audit } from '../detail/Audit';
+import { Quality } from '../detail/Quality';
 import { Roadmap, type ReviewTag } from '../detail/Roadmap';
 import { Futures, type Alignment } from '../detail/Futures';
 import { Notes } from '../detail/Notes';
@@ -27,11 +26,11 @@ import { BugModal } from '../components/BugModal';
 import { RoadmapModal } from '../components/RoadmapModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 
-type Tab = 'overview' | 'bugs' | 'audit' | 'roadmap' | 'futures' | 'tips' | 'notes' | 'activity';
-type BugFilter = 'all' | 'open' | 'fixing' | 'fixed';
+// #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
+// (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
+type Tab = 'overview' | 'quality' | 'roadmap' | 'futures' | 'tips' | 'notes' | 'activity';
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'overview', label: 'Overview' }, { key: 'bugs', label: 'Bugs' },
-  { key: 'audit', label: 'Audit' },
+  { key: 'overview', label: 'Overview' }, { key: 'quality', label: 'Quality' },
   { key: 'roadmap', label: 'Roadmap' }, { key: 'futures', label: 'Polaris' },
   { key: 'tips', label: 'Tips' },
   { key: 'notes', label: 'Notes' }, { key: 'activity', label: 'Activity' },
@@ -40,8 +39,12 @@ const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', arc
 
 const roadmapTotal = (r: RoadmapData) => r.must.length + r.should.length + r.could.length + r.wont.length;
 
-const TAB_KEYS = new Set<Tab>(['overview', 'bugs', 'audit', 'roadmap', 'futures', 'tips', 'notes', 'activity']);
-const asTab = (t: string | undefined): Tab => (t && TAB_KEYS.has(t as Tab) ? (t as Tab) : 'overview');
+const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'futures', 'tips', 'notes', 'activity']);
+// 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
+// payload from an older server, a ⌘K target) keep working.
+const LEGACY_TABS: Record<string, Tab> = { bugs: 'quality', audit: 'quality' };
+const asTab = (t: string | undefined): Tab =>
+  (t && TAB_KEYS.has(t as Tab) ? (t as Tab) : (t && LEGACY_TABS[t]) || 'overview');
 
 export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
   id: string; tab?: string; highlight?: string; onOpenSearch: () => void;
@@ -98,7 +101,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
 
   const initialTab = asTab(routeTab);
   const [tab, setTab] = useState<Tab>(initialTab);
-  const [bugFilter, setBugFilter] = useState<BugFilter>('all');
   // Two highlight channels: a commit hash (the existing activity highlight) and
   // a row id (bug key / roadmap id / note id) for the other tabs. A search
   // deep-link sets whichever matches the tab it lands on.
@@ -186,6 +188,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const unsortedFutures = futures.filter((f) => !f.alignment).length;
   const fixingCount = bugs.filter((b) => b.status === 'fixing').length;
   const failingChecks = data.checks.filter((c) => c.lastStatus === 'fail').length;
+  // The Quality tab's single badge (#278): red checks plus serious open bugs.
+  const needsAttention = failingChecks
+    + bugs.filter((b) => b.status !== 'fixed' && (b.severity === 'critical' || b.severity === 'high')).length;
   const roadmapCount = roadmapTotal(roadmap);
   const linkedBugId = bugs.find((b) => b.linkRef === highlightRef)?.id ?? null;
 
@@ -201,16 +206,16 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       const fromNote = bugModal.fromNote;
       setData({ ...data, bugs: [bug, ...bugs] });
       setBugModal({ open: false, title: '', fromNote: null });
-      setBugFilter('all');
       if (fromNote != null) setPromotedNote({ id: fromNote, kind: 'bug' });
     });
 
-  // #161: quick-add from the inline composer — same store call, no modal needed.
-  const quickAddBug = (title: string, severity: Severity) =>
+  // #161/#278: the Quality page's inline report bar. `checkId` is set when the
+  // bug is filed straight off a red check — that link is what makes the loop
+  // legible from either side afterwards.
+  const fileBug = (title: string, severity: Severity, checkId: number | null) =>
     guard(async () => {
-      const bug = await createBug(slug, { title, severity });
+      const bug = await createBug(slug, { title, severity, check_id: checkId });
       setData({ ...data, bugs: [bug, ...bugs] });
-      setBugFilter('all');
     });
 
   const setBugStatus = (b: Bug, status: BugStatus) =>
@@ -597,9 +602,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, checks: data.checks.filter((c) => c.id !== cid) });
     });
 
-  const checkToBug = (c: Check) =>
-    setBugModal({ open: true, title: `Check failing: ${c.name} — ${c.lastError || `HTTP ${c.lastCode}`}`, fromNote: null });
-
   // ---- the automated bug audit (#144) ----
   // Re-runs the checks first so Gemini judges fresh evidence, then audits;
   // logged findings are review-inbox bugs, merged straight into the list.
@@ -815,11 +817,14 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
 
         <div className="tabs">
           {TABS.map((t) => {
-            const n = t.key === 'bugs' ? openBugCount : t.key === 'audit' ? failingChecks
+            // #278 — Quality wears ONE number: what's actually wrong right now
+            // (red checks + serious open bugs). Two badges gave two counts and
+            // no sense of how bad it was.
+            const n = t.key === 'quality' ? needsAttention
               : t.key === 'roadmap' ? openRoadCount : t.key === 'futures' ? unsortedFutures : 0;
             return (
               <button key={t.key} className={`tab ${tab === t.key ? 'on' : ''}`} onClick={() => setTab(t.key)}>
-                {t.label}{n > 0 && <span className="tab-n">{n}</span>}
+                {t.label}{n > 0 && <span className={`tab-n${t.key === 'quality' ? ' bad' : ''}`}>{n}</span>}
               </button>
             );
           })}
@@ -834,16 +839,13 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onReviewKeep={reviewKeep} onReviewDismiss={reviewDismiss} onSaveDeploy={saveDeploy}
             onSaveStack={saveStack} />
         )}
-        {tab === 'bugs' && (
-          <Bugs bugs={bugs} filter={bugFilter} setFilter={setBugFilter} highlightId={highlightId}
-            onReport={() => setBugModal({ open: true, title: '', fromNote: null })} onOpenLink={openBugLink}
-            onSetStatus={setBugStatus} onDelete={(b) => setConfirmBugDelete(b)}
-            onQuickAddBug={quickAddBug} />
-        )}
-        {tab === 'audit' && (
-          <Audit slug={slug} checks={data.checks} siteUrl={project.siteUrl} checksBusy={checksBusy}
-            onRunChecks={runProjectChecks} onAddCheck={addCheck} onEditCheck={editCheck}
-            onDeleteCheck={removeCheck} onCheckToBug={checkToBug}
+        {tab === 'quality' && (
+          <Quality slug={slug} checks={data.checks} bugs={bugs} siteUrl={project.siteUrl}
+            geminiReady={data.geminiReady} highlightId={highlightId}
+            checksBusy={checksBusy} onRunChecks={runProjectChecks}
+            onAddCheck={addCheck} onEditCheck={editCheck} onDeleteCheck={removeCheck}
+            onFileBug={fileBug} onSetBugStatus={setBugStatus} onDeleteBug={(b) => setConfirmBugDelete(b)}
+            onOpenCommit={openBugLink}
             auditContext={data.auditContext} onSaveAuditContext={saveAuditContext}
             auditBusy={auditBusy} auditResult={auditResult} auditError={auditError}
             onRunAudit={runProjectAudit} claudeCopy={claudeCopy} onCopyClaudePrompt={copyClaudePrompt} />

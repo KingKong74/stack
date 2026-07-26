@@ -154,9 +154,9 @@ export function CommandDeck({ data }: { data: Overview }) {
         </AttentionCard>
 
         <AttentionCard kind="bugs" title="Critical & high bugs" count={bugs.total} clearText="No serious bugs"
-          onCount={worstBug ? () => go.detail(worstBug.slug, 'bugs') : undefined}>
+          onCount={worstBug ? () => go.detail(worstBug.slug, 'quality') : undefined}>
           {bugs.projects.slice(0, 4).map((p, i) => (
-            <button className="att-row" key={i} onClick={() => go.detail(p.slug, 'bugs')}>
+            <button className="att-row" key={i} onClick={() => go.detail(p.slug, 'quality')}>
               <span className="att-text">{p.name}</span>
               <span className="att-proj">{p.count}</span>
             </button>
@@ -390,7 +390,7 @@ function ReviewQueue({ initial }: { initial: Overview['review'] }) {
                     <span className={`review-kind ${it.kind}`}>{it.kind === 'bug' ? it.id : it.kind === 'roadmap' ? 'roadmap' : 'idea'}</span>
                     <span className="review-row-body">
                       <button className="review-title" title="Open in its tracker"
-                        onClick={() => go.detail(it.slug, it.kind === 'bug' ? 'bugs' : it.kind === 'roadmap' ? 'roadmap' : 'futures', it.id)}>
+                        onClick={() => go.detail(it.slug, it.kind === 'bug' ? 'quality' : it.kind === 'roadmap' ? 'roadmap' : 'futures', it.id)}>
                         {it.title}
                       </button>
                       {/* #76 — triage annotations */}

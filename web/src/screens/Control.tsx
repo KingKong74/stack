@@ -801,7 +801,7 @@ export function ControlPanel() {
                       </button>
                     )}
                     {p.bugs.serious > 0 && (
-                      <button className="mc-bugs" onClick={() => go.detail(p.slug, 'bugs')}>
+                      <button className="mc-bugs" onClick={() => go.detail(p.slug, 'quality')}>
                         {p.bugs.serious} serious bug{p.bugs.serious === 1 ? '' : 's'}
                       </button>
                     )}
@@ -809,8 +809,8 @@ export function ControlPanel() {
                     {p.audit && (
                       <button
                         className={`mc-fact mc-audit${p.audit.passing < p.audit.run ? ' warn' : ''}`}
-                        title={`${p.audit.passing} of ${p.audit.run} checks passing (last stored results) — open the Audit tab`}
-                        onClick={() => go.detail(p.slug, 'audit')}>
+                        title={`${p.audit.passing} of ${p.audit.run} checks passing (last stored results) — open the Quality tab`}
+                        onClick={() => go.detail(p.slug, 'quality')}>
                         ⚗ {Math.round((p.audit.passing / p.audit.run) * 100)}% audit
                       </button>
                     )}

@@ -110,7 +110,7 @@ search.get('/', async (req, res) => {
     slug: r.slug, name: r.name, tint: r.tint || null,
     title: r.title,
     meta: r.status,
-    target: { slug: r.slug, tab: 'bugs', highlight: r.bug_key },
+    target: { slug: r.slug, tab: 'quality', highlight: r.bug_key },
   }));
 
   const roadmap = roadR.rows.map((r) => ({

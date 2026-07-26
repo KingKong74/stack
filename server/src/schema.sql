@@ -239,6 +239,15 @@ CREATE TABLE IF NOT EXISTS checks (
 );
 CREATE INDEX IF NOT EXISTS idx_checks_project ON checks (project_id, created_at);
 
+-- #278 — the bug↔check link, the one data change the merged Quality page needed.
+-- Which check caught this bug: a red check wears the bug filed from it, and the
+-- bug wears the check that caught it, so the run→file→fix→re-run loop never
+-- loses its thread. NULL = filed by hand. Declared here (not with the bugs
+-- table) because it references checks, which is created further down; ON DELETE
+-- SET NULL so deleting a check never takes its bug with it.
+ALTER TABLE bugs ADD COLUMN IF NOT EXISTS check_id INTEGER REFERENCES checks(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_bugs_check ON bugs (check_id) WHERE check_id IS NOT NULL;
+
 -- Tombstones: a deleted auto item must not be re-created by the next push.
 -- Keyed by project + kind (bug | roadmap | future) + fingerprint.
 CREATE TABLE IF NOT EXISTS dismissed_items (
