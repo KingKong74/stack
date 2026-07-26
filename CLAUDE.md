@@ -328,11 +328,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   confirm modal as the merge strip), red checks (→ Quality) and a limit-held resume. A night in
   the FUTURE has nothing to debrief, so the same panel becomes **Planned** — what is booked, with
   ✎ Edit the plan reaching the SessionPlanModal exactly as the old card did. The design's roster is
-  a reviewer AND an architect; **Stack has only the reviewer** (whose read #282 now stores on the
-  run row, so the column is its actual verdict rather than an inference; the per-push `gemini_note`
-  remains the fallback for rows that pre-date it), and the ARCHITECT seat renders as an explicit absent state saying what
-  filling it would take, with WHERE THEY DISAGREE omitted entirely because one opinion cannot
-  disagree. There is no revert-the-night button: reverting is per item from Reviews (#128), since
+  a reviewer AND an architect, and **both seats are filled**: the reviewer's stored read (#282 —
+  `clean`/`concerns`/`blocked`, with a BLOCKED change becoming one of the decisions the debrief
+  asks for) and the architect's (#284 — `aligned`/`drifting`/`concerning` plus its structural
+  observations), each stored on the run row and each its own panel. **WHERE THEY DISAGREE** renders
+  only when the two land on opposite sides of the SAME change (clean-but-drifting, or
+  blocked-but-aligned) — one opinion cannot disagree, and neither can two opinions about different
+  changes. Either panel with no stored read says "no pass ran", never "nothing found".
+  There is no revert-the-night button: reverting is per item from Reviews (#128), since
   a night is several independent items and undoing them as a block would take back work already
   accepted. **Plan** is 16a (the
   design's 15a+15b, superseding the 12b tree): the **ordered schedule with the inbox beside
