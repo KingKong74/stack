@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Priority, AutopilotRun, Tier } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Priority, Tier } from '../types';
 import { TIERS, tierRank } from '../types';
-import { PRIORITY_META, timeAgo, dayLabel } from '../lib/ui';
-import { getAutopilotRuns, getReviewBrief, queueUndo, ReviewBrief } from '../store';
+import { PRIORITY_META } from '../lib/ui';
+import { go } from '../lib/route';
 import { Modal } from '../components/Modal';
 import { renderMarkdownLite } from '../lib/markdownLite';
 
@@ -12,7 +12,6 @@ export const REVIEW_TAGS: { key: ReviewTag; label: string }[] = [
   { key: 'needs-work', label: 'Needs more work' },
   { key: 'rethink', label: 'Rethink' },
 ];
-const tagLabel = (tag: string) => REVIEW_TAGS.find((t) => t.key === tag)?.label || tag;
 
 // Review annotations (#146): quick labels the reviewer sticks on a To-verify
 // row — lighter than a verdict, they stay while the item sits in the pipeline
@@ -23,14 +22,13 @@ export const REVIEW_NOTE_TAGS: { key: string; label: string }[] = [
   { key: 'polish', label: 'Polish' },
   { key: 'question', label: 'Question' },
 ];
-const noteTagLabel = (t: string) => REVIEW_NOTE_TAGS.find((x) => x.key === t)?.label || t;
 
 // MoSCoW roadmap. Open items live in their bucket columns (with lane-claim
 // chips and edit/delete on hover); completed items move to the collapsed
 // Archive below — still counted by the progress model, reviewable with a
 // verdict tag, refinable by delta (#146), restorable by un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onReviewTag, onReviewTags, onRefine, onShelve, onLogBug, onLogAudit, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onPlanItems, onSetTier, onBranch, onDeleteArea, onRenameArea, slug, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onPlanItems, onSetTier, onBranch, onDeleteArea, onRenameArea, slug, highlightId,
   draft, onResumeDraft, onDiscardDraft, liveBranches, staleItemDays,
 }: {
   roadmap: RoadmapData;
@@ -41,12 +39,6 @@ export function Roadmap({
   onToggle: (item: RoadmapItem) => void;
   onEdit: (item: RoadmapItem) => void;
   onDelete: (item: RoadmapItem) => void;
-  onReviewTag: (item: RoadmapItem, tag: ReviewTag) => void;
-  onReviewTags: (item: RoadmapItem, tags: string[]) => void;
-  onRefine: (item: RoadmapItem, refineNote: string, queueNow: boolean) => void;
-  onShelve: (item: RoadmapItem) => void;
-  onLogBug: (item: RoadmapItem) => void;
-  onLogAudit: (item: RoadmapItem) => void;
   onToggleSkip: (item: RoadmapItem) => void;
   onReorder?: (item: RoadmapItem, toBucket: Priority, beforeId: number | null) => void;
   onCleanup?: () => void;
@@ -68,11 +60,6 @@ export function Roadmap({
   onResumeDraft?: () => void;
   onDiscardDraft?: () => void;
 }) {
-  const [pickerFor, setPickerFor] = useState<number | null>(null);
-  // #166 — collapsed individual review rows (session-local; group collapse trumps this)
-  const [collapsedRows, setCollapsedRows] = useState<Set<number>>(new Set());
-  const toggleRowCollapse = (id: number) =>
-    setCollapsedRows((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   // Drag-reorder: which item is in flight, and what it's hovering over
   // (an item id = drop before it; `col-<bucket>` = drop at the bucket's end).
   const [dragId, setDragId] = useState<number | null>(null);
@@ -255,20 +242,14 @@ export function Roadmap({
     setAreaManage(null);
   };
 
-  // Done items split into the pipeline: To verify (no verdict yet — test it,
-  // verdict it, or send it back) → Archive (verdict given). Latest first.
-  // Unverdicted items the owner has set aside (#148) sit on the shelf instead
-  // of the main list — same rows, same actions, out of the way until recalled.
-  const ts = (it: RoadmapItem) => (it.updatedAt ? Date.parse(it.updatedAt) : 0);
+  // Completed items are no longer shown here at all (#282): verdicts, the
+  // archive and the whole review pipeline live in Mission Control's Review
+  // room. The board still needs the list to count progress and to answer a
+  // deep link that lands on something already finished.
   const doneItems = PRIORITY_META.flatMap((col) => roadmap[col.key].filter((it) => it.done));
-  const unverdicted = doneItems.filter((it) => !it.reviewTag);
-  const toVerify = unverdicted.filter((it) => !it.reviewShelved).sort((a, b) => ts(b) - ts(a));
-  const shelved = unverdicted.filter((it) => it.reviewShelved).sort((a, b) => ts(b) - ts(a));
-  const archived = doneItems.filter((it) => it.reviewTag).sort((a, b) => ts(b) - ts(a));
-  // The tab's four views: Board, Tiers (#227), Parked (#247) and Reviews
-  // (to-verify + archive). A deep-link to a done item opens straight on Reviews.
-  const [view, setView] = useState<'board' | 'tiers' | 'parked' | 'reviews'>(
-    () => (doneItems.some((it) => String(it.id) === highlightId) ? 'reviews' : 'board'));
+
+  // The tab's three views: Board, Tiers (#227) and Parked (#247).
+  const [view, setView] = useState<'board' | 'tiers' | 'parked'>('board');
 
   // #247 — the parked shelf. Every open item somebody pressed ⏸ on, oldest park
   // first, aged from the park stamp (falling back to the last edit for rows
@@ -306,326 +287,6 @@ export function Roadmap({
   const openForTiers = openAll.filter(inAreaTab);
   const inTier = (t: Tier) => openForTiers.filter((it) => (it.tier || '') === t);
   const rankedCount = openForTiers.filter((it) => it.tier).length;
-  // Open the archive straight away when a deep-link targets an archived item.
-  const [archiveOpen, setArchiveOpen] = useState(
-    () => archived.some((it) => String(it.id) === highlightId));
-  // Same for the shelf (#148) — a deep-linked shelved item unfolds it.
-  const [shelfOpen, setShelfOpen] = useState(
-    () => shelved.some((it) => String(it.id) === highlightId));
-  // The run ledger labels auto-built rows — branch, commits, tokens, cost —
-  // so a verdict is made against what the session reported (#132). Fetched
-  // once when the Reviews view first opens; silently absent on any failure.
-  const [runs, setRuns] = useState<AutopilotRun[] | null>(null);
-  useEffect(() => {
-    if (view !== 'reviews' || runs !== null || !slug) return;
-    let stale = false;
-    getAutopilotRuns(slug)
-      .then((r) => { if (!stale) setRuns(r); })
-      .catch(() => { if (!stale) setRuns([]); });
-    return () => { stale = true; };
-  }, [view, runs, slug]);
-  const runByItem = new Map<string, AutopilotRun>();
-  for (const r of runs ?? []) {
-    // Newest first — the first landed run per item is the one that built it.
-    if (r.itemId != null && r.outcome === 'landed' && !runByItem.has(String(r.itemId))) {
-      runByItem.set(String(r.itemId), r);
-    }
-  }
-  // Who completed it (#117): the autopilot (auto/* claim or a landed run), a
-  // named lane, or by hand. Claims are cleared on tick, so the run ledger is
-  // what keeps merged autopilot items reading as auto.
-  const originOf = (it: RoadmapItem): 'auto' | 'lane' | 'manual' =>
-    it.claimedBy.startsWith('auto/') || runByItem.has(String(it.id)) ? 'auto'
-      : it.claimedBy ? 'lane' : 'manual';
-  const ORIGIN_LABEL = { auto: '⚙ autopilot', lane: '⚑ lane', manual: 'by hand' } as const;
-  const [originFilter, setOriginFilter] = useState<'all' | 'auto' | 'lane' | 'manual'>('all');
-  const byOrigin = (it: RoadmapItem) => originFilter === 'all' || originOf(it) === originFilter;
-  const fmtTok = (n: number) =>
-    n >= 1e6 ? `${(n / 1e6).toFixed(1)}M tok` : n >= 1000 ? `${Math.round(n / 1000)}k tok` : `${n} tok`;
-  // Completion metadata under a review row: origin, when, and the run stats.
-  const reviewMeta = (it: RoadmapItem) => {
-    const run = runByItem.get(String(it.id));
-    const o = originOf(it);
-    return (
-      <div className="review-meta">
-        <span className={`origin-chip ${o}`}>{o === 'lane' ? `⚑ ${it.claimedBy}` : ORIGIN_LABEL[o]}</span>
-        {it.updatedAt && <span className="review-when">done {timeAgo(it.updatedAt)}</span>}
-        {run && (
-          <span className="run-chip" title={(() => {
-            const parts: string[] = [];
-            if (run.summary) parts.push(run.summary.slice(0, 600));
-            // Per-model breakdown (#167): append model lines to the hover when present.
-            if (run.modelUsage) {
-              const modelLines = Object.entries(run.modelUsage).map(([model, u]) => {
-                const t = (u.inputTokens ?? 0) + (u.outputTokens ?? 0)
-                  + (u.cacheReadInputTokens ?? 0) + (u.cacheCreationInputTokens ?? 0);
-                return `${model}: ${fmtTok(t)}${u.costUSD ? ` ($${u.costUSD.toFixed(2)})` : ''}`;
-              });
-              if (modelLines.length) parts.push(`Models: ${modelLines.join(', ')}`);
-            }
-            return parts.join('\n\n') || undefined;
-          })()}>
-            {run.branch} · {run.commits} commit{run.commits === 1 ? '' : 's'} · {fmtTok(run.tokens)}
-            {run.costUsd ? ` · $${run.costUsd.toFixed(2)}` : ''}
-          </span>
-        )}
-        {run && run.checksFailing ? <span className="run-warn">{run.checksFailing} check{run.checksFailing === 1 ? '' : 's'} failing</span> : null}
-      </div>
-    );
-  };
-  // ✧ Reviewer's briefs (#134): Gemini's read on a completed item — what
-  // shipped, how to test it, likely risks. In-memory annotation per row;
-  // click toggles, nothing is stored.
-  const [briefs, setBriefs] = useState<Map<number, { loading?: boolean; error?: string; data?: ReviewBrief }>>(new Map());
-  const setBrief = (id: number, v: { loading?: boolean; error?: string; data?: ReviewBrief } | null) =>
-    setBriefs((m) => { const next = new Map(m); if (v) next.set(id, v); else next.delete(id); return next; });
-  const toggleBrief = (it: RoadmapItem) => {
-    if (!slug) return;
-    if (briefs.has(it.id)) { setBrief(it.id, null); return; }
-    setBrief(it.id, { loading: true });
-    getReviewBrief(slug, it.id)
-      .then((data) => setBrief(it.id, { data }))
-      .catch((e) => setBrief(it.id, { error: e instanceof Error ? e.message : 'Gemini call failed.' }));
-  };
-  const briefPanel = (it: RoadmapItem) => {
-    const b = briefs.get(it.id);
-    if (!b) return null;
-    return (
-      <div className="review-brief">
-        {b.loading && <div className="rb-loading">✧ Reading the item, its run and the checks…</div>}
-        {b.error && <div className="rb-err">{b.error}</div>}
-        {b.data && (<>
-          <div className="rb-summary">{b.data.summary}</div>
-          {b.data.test.length > 0 && (
-            <div className="rb-block">
-              <div className="rb-lbl">Test it</div>
-              <ol>{b.data.test.map((s, i) => <li key={i}>{s}</li>)}</ol>
-            </div>
-          )}
-          {b.data.risks.length > 0 && (
-            <div className="rb-block">
-              <div className="rb-lbl">Likely risks</div>
-              <ul>{b.data.risks.map((s, i) => <li key={i}>{s}</li>)}</ul>
-            </div>
-          )}
-          <div className="rb-foot">✧ Gemini's read — verify before trusting it.</div>
-        </>)}
-      </div>
-    );
-  };
-  // Review-annotation chips (#146): toggleable on To-verify rows. The whole
-  // list PATCHes back each time, like plan steps. Tags an agent stuck on via
-  // the API that aren't in the catalogue still render (click removes).
-  const toggleNoteTag = (it: RoadmapItem, key: string) =>
-    onReviewTags(it, it.reviewTags.includes(key) ? it.reviewTags.filter((t) => t !== key) : [...it.reviewTags, key]);
-  const tagRow = (it: RoadmapItem) => (
-    <div className="review-tags">
-      {REVIEW_NOTE_TAGS.map((t) => (
-        <button key={t.key} className={`rt ${it.reviewTags.includes(t.key) ? 'on' : ''}`}
-          onClick={() => toggleNoteTag(it, t.key)}
-          title="Review annotation — sticks to the item while it awaits its verdict">
-          {t.label}
-        </button>
-      ))}
-      {it.reviewTags.filter((t) => !REVIEW_NOTE_TAGS.some((c) => c.key === t)).map((t) => (
-        <button key={t} className="rt on" onClick={() => toggleNoteTag(it, t)}
-          title="Review annotation — click to remove">{t}</button>
-      ))}
-    </div>
-  );
-  // ✎ Refine (#146): the delta-only send-back. The item returns to the board
-  // as ITSELF — same id, built_note kept — carrying just this instruction; the
-  // next session (optionally queued right here) changes only what it asks.
-  const [refineFor, setRefineFor] = useState<RoadmapItem | null>(null);
-  const [refineText, setRefineText] = useState('');
-  const [refineQueue, setRefineQueue] = useState(false);
-  const openRefine = (it: RoadmapItem) => {
-    setPickerFor(null);
-    setRefineFor(it);
-    setRefineText(it.refineNote);
-    setRefineQueue(false);
-  };
-  // ⎌ Undo (#128): confirm, then queue a revert job — the host dispatcher
-  // reverts the item's #N-tagged main commits and un-ticks it. The note under
-  // the row is the only feedback needed; the item reappears on the board when
-  // the revert lands.
-  const [undoConfirm, setUndoConfirm] = useState<RoadmapItem | null>(null);
-  const [undoNotes, setUndoNotes] = useState<Map<number, string>>(new Map());
-  const setUndoNote = (id: number, msg: string) =>
-    setUndoNotes((m) => new Map(m).set(id, msg));
-  const confirmUndo = (it: RoadmapItem) => {
-    setUndoConfirm(null);
-    if (!slug) return;
-    setUndoNote(it.id, 'Queuing the revert…');
-    queueUndo(slug, it.id)
-      .then(() => setUndoNote(it.id, `Undo queued — the host reverts every main commit tagged #${it.id} and returns the item to the board within a minute or two.`))
-      .catch((e) => setUndoNote(it.id, e instanceof Error ? e.message : 'Undo failed.'));
-  };
-  // #140 — group collapse state (session-local; starts all expanded)
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const toggleGroup = (key: string) =>
-    setCollapsedGroups((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-
-  // #140 — group To-verify items by session/run: autopilot items go under their
-  // run's branch; manual items cluster under their completion day (matching the
-  // pre-existing day-header UX). Groups are newest first.
-  type VerifyGroup = { key: string; label: string; sublabel: string; items: RoadmapItem[]; isRun: boolean; branch?: string };
-  const buildVerifyGroups = (items: RoadmapItem[]): VerifyGroup[] => {
-    const groups = new Map<string, VerifyGroup>();
-    for (const it of items) {
-      const run = runByItem.get(String(it.id));
-      if (run) {
-        // autopilot run — group key is the branch so parallel lanes stay separate
-        const key = `run:${run.branch}`;
-        if (!groups.has(key)) {
-          const tok = fmtTok(run.tokens);
-          groups.set(key, {
-            key, label: run.branch,
-            sublabel: `${run.commits} commit${run.commits === 1 ? '' : 's'} · ${tok}${run.costUsd ? ` · $${run.costUsd.toFixed(2)}` : ''} · finished ${run.when}`,
-            items: [], isRun: true, branch: run.branch,
-          });
-        }
-        groups.get(key)!.items.push(it);
-      } else {
-        // manual completion — group by day
-        const day = dayLabel(it.updatedAt);
-        const key = `day:${day}`;
-        if (!groups.has(key)) {
-          const o = originOf(it);
-          groups.set(key, {
-            key, label: day,
-            sublabel: o === 'lane' ? `⚑ ${it.claimedBy}` : o === 'auto' ? '⚙ autopilot' : 'by hand',
-            items: [], isRun: false,
-          });
-        }
-        groups.get(key)!.items.push(it);
-      }
-    }
-    return [...groups.values()];
-  };
-
-  // Archive rendering: the MoSCoW grid, or a dense paginated list + verdict filter.
-  const [archView, setArchView] = useState<'grid' | 'list'>('grid');
-  const [archFilter, setArchFilter] = useState<'all' | ReviewTag>('all');
-  const [archPage, setArchPage] = useState(0);
-  const filtered = archived.filter((it) => (archFilter === 'all' || it.reviewTag === archFilter) && byOrigin(it));
-  const ARCH_PAGE_SIZE = 12;
-  const archPages = Math.max(1, Math.ceil(filtered.length / ARCH_PAGE_SIZE));
-  const archSlice = filtered.slice(archPage * ARCH_PAGE_SIZE, (archPage + 1) * ARCH_PAGE_SIZE);
-
-  // Verdict controls, shared by both archive views and the verify strip.
-  // Solid is the only pickable verdict now (#141) — dissatisfaction goes
-  // through ✎ Refine, which reworks the item and sends it back to the board.
-  // Legacy rethink/needs-work verdicts still render; clicking one reopens the
-  // Solid option (or Refine).
-  const VISIBLE_TAGS = REVIEW_TAGS.filter((t) => t.key === 'solid');
-  const verdictButtons = (it: RoadmapItem) => VISIBLE_TAGS.map((t) => (
-    <button key={t.key} className={`review-pick-opt ${t.key}`}
-      onClick={() => { setPickerFor(null); onReviewTag(it, t.key); }}>
-      {t.label}
-    </button>
-  ));
-  const archActions = (it: RoadmapItem) => (
-    <div className="road-actions arch">
-      {it.reviewTag && pickerFor !== it.id ? (
-        <button className={`review-verdict ${it.reviewTag}`} onClick={() => setPickerFor(it.id)}
-          title="Change the verdict">{tagLabel(it.reviewTag)}</button>
-      ) : (
-        verdictButtons(it)
-      )}
-      <button className="review-pick-opt refine" onClick={() => openRefine(it)}
-        title="Not right yet — say what to change on top of what landed and send the item back to the board">
-        ✎ Refine
-      </button>
-      <button onClick={() => onDelete(it)} aria-label="Delete item" title="Delete">×</button>
-    </div>
-  );
-
-  // The ⌨ Session handoff: opens a terminal in this project primed with the
-  // review context (same one-shot paste as the board's ⌨ To terminal), so
-  // verifying starts from the review point instead of a blank prompt.
-  const reviewSessionBrief = (it: RoadmapItem) => [
-    `Review roadmap item #${it.id} — ${it.title}`,
-    it.note ? `\nThe item:\n${it.note}` : '',
-    it.builtNote ? `\nWhat the building session says landed:\n${it.builtNote}` : '',
-    '\nVerify it: read the relevant code, run or build the app where useful, and check what landed',
-    'matches the item. Report what holds up and what does not — no fixes without asking first.',
-  ].filter(Boolean).join('\n');
-
-  // One unverdicted review row — shared by the To-verify list and the shelf
-  // (#148); the only difference is which way the shelve toggle points.
-  // #166: rows collapse to a compact title+verdict line; group collapse trumps.
-  const verifyRow = (it: RoadmapItem, forceExpanded?: boolean) => {
-    const isCollapsed = !forceExpanded && collapsedRows.has(it.id);
-    if (isCollapsed) {
-      return (
-        <div className="verify-row verify-row-collapsed" key={it.id} data-hl={it.id}>
-          <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
-          <button className="verify-collapse-toggle" onClick={() => toggleRowCollapse(it.id)}
-            title="Expand this review row" aria-expanded={false}>
-            <span className="chev">▸</span>
-          </button>
-          <div className="verify-body verify-body-compact">
-            <div className="t"><span className="item-num">#{it.id}</span>{it.title}
-              {it.reviewTags.length > 0 && (
-                <span className="vr-tags-inline">
-                  {it.reviewTags.map((t) => <span key={t} className="rt on">{noteTagLabel(t)}</span>)}
-                </span>
-              )}
-            </div>
-          </div>
-          {archActions(it)}
-        </div>
-      );
-    }
-    return (
-      <div className="verify-row" key={it.id} data-hl={it.id}>
-        <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
-        <button className="verify-collapse-toggle" onClick={() => toggleRowCollapse(it.id)}
-          title="Collapse this review row" aria-expanded={true}>
-          <span className="chev">▾</span>
-        </button>
-        <div className="verify-body">
-          <div className="t"><span className="item-num">#{it.id}</span>{it.title}</div>
-          {reviewMeta(it)}
-          {it.note && <div className="note">{it.note}</div>}
-          {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
-          {tagRow(it)}
-          {briefPanel(it)}
-          {undoNotes.has(it.id) && <div className="undo-note">⎌ {undoNotes.get(it.id)}</div>}
-        </div>
-        <div className="verify-btn-group">
-          {archActions(it)}
-          <div className="verify-actions">
-            <button className="verify-back" onClick={() => setUndoConfirm(it)}
-              title="Revert this item's commits on main and send it back to the board">⎌ Undo</button>
-            <button className="gemini-btn sm" onClick={() => toggleBrief(it)}
-              title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">
-              ✧ Brief
-            </button>
-            {onSendToTerminal && (
-              <button className="verify-back" onClick={() => onSendToTerminal(reviewSessionBrief(it))}
-                title="Open a terminal session in this project primed with this review — paste the brief and verify what landed">
-                ⌨ Session
-              </button>
-            )}
-            <button className="verify-back" onClick={() => onLogBug(it)}
-              title="Log a bug ticket against this item — prefills the bug modal">＋ Bug</button>
-            <button className="verify-back" onClick={() => onLogAudit(it)}
-              title="Log an audit ticket — a roadmap item in the audit area to check what landed">＋ Audit</button>
-            <button className="verify-back" onClick={() => onShelve(it)}
-              title={it.reviewShelved
-                ? 'Bring it back to the To-verify list'
-                : 'Set aside — good enough for now; waits under Shelved until you bring it back'}>
-              {it.reviewShelved ? '▶ To review' : '⏸ Later'}
-            </button>
-            <button className="verify-back" onClick={() => onToggle(it)}
-              title="Didn't hold up — send it back to the board">↩ Board</button>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div>
@@ -675,10 +336,6 @@ export function Roadmap({
             title="Every parked item, oldest park first — with how long it's been sitting">
             Parked{parked.length > 0 ? ` · ${parked.length}` : ''}
             {staleCount > 0 && <span className="seg-warn" title={`${staleCount} past the ${staleDays}-day stale threshold`}>{staleCount}</span>}
-          </button>
-          <button role="tab" aria-selected={view === 'reviews'}
-            className={`seg-opt ${view === 'reviews' ? 'on' : ''}`} onClick={() => setView('reviews')}>
-            Reviews{toVerify.length > 0 ? ` · ${toVerify.length}` : ''}
           </button>
         </div>
       </div>
@@ -1205,253 +862,18 @@ export function Roadmap({
         </Modal>
       )}
 
-      {undoConfirm && (
-        <Modal onClose={() => setUndoConfirm(null)}>
-          <h3>⎌ Undo #{undoConfirm.id}</h3>
-          <div className="confirm-body" style={{ marginBottom: 16 }}>
-            Reverts every main-branch commit tagged <b>#{undoConfirm.id}</b> — the host dispatcher
-            adds a revert commit for each and pushes, usually within a minute or two — then sends
-            the item back to the board with its verdict and claim cleared. The original commits
-            stay in history; nothing is rewritten.
-          </div>
-          <div className="modal-actions">
-            <button className="btn-cancel" onClick={() => setUndoConfirm(null)}>Cancel</button>
-            <button className="btn-submit" onClick={() => confirmUndo(undoConfirm)}>Revert the commits</button>
-          </div>
-        </Modal>
-      )}
-
-      {refineFor && (
-        <Modal onClose={() => setRefineFor(null)}>
-          <h3>✎ Refine #{refineFor.id}</h3>
-          <div className="confirm-body" style={{ marginBottom: 12 }}>
-            Sends <b>#{refineFor.id} {refineFor.title}</b> back to the board as itself — same item,
-            and what landed stays on record. Write only the delta: what should change on top of
-            what's there. The next session builds against that, not a fresh spec.
-          </div>
-          <textarea className="field-area" rows={4} autoFocus value={refineText}
-            placeholder="What to change or add on top of what landed…"
-            onChange={(e) => setRefineText(e.target.value)} />
-          <div className="field-hint" style={{ marginBottom: 10 }}>
-            **bold**, <code>`code`</code>, - lists supported
-          </div>
-          <label className="refine-queue">
-            <input type="checkbox" checked={refineQueue}
-              onChange={(e) => setRefineQueue(e.target.checked)} />
-            Queue an autopilot session on it now
-          </label>
-          <div className="modal-actions">
-            <button className="btn-cancel" onClick={() => setRefineFor(null)}>Cancel</button>
-            <button className="btn-submit" disabled={!refineText.trim()}
-              onClick={() => { onRefine(refineFor, refineText.trim(), refineQueue); setRefineFor(null); }}>
-              {refineQueue ? 'Refine → board + queue' : 'Refine → board'}
-            </button>
-          </div>
-        </Modal>
-      )}
-
-      {view === 'reviews' && (<>
-      <div className="subtitle" style={{ marginBottom: 14 }}>
-        Everything completed, awaiting your verdict — each row shows who built it, when, and what
-        landed. Tag rows as you test (Fix, Needs more, …). Solid closes it out; ✎ Refine sends it
-        back with just what to change — same item, what landed stays on record; ↩ Board sends it
-        back unchanged. Either way it returns fresh — the old verdict and lane claim don't come
-        with it. ＋ Bug / ＋ Audit log a ticket against the item; ⏸ Later shelves the review for
-        another day.
-      </div>
-
-      {/* who-built-it filter (#117) — only when completions come from more than one origin */}
-      {(() => {
-        const counts = { auto: 0, lane: 0, manual: 0 };
-        doneItems.forEach((it) => { counts[originOf(it)]++; });
-        const present = (['auto', 'lane', 'manual'] as const).filter((o) => counts[o] > 0);
-        if (present.length < 2) return null;
-        return (
-          <div className="chips" style={{ marginBottom: 16 }}>
-            <button className={`chip-sm ${originFilter === 'all' ? 'on' : ''}`} onClick={() => { setOriginFilter('all'); setArchPage(0); }}>
-              All {doneItems.length}
-            </button>
-            {present.map((o) => (
-              <button key={o} className={`chip-sm ${originFilter === o ? 'on' : ''}`}
-                onClick={() => { setOriginFilter(originFilter === o ? 'all' : o); setArchPage(0); }}>
-                {ORIGIN_LABEL[o]} {counts[o]}
-              </button>
-            ))}
-          </div>
-        );
-      })()}
-
-      {toVerify.length === 0 && shelved.length === 0 && archived.length === 0 && (
-        <div className="empty-state">
-          <div className="big">Nothing to review</div>
-          <div>Completed items land here with a note on what was built.</div>
+      {/* #282 — the Reviews view moved OUT of this tab into Mission Control's
+          Review room: the nights run across projects, so the morning's queue
+          does too. A deep link to a completed item lands here, so say where it
+          went rather than showing an empty board. */}
+      {view === 'board' && highlightId && doneItems.some((it) => String(it.id) === highlightId) && (
+        <div className="road-moved">
+          <span>
+            #{highlightId} is complete — completed work is reviewed in
+            {' '}<button className="link" onClick={go.control}>Mission Control → Review</button>.
+          </span>
         </div>
       )}
-
-      {/* to verify — completed but unverdicted, grouped by session/run (#140):
-          autopilot items group under their branch; manual items under their day.
-          Each group collapses/expands; bulk "Mark all solid" on the header. */}
-      {toVerify.filter(byOrigin).length > 0 && (
-        <div className="verify-strip">
-          <div className="verify-head">
-            <span className="verify-title">To verify</span>
-            <span className="verify-sub">
-              {toVerify.filter(byOrigin).length} completed — test each, give a verdict, or send it back to the board
-            </span>
-          </div>
-          {buildVerifyGroups(toVerify.filter(byOrigin)).map((g) => {
-            const collapsed = collapsedGroups.has(g.key);
-            return (
-              <div key={g.key} className="verify-group">
-                <div className="verify-group-head">
-                  <button className="verify-group-toggle" onClick={() => toggleGroup(g.key)}
-                    aria-expanded={!collapsed} title={collapsed ? 'Expand group' : 'Collapse group'}>
-                    <span className="chev">{collapsed ? '▸' : '▾'}</span>
-                    <span className="vg-label">{g.label}</span>
-                    <span className="vg-count">{g.items.length}</span>
-                    <span className="vg-sub">{g.sublabel}</span>
-                  </button>
-                  {!collapsed && (
-                    <button className="verify-bulk-solid"
-                      title="Mark all items in this group as Solid"
-                      onClick={() => g.items.forEach((it) => { if (!it.reviewTag) onReviewTag(it, 'solid'); })}>
-                      ✓ All solid
-                    </button>
-                  )}
-                </div>
-                {!collapsed && g.items.map((it) => verifyRow(it))}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* the shelf (#148) — reviews set aside on purpose: out of the To-verify
-          list, collapsed here until brought back (or verdicted in place) */}
-      {shelved.filter(byOrigin).length > 0 && (
-        <div className="road-archive shelf">
-          <div className="road-archive-bar">
-            <button className="road-archive-head" onClick={() => setShelfOpen((o) => !o)}
-              aria-expanded={shelfOpen}>
-              <span className="chev">{shelfOpen ? '▾' : '▸'}</span>
-              Shelved <span className="count">{shelved.filter(byOrigin).length}</span>
-              <span className="hint">set aside to review later — ▶ To review brings one back</span>
-            </button>
-          </div>
-          {shelfOpen && (
-            <div className="verify-strip shelf">
-              {shelved.filter(byOrigin).map((it) => verifyRow(it))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* archive — verdict-given items, out of the way but recoverable */}
-      {archived.length > 0 && (
-        <div className="road-archive">
-          <div className="road-archive-bar">
-            <button className="road-archive-head" onClick={() => setArchiveOpen((o) => !o)}
-              aria-expanded={archiveOpen}>
-              <span className="chev">{archiveOpen ? '▾' : '▸'}</span>
-              Archive <span className="count">{filtered.length}</span>
-              <span className="hint">reviewed items, latest first — still count toward progress</span>
-            </button>
-            {archiveOpen && (
-              <div className="arch-controls">
-                <div className="chips">
-                  {([
-                    { key: 'all', label: 'All', n: archived.length },
-                    ...REVIEW_TAGS.map((t) => ({
-                      key: t.key as 'all' | ReviewTag, label: t.label,
-                      n: archived.filter((it) => it.reviewTag === t.key).length,
-                    })),
-                  ] as { key: 'all' | ReviewTag; label: string; n: number }[])
-                    .filter((c) => c.key !== 'needs-work' || c.n > 0) // legacy verdicts only
-                    .map((c) => (
-                    <button key={c.key} className={`chip-sm ${archFilter === c.key ? 'on' : ''}`}
-                      onClick={() => { setArchFilter(c.key); setArchPage(0); }}>
-                      {c.label} {c.n}
-                    </button>
-                  ))}
-                </div>
-                <div className="seg-control sm" role="tablist" aria-label="Archive view">
-                  <button role="tab" aria-selected={archView === 'grid'}
-                    className={`seg-opt ${archView === 'grid' ? 'on' : ''}`} onClick={() => setArchView('grid')}>Buckets</button>
-                  <button role="tab" aria-selected={archView === 'list'}
-                    className={`seg-opt ${archView === 'list' ? 'on' : ''}`} onClick={() => setArchView('list')}>List</button>
-                </div>
-              </div>
-            )}
-          </div>
-          {archiveOpen && archView === 'grid' && (
-            <div className="road-grid arch">
-              {PRIORITY_META.map((col) => {
-                const items = filtered.filter((it) => it.bucket === col.key);
-                return (
-                  <div className="road-col" key={col.key}>
-                    <div className="road-col-head">
-                      <span className="dot" style={{ background: col.color }} />
-                      <span className="name">{col.label}</span>
-                      <span className="count">{items.length}</span>
-                    </div>
-                    <div className="road-items">
-                      {items.map((it) => (
-                        <div className="road-item done" key={it.id} data-hl={it.id}>
-                          <button className="road-check on" onClick={() => onToggle(it)}
-                            aria-label="Mark not done" title="Restore to the roadmap">✓</button>
-                          <div className="road-body">
-                            <div className="t">
-                              <span className="item-num">#{it.id}</span>{it.title}
-                              {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
-                            </div>
-                            {reviewMeta(it)}
-                            {it.note && <div className="note">{it.note}</div>}
-                            {it.builtNote && <div className="built"><span className="built-lbl">What landed</span>{it.builtNote}</div>}
-                            {it.reviewTags.length > 0 && (
-                              <div className="review-tags ro">
-                                {it.reviewTags.map((t) => <span key={t} className="rt on">{noteTagLabel(t)}</span>)}
-                              </div>
-                            )}
-                            {archActions(it)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {archiveOpen && archView === 'list' && (
-            <div className="arch-list">
-              {archSlice.map((it) => (
-                <div className="arch-list-row" key={it.id} data-hl={it.id}>
-                  <button className="road-check on sm" onClick={() => onToggle(it)}
-                    aria-label="Mark not done" title="Restore to the roadmap">✓</button>
-                  <span className="arch-list-bucket">{PRIORITY_META.find((p) => p.key === it.bucket)?.short}</span>
-                  <span className="arch-list-text">
-                    <span className="arch-list-title"><span className="item-num">#{it.id}</span>{it.title}</span>
-                    {it.note && <span className="arch-list-note">{it.note}</span>}
-                  </span>
-                  <span className={`origin-chip ${originOf(it)}`}>
-                    {originOf(it) === 'lane' ? `⚑ ${it.claimedBy}` : ORIGIN_LABEL[originOf(it)]}
-                  </span>
-                  {it.updatedAt && <span className="review-when">{timeAgo(it.updatedAt)}</span>}
-                  {archActions(it)}
-                </div>
-              ))}
-              {archPages > 1 && (
-                <div className="arch-pager">
-                  <button disabled={archPage === 0} onClick={() => setArchPage((p) => p - 1)}>‹</button>
-                  <span>{archPage * ARCH_PAGE_SIZE + 1}–{Math.min((archPage + 1) * ARCH_PAGE_SIZE, filtered.length)} of {filtered.length}</span>
-                  <button disabled={archPage >= archPages - 1} onClick={() => setArchPage((p) => p + 1)}>›</button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-      </>)}
 
     </div>
   );
