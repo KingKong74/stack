@@ -36,7 +36,14 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //     capacity,                             // how many jobs may run at once
 //     slots: [ { jobId, slug, name, tint, status, kind, sessionKind,
 //                itemId, itemTitle, branch, startedAt, since,
-//                tokens, costUsd, tmux } ], // in-flight only; client pads idle
+//                tokens, costUsd, tmux,
+//                exec, adv,                 // (#280) the two roles on this lane
+//                spend: [ { model, label, role, tokens, costUsd, share,
+//                           inferred } ],   // banked spend, split by role
+//                execCostUsd, advCostUsd, advShare, advisorSeen,
+//                ledger: [ { itemId, itemTitle, outcome, when,
+//                            tokens, costUsd, advCostUsd, models } ] } ],
+//     roles: { executor, advisor, note },   // (#280) the app-wide role policy
 //     status: { code, tone, text, hint, fix },   // (#270) why it is/isn't running
 //     heartbeat: { ageSec, silent, hostLocal }   // (#270) the dispatcher's pulse
 //   }
@@ -59,10 +66,68 @@ const FLEET_CAPACITY = 1;
 const tmuxNameFor = (slug, jobId) =>
   `stack-auto-${String(slug).replace(/[^A-Za-z0-9_]/g, '_').slice(0, 30)}-j${jobId}`;
 
+// ---- (#280 / design 23a) Roles inside a session -------------------------
+// Who is executing, who advised, and what the advice cost. The two roles are
+// app-wide settings (#153), but the SPEND split is per session and real: the
+// runner persists `model_usage` per run, so the advisor's own line in that
+// object is the proof it was consulted and the price of the counsel.
+//
+// The join is the awkward part. Usage is recorded under the CLI's real model
+// ids (`claude-opus-4-5-20251101`) while the settings hold aliases (`opus`,
+// `claude-opus-5`, '' = the CLI's own default). They are matched by FAMILY
+// and, when the alias names one, GENERATION — and the more specific alias
+// wins, which is what makes executor `opus` + advisor `claude-opus-5` resolve
+// correctly against a run that carries both. A model matching neither stays
+// unattributed rather than being guessed into a role; the client renders that
+// as its own bucket, so the split never asserts more than it knows.
+const MODEL_FAMILY_RE = /(haiku|sonnet|opus|fable)/i;
+const modelFamily = (s) => {
+  const m = MODEL_FAMILY_RE.exec(String(s || ''));
+  return m ? m[1].toLowerCase() : '';
+};
+// The generation directly after the family word: 'claude-opus-5' → '5',
+// 'claude-opus-4-5-20251101' → '4', bare 'opus' → '' (family-only alias).
+const modelGen = (s) => {
+  const fam = modelFamily(s);
+  if (!fam) return '';
+  const m = new RegExp(`${fam}[-_ ]?(\\d+)`, 'i').exec(String(s));
+  return m ? m[1] : '';
+};
+// 0 = no claim on this model, 1 = family-only alias, 2 = family + generation.
+const aliasScore = (alias, modelId) => {
+  if (!alias) return 0; // '' = the CLI's default: no identity to match on
+  const fam = modelFamily(modelId);
+  if (!fam || modelFamily(alias) !== fam) return 0;
+  const ag = modelGen(alias);
+  if (!ag) return 1;
+  return ag === modelGen(modelId) ? 2 : 0;
+};
+const roleOfModel = (modelId, execAlias, advAlias) => {
+  const e = aliasScore(execAlias, modelId);
+  const a = aliasScore(advAlias, modelId);
+  if (e === 0 && a === 0) return '';   // neither role claims it
+  if (e === a) return '';              // both claim it equally — genuinely ambiguous
+  return a > e ? 'adv' : 'exec';
+};
+// `claude-opus-4-5-20251101` → `opus-4-5`: enough to recognise the model,
+// short enough to sit in a lane row.
+const shortModel = (id) => {
+  const s = String(id || '');
+  const t = s.replace(/^(us|eu|apac)\./, '').replace(/^anthropic\./, '')
+    .replace(/^claude-/, '').replace(/-\d{8}$/, '');
+  return t || s;
+};
+const catalogueLabel = (catalogue, model, fallback) => {
+  if (!model) return fallback;
+  const hit = catalogue.find((m) => m.model === model);
+  return hit ? hit.label : model;
+};
+
 control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
-  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR, branchR, checksR, monthR, hbR] = await Promise.all([
+  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR, branchR, checksR, monthR, hbR,
+         ledgerR, ledgerJobsR, verdictR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, automode, autopilot_area, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
     // claimed_by that starts with 'auto/' or 'lane/' is an open lane branch; we
@@ -133,6 +198,25 @@ control.get('/', async (_req, res) => {
     // rather than as silent (see the resolver below).
     q(`SELECT last_poll_at, host_local FROM dispatcher_heartbeat WHERE id`)
       .catch(() => ({ rows: [] })),
+    // (#269) The throughput ledger — 14 days of runs. Mission Control shows
+    // what IS; these rows are the only record of whether the machine is
+    // getting BETTER, and until now nothing read them.
+    q(`SELECT r.item_id, r.outcome, r.tokens, r.cost_usd, r.model_usage, r.finished_at
+         FROM autopilot_runs r
+         JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
+        WHERE r.finished_at > now() - interval '14 days'
+        ORDER BY r.finished_at`),
+    // Merge + revert jobs over the same window: the auto-merge share and the
+    // revert rate are the two signals of whether the machine can be trusted
+    // to close its own loop.
+    q(`SELECT kind, status, detail, created_at FROM autopilot_jobs
+        WHERE created_at > now() - interval '14 days' AND kind IN ('merge','revert')`),
+    // Verdicts on items the runner landed in the window — the first-pass rate.
+    q(`SELECT DISTINCT ri.id, ri.review_tag
+         FROM roadmap_items ri
+         JOIN autopilot_runs r ON r.item_id = ri.id
+        WHERE r.finished_at > now() - interval '14 days' AND r.outcome = 'landed'
+          AND COALESCE(ri.review_tag, '') <> ''`),
   ]);
 
   const roadByP = new Map();
@@ -351,6 +435,12 @@ control.get('/', async (_req, res) => {
   // rather than as absent. In-flight jobs always lead the jobs query (open
   // rows sort first), so no extra query is needed.
   const projById = new Map(projectsR.rows.map((p) => [p.id, p]));
+  // (#280) The role policy every session runs under — the runner reads its two
+  // models straight from settings, so these are not per-job guesses.
+  const execAlias = appSettings.autopilot_executor_model;
+  const advAlias = appSettings.autopilot_advisor_model;
+  const execLabel = catalogueLabel(EXECUTOR_CATALOGUE, execAlias, 'CLI default');
+  const advLabel = catalogueLabel(ADVISOR_CATALOGUE, advAlias, 'Off');
   const fleetSlots = jobsR.rows
     .filter((j) => j.status === 'claimed' || j.status === 'running')
     .map((j) => {
@@ -370,12 +460,60 @@ control.get('/', async (_req, res) => {
       const since = startedAt ? new Date(startedAt).getTime() : Infinity;
       let tokens = 0;
       let costUsd = 0;
+      // (#280) …and the same banked runs, split by ROLE. `banked` is the
+      // session's own ledger — one entry per item it has already finished.
+      const banked = [];
       for (const r of usageR.rows) {
         if (p && r.slug === p.slug && new Date(r.finished_at).getTime() >= since) {
           tokens += Number(r.tokens || 0);
           costUsd += Number(r.cost_usd || 0);
+          banked.push(r);
         }
       }
+      // Per-model totals across everything this session banked, each model
+      // attributed to a role by the alias match above.
+      const byModel = new Map();
+      for (const r of banked) {
+        if (!r.model_usage || typeof r.model_usage !== 'object') continue;
+        for (const [model, u] of Object.entries(r.model_usage)) {
+          const t = (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0)
+            + (Number(u.cacheReadInputTokens) || 0) + (Number(u.cacheCreationInputTokens) || 0);
+          if (!byModel.has(model)) {
+            byModel.set(model, {
+              model,
+              label: shortModel(model),
+              role: roleOfModel(model, execAlias, advAlias),
+              tokens: 0, costUsd: 0, inferred: false,
+            });
+          }
+          const m = byModel.get(model);
+          m.tokens += t;
+          m.costUsd += Number(u.costUSD) || 0;
+        }
+      }
+      const spend = [...byModel.values()].sort((a, b) => b.tokens - a.tokens);
+      // One documented inference, and only one: when the executor is left on
+      // the CLI's own default there is no alias to match, so a single otherwise
+      // unattributed model IS the executor — nothing else was running. It is
+      // flagged `inferred` so the client can say so rather than assert it.
+      if (!execAlias && !spend.some((m) => m.role === 'exec')) {
+        const orphans = spend.filter((m) => !m.role);
+        if (orphans.length === 1) { orphans[0].role = 'exec'; orphans[0].inferred = true; }
+      }
+      const modelCost = spend.reduce((n, m) => n + m.costUsd, 0);
+      const execCostUsd = spend.filter((m) => m.role === 'exec').reduce((n, m) => n + m.costUsd, 0);
+      const advCostUsd = spend.filter((m) => m.role === 'adv').reduce((n, m) => n + m.costUsd, 0);
+      // Shares are of the ATTRIBUTED model cost, so the bar's segments and the
+      // legend's numbers always describe the same total. Cost can legitimately
+      // be 0 (a subscription session reports none) — fall back to tokens so the
+      // split still reads rather than collapsing to an empty bar.
+      const modelTok = spend.reduce((n, m) => n + m.tokens, 0);
+      const basis = modelCost > 0 ? 'costUsd' : 'tokens';
+      const total = modelCost > 0 ? modelCost : modelTok;
+      for (const m of spend) m.share = total > 0 ? (m[basis] / total) * 100 : 0;
+      const advShare = total > 0
+        ? (spend.filter((m) => m.role === 'adv').reduce((n, m) => n + m[basis], 0) / total) * 100
+        : 0;
       return {
         jobId: String(j.id),
         slug: p ? p.slug : '',
@@ -395,6 +533,44 @@ control.get('/', async (_req, res) => {
         // daemon advertises stack-term-* only — so the client offers it as a
         // `tmux attach -t <name>` hint rather than a dead link.
         tmux: p ? tmuxNameFor(p.slug, j.id) : '',
+        // (#280) The two roles on this lane. Both are the app-wide policy —
+        // the runner takes its models from settings, so a session cannot be on
+        // anything else — while everything below is this session's own spend.
+        exec: { model: execAlias, label: execLabel },
+        adv: advAlias ? { model: advAlias, label: advLabel } : null,
+        spend,
+        execCostUsd,
+        advCostUsd,
+        advShare,
+        // Did the advisor actually get consulted? Its model appearing in the
+        // banked usage is the only proof, and its absence is worth seeing:
+        // an advisor configured but never called is spend policy on paper.
+        advisorSeen: spend.some((m) => m.role === 'adv'),
+        // The role ledger — what each role has been on, item by item. Stack
+        // records role SPEND, not the advisor conversation, so this is the
+        // honest granularity: one entry per item the session banked.
+        ledger: banked.slice(0, 6).map((r) => {
+          const models = r.model_usage && typeof r.model_usage === 'object'
+            ? Object.entries(r.model_usage).map(([model, u]) => ({
+                model,
+                label: shortModel(model),
+                role: roleOfModel(model, execAlias, advAlias),
+                tokens: (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0)
+                  + (Number(u.cacheReadInputTokens) || 0) + (Number(u.cacheCreationInputTokens) || 0),
+                costUsd: Number(u.costUSD) || 0,
+              })).sort((a, b) => b.tokens - a.tokens)
+            : [];
+          return {
+            itemId: r.item_id != null ? String(r.item_id) : '',
+            itemTitle: r.item_title || '',
+            outcome: r.outcome,
+            when: relativeTime(r.finished_at) || 'just now',
+            tokens: Number(r.tokens) || 0,
+            costUsd: Number(r.cost_usd) || 0,
+            advCostUsd: models.filter((m) => m.role === 'adv').reduce((n, m) => n + m.costUsd, 0),
+            models,
+          };
+        }),
       };
     });
   // Deliberately NOT truncated to capacity: if a stale-recovery race ever
@@ -475,12 +651,125 @@ control.get('/', async (_req, res) => {
     };
   })();
 
+  // (#269) The throughput ledger — is the automation getting better? Every
+  // number is current-value-plus-direction (last 7 days against the 7 before),
+  // never a table: the question is the trend, not the row.
+  const ledger = (() => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const dayKey = (ts) => new Date(ts).toISOString().slice(0, 10); // UTC, as everywhere
+    // Plan nights (#219) never commit by design — counting them as no-commit
+    // runs would slander the build throughput. They are excluded throughout.
+    const runs = ledgerR.rows.filter((r) => r.outcome !== 'planned');
+    const half = (rows, recent) => rows.filter((r) => {
+      const age = now - new Date(r.finished_at || r.created_at).getTime();
+      return recent ? age <= 7 * DAY_MS : age > 7 * DAY_MS;
+    });
+
+    // 14 daily buckets, oldest first — the sparkline's spine. Days with no
+    // runs are present as zeroes so the shape reads as time, not as samples.
+    const days = [];
+    for (let i = 13; i >= 0; i--) {
+      const key = dayKey(now - i * DAY_MS);
+      const onDay = runs.filter((r) => dayKey(r.finished_at) === key);
+      days.push({
+        day: key,
+        landed: onDay.filter((r) => r.outcome === 'landed').length,
+        runs: onDay.length,
+        tokens: onDay.reduce((n, r) => n + Number(r.tokens || 0), 0),
+        costUsd: onDay.reduce((n, r) => n + Number(r.cost_usd || 0), 0),
+      });
+    }
+
+    // A metric is {now, prev} — the client renders the delta as direction.
+    const window = (rows) => {
+      const landed = rows.filter((r) => r.outcome === 'landed');
+      const nights = new Set(rows.map((r) => dayKey(r.finished_at))).size;
+      const tokens = landed.reduce((n, r) => n + Number(r.tokens || 0), 0);
+      const cost = landed.reduce((n, r) => n + Number(r.cost_usd || 0), 0);
+      return {
+        landed: landed.length,
+        // Items landed per ACTIVE night — nights the fleet did not run at all
+        // would otherwise drag the average toward zero and hide real gains.
+        perNight: nights ? landed.length / nights : 0,
+        tokensPerItem: landed.length ? tokens / landed.length : 0,
+        costPerItem: landed.length ? cost / landed.length : 0,
+        noCommitRate: rows.length
+          ? rows.filter((r) => r.outcome === 'no-commits').length / rows.length : 0,
+      };
+    };
+
+    // Auto-merge share. The runner's own low-risk merges (#212) are recorded
+    // by the 'auto-merge …' detail prefix that POST /merge writes; a human
+    // ⇥ Merge writes plain 'merge …'. That string IS the only distinguishing
+    // record, so it is what we read.
+    const merges = ledgerJobsR.rows.filter((j) => j.kind === 'merge');
+    const reverts = ledgerJobsR.rows.filter((j) => j.kind === 'revert');
+    const mergeSplit = (rows) => {
+      const done = rows.filter((j) => j.status === 'done');
+      return {
+        total: done.length,
+        auto: done.filter((j) => String(j.detail || '').startsWith('auto-merge')).length,
+      };
+    };
+
+    // First pass: of the items a run landed and a human has since verdicted,
+    // how many were called solid. Verdicts are current state, so an item
+    // refined and later passed counts as solid — this is the ceiling of the
+    // true first-pass rate, and the client says so.
+    const verdicted = verdictR.rows;
+    const solid = verdicted.filter((r) => r.review_tag === 'solid').length;
+
+    // Executor vs advisor spend (#153's "cheap hands, strong minds" claim,
+    // finally measurable). Roles are not recorded per run, so within each run
+    // the highest-token model is taken as the executor (it runs every turn)
+    // and the rest as advisors (consulted). Documented as a heuristic because
+    // it is one — historical runs used whatever the settings said at the time.
+    const roles = { executor: { tokens: 0, costUsd: 0 }, advisor: { tokens: 0, costUsd: 0 } };
+    for (const r of ledgerR.rows) {
+      if (!r.model_usage || typeof r.model_usage !== 'object') continue;
+      const entries = Object.entries(r.model_usage).map(([model, u]) => ({
+        model,
+        tokens: (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0)
+          + (Number(u.cacheReadInputTokens) || 0) + (Number(u.cacheCreationInputTokens) || 0),
+        costUsd: Number(u.costUSD) || 0,
+      })).sort((a, b) => b.tokens - a.tokens);
+      entries.forEach((e, i) => {
+        const bucket = i === 0 ? roles.executor : roles.advisor;
+        bucket.tokens += e.tokens;
+        bucket.costUsd += e.costUsd;
+      });
+    }
+
+    return {
+      days,
+      now: window(half(runs, true)),
+      prev: window(half(runs, false)),
+      merges: { now: mergeSplit(half(merges, true)), prev: mergeSplit(half(merges, false)) },
+      reverts: { now: half(reverts, true).length, prev: half(reverts, false).length },
+      firstPass: { solid, verdicted: verdicted.length },
+      roles,
+    };
+  })();
+
   res.json({
+    // (#269) The throughput ledger — the trend behind the numbers.
+    ledger,
     // (#268) The fleet: capacity plus every in-flight worker.
     // (#270) …and the honest reason it is or is not running.
     fleet: {
       capacity: FLEET_CAPACITY,
       slots: fleetSlots,
+      // (#280) The role policy, stated once above the lanes: who executes, who
+      // advises, and what the arrangement is meant to be. The per-lane numbers
+      // are what it actually cost.
+      roles: {
+        executor: { model: execAlias, label: execLabel },
+        advisor: advAlias ? { model: advAlias, label: advLabel } : null,
+        note: advAlias
+          ? 'Cheap hands, strong mind — the advisor is read-only counsel, never a committer.'
+          : 'Single-model sessions — no advisor is configured, so nothing is being consulted.',
+      },
       status: fleetStatus,
       heartbeat: { ageSec: hbAgeSec, silent: dispatcherSilent, hostLocal: (hb && hb.host_local) || '' },
     },

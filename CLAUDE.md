@@ -261,7 +261,20 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   rail** that stays put across rooms (the #220 CLAUDE PLAN window meters, the compact #194/#200
   7-day usage — spend, tokens, per-model stacked bar, month-to-date, the collapsed #177 agent
   breakdown — the NEXT UP list of the week's bookings with tonight's nightly first, and the
-  daemon status line). **Now** is 11a's dashboard: the LIVE SESSION card beside the terracotta
+  daemon status line). **Now** is 11a's dashboard: the **fleet strip** (#268 — one row per worker
+  slot, busy or idle; idle slots are RENDERED, never omitted, because the strip's length is how
+  you read the fleet's real size) carrying the **ROLES column** (#280, the design's 23a — who is
+  executing, who advised, and what the advice cost): the app-wide role policy stated once above
+  the lanes (EXEC green / ADV terracotta, the same two colours the split bars use), each lane
+  wearing its EXEC/ADV models and a spend-split bar, expandable to the **role panel** — the ROLE
+  LEDGER (one row per item the session has BANKED, with the roles that were on it and what the
+  advice cost), the SPEND bar with a per-model legend, and an arithmetic read (`roleRead`, no API)
+  that judges the split: advice-heavy / in proportion / cheap counsel — or refuses to judge when
+  there is no advisor, nothing banked, or the advisor was never actually consulted. Attribution
+  joins the runner's real model ids (`claude-opus-4-5-…`) to the settings' aliases (`opus`,
+  `claude-opus-5`, '' = CLI default) by family + generation, most-specific-alias-wins; a model
+  neither role claims stays **unattributed and is drawn as its own slice** rather than guessed
+  into a role. Then the LIVE SESSION card beside the terracotta
   awaiting-review tile (→ the deck inbox) + serious-bugs/claimed-lanes minis, then the
   autopilot **settled into one line** — arm switch + a mono summary — whose ▸ configure folds
   open the full console (session cap up to 6h + **token budget incl. ∞ Unlimited** + **nightly
@@ -858,7 +871,15 @@ the silent metadata backstop so the feed never has gaps.
   queries: automode, presence, open lane claims, review counts, serious bugs, blockers, tonight's
   likely autopilot pick per automode project (mirrors the runner's eligibility rules) and the last
   `auto/*` push; plus the full autopilot config (arm, cap, tokens, time, maxItems), the schedule
-  rows, the recent job queue and cross-project totals)
+  rows, the recent job queue and cross-project totals. `fleet` carries the worker slots (#268)
+  and, per slot, the ROLES (#280): `exec`/`adv` (the app-wide policy), `spend` (banked usage
+  split per model with a `role` and a `share`; `role:''` = unattributed, `inferred` = the one
+  documented inference — a lone unattributed model while the executor is on the CLI default),
+  `execCostUsd`/`advCostUsd`/`advShare`, `advisorSeen` (the advisor's model actually appears in
+  the banked usage — an advisor configured but never called is spend policy on paper) and
+  `ledger` (the last 6 items the session banked, each with its per-model role split).
+  Spend is always **banked, never estimated**: a run row lands per finished item, so the item
+  in flight honestly contributes nothing until it completes)
 - `GET /api/search?q=…` (the ⌘K palette — grouped results across all kinds; see shape below)
 - `GET /api/timeline` (the #/timeline screen — last month of pushes grouped by day + 53 weeks of
   daily counts for the contribution grid; soft-deleted projects excluded)
