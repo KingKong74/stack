@@ -9,6 +9,7 @@ import {
 } from '../store';
 import { SessionPlanModal } from '../components/SessionPlanModal';
 import { NightsRoom, PlanRoom, BuildRoom } from './ControlRooms';
+import { RolesRoom } from './ControlRoles';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
 import { go, hrefTo } from '../lib/route';
 import type { ProjectStatus } from '../types';
@@ -149,7 +150,7 @@ export function ControlPanel() {
   const [mergeBusy, setMergeBusy] = useState(false);
   // 14a — the shell: Now / Nights / Plan / Build are rooms behind one pinned
   // live strip and a persistent rail; the autopilot config folds away.
-  const [room, setRoom] = useState<'now' | 'nights' | 'plan' | 'build'>('now');
+  const [room, setRoom] = useState<'now' | 'nights' | 'plan' | 'build' | 'roles'>('now');
   const [cfgOpen, setCfgOpen] = useState(false);
   // #280 — which fleet lane is expanded to its role panel (one at a time; the
   // rows are dense enough that two open at once stops being scannable).
@@ -476,7 +477,7 @@ export function ControlPanel() {
           <>
             {/* ---- 14a: the shell — rooms behind one live strip + rail ---- */}
             <div className="mc14-tabs" role="tablist" aria-label="Mission Control rooms">
-              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0], ['build', 'Build', 0]] as const).map(([key, label, n]) => (
+              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0], ['build', 'Build', 0], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => a.drift && a.drift !== 'no-runs').length]] as const).map(([key, label, n]) => (
                 <button key={key} role="tab" aria-selected={room === key}
                   className={`mc14-tab ${room === key ? 'on' : ''}`} onClick={() => setRoom(key)}>
                   {label}{n > 0 && <span className="n">{n}</span>}
@@ -1261,6 +1262,13 @@ export function ControlPanel() {
                 {room === 'build' && pickSlug && (
                   <BuildRoom data={data} pickSlug={pickSlug} onPick={setPickSlug} onGoNow={() => setRoom('now')} />
                 )}
+                {/* #281 — Roles: the fleet-wide half of turn 23. "Edit the
+                    policy" lands you on the Now room's model pickers, which
+                    are the one place the policy is actually written. */}
+                {room === 'roles' && (
+                  <RolesRoom data={data} onReload={load}
+                    onConfigure={() => { setRoom('now'); setCfgOpen(true); }} />
+                )}
               </div>
 
               {/* ---- the rail: plan windows, usage, next up — stays put across rooms ---- */}
@@ -1434,10 +1442,20 @@ export function ControlPanel() {
                           <span className="d flat">of {L.firstPass.verdicted}</span>
                         </div>
                       )}
-                      {/* #153's claim — cheap hands, strong minds — made measurable */}
-                      {L.roles.advisor.tokens > 0 && (
+                      {/* #153's claim — cheap hands, strong minds — made measurable.
+                          Attribution is the same alias match the Roles room and the
+                          lanes use; `assumed` is the share the fallback placed, and
+                          the tooltip says so rather than claiming a measured total. */}
+                      {L.roles.advisor.tokens > 0 && (() => {
+                        const totalTok = L.roles.executor.tokens + L.roles.advisor.tokens;
+                        const assumedTok = L.roles.assumed?.tokens ?? 0;
+                        const assumedPct = totalTok > 0 ? Math.round((assumedTok / totalTok) * 100) : 0;
+                        return (
                         <div className="mc-led-roles"
-                          title="Executor vs advisor spend over 14 days. Roles are not recorded per run, so the highest-token model in each run is taken as the executor — a heuristic, since the session's models are whatever the settings said at the time.">
+                          title={`Executor vs advisor spend over 14 days, attributed by the configured models — the same rule the Roles room and the fleet lanes use.${
+                            assumedPct > 0
+                              ? ` ${assumedPct}% of these tokens ran on a model the current policy names for neither role (usually a run from before a settings change); that share is split the old way — highest-token model as the executor — and is an assumption, not a reading.`
+                              : ' Every token here ran on a model the current policy names, so none of it is guesswork.'}`}>
                           <div className="row">
                             <span className="rl">hands</span>
                             <span className="rt">{fmtTok(L.roles.executor.tokens)}</span>
@@ -1448,8 +1466,14 @@ export function ControlPanel() {
                             <span className="rt">{fmtTok(L.roles.advisor.tokens)}</span>
                             <span className="rc">${L.roles.advisor.costUsd.toFixed(2)}</span>
                           </div>
+                          {assumedPct > 0 && (
+                            <div className="row assumed">
+                              <span className="rl">{assumedPct}% assumed</span>
+                            </div>
+                          )}
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   );
                 })()}

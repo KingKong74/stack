@@ -2709,6 +2709,108 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .daemon-row .ddot { width: 6px; height: 6px; border-radius: 50%; background: var(--paused); }
 .daemon-row .ddot.on { background: var(--live); }
 
+/* #269 — the throughput ledger in the rail. (These rules were missing: the
+   ledger's markup reached the branch without them, so the section rendered
+   unstyled.) Same vocabulary as the rail's other sections. */
+.mc-led-spark { display: flex; align-items: flex-end; gap: 2px; height: 34px; padding: 2px 0 4px; }
+.mc-led-spark i { flex: 1; min-width: 2px; border-radius: 1px; background: var(--live); }
+.mc-led-spark i.zero { background: var(--line-2); }
+.mc-led-stat { display: flex; align-items: baseline; gap: 8px; cursor: help; }
+.mc-led-stat .l { flex: 1; min-width: 0; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-led-stat .v { font-family: var(--mono); font-size: 11.5px; font-weight: 500; color: var(--ink); }
+.mc-led-stat .d { font-family: var(--mono); font-size: 10px; width: 34px; text-align: right; flex: none; color: var(--paused); }
+.mc-led-stat .d.good { color: var(--live); }
+.mc-led-stat .d.bad { color: var(--critical); }
+.mc-led-roles { display: flex; flex-direction: column; gap: 3px; padding-top: 8px; margin-top: 4px; border-top: 1px solid var(--line-2); cursor: help; }
+.mc-led-roles .row { display: flex; align-items: baseline; gap: 8px; }
+.mc-led-roles .rl { flex: 1; font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.mc-led-roles .rt { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.mc-led-roles .rc { font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--ink); width: 48px; text-align: right; }
+/* the honesty line: how much of the split the fallback placed */
+.mc-led-roles .row.assumed .rl { font-size: 9px; color: var(--accent-deep); }
+
+/* #281 (design 23b) — the Roles room. Everything is scoped under
+   .mc-rolesroom: `.tag`, `.note` and `.big` are all names other parts of the
+   app already use, and #280 shipped a bug from exactly that mistake. */
+.mc-rolesroom { display: flex; flex-direction: column; gap: 14px; }
+
+/* which model is doing what */
+.mc-rolesroom .mc-rolecards { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 12px; }
+.mc-rolecard { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); padding: 14px 15px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.mc-rolecard.exec { border-color: var(--green-tint); }
+.mc-rolecard.adv { border-color: var(--accent-tint-border); }
+.mc-rolecard .top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mc-rolecard .sw { width: 7px; height: 7px; border-radius: 2px; flex: none; background: var(--line-3); }
+.mc-rolecard .sw.exec { background: var(--live); }
+.mc-rolecard .sw.adv { background: var(--accent); }
+.mc-rolecard .nm { flex: 1; min-width: 0; font-family: var(--mono); font-size: 11.5px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-rolesroom .tag { font-family: var(--mono); font-size: 8.5px; font-weight: 500; padding: 1px 7px; border-radius: 4px; border: none; background: var(--panel); color: var(--paused); flex: none; white-space: nowrap; }
+.mc-rolesroom .tag.exec { background: var(--green-tint); color: var(--live); }
+.mc-rolesroom .tag.adv { background: var(--accent-tint); color: var(--accent-deep); }
+.mc-rolecard .big { display: flex; align-items: baseline; gap: 8px; }
+.mc-rolecard .big b { font-family: var(--disp); font-size: 22px; font-weight: 600; color: var(--ink); }
+.mc-rolecard .big span { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.mc-rolecard .line { display: flex; align-items: baseline; gap: 7px; }
+.mc-rolecard .line .k { flex: 1; font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.mc-rolecard .line .v { font-family: var(--mono); font-size: 10.5px; color: var(--ink); }
+.mc-rolecard .line .c { font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--ink); }
+.mc-rolecard .bar { height: 4px; border-radius: 2px; background: var(--bg); overflow: hidden; }
+.mc-rolecard .bar i { display: block; height: 4px; background: var(--line-3); }
+.mc-rolecard .bar i.exec { background: var(--live); }
+.mc-rolecard .bar i.adv { background: var(--accent); }
+.mc-rolecard .note { font-family: var(--mono); font-size: 9px; color: var(--paused); }
+
+/* who is doing what — the policy beside what actually ran */
+.mc-roletable { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); overflow: hidden; }
+.mc-roletable .head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 11px 15px; border-bottom: 1px solid var(--line-2); }
+.mc-roletable .head .title { font-family: var(--disp); font-size: 12px; font-weight: 600; color: var(--ink); }
+.mc-roletable .head .sub { font-size: 10.5px; color: var(--muted); }
+.mc-roletable .head .policy { font-family: var(--mono); font-size: 10px; color: var(--paused); white-space: nowrap; }
+.mc-roletable .rows { padding: 5px 9px 10px; display: flex; flex-direction: column; gap: 1px; }
+.mc-roletable .ra { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; min-width: 0; }
+.mc-roletable .ra:hover { background: var(--panel); }
+.mc-roletable .ra.off-policy, .mc-roletable .ra.advisor-unused { background: var(--accent-tint); }
+.mc-roletable .ra .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.mc-roletable .ra .nm { width: 148px; flex: none; font-size: 12px; color: var(--ink); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-roletable .ra .nm:hover { color: var(--accent-deep); }
+.mc-roletable .ra .mdl { width: 112px; flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-roletable .ra .mdl.quiet { color: var(--paused); }
+.mc-roletable .ra .mdl em { font-style: normal; color: var(--paused); }
+.mc-roletable .ra .mdl u { text-decoration: none; font-size: 9px; color: var(--paused); margin-left: 3px; cursor: help; }
+.mc-roletable .ra .note { flex: 1; min-width: 0; font-family: var(--mono); font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-roletable .ra .note.ok { color: var(--sage); }
+.mc-roletable .ra .note.warn { color: var(--accent-deep); }
+.mc-roletable .ra .note.quiet { color: var(--paused); }
+.mc-roletable .ra .runs { font-family: var(--mono); font-size: 9.5px; color: var(--paused); white-space: nowrap; flex: none; }
+
+/* was the advice worth it · the advisor's share */
+.mc-rolefoot { display: flex; gap: 12px; align-items: stretch; flex-wrap: wrap; }
+.mc-rolefoot .worth { flex: 1 1 340px; min-width: 0; border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); padding: 14px 15px; display: flex; flex-direction: column; gap: 9px; }
+.mc-rolefoot .cap { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.1em; color: var(--paused); }
+.mc-rolefoot .wl { display: flex; gap: 10px; align-items: baseline; }
+.mc-rolefoot .wl .tag { width: 56px; flex: none; text-align: center; }
+.mc-rolefoot .wl .tag.good { background: var(--green-tint); color: var(--live); }
+.mc-rolefoot .wl .tag.warn { background: var(--accent-tint); color: var(--accent-deep); }
+.mc-rolefoot .wl .t { flex: 1; font-size: 11.5px; line-height: 1.6; color: var(--ink); }
+.mc-rolefoot .share { width: 268px; flex: none; border-radius: 11px; border: 1px solid var(--accent-tint-border); background: var(--accent-tint); padding: 14px 15px; display: flex; flex-direction: column; gap: 9px; }
+.mc-rolefoot .share .cap { color: var(--accent-deep); }
+.mc-rolefoot .share .big { display: flex; align-items: baseline; gap: 8px; }
+.mc-rolefoot .share .big b { font-family: var(--disp); font-size: 22px; font-weight: 600; color: var(--accent-deep); }
+.mc-rolefoot .share .big span { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.mc-rolefoot .share .bar { height: 5px; border-radius: 3px; background: var(--card); overflow: hidden; }
+.mc-rolefoot .share .bar i { display: block; height: 5px; background: var(--accent); }
+.mc-rolefoot .share .copy { font-size: 11px; line-height: 1.6; color: var(--muted); }
+.mc-rolefoot .share .acts { display: flex; gap: 6px; }
+.mc-rolefoot .share .acts .btn-repo { flex: 1; }
+.mc-rolesroom .mc-rolenote { padding: 11px 13px; border-radius: 10px; border: 1px dashed var(--line-3); font-size: 11px; line-height: 1.6; color: var(--muted); }
+
+@media (max-width: 760px) {
+  .mc-roletable .ra { flex-wrap: wrap; }
+  .mc-roletable .ra .nm, .mc-roletable .ra .mdl { width: auto; flex: 1 1 100px; }
+  .mc-roletable .ra .note { flex: 1 1 100%; white-space: normal; }
+  .mc-rolefoot .share { width: auto; flex: 1 1 100%; }
+}
+
 /* Rooms — shared */
 .mc14-room-head { display: flex; align-items: center; gap: 12px; }
 .mc14-room-head .title { font-family: var(--disp); font-size: 15px; font-weight: 600; color: var(--ink); }

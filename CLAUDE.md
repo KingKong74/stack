@@ -253,10 +253,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   `store.getThemePref/setThemePref`; App resolves to `<html data-theme>`). The dark palette is one
   `[data-theme='dark']` override block on the same named tokens at the top of `styles.css`, plus a
   short list of literal-background fixups right below it. Stickies keep their paper colours.
-- `screens/Control.tsx` (+ `screens/ControlRooms.tsx`) — **Mission Control** (`#/control`, the
+- `screens/Control.tsx` (+ `screens/ControlRooms.tsx`, `screens/ControlRoles.tsx`) — **Mission
+  Control** (`#/control`, the
   Dashboard header's "Mission Control" button): every project's automation from one point,
-  restructured to the Stack Planning design's **14a shell**: four rooms — **Now / Nights /
-  Plan / Build** — behind one **pinned live strip** (the primary claude/web session, or the
+  restructured to the Stack Planning design's **14a shell**: five rooms — **Now / Nights /
+  Plan / Build / Roles** — behind one **pinned live strip** (the primary claude/web session, or the
   first detached survivor, with Attach; ALL QUIET when nothing runs) and a **persistent right
   rail** that stays put across rooms (the #220 CLAUDE PLAN window meters, the compact #194/#200
   7-day usage — spend, tokens, per-model stacked bar, month-to-date, the collapsed #177 agent
@@ -319,7 +320,34 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   gates: every roadmap item carrying #75 plan steps as a phase card (building / queued /
   awaiting verdict / landed) with step marks, and GATE rows for the two crossings the autopilot
   never makes alone — the human verdict (→ Reviews) and the merge (→ the merge strip) — plus
-  LAST NIGHTS MOVED THE PLAN from the run ledger. Plan/Build fetch the picked project's detail
+  LAST NIGHTS MOVED THE PLAN from the run ledger. **Roles** is 23b (`screens/ControlRoles.tsx`,
+  #281 — the fleet-wide half of turn 23, where the Now room's lanes are the per-session half):
+  which model is doing what, what the advisors are costing, and **where the policy is being
+  ignored**. It reads the RUN LEDGER, not the settings — that separation is the whole point,
+  since a screen that renders the policy back at you can never show drift. Per-model cards over
+  the week (role chip, runs, last-24h tokens/cost, share of the week), the **who is doing what**
+  table (one row per project that ran or is in automode, showing the models actually seen in each
+  role against the configured policy — `drift` is `off-policy` (a model neither current role
+  names: a changed setting, or a host-side `--executor-model` override), `advisor-unused` (an
+  advisor configured but never consulted) or `no-runs` (quiet, explicitly NOT drift); drifting
+  rows sort first and the tab badge counts them), the **was the advice worth it** arithmetic
+  (landed rate advised vs unadvised, advisor cost and share, with an explicit small-sample caveat
+  under 12 runs — the numbers come from the server, the sentences are composed client-side, the
+  same split as a lane's read) and the **ADVISOR SHARE** meter — deliberately not called an
+  allowance, because nothing enforces a ceiling; its two buttons (Drop to Sonnet / Advisor off)
+  are real `patchSettings` writes that apply from the next session. Server side it is
+  `computeFleetRoles()` in `routes/control.js` — exported and PURE (usage rows + projects + the
+  two aliases in, the `roles` block out) so it is testable without a database. The **throughput
+  ledger (#269) shares the attribution**: `splitRunRoles()` decides each run's roles by the same
+  alias match, so the lanes, the Roles room and the ledger can never disagree about who a model
+  was. The old highest-token heuristic survives ONLY as its fallback, for models the current
+  policy names for neither role — dropping them would quietly shrink the 14-day totals the
+  ledger exists to trend — and that share comes back as `roles.assumed`, which the rail states
+  as "N% assumed" rather than passing a partly-guessed split off as measured. (The lane and
+  fleet views deliberately do NOT use the fallback: they show an unattributed model as its own
+  slice, because reporting what is known costs them nothing. Same rule for deciding a role,
+  different handling of what the rule cannot decide.)
+  Plan/Build fetch the picked project's detail
   via `getProjectDetail` (60s in-module cache). The **scheduled
   sessions** system is unchanged underneath (one-off / daily / chosen-days sessions per
   project — `store.createAutopilotSchedule` et al). Every scheduled session is a **session
@@ -879,7 +907,13 @@ the silent metadata backstop so the feed never has gaps.
   the banked usage — an advisor configured but never called is spend policy on paper) and
   `ledger` (the last 6 items the session banked, each with its per-model role split).
   Spend is always **banked, never estimated**: a run row lands per finished item, so the item
-  in flight honestly contributes nothing until it completes)
+  in flight honestly contributes nothing until it completes. A top-level `roles` block (#281,
+  from the pure `computeFleetRoles()`) carries the fleet-wide view the Roles room renders:
+  `models` (per model over the window — role, runs, tokens/cost, last 24h, share, last seen),
+  `assignments` (per project: the models actually seen in each role, plus `drift` —
+  `off-policy` | `advisor-unused` | `no-runs` | '') and `worth` (advised vs unadvised run and
+  landed counts, advisor/executor cost and share, average advice per run, and `costBasis` —
+  false when no cost was reported and the shares are token-based))
 - `GET /api/search?q=…` (the ⌘K palette — grouped results across all kinds; see shape below)
 - `GET /api/timeline` (the #/timeline screen — last month of pushes grouped by day + 53 weeks of
   daily counts for the contribution grid; soft-deleted projects excluded)
@@ -1086,6 +1120,7 @@ echo '{"project":{"slug":"stack"},"session":{"summary":"…"}}' | node hook/stac
 node scripts/stack-context.mjs --slug stack --api https://stack.your-domain  # export agent manual
 ./stack tree                               # the branch navigator (also --repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
+node server/test/fleet-roles.test.mjs      # #281's role attribution + drift detection (pure, no DB)
 ./stack start-session [slug] [--item N]    # start an automation session (▶ Run now from the terminal)
 ./stack list-sessions                      # the automation job queue (also [slug], --limit, --json)
 ./stack term [dir]                         # claude in a stack-term tmux session (laptop/ssh — shows on
