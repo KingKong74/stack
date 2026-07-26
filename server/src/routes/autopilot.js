@@ -14,6 +14,9 @@ const OUTCOMES = ['landed', 'no-commits', 'failed', 'limit', 'planned'];
 // #282 — the reviewer's three possible reads. NULL is the fourth state and means
 // "no review ran", which is deliberately not the same as "nothing found".
 const REVIEW_VERDICTS = ['clean', 'concerns', 'blocked'];
+// #284 — the architect's three reads. NULL again means "no pass ran", which is
+// not the same as "nothing to say".
+const ARCHITECT_VERDICTS = ['aligned', 'drifting', 'concerning'];
 
 autopilot.use(async (req, res, next) => {
   const project = await projectBySlug(req.params.slug);
@@ -46,6 +49,10 @@ export function runShape(r) {
     reviewVerdict: r.review_verdict || '',
     reviewNote: r.review_note || '',
     reviewFindings: r.review_findings ?? null,
+    // #284 — the architect's structural read, beside the reviewer's correctness one.
+    architectVerdict: r.architect_verdict || '',
+    architectNote: r.architect_note || '',
+    architectObs: Array.isArray(r.architect_obs) ? r.architect_obs : [],
     when: relativeTime(r.finished_at) || 'just now',
     finishedAt: r.finished_at,
   };
@@ -592,6 +599,20 @@ autopilot.patch('/runs/:id', async (req, res) => {
   if (b.review_findings !== undefined) {
     sets.push(`review_findings = $${i++}`);
     vals.push(Number.isFinite(Number(b.review_findings)) ? Math.max(0, Math.trunc(Number(b.review_findings))) : null);
+  }
+  if (b.architect_verdict !== undefined) {
+    sets.push(`architect_verdict = $${i++}`);
+    vals.push(ARCHITECT_VERDICTS.includes(b.architect_verdict) ? b.architect_verdict : null);
+  }
+  if (b.architect_note !== undefined) {
+    sets.push(`architect_note = $${i++}`);
+    vals.push(b.architect_note ? String(b.architect_note).slice(0, 1200) : null);
+  }
+  if (b.architect_obs !== undefined) {
+    const obs = Array.isArray(b.architect_obs)
+      ? b.architect_obs.map((o) => String(o).slice(0, 200)).filter(Boolean).slice(0, 4) : null;
+    sets.push(`architect_obs = $${i++}::jsonb`);
+    vals.push(obs && obs.length ? JSON.stringify(obs) : null);
   }
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
   vals.push(req.project.id, Number(req.params.id));
