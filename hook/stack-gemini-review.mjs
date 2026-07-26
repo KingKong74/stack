@@ -29,9 +29,11 @@ const DRY = process.argv.includes('--dry');
 const rangeIdx = process.argv.indexOf('--range');
 const RANGE = rangeIdx > -1 ? process.argv[rangeIdx + 1] : null;
 // --verdict-file <path> (#212): also write a small machine-readable verdict
-// ({bugs, improvements, ideas, summary}) so a caller (the autopilot's
-// risk-tiered auto-merge) can tell a clean review from a flagged one without
-// scraping stderr. Written on success only — no file means no verdict.
+// ({bugs, improvements, ideas, serious, verdict, summary, model}) so a caller
+// (the autopilot's risk-tiered auto-merge, and #282's stored reviewer read) can
+// tell a clean review from a flagged one without scraping stderr. `verdict` is
+// clean | concerns | blocked — blocked meaning at least one critical/high
+// finding. Written on success only — no file means no verdict.
 const verdictIdx = process.argv.indexOf('--verdict-file');
 const VERDICT_FILE = verdictIdx > -1 ? process.argv[verdictIdx + 1] : null;
 
@@ -162,8 +164,15 @@ if (!result?.ok) die(`Posting the review to Stack failed${result?.reason ? ` (${
 if (VERDICT_FILE) {
   try {
     const { writeFileSync } = await import('node:fs');
+    // #282 adds `serious` + `verdict`: the counts alone can't tell a nitpick
+    // from a stop-the-line finding, and the Review room needs to arrive with a
+    // read, not just a number. clean = nothing filed; blocked = at least one
+    // critical/high; concerns = findings, none of them serious.
+    const serious = bugs.filter((b2) => b2.severity === 'critical' || b2.severity === 'high').length;
     writeFileSync(VERDICT_FILE, JSON.stringify({
       bugs: bugs.length, improvements: improvements.length, ideas: ideas.length,
+      serious,
+      verdict: bugs.length === 0 ? 'clean' : serious > 0 ? 'blocked' : 'concerns',
       summary: summaryLine, model: usedModel,
     }));
   } catch (e) { logStderr(`verdict file not written (${e.message})`); }

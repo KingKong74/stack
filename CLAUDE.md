@@ -256,8 +256,8 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 - `screens/Control.tsx` (+ `screens/ControlRooms.tsx`, `screens/ControlRoles.tsx`) — **Mission
   Control** (`#/control`, the
   Dashboard header's "Mission Control" button): every project's automation from one point,
-  restructured to the Stack Planning design's **14a shell**: five rooms — **Now / Nights /
-  Plan / Build / Roles** — behind one **pinned live strip** (the primary claude/web session, or the
+  restructured to the Stack Planning design's **14a shell**: six rooms — **Now / Nights /
+  Plan / Build / Review / Roles** — behind one **pinned live strip** (the primary claude/web session, or the
   first detached survivor, with Attach; ALL QUIET when nothing runs) and a **persistent right
   rail** that stays put across rooms (the #220 CLAUDE PLAN window meters, the compact #194/#200
   7-day usage — spend, tokens, per-model stacked bar, month-to-date, the collapsed #177 agent
@@ -347,7 +347,33 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   fleet views deliberately do NOT use the fallback: they show an unattributed model as its own
   slice, because reporting what is known costs them nothing. Same rule for deciding a role,
   different handling of what the rule cannot decide.)
-  Plan/Build fetch the picked project's detail
+  **Review** (`screens/ControlReview.tsx` — #282, design 24b + 24a) is where review LIVES now,
+  moved wholesale out of the Roadmap tab: the nights run across projects, so the morning's queue
+  does too. Two views behind one seg. **Queue** is 24b — a rail of every completed item nobody has
+  verdicted yet (newest first, each card wearing the reviewer's stored verdict chip — CLEAN /
+  CONCERNS / BLOCKED / **NO REVIEW**, which is deliberately not green — plus a CHECKS flag, the
+  project, #id and commit count) beside the change itself: THE CHANGE (the built_note and the
+  session's own account — there is **no line-by-line diff**, because the server cannot run git, and
+  the pane says so rather than inventing a diffstat), WHAT THE AGENTS SAID (the REVIEWER's stored
+  note, its findings count, and an honest dashed line where an ARCHITECT would report if one were
+  on the roster), your annotation chips (#146), a FACTS panel, and a **DECIDE** panel whose three
+  keyed actions — **1** Solid, **2** ✎ Refine, **3** ⏸ Later — also work from the keyboard (j/k
+  walk the queue; keys are ignored while a modal or field has focus). Everything the old Reviews
+  view could do is still here, under ALSO: ↩ Board, ⎌ Undo (#128), ✧ Brief (#134), ⌨ Session,
+  ＋ Bug, ＋ Audit and × Delete. Filter chips are To review / Flagged (the reviewer said blocked,
+  or the run left checks red) / Shelved (#148) / Settled (the archive), and ✓ All solid clears a
+  whole list. The verdict receipt sits at ROOM level with its undo — a verdict removes its own row,
+  so a receipt pinned to the selection would vanish exactly when you wanted it back. ＋ Bug /
+  ＋ Audit have no modals here (no project is loaded), so they stash a one-shot prefill
+  (`store.setReviewPrefill`) and open the project, where ProjectDetail takes it exactly once.
+  **Debrief** is 24a — a night at a time: night tabs, a header stating what the reviewer read and
+  called clean, four stat tiles, WHAT LANDED (one card per run with the reviewer's and the
+  session's own notes, and Review this change / Open the item), DECISIONS THIS DEBRIEF ASKS FOR
+  (blocked reviews, red checks, limit-paused and failed runs — each a real door), and a right rail
+  of REVIEWER / ARCHITECT (absent, stated) / SPEND. The room owns its own fetch (`store.getReview`)
+  and reports the pending count up so the room tab can badge it; it mutates nothing itself — every
+  verdict, refinement, shelve and undo goes through the same per-project routes the Roadmap tab
+  used. Plan/Build fetch the picked project's detail
   via `getProjectDetail` (60s in-module cache). The **scheduled
   sessions** system is unchanged underneath (one-off / daily / chosen-days sessions per
   project — `store.createAutopilotSchedule` et al). Every scheduled session is a **session
@@ -468,19 +494,17 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   in flight greys the numbers instead of blanking them, and every Gemini surface is ABSENT (not
   disabled) when `geminiReady` is false. `.q-*` styles; narrow stacks the cards in priority order
   with the KPIs 2×2),
-  Roadmap (the Board/**Tiers**/**Parked**/Reviews switch sits above the content, left, full seg size
-  (#129); + Add tops
-  each column (#112); tick moves an item into the Reviews pipeline — still counted by
-  progress; hover ✎/× edit + delete, edit reuses RoadmapModal in `mode='edit'` incl. the Lane
-  field and the **Plan** editor (#75 — ordered `{text, done}` steps; the card wears a ☰ n/m
-  progress chip and the autopilot works unticked steps top-down); open items show ⚑ claim chips;
-  a bucket column **expands to fill the board** (#251 — click its name or ⤢; the others fold away,
-  cards get the full width) or **folds to its header** (▾), both session-local;
-  the bar's **✧ To planning agent** (#255, replacing ⌨ To terminal) picks open items — pre-ticked
-  to everything with no plan, bulk ticks for all-workable / only-unplanned / none — and queues a
-  **plan-kind autopilot session whose ordered agenda IS the picked list** via
-  `store.startAutopilot(slug, {kind:'plan', agenda})`; the old terminal handoff survives as the
-  modal's second destination;
+  Roadmap (the Board/**Tiers**/**Parked** switch sits above the content, left, full seg size
+  (#129); + Add tops each column (#112); tick moves an item into the **Review room's** queue —
+  still counted by progress; hover ✎/× edit + delete, edit reuses RoadmapModal in `mode='edit'`
+  incl. the Lane field and the **Plan** editor (#75 — ordered `{text, done}` steps; the card wears
+  a ☰ n/m progress chip and the autopilot works unticked steps top-down); open items show ⚑ claim
+  chips; a bucket column **expands to fill the board** (#251 — click its name or ⤢; the others fold
+  away, cards get the full width) or **folds to its header** (▾), both session-local;
+  the bar's **✧ To planning agent** (#255) picks open items — pre-ticked to everything with no
+  plan, bulk ticks for all-workable / only-unplanned / none — and queues a **plan-kind autopilot
+  session whose ordered agenda IS the picked list** via `store.startAutopilot(slug, {kind:'plan',
+  agenda})`; the old terminal handoff survives as the modal's second destination;
   the **Tiers view** (#227) is the desire ranking over the whole open board — S/A/B/C rows plus
   Unranked, drag a card between them (or use its S/A/B/C buttons) → `patchRoadmapItem {tier}`.
   Tier is the PRIMARY sort of the run queue (Plan room + the runner both apply it) and unranked
@@ -488,25 +512,12 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   cards wear the tier chip.
   The **Parked view** (#247) lists every open ⏸ item oldest-park-first with its age in days (from
   `skipped_at`, falling back to `updated_at` shown as `~n days`) and a stale flag past Settings'
-  `staleItemDays`; unpark/edit/delete per row, the tab badge counts parked + stale;
-  the **Reviews view** (#132/#117) clusters To-verify items under completion-day headers, labels
-  every row with #id + an origin chip (⚙ autopilot — auto/* claim or a landed run — / ⚑ lane /
-  by hand, with an origin filter when mixed) and the run-ledger chip (branch · commits · tokens ·
-  cost, session summary on hover) via `store.getAutopilotRuns`; each To-verify row also has
-  **✧ Brief** (#134 — Gemini's reviewer brief: what shipped, test steps, risks; in-memory),
-  **⌨ Session** (opens a terminal in the project primed with the review — item, built_note and
-  verify instructions ride the board's one-shot `stack.term.brief` handoff),
-  **⎌ Undo** (#128 — confirm modal → `store.queueUndo` → a `revert` job the host dispatcher runs),
-  toggleable **annotation chips** (#146 — Fix / Needs more / Polish / Question, PATCHed whole as
-  `review_tags`; read-only in the archive), **＋ Bug / ＋ Audit** (#146 — prefill a bug ticket /
-  an audit-area roadmap item referencing the row) and **⏸ Later** (#148 — shelves the review:
-  PATCH `{review_shelved:true}` moves the row off the To-verify list into a collapsed **Shelved**
-  strip below it — same row, same actions — and ▶ To review brings it back; the Reviews badge
-  counts only the active list); Solid is the only pickable verdict — **✎ Refine**
-  (#146, replacing #141's full-rework modal) takes just the delta: PATCH `{done:false, refine_note}`
-  sends the item back as ITSELF (same id, built_note kept, verdict + claim cleared), the board card
-  shows the pending ↻ refinement, and an optional checkbox queues a pinned autopilot session via
-  `store.startAutopilot`), Futures — the **Polaris tab** (#227, from the Stack Planning design):
+  `staleItemDays`; unpark/edit/delete per row, the tab badge counts parked + stale.
+  **There is no Reviews view here any more (#282)** — verdicts, the archive and the whole review
+  pipeline moved to Mission Control's **Review room**, because the nights run across projects so
+  the morning's queue does too. A deep link that lands on a completed item shows a one-line
+  pointer to the room rather than an empty board),
+  Futures — the **Polaris tab** (#227, from the Stack Planning design):
   the collapsible **north star band** (one editable paragraph, PATCHed as `north_star`, injected
   by the SessionStart hook) over the **constellation sky** — the north star at the centre, one
   dashed ring per alignment verdict (on course 132 / tangent 224 / off course 296; unjudged
@@ -686,6 +697,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     done|failed|paused; a partial unique index on (project, night_date) makes the nightly
     enqueue idempotent. `resume` jobs (#142) carry `not_before` — GET /next skips a queued job
     until its hold passes, and a `paused` (hung-up) job is never handed out at all.
+  - `autopilot_runs` also carries **the reviewer's stored read** (#282): `review_verdict`
+    (clean | concerns | blocked | NULL), `review_note` (the reviewer's own sentence) and
+    `review_findings` (how many bugs it filed to the review inbox). The night already ran a Gemini
+    second-model review of the branch diff and wrote a verdict for the #212 auto-merge gate — and
+    then discarded it, so the morning's queue started blank. The runner now attaches it via
+    `PATCH /runs/:id` (a second, narrow write: the run row is recorded BEFORE the review so a crash
+    mid-review costs the review, never the record). NULL means **no review ran** — deliberately not
+    the same as "nothing found", and the Review room's chip says NO REVIEW rather than showing green.
   - `branch_reports` — the host dispatcher's git snapshot (#207), one row per project replaced
     whole every ~10 min: jsonb list of origin branches with ahead/behind vs main, the
     merge-tree conflict probe (`mergeClean` true|false|null) and the parsed item id, plus
@@ -1011,6 +1030,14 @@ the silent metadata backstop so the feed never has gaps.
 - `GET|POST /api/projects/:slug/autopilot/runs` (the overnight runner's ledger — one row per
   item attempt: outcome landed|no-commits|failed|limit, commits, tokens, cost, checks, the
   session's own summary; the overview's `autopilotRuns` digest reads the last 20h)
+- `GET /api/review` (#282 — the Review room's cross-project payload: the unverdicted `queue`
+  (each item with the run that built it and its stored reviewer read), the capped `settled`
+  archive, a fortnight of `nights` (runs grouped by the UTC day they finished, for the debrief)
+  and `totals` (pending / shelved / flagged / projects / settled). Three aggregate queries, never
+  one per project. READ-ONLY: every verdict still goes through the per-project roadmap routes) ·
+  `PATCH /api/projects/:slug/autopilot/runs/:id` (#282 — review fields only: `review_verdict`,
+  `review_note`, `review_findings`. Nothing else about a finished run is editable after the fact,
+  and an unrecognised verdict lands NULL rather than inventing a read nobody gave)
 - `POST /api/projects/:slug/branches` (#207 — the host dispatcher's branch report, replacing
   the project's `branch_reports` row whole; write side only, Mission Control reads it folded
   into the control payload: enriched `branches` chips (ahead/behind/mergeClean/subject/when),

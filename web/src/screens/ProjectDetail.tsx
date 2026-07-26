@@ -10,13 +10,13 @@ import {
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, convergeFutures,
   type ConvergeDraft, assistRoadmapItem,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
-  replanProject, startAutopilot, AuthError,
+  replanProject, startAutopilot, AuthError, takeReviewPrefill,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Quality } from '../detail/Quality';
-import { Roadmap, type ReviewTag } from '../detail/Roadmap';
+import { Roadmap } from '../detail/Roadmap';
 import { Futures, type Alignment } from '../detail/Futures';
 import { Notes } from '../detail/Notes';
 import { Tips } from '../detail/Tips';
@@ -166,6 +166,24 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const [editingUrl, setEditingUrl] = useState<'site' | 'repo' | null>(null);
   const [urlDraft, setUrlDraft] = useState('');
   const [actionError, setActionError] = useState('');
+
+  // #282 — the Review room's ＋ Bug / ＋ Audit. The room has no modals and no
+  // project loaded, so it stashes a prefill and opens the project; this picks it
+  // up exactly once (the same one-shot idiom as the terminal brief). Runs after
+  // mount so the modal state is live.
+  useEffect(() => {
+    const p = takeReviewPrefill(slug);
+    if (!p) return;
+    if (p.kind === 'bug') {
+      setBugModal({ open: true, title: `#${p.itemId} ${p.title}: `, fromNote: null });
+    } else {
+      setRoadModal({
+        open: true, priority: 'should', title: `Audit #${p.itemId} — ${p.title}`,
+        note: `Audit what landed for #${p.itemId}: exercise it against the item's intent and log bugs for anything off.`,
+        area: 'audit', fromNote: null, editing: null,
+      });
+    }
+  }, [slug]);
 
   const bugs = data.bugs;
   const roadmap = data.roadmap;
@@ -340,42 +358,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       closeCleanup();
     });
 
-  // Archive review: store the verdict. Solid is the only pickable one now —
-  // dissatisfaction goes through Refine (#141), not a rethink tag.
-  const reviewTagRoad = (item: RoadmapItem, tag: ReviewTag) =>
-    guard(async () => {
-      const updated = await patchRoadmapItem(slug, item.id, { review_tag: tag });
-      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
-    });
-
-  // Review annotations (#146): the chip row on a To-verify row — the whole
-  // tag list PATCHes back each time, like plan steps.
-  const reviewTagsRoad = (item: RoadmapItem, tags: string[]) =>
-    guard(async () => {
-      const updated = await patchRoadmapItem(slug, item.id, { review_tags: tags });
-      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
-    });
-
-  // Shelve a review (#148): the completed row steps out of the To-verify list
-  // onto the collapsed shelf — good enough for now, reviewed properly later.
-  // Nothing else about the item changes; the same call brings it back.
-  const shelveRoad = (item: RoadmapItem) =>
-    guard(async () => {
-      const updated = await patchRoadmapItem(slug, item.id, { review_shelved: !item.reviewShelved });
-      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
-    });
-
-  // Refine (#146, replacing #141's full rework): delta-only. The item goes
-  // back to the board as itself — the server clears the verdict and claim,
-  // keeps built_note — carrying just the refinement instruction; optionally a
-  // pinned autopilot session is queued on it straight away.
-  const refineRoad = (item: RoadmapItem, refineNote: string, queueNow: boolean) =>
-    guard(async () => {
-      const updated = await patchRoadmapItem(slug, item.id, { done: false, refine_note: refineNote });
-      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
-      if (queueNow) await startAutopilot(slug, String(item.id));
-    });
-
   // #227 — set (or clear) an item's desire tier from the Tiers view. An ordinary
   // PATCH like every other board mutation; the tier then leads the run queue in
   // the Plan room and in the overnight runner's pick.
@@ -401,17 +383,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       ? `Planning session queued for ${ids.length} item${ids.length === 1 ? '' : 's'} — the host picks it up within a minute.`
       : `This project already has an open ${job.kind} session (${job.status}); nothing new was queued. Let it finish, then push again.`;
   };
-
-  // ＋ Bug / ＋ Audit from a review row (#146): log a ticket referencing the
-  // item — the prefilled modal opens, the human finishes and saves it.
-  const logBugFromReview = (item: RoadmapItem) =>
-    setBugModal({ open: true, title: `#${item.id} ${item.title}: `, fromNote: null });
-  const logAuditFromReview = (item: RoadmapItem) =>
-    setRoadModal({
-      open: true, priority: 'should', title: `Audit #${item.id} — ${item.title}`,
-      note: `Audit what landed for #${item.id}: exercise it against the item's intent and log bugs for anything off.`,
-      area: 'audit', fromNote: null, editing: null,
-    });
 
   const toggleRoad = (item: RoadmapItem) =>
     guard(async () => {
@@ -860,9 +831,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onDiscardDraft={() => updateRoadDraft(null)}
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
-            onDelete={(it) => setConfirmRoadDelete(it)} onReviewTag={reviewTagRoad}
-            onReviewTags={reviewTagsRoad} onRefine={refineRoad} onShelve={shelveRoad}
-            onLogBug={logBugFromReview} onLogAudit={logAuditFromReview}
+            onDelete={(it) => setConfirmRoadDelete(it)}
             onToggleSkip={toggleSkipRoad} onReorder={reorderRoad} onCleanup={openCleanup}
             onDeleteArea={deleteArea} onRenameArea={renameArea}
             onSendToTerminal={(brief) => {

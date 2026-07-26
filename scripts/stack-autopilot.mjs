@@ -144,8 +144,23 @@ async function api(method, path, body) {
 // morning digest + Mission Control read it). Best effort — a failed POST only
 // costs the record, never the night.
 async function postRun(payload) {
-  try { await api('POST', `/api/projects/${SLUG}/autopilot/runs`, payload); }
-  catch (e) { log(`run record skipped (${e.message})`); }
+  try { return await api('POST', `/api/projects/${SLUG}/autopilot/runs`, payload); }
+  catch (e) { log(`run record skipped (${e.message})`); return null; }
+}
+
+// #282 — attach the reviewer's read to a run already recorded. The run row goes
+// in before the Gemini review so a crash mid-review costs only the review; this
+// is the narrow second write that stops the verdict evaporating the moment the
+// auto-merge gate has read it. Best effort, like the record itself.
+async function attachReview(runId, verdict) {
+  if (!runId || !verdict) return;
+  try {
+    await api('PATCH', `/api/projects/${SLUG}/autopilot/runs/${runId}`, {
+      review_verdict: verdict.verdict || (verdict.bugs === 0 ? 'clean' : 'concerns'),
+      review_note: verdict.summary || '',
+      review_findings: verdict.bugs ?? null,
+    });
+  } catch (e) { log(`reviewer verdict not stored (${e.message})`); }
 }
 
 // Night-end notification (#79) via ntfy.sh — free, keyless, no account: set
@@ -897,7 +912,7 @@ Rules for this run:
     log(`checks run: ${rows.length} total, ${checksFailing} failing.`);
   } catch (e) { log(`checks run skipped (${e.message})`); }
 
-  await postRun({ ...runRecord, outcome: limitHit ? 'limit' : 'landed', commits: nCommits,
+  const runRow = await postRun({ ...runRecord, outcome: limitHit ? 'limit' : 'landed', commits: nCommits,
     checks_failing: checksFailing,
     summary: (resultText || `${nCommits} commit(s) on ${branch}.`).slice(0, 1800) });
 
@@ -917,6 +932,8 @@ Rules for this run:
       reviewVerdict = JSON.parse(readFileSync(verdictFile, 'utf8'));
       rmSync(verdictFile);
     } catch { /* no verdict — treated as not-clean below */ }
+    // Keep it: the morning's review queue reads this instead of starting blank.
+    await attachReview(runRow?.id, reviewVerdict);
   }
 
   // Risk-tiered auto-merge (#212) — the graduated-trust lever. A LOW-risk item
