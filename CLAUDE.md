@@ -337,7 +337,16 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   allowance, because nothing enforces a ceiling; its two buttons (Drop to Sonnet / Advisor off)
   are real `patchSettings` writes that apply from the next session. Server side it is
   `computeFleetRoles()` in `routes/control.js` — exported and PURE (usage rows + projects + the
-  two aliases in, the `roles` block out) so it is testable without a database.
+  two aliases in, the `roles` block out) so it is testable without a database. The **throughput
+  ledger (#269) shares the attribution**: `splitRunRoles()` decides each run's roles by the same
+  alias match, so the lanes, the Roles room and the ledger can never disagree about who a model
+  was. The old highest-token heuristic survives ONLY as its fallback, for models the current
+  policy names for neither role — dropping them would quietly shrink the 14-day totals the
+  ledger exists to trend — and that share comes back as `roles.assumed`, which the rail states
+  as "N% assumed" rather than passing a partly-guessed split off as measured. (The lane and
+  fleet views deliberately do NOT use the fallback: they show an unattributed model as its own
+  slice, because reporting what is known costs them nothing. Same rule for deciding a role,
+  different handling of what the rule cannot decide.)
   Plan/Build fetch the picked project's detail
   via `getProjectDetail` (60s in-module cache). The **scheduled
   sessions** system is unchanged underneath (one-off / daily / chosen-days sessions per

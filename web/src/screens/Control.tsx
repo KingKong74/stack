@@ -1442,10 +1442,20 @@ export function ControlPanel() {
                           <span className="d flat">of {L.firstPass.verdicted}</span>
                         </div>
                       )}
-                      {/* #153's claim — cheap hands, strong minds — made measurable */}
-                      {L.roles.advisor.tokens > 0 && (
+                      {/* #153's claim — cheap hands, strong minds — made measurable.
+                          Attribution is the same alias match the Roles room and the
+                          lanes use; `assumed` is the share the fallback placed, and
+                          the tooltip says so rather than claiming a measured total. */}
+                      {L.roles.advisor.tokens > 0 && (() => {
+                        const totalTok = L.roles.executor.tokens + L.roles.advisor.tokens;
+                        const assumedTok = L.roles.assumed?.tokens ?? 0;
+                        const assumedPct = totalTok > 0 ? Math.round((assumedTok / totalTok) * 100) : 0;
+                        return (
                         <div className="mc-led-roles"
-                          title="Executor vs advisor spend over 14 days. Roles are not recorded per run, so the highest-token model in each run is taken as the executor — a heuristic, since the session's models are whatever the settings said at the time.">
+                          title={`Executor vs advisor spend over 14 days, attributed by the configured models — the same rule the Roles room and the fleet lanes use.${
+                            assumedPct > 0
+                              ? ` ${assumedPct}% of these tokens ran on a model the current policy names for neither role (usually a run from before a settings change); that share is split the old way — highest-token model as the executor — and is an assumption, not a reading.`
+                              : ' Every token here ran on a model the current policy names, so none of it is guesswork.'}`}>
                           <div className="row">
                             <span className="rl">hands</span>
                             <span className="rt">{fmtTok(L.roles.executor.tokens)}</span>
@@ -1456,8 +1466,14 @@ export function ControlPanel() {
                             <span className="rt">{fmtTok(L.roles.advisor.tokens)}</span>
                             <span className="rc">${L.roles.advisor.costUsd.toFixed(2)}</span>
                           </div>
+                          {assumedPct > 0 && (
+                            <div className="row assumed">
+                              <span className="rl">{assumedPct}% assumed</span>
+                            </div>
+                          )}
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   );
                 })()}

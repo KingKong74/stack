@@ -134,6 +134,50 @@ const catalogueLabel = (catalogue, model, fallback) => {
   return hit ? hit.label : model;
 };
 
+// One run's models, split by role — the shared attribution the throughput
+// ledger (#269) now uses too, so no two parts of Mission Control can disagree
+// about who a model was.
+//
+// The alias match above decides wherever it can. The pre-#280 heuristic —
+// highest-token model is the executor, the rest advised — survives ONLY as the
+// fallback for models the current policy names for neither role, and each such
+// model is flagged `assumed` so a caller can say how much of its split is
+// guesswork.
+//
+// The fallback has to stay, and the reason is worth stating: the policy is read
+// as it is NOW, while the ledger totals 14 days. A run from before an executor
+// change matches neither alias, and DROPPING it would quietly shrink the very
+// totals the ledger exists to trend — a silent, wrong answer. So nothing is
+// discarded; everything the policy can name is named by the policy, and the
+// remainder is split the old way and marked as assumed.
+//
+// This is deliberately NOT what the lane split (#280) and the fleet table
+// (#281) do: those show an unattributed model as its own slice, because their
+// job is to report what is known and a third bucket costs them nothing. The
+// ledger is a two-bucket total that must reconcile, so it has to place every
+// token somewhere. Same rule for deciding a role; different handling of what
+// the rule cannot decide.
+export function splitRunRoles(modelUsage, execAlias, advAlias) {
+  if (!modelUsage || typeof modelUsage !== 'object') return [];
+  const entries = Object.entries(modelUsage).map(([model, u]) => ({
+    model,
+    tokens: (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0)
+      + (Number(u.cacheReadInputTokens) || 0) + (Number(u.cacheCreationInputTokens) || 0),
+    costUsd: Number(u.costUSD) || 0,
+    role: roleOfModel(model, execAlias, advAlias),
+    assumed: false,
+  })).sort((a, b) => b.tokens - a.tokens);
+  // Sorted descending, so the first unclaimed model IS the highest-token one:
+  // with nothing claimed this reproduces the old heuristic exactly.
+  let hasExec = entries.some((e) => e.role === 'exec');
+  for (const e of entries) {
+    if (e.role) continue;
+    if (!hasExec) { e.role = 'exec'; hasExec = true; } else { e.role = 'adv'; }
+    e.assumed = true;
+  }
+  return entries;
+}
+
 
 // (#281 / design 23b) Roles across the fleet, as a PURE function of the run
 // ledger and the two configured aliases — which is what makes it testable, and
@@ -865,24 +909,27 @@ control.get('/', async (_req, res) => {
     const solid = verdicted.filter((r) => r.review_tag === 'solid').length;
 
     // Executor vs advisor spend (#153's "cheap hands, strong minds" claim,
-    // finally measurable). Roles are not recorded per run, so within each run
-    // the highest-token model is taken as the executor (it runs every turn)
-    // and the rest as advisors (consulted). Documented as a heuristic because
-    // it is one — historical runs used whatever the settings said at the time.
-    const roles = { executor: { tokens: 0, costUsd: 0 }, advisor: { tokens: 0, costUsd: 0 } };
+    // finally measurable). Attribution is `splitRunRoles` — the SAME alias
+    // match the lane split (#280) and the fleet table (#281) use, so the three
+    // views can no longer disagree about who a model was. The old highest-token
+    // heuristic remains only as the fallback for models the current policy
+    // names for neither role; `assumed` reports how much of the split rests on
+    // it, so the client can qualify the claim instead of overstating it.
+    const roles = {
+      executor: { tokens: 0, costUsd: 0 },
+      advisor: { tokens: 0, costUsd: 0 },
+      assumed: { tokens: 0, costUsd: 0 },
+    };
     for (const r of ledgerR.rows) {
-      if (!r.model_usage || typeof r.model_usage !== 'object') continue;
-      const entries = Object.entries(r.model_usage).map(([model, u]) => ({
-        model,
-        tokens: (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0)
-          + (Number(u.cacheReadInputTokens) || 0) + (Number(u.cacheCreationInputTokens) || 0),
-        costUsd: Number(u.costUSD) || 0,
-      })).sort((a, b) => b.tokens - a.tokens);
-      entries.forEach((e, i) => {
-        const bucket = i === 0 ? roles.executor : roles.advisor;
+      for (const e of splitRunRoles(r.model_usage, execAlias, advAlias)) {
+        const bucket = e.role === 'exec' ? roles.executor : roles.advisor;
         bucket.tokens += e.tokens;
         bucket.costUsd += e.costUsd;
-      });
+        if (e.assumed) {
+          roles.assumed.tokens += e.tokens;
+          roles.assumed.costUsd += e.costUsd;
+        }
+      }
     }
 
     return {

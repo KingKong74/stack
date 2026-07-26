@@ -458,9 +458,16 @@ export interface Ledger {
   // solid. Current state, so a refined-then-passed item counts — this is the
   // CEILING of the true first-pass rate.
   firstPass: { solid: number; verdicted: number };
-  // Executor vs advisor spend (#153). Roles are not recorded per run, so the
-  // highest-token model in each run is taken as the executor. A heuristic.
-  roles: { executor: { tokens: number; costUsd: number }; advisor: { tokens: number; costUsd: number } };
+  // Executor vs advisor spend (#153), attributed by the SAME alias match the
+  // lane split (#280) and the fleet table (#281) use. `assumed` is the slice
+  // the fallback placed — models the current policy names for neither role,
+  // split the old highest-token way — so the client can qualify the claim
+  // rather than present a partly-guessed total as measured.
+  roles: {
+    executor: { tokens: number; costUsd: number };
+    advisor: { tokens: number; costUsd: number };
+    assumed?: { tokens: number; costUsd: number };
+  };
 }
 
 // (#281 / design 23b) Roles across the fleet. `models` is the week per model,

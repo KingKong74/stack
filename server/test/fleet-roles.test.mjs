@@ -100,5 +100,54 @@ const noBreak = computeFleetRoles({
 check('sits out the advised/unadvised split', [noBreak.worth.advisedRuns, noBreak.worth.plainRuns], [0, 0]);
 check('but the project still counts a run', noBreak.assignments.find((a) => a.slug === 'alpha').runs, 1);
 
+
+
+// --------------------------------------------------------------------------
+// splitRunRoles — the shared attribution the throughput ledger (#269) uses.
+// Alias match first, the old highest-token heuristic only as the fallback, and
+// every token placed (the ledger is a two-bucket total that must reconcile).
+// --------------------------------------------------------------------------
+console.log('\n--- splitRunRoles (#269 attribution) ---');
+const { splitRunRoles } = await import('../src/routes/control.js');
+const roleOf = (out, model) => out.find((e) => e.model === model);
+
+{
+  // policy names both — the alias match decides, nothing is assumed
+  const out = splitRunRoles({ [SONNET]: usage(800, 0.6), [OPUS5]: usage(200, 0.4) }, 'sonnet', 'claude-opus-5');
+  check('on-policy: sonnet is exec', roleOf(out, SONNET).role, 'exec');
+  check('on-policy: opus-5 is adv', roleOf(out, OPUS5).role, 'adv');
+  check('on-policy: nothing assumed', out.some((e) => e.assumed), false);
+}
+{
+  // THE FIX: the advisor genuinely outspent the executor this run. The old
+  // heuristic called the biggest model the executor and got it backwards.
+  const out = splitRunRoles({ [OPUS5]: usage(900, 0.9), [SONNET]: usage(100, 0.1) }, 'sonnet', 'claude-opus-5');
+  check('advisor-heavy run: opus-5 still adv (heuristic would say exec)', roleOf(out, OPUS5).role, 'adv');
+  check('advisor-heavy run: sonnet still exec', roleOf(out, SONNET).role, 'exec');
+}
+{
+  // nothing matches (a run from before a policy change) — old behaviour intact
+  const out = splitRunRoles({ [HAIKU]: usage(900, 0.9), ['claude-opus-4-1-20250101']: usage(100, 0.1) }, 'sonnet', 'claude-opus-5');
+  check('off-policy: highest-token is exec', roleOf(out, HAIKU).role, 'exec');
+  check('off-policy: the rest are adv', roleOf(out, 'claude-opus-4-1-20250101').role, 'adv');
+  check('off-policy: both flagged assumed', out.every((e) => e.assumed), true);
+}
+{
+  // executor on the CLI default: the advisor is named, the rest inferred
+  const out = splitRunRoles({ [SONNET]: usage(800, 0.6), [OPUS5]: usage(200, 0.4) }, '', 'claude-opus-5');
+  check('CLI-default exec: opus-5 named adv', roleOf(out, OPUS5).assumed, false);
+  check('CLI-default exec: sonnet assumed exec', [roleOf(out, SONNET).role, roleOf(out, SONNET).assumed], ['exec', true]);
+}
+{
+  // every token lands in a bucket — the ledger total must reconcile
+  const mu = { [SONNET]: usage(500, 0.5), [HAIKU]: usage(400, 0.4), [OPUS5]: usage(100, 0.1) };
+  const out = splitRunRoles(mu, 'sonnet', 'claude-opus-5');
+  const placed = out.reduce((n, e) => n + e.tokens, 0);
+  check('nothing is dropped', placed, 1000);
+  check('all roles assigned', out.every((e) => e.role === 'exec' || e.role === 'adv'), true);
+  check('unclaimed haiku goes to adv (exec already named)', roleOf(out, HAIKU).role, 'adv');
+}
+check('no model_usage yields nothing', splitRunRoles(null, 'sonnet', 'claude-opus-5'), []);
+
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);
