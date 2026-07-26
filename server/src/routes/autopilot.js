@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { relativeTime } from '../util.js';
+import { runCore } from '../shape.js';
 import { readSettings, cleanAutopilotTime } from '../settings.js';
 
 // Mounted at /api/projects/:slug/autopilot — the overnight runner's history.
@@ -33,26 +34,15 @@ export function runShape(r) {
     branch: r.branch || '',
     outcome: r.outcome,
     commits: r.commits,
-    tokens: Number(r.tokens) || 0,
-    costUsd: Number(r.cost_usd) || 0,
-    checksFailing: r.checks_failing,
-    summary: r.summary || '',
+    // What the run produced, plus both second-model reads (#282/#284) — one
+    // shared shape in shape.js, since four routes serve these same columns.
+    ...runCore(r),
     // Per-model breakdown (#167): { "<model>": { inputTokens, outputTokens, costUSD } }
     // Present only on dual-model sessions; null for single-model or legacy rows.
     modelUsage: r.model_usage || null,
     // Named tmux session (#171): set when the run was started inside a tmux session
     // so the web terminal can re-attach for live monitoring while the run is active.
     tmuxSession: r.tmux_session || null,
-    // The reviewer's stored read (#282): clean | concerns | blocked, or '' when
-    // no review ran (keyless, no diff, or a row predating the column). The
-    // Review room shows a change pre-verdicted; the human still decides.
-    reviewVerdict: r.review_verdict || '',
-    reviewNote: r.review_note || '',
-    reviewFindings: r.review_findings ?? null,
-    // #284 — the architect's structural read, beside the reviewer's correctness one.
-    architectVerdict: r.architect_verdict || '',
-    architectNote: r.architect_note || '',
-    architectObs: Array.isArray(r.architect_obs) ? r.architect_obs : [],
     when: relativeTime(r.finished_at) || 'just now',
     finishedAt: r.finished_at,
   };

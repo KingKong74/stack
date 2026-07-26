@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { relativeTime, computeProgress, PRESENCE_TTL_MINUTES } from '../util.js';
 import { readSettings, EXECUTOR_CATALOGUE, ADVISOR_CATALOGUE } from '../settings.js';
+import { runCore } from '../shape.js';
 import { termAgentConnected, termSessions, termDetached, termPlanUsage } from '../term.js';
 import { geminiEnabled } from '../gemini.js';
 import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
@@ -522,32 +523,16 @@ control.get('/', async (_req, res) => {
       name: r.project_name,
       itemId: r.item_id != null ? String(r.item_id) : null,
       itemTitle: r.item_title || '',
-      outcome: r.outcome,
-      // (#286) What the run produced, for the night debrief. `verdict` is the
-      // item's CURRENT review_tag — '' means nobody has dispositioned it yet,
-      // which is exactly what the debrief asks you to do.
-      branch: r.branch || '',
-      commits: Number(r.commits) || 0,
-      summary: r.summary || '',
-      checksFailing: r.checks_failing == null ? null : Number(r.checks_failing),
+      // (#286) What the run produced plus both second-model reads (#282/#284) —
+      // the shared shape from shape.js. It supplies outcome, tokens and costUsd.
+      ...runCore(r),
+      // The ITEM's current verdict, which is a different thing from the
+      // reviewer's: '' means nobody has dispositioned it yet, and that is
+      // exactly what the debrief asks you to do.
       verdict: r.review_tag || '',
       itemDone: !!r.item_done,
-      // (#282) The REVIEWER's stored read on this run — kept since #282 rather
-      // than discarded after the auto-merge gate. '' = no review ran (keyless,
-      // no diff, or a pre-#282 row); deliberately NOT "nothing found".
-      reviewVerdict: r.review_verdict || '',
-      reviewNote: r.review_note || '',
-      reviewFindings: r.review_findings == null ? null : Number(r.review_findings),
-      // (#284) The ARCHITECT's structural read, beside the reviewer's. Separate
-      // because a change can be correct and still drift — collapsing them would
-      // hide exactly that. '' = no pass ran; it files nothing and closes nothing.
-      architectVerdict: r.architect_verdict || '',
-      architectNote: r.architect_note || '',
-      architectObs: Array.isArray(r.architect_obs) ? r.architect_obs : [],
       day: new Date(r.finished_at).toISOString().slice(0, 10),
       when: relativeTime(r.finished_at) || 'just now',
-      tokens: Number(r.tokens) || 0,
-      costUsd: Number(r.cost_usd) || 0,
       models: r.model_usage && typeof r.model_usage === 'object'
         ? Object.entries(r.model_usage).map(([model, u]) => ({
             model,

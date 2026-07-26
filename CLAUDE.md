@@ -788,7 +788,19 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   whitespace stripped), `relativeTime`, palettes, **`computeProgress` — the one documented progress
   model** (see below), and **`STALE_DAYS`** — the single knob for the command deck's stale threshold
   (default 14; the only place to change it).
-- `shape.js` — row → client-shape mappers (bug/roadmap/note/activity/project). The detail shape also
+- `shape.js` — row → client-shape mappers (bug/roadmap/note/activity/project), plus the **run
+  ledger's shared shapes**: `runCore(row)` (what a run produced — branch, outcome, commits,
+  tokens, costUsd, checksFailing, summary) and `agentReads(row)` (both second-model reads —
+  #282's reviewer and #284's architect). Four routes serve `autopilot_runs` rows — the job
+  ledger (`autopilot.js`), the Review room's queue AND its nights list (`review.js`), and
+  Mission Control's `recentRuns` (`control.js`) — and each had grown its own copy, drifting on
+  the coercions that matter: **BIGINT and NUMERIC come back as STRINGS**, so `tokens`/`cost_usd`
+  need `Number()`, while INT columns only need their null preserved. The split is deliberate:
+  `runCore` needs the columns under their own names, so it does not fit the Review room's item
+  query where the run is LEFT JOINed and wears `run_` aliases; `agentReads` uses columns that are
+  never aliased and so fits all four. Both encode the rule that '' means **no pass ran** — not
+  "nothing found". Pinned by `server/test/run-shape.test.mjs`, which keeps the original
+  hand-rolled copies transcribed so the equivalence stays checkable. The detail shape also
   carries `keepResumeCard` (the global flag) so the detail Overview hides its resume card cleanly,
   and `sessionDefaults` (the rendered standing-preference lines) for the SessionStart hook.
 - `settings.js` — the single-row settings: `readSettings(client?)` (accepts a txn client; defaults on
@@ -1213,6 +1225,7 @@ node scripts/stack-context.mjs --slug stack --api https://stack.your-domain  # e
 ./stack tree                               # the branch navigator (also --repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
 node server/test/fleet-roles.test.mjs      # #281's role attribution + drift detection (pure, no DB)
+node server/test/run-shape.test.mjs        # the run ledger's shared shapes still match the old copies
 ./stack start-session [slug] [--item N]    # start an automation session (▶ Run now from the terminal)
 ./stack list-sessions                      # the automation job queue (also [slug], --limit, --json)
 ./stack term [dir]                         # claude in a stack-term tmux session (laptop/ssh — shows on

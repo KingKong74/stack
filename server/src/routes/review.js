@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { relativeTime } from '../util.js';
+import { agentReads, runCore } from '../shape.js';
 
 // GET /api/review — the Review room's payload (#282, design 24b + 24a).
 //
@@ -68,13 +69,11 @@ function itemShape(row) {
       costUsd: Number(row.run_cost) || 0,
       checksFailing: row.run_checks,
       summary: row.run_summary || '',
-      reviewVerdict: row.review_verdict || '',
-      reviewNote: row.review_note || '',
-      reviewFindings: row.review_findings ?? null,
-      // #284 — the architect's structural read, beside the reviewer's.
-      architectVerdict: row.architect_verdict || '',
-      architectNote: row.architect_note || '',
-      architectObs: Array.isArray(row.architect_obs) ? row.architect_obs : [],
+      // Both second-model reads (#282/#284), shaped once in shape.js. The run's
+      // own columns wear `run_` aliases here (it is LEFT JOINed beside the item,
+      // so `branch` and `summary` would collide) — the agent columns are not
+      // aliased, so this half of the shape is shared and the rest is local.
+      ...agentReads(row),
       when: relativeTime(row.run_finished) || '',
       finishedAt: row.run_finished,
     } : null,
@@ -132,19 +131,7 @@ review.get('/', async (req, res) => {
       id: Number(r.id),
       itemId: r.item_id != null ? String(r.item_id) : '',
       itemTitle: r.item_title || '',
-      branch: r.branch || '',
-      outcome: r.outcome,
-      commits: r.commits || 0,
-      tokens: Number(r.tokens) || 0,
-      costUsd: Number(r.cost_usd) || 0,
-      checksFailing: r.checks_failing,
-      summary: r.summary || '',
-      reviewVerdict: r.review_verdict || '',
-      reviewNote: r.review_note || '',
-      reviewFindings: r.review_findings ?? null,
-      architectVerdict: r.architect_verdict || '',
-      architectNote: r.architect_note || '',
-      architectObs: Array.isArray(r.architect_obs) ? r.architect_obs : [],
+      ...runCore(r),
       // The UTC calendar day the run finished — the client groups nights on it,
       // the same convention Mission Control's week strip already uses.
       day: r.finished_at ? new Date(r.finished_at).toISOString().slice(0, 10) : '',

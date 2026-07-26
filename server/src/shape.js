@@ -217,3 +217,55 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, acti
     checks: checks || [],
   };
 }
+
+// ---- the run ledger's shared shapes --------------------------------------
+// Four places read an `autopilot_runs` row and hand it to a client: the job
+// ledger (routes/autopilot.js), the Review room's queue and its nights list
+// (routes/review.js), and Mission Control's recentRuns (routes/control.js).
+// They had each grown their own copy, and the copies had already drifted on
+// the numeric coercions — which matters, because node-postgres returns BIGINT
+// and NUMERIC as STRINGS. `tokens` and `cost_usd` must go through Number();
+// INT columns (commits, checks_failing, review_findings) arrive as numbers and
+// only need their null preserved.
+//
+// Split in two on purpose. `runCore` needs the columns under their own names,
+// so it does not fit the Review room's item query, where the run is LEFT
+// JOINed alongside the item and its columns wear `run_` aliases to avoid
+// colliding with the item's. `agentReads` uses columns that are never aliased,
+// so it fits all four — and the agent reads were the actual duplication.
+
+// The two second-model reads stored on a run. Both follow the same rule, and
+// it is the reason they are worth centralising: '' means NO PASS RAN — keyless,
+// no diff, or a row predating the column — which is deliberately NOT the same
+// as "it looked and found nothing". Every caller must preserve that distinction,
+// so it is encoded once here rather than restated at four call sites.
+export function agentReads(r) {
+  return {
+    // #282 — the reviewer: is this change correct? clean | concerns | blocked
+    reviewVerdict: r.review_verdict || '',
+    reviewNote: r.review_note || '',
+    reviewFindings: r.review_findings ?? null,
+    // #284 — the architect: where does this take the codebase?
+    // aligned | drifting | concerning. It files nothing and closes nothing.
+    architectVerdict: r.architect_verdict || '',
+    architectNote: r.architect_note || '',
+    architectObs: Array.isArray(r.architect_obs) ? r.architect_obs : [],
+  };
+}
+
+// What a run produced, for callers that select the run's columns unaliased.
+// Callers spread this and add their own identity/time fields, which differ:
+// the ledger carries model usage and the tmux session, the nights list carries
+// the project, recentRuns carries the UTC day and the item's verdict.
+export function runCore(r) {
+  return {
+    branch: r.branch || '',
+    outcome: r.outcome,
+    commits: r.commits || 0,
+    tokens: Number(r.tokens) || 0,       // BIGINT → string from node-postgres
+    costUsd: Number(r.cost_usd) || 0,    // NUMERIC → string
+    checksFailing: r.checks_failing ?? null,
+    summary: r.summary || '',
+    ...agentReads(r),
+  };
+}
