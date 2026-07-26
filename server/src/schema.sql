@@ -503,9 +503,9 @@ ALTER TABLE checks ADD COLUMN IF NOT EXISTS json_expect TEXT;
 -- runs unauthenticated rather than leaking the token to a third-party URL.
 ALTER TABLE checks ADD COLUMN IF NOT EXISTS auth BOOLEAN NOT NULL DEFAULT false;
 
--- Audit tab run history: one row per Run-all (or run-one) of a project's
--- checks — the dashboard's trend strip and last-run stats read from it.
--- Summary only; per-check results stay on the checks rows themselves.
+-- Quality tab run history: one row per Run-all (or run-one) of a project's
+-- checks — the health card's pass-rate trend and the History ledger read from
+-- it. Summary only; the per-check grain lives in check_results below.
 CREATE TABLE IF NOT EXISTS check_runs (
   id          SERIAL PRIMARY KEY,
   project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -517,6 +517,31 @@ CREATE TABLE IF NOT EXISTS check_runs (
   run_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_check_runs_project ON check_runs (project_id, run_at DESC);
+
+-- #279 — each check's OWN history: one row per check per run. The checks row
+-- carries only the latest result, and check_runs only per-run totals, so
+-- "this has been flaky for a week" used to be unanswerable — a red light with
+-- no diagnosis. These rows are what let the Quality page sparkline a check,
+-- say "failed 4 of the last 6 runs", and separate a fresh regression from a
+-- long-standing failure.
+--   • Written best-effort inside the run, one statement for the whole batch.
+--   • Capped per check (util.CHECK_HISTORY_KEEP) by a prune right after the
+--     insert, so 30 checks × nightly runs cannot grow without bound.
+--   • run_id is nullable on purpose: a run-one still records its result even
+--     though the summary row is written after the probes.
+CREATE TABLE IF NOT EXISTS check_results (
+  id         SERIAL PRIMARY KEY,
+  check_id   INTEGER NOT NULL REFERENCES checks(id) ON DELETE CASCADE,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  run_id     INTEGER REFERENCES check_runs(id) ON DELETE SET NULL,
+  status     TEXT NOT NULL,                             -- pass | fail
+  code       INTEGER,
+  ms         INTEGER,
+  error      TEXT,
+  run_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_check_results_check ON check_results (check_id, run_at DESC);
+CREATE INDEX IF NOT EXISTS idx_check_results_project ON check_results (project_id, run_at DESC);
 
 -- Branch report (#207): the host dispatcher's git snapshot per project — every
 -- origin branch with ahead/behind counts vs origin/main, a merge-tree conflict
@@ -599,3 +624,15 @@ BEGIN
     UPDATE settings SET tips_seeded = true WHERE id;
   END IF;
 END $$;
+
+-- (#270) Dispatcher heartbeat — the host's every-minute GET /next poll stamps
+-- this singleton. Freshness is the ONLY honest signal that the automation loop
+-- is alive: the arm switch says what should happen, the heartbeat says whether
+-- anything is asking. A dispatcher that stopped polling (cron removed, host
+-- rebooted, node missing) must not read as calm on Mission Control.
+CREATE TABLE IF NOT EXISTS dispatcher_heartbeat (
+  id           BOOLEAN PRIMARY KEY DEFAULT true CHECK (id),
+  last_poll_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  host_local   TEXT NOT NULL DEFAULT ''   -- the host clock the dispatcher reported
+);
+INSERT INTO dispatcher_heartbeat (id) VALUES (true) ON CONFLICT (id) DO NOTHING;

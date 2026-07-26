@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Bug, BugStatus, Check, CheckMethod, CheckRun, Severity } from '../types';
-import { getCheckRuns, type CheckInput, type AuditResult } from '../store';
+import type { Bug, BugStatus, Check, CheckHistory, CheckMethod, CheckResult, CheckRun, Severity } from '../types';
+import { getCheckHistory, getCheckRuns, type CheckInput, type AuditResult } from '../store';
 import { STATUS_LABEL } from '../lib/ui';
 
 // The Quality page (#278, design 20b) — Bugs and Audit merged into one card grid.
@@ -54,6 +54,66 @@ function assertLabel(c: Check) {
   if (c.jsonPath) return { text: c.jsonPath + (c.jsonExpect ? ` = ${c.jsonExpect}` : ''), ai: false };
   if (c.contains) return { text: `"${c.contains}"`, ai: false };
   return { text: `status ${c.expectStatus}`, ai: false };
+}
+
+// ---- #279: what a check remembers ---------------------------------------
+//
+// A check used to have a result but no memory, so a red light carried no
+// diagnosis: a fresh regression and a fortnight of failure looked identical.
+// These stats turn the same rows into the sentence you actually want — "failed
+// 4 of the last 6 runs" — and they only ever claim what the window holds.
+
+type HistoryStats = {
+  n: number;            // results in the window
+  fails: number;
+  streak: number;       // leading runs sharing the newest result's status
+  flaky: boolean;       // both outcomes inside the window
+  diagnosis: string;    // plain language, '' when there's nothing to say
+};
+
+const NO_HISTORY: HistoryStats = { n: 0, fails: 0, streak: 0, flaky: false, diagnosis: '' };
+
+function readHistory(results: CheckResult[] | undefined): HistoryStats {
+  if (!results?.length) return NO_HISTORY;
+  const n = results.length;
+  const fails = results.filter((r) => r.status === 'fail').length;
+  const newest = results[0].status;
+  let streak = 0;
+  while (streak < n && results[streak].status === newest) streak += 1;
+  const flaky = fails > 0 && fails < n;
+
+  // One run is not a trend — say nothing rather than dress it up.
+  let diagnosis = '';
+  if (n >= 2) {
+    if (newest === 'fail') {
+      diagnosis = streak === n ? `red every one of the last ${n} runs`
+        : streak === 1 ? `first failure in ${n} runs`
+          : `failed ${fails} of the last ${n} runs`;
+    } else if (fails > 0) {
+      diagnosis = streak === n ? '' // impossible with fails > 0, but keeps the branch honest
+        : `green again — failed ${fails} of the last ${n} runs`;
+    }
+  }
+  return { n, fails, streak, flaky, diagnosis };
+}
+
+// The sparkline: one bar per run, oldest → newest. Colour is the outcome;
+// height is that run's latency against the slowest in the window, so a check
+// that is passing but getting slower reads as such BEFORE it goes red.
+function Spark({ results, width }: { results: CheckResult[] | undefined; width?: number }) {
+  if (!results || results.length < 2) return null;
+  const window = results.slice(0, 14).reverse();
+  const slowest = Math.max(...window.map((r) => r.ms ?? 0), 1);
+  const stats = readHistory(results);
+  return (
+    <span className="q-spark" style={width ? { width } : undefined}
+      title={`${stats.n} runs · ${stats.fails} red${stats.diagnosis ? ` · ${stats.diagnosis}` : ''}`}>
+      {window.map((r, i) => (
+        <span key={i} className={r.status === 'fail' ? 'bad' : 'good'}
+          style={{ height: `${Math.max(20, Math.round(((r.ms ?? 0) / slowest) * 100))}%` }} />
+      ))}
+    </span>
+  );
 }
 
 // ---- the health read: one verdict over checks AND bugs -------------------
@@ -120,7 +180,7 @@ function readHealth(checks: Check[], bugs: Bug[], linkedRed: boolean): Health {
 
 // ---- health band + KPI cards --------------------------------------------
 
-function HealthBand({ health, runs }: { health: Health; runs: CheckRun[] }) {
+function HealthBand({ health, runs, detail }: { health: Health; runs: CheckRun[]; detail: string }) {
   // Full Run-alls only, oldest → newest: a run-one would read as a false dip.
   const trend = runs.filter((r) => r.scope === 'all').slice(0, 30).reverse();
   return (
@@ -128,6 +188,8 @@ function HealthBand({ health, runs }: { health: Health; runs: CheckRun[] }) {
       <span className="q-eyebrow">HEALTH</span>
       <span className="q-verdict">{health.label}</span>
       <span className="q-why">{health.why}</span>
+      {/* #279 — what the checks REMEMBER, not just what they say right now. */}
+      {detail && <span className="q-why-more">{detail}</span>}
       {trend.length > 1 && (
         <div className="q-trend" title="Pass rate — one bar per Run all, oldest to newest">
           {trend.map((r) => (
@@ -258,9 +320,9 @@ type NeedsRow =
   | { kind: 'bug'; bug: Bug; check: Check | null };
 
 function NeedsYou({
-  rows, busy, onRunFailing, onRunOne, onFileBug, onSetStatus, onJump, highlightId,
+  rows, busy, history, onRunFailing, onRunOne, onFileBug, onSetStatus, onJump, highlightId,
 }: {
-  rows: NeedsRow[]; busy: boolean;
+  rows: NeedsRow[]; busy: boolean; history: CheckHistory;
   onRunFailing: () => void; onRunOne: (id: number) => void;
   onFileBug: (c: Check) => void; onSetStatus: (b: Bug, s: BugStatus) => void;
   onJump: (kind: 'check' | 'bug', id: string) => void; highlightId?: string | null;
@@ -292,8 +354,15 @@ function NeedsYou({
                     title="The bug filed from this check">↳ {r.bug.id} {r.bug.status}</button>
                 )}
               </div>
-              <span className="q-row-sub bad">{failSignature(r.check)}{r.check.lastStatus ? ` · ${r.check.when}` : ''}</span>
+              <span className="q-row-sub bad">
+                {failSignature(r.check)}{r.check.lastStatus ? ` · ${r.check.when}` : ''}
+                {/* #279 — is this new, or has it been broken all week? */}
+                {readHistory(history[r.check.id]).diagnosis && (
+                  <span className="q-diag"> · {readHistory(history[r.check.id]).diagnosis}</span>
+                )}
+              </span>
             </div>
+            <Spark results={history[r.check.id]} width={54} />
             <div className="q-row-acts">
               {wantsBug(r.bug) && <button className="q-act red" onClick={() => onFileBug(r.check)}>→ Bug</button>}
               <button className="q-act" disabled={busy} onClick={() => onRunOne(r.check.id)}>▸ re-run</button>

@@ -1,5 +1,5 @@
 import type {
-  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, Overview,
+  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Tip,
 } from './types';
@@ -380,10 +380,35 @@ export interface FleetSlot {
   tmux: string;
 }
 
+// (#270) Loud idle — the honest reason the fleet is or is not running, resolved
+// server-side most-fundamental-first. `tone` drives the colour; `fix` is the
+// one-click remedy where one exists; `hint` is the host-side instruction when
+// it doesn't. 'dispatcher-silent' outranks everything: if nobody is polling,
+// no amount of correct configuration matters.
+export type FleetStatusCode =
+  | 'dispatcher-silent' | 'working' | 'disarmed' | 'no-automode'
+  | 'paused' | 'nothing-eligible' | 'waiting';
+
+export interface FleetStatus {
+  code: FleetStatusCode;
+  tone: 'good' | 'warn' | 'bad';
+  text: string;
+  hint: string;
+  fix: { kind: 'arm' | 'resume' | 'plan'; label: string } | null;
+}
+
 export interface ControlData {
   // (#268) The fleet: how many workers the host may run at once, and what each
   // busy one holds. Slots below capacity are idle — the strip renders them.
-  fleet?: { capacity: number; slots: FleetSlot[] };
+  // (#270) …plus why it is or is not running, and the dispatcher's pulse.
+  fleet?: {
+    capacity: number;
+    slots: FleetSlot[];
+    status?: FleetStatus;
+    // ageSec null = no heartbeat recorded (a pre-#270 server) — reads as
+    // unknown, never as silent.
+    heartbeat?: { ageSec: number | null; silent: boolean; hostLocal: string };
+  };
   autopilot: {
     enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number;
     executorModel: string;  // '' = the claude CLI's default model (#153)
@@ -1019,9 +1044,16 @@ export async function deleteCheck(slug: string, id: number): Promise<void> {
 export async function runChecks(slug: string, id?: number): Promise<Check[]> {
   return request<Check[]>(`${checksBase(slug)}/run`, { method: 'POST', body: id ? { id } : {} });
 }
-// The run history, newest first — the Audit dashboard's trend strip.
+// The run history, newest first — the Quality page's pass-rate trend + ledger.
 export async function getCheckRuns(slug: string, limit = 40): Promise<CheckRun[]> {
   return request<CheckRun[]>(`${checksBase(slug)}/runs?limit=${limit}`);
+}
+// #279 — each check's own last N results, keyed by check id, newest first. One
+// query behind one fetch; the Suite sparklines and the red-row diagnosis are
+// both derived from it client-side. An older server 404s → an empty history,
+// which every consumer already reads as "no memory yet".
+export async function getCheckHistory(slug: string, limit = 20): Promise<CheckHistory> {
+  return request<CheckHistory>(`${checksBase(slug)}/history?limit=${limit}`);
 }
 
 // #260 — how many sessions the Plan room assumes you run in parallel. A
