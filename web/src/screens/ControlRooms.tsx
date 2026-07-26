@@ -43,12 +43,97 @@ function useProjectDetail(slug: string) {
   return { detail, err };
 }
 
+// (#271) Several projects' details at once — the whole-house view. Shares the
+// same cache as useProjectDetail, so switching between All and a single
+// project is free. Fetches are issued together and land as they arrive, so a
+// slow project never blocks the rest of the board from rendering.
+function useProjectDetails(slugs: string[]) {
+  const key = slugs.join(',');
+  const [details, setDetails] = useState<Map<string, ProjectDetailData>>(new Map());
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    let alive = true;
+    const seed = new Map<string, ProjectDetailData>();
+    for (const s of slugs) {
+      const hit = detailCache.get(s);
+      if (hit) seed.set(s, hit.data);
+    }
+    setDetails(seed);
+    setErr('');
+    const stale = slugs.filter((s) => {
+      const hit = detailCache.get(s);
+      return !hit || Date.now() - hit.at >= 60_000;
+    });
+    for (const s of stale) {
+      getProjectDetail(s)
+        .then((d) => {
+          detailCache.set(s, { data: d, at: Date.now() });
+          if (alive) setDetails((m) => new Map(m).set(s, d));
+        })
+        // One unreachable project must not blank the whole house — the others
+        // still render and the error names which one is missing.
+        .catch((e) => { if (alive) setErr((e as Error)?.message || `Could not load ${s}.`); });
+    }
+    return () => { alive = false; };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return { details, err };
+}
+
+// (#271) A cross-project row: the item plus which project it belongs to. The
+// tint carries the identity everywhere the whole house is on screen.
+// `rank` is the item's place in ITS OWN project's board order (the client
+// shape carries no `position` — board order is the array order the API
+// returns), which is what breaks ties inside a project once tier and bucket
+// have had their say.
+type HouseItem = {
+  it: RoadmapItem; slug: string; name: string; tint: string | null; area: string; rank: number;
+};
+
+// Merge every project's schedulable work into ONE queue in the order the fleet
+// would actually work it: desire tier first (#227), then must before should,
+// then each project's own board order. Cross-project ties break by project name
+// so the list is stable between loads rather than reshuffling on fetch order.
+function houseQueue(
+  data: ControlData, details: Map<string, ProjectDetailData>,
+): { queue: HouseItem[]; held: HouseItem[] } {
+  const queue: HouseItem[] = [];
+  const held: HouseItem[] = [];
+  for (const p of data.projects) {
+    const d = details.get(p.slug);
+    if (!d) continue;
+    const area = p.autopilotArea || '';
+    const all = [...d.roadmap.must, ...d.roadmap.should, ...d.roadmap.could, ...d.roadmap.wont];
+    all.forEach((it, rank) => {
+      const row = { it, slug: p.slug, name: p.name, tint: p.tint, area, rank };
+      if (schedulable(it, area)) queue.push(row);
+      else if (!it.done
+        && !(it.source === 'hook' && !it.reviewed && (it.bucket === 'must' || it.bucket === 'should'))) {
+        held.push(row);
+      }
+    });
+  }
+  queue.sort((a, b) =>
+    tierRank(a.it.tier) - tierRank(b.it.tier)
+    || (a.it.bucket === b.it.bucket ? 0 : a.it.bucket === 'must' ? -1 : 1)
+    || a.rank - b.rank
+    || a.name.localeCompare(b.name));
+  return { queue, held };
+}
+
 // The Plan/Build project picker — automode projects lead (payload order).
+// '' is the whole house (#271): the picked project is a FILTER, not a
+// requirement, so All leads the list and is the default.
 function ProjectPicker({ data, pickSlug, onPick }: {
   data: ControlData; pickSlug: string; onPick: (slug: string) => void;
 }) {
   return (
     <div className="mc14-picker" role="tablist" aria-label="Project">
+      <button role="tab" aria-selected={pickSlug === ''}
+        className={`mc14-pick-chip all ${pickSlug === '' ? 'on' : ''}`}
+        title="Every project at once — the whole house"
+        onClick={() => onPick('')}>
+        ⌂ All projects
+      </button>
       {data.projects.map((p) => (
         <button key={p.slug} role="tab" aria-selected={p.slug === pickSlug}
           className={`mc14-pick-chip ${p.slug === pickSlug ? 'on' : ''}`}
@@ -80,8 +165,9 @@ const scheduleWhen = (s: { days: number[]; runDate: string | null; atTime: strin
   return `${s.days.map((d) => DAY_LABELS[d]).join(' ')} · ${s.atTime}`;
 };
 
-export function NightsRoom({ data, onOpenPlanner, onRunNow, onToggleSchedule, onRemoveSchedule }: {
+export function NightsRoom({ data, pickSlug, onPick, onOpenPlanner, onRunNow, onToggleSchedule, onRemoveSchedule }: {
   data: ControlData;
+  pickSlug: string; onPick: (slug: string) => void;
   onOpenPlanner: (row: AutopilotSchedule | null) => void;
   onRunNow: (slug: string) => void;
   onToggleSchedule: (id: string, enabled: boolean) => void;
@@ -101,10 +187,14 @@ export function NightsRoom({ data, onOpenPlanner, onRunNow, onToggleSchedule, on
   const runs = data.usage?.recentRuns ?? [];
 
   // Rows: any project the week actually touches — automode, a schedule, or a run.
-  const rows = data.projects.filter((p) =>
+  // (#271) The picked project narrows the lanes to one; '' shows the house.
+  // The filter is applied last so the "no nights yet" empty state still means
+  // the week is genuinely empty, not that the filter hid everything.
+  const weekRows = data.projects.filter((p) =>
     p.automode
     || data.schedules.some((s) => s.slug === p.slug)
     || runs.some((r) => r.slug === p.slug));
+  const rows = pickSlug ? weekRows.filter((p) => p.slug === pickSlug) : weekRows;
 
   const cellFor = (slug: string, d: Date): NightCell => {
     const date = fmtDate(d);
@@ -135,6 +225,7 @@ export function NightsRoom({ data, onOpenPlanner, onRunNow, onToggleSchedule, on
 
   return (
     <div className="mc14-nights">
+      <ProjectPicker data={data} pickSlug={pickSlug} onPick={onPick} />
       <div className="mc14-room-head">
         <span className="title">Nights</span>
         <span className="meta">{fmtDate(days[0]).slice(5)} → {fmtDate(days[6]).slice(5)}</span>
@@ -147,7 +238,11 @@ export function NightsRoom({ data, onOpenPlanner, onRunNow, onToggleSchedule, on
       </div>
 
       {rows.length === 0 ? (
-        <div className="mc14-empty">No nights yet — flip a project onto automode, or plan a session, and the week fills in.</div>
+        <div className="mc14-empty">
+          {weekRows.length > 0
+            ? 'Nothing this week for the project you picked — ⌂ All projects shows the rest of the house.'
+            : 'No nights yet — flip a project onto automode, or plan a session, and the week fills in.'}
+        </div>
       ) : (
         <>
           <div className="mc14-cal-days">
@@ -355,7 +450,244 @@ type PlanProposal =
   | { key: string; kind: 'cleanup'; s: RoadmapCleanupSuggestion };
 type Settled = { note: string; undo?: () => void };
 
+// ---------------------------------------------------------------------------
+// (#271) Plan, whole house. Three projects exist and the schedule was only ever
+// single-project-picked; a director's chair should show them all.
+//
+// This is deliberately a READ view of the run queue rather than the editing
+// surface. Board order is what the runner reads, and `position` is per project
+// — there is no cross-project position to save, so a cross-project drag would
+// be a promise the data cannot keep. The merged queue tells you honestly what
+// the fleet works next and on which night; reordering stays where it means
+// something, behind a project chip.
+// ---------------------------------------------------------------------------
+function AllPlanQueue({ data, onPick, onSetMaxItems }: {
+  data: ControlData; onPick: (slug: string) => void; onSetMaxItems: (n: number) => void;
+}) {
+  const slugs = useMemo(() => data.projects.map((p) => p.slug), [data.projects]);
+  const { details, err } = useProjectDetails(slugs);
+  const [lanes, setLanes] = useState<number>(() => getPlanLanes());
+  const [heldAll, setHeldAll] = useState(false);
+  const [settled, setSettled] = useState<Map<string, string>>(new Map());
+  const [roomErr, setRoomErr] = useState('');
+
+  const { queue, held: heldAllItems } = houseQueue(data, details);
+  const cap = data.autopilot.maxItems === 0 ? Infinity : Math.max(1, data.autopilot.maxItems);
+  const perNight = cap === Infinity ? Infinity : cap * lanes;
+  const nightOf = (idx: number) => (perNight === Infinity ? 0 : Math.floor(idx / perNight));
+
+  // Found items across every project — the same inbox, house-wide.
+  const found: HouseItem[] = [];
+  for (const p of data.projects) {
+    const d = details.get(p.slug);
+    if (!d) continue;
+    [...d.roadmap.must, ...d.roadmap.should, ...d.roadmap.could, ...d.roadmap.wont].forEach((it, rank) => {
+      if (it.source === 'hook' && !it.reviewed && !it.done && !settled.has(`${p.slug}#${it.id}`)) {
+        found.push({ it, slug: p.slug, name: p.name, tint: p.tint, area: p.autopilotArea || '', rank });
+      }
+    });
+  }
+
+  const settle = (slug: string, id: number, note: string) =>
+    setSettled((m) => new Map(m).set(`${slug}#${id}`, note));
+  const accept = async (r: HouseItem) => {
+    settle(r.slug, r.it.id, 'kept');
+    try {
+      await patchRoadmapItem(r.slug, r.it.id, { reviewed: true });
+      detailCache.delete(r.slug);
+    } catch (e) { setRoomErr((e as Error)?.message || 'Could not accept the item.'); }
+  };
+  const dismiss = async (r: HouseItem) => {
+    settle(r.slug, r.it.id, 'dismissed');
+    try {
+      await deleteRoadmapItem(r.slug, r.it.id);
+      detailCache.delete(r.slug);
+    } catch (e) { setRoomErr((e as Error)?.message || 'Could not dismiss the item.'); }
+  };
+
+  const lastNight = (pred: (r: HouseItem) => boolean) => {
+    let last = -1;
+    queue.forEach((r, i) => { if (pred(r)) last = i; });
+    return last < 0 ? null : nightOf(last);
+  };
+  const milestones = [
+    { name: 'musts land', night: lastNight((r) => r.it.bucket === 'must') },
+    { name: 'the house clears', night: lastNight(() => true) },
+  ];
+
+  const HELD_FOLD = 8;
+  const shownHeld = heldAll ? heldAllItems : heldAllItems.slice(0, HELD_FOLD);
+  const loaded = details.size;
+
+  return (
+    <div className="mc14-plan">
+      <ProjectPicker data={data} pickSlug="" onPick={onPick} />
+
+      <div className="mc16-head">
+        {milestones.map((m) => (
+          <div className="mc16-ms" key={m.name}>
+            <span className="nm">{m.name}</span>
+            <span className={`date ${m.night === null ? 'quiet' : ''}`}>
+              {m.night === null ? '—' : nightLabel(m.night)}
+            </span>
+          </div>
+        ))}
+        <div style={{ flex: 1 }} />
+        <span className="capnote">
+          {cap === Infinity ? '∞' : cap}/session × {lanes === 1 ? 'one lane' : `${lanes} lanes`} · nightly {data.autopilot.time}
+        </span>
+        <div className="mc16-caps" role="tablist" aria-label="Items per session">
+          {[1, 2, 3, 5, 8, 0].map((n) => (
+            <button key={n} role="tab" aria-selected={data.autopilot.maxItems === n}
+              className={`mc16-cap ${data.autopilot.maxItems === n ? 'on' : ''}`}
+              onClick={() => onSetMaxItems(n)}>{n === 0 ? '∞' : n}</button>
+          ))}
+        </div>
+        <span className="capnote lanes">lanes</span>
+        <div className="mc16-caps" role="tablist" aria-label="Parallel sessions you plan to run">
+          {PLAN_LANE_CHOICES.map((n) => (
+            <button key={n} role="tab" aria-selected={lanes === n}
+              className={`mc16-cap ${lanes === n ? 'on' : ''}`}
+              onClick={() => { setLanes(n); setPlanLanes(n); }}>{n}</button>
+          ))}
+        </div>
+      </div>
+
+      {err && <div className="action-error">{err}</div>}
+      {roomErr && <div className="action-error">{roomErr}</div>}
+
+      <div className="mc16-cols">
+        <div className="mc16-sched">
+          <div className="mc14-room-head">
+            <span className="cap-sm">THE WHOLE HOUSE</span>
+            <span className="hair" />
+            <span className="meta">
+              {loaded < slugs.length ? `loading ${slugs.length - loaded} more…`
+                : `${queue.length} item${queue.length === 1 ? '' : 's'} across ${loaded} project${loaded === 1 ? '' : 's'}`}
+            </span>
+          </div>
+          <div className="mc16-lanenote">
+            Tier first, then musts, then each project's own board order — the order the fleet
+            would really work them. <b>Reordering lives on a project</b>: board position is per
+            project, so there is no cross-project order to save. Pick a project above to move things.
+          </div>
+          {queue.map((r, idx) => {
+            const night = nightOf(idx);
+            const showBreak = idx === 0 || nightOf(idx - 1) !== night;
+            return (
+              <div key={`${r.slug}#${r.it.id}`}>
+                {showBreak && (
+                  <div className="mc16-break">
+                    <span className={night === 0 ? 'tonight' : ''}>{nightLabel(night).toUpperCase()}</span>
+                    <span className="hair" />
+                  </div>
+                )}
+                <div className={`mc16-row ${night === 0 ? 'tonight' : ''}`}>
+                  <span className="n">{idx + 1}</span>
+                  <span className="tintdot" style={{ background: r.tint || 'var(--sand)' }}
+                    title={r.name} />
+                  {r.it.tier && (
+                    <span className={`tier-chip t${r.it.tier}`}
+                      title={`Desire tier ${r.it.tier} — the queue works S, then A, B, C, then unranked`}>
+                      {r.it.tier}
+                    </span>
+                  )}
+                  <button className="body" onClick={() => go.detail(r.slug, 'roadmap', String(r.it.id))}>
+                    <span className="t">{r.it.title}</span>
+                    <span className="p">
+                      {r.name} · {r.it.area || 'board'} · {r.it.bucket}
+                      {r.it.plan.length ? ` · ☰ ${r.it.plan.filter((s) => s.done).length}/${r.it.plan.length}` : ''}
+                    </span>
+                  </button>
+                  {r.it.refineNote && <span className="flag refine">↻ refine</span>}
+                  {r.it.plan.length === 0 && <span className="flag noplan">no plan</span>}
+                  {r.it.risk === 'low' && <span className="flag low">auto-merge</span>}
+                  <span className={`when ${night === 0 ? 'tonight' : ''}`}>{nightLabel(night)}</span>
+                </div>
+              </div>
+            );
+          })}
+          {queue.length === 0 && loaded === slugs.length && (
+            <div className="mc14-empty">Nothing schedulable anywhere — every night would pass the house by.</div>
+          )}
+          {shownHeld.length > 0 && (
+            <div className="mc16-held">
+              <span className="cap-sm">OUT OF THE SCHEDULE</span>
+              {shownHeld.map((r) => (
+                <button className="mc16-heldrow" key={`${r.slug}#${r.it.id}`}
+                  onClick={() => go.detail(r.slug, 'roadmap', String(r.it.id))}>
+                  <span className="tintdot" style={{ background: r.tint || 'var(--sand)' }} title={r.name} />
+                  <span className="tag">#{r.it.id}</span>
+                  <span className="t">{r.it.title}</span>
+                  <span className="why">{heldWhy(r.it, r.area)}</span>
+                </button>
+              ))}
+              {heldAllItems.length > HELD_FOLD && (
+                <button className="mc16-heldmore" onClick={() => setHeldAll((v) => !v)}>
+                  {heldAll
+                    ? `show fewer — ${heldAllItems.length} held in total`
+                    : `show all ${heldAllItems.length} held (${heldAllItems.length - HELD_FOLD} more)`}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* the inbox, house-wide — what every project's sessions found */}
+        <div className="mc16-inbox">
+          <div className="head">
+            <span className="title">Inbox</span>
+            {found.length > 0 && <span className="count">{found.length}</span>}
+          </div>
+          {found.map((r) => (
+            <div className="mc16-prop" key={`${r.slug}#${r.it.id}`}>
+              <div className="top">
+                <span className="kind found">FOUND</span>
+                <span className="tintdot" style={{ background: r.tint || 'var(--sand)' }} title={r.name} />
+                <span className="where">{r.name}</span>
+              </div>
+              <button className="t" onClick={() => go.detail(r.slug, 'roadmap', String(r.it.id))}>
+                {r.it.title}
+              </button>
+              <div className="acts">
+                <button className="ok" onClick={() => void accept(r)}
+                  title="Keep it — the item stays on the board and becomes eligible for the nights">Accept</button>
+                <button className="no" onClick={() => void dismiss(r)}
+                  title="Dismiss — deletes the item and tombstones it so the next push will not re-create it">Dismiss</button>
+              </div>
+            </div>
+          ))}
+          {found.length === 0 && (
+            <div className="mc14-empty">
+              {loaded < slugs.length ? 'Loading…' : 'Nothing waiting — every found item has been looked at.'}
+            </div>
+          )}
+          {settled.size > 0 && (
+            <div className="mc16-settled">
+              {[...settled.values()].length} item{settled.size === 1 ? '' : 's'} settled this visit
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
+  data: ControlData; pickSlug: string; onPick: (slug: string) => void;
+  onSetMaxItems: (n: number) => void;
+  onSetModel: (patch: { autopilotExecutorModel?: string; autopilotAdvisorModel?: string }) => void;
+}) {
+  // (#271) '' = the whole house. The picked project is a filter, not a
+  // requirement, so the merged read view is a first-class mode of this room.
+  if (pickSlug === '') {
+    return <AllPlanQueue data={data} onPick={onPick} onSetMaxItems={onSetMaxItems} />;
+  }
+  return <OnePlanRoom data={data} pickSlug={pickSlug} onPick={onPick}
+    onSetMaxItems={onSetMaxItems} onSetModel={onSetModel} />;
+}
+
+function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
   data: ControlData; pickSlug: string; onPick: (slug: string) => void;
   onSetMaxItems: (n: number) => void;
   onSetModel: (patch: { autopilotExecutorModel?: string; autopilotAdvisorModel?: string }) => void;
@@ -915,40 +1247,69 @@ export function PlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: 
 export function BuildRoom({ data, pickSlug, onPick, onGoNow }: {
   data: ControlData; pickSlug: string; onPick: (slug: string) => void; onGoNow: () => void;
 }) {
-  const { detail, err } = useProjectDetail(pickSlug);
-  const [open, setOpen] = useState<Set<number> | null>(null);
+  // (#271) '' = every project. The room reads the same either way — a phase
+  // card carries its project's tint, so one board can hold the whole house.
+  const slugs = useMemo(
+    () => (pickSlug ? [pickSlug] : data.projects.map((p) => p.slug)),
+    [pickSlug, data.projects]);
+  const { details, err } = useProjectDetails(slugs);
+  const [open, setOpen] = useState<Set<string> | null>(null);
 
-  if (err) return <div className="mc14-empty">{err}</div>;
-  if (!detail) return <div className="mc14-empty">Loading the build…</div>;
+  const house = pickSlug === '';
+  // Rows key by project+item, since ids only mean something inside a project.
+  const planned: HouseItem[] = [];
+  for (const p of data.projects) {
+    if (!slugs.includes(p.slug)) continue;
+    const d = details.get(p.slug);
+    if (!d) continue;
+    [...d.roadmap.must, ...d.roadmap.should, ...d.roadmap.could, ...d.roadmap.wont].forEach((it, rank) => {
+      if (it.plan.length > 0) {
+        planned.push({ it, slug: p.slug, name: p.name, tint: p.tint, area: p.autopilotArea || '', rank });
+      }
+    });
+  }
 
-  const all = [...detail.roadmap.must, ...detail.roadmap.should, ...detail.roadmap.could, ...detail.roadmap.wont];
-  const planned = all.filter((it) => it.plan.length > 0);
   const phase = (it: RoadmapItem) =>
     it.claimedBy && !it.done ? 'building'
     : !it.done ? 'queued'
     : !it.reviewTag ? 'verdict'
     : 'landed';
   const orderKey: Record<string, number> = { building: 0, queued: 1, verdict: 2, landed: 3 };
-  const phases = [...planned].sort((a, b) => orderKey[phase(a)] - orderKey[phase(b)] || a.id - b.id);
-  const openSet = open ?? new Set(phases.filter((it) => phase(it) !== 'landed').slice(0, 2).map((it) => it.id));
-  const toggle = (id: number) => {
+  const rowKey = (r: HouseItem) => `${r.slug}#${r.it.id}`;
+  const phases = [...planned].sort((a, b) =>
+    orderKey[phase(a.it)] - orderKey[phase(b.it)]
+    || a.name.localeCompare(b.name)
+    || a.it.id - b.it.id);
+  const openSet = open
+    ?? new Set(phases.filter((r) => phase(r.it) !== 'landed').slice(0, 2).map(rowKey));
+  const toggle = (k: string) => {
     const next = new Set(openSet);
-    if (next.has(id)) next.delete(id); else next.add(id);
+    if (next.has(k)) next.delete(k); else next.add(k);
     setOpen(next);
   };
 
-  const totalSteps = planned.reduce((n, it) => n + it.plan.length, 0);
-  const doneSteps = planned.reduce((n, it) => n + it.plan.filter((s) => s.done).length, 0);
+  const totalSteps = planned.reduce((n, r) => n + r.it.plan.length, 0);
+  const doneSteps = planned.reduce((n, r) => n + r.it.plan.filter((s) => s.done).length, 0);
   const BADGE: Record<string, string> = {
     building: 'building', queued: 'queued', verdict: 'awaiting verdict', landed: 'landed',
   };
-  const runsHere = (data.usage?.recentRuns ?? []).filter((r) => r.slug === pickSlug).slice(0, 4);
-  const branchFor = (it: RoadmapItem) =>
-    data.projects.find((p) => p.slug === pickSlug)?.branches.find((b) => b.itemId === String(it.id));
+  const runsHere = (data.usage?.recentRuns ?? [])
+    .filter((r) => (house ? true : r.slug === pickSlug))
+    .slice(0, house ? 6 : 4);
+  const branchFor = (r: HouseItem) =>
+    data.projects.find((p) => p.slug === r.slug)?.branches.find((b) => b.itemId === String(r.it.id));
+  const loaded = slugs.filter((s) => details.has(s)).length;
+  const title = house
+    ? `Every project · implementation plans`
+    : `${details.get(pickSlug)?.project.name ?? pickSlug} · implementation plans`;
+
+  if (err && loaded === 0) return <div className="mc14-empty">{err}</div>;
+  if (loaded === 0) return <div className="mc14-empty">Loading the build…</div>;
 
   return (
     <div className="mc14-build">
       <ProjectPicker data={data} pickSlug={pickSlug} onPick={onPick} />
+      {err && <div className="action-error">{err}</div>}
       {planned.length === 0 ? (
         <div className="mc14-empty">
           No implementation plans yet — plan steps land on roadmap items from the board's ✎ Plan editor,
@@ -957,26 +1318,37 @@ export function BuildRoom({ data, pickSlug, onPick, onGoNow }: {
       ) : (
         <>
           <div className="mc14-room-head">
-            <span className="title">{detail.project.name} · implementation plans</span>
-            <span className="meta">{doneSteps}/{totalSteps} steps · {planned.length} planned item{planned.length === 1 ? '' : 's'}</span>
+            <span className="title">{title}</span>
+            <span className="meta">
+              {doneSteps}/{totalSteps} steps · {planned.length} planned item{planned.length === 1 ? '' : 's'}
+              {house && loaded < slugs.length ? ` · loading ${slugs.length - loaded} more` : ''}
+            </span>
             <div className="mc14-buildbar">
               {Array.from({ length: 12 }, (_, i) => (
                 <span key={i} className={totalSteps > 0 && i < Math.round((doneSteps / totalSteps) * 12) ? 'on' : ''} />
               ))}
             </div>
           </div>
-          {phases.map((it) => {
+          {phases.map((r) => {
+            const it = r.it;
             const ph = phase(it);
-            const isOpen = openSet.has(it.id);
-            const br = branchFor(it);
+            const k = rowKey(r);
+            const isOpen = openSet.has(k);
+            const br = branchFor(r);
             return (
-              <div key={it.id} className={`mc14-phase ${ph}`}>
-                <button className="head" onClick={() => toggle(it.id)}>
+              <div key={k} className={`mc14-phase ${ph}`}>
+                <button className="head" onClick={() => toggle(k)}>
+                  {house && (
+                    <span className="tintdot" style={{ background: r.tint || 'var(--sand)' }} title={r.name} />
+                  )}
                   <span className="n">#{it.id}</span>
                   <span className="nm">{it.title}</span>
                   <span className={`badge ${ph}`}>{BADGE[ph]}</span>
                   <div style={{ flex: 1 }} />
-                  <span className="meta">{it.plan.filter((s) => s.done).length}/{it.plan.length} steps{it.claimedBy ? ` · ${it.claimedBy}` : ''}</span>
+                  <span className="meta">
+                    {house ? `${r.name} · ` : ''}
+                    {it.plan.filter((s) => s.done).length}/{it.plan.length} steps{it.claimedBy ? ` · ${it.claimedBy}` : ''}
+                  </span>
                   <span className="caret">{isOpen ? '▾' : '▸'}</span>
                 </button>
                 {isOpen && (
@@ -994,7 +1366,7 @@ export function BuildRoom({ data, pickSlug, onPick, onGoNow }: {
                       <div className="gate">
                         <span className="g">GATE</span>
                         <span className="t">Human verdict — the autopilot never ticks its own work. Judge what landed in Reviews.</span>
-                        <button className="act" onClick={() => go.detail(pickSlug, 'roadmap', String(it.id))}>→ Reviews</button>
+                        <button className="act" onClick={() => go.detail(r.slug, 'roadmap', String(it.id))}>→ Reviews</button>
                       </div>
                     )}
                     {ph === 'building' && br && (
@@ -1017,9 +1389,12 @@ export function BuildRoom({ data, pickSlug, onPick, onGoNow }: {
             <div className="mc14-card wide">
               <span className="cap">LAST NIGHTS MOVED THE PLAN</span>
               {runsHere.map((r, i) => (
-                <button key={i} className="mc14-diff" onClick={() => r.itemId && go.detail(pickSlug, 'roadmap', r.itemId)}>
+                <button key={i} className="mc14-diff" onClick={() => r.itemId && go.detail(r.slug, 'roadmap', r.itemId)}>
                   <span className={`tag ${r.outcome}`}>{r.outcome.toUpperCase()}</span>
-                  <span className="t">{r.itemId ? `#${r.itemId} ` : ''}{r.itemTitle || 'general session'} — {r.when}, {fmtTok(r.tokens)} tok</span>
+                  <span className="t">
+                    {house ? `${r.name} · ` : ''}{r.itemId ? `#${r.itemId} ` : ''}
+                    {r.itemTitle || 'general session'} — {r.when}, {fmtTok(r.tokens)} tok
+                  </span>
                 </button>
               ))}
             </div>

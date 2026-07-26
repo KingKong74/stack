@@ -30,7 +30,9 @@ export const sessionDefaultLines = (keys) =>
 
 // ✧ Fill from note (#131): the fields the assist may fill. Title is the point
 // of the feature and always allowed; the rest can be switched off in Settings.
-export const ASSIST_FIELDS = ['title', 'note', 'area', 'lane', 'priority'];
+// #277 — 'tier' joins the catalogue: Gemini may propose a desire tier, and the
+// modal only accepts one into an empty field, so a hand-set tier always stands.
+export const ASSIST_FIELDS = ['title', 'note', 'area', 'lane', 'priority', 'tier'];
 export const cleanAssistFields = (v) => {
   const keys = Array.isArray(v) ? v.map(String).filter((k) => ASSIST_FIELDS.includes(k)) : [];
   return [...new Set(['title', ...keys])];

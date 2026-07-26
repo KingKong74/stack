@@ -176,7 +176,7 @@ export function Roadmap({
     const chosen = termCandidates.filter((it) => termPick?.has(it.id));
     const lines = chosen.map((it, i) =>
       `${i + 1}. [${it.bucket}] #${it.id} — ${it.title}${it.note ? `\n   ${it.note.replace(/\n/g, '\n   ')}` : ''}`);
-    return `Work these Stack roadmap items${termAreas.size ? ` (areas: ${[...termAreas].sort().join(', ')})` : ''}, top-down:\n\n${lines.join('\n')}\n\nProtocol: claim each item's lane before starting, work one item at a time, commit each unit, and when an item is finished set built_note (what landed) alongside done:true through the Stack API. Leave items claimed by other lanes alone.`;
+    return `Work these Stack roadmap items${termAreas.size ? ` (areas: ${[...termAreas].sort().join(', ')})` : ''}, top-down:\n\n${lines.join('\n')}\n\nProtocol: claim each item's branch before starting, work one item at a time, commit each unit, and when an item is finished set built_note (what landed) alongside done:true through the Stack API. Leave items claimed by other branches alone.`;
   };
 
   const commitNewArea = () => {
@@ -337,7 +337,7 @@ export function Roadmap({
   const originOf = (it: RoadmapItem): 'auto' | 'lane' | 'manual' =>
     it.claimedBy.startsWith('auto/') || runByItem.has(String(it.id)) ? 'auto'
       : it.claimedBy ? 'lane' : 'manual';
-  const ORIGIN_LABEL = { auto: '⚙ autopilot', lane: '⚑ lane', manual: 'by hand' } as const;
+  const ORIGIN_LABEL = { auto: '⚙ autopilot', lane: '⚑ branch', manual: 'by hand' } as const;
   const [originFilter, setOriginFilter] = useState<'all' | 'auto' | 'lane' | 'manual'>('all');
   const byOrigin = (it: RoadmapItem) => originFilter === 'all' || originOf(it) === originFilter;
   const fmtTok = (n: number) =>
@@ -883,8 +883,8 @@ export function Roadmap({
                       {it.claimedBy && (
                         <div className="claim-chip"
                           title={working
-                            ? 'Claimed by this lane'
-                            : 'Claimed by this lane — no live session on it; edit the item to clear the claim'}>
+                            ? 'Claimed by this branch'
+                            : 'Claimed by this branch — no live session on it; edit the item to clear the claim'}>
                           ⚑ {it.claimedBy}
                         </div>
                       )}
@@ -894,7 +894,7 @@ export function Roadmap({
                         <>
                           {onBranch && !it.claimedBy && !it.skipped && (
                             <button onClick={() => onBranch(it)} aria-label="Branch for focused work"
-                              title={`Branch for focused work (#205) — claims lane/item-${it.id} and opens a terminal session primed to build it on that branch; merge back from Mission Control when it lands`}>⎇</button>
+                              title={`Branch for focused work (#205) — claims the item’s branch and opens a terminal session primed to build it on that branch; merge back from Mission Control when it lands`}>⎇</button>
                           )}
                           <button onClick={() => onToggleSkip(it)} aria-label={it.skipped ? 'Unpark item' : 'Park item'}
                             title={it.skipped ? 'Unpark — back in play' : 'Park — skip for now'}>{it.skipped ? '▶' : '⏸'}</button>
@@ -1255,7 +1255,7 @@ export function Roadmap({
         Everything completed, awaiting your verdict — each row shows who built it, when, and what
         landed. Tag rows as you test (Fix, Needs more, …). Solid closes it out; ✎ Refine sends it
         back with just what to change — same item, what landed stays on record; ↩ Board sends it
-        back unchanged. Either way it returns fresh — the old verdict and lane claim don't come
+        back unchanged. Either way it returns fresh — the old verdict and branch claim don't come
         with it. ＋ Bug / ＋ Audit log a ticket against the item; ⏸ Later shelves the review for
         another day.
       </div>

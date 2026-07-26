@@ -92,7 +92,6 @@ const roleRead = (s: FleetSlot): { tag: string; tone: 'good' | 'warn' | 'quiet';
     text: `The advisor is ${pct}% ${basis} — barely consulted. Cheap, but worth checking the executor actually asks when it gets stuck rather than guessing.`,
   };
 };
-
 // #269 — a metric's direction: the arrow, whether the movement is good, and a
 // plain-language delta for the tooltip. A metric with no prior period reads as
 // "from nothing" rather than as an infinite improvement.
@@ -369,9 +368,10 @@ export function ControlPanel() {
     : null;
 
   // ---- 14a derived bits ----
-  useEffect(() => {
-    if (!pickSlug && data?.projects.length) setPickSlug(data.projects[0].slug);
-  }, [data, pickSlug]);
+  // #271 — pickSlug '' is the whole house, and it is the DEFAULT. A director's
+  // chair shows every project; picking one narrows it. (There is deliberately
+  // no auto-pick here any more: landing on whichever project sorted first was
+  // exactly the single-project framing this replaces.)
   const runNowSlug = (slug: string) => {
     const p = data?.projects.find((x) => x.slug === slug);
     if (p) void runNow(p);
@@ -477,7 +477,9 @@ export function ControlPanel() {
           <>
             {/* ---- 14a: the shell — rooms behind one live strip + rail ---- */}
             <div className="mc14-tabs" role="tablist" aria-label="Mission Control rooms">
-              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0], ['build', 'Build', 0], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => a.drift && a.drift !== 'no-runs').length]] as const).map(([key, label, n]) => (
+              {/* #271 — with no project picked the Plan badge counts the whole
+                  house, not zero; picking one narrows the badge with the room. */}
+              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['build', 'Build', 0], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => a.drift && a.drift !== 'no-runs').length]] as const).map(([key, label, n]) => (
                 <button key={key} role="tab" aria-selected={room === key}
                   className={`mc14-tab ${room === key ? 'on' : ''}`} onClick={() => setRoom(key)}>
                   {label}{n > 0 && <span className="n">{n}</span>}
@@ -605,7 +607,7 @@ export function ControlPanel() {
                       <span className="tintdot" style={{ background: s.tint || 'var(--sand)' }} />
                       <span className="who">
                         <b>{s.name}</b>
-                        <i title={s.branch ? `The lane claim this worker holds: ${s.branch}` : undefined}>
+                        <i title={s.branch ? `The branch claim this worker holds: ${s.branch}` : undefined}>
                           {s.branch || (s.kind === 'nightly' ? 'general night — no claim yet' : `${s.kind} job`)}
                         </i>
                       </span>
@@ -793,7 +795,7 @@ export function ControlPanel() {
                 </button>
                 <div className="mc14-minis">
                   <div className="mc14-mini"><span className="n">{seriousTotal}</span><span className={`l ${seriousTotal ? 'bad' : ''}`}>serious bugs</span></div>
-                  <div className="mc14-mini"><span className="n">{data.totals.claims}</span><span className="l">claimed lanes</span></div>
+                  <div className="mc14-mini"><span className="n">{data.totals.claims}</span><span className="l">claimed branches</span></div>
                 </div>
               </div>
             </div>
@@ -1251,15 +1253,16 @@ export function ControlPanel() {
                 </>)}
 
                 {room === 'nights' && (
-                  <NightsRoom data={data} onOpenPlanner={(row) => setPlanner({ row })} onRunNow={runNowSlug}
+                  <NightsRoom data={data} pickSlug={pickSlug} onPick={setPickSlug}
+                    onOpenPlanner={(row) => setPlanner({ row })} onRunNow={runNowSlug}
                     onToggleSchedule={toggleSchedule} onRemoveSchedule={removeSchedule} />
                 )}
-                {room === 'plan' && pickSlug && (
+                {room === 'plan' && (
                   <PlanRoom data={data} pickSlug={pickSlug} onPick={setPickSlug}
                     onSetMaxItems={(n) => void setAutopilot({ autopilotMaxItems: n })}
                     onSetModel={(p) => void setAutopilot(p)} />
                 )}
-                {room === 'build' && pickSlug && (
+                {room === 'build' && (
                   <BuildRoom data={data} pickSlug={pickSlug} onPick={setPickSlug} onGoNow={() => setRoom('now')} />
                 )}
                 {/* #281 — Roles: the fleet-wide half of turn 23. "Edit the

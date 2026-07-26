@@ -1,27 +1,39 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Priority, PlanStep, RoadmapItem } from '../types';
+import type { Priority, PlanStep, RoadmapItem, Tier } from '../types';
+import { TIERS } from '../types';
 import type { RoadmapAssist } from '../store';
 import { Modal } from './Modal';
 import { PRIORITY_META } from '../lib/ui';
 
 // Add OR edit a roadmap item — `mode: 'edit'` prefills and relabels.
 // The note leads: it's the first field and the ✧ button reads it to fill
-// everything else (title, tidied note, area, lane, priority) — suggestions
-// the human can still edit before saving.
+// everything else (title, tidied note, area, branch, priority, tier) —
+// suggestions the human can still edit before saving.
+//
+// #277: the desire TIER is set here as well as on the Tiers view. Bucket says
+// how necessary the work is; tier says how much you want it NEXT, and it leads
+// the run queue. Gemini may propose one, but only into an empty field — a tier
+// you set by hand is never re-decided.
 // A stray click on the overlay (or Escape) with typed content calls onDismiss
 // with the fields so the caller can keep a draft; the explicit Cancel button
 // stays a genuine discard.
+// What the modal hands back on save (and on a draft-keeping dismiss).
+export interface RoadmapFields {
+  title: string; note: string; priority: Priority; lane: string; area: string;
+  plan: PlanStep[]; risk: RoadmapItem['risk']; tier: Tier;
+}
+
 export function RoadmapModal({
   initialPriority, onClose, onSubmit, onDismiss, onAssist,
   initialTitle = '', initialNote = '', initialLane = '', initialArea = '', initialPlan = [],
-  initialRisk = 'normal', lanes = [], areas = [], mode = 'add',
+  initialRisk = 'normal', initialTier = '', lanes = [], areas = [], mode = 'add',
 }: {
   initialPriority: Priority; onClose: () => void;
-  onSubmit: (v: { title: string; note: string; priority: Priority; lane: string; area: string; plan: PlanStep[]; risk: RoadmapItem['risk'] }) => void;
-  onDismiss?: (v: { title: string; note: string; priority: Priority; lane: string; area: string; plan: PlanStep[]; risk: RoadmapItem['risk'] }) => void;
+  onSubmit: (v: RoadmapFields) => void;
+  onDismiss?: (v: RoadmapFields) => void;
   onAssist?: (note: string) => Promise<RoadmapAssist>;
   initialTitle?: string; initialNote?: string; initialLane?: string; initialArea?: string;
-  initialPlan?: PlanStep[]; initialRisk?: RoadmapItem['risk'];
+  initialPlan?: PlanStep[]; initialRisk?: RoadmapItem['risk']; initialTier?: Tier;
   lanes?: string[]; areas?: string[]; mode?: 'add' | 'edit';
 }) {
   const [title, setTitle] = useState(initialTitle);
@@ -30,6 +42,8 @@ export function RoadmapModal({
   const [area, setArea] = useState(initialArea);
   const [priority, setPriority] = useState<Priority>(initialPriority);
   const [risk, setRisk] = useState<RoadmapItem['risk']>(initialRisk);
+  // #277 — the desire tier, '' = unranked (which sorts last in the run queue).
+  const [tier, setTier] = useState<Tier>(initialTier);
   // The implementation plan (#75): ordered steps for bigger work. A pending
   // draft line is folded in on save so a typed-but-not-entered step isn't lost.
   const [plan, setPlan] = useState<PlanStep[]>(initialPlan);
@@ -55,7 +69,8 @@ export function RoadmapModal({
   const [areaOpen, setAreaOpen] = useState(false);
   const areaMatches = knownAreas.filter(
     (a) => !area.trim() || a.includes(area.trim().toLowerCase()));
-  const fields = () => ({ title, note, priority, lane: lane.trim(), area: area.trim().toLowerCase(), plan: fullPlan(), risk });
+  const fields = (): RoadmapFields =>
+    ({ title, note, priority, lane: lane.trim(), area: area.trim().toLowerCase(), plan: fullPlan(), risk, tier });
   const submit = () => { if (title.trim()) onSubmit(fields()); };
   const typed = Boolean(title.trim() || note.trim());
   const dismiss = () => {
@@ -92,6 +107,9 @@ export function RoadmapModal({
       if (s.area && !area.trim()) setArea(s.area);
       if (s.lane && !lane.trim()) { setLane(s.lane); setNewLane(false); }
       if (s.priority) setPriority(s.priority);
+      // #277 — "adjusted by Gemini unless manually set": a tier already chosen
+      // (here or on the Tiers view) is left exactly as it is.
+      if (s.tier && !tier) setTier(s.tier);
     } catch (e) {
       setSuggestErr((e as Error)?.message || 'Gemini call failed.');
     } finally {
@@ -162,21 +180,21 @@ export function RoadmapModal({
           onChange={(e) => setPlanDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addStep(); } }} />
       </div>
-      <div className="lbl">Lane <span className="optional">optional — who's claiming this</span></div>
+      <div className="lbl">Branch <span className="optional">optional — who's claiming this</span></div>
       {!newLane ? (
         <div className="lane-pick" style={{ marginBottom: 8 }}>
           <select className="field-input" value={lane} onChange={(e) => setLane(e.target.value)}>
-            <option value="">No lane — open for anyone</option>
+            <option value="">No branch — open for anyone</option>
             {knownLanes.map((l) => <option key={l} value={l}>⚑ {l}</option>)}
           </select>
           <button type="button" className="btn-cancel sm" onClick={() => { setLane(''); setNewLane(true); }}>
-            + New lane
+            + New branch
           </button>
         </div>
       ) : (
         <div className="lane-pick" style={{ marginBottom: 8 }}>
           <input className="field-input" value={lane}
-            placeholder="e.g. lane/ui, autopilot, or a name" onChange={(e) => setLane(e.target.value)}
+            placeholder="e.g. auto/item-12-ui, autopilot, or a name" onChange={(e) => setLane(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
           {knownLanes.length > 0 && (
             <button type="button" className="btn-cancel sm" onClick={() => { setLane(''); setNewLane(false); }}>
@@ -186,14 +204,31 @@ export function RoadmapModal({
         </div>
       )}
       <div className="field-hint" style={{ marginBottom: 18 }}>
-        A lane claims the item for one session or agent — other sessions (and the overnight
-        autopilot) see the ⚑ claim and leave it alone. Clear the lane to release it.
+        A branch claims the item for one session or agent — other sessions (and the overnight
+        autopilot) see the ⚑ claim and leave it alone. Clear the branch to release it.
       </div>
       <div className="lbl" style={{ marginBottom: 9 }}>Priority</div>
       <div className="seg" style={{ marginBottom: 26 }}>
         {PRIORITY_META.map((p) => (
           <button key={p.key} className={`opt prio ${p.key} ${priority === p.key ? 'on' : ''}`} onClick={() => setPriority(p.key)}>
             {p.short}
+          </button>
+        ))}
+      </div>
+      <div className="lbl" style={{ marginBottom: 9 }}>
+        Tier <span className="optional">how much you want it NEXT — leads the run queue; unranked goes last</span>
+      </div>
+      <div className="seg" style={{ marginBottom: 26 }} role="tablist" aria-label="Desire tier">
+        <button type="button" role="tab" aria-selected={tier === ''}
+          className={`opt ${tier === '' ? 'on' : ''}`} onClick={() => setTier('')}
+          title="Unranked — sorts behind every ranked item, so an unranked board queues exactly as it always did">
+          Unranked
+        </button>
+        {TIERS.map((t) => (
+          <button key={t} type="button" role="tab" aria-selected={tier === t}
+            className={`opt tier-${t} ${tier === t ? 'on' : ''}`} onClick={() => setTier(t)}
+            title={`Tier ${t} — the queue works S first, then A, B, C`}>
+            {t}
           </button>
         ))}
       </div>

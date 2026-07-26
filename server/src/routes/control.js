@@ -57,6 +57,14 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //     worth: { advisedRuns, advisedLanded, plainRuns, plainLanded,
 //              advCostUsd, execCostUsd, totalCostUsd,
 //              advShare, execShare, avgAdvPerRun, costBasis }
+//                tokens, costUsd, tmux } ], // in-flight only; client pads idle
+//   ledger: {                               // (#269) the throughput trend
+//     days: [ { day, landed, runs, tokens, costUsd } ],   // 14, oldest first
+//     now, prev,                            // 7-day windows → direction
+//     merges: { now: { total, auto }, prev }, reverts: { now, prev },
+//     firstPass: { solid, verdicted },
+//     roles: { executor, advisor, assumed } // spend split via splitRunRoles();
+//                                           // `assumed` = the fallback's share
 //   }
 // }
 export const control = Router();
@@ -310,7 +318,6 @@ export function computeFleetRoles({ usageRows, projects, execAlias, advAlias, no
     },
   };
 }
-
 control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 

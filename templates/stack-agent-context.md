@@ -83,12 +83,12 @@ fingerprint of their title. So:
 - Manual items are never touched by the extractor. Reach for a manual bug/roadmap
   item/note when you want something the session summary wouldn't capture.
 
-## Lane claims (parallel sessions)
+## Branch claims (parallel sessions)
 
 Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
-`lane/ui`). The SessionStart block lists current claims. The protocol:
+`auto/item-12-ui`). The SessionStart block lists current claims. The protocol:
 
-- **Never start an item claimed by another lane.**
+- **Never start an item claimed by another branch.**
 - **Never start an item with `skipped: true`** — it's parked on purpose; the
   owner unparks it from the UI when it's back in play. (The Roadmap tab's Parked
   view ages every parked item and flags the stale ones, so nothing rots unseen.)
@@ -109,7 +109,7 @@ Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
 
 - Marking the item `{"done":true}` finishes it; send `{"claimed_by":""}` to
   release one you're abandoning. Un-ticking (`{"done":false}`) sends an item
-  back into play fresh: the server clears its archive verdict and lane claim
+  back into play fresh: the server clears its archive verdict and branch claim
   so it re-enters the To verify pipeline and is pickable again. Never print
   the token while doing this.
 - **When you finish an item, tell the reviewer what landed.** Include a
