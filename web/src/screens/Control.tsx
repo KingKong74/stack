@@ -5,12 +5,12 @@ import {
   resumeAutopilotJob, hangupAutopilotJob, dismissAutopilotJob,
   labelTerminalSessions, queueMerge, AuthError,
   type ControlData, type ControlProject, type AutopilotJob, type AutopilotSchedule,
-  type FleetSlot,
 } from '../store';
 import { SessionPlanModal } from '../components/SessionPlanModal';
 import { NightsRoom, PlanRoom, BuildRoom } from './ControlRooms';
 import { RolesRoom } from './ControlRoles';
 import { ReviewRoom } from './ControlReview';
+import { SessionLanes } from './ControlLanes';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
 import { go, hrefTo } from '../lib/route';
 import type { ProjectStatus } from '../types';
@@ -44,55 +44,14 @@ const sessionAge = (startedAt: number) => {
   return min < 1 ? 'just opened' : min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`;
 };
 
-// #280 — session money. Sub-cent spend is real but unprintable at two places;
-// say "<$0.01" rather than round it away to nothing.
-const fmtUsd = (n: number) => (n >= 0.005 ? `$${n.toFixed(2)}` : n > 0 ? '<$0.01' : '$0.00');
 
-// #280 — the read on one lane's role split: was the advice worth what it cost?
-// Pure arithmetic over what the session has BANKED — no API, no model, and
-// nothing asserted that the numbers don't already say. The order matters: a
-// lane with no advisor, or nothing banked, has no split to judge, and saying so
-// is more honest than rendering a 0% bar as if it were a finding.
-const roleRead = (s: FleetSlot): { tag: string; tone: 'good' | 'warn' | 'quiet'; text: string } => {
-  const banked = (s.spend ?? []).length > 0;
-  if (!s.adv) {
-    return {
-      tag: 'SINGLE MODEL', tone: 'quiet',
-      text: 'No advisor is configured, so nothing was consulted — every token on this lane is the executor\'s own.',
-    };
-  }
-  if (!banked) {
-    return {
-      tag: 'NOTHING BANKED YET', tone: 'quiet',
-      text: 'The first item is still in flight. A run row lands when an item finishes — that is when the split becomes real, and until then there is nothing to divide.',
-    };
-  }
-  if (!s.advisorSeen) {
-    return {
-      tag: 'ADVISOR UNUSED', tone: 'warn',
-      text: `${s.adv.label} is configured, but its model has not appeared in anything this session banked — the counsel is policy on paper, not in the work.`,
-    };
-  }
-  const pct = Math.round(s.advShare ?? 0);
-  const total = (s.execCostUsd ?? 0) + (s.advCostUsd ?? 0);
-  const basis = total > 0 ? `of the ${fmtUsd(total)} banked` : 'of the tokens banked';
-  if (pct >= 50) {
-    return {
-      tag: 'ADVICE HEAVY', tone: 'warn',
-      text: `The advisor is ${pct}% ${basis} — counsel is costing more than the hands it is advising. Worth a cheaper advisor unless these sessions are genuinely getting stuck.`,
-    };
-  }
-  if (pct >= 20) {
-    return {
-      tag: 'IN PROPORTION', tone: 'good',
-      text: `The advisor is ${pct}% ${basis} — a strong mind consulted at the decisions, with the labour left to the cheap hands. That is the arrangement working.`,
-    };
-  }
-  return {
-    tag: 'CHEAP COUNSEL', tone: 'good',
-    text: `The advisor is ${pct}% ${basis} — barely consulted. Cheap, but worth checking the executor actually asks when it gets stuck rather than guessing.`,
-  };
-};
+
+
+// Mission Control — every project's automation from one point: the autopilot
+// console (arm, session cap, token budget incl. unlimited, nightly time,
+// items/night), manual Run-now per project, the scheduled-sessions calendar,
+// and one row per project (automode, presence, claims, reviews, blockers).
+// Rendered as a tab of the Settings screen (#/control deep-links to it).
 // #269 — a metric's direction: the arrow, whether the movement is good, and a
 // plain-language delta for the tooltip. A metric with no prior period reads as
 // "from nothing" rather than as an infinite improvement.
@@ -128,11 +87,6 @@ const resumeWhen = (iso?: string | null) => {
   return d.toDateString() === new Date().toDateString() ? t : `${DAY_LABELS[d.getDay()]} ${t}`;
 };
 
-// Mission Control — every project's automation from one point: the autopilot
-// console (arm, session cap, token budget incl. unlimited, nightly time,
-// items/night), manual Run-now per project, the scheduled-sessions calendar,
-// and one row per project (automode, presence, claims, reviews, blockers).
-// Rendered as a tab of the Settings screen (#/control deep-links to it).
 export function ControlPanel() {
   const [data, setData] = useState<ControlData | null>(null);
   const [error, setError] = useState('');
@@ -155,9 +109,6 @@ export function ControlPanel() {
   // The Review room owns the fetch and reports the count back up.
   const [reviewN, setReviewN] = useState(0);
   const [cfgOpen, setCfgOpen] = useState(false);
-  // #280 — which fleet lane is expanded to its role panel (one at a time; the
-  // rows are dense enough that two open at once stops being scannable).
-  const [laneOpen, setLaneOpen] = useState('');
   const [projFilter, setProjFilter] = useState<'all' | 'auto' | 'live'>('all');
   const [pickSlug, setPickSlug] = useState(''); // the Plan/Build rooms' project
   const load = useCallback(() => {
@@ -393,12 +344,8 @@ export function ControlPanel() {
     return data?.projects.find((p) => p.slug === seg)?.name ?? (seg === '~' ? 'home' : seg);
   };
   const seriousTotal = data?.projects.reduce((n, p) => n + p.bugs.serious, 0) ?? 0;
-  // #268 — the fleet: the busy slots the payload reports, padded out with idle
-  // ones up to capacity. Idle slots are RENDERED, never omitted — the strip's
-  // width is how you read the fleet's real size at a glance.
-  const fleetCapacity = data?.fleet?.capacity ?? 1;
-  const fleetSlots = data?.fleet?.slots ?? [];
-  const fleetIdle = Math.max(0, fleetCapacity - fleetSlots.length);
+  // #268's slots and capacity are read inside <SessionLanes> now (#283) — it
+  // owns the merged list and still renders idle capacity rather than omitting it.
   // #270 — the honest reason the fleet is or is not running. Absent only on a
   // server that pre-dates the resolver, where the line simply doesn't render.
   const fleetStatus = data?.fleet?.status;
@@ -550,229 +497,14 @@ export function ControlPanel() {
               </div>
             )}
 
-            {/* #268 — the fleet strip: one row per worker slot, busy or idle.
-                Once there are N workers you need to see N workers: what each
-                holds, how long it has been at it and what it has burned.
-                #280 (design 23a) — plus the ROLE column: who is executing, who
-                advised, and what the advice cost. Expand a lane for the split. */}
-            <div className="mc-fleet" aria-label="Fleet worker slots">
-              <div className="mc-fleet-head">
-                <span className="cap">FLEET</span>
-                <span className="hair" />
-                <span className="sum">
-                  {fleetSlots.length} of {fleetCapacity} slot{fleetCapacity === 1 ? '' : 's'} working
-                </span>
-              </div>
+            {/* #283 (design 22a) — ONE lane list over both sources: the
+                autopilot's workers and every terminal session the daemon can
+                see. Replaces the separate fleet strip and terminal chip strip,
+                which split "what is running" across two widgets fed by two
+                unrelated paths. */}
+            <SessionLanes data={data} labelBusy={labelBusy} onLabel={() => labelSessions()}
+              onConfigureRoles={() => setCfgOpen(true)} onReload={load} />
 
-              {/* #280 — the role policy, stated once above the lanes. Every
-                  session runs on these two models (the runner reads them from
-                  settings), so this belongs to the fleet, not to a row. */}
-              {data.fleet?.roles && (
-                <div className="mc-roles" aria-label="Session roles">
-                  <span className="cap">ROLES</span>
-                  <span className="mc-role-chip exec">
-                    <em>EXEC</em>
-                    <b>{data.fleet.roles.executor.label}</b>
-                    <i>runs the session · owns every commit</i>
-                  </span>
-                  {data.fleet.roles.advisor ? (
-                    <span className="mc-role-chip adv">
-                      <em>ADV</em>
-                      <b>{data.fleet.roles.advisor.label}</b>
-                      <i>read-only counsel · plan, unblock, sanity check</i>
-                    </span>
-                  ) : (
-                    <span className="mc-role-chip off">
-                      <em>ADV</em>
-                      <b>Off</b>
-                      <i>nothing is consulted</i>
-                    </span>
-                  )}
-                  <div style={{ flex: 1 }} />
-                  <span className="note">{data.fleet.roles.note}</span>
-                </div>
-              )}
-
-              <div className="mc-fleet-lanes">
-                {fleetSlots.map((s) => {
-                  const open = laneOpen === s.jobId;
-                  const spend = s.spend ?? [];
-                  const banked = spend.length > 0;
-                  const execShare = spend.filter((m) => m.role === 'exec').reduce((n, m) => n + m.share, 0);
-                  const advSh = s.advShare ?? 0;
-                  // Whatever neither alias claimed. Rendered, never hidden: an
-                  // unattributed slice is the split admitting what it can't see.
-                  const otherShare = Math.max(0, 100 - execShare - advSh);
-                  const read = roleRead(s);
-                  const toggle = () => setLaneOpen(open ? '' : s.jobId);
-                  return (
-                  <div key={s.jobId} className={`mc-lane ${s.status}${open ? ' open' : ''}`}>
-                    <div className="lane-head" role="button" tabIndex={0} aria-expanded={open}
-                      onClick={toggle}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}>
-                      <span className="tintdot" style={{ background: s.tint || 'var(--sand)' }} />
-                      <span className="who">
-                        <b>{s.name}</b>
-                        <i title={s.branch ? `The branch claim this worker holds: ${s.branch}` : undefined}>
-                          {s.branch || (s.kind === 'nightly' ? 'general night — no claim yet' : `${s.kind} job`)}
-                        </i>
-                      </span>
-
-                      {/* the role column — 23a's whole point */}
-                      <span className="lane-roles">
-                        <span className="r">
-                          <em className="tag exec">EXEC</em>
-                          <span className="m">{s.exec?.label ?? '—'}</span>
-                        </span>
-                        <span className={`r ${s.adv ? (s.advisorSeen ? '' : 'idle') : 'off'}`}>
-                          <em className={`tag adv${s.adv ? (s.advisorSeen ? '' : ' idle') : ' off'}`}>ADV</em>
-                          <span className="m" title={s.adv && !s.advisorSeen
-                            ? 'Configured, but its model has not appeared in anything this session banked'
-                            : undefined}>
-                            {s.adv ? s.adv.label : 'none'}
-                            {s.adv && banked && !s.advisorSeen && ' · unused'}
-                          </span>
-                        </span>
-                      </span>
-
-                      <span className={`mc-kind ${s.sessionKind}`}>{s.sessionKind}</span>
-                      <span className="state">{s.status === 'claimed' ? 'starting' : 'running'}</span>
-
-                      <span className="lane-tail">
-                        <span className="what" title={s.itemTitle || undefined}>
-                          {s.itemId
-                            ? `#${s.itemId} ${s.itemTitle || 'item'}`
-                            : s.kind === 'nightly' ? 'general night — picks as it goes' : `${s.kind} job`}
-                        </span>
-                        <span className="split">
-                          <span className="bar" aria-hidden>
-                            <i className="ex" style={{ width: `${execShare}%` }} />
-                            <i className="ad" style={{ width: `${advSh}%` }} />
-                            <i className="ot" style={{ width: `${otherShare}%` }} />
-                          </span>
-                          <span className="note">
-                            {!banked ? 'nothing banked yet'
-                              : advSh > 0 ? `advice ${Math.round(advSh)}% of ${fmtUsd((s.execCostUsd ?? 0) + (s.advCostUsd ?? 0))}`
-                              : 'all executor'}
-                          </span>
-                        </span>
-                      </span>
-
-                      <span className="lane-burn">
-                        <b title={s.startedAt ? `started ${new Date(s.startedAt).toLocaleString()}` : undefined}>{s.since}</b>
-                        <i title="Tokens banked by items this session has already finished — the item in flight is not counted until it lands">
-                          {s.tokens > 0 ? fmtTok(s.tokens) : 'nothing banked'}
-                        </i>
-                      </span>
-                      <span className="caret" aria-hidden>{open ? '▾' : '▸'}</span>
-                    </div>
-
-                    {open && (
-                      <div className="lane-body">
-                        <div className="lane-ledger">
-                          <span className="cap">ROLE LEDGER</span>
-                          {(s.ledger ?? []).map((e, i) => (
-                            <div className="lx" key={`${e.itemId}·${i}`}>
-                              <span className="at">{e.when}</span>
-                              <span className="tags">
-                                {e.models.length > 0 ? e.models.map((m) => (
-                                  <em key={m.model} className={`tag ${m.role || 'other'}`}
-                                    title={`${m.label} — ${fmtTok(m.tokens)}${m.costUsd > 0 ? ` · ${fmtUsd(m.costUsd)}` : ''}`}>
-                                    {m.role === 'adv' ? 'ADV' : m.role === 'exec' ? 'EXEC' : '?'}
-                                  </em>
-                                )) : <em className="tag other" title="This run predates the per-model breakdown">—</em>}
-                              </span>
-                              <span className="what">
-                                {e.itemId ? (
-                                  <button className="link" onClick={() => go.detail(s.slug, 'roadmap', e.itemId)}>
-                                    #{e.itemId} {e.itemTitle || 'item'}
-                                  </button>
-                                ) : (
-                                  <span className="plain">{e.itemTitle || 'an item'}</span>
-                                )}
-                                <i>
-                                  {e.outcome} · {fmtUsd(e.costUsd)}
-                                  {e.advCostUsd > 0 && ` · advice ${fmtUsd(e.advCostUsd)}`}
-                                </i>
-                              </span>
-                            </div>
-                          ))}
-                          {(s.ledger ?? []).length === 0 && (
-                            <div className="lane-none">
-                              Nothing banked yet — a run row lands per finished item, so this session's
-                              first item is still in flight. Stack records what each role SPENT, not the
-                              advisor conversation; the ledger fills in item by item as they land.
-                            </div>
-                          )}
-                          {!s.adv && (
-                            <div className="lane-none">
-                              No advisor is configured, so this session is single-model — there is no
-                              exchange to read, and the whole spend below is the executor's.
-                            </div>
-                          )}
-
-                          <div className="lane-spend">
-                            <span className="cap">SPEND</span>
-                            <span className="bar" aria-hidden>
-                              {spend.map((m) => (
-                                <i key={m.model} className={m.role || 'other'} style={{ width: `${m.share}%` }} />
-                              ))}
-                              {!banked && <i className="none" style={{ width: '100%' }} />}
-                            </span>
-                            <span className="legend">
-                              {spend.map((m) => (
-                                <span className="sw" key={m.model}
-                                  title={m.role === '' ? 'Neither the executor nor the advisor alias claims this model — shown unattributed rather than guessed into a role'
-                                    : m.inferred ? 'Inferred: the executor is on the CLI default, and this was the only model running'
-                                    : undefined}>
-                                  <i className={m.role || 'other'} />
-                                  <b>{m.label}</b>
-                                  <em>{m.costUsd > 0 ? fmtUsd(m.costUsd) : fmtTok(m.tokens)}</em>
-                                  {m.inferred && <u>inferred</u>}
-                                </span>
-                              ))}
-                              {!banked && <span className="sw quiet">no banked usage to split</span>}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="lane-side">
-                          <div className={`lane-read ${read.tone}`}>
-                            <span className="tag">{read.tag}</span>
-                            <span className="txt">{read.text}</span>
-                          </div>
-                          <div className="lane-acts">
-                            <button className="btn-repo sm" onClick={() => setCfgOpen(true)}>
-                              {s.adv ? 'Change the roles' : 'Turn an advisor on'}
-                            </button>
-                            <button className="btn-repo sm" onClick={() => go.detail(s.slug)}>Open project</button>
-                          </div>
-                          {s.tmux && (
-                            <code className="tmux" title={`Watch it on the host: tmux attach -t ${s.tmux}\n(Autopilot sessions are not attachable from the browser — the terminal daemon carries stack-term-* only.)`}>
-                              tmux attach -t {s.tmux}
-                            </code>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  );
-                })}
-                {Array.from({ length: fleetIdle }, (_, i) => (
-                  <div className="mc-lane idle" key={`idle${i}`}>
-                    <div className="lane-head">
-                      <span className="tintdot idle" />
-                      <span className="who">
-                        <b className="quiet">Slot {fleetSlots.length + i + 1}</b>
-                        <i>nothing in flight</i>
-                      </span>
-                      <div style={{ flex: 1 }} />
-                      <span className="state quiet">IDLE</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
 
             {/* the live session card + the tiles (11a) */}
             <div className="mc14-toprow">
@@ -947,57 +679,9 @@ export function ControlPanel() {
               </div>
               )}
             </div>
-              {/* Running sessions — the web-attached ones and the detached tmux
-                  survivors. Every chip is a ▶ jump-in: it opens #/terminal
-                  attached to that session (by tmux name when there is one —
-                  same-tab jumps just switch to the tab that holds it; a shell
-                  or pre-tmux session falls back to a cwd match). Labels are
-                  Gemini's, applied automatically as unlabelled sessions appear. */}
-              {((data.terminal?.sessions?.length ?? 0) > 0 || (data.terminal?.detached?.length ?? 0) > 0) && (
-                <div className="mc-terms" aria-label="Running terminal sessions">
-                  {(data.terminal?.sessions ?? []).map((s) => s.polaris ? (
-                    // A Polaris planning session (#213): labelled as planning and
-                    // jumping to the studio, where the same tmux session re-attaches.
-                    <a key={s.sid} className="mc-termchip claude polaris"
-                      title={`A Polaris planning session — open the studio${s.label ? ` — ${s.label}` : ''}`}
-                      href={hrefTo.polaris(s.cwd.split('/')[0] || s.cwd)}>
-                      ✦ planning · {s.cwd.replace(/^\/home\/[^/]+/, '~')} · {sessionAge(s.startedAt)}
-                      {s.label && <em> — {s.label}</em>}
-                    </a>
-                  ) : (
-                    <a key={s.sid} className={`mc-termchip ${s.cmd}`}
-                      title={`Jump into this session${s.label ? ` — ${s.label}` : ''}`}
-                      href={hrefTo.terminal(s.cwd === '~' ? undefined : s.cwd, s.tmux || undefined)}>
-                      ▶ {s.cmd} · {s.cwd.replace(/^\/home\/[^/]+/, '~')} · {sessionAge(s.startedAt)}
-                      {s.label && <em> — {s.label}</em>}
-                    </a>
-                  ))}
-                  {(data.terminal?.detached ?? [])
-                    // A web session's own tmux name would double up with its
-                    // live chip above — skip those; keep true orphans and
-                    // sessions attached elsewhere (laptop ssh, another browser).
-                    .filter((d) => !(data.terminal?.sessions ?? []).some((s) => s.tmux === d.name))
-                    .map((d) => {
-                    // The name shape marks a planning session even after the
-                    // browser that started it is gone (#213).
-                    const polaris = d.name.startsWith('stack-term-pol-');
-                    return (
-                    <a key={d.name} className={`mc-termchip ${d.attached ? 'away' : 'detached'}${polaris ? ' polaris' : ''}`}
-                      title={d.attached
-                        ? `Attached on another device (tmux ${d.name}) — open it here too; both screens mirror the same session${d.label ? ` — ${d.label}` : ''}`
-                        : `Running unattended on the host (tmux ${d.name}) — jump back in${d.label ? ` — ${d.label}` : ''}`}
-                      href={hrefTo.terminal(d.cwd || undefined, d.name)}>
-                      {polaris ? '✦ planning' : '▶ claude'} · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}
-                      {d.label && <em> — {d.label}</em>}
-                    </a>
-                    );
-                  })}
-                  <button className="btn-repo sm" onClick={() => labelSessions()} disabled={labelBusy}
-                    title="Ask Gemini again what each running session is doing">
-                    {labelBusy ? 'Labelling…' : '✧ Re-label'}
-                  </button>
-                </div>
-              )}
+              {/* The running-sessions chips moved into the #283 lane list above —
+                  one place for what is running, rather than the same sessions
+                  described twice in two shapes. */}
               {/* #142 — paused sessions: limit-hit resumes holding for the reset,
                   or hung up by hand. Resume clears the hold, hang-up parks it. */}
               {data.jobs.some(isPausedSession) && (

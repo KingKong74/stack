@@ -329,7 +329,7 @@ a { color: inherit; }
 .tab { padding: 0 1px 13px; font-size: 14px; font-weight: 500; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
 /* Navigation "buttons" that are really anchors (so middle/ctrl-click opens a
    new tab) keep their button look — the classes carry the styling. */
-a.btn-repo, a.btn-accent, a.tab, a.mc-term, a.mc-termchip { text-decoration: none; cursor: pointer; }
+a.btn-repo, a.btn-accent, a.tab, a.mc-term { text-decoration: none; cursor: pointer; }
 a.tab { display: inline-block; }
 .tab:hover { color: var(--ink); }
 .tab.on { font-weight: 600; color: var(--accent); border-bottom-color: var(--accent); }
@@ -1708,24 +1708,8 @@ a.tab { display: inline-block; }
 .linklike { color: var(--accent); font-weight: 600; padding: 0; background: none; border: 0; cursor: pointer; }
 .linklike:hover { color: var(--accent-deep); text-decoration: underline; }
 
-/* running terminal sessions (#120) — every chip is a ▶ jump-in button */
-.mc-terms { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; }
-.mc-termchip {
-  font: inherit; font-size: 11.5px; font-weight: 600; color: var(--chip-ink);
-  background: var(--panel); border: 1px solid var(--line-2); border-radius: 20px; padding: 3px 10px;
-  cursor: pointer; transition: border-color 0.15s ease, color 0.15s ease;
-}
-.mc-termchip:hover { color: var(--accent-deep); border-color: var(--accent-deep); }
-.mc-termchip.claude { color: var(--accent); border-color: var(--accent-tint-border); }
-.mc-termchip.claude:hover { color: var(--accent-deep); border-color: var(--accent-deep); }
-.mc-termchip.detached { color: var(--muted); border-style: dashed; }
-.mc-termchip.detached:hover { color: var(--accent-deep); border-color: var(--accent-deep); }
-.mc-termchip.away { color: var(--live); border-color: var(--live); border-style: dashed; }
-/* Polaris planning sessions (#213): sage — thinking, not building */
-.mc-termchip.polaris { color: var(--sage); border-color: var(--sage); }
-.mc-termchip.polaris:hover { color: var(--accent-deep); border-color: var(--accent-deep); }
-.mc-termchip.away:hover { color: var(--accent-deep); border-color: var(--accent-deep); }
-.mc-termchip em { font-style: normal; font-weight: 500; color: var(--muted); }
+/* The terminal-session chips retired with #283: those sessions are rows in
+   the merged lane list now, styled as .mc-lane like every other session. */
 
 /* (#194) 7-day usage summary card — sits between the arm console and the schedule */
 .mc-usage {
@@ -2659,6 +2643,36 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc-lane .lane-acts { display: flex; gap: 6px; }
 .mc-lane .lane-acts .btn-repo { flex: 1; }
 .mc-lane .tmux { font-family: var(--mono); font-size: 9.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
+
+/* #283 (design 22a) — the merged lane list: terminal sessions alongside the
+   autopilot's workers, plus the queued rows behind them. */
+.mc-lane-sorts { display: flex; gap: 4px; flex: none; }
+.mc-fleet-head .btn-repo { flex: none; }
+/* origin is carried by the dot: autopilot takes the project tint (set inline),
+   terminal sessions green like the live pill, unattended terracotta. */
+.mc-lane .tintdot.web { background: var(--live); }
+.mc-lane .tintdot.detached { background: var(--accent); }
+.mc-lane .tintdot.queued { background: var(--line-3); }
+.mc-lane.away .tintdot.detached { background: var(--sage); }
+.mc-lane .lane-roles .r.none { font-family: var(--mono); font-size: 10px; color: var(--paused); cursor: help; }
+.mc-lane .split .note.warn { color: var(--accent-deep); }
+.mc-lane .lane-go { display: flex; align-items: center; gap: 5px; flex: none; }
+.mc-lane .lane-go .btn-repo { white-space: nowrap; }
+.mc-lane-kill { font-family: var(--mono); font-size: 12px; color: var(--muted); padding: 0 4px; }
+.mc-lane-kill:hover { color: var(--critical); }
+.mc-lane.queued { border-style: dashed; background: var(--bg); }
+.mc-lane.queued .lane-head { cursor: default; }
+.mc-lane-queuedhead { display: flex; align-items: center; gap: 10px; padding: 6px 2px 0; }
+.mc-lane-queuedhead .cap { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.1em; color: var(--paused); }
+.mc-lane-queuedhead .hair { flex: 1; height: 1px; background: var(--line-2); }
+.mc-lane .lane-tail .what.quiet { color: var(--muted); font-style: italic; }
+/* the expanded panel for a terminal lane — facts, since there is no ledger */
+.mc-lane .lane-facts { display: flex; flex-direction: column; gap: 4px; }
+.mc-lane .lane-facts > div { display: flex; align-items: baseline; gap: 8px; }
+.mc-lane .lane-facts span { width: 62px; flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--paused); }
+.mc-lane .lane-facts b { font-family: var(--mono); font-size: 10.5px; font-weight: 400; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.mc-lane .lane-read .tmux { margin-top: 2px; }
+.mc-lane-note { padding: 11px 13px; border-radius: 10px; border: 1px dashed var(--line-3); font-size: 11px; line-height: 1.6; color: var(--muted); }
 
 /* narrow: the role column and the burn drop under the name, and the expanded
    panel stacks the read card below the ledger rather than beside it. */
