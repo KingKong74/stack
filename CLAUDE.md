@@ -253,9 +253,25 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   `store.getThemePref/setThemePref`; App resolves to `<html data-theme>`). The dark palette is one
   `[data-theme='dark']` override block on the same named tokens at the top of `styles.css`, plus a
   short list of literal-background fixups right below it. Stickies keep their paper colours.
-- `screens/Control.tsx` (+ `screens/ControlRooms.tsx`, `screens/ControlRoles.tsx`) — **Mission
+- `screens/Control.tsx` (+ `screens/ControlRooms.tsx`, `screens/ControlRoles.tsx`,
+  `screens/ControlLanes.tsx`) — **Mission
   Control** (`#/control`, the
-  Dashboard header's "Mission Control" button): every project's automation from one point,
+  Dashboard header's "Mission Control" button): every project's automation from one point.
+  **What is running is ONE list** (#283, design 22a — `SessionLanes` in `ControlLanes.tsx`):
+  the autopilot's own workers AND every terminal session the host daemon can see (web tabs,
+  detached tmux survivors, sessions attached from another device) as rows in a single lane
+  list, replacing the old split between the fleet strip and the terminal chip strip — two
+  widgets fed by two unrelated paths (`autopilot_jobs` via the control payload vs the relay's
+  socket) that between them made "what is happening now" something you assembled yourself.
+  Sorted by **who needs you**: an unattended claude session on the host outranks the autopilot
+  (which is unattended BY DESIGN), which outranks a tab you already have open. The sources stay
+  honestly different where they differ — an autopilot lane carries its #280 role split and
+  spend panel but is reachable only over `tmux attach` on the host, while a terminal lane can be
+  jumped into but reads **"no model record"** in the role column, because Stack keeps no
+  per-model usage for one (the Terminal screen's meter is a daily transcript total, not a
+  per-session one). Idle autopilot capacity is still rendered (#268's contract), queued jobs sit
+  behind the lanes, and × on a detached row kills the host process behind a ConfirmModal.
+  Every project's automation from one point,
   restructured to the Stack Planning design's **14a shell**: five rooms — **Now / Nights /
   Plan / Build / Roles** — behind one **pinned live strip** (the primary claude/web session, or the
   first detached survivor, with Attach; ALL QUIET when nothing runs) and a **persistent right
