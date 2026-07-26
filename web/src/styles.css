@@ -2644,6 +2644,19 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc14-pick-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--line-3); font-size: 11.5px; font-weight: 500; color: var(--muted); }
 .mc14-pick-chip:hover { border-color: var(--accent); }
 .mc14-pick-chip.on { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-deep); }
+/* #271 — the whole-house chip leads the picker: a project is a filter, not a
+   requirement, so "all" is the resting state rather than an extra option. */
+.mc14-pick-chip.all { font-weight: 600; }
+.mc14-pick-chip.all.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* #271 — the tint carries project identity wherever the house is merged into
+   one list: the queue rows, the held rows and the Build phase headers. */
+.mc16-row > .tintdot, .mc16-heldrow > .tintdot, .mc14-phase .head > .tintdot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+}
+.mc16-prop .top { display: flex; align-items: center; gap: 7px; }
+.mc16-prop .top .tintdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.mc16-prop .where { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.mc16-settled { padding: 8px 2px 0; font-family: var(--mono); font-size: 10px; color: var(--faint); }
 .mc14-card { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); padding: 14px 15px; display: flex; flex-direction: column; gap: 8px; }
 .mc14-card .rule { font-size: 11px; line-height: 1.55; color: var(--muted); }
 .mc14-card .rule.quiet { color: var(--paused); }
