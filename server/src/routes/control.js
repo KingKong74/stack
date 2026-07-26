@@ -36,7 +36,9 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //     capacity,                             // how many jobs may run at once
 //     slots: [ { jobId, slug, name, tint, status, kind, sessionKind,
 //                itemId, itemTitle, branch, startedAt, since,
-//                tokens, costUsd, tmux } ]  // in-flight only; client pads idle
+//                tokens, costUsd, tmux } ], // in-flight only; client pads idle
+//     status: { code, tone, text, hint, fix },   // (#270) why it is/isn't running
+//     heartbeat: { ageSec, silent, hostLocal }   // (#270) the dispatcher's pulse
 //   }
 // }
 export const control = Router();
@@ -60,7 +62,7 @@ const tmuxNameFor = (slug, jobId) =>
 control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
-  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR, branchR, checksR, monthR] = await Promise.all([
+  const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR, branchR, checksR, monthR, hbR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, automode, autopilot_area, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
     // claimed_by that starts with 'auto/' or 'lane/' is an open lane branch; we
@@ -126,6 +128,11 @@ control.get('/', async (_req, res) => {
     // same convention as every server-side date bucket).
     q(`SELECT COALESCE(SUM(tokens), 0) AS tokens, COALESCE(SUM(cost_usd), 0) AS cost, count(*)::int AS runs
          FROM autopilot_runs WHERE finished_at >= date_trunc('month', now())`),
+    // (#270) The dispatcher's pulse — its last GET /next poll. A server that
+    // pre-dates the table just reports no heartbeat, which reads as unknown
+    // rather than as silent (see the resolver below).
+    q(`SELECT last_poll_at, host_local FROM dispatcher_heartbeat WHERE id`)
+      .catch(() => ({ rows: [] })),
   ]);
 
   const roadByP = new Map();
@@ -394,9 +401,89 @@ control.get('/', async (_req, res) => {
   // leaves more in flight than the fleet is meant to hold, the strip must
   // show it. The client pads with idle slots up to capacity instead.
 
+  // (#270) Loud idle — the honest reason nothing is starting. The most
+  // important fact about an automation system is whether it is actually
+  // running, and a screen of calm green is a lie when the loop is dead.
+  // Resolved most-fundamental-first: if nobody is polling, nothing else about
+  // the configuration matters, so the heartbeat outranks every other reason.
+  const hb = hbR.rows[0];
+  const hbAgeSec = hb
+    ? Math.max(0, Math.round((Date.now() - new Date(hb.last_poll_at).getTime()) / 1000))
+    : null;
+  // The dispatcher runs on a one-minute cron, so five minutes of silence is
+  // four missed ticks — an outage, not jitter. No heartbeat row at all (a
+  // server that pre-dates the table) reads as UNKNOWN, never as silent.
+  const DISPATCH_SILENT_SEC = 5 * 60;
+  const dispatcherSilent = hbAgeSec !== null && hbAgeSec > DISPATCH_SILENT_SEC;
+  const automodeProjects = projects.filter((p) => p.automode);
+  const eligibleProjects = automodeProjects.filter((p) => p.nextPick);
+  const heldResume = jobsR.rows.find((j) => j.kind === 'resume'
+    && (j.status === 'paused' || (j.status === 'queued' && j.not_before)));
+  const fleetStatus = (() => {
+    if (dispatcherSilent) {
+      return {
+        code: 'dispatcher-silent', tone: 'bad',
+        text: `The host dispatcher has not polled for ${relativeTime(hb.last_poll_at) || 'a while'}. Nothing runs — armed or not — until it comes back.`,
+        hint: 'On the host: `crontab -l` should carry the every-minute stack-autopilot-dispatch.mjs line, and `tail ~/.stack/autopilot.log` says why it stopped.',
+        fix: null,
+      };
+    }
+    if (fleetSlots.length > 0) {
+      return {
+        code: 'working', tone: 'good',
+        text: fleetSlots.length >= FLEET_CAPACITY
+          ? 'Every slot is working — new work waits for one to free up.'
+          : `${fleetSlots.length} of ${FLEET_CAPACITY} slots working.`,
+        hint: '', fix: null,
+      };
+    }
+    if (!appSettings.autopilot_enabled) {
+      return {
+        code: 'disarmed', tone: 'bad',
+        text: 'Autopilot is off — the nightly and every scheduled session are paused. ▶ Run now still works.',
+        hint: '', fix: { kind: 'arm', label: 'Arm the autopilot' },
+      };
+    }
+    if (automodeProjects.length === 0) {
+      return {
+        code: 'no-automode', tone: 'warn',
+        text: 'Armed, but no project is in automode — the runner has nothing it is allowed to touch.',
+        hint: 'Flip a project switch in the list below.', fix: null,
+      };
+    }
+    if (heldResume) {
+      return {
+        code: 'paused', tone: 'warn',
+        text: heldResume.status === 'paused'
+          ? 'A session is hung up — it only resumes when you say so, and it holds the queue.'
+          : 'A session is paused on the usage limit and holds the queue until its reset.',
+        hint: '', fix: { kind: 'resume', label: '▶ Resume it' },
+      };
+    }
+    if (eligibleProjects.length === 0) {
+      return {
+        code: 'nothing-eligible', tone: 'warn',
+        text: 'Armed with automode on, but nothing is eligible — every open item is parked, claimed, outside the target area, or still awaiting review.',
+        hint: 'Approving a found item in the Plan room inbox is usually what unblocks this.',
+        fix: { kind: 'plan', label: 'Open the Plan room' },
+      };
+    }
+    return {
+      code: 'waiting', tone: 'good',
+      text: `Armed and ready — ${eligibleProjects.length} project${eligibleProjects.length === 1 ? '' : 's'} with work queued. The next window is the nightly at ${appSettings.autopilot_time}.`,
+      hint: '', fix: null,
+    };
+  })();
+
   res.json({
     // (#268) The fleet: capacity plus every in-flight worker.
-    fleet: { capacity: FLEET_CAPACITY, slots: fleetSlots },
+    // (#270) …and the honest reason it is or is not running.
+    fleet: {
+      capacity: FLEET_CAPACITY,
+      slots: fleetSlots,
+      status: fleetStatus,
+      heartbeat: { ageSec: hbAgeSec, silent: dispatcherSilent, hostLocal: (hb && hb.host_local) || '' },
+    },
     autopilot: {
       enabled: appSettings.autopilot_enabled,
       minutes: appSettings.autopilot_minutes,

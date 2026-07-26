@@ -321,6 +321,9 @@ export function ControlPanel() {
   const fleetCapacity = data?.fleet?.capacity ?? 1;
   const fleetSlots = data?.fleet?.slots ?? [];
   const fleetIdle = Math.max(0, fleetCapacity - fleetSlots.length);
+  // #270 — the honest reason the fleet is or is not running. Absent only on a
+  // server that pre-dates the resolver, where the line simply doesn't render.
+  const fleetStatus = data?.fleet?.status;
   const shownProjects = (data?.projects ?? []).filter((p) =>
     projFilter === 'auto' ? p.automode : projFilter === 'live' ? !!p.live : true);
   // Per-project run history for the row bars — oldest → newest, this week.
@@ -438,6 +441,33 @@ export function ControlPanel() {
             <div className="mc14-cols">
               <div className="mc14-body">
                 {room === 'now' && (<>
+            {/* #270 — LOUD IDLE. The most important fact about an automation
+                system is whether it is actually running, so it gets the first
+                line of the room, with the one-click fix beside it. */}
+            {fleetStatus && (
+              <div className={`mc-idle ${fleetStatus.tone}`} role={fleetStatus.tone === 'bad' ? 'alert' : undefined}>
+                <span className="dot" />
+                <span className="txt">
+                  {fleetStatus.text}
+                  {fleetStatus.hint && <em>{fleetStatus.hint}</em>}
+                </span>
+                {fleetStatus.fix?.kind === 'arm' && (
+                  <button className="fix" onClick={() => setAutopilot({ autopilotEnabled: true })}>
+                    {fleetStatus.fix.label}
+                  </button>
+                )}
+                {fleetStatus.fix?.kind === 'plan' && (
+                  <button className="fix" onClick={() => setRoom('plan')}>{fleetStatus.fix.label}</button>
+                )}
+                {fleetStatus.fix?.kind === 'resume' && (() => {
+                  const j = data.jobs.find(isPausedSession);
+                  return j ? (
+                    <button className="fix" onClick={() => resumeJob(j)}>{fleetStatus.fix!.label}</button>
+                  ) : null;
+                })()}
+              </div>
+            )}
+
             {/* #268 — the fleet strip: one tile per worker slot, busy or idle.
                 Once there are N workers you need to see N workers: what each
                 holds, how long it has been at it and what it has burned. */}

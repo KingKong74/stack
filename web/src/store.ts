@@ -380,10 +380,35 @@ export interface FleetSlot {
   tmux: string;
 }
 
+// (#270) Loud idle — the honest reason the fleet is or is not running, resolved
+// server-side most-fundamental-first. `tone` drives the colour; `fix` is the
+// one-click remedy where one exists; `hint` is the host-side instruction when
+// it doesn't. 'dispatcher-silent' outranks everything: if nobody is polling,
+// no amount of correct configuration matters.
+export type FleetStatusCode =
+  | 'dispatcher-silent' | 'working' | 'disarmed' | 'no-automode'
+  | 'paused' | 'nothing-eligible' | 'waiting';
+
+export interface FleetStatus {
+  code: FleetStatusCode;
+  tone: 'good' | 'warn' | 'bad';
+  text: string;
+  hint: string;
+  fix: { kind: 'arm' | 'resume' | 'plan'; label: string } | null;
+}
+
 export interface ControlData {
   // (#268) The fleet: how many workers the host may run at once, and what each
   // busy one holds. Slots below capacity are idle — the strip renders them.
-  fleet?: { capacity: number; slots: FleetSlot[] };
+  // (#270) …plus why it is or is not running, and the dispatcher's pulse.
+  fleet?: {
+    capacity: number;
+    slots: FleetSlot[];
+    status?: FleetStatus;
+    // ageSec null = no heartbeat recorded (a pre-#270 server) — reads as
+    // unknown, never as silent.
+    heartbeat?: { ageSec: number | null; silent: boolean; hostLocal: string };
+  };
   autopilot: {
     enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number;
     executorModel: string;  // '' = the claude CLI's default model (#153)

@@ -2511,6 +2511,21 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc14-mini .l { font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
 .mc14-mini .l.bad { color: var(--critical); }
 
+/* Now — loud idle (#270): the first line of the room. An automation system
+   that is not running must never render as calm, so `bad` is unmissable. */
+.mc-idle { display: flex; align-items: flex-start; gap: 10px; padding: 11px 15px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--card); }
+.mc-idle .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; margin-top: 5px; background: var(--paused); }
+.mc-idle .txt { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink); }
+.mc-idle .txt em { display: block; margin-top: 3px; font-family: var(--mono); font-size: 10.5px; font-style: normal; line-height: 1.5; color: var(--muted); }
+.mc-idle .fix { flex: none; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent-tint); font-size: 11.5px; font-weight: 500; color: var(--accent-deep); white-space: nowrap; }
+.mc-idle .fix:hover { background: var(--accent); color: #fff; }
+.mc-idle.good .dot { background: var(--live); }
+.mc-idle.warn { border-color: var(--building-tint); background: var(--building-tint); }
+.mc-idle.warn .dot { background: var(--building); }
+.mc-idle.bad { border-color: var(--critical); background: var(--paused-tint); }
+.mc-idle.bad .dot { background: var(--critical); }
+.mc-idle.bad .txt { font-weight: 500; }
+
 /* Now — the fleet strip (#268): one tile per worker slot, busy or idle. The
    strip's width IS the fleet's size, so idle slots are drawn, never omitted. */
 .mc-fleet { display: flex; flex-direction: column; gap: 8px; }

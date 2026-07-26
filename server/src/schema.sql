@@ -599,3 +599,15 @@ BEGIN
     UPDATE settings SET tips_seeded = true WHERE id;
   END IF;
 END $$;
+
+-- (#270) Dispatcher heartbeat — the host's every-minute GET /next poll stamps
+-- this singleton. Freshness is the ONLY honest signal that the automation loop
+-- is alive: the arm switch says what should happen, the heartbeat says whether
+-- anything is asking. A dispatcher that stopped polling (cron removed, host
+-- rebooted, node missing) must not read as calm on Mission Control.
+CREATE TABLE IF NOT EXISTS dispatcher_heartbeat (
+  id           BOOLEAN PRIMARY KEY DEFAULT true CHECK (id),
+  last_poll_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  host_local   TEXT NOT NULL DEFAULT ''   -- the host clock the dispatcher reported
+);
+INSERT INTO dispatcher_heartbeat (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
