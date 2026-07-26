@@ -20,6 +20,7 @@ import { timeline } from './routes/timeline.js';
 import { auth } from './routes/auth.js';
 import { devices } from './routes/devices.js';
 import { control } from './routes/control.js';
+import { review } from './routes/review.js';
 import { autopilot, autopilotGlobal } from './routes/autopilot.js';
 import { branches } from './routes/branches.js';
 import { terminal } from './routes/terminal.js';
@@ -61,6 +62,8 @@ app.use('/api/auth/devices', requireToken, devices);
 app.use('/api/ingest', requireToken, ingest);
 app.use('/api/overview', requireToken, overview);
 app.use('/api/control', requireToken, control);
+// #282 — the Review room's cross-project payload (queue, archive, nights).
+app.use('/api/review', requireToken, review);
 app.use('/api/search', requireToken, search);
 app.use('/api/timeline', requireToken, timeline);
 app.use('/api/settings', requireToken, settings);

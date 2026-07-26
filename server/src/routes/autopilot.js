@@ -11,6 +11,9 @@ import { readSettings, cleanAutopilotTime } from '../settings.js';
 export const autopilot = Router({ mergeParams: true });
 
 const OUTCOMES = ['landed', 'no-commits', 'failed', 'limit', 'planned'];
+// #282 — the reviewer's three possible reads. NULL is the fourth state and means
+// "no review ran", which is deliberately not the same as "nothing found".
+const REVIEW_VERDICTS = ['clean', 'concerns', 'blocked'];
 
 autopilot.use(async (req, res, next) => {
   const project = await projectBySlug(req.params.slug);
@@ -37,6 +40,12 @@ export function runShape(r) {
     // Named tmux session (#171): set when the run was started inside a tmux session
     // so the web terminal can re-attach for live monitoring while the run is active.
     tmuxSession: r.tmux_session || null,
+    // The reviewer's stored read (#282): clean | concerns | blocked, or '' when
+    // no review ran (keyless, no diff, or a row predating the column). The
+    // Review room shows a change pre-verdicted; the human still decides.
+    reviewVerdict: r.review_verdict || '',
+    reviewNote: r.review_note || '',
+    reviewFindings: r.review_findings ?? null,
     when: relativeTime(r.finished_at) || 'just now',
     finishedAt: r.finished_at,
   };
@@ -532,10 +541,16 @@ autopilot.post('/runs', async (req, res) => {
   // tmux_session (#171): the named tmux session monitoring this run, if any.
   const tmuxSession = b.tmux_session && typeof b.tmux_session === 'string'
     ? String(b.tmux_session).slice(0, 120) : null;
+  // The reviewer's verdict (#282). Only the three known words are stored — an
+  // unrecognised one becomes NULL rather than inventing a verdict nobody gave.
+  const reviewVerdict = REVIEW_VERDICTS.includes(b.review_verdict) ? b.review_verdict : null;
+  const reviewNote = b.review_note ? String(b.review_note).slice(0, 1200) : null;
+  const reviewFindings = Number.isFinite(Number(b.review_findings))
+    ? Math.max(0, Math.trunc(Number(b.review_findings))) : null;
   const { rows } = await q(
     `INSERT INTO autopilot_runs
-       (project_id, item_id, item_title, branch, outcome, commits, tokens, cost_usd, checks_failing, summary, model_usage, tmux_session, started_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12, COALESCE($13, now())) RETURNING *`,
+       (project_id, item_id, item_title, branch, outcome, commits, tokens, cost_usd, checks_failing, summary, model_usage, tmux_session, review_verdict, review_note, review_findings, started_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15, COALESCE($16, now())) RETURNING *`,
     [
       req.project.id,
       Number.isFinite(Number(b.item_id)) ? Number(b.item_id) : null,
@@ -549,8 +564,41 @@ autopilot.post('/runs', async (req, res) => {
       String(b.summary || '').slice(0, 2000),
       modelUsage ? JSON.stringify(modelUsage) : null,
       tmuxSession,
+      reviewVerdict, reviewNote, reviewFindings,
       b.started_at ? new Date(b.started_at) : null,
     ]
   );
   res.status(201).json(runShape(rows[0]));
+});
+
+// PATCH /runs/:id -> attach the reviewer's read to a run already recorded (#282).
+// The run row is posted BEFORE the Gemini diff review so a crash mid-review
+// still costs only the review, never the record — which means the verdict has
+// to arrive as a second, narrow write. Review fields only: nothing else about a
+// finished run is editable after the fact.
+autopilot.patch('/runs/:id', async (req, res) => {
+  const b = req.body || {};
+  const sets = [];
+  const vals = [];
+  let i = 1;
+  if (b.review_verdict !== undefined) {
+    sets.push(`review_verdict = $${i++}`);
+    vals.push(REVIEW_VERDICTS.includes(b.review_verdict) ? b.review_verdict : null);
+  }
+  if (b.review_note !== undefined) {
+    sets.push(`review_note = $${i++}`);
+    vals.push(b.review_note ? String(b.review_note).slice(0, 1200) : null);
+  }
+  if (b.review_findings !== undefined) {
+    sets.push(`review_findings = $${i++}`);
+    vals.push(Number.isFinite(Number(b.review_findings)) ? Math.max(0, Math.trunc(Number(b.review_findings))) : null);
+  }
+  if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
+  vals.push(req.project.id, Number(req.params.id));
+  const { rows } = await q(
+    `UPDATE autopilot_runs SET ${sets.join(', ')} WHERE project_id = $${i++} AND id = $${i} RETURNING *`,
+    vals
+  );
+  if (!rows.length) return res.status(404).json({ error: 'No such run.' });
+  res.json(runShape(rows[0]));
 });

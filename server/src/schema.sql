@@ -426,6 +426,22 @@ ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS model_usage JSONB;
 -- started inside a tmux session (non-tmux host, or pre-dates this column).
 ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS tmux_session TEXT;
 
+-- #273/#282 — the REVIEWER's read on this run, stored instead of thrown away.
+-- The night already runs a Gemini second-model review of the branch diff and
+-- writes a machine-readable verdict for the #212 auto-merge gate; until now
+-- that verdict evaporated the moment the gate read it, so a human opening the
+-- review queue in the morning started from nothing. Keeping it means every
+-- change arrives pre-verdicted:
+--   review_verdict  clean | concerns | blocked | NULL (no review ran — keyless,
+--                   no diff, or a pre-#282 row). NEVER a verdict Stack invented.
+--   review_note     the reviewer's own sentence on what it found.
+--   review_findings how many bugs it filed into the review inbox (0 = clean).
+-- Suggestions, not state: the human still gives the verdict. See CLAUDE.md's
+-- "Gemini annotates, the human disposes".
+ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS review_verdict  TEXT;
+ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS review_note     TEXT;
+ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS review_findings INT;
+
 -- Scheduled sessions — Mission Control's calendar. A row is "run the autopilot
 -- on this project at this time": one-off (run_date set, days empty) or
 -- recurring (days = ISO getDay() ints 0-6, run_date NULL). item_id optionally
