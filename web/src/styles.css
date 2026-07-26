@@ -3093,3 +3093,39 @@ button.mc-day-chip:hover { border-color: var(--accent); }
   .q-hrow-note { flex-basis: 100%; }
   .q-assert { max-width: 100%; }
 }
+
+/* #279 — each check's own history: the sparkline, the diagnosis and the
+   unfolded run list. Bars are coloured by outcome and sized by latency, so a
+   check that is passing but slowing down reads that way before it goes red. */
+.q-why-more { font-size: 11px; line-height: 1.55; color: var(--muted); font-style: italic; text-wrap: pretty; }
+.q-health.needs-work .q-why-more, .q-health.down .q-why-more { color: var(--critical); opacity: 0.9; }
+.q-diag { color: var(--paused); }
+.q-row-sub.bad .q-diag { color: var(--critical); opacity: 0.8; }
+.q-spark { display: inline-flex; align-items: flex-end; gap: 1px; height: 16px; width: 68px; flex: none; }
+.q-spark span { flex: 1; min-width: 1px; border-radius: 1px; background: var(--green); }
+.q-spark span.bad { background: var(--critical); }
+.q-spark-btn { flex: none; padding: 2px 3px; border-radius: 5px; line-height: 0; }
+.q-spark-btn:hover, .q-spark-btn.on { background: var(--panel); }
+.q-spark-none { flex: none; width: 74px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--keyline); }
+.q-flaky { flex: none; font-family: var(--mono); font-size: 9px; font-weight: 500; color: var(--building);
+  background: var(--building-tint); border-radius: 4px; padding: 1px 6px; }
+.q-hist { margin: 2px 4px 8px 34px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--panel); overflow: hidden; }
+.q-hist-head { display: flex; align-items: baseline; gap: 10px; padding: 8px 11px; border-bottom: 1px solid var(--line-2);
+  font-size: 10.5px; color: var(--muted); }
+.q-hist-note { font-size: 10px; line-height: 1.5; color: var(--paused); text-align: right; max-width: 380px; text-wrap: pretty; }
+.q-hist-row { display: flex; align-items: center; gap: 10px; padding: 5px 11px; font-family: var(--mono); font-size: 10px; }
+.q-hist-row + .q-hist-row { border-top: 1px solid var(--line); }
+.q-hist-when { width: 84px; flex: none; color: var(--ink); }
+.q-hist-code { width: 78px; flex: none; color: var(--muted); }
+.q-hist-row.fail .q-hist-code { color: var(--critical); }
+.q-hist-ms { width: 56px; flex: none; color: var(--paused); }
+.q-hist-err { flex: 1; min-width: 0; color: var(--critical); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .q-hist { margin-left: 8px; }
+  .q-hist-note { display: none; }
+  .q-hist-row { flex-wrap: wrap; }
+  .q-hist-err { flex-basis: 100%; }
+  .q-spark { width: 52px; }
+  .q-spark-none { display: none; }
+}

@@ -410,7 +410,15 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   status pill = the inline editor, ✓ fix / × delete, the ↳ commit chip still jumping to Activity);
   **Suite** is every check with the composer (method/name/URL/expected status, request body,
   the assertion tabs — ✧ Semantic absent when keyless — the #261 **Authenticated** opt-in, and
-  ▸ ✎ × / → Bug per row, authenticated rows wearing 🔒); **History** is
+  ▸ ✎ × / → Bug per row, authenticated rows wearing 🔒) plus **each check's own memory** (#279):
+  a **sparkline** per row — colour = the outcome, height = that run's latency against the slowest
+  in the window, so a check that's passing but slowing reads that way before it goes red — which
+  is also the button that unfolds the check's last N runs (when · code · ms · error). Red rows
+  carry a plain-language **diagnosis** ("failed every one of the last 6 runs" / "failed for the
+  first time in 12 runs" / "failed 4 of the last 6 runs"), a green-but-mixed row wears a `flaky`
+  chip, and the health card's second line names the worst offender — the one sentence a single
+  stored result could never answer. Two runs is the floor for saying anything at all;
+  **History** is
   the `check_runs` ledger (when · scope · pass bar · note · duration). `+ Report` is an inline
   composer (title + C/H/M/L, Enter files, esc closes), and `→ Bug` on a red check opens it
   prefilled with the failure AND links the two (#278). Distinct states are drawn, not implied:
@@ -613,6 +621,18 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     (scope all|one, total/passed/failed, duration_ms) — the health card's pass-rate trend, the
     KPI deltas and the History ledger. Written best-effort after the checks save their results (an insert hiccup
     never fails the run); the autopilot's nightly checks run lands here too.
+  - `check_results` — **each check's own history** (#279): one row per check per run
+    (status/code/ms/error + `run_id`). The checks row holds only the latest result and `check_runs`
+    only per-run totals, so "this has been flaky for a week" used to be unanswerable — a red light
+    with no diagnosis. These rows are what let the Quality page sparkline a check, say
+    "failed 4 of the last 6 runs" and tell a fresh regression from a long-standing failure.
+    Written best-effort in ONE statement per run (`INSERT … SELECT` off the just-updated checks, so
+    the recorded result always equals what the row shows), then **pruned to `util.CHECK_HISTORY_KEEP`
+    rows per check** (60 — the third single-knob constant, alongside `STALE_DAYS` and
+    `PRESENCE_TTL_MINUTES`) so nightly runs can't grow the table without bound. Deleting a check
+    cascades; **editing what a check TESTS clears its history** — the same reasoning that already
+    clears the stored result, since past passes were against a different test — while renaming
+    keeps it.
   - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap|future`, fingerprint).
   - `autopilot_schedule` + `autopilot_jobs` — Mission Control's calendar and the job queue the
     host dispatcher polls (see scripts/stack-autopilot-dispatch.mjs). Schedule rows: host-local
@@ -917,12 +937,18 @@ the silent metadata backstop so the feed never has gaps.
   `DELETE /api/projects/:slug/notes/:id`
 - `GET|POST /api/projects/:slug/checks` (POST/PATCH also take `auth: bool` — #261, run the check
   with the server's own token, same-origin only) · `PATCH /api/projects/:slug/checks/:id` (#143 — edit
-  any subset of the POST fields; changing anything but the name — `auth` included — clears the stored result) ·
+  any subset of the POST fields; changing anything but the name — `auth` included — clears the stored
+  result AND that check's `check_results` history (#279)) ·
   `DELETE /api/projects/:slug/checks/:id` ·
   `POST /api/projects/:slug/checks/run` (all, or one with `{id}`; returns updated rows — and
-  lands a summary row in `check_runs`) ·
-  `GET /api/projects/:slug/checks/runs?limit=` (the run history, newest first — the Audit
-  dashboard's trend strip)
+  lands a summary row in `check_runs` plus one `check_results` row per check probed, then prunes
+  each check to `CHECK_HISTORY_KEEP`) ·
+  `GET /api/projects/:slug/checks/runs?limit=` (the run history, newest first — the pass-rate
+  trend + the History ledger) ·
+  `GET /api/projects/:slug/checks/history?limit=` (#279 — each check's own last N results,
+  **keyed by check id**, newest first, `limit` clamped to `CHECK_HISTORY_KEEP`. One window
+  function, one fetch; the Suite sparklines, the flaky flag and every "failed 4 of the last 6
+  runs" line are derived from it client-side)
 - `GET|POST /api/tips` · `PATCH|DELETE /api/tips/:id` · `POST /api/tips/:id/run` (the app-wide
   recipe library behind every project's Tips tab — GLOBAL, no slug. PATCH takes any subset
   incl. `{pinned}`; `/run` is just the ledger (uses + last_run_at) — the actual run is the

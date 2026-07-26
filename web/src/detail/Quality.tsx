@@ -82,17 +82,17 @@ function readHistory(results: CheckResult[] | undefined): HistoryStats {
   while (streak < n && results[streak].status === newest) streak += 1;
   const flaky = fails > 0 && fails < n;
 
-  // One run is not a trend — say nothing rather than dress it up.
+  // One run is not a trend — say nothing rather than dress it up. The phrase is
+  // always a past participle, so it reads standalone on a row ("· failed 4 of
+  // the last 6 runs") AND after a name ("Webhook receipt has …").
+  // Order matters: a check whose newest result is its ONLY failure is a fresh
+  // regression; one that has failed four times in the window is not, however
+  // long its current streak.
   let diagnosis = '';
-  if (n >= 2) {
-    if (newest === 'fail') {
-      diagnosis = streak === n ? `red every one of the last ${n} runs`
-        : streak === 1 ? `first failure in ${n} runs`
-          : `failed ${fails} of the last ${n} runs`;
-    } else if (fails > 0) {
-      diagnosis = streak === n ? '' // impossible with fails > 0, but keeps the branch honest
-        : `green again — failed ${fails} of the last ${n} runs`;
-    }
+  if (n >= 2 && fails > 0) {
+    diagnosis = fails === n ? `failed every one of the last ${n} runs`
+      : fails === 1 ? (newest === 'fail' ? `failed for the first time in ${n} runs` : `failed once in the last ${n} runs`)
+        : `failed ${fails} of the last ${n} runs`;
   }
   return { n, fails, streak, flaky, diagnosis };
 }
@@ -667,11 +667,11 @@ const deriveAssertionTab = (d: Draft): AssertionTab =>
   d.semantic ? 'semantic' : d.jsonPath ? 'json' : d.contains ? 'contains' : 'none';
 
 function SuitePanel({
-  checks, bugFor, siteUrl, busy, geminiReady, openAdd, onAddConsumed,
+  checks, bugFor, siteUrl, busy, geminiReady, openAdd, onAddConsumed, history,
   onRun, onAdd, onEdit, onDelete, onFileBug, highlightId,
 }: {
   checks: Check[]; bugFor: (c: Check) => Bug | null; siteUrl: string; busy: boolean;
-  geminiReady: boolean; openAdd: boolean; onAddConsumed: () => void;
+  geminiReady: boolean; openAdd: boolean; onAddConsumed: () => void; history: CheckHistory;
   onRun: (id?: number) => void;
   onAdd: (input: CheckInput) => void;
   onEdit: (id: number, patch: Partial<CheckInput>) => void;
@@ -683,6 +683,9 @@ function SuitePanel({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [d, setD] = useState<Draft>(EMPTY_DRAFT);
   const [assertTab, setAssertTab] = useState<AssertionTab>('none');
+  // #279 — which check has its history unfolded (one at a time; the sparkline
+  // is the affordance, the panel underneath is the receipts).
+  const [openHistory, setOpenHistory] = useState<number | null>(null);
   const set = (patch: Partial<Draft>) => setD((prev) => ({ ...prev, ...patch }));
 
   const close = () => { setOpen(false); setEditingId(null); setD(EMPTY_DRAFT); setAssertTab('none'); };
@@ -823,33 +826,76 @@ function SuitePanel({
         {checks.map((c) => {
           const a = assertLabel(c);
           const bug = bugFor(c);
+          const past = history[c.id];
+          const stats = readHistory(past);
+          const shown = openHistory === c.id;
           return (
-            <div className={`q-srow ${c.lastStatus || 'never'}${highlightId === String(c.id) ? ' hl' : ''}`}
-              key={c.id} data-hl={c.id}>
-              <span className={`check-dot ${c.lastStatus || 'never'}`} />
-              <span className={`check-method ${c.method === 'GET' ? '' : 'fn'}`}>{c.method}</span>
-              {c.auth && (
-                <span className="check-authed" title="Runs with the app's own token — this project's origin only">🔒</span>
-              )}
-              <div className="q-row-main">
-                <div className="q-row-title">
-                  <span className="t">{c.name}</span>
-                  <span className={`q-assert${a.ai ? ' ai' : ''}`} title={a.text}>{a.text}</span>
-                  {bug && <span className="q-link flat">↳ {bug.id} {bug.status}</span>}
-                </div>
-                <span className={`q-row-sub${c.lastStatus === 'fail' ? ' bad' : ''}`}>
-                  {c.lastStatus === 'fail' && c.lastError ? c.lastError : c.url}
-                </span>
-              </div>
-              <span className={`q-crow-result ${c.lastStatus || 'never'}`}>{checkResult(c)}</span>
-              <div className="q-row-acts">
-                {c.lastStatus === 'fail' && wantsBug(bug) && (
-                  <button className="q-act red" onClick={() => onFileBug(c)}>→ Bug</button>
+            <div key={c.id}>
+              <div className={`q-srow ${c.lastStatus || 'never'}${highlightId === String(c.id) ? ' hl' : ''}`}
+                data-hl={c.id}>
+                <span className={`check-dot ${c.lastStatus || 'never'}`} />
+                <span className={`check-method ${c.method === 'GET' ? '' : 'fn'}`}>{c.method}</span>
+                {c.auth && (
+                  <span className="check-authed" title="Runs with the app's own token — this project's origin only">🔒</span>
                 )}
-                <button className="q-icon" disabled={busy} onClick={() => onRun(c.id)} title="Run this check">▸</button>
-                <button className="q-icon" onClick={() => startEdit(c)} title="Edit">✎</button>
-                <button className="q-icon danger" onClick={() => onDelete(c.id)} title="Delete">×</button>
+                <div className="q-row-main">
+                  <div className="q-row-title">
+                    <span className="t">{c.name}</span>
+                    <span className={`q-assert${a.ai ? ' ai' : ''}`} title={a.text}>{a.text}</span>
+                    {/* #279 — flaky is its own signal: neither green nor honestly red. */}
+                    {stats.flaky && c.lastStatus === 'pass' && (
+                      <span className="q-flaky" title={stats.diagnosis}>flaky</span>
+                    )}
+                    {bug && <span className="q-link flat">↳ {bug.id} {bug.status}</span>}
+                  </div>
+                  <span className={`q-row-sub${c.lastStatus === 'fail' ? ' bad' : ''}`}>
+                    {c.lastStatus === 'fail' && c.lastError ? c.lastError : c.url}
+                    {stats.diagnosis && (
+                      <span className="q-diag">
+                        {' · '}{c.lastStatus === 'pass' ? 'green again — ' : ''}{stats.diagnosis}
+                      </span>
+                    )}
+                  </span>
+                </div>
+                {/* The sparkline IS the affordance for the history panel. */}
+                {stats.n > 1 ? (
+                  <button className={`q-spark-btn${shown ? ' on' : ''}`} title="Show this check's recent runs"
+                    onClick={() => setOpenHistory(shown ? null : c.id)}>
+                    <Spark results={past} />
+                  </button>
+                ) : <span className="q-spark-none" title="No history yet — it builds from each run">·</span>}
+                <span className={`q-crow-result ${c.lastStatus || 'never'}`}>{checkResult(c)}</span>
+                <div className="q-row-acts">
+                  {c.lastStatus === 'fail' && wantsBug(bug) && (
+                    <button className="q-act red" onClick={() => onFileBug(c)}>→ Bug</button>
+                  )}
+                  <button className="q-icon" disabled={busy} onClick={() => onRun(c.id)} title="Run this check">▸</button>
+                  <button className="q-icon" onClick={() => startEdit(c)} title="Edit">✎</button>
+                  <button className="q-icon danger" onClick={() => onDelete(c.id)} title="Delete">×</button>
+                </div>
               </div>
+              {shown && past && (
+                <div className="q-hist">
+                  <div className="q-hist-head">
+                    <span className="q-eyebrow">LAST {past.length} RUNS</span>
+                    <span>{stats.fails ? `${stats.fails} red` : 'all green'}</span>
+                    <div className="q-spacer" />
+                    <span className="q-hist-note">
+                      Kept per check; editing what a check tests clears its history, since past passes
+                      were against a different test.
+                    </span>
+                  </div>
+                  {past.map((r, i) => (
+                    <div className={`q-hist-row ${r.status}`} key={i}>
+                      <span className={`check-dot ${r.status}`} />
+                      <span className="q-hist-when">{r.when}</span>
+                      <span className="q-hist-code">{r.code ?? 'no response'}</span>
+                      <span className="q-hist-ms">{fmtMs(r.ms)}</span>
+                      <span className="q-hist-err">{r.error || ''}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
@@ -961,18 +1007,22 @@ export function Quality({
 }) {
   const [seg, setSeg] = useState<Seg>('now');
   const [runs, setRuns] = useState<CheckRun[]>([]);
+  const [history, setHistory] = useState<CheckHistory>({});
   const [report, setReport] = useState<{ open: boolean; title: string; check: Check | null }>(
     { open: false, title: '', check: null });
   const [showFixed, setShowFixed] = useState(false);
   const [openAdd, setOpenAdd] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
-  // The run ledger is this page's own fetch (the detail payload stays lean); it
-  // refreshes whenever a run — or the check-rerunning audit — settles.
+  // The run ledger and each check's own history (#279) are this page's own
+  // fetches (the detail payload stays lean); both refresh whenever a run — or
+  // the check-rerunning audit — settles. A miss on either is quietly no memory,
+  // never an error: an older server without /history just has no sparklines.
   useEffect(() => {
     if (checksBusy || auditBusy) return;
     let live = true;
     getCheckRuns(slug).then((r) => { if (live) setRuns(r); }).catch(() => {});
+    getCheckHistory(slug).then((h) => { if (live) setHistory(h); }).catch(() => {});
     return () => { live = false; };
   }, [slug, checksBusy, auditBusy]);
 
@@ -1009,6 +1059,25 @@ export function Quality({
   const virgin = !checks.length && !bugs.length;
   // What's open but not serious — the calm card names it rather than implying zero.
   const parked = bugs.filter((b) => isOpen(b) && !isSerious(b)).length;
+
+  // #279 — the health card's second line: the one sentence the history can now
+  // answer that a single result never could. Prefer the red check with the most
+  // failures behind it; when nothing is red, name a flaky one, because a check
+  // that passes intermittently is not a healthy check.
+  const healthDetail = (() => {
+    const named = (c: Check) => (failing.length === 1 || checks.length === 1 ? c.name : `“${c.name}”`);
+    const worstRed = failing
+      .map((c) => ({ c, s: readHistory(history[c.id]) }))
+      .filter((x) => x.s.diagnosis)
+      .sort((a, b) => b.s.fails - a.s.fails)[0];
+    if (worstRed) return `${named(worstRed.c)} has ${worstRed.s.diagnosis}.`;
+    const flaky = checks
+      .map((c) => ({ c, s: readHistory(history[c.id]) }))
+      .filter((x) => x.s.flaky && x.s.n >= 3)
+      .sort((a, b) => b.s.fails - a.s.fails)[0];
+    if (flaky) return `${named(flaky.c)} is passing now, but it ${flaky.s.diagnosis}.`;
+    return '';
+  })();
 
   // A deep link onto a fixed bug has to be able to find it.
   useEffect(() => {
@@ -1072,7 +1141,7 @@ export function Quality({
       )}
 
       <div className="q-top">
-        <HealthBand health={health} runs={runs} />
+        <HealthBand health={health} runs={runs} detail={healthDetail} />
         {virgin ? (
           <div className="q-teach">
             <p>
@@ -1117,7 +1186,7 @@ export function Quality({
                 <OneCause signature={health.oneCause} count={failing.length} busy={checksBusy}
                   onRunAll={() => onRunChecks()} onFileHost={() => openReport(null)} />
               ) : needs.length ? (
-                <NeedsYou rows={needs} busy={checksBusy} onRunFailing={() => onRunChecks()}
+                <NeedsYou rows={needs} busy={checksBusy} history={history} onRunFailing={() => onRunChecks()}
                   onRunOne={(id) => onRunChecks(id)} onFileBug={openReport}
                   onSetStatus={onSetBugStatus} onJump={jump} highlightId={highlightId} />
               ) : (
@@ -1163,6 +1232,7 @@ export function Quality({
       {seg === 'suite' && (
         <SuitePanel checks={checks} bugFor={bugFor} siteUrl={siteUrl} busy={checksBusy}
           geminiReady={geminiReady} openAdd={openAdd} onAddConsumed={() => setOpenAdd(false)}
+          history={history}
           onRun={onRunChecks} onAdd={onAddCheck} onEdit={onEditCheck} onDelete={onDeleteCheck}
           onFileBug={openReport} highlightId={highlightId} />
       )}

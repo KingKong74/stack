@@ -72,6 +72,10 @@ function suiteFor(slug, ORIGIN) {
     // null on a hand-filed bug, which is the common case).
     { name: 'Bugs — bug↔check link present', url: u(`/api/projects/${slug}/bugs`), auth: true, json_path: '0.checkId' },
     { name: 'Project — Gemini readiness flag', url: u(`/api/projects/${slug}`), auth: true, json_path: 'geminiReady' },
+    // #279 — per-check history. Asserting only 200 on purpose: the payload is
+    // keyed by check id, so any path assertion would name a specific check and
+    // go red the day that check is renamed or retired.
+    { name: 'Checks — per-check history', url: u(`/api/projects/${slug}/checks/history?limit=5`), auth: true },
     { name: 'Roadmap — collection', url: u(`/api/projects/${slug}/roadmap`), auth: true, json_path: 'must' },
     { name: 'Futures — collection', url: u(`/api/projects/${slug}/futures`), auth: true, json_path: '0.title' },
     { name: 'Notes — collection', url: u(`/api/projects/${slug}/notes`), auth: true, expect_status: 200 },
