@@ -442,6 +442,18 @@ ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS review_verdict  TEXT;
 ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS review_note     TEXT;
 ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS review_findings INT;
 
+-- #284 — the ARCHITECT's read on the same change, kept beside the reviewer's.
+-- Two agents asking different questions: the reviewer "is this correct?", the
+-- architect "where is this codebase going?". Separate columns because a change
+-- can be correct and still drift, and collapsing them would hide exactly that.
+--   architect_verdict  aligned | drifting | concerning | NULL (no pass ran)
+--   architect_note     one or two sentences on where the change takes the code
+--   architect_obs      jsonb list of short structural observations (max 4)
+-- Suggestions, not state: it files nothing and closes nothing.
+ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS architect_verdict TEXT;
+ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS architect_note    TEXT;
+ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS architect_obs     JSONB;
+
 -- Scheduled sessions — Mission Control's calendar. A row is "run the autopilot
 -- on this project at this time": one-off (run_date set, days empty) or
 -- recurring (days = ISO getDay() ints 0-6, run_date NULL). item_id optionally

@@ -3644,3 +3644,15 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .rv-receipt button { font-family: var(--mono); font-size: 10.5px; color: var(--accent-deep); font-weight: 600; }
 .rv-receipt button:hover { color: var(--ink); }
 .rv-receipt button.x { font-size: 14px; color: var(--paused); font-weight: 400; }
+/* #284 — the architect: a second opinion with its own vocabulary, so it never
+   reads as another correctness verdict. Building-tone rather than terracotta,
+   because structural drift is a different kind of news from a bug. */
+.rv-arch { flex: none; padding: 1px 7px; border-radius: 4px; background: var(--building-tint); color: var(--building);
+  font-family: var(--mono); font-size: 8.5px; font-weight: 500; }
+.rv-opinion.arch { border-color: var(--building-tint); background: var(--building-tint); }
+.rv-opinion.arch.aligned { border-color: var(--line-2); background: var(--bg); }
+.rv-opinion .agent.arch { background: var(--building-tint); color: var(--building); }
+.rv-obs { margin: 5px 0 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
+.rv-obs li { font-size: 11.5px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+.rv-revline .mark.drifting, .rv-revline .mark.concerning { color: var(--building); }
+.rv-revline .mark.aligned { color: var(--live); }

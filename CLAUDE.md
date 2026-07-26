@@ -124,14 +124,28 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             via the API, push test hardening on auto/audit-<date> — the wall-clock cap (Settings' autopilotMinutes) AND a token budget
             (--tokens / STACK_AUTOPILOT_TOKENS override; default Settings' autopilotTokens,
             **0 = unlimited** — the wall clock alone governs) metered from each session's real
-            usage via `claude -p --output-format json`. **Dual-model sessions** (#153): the
-            session runs on Settings' autopilotExecutorModel (`claude --model`; '' = the CLI's
-            default) and, when autopilotAdvisorModel is set, a stronger ADVISOR is exposed to
-            it as a read-only custom subagent (`claude --agents`, tools Read/Grep/Glob) the
-            executor consults — an ordinary Agent tool call — for the build plan, unblocking
-            and a pre-finish sanity check; the night log states both roles and logs the
-            session's per-model usage breakdown (`--executor-model`/`--advisor-model`
-            override). `--item N` pins a run to exactly that
+            usage via `claude -p --output-format json`. **Dual-model sessions** (#153,
+            **inverted by #285**): the ADVISOR runs the session. Settings'
+            autopilotAdvisorModel is the DIRECTOR — it holds the main loop (`claude --model`),
+            plans, delegates, verifies and commits — and autopilotExecutorModel is exposed to
+            it as the `executor` subagent (`claude --agents`) with the WRITE tools
+            (Read/Grep/Glob/Edit/Write/Bash) that actually build. The director's contract says
+            plainly: do not write code, do not re-read what the executor summarised, verify with
+            `git diff --stat` and targeted hunks, send work back rather than fixing it yourself.
+            Advisor unset = nothing to direct with, so the session runs single-model on the
+            executor exactly as it did before #153. A **plan night** (#219) is all judgement and
+            no typing, so it runs on the advisor and spawns no executor at all. Every session
+            kind (build / debug / audit) uses the same inversion; the night log names both roles
+            and logs the per-model usage split (`--executor-model`/`--advisor-model` override).
+            **On the token argument, honestly:** the loop's fixed overhead — system prompt, tool
+            and agent definitions, the accumulating transcript — is now billed at the STRONG
+            model's rate every turn, and only the delegated work is cheap. Measured on a trivial
+            two-turn delegation (Jul 2026): director `claude-sonnet-5` 65.8k tok / $0.080 against
+            executor `haiku-4.5` 12.3k tok / $0.005 — 94% of the cost in the loop. So this
+            arrangement buys **better judgement**, and only becomes token-competitive on long
+            sessions where delegated file work dwarfs that overhead — which is the overnight
+            build case, but not a short one. The #280/#281 role split makes the real ratio
+            visible per night, so the claim stays checkable rather than assumed. `--item N` pins a run to exactly that
             roadmap item in any bucket (done/claimed still refuse) — how scheduled + Run-now
             jobs target one thing. **Plan nights** (#219, `--plan-only`): no branches, no
             builds — each picked item (must/should with no plan steps; a pinned --item may
@@ -388,8 +402,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   project, #id and commit count) beside the change itself: THE CHANGE (the built_note and the
   session's own account — there is **no line-by-line diff**, because the server cannot run git, and
   the pane says so rather than inventing a diffstat), WHAT THE AGENTS SAID (the REVIEWER's stored
-  note, its findings count, and an honest dashed line where an ARCHITECT would report if one were
-  on the roster), your annotation chips (#146), a FACTS panel, and a **DECIDE** panel whose three
+  note and findings count, and — since #284 — the ARCHITECT's structural read with its
+  observations, an ARCH chip on the card whenever it said anything other than "aligned", and the
+  same honest dashed line only when no architect pass ran), your annotation chips (#146), a FACTS panel, and a **DECIDE** panel whose three
   keyed actions — **1** Solid, **2** ✎ Refine, **3** ⏸ Later — also work from the keyboard (j/k
   walk the queue; keys are ignored while a modal or field has focus). Everything the old Reviews
   view could do is still here, under ALSO: ↩ Board, ⎌ Undo (#128), ✧ Brief (#134), ⌨ Session,
@@ -403,7 +418,8 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   called clean, four stat tiles, WHAT LANDED (one card per run with the reviewer's and the
   session's own notes, and Review this change / Open the item), DECISIONS THIS DEBRIEF ASKS FOR
   (blocked reviews, red checks, limit-paused and failed runs — each a real door), and a right rail
-  of REVIEWER / ARCHITECT (absent, stated) / SPEND. The room owns its own fetch (`store.getReview`)
+  of REVIEWER / ARCHITECT (#284 — how many of the night's changes drifted, with the notes; a night
+  that is entirely aligned says so in one line rather than listing what was fine) / SPEND. The room owns its own fetch (`store.getReview`)
   and reports the pending count up so the room tab can badge it; it mutates nothing itself — every
   verdict, refinement, shelve and undo goes through the same per-project routes the Roadmap tab
   used. Plan/Build fetch the picked project's detail
@@ -730,6 +746,18 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     done|failed|paused; a partial unique index on (project, night_date) makes the nightly
     enqueue idempotent. `resume` jobs (#142) carry `not_before` — GET /next skips a queued job
     until its hold passes, and a `paused` (hung-up) job is never handed out at all.
+  - `autopilot_runs` also carries **the architect's read** (#284): `architect_verdict`
+    (aligned | drifting | concerning | NULL), `architect_note` and `architect_obs` (jsonb, max 4
+    short structural lines). A second Gemini pass over the same diff asking a DIFFERENT question:
+    the reviewer asks "is this correct?", the architect asks "where is this codebase going?" —
+    duplication introduced, boundaries crossed, drift from the patterns already there. Separate
+    columns because a change can be correct and still drift, and collapsing them would hide
+    exactly that. It **files nothing** — structure notes are not bugs, and filing them would clog
+    the review inbox with items nobody can close. Run by `hook/stack-gemini-review.mjs
+    --architect` (verdict file only, no ingest post), which also feeds it a capped `git ls-files`
+    listing: a diff alone cannot show duplication of an untouched file. Keyless = skipped
+    silently, and on the free tier's lite fallback its reads are shallow — an annotation, like
+    every other Gemini surface here.
   - `autopilot_runs` also carries **the reviewer's stored read** (#282): `review_verdict`
     (clean | concerns | blocked | NULL), `review_note` (the reviewer's own sentence) and
     `review_findings` (how many bugs it filed to the review inbox). The night already ran a Gemini
@@ -1139,7 +1167,8 @@ won't re-create it.
     `GEMINI_API_KEY`; nothing blocks, nothing errors user-visibly.
   Rich checkpoints stay Claude-authored via `/checkpoint` (free, in-session) — don't replace that
   with an API summariser. Surfaces: `hook/stack-gemini-review.mjs` (second-model diff review →
-  review inbox; run manually or from the autopilot), `server/src/gemini.js` + judge/
+  review inbox; run manually or from the autopilot — and `--architect` (#284) for the structural
+  read, which posts nothing and writes only a verdict file), `server/src/gemini.js` + judge/
   semantic-checks/replan routes, and the post-ingest `gemini_note` (a one-line second-model take
   stamped onto each push in the activity feed). Key from server env / `~/.stack/env`; model
   default gemini-2.5-flash for all surfaces.
@@ -1188,6 +1217,7 @@ node server/test/fleet-roles.test.mjs      # #281's role attribution + drift det
 node terminal/stack-term.mjs               # the web-terminal daemon (normally via the @reboot cron line)
 tail -f ~/.stack/term.log                  # its log
 node hook/stack-gemini-review.mjs --dry    # second-model review of the last commit (Gemini; --dry = print only)
+node hook/stack-gemini-review.mjs --architect --range main..HEAD  # the structural read (#284) — prints, posts nothing
 node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack --dry  # what would tonight's run pick?
 node scripts/stack-autopilot-dispatch.mjs  # one dispatcher poll by hand (normally the cron line)
 crontab -l                                 # the dispatcher line (every minute; remove it to disable all runs)

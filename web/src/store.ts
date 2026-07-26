@@ -776,6 +776,11 @@ export interface ReviewRun {
   reviewVerdict: '' | 'clean' | 'concerns' | 'blocked';  // '' = no review ran
   reviewNote: string;
   reviewFindings: number | null;
+  // #284 — the architect's structural read, beside the reviewer's correctness one.
+  // '' = no architect pass ran (keyless, or a run that predates it).
+  architectVerdict: '' | 'aligned' | 'drifting' | 'concerning';
+  architectNote: string;
+  architectObs: string[];
   when: string;
   finishedAt: string;
 }
