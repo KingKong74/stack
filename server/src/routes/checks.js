@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { checkShape, checkRunShape } from '../shape.js';
+import { checkShape, checkRunShape, checkResultShape } from '../shape.js';
+import { CHECK_HISTORY_KEEP } from '../util.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
 
-// Mounted at /api/projects/:slug/checks — the Bugs tab’s Audit area (#143, named by #145).
+// Mounted at /api/projects/:slug/checks — the Quality tab's Suite segment (#143,
+// named by #145, merged into Quality by #278).
 // A check exercises the project's live application over HTTP: a plain probe
 // (GET, expected status) or a function test (method + request body against an
 // API endpoint) with optional assertions — a body keyword, a JSON-path value
@@ -126,6 +128,13 @@ checks.patch('/:id', async (req, res) => {
     [id, merged.name, merged.url, merged.method, merged.expect_status, merged.req_body,
      merged.contains, merged.json_path, merged.json_expect, merged.semantic, merged.auth]
   );
+  // #279 — the same reasoning that clears the stored result clears the history:
+  // past passes were against a different test, so charting them under the new
+  // definition would be a lie. Renaming a check keeps its history.
+  if (definitionChanged) {
+    try { await q('DELETE FROM check_results WHERE check_id = $1', [id]); }
+    catch (e) { console.error('check history clear failed:', e.message); }
+  }
   res.json(checkShape(saved));
 });
 
@@ -285,20 +294,57 @@ checks.post('/run', async (req, res) => {
     return checkShape(saved);
   }));
 
-  // The history row never blocks the response — a hiccup here is a log line,
+  // The history rows never block the response — a hiccup here is a log line,
   // not a failed run (the checks themselves already saved their results).
   const passed = updated.filter((c) => c.lastStatus === 'pass').length;
   try {
-    await q(
+    const { rows: [run] } = await q(
       `INSERT INTO check_runs (project_id, scope, total, passed, failed, duration_ms)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
       [req.project.id, Number.isFinite(one) && one > 0 ? 'one' : 'all',
        updated.length, passed, updated.length - passed, Date.now() - started]
     );
+    // #279 — the per-check grain, in one statement for the whole batch. This is
+    // what makes a red check answerable ("failed 4 of the last 6 runs") instead
+    // of just red. Then prune: each check keeps at most CHECK_HISTORY_KEEP rows,
+    // so nightly runs can't grow the table without bound.
+    await q(
+      `INSERT INTO check_results (check_id, project_id, run_id, status, code, ms, error)
+       SELECT c.id, $1, $2, c.last_status, c.last_code, c.last_ms, c.last_error
+         FROM checks c WHERE c.id = ANY($3::int[])`,
+      [req.project.id, run.id, rows.map((r) => r.id)]
+    );
+    await q(
+      `DELETE FROM check_results WHERE id IN (
+         SELECT id FROM (
+           SELECT id, row_number() OVER (PARTITION BY check_id ORDER BY run_at DESC, id DESC) AS rn
+             FROM check_results WHERE check_id = ANY($1::int[])
+         ) ranked WHERE rn > $2
+       )`,
+      [rows.map((r) => r.id), CHECK_HISTORY_KEEP]
+    );
   } catch (e) {
-    console.error('check_runs insert failed:', e.message);
+    console.error('check history insert failed:', e.message);
   }
   res.json(updated);
+});
+
+// GET /history?limit=  -> #279, each check's own last N results, newest first,
+// keyed by check id. The Quality page fetches it beside /runs: the Suite rows
+// sparkline from it and a red row reads its diagnosis out of it. Stats are
+// derived client-side from these rows — one query, no per-check round trips.
+checks.get('/history', async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), CHECK_HISTORY_KEEP);
+  const { rows } = await q(
+    `SELECT check_id, status, code, ms, error, run_at FROM (
+       SELECT r.*, row_number() OVER (PARTITION BY r.check_id ORDER BY r.run_at DESC, r.id DESC) AS rn
+         FROM check_results r WHERE r.project_id = $1
+     ) ranked WHERE rn <= $2 ORDER BY check_id, run_at DESC`,
+    [req.project.id, limit]
+  );
+  const out = {};
+  for (const r of rows) (out[r.check_id] ||= []).push(checkResultShape(r));
+  res.json(out);
 });
 
 // GET /runs  -> the run history, newest first (the Audit tab's trend strip)

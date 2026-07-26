@@ -2511,6 +2511,141 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc14-mini .l { font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
 .mc14-mini .l.bad { color: var(--critical); }
 
+/* Now — loud idle (#270): the first line of the room. An automation system
+   that is not running must never render as calm, so `bad` is unmissable. */
+.mc-idle { display: flex; align-items: flex-start; gap: 10px; padding: 11px 15px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--card); }
+.mc-idle .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; margin-top: 5px; background: var(--paused); }
+.mc-idle .txt { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink); }
+.mc-idle .txt em { display: block; margin-top: 3px; font-family: var(--mono); font-size: 10.5px; font-style: normal; line-height: 1.5; color: var(--muted); }
+.mc-idle .fix { flex: none; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent-tint); font-size: 11.5px; font-weight: 500; color: var(--accent-deep); white-space: nowrap; }
+.mc-idle .fix:hover { background: var(--accent); color: #fff; }
+.mc-idle.good .dot { background: var(--live); }
+.mc-idle.warn { border-color: var(--building-tint); background: var(--building-tint); }
+.mc-idle.warn .dot { background: var(--building); }
+.mc-idle.bad { border-color: var(--critical); background: var(--paused-tint); }
+.mc-idle.bad .dot { background: var(--critical); }
+.mc-idle.bad .txt { font-weight: 500; }
+
+/* Now — the fleet strip (#268): one tile per worker slot, busy or idle. The
+   strip's width IS the fleet's size, so idle slots are drawn, never omitted. */
+.mc-fleet { display: flex; flex-direction: column; gap: 8px; }
+.mc-fleet-head { display: flex; align-items: center; gap: 10px; }
+.mc-fleet-head .cap { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.1em; color: var(--faint); }
+.mc-fleet-head .hair { flex: 1; height: 1px; background: var(--line-2); }
+.mc-fleet-head .sum { font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; }
+
+/* #280 (design 23a) — the ROLES legend: the policy every session runs under,
+   stated once above the lanes. EXEC green, ADV terracotta — the same two
+   colours the per-lane split bars use, so the legend teaches the bar. */
+.mc-roles { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 9px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line-2); }
+.mc-roles > .cap { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.1em; color: var(--paused); }
+.mc-role-chip { display: flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--line-3); background: var(--card); }
+.mc-role-chip em { font-family: var(--mono); font-size: 8.5px; font-weight: 500; font-style: normal; padding: 1px 6px; border-radius: 4px; }
+.mc-role-chip.exec em { background: var(--green-tint); color: var(--live); }
+.mc-role-chip.adv em { background: var(--accent-tint); color: var(--accent-deep); }
+.mc-role-chip.off em { background: var(--panel); color: var(--paused); }
+.mc-role-chip b { font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--ink); }
+.mc-role-chip.off b { color: var(--muted); }
+.mc-role-chip i { font-size: 10px; font-style: normal; color: var(--muted); }
+.mc-roles .note { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+
+/* #280 — the lanes: one row per worker slot, expandable to its role panel. */
+.mc-fleet-lanes { display: flex; flex-direction: column; gap: 8px; }
+.mc-lane { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); overflow: hidden; }
+.mc-lane.running { border-color: var(--green-tint); }
+.mc-lane.idle { background: var(--bg); border-style: dashed; }
+.mc-lane .lane-head { display: flex; align-items: center; gap: 11px; padding: 11px 14px; min-width: 0; }
+.mc-lane:not(.idle) .lane-head { cursor: pointer; }
+.mc-lane:not(.idle) .lane-head:hover { background: var(--panel); }
+.mc-lane .lane-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mc-lane .tintdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.mc-lane .tintdot.idle { background: var(--line-3); }
+.mc-lane .who { width: 172px; flex: none; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mc-lane .who b { font-size: 12.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-lane .who b.quiet { font-weight: 500; color: var(--muted); }
+.mc-lane .who i { font-family: var(--mono); font-size: 9.5px; font-style: normal; color: var(--paused); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* the role column */
+.mc-lane .lane-roles { width: 196px; flex: none; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mc-lane .lane-roles .r { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mc-lane .lane-roles .m { font-family: var(--mono); font-size: 10.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-lane .lane-roles .r.idle .m, .mc-lane .lane-roles .r.off .m { color: var(--paused); }
+/* Scoped to .mc-lane on purpose: `.tag` is the app-wide activity-chip class
+   (styles.css:559, used by Activity/Overview/Timeline/Tips/Showcase). These
+   role tags are a different, much smaller thing and must not leak into it. */
+.mc-lane .tag { font-family: var(--mono); font-size: 8.5px; font-weight: 500; font-style: normal; padding: 1px 6px; border-radius: 4px; border: none; flex: none; }
+.mc-lane .tag.exec { background: var(--green-tint); color: var(--live); }
+.mc-lane .tag.adv { background: var(--accent-tint); color: var(--accent-deep); }
+.mc-lane .tag.adv.idle, .mc-lane .tag.adv.off, .mc-lane .tag.other { background: var(--panel); color: var(--paused); }
+
+.mc-lane .state { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; color: var(--live); white-space: nowrap; flex: none; }
+.mc-lane .state.quiet { color: var(--paused); }
+.mc-lane .lane-tail { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.mc-lane .lane-tail .what { font-size: 11.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-lane .split { display: flex; align-items: center; gap: 8px; }
+.mc-lane .split .bar { display: flex; width: 150px; height: 4px; border-radius: 2px; overflow: hidden; background: var(--bg); flex: none; }
+.mc-lane .split .bar i { height: 4px; }
+.mc-lane .split .bar .ex { background: var(--live); }
+.mc-lane .split .bar .ad { background: var(--accent); }
+.mc-lane .split .bar .ot { background: var(--line-3); }
+.mc-lane .split .note { font-family: var(--mono); font-size: 9px; color: var(--paused); white-space: nowrap; }
+.mc-lane .lane-burn { width: 96px; flex: none; display: flex; flex-direction: column; gap: 2px; text-align: right; }
+.mc-lane .lane-burn b { font-family: var(--mono); font-size: 10.5px; font-weight: 400; color: var(--ink); }
+.mc-lane .lane-burn i { font-family: var(--mono); font-size: 9px; font-style: normal; color: var(--paused); }
+.mc-lane .caret { font-family: var(--mono); font-size: 9px; color: var(--paused); width: 12px; flex: none; }
+
+/* the expanded role panel */
+.mc-lane .lane-body { border-top: 1px solid var(--line-2); background: var(--bg); padding: 14px; display: flex; gap: 18px; align-items: flex-start; }
+.mc-lane .lane-ledger { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
+.mc-lane .lane-ledger .cap, .mc-lane .lane-spend .cap { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.1em; color: var(--paused); }
+.mc-lane .lx { display: flex; gap: 10px; align-items: flex-start; }
+.mc-lane .lx .at { width: 58px; flex: none; font-family: var(--mono); font-size: 9px; color: var(--paused); padding-top: 3px; }
+.mc-lane .lx .tags { display: flex; gap: 3px; flex: none; padding-top: 1px; }
+.mc-lane .lx .what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mc-lane .lx .what .link { font-size: 11.5px; color: var(--ink); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-lane .lx .what .link:hover { color: var(--accent-deep); }
+.mc-lane .lx .what .plain { font-size: 11.5px; color: var(--ink); }
+.mc-lane .lx .what i { font-family: var(--mono); font-size: 9px; font-style: normal; color: var(--paused); }
+.mc-lane .lane-none { padding: 10px 12px; border-radius: 8px; border: 1px dashed var(--line-3); font-size: 11px; line-height: 1.6; color: var(--muted); }
+.mc-lane .lane-spend { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding-top: 3px; }
+.mc-lane .lane-spend .bar { display: flex; width: 130px; height: 5px; border-radius: 3px; overflow: hidden; background: var(--card); flex: none; }
+.mc-lane .lane-spend .bar i { height: 5px; }
+.mc-lane .lane-spend .bar i.exec { background: var(--live); }
+.mc-lane .lane-spend .bar i.adv { background: var(--accent); }
+.mc-lane .lane-spend .bar i.other { background: var(--line-3); }
+.mc-lane .lane-spend .bar i.none { background: var(--line-2); }
+.mc-lane .lane-spend .legend { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 11px; }
+.mc-lane .lane-spend .sw { display: flex; align-items: center; gap: 5px; }
+.mc-lane .lane-spend .sw.quiet { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.mc-lane .lane-spend .sw > i { width: 6px; height: 6px; border-radius: 2px; flex: none; }
+.mc-lane .lane-spend .sw > i.exec { background: var(--live); }
+.mc-lane .lane-spend .sw > i.adv { background: var(--accent); }
+.mc-lane .lane-spend .sw > i.other { background: var(--line-3); }
+.mc-lane .lane-spend .sw b { font-family: var(--mono); font-size: 10px; font-weight: 400; color: var(--muted); }
+.mc-lane .lane-spend .sw em { font-family: var(--mono); font-size: 10px; font-style: normal; font-weight: 500; color: var(--ink); }
+.mc-lane .lane-spend .sw u { font-family: var(--mono); font-size: 8.5px; text-decoration: none; color: var(--paused); cursor: help; }
+.mc-lane .lane-side { width: 258px; flex: none; display: flex; flex-direction: column; gap: 9px; }
+.mc-lane .lane-read { padding: 11px 12px; border-radius: 9px; border: 1px solid var(--line-3); background: var(--card); display: flex; flex-direction: column; gap: 5px; }
+.mc-lane .lane-read.good { border-color: var(--green-tint); }
+.mc-lane .lane-read.warn { border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.mc-lane .lane-read .tag { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.06em; padding: 0; background: none; color: var(--paused); }
+.mc-lane .lane-read.good .tag { color: var(--live); }
+.mc-lane .lane-read.warn .tag { color: var(--accent-deep); }
+.mc-lane .lane-read .txt { font-size: 11px; line-height: 1.6; color: var(--ink); }
+.mc-lane .lane-acts { display: flex; gap: 6px; }
+.mc-lane .lane-acts .btn-repo { flex: 1; }
+.mc-lane .tmux { font-family: var(--mono); font-size: 9.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
+
+/* narrow: the role column and the burn drop under the name, and the expanded
+   panel stacks the read card below the ledger rather than beside it. */
+@media (max-width: 900px) {
+  .mc-lane .lane-head { flex-wrap: wrap; }
+  .mc-lane .who, .mc-lane .lane-roles { width: auto; flex: 1 1 160px; }
+  .mc-lane .lane-tail { flex: 1 1 100%; }
+  .mc-lane .lane-body { flex-direction: column; }
+  .mc-lane .lane-side { width: auto; align-self: stretch; }
+}
+
 /* Now — the settled autopilot line */
 .mc14-settle { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); overflow: hidden; }
 .mc14-settle .row { display: flex; align-items: center; gap: 11px; padding: 11px 15px; }
@@ -3048,4 +3183,40 @@ button.mc-day-chip:hover { border-color: var(--accent); }
   .q-crow-result { width: auto; text-align: left; }
   .q-hrow-note { flex-basis: 100%; }
   .q-assert { max-width: 100%; }
+}
+
+/* #279 — each check's own history: the sparkline, the diagnosis and the
+   unfolded run list. Bars are coloured by outcome and sized by latency, so a
+   check that is passing but slowing down reads that way before it goes red. */
+.q-why-more { font-size: 11px; line-height: 1.55; color: var(--muted); font-style: italic; text-wrap: pretty; }
+.q-health.needs-work .q-why-more, .q-health.down .q-why-more { color: var(--critical); opacity: 0.9; }
+.q-diag { color: var(--paused); }
+.q-row-sub.bad .q-diag { color: var(--critical); opacity: 0.8; }
+.q-spark { display: inline-flex; align-items: flex-end; gap: 1px; height: 16px; width: 68px; flex: none; }
+.q-spark span { flex: 1; min-width: 1px; border-radius: 1px; background: var(--green); }
+.q-spark span.bad { background: var(--critical); }
+.q-spark-btn { flex: none; padding: 2px 3px; border-radius: 5px; line-height: 0; }
+.q-spark-btn:hover, .q-spark-btn.on { background: var(--panel); }
+.q-spark-none { flex: none; width: 74px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--keyline); }
+.q-flaky { flex: none; font-family: var(--mono); font-size: 9px; font-weight: 500; color: var(--building);
+  background: var(--building-tint); border-radius: 4px; padding: 1px 6px; }
+.q-hist { margin: 2px 4px 8px 34px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--panel); overflow: hidden; }
+.q-hist-head { display: flex; align-items: baseline; gap: 10px; padding: 8px 11px; border-bottom: 1px solid var(--line-2);
+  font-size: 10.5px; color: var(--muted); }
+.q-hist-note { font-size: 10px; line-height: 1.5; color: var(--paused); text-align: right; max-width: 380px; text-wrap: pretty; }
+.q-hist-row { display: flex; align-items: center; gap: 10px; padding: 5px 11px; font-family: var(--mono); font-size: 10px; }
+.q-hist-row + .q-hist-row { border-top: 1px solid var(--line); }
+.q-hist-when { width: 84px; flex: none; color: var(--ink); }
+.q-hist-code { width: 78px; flex: none; color: var(--muted); }
+.q-hist-row.fail .q-hist-code { color: var(--critical); }
+.q-hist-ms { width: 56px; flex: none; color: var(--paused); }
+.q-hist-err { flex: 1; min-width: 0; color: var(--critical); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .q-hist { margin-left: 8px; }
+  .q-hist-note { display: none; }
+  .q-hist-row { flex-wrap: wrap; }
+  .q-hist-err { flex-basis: 100%; }
+  .q-spark { width: 52px; }
+  .q-spark-none { display: none; }
 }

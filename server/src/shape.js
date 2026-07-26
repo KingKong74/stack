@@ -104,6 +104,19 @@ export function checkRunShape(row) {
   };
 }
 
+// #279 — one past result for one check. The Quality page's Suite sparklines and
+// the plain-language diagnosis on a red row are both derived from these.
+export function checkResultShape(row) {
+  return {
+    status: row.status,                  // pass | fail
+    code: row.code ?? null,
+    ms: row.ms ?? null,
+    error: row.error || '',
+    at: row.run_at,                      // raw ISO — the client buckets on it
+    when: relativeTime(row.run_at) || '',
+  };
+}
+
 export function noteShape(row) {
   return {
     id: row.id,

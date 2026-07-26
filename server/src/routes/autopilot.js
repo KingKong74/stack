@@ -368,6 +368,13 @@ autopilotGlobal.get('/next', async (req, res) => {
   const dow = Math.trunc(Number(req.query.dow));
   const settings = await readSettings();
 
+  // (#270) Heartbeat. This poll is the automation loop's pulse — stamp it
+  // before any gate, so a disarmed-but-alive dispatcher is distinguishable
+  // from one that has stopped asking. Mission Control reads the freshness;
+  // a failure here must never cost the dispatcher its job.
+  q(`UPDATE dispatcher_heartbeat SET last_poll_at = now(), host_local = $1 WHERE id`,
+    [`${localDate}T${localTime}`]).catch(() => {});
+
   // Stale recovery: a claim the dispatcher never started (it died) re-queues;
   // a "running" job with no completion report for 12h is closed out.
   await q(`UPDATE autopilot_jobs SET status = 'queued', claimed_at = NULL

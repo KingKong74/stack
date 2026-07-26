@@ -31,6 +31,12 @@ export const STALE_DAYS = 14;
 // sessions that died without a clean end.
 export const PRESENCE_TTL_MINUTES = 240;
 
+// #279 — how many results each check keeps. The pruner runs right after every
+// insert, so this is a hard per-check ceiling, not a target: 30 checks can only
+// ever hold 30 × this many rows however long the nights run. Single knob —
+// deep enough to read a fortnight of nightly runs plus a day of hand runs.
+export const CHECK_HISTORY_KEEP = 60;
+
 export function slugify(s) {
   return (
     String(s || '')

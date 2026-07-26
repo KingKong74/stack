@@ -1,5 +1,5 @@
 import type {
-  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, Overview,
+  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Tip,
 } from './types';
@@ -362,7 +362,128 @@ export interface PlanUsageSnapshot {
   at: number;     // epoch ms the relay cached it — staleness gate
 }
 
+// (#268) A worker slot — one in-flight autopilot job. `branch` is the lane
+// claim the runner holds ('' until a general night claims its first item);
+// `tokens`/`costUsd` are spend BANKED by items this job already finished, so
+// the first in-flight item honestly reads 0. `tmux` is the host session name
+// (#171) — not browser-attachable, offered as a `tmux attach -t` hint.
+export interface FleetSlot {
+  jobId: string; slug: string; name: string; tint: string | null;
+  status: 'claimed' | 'running';
+  kind: AutopilotJob['kind'];
+  sessionKind: SessionKind;
+  itemId: string; itemTitle: string;
+  branch: string;
+  startedAt: string | null;
+  since: string;
+  tokens: number; costUsd: number;
+  tmux: string;
+  // (#280) The roles on this lane. `exec`/`adv` are the app-wide policy (the
+  // runner takes its models from settings); everything below is this session's
+  // own spend, so the pair reads as "who was meant to run it" beside "what it
+  // actually cost". Optional throughout — a pre-#280 server sends none.
+  exec?: RoleModel;
+  adv?: RoleModel | null;
+  spend?: RoleSpend[];
+  execCostUsd?: number; advCostUsd?: number;
+  advShare?: number;        // advisor's % of the attributed total
+  advisorSeen?: boolean;    // the advisor's model appears in the banked usage
+  ledger?: RoleLedgerEntry[];
+}
+
+// (#280) One of the two roles: the configured model, catalogue-labelled.
+export interface RoleModel { model: string; label: string }
+
+// (#280) One model's share of a session's banked spend. `role` is '' when
+// neither alias claims the model — the split shows it as unattributed rather
+// than guessing. `inferred` marks the one documented inference: a lone
+// unattributed model while the executor is on the CLI's default IS the executor.
+export interface RoleSpend {
+  model: string; label: string;
+  role: 'exec' | 'adv' | '';
+  tokens: number; costUsd: number;
+  share: number; inferred: boolean;
+}
+
+// (#280) One item this session has already banked, with the roles that were on
+// it. Stack records role spend, not the advisor conversation — so an item is
+// the honest granularity for "what the advice cost".
+export interface RoleLedgerEntry {
+  itemId: string; itemTitle: string;
+  outcome: string; when: string;
+  tokens: number; costUsd: number;
+  advCostUsd: number;
+  models: { model: string; label: string; role: 'exec' | 'adv' | ''; tokens: number; costUsd: number }[];
+}
+
+// (#270) Loud idle — the honest reason the fleet is or is not running, resolved
+// server-side most-fundamental-first. `tone` drives the colour; `fix` is the
+// one-click remedy where one exists; `hint` is the host-side instruction when
+// it doesn't. 'dispatcher-silent' outranks everything: if nobody is polling,
+// no amount of correct configuration matters.
+export type FleetStatusCode =
+  | 'dispatcher-silent' | 'working' | 'disarmed' | 'no-automode'
+  | 'paused' | 'nothing-eligible' | 'waiting';
+
+export interface FleetStatus {
+  code: FleetStatusCode;
+  tone: 'good' | 'warn' | 'bad';
+  text: string;
+  hint: string;
+  fix: { kind: 'arm' | 'resume' | 'plan'; label: string } | null;
+}
+
+// (#269) The throughput ledger — is the automation getting better? Every metric
+// is a pair: `now` (last 7 days) against `prev` (the 7 before), so the rail can
+// render a direction rather than a table. Plan nights are excluded throughout —
+// they never commit by design.
+export interface LedgerWindow {
+  landed: number;
+  perNight: number;       // landed items per ACTIVE night (idle nights excluded)
+  tokensPerItem: number;
+  costPerItem: number;
+  noCommitRate: number;   // 0–1
+}
+
+export interface Ledger {
+  // 14 daily buckets, oldest first; empty days are present as zeroes.
+  days: { day: string; landed: number; runs: number; tokens: number; costUsd: number }[];
+  now: LedgerWindow;
+  prev: LedgerWindow;
+  // Completed merge jobs split by who queued them — the runner's own low-risk
+  // auto-merges (#212) vs a human ⇥ Merge.
+  merges: { now: { total: number; auto: number }; prev: { total: number; auto: number } };
+  reverts: { now: number; prev: number };
+  // Of items a run landed and a human has since verdicted, how many were called
+  // solid. Current state, so a refined-then-passed item counts — this is the
+  // CEILING of the true first-pass rate.
+  firstPass: { solid: number; verdicted: number };
+  // Executor vs advisor spend (#153). Roles are not recorded per run, so the
+  // highest-token model in each run is taken as the executor. A heuristic.
+  roles: { executor: { tokens: number; costUsd: number }; advisor: { tokens: number; costUsd: number } };
+}
+
 export interface ControlData {
+  // (#269) The throughput ledger; absent on a server that pre-dates it.
+  ledger?: Ledger;
+  // (#268) The fleet: how many workers the host may run at once, and what each
+  // busy one holds. Slots below capacity are idle — the strip renders them.
+  // (#270) …plus why it is or is not running, and the dispatcher's pulse.
+  fleet?: {
+    capacity: number;
+    slots: FleetSlot[];
+    // (#280) The role policy stated once above the lanes. Undefined on a
+    // pre-#280 server — the roles strip hides rather than inventing one.
+    roles?: {
+      executor: RoleModel;
+      advisor: RoleModel | null;   // null = no advisor: single-model sessions
+      note: string;
+    };
+    status?: FleetStatus;
+    // ageSec null = no heartbeat recorded (a pre-#270 server) — reads as
+    // unknown, never as silent.
+    heartbeat?: { ageSec: number | null; silent: boolean; hostLocal: string };
+  };
   autopilot: {
     enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number;
     executorModel: string;  // '' = the claude CLI's default model (#153)
@@ -401,6 +522,9 @@ export async function getControl(): Promise<ControlData> {
     projects: (d.projects ?? []).map((p) => ({ ...p, branches: p.branches ?? [] })),
     // #194 — null when the server pre-dates this feature; the usage card hides.
     usage: d.usage ?? null,
+    // #268 — a pre-deploy server sends no fleet; one idle slot is the honest
+    // default, since the dispatcher has always been one worker wide.
+    fleet: d.fleet ?? { capacity: 1, slots: [] },
   };
 }
 
@@ -995,9 +1119,16 @@ export async function deleteCheck(slug: string, id: number): Promise<void> {
 export async function runChecks(slug: string, id?: number): Promise<Check[]> {
   return request<Check[]>(`${checksBase(slug)}/run`, { method: 'POST', body: id ? { id } : {} });
 }
-// The run history, newest first — the Audit dashboard's trend strip.
+// The run history, newest first — the Quality page's pass-rate trend + ledger.
 export async function getCheckRuns(slug: string, limit = 40): Promise<CheckRun[]> {
   return request<CheckRun[]>(`${checksBase(slug)}/runs?limit=${limit}`);
+}
+// #279 — each check's own last N results, keyed by check id, newest first. One
+// query behind one fetch; the Suite sparklines and the red-row diagnosis are
+// both derived from it client-side. An older server 404s → an empty history,
+// which every consumer already reads as "no memory yet".
+export async function getCheckHistory(slug: string, limit = 20): Promise<CheckHistory> {
+  return request<CheckHistory>(`${checksBase(slug)}/history?limit=${limit}`);
 }
 
 // #260 — how many sessions the Plan room assumes you run in parallel. A

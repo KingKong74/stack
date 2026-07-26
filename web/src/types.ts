@@ -201,6 +201,19 @@ export interface CheckRun {
   when: string;  // relative, server-rendered
 }
 
+// #279 — one past result for one check. The Suite rows sparkline from these and
+// a red row reads its diagnosis out of them ("failed 4 of the last 6 runs").
+export interface CheckResult {
+  status: 'pass' | 'fail';
+  code: number | null;
+  ms: number | null;
+  error: string;
+  at: string;    // ISO timestamp
+  when: string;  // relative, server-rendered
+}
+// Keyed by check id, newest result first.
+export type CheckHistory = Record<number, CheckResult[]>;
+
 export interface Activity {
   hash: string;
   branch: string;
