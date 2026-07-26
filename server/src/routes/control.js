@@ -46,6 +46,17 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //     roles: { executor, advisor, note },   // (#280) the app-wide role policy
 //     status: { code, tone, text, hint, fix },   // (#270) why it is/isn't running
 //     heartbeat: { ageSec, silent, hostLocal }   // (#270) the dispatcher's pulse
+//   },
+//   roles: {                                // (#281) roles across the fleet
+//     days,                                 // the window these numbers cover
+//     models: [ { model, label, role, runs, tokens, costUsd,
+//                 todayTokens, todayCostUsd, share, lastSeen } ],
+//     assignments: [ { slug, name, tint, automode, runs,   // what ACTUALLY ran
+//                      exec, execExtra, adv, advExtra,     // per project, vs
+//                      drift, driftModel, lastRun } ],     // the configured policy
+//     worth: { advisedRuns, advisedLanded, plainRuns, plainLanded,
+//              advCostUsd, execCostUsd, totalCostUsd,
+//              advShare, execShare, avgAdvPerRun, costBasis }
 //   }
 // }
 export const control = Router();
@@ -122,6 +133,139 @@ const catalogueLabel = (catalogue, model, fallback) => {
   const hit = catalogue.find((m) => m.model === model);
   return hit ? hit.label : model;
 };
+
+
+// (#281 / design 23b) Roles across the fleet, as a PURE function of the run
+// ledger and the two configured aliases — which is what makes it testable, and
+// what keeps "what the policy says" and "what actually ran" separable.
+//
+// `usageRows` are the 7-day autopilot_runs rows (slug, outcome, cost_usd,
+// model_usage, finished_at); `projects` is the already-shaped project list.
+// Attribution uses the same alias match as the per-lane split (#280), so a
+// lane and the fleet can never disagree about who a model was.
+export function computeFleetRoles({ usageRows, projects, execAlias, advAlias, now = Date.now() }) {
+  const dayCut = now - 24 * 60 * 60 * 1000;
+  const models = new Map();   // model id → its week
+  const perProject = new Map(); // slug → what actually ran there
+  let advisedRuns = 0, advisedLanded = 0, plainRuns = 0, plainLanded = 0;
+  let advCostUsd = 0, execCostUsd = 0, attributedCost = 0, attributedTokens = 0;
+  let advTokens = 0, execTokens = 0;
+
+  for (const r of usageRows) {
+    const at = new Date(r.finished_at).getTime();
+    const entries = r.model_usage && typeof r.model_usage === 'object'
+      ? Object.entries(r.model_usage) : [];
+    if (!perProject.has(r.slug)) {
+      perProject.set(r.slug, { runs: 0, byRole: { exec: new Map(), adv: new Map(), '': new Map() }, sawAdv: false, lastAt: 0 });
+    }
+    const proj = perProject.get(r.slug);
+    proj.runs += 1;
+    proj.lastAt = Math.max(proj.lastAt, at);
+
+    let sawAdv = false;
+    for (const [model, u] of entries) {
+      const tokens = (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0)
+        + (Number(u.cacheReadInputTokens) || 0) + (Number(u.cacheCreationInputTokens) || 0);
+      const costUsd = Number(u.costUSD) || 0;
+      const role = roleOfModel(model, execAlias, advAlias);
+      if (role === 'adv') { sawAdv = true; advCostUsd += costUsd; advTokens += tokens; }
+      if (role === 'exec') { execCostUsd += costUsd; execTokens += tokens; }
+      attributedCost += costUsd;
+      attributedTokens += tokens;
+
+      if (!models.has(model)) {
+        models.set(model, {
+          model, label: shortModel(model), role,
+          runs: 0, tokens: 0, costUsd: 0,
+          todayTokens: 0, todayCostUsd: 0, lastAt: 0,
+        });
+      }
+      const m = models.get(model);
+      m.runs += 1;
+      m.tokens += tokens;
+      m.costUsd += costUsd;
+      m.lastAt = Math.max(m.lastAt, at);
+      if (at > dayCut) { m.todayTokens += tokens; m.todayCostUsd += costUsd; }
+
+      const bucket = proj.byRole[role];
+      bucket.set(model, (bucket.get(model) || 0) + tokens);
+    }
+    if (sawAdv) proj.sawAdv = true;
+    // Runs with no per-model breakdown at all can't say whether they were
+    // advised, so they sit out of the comparison rather than skewing it.
+    if (entries.length > 0) {
+      if (sawAdv) { advisedRuns += 1; if (r.outcome === 'landed') advisedLanded += 1; }
+      else { plainRuns += 1; if (r.outcome === 'landed') plainLanded += 1; }
+    }
+  }
+
+  // Cost is the basis where there is any; a subscription session reports none,
+  // and tokens still describe the shape. Same convention as the lane split.
+  const basisCost = attributedCost > 0;
+  const total = basisCost ? attributedCost : attributedTokens;
+  const modelList = [...models.values()]
+    .map((m) => ({
+      ...m,
+      share: total > 0 ? ((basisCost ? m.costUsd : m.tokens) / total) * 100 : 0,
+      lastSeen: relativeTime(new Date(m.lastAt).toISOString()) || 'just now',
+    }))
+    .sort((a, b) => b.tokens - a.tokens);
+  for (const m of modelList) delete m.lastAt;
+
+  // One row per project that either ran this week or is allowed to. A
+  // project in automode with no runs is not drift — it is just quiet — and
+  // saying so beats leaving it off the table as if it did not exist.
+  const topOf = (map) => {
+    const sorted = [...map.entries()].sort((a, b) => b[1] - a[1]);
+    return { label: sorted.length ? shortModel(sorted[0][0]) : '', extra: Math.max(0, sorted.length - 1) };
+  };
+  const assignments = projects
+    .filter((p) => p.automode || perProject.has(p.slug))
+    .map((p) => {
+      const seen = perProject.get(p.slug);
+      const runs = seen ? seen.runs : 0;
+      const exec = seen ? topOf(seen.byRole.exec) : { label: '', extra: 0 };
+      const adv = seen ? topOf(seen.byRole.adv) : { label: '', extra: 0 };
+      const off = seen ? topOf(seen.byRole['']) : { label: '', extra: 0 };
+      // Drift, most-telling first. An off-policy model is the loudest signal
+      // (something ran that the current policy names for neither role — a
+      // changed setting, or a --executor-model override on the host), then an
+      // advisor that was configured but never actually consulted.
+      let drift = '';
+      if (runs === 0) drift = 'no-runs';
+      else if (off.label) drift = 'off-policy';
+      else if (advAlias && !seen.sawAdv) drift = 'advisor-unused';
+      return {
+        slug: p.slug, name: p.name, tint: p.tint, automode: p.automode,
+        runs,
+        exec: exec.label, execExtra: exec.extra,
+        adv: adv.label, advExtra: adv.extra,
+        drift,
+        driftModel: off.label,
+        lastRun: seen ? relativeTime(new Date(seen.lastAt).toISOString()) || 'just now' : '',
+      };
+    })
+    // Drift first — the whole point of the table is finding it.
+    .sort((a, b) => (a.drift && a.drift !== 'no-runs' ? 0 : 1) - (b.drift && b.drift !== 'no-runs' ? 0 : 1)
+      || b.runs - a.runs);
+
+  return {
+    days: 7,
+    models: modelList,
+    assignments,
+    // The numbers only. The sentences are composed client-side, the same way
+    // a lane's read is — so the two role views phrase things one way.
+    worth: {
+      advisedRuns, advisedLanded, plainRuns, plainLanded,
+      advCostUsd, execCostUsd,
+      totalCostUsd: attributedCost,
+      advShare: total > 0 ? ((basisCost ? advCostUsd : advTokens) / total) * 100 : 0,
+      execShare: total > 0 ? ((basisCost ? execCostUsd : execTokens) / total) * 100 : 0,
+      avgAdvPerRun: advisedRuns > 0 ? advCostUsd / advisedRuns : 0,
+      costBasis: basisCost,
+    },
+  };
+}
 
 control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
@@ -752,7 +896,22 @@ control.get('/', async (_req, res) => {
     };
   })();
 
+  // ---- (#281 / design 23b) Roles across the fleet ------------------------
+  // Which model is doing what, what the advisors are costing, and where the
+  // policy is being ignored. The policy is a setting; this block is what the
+  // runs ACTUALLY did — the two are compared rather than assumed equal, which
+  // is the only way "the policy is being ignored" can ever be visible.
+  //
+  // Everything here reads the same 7-day usage rows the usage card does, and
+  // attributes models with the same alias match #280 uses — so a lane's split
+  // and the fleet's split can never disagree about who a model was.
+  const fleetRoles = computeFleetRoles({
+    usageRows: usageR.rows, projects, execAlias, advAlias,
+  });
+
   res.json({
+    // (#281) Roles across the fleet — the policy beside what actually ran.
+    roles: fleetRoles,
     // (#269) The throughput ledger — the trend behind the numbers.
     ledger,
     // (#268) The fleet: capacity plus every in-flight worker.

@@ -463,6 +463,50 @@ export interface Ledger {
   roles: { executor: { tokens: number; costUsd: number }; advisor: { tokens: number; costUsd: number } };
 }
 
+// (#281 / design 23b) Roles across the fleet. `models` is the week per model,
+// `assignments` is what ACTUALLY ran per project — compared against the
+// configured policy rather than assumed equal to it, which is the only way
+// drift becomes visible. `worth` is numbers only; the sentences are composed
+// in the Roles room, the same way a lane's read is.
+export interface FleetRoleModel {
+  model: string; label: string;
+  role: 'exec' | 'adv' | '';
+  runs: number; tokens: number; costUsd: number;
+  todayTokens: number; todayCostUsd: number;
+  share: number; lastSeen: string;
+}
+
+// drift: '' = the runs match the policy · 'no-runs' = quiet, not drift ·
+// 'off-policy' = a model ran that neither current role claims (a changed
+// setting, or a host-side --executor-model override) · 'advisor-unused' = an
+// advisor is configured but never appeared in this project's runs.
+export type RoleDrift = '' | 'no-runs' | 'off-policy' | 'advisor-unused';
+
+export interface FleetRoleAssignment {
+  slug: string; name: string; tint: string | null; automode: boolean;
+  runs: number;
+  exec: string; execExtra: number;
+  adv: string; advExtra: number;
+  drift: RoleDrift;
+  driftModel: string;
+  lastRun: string;
+}
+
+export interface FleetRoleWorth {
+  advisedRuns: number; advisedLanded: number;
+  plainRuns: number; plainLanded: number;
+  advCostUsd: number; execCostUsd: number; totalCostUsd: number;
+  advShare: number; execShare: number; avgAdvPerRun: number;
+  costBasis: boolean;   // false = no cost reported, the shares are token-based
+}
+
+export interface FleetRoles {
+  days: number;
+  models: FleetRoleModel[];
+  assignments: FleetRoleAssignment[];
+  worth: FleetRoleWorth;
+}
+
 export interface ControlData {
   // (#269) The throughput ledger; absent on a server that pre-dates it.
   ledger?: Ledger;
@@ -500,6 +544,9 @@ export interface ControlData {
   totals: { automode: number; liveSessions: number; claims: number; review: number };
   usage?: UsageSummary | null;
   planUsage?: PlanUsageSnapshot | null; // Plan windows via the daemon (#220)
+  // (#281) Undefined on a pre-#281 server — the Roles room says so rather than
+  // rendering an empty fleet as if nothing had ever run.
+  roles?: FleetRoles | null;
 }
 
 export async function getControl(): Promise<ControlData> {
@@ -525,6 +572,9 @@ export async function getControl(): Promise<ControlData> {
     // #268 — a pre-deploy server sends no fleet; one idle slot is the honest
     // default, since the dispatcher has always been one worker wide.
     fleet: d.fleet ?? { capacity: 1, slots: [] },
+    // #281 — null when the server pre-dates the fleet roles block; the Roles
+    // room draws its own "this server has no roles data" state.
+    roles: d.roles ?? null,
   };
 }
 

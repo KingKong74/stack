@@ -9,6 +9,7 @@ import {
 } from '../store';
 import { SessionPlanModal } from '../components/SessionPlanModal';
 import { NightsRoom, PlanRoom, BuildRoom } from './ControlRooms';
+import { RolesRoom } from './ControlRoles';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
 import { go, hrefTo } from '../lib/route';
 import type { ProjectStatus } from '../types';
@@ -149,7 +150,7 @@ export function ControlPanel() {
   const [mergeBusy, setMergeBusy] = useState(false);
   // 14a — the shell: Now / Nights / Plan / Build are rooms behind one pinned
   // live strip and a persistent rail; the autopilot config folds away.
-  const [room, setRoom] = useState<'now' | 'nights' | 'plan' | 'build'>('now');
+  const [room, setRoom] = useState<'now' | 'nights' | 'plan' | 'build' | 'roles'>('now');
   const [cfgOpen, setCfgOpen] = useState(false);
   // #280 — which fleet lane is expanded to its role panel (one at a time; the
   // rows are dense enough that two open at once stops being scannable).
@@ -476,7 +477,7 @@ export function ControlPanel() {
           <>
             {/* ---- 14a: the shell — rooms behind one live strip + rail ---- */}
             <div className="mc14-tabs" role="tablist" aria-label="Mission Control rooms">
-              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0], ['build', 'Build', 0]] as const).map(([key, label, n]) => (
+              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0], ['build', 'Build', 0], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => a.drift && a.drift !== 'no-runs').length]] as const).map(([key, label, n]) => (
                 <button key={key} role="tab" aria-selected={room === key}
                   className={`mc14-tab ${room === key ? 'on' : ''}`} onClick={() => setRoom(key)}>
                   {label}{n > 0 && <span className="n">{n}</span>}
@@ -1260,6 +1261,13 @@ export function ControlPanel() {
                 )}
                 {room === 'build' && pickSlug && (
                   <BuildRoom data={data} pickSlug={pickSlug} onPick={setPickSlug} onGoNow={() => setRoom('now')} />
+                )}
+                {/* #281 — Roles: the fleet-wide half of turn 23. "Edit the
+                    policy" lands you on the Now room's model pickers, which
+                    are the one place the policy is actually written. */}
+                {room === 'roles' && (
+                  <RolesRoom data={data} onReload={load}
+                    onConfigure={() => { setRoom('now'); setCfgOpen(true); }} />
                 )}
               </div>
 
