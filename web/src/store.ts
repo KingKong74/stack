@@ -750,6 +750,79 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   };
 }
 
+// ---- the Review room (#282, GET /api/review) ----
+//
+// Cross-project, because the nights are: one payload holds every completed item
+// nobody has verdicted yet (with the run that built it and the reviewer's stored
+// read), the settled archive, and a fortnight of runs grouped by night for the
+// debrief. Read-only — every verdict still goes through the per-project roadmap
+// routes, so nothing here can mutate a tracker.
+
+export interface ReviewRun {
+  id: number;
+  branch: string;
+  outcome: string;
+  commits: number;
+  tokens: number;
+  costUsd: number;
+  checksFailing: number | null;
+  summary: string;
+  reviewVerdict: '' | 'clean' | 'concerns' | 'blocked';  // '' = no review ran
+  reviewNote: string;
+  reviewFindings: number | null;
+  when: string;
+  finishedAt: string;
+}
+
+export interface ReviewItem {
+  slug: string; name: string; tint: string | null;
+  id: string; title: string; bucket: Priority;
+  note: string; builtNote: string; refineNote: string;
+  reviewTags: string[]; reviewTag: string; shelved: boolean;
+  lane: string; origin: 'auto' | 'lane' | 'manual';
+  when: string; doneAt: string; risk: string;
+  run: ReviewRun | null;
+}
+
+export interface ReviewNightRun extends ReviewRun {
+  slug: string; name: string; tint: string | null;
+  itemId: string; itemTitle: string;
+  day: string;   // UTC calendar day the run finished — the debrief groups on it
+}
+
+export interface ReviewData {
+  queue: ReviewItem[];
+  settled: ReviewItem[];
+  nights: ReviewNightRun[];
+  totals: { pending: number; shelved: number; flagged: number; projects: number; settled: number };
+}
+
+export async function getReview(): Promise<ReviewData> {
+  return request<ReviewData>('/review');
+}
+
+// The one-shot hand-off behind the Review room's ＋ Bug / ＋ Audit: the room has
+// no modals of its own (and no project loaded), so it stashes the prefill and
+// opens the project, where ProjectDetail picks it up exactly once — the same
+// pattern as the terminal brief and the Polaris thought.
+export interface ReviewPrefill { kind: 'bug' | 'audit'; slug: string; itemId: string; title: string }
+const REVIEW_PREFILL_KEY = 'stack.review.prefill';
+
+export function setReviewPrefill(p: ReviewPrefill) {
+  try { sessionStorage.setItem(REVIEW_PREFILL_KEY, JSON.stringify(p)); }
+  catch { /* private mode — the modal just won't open prefilled */ }
+}
+export function takeReviewPrefill(slug: string): ReviewPrefill | null {
+  try {
+    const raw = sessionStorage.getItem(REVIEW_PREFILL_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as ReviewPrefill;
+    if (p?.slug !== slug) return null;      // meant for a different project
+    sessionStorage.removeItem(REVIEW_PREFILL_KEY);
+    return p;
+  } catch { return null; }
+}
+
 // ---- Gemini re-entry plan (POST .../replan — suggestion only) ----
 
 export async function replanProject(slug: string): Promise<string> {
