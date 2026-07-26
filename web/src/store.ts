@@ -1182,8 +1182,12 @@ export async function suggestRoadmapTitle(slug: string, note: string): Promise<s
 
 // Gemini fills the whole item from its note — title, tidied note, area, lane,
 // priority. Suggestion only: it prefills the modal, the human saves.
+// #277 — the assist may also propose a desire tier. Like every other field it
+// is a SUGGESTION: the modal only takes it into an empty tier, so a tier set by
+// hand is never re-decided.
 export interface RoadmapAssist {
   title: string; note: string; area: string; lane: string; priority: Priority | null;
+  tier: RoadmapItem['tier'];   // #277 — '' when the assist has no opinion or the field is off
 }
 export async function assistRoadmapItem(slug: string, note: string): Promise<RoadmapAssist> {
   return request<RoadmapAssist>(`${roadmapBase(slug)}/assist`, { method: 'POST', body: { note } });

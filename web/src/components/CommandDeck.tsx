@@ -84,10 +84,10 @@ export function CommandDeck({ data }: { data: Overview }) {
         </div>
       )}
 
-      {/* lane claims — who holds what, across everything; gone when nothing's claimed */}
+      {/* branch claims — who holds what, across everything; gone when nothing's claimed */}
       {claims.length > 0 && (
         <div className="deck-lanes">
-          <span className="lanes-label">⚑ Lanes</span>
+          <span className="lanes-label">⚑ Branches</span>
           {claims.map((c) => (
             <button className="lane-chip" key={`${c.slug}:${c.id}`}
               onClick={() => go.detail(c.slug, 'roadmap', c.id)}
@@ -119,7 +119,7 @@ export function CommandDeck({ data }: { data: Overview }) {
                     : r.outcome === 'planned' ? 'design saved — review the plan'
                     : r.outcome === 'limit' ? 'paused on the usage limit'
                     : r.outcome === 'failed' ? 'failed — see the log'
-                    : 'no commits — lane released'}
+                    : 'no commits — branch released'}
                 </span>
               </span>
               <span className="run-when">{r.when}</span>

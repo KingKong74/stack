@@ -88,11 +88,11 @@ node ~/.stack/stack-session-start.mjs --demo      # prints the block Claude will
         </div>
 
         <div className="guide-step">
-          <div className="guide-step-title"><span className="n">✦</span> Parallel lanes — a team on one project</div>
+          <div className="guide-step-title"><span className="n">✦</span> Parallel branches — a team on one project</div>
           <div className="guide-step-body">
             Run several sessions on one project without them tripping over each other: one git worktree
-            per lane, one terminal per worktree, one directive per lane. Each session shows up in
-            <b> Live now</b> with its branch, and each lane's checkpoints land in Activity under that branch.
+            per branch, one terminal per worktree, one directive per branch. Each session shows up in
+            <b> Live now</b> with its branch, and each branch's checkpoints land in Activity under that branch.
           </div>
           <CodeBlock code={`cd /path/to/project
 git worktree add ../project-ui  -b lane/ui     # lane 1
@@ -102,13 +102,13 @@ git worktree add ../project-api -b lane/api    # lane 2
 # terminal 2:  cd ../project-api && claude   → "you own the API lane: <task>"
 #   (set each lane's steer in Overview → Directives before starting)
 
-# when both lanes have pushed, a third session plays integrator:
+# when both branches have pushed, a third session plays integrator:
 cd /path/to/project && claude
 #   → "merge lane/ui and lane/api into main, resolve conflicts, run the build"
 git worktree remove ../project-ui ../project-api   # tidy up after the merge`} />
           <div className="guide-step-body">
             Ingest is already safe for this: sessions are idempotent per commit, extractions dedupe by
-            fingerprint, and the resume card only takes authored checkpoints — so parallel lanes never
+            fingerprint, and the resume card only takes authored checkpoints — so parallel branches never
             corrupt each other's state.
           </div>
         </div>

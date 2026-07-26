@@ -350,7 +350,8 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
               {([
                 { key: 'note', label: 'Tidy the note', hint: 'Restructure your note for the agent that builds it — intent kept, filler dropped.' },
                 { key: 'area', label: 'Suggest the area', hint: 'Tag the item with a product area, preferring ones the board already uses.' },
-                { key: 'lane', label: 'Suggest a lane', hint: 'Only ever an already-open lane, and only when the note clearly belongs to it.' },
+                { key: 'lane', label: 'Suggest a branch', hint: 'Only ever an already-open branch claim, and only when the note clearly belongs to it.' },
+                { key: 'tier', label: 'Suggest a tier', hint: 'The desire rank that leads the run queue. Only ever fills an EMPTY tier — one you set by hand always stands.' },
                 { key: 'priority', label: 'Suggest the bucket', hint: 'An honest MoSCoW call — most things are not must.' },
               ] as { key: string; label: string; hint: string }[]).map((f) => (
                 <Switch

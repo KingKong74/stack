@@ -112,15 +112,15 @@ function buildBlock(p) {
   if (Array.isArray(p.nextUp) && p.nextUp.length) lines.push('', '**Suggested next**', bullets(p.nextUp));
   if (Array.isArray(p.blockers) && p.blockers.length) lines.push('', '**Blockers**', bullets(p.blockers));
 
-  // Lane claims: open roadmap items owned by a parallel session. Never grab
-  // another lane's item; claim yours before starting (see the agent manual).
+  // Branch claims: open roadmap items owned by a parallel session. Never grab
+  // another branch's item; claim yours before starting (see the agent manual).
   const claims = [];
   for (const b of ['must', 'should', 'could', 'wont']) {
     for (const it of (p.roadmap?.[b] || [])) {
       if (it && !it.done && it.claimedBy) claims.push(`${it.claimedBy} → ${it.title} (#${it.id})`);
     }
   }
-  if (claims.length) lines.push('', '**Lane claims — respect these**', bullets(claims, 6));
+  if (claims.length) lines.push('', '**Branch claims — respect these**', bullets(claims, 6));
 
   // The idea funnel + the To-verify queue (#215): planning sessions (Polaris)
   // steer with the full picture — what's brewing and what awaits a verdict —

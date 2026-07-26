@@ -824,6 +824,12 @@ a.tab { display: inline-block; }
 .tier-chip.tA { background: var(--building); }
 .tier-chip.tB { background: var(--sage); }
 .tier-chip.tC { background: #8f897d; }
+/* #277 — the tier seg in the roadmap modal: the selected tier wears its own
+   colour, so the modal and the Tiers view read as the same ranking. */
+.seg .opt.tier-S.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.seg .opt.tier-A.on { background: var(--building); border-color: var(--building); color: #fff; }
+.seg .opt.tier-B.on { background: var(--sage); border-color: var(--sage); color: #fff; }
+.seg .opt.tier-C.on { background: #8f897d; border-color: #8f897d; color: #fff; }
 .tier-board { display: flex; flex-direction: column; gap: 10px; }
 .tier-row { display: flex; gap: 14px; align-items: flex-start; background: var(--panel); border: 1px solid var(--line-panel); border-radius: 14px; padding: 12px 14px; }
 .tier-row.tnone { background: transparent; border-style: dashed; }
@@ -2526,6 +2532,24 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc-idle.bad .dot { background: var(--critical); }
 .mc-idle.bad .txt { font-weight: 500; }
 
+/* Rail — the throughput ledger (#269): a 14-day spine, then current-and-
+   direction stats. Never a table; the question is the trend. */
+.mc-led-spark { display: flex; align-items: flex-end; gap: 2px; height: 34px; margin: 2px 0 8px; }
+.mc-led-spark i { flex: 1; min-width: 0; border-radius: 2px 2px 0 0; background: var(--accent); }
+.mc-led-spark i.zero { background: var(--line-3); }
+.mc-led-stat { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; cursor: help; }
+.mc-led-stat .l { flex: 1; min-width: 0; font-family: var(--mono); font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-led-stat .v { font-family: var(--disp); font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.mc-led-stat .d { font-size: 10px; width: 34px; text-align: right; color: var(--faint); }
+.mc-led-stat .d.good { color: var(--live); }
+.mc-led-stat .d.bad { color: var(--critical); }
+.mc-led-roles { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-2); cursor: help; }
+.mc-led-roles .row { display: flex; align-items: baseline; gap: 8px; padding: 2px 0; }
+.mc-led-roles .rl { flex: 1; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.mc-led-roles .rt { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.mc-led-roles .rc { font-family: var(--mono); font-size: 10.5px; font-weight: 600; color: var(--ink); width: 48px; text-align: right; }
+/* the honesty line (#269 fix): how much of the split the fallback placed */
+.mc-led-roles .row.assumed .rl { font-size: 9px; color: var(--accent-deep); }
 /* Now — the fleet strip (#268): one tile per worker slot, busy or idle. The
    strip's width IS the fleet's size, so idle slots are drawn, never omitted. */
 .mc-fleet { display: flex; flex-direction: column; gap: 8px; }
@@ -2709,26 +2733,6 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .daemon-row .ddot { width: 6px; height: 6px; border-radius: 50%; background: var(--paused); }
 .daemon-row .ddot.on { background: var(--live); }
 
-/* #269 — the throughput ledger in the rail. (These rules were missing: the
-   ledger's markup reached the branch without them, so the section rendered
-   unstyled.) Same vocabulary as the rail's other sections. */
-.mc-led-spark { display: flex; align-items: flex-end; gap: 2px; height: 34px; padding: 2px 0 4px; }
-.mc-led-spark i { flex: 1; min-width: 2px; border-radius: 1px; background: var(--live); }
-.mc-led-spark i.zero { background: var(--line-2); }
-.mc-led-stat { display: flex; align-items: baseline; gap: 8px; cursor: help; }
-.mc-led-stat .l { flex: 1; min-width: 0; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mc-led-stat .v { font-family: var(--mono); font-size: 11.5px; font-weight: 500; color: var(--ink); }
-.mc-led-stat .d { font-family: var(--mono); font-size: 10px; width: 34px; text-align: right; flex: none; color: var(--paused); }
-.mc-led-stat .d.good { color: var(--live); }
-.mc-led-stat .d.bad { color: var(--critical); }
-.mc-led-roles { display: flex; flex-direction: column; gap: 3px; padding-top: 8px; margin-top: 4px; border-top: 1px solid var(--line-2); cursor: help; }
-.mc-led-roles .row { display: flex; align-items: baseline; gap: 8px; }
-.mc-led-roles .rl { flex: 1; font-family: var(--mono); font-size: 10px; color: var(--paused); }
-.mc-led-roles .rt { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
-.mc-led-roles .rc { font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--ink); width: 48px; text-align: right; }
-/* the honesty line: how much of the split the fallback placed */
-.mc-led-roles .row.assumed .rl { font-size: 9px; color: var(--accent-deep); }
-
 /* #281 (design 23b) — the Roles room. Everything is scoped under
    .mc-rolesroom: `.tag`, `.note` and `.big` are all names other parts of the
    app already use, and #280 shipped a bug from exactly that mistake. */
@@ -2820,6 +2824,19 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc14-pick-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--line-3); font-size: 11.5px; font-weight: 500; color: var(--muted); }
 .mc14-pick-chip:hover { border-color: var(--accent); }
 .mc14-pick-chip.on { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-deep); }
+/* #271 — the whole-house chip leads the picker: a project is a filter, not a
+   requirement, so "all" is the resting state rather than an extra option. */
+.mc14-pick-chip.all { font-weight: 600; }
+.mc14-pick-chip.all.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* #271 — the tint carries project identity wherever the house is merged into
+   one list: the queue rows, the held rows and the Build phase headers. */
+.mc16-row > .tintdot, .mc16-heldrow > .tintdot, .mc14-phase .head > .tintdot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+}
+.mc16-prop .top { display: flex; align-items: center; gap: 7px; }
+.mc16-prop .top .tintdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.mc16-prop .where { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.mc16-settled { padding: 8px 2px 0; font-family: var(--mono); font-size: 10px; color: var(--faint); }
 .mc14-card { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); padding: 14px 15px; display: flex; flex-direction: column; gap: 8px; }
 .mc14-card .rule { font-size: 11px; line-height: 1.55; color: var(--muted); }
 .mc14-card .rule.quiet { color: var(--paused); }
