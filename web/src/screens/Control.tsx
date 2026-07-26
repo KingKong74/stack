@@ -315,6 +315,12 @@ export function ControlPanel() {
     return data?.projects.find((p) => p.slug === seg)?.name ?? (seg === '~' ? 'home' : seg);
   };
   const seriousTotal = data?.projects.reduce((n, p) => n + p.bugs.serious, 0) ?? 0;
+  // #268 — the fleet: the busy slots the payload reports, padded out with idle
+  // ones up to capacity. Idle slots are RENDERED, never omitted — the strip's
+  // width is how you read the fleet's real size at a glance.
+  const fleetCapacity = data?.fleet?.capacity ?? 1;
+  const fleetSlots = data?.fleet?.slots ?? [];
+  const fleetIdle = Math.max(0, fleetCapacity - fleetSlots.length);
   const shownProjects = (data?.projects ?? []).filter((p) =>
     projFilter === 'auto' ? p.automode : projFilter === 'live' ? !!p.live : true);
   // Per-project run history for the row bars — oldest → newest, this week.
@@ -432,6 +438,77 @@ export function ControlPanel() {
             <div className="mc14-cols">
               <div className="mc14-body">
                 {room === 'now' && (<>
+            {/* #268 — the fleet strip: one tile per worker slot, busy or idle.
+                Once there are N workers you need to see N workers: what each
+                holds, how long it has been at it and what it has burned. */}
+            <div className="mc-fleet" aria-label="Fleet worker slots">
+              <div className="mc-fleet-head">
+                <span className="cap">FLEET</span>
+                <span className="hair" />
+                <span className="sum">
+                  {fleetSlots.length} of {fleetCapacity} slot{fleetCapacity === 1 ? '' : 's'} working
+                </span>
+              </div>
+              <div className="mc-fleet-slots">
+                {fleetSlots.map((s) => (
+                  <div key={s.jobId} className={`mc-slot ${s.status}`}>
+                    <div className="row">
+                      <span className="tintdot" style={{ background: s.tint || 'var(--sand)' }} />
+                      <button className="nm" onClick={() => go.detail(s.slug)}>{s.name}</button>
+                      <span className={`mc-kind ${s.sessionKind}`}>{s.sessionKind}</span>
+                      <span className="state">{s.status === 'claimed' ? 'starting' : 'running'}</span>
+                      <div style={{ flex: 1 }} />
+                      <span className="age" title={s.startedAt ? `started ${new Date(s.startedAt).toLocaleString()}` : undefined}>
+                        {s.since}
+                      </span>
+                    </div>
+                    <div className="row holds">
+                      {s.itemId ? (
+                        <button className="item" title={s.itemTitle}
+                          onClick={() => go.detail(s.slug, 'roadmap', s.itemId)}>
+                          #{s.itemId} {s.itemTitle || 'item'}
+                        </button>
+                      ) : (
+                        <span className="item quiet">
+                          {s.kind === 'nightly' ? 'general night — picks as it goes' : `${s.kind} job`}
+                        </span>
+                      )}
+                      {s.branch && (
+                        <span className="branch" title={`The lane claim this worker holds: ${s.branch}`}>
+                          {s.branch}
+                        </span>
+                      )}
+                    </div>
+                    <div className="row burn">
+                      <span className="tok" title="Tokens banked by items this session has already finished — the item in flight is not counted until it lands">
+                        {s.tokens > 0 ? fmtTok(s.tokens) : 'nothing banked yet'}
+                        {s.costUsd > 0.005 && <b> ${s.costUsd.toFixed(2)}</b>}
+                      </span>
+                      <div style={{ flex: 1 }} />
+                      {s.tmux && (
+                        <code className="tmux" title={`Watch it on the host: tmux attach -t ${s.tmux}\n(Autopilot sessions are not attachable from the browser — the terminal daemon carries stack-term-* only.)`}>
+                          {s.tmux}
+                        </code>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {Array.from({ length: fleetIdle }, (_, i) => (
+                  <div className="mc-slot idle" key={`idle${i}`}>
+                    <div className="row">
+                      <span className="tintdot idle" />
+                      <span className="nm quiet">Slot {fleetSlots.length + i + 1}</span>
+                      <div style={{ flex: 1 }} />
+                      <span className="state quiet">IDLE</span>
+                    </div>
+                    <div className="row holds">
+                      <span className="item quiet">nothing in flight</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* the live session card + the tiles (11a) */}
             <div className="mc14-toprow">
               <div className={`mc14-livecard ${primary || primaryDet ? 'live' : ''}`}>
