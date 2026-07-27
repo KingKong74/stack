@@ -4,7 +4,7 @@ import {
   patchAutopilotSchedule, deleteAutopilotSchedule,
   resumeAutopilotJob, hangupAutopilotJob, dismissAutopilotJob,
   labelTerminalSessions, queueMerge, AuthError,
-  startPreview, getPreviews, stopPreview, type Preview,
+  startPreview, getPreviews, stopPreview, extendPreview, type Preview,
   type ControlData, type ControlProject, type AutopilotJob, type AutopilotSchedule,
 } from '../store';
 import { SessionPlanModal } from '../components/SessionPlanModal';
@@ -144,6 +144,38 @@ export function ControlPanel() {
       setPreviews((cur) => cur.map((v) => (v.id === next.id ? next : v)));
     } catch (e) {
       if (!(e instanceof AuthError)) setPreviewErr((e as Error)?.message || 'Could not stop the preview.');
+    }
+  };
+  // (#208) Every preview still on the host, in the order it will matter to you:
+  // live first, then the ones on their way. `stopped`/`failed` are history and
+  // belong to the failure banner, not here.
+  const MIRROR_ORDER = ['live', 'stopping', 'starting', 'queued'];
+  const openMirrors = previews
+    .filter((v) => MIRROR_ORDER.includes(v.status))
+    .sort((a, b) => MIRROR_ORDER.indexOf(a.status) - MIRROR_ORDER.indexOf(b.status));
+  // How long this URL has left. Expiry is a safety property here rather than
+  // tidiness — the URL is public while it lives — so it is stated as a
+  // countdown, not as a timestamp you would have to do arithmetic on.
+  const mirrorLeft = (iso: string | null) => {
+    if (!iso) return '';
+    const ms = new Date(iso).getTime() - Date.now();
+    if (!Number.isFinite(ms)) return '';
+    if (ms <= 0) return 'expiring now';
+    const mins = Math.round(ms / 60_000);
+    if (mins < 60) return `${mins}m left`;
+    return `${Math.floor(mins / 60)}h ${mins % 60}m left`;
+  };
+  const [mirrorBusy, setMirrorBusy] = useState('');
+  const extendMirror = async (pv: Preview) => {
+    setMirrorBusy(pv.id);
+    setPreviewErr('');
+    try {
+      const next = await extendPreview(pv.id, 1);
+      setPreviews((cur) => cur.map((v) => (v.id === next.id ? next : v)));
+    } catch (e) {
+      if (!(e instanceof AuthError)) setPreviewErr((e as Error)?.message || 'Could not extend the preview.');
+    } finally {
+      setMirrorBusy('');
     }
   };
   // #177 — the usage card's per-session agent breakdown, collapsed by default.
@@ -585,6 +617,72 @@ export function ControlPanel() {
                 unrelated paths. */}
             <SessionLanes data={data} labelBusy={labelBusy} onLabel={() => labelSessions()}
               onConfigureRoles={() => setCfgOpen(true)} onReload={load} />
+
+            {/* (#208) MIRROR SITES. A preview used to be visible only as a chip
+                on its own branch in the merge strip — which answers "is this
+                branch previewed?" but not "what is running, and what is the
+                link?", and the link is the entire point of a mirror site: it is
+                how the branch reaches a phone, or anyone you want to show. So
+                the running previews get their own line in the room that says
+                what is running now, beside the sessions.
+                Rendered even when empty, on the same reasoning as the fleet's
+                idle slots (#268): a feature you cannot see when it is idle is a
+                feature nobody finds. */}
+            <div className="mc-mirrors">
+              <div className="mc-mirror-cap">
+                <span className="cap">MIRROR SITES</span>
+                <span className="note">
+                  one branch running on its own stack, own empty database — the link is public while it lives
+                </span>
+              </div>
+              {openMirrors.length === 0 ? (
+                <div className="mc-mirror-empty">
+                  Nothing mirrored right now. ◱ Preview on a branch in the merge strip below brings one
+                  up — a minute or two for a warm build.
+                </div>
+              ) : (
+                <ul className="mc-mirror-list">
+                  {openMirrors.map((v) => (
+                    <li key={v.id} className={`mc-mirror ${v.status}`}>
+                      <span className="st">
+                        {v.status === 'live' ? 'LIVE'
+                          : v.status === 'stopping' ? 'STOPPING'
+                            : v.status === 'starting' ? 'BUILDING' : 'QUEUED'}
+                      </span>
+                      <span className="who">
+                        <b>{v.name || v.slug}</b>
+                        <code>{v.branch}</code>
+                        {v.itemTitle && <em>#{v.itemId} {v.itemTitle}</em>}
+                      </span>
+                      {/* A live row with no url yet is still arriving — say that
+                          rather than rendering a dead link. */}
+                      {v.status === 'live' && v.url ? (
+                        <a className="url" href={v.url} target="_blank" rel="noreferrer noopener"
+                          title="Opens the mirror in a new tab — public link, no sign-in wall in front of it">
+                          {v.url.replace(/^https?:\/\//, '')}
+                        </a>
+                      ) : (
+                        <span className="detail">{v.detail || 'starting on the host'}</span>
+                      )}
+                      <span className="left">{mirrorLeft(v.expiresAt)}</span>
+                      <span className="acts">
+                        {(v.status === 'live' || v.status === 'starting') && (
+                          <button className="mc-mirror-more" disabled={mirrorBusy === v.id}
+                            title="Give this mirror another hour before it expires"
+                            onClick={() => void extendMirror(v)}>
+                            {mirrorBusy === v.id ? '◴' : '＋1h'}
+                          </button>
+                        )}
+                        {v.status !== 'stopping' && (
+                          <button className="mc-mirror-x" title="Stop this mirror and free the host"
+                            onClick={() => setStopPending(v)}>× Stop</button>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
 
             {/* the live session card + the tiles (11a) */}

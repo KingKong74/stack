@@ -354,7 +354,15 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   joins the runner's real model ids (`claude-opus-4-5-…`) to the settings' aliases (`opus`,
   `claude-opus-5`, '' = CLI default) by family + generation, most-specific-alias-wins; a model
   neither role claims stays **unattributed and is drawn as its own slice** rather than guessed
-  into a role. Then the LIVE SESSION card beside the terracotta
+  into a role. Then the **MIRROR SITES** strip (#208 — the running branch previews, straight under
+  the lanes): one row per open preview with its STATUS, project + branch, the **public URL as the
+  row's payload**, a countdown to expiry and ＋1h / × Stop. Previously a preview was visible only as
+  a chip on its own branch in the merge strip, which answers "is this branch previewed?" but never
+  "what is running, and what is the link?" — and the link IS the mirror site, since it is how a
+  branch reaches a phone or anyone you want to show. Rendered even when EMPTY, on the same
+  reasoning as the fleet's idle slots: a feature invisible while idle is a feature nobody finds.
+  Fed by the room's own 15s `getPreviews()` poll, not the control payload, because a preview moves
+  on the host's clock while everything else sits still. Then the LIVE SESSION card beside the terracotta
   awaiting-review tile (→ the deck inbox) + serious-bugs/claimed-branches minis, then the
   autopilot **settled into one line** — arm switch + a mono summary — whose ▸ configure folds
   open the full console (session cap up to 6h + **token budget incl. ∞ Unlimited** + **nightly
