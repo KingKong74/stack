@@ -943,16 +943,28 @@ export function setTermUsagePrefs(p: TermUsagePrefs) {
 }
 
 // The Terminal screen's view preferences (#136) — device-local, like the
-// usage prefs above: the cockpit rail's collapse, wide mode, and (25b) which
-// of the rail's two segments it opens on.
-export interface TermViewPrefs { railOpen: boolean; wide: boolean; railSeg: 'session' | 'runbook' }
+// usage prefs above: the cockpit rail's collapse, how many terminals are on
+// screen at once, and (25b) which of the rail's two segments it opens on.
+//
+// `panes` REPLACED the old `wide` boolean. Wide mode answered "give the
+// terminal the whole viewport", which turned out to be the consequence of a
+// question rather than the question: you widen the screen because you want to
+// see more than one session. So the count is the control now, and panes > 1
+// takes the full width by itself — the thing wide mode did, asked for the
+// reason people actually wanted it.
+export const TERM_PANE_CHOICES = [1, 2, 3, 4] as const;
+export type TermPaneCount = (typeof TERM_PANE_CHOICES)[number];
+export interface TermViewPrefs { railOpen: boolean; panes: TermPaneCount; railSeg: 'session' | 'runbook' }
 const TERM_VIEW_KEY = 'stack.termView';
 export function getTermViewPrefs(): TermViewPrefs {
   // Rail defaults COLLAPSED — the terminal canvas is the point of the screen;
   // expand it when you want the cockpit (the choice sticks per device).
   return readStoredJSON(TERM_VIEW_KEY, (p) => ({
     railOpen: p?.railOpen === true,
-    wide: !!p?.wide,
+    // A device that stored the old `wide: true` keeps its full-width screen by
+    // landing on two panes, which is the nearest honest reading of what it was
+    // asking for. Anything unrecognised falls back to a single pane.
+    panes: TERM_PANE_CHOICES.includes(p?.panes) ? p.panes as TermPaneCount : (p?.wide ? 2 : 1),
     railSeg: p?.railSeg === 'runbook' ? 'runbook' as const : 'session' as const,
   }));
 }

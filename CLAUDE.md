@@ -522,7 +522,27 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   project, falling back to home on any miss; entry points on Mission Control — the strip's ⌨ Terminal button
   and a per-row ⌨ that prefills the project's slug as the cwd). xterm.js + fit addon over
   `store.openTerminal()` (the only place the ws transport + token live); Shell/Claude seg control,
-  status line, reconnectable. **The screen is the COCKPIT (25b)**: the terminal keeps the width and
+  status line, reconnectable. **Two to four terminals at once**: the head bar's pane seg (1/2/3/4,
+  device-local as `store.getTermViewPrefs().panes`, `TERM_PANE_CHOICES`) replaced the old wide-mode
+  toggle — wide mode answered "give the terminal the whole viewport", which was the consequence of
+  a question rather than the question, since you widen the screen because you want more than one
+  session on it. So panes > 1 takes the full width by itself, and a device that stored `wide:true`
+  migrates to 2. The window of shown sessions STARTS at the active tab (backing up near the end of
+  the list so panes stay full), so picking a tab puts it top-left with its neighbours beside it and
+  the tab strip is never reordered under you. Off-screen panes are HIDDEN, never unmounted — their
+  sockets and scrollback have to survive, the same reason the screen itself never unmounts — and
+  `visible` (on screen) is now separate from `focused` (takes keystrokes), because with a grid
+  those stopped being the same thing. The floating dock collapses to one pane whatever the count.
+  **Every terminal wears its own title** — what that session is working on, from the #120 labeller,
+  ON the pane rather than only on the tab, because with four terminals up the tab strip is not
+  where you are looking. Names are keyed by the relay's **sid**, which is the only id EVERY session
+  has (a shell has no tmux name, which is why shells used to go unnamed); the browser learns it
+  from the daemon's frames, since the relay multiplexes by sid and forwards them whole. The tmux
+  name stays a second key so a tab that re-attached a detached session inherits the name it wore as
+  a chip. The re-ask is driven by OUTPUT, not a timer — a session that has emitted ~1.5k of new
+  conversation is due a fresh title, floored at one call a minute and checked on a slow tick so a
+  re-render can never re-ask — so an idle screen costs nothing and a busy one keeps up. Silent when
+  the server is keyless: an unnamed pane reads as unnamed, never as idle. **The screen is the COCKPIT (25b)**: the terminal keeps the width and
   all the chrome folds into ONE right rail. The old left quick-commands rail, the horizontal usage
   strip and the tab strip above the canvas are gone — the **tabs live in the head bar** (with the
   cwd field, the Shell/Claude mode button, + New session and the real count of **branches claimed**

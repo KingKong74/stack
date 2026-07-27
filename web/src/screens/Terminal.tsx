@@ -5,7 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import {
   openTerminal, getTermCmds, setTermCmds, type TermCmd,
   getTermUsagePrefs, setTermUsagePrefs, type TermUsagePrefs,
-  getTermViewPrefs, setTermViewPrefs, type TermViewPrefs,
+  getTermViewPrefs, setTermViewPrefs, type TermViewPrefs, TERM_PANE_CHOICES,
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
@@ -182,7 +182,11 @@ function itemsBrief(items: RoadmapItem[]): string {
 // tmux is the host-side tmux session a claude tab runs inside (#188): seeded
 // from a detached-session chip or the device-local cwd map, confirmed by the
 // daemon's ready frame. Shell tabs never have one.
-type Sess = { id: number; cwd: string; cmd: 'shell' | 'claude'; status: Status; note: string; tmux?: string };
+// `sid` is the RELAY's id for this session. The browser learns it from the
+// daemon's frames (they are multiplexed by sid and the relay forwards them
+// whole), and it is the only id that exists for EVERY session — a shell has no
+// tmux name, so keying names by tmux is why shells used to go unnamed.
+type Sess = { id: number; cwd: string; cmd: 'shell' | 'claude'; status: Status; note: string; tmux?: string; sid?: string };
 type Handle = { sendText: (s: string) => void; reconnect: () => void; focus: () => void };
 
 // Mounted once by App and never unmounted (#137): sessions, sockets and
@@ -328,7 +332,7 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   // dependency says out loud which layout changes are expected to reflow.
   useEffect(() => {
     window.dispatchEvent(new Event('resize'));
-  }, [visible, dock, viewPrefs.wide, viewPrefs.railOpen]);
+  }, [visible, dock, viewPrefs.panes, viewPrefs.railOpen]);
 
   const closeSession = (id: number) => {
     handles.current.delete(id);
@@ -413,40 +417,88 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   // the daemon only reads claude sessions' output for this.
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [labelBusy, setLabelBusy] = useState(false);
-  const labelledOnce = useRef('');
+  const labelBusyRef = useRef(false);
   const refreshLabels = async () => {
-    if (labelBusy) return;
+    // Guard on a REF, not the state: two triggers in the same tick would both
+    // read the stale `false` and fire two Gemini calls for one set of tabs.
+    if (labelBusyRef.current) return;
+    labelBusyRef.current = true;
     setLabelBusy(true);
     try {
       const r = await labelTerminalSessions();
       setLabels((prev) => {
         const next = { ...prev };
-        for (const s of r.sessions) if (s.tmux && s.label) next[s.tmux] = s.label;
+        // Key by SID — every session has one, so shells get named too. The
+        // tmux name is kept as a second key so a detached chip and the tab
+        // that later re-attaches it read the same.
+        for (const s of r.sessions) {
+          if (!s.label) continue;
+          next[s.sid] = s.label;
+          if (s.tmux) next[s.tmux] = s.label;
+        }
         for (const d of r.detached) if (d.label) next[d.name] = d.label;
         return next;
       });
+      // Everything on screen has just been named, so nothing is owed a re-ask.
+      dirtyRef.current = {};
+      lastLabelAt.current = Date.now();
     } catch { /* keyless (503) or offline — sessions just stay unnamed */ }
-    finally { setLabelBusy(false); }
+    finally { labelBusyRef.current = false; setLabelBusy(false); }
   };
-  // Auto-label whenever an unnamed claude session appears, the way Mission
-  // Control does — the names are the point, and asking for them by hand every
-  // time would mean they are usually absent. Once per distinct set of names,
-  // so a re-render or a poll can't re-ask.
+  // Bytes each session has emitted since it was last named, and when we last
+  // asked. A title that says what you are working on has to follow the work,
+  // and the work shows up as OUTPUT — so the re-ask is driven by the session
+  // talking, not by a clock. An idle screen makes no calls at all; a busy one
+  // re-titles about a minute after the conversation moves on.
+  const dirtyRef = useRef<Record<number, number>>({});
+  const lastLabelAt = useRef(0);
+  const noteOutput = (id: number, bytes: number) => {
+    dirtyRef.current[id] = (dirtyRef.current[id] || 0) + bytes;
+  };
+  const RELABEL_BYTES = 1500;      // roughly a screenful of new conversation
+  const RELABEL_MIN_MS = 60_000;   // never more than once a minute, whatever happens
+  // Names arrive by themselves, and then KEEP UP. Two triggers, one call:
+  //   • something on screen is unnamed — a new tab, a fresh detached chip;
+  //   • something named has since said enough to have moved on.
+  // Both are checked on a slow tick rather than in a render effect, so a
+  // re-render can never re-ask and the cost is bounded to one call a minute
+  // even when every pane is busy.
   useEffect(() => {
     if (!visible) return;
-    const unnamed = [
-      ...sessions.filter((s) => s.cmd === 'claude' && s.tmux && (s.status === 'live' || s.status === 'connecting')).map((s) => s.tmux!),
-      ...detachedShown.map((d) => d.name),
-    ].filter((n) => !labels[n]);
-    if (!unnamed.length) return;
-    const key = unnamed.sort().join(',');
-    if (labelledOnce.current === key) return;
-    labelledOnce.current = key;
-    void refreshLabels();
+    const tick = () => {
+      const live = sessions.filter((x) => x.status === 'live' || x.status === 'connecting');
+      if (!live.length && !detachedShown.length) return;
+      const unnamed = [
+        ...live.filter((x) => !labelOf(x)).map((x) => x.id),
+        ...detachedShown.filter((d) => !labels[d.name]).map((d) => d.name),
+      ];
+      const moved = live.some((x) => (dirtyRef.current[x.id] || 0) >= RELABEL_BYTES);
+      if (!unnamed.length && !moved) return;
+      // An unnamed session is worth asking for straight away; a re-ask for one
+      // that has merely moved on waits out the floor.
+      if (!unnamed.length && Date.now() - lastLabelAt.current < RELABEL_MIN_MS) return;
+      void refreshLabels();
+    };
+    tick();
+    const t = setInterval(tick, 15_000);
+    return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, sessions, detached, labels]);
-  const labelOf = (s: Sess) => (s.tmux ? labels[s.tmux] || '' : '');
+  // Named by sid first (every session has one), falling back to the tmux name
+  // so a tab that re-attached a detached session inherits the name it wore as
+  // a chip instead of reading as unnamed until the next ask.
+  const labelOf = (s: Sess) => (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux]) || '';
   const claudeLive = sessions.some((s) => s.cmd === 'claude' && (s.status === 'live' || s.status === 'connecting'));
+  // Which sessions are on screen. The window STARTS at the active tab, so
+  // clicking a tab always puts it top-left with its neighbours filling in
+  // beside it — predictable enough to navigate without thinking, and it never
+  // reorders the tab strip under you. Near the end of the list the window
+  // backs up so the panes stay full rather than leaving holes.
+  const paneCount = Math.max(1, Math.min(viewPrefs.panes, Math.max(1, sessions.length)));
+  const activeIdx = Math.max(0, sessions.findIndex((s) => s.id === active));
+  const paneStart = Math.max(0, Math.min(activeIdx, sessions.length - paneCount));
+  const shownIds = sessions.slice(paneStart, paneStart + paneCount).map((s) => s.id);
+
 
   // 25b — a runbook line LOADS at the prompt; the row's ↵ runs it. Typing it
   // is the default because the command is usually the start of the thought,
@@ -707,7 +759,10 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
         </div>
       </div>
 
-      <div className={`page detail term-page${viewPrefs.wide ? ' term-wide' : ''}`}>
+      {/* Panes > 1 takes the full viewport width by itself. That is what the
+          old wide-mode button did, now tied to the reason people pressed it:
+          you widen the screen because you want more than one session on it. */}
+      <div className={`page detail term-page${viewPrefs.panes > 1 ? ' term-wide' : ''}`}>
         <div className="term-bar">
           {/* #138 — bare slug (no /) resolves to $HOME/<slug> on the daemon;
               a full path like "stack/src" also works within that root.
@@ -768,13 +823,21 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
               {claimedItems.length} branch{claimedItems.length === 1 ? '' : 'es'} claimed
             </span>
           )}
-          {/* #136 — wide mode toggle: the terminal panel expands to the full viewport width */}
-          <button
-            className={`btn-repo sm term-wide-btn${viewPrefs.wide ? ' on' : ''}`}
-            title={viewPrefs.wide ? 'Exit wide mode' : 'Wide mode — expand terminal to the full viewport width'}
-            onClick={() => saveViewPrefs({ wide: !viewPrefs.wide })}>
-            {viewPrefs.wide ? '⊠' : '⊞'}
-          </button>
+          {/* How many terminals are on screen at once — this replaced the
+              wide-mode toggle. Panes are filled from the active tab onwards,
+              so picking a tab puts it top-left and its neighbours beside it. */}
+          <span className="seg-control sm term-panes" role="tablist" aria-label="Terminals on screen">
+            {TERM_PANE_CHOICES.map((n) => (
+              <button key={n} role="tab" aria-selected={viewPrefs.panes === n}
+                className={`seg-opt ${viewPrefs.panes === n ? 'on' : ''}`}
+                title={n === 1
+                  ? 'One terminal, normal page width'
+                  : `${n} terminals side by side — the screen goes full width`}
+                onClick={() => saveViewPrefs({ panes: n })}>
+                {n === 1 ? '▢' : `▢${n}`}
+              </button>
+            ))}
+          </span>
           {activeSess && (
             <span className={`term-status ${activeSess.status}`}>
               {activeSess.status === 'live' ? `● live ${activeSess.note}`
@@ -958,15 +1021,40 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
         )}
 
         <div className="term-layout">
-          <div className="term-main">
-            {sessions.map((s) => (
-              <TermSession key={s.id} sess={s} visible={s.id === active}
-                onStatus={(st, note) => setStatus(s.id, st, note)}
-                onUsage={setUsage}
-                onTmux={(name) => noteTmux(s.id, s.cwd, name)}
-                onExit={(name) => noteTmuxEnded(s.cwd, name)}
-                register={(h) => { if (h) handles.current.set(s.id, h); else handles.current.delete(s.id); }} />
-            ))}
+          <div className={`term-main term-grid p${paneCount}`}>
+            {sessions.map((s) => {
+              const shown = shownIds.includes(s.id);
+              // Every session stays MOUNTED whether or not it is on screen —
+              // unmounting one would drop its socket and its scrollback, which
+              // is the whole reason this component never unmounts either. Off
+              // -screen panes are hidden, not destroyed.
+              return (
+              <div key={s.id} className={`term-pane${shown ? '' : ' off'}${s.id === active ? ' focused' : ''}`}
+                onMouseDown={() => { if (s.id !== active) setActive(s.id); }}>
+                {/* The title: what this session is working on, in its own
+                    words via the labeller. It sits ON the pane rather than on
+                    the tab because with four terminals up, the tab strip is no
+                    longer where you are looking. */}
+                <div className="term-pane-title">
+                  <span className={`dot ${s.status}`} />
+                  <span className="what">
+                    {labelOf(s) || (s.status === 'live'
+                      ? (labelBusy ? 'naming this session…' : 'not named yet')
+                      : s.note || s.status)}
+                  </span>
+                  <span className="where">{s.cmd === 'claude' ? 'claude' : 'shell'} · {s.cwd || '~'}</span>
+                </div>
+                <TermSession sess={s} visible={shown} focused={shown && s.id === active}
+                  onStatus={(st, note) => setStatus(s.id, st, note)}
+                  onUsage={setUsage}
+                  onTmux={(name) => noteTmux(s.id, s.cwd, name)}
+                  onSid={(sid) => setSessions((cur) => cur.map((x) => (x.id === s.id ? { ...x, sid } : x)))}
+                  onOutput={(bytes) => noteOutput(s.id, bytes)}
+                  onExit={(name) => noteTmuxEnded(s.cwd, name)}
+                  register={(h) => { if (h) handles.current.set(s.id, h); else handles.current.delete(s.id); }} />
+              </div>
+              );
+            })}
             {sessions.length === 0 && (
               <div className="term-holder gitbash term-empty">
                 <span>No session open.</span>
@@ -1233,12 +1321,19 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
 
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
-function TermSession({ sess, visible, onStatus, onUsage, onTmux, onExit, register }: {
+function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid, onOutput, onExit, register }: {
   sess: { id: number; cwd: string; cmd: 'shell' | 'claude'; tmux?: string };
+  // Rendered on screen at all (it may be one of several panes)...
   visible: boolean;
+  // ...and the one that takes keystrokes. With a grid these stopped being the
+  // same thing: stealing focus for every visible pane would make the last one
+  // mounted swallow your typing.
+  focused: boolean;
   onStatus: (s: Status, note: string) => void;
   onUsage: (u: TermUsage) => void;
   onTmux: (name: string) => void;
+  onSid: (sid: string) => void;
+  onOutput: (bytes: number) => void;
   onExit: (tmuxName: string | null) => void;
   register: (h: Handle | null) => void;
 }) {
@@ -1252,6 +1347,8 @@ function TermSession({ sess, visible, onStatus, onUsage, onTmux, onExit, registe
   // frame so the daemon re-attaches to the surviving session instead of
   // spawning a new one.
   const tmuxRef = useRef<string | null>(sess.tmux ?? null);
+  // The relay's id for this session, learned from its first frame.
+  const sidRef = useRef<string | null>(null);
 
   useEffect(() => {
     const term = new XTerm({
@@ -1304,19 +1401,32 @@ function TermSession({ sess, visible, onStatus, onUsage, onTmux, onExit, registe
       ws.addEventListener('message', (ev) => {
         let m: {
           t: string; data?: string; msg?: string; code?: number; cwd?: string;
+          // The relay multiplexes by sid and forwards the daemon's frames
+          // whole, so every frame carries it — that is how a tab learns the
+          // one id the labeller keys on.
+          sid?: string;
           tmuxSession?: string;
           tokens?: number; resetAt?: number; resetLabel?: string; sched?: { runDate: string; atTime: string };
           totalTokens?: number; plan?: TermUsage['plan'];
         };
         try { m = JSON.parse(ev.data); } catch { return; }
-        if (m.t === 'out' && m.data) scheduleWrite(b64decode(m.data));
+        // Every frame carries the relay's sid, so the first one names this tab
+        // for the labeller — including shells, which have no tmux name.
+        if (typeof m.sid === 'string' && m.sid && !sidRef.current) { sidRef.current = m.sid; onSid(m.sid); }
+        if (m.t === 'out' && m.data) {
+          scheduleWrite(b64decode(m.data));
+          // How much this session has said since it was last named. The title
+          // is re-asked on OUTPUT rather than on a timer, so an active
+          // conversation re-titles quickly and an idle one costs nothing.
+          onOutput(m.data.length);
+        }
         else if (m.t === 'usage' && typeof m.tokens === 'number') {
           onUsage({ tokens: m.tokens, totalTokens: m.totalTokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched, plan: m.plan });
         }
         else if (m.t === 'ready') {
           if (m.tmuxSession) { tmuxRef.current = m.tmuxSession; onTmux(m.tmuxSession); }
           onStatus('live', m.cwd || '');
-          if (visible) term.focus();
+          if (focused) term.focus();
         }
         else if (m.t === 'exit') {
           // An exit while attached = the underlying process really ended (a
@@ -1394,7 +1504,7 @@ function TermSession({ sess, visible, onStatus, onUsage, onTmux, onExit, registe
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Refit when this tab becomes visible (it may have been hidden at 0×0).
+  // Refit when this pane becomes visible (it may have been hidden at 0×0).
   useEffect(() => {
     if (!visible) return;
     const term = termRef.current;
@@ -1403,8 +1513,8 @@ function TermSession({ sess, visible, onStatus, onUsage, onTmux, onExit, registe
     fit.fit();
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
-    term.focus();
-  }, [visible]);
+    if (focused) term.focus();
+  }, [visible, focused]);
 
   return <div className="term-holder gitbash" ref={holderRef} style={visible ? undefined : { display: 'none' }} />;
 }
