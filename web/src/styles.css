@@ -247,7 +247,7 @@ a { color: inherit; }
 /* ---------- page shell ----------
    Every screen fills the viewport; --page-max is the ONE knob if a cap is ever
    wanted back (set it to e.g. 1240px here and every page re-centres at once). */
-:root { --page-max: none; }
+:root { --page-max: 1600px; }
 .page { max-width: var(--page-max); margin: 0 auto; padding: 36px 32px 64px; }
 .page.detail { padding: 30px 32px 72px; }
 /* wide screens get a little more breathing room at the edges, not a cap */
