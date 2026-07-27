@@ -10,6 +10,7 @@ import {
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
   getDetachedSessions, killDetachedSession, type DetachedSession,
+  labelTerminalSessions,
   getTermTmuxName, setTermTmuxName, clearTermTmuxName,
   getTermSessionPrefs, termAssist, type TermAssistSuggestion,
   getTermWorkingItem, setTermWorkingItem,
@@ -176,21 +177,6 @@ function itemsBrief(items: RoadmapItem[]): string {
     return `  #${it.id} ${it.title}  (${meta})${note}${plan}`;
   }).join('\n');
   return `${head}\n${body}\n`;
-}
-
-// One BUDGET line in the cockpit rail: name, bar, figure. Same bar element
-// (and colours) the old horizontal usage strip used — warn at 85%, critical
-// past 100 — just stacked instead of laid out across the page.
-function BudgetRow({ name, pct, val, title }: { name: string; pct: number; val: string; title?: string }) {
-  return (
-    <div className="tc-brow" title={title}>
-      <span className="n">{name}</span>
-      <div className={`tu-bar${pct >= 100 ? ' over' : pct >= 85 ? ' warn' : ''}`}>
-        <div className="tu-fill" style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
-      </div>
-      <span className="v">{val}</span>
-    </div>
-  );
 }
 
 // tmux is the host-side tmux session a claude tab runs inside (#188): seeded
@@ -365,16 +351,34 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
 
   const attachDetached = (d: DetachedSession) => {
     setDetached((l) => l.filter((x) => x.name !== d.name));
+    setKillPick((p) => p.filter((n) => n !== d.name));
     openSession(d.cwd, 'claude', d.name);
   };
-  const [killTarget, setKillTarget] = useState<DetachedSession | null>(null);
+
+  // Killing host sessions, one or many. The route only ever kills DETACHED
+  // sessions — the daemon refuses a name a client still holds — so selection
+  // is offered on those chips alone; to kill one you are attached to, close
+  // the tab first (that detaches it) and it reappears here.
+  const [killPick, setKillPick] = useState<string[]>([]);
+  const [killTargets, setKillTargets] = useState<DetachedSession[] | null>(null);
+  const toggleKillPick = (name: string) =>
+    setKillPick((p) => (p.includes(name) ? p.filter((n) => n !== name) : [...p, name]));
   const confirmKill = async () => {
-    const d = killTarget;
-    setKillTarget(null);
-    if (!d) return;
-    setDetached((l) => l.filter((x) => x.name !== d.name));
-    clearTermTmuxName(d.cwd, d.name);
-    try { await killDetachedSession(d.name); } catch { void refreshDetached(); }
+    const list = killTargets ?? [];
+    setKillTargets(null);
+    if (!list.length) return;
+    const names = new Set(list.map((d) => d.name));
+    setDetached((l) => l.filter((x) => !names.has(x.name)));
+    setKillPick((p) => p.filter((n) => !names.has(n)));
+    // Sequential, not Promise.all: the daemon takes these over one socket, and
+    // a failure part-way should still leave the rest killed. One refresh at the
+    // end re-syncs whatever actually died.
+    let failed = false;
+    for (const d of list) {
+      clearTermTmuxName(d.cwd, d.name);
+      try { await killDetachedSession(d.name); } catch { failed = true; }
+    }
+    if (failed) void refreshDetached();
   };
 
   // The daemon confirmed (or assigned) a tab's tmux session — remember it on
@@ -393,6 +397,49 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   // hide them (the daemon's next push drops them anyway).
   const detachedShown = detached.filter(
     (d) => !sessions.some((s) => s.tmux === d.name && (s.status === 'live' || s.status === 'connecting')));
+  const killable = detachedShown.filter((d) => !d.attached);
+
+  // ---- what each claude session is DOING (#120), on this screen ----
+  // Gemini's one-line take, keyed by the host tmux session — the only id both
+  // sides agree on (the browser never learns the relay's sid, and a claude tab
+  // knows its tmux name from the ready frame). Shell tabs are not labelled:
+  // the daemon only reads claude sessions' output for this.
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const [labelBusy, setLabelBusy] = useState(false);
+  const labelledOnce = useRef('');
+  const refreshLabels = async () => {
+    if (labelBusy) return;
+    setLabelBusy(true);
+    try {
+      const r = await labelTerminalSessions();
+      setLabels((prev) => {
+        const next = { ...prev };
+        for (const s of r.sessions) if (s.tmux && s.label) next[s.tmux] = s.label;
+        for (const d of r.detached) if (d.label) next[d.name] = d.label;
+        return next;
+      });
+    } catch { /* keyless (503) or offline — sessions just stay unnamed */ }
+    finally { setLabelBusy(false); }
+  };
+  // Auto-label whenever an unnamed claude session appears, the way Mission
+  // Control does — the names are the point, and asking for them by hand every
+  // time would mean they are usually absent. Once per distinct set of names,
+  // so a re-render or a poll can't re-ask.
+  useEffect(() => {
+    if (!visible) return;
+    const unnamed = [
+      ...sessions.filter((s) => s.cmd === 'claude' && s.tmux && (s.status === 'live' || s.status === 'connecting')).map((s) => s.tmux!),
+      ...detachedShown.map((d) => d.name),
+    ].filter((n) => !labels[n]);
+    if (!unnamed.length) return;
+    const key = unnamed.sort().join(',');
+    if (labelledOnce.current === key) return;
+    labelledOnce.current = key;
+    void refreshLabels();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, sessions, detached, labels]);
+  const labelOf = (s: Sess) => (s.tmux ? labels[s.tmux] || '' : '');
+  const claudeLive = sessions.some((s) => s.cmd === 'claude' && (s.status === 'live' || s.status === 'connecting'));
 
   // 25b — a runbook line LOADS at the prompt; the row's ↵ runs it. Typing it
   // is the default because the command is usually the start of the thought,
@@ -677,17 +724,35 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
           {/* 25b — the tabs live in the head bar now. Each is still its own
               socket with its own warm buffer; only the row they sit on moved. */}
           <div className="term-tabs">
-            {sessions.map((s) => (
-              <span key={s.id} className={`term-tab ${s.id === active ? 'on' : ''}`}>
-                <button className="term-tab-name" onClick={() => setActive(s.id)}>
-                  <span className={`dot ${s.status}`} />
-                  {s.cmd === 'claude' ? 'claude' : 'shell'}{s.cwd ? ` · ${s.cwd}` : ''}
-                </button>
-                <button className="term-tab-x" onClick={() => closeSession(s.id)} aria-label="Close session" title="Close">×</button>
-              </span>
-            ))}
+            {sessions.map((s) => {
+              const label = labelOf(s);
+              return (
+                <span key={s.id} className={`term-tab ${s.id === active ? 'on' : ''}`}>
+                  <button className="term-tab-name" onClick={() => setActive(s.id)}
+                    title={label ? `${label}${s.tmux ? ` (tmux ${s.tmux})` : ''}` : s.tmux ? `tmux ${s.tmux}` : undefined}>
+                    <span className={`dot ${s.status}`} />
+                    {s.cmd === 'claude' ? 'claude' : 'shell'}{s.cwd ? ` · ${s.cwd}` : ''}
+                    {/* #120 — what this session is doing, in its own words via
+                        Gemini. Absent until one comes back: a tab with no name
+                        reads as unnamed, never as idle. */}
+                    {label && <span className="tab-label">{label}</span>}
+                  </button>
+                  <button className="term-tab-x" onClick={() => closeSession(s.id)} aria-label="Close session" title="Close">×</button>
+                </span>
+              );
+            })}
           </div>
           <div className="term-bar-gap" />
+          {/* ✧ re-ask for the session names. They arrive by themselves when an
+              unnamed claude session appears; this is for when one has moved on
+              to something else. Absent without claude sessions, and silent when
+              the server has no Gemini key. */}
+          {claudeLive && (
+            <button className="btn-repo sm" onClick={() => void refreshLabels()} disabled={labelBusy}
+              title="Re-read what each claude session is doing (✧ Gemini, annotation only)">
+              {labelBusy ? '✧ …' : '✧ Re-label'}
+            </button>
+          )}
           {/* Real claim state (#277 — a claim is a BRANCH, and is called one),
               not a count of browser tabs: open roadmap items a branch holds. */}
           {claimedItems.length > 0 && (
@@ -718,6 +783,119 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
           )}
         </div>
 
+        {/* The usage strip lives ABOVE the canvas, not in the cockpit rail: it
+            is about the machine and the day, not about this session, and
+            reading it should never cost a segment switch. Visible once the
+            daemon sends a frame OR the server endpoint responds, whichever
+            comes first. With plan data (#195) the bar IS the Plan session
+            window — the same percentages + reset times Claude's in-app /usage
+            shows — and the transcript token count drops to a secondary figure.
+            Without it (no credentials on the host, or offline) the old
+            tokens-vs-budget estimate carries the strip. */}
+        {(usage || serverUsage) && (
+          <div className="term-usage">
+            {usage?.plan?.session ? (
+              <>
+                <span className="tu-lbl">Session</span>
+                <div className={`tu-bar${usage.plan.session.pct >= 100 ? ' over' : usage.plan.session.pct >= 85 ? ' warn' : ''}`}>
+                  <div className="tu-fill" style={{ width: `${Math.min(100, usage.plan.session.pct)}%` }} />
+                </div>
+                <span className="tu-num"
+                  title="The Plan's 5-hour session window — the same number Claude's /usage shows in-app">
+                  {usage.plan.session.pct}%
+                  {usage.plan.session.resetAt ? ` · resets ${fmtReset(usage.plan.session.resetAt)}` : ''}
+                </span>
+                {usage.plan.week && (
+                  <span className={`tu-total${usage.plan.week.pct >= 85 || (usage.plan.weekModel?.pct ?? 0) >= 85 ? ' warn' : ''}`}
+                    title={`The Plan's weekly window — resets ${fmtReset(usage.plan.week.resetAt, true)}`}>
+                    week {usage.plan.week.pct}%
+                    {usage.plan.weekModel ? ` · ${(usage.plan.weekModel.model || 'model').toLowerCase()} ${usage.plan.weekModel.pct}%` : ''}
+                  </span>
+                )}
+                <span className="tu-total" title="Fresh tokens today (input + output + cache writes) from this host's transcripts">
+                  {fmtTok(usedTokens)} tok today
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="tu-lbl">Tokens</span>
+                <div className={`tu-bar${usagePct >= 100 ? ' over' : usagePct >= 85 ? ' warn' : ''}`}>
+                  <div className="tu-fill" style={{ width: `${Math.min(100, usagePct)}%` }} />
+                </div>
+                <span className="tu-num"
+                  title={`${fmtTok(usedTokens)} / ${serverUsage && serverUsage.tokenBudget > 0 ? fmtTok(serverUsage.tokenBudget) + ' nightly budget' : fmtTok(usagePrefs.dailyLimit) + ' estimate'} (24h)`}>
+                  {fmtTok(usedTokens)} /{' '}
+                  {serverUsage && serverUsage.tokenBudget > 0
+                    ? <span>{fmtTok(serverUsage.tokenBudget)}</span>
+                    : editLimit
+                      ? (
+                        <input className="field-input tu-edit" autoFocus value={limitDraft}
+                          onChange={(e) => setLimitDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              const v = parseTok(limitDraft);
+                              if (v) savePrefs({ ...usagePrefs, dailyLimit: v });
+                              setEditLimit(false);
+                            } else if (e.key === 'Escape') setEditLimit(false);
+                          }}
+                          onBlur={() => setEditLimit(false)} />
+                      ) : (
+                        <button className="tu-limit" title="Daily token estimate (this device only) — click to change"
+                          onClick={() => { setLimitDraft(fmtTok(usagePrefs.dailyLimit)); setEditLimit(true); }}>
+                          {fmtTok(usagePrefs.dailyLimit)}
+                        </button>
+                      )
+                  }
+                </span>
+                {usage?.totalTokens != null && usage.totalTokens > (usage?.tokens ?? 0) && (
+                  <span className="tu-total" title="Raw volume including prompt-cache reads — the fresh count on the bar is what tracks real work">
+                    {fmtTok(usage.totalTokens)} incl. cache reads
+                  </span>
+                )}
+              </>
+            )}
+            {usage?.resetLabel && <span className="tu-reset">⏳ limit resets {usage.resetLabel}</span>}
+            {resumeJob && (
+              <span className={`tu-resume ${resumeJob.status}`}
+                title={resumeJob.itemTitle ? `#${resumeJob.itemId} ${resumeJob.itemTitle}` : undefined}>
+                ⏸ {resumeJob.status === 'paused'
+                  ? `${resumeJob.slug} hung up — resumes when you say`
+                  : resumeJob.notBefore ? `${resumeJob.slug} paused · resumes ${resumeAt}`
+                  : `${resumeJob.slug} resuming…`}
+                {(resumeJob.status === 'paused' || resumeJob.notBefore) && (
+                  <button className="btn-submit sm" onClick={() => void actOnResume(resumeAutopilotJob)}
+                    title="Resume the paused session now — the host picks it up within a minute">
+                    ▶ Resume now
+                  </button>
+                )}
+                {resumeJob.status === 'queued' && resumeJob.notBefore && (
+                  <button className="btn-cancel sm" onClick={() => void actOnResume(hangupAutopilotJob)}
+                    title="Hang up — hold the session so it only resumes when you say">
+                    Hang up
+                  </button>
+                )}
+              </span>
+            )}
+            {usage?.sched && (booked ? (
+              <span className="tu-booked">✓ session booked for {usage.sched.atTime}</span>
+            ) : !usagePrefs.autoSchedule ? (
+              <button className="btn-submit sm" onClick={() => void bookReset()}
+                title={`Book a one-off automated session at ${usage.sched.atTime} (just past the reset) via the Mission Control calendar`}>
+                ▶ Book session at {usage.sched.atTime}
+              </button>
+            ) : null)}
+            <span className="tu-auto" title="When the usage limit hits, book the next automated session just past the reset without asking">
+              auto-book at reset
+              <button role="switch" aria-checked={usagePrefs.autoSchedule} aria-label="Auto-book a session at the limit reset"
+                className={`switch sm ${usagePrefs.autoSchedule ? 'on' : ''}`}
+                onClick={() => savePrefs({ ...usagePrefs, autoSchedule: !usagePrefs.autoSchedule })}>
+                <span className="switch-knob" />
+              </button>
+            </span>
+            {schedNote && <span className="tu-note">{schedNote}</span>}
+          </div>
+        )}
+
         {/* #188 — sessions still running on the host that this tab doesn't
             hold, framed the way 25b frames them: things to pick up. Detached
             ones (a page reload's orphans) ↺ re-attach, × kills (confirmed
@@ -728,21 +906,47 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
         {detachedShown.length > 0 && (
           <div className="term-detached">
             <span className="td-lbl">Pick up where it stopped</span>
-            {detachedShown.map((d) => (
-              <span key={d.name} className={`td-chip${d.attached ? ' away' : ''}`}>
-                <button className="td-attach"
-                  title={d.attached
-                    ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
-                    : `Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`}
-                  onClick={() => attachDetached(d)}>
-                  ↺ claude · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}{d.label ? ` — ${d.label}` : ''}
+            {detachedShown.map((d) => {
+              const name = labels[d.name] || d.label || '';
+              const picked = killPick.includes(d.name);
+              return (
+                <span key={d.name} className={`td-chip${d.attached ? ' away' : ''}${picked ? ' picked' : ''}`}>
+                  <button className="td-attach"
+                    title={d.attached
+                      ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
+                      : `Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`}
+                    onClick={() => attachDetached(d)}>
+                    ↺ claude · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}{name ? ` — ${name}` : ''}
+                  </button>
+                  {/* Selection for a multi-kill sits on killable chips only:
+                      the daemon refuses a name a client still holds, so
+                      offering it on an attached one would be a button that
+                      cannot work. */}
+                  {!d.attached && (
+                    <button className={`td-pick${picked ? ' on' : ''}`} onClick={() => toggleKillPick(d.name)}
+                      aria-pressed={picked} aria-label={`Select ${d.name} to kill`}
+                      title={picked ? 'Unselect' : 'Select for a bulk kill'}>{picked ? '☑' : '☐'}</button>
+                  )}
+                  {!d.attached && (
+                    <button className="td-x" aria-label="Kill this detached session"
+                      title="Kill this session on the host" onClick={() => setKillTargets([d])}>×</button>
+                  )}
+                </span>
+              );
+            })}
+            {killable.length > 1 && (
+              <span className="td-bulk">
+                <button className="btn-repo sm"
+                  onClick={() => setKillPick(killPick.length === killable.length ? [] : killable.map((d) => d.name))}>
+                  {killPick.length === killable.length ? 'none' : `all ${killable.length}`}
                 </button>
-                {!d.attached && (
-                  <button className="td-x" aria-label="Kill this detached session"
-                    title="Kill this session on the host" onClick={() => setKillTarget(d)}>×</button>
-                )}
+                <button className="btn-cancel sm" disabled={killPick.length === 0}
+                  title="Kill the selected sessions on the host"
+                  onClick={() => setKillTargets(killable.filter((d) => killPick.includes(d.name)))}>
+                  × Kill {killPick.length || ''}
+                </button>
               </span>
-            ))}
+            )}
           </div>
         )}
 
@@ -870,108 +1074,6 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                       </div>
                     )}
 
-                    {/* BUDGET — the usage strip, folded in vertically. With
-                        plan data (#195) the bars ARE the Plan windows; without
-                        it the tokens-vs-estimate bar carries the block. */}
-                    <div className="tc-block">
-                      <div className="tc-cap">BUDGET</div>
-                      {!usage && !serverUsage ? (
-                        <div className="tc-empty">No usage reported yet — the daemon sends it once a session is live.</div>
-                      ) : (
-                        <>
-                          {usage?.plan?.session && (
-                            <BudgetRow name="session" pct={usage.plan.session.pct} val={`${usage.plan.session.pct}%`}
-                              title="The Plan's 5-hour session window — the same number Claude's /usage shows in-app" />
-                          )}
-                          {usage?.plan?.week && (
-                            <BudgetRow name="week" pct={usage.plan.week.pct} val={`${usage.plan.week.pct}%`}
-                              title={`The Plan's weekly window — resets ${fmtReset(usage.plan.week.resetAt, true)}`} />
-                          )}
-                          {usage?.plan?.weekModel && (
-                            <BudgetRow name={(usage.plan.weekModel.model || 'model').toLowerCase()}
-                              pct={usage.plan.weekModel.pct} val={`${usage.plan.weekModel.pct}%`}
-                              title="This model's own weekly window" />
-                          )}
-                          <BudgetRow name="tokens" pct={usagePct} val={fmtTok(usedTokens)}
-                            title="Fresh tokens today (input + output + cache writes) from this host's transcripts" />
-                          <div className="tc-note">
-                            of{' '}
-                            {serverUsage && serverUsage.tokenBudget > 0
-                              ? `${fmtTok(serverUsage.tokenBudget)} nightly budget`
-                              : editLimit
-                                ? (
-                                  <input className="field-input tu-edit" autoFocus value={limitDraft}
-                                    onChange={(e) => setLimitDraft(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        const v = parseTok(limitDraft);
-                                        if (v) savePrefs({ ...usagePrefs, dailyLimit: v });
-                                        setEditLimit(false);
-                                      } else if (e.key === 'Escape') setEditLimit(false);
-                                    }}
-                                    onBlur={() => setEditLimit(false)} />
-                                ) : (
-                                  <>
-                                    <button className="tu-limit" title="Daily token estimate (this device only) — click to change"
-                                      onClick={() => { setLimitDraft(fmtTok(usagePrefs.dailyLimit)); setEditLimit(true); }}>
-                                      {fmtTok(usagePrefs.dailyLimit)}
-                                    </button>
-                                    {' '}estimate
-                                  </>
-                                )}
-                            {usage?.totalTokens != null && usage.totalTokens > (usage?.tokens ?? 0)
-                              ? ` · ${fmtTok(usage.totalTokens)} incl. cache reads` : ''}
-                          </div>
-                          {usage?.plan?.session?.resetAt && (
-                            <div className="tc-note">resets {fmtReset(usage.plan.session.resetAt)}</div>
-                          )}
-                          {usage?.resetLabel && <div className="tc-warn">⏳ limit resets {usage.resetLabel}</div>}
-                          {resumeJob && (
-                            <div className={`tc-resume ${resumeJob.status}`}
-                              title={resumeJob.itemTitle ? `#${resumeJob.itemId} ${resumeJob.itemTitle}` : undefined}>
-                              <div className="l">
-                                ⏸ {resumeJob.status === 'paused'
-                                  ? `${resumeJob.slug} hung up — resumes when you say`
-                                  : resumeJob.notBefore ? `${resumeJob.slug} paused · resumes ${resumeAt}`
-                                  : `${resumeJob.slug} resuming…`}
-                              </div>
-                              <div className="a">
-                                {(resumeJob.status === 'paused' || resumeJob.notBefore) && (
-                                  <button className="btn-submit sm" onClick={() => void actOnResume(resumeAutopilotJob)}
-                                    title="Resume the paused session now — the host picks it up within a minute">
-                                    ▶ Resume now
-                                  </button>
-                                )}
-                                {resumeJob.status === 'queued' && resumeJob.notBefore && (
-                                  <button className="btn-cancel sm" onClick={() => void actOnResume(hangupAutopilotJob)}
-                                    title="Hang up — hold the session so it only resumes when you say">
-                                    Hang up
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                          {usage?.sched && (booked ? (
-                            <div className="tc-note booked">✓ session booked for {usage.sched.atTime}</div>
-                          ) : !usagePrefs.autoSchedule ? (
-                            <button className="btn-submit sm tc-book" onClick={() => void bookReset()}
-                              title={`Book a one-off automated session at ${usage.sched.atTime} (just past the reset) via the Mission Control calendar`}>
-                              ▶ Book session at {usage.sched.atTime}
-                            </button>
-                          ) : null)}
-                          <div className="tc-auto" title="When the usage limit hits, book the next automated session just past the reset without asking">
-                            <span>auto-book at reset</span>
-                            <button role="switch" aria-checked={usagePrefs.autoSchedule} aria-label="Auto-book a session at the limit reset"
-                              className={`switch sm ${usagePrefs.autoSchedule ? 'on' : ''}`}
-                              onClick={() => savePrefs({ ...usagePrefs, autoSchedule: !usagePrefs.autoSchedule })}>
-                              <span className="switch-knob" />
-                            </button>
-                          </div>
-                          {schedNote && <div className="tc-warn">{schedNote}</div>}
-                        </>
-                      )}
-                    </div>
-
                     {/* ROSTER — deliberately thin. Stack keeps per-model usage
                         for autopilot runs, never for a terminal session (#283),
                         so the honest line is who is at the keyboard and the
@@ -1085,15 +1187,29 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
         </div>
       </div>
     </div>
-    {killTarget && (
+    {killTargets && killTargets.length > 0 && (
       <ConfirmModal
-        title="Kill detached session?"
-        body={<>The claude session in <b>{killTarget.cwd ? `~/${killTarget.cwd}` : '~'}</b> is still running
-          on the host. Killing it ends the process — anything unfinished in that conversation is lost.</>}
-        confirmLabel="Kill session"
+        title={killTargets.length === 1 ? 'Kill detached session?' : `Kill ${killTargets.length} detached sessions?`}
+        body={killTargets.length === 1 ? (
+          <>The claude session in <b>{killTargets[0].cwd ? `~/${killTargets[0].cwd}` : '~'}</b> is still running
+            on the host. Killing it ends the process — anything unfinished in that conversation is lost.</>
+        ) : (
+          <>These claude sessions are still running on the host. Killing them ends the processes —
+            anything unfinished in those conversations is lost.
+            <ul className="td-killlist">
+              {killTargets.map((d) => (
+                <li key={d.name}>
+                  <b>{d.cwd ? `~/${d.cwd}` : '~'}</b>
+                  {labels[d.name] || d.label ? ` — ${labels[d.name] || d.label}` : ''}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        confirmLabel={killTargets.length === 1 ? 'Kill session' : `Kill ${killTargets.length} sessions`}
         danger
         onConfirm={() => void confirmKill()}
-        onCancel={() => setKillTarget(null)}
+        onCancel={() => setKillTargets(null)}
       />
     )}
     {/* the minimised dock chip (#139) — the default whenever the user

@@ -2101,7 +2101,6 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tc-link.dim:hover { color: var(--critical); }
 .tc-empty { font-size: 11.5px; line-height: 1.5; color: var(--muted); }
 .tc-note { font-size: 10.5px; line-height: 1.5; color: var(--muted); }
-.tc-note.booked { color: var(--green); font-weight: 600; }
 .tc-warn { font-size: 11px; color: var(--critical); font-weight: 600; }
 .tc-foot { font-size: 10.5px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--line-3); padding-top: 10px; }
 /* WORKING ON */
@@ -2121,18 +2120,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tc-item .m { display: block; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 9.5px; color: var(--muted); margin-top: 2px; }
 .tc-send { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
 .tc-send .btn-submit.sm { padding: 4px 10px; font-size: 11px; }
-/* BUDGET + ROSTER */
-.tc-brow { display: flex; align-items: center; gap: 8px; }
-.tc-brow .n { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px; color: var(--muted); width: 52px; flex: none; overflow: hidden; text-overflow: ellipsis; }
-.tc-brow .v { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px; color: var(--body); width: 52px; text-align: right; flex: none; }
-.tc-brow .tu-bar { flex: 1 1 auto; max-width: none; }
-.tc-resume { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--accent-tint-border); background: var(--accent-tint); border-radius: 8px; padding: 8px 9px; }
-.tc-resume .l { font-size: 11px; font-weight: 600; color: var(--accent-deep); line-height: 1.4; }
-.tc-resume.paused .l { color: var(--muted); }
-.tc-resume .a { display: flex; gap: 6px; }
-.tc-resume .btn-submit.sm, .tc-resume .btn-cancel.sm, .tc-book { padding: 3px 9px; font-size: 11px; }
-.tc-book { align-self: flex-start; }
-.tc-auto { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); }
+/* ROSTER */
 .tc-roster { display: flex; align-items: baseline; gap: 8px; }
 .tc-roster .l { font-size: 11px; line-height: 1.5; color: var(--ink); }
 .tc-roster .s { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10px; color: var(--muted); margin-left: auto; flex: none; }
@@ -2175,6 +2163,9 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .term-empty .dim { color: #666; font-size: 12px; }
 
 /* the usage strip — today's tokens against the daily budget, limit reset + booking (#111) */
+/* the usage strip — above the canvas, where the machine's day belongs */
+.term-usage { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 12px; font-size: 12.5px; color: var(--muted); }
+.tu-lbl { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .tu-bar { flex: 1 1 120px; max-width: 260px; height: 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line-3); overflow: hidden; }
 .tu-fill { height: 100%; border-radius: 6px; background: var(--sage, var(--green)); transition: width 0.4s ease; }
 .tu-bar.warn .tu-fill { background: var(--building); }
@@ -2182,6 +2173,17 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tu-limit { font-family: inherit; font-size: inherit; color: var(--body); text-decoration: underline dotted; text-underline-offset: 3px; }
 .tu-limit:hover { color: var(--accent); }
 .tu-edit { width: 64px; height: 24px; padding: 0 6px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.tu-num { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--body); white-space: nowrap; }
+.tu-reset { color: var(--critical); font-weight: 600; }
+.tu-total { color: var(--faint); font-size: 11px; white-space: nowrap; } /* #130 — cache-inclusive raw volume */
+.tu-total.warn { color: var(--critical); font-weight: 600; } /* #195 — a plan weekly window running hot */
+.tu-booked { color: var(--green); font-weight: 600; }
+/* #142 — the project's paused session (a limit-hit resume job in the queue) */
+.tu-resume { display: inline-flex; align-items: center; gap: 8px; color: var(--accent); font-weight: 600; }
+.tu-resume.paused { color: var(--muted); }
+.tu-resume .btn-submit.sm, .tu-resume .btn-cancel.sm { padding: 2px 8px; font-size: 11px; }
+.tu-auto { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
+.tu-note { flex-basis: 100%; color: var(--critical); }
 /* ✧ the rail's Gemini command help — ask, get one command, type/save it */
 .term-assist { display: flex; flex-direction: column; gap: 6px; }
 .ta-note { font-size: 11.5px; color: var(--muted); }
@@ -2197,6 +2199,18 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .td-attach { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--body); padding: 3px 8px; }
 .td-attach:hover { color: var(--accent-deep); }
 .td-x { padding: 3px 7px; color: var(--muted); border-left: 1px solid var(--accent-tint-border); }
+/* #120 on this screen — the session's own name, beside its tab */
+.term-tab-name .tab-label { color: var(--muted); font-size: 11px; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-tab-name .tab-label::before { content: '— '; }
+.term-tab.on .term-tab-name .tab-label { color: #8f8f8f; }
+.term-tab-name { max-width: 420px; }
+/* multi-kill: selection on the killable (detached) chips + the bulk action */
+.td-pick { padding: 3px 6px; color: var(--muted); font-size: 12px; line-height: 1; border-left: 1px solid var(--accent-tint-border); }
+.td-pick:hover, .td-pick.on { color: var(--critical); }
+.td-chip.picked { border-color: var(--critical); }
+.td-bulk { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
+.td-bulk .btn-repo.sm, .td-bulk .btn-cancel.sm { padding: 3px 9px; font-size: 11.5px; }
+.td-killlist { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; }
 .td-x:hover { color: var(--critical); }
 .term-float .term-detached { display: none; }
 /* #137/#139 — the persistent terminal dock. The whole screen stays mounted;

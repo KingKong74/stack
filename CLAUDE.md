@@ -525,14 +525,20 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     parked or claimed — the Plan room's rules applied to one project, so what the rail offers is
     what the night would take); tick rows and **Send N to the prompt** types them as one bracketed
     block — typed, not run, like every other handoff here — and pins the first as WORKING ON.
-    **BUDGET** is the old usage strip stacked vertically (the Plan session/week windows when the
-    daemon reports them, else tokens-vs-budget), carrying the reset line, the #142 paused-session
-    controls, ▶ Book session and the auto-book switch. **ROSTER** is deliberately one line: Stack
+    **ROSTER** is deliberately one line: Stack
     keeps per-model usage for autopilot runs and never for a terminal session (#283), so it names
     who is at the keyboard and says plainly that the figure beside it is the host's whole day.
   • **Runbook** — the commands you type every day, grouped (GIT / COMPOSE / HOST / YOURS) with the
     reason you reach for each on the right. A row **loads the command at the prompt**; the row's
     ↵ runs it. It also hosts + Add a command and the ✧ command help.
+  Two things deliberately stayed OUT of the rail. The **usage strip** sits above the canvas as it
+  always did — it is about the machine and the day, not about this session, so reading it should
+  never cost a segment switch. And **every claude tab wears its own live name** (#120): Gemini's
+  one-line take on what that session is doing, keyed by the host **tmux session** — the only id
+  both sides agree on, since the browser never learns the relay's `sid` — auto-requested whenever
+  an unnamed claude session appears (silent when the server is keyless; a tab with no name reads
+  as unnamed, never as idle) and re-askable with ✧ Re-label. The same names ride the
+  PICK UP WHERE IT STOPPED chips.
   The **usage** data itself is unchanged: the daemon's `usage` frames give today's token count
   against an editable device-local daily budget (`store.getTermUsagePrefs/setTermUsagePrefs`), the
   limit-reset time when a usage limit hits, and session booking around the reset — manual mode is a
@@ -544,7 +550,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   canvas as **PICK UP WHERE IT STOPPED**: ↺ re-attach chips for claude sessions still running on
   the host with no browser attached
   (`store.getDetachedSessions`, refreshed when the screen shows and on live-count changes; ×
-  kills the host process behind a ConfirmModal via `store.killDetachedSession`). A claude tab
+  kills the host process behind a ConfirmModal via `store.killDetachedSession`, and ☐ selects for
+  a **bulk kill** — all/none plus × Kill N, one confirm listing every session by cwd and name,
+  killed sequentially so a failure part-way still ends the rest. Selection is offered on DETACHED
+  chips only: the daemon refuses a name a client still holds, so a checkbox on an attached one
+  would be a button that cannot work — close the tab first, which detaches it). A claude tab
   also remembers its tmux session name device-locally (`store.getTermTmuxName` et al, keyed by
   cwd) so a plain page reload re-attaches the same session automatically; an exit frame while
   attached — the process really ending — forgets the mapping. The screen auto-opens a session on
