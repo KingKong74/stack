@@ -320,8 +320,15 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
 
   // Any full/float/hidden transition changes the holder's size out from under
   // xterm — the sessions' own resize listeners refit on this. Also fires on
-  // wide-mode toggle (#136).
-  useEffect(() => { window.dispatchEvent(new Event('resize')); }, [visible, dock, viewPrefs.wide]);
+  // wide-mode toggle (#136) and on collapsing the cockpit rail, which changes
+  // the canvas width by the rail's whole width.
+  //
+  // Each session also watches its own holder with a ResizeObserver, which is
+  // the real guarantee — this stays because it is free, and because a listed
+  // dependency says out loud which layout changes are expected to reflow.
+  useEffect(() => {
+    window.dispatchEvent(new Event('resize'));
+  }, [visible, dock, viewPrefs.wide, viewPrefs.railOpen]);
 
   const closeSession = (id: number) => {
     handles.current.delete(id);
@@ -1334,15 +1341,38 @@ function TermSession({ sess, visible, onStatus, onUsage, onTmux, onExit, registe
     // #135 — debounced resize: the window.resize event fires on every animation
     // frame while the user drags; debouncing 80 ms sends only the settled size.
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+    // What the daemon was last told. The observer below fires on any pixel
+    // change, but the pty only cares about CELLS — so a resize frame goes out
+    // only when the grid actually changed, and a few stray pixels of layout
+    // never chatter at the host.
+    let sentCols = 0;
+    let sentRows = 0;
     const onResize = () => {
       fit.fit();
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         const ws = wsRef.current;
-        if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
+        if (term.cols === sentCols && term.rows === sentRows) return;
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
+          sentCols = term.cols;
+          sentRows = term.rows;
+        }
       }, 80);
     };
     window.addEventListener('resize', onResize);
+    // The window is not the only thing that resizes this terminal. Collapsing
+    // the cockpit rail, docking, wide mode — each changes the HOLDER's width
+    // while the window stands still, and xterm only reflows when something
+    // calls fit(). That was patched per-toggle by dispatching a synthetic
+    // resize event, which meant every new layout control silently inherited
+    // the bug until someone noticed the terminal had stopped reflowing.
+    //
+    // Watching the element instead fixes the whole class: whatever changes the
+    // holder's size, for whatever reason, refits. The debounce above still
+    // means the daemon is only told the settled size.
+    const ro = new ResizeObserver(() => onResize());
+    if (holderRef.current) ro.observe(holderRef.current);
 
     register({
       sendText: (s) => {
@@ -1357,6 +1387,7 @@ function TermSession({ sess, visible, onStatus, onUsage, onTmux, onExit, registe
       register(null);
       clearTimeout(resizeTimer);
       window.removeEventListener('resize', onResize);
+      ro.disconnect();
       data.dispose();
       wsRef.current?.close();
       term.dispose();
