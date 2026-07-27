@@ -12,6 +12,7 @@ import {
   getDetachedSessions, killDetachedSession, type DetachedSession,
   labelTerminalSessions,
   getTermTmuxName, setTermTmuxName, clearTermTmuxName,
+  getTermOpenTabs, setTermOpenTabs,
   getTermSessionPrefs, termAssist, type TermAssistSuggestion,
   getTermWorkingItem, setTermWorkingItem,
   getProjectDetail, type ProjectDetailData,
@@ -279,18 +280,38 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
       return [...s, { id, cwd: cwdKey, cmd, status: 'connecting', note: '', tmux: name }];
     });
     setActive(id);
+    return id;
   };
-  // One session opens itself on arrival — the screen is never empty. The kind
-  // comes from the device pref (default claude, in skip-permissions mode via
-  // the start frame; a surviving tmux session for the cwd re-attaches). An
-  // ?attach=<tmux name> route (Mission Control's ▶ jump-in) overrides the
-  // pref: attach straight to that running claude session instead. A bare open
-  // (no cwd, no attach) lands in the most recently touched project rather
-  // than $HOME — claude in the home directory helps nobody; overview's resume
-  // slug is the "current" project. Falls back to home if the fetch misses.
+  // The screen comes BACK the way it was left. Every tab this device had open
+  // is restored first — claude tabs by re-attaching their tmux session (the
+  // process survived the reload; that is the point of #171), shell tabs as
+  // fresh shells in the same directory — so four terminals reload as four
+  // terminals rather than one. Only then does the route get its say: an
+  // ?attach= / ?cwd= that a restored tab already covers just focuses that tab
+  // instead of opening a duplicate.
+  //
+  // With nothing remembered, one session still opens itself, as it always
+  // did — the screen is never empty. The kind comes from the device pref
+  // (default claude, skip-permissions via the start frame). A bare open (no
+  // cwd, no attach, nothing stored) lands in the most recently touched project
+  // rather than $HOME — claude in the home directory helps nobody; overview's
+  // resume slug is the "current" project. Falls back to home on any miss.
   useEffect(() => {
-    if (initialAttach) { openSession(initialCwd, 'claude', initialAttach); return; }
-    if (initialCwd) { openSession(initialCwd, getTermSessionPrefs().autoStart); return; }
+    const saved = getTermOpenTabs();
+    const ids = saved.map((t) => openSession(t.cwd, t.cmd, t.tmux));
+    if (initialAttach) {
+      const i = saved.findIndex((t) => t.tmux === initialAttach);
+      if (i >= 0) setActive(ids[i]);
+      else openSession(initialCwd, 'claude', initialAttach);
+      return;
+    }
+    if (initialCwd) {
+      const i = saved.findIndex((t) => t.cwd === initialCwd);
+      if (i >= 0) setActive(ids[i]);
+      else openSession(initialCwd, getTermSessionPrefs().autoStart);
+      return;
+    }
+    if (ids.length) { setActive(ids[0]); return; }
     let gone = false;
     getOverview()
       .then((o) => o.resume?.slug ?? '')
@@ -302,6 +323,20 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
       });
     return () => { gone = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // …and is remembered as it changes. Written from the live tabs only: a
+  // closed pane is not something to bring back, and the tmux name rides along
+  // so the restore re-attaches the same host session rather than spawning a
+  // new one. The FIRST run is skipped: it fires alongside the mount effect
+  // above, whose sessions have not landed in state yet, and would write the
+  // empty list straight back over what the restore just read.
+  const persistReady = useRef(false);
+  useEffect(() => {
+    if (!persistReady.current) { persistReady.current = true; return; }
+    setTermOpenTabs(sessions
+      .filter((s) => s.status === 'live' || s.status === 'connecting')
+      .map((s) => ({ cwd: s.cwd, cmd: s.cmd, tmux: s.tmux })));
+  }, [sessions]);
 
   // A later ⌨ press with a project cwd, or a ▶ jump-in with an attach name
   // (the component stays mounted, so both arrive as prop changes — and a
@@ -548,6 +583,40 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   const activeIdx = Math.max(0, sessions.findIndex((s) => s.id === active));
   const paneStart = Math.max(0, Math.min(activeIdx, sessions.length - paneCount));
   const shownIds = sessions.slice(paneStart, paneStart + paneCount).map((s) => s.id);
+
+  // Asking for N terminals is asking for N terminals. The pane control used to
+  // set a number and stop, so choosing 4 with one session open left one pane
+  // and three holes — the grid clamps to what exists — even while claude was
+  // still running on the host in sessions nobody was attached to. So the
+  // choice FILLS the screen: jump into those first (that is where the work
+  // already is, and re-attaching costs nothing), newest survivors before ones
+  // a client holds elsewhere (attaching to those only mirrors them), then open
+  // fresh sessions in the active tab's directory for whatever is still short.
+  const [filling, setFilling] = useState(false);
+  const choosePanes = async (n: TermPaneCount) => {
+    saveViewPrefs({ panes: n });
+    const liveNow = sessions.filter((s) => s.status === 'live' || s.status === 'connecting');
+    let need = n - liveNow.length;
+    if (need <= 0 || filling) return;
+    setFilling(true);
+    try {
+      const held = new Set(liveNow.map((s) => s.tmux).filter((t): t is string => !!t));
+      // Fetched fresh rather than read off the strip: the cached list is as old
+      // as the last push, and this is the moment it matters.
+      const pool = (await getDetachedSessions().catch(() => detached))
+        .filter((d) => !held.has(d.name))
+        .sort((a, b) => (a.attached ? 1 : 0) - (b.attached ? 1 : 0) || b.created - a.created);
+      const take = pool.slice(0, need);
+      for (const d of take) { held.add(d.name); openSession(d.cwd, 'claude', d.name); }
+      need -= take.length;
+      if (take.length) setDetached((l) => l.filter((x) => !held.has(x.name)));
+      const dir = (sessions.find((s) => s.id === active)?.cwd ?? cwd).trim();
+      for (let i = 0; i < need; i++) openSession(dir, getTermSessionPrefs().autoStart);
+    } finally {
+      setFilling(false);
+      void refreshDetached();
+    }
+  };
 
 
   // 25b — a runbook line LOADS at the prompt; the row's ↵ runs it. Typing it
@@ -940,8 +1009,10 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                 className={`seg-opt ${viewPrefs.panes === n ? 'on' : ''}`}
                 title={n === 1
                   ? 'One terminal, normal page width'
-                  : `${n} terminals side by side — the screen goes full width`}
-                onClick={() => saveViewPrefs({ panes: n })}>
+                  : `${n} terminals side by side — the screen goes full width.`
+                    + ' Empty panes fill from the sessions still running on the host,'
+                    + ' then with new ones.'}
+                onClick={() => void choosePanes(n)}>
                 {n === 1 ? '▢' : `▢${n}`}
               </button>
             ))}

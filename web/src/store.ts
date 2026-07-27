@@ -1059,6 +1059,34 @@ export function clearTermTmuxName(cwd: string, name: string) {
   localStorage.setItem(TERM_TMUX_KEY, JSON.stringify(m));
 }
 
+// The open TABS themselves, device-local, so a page reload brings the whole
+// screen back rather than one session. The cwd → tmux map above can only ever
+// remember ONE session per directory, which is why four panes used to come
+// back as one: the other three were still running on the host but nothing on
+// this device remembered that this browser had them open.
+//
+// A claude tab restores by re-attaching its tmux session (the process really
+// did survive); a shell tab restores as a fresh shell in the same directory —
+// its process died with the socket, so the pane comes back and the shell is
+// new. Order is the tab order, so the grid comes back the way it was left.
+export interface TermOpenTab { cwd: string; cmd: 'shell' | 'claude'; tmux?: string }
+const TERM_TABS_KEY = 'stack.termTabs';
+const TERM_TABS_MAX = 8;
+export function getTermOpenTabs(): TermOpenTab[] {
+  return readStoredJSON(TERM_TABS_KEY, (v) => (Array.isArray(v) ? v : [])
+    .filter((t: unknown): t is TermOpenTab =>
+      !!t && typeof t === 'object'
+      && typeof (t as TermOpenTab).cwd === 'string'
+      && ((t as TermOpenTab).cmd === 'shell' || (t as TermOpenTab).cmd === 'claude'))
+    .slice(0, TERM_TABS_MAX)
+    .map((t: TermOpenTab) => ({
+      cwd: t.cwd, cmd: t.cmd, tmux: typeof t.tmux === 'string' && t.tmux ? t.tmux : undefined,
+    })));
+}
+export function setTermOpenTabs(tabs: TermOpenTab[]) {
+  localStorage.setItem(TERM_TABS_KEY, JSON.stringify(tabs.slice(0, TERM_TABS_MAX)));
+}
+
 // Polaris (#209) is no longer a server chat route — it's a claude session over
 // openTerminal() above (components/PolarisTerm.tsx); the Gemini polaris/intake
 // routes were culled with it.

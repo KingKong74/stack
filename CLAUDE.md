@@ -560,6 +560,19 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   sockets and scrollback have to survive, the same reason the screen itself never unmounts — and
   `visible` (on screen) is now separate from `focused` (takes keystrokes), because with a grid
   those stopped being the same thing. The floating dock collapses to one pane whatever the count.
+  **Choosing N panes FILLS the screen**, rather than setting a number and leaving holes: the grid
+  clamps to the sessions that exist, so picking 4 with one tab open used to show one pane while
+  claude was still running on the host in sessions nobody was attached to. The control now jumps
+  into those first (unattached survivors before ones a client holds elsewhere, newest first — an
+  attach of the latter only mirrors it), then opens fresh sessions in the active tab's directory
+  for whatever is still short. **A reload brings the whole screen back**: the open tabs are
+  remembered device-local (`store.getTermOpenTabs/setTermOpenTabs` — cwd, kind and tmux name per
+  tab, in tab order), because the cwd→tmux map can only ever hold ONE session per directory, which
+  is why four panes used to come back as one. Claude tabs restore by re-attaching their tmux
+  session (the process really did survive); a shell tab restores as a fresh shell in the same
+  directory, since its process died with the socket. The route still gets the last word — an
+  `?attach=`/`?cwd=` a restored tab already covers focuses that tab instead of duplicating it —
+  and with nothing remembered the old single auto-open is exactly unchanged.
   Each pane carries its own **× close** and, when it has a tmux session, **⏻ end**: closing a claude
   tab only DETACHES it (the host session keeps running — the point of #171), so the two endings are
   named separately rather than one × implying the work stopped. ⏻ closes the tab and then kills the
