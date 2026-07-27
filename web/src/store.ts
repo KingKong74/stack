@@ -943,16 +943,40 @@ export function setTermUsagePrefs(p: TermUsagePrefs) {
 }
 
 // The Terminal screen's view preferences (#136) — device-local, like the
-// usage prefs above: the quick-commands rail collapse and wide mode.
-export interface TermViewPrefs { railOpen: boolean; wide: boolean }
+// usage prefs above: the cockpit rail's collapse, wide mode, and (25b) which
+// of the rail's two segments it opens on.
+export interface TermViewPrefs { railOpen: boolean; wide: boolean; railSeg: 'session' | 'runbook' }
 const TERM_VIEW_KEY = 'stack.termView';
 export function getTermViewPrefs(): TermViewPrefs {
   // Rail defaults COLLAPSED — the terminal canvas is the point of the screen;
-  // expand it when you want the quick commands (the choice sticks per device).
-  return readStoredJSON(TERM_VIEW_KEY, (p) => ({ railOpen: p?.railOpen === true, wide: !!p?.wide }));
+  // expand it when you want the cockpit (the choice sticks per device).
+  return readStoredJSON(TERM_VIEW_KEY, (p) => ({
+    railOpen: p?.railOpen === true,
+    wide: !!p?.wide,
+    railSeg: p?.railSeg === 'runbook' ? 'runbook' as const : 'session' as const,
+  }));
 }
 export function setTermViewPrefs(p: TermViewPrefs) {
   localStorage.setItem(TERM_VIEW_KEY, JSON.stringify(p));
+}
+
+// 25b — what the terminal session was handed to work on, device-local and
+// keyed by cwd. Stack has no server-side notion of "the item this TAB is on"
+// (a claim belongs to a BRANCH, not a browser tab — #277), so pinning it here is
+// the honest version: it records what YOU sent to the prompt, and nothing
+// downstream reads it. Cleared by passing null.
+const TERM_WORKING_KEY = 'stack.termWorking';
+function readWorkingMap(): Record<string, number> {
+  return readStoredJSON(TERM_WORKING_KEY, (m) => (m && typeof m === 'object' ? m : {}));
+}
+export function getTermWorkingItem(cwd: string): number | null {
+  const v = readWorkingMap()[cwd];
+  return typeof v === 'number' && v > 0 ? v : null;
+}
+export function setTermWorkingItem(cwd: string, id: number | null) {
+  const m = readWorkingMap();
+  if (id) m[cwd] = id; else delete m[cwd];
+  localStorage.setItem(TERM_WORKING_KEY, JSON.stringify(m));
 }
 
 // How the Terminal screen opens sessions — device-local, edited from the

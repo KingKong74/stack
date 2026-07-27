@@ -1,29 +1,45 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import {
   openTerminal, getTermCmds, setTermCmds, type TermCmd,
   getTermUsagePrefs, setTermUsagePrefs, type TermUsagePrefs,
-  getTermViewPrefs, setTermViewPrefs,
+  getTermViewPrefs, setTermViewPrefs, type TermViewPrefs,
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
   getDetachedSessions, killDetachedSession, type DetachedSession,
   getTermTmuxName, setTermTmuxName, clearTermTmuxName,
   getTermSessionPrefs, termAssist, type TermAssistSuggestion,
+  getTermWorkingItem, setTermWorkingItem,
+  getProjectDetail, type ProjectDetailData,
   getOverview,
 } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { tierRank, type RoadmapItem } from '../types';
 
 // The web terminal (#/terminal[?cwd=…]) — xterm.js over websocket to the host
 // PTY daemon (via the server relay at /term). Parallel sessions live in tabs
 // (every tab is its own socket; the relay multiplexes them over the one agent
-// connection), a left rail of quick commands types into the active tab, and
-// the theme is a mintty/git-bash homage: black, grey foreground, the classic
-// ANSI palette.
+// connection), and the theme is a mintty/git-bash homage: black, grey
+// foreground, the classic ANSI palette.
+//
+// 25b — THE COCKPIT. The screen used to spend its chrome on itself: a quick-
+// commands rail on the left, a usage strip and a tab strip stacked above the
+// canvas. The terminal is the work surface, so it now keeps the width, and
+// everything else folds into ONE right rail with two segments:
+//   Session   what this session is on, what to hand it next, what it is
+//             spending, and who is on it — the rail that ties the tab to the
+//             plan, which is the whole argument of the design.
+//   Runbook   the eight commands you type every day, grouped, each with the
+//             reason you reach for it. Clicking one LOADS it at the prompt
+//             (↵ on the row runs it) — the same "nothing runs until you press
+//             Enter" rule the brief paste and the ✧ assist already follow.
+// The terminal's own colours are untouched: black canvas, the mintty palette,
+// the black active tab. The cockpit is Stack's palette around a git-bash box.
 type Status = 'connecting' | 'live' | 'closed' | 'error';
 
 // The daemon's `usage` frame — today's real token count from the host's Claude
@@ -99,16 +115,83 @@ const GIT_BASH_THEME = {
 // into a shell tab bypasses tmux persistence entirely (the daemon only wraps
 // sessions opened in Claude mode), which is exactly the trap #188 closed.
 // Claude tabs are the seg control / the auto-opened session.
-const DEFAULT_CMDS: TermCmd[] = [
-  { label: 'git status', cmd: 'git status' },
-  { label: 'git log', cmd: 'git log --oneline -15' },
-  { label: 'git diff', cmd: 'git diff --stat' },
-  { label: 'git pull', cmd: 'git pull' },
-  { label: 'compose up', cmd: 'docker compose up -d --build' },
-  { label: 'compose logs', cmd: 'docker compose logs -f --tail=50' },
-  { label: 'autopilot log', cmd: 'tail -40 ~/.stack/autopilot.log' },
-  { label: 'tmux sessions', cmd: 'tmux ls' },
+// 25b groups them and states WHY you reach for each — a runbook, not a
+// palette. `label` stays the storage shape (custom commands are {label, cmd}),
+// `why` is the right-hand note the design puts on every line.
+const RUNBOOK: { name: string; items: (TermCmd & { why: string })[] }[] = [
+  {
+    name: 'GIT',
+    items: [
+      { label: 'git status', cmd: 'git status', why: 'what is dirty' },
+      { label: 'git log', cmd: 'git log --oneline -15', why: 'what landed' },
+      { label: 'git diff', cmd: 'git diff --stat', why: 'size of the change' },
+      { label: 'git pull', cmd: 'git pull', why: 'take the night’s work' },
+    ],
+  },
+  {
+    name: 'COMPOSE',
+    items: [
+      { label: 'compose up', cmd: 'docker compose up -d --build', why: 'rebuild and run' },
+      { label: 'compose logs', cmd: 'docker compose logs -f --tail=50', why: 'why it broke' },
+    ],
+  },
+  {
+    name: 'HOST',
+    items: [
+      { label: 'autopilot log', cmd: 'tail -40 ~/.stack/autopilot.log', why: 'last night' },
+      { label: 'tmux sessions', cmd: 'tmux ls', why: 'what survived' },
+    ],
+  },
 ];
+// The rail's DO NEXT list mirrors the runner's own pick: tier first (#227),
+// then must before should, then board order — and never offers work that is
+// parked or already claimed by a branch. Same rules as the Plan room, applied
+// to one project, so what the rail hands you is what the night would take.
+const BUCKET_RANK: Record<string, number> = { must: 0, should: 1, could: 2, wont: 3 };
+function nextUpItems(roadmap: ProjectDetailData['roadmap']): RoadmapItem[] {
+  const all = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
+  return all
+    .map((it, i) => ({ it, i }))
+    .filter(({ it }) => !it.done && !it.skipped && !it.claimedBy)
+    .sort((a, b) =>
+      tierRank(a.it.tier) - tierRank(b.it.tier)
+      || (BUCKET_RANK[a.it.bucket] ?? 9) - (BUCKET_RANK[b.it.bucket] ?? 9)
+      || a.i - b.i)
+    .map(({ it }) => it);
+}
+
+// What gets typed at the prompt when you send items across. Plain text, no
+// commands: the session reads it and asks you what it should do — which is
+// why it is pasted without an Enter, like every other handoff on this screen.
+function itemsBrief(items: RoadmapItem[]): string {
+  const head = items.length === 1
+    ? 'Work this roadmap item:'
+    : `Work these ${items.length} roadmap items, in this order:`;
+  const body = items.map((it) => {
+    const meta = [it.bucket, it.tier ? `tier ${it.tier}` : '', it.area].filter(Boolean).join(' · ');
+    const note = it.note ? `\n    ${it.note.trim().replace(/\s*\n\s*/g, ' ').slice(0, 400)}` : '';
+    const plan = it.plan.length
+      ? `\n    Plan:\n${it.plan.map((s, i) => `      ${s.done ? '[x]' : '[ ]'} ${i + 1}. ${s.text}`).join('\n')}`
+      : '';
+    return `  #${it.id} ${it.title}  (${meta})${note}${plan}`;
+  }).join('\n');
+  return `${head}\n${body}\n`;
+}
+
+// One BUDGET line in the cockpit rail: name, bar, figure. Same bar element
+// (and colours) the old horizontal usage strip used — warn at 85%, critical
+// past 100 — just stacked instead of laid out across the page.
+function BudgetRow({ name, pct, val, title }: { name: string; pct: number; val: string; title?: string }) {
+  return (
+    <div className="tc-brow" title={title}>
+      <span className="n">{name}</span>
+      <div className={`tu-bar${pct >= 100 ? ' over' : pct >= 85 ? ' warn' : ''}`}>
+        <div className="tu-fill" style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+      </div>
+      <span className="v">{val}</span>
+    </div>
+  );
+}
 
 // tmux is the host-side tmux session a claude tab runs inside (#188): seeded
 // from a detached-session chip or the device-local cwd map, confirmed by the
@@ -158,10 +241,12 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   const [newLabel, setNewLabel] = useState('');
   const [newCmd, setNewCmd] = useState('');
 
-  // #136 — view prefs: collapsible quick-commands rail + wide mode.
+  // #136 — view prefs: the collapsible rail + wide mode; 25b adds which
+  // segment the rail opens on.
   const [viewPrefs, setViewPrefsState] = useState(() => getTermViewPrefs());
-  const saveViewPrefs = (p: { railOpen: boolean; wide: boolean }) => {
-    setViewPrefsState(p); setTermViewPrefs(p);
+  const saveViewPrefs = (p: Partial<TermViewPrefs>) => {
+    const next = { ...viewPrefs, ...p };
+    setViewPrefsState(next); setTermViewPrefs(next);
   };
 
   // #138 — bare-slug cwd resolution: a slug with no path separators (e.g.
@@ -309,6 +394,16 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   const detachedShown = detached.filter(
     (d) => !sessions.some((s) => s.tmux === d.name && (s.status === 'live' || s.status === 'connecting')));
 
+  // 25b — a runbook line LOADS at the prompt; the row's ↵ runs it. Typing it
+  // is the default because the command is usually the start of the thought,
+  // not the whole of it (`git log --oneline -15` wants a `| grep` half the
+  // time), and it keeps this screen's one rule: Stack never presses Enter.
+  const typeQuick = (cmd: string) => {
+    const h = handles.current.get(active);
+    if (!h) return;
+    h.sendText(cmd);
+    h.focus();
+  };
   const runQuick = (cmd: string) => {
     const h = handles.current.get(active);
     if (!h) return;
@@ -394,6 +489,71 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
     ? serverUsage.tokenBudget
     : usagePrefs.dailyLimit;
   const usagePct = usedTokens > 0 ? Math.round((usedTokens / effectiveLimit) * 100) : 0;
+
+  // ---- 25b: the cockpit rail's Session segment ----
+  // The cwd's project, fetched once per slug (and refreshed when the screen
+  // comes back), because that is what ties this tab to the plan. Silent on
+  // failure: a cwd that isn't a Stack project is normal, and the rail says so
+  // rather than erroring at you.
+  const [detail, setDetail] = useState<ProjectDetailData | null>(null);
+  const [detailSlug, setDetailSlug] = useState('');
+  // Why the board is missing, so the rail can say which: a directory that
+  // isn't a tracked project reads differently from an API that hiccuped.
+  const [detailErr, setDetailErr] = useState(false);
+  useEffect(() => {
+    if (!visible || !projectSlug) return;
+    let gone = false;
+    getProjectDetail(projectSlug)
+      .then((d) => { if (!gone) { setDetail(d); setDetailErr(false); setDetailSlug(projectSlug); } })
+      .catch((e) => {
+        if (gone) return;
+        setDetail(null);
+        setDetailErr(!/not found|404/i.test(e instanceof Error ? e.message : ''));
+        setDetailSlug(projectSlug);
+      });
+    return () => { gone = true; };
+  }, [visible, projectSlug]);
+  const board = detailSlug === projectSlug ? detail : null;
+
+  const openItems = useMemo(() => {
+    const r = board?.roadmap;
+    if (!r) return [] as RoadmapItem[];
+    return [...r.must, ...r.should, ...r.could, ...r.wont].filter((it) => !it.done);
+  }, [board]);
+  const nextUp = useMemo(() => (board ? nextUpItems(board.roadmap).slice(0, 6) : []), [board]);
+  // The head's claim count — open items a branch holds (#277). Real Stack
+  // state, not a guess about how many terminal tabs you have open.
+  const claimedItems = openItems.filter((it) => it.claimedBy);
+
+  // WORKING ON: what you last sent this cwd's session. Device-local (see
+  // store.setTermWorkingItem) and re-read whenever the cwd changes.
+  const [workingId, setWorkingId] = useState<number | null>(null);
+  useEffect(() => { setWorkingId(getTermWorkingItem(projectSlug)); }, [projectSlug]);
+  const workingItem = openItems.find((it) => it.id === workingId) ?? null;
+  const pinWorking = (id: number | null) => {
+    setWorkingId(id);
+    setTermWorkingItem(projectSlug, id);
+  };
+
+  const [picked, setPicked] = useState<number[]>([]);
+  useEffect(() => { setPicked([]); }, [projectSlug]);
+  const togglePick = (id: number) =>
+    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  // Send = type the brief at the prompt (bracketed, so a multi-line block
+  // lands as one paste) and remember the first item as what this session is
+  // on. Nothing runs: the human presses Enter.
+  const sendPicked = () => {
+    const h = handles.current.get(active);
+    if (!h || picked.length === 0) return;
+    const items = picked
+      .map((id) => nextUp.find((it) => it.id === id))
+      .filter((it): it is RoadmapItem => !!it);
+    if (!items.length) return;
+    h.sendText(`\x1b[200~${itemsBrief(items)}\x1b[201~`);
+    h.focus();
+    pinWorking(items[0].id);
+    setPicked([]);
+  };
 
   const bookReset = async () => {
     const sched = usage?.sched;
@@ -514,11 +674,33 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
             {mode === 'claude' ? 'Claude' : 'Shell'}
           </button>
           <button className="btn-submit sm" onClick={() => openSession()}>+ New session</button>
+          {/* 25b — the tabs live in the head bar now. Each is still its own
+              socket with its own warm buffer; only the row they sit on moved. */}
+          <div className="term-tabs">
+            {sessions.map((s) => (
+              <span key={s.id} className={`term-tab ${s.id === active ? 'on' : ''}`}>
+                <button className="term-tab-name" onClick={() => setActive(s.id)}>
+                  <span className={`dot ${s.status}`} />
+                  {s.cmd === 'claude' ? 'claude' : 'shell'}{s.cwd ? ` · ${s.cwd}` : ''}
+                </button>
+                <button className="term-tab-x" onClick={() => closeSession(s.id)} aria-label="Close session" title="Close">×</button>
+              </span>
+            ))}
+          </div>
+          <div className="term-bar-gap" />
+          {/* Real claim state (#277 — a claim is a BRANCH, and is called one),
+              not a count of browser tabs: open roadmap items a branch holds. */}
+          {claimedItems.length > 0 && (
+            <span className="term-lanes"
+              title={claimedItems.map((it) => `⚑ ${it.claimedBy} — #${it.id} ${it.title}`).join('\n')}>
+              {claimedItems.length} branch{claimedItems.length === 1 ? '' : 'es'} claimed
+            </span>
+          )}
           {/* #136 — wide mode toggle: the terminal panel expands to the full viewport width */}
           <button
             className={`btn-repo sm term-wide-btn${viewPrefs.wide ? ' on' : ''}`}
             title={viewPrefs.wide ? 'Exit wide mode' : 'Wide mode — expand terminal to the full viewport width'}
-            onClick={() => saveViewPrefs({ ...viewPrefs, wide: !viewPrefs.wide })}>
+            onClick={() => saveViewPrefs({ wide: !viewPrefs.wide })}>
             {viewPrefs.wide ? '⊠' : '⊞'}
           </button>
           {activeSess && (
@@ -536,133 +718,24 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
           )}
         </div>
 
-        {/* the usage strip — visible once the daemon sends a frame OR the server
-            endpoint responds, whichever comes first. With plan data (#195) the
-            bar IS the Plan session window — the same percentages + reset times
-            Claude's in-app /usage shows — and the transcript token count drops
-            to a secondary figure. Without it (no credentials on the host, or
-            offline) the old tokens-vs-budget estimate carries the strip. */}
-        {(usage || serverUsage) && (
-          <div className="term-usage">
-            {usage?.plan?.session ? (
-              <>
-                <span className="tu-lbl">Session</span>
-                <div className={`tu-bar${usage.plan.session.pct >= 100 ? ' over' : usage.plan.session.pct >= 85 ? ' warn' : ''}`}>
-                  <div className="tu-fill" style={{ width: `${Math.min(100, usage.plan.session.pct)}%` }} />
-                </div>
-                <span className="tu-num"
-                  title="The Plan's 5-hour session window — the same number Claude's /usage shows in-app">
-                  {usage.plan.session.pct}%
-                  {usage.plan.session.resetAt ? ` · resets ${fmtReset(usage.plan.session.resetAt)}` : ''}
-                </span>
-                {usage.plan.week && (
-                  <span className={`tu-total${usage.plan.week.pct >= 85 || (usage.plan.weekModel?.pct ?? 0) >= 85 ? ' warn' : ''}`}
-                    title={`The Plan's weekly window — resets ${fmtReset(usage.plan.week.resetAt, true)}`}>
-                    week {usage.plan.week.pct}%
-                    {usage.plan.weekModel ? ` · ${(usage.plan.weekModel.model || 'model').toLowerCase()} ${usage.plan.weekModel.pct}%` : ''}
-                  </span>
-                )}
-                <span className="tu-total" title="Fresh tokens today (input + output + cache writes) from this host's transcripts">
-                  {fmtTok(usedTokens)} tok today
-                </span>
-              </>
-            ) : (
-              <>
-                <span className="tu-lbl">Tokens</span>
-                <div className={`tu-bar${usagePct >= 100 ? ' over' : usagePct >= 85 ? ' warn' : ''}`}>
-                  <div className="tu-fill" style={{ width: `${Math.min(100, usagePct)}%` }} />
-                </div>
-                <span className="tu-num"
-                  title={`${fmtTok(usedTokens)} / ${serverUsage && serverUsage.tokenBudget > 0 ? fmtTok(serverUsage.tokenBudget) + ' nightly budget' : fmtTok(usagePrefs.dailyLimit) + ' estimate'} (24h)`}>
-                  {fmtTok(usedTokens)} /{' '}
-                  {serverUsage && serverUsage.tokenBudget > 0
-                    ? <span>{fmtTok(serverUsage.tokenBudget)}</span>
-                    : editLimit
-                      ? (
-                        <input className="field-input tu-edit" autoFocus value={limitDraft}
-                          onChange={(e) => setLimitDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              const v = parseTok(limitDraft);
-                              if (v) savePrefs({ ...usagePrefs, dailyLimit: v });
-                              setEditLimit(false);
-                            } else if (e.key === 'Escape') setEditLimit(false);
-                          }}
-                          onBlur={() => setEditLimit(false)} />
-                      ) : (
-                        <button className="tu-limit" title="Daily token estimate (this device only) — click to change"
-                          onClick={() => { setLimitDraft(fmtTok(usagePrefs.dailyLimit)); setEditLimit(true); }}>
-                          {fmtTok(usagePrefs.dailyLimit)}
-                        </button>
-                      )
-                  }
-                </span>
-                {usage?.totalTokens != null && usage.totalTokens > (usage?.tokens ?? 0) && (
-                  <span className="tu-total" title="Raw volume including prompt-cache reads — the fresh count on the bar is what tracks real work">
-                    {fmtTok(usage.totalTokens)} incl. cache reads
-                  </span>
-                )}
-              </>
-            )}
-            {usage?.resetLabel && <span className="tu-reset">⏳ limit resets {usage.resetLabel}</span>}
-            {resumeJob && (
-              <span className={`tu-resume ${resumeJob.status}`}
-                title={resumeJob.itemTitle ? `#${resumeJob.itemId} ${resumeJob.itemTitle}` : undefined}>
-                ⏸ {resumeJob.status === 'paused'
-                  ? `${resumeJob.slug} hung up — resumes when you say`
-                  : resumeJob.notBefore ? `${resumeJob.slug} paused · resumes ${resumeAt}`
-                  : `${resumeJob.slug} resuming…`}
-                {(resumeJob.status === 'paused' || resumeJob.notBefore) && (
-                  <button className="btn-submit sm" onClick={() => void actOnResume(resumeAutopilotJob)}
-                    title="Resume the paused session now — the host picks it up within a minute">
-                    ▶ Resume now
-                  </button>
-                )}
-                {resumeJob.status === 'queued' && resumeJob.notBefore && (
-                  <button className="btn-cancel sm" onClick={() => void actOnResume(hangupAutopilotJob)}
-                    title="Hang up — hold the session so it only resumes when you say">
-                    Hang up
-                  </button>
-                )}
-              </span>
-            )}
-            {usage?.sched && (booked ? (
-              <span className="tu-booked">✓ session booked for {usage.sched.atTime}</span>
-            ) : !usagePrefs.autoSchedule ? (
-              <button className="btn-submit sm" onClick={() => void bookReset()}
-                title={`Book a one-off automated session at ${usage.sched.atTime} (just past the reset) via the Mission Control calendar`}>
-                ▶ Book session at {usage.sched.atTime}
-              </button>
-            ) : null)}
-            <span className="tu-auto" title="When the usage limit hits, book the next automated session just past the reset without asking">
-              auto-book at reset
-              <button role="switch" aria-checked={usagePrefs.autoSchedule} aria-label="Auto-book a session at the limit reset"
-                className={`switch sm ${usagePrefs.autoSchedule ? 'on' : ''}`}
-                onClick={() => savePrefs({ ...usagePrefs, autoSchedule: !usagePrefs.autoSchedule })}>
-                <span className="switch-knob" />
-              </button>
-            </span>
-            {schedNote && <span className="tu-note">{schedNote}</span>}
-          </div>
-        )}
-
-        {/* #188 — running-on-the-host strip: claude tmux sessions this tab
-            doesn't hold. Detached ones (a page reload's orphans) ▶ re-attach,
-            × kills (confirmed first — and only detached ones are killable);
-            ones attached elsewhere (another browser, the laptop over ssh via
-            `stack term`) ▶ mirror — tmux fans the same session out to every
-            client, so this tab watches/drives the same screen. */}
+        {/* #188 — sessions still running on the host that this tab doesn't
+            hold, framed the way 25b frames them: things to pick up. Detached
+            ones (a page reload's orphans) ↺ re-attach, × kills (confirmed
+            first — and only detached ones are killable); ones attached
+            elsewhere (another browser, the laptop over ssh via `stack term`)
+            ↺ mirror — tmux fans one session out to every client, so this tab
+            drives the same screen. */}
         {detachedShown.length > 0 && (
           <div className="term-detached">
-            <span className="td-lbl">Running on the host</span>
+            <span className="td-lbl">Pick up where it stopped</span>
             {detachedShown.map((d) => (
-              <span key={d.name} className="td-chip">
+              <span key={d.name} className={`td-chip${d.attached ? ' away' : ''}`}>
                 <button className="td-attach"
                   title={d.attached
                     ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
                     : `Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`}
                   onClick={() => attachDetached(d)}>
-                  ▶ claude · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}{d.label ? ` — ${d.label}` : ''}
+                  ↺ claude · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}{d.label ? ` — ${d.label}` : ''}
                 </button>
                 {!d.attached && (
                   <button className="td-x" aria-label="Kill this detached session"
@@ -674,99 +747,7 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
         )}
 
         <div className="term-layout">
-          {/* #136 — quick commands rail, now collapsible. A small ‹/› toggle
-              sits at the top; collapsed the rail shrinks to that button only,
-              reclaiming horizontal space for the terminal canvas. */}
-          <div className={`term-rail${viewPrefs.railOpen ? '' : ' term-rail-collapsed'}`}>
-            <button
-              className="term-rail-toggle"
-              title={viewPrefs.railOpen ? 'Collapse quick commands' : 'Expand quick commands'}
-              onClick={() => saveViewPrefs({ ...viewPrefs, railOpen: !viewPrefs.railOpen })}>
-              <span className="term-rail-toggle-icon">{viewPrefs.railOpen ? '‹' : '›'}</span>
-            </button>
-            {viewPrefs.railOpen && (
-              <>
-                {brief && (
-                  <>
-                    <div className="term-rail-head">From the roadmap</div>
-                    <button className="term-cmd brief" onClick={pasteBrief}
-                      title="Types the roadmap brief into the active session — review it, then press Enter yourself">
-                      ▶ Paste roadmap brief
-                    </button>
-                  </>
-                )}
-                <div className="term-rail-head">Quick commands</div>
-                {DEFAULT_CMDS.map((c) => (
-                  <button key={c.cmd} className="term-cmd" title={c.cmd} onClick={() => runQuick(c.cmd)}>
-                    {c.label}
-                  </button>
-                ))}
-                {customCmds.length > 0 && <div className="term-rail-head" style={{ marginTop: 10 }}>Yours</div>}
-                {customCmds.map((c, i) => (
-                  <span className="term-cmd-row" key={`${c.cmd}-${i}`}>
-                    <button className="term-cmd" title={c.cmd} onClick={() => runQuick(c.cmd)}>{c.label}</button>
-                    <button className="term-cmd-x" onClick={() => dropCmd(i)} aria-label={`Remove ${c.label}`} title="Remove">×</button>
-                  </span>
-                ))}
-                {adding ? (
-                  <div className="term-cmd-add">
-                    <input className="field-input sm" value={newLabel} placeholder="label (optional)"
-                      onChange={(e) => setNewLabel(e.target.value)} />
-                    <input className="field-input sm" value={newCmd} placeholder="command" autoFocus
-                      onChange={(e) => setNewCmd(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') addCmd(); else if (e.key === 'Escape') setAdding(false); }} />
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button className="btn-cancel sm" onClick={() => setAdding(false)}>Cancel</button>
-                      <button className="btn-submit sm" onClick={addCmd} disabled={!newCmd.trim()}>Add</button>
-                    </div>
-                  </div>
-                ) : (
-                  <button className="term-cmd add" onClick={() => setAdding(true)}>+ Add a command</button>
-                )}
-
-                {/* ✧ side gemini — command help. Suggestion only; nothing runs
-                    until the human presses Enter in the terminal. */}
-                <div className="term-rail-head" style={{ marginTop: 10 }}>✧ Command help</div>
-                <div className="term-assist">
-                  <input className="field-input sm" value={askText} placeholder="what do you want to do?"
-                    onChange={(e) => setAskText(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') void runAssist(); }} />
-                  {askBusy && <div className="ta-note">thinking…</div>}
-                  {askErr && <div className="ta-note err">{askErr}</div>}
-                  {suggestion && (
-                    <div className="ta-card">
-                      <code className="ta-cmd">{suggestion.command}</code>
-                      {suggestion.explanation && <div className="ta-why">{suggestion.explanation}</div>}
-                      <div className="ta-actions">
-                        <button className="btn-submit sm" onClick={typeSuggestion}
-                          title="Types the command into the active session — press Enter yourself to run it">
-                          ⌨ Type it
-                        </button>
-                        <button className="btn-cancel sm" onClick={saveSuggestion} title="Save as a quick command">
-                          + Save
-                        </button>
-                        <button className="term-cmd-x" onClick={() => setSuggestion(null)} aria-label="Dismiss suggestion">×</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-
           <div className="term-main">
-            {/* session tabs — each is its own socket, buffers stay warm off-screen */}
-            <div className="term-tabs">
-              {sessions.map((s) => (
-                <span key={s.id} className={`term-tab ${s.id === active ? 'on' : ''}`}>
-                  <button className="term-tab-name" onClick={() => setActive(s.id)}>
-                    <span className={`dot ${s.status}`} />
-                    {s.cmd === 'claude' ? 'claude' : 'shell'}{s.cwd ? ` · ${s.cwd}` : ''}
-                  </button>
-                  <button className="term-tab-x" onClick={() => closeSession(s.id)} aria-label="Close session" title="Close">×</button>
-                </span>
-              ))}
-            </div>
             {sessions.map((s) => (
               <TermSession key={s.id} sess={s} visible={s.id === active}
                 onStatus={(st, note) => setStatus(s.id, st, note)}
@@ -776,7 +757,329 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                 register={(h) => { if (h) handles.current.set(s.id, h); else handles.current.delete(s.id); }} />
             ))}
             {sessions.length === 0 && (
-              <div className="term-holder gitbash term-empty">No sessions — open one above.</div>
+              <div className="term-holder gitbash term-empty">
+                <span>No session open.</span>
+                <span className="dim">Resume one above, or start a new one with + New session.</span>
+              </div>
+            )}
+          </div>
+
+          {/* ---- 25b: the cockpit rail. Two segments, one job each — what
+              this session is on (Session) and what you type at it (Runbook).
+              Collapsing it gives the canvas the whole width; the choice and
+              the open segment are device-local. ---- */}
+          <div className={`term-cockpit${viewPrefs.railOpen ? '' : ' collapsed'}`}>
+            <button
+              className="term-rail-toggle"
+              title={viewPrefs.railOpen ? 'Collapse the cockpit rail' : 'Expand the cockpit rail'}
+              onClick={() => saveViewPrefs({ railOpen: !viewPrefs.railOpen })}>
+              <span className="term-rail-toggle-icon">{viewPrefs.railOpen ? '›' : '‹'}</span>
+            </button>
+            {viewPrefs.railOpen && (
+              <>
+                <div className="tc-segs seg-control sm" role="tablist" aria-label="Cockpit rail">
+                  {([['session', 'Session'], ['runbook', 'Runbook']] as const).map(([k, label]) => (
+                    <button key={k} role="tab" aria-selected={viewPrefs.railSeg === k}
+                      className={`seg-opt ${viewPrefs.railSeg === k ? 'on' : ''}`}
+                      onClick={() => saveViewPrefs({ railSeg: k })}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {viewPrefs.railSeg === 'session' ? (
+                  <div className="tc-body">
+                    {/* WORKING ON — what you handed this session. Device-local:
+                        Stack has no server-side "the item this TAB is on", and
+                        inventing one from lane claims would be a guess. */}
+                    <div className="tc-block">
+                      <div className="tc-cap">WORKING ON</div>
+                      {workingItem ? (
+                        <div className="tc-work">
+                          <div className="t">{workingItem.title}</div>
+                          <div className="m">
+                            #{workingItem.id} · {workingItem.bucket}
+                            {workingItem.tier ? ` · tier ${workingItem.tier}` : ''}
+                            {workingItem.area ? ` · ${workingItem.area}` : ''}
+                            {workingItem.plan.length
+                              ? ` · ☰ ${workingItem.plan.filter((s) => s.done).length}/${workingItem.plan.length}`
+                              : ''}
+                          </div>
+                          <div className="tc-work-acts">
+                            <button className="tc-link"
+                              onClick={() => go.detail(projectSlug, 'roadmap', String(workingItem.id))}>
+                              Open on the board ↗
+                            </button>
+                            <button className="tc-link dim" onClick={() => pinWorking(null)}
+                              title="Forget what this session is on (nothing on the board changes)">clear</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="tc-empty">
+                          {board ? 'Nothing handed over yet — pick from DO NEXT and send it to the prompt.'
+                            : !projectSlug ? 'Open a session in a project directory to tie it to the plan.'
+                            : detailErr ? `Could not read ~/${projectSlug} just now — the plan is there, this rail isn't.`
+                            : `~/${projectSlug} isn't a tracked project — there is no plan to tie this session to.`}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* DO NEXT — the runner's own order, so what the rail
+                        offers is what the night would take. */}
+                    {board && (
+                      <div className="tc-block">
+                        <div className="tc-cap row">
+                          <span>DO NEXT</span>
+                          <button className="tc-link" onClick={() => go.detail(projectSlug, 'roadmap')}>Roadmap ↗</button>
+                        </div>
+                        {nextUp.length === 0 ? (
+                          <div className="tc-empty">Every open item is claimed or parked — nothing free to hand over.</div>
+                        ) : (
+                          <>
+                            <div className="tc-next">
+                              {nextUp.map((it) => {
+                                const on = picked.includes(it.id);
+                                return (
+                                  <button key={it.id} className={`tc-item${on ? ' on' : ''}`}
+                                    onClick={() => togglePick(it.id)}
+                                    title={it.note ? it.note.slice(0, 300) : undefined}>
+                                    <span className="mark">{on ? '✓' : '○'}</span>
+                                    <span className="body">
+                                      <span className="t">{it.title}</span>
+                                      <span className="m">
+                                        #{it.id} · {it.bucket}
+                                        {it.tier ? ` · ${it.tier}` : ''}
+                                        {it.area ? ` · ${it.area}` : ''}
+                                        {it.plan.length ? ` · ☰ ${it.plan.filter((s) => s.done).length}/${it.plan.length}` : ' · no plan'}
+                                      </span>
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="tc-send">
+                              <button className="btn-submit sm" disabled={picked.length === 0 || !activeSess}
+                                onClick={sendPicked}
+                                title="Types the picked items at the prompt as one block — read it, then press Enter yourself">
+                                Send{picked.length ? ` ${picked.length}` : ''} to the prompt
+                              </button>
+                              <span className="tc-note">typed, not run</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* BUDGET — the usage strip, folded in vertically. With
+                        plan data (#195) the bars ARE the Plan windows; without
+                        it the tokens-vs-estimate bar carries the block. */}
+                    <div className="tc-block">
+                      <div className="tc-cap">BUDGET</div>
+                      {!usage && !serverUsage ? (
+                        <div className="tc-empty">No usage reported yet — the daemon sends it once a session is live.</div>
+                      ) : (
+                        <>
+                          {usage?.plan?.session && (
+                            <BudgetRow name="session" pct={usage.plan.session.pct} val={`${usage.plan.session.pct}%`}
+                              title="The Plan's 5-hour session window — the same number Claude's /usage shows in-app" />
+                          )}
+                          {usage?.plan?.week && (
+                            <BudgetRow name="week" pct={usage.plan.week.pct} val={`${usage.plan.week.pct}%`}
+                              title={`The Plan's weekly window — resets ${fmtReset(usage.plan.week.resetAt, true)}`} />
+                          )}
+                          {usage?.plan?.weekModel && (
+                            <BudgetRow name={(usage.plan.weekModel.model || 'model').toLowerCase()}
+                              pct={usage.plan.weekModel.pct} val={`${usage.plan.weekModel.pct}%`}
+                              title="This model's own weekly window" />
+                          )}
+                          <BudgetRow name="tokens" pct={usagePct} val={fmtTok(usedTokens)}
+                            title="Fresh tokens today (input + output + cache writes) from this host's transcripts" />
+                          <div className="tc-note">
+                            of{' '}
+                            {serverUsage && serverUsage.tokenBudget > 0
+                              ? `${fmtTok(serverUsage.tokenBudget)} nightly budget`
+                              : editLimit
+                                ? (
+                                  <input className="field-input tu-edit" autoFocus value={limitDraft}
+                                    onChange={(e) => setLimitDraft(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        const v = parseTok(limitDraft);
+                                        if (v) savePrefs({ ...usagePrefs, dailyLimit: v });
+                                        setEditLimit(false);
+                                      } else if (e.key === 'Escape') setEditLimit(false);
+                                    }}
+                                    onBlur={() => setEditLimit(false)} />
+                                ) : (
+                                  <>
+                                    <button className="tu-limit" title="Daily token estimate (this device only) — click to change"
+                                      onClick={() => { setLimitDraft(fmtTok(usagePrefs.dailyLimit)); setEditLimit(true); }}>
+                                      {fmtTok(usagePrefs.dailyLimit)}
+                                    </button>
+                                    {' '}estimate
+                                  </>
+                                )}
+                            {usage?.totalTokens != null && usage.totalTokens > (usage?.tokens ?? 0)
+                              ? ` · ${fmtTok(usage.totalTokens)} incl. cache reads` : ''}
+                          </div>
+                          {usage?.plan?.session?.resetAt && (
+                            <div className="tc-note">resets {fmtReset(usage.plan.session.resetAt)}</div>
+                          )}
+                          {usage?.resetLabel && <div className="tc-warn">⏳ limit resets {usage.resetLabel}</div>}
+                          {resumeJob && (
+                            <div className={`tc-resume ${resumeJob.status}`}
+                              title={resumeJob.itemTitle ? `#${resumeJob.itemId} ${resumeJob.itemTitle}` : undefined}>
+                              <div className="l">
+                                ⏸ {resumeJob.status === 'paused'
+                                  ? `${resumeJob.slug} hung up — resumes when you say`
+                                  : resumeJob.notBefore ? `${resumeJob.slug} paused · resumes ${resumeAt}`
+                                  : `${resumeJob.slug} resuming…`}
+                              </div>
+                              <div className="a">
+                                {(resumeJob.status === 'paused' || resumeJob.notBefore) && (
+                                  <button className="btn-submit sm" onClick={() => void actOnResume(resumeAutopilotJob)}
+                                    title="Resume the paused session now — the host picks it up within a minute">
+                                    ▶ Resume now
+                                  </button>
+                                )}
+                                {resumeJob.status === 'queued' && resumeJob.notBefore && (
+                                  <button className="btn-cancel sm" onClick={() => void actOnResume(hangupAutopilotJob)}
+                                    title="Hang up — hold the session so it only resumes when you say">
+                                    Hang up
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          {usage?.sched && (booked ? (
+                            <div className="tc-note booked">✓ session booked for {usage.sched.atTime}</div>
+                          ) : !usagePrefs.autoSchedule ? (
+                            <button className="btn-submit sm tc-book" onClick={() => void bookReset()}
+                              title={`Book a one-off automated session at ${usage.sched.atTime} (just past the reset) via the Mission Control calendar`}>
+                              ▶ Book session at {usage.sched.atTime}
+                            </button>
+                          ) : null)}
+                          <div className="tc-auto" title="When the usage limit hits, book the next automated session just past the reset without asking">
+                            <span>auto-book at reset</span>
+                            <button role="switch" aria-checked={usagePrefs.autoSchedule} aria-label="Auto-book a session at the limit reset"
+                              className={`switch sm ${usagePrefs.autoSchedule ? 'on' : ''}`}
+                              onClick={() => savePrefs({ ...usagePrefs, autoSchedule: !usagePrefs.autoSchedule })}>
+                              <span className="switch-knob" />
+                            </button>
+                          </div>
+                          {schedNote && <div className="tc-warn">{schedNote}</div>}
+                        </>
+                      )}
+                    </div>
+
+                    {/* ROSTER — deliberately thin. Stack keeps per-model usage
+                        for autopilot runs, never for a terminal session (#283),
+                        so the honest line is who is at the keyboard and the
+                        host-wide day; anything more would be invented. */}
+                    <div className="tc-block">
+                      <div className="tc-cap">ROSTER</div>
+                      <div className="tc-roster">
+                        <span className="l">You and claude, in this tab</span>
+                        <span className="s">{fmtTok(usedTokens)} tok today</span>
+                      </div>
+                      <div className="tc-note">
+                        No per-model record for a terminal session — that figure is this host's whole day.
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="tc-body">
+                    {brief && (
+                      <div className="tc-block">
+                        <div className="tc-cap">FROM THE ROADMAP</div>
+                        <button className="tc-cmd brief" onClick={pasteBrief}
+                          title="Types the roadmap brief into the active session — review it, then press Enter yourself">
+                          ▶ Paste roadmap brief
+                        </button>
+                      </div>
+                    )}
+                    {RUNBOOK.map((g) => (
+                      <div className="tc-block" key={g.name}>
+                        <div className="tc-cap">{g.name}</div>
+                        {g.items.map((c) => (
+                          <div className="tc-cmd-row" key={c.cmd}>
+                            <button className="tc-cmd" onClick={() => typeQuick(c.cmd)}
+                              title={`Load "${c.cmd}" at the prompt`}>
+                              <span className="c">{c.cmd}</span>
+                              <span className="w">{c.why}</span>
+                            </button>
+                            <button className="tc-run" onClick={() => runQuick(c.cmd)}
+                              aria-label={`Run ${c.cmd}`} title="Run it now">↵</button>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    <div className="tc-block">
+                      <div className="tc-cap">YOURS</div>
+                      {customCmds.map((c, i) => (
+                        <div className="tc-cmd-row" key={`${c.cmd}-${i}`}>
+                          <button className="tc-cmd" onClick={() => typeQuick(c.cmd)}
+                            title={`Load "${c.cmd}" at the prompt`}>
+                            <span className="c">{c.label}</span>
+                            <span className="w">{c.cmd === c.label ? '' : c.cmd}</span>
+                          </button>
+                          <button className="tc-run" onClick={() => runQuick(c.cmd)}
+                            aria-label={`Run ${c.label}`} title="Run it now">↵</button>
+                          <button className="term-cmd-x" onClick={() => dropCmd(i)}
+                            aria-label={`Remove ${c.label}`} title="Remove">×</button>
+                        </div>
+                      ))}
+                      {adding ? (
+                        <div className="term-cmd-add">
+                          <input className="field-input sm" value={newLabel} placeholder="label (optional)"
+                            onChange={(e) => setNewLabel(e.target.value)} />
+                          <input className="field-input sm" value={newCmd} placeholder="command" autoFocus
+                            onChange={(e) => setNewCmd(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') addCmd(); else if (e.key === 'Escape') setAdding(false); }} />
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="btn-cancel sm" onClick={() => setAdding(false)}>Cancel</button>
+                            <button className="btn-submit sm" onClick={addCmd} disabled={!newCmd.trim()}>Add</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button className="tc-cmd add" onClick={() => setAdding(true)}>+ Add a command</button>
+                      )}
+                    </div>
+
+                    {/* ✧ side gemini — command help. Suggestion only; nothing
+                        runs until the human presses Enter in the terminal. */}
+                    <div className="tc-block">
+                      <div className="tc-cap">✧ COMMAND HELP</div>
+                      <div className="term-assist">
+                        <input className="field-input sm" value={askText} placeholder="what do you want to do?"
+                          onChange={(e) => setAskText(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') void runAssist(); }} />
+                        {askBusy && <div className="ta-note">thinking…</div>}
+                        {askErr && <div className="ta-note err">{askErr}</div>}
+                        {suggestion && (
+                          <div className="ta-card">
+                            <code className="ta-cmd">{suggestion.command}</code>
+                            {suggestion.explanation && <div className="ta-why">{suggestion.explanation}</div>}
+                            <div className="ta-actions">
+                              <button className="btn-submit sm" onClick={typeSuggestion}
+                                title="Types the command into the active session — press Enter yourself to run it">
+                                ⌨ Type it
+                              </button>
+                              <button className="btn-cancel sm" onClick={saveSuggestion} title="Save as a quick command">
+                                + Save
+                              </button>
+                              <button className="term-cmd-x" onClick={() => setSuggestion(null)} aria-label="Dismiss suggestion">×</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="tc-foot">
+                      Ask in plain words at the prompt instead — the runbook is only for the ones you type every day.
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

@@ -479,16 +479,40 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   project, falling back to home on any miss; entry points on Mission Control — the strip's ⌨ Terminal button
   and a per-row ⌨ that prefills the project's slug as the cwd). xterm.js + fit addon over
   `store.openTerminal()` (the only place the ws transport + token live); Shell/Claude seg control,
-  status line, reconnectable. The **usage strip** renders the daemon's `usage` frames: today's
-  token count as a live bar against an editable device-local daily budget
-  (`store.getTermUsagePrefs/setTermUsagePrefs`), the limit-reset time when a usage limit hits, and
-  session booking around the reset — manual mode is a ▶ Book button, the auto-book toggle books
-  the one-off Mission Control calendar slot itself (once per slot; project = the cwd's first
-  segment, which IS the dispatcher's slug). The strip also shows the cwd project's **paused
-  session** (#142) when one sits in the queue — a limit-hit `resume` job with its resume time
-  and in-place ▶ Resume now / Hang up (polled via `store.getAutopilotJobs` while the screen
-  shows, re-checked when a limit frame lands). **Detached sessions** (#188): a strip of ▶
-  re-attach chips for claude sessions still running on the host with no browser attached
+  status line, reconnectable. **The screen is the COCKPIT (25b)**: the terminal keeps the width and
+  all the chrome folds into ONE right rail. The old left quick-commands rail, the horizontal usage
+  strip and the tab strip above the canvas are gone — the **tabs live in the head bar** (with the
+  cwd field, the Shell/Claude mode button, + New session and the real count of **branches claimed**
+  on this project, #277), which is most of the height the canvas gains, and the canvas keeps its
+  git-bash colours untouched (black, the mintty palette, the black active tab — the redesign
+  changed what surrounds the box, never the box). The rail has two segments, device-local via
+  `store.getTermViewPrefs().railSeg`, and collapses to its toggle:
+  • **Session** — what ties this tab to the plan. **WORKING ON** is the item you last handed the
+    session, pinned device-locally per cwd (`store.getTermWorkingItem/setTermWorkingItem`): Stack
+    has no server-side notion of "the item this TAB is on" — a claim belongs to a branch, not a
+    browser tab — so inventing one from claims would be a guess. **DO NEXT** lists the cwd
+    project's next eligible items in the RUNNER's own order (tier → bucket → board position, never
+    parked or claimed — the Plan room's rules applied to one project, so what the rail offers is
+    what the night would take); tick rows and **Send N to the prompt** types them as one bracketed
+    block — typed, not run, like every other handoff here — and pins the first as WORKING ON.
+    **BUDGET** is the old usage strip stacked vertically (the Plan session/week windows when the
+    daemon reports them, else tokens-vs-budget), carrying the reset line, the #142 paused-session
+    controls, ▶ Book session and the auto-book switch. **ROSTER** is deliberately one line: Stack
+    keeps per-model usage for autopilot runs and never for a terminal session (#283), so it names
+    who is at the keyboard and says plainly that the figure beside it is the host's whole day.
+  • **Runbook** — the commands you type every day, grouped (GIT / COMPOSE / HOST / YOURS) with the
+    reason you reach for each on the right. A row **loads the command at the prompt**; the row's
+    ↵ runs it. It also hosts + Add a command and the ✧ command help.
+  The **usage** data itself is unchanged: the daemon's `usage` frames give today's token count
+  against an editable device-local daily budget (`store.getTermUsagePrefs/setTermUsagePrefs`), the
+  limit-reset time when a usage limit hits, and session booking around the reset — manual mode is a
+  ▶ Book button, the auto-book toggle books the one-off Mission Control calendar slot itself (once
+  per slot; project = the cwd's first segment, which IS the dispatcher's slug). The cwd project's
+  **paused session** (#142) shows when one sits in the queue — a limit-hit `resume` job with its
+  resume time and in-place ▶ Resume now / Hang up (polled via `store.getAutopilotJobs` while the
+  screen shows, re-checked when a limit frame lands). **Detached sessions** (#188) sit above the
+  canvas as **PICK UP WHERE IT STOPPED**: ↺ re-attach chips for claude sessions still running on
+  the host with no browser attached
   (`store.getDetachedSessions`, refreshed when the screen shows and on live-count changes; ×
   kills the host process behind a ConfirmModal via `store.killDetachedSession`). A claude tab
   also remembers its tmux session name device-locally (`store.getTermTmuxName` et al, keyed by
@@ -496,11 +520,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   attached — the process really ending — forgets the mapping. The screen auto-opens a session on
   arrival per the device's **Terminal prefs** (Settings → Terminal, `store.getTermSessionPrefs`:
   opens-with claude|shell, default claude; skip-permissions default on — sent as the start
-  frame's `skipPerms` boolean). The quick-commands rail defaults COLLAPSED, its starter kit is
+  frame's `skipPerms` boolean). The cockpit rail defaults COLLAPSED, the runbook's starter kit is
   essentials-only (git/compose/autopilot-log — deliberately NO claude commands: claude typed
   into a shell tab bypasses tmux persistence), and it hosts the **✧ command help**
   (`store.termAssist` → POST /api/terminal/assist): describe a goal, Gemini returns one command
-  — ⌨ types it into the active session without Enter, + Save adds it to the quick commands.
+  — ⌨ types it into the active session without Enter, + Save adds it to the runbook's YOURS group.
 - `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router; routes
   are `#/`, `#/settings`, `#/control`, `#/terminal`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit

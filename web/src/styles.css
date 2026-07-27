@@ -244,9 +244,17 @@ a { color: inherit; }
 }
 .btn-accent:hover { background: var(--accent-deep); }
 
-/* ---------- page shell ---------- */
-.page { max-width: 1240px; margin: 0 auto; padding: 36px 32px 64px; }
+/* ---------- page shell ----------
+   Every screen fills the viewport; --page-max is the ONE knob if a cap is ever
+   wanted back (set it to e.g. 1240px here and every page re-centres at once). */
+:root { --page-max: none; }
+.page { max-width: var(--page-max); margin: 0 auto; padding: 36px 32px 64px; }
 .page.detail { padding: 30px 32px 72px; }
+/* wide screens get a little more breathing room at the edges, not a cap */
+@media (min-width: 1600px) {
+  .page, .page.detail { padding-left: 44px; padding-right: 44px; }
+  .topbar, .topbar.dash { padding-left: 44px; padding-right: 44px; }
+}
 
 /* ---------- dashboard ---------- */
 .dash-head { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 26px; }
@@ -1592,6 +1600,10 @@ a.tab { display: inline-block; }
 }
 
 /* ---------- settings ---------- */
+/* the page fills the viewport now, so the cards flow into as many columns as
+   fit (one below ~1080px) rather than stretching a switch to the far edge */
+.set-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); gap: 18px; align-items: start; }
+.set-cols > .set-card { margin-bottom: 0; }
 .set-card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 22px 24px; margin-bottom: 18px; }
 .set-card.signature { background: var(--sand); border-color: var(--resume-border); }
 /* Autopilot → Mission Control pointer card */
@@ -1957,7 +1969,7 @@ a.polaris:hover { border-color: var(--accent-tint-border); }
 a.polaris .polaris-head { cursor: pointer; }
 
 /* ---------- polaris studio (#226 — #/polaris/<slug>) ---------- */
-.pol-page { max-width: 1440px; margin: 0 auto; padding: 20px 26px 30px; }
+.pol-page { max-width: var(--page-max); margin: 0 auto; padding: 20px 26px 30px; }
 .pol-head { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
 .pol-title { font-family: var(--disp); font-size: 21px; font-weight: 700; color: var(--ink); }
 .pol-title .glyph { color: var(--accent); margin-right: 8px; }
@@ -2039,9 +2051,15 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .term-layout { display: flex; gap: 14px; align-items: stretch; }
 /* #136 — wide mode: terminal page expands past the 1080px max-width */
 .term-page.term-wide { max-width: none; }
-/* #136 — collapsible quick-commands rail */
-.term-rail { width: 216px; flex: none; display: flex; flex-direction: column; gap: 6px; align-content: flex-start; }
-.term-rail.term-rail-collapsed { width: 30px; overflow: hidden; }
+/* 25b — the cockpit rail: the terminal keeps the width, everything else
+   folds in here. Collapsed it is just the toggle. */
+.term-cockpit {
+  width: 300px; flex: none; display: flex; flex-direction: column; gap: 8px;
+  height: calc(100vh - 210px); background: var(--surface);
+  border: 1px solid var(--line-2); border-radius: 14px; padding: 10px 0 0;
+}
+.term-cockpit.collapsed { width: 34px; overflow: hidden; padding: 10px 0; }
+.term-cockpit .term-rail-toggle { margin: 0 8px 0 auto; }
 .term-rail-toggle { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; align-self: flex-end; background: var(--card); border: 1px solid var(--line-2); color: var(--muted); flex: none; margin-bottom: 2px; }
 .term-rail-toggle:hover { border-color: var(--accent); color: var(--accent); }
 .term-rail-toggle-icon { font-size: 13px; line-height: 1; }
@@ -2051,22 +2069,75 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .term-mode-btn.on:hover { border-color: var(--accent); }
 .term-wide-btn { font-size: 16px; line-height: 1; padding: 0 8px; }
 .term-wide-btn.on { color: var(--accent); border-color: var(--accent-tint-border); }
-.term-rail-head { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 2px 0 2px; }
-.term-cmd { display: block; width: 100%; text-align: left; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--ink); background: var(--card); border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.term-cmd:hover { border-color: var(--accent); color: var(--accent); }
-.term-cmd.add { color: var(--muted); border-style: dashed; }
-.term-cmd.add:hover { color: var(--accent); }
-.term-cmd.brief { color: var(--accent); border-color: var(--accent-tint-border); background: var(--accent-tint); margin-bottom: 10px; }
-.term-cmd.brief:hover { border-color: var(--accent); }
-.term-cmd-row { display: flex; gap: 4px; align-items: center; }
-.term-cmd-row .term-cmd { flex: 1; min-width: 0; }
+/* ---- the cockpit's two segments ---- */
+.tc-segs { margin: 0 10px 2px; }
+.tc-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 14px; }
+.tc-block { display: flex; flex-direction: column; gap: 6px; }
+.tc-cap { font-family: var(--mono, ui-monospace), Menlo, Consolas, monospace; font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; color: var(--muted); }
+.tc-cap.row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tc-link { font-size: 11px; color: var(--accent); padding: 0; }
+.tc-link:hover { color: var(--accent-deep); }
+.tc-link.dim { color: var(--muted); }
+.tc-link.dim:hover { color: var(--critical); }
+.tc-empty { font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+.tc-note { font-size: 10.5px; line-height: 1.5; color: var(--muted); }
+.tc-note.booked { color: var(--green); font-weight: 600; }
+.tc-warn { font-size: 11px; color: var(--critical); font-weight: 600; }
+.tc-foot { font-size: 10.5px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--line-3); padding-top: 10px; }
+/* WORKING ON */
+.tc-work { border: 1px solid var(--accent-tint-border); background: var(--accent-tint); border-radius: 8px; padding: 10px 11px; }
+.tc-work .t { font-size: 12px; line-height: 1.45; font-weight: 600; color: var(--ink); }
+.tc-work .m { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+.tc-work-acts { display: flex; align-items: baseline; gap: 10px; margin-top: 7px; }
+/* DO NEXT */
+.tc-next { display: flex; flex-direction: column; gap: 4px; }
+.tc-item { display: flex; align-items: flex-start; gap: 8px; width: 100%; text-align: left; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--card); }
+.tc-item:hover { border-color: var(--accent); }
+.tc-item.on { border-color: var(--accent); background: var(--accent-tint); }
+.tc-item .mark { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10px; color: var(--faint); width: 11px; flex: none; line-height: 1.6; }
+.tc-item.on .mark { color: var(--accent); }
+.tc-item .body { min-width: 0; }
+.tc-item .t { display: block; font-size: 11px; line-height: 1.4; color: var(--ink); }
+.tc-item .m { display: block; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 9.5px; color: var(--muted); margin-top: 2px; }
+.tc-send { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.tc-send .btn-submit.sm { padding: 4px 10px; font-size: 11px; }
+/* BUDGET + ROSTER */
+.tc-brow { display: flex; align-items: center; gap: 8px; }
+.tc-brow .n { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px; color: var(--muted); width: 52px; flex: none; overflow: hidden; text-overflow: ellipsis; }
+.tc-brow .v { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px; color: var(--body); width: 52px; text-align: right; flex: none; }
+.tc-brow .tu-bar { flex: 1 1 auto; max-width: none; }
+.tc-resume { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--accent-tint-border); background: var(--accent-tint); border-radius: 8px; padding: 8px 9px; }
+.tc-resume .l { font-size: 11px; font-weight: 600; color: var(--accent-deep); line-height: 1.4; }
+.tc-resume.paused .l { color: var(--muted); }
+.tc-resume .a { display: flex; gap: 6px; }
+.tc-resume .btn-submit.sm, .tc-resume .btn-cancel.sm, .tc-book { padding: 3px 9px; font-size: 11px; }
+.tc-book { align-self: flex-start; }
+.tc-auto { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); }
+.tc-roster { display: flex; align-items: baseline; gap: 8px; }
+.tc-roster .l { font-size: 11px; line-height: 1.5; color: var(--ink); }
+.tc-roster .s { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10px; color: var(--muted); margin-left: auto; flex: none; }
+/* RUNBOOK — cmd on the left, the reason you reach for it on the right */
+.tc-cmd-row { display: flex; gap: 2px; align-items: center; }
+.tc-cmd { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; text-align: left; padding: 5px 8px; border-radius: 7px; color: var(--ink); }
+.tc-cmd:hover { background: var(--panel); }
+.tc-cmd .c { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tc-cmd .w { margin-left: auto; font-size: 10px; color: var(--muted); flex: none; }
+.tc-cmd.add { color: var(--muted); border: 1px dashed var(--line-2); font-size: 11.5px; }
+.tc-cmd.add:hover { color: var(--accent); border-color: var(--accent); }
+.tc-cmd.brief { border: 1px solid var(--accent-tint-border); background: var(--accent-tint); color: var(--accent-deep); font-size: 11.5px; }
+.tc-cmd.brief:hover { border-color: var(--accent); }
+.tc-run { color: var(--faint); font-size: 12px; padding: 3px 6px; border-radius: 5px; flex: none; }
+.tc-run:hover { color: var(--accent); background: var(--panel); }
 .term-cmd-x { color: var(--faint); font-size: 14px; padding: 2px 5px; border-radius: 5px; }
 .term-cmd-x:hover { color: var(--critical); }
 .term-cmd-add { display: flex; flex-direction: column; gap: 6px; }
 .term-cmd-add .field-input.sm { height: 32px; font-size: 12px; }
 .term-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.term-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-.term-tab { display: inline-flex; align-items: center; gap: 2px; background: var(--card); border: 1px solid var(--line-2); border-radius: 9px 9px 0 0; padding: 0 4px 0 0; }
+.term-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+/* 25b — the head bar's spacer + the real lane count (#277) */
+.term-bar-gap { flex: 1; }
+.term-lanes { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); }
+.term-tab { display: inline-flex; align-items: center; gap: 2px; background: var(--card); border: 1px solid var(--line-2); border-radius: 9px; padding: 0 4px 0 0; }
 .term-tab.on { background: #000; border-color: #000; }
 .term-tab.on .term-tab-name, .term-tab.on .term-tab-x { color: #bfbfbf; }
 .term-tab-name { display: inline-flex; align-items: center; gap: 7px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--chip-ink); padding: 7px 6px 7px 11px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2076,23 +2147,21 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .term-tab .dot.error { background: var(--critical); }
 .term-tab-x { color: var(--faint); font-size: 13px; padding: 2px 6px; border-radius: 5px; }
 .term-tab-x:hover { color: var(--critical); }
-.term-holder.gitbash { background: #000; border-radius: 0 14px 14px 14px; height: calc(100vh - 264px); }
-.term-empty { display: flex; align-items: center; justify-content: center; color: #666; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+/* the canvas keeps its git-bash colours — black, mintty palette (25b changed
+   the chrome around it, never the box itself). The tab strip and the usage
+   strip moved off this column, so it gets that height back. */
+.term-holder.gitbash { background: #000; border-radius: 14px; height: calc(100vh - 210px); }
+.term-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #8a8a8a; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+.term-empty .dim { color: #666; font-size: 12px; }
 
 /* the usage strip — today's tokens against the daily budget, limit reset + booking (#111) */
-.term-usage { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 12px; font-size: 12.5px; color: var(--muted); }
-.tu-lbl { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .tu-bar { flex: 1 1 120px; max-width: 260px; height: 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line-3); overflow: hidden; }
 .tu-fill { height: 100%; border-radius: 6px; background: var(--sage, var(--green)); transition: width 0.4s ease; }
 .tu-bar.warn .tu-fill { background: var(--building); }
 .tu-bar.over .tu-fill { background: var(--critical); }
-.tu-num { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--body); white-space: nowrap; }
 .tu-limit { font-family: inherit; font-size: inherit; color: var(--body); text-decoration: underline dotted; text-underline-offset: 3px; }
 .tu-limit:hover { color: var(--accent); }
 .tu-edit { width: 64px; height: 24px; padding: 0 6px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
-.tu-reset { color: var(--critical); font-weight: 600; }
-.tu-total { color: var(--faint); font-size: 11px; white-space: nowrap; } /* #130 — cache-inclusive raw volume */
-.tu-total.warn { color: var(--critical); font-weight: 600; } /* #195 — a plan weekly window running hot */
 /* ✧ the rail's Gemini command help — ask, get one command, type/save it */
 .term-assist { display: flex; flex-direction: column; gap: 6px; }
 .ta-note { font-size: 11.5px; color: var(--muted); }
@@ -2119,7 +2188,11 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
   background: var(--card); border: 1px solid var(--line-3); border-radius: 14px;
   box-shadow: 0 10px 34px rgba(30, 24, 18, 0.22); overflow: hidden;
 }
-.term-float .topbar, .term-float .term-bar, .term-float .term-usage, .term-float .term-rail { display: none; }
+.term-float .topbar, .term-float .term-cockpit { display: none; }
+/* 25b — the tabs live in the head bar now, and the floating dock still needs
+   them: keep the bar, hide everything on it except the tab strip. */
+.term-float .term-bar { margin: 0; padding: 6px 8px 0; gap: 6px; }
+.term-float .term-bar > *:not(.term-tabs) { display: none; }
 .term-float .page.term-page { padding: 0; max-width: none; margin: 0; }
 .term-float .term-layout { display: block; }
 .term-float .term-tabs { padding: 6px 8px 0; }
@@ -2146,14 +2219,12 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 }
 .term-mini:hover { border-color: var(--green); }
 .term-mini .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
-.tu-booked { color: var(--green); font-weight: 600; }
-/* #142 — the project's paused session (a limit-hit resume job in the queue) */
-.tu-resume { display: inline-flex; align-items: center; gap: 8px; color: var(--accent); font-weight: 600; }
-.tu-resume.paused { color: var(--muted); }
-.tu-resume .btn-submit.sm, .tu-resume .btn-cancel.sm { padding: 2px 8px; font-size: 11px; }
-.tu-auto { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
-.tu-note { flex-basis: 100%; color: var(--critical); }
-@media (max-width: 760px) { .term-layout { flex-direction: column; } .term-rail { width: 100%; flex-direction: row; flex-wrap: wrap; } .term-rail.term-rail-collapsed { width: 100%; height: 30px; overflow: hidden; } .term-cmd { width: auto; } }
+@media (max-width: 760px) {
+  .term-layout { flex-direction: column-reverse; }
+  .term-cockpit { width: 100%; height: auto; max-height: 320px; }
+  .term-cockpit.collapsed { width: 100%; height: 40px; }
+  .term-cockpit .term-rail-toggle { transform: rotate(90deg); }
+}
 
 /* ---------- #165 to-top button ---------- */
 .totop {
