@@ -87,12 +87,12 @@ const safeName = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').repl
 // ---------------------------------------------------------------------------
 // The access PIN
 // ---------------------------------------------------------------------------
-// A preview gets its OWN empty database — that is the isolation working, and it
-// has to stay that way: real data must never ride a public unauthenticated URL.
-// But an empty database has no access PIN, so the sign-in the owner actually
-// uses is missing, and the mirror can only be opened by pasting the API token
-// in by hand. That makes looking at a branch a chore, which is the one thing a
-// preview is supposed not to be.
+// A preview gets its OWN database — that is the isolation working, and it stays
+// that way: the mirror can never write to the real one. But a database the
+// server has only just migrated has no access PIN, so the sign-in the owner
+// actually uses is missing, and the mirror can only be opened by pasting the
+// API token in by hand. That makes looking at a branch a chore, which is the
+// one thing a preview is supposed not to be.
 //
 // So exactly one field of the real database is copied: the PIN HASH. The same
 // PIN opens the mirror, and it stays the same when the PIN is CHANGED, because
@@ -130,22 +130,29 @@ const dbContainerFor = (composeProject) => {
   return ok(r) ? (r.stdout || '').split('\n')[0].trim() : '';
 };
 
-// The live PIN hash from whichever database on this host is a Stack one, or ''
-// when no PIN is set anywhere (a host that signs in with the token alone).
-const realAccessPinHash = (skipProject) => {
+// The real stack's database container, identified by its SCHEMA rather than by
+// name. Returns '' when no Stack database is running here.
+const realStackDb = (skipProject) => {
   const ls = sh('docker', ['ps', '--filter', 'label=com.docker.compose.service=db',
     '--format', '{{.Names}}'], { timeout: 20_000 });
   if (!ok(ls)) return '';
   const candidates = (ls.stdout || '').split('\n').map((s) => s.trim())
     .filter((n) => n && !n.startsWith('stack-preview-') && !n.startsWith(skipProject));
-  for (const c of candidates) {
-    const r = psql(c, 'SELECT access_pin_hash FROM settings WHERE access_pin_hash IS NOT NULL LIMIT 1');
-    const hash = ok(r) ? (r.stdout || '').trim() : '';
-    // Whitespace or the dollar-quote tag would break the UPDATE below, and
-    // neither belongs in a hash — treat such a value as no value at all.
-    if (hash && !/\s/.test(hash) && !hash.includes('$pin$')) return hash;
-  }
-  return '';
+  // `settings` alone is a common enough table name to be worth pairing with a
+  // column only this schema has.
+  return candidates.find((c) => ok(psql(c, 'SELECT access_pin_hash FROM settings LIMIT 1'))) || '';
+};
+
+// The live PIN hash, or '' when no PIN is set anywhere (a host that signs in
+// with the token alone).
+const realAccessPinHash = (skipProject) => {
+  const db = realStackDb(skipProject);
+  if (!db) return '';
+  const r = psql(db, 'SELECT access_pin_hash FROM settings WHERE access_pin_hash IS NOT NULL LIMIT 1');
+  const hash = ok(r) ? (r.stdout || '').trim() : '';
+  // Whitespace or the dollar-quote tag would break the UPDATE that applies it,
+  // and neither belongs in a hash — treat such a value as no value at all.
+  return hash && !/\s/.test(hash) && !hash.includes('$pin$') ? hash : '';
 };
 
 // Best effort, always: a preview you sign into with the token is still a
@@ -175,6 +182,71 @@ const mirrorAccessPin = async (composeProject, id) => {
     }
     log(`#${id} could not mirror the access PIN — sign in with the API token`);
   } catch { /* the preview is the point; the PIN is a convenience */ }
+};
+
+// ---------------------------------------------------------------------------
+// The data — what makes it a MIRROR rather than a blank instance
+// ---------------------------------------------------------------------------
+// An empty database renders an empty Stack: no projects, no board, no activity.
+// The branch is running, but there is nothing on the screens to judge it by, so
+// the one question a preview exists to answer — does this change look right on
+// MY data? — is the one it cannot answer.
+//
+// So the real database is copied in. Two properties come with that, and the
+// second is the more valuable: the mirror looks like the real thing, AND the
+// branch's own migrations then run against real rows, which is the rehearsal of
+// the merge nobody otherwise gets until it is production.
+//
+// What is deliberately NOT copied:
+//   • auth_tokens — the PIN-issued device sessions. The PIN hash comes across
+//     so the owner can sign in; live sessions must not be duplicated onto
+//     another host.
+//   • previews — this host's preview rows. A mirror is not the host, nothing
+//     polls it, so its own preview list would show LIVE rows pointing at dead
+//     tunnels. Better empty and honest than populated and wrong.
+//
+// **The trade, stated plainly:** a second copy of real data now exists behind a
+// random public hostname for the life of the preview. It sits behind the same
+// token gate and the same PIN as production (which is itself public at
+// projects.bkos.dev), so the exposure is the same CLASS — but it is another
+// copy, and expiry is what bounds it. STACK_PREVIEW_DATA=0 in ~/.stack/env
+// turns this off and returns to an empty mirror.
+const seedFromReal = async (composeProject, id, say) => {
+  if (String(process.env.STACK_PREVIEW_DATA || '') === '0') return false;
+  const src = realStackDb(composeProject);
+  const dst = dbContainerFor(composeProject);
+  if (!src || !dst) return false;
+  // Container names come from docker itself, but they are about to cross a
+  // shell, so anything that is not a container name ends the attempt.
+  const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+  if (!NAME.test(src) || !NAME.test(dst)) return false;
+  const su = pgEnv(src, 'POSTGRES_USER') || 'postgres';
+  const sd = pgEnv(src, 'POSTGRES_DB') || su;
+  const du = pgEnv(dst, 'POSTGRES_USER') || 'postgres';
+  const dd = pgEnv(dst, 'POSTGRES_DB') || du;
+  if (![su, sd, du, dd].every((v) => NAME.test(v))) return false;
+
+  await say('copying the real data in');
+  // Piped rather than buffered: a dump is small today and there is no reason
+  // for the worker's memory to be what limits that later.
+  const dump = `docker exec ${src} pg_dump -U ${su} -d ${sd} --no-owner --no-privileges `
+    + '--clean --if-exists --exclude-table=auth_tokens --exclude-table=previews';
+  // ON_ERROR_STOP stays OFF: --clean emits drops for objects a fresh database
+  // may not have, and one such notice must not abandon a good restore.
+  const restore = `docker exec -i ${dst} psql -U ${du} -d ${dd} -q`;
+  const r = sh('bash', ['-c', `set -o pipefail; ${dump} | ${restore}`], { timeout: 300_000 });
+  if (!ok(r)) {
+    log(`#${id} data copy failed — the mirror comes up empty: ${(r.stderr || '').trim().split('\n').pop()?.slice(0, 160)}`);
+    return false;
+  }
+  // The server migrated an EMPTY database at boot; it has now been replaced
+  // wholesale by production's, which may predate this branch's schema changes.
+  // Restarting re-runs the idempotent migrate over the real rows — which is
+  // exactly the rehearsal this is worth having.
+  await say('re-running the branch migrations over the real data');
+  sh('docker', ['compose', '-p', composeProject, 'restart', 'server'], { timeout: 180_000 });
+  log(`#${id} real data copied in — migrations re-run over it`);
+  return true;
 };
 
 const portFree = (port) => {

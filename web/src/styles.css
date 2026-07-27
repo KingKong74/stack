@@ -2197,7 +2197,11 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .term-grid { display: grid; gap: 10px; height: calc(100vh - 210px); min-height: 320px; }
 .term-grid.p1 { grid-template-columns: 1fr; }
 .term-grid.p2 { grid-template-columns: 1fr 1fr; }
-.term-grid.p3 { grid-template-columns: repeat(3, 1fr); }
+/* Three up is NOT three columns: at this width three abreast gives each one
+   too little to read. One tall pane on the left — the active session, since
+   the window starts there — with the other two stacked beside it. */
+.term-grid.p3 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.term-grid.p3 .term-pane.lead { grid-row: span 2; }
 .term-grid.p4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
 .term-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 /* An off-screen pane is HIDDEN, never unmounted — its socket and scrollback
@@ -2250,6 +2254,8 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
    three unusable terminals. */
 @media (max-width: 900px) {
   .term-grid.p2, .term-grid.p3, .term-grid.p4 { grid-template-columns: 1fr; grid-template-rows: none; }
+  /* Stacked in one column, a tall lead would just be a double-height pane. */
+  .term-grid.p3 .term-pane.lead { grid-row: auto; }
 }
 .term-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 /* 25b — the head bar's spacer + the real lane count (#277) */

@@ -1207,8 +1207,12 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
               // unmounting one would drop its socket and its scrollback, which
               // is the whole reason this component never unmounts either. Off
               // -screen panes are hidden, not destroyed.
+              // `lead` marks the FIRST pane on screen, which the 3-up layout
+              // gives the tall left column to. It has to be a class rather than
+              // :first-child, because off-screen panes stay in the DOM (they
+              // keep their sockets) and would win that selector while invisible.
               return (
-              <div key={s.id} className={`term-pane${shown ? '' : ' off'}${s.id === active ? ' focused' : ''}`}
+              <div key={s.id} className={`term-pane${shown ? '' : ' off'}${s.id === active ? ' focused' : ''}${shown && s.id === shownIds[0] ? ' lead' : ''}`}
                 onMouseDown={() => { if (s.id !== active) setActive(s.id); }}>
                 {/* The title: what this session is working on, in its own
                     words via the labeller. It sits ON the pane rather than on

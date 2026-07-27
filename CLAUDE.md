@@ -556,7 +556,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   session on it. So panes > 1 takes the full width by itself, and a device that stored `wide:true`
   migrates to 2. The window of shown sessions STARTS at the active tab (backing up near the end of
   the list so panes stay full), so picking a tab puts it top-left with its neighbours beside it and
-  the tab strip is never reordered under you. Off-screen panes are HIDDEN, never unmounted — their
+  the tab strip is never reordered under you. The shapes are 2 = side by side, **3 = one tall pane
+  on the LEFT with two stacked beside it** (not three columns — three abreast leaves each too
+  narrow to read), 4 = 2×2; the tall one is the first pane on screen, i.e. the active session,
+  marked with a `lead` class rather than `:first-child` because off-screen panes stay in the DOM
+  and would win that selector while invisible. Under 900px every shape stacks to one column. Off-screen panes are HIDDEN, never unmounted — their
   sockets and scrollback have to survive, the same reason the screen itself never unmounts — and
   `visible` (on screen) is now separate from `focused` (takes keystrokes), because with a grid
   those stopped being the same thing. The floating dock collapses to one pane whatever the count.
