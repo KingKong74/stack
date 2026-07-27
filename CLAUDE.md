@@ -595,7 +595,16 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     project's next eligible items in the RUNNER's own order (tier → bucket → board position, never
     parked or claimed — the Plan room's rules applied to one project, so what the rail offers is
     what the night would take); tick rows and **Send N to the prompt** types them as one bracketed
-    block — typed, not run, like every other handoff here — and pins the first as WORKING ON.
+    block — typed, not run, like every other handoff here — pins the first as WORKING ON and
+    **CLAIMS every sent item** (`claimed_by = term:<tmux name>`, or `term:<slug>` for a tab with no
+    tmux). The pin is a browser fact; "I am working this now" is not, so the send writes real
+    state: the items drop out of DO NEXT everywhere, wear the ⚑ chip on the board and the
+    overnight runner leaves them alone rather than picking up work you are half-way through in a
+    tab. The claim names the SESSION rather than a branch — a terminal tab has no branch, and one
+    that invented a branch name would be worse than one that says where it came from. WORKING ON
+    states the claim and offers **release** (PATCH `claimed_by:''`), but only for a `term:` claim,
+    since a real lane's claim is not this tab's to drop; **clear** still only forgets the pin. The
+    typing happens before the writes, so a failed claim says so rather than pretending.
     **ROSTER** is deliberately one line: Stack
     keeps per-model usage for autopilot runs and never for a terminal session (#283), so it names
     who is at the keyboard and says plainly that the figure beside it is the host's whole day.

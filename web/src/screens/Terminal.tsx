@@ -15,6 +15,7 @@ import {
   getTermSessionPrefs, termAssist, type TermAssistSuggestion,
   getTermWorkingItem, setTermWorkingItem,
   getProjectDetail, type ProjectDetailData,
+  patchRoadmapItem,
   getOverview,
 } from '../store';
 import { go } from '../lib/route';
@@ -690,14 +691,42 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
     setTermWorkingItem(projectSlug, id);
   };
 
+  // Handing an item over CLAIMS it. The pin above is device-local by design,
+  // but "I am working this now" is not a browser fact — the overnight runner
+  // would otherwise pick up an item you are half-way through in a tab. So the
+  // send writes a real claim (#277), which drops the item out of DO NEXT
+  // everywhere, wears the ⚑ chip on the board and makes the runner skip it.
+  // The claim names the SESSION rather than a branch, honestly: a terminal tab
+  // has no branch to name, and a claim that lied about one would be worse than
+  // one that says where it came from.
+  const claimLabel = activeSess?.tmux ? `term:${activeSess.tmux}` : `term:${projectSlug || 'session'}`;
+  const isTermClaim = (c: string) => c.startsWith('term:');
+  const [claimNote, setClaimNote] = useState('');
+  // Fold a claim change into the loaded board so DO NEXT settles immediately —
+  // the detail fetch only re-runs on a cwd change or a re-show.
+  const applyClaim = (ids: number[], claim: string) => setDetail((d) => {
+    if (!d) return d;
+    const bucket = (list: RoadmapItem[]) =>
+      list.map((it) => (ids.includes(it.id) ? { ...it, claimedBy: claim } : it));
+    return {
+      ...d,
+      roadmap: {
+        must: bucket(d.roadmap.must), should: bucket(d.roadmap.should),
+        could: bucket(d.roadmap.could), wont: bucket(d.roadmap.wont),
+      },
+    };
+  });
+
   const [picked, setPicked] = useState<number[]>([]);
   useEffect(() => { setPicked([]); }, [projectSlug]);
   const togglePick = (id: number) =>
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   // Send = type the brief at the prompt (bracketed, so a multi-line block
-  // lands as one paste) and remember the first item as what this session is
-  // on. Nothing runs: the human presses Enter.
-  const sendPicked = () => {
+  // lands as one paste), remember the first item as what this session is on
+  // and claim the lot. Nothing runs: the human presses Enter. The typing is
+  // unconditional — it has already happened by the time the claims are
+  // written, so a failed claim reports itself rather than pretending.
+  const sendPicked = async () => {
     const h = handles.current.get(active);
     if (!h || picked.length === 0) return;
     const items = picked
@@ -708,6 +737,30 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
     h.focus();
     pinWorking(items[0].id);
     setPicked([]);
+    const ids = items.map((it) => it.id);
+    applyClaim(ids, claimLabel);
+    setClaimNote('');
+    try {
+      for (const id of ids) await patchRoadmapItem(projectSlug, id, { claimed_by: claimLabel });
+    } catch {
+      applyClaim(ids, '');
+      setClaimNote('Sent to the prompt, but the claim did not save — the board still reads it as free.');
+    }
+  };
+
+  // Release = give the item back to the board (and to the runner). Only ever
+  // offered for a claim this screen made; a branch claim from a real lane is
+  // not this tab's to drop.
+  const releaseWorking = async () => {
+    if (!workingItem) return;
+    const id = workingItem.id;
+    applyClaim([id], '');
+    setClaimNote('');
+    try { await patchRoadmapItem(projectSlug, id, { claimed_by: '' }); }
+    catch {
+      applyClaim([id], claimLabel);
+      setClaimNote('Could not release the claim just now.');
+    }
   };
 
   const bookReset = async () => {
@@ -1180,13 +1233,26 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                               ? ` · ☰ ${workingItem.plan.filter((s) => s.done).length}/${workingItem.plan.length}`
                               : ''}
                           </div>
+                          {/* The claim is what makes this more than a note to
+                              yourself: while it stands, the runner leaves the
+                              item alone. A claim from a real branch is shown
+                              but never dropped from here. */}
+                          <div className={`tc-claim${workingItem.claimedBy ? '' : ' off'}`}>
+                            {workingItem.claimedBy
+                              ? `⚑ in progress · ${workingItem.claimedBy}`
+                              : '○ not claimed — the runner may still pick this up'}
+                          </div>
                           <div className="tc-work-acts">
                             <button className="tc-link"
                               onClick={() => go.detail(projectSlug, 'roadmap', String(workingItem.id))}>
                               Open on the board ↗
                             </button>
+                            {workingItem.claimedBy && isTermClaim(workingItem.claimedBy) && (
+                              <button className="tc-link" onClick={() => void releaseWorking()}
+                                title="Give the item back to the board — it becomes pickable again">release</button>
+                            )}
                             <button className="tc-link dim" onClick={() => pinWorking(null)}
-                              title="Forget what this session is on (nothing on the board changes)">clear</button>
+                              title="Forget what this session is on (the claim, if any, stays)">clear</button>
                           </div>
                         </div>
                       ) : (
@@ -1234,12 +1300,13 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                             </div>
                             <div className="tc-send">
                               <button className="btn-submit sm" disabled={picked.length === 0 || !activeSess}
-                                onClick={sendPicked}
-                                title="Types the picked items at the prompt as one block — read it, then press Enter yourself">
+                                onClick={() => void sendPicked()}
+                                title="Types the picked items at the prompt as one block and claims them — read it, then press Enter yourself">
                                 Send{picked.length ? ` ${picked.length}` : ''} to the prompt
                               </button>
-                              <span className="tc-note">typed, not run</span>
+                              <span className="tc-note">typed, not run · claims the item</span>
                             </div>
+                            {claimNote && <div className="tc-warn">{claimNote}</div>}
                           </>
                         )}
                       </div>
