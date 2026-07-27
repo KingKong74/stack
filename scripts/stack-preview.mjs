@@ -235,6 +235,11 @@ async function teardown(handles, { quiet = false } = {}) {
     sh('docker', ['compose', '-p', composeProject, 'down', '-v', '--remove-orphans'],
       { cwd: existsSync(worktree || '') ? worktree : undefined, timeout: 300_000 });
   }
+  // The tunnel log is only useful while the tunnel lives — left behind it just
+  // accumulates one file per preview forever.
+  if (composeProject) {
+    try { rmSync(join(PREVIEW_DIR, `${composeProject}.tunnel.log`), { force: true }); } catch { /* best effort */ }
+  }
   if (worktree && existsSync(worktree)) {
     // The worktree belongs to whichever repo created it; prune from the repo
     // side too so git doesn't keep a dangling registration.
