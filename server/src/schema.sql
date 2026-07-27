@@ -678,3 +678,49 @@ CREATE TABLE IF NOT EXISTS dispatcher_heartbeat (
   host_local   TEXT NOT NULL DEFAULT ''   -- the host clock the dispatcher reported
 );
 INSERT INTO dispatcher_heartbeat (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
+
+-- (#208) Branch previews — a mirror site for pushed work. The point is to LOOK
+-- at a branch running before deciding on it, without merging it first.
+--
+-- One row per preview. The host dispatcher does the work (only it can reach
+-- docker and the repo); the server holds the state and the URL, so a preview
+-- survives a browser reload, a dispatcher restart and a host reboot.
+--
+-- Reachability is the whole design constraint here. This host has exactly one
+-- public entry — projects.bkos.dev via a token-managed Cloudflare Tunnel to
+-- port 8787 — no wildcard DNS, and the tunnel's ingress lives in Cloudflare's
+-- dashboard rather than a file we can edit. Serving previews under a path on
+-- that origin would break every app whose assets are root-absolute. So each
+-- preview gets its OWN ephemeral `cloudflared tunnel --url` quick tunnel: a
+-- random *.trycloudflare.com hostname, served at the ROOT path, needing no DNS
+-- record and no dashboard access.
+--
+-- That URL is PUBLIC and unauthenticated for as long as it lives — it is
+-- unguessable, never listed, and expires, but it is not access-controlled.
+-- expires_at is therefore not tidiness, it is the safety property: the sweep
+-- tears a preview down when it passes, so an abandoned preview cannot sit
+-- exposed indefinitely.
+CREATE TABLE IF NOT EXISTS previews (
+  id            BIGSERIAL PRIMARY KEY,
+  project_id    BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  branch        TEXT NOT NULL,
+  item_id       BIGINT,                          -- the roadmap item the branch builds, when known
+  -- queued → starting → live → stopping → stopped | failed
+  status        TEXT NOT NULL DEFAULT 'queued',
+  url           TEXT NOT NULL DEFAULT '',        -- the quick tunnel's public URL, once it exists
+  detail        TEXT NOT NULL DEFAULT '',        -- progress line / failure reason, for the UI
+  port          INTEGER,                         -- host port the preview stack publishes
+  compose_project TEXT NOT NULL DEFAULT '',      -- namespaces its containers AND its volumes
+  worktree      TEXT NOT NULL DEFAULT '',        -- throwaway checkout, removed on teardown
+  tunnel_pid    INTEGER,                         -- the detached cloudflared
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  started_at    TIMESTAMPTZ,
+  expires_at    TIMESTAMPTZ,                     -- the safety property, not tidiness
+  stopped_at    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS previews_project_idx ON previews (project_id, created_at DESC);
+-- One LIVE preview per branch. A second request for a branch already previewed
+-- returns the existing row rather than racing a duplicate stack onto the host.
+CREATE UNIQUE INDEX IF NOT EXISTS previews_open_idx
+  ON previews (project_id, branch)
+  WHERE status IN ('queued', 'starting', 'live');

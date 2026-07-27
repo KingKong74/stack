@@ -58,6 +58,10 @@ function suiteFor(slug, ORIGIN) {
     // room writes, and the coverage the Plan room reads. Asserting the PATH
     // exists (not a value) is the point — the numbers change every night.
     { name: 'Settings — plan sweep switch', url: u('/api/settings'), auth: true, json_path: 'autopilotPlanSweep' },
+    // #208 — the preview sweep's contract. `work` is what the host polls every
+    // minute; if its shape breaks, previews silently stop being torn down and
+    // public URLs outlive their expiry, which is the failure that matters most.
+    { name: 'Previews — the sweep feed', url: u('/api/previews/work'), auth: true, json_path: 'start' },
     { name: 'Control — plan coverage', url: u('/api/control'), auth: true, json_path: 'projects.0.planCoverage.unplanned' },
     { name: 'Control — per-project rows', url: u('/api/control'), auth: true, json_path: 'projects' },
     { name: 'Control — model catalogue', url: u('/api/control'), auth: true, json_path: 'models' },

@@ -186,6 +186,29 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             Night end fires an ntfy.sh notification when STACK_NTFY_TOPIC is set in
             ~/.stack/env (free, keyless; unset = silent). Lockfile ~/.stack/autopilot.lock; log
             ~/.stack/autopilot.log. `skipped` items are how you keep human-only work off its plate.
+            stack-preview.mjs — the BRANCH PREVIEW worker (#208, a mirror site for pushed
+            work): brings ONE branch up as an isolated stack so it can be LOOKED AT running
+            before it is merged. Throwaway worktree on `origin/<branch>` under
+            ~/.stack/previews, the main checkout's `.env` copied in (the worktree has none and
+            compose requires it), a free port from 8790-8809, `docker compose -p
+            stack-preview-<slug>-<branch>` up — the project NAME is what buys isolation, since
+            docker namespaces the containers AND the named volumes under it, so the preview gets
+            its own empty database rather than sharing the real one — then it waits for the
+            stack to actually answer before exposing it, and opens a **Cloudflare quick tunnel**
+            (`cloudflared tunnel --url`) for the public URL. **Why a quick tunnel:** this host
+            has exactly one public entry (projects.bkos.dev → a token-managed tunnel → :8787),
+            no wildcard DNS, and the tunnel's ingress lives in Cloudflare's dashboard rather
+            than a file; and serving previews under a PATH breaks any app with root-absolute
+            asset URLs (a Vite build asks the parent origin for /assets/… and gets Stack's own
+            bundle). A quick tunnel needs no DNS and no dashboard, and serves the app at the
+            ROOT of its own random hostname, so the preview is byte-for-byte what production
+            would be. **The trade, plainly: that URL is PUBLIC and unauthenticated while it
+            lives** — unguessable and never listed, but not access-controlled, which is why
+            expiry is a safety property rather than tidiness and the default life is 2h.
+            Teardown (`--stop`) is all best-effort and independent, so a half-gone preview still
+            gets the rest of itself cleaned up: kill the tunnel, `compose down -v` (its OWN
+            namespaced volumes, never the real stack's), remove the worktree, prune. Never run
+            by hand in normal use — the dispatcher spawns it DETACHED. Log ~/.stack/preview.log.
             stack-autopilot-dispatch.mjs — the every-minute cron line (the master on/off
             switch). Polls GET /api/autopilot/next with the HOST's local clock (the server
             can't reach the host — same dial-out pattern as the terminal daemon); the server
@@ -212,6 +235,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             origin branch's ahead/behind vs origin/main, a `git merge-tree --write-tree`
             conflict probe (null when git <2.38) and the item id parsed from the lane name,
             POSTed to /api/projects/:slug/branches — the git truth behind the merge strip.
+            It also runs the **preview sweep** (#208) on every poll, deliberately OUTSIDE the
+            job queue — a preview must not wait behind a three-hour build night, and a build
+            night must not wait behind a docker build. The sweep only CLAIMS work and spawns
+            stack-preview.mjs detached, so the tick stays fast: teardowns first (they free the
+            ports and memory a start may need), then at most ONE start per tick. Expiry is
+            decided SERVER-side and arrives as stop work, so an abandoned preview's public URL
+            is torn down even if nobody presses anything.
             Silent when idle or the API is unreachable (fail safe). A missed slot stays missed
             (90-min grace, clamped at midnight) — like the old fixed cron line, but the time
             is now a setting.
@@ -829,6 +859,15 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     `PATCH /runs/:id` (a second, narrow write: the run row is recorded BEFORE the review so a crash
     mid-review costs the review, never the record). NULL means **no review ran** — deliberately not
     the same as "nothing found", and the Review room's chip says NO REVIEW rather than showing green.
+  - `previews` — (#208) branch previews, one row each: branch, item, status
+    (queued → starting → live → stopping → stopped | failed), the public `url`, the host
+    handles (port, compose project, worktree, tunnel pid) and `expires_at`. The server holds
+    the state and the URL; the HOST does the doing, so a preview survives a browser reload, a
+    dispatcher restart and a host reboot. A partial unique index on (project, branch) WHERE
+    status is open makes "preview this branch" idempotent — a double-click returns the same row
+    rather than racing a second docker stack onto the host. `expires_at` is the SAFETY property:
+    the quick-tunnel URL is public while it lives, so the sweep tears the preview down when it
+    passes.
   - `branch_reports` — the host dispatcher's git snapshot (#207), one row per project replaced
     whole every ~10 min: jsonb list of origin branches with ahead/behind vs main, the
     merge-tree conflict probe (`mergeClean` true|false|null) and the parsed item id, plus
@@ -1186,6 +1225,15 @@ the silent metadata backstop so the feed never has gaps.
   `PATCH /api/projects/:slug/autopilot/runs/:id` (#282 — review fields only: `review_verdict`,
   `review_note`, `review_findings`. Nothing else about a finished run is editable after the fact,
   and an unrecognised verdict lands NULL rather than inventing a read nobody gave)
+- **Branch previews** (#208): `GET|POST /api/projects/:slug/previews` (POST `{branch, itemId?,
+  hours?}` queues one — idempotent per branch, hours clamped 15m–24h, default 2h) ·
+  `GET /api/previews` (open first, then recent history — what Mission Control renders) ·
+  `GET /api/previews/work` (the dispatcher's sweep: `start` and `stop`, where EXPIRY is
+  resolved server-side and reported as stop work, and a 'starting' row stuck 20min is recovered
+  to 'queued') · `PATCH /api/previews/:id` (the host's progress/outcome report — url, detail,
+  port, handles — plus `{hours}` to re-arm expiry) · `POST /api/previews/:id/stop` (marks
+  `stopping` ONLY; the teardown is the host's, so Stop works even while the host is briefly
+  unreachable and the UI never lies about what has happened). Nothing here runs anything.
 - `POST /api/projects/:slug/branches` (#207 — the host dispatcher's branch report, replacing
   the project's `branch_reports` row whole; write side only, Mission Control reads it folded
   into the control payload: enriched `branches` chips (ahead/behind/mergeClean/subject/when),
@@ -1311,6 +1359,8 @@ tail -f ~/.stack/term.log                  # its log
 node hook/stack-gemini-review.mjs --dry    # second-model review of the last commit (Gemini; --dry = print only)
 node hook/stack-gemini-review.mjs --architect --range main..HEAD  # the structural read (#284) — prints, posts nothing
 node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack --dry  # what would tonight's run pick?
+node scripts/stack-preview.mjs --start <id>  # bring a branch up as a preview (normally the dispatcher spawns it)
+node scripts/stack-preview.mjs --stop <id>   # tear one down; log ~/.stack/preview.log
 node scripts/stack-autopilot-dispatch.mjs  # one dispatcher poll by hand (normally the cron line)
 crontab -l                                 # the dispatcher line (every minute; remove it to disable all runs)
 ```

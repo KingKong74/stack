@@ -4,6 +4,7 @@ import {
   patchAutopilotSchedule, deleteAutopilotSchedule,
   resumeAutopilotJob, hangupAutopilotJob, dismissAutopilotJob,
   labelTerminalSessions, queueMerge, AuthError,
+  startPreview, getPreviews, stopPreview, type Preview,
   type ControlData, type ControlProject, type AutopilotJob, type AutopilotSchedule,
 } from '../store';
 import { SessionPlanModal } from '../components/SessionPlanModal';
@@ -99,6 +100,52 @@ export function ControlPanel() {
   const [mergePending, setMergePending] = useState<{ slug: string; branch: string; itemId: string; itemTitle: string; mergeClean?: boolean | null } | null>(null);
   // #193 — a dirty branch may opt into the dispatcher's AI conflict resolution.
   const [mergeAiResolve, setMergeAiResolve] = useState(false);
+  // (#208) Branch previews. Their own poll rather than a field on the control
+  // payload: a preview changes state on the host's clock (queued → building →
+  // live), so it needs to be watched while everything else sits still.
+  const [previews, setPreviews] = useState<Preview[]>([]);
+  const [previewErr, setPreviewErr] = useState('');
+  const [previewBusy, setPreviewBusy] = useState<string | null>(null);
+  const [stopPending, setStopPending] = useState<Preview | null>(null);
+  const loadPreviews = () => {
+    getPreviews().then(setPreviews).catch((e) => {
+      // An older server without the routes must not make the whole room shout.
+      if (!(e instanceof AuthError)) setPreviews([]);
+    });
+  };
+  useEffect(() => {
+    loadPreviews();
+    // Poll faster while something is mid-flight — a docker build reports
+    // progress, and a finished one should not sit reading "building".
+    const t = setInterval(loadPreviews, 15_000);
+    return () => clearInterval(t);
+  }, []);
+  const previewFor = (slug: string, branch: string) =>
+    previews.find((v) => v.slug === slug && v.branch === branch
+      && ['queued', 'starting', 'live', 'stopping'].includes(v.status)) || null;
+  const openPreview = async (slug: string, branch: string, itemId: string | null) => {
+    setPreviewBusy(`${slug}:${branch}`);
+    setPreviewErr('');
+    try {
+      const pv = await startPreview(slug, branch, { itemId });
+      setPreviews((cur) => [pv, ...cur.filter((v) => v.id !== pv.id)]);
+    } catch (e) {
+      if (!(e instanceof AuthError)) setPreviewErr((e as Error)?.message || 'Could not queue the preview.');
+    } finally {
+      setPreviewBusy(null);
+    }
+  };
+  const confirmStopPreview = async () => {
+    if (!stopPending) return;
+    const pv = stopPending;
+    setStopPending(null);
+    try {
+      const next = await stopPreview(pv.id);
+      setPreviews((cur) => cur.map((v) => (v.id === next.id ? next : v)));
+    } catch (e) {
+      if (!(e instanceof AuthError)) setPreviewErr((e as Error)?.message || 'Could not stop the preview.');
+    }
+  };
   // #177 — the usage card's per-session agent breakdown, collapsed by default.
   const [agentBreakdown, setAgentBreakdown] = useState(false);
   const [mergeBusy, setMergeBusy] = useState(false);
@@ -395,6 +442,32 @@ export function ControlPanel() {
   return (
     <div>
       {error && <div className="action-error">{error}</div>}
+      {previewErr && <div className="action-error">{previewErr}</div>}
+      {/* (#208) A preview that failed is worth saying out loud — it usually
+          means the branch itself doesn't come up, which is a review finding. */}
+      {previews.filter((v) => v.status === 'failed').slice(0, 2).map((v) => (
+        <div className="action-error" key={v.id}>
+          Preview of <b>{v.slug}/{v.branch}</b> failed — {v.detail || 'no reason reported'}
+        </div>
+      ))}
+      {/* (#208) Stop confirm — tearing a preview down drops its containers and
+          its throwaway database, so ask rather than doing it on a stray click. */}
+      {stopPending && (
+        <div className="overlay" onClick={() => setStopPending(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Stop the preview of {stopPending.branch}?</h3>
+            <p style={{ fontSize: 13.5, lineHeight: 1.55, marginBottom: 20 }}>
+              The host tears the stack down within a minute: its containers stop, its throwaway
+              database is deleted and the public URL stops working. The branch itself is untouched —
+              you can preview it again whenever you like.
+            </p>
+            <div className="modal-actions">
+              <button className="btn-cancel" onClick={() => setStopPending(null)}>Keep it running</button>
+              <button className="btn-submit" onClick={() => void confirmStopPreview()}>Stop the preview</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* #154 — merge confirm modal */}
       {mergePending && (
         <div className="overlay" onClick={() => !mergeBusy && setMergePending(null)}>
@@ -918,6 +991,41 @@ export function ControlPanel() {
                                 ⇥ Merge
                               </button>
                             )}
+                            {/* (#208) Look at the branch RUNNING before deciding
+                                on it. The chip shows the live state, because a
+                                preview is a slow thing on someone else's clock. */}
+                            {(() => {
+                              const pv = previewFor(p.slug, b.branch);
+                              const busy = previewBusy === `${p.slug}:${b.branch}`;
+                              if (!pv) {
+                                return (
+                                  <button className="mc-branch-preview" disabled={busy}
+                                    title={`Bring ${b.branch} up as an isolated stack on the host and open it on a temporary public URL. Expires in 2 hours.`}
+                                    onClick={() => void openPreview(p.slug, b.branch, b.itemId || null)}>
+                                    {busy ? '◴ …' : '◱ Preview'}
+                                  </button>
+                                );
+                              }
+                              if (pv.status === 'live' && pv.url) {
+                                return (
+                                  <span className="mc-branch-previewlive">
+                                    <a className="url" href={pv.url} target="_blank" rel="noopener noreferrer"
+                                      title={`${pv.url} — public while it lives, expires ${pv.expiresAt ? new Date(pv.expiresAt).toLocaleTimeString() : 'soon'}`}>
+                                      ◱ Open
+                                    </a>
+                                    <button className="x" aria-label="Stop preview" title="Stop this preview and free the host"
+                                      onClick={() => setStopPending(pv)}>×</button>
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="mc-branch-status" title={pv.detail}>
+                                  {pv.status === 'stopping' ? 'stopping…'
+                                    : pv.status === 'queued' ? 'preview queued…'
+                                    : 'preview building…'}
+                                </span>
+                              );
+                            })()}
                           </span>
                         );
                       })}

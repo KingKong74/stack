@@ -1235,6 +1235,53 @@ export async function getReviewBrief(slug: string, id: number): Promise<ReviewBr
 export async function queueUndo(slug: string, itemId: number): Promise<AutopilotJob> {
   return request<AutopilotJob>('/autopilot/undo', { method: 'POST', body: { slug, itemId } });
 }
+// ---- (#208) branch previews — a mirror site for pushed work ----
+// The server holds the state; the host dispatcher does the doing. A preview is
+// an isolated docker stack of one branch, exposed on its own ephemeral
+// Cloudflare quick-tunnel URL, so a branch can be LOOKED AT before it is
+// merged. That URL is public and unauthenticated while it lives, which is why
+// every preview carries an expiry the server enforces.
+export interface Preview {
+  id: string;
+  slug: string; name: string; tint: string | null;
+  branch: string;
+  itemId: string | null; itemTitle: string;
+  // queued → starting → live → stopping → stopped | failed
+  status: 'queued' | 'starting' | 'live' | 'stopping' | 'stopped' | 'failed';
+  url: string;        // '' until the tunnel is up — a live row with no url is still arriving
+  detail: string;     // progress line, or why it failed
+  port: number | null;
+  createdAt: string; startedAt: string | null; expiresAt: string | null;
+  when: string;
+}
+
+// Queue a preview of one branch. Idempotent per branch: asking twice returns
+// the SAME row rather than racing a second docker stack onto the host.
+export async function startPreview(
+  slug: string, branch: string, opts?: { itemId?: string | null; hours?: number },
+): Promise<Preview> {
+  return request<Preview>(`/projects/${encodeURIComponent(slug)}/previews`, {
+    method: 'POST',
+    body: { branch, itemId: opts?.itemId ?? undefined, hours: opts?.hours ?? undefined },
+  });
+}
+
+// Every open preview, plus recent history.
+export async function getPreviews(): Promise<Preview[]> {
+  return request<Preview[]>('/previews');
+}
+
+// Ask for a teardown. This only marks intent — the host tears it down on its
+// next sweep — so it works even while the host is briefly unreachable.
+export async function stopPreview(id: string): Promise<Preview> {
+  return request<Preview>(`/previews/${encodeURIComponent(id)}/stop`, { method: 'POST' });
+}
+
+// Re-arm a live preview's expiry (the one write that isn't a stop).
+export async function extendPreview(id: string, hours: number): Promise<Preview> {
+  return request<Preview>(`/previews/${encodeURIComponent(id)}`, { method: 'PATCH', body: { hours } });
+}
+
 // ⇥ Merge a claim branch (#154): queues a merge job — the host dispatcher fetches,
 // merges origin/<branch> into main with --no-ff in a throwaway worktree, pushes
 // main, and deletes the remote branch on success. Conflicts fail safely.

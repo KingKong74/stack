@@ -1866,6 +1866,26 @@ a.tab { display: inline-block; }
   border-radius: 12px; padding: 1px 8px;
 }
 .mc-branch-merge:hover { color: #fff; background: var(--accent-deep); border-color: var(--accent-deep); }
+/* (#208) Preview a branch — deliberately quieter than ⇥ Merge: looking at a
+   branch is the reversible act, merging is the one that changes main. */
+.mc-branch-preview {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  border: 1px solid var(--line-2); background: var(--card);
+  border-radius: 12px; padding: 1px 8px;
+}
+.mc-branch-preview:hover:not(:disabled) { color: var(--accent-deep); border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.mc-branch-preview:disabled { opacity: 0.55; }
+/* A live preview: the URL is the point, so it reads as a link, and the sage
+   tone matches every other "this is up and running" signal in the app. */
+.mc-branch-previewlive { display: inline-flex; align-items: center; gap: 3px; }
+.mc-branch-previewlive .url {
+  font-size: 11px; font-weight: 600; color: var(--sage);
+  border: 1px solid var(--green-tint); background: var(--green-tint);
+  border-radius: 12px; padding: 1px 8px; text-decoration: none;
+}
+.mc-branch-previewlive .url:hover { color: #fff; background: var(--sage); border-color: var(--sage); }
+.mc-branch-previewlive .x { font-size: 12px; line-height: 1; color: var(--fainter); padding: 1px 3px; border-radius: 5px; }
+.mc-branch-previewlive .x:hover { color: var(--critical); background: var(--card); }
 /* #207 — git state on the branch chips: ahead/behind + the conflict probe */
 .mc-branch-diff { color: var(--muted); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .mc-branch-clean { color: var(--sage); font-size: 11px; font-weight: 700; }

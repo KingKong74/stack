@@ -24,8 +24,8 @@
 // next minute's poll sees it "running" and gets nothing, and the runner's own
 // lockfile refuses a second night.
 
-import { spawnSync } from 'node:child_process';
-import { existsSync, rmSync, writeFileSync, readFileSync, unlinkSync, statSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, rmSync, writeFileSync, readFileSync, unlinkSync, statSync, openSync, mkdirSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,6 +65,10 @@ try {
 }
 
 const root = process.env.STACK_AUTOPILOT_ROOT || homedir();
+
+// Defined up here because the branch report and the preview sweep (#208) both
+// run before any job is claimed, and both log.
+const log = (msg) => logStderr(`dispatch ${new Date().toISOString()} · ${msg}`);
 
 // Branch report (#207) — every ~10 minutes, push each repo's git branch state
 // up to the server: every origin branch with ahead/behind counts vs
@@ -110,6 +114,40 @@ async function reportBranches() {
   }
 }
 
+// (#208) The preview sweep. Runs on EVERY poll, before the job queue, and is
+// deliberately not part of it: a preview must not wait behind a three-hour
+// build night, and a build night must not wait behind a docker build. So the
+// sweep only ever CLAIMS work and spawns stack-preview.mjs detached — this
+// script stays a fast cron tick that exits.
+//
+// Expiry is decided server-side and arrives as stop work, so an abandoned
+// preview's public URL is torn down even if nobody ever presses anything.
+async function sweepPreviews() {
+  const work = await api('GET', '/api/previews/work');
+  const previewScript = join(dirname(fileURLToPath(import.meta.url)), 'stack-preview.mjs');
+  const detach = (args, what) => {
+    const child = spawn(process.execPath, [previewScript, ...args], {
+      detached: true,
+      stdio: ['ignore', 'ignore', openSync(join(homedir(), '.stack', 'preview.log'), 'a')],
+    });
+    child.unref();
+    log(`preview ${what}`);
+  };
+  // Teardowns first: they free ports and memory the starts may need, and an
+  // expired preview is a live public URL that should not outlast its slot.
+  for (const p of (work.stop || [])) {
+    detach(['--stop', p.id], `#${p.id} ${p.slug}/${p.branch} — ${p.expired ? 'expired' : 'stopping'}`);
+  }
+  // One start per tick. A docker build is heavy, and the next poll is a minute
+  // away, so queueing three at once would only contend for the same CPU.
+  const next = (work.start || [])[0];
+  if (next) {
+    // Claim it before spawning, so an overlapping tick can't start it twice.
+    await api('PATCH', `/api/previews/${next.id}`, { status: 'starting', detail: 'starting on the host' });
+    detach(['--start', next.id], `#${next.id} ${next.slug}/${next.branch} — starting`);
+  }
+}
+
 const REPORT_EVERY_MS = 10 * 60 * 1000;
 const reportStamp = join(homedir(), '.stack', 'branch-report.stamp');
 const reportDue = (() => {
@@ -120,9 +158,14 @@ if (reportDue) {
   try { await reportBranches(); } catch { /* next cycle retries */ }
 }
 
+// (#208) The preview sweep runs regardless of whether a job came back — it is
+// its own lane, not part of the job queue. Failures are swallowed: an
+// unreachable API or a docker hiccup must never cost the dispatcher its job.
+try { mkdirSync(join(homedir(), '.stack'), { recursive: true }); } catch { /* exists */ }
+try { await sweepPreviews(); } catch { /* next tick retries */ }
+
 if (!job) process.exit(0);
 
-const log = (msg) => logStderr(`dispatch ${new Date().toISOString()} · ${msg}`);
 const report = (status, detail) =>
   api('PATCH', `/api/autopilot/jobs/${job.id}`, detail === undefined ? { status } : { status, detail })
     .catch((e) => log(`[report] job #${job.id} status=${status} — PATCH failed (${e.message})`));
