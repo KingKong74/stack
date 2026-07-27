@@ -315,6 +315,14 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS access_pin_hash TEXT;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_tokens    BIGINT  NOT NULL DEFAULT 1500000;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_time      TEXT    NOT NULL DEFAULT '23:05';
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_max_items INTEGER NOT NULL DEFAULT 3;
+-- The plan sweep (#255). The board's ✧ To planning agent already hands a PICKED
+-- list to a plan session; this is the standing half of the same idea — "the
+-- system must plan the implementation of all roadmap items", without anyone
+-- having to press anything. While on, GET /next lazily enqueues a plan job for
+-- an automode project that still has eligible unplanned must/should work. It
+-- sits behind the SAME gates as the nightly (the arm switch and the project's
+-- automode), so disarming stops it like everything else.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_plan_sweep BOOLEAN NOT NULL DEFAULT true;
 -- How long a parked roadmap item may sit before it reads as STALE (#247). The
 -- Roadmap tab's Parked view counts days since the park and flags anything past
 -- this threshold; purely a surfacing rule, nothing is auto-changed.
@@ -494,6 +502,12 @@ CREATE TABLE IF NOT EXISTS autopilot_jobs (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS autopilot_jobs_nightly_idx
   ON autopilot_jobs (project_id, night_date) WHERE kind = 'nightly';
+-- #255 — the plan sweep enqueues at most ONE open plan job per project. The
+-- index is what makes the lazy enqueue idempotent under a dispatcher that polls
+-- every minute: a second insert while one is still open simply conflicts.
+CREATE UNIQUE INDEX IF NOT EXISTS autopilot_jobs_plan_idx
+  ON autopilot_jobs (project_id)
+  WHERE kind = 'plan' AND status IN ('queued', 'claimed', 'running');
 CREATE INDEX IF NOT EXISTS autopilot_jobs_status_idx ON autopilot_jobs (status, created_at);
 -- #142 — a limit-paused session becomes a durable `resume` job instead of a
 -- detached sleep on the host: not_before is the earliest hand-out time (the

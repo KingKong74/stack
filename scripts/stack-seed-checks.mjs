@@ -54,6 +54,11 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Overview — resume-card flag', url: u('/api/overview'), auth: true, json_path: 'keepResumeCard' },
     { name: 'Overview — contribution graph', url: u('/api/overview'), auth: true, json_path: 'graph.0.date' },
     { name: 'Control — autopilot config', url: u('/api/control'), auth: true, json_path: 'autopilot.maxItems' },
+    // #255 — the plan sweep's two halves of the contract: the switch the Now
+    // room writes, and the coverage the Plan room reads. Asserting the PATH
+    // exists (not a value) is the point — the numbers change every night.
+    { name: 'Settings — plan sweep switch', url: u('/api/settings'), auth: true, json_path: 'autopilotPlanSweep' },
+    { name: 'Control — plan coverage', url: u('/api/control'), auth: true, json_path: 'projects.0.planCoverage.unplanned' },
     { name: 'Control — per-project rows', url: u('/api/control'), auth: true, json_path: 'projects' },
     { name: 'Control — model catalogue', url: u('/api/control'), auth: true, json_path: 'models' },
     { name: 'Search — grouped counts', url: u('/api/search?q=roadmap'), auth: true, json_path: 'counts.total' },

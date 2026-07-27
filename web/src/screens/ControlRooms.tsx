@@ -1127,6 +1127,32 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
                   : `✧ Plan the ${unplannedIds.length} unplanned item${unplannedIds.length === 1 ? '' : 's'}`}
               </button>
               {planNote && <span className="note">{planNote}</span>}
+              {/* #255 — the standing sweep's coverage, so the button above reads
+                  as the manual override it now is rather than the only way work
+                  ever gets designed. Says plainly when the sweep is off. */}
+              {(() => {
+                const cov = data.projects.find((p) => p.slug === pickSlug)?.planCoverage;
+                if (!cov) return null;
+                if (cov.queued > 0) {
+                  return <span className="note">✧ a plan session is queued — it will design what is still unplanned</span>;
+                }
+                if (!data.autopilot.planSweep) {
+                  return (
+                    <span className="note">
+                      the plan sweep is off — {cov.unplanned === 0
+                        ? 'nothing is waiting on a design'
+                        : `${cov.unplanned} open item${cov.unplanned === 1 ? '' : 's'} would stay unplanned until you press this`}
+                    </span>
+                  );
+                }
+                return (
+                  <span className="note">
+                    {cov.unplanned === 0
+                      ? 'the plan sweep has nothing left to design here'
+                      : `the plan sweep will pick up ${cov.unplanned} unplanned item${cov.unplanned === 1 ? '' : 's'} on its own`}
+                  </span>
+                );
+              })()}
             </div>
           )}
           {held.length > 0 && (

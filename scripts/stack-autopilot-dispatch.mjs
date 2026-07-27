@@ -128,7 +128,11 @@ const report = (status, detail) =>
     .catch((e) => log(`[report] job #${job.id} status=${status} — PATCH failed (${e.message})`));
 
 const repo = join(root, job.slug);
-log(`job #${job.id}: ${job.kind} run on ${job.slug}${job.itemId ? ` (item #${job.itemId})` : ''}`);
+// #255 — name the SESSION kind too: 'plan' and 'nightly' are different jobs
+// that both run the runner, and a log that only says the job kind cannot tell
+// a plan sweep from a build night.
+const kindLabel = job.sessionKind && job.sessionKind !== 'build' ? `${job.kind}/${job.sessionKind}` : job.kind;
+log(`job #${job.id}: ${kindLabel} run on ${job.slug}${job.itemId ? ` (item #${job.itemId})` : ''}`);
 if (!existsSync(join(repo, '.git'))) {
   log(`no repo at ${repo} — job failed.`);
   await report('failed', `no repo at ${repo}`);
@@ -289,8 +293,12 @@ if (job.area) args.push('--area', String(job.area));
 // while the arm switch / automode are off. The nightly keeps both gates, and
 // so does a limit-resume that fired on its own clock (#142 — notBefore still
 // set); a resume whose hold a human cleared (▶ Resume now) is a manual press.
+// #255 — a plan-sweep job is the SERVER's decision, not a human's, so it keeps
+// both gates exactly like the nightly. --force would let a sweep run against a
+// disarmed switch, which is precisely what the switch is for.
 const autoResume = job.kind === 'resume' && job.notBefore;
-if (job.kind !== 'nightly' && !autoResume) args.push('--force');
+const serverEnqueued = job.kind === 'nightly' || job.kind === 'plan';
+if (!serverEnqueued && !autoResume) args.push('--force');
 
 // Run the autopilot inside a named tmux session (#171) so the web terminal can
 // attach for live monitoring while the run is active. The session name is passed
@@ -377,6 +385,6 @@ if (!usedTmux) {
   ok = run.status === 0;
 }
 
-const failDetail = `[run/job #${job.id}] runner failed (${job.kind} on ${job.slug}${job.itemId ? ` item #${job.itemId}` : ''})`;
-await report(ok ? 'done' : 'failed', ok ? '' : failDetail);
+const failDetail = `[run/job #${job.id}] runner failed (${kindLabel} on ${job.slug}${job.itemId ? ` item #${job.itemId}` : ''})`;
+await report(ok ? 'done' : 'failed', ok ? (job.kind === 'plan' ? 'plan sweep complete' : '') : failDetail);
 log(`job #${job.id}: ${ok ? 'done' : `failed — ${failDetail}`}.`);

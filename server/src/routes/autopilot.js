@@ -324,6 +324,11 @@ autopilotGlobal.post('/resume', async (req, res) => {
   if (!project) return res.status(404).json({ error: 'No such project.' });
   const minutes = Math.min(24 * 60, Math.max(1, Math.round(Number(b.minutes)) || 240));
   const itemId = Number.isFinite(Number(b.itemId)) && b.itemId !== '' && b.itemId != null ? Number(b.itemId) : null;
+  // #255 — a resume must come back as the SAME kind of session. A plan sweep
+  // that hits the usage limit and resumes as a build night would start writing
+  // code nobody asked it to write, so the runner passes its kind along and the
+  // job carries it; the dispatcher re-derives --plan-only from session_kind.
+  const kind = cleanKind(b.kind);
   const openResume = await q(
     `SELECT id FROM autopilot_jobs
       WHERE project_id = $1 AND kind = 'resume' AND status IN ('queued','paused')
@@ -333,13 +338,13 @@ autopilotGlobal.post('/resume', async (req, res) => {
     id = openResume.rows[0].id;
     await q(
       `UPDATE autopilot_jobs SET not_before = now() + ($1 || ' minutes')::interval,
-              status = 'queued', claimed_at = NULL, item_id = $2 WHERE id = $3`,
-      [minutes, itemId, id]);
+              status = 'queued', claimed_at = NULL, item_id = $2, session_kind = $4 WHERE id = $3`,
+      [minutes, itemId, id, kind]);
   } else {
     ({ rows: [{ id }] } = await q(
-      `INSERT INTO autopilot_jobs (project_id, kind, item_id, not_before)
-       VALUES ($1, 'resume', $2, now() + ($3 || ' minutes')::interval) RETURNING id`,
-      [project.id, itemId, minutes]));
+      `INSERT INTO autopilot_jobs (project_id, kind, item_id, not_before, session_kind)
+       VALUES ($1, 'resume', $2, now() + ($3 || ' minutes')::interval, $4) RETURNING id`,
+      [project.id, itemId, minutes, kind]));
   }
   const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [id]);
   res.status(openResume.rows.length ? 200 : 201).json(jobShape(full.rows[0]));
@@ -397,6 +402,42 @@ autopilotGlobal.get('/next', async (req, res) => {
         SELECT id, 'nightly', $1::date FROM projects WHERE automode AND deleted_at IS NULL
         ON CONFLICT (project_id, night_date) WHERE kind = 'nightly' DO NOTHING`,
       [localDate]);
+  }
+
+  // The plan sweep (#255). The board's ✧ To planning agent is the pressed
+  // version of this; the sweep is the standing one — "the system must plan the
+  // implementation of all roadmap items" without anyone asking.
+  //
+  // It stands up ONE plan job per project that still has eligible unplanned
+  // must/should work, and the partial unique index makes that idempotent under
+  // a poll that runs every minute. Deliberately gated on the arm switch and
+  // automode, exactly like the nightly: the sweep spends tokens, so the same
+  // switch that stops the nights stops it too. Its agenda is left empty — the
+  // runner re-derives the eligible list when it actually starts, so a job that
+  // sits in the queue for hours never plans against a stale board.
+  //
+  // "No recent 'planned' run" keeps a project that was just swept from being
+  // swept again while the human has not yet looked at the designs.
+  if (settings.autopilot_enabled && settings.autopilot_plan_sweep) {
+    await q(
+      `INSERT INTO autopilot_jobs (project_id, kind, session_kind)
+         SELECT p.id, 'plan', 'plan'
+           FROM projects p
+          WHERE p.automode AND p.deleted_at IS NULL
+            AND EXISTS (
+              SELECT 1 FROM roadmap_items r
+               WHERE r.project_id = p.id
+                 AND NOT r.done
+                 AND NOT COALESCE(r.skipped, false)
+                 AND COALESCE(r.claimed_by, '') = ''
+                 AND r.bucket IN ('must', 'should')
+                 AND jsonb_array_length(COALESCE(r.plan, '[]'::jsonb)) = 0)
+            AND NOT EXISTS (
+              SELECT 1 FROM autopilot_runs ar
+               WHERE ar.project_id = p.id
+                 AND ar.outcome = 'planned'
+                 AND ar.finished_at > now() - interval '20 hours')
+       ON CONFLICT DO NOTHING`);
   }
 
   // Due calendar rows (the arm switch pauses the whole calendar; Run-now stays

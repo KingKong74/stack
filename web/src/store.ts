@@ -282,6 +282,8 @@ export interface ControlProject {
   absorbedBranches?: number;
   branchesWhen?: string;
   reviewCount: number;
+  // #255 — open must/should with no design, and plan jobs already standing by.
+  planCoverage?: { unplanned: number; queued: number };
   bugs: { serious: number; open: number };
   // #206 — audit pass rate from the checks' stored results; null/absent = never run.
   audit?: { run: number; passing: number } | null;
@@ -571,6 +573,7 @@ export interface ControlData {
   };
   autopilot: {
     enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number;
+    planSweep: boolean;     // #255 — auto-plan unplanned must/should work
     executorModel: string;  // '' = the claude CLI's default model (#153)
     advisorModel: string;   // '' = no advisor subagent
   };
@@ -606,6 +609,9 @@ export async function getControl(): Promise<ControlData> {
       tokens: d.autopilot?.tokens ?? 1_500_000,
       time: d.autopilot?.time ?? '23:05',
       maxItems: d.autopilot?.maxItems ?? 3,
+      // An older server that does not send it reads as ON, matching the
+      // server-side default — the switch then simply has nothing to gate.
+      planSweep: d.autopilot?.planSweep ?? true,
       executorModel: d.autopilot?.executorModel ?? '',
       advisorModel: d.autopilot?.advisorModel ?? '',
     },

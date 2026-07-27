@@ -190,8 +190,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             switch). Polls GET /api/autopilot/next with the HOST's local clock (the server
             can't reach the host — same dial-out pattern as the terminal daemon); the server
             lazily enqueues due work — the armed nightly at Settings' autopilotTime per
-            automode project, due Mission Control calendar rows, manual ▶ Run now presses —
-            and hands out at most ONE job at a time. The dispatcher runs it (repo resolved as
+            automode project, the **plan sweep** (#255 — a `plan` job for any automode project
+            with eligible unplanned must/should work, so nothing reaches a build night without
+            a design; kept to one open job per project by a partial unique index, and skipped
+            for 20h after a `planned` run so a swept board isn't swept again before anyone has
+            read the designs), due Mission Control calendar rows, manual ▶ Run now presses —
+            and hands out at most ONE job at a time. Nightly AND plan jobs are the SERVER's
+            decision, so both keep the arm-switch + automode gates (no `--force`); only human
+            presses bypass them. The dispatcher runs it (repo resolved as
             $STACK_AUTOPILOT_ROOT/<slug>, default $HOME) and PATCHes the outcome back.
             Manual/scheduled jobs run with --force (explicit human config beats the arm
             switch + automode); nightly keeps both gates. `revert` jobs (#128 — the Reviews
@@ -971,6 +977,14 @@ Single row, client camelCase. Meanings under the no-API model:
   "autopilotMinutes": 120,    // wall-clock cap per unattended session (clamped 15–360)
   "autopilotTokens": 1500000, // token budget per run; 0 = UNLIMITED (positive values floored at 100k)
   "autopilotTime": "23:05",   // nightly start, HOST-local HH:MM (the dispatcher supplies its clock)
+  "autopilotPlanSweep": true, // #255 — the STANDING plan sweep. While on, GET /next lazily
+                              // enqueues a `plan` job for any automode project that still has
+                              // eligible unplanned must/should work (open, unparked, unclaimed,
+                              // empty plan) and hasn't been swept in 20h. The board's ✧ To
+                              // planning agent is the pressed version of the same idea; this is
+                              // the default one. Gated by the arm switch + automode exactly like
+                              // the nightly, and the partial unique index autopilot_jobs_plan_idx
+                              // keeps one open plan job per project under an every-minute poll
   "autopilotMaxItems": 3,     // most items attempted per night; 0 = UNLIMITED (#260 — the wall
                               // clock and the token budget are then the only governors), positive
                               // values clamped 1–20
@@ -1012,7 +1026,10 @@ the silent metadata backstop so the feed never has gaps.
 - `GET /api/overview` (cross-project command deck — resume, blockers, stale, bugs, activity, totals)
 - `GET /api/control` (Mission Control, `#/control` — per-project automation state in aggregate
   queries: automode, presence, open branch claims, review counts, serious bugs, blockers, tonight's
-  likely autopilot pick per automode project (mirrors the runner's eligibility rules) and the last
+  likely autopilot pick per automode project (mirrors the runner's eligibility rules),
+  `planCoverage` per project (#255 — `unplanned`: open unparked unclaimed must/should with an
+  empty plan, counted by the SAME condition the sweep's enqueue tests, so the number shown and
+  the condition acted on cannot drift; `queued`: plan jobs already standing by) and the last
   `auto/*` push; plus the full autopilot config (arm, cap, tokens, time, maxItems), the schedule
   rows, the recent job queue and cross-project totals. `fleet` carries the worker slots (#268)
   and, per slot, the ROLES (#280): `exec`/`adv` (the app-wide policy), `spend` (banked usage
@@ -1158,6 +1175,10 @@ the silent metadata backstop so the feed never has gaps.
   keeps reading jobs off the control payload) ·
   `GET /next?local=YYYY-MM-DDTHH:MM&dow=N` (the host dispatcher's poll: recovers stale jobs,
   lazily enqueues due nightly/scheduled work, hands out at most one claimed job — serialised) ·
+  `POST /resume` also takes `kind` (#255 — a limit-hit session resumes as the SAME kind of
+  session: a plan sweep that came back as a build night would start writing code nobody asked
+  for, so the runner sends its kind, the job stores it in session_kind and the dispatcher
+  re-derives `--plan-only`) ·
   `PATCH /jobs/:id` (the dispatcher's outcome report: running|done|failed|queued + detail;
   #142 adds the human controls — `{status:'paused'}` hangs a queued/claimed job up (409
   otherwise — a running session has no kill channel), `{status:'queued', notBefore:null}`

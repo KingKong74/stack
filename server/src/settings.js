@@ -88,6 +88,7 @@ const DEFAULTS = {
   autopilot_tokens: 1_500_000, // per-run token budget; 0 = unlimited
   autopilot_time: '23:05',     // nightly start, host-local HH:MM
   autopilot_max_items: 3,
+  autopilot_plan_sweep: true,  // #255 — stand up a plan job for unplanned work
   stale_item_days: 21,         // a parked item reads as stale past this many days (#247)
   autopilot_executor_model: '',            // '' = the claude CLI's own default model
   autopilot_advisor_model: 'claude-opus-5', // the default advisor ('' = no advisor subagent)
@@ -122,6 +123,9 @@ export async function readSettings(client) {
     autopilot_tokens: Number.isFinite(Number(r.autopilot_tokens)) ? Number(r.autopilot_tokens) : 1_500_000,
     autopilot_time: cleanAutopilotTime(r.autopilot_time),
     autopilot_max_items: Number.isFinite(r.autopilot_max_items) ? r.autopilot_max_items : 3,
+    // #255 — default ON: a column added by the migration is true, and a row that
+    // predates it reads as true too, so the sweep is the standing behaviour.
+    autopilot_plan_sweep: r.autopilot_plan_sweep == null ? true : Boolean(r.autopilot_plan_sweep),
     stale_item_days: Number.isFinite(r.stale_item_days) ? r.stale_item_days : 21,
     autopilot_executor_model: cleanModelAlias(r.autopilot_executor_model),
     autopilot_advisor_model: cleanModelAlias(r.autopilot_advisor_model),
@@ -148,6 +152,7 @@ export function settingsShape(s) {
     autopilotTokens: s.autopilot_tokens,     // 0 = unlimited
     autopilotTime: s.autopilot_time,         // host-local HH:MM
     autopilotMaxItems: s.autopilot_max_items,
+    autopilotPlanSweep: s.autopilot_plan_sweep, // #255 — auto-plan unplanned must/should work
     staleItemDays: s.stale_item_days,        // parked-item stale threshold, days (#247)
     autopilotExecutorModel: s.autopilot_executor_model, // '' = CLI default (#153)
     autopilotAdvisorModel: s.autopilot_advisor_model,   // '' = no advisor

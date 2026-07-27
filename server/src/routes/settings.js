@@ -67,6 +67,13 @@ settings.patch('/', async (req, res) => {
     fields.push(`autopilot_max_items = $${i++}`);
     values.push(!Number.isFinite(n) || n < 0 ? 3 : (n === 0 ? 0 : Math.min(20, Math.max(1, n))));
   }
+  if ('autopilotPlanSweep' in body) {
+    // #255 — the standing plan sweep. A plain switch: it only decides whether
+    // GET /next may stand a plan job up, and the arm switch + automode still
+    // gate the run itself, so switching it off can never strand work.
+    fields.push(`autopilot_plan_sweep = $${i++}`);
+    values.push(Boolean(body.autopilotPlanSweep));
+  }
   if ('staleItemDays' in body) {
     // The parked-item stale threshold (#247) — days. Clamped to a sane window:
     // a day at the tightest, a year at the loosest.

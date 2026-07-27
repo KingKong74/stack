@@ -320,6 +320,7 @@ export interface Settings {
   autopilotTokens: number;    // token budget per run; 0 = unlimited
   autopilotTime: string;      // nightly start, host-local HH:MM
   autopilotMaxItems: number;  // most items attempted per night
+  autopilotPlanSweep: boolean; // #255 — stand up a plan session for unplanned must/should work
   staleItemDays: number;      // a parked roadmap item reads as stale past this many days (#247)
   autopilotExecutorModel: string; // model alias sessions run as; '' = CLI default (#153)
   autopilotAdvisorModel: string;  // stronger model exposed as the advisor subagent; '' = off

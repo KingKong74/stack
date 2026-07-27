@@ -238,15 +238,22 @@ function minutesUntilReset(text) {
 // old in-memory sleep step back in, so a flaky API still gets its resume.
 async function scheduleResume(minutes) {
   try {
-    const job = await api('POST', '/api/autopilot/resume',
-      ITEM_ID != null ? { slug: SLUG, minutes, itemId: ITEM_ID } : { slug: SLUG, minutes });
+    // #255 — the resume must come back as the SAME kind of session. A plan
+    // session that resumed as a build night would start writing code nobody
+    // asked for, so the kind rides the job and the dispatcher re-derives
+    // --plan-only from it.
+    const job = await api('POST', '/api/autopilot/resume', {
+      slug: SLUG, minutes, kind: KIND,
+      ...(ITEM_ID != null ? { itemId: ITEM_ID } : {}),
+    });
     log(`resume queued as job #${job.id} in ~${Math.round(minutes / 60 * 10) / 10}h — `
       + 'resume it early or hang it up from Mission Control (the arm switch still gates an automatic resume).');
     return;
   } catch (e) {
     log(`resume job not queued (${e.message}) — falling back to a detached sleep.`);
   }
-  const cmd = `sleep ${minutes * 60} && ${process.execPath} ${process.argv[1]} --project ${SLUG} --repo ${REPO}`;
+  const kindFlag = KIND === 'plan' ? ' --plan-only' : (KIND !== 'build' ? ` --kind ${KIND}` : '');
+  const cmd = `sleep ${minutes * 60} && ${process.execPath} ${process.argv[1]} --project ${SLUG} --repo ${REPO}${kindFlag}`;
   spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore' }).unref();
   log(`resume scheduled in ~${Math.round(minutes / 60 * 10) / 10}h (detached; the arm switch still gates it).`);
 }

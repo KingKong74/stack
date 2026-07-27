@@ -28,6 +28,8 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //                   subject?, when? } ],            // branch report (#207)
 //     absorbedBranches, branchesWhen,       // prune count + report freshness
 //     reviewCount,                          // hook items awaiting review
+//     planCoverage: { unplanned, queued },  // (#255) open must/should with no
+//                                           // design, and plan jobs standing by
 //     bugs: { serious, open },
 //     blockers: [ "…" ],
 //     nextPick: { id, bucket, title } | null,  // what the autopilot would pick tonight
@@ -331,7 +333,11 @@ control.get('/', async (_req, res) => {
     // also need must/should for progress + pick, so pull everything that's
     // relevant in one query.
     q(`SELECT project_id, id, bucket, title, done, skipped, claimed_by, source,
-              reviewed_at, position, created_at, area
+              reviewed_at, position, created_at, area,
+              -- #255 — does this item still have no design? The plan sweep's
+              -- coverage line counts these, so it rides the pass that is
+              -- already reading every must/should rather than a new query.
+              (jsonb_array_length(COALESCE(plan, '[]'::jsonb)) = 0) AS unplanned
          FROM roadmap_items WHERE bucket IN ('must','should') OR claimed_by IS NOT NULL`),
     q(`SELECT project_id,
               count(*) FILTER (WHERE severity IN ('critical','high') AND status <> 'fixed')::int AS serious,
@@ -635,6 +641,19 @@ control.get('/', async (_req, res) => {
         .filter((r) => r.claimed_by && !r.done)
         .map((r) => ({ id: String(r.id), title: r.title, branch: r.claimed_by })),
       reviewCount: reviewByP.get(p.id) || 0,
+      // #255 — how much of this board still has no design, and whether a plan
+      // session is already standing by to fix that. `unplanned` counts exactly
+      // what the sweep's enqueue is looking for (open, unparked, unclaimed
+      // must/should with an empty plan), so the number the Plan room shows and
+      // the condition the server acts on can never drift apart.
+      planCoverage: {
+        unplanned: road.filter((r) =>
+          !r.done && !r.skipped && !r.claimed_by && r.unplanned
+          && (r.bucket === 'must' || r.bucket === 'should')).length,
+        queued: jobsR.rows.filter((j) =>
+          j.project_id === p.id && (j.kind === 'plan' || j.session_kind === 'plan')
+          && ['queued', 'claimed', 'running'].includes(j.status)).length,
+      },
       bugs: { serious: bugRow ? bugRow.serious : 0, open: bugRow ? bugRow.open_all : 0 },
       // (#206) Audit pass rate from the checks' stored results; null = no
       // checks have ever run on this project (nothing to rate).
@@ -1037,6 +1056,7 @@ control.get('/', async (_req, res) => {
       tokens: appSettings.autopilot_tokens,     // 0 = unlimited
       time: appSettings.autopilot_time,         // host-local HH:MM
       maxItems: appSettings.autopilot_max_items,
+      planSweep: appSettings.autopilot_plan_sweep, // #255 — the standing plan sweep
       executorModel: appSettings.autopilot_executor_model, // '' = CLI default (#153)
       advisorModel: appSettings.autopilot_advisor_model,   // '' = no advisor
     },

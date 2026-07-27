@@ -145,6 +145,13 @@ Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
 
   Stopping partway is fine — ticked steps tell the next session (or the
   overnight autopilot, which injects the plan into its prompt) where to resume.
+
+  An empty `plan` on an open must/should item is what the **plan sweep** looks
+  for: while it's on, the server stands up an unattended plan session for any
+  automode project with work that has no design yet, so a build night rarely
+  starts from a bare title. A plan session designs and PATCHes steps back — it
+  never builds, never ticks and never touches a plan whose steps you've already
+  started ticking.
 - **An item may come back as a refinement** — if it carries a `refineNote`, it
   was built before and sent back with a delta. `builtNote` says what already
   landed; change ONLY what the refinement asks for, on top of that — don't

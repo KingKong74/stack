@@ -134,6 +134,7 @@ export function ControlPanel() {
   const setAutopilot = async (patch: {
     autopilotEnabled?: boolean; autopilotMinutes?: number;
     autopilotTokens?: number; autopilotTime?: string; autopilotMaxItems?: number;
+    autopilotPlanSweep?: boolean;   // #255 — the standing plan sweep
     autopilotExecutorModel?: string; autopilotAdvisorModel?: string;
   }) => {
     if (!data) return;
@@ -146,6 +147,7 @@ export function ControlPanel() {
         tokens: patch.autopilotTokens ?? prev.tokens,
         time: patch.autopilotTime ?? prev.time,
         maxItems: patch.autopilotMaxItems ?? prev.maxItems,
+        planSweep: patch.autopilotPlanSweep ?? prev.planSweep,
         executorModel: patch.autopilotExecutorModel ?? prev.executorModel,
         advisorModel: patch.autopilotAdvisorModel ?? prev.advisorModel,
       },
@@ -158,6 +160,7 @@ export function ControlPanel() {
           enabled: s.autopilotEnabled, minutes: s.autopilotMinutes,
           tokens: s.autopilotTokens ?? prev.tokens, time: s.autopilotTime ?? prev.time,
           maxItems: s.autopilotMaxItems ?? prev.maxItems,
+          planSweep: s.autopilotPlanSweep ?? prev.planSweep,
           executorModel: s.autopilotExecutorModel ?? prev.executorModel,
           advisorModel: s.autopilotAdvisorModel ?? prev.advisorModel,
         },
@@ -613,6 +616,19 @@ export function ControlPanel() {
                           </button>
                         ))}
                       </span>
+                    </label>
+                    {/* #255 — the standing plan sweep. The board's ✧ To planning
+                        agent is the pressed version of this; here it becomes the
+                        default behaviour, so work never reaches a build night
+                        without a design. Same gates as the nightly. */}
+                    <label className="mc-knob">
+                      <span className="mc-knob-label">Plan sweep</span>
+                      <button type="button" role="switch" aria-checked={data.autopilot.planSweep}
+                        className={`switch ${data.autopilot.planSweep ? 'on' : ''}`}
+                        title={data.autopilot.planSweep
+                          ? 'On — a project with unplanned must/should work gets a plan session queued for it automatically. The arm switch and the project’s automode still gate the run.'
+                          : 'Off — items are only designed when you press ✧ To planning agent or book a plan night.'}
+                        onClick={() => setAutopilot({ autopilotPlanSweep: !data.autopilot.planSweep })} />
                     </label>
                   </div>
                 </div>
