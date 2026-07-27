@@ -150,15 +150,30 @@ const realAccessPinHash = (skipProject) => {
 
 // Best effort, always: a preview you sign into with the token is still a
 // preview, and worth far more than one that failed over its sign-in screen.
-const mirrorAccessPin = (composeProject, id) => {
+//
+// The write is RETRIED rather than done once, because the readiness probe that
+// precedes it only proves NGINX is serving — the API behind it may still be
+// migrating, and the settings row this updates is created by that migration. A
+// single attempt therefore races the server on a cold build and silently
+// updates nothing.
+const mirrorAccessPin = async (composeProject, id) => {
   try {
     const hash = realAccessPinHash(composeProject);
     if (!hash) return;
     const db = dbContainerFor(composeProject);
     if (!db) return;
-    const r = psql(db, `UPDATE settings SET access_pin_hash = $pin$${hash}$pin$ RETURNING 1`);
-    if (ok(r) && (r.stdout || '').trim() === '1') log(`#${id} access PIN mirrored — same PIN as the real stack`);
-    else log(`#${id} could not mirror the access PIN — sign in with the API token`);
+    for (let i = 0; i < 20; i++) {
+      const r = psql(db, `UPDATE settings SET access_pin_hash = $pin$${hash}$pin$ RETURNING 1`);
+      // psql -tAc prints the returned row AND the command tag ("UPDATE 1"), so
+      // the row has to be looked for among the lines rather than compared to
+      // the whole of stdout — which is what made a working copy report itself
+      // as a failure. A false failure in a log is worse than no log at all:
+      // it sends the next reader hunting a bug that is not there.
+      const updated = ok(r) && (r.stdout || '').split('\n').some((l) => l.trim() === '1');
+      if (updated) { log(`#${id} access PIN mirrored — same PIN as the real stack`); return; }
+      await new Promise((res) => setTimeout(res, 3_000));
+    }
+    log(`#${id} could not mirror the access PIN — sign in with the API token`);
   } catch { /* the preview is the point; the PIN is a convenience */ }
 };
 
@@ -267,7 +282,7 @@ async function start(id) {
   // The stack has answered, so the server has migrated and its settings row
   // exists — the PIN can be mirrored onto it now, before the URL is public, so
   // the mirror is signable-in from the first moment it can be opened.
-  mirrorAccessPin(composeProject, id);
+  await mirrorAccessPin(composeProject, id);
 
   // The public URL. cloudflared prints the hostname to stderr on startup; it
   // has to keep running for the tunnel to live, so it is detached and its pid
