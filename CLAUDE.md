@@ -369,8 +369,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   undo. The Plan tab wears the picked project's review count as its badge. **Build** is 12c grounded in Stack's real
   gates: every roadmap item carrying #75 plan steps as a phase card (building / queued /
   awaiting verdict / landed) with step marks, and GATE rows for the two crossings the autopilot
-  never makes alone — the human verdict (→ Reviews) and the merge (→ the merge strip) — plus
-  LAST NIGHTS MOVED THE PLAN from the run ledger. **Roles** is 23b (`screens/ControlRoles.tsx`,
+  never makes alone — the human verdict (→ Review, which switches rooms carrying the change to
+  judge: the room takes an optional `focus` of "slug#id" and opens on that item once its queue
+  lands, falling back to the normal list if it has already been verdicted — since #282 the
+  Roadmap board holds only a pointer back here) and the merge (→ the merge strip) — plus
+  LAST NIGHTS MOVED THE PLAN from the run ledger. The tab's badge is those open gate rows,
+  reported up by the room like Review's count, because the plan steps come from the room's own
+  per-project detail fetches and not the control payload — so the tab is unbadged until the room
+  has loaded once (absent, never a false zero). **Roles** is 23b (`screens/ControlRoles.tsx`,
   #281 — the fleet-wide half of turn 23, where the Now room's lanes are the per-session half):
   which model is doing what, what the advisors are costing, and **where the policy is being
   ignored**. It reads the RUN LEDGER, not the settings — that separation is the whole point,

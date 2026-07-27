@@ -108,6 +108,11 @@ export function ControlPanel() {
   // #282 — how many changes are waiting on a verdict, for the room's badge.
   // The Review room owns the fetch and reports the count back up.
   const [reviewN, setReviewN] = useState(0);
+  // The Build room's open gates, reported up the same way (the room owns the
+  // per-project detail fetches the plan steps come from), plus the change the
+  // room's verdict gate has asked the Review room to open on ("slug#id").
+  const [buildN, setBuildN] = useState(0);
+  const [reviewFocus, setReviewFocus] = useState('');
   const [cfgOpen, setCfgOpen] = useState(false);
   const [projFilter, setProjFilter] = useState<'all' | 'auto' | 'live'>('all');
   const [pickSlug, setPickSlug] = useState(''); // the Plan/Build rooms' project
@@ -432,7 +437,7 @@ export function ControlPanel() {
                   house, not zero; picking one narrows the badge with the room.
                   #282 — Review badges what is waiting on a verdict, reported up
                   by the room itself (it owns that fetch). */}
-              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['build', 'Build', 0], ['review', 'Review', reviewN], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => a.drift && a.drift !== 'no-runs').length]] as const).map(([key, label, n]) => (
+              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['build', 'Build', buildN], ['review', 'Review', reviewN], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => a.drift && a.drift !== 'no-runs').length]] as const).map(([key, label, n]) => (
                 <button key={key} role="tab" aria-selected={room === key}
                   className={`mc14-tab ${room === key ? 'on' : ''}`} onClick={() => setRoom(key)}>
                   {label}{n > 0 && <span className="n">{n}</span>}
@@ -960,14 +965,16 @@ export function ControlPanel() {
                     onSetModel={(p) => void setAutopilot(p)} />
                 )}
                 {room === 'build' && (
-                  <BuildRoom data={data} pickSlug={pickSlug} onPick={setPickSlug} onGoNow={() => setRoom('now')} />
+                  <BuildRoom data={data} pickSlug={pickSlug} onPick={setPickSlug} onGoNow={() => setRoom('now')}
+                    onCount={setBuildN}
+                    onGoReview={(slug, itemId) => { setReviewFocus(`${slug}#${itemId}`); setRoom('review'); }} />
                 )}
                 {/* #281 — Roles: the fleet-wide half of turn 23. "Edit the
                     policy" lands you on the Now room's model pickers, which
                     are the one place the policy is actually written. */}
                 {/* #282 — Review: the cross-project queue and the night
                     debrief, moved out of the Roadmap tab. */}
-                {room === 'review' && <ReviewRoom onCount={setReviewN} />}
+                {room === 'review' && <ReviewRoom onCount={setReviewN} focus={reviewFocus} />}
                 {room === 'roles' && (
                   <RolesRoom data={data} onReload={load}
                     onConfigure={() => { setRoom('now'); setCfgOpen(true); }} />

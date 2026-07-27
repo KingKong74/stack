@@ -1224,8 +1224,17 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
 // merge (⇥ stays yours). "Last night moved the plan" is the run ledger.
 // ---------------------------------------------------------------------------
 
-export function BuildRoom({ data, pickSlug, onPick, onGoNow }: {
+export function BuildRoom({ data, pickSlug, onPick, onGoNow, onGoReview, onCount }: {
   data: ControlData; pickSlug: string; onPick: (slug: string) => void; onGoNow: () => void;
+  // #282 moved review into its own room, so the verdict gate switches rooms
+  // with the change to judge, rather than deep-linking to a Roadmap board
+  // that now only holds a pointer back here.
+  onGoReview: (slug: string, itemId: number) => void;
+  // What this room is asking of you: the gate rows it renders. Reported up
+  // like the Review room's count, since plan steps live behind this room's
+  // own detail fetches and not the control payload — so the tab is unbadged
+  // until the room has loaded once, which is honest rather than a false zero.
+  onCount?: (n: number) => void;
 }) {
   // (#271) '' = every project. The room reads the same either way — a phase
   // card carries its project's tint, so one board can hold the whole house.
@@ -1279,6 +1288,14 @@ export function BuildRoom({ data, pickSlug, onPick, onGoNow }: {
   const branchFor = (r: HouseItem) =>
     data.projects.find((p) => p.slug === r.slug)?.branches.find((b) => b.itemId === String(r.it.id));
   const loaded = slugs.filter((s) => details.has(s)).length;
+
+  // The badge counts exactly the gate rows below — a change awaiting your
+  // verdict, or a branch waiting on your merge. Both are crossings the
+  // autopilot never makes alone, which is the one thing this room is for.
+  const gates = phases.filter((r) =>
+    phase(r.it) === 'verdict' || (phase(r.it) === 'building' && branchFor(r))).length;
+  useEffect(() => { onCount?.(gates); }, [gates, onCount]);
+
   const title = house
     ? `Every project · implementation plans`
     : `${details.get(pickSlug)?.project.name ?? pickSlug} · implementation plans`;
@@ -1346,7 +1363,7 @@ export function BuildRoom({ data, pickSlug, onPick, onGoNow }: {
                       <div className="gate">
                         <span className="g">GATE</span>
                         <span className="t">Human verdict — the autopilot never ticks its own work. Judge what landed in Reviews.</span>
-                        <button className="act" onClick={() => go.detail(r.slug, 'roadmap', String(it.id))}>→ Reviews</button>
+                        <button className="act" onClick={() => onGoReview(r.slug, it.id)}>→ Review</button>
                       </div>
                     )}
                     {ph === 'building' && br && (
