@@ -533,9 +533,20 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   sockets and scrollback have to survive, the same reason the screen itself never unmounts — and
   `visible` (on screen) is now separate from `focused` (takes keystrokes), because with a grid
   those stopped being the same thing. The floating dock collapses to one pane whatever the count.
+  Each pane carries its own **× close** and, when it has a tmux session, **⏻ end**: closing a claude
+  tab only DETACHES it (the host session keeps running — the point of #171), so the two endings are
+  named separately rather than one × implying the work stopped. ⏻ closes the tab and then kills the
+  tmux session, in that order and as two steps, because the daemon only accepts a kill for a name in
+  its DETACHED list — a name a client still holds never matches, which is what stops one browser
+  killing another's session. Closing a session that is ON SCREEN **lessens the grid** (panes − 1),
+  from the tab or the pane alike: the count would clamp to what is left anyway, but leaving the
+  stored number high means the next session you open silently re-splits the screen.
   **Every terminal wears its own title** — what that session is working on, from the #120 labeller,
   ON the pane rather than only on the tab, because with four terminals up the tab strip is not
-  where you are looking. Names are keyed by the relay's **sid**, which is the only id EVERY session
+  where you are looking. The title is a loose paraphrase of **the last thing the assistant said** —
+  the subject it just wrote about — deliberately NOT a status report: the prompt tells the model to
+  name the topic and not to work out whether the session is running, waiting or idle, since "claude
+  is running a command" is true of every session and therefore says nothing. Names are keyed by the relay's **sid**, which is the only id EVERY session
   has (a shell has no tmux name, which is why shells used to go unnamed); the browser learns it
   from the daemon's frames, since the relay multiplexes by sid and forwards them whole. The tmux
   name stays a second key so a tab that re-attached a detached session inherits the name it wore as

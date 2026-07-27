@@ -101,16 +101,24 @@ terminal.post('/label', async (_req, res) => {
   if (tails.length || orphans.length) {
     const blocks = [
       ...tails.map(({ sid, meta }) =>
-        `Session ${sid} (${meta.cmd} in ${meta.cwd}) — recent output:\n${meta.tail.trim().slice(-1200)}`),
+        `Session ${sid} (${meta.cmd} in ${meta.cwd}) — most recent output, oldest first:\n${meta.tail.trim().slice(-1200)}`),
       ...orphans.map((d) =>
         `Session ${d.name} (claude in ${d.cwd || '~'}, ${d.attached ? 'attached on another device' : 'running detached — no one watching'}) — recent output:\n${d.tail.trim().slice(-1200)}`),
     ].join('\n\n---\n\n');
     try {
       const out = await askGemini(
-        `These are terminal sessions on a solo developer's machine. From each session's recent
-output, write one SHORT label (max 8 words, plain, no punctuation flourishes) saying what the
-session appears to be doing right now — e.g. "editing the deploy config", "claude building the
-roadmap board", "idle shell".
+        `These are terminal sessions on a solo developer's machine. Each block ends with the most
+recent output, so the bottom of a block is the latest thing that happened.
+
+For each session write one SHORT label (max 8 words, plain, no punctuation flourishes) that
+loosely paraphrases THE LAST THING THE ASSISTANT SAID — the subject it just wrote about or just
+finished. This is a title, not a status report: name the topic, not the mechanics. Do not try to
+work out whether it is still running, waiting, or idle, and do not describe the tooling.
+
+Good: "reworking the merge strip", "explaining the tunnel trade-off", "adding preview teardown".
+Bad: "claude is running a command", "session appears idle", "waiting for input".
+
+For a plain shell with no assistant in it, name the subject of the last command instead.
 
 ${blocks}
 

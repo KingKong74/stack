@@ -5,7 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import {
   openTerminal, getTermCmds, setTermCmds, type TermCmd,
   getTermUsagePrefs, setTermUsagePrefs, type TermUsagePrefs,
-  getTermViewPrefs, setTermViewPrefs, type TermViewPrefs, TERM_PANE_CHOICES,
+  getTermViewPrefs, setTermViewPrefs, type TermViewPrefs, TERM_PANE_CHOICES, type TermPaneCount,
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
@@ -334,13 +334,48 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
     window.dispatchEvent(new Event('resize'));
   }, [visible, dock, viewPrefs.panes, viewPrefs.railOpen]);
 
-  const closeSession = (id: number) => {
+  const closeSession = (id: number, opts?: { shrink?: boolean }) => {
     handles.current.delete(id);
     setSessions((s) => {
       const rest = s.filter((x) => x.id !== id);
       if (id === active && rest.length) setActive(rest[rest.length - 1].id);
       return rest;
     });
+    // Closing a pane from the grid LESSENS the grid. The count would clamp to
+    // the sessions that are left anyway, but leaving the stored number high
+    // means the next session you open silently re-splits the screen — so the
+    // close is taken as the intent it looks like.
+    if (opts?.shrink && viewPrefs.panes > 1) saveViewPrefs({ panes: (viewPrefs.panes - 1) as TermPaneCount });
+  };
+
+  // End a session for REAL: close the tab, then kill the tmux session it was
+  // attached to. Two steps because the daemon only accepts a kill for a name
+  // in its DETACHED list — a name a client still holds never matches, which is
+  // what stops one browser killing another's session. So we detach first and
+  // wait for the daemon to advertise it, which it does as soon as the shim
+  // exits rather than on its slow tick.
+  //
+  // Without a tmux session there is nothing to kill: closing the tab already
+  // ends the process, so the close IS the end.
+  const [ending, setEnding] = useState<number | null>(null);
+  const endSession = async (sess: Sess) => {
+    const name = sess.tmux;
+    closeSession(sess.id, { shrink: true });
+    if (!name) return;
+    setEnding(sess.id);
+    try {
+      for (let i = 0; i < 12; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        const list = await getDetachedSessions().catch(() => []);
+        if (list.some((d) => d.name === name)) {
+          await killDetachedSession(name).catch(() => { /* reported by the refresh below */ });
+          break;
+        }
+      }
+    } finally {
+      setEnding(null);
+      void refreshDetached();
+    }
   };
   const setStatus = (id: number, status: Status, note: string) =>
     setSessions((s) => s.map((x) => (x.id === id ? { ...x, status, note } : x)));
@@ -799,7 +834,13 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                         reads as unnamed, never as idle. */}
                     {label && <span className="tab-label">{label}</span>}
                   </button>
-                  <button className="term-tab-x" onClick={() => closeSession(s.id)} aria-label="Close session" title="Close">×</button>
+                  {/* Closing a session that is ON SCREEN lessens the grid,
+                      whichever control you close it from — the tab and the
+                      pane are two handles on the same session, so they should
+                      not leave the screen in different states. */}
+                  <button className="term-tab-x"
+                    onClick={() => closeSession(s.id, { shrink: shownIds.includes(s.id) })}
+                    aria-label="Close session" title="Close">×</button>
                 </span>
               );
             })}
@@ -1043,6 +1084,23 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                       : s.note || s.status)}
                   </span>
                   <span className="where">{s.cmd === 'claude' ? 'claude' : 'shell'} · {s.cwd || '~'}</span>
+                  {/* Two different endings, named as such. Closing a claude
+                      tab DETACHES it — the host session keeps running, which
+                      is the whole point of #171 — so a control called × must
+                      not imply the work stopped. ⏻ is the one that stops it. */}
+                  {s.tmux && (
+                    <button className="pane-btn end" disabled={ending === s.id}
+                      title={`End this session — closes the tab AND kills ${s.tmux} on the host`}
+                      onClick={(e) => { e.stopPropagation(); void endSession(s); }}>
+                      {ending === s.id ? '…' : '⏻'}
+                    </button>
+                  )}
+                  <button className="pane-btn"
+                    title={s.tmux
+                      ? 'Close this pane — the session keeps running on the host, re-attach it any time'
+                      : 'Close this pane — the session ends with it'}
+                    onClick={(e) => { e.stopPropagation(); closeSession(s.id, { shrink: true }); }}
+                    aria-label="Close pane">×</button>
                 </div>
                 <TermSession sess={s} visible={shown} focused={shown && s.id === active}
                   onStatus={(st, note) => setStatus(s.id, st, note)}

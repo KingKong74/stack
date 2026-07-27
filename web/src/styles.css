@@ -2176,6 +2176,14 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 }
 .term-pane.focused .term-pane-title { border-color: var(--accent-tint-border); background: var(--accent-tint); }
 .term-pane.focused .term-pane-title .what { color: var(--accent-deep); }
+/* The pane's own endings. Hidden until you're on the pane, so four titles
+   don't read as a row of buttons. */
+.pane-btn { flex: none; font-size: 12px; line-height: 1; color: var(--fainter); padding: 2px 5px; border-radius: 6px; opacity: 0; }
+.term-pane:hover .pane-btn, .term-pane.focused .pane-btn, .pane-btn:focus-visible { opacity: 1; }
+.pane-btn:hover { color: var(--critical); background: var(--card); }
+.pane-btn.end { font-size: 11px; }
+.pane-btn.end:hover { color: #fff; background: var(--critical); }
+.pane-btn:disabled { opacity: 0.5; }
 .term-pane-title .where {
   font-family: var(--mono); font-size: 10px; color: var(--fainter); flex: none;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%;
