@@ -604,8 +604,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   (now on the future shape): scrub back and the sky shows only the ideas that had arrived by
   that tick, the newest aglow, with an honest arithmetic caption; view-only, snaps to now when
   the population changes; hidden under 4 ideas / 2 days), an All-ideas/Themes toggle, theme chips and
-  **✧ Cluster** (POST `futures/cluster` — Gemini groups the funnel into themes; a tickable
-  preview modal applies via the normal area PATCH, batched in one state write) —
+  **✧ Cluster** (POST `futures/cluster` — Gemini groups the funnel into themes; the preview
+  modal is an EDITABLE DRAFT (#254), not an accept-or-reject list: themes lay out in columns so
+  the funnel reads at a glance, each theme renames in place, a per-idea picker moves ONE idea
+  between themes (which ticks it back on — a move you had to remember to re-tick would be a
+  trap), and **+ new theme** coins one Gemini never proposed. All of it is local state over the
+  draft, so the only write is still the single batched area PATCH on apply, and Cancel really
+  does mean nothing happened) —
   beside the **Polaris rail**: the selected idea (verdict pill, → Roadmap promote, Build on it
   → the studio primed via the one-shot `stack.polaris.thought` handoff PolarisTerm types in,
   ✎ edit, dismiss), the **judge queue** (unsorted ideas one at a time — verdict buttons PATCH
@@ -620,7 +625,13 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   the converged ideas (tombstone-safe delete); "✦ Design in the studio instead" hands the
   set to the Polaris studio via the thought handoff
   input (stashes the thought, opens the studio). The pre-sky list view survives behind a
-  Sky/List seg (promote/dismiss/edit/judge per row, area chips, "first line = idea" composer);
+  Sky/List seg (promote/dismiss/edit/judge per row, area chips, "first line = idea" composer).
+  **The two views share ONE selection** (#259): a list row's title selects it and wears the
+  selection the sky made, and switching views CARRIES that selection rather than merely keeping
+  the id — the list clears an area filter that would hide it and scrolls the row in, the sky
+  opens the selected idea's theme so its star is actually drawn. Landing on a view where the
+  selection is filtered out or folded away preserves it in name and loses it in every sense
+  that matters;
   the old drag-canvas (`FuturesCanvas`) is retired), Tips (`detail/Tips.tsx` — the recipe library from the
   Stack Planning design's Tips tab: kept Claude prompts with the context of WHEN to reach for
   them. The library is **app-wide** (`store.getTips` et al hit the global `/api/tips` — every

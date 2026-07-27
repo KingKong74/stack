@@ -130,6 +130,30 @@ export function Futures({
   const themes = useMemo(() => buildThemes(bySource), [bySource]);
   const selected = selId != null ? bySource.find((f) => f.id === selId) || null : null;
 
+  // #259 — the sky and the list are two views of ONE selection, so switching
+  // between them has to CARRY the selection rather than merely keep the id.
+  // Landing on a view where the selected idea is filtered out, folded away or
+  // below the fold would technically preserve the selection while losing it in
+  // every sense that matters, so each view is made to actually show it.
+  useEffect(() => {
+    if (!selected) return;
+    if (view === 'list') {
+      // The list groups by verdict and filters by area — clear a filter that
+      // would hide the selection, then bring the row into view.
+      if (areaFilter && areaFilter !== (selected.area || '')) setAreaFilter('');
+      const t = setTimeout(() => {
+        document.querySelector(`.future-row[data-hl="${selected.id}"]`)
+          ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }, 60);
+      return () => clearTimeout(t);
+    }
+    // The sky collapses unopened themes into a bubble, so open the selected
+    // idea's own theme — otherwise the star it points at isn't drawn.
+    const theme = selected.area || LOOSE;
+    if (!allIdeas && openTheme !== theme) setOpenTheme(theme);
+    return undefined;
+  }, [view, selected?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   // A search deep-link picks the idea out of the sky: select it and open its theme.
   const hlDone = useRef<string | null>(null);
   useEffect(() => {
@@ -359,6 +383,11 @@ export function Futures({
       } else {
         setClusterSugs(items);
         setClusterPicks(new Set(items.map((s) => s.id)));
+        // #254 — a fresh run starts from Gemini's grouping, not the last
+        // session's hand-edits.
+        setClusterExtraThemes([]);
+        setClusterRename(null);
+        setClusterAdding(false);
       }
     } catch (e) {
       setClusterErr((e as Error)?.message || 'Gemini call failed.');
@@ -373,6 +402,47 @@ export function Futures({
       .map((s) => ({ id: s.id, area: s.area }));
     if (pairs.length) onSetAreas(pairs);
     setClusterSugs(null);
+  };
+
+  // #254 — the suggestion list is EDITABLE before it is applied: rename a
+  // theme, move a single idea between themes, or coin a theme Gemini never
+  // proposed. All of it is local state over the draft — the only write is
+  // still applyCluster's one onSetAreas call, so an edit costs nothing and
+  // Cancel really does mean nothing happened.
+  //
+  // Themes come from the suggestions themselves plus any the human has coined
+  // (kept separately so a brand-new, still-empty theme doesn't vanish from the
+  // list the moment it's created).
+  const [clusterExtraThemes, setClusterExtraThemes] = useState<string[]>([]);
+  const [clusterRename, setClusterRename] = useState<string | null>(null);
+  const [clusterRenameDraft, setClusterRenameDraft] = useState('');
+  const [clusterAdding, setClusterAdding] = useState(false);
+  const [clusterNewDraft, setClusterNewDraft] = useState('');
+  const clusterThemes = [...new Set([
+    ...(clusterSugs ?? []).map((s) => s.area),
+    ...clusterExtraThemes,
+  ])].sort();
+  const normTheme = (v: string) => v.trim().toLowerCase().slice(0, 40);
+
+  const moveClusterItem = (id: number, area: string) => {
+    setClusterSugs((sugs) => sugs && sugs.map((s) => (s.id === id ? { ...s, area } : s)));
+    // Moving an idea is a decision about it, so it ticks itself back on — a
+    // move you then had to remember to re-tick would be a trap.
+    setClusterPicks((p) => new Set(p).add(id));
+  };
+  const commitClusterRename = (from: string) => {
+    const to = normTheme(clusterRenameDraft);
+    setClusterRename(null);
+    setClusterRenameDraft('');
+    if (!to || to === from) return;
+    setClusterSugs((sugs) => sugs && sugs.map((s) => (s.area === from ? { ...s, area: to } : s)));
+    setClusterExtraThemes((t) => [...new Set(t.map((x) => (x === from ? to : x)))]);
+  };
+  const commitClusterNew = () => {
+    const a = normTheme(clusterNewDraft);
+    setClusterAdding(false);
+    setClusterNewDraft('');
+    if (a && !clusterThemes.includes(a)) setClusterExtraThemes((t) => [...t, a]);
   };
 
   // ---- the converge tray: pick ideas across the sky, converge into tickets ----
@@ -599,6 +669,8 @@ export function Futures({
                 <div className="futures-list">
                   {g.items.map((f) => (
                     <IdeaRow key={f.id} future={f} highlighted={highlightId === String(f.id)}
+                      selected={selId === f.id}
+                      onSelect={() => setSelId(selId === f.id ? null : f.id)}
                       onEdit={onEdit} onAlign={onAlign} onDelete={onDelete} onPromote={onPromote}
                       onAskGemini={onAskGemini} />
                   ))}
@@ -889,39 +961,91 @@ export function Futures({
       )}
 
       {/* Gemini's suggested clustering — nothing is written until Apply */}
+      {/* #254 — the suggestions are a DRAFT you edit, not a list you accept or
+          reject wholesale. Rename a theme, move an idea to another theme, coin
+          a theme Gemini never thought of — then apply. Nothing is written until
+          you do, so every edit here is free. */}
       {clusterSugs && (
-        <Modal onClose={() => setClusterSugs(null)} closeOnOverlay={false}>
-          <div className="psky-pop">
+        <Modal onClose={() => setClusterSugs(null)} closeOnOverlay={false} wide>
+          <div className="psky-pop psky-cluster-pop">
             <div className="psky-pop-head">
               <span className="name">✧ Suggested themes</span>
               <button className="psky-pop-close" onClick={() => setClusterSugs(null)} aria-label="Close">×</button>
             </div>
             <div className="psky-cluster-hint">
-              Gemini's grouping of the funnel against the north star. Untick anything that's wrong —
-              nothing is written until you apply.
+              Gemini's grouping of the funnel against the north star — a draft, not a verdict.
+              Untick what's wrong, rename a theme, move an idea with its ▾ picker, or coin a new
+              theme below. Nothing is written until you apply.
             </div>
             <div className="psky-cluster-list">
-              {[...new Set(clusterSugs.map((s) => s.area))].sort().map((a) => (
+              {clusterThemes.map((a) => {
+                const rows = clusterSugs.filter((s) => s.area === a);
+                return (
                 <div className="psky-cluster-group" key={a}>
-                  <div className="theme">{a}</div>
-                  {clusterSugs.filter((s) => s.area === a).map((s) => (
-                    <label className="psky-cluster-row" key={s.id}>
-                      <input type="checkbox" checked={clusterPicks.has(s.id)}
-                        onChange={() => setClusterPicks((p) => {
-                          const n = new Set(p);
-                          if (n.has(s.id)) n.delete(s.id); else n.add(s.id);
-                          return n;
-                        })} />
-                      <span>{s.currentTitle}</span>
-                    </label>
+                  <div className="theme">
+                    {clusterRename === a ? (
+                      <input className="psky-theme-input" autoFocus value={clusterRenameDraft}
+                        maxLength={40} placeholder="theme name…"
+                        onChange={(e) => setClusterRenameDraft(e.target.value)}
+                        onBlur={() => commitClusterRename(a)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitClusterRename(a);
+                          if (e.key === 'Escape') { setClusterRename(null); setClusterRenameDraft(''); }
+                        }} />
+                    ) : (
+                      <button className="psky-theme-name"
+                        onClick={() => { setClusterRename(a); setClusterRenameDraft(a); }}
+                        title="Rename this theme — it's just a draft until you apply">
+                        {a} <span className="n">{rows.length}</span> <span className="pencil">✎</span>
+                      </button>
+                    )}
+                  </div>
+                  {rows.map((s) => (
+                    <div className="psky-cluster-row" key={s.id}>
+                      <label>
+                        <input type="checkbox" checked={clusterPicks.has(s.id)}
+                          onChange={() => setClusterPicks((p) => {
+                            const n = new Set(p);
+                            if (n.has(s.id)) n.delete(s.id); else n.add(s.id);
+                            return n;
+                          })} />
+                        <span>{s.currentTitle}</span>
+                      </label>
+                      {/* Move ONE idea without touching the rest of its theme. */}
+                      <select className="psky-cluster-move" value={s.area}
+                        aria-label={`Theme for ${s.currentTitle}`}
+                        title="Move this idea to another theme"
+                        onChange={(e) => moveClusterItem(s.id, e.target.value)}>
+                        {clusterThemes.map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
                   ))}
+                  {rows.length === 0 && <div className="psky-cluster-empty">empty — move an idea here</div>}
                 </div>
-              ))}
+                );
+              })}
+            </div>
+            <div className="psky-cluster-new">
+              {clusterAdding ? (
+                <input className="psky-theme-input" autoFocus value={clusterNewDraft}
+                  maxLength={40} placeholder="new theme name… (Enter)"
+                  onChange={(e) => setClusterNewDraft(e.target.value)}
+                  onBlur={commitClusterNew}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitClusterNew();
+                    if (e.key === 'Escape') { setClusterAdding(false); setClusterNewDraft(''); }
+                  }} />
+              ) : (
+                <button className="chip-sm add" onClick={() => setClusterAdding(true)}
+                  title="Coin a theme Gemini didn't suggest, then move ideas into it">
+                  + new theme
+                </button>
+              )}
             </div>
             <div className="psky-pop-foot">
               <button className="btn-cancel sm" onClick={() => setClusterSugs(null)}>Cancel</button>
               <button className="btn-submit sm" onClick={applyCluster} disabled={clusterPicks.size === 0}>
-                Apply {clusterPicks.size} theme{clusterPicks.size === 1 ? '' : 's'}
+                Apply {clusterPicks.size} idea{clusterPicks.size === 1 ? '' : 's'}
               </button>
             </div>
           </div>
@@ -1112,10 +1236,15 @@ function SelectedPanel({
 }
 
 function IdeaRow({
-  future: f, highlighted, onEdit, onAlign, onDelete, onPromote, onAskGemini,
+  future: f, highlighted, selected, onSelect, onEdit, onAlign, onDelete, onPromote, onAskGemini,
 }: {
   future: Future;
   highlighted?: boolean;
+  // #259 — the sky and the list are two views of ONE selection. A row wears the
+  // selection the sky made and can make it itself, so switching views never
+  // loses your place.
+  selected?: boolean;
+  onSelect?: () => void;
   onEdit: (id: number, patch: { title: string; note: string; area: string }) => void;
   onAlign: (id: number, alignment: Alignment | '') => void;
   onDelete: (id: number) => void;
@@ -1182,9 +1311,12 @@ function IdeaRow({
   }
 
   return (
-    <div className={`future-row ${highlighted ? 'hl' : ''}`} data-hl={f.id}>
+    <div className={`future-row ${highlighted ? 'hl' : ''} ${selected ? 'sel' : ''}`} data-hl={f.id}>
       <div className="future-body">
-        <div className="future-title">{f.title}</div>
+        <button className="future-title" onClick={onSelect}
+          title="Select this idea — the Polaris rail and the sky follow the same selection">
+          {f.title}
+        </button>
         {f.note && <div className="future-note">{f.note}</div>}
         <div className="future-meta">
           {picking ? (
