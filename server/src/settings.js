@@ -90,6 +90,7 @@ const DEFAULTS = {
   autopilot_max_items: 3,
   autopilot_plan_sweep: true,  // #255 — stand up a plan job for unplanned work
   stale_item_days: 21,         // a parked item reads as stale past this many days (#247)
+  term_idle_hours: 6,          // #287 — terminate a silent terminal session after this long; 0 = never
   autopilot_executor_model: '',            // '' = the claude CLI's own default model
   autopilot_advisor_model: 'claude-opus-5', // the default advisor ('' = no advisor subagent)
   assist_guidance: '',
@@ -127,6 +128,9 @@ export async function readSettings(client) {
     // predates it reads as true too, so the sweep is the standing behaviour.
     autopilot_plan_sweep: r.autopilot_plan_sweep == null ? true : Boolean(r.autopilot_plan_sweep),
     stale_item_days: Number.isFinite(r.stale_item_days) ? r.stale_item_days : 21,
+    // #287 — a row predating the column reads as the default rather than as 0,
+    // since 0 means "never reap" and would silently disable the feature.
+    term_idle_hours: Number.isFinite(r.term_idle_hours) ? r.term_idle_hours : 6,
     autopilot_executor_model: cleanModelAlias(r.autopilot_executor_model),
     autopilot_advisor_model: cleanModelAlias(r.autopilot_advisor_model),
     assist_guidance: String(r.assist_guidance || ''),
@@ -154,6 +158,7 @@ export function settingsShape(s) {
     autopilotMaxItems: s.autopilot_max_items,
     autopilotPlanSweep: s.autopilot_plan_sweep, // #255 — auto-plan unplanned must/should work
     staleItemDays: s.stale_item_days,        // parked-item stale threshold, days (#247)
+    termIdleHours: s.term_idle_hours,        // #287 — reap a silent terminal session after this long; 0 = never
     autopilotExecutorModel: s.autopilot_executor_model, // '' = CLI default (#153)
     autopilotAdvisorModel: s.autopilot_advisor_model,   // '' = no advisor
     assistGuidance: s.assist_guidance,       // standing steer for ✧ Fill from note

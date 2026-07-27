@@ -19,6 +19,7 @@ import {
 } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
+import { wireTermClipboard } from '../lib/termClipboard';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { tierRank, type RoadmapItem } from '../types';
 
@@ -214,6 +215,19 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   }, [visible]);
 
   const [customCmds, setCustomCmds] = useState<TermCmd[]>(() => getTermCmds());
+
+  // The copy receipt. xterm draws to a canvas, so a copy leaves nothing on the
+  // page to look at — without a mark, a working copy and a failed one look
+  // identical, which is how "I can't copy from the terminal" survives a fix.
+  const [copied, setCopied] = useState<{ id: number; label: string } | null>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const noteCopied = (id: number, text: string) => {
+    const lines = text.split('\n').length;
+    setCopied({ id, label: lines > 1 ? `copied ${lines} lines` : `copied ${text.length} chars` });
+    clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(null), 1600);
+  };
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
   // Token usage strip (#111) — fed by every session's usage frames (they all
   // report the same host-wide numbers; latest wins). The daily limit is a
@@ -1076,7 +1090,9 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                     words via the labeller. It sits ON the pane rather than on
                     the tab because with four terminals up, the tab strip is no
                     longer where you are looking. */}
-                <div className="term-pane-title">
+                <div className="term-pane-title"
+                  title={'Copy: drag to select — releasing copies it (⌃⇧C, or ⌃C with a selection).\n'
+                    + 'Paste: ⌃V. Shift-drag selects in the browser instead of tmux.'}>
                   <span className={`dot ${s.status}`} />
                   <span className="what">
                     {labelOf(s) || (s.status === 'live'
@@ -1084,6 +1100,7 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                       : s.note || s.status)}
                   </span>
                   <span className="where">{s.cmd === 'claude' ? 'claude' : 'shell'} · {s.cwd || '~'}</span>
+                  {copied?.id === s.id && <span className="pane-copied">⧉ {copied.label}</span>}
                   {/* Two different endings, named as such. Closing a claude
                       tab DETACHES it — the host session keeps running, which
                       is the whole point of #171 — so a control called × must
@@ -1109,6 +1126,7 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                   onSid={(sid) => setSessions((cur) => cur.map((x) => (x.id === s.id ? { ...x, sid } : x)))}
                   onOutput={(bytes) => noteOutput(s.id, bytes)}
                   onExit={(name) => noteTmuxEnded(s.cwd, name)}
+                  onCopied={(text) => noteCopied(s.id, text)}
                   register={(h) => { if (h) handles.current.set(s.id, h); else handles.current.delete(s.id); }} />
               </div>
               );
@@ -1379,7 +1397,7 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
 
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
-function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid, onOutput, onExit, register }: {
+function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid, onOutput, onExit, onCopied, register }: {
   sess: { id: number; cwd: string; cmd: 'shell' | 'claude'; tmux?: string };
   // Rendered on screen at all (it may be one of several panes)...
   visible: boolean;
@@ -1393,6 +1411,9 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
   onSid: (sid: string) => void;
   onOutput: (bytes: number) => void;
   onExit: (tmuxName: string | null) => void;
+  // Something reached the clipboard. With a canvas and no browser selection to
+  // look at, "did that copy?" is otherwise unanswerable — so the pane says so.
+  onCopied: (text: string) => void;
   register: (h: Handle | null) => void;
 }) {
   const holderRef = useRef<HTMLDivElement>(null);
@@ -1420,6 +1441,11 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
     if (holderRef.current) { term.open(holderRef.current); fit.fit(); }
     termRef.current = term;
     fitRef.current = fit;
+    // Copy/paste (see lib/termClipboard): a released selection copies itself,
+    // ⌃⇧C copies explicitly, ⌃V pastes through the browser's own handler, and
+    // OSC 52 carries a tmux copy-mode selection — the plain mouse drag inside
+    // a claude session — out to the clipboard.
+    const unwireClipboard = wireTermClipboard(term, onCopied);
 
     const connect = () => {
       wsRef.current?.close();
@@ -1557,6 +1583,7 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
       window.removeEventListener('resize', onResize);
       ro.disconnect();
       data.dispose();
+      unwireClipboard();
       wsRef.current?.close();
       term.dispose();
     };

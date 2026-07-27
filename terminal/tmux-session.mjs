@@ -56,9 +56,22 @@ export function sessionExists(name) {
 // outer xterm never accumulates scrollback; with it, wheel-up scrolls tmux's
 // own history in copy-mode. history-limit raises the ceiling for panes
 // created after the first (the global default is only 2000 lines).
+//
+// set-clipboard is the other half of that trade. Mouse mode means a plain drag
+// is TMUX's selection, not xterm's — it lands in a tmux paste buffer the
+// browser cannot see, which is what "I highlighted it and nothing copied"
+// actually was. The default (`external`) only forwards OSC 52 that an
+// application inside tmux emits; `on` makes tmux emit its OWN copies too, so a
+// copy-mode selection reaches the browser, where lib/termClipboard turns the
+// escape into a real clipboard write. The terminal has to advertise the
+// capability for tmux to bother: TERM is xterm-256color (pty-shim), whose
+// terminfo carries Ms, and the terminal-features append covers any host whose
+// terminfo does not.
 export function sessionArgv(name, cwd, shellCmd) {
   return ['tmux', 'new-session', '-A', '-s', name, '-c', cwd, shellCmd,
     ';', 'set-option', '-g', 'mouse', 'on',
+    ';', 'set-option', '-g', 'set-clipboard', 'on',
+    ';', 'set-option', '-as', 'terminal-features', ',*:clipboard',
     ';', 'set-option', '-g', 'history-limit', '20000'];
 }
 
@@ -91,17 +104,26 @@ export function paneTail(name, lines = 30) {
 export function listStackSessions() {
   const r = spawnSync(
     'tmux',
-    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}'],
+    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}\t#{session_activity}'],
     { encoding: 'utf8' },
   );
   if (r.status !== 0) return []; // no server running = no sessions
   const out = [];
   for (const line of r.stdout.split('\n')) {
-    const [name, attached, created, path] = line.split('\t');
+    const [name, attached, created, path, activity] = line.split('\t');
     // One strict pattern (#218: #199) instead of the old two-step
     // validName() + startsWith() pair, whose rules could drift apart.
     if (typeof name !== 'string' || !/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(name)) continue;
-    out.push({ name, attached: attached !== '0', created: (parseInt(created, 10) || 0) * 1000, path: path || '' });
+    out.push({
+      name,
+      attached: attached !== '0',
+      created: (parseInt(created, 10) || 0) * 1000,
+      path: path || '',
+      // #287 — when the session last produced output, epoch ms. tmux bumps
+      // this on real pane activity, so it measures whether WORK is happening
+      // rather than whether a tab happens to be open.
+      activity: (parseInt(activity, 10) || 0) * 1000,
+    });
   }
   return out;
 }
@@ -131,6 +153,40 @@ export function reapDeadSessions() {
     if (attached !== '0' || dead !== '1') continue;
     killSession(name);
     reaped.push(name);
+  }
+  return reaped;
+}
+
+// (#287) Reap sessions that have gone QUIET — no pane activity for `hours`.
+//
+// This is a deliberate narrowing of #188's "a walked-away claude session is
+// sacred". It still is, for hours; it is not forever. What #188 protects is
+// work in progress surviving a closed laptop, and a session that has produced
+// nothing for six hours is not that — it is a shell holding memory and, for
+// claude, a context nobody is coming back to.
+//
+// Idleness is measured by tmux's own session_activity (real output), NOT by
+// whether a client is attached: a browser tab left open overnight is exactly
+// the case this exists for, and treating "attached" as "in use" would exempt
+// it. The browser is told — killing the session ends the shim, which sends the
+// exit frame the UI already handles — so a reaped tab reads as ended rather
+// than silently going dead.
+//
+// Only stack-term-* names are ever considered, so the autopilot's own
+// stack-auto-* sessions are untouched by construction: a build night is
+// legitimately quiet for long stretches while a model thinks.
+//
+// `hours` <= 0 means never. Returns [{ name, idleHours }] for the log.
+export function reapIdleSessions(hours) {
+  if (!(hours > 0)) return [];
+  const cutoff = Date.now() - hours * 3600_000;
+  const reaped = [];
+  for (const s of listStackSessions()) {
+    // activity 0 = tmux told us nothing; refuse to guess rather than kill on a
+    // missing timestamp.
+    if (!s.activity || s.activity > cutoff) continue;
+    killSession(s.name);
+    reaped.push({ name: s.name, idleHours: Math.round((Date.now() - s.activity) / 3600_000 * 10) / 10 });
   }
   return reaped;
 }

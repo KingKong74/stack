@@ -51,7 +51,7 @@ import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, paneTail, reapDeadSessions } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, paneTail, reapDeadSessions, reapIdleSessions } from './tmux-session.mjs';
 import {
   availableProviders, providerEnv, getProvider,
   loadPreferredProvider, savePreferredProvider,
@@ -274,6 +274,54 @@ function gcOrphans() {
 }
 setInterval(gcOrphans, 10 * 60_000);
 gcOrphans(); // and once at startup — reboots are when corpses accumulate
+
+// (#287) Idle reaper — the second half of a ladder the daemon only had the
+// first half of.
+//
+// The per-child idle timer above kills the pty-SHIM after inactivity, which
+// for a tmux session merely detaches the client: the tmux session and the
+// claude inside it keep running, forever, because that is exactly what tmux
+// persistence is for. Which is right at four hours and wrong at four days —
+// the machine ends up holding contexts nobody is coming back to.
+//
+// So: detach frees the socket, and this frees the machine. The threshold is an
+// app setting (Settings → Terminal), read from the API rather than a flag,
+// because it is a policy about the whole system rather than about this host's
+// process.
+//
+// FAIL SAFE. `idleHours` starts null and stays null until a fetch actually
+// succeeds, and null NEVER reaps. An unreachable API therefore means sessions
+// survive — the opposite of the arm-switch convention, and deliberately so:
+// this deletes running work, so the failure mode has to be "do nothing".
+let idleHours = null;
+async function refreshTermSettings() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
+  try {
+    const res = await fetch(`${API}/api/settings`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return;
+    const s = await res.json();
+    if (typeof s.termIdleHours === 'number' && s.termIdleHours >= 0) idleHours = s.termIdleHours;
+  } catch { /* unreachable — keep the last known value, or stay null and reap nothing */ }
+  finally { clearTimeout(timer); }
+}
+
+async function gcIdle() {
+  await refreshTermSettings();
+  if (!tmuxAvailable() || idleHours == null || idleHours <= 0) return;
+  const reaped = reapIdleSessions(idleHours);
+  if (reaped.length) {
+    log(`idle reaper: terminated ${reaped.length} session(s) silent for >${idleHours}h: `
+      + reaped.map((r) => `${r.name} (${r.idleHours}h)`).join(', '));
+    pushDetached(); // the advertised list just changed
+  }
+}
+setInterval(gcIdle, 10 * 60_000);
+// Not at startup: a reboot is when the clock is least trustworthy and the
+// settings fetch has not happened yet. The first pass runs ten minutes in.
 
 // Plan-window push (#220): the account-level Plan usage (#195) rides to the
 // relay even with NO session open, so Mission Control's console can show the

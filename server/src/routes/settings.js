@@ -74,6 +74,14 @@ settings.patch('/', async (req, res) => {
     fields.push(`autopilot_plan_sweep = $${i++}`);
     values.push(Boolean(body.autopilotPlanSweep));
   }
+  if ('termIdleHours' in body) {
+    // #287 — 0 = NEVER, which is the off switch; otherwise 1–72h. The floor is
+    // an hour because anything shorter would reap sessions mid-thought, and
+    // this kills real work rather than merely hiding a row.
+    const h = Math.trunc(Number(body.termIdleHours));
+    fields.push(`term_idle_hours = $${i++}`);
+    values.push(!Number.isFinite(h) || h < 0 ? 6 : (h === 0 ? 0 : Math.min(72, Math.max(1, h))));
+  }
   if ('staleItemDays' in body) {
     // The parked-item stale threshold (#247) — days. Clamped to a sane window:
     // a day at the tightest, a year at the loosest.

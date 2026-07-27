@@ -80,7 +80,12 @@ terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (npm
         name from the ready frame, so Mission Control's session chips can deep-link an attach.
         tmux sessions run with `mouse on` (set server-wide by `sessionArgv`'s command sequence):
         tmux repaints a fixed viewport so the outer xterm never accumulates scrollback — mouse
-        mode makes the wheel scroll tmux's own history instead.
+        mode makes the wheel scroll tmux's own history instead. The same sequence sets
+        `set-clipboard on`, which is the other half of that trade: mouse mode makes a plain drag
+        TMUX's selection rather than xterm's, landing it in a paste buffer the browser can't see
+        (the "I highlighted it and nothing copied" bug). tmux's default `external` only forwards
+        an inner application's OSC 52; `on` makes tmux emit its OWN copies, which the browser turns
+        into a real clipboard write (web/src/lib/termClipboard.ts).
 templates/  stack-agent-context.md — the canonical portable agent manual (single source of truth).
 scripts/    stack-context.mjs — prints that template to stdout, optionally stamped with slug + API.
             stack-tree.mjs — the branch navigator, phase 1 (`stack tree` via the root `stack`
@@ -617,6 +622,16 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   into a shell tab bypasses tmux persistence), and it hosts the **✧ command help**
   (`store.termAssist` → POST /api/terminal/assist): describe a goal, Gemini returns one command
   — ⌨ types it into the active session without Enter, + Save adds it to the runbook's YOURS group.
+- `lib/termClipboard.ts` — copy/paste for both xterms (the Terminal screen and PolarisTerm), because
+  a browser is not a terminal emulator and none of it came for free: a released selection copies
+  itself, ⌃⇧C copies explicitly, ⌃C copies ONLY while a selection exists and clears it (so the next
+  press is still SIGINT), ⌃V/⌃⇧V return false WITHOUT preventDefault so the browser's own paste event
+  reaches xterm's bracketed-paste-aware handler (no clipboard-READ permission, which Firefox never
+  grants), and an OSC 52 handler turns tmux's own copy-mode selection into a clipboard write. A '?'
+  payload — the host READING the clipboard — is never answered. `copyText()` falls back to
+  execCommand when `navigator.clipboard` is absent, which is any insecure origin (Stack over plain
+  http on the LAN). The pane shows a copy receipt: xterm draws to a canvas, so a copy that worked and
+  one that silently failed look identical otherwise.
 - `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router; routes
   are `#/`, `#/settings`, `#/control`, `#/terminal`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit

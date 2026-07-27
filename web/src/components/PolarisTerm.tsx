@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import {
   openTerminal, getTermSessionPrefs, getTermTmuxName, setTermTmuxName, clearTermTmuxName,
 } from '../store';
+import { wireTermClipboard } from '../lib/termClipboard';
 
 // PolarisTerm (#209) — the Polaris tab's claude session. A real terminal over
 // the host daemon (same transport as the Mission Control terminal, no external
@@ -88,6 +89,10 @@ export default function PolarisTerm({ slug }: { slug: string }) {
     if (holderRef.current) { term.open(holderRef.current); fit.fit(); }
     termRef.current = term;
     fitRef.current = fit;
+    // Same copy/paste wiring as the Terminal screen (see lib/termClipboard):
+    // a released selection copies itself, ⌃⇧C copies, ⌃V pastes natively, and
+    // tmux's own copy-mode selection arrives as OSC 52.
+    const unwireClipboard = wireTermClipboard(term);
 
     setStatus('connecting');
     setNote('');
@@ -185,6 +190,7 @@ export default function PolarisTerm({ slug }: { slug: string }) {
       clearTimeout(resizeTimer);
       window.removeEventListener('resize', onResize);
       data.dispose();
+      unwireClipboard();
       wsRef.current?.close();
       term.dispose();
     };

@@ -323,6 +323,13 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_max_items INTEGER NOT NU
 -- sits behind the SAME gates as the nightly (the arm switch and the project's
 -- automode), so disarming stops it like everything else.
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_plan_sweep BOOLEAN NOT NULL DEFAULT true;
+-- (#287) How long a web-terminal session may sit with NO output before the host
+-- daemon terminates it. 0 = never. Idleness is tmux's own session_activity, so
+-- it measures whether work is happening rather than whether a tab is open — a
+-- browser left open overnight is the case this exists for. Only stack-term-*
+-- sessions are eligible, so the autopilot's stack-auto-* nights (legitimately
+-- quiet while a model thinks) are out of scope by construction.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS term_idle_hours INTEGER NOT NULL DEFAULT 6;
 -- How long a parked roadmap item may sit before it reads as STALE (#247). The
 -- Roadmap tab's Parked view counts days since the park and flags anything past
 -- this threshold; purely a surfacing rule, nothing is auto-changed.

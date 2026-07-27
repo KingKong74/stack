@@ -2233,6 +2233,13 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .pane-btn.end { font-size: 11px; }
 .pane-btn.end:hover { color: #fff; background: var(--critical); }
 .pane-btn:disabled { opacity: 0.5; }
+/* The copy receipt. xterm draws to a canvas, so a copy leaves no visible
+   selection behind — without this, a copy that worked and one that silently
+   failed look exactly alike. */
+.pane-copied {
+  flex: none; font-family: var(--mono); font-size: 10px; color: var(--sage);
+  background: var(--card); border-radius: 6px; padding: 2px 6px;
+}
 .term-pane-title .where {
   font-family: var(--mono); font-size: 10px; color: var(--fainter); flex: none;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%;
