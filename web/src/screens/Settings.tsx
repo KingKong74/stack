@@ -160,7 +160,7 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
         </div>
       </div>
 
-      <div className="page detail" style={{ maxWidth: screenTab === 'control' ? 1280 : 760 }}>
+      <div className="page detail">
         <div className="dash-head" style={{ marginBottom: 16 }}>
           <div>
             <div className="dash-title">{screenTab === 'control' ? 'Mission Control' : 'Settings'}</div>
@@ -196,7 +196,7 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
         {screenTab === 'settings' && (loading || !settings ? (
           <div className="empty-state"><div className="big">Loading…</div></div>
         ) : (
-          <>
+          <div className="set-cols">
             {/* ---- Push summaries (the cream signature card) ---- */}
             <section className="set-card signature">
               <div className="set-card-head">
@@ -554,7 +554,7 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
                 Rotating the real token is a server env change (<span className="mono">API_TOKEN</span>), not done here.
               </div>
             </section>
-          </>
+          </div>
         ))}
       </div>
     </div>

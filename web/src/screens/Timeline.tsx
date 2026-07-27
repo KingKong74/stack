@@ -39,7 +39,7 @@ export function Timeline() {
         </div>
       </div>
 
-      <div className="page detail" style={{ maxWidth: 880 }}>
+      <div className="page detail">
         <div className="dash-head" style={{ marginBottom: 24 }}>
           <div>
             <div className="dash-title">Timeline</div>

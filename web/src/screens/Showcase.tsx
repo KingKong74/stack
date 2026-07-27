@@ -43,7 +43,7 @@ export function Showcase({ slug, token }: { slug: string; token: string }) {
         <div className="right"><span className="show-badge">Shared view · read-only</span></div>
       </div>
 
-      <div className="page detail" style={{ maxWidth: 860 }}>
+      <div className="page detail">
         <div className="detail-head">
           <div>
             <div className="titlerow">
