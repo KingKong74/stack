@@ -224,19 +224,33 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             would be. **The trade, plainly: that URL is PUBLIC and unauthenticated while it
             lives** — unguessable and never listed, but not access-controlled, which is why
             expiry is a safety property rather than tidiness and the default life is 2h.
-            **The access PIN is mirrored, and only the PIN.** An empty database has no PIN, so
-            the sign-in the owner actually uses was missing and the mirror could only be opened
-            by pasting a bearer token — and not even the live one, since the deployment's
-            API_TOKEN comes from Dokploy's env while the preview's comes from the copied `.env`.
-            So the worker copies ONE field of the real database across after the stack answers
-            (the server has migrated by then, so the settings row exists): the PIN **hash**,
-            verbatim — the plaintext is never known, logged or written to disk, and reading it
-            live at start is what keeps the two the same when the PIN is changed. The real
-            database is found BY ITS SCHEMA (a read-only SELECT over every `service=db`
-            container, previews excluded) rather than by name, since this host runs Stack under
-            a Dokploy-generated compose project no script should hardcode. Best effort
-            throughout: a preview you sign into with a token is still a preview. Real DATA is
-            never copied — that is the isolation, and it must not ride a public URL.
+            **The mirror is a real one: the data comes across too.** An empty database renders
+            an empty Stack — the branch runs, but with no projects, board or activity on the
+            screens, so the one question a preview exists to answer (does this look right on MY
+            data?) is the one it could not answer. So once the stack answers, the worker pipes
+            production's `pg_dump` into the preview's database and RESTARTS its server, which
+            re-runs the branch's idempotent migrations over real rows — the rehearsal of the
+            merge nobody otherwise gets until it is production. Two tables are deliberately
+            excluded: `auth_tokens` (PIN-issued device sessions must not be duplicated onto
+            another host) and `previews` (a mirror is not the host and nothing polls it, so its
+            own preview list would show LIVE rows pointing at dead tunnels — better empty than
+            wrong). **The trade:** a second copy of real data lives behind a random public
+            hostname until the preview expires. It is behind the same token gate and the same
+            PIN as production — which is itself public at projects.bkos.dev — so the exposure is
+            the same CLASS, but it is another copy, and expiry is what bounds it.
+            `STACK_PREVIEW_DATA=0` in `~/.stack/env` turns the copy off and returns to an empty
+            mirror. The **access PIN is mirrored separately** (and redundantly once the copy
+            lands, since the settings row carries it): the PIN **hash** verbatim, read live at
+            start so the two stay the same when the PIN is changed — the plaintext is never
+            known, logged or written to disk. It is what gets you in when the data copy is off
+            or fails, and it matters because not even the API token would do: the deployment's
+            comes from Dokploy's env while the preview's comes from the copied `.env`, and they
+            differ. The real database is found BY ITS SCHEMA (a read-only SELECT over every
+            `service=db` container, previews excluded) rather than by name, since this host runs
+            Stack under a Dokploy-generated compose project no script should hardcode. Best
+            effort throughout: an empty mirror is still a mirror, and worth more than a failed
+            one. The preview NEVER writes to the real database — its own is a copy, and that
+            direction of isolation is absolute.
             Teardown (`--stop`) is all best-effort and independent, so a half-gone preview still
             gets the rest of itself cleaned up: kill the tunnel, `compose down -v` (its OWN
             namespaced volumes, never the real stack's), remove the worktree, prune. Never run

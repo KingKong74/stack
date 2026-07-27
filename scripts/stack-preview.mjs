@@ -124,11 +124,12 @@ const psql = (container, sql) => {
     '-v', 'ON_ERROR_STOP=1', '-tAc', sql], { timeout: 30_000 });
 };
 
-const dbContainerFor = (composeProject) => {
+const containerFor = (composeProject, service) => {
   const r = sh('docker', ['ps', '--filter', `label=com.docker.compose.project=${composeProject}`,
-    '--filter', 'label=com.docker.compose.service=db', '--format', '{{.Names}}'], { timeout: 20_000 });
+    '--filter', `label=com.docker.compose.service=${service}`, '--format', '{{.Names}}'], { timeout: 20_000 });
   return ok(r) ? (r.stdout || '').split('\n')[0].trim() : '';
 };
+const dbContainerFor = (composeProject) => containerFor(composeProject, 'db');
 
 // The real stack's database container, identified by its SCHEMA rather than by
 // name. Returns '' when no Stack database is running here.
@@ -243,8 +244,12 @@ const seedFromReal = async (composeProject, id, say) => {
   // wholesale by production's, which may predate this branch's schema changes.
   // Restarting re-runs the idempotent migrate over the real rows — which is
   // exactly the rehearsal this is worth having.
+  // `docker compose restart` would need the compose file this function has no
+  // business knowing about, so the container is restarted directly — same
+  // effect, one less thing to be wrong about.
   await say('re-running the branch migrations over the real data');
-  sh('docker', ['compose', '-p', composeProject, 'restart', 'server'], { timeout: 180_000 });
+  const server = containerFor(composeProject, 'server');
+  if (server) sh('docker', ['restart', server], { timeout: 180_000 });
   log(`#${id} real data copied in — migrations re-run over it`);
   return true;
 };
@@ -338,22 +343,32 @@ async function start(id) {
   // still-booting stack shows the reviewer a connection error and reads as "the
   // branch is broken" when it is merely slow.
   await say('waiting for the stack to answer');
-  let answered = false;
-  for (let i = 0; i < 60; i++) {
-    const probe = sh('curl', ['-s', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '4',
-      `http://127.0.0.1:${port}/`], { timeout: 10_000 });
-    const code = parseInt((probe.stdout || '').trim(), 10);
-    if (Number.isFinite(code) && code > 0 && code < 500) { answered = true; break; }
-    await new Promise((r) => setTimeout(r, 3_000));
-  }
-  if (!answered) {
+  const answers = async (path, tries) => {
+    for (let i = 0; i < tries; i++) {
+      const probe = sh('curl', ['-s', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '4',
+        `http://127.0.0.1:${port}${path}`], { timeout: 10_000 });
+      const code = parseInt((probe.stdout || '').trim(), 10);
+      if (Number.isFinite(code) && code > 0 && code < 500) return true;
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+    return false;
+  };
+  if (!await answers('/', 60)) {
     await teardown({ composeProject, worktree, tunnelPid: null }, { quiet: true });
     return fail(`the stack came up but nothing answered on :${port} within 3 minutes`);
   }
 
-  // The stack has answered, so the server has migrated and its settings row
-  // exists — the PIN can be mirrored onto it now, before the URL is public, so
-  // the mirror is signable-in from the first moment it can be opened.
+  // '/' is nginx, which serves the SPA long before the API behind it is ready.
+  // The data copy and the PIN both want the SERVER, so ask the one route that
+  // needs no auth. Not fatal if it never answers: the restore replaces the
+  // schema wholesale anyway, and the restart after it is what settles things.
+  await answers('/api/health', 40);
+
+  // What makes it a mirror rather than a blank instance. When this succeeds the
+  // PIN arrives with the data; the call below is then a no-op that costs one
+  // UPDATE, and the one thing that gets you in when it does not.
+  await seedFromReal(composeProject, id, say);
+  await answers('/api/health', 40);
   await mirrorAccessPin(composeProject, id);
 
   // The public URL. cloudflared prints the hostname to stderr on startup; it
