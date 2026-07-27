@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Roadmap as RoadmapData, RoadmapItem, Priority, Tier } from '../types';
 import { TIERS, tierRank } from '../types';
 import { PRIORITY_META } from '../lib/ui';
+import { getBoardLayout, setBoardLayout } from '../store';
 import { go } from '../lib/route';
 import { Modal } from '../components/Modal';
 import { renderMarkdownLite } from '../lib/markdownLite';
@@ -64,6 +65,24 @@ export function Roadmap({
   // (an item id = drop before it; `col-<bucket>` = drop at the bucket's end).
   const [dragId, setDragId] = useState<number | null>(null);
   const [overKey, setOverKey] = useState<string | null>(null);
+  // #251 — hovering a folded column with a card in hand unfolds it after a short
+  // dwell, so you can drop onto a precise position rather than only at the end.
+  // Which card has its ⇄ move-to-bucket menu open (one at a time).
+  const [moveFor, setMoveFor] = useState<number | null>(null);
+  // Close it on an outside click or esc, like the area popover below.
+  useEffect(() => {
+    if (moveFor == null) return;
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement)?.closest?.('.road-move')) setMoveFor(null);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMoveFor(null); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [moveFor]);
+  const unfoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelUnfold = () => { if (unfoldTimer.current) { clearTimeout(unfoldTimer.current); unfoldTimer.current = null; } };
+  useEffect(() => cancelUnfold, []);
   const allById = new Map(PRIORITY_META.flatMap((c) => roadmap[c.key]).map((i) => [i.id, i]));
   const handleDrop = (toBucket: Priority, beforeId: number | null) => {
     const dragged = dragId != null ? allById.get(dragId) : null;
@@ -74,19 +93,68 @@ export function Roadmap({
   // #251 — section expansion. A bucket column can be FOCUSED (it fills the board
   // width and the other three are hidden, so long titles and notes get room to
   // breathe) or COLLAPSED (header only, items folded away). Focus wins over
-  // collapse: a focused column always shows its items. Session-local, like the
-  // review-row collapse above.
-  const [focusCol, setFocusCol] = useState<Priority | null>(null);
-  const [collapsedCols, setCollapsedCols] = useState<Set<Priority>>(new Set());
+  // collapse: a focused column always shows its items.
+  //
+  // The layout is DEVICE-LOCAL and keyed by slug (it describes how you like to
+  // look at this board, not anything about the work), so it survives a reload
+  // rather than resetting every visit. Absent or corrupt storage falls back to
+  // all-sections-open, which is exactly the pre-#251 board.
+  const layout0 = slug ? getBoardLayout(slug) : null;
+  const [focusCol, setFocusCol] = useState<Priority | null>(layout0?.focus ?? null);
+  const [collapsedCols, setCollapsedCols] = useState<Set<Priority>>(new Set(layout0?.collapsed ?? []));
+  // #251 — the Tiers view gets the same fold: a long S row shouldn't push B and
+  // C off the screen when you're ranking.
+  const [foldedTiers, setFoldedTiers] = useState<Set<Tier>>(new Set(layout0?.foldedTiers ?? []));
+  // One writer for all three, so no toggle can forget to persist.
+  const persistLayout = (next: { focus?: Priority | null; collapsed?: Set<Priority>; folded?: Set<Tier> }) => {
+    if (!slug) return;
+    setBoardLayout(slug, {
+      focus: next.focus !== undefined ? next.focus : focusCol,
+      collapsed: [...(next.collapsed ?? collapsedCols)],
+      foldedTiers: [...(next.folded ?? foldedTiers)],
+    });
+  };
   const toggleColCollapse = (k: Priority) =>
-    setCollapsedCols((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+    setCollapsedCols((s) => {
+      const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k);
+      persistLayout({ collapsed: n });
+      return n;
+    });
   const toggleColFocus = (k: Priority) =>
     setFocusCol((f) => {
       const next = f === k ? null : k;
       // Expanding a folded column unfolds it — the expand gesture means "show me this".
-      if (next) setCollapsedCols((s) => { const n = new Set(s); n.delete(next); return n; });
+      if (next) setCollapsedCols((s) => {
+        const n = new Set(s); n.delete(next);
+        persistLayout({ focus: next, collapsed: n });
+        return n;
+      });
+      else persistLayout({ focus: next });
       return next;
     });
+  const toggleTierFold = (t: Tier) =>
+    setFoldedTiers((s) => {
+      const n = new Set(s); if (n.has(t)) n.delete(t); else n.add(t);
+      persistLayout({ folded: n });
+      return n;
+    });
+  // Esc leaves focus mode — the same key that closes every other overlay here.
+  // Ignored while a field or a modal has focus, so it never steals an edit's esc.
+  useEffect(() => {
+    if (!focusCol) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Esc unwinds one layer at a time: an open ⇄ menu (or a modal/field) owns
+      // it first, and only a bare esc leaves focus mode.
+      if (moveFor != null) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.closest('.modal') || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return;
+      setFocusCol(null);
+      persistLayout({ focus: null });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   // Area filter — the product-area chips over the board (mirrors the Futures funnel).
   // UNCAT (#198) is the Uncategorised tab's sentinel: the leading space can
@@ -427,10 +495,32 @@ export function Roadmap({
         </div>
       )}
 
+      {/* #251 — focus mode hides the other three buckets, which would otherwise
+          take the board's primary interaction (drag an item across buckets) away
+          with them. So the hidden buckets come back as a rail of drop targets,
+          and every card gets a keyboard-reachable move control besides — the
+          crossing must not be drag-only. */}
       {focusCol && (
-        <button className="road-focus-back" onClick={() => setFocusCol(null)}>
-          ← all sections
-        </button>
+        <div className="road-focus-bar">
+          <button className="road-focus-back" onClick={() => { setFocusCol(null); persistLayout({ focus: null }); }}>
+            ← all sections
+          </button>
+          <span className="road-focus-hint">move to</span>
+          {PRIORITY_META.filter((c) => c.key !== focusCol).map((c) => (
+            <button key={c.key}
+              className={`road-bucket-drop ${overKey === `rail-${c.key}` ? 'over' : ''}`}
+              onDragOver={(e) => { if (dragId != null) { e.preventDefault(); setOverKey(`rail-${c.key}`); } }}
+              onDragLeave={() => setOverKey((k) => (k === `rail-${c.key}` ? null : k))}
+              onDrop={(e) => { e.preventDefault(); handleDrop(c.key, null); }}
+              onClick={() => { setFocusCol(c.key); persistLayout({ focus: c.key }); }}
+              title={`Drop an item here to move it to ${c.label} — or click to focus ${c.label} instead`}>
+              <span className="dot" style={{ background: c.color }} />
+              {c.label}
+              <span className="n">{roadmap[c.key].filter((it) => !it.done && inAreaTab(it)).length}</span>
+            </button>
+          ))}
+          <span className="road-focus-esc">esc</span>
+        </div>
       )}
       <div className={`road-grid ${focusCol ? 'focused' : ''}`}>
         {PRIORITY_META.filter((col) => !focusCol || col.key === focusCol).map((col) => {
@@ -444,7 +534,21 @@ export function Roadmap({
           const folded = focusCol !== col.key && collapsedCols.has(col.key);
           return (
             <div className={`road-col ${folded ? 'folded' : ''} ${focusCol === col.key ? 'focus' : ''}`} key={col.key}>
-              <div className="road-col-head">
+              {/* A folded column is still a bucket, so it still takes a drop —
+                  otherwise folding a column quietly removes it as a target and
+                  the board's reorder gesture half-breaks. Dragging over it also
+                  unfolds it, so you can drop precisely once it opens. */}
+              <div className={`road-col-head ${folded && overKey === `fold-${col.key}` ? 'drop-into' : ''}`}
+                onDragOver={folded ? (e) => {
+                  if (dragId == null) return;
+                  e.preventDefault();
+                  setOverKey(`fold-${col.key}`);
+                  if (!unfoldTimer.current) {
+                    unfoldTimer.current = setTimeout(() => { unfoldTimer.current = null; toggleColCollapse(col.key); }, 550);
+                  }
+                } : undefined}
+                onDragLeave={folded ? () => { cancelUnfold(); setOverKey((k) => (k === `fold-${col.key}` ? null : k)); } : undefined}
+                onDrop={folded ? (e) => { e.preventDefault(); cancelUnfold(); handleDrop(col.key, null); } : undefined}>
                 <span className="dot" style={{ background: col.color }} />
                 <button className="name" onClick={() => toggleColFocus(col.key)}
                   title={focusCol === col.key
@@ -549,6 +653,26 @@ export function Roadmap({
                     <div className="road-actions">
                       {!working && (
                         <>
+                          {/* #251 — move to another bucket without dragging. It
+                              matters most in focus mode (the other columns are
+                              hidden) but it's the keyboard path everywhere. */}
+                          {onReorder && (
+                            <span className="road-move">
+                              <button aria-haspopup="true" aria-expanded={moveFor === it.id}
+                                onClick={() => setMoveFor(moveFor === it.id ? null : it.id)}
+                                aria-label={`Move #${it.id} to another section`} title="Move to another section">⇄</button>
+                              {moveFor === it.id && (
+                                <span className="road-move-pop" role="menu">
+                                  {PRIORITY_META.filter((c) => c.key !== it.bucket).map((c) => (
+                                    <button key={c.key} role="menuitem"
+                                      onClick={() => { setMoveFor(null); onReorder(it, c.key, null); }}>
+                                      <span className="dot" style={{ background: c.color }} />{c.label}
+                                    </button>
+                                  ))}
+                                </span>
+                              )}
+                            </span>
+                          )}
                           {onBranch && !it.claimedBy && !it.skipped && (
                             <button onClick={() => onBranch(it)} aria-label="Branch for focused work"
                               title={`Branch for focused work (#205) — claims the item’s branch and opens a terminal session primed to build it on that branch; merge back from Mission Control when it lands`}>⎇</button>
@@ -586,8 +710,12 @@ export function Roadmap({
         <div className="tier-board">
           {tierRows.map((row) => {
             const rowItems = inTier(row.key);
+            // #251 — a folded tier row keeps its header (and stays a drop
+            // target: dropping onto a tier is a whole-row gesture, so folding
+            // costs nothing here), it just hides its cards.
+            const tFolded = foldedTiers.has(row.key);
             return (
-              <div className={`tier-row t${row.key || 'none'} ${tierOver === row.key ? 'over' : ''}`} key={row.key || 'none'}
+              <div className={`tier-row t${row.key || 'none'} ${tFolded ? 'folded' : ''} ${tierOver === row.key ? 'over' : ''}`} key={row.key || 'none'}
                 onDragOver={(e) => { if (tierDrag != null) { e.preventDefault(); setTierOver(row.key); } }}
                 onDragLeave={() => setTierOver((t) => (t === row.key ? null : t))}
                 onDrop={(e) => {
@@ -597,10 +725,20 @@ export function Roadmap({
                   if (it && (it.tier || '') !== row.key) onSetTier(it, row.key);
                 }}>
                 <div className="tier-label">
+                  <button className="tier-fold" aria-expanded={!tFolded}
+                    onClick={() => toggleTierFold(row.key)}
+                    title={tFolded ? `Unfold tier ${row.label}` : `Fold tier ${row.label} away — it still takes drops`}>
+                    {tFolded ? '▸' : '▾'}
+                  </button>
                   <span className="k">{row.label}</span>
                   <span className="n">{rowItems.length}</span>
                   <span className="blurb">{row.blurb}</span>
                 </div>
+                {tFolded ? (
+                  <div className="tier-folded-note">
+                    {rowItems.length === 0 ? 'empty' : `${rowItems.length} item${rowItems.length === 1 ? '' : 's'} folded — drop still lands here`}
+                  </div>
+                ) : (
                 <div className="tier-items">
                   {rowItems.map((it) => (
                     <div className={`tier-card ${tierDrag === it.id ? 'drag' : ''} ${highlightId === String(it.id) ? 'hl' : ''}`}
@@ -630,6 +768,7 @@ export function Roadmap({
                     </div>
                   )}
                 </div>
+                )}
               </div>
             );
           })}

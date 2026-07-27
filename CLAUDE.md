@@ -558,13 +558,24 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   incl. the Lane field and the **Plan** editor (#75 — ordered `{text, done}` steps; the card wears
   a ☰ n/m progress chip and the autopilot works unticked steps top-down); open items show ⚑ claim
   chips; a bucket column **expands to fill the board** (#251 — click its name or ⤢; the others fold
-  away, cards get the full width) or **folds to its header** (▾), both session-local;
+  away, the column takes the viewport's height with its own scroll and a sticky header, and the
+  card's text is capped at a readable measure rather than set as one board-wide line) or **folds
+  to its header** (▾). Both are **device-local per slug** (`store.getBoardLayout/setBoardLayout`,
+  which also holds the Tiers view's folded rows), so a board you have arranged stays arranged
+  across reloads; absent or corrupt storage falls back to all-sections-open, i.e. the pre-#251
+  board. Expansion must not cost the board its primary interaction, so the crossings survive
+  being hidden: a **folded column still takes a drop** (and unfolds after a short dwell so you
+  can place the card precisely), focus mode renders the three hidden buckets as a **rail of drop
+  targets** (click one to focus it instead), esc leaves focus, and every card carries a **⇄ move
+  menu** so moving across buckets is never drag-only;
   the bar's **✧ To planning agent** (#255) picks open items — pre-ticked to everything with no
   plan, bulk ticks for all-workable / only-unplanned / none — and queues a **plan-kind autopilot
   session whose ordered agenda IS the picked list** via `store.startAutopilot(slug, {kind:'plan',
   agenda})`; the old terminal handoff survives as the modal's second destination;
   the **Tiers view** (#227) is the desire ranking over the whole open board — S/A/B/C rows plus
-  Unranked, drag a card between them (or use its S/A/B/C buttons) → `patchRoadmapItem {tier}`.
+  Unranked, drag a card between them (or use its S/A/B/C buttons) → `patchRoadmapItem {tier}`;
+  cards fill their row (#251 dropped the 330px cap that ribboned long titles) and each tier row
+  ▾ folds, staying a drop target while folded since dropping onto a tier is a whole-row gesture.
   Tier is the PRIMARY sort of the run queue (Plan room + the runner both apply it) and unranked
   sorts last, so an unranked board behaves exactly as before; board columns sort tier-first and
   cards wear the tier chip.

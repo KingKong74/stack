@@ -1,7 +1,7 @@
 import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
-  AuthDevice, Tip,
+  AuthDevice, Tip, Tier,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1323,6 +1323,35 @@ export function getPlanLanes(): number {
 }
 export function setPlanLanes(n: number) {
   localStorage.setItem(PLAN_LANES_KEY, JSON.stringify(n));
+}
+
+// #251 — the Roadmap board's layout, per project. Which bucket column is
+// FOCUSED (fills the board, the others fold away), which columns are folded to
+// their header, and which tier rows are folded on the Tiers view. Device-local
+// and keyed by slug, because it describes how you like to look at THIS board,
+// not anything about the work. Absent or corrupt storage falls back to the
+// all-sections-open default, so a wiped browser behaves exactly as before.
+export interface BoardLayout {
+  focus: Priority | null;
+  collapsed: Priority[];
+  foldedTiers: Tier[];
+}
+const BOARD_LAYOUT_KEY = (slug: string) => `stack.boardLayout.${slug}`;
+const BUCKETS: Priority[] = ['must', 'should', 'could', 'wont'];
+const TIER_KEYS: Tier[] = ['S', 'A', 'B', 'C', ''];
+
+export function getBoardLayout(slug: string): BoardLayout {
+  return readStoredJSON(BOARD_LAYOUT_KEY(slug), (p) => {
+    const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
+    const list = <T,>(v: unknown, allowed: readonly T[]): T[] =>
+      Array.isArray(v) ? [...new Set(v.filter((x): x is T => allowed.includes(x as T)))] : [];
+    const focus = BUCKETS.includes(o.focus as Priority) ? o.focus as Priority : null;
+    return { focus, collapsed: list(o.collapsed, BUCKETS), foldedTiers: list(o.foldedTiers, TIER_KEYS) };
+  });
+}
+export function setBoardLayout(slug: string, layout: BoardLayout) {
+  try { localStorage.setItem(BOARD_LAYOUT_KEY(slug), JSON.stringify(layout)); }
+  catch { /* storage full or unavailable — the layout is a nicety, never a blocker */ }
 }
 
 // ---- tips (the app-wide recipe library — the Tips tab) ----
