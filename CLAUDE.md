@@ -205,6 +205,19 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             would be. **The trade, plainly: that URL is PUBLIC and unauthenticated while it
             lives** — unguessable and never listed, but not access-controlled, which is why
             expiry is a safety property rather than tidiness and the default life is 2h.
+            **The access PIN is mirrored, and only the PIN.** An empty database has no PIN, so
+            the sign-in the owner actually uses was missing and the mirror could only be opened
+            by pasting a bearer token — and not even the live one, since the deployment's
+            API_TOKEN comes from Dokploy's env while the preview's comes from the copied `.env`.
+            So the worker copies ONE field of the real database across after the stack answers
+            (the server has migrated by then, so the settings row exists): the PIN **hash**,
+            verbatim — the plaintext is never known, logged or written to disk, and reading it
+            live at start is what keeps the two the same when the PIN is changed. The real
+            database is found BY ITS SCHEMA (a read-only SELECT over every `service=db`
+            container, previews excluded) rather than by name, since this host runs Stack under
+            a Dokploy-generated compose project no script should hardcode. Best effort
+            throughout: a preview you sign into with a token is still a preview. Real DATA is
+            never copied — that is the isolation, and it must not ride a public URL.
             Teardown (`--stop`) is all best-effort and independent, so a half-gone preview still
             gets the rest of itself cleaned up: kill the tunnel, `compose down -v` (its OWN
             namespaced volumes, never the real stack's), remove the worktree, prune. Never run

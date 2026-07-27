@@ -84,6 +84,84 @@ const PORT_HI = 8809;
 // [a-z0-9_-]) and a directory. Keep it recognisable but boring.
 const safeName = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 
+// ---------------------------------------------------------------------------
+// The access PIN
+// ---------------------------------------------------------------------------
+// A preview gets its OWN empty database — that is the isolation working, and it
+// has to stay that way: real data must never ride a public unauthenticated URL.
+// But an empty database has no access PIN, so the sign-in the owner actually
+// uses is missing, and the mirror can only be opened by pasting the API token
+// in by hand. That makes looking at a branch a chore, which is the one thing a
+// preview is supposed not to be.
+//
+// So exactly one field of the real database is copied: the PIN HASH. The same
+// PIN opens the mirror, and it stays the same when the PIN is CHANGED, because
+// this reads the live value at start rather than keeping a second copy in sync.
+// The plaintext PIN is never known here, never logged and never written to
+// disk; the hash is copied verbatim, and it is the same class of secret the
+// copied .env already carries (API_TOKEN), so nothing new is exposed.
+//
+// The real stack's database is found BY ITS SCHEMA, not by name — on this host
+// it runs under a Dokploy-generated compose project
+// (`compose-back-up-neural-hard-drive-4flckt`), which is not a name any script
+// should hardcode and not one that survives a redeploy. Every probe is a
+// read-only SELECT and every failure is ignored, so asking an unrelated
+// postgres costs nothing but the question.
+const pgEnv = (container, key) => {
+  const r = sh('docker', ['inspect', '-f', '{{range .Config.Env}}{{println .}}{{end}}', container],
+    { timeout: 20_000 });
+  if (!ok(r)) return '';
+  const line = (r.stdout || '').split('\n').find((l) => l.startsWith(`${key}=`));
+  return line ? line.slice(key.length + 1).trim() : '';
+};
+
+// psql inside a postgres container. The official image trusts local socket
+// connections, which is also what its own healthcheck relies on.
+const psql = (container, sql) => {
+  const user = pgEnv(container, 'POSTGRES_USER') || 'postgres';
+  const db = pgEnv(container, 'POSTGRES_DB') || user;
+  return sh('docker', ['exec', container, 'psql', '-U', user, '-d', db,
+    '-v', 'ON_ERROR_STOP=1', '-tAc', sql], { timeout: 30_000 });
+};
+
+const dbContainerFor = (composeProject) => {
+  const r = sh('docker', ['ps', '--filter', `label=com.docker.compose.project=${composeProject}`,
+    '--filter', 'label=com.docker.compose.service=db', '--format', '{{.Names}}'], { timeout: 20_000 });
+  return ok(r) ? (r.stdout || '').split('\n')[0].trim() : '';
+};
+
+// The live PIN hash from whichever database on this host is a Stack one, or ''
+// when no PIN is set anywhere (a host that signs in with the token alone).
+const realAccessPinHash = (skipProject) => {
+  const ls = sh('docker', ['ps', '--filter', 'label=com.docker.compose.service=db',
+    '--format', '{{.Names}}'], { timeout: 20_000 });
+  if (!ok(ls)) return '';
+  const candidates = (ls.stdout || '').split('\n').map((s) => s.trim())
+    .filter((n) => n && !n.startsWith('stack-preview-') && !n.startsWith(skipProject));
+  for (const c of candidates) {
+    const r = psql(c, 'SELECT access_pin_hash FROM settings WHERE access_pin_hash IS NOT NULL LIMIT 1');
+    const hash = ok(r) ? (r.stdout || '').trim() : '';
+    // Whitespace or the dollar-quote tag would break the UPDATE below, and
+    // neither belongs in a hash — treat such a value as no value at all.
+    if (hash && !/\s/.test(hash) && !hash.includes('$pin$')) return hash;
+  }
+  return '';
+};
+
+// Best effort, always: a preview you sign into with the token is still a
+// preview, and worth far more than one that failed over its sign-in screen.
+const mirrorAccessPin = (composeProject, id) => {
+  try {
+    const hash = realAccessPinHash(composeProject);
+    if (!hash) return;
+    const db = dbContainerFor(composeProject);
+    if (!db) return;
+    const r = psql(db, `UPDATE settings SET access_pin_hash = $pin$${hash}$pin$ RETURNING 1`);
+    if (ok(r) && (r.stdout || '').trim() === '1') log(`#${id} access PIN mirrored — same PIN as the real stack`);
+    else log(`#${id} could not mirror the access PIN — sign in with the API token`);
+  } catch { /* the preview is the point; the PIN is a convenience */ }
+};
+
 const portFree = (port) => {
   // ss is the cheapest reliable check on this host; if it isn't there, fall
   // back to assuming free and let docker fail loudly rather than silently.
@@ -185,6 +263,11 @@ async function start(id) {
     await teardown({ composeProject, worktree, tunnelPid: null }, { quiet: true });
     return fail(`the stack came up but nothing answered on :${port} within 3 minutes`);
   }
+
+  // The stack has answered, so the server has migrated and its settings row
+  // exists — the PIN can be mirrored onto it now, before the URL is public, so
+  // the mirror is signable-in from the first moment it can be opened.
+  mirrorAccessPin(composeProject, id);
 
   // The public URL. cloudflared prints the hostname to stderr on startup; it
   // has to keep running for the tunnel to live, so it is detached and its pid
