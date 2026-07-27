@@ -69,7 +69,7 @@ export interface RoadmapItem {
   bucket: Priority;
   source: Source;
   reviewed: boolean;
-  claimedBy: string;   // lane owning this item ('' = free)
+  claimedBy: string;   // #277 — the BRANCH owning this item ('' = free)
   area: string;        // product-area tag ('' = untagged) — filters the board
   builtNote: string;   // what actually landed — shown on the Reviews view
   reviewTag: string;   // archive verdict: '' | solid | needs-work | rethink
@@ -258,8 +258,8 @@ export interface OverviewActivity {
   slug: string; name: string; hash: string; branch: string;
   summary: string; tags: string[]; geminiNote: string; when: string;
 }
-// An open roadmap item claimed by a lane, surfaced on the deck.
-export interface ClaimItem { slug: string; name: string; lane: string; title: string; id: string }
+// An open roadmap item claimed by a branch, surfaced on the deck (#277).
+export interface ClaimItem { slug: string; name: string; branch: string; title: string; id: string }
 // One overnight autopilot item attempt — the deck's morning digest.
 export interface OverviewRun {
   slug: string; name: string; itemId: number | null; itemTitle: string; branch: string;

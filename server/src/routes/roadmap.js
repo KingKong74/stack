@@ -208,19 +208,19 @@ roadmap.post('/assist', async (req, res) => {
   }
   const note = String(req.body?.note || '').trim().slice(0, 4000);
   if (!note) return res.status(400).json({ error: 'Write the note first — everything comes from it.' });
-  const [{ rows: areaRows }, { rows: laneRows }] = await Promise.all([
+  const [{ rows: areaRows }, { rows: branchRows }] = await Promise.all([
     q(
       `SELECT DISTINCT area FROM roadmap_items WHERE project_id = $1 AND area IS NOT NULL
        UNION SELECT DISTINCT area FROM futures WHERE project_id = $1 AND area IS NOT NULL`,
       [req.project.id]
     ),
     q(
-      `SELECT DISTINCT claimed_by AS lane FROM roadmap_items
+      `SELECT DISTINCT claimed_by AS branch FROM roadmap_items
         WHERE project_id = $1 AND claimed_by IS NOT NULL AND NOT done`,
       [req.project.id]
     ),
   ]);
-  const lanes = laneRows.map((r) => r.lane);
+  const branches = branchRows.map((r) => r.branch);
   // The assist settings (#131): a standing guidance line folded into the
   // prompt, and which fields the assist may fill (title always may).
   const appSettings = await readSettings();
@@ -228,7 +228,7 @@ roadmap.post('/assist', async (req, res) => {
   const prompt = buildPrompt('assist', {
     NOTE: note,
     AREAS: areaRows.map((r) => r.area).join(', ') || '(none yet)',
-    LANES: lanes.join(', ') || '(none)',
+    BRANCHES: branches.join(', ') || '(none)',
     GUIDANCE_LINE: appSettings.assist_guidance
       ? `Standing guidance from the owner (follow it): ${appSettings.assist_guidance}`
       : '',
@@ -245,8 +245,8 @@ roadmap.post('/assist', async (req, res) => {
       title,
       note: allowed.has('note') ? String(answer?.note || '').trim().slice(0, 1000) || note : '',
       area: allowed.has('area') ? String(answer?.area || '').trim().toLowerCase().slice(0, 40) : '',
-      // A lane claims work for a stream — only ever suggest one that already exists.
-      lane: allowed.has('lane') && lanes.includes(String(answer?.lane || '').trim()) ? String(answer.lane).trim() : '',
+      // A branch claims work for a stream — only ever suggest one that already exists.
+      branch: allowed.has('branch') && branches.includes(String(answer?.branch || '').trim()) ? String(answer.branch).trim() : '',
       priority: allowed.has('priority') && BUCKETS.includes(answer?.priority) ? answer.priority : null,
       // #277 — a desire tier, only ever S/A/B/C; anything else means "no view".
       tier: allowed.has('tier') && TIERS.includes(String(answer?.tier || '').trim().toUpperCase())

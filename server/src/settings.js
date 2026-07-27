@@ -32,9 +32,16 @@ export const sessionDefaultLines = (keys) =>
 // of the feature and always allowed; the rest can be switched off in Settings.
 // #277 — 'tier' joins the catalogue: Gemini may propose a desire tier, and the
 // modal only accepts one into an empty field, so a hand-set tier always stands.
-export const ASSIST_FIELDS = ['title', 'note', 'area', 'lane', 'priority', 'tier'];
+// #277 — the item's claim is a BRANCH, and is now called one everywhere. Rows
+// stored before the rename carry 'lane', so it is accepted as an alias and
+// normalised on read: a setting the owner switched on stays on across the
+// rename rather than silently reverting to the default.
+export const ASSIST_FIELDS = ['title', 'note', 'area', 'branch', 'priority', 'tier'];
+const ASSIST_FIELD_ALIASES = { lane: 'branch' };
 export const cleanAssistFields = (v) => {
-  const keys = Array.isArray(v) ? v.map(String).filter((k) => ASSIST_FIELDS.includes(k)) : [];
+  const keys = Array.isArray(v)
+    ? v.map((k) => ASSIST_FIELD_ALIASES[String(k)] || String(k)).filter((k) => ASSIST_FIELDS.includes(k))
+    : [];
   return [...new Set(['title', ...keys])];
 };
 

@@ -86,15 +86,15 @@ export function CommandDeck({ data }: { data: Overview }) {
 
       {/* branch claims — who holds what, across everything; gone when nothing's claimed */}
       {claims.length > 0 && (
-        <div className="deck-lanes">
-          <span className="lanes-label">⚑ Branches</span>
+        <div className="deck-branches">
+          <span className="branches-label">⚑ Branches</span>
           {claims.map((c) => (
-            <button className="lane-chip" key={`${c.slug}:${c.id}`}
+            <button className="branch-chip" key={`${c.slug}:${c.id}`}
               onClick={() => go.detail(c.slug, 'roadmap', c.id)}
               title={`${c.name} — open in the roadmap`}>
-              <span className="lane-name">{c.lane}</span>
-              <span className="lane-arrow">→</span>
-              <span className="lane-title">{c.title}</span>
+              <span className="branch-name">{c.branch}</span>
+              <span className="branch-arrow">→</span>
+              <span className="branch-title">{c.title}</span>
             </button>
           ))}
         </div>

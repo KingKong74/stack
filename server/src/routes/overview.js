@@ -11,7 +11,7 @@ import { readSettings } from '../settings.js';
 //   resume: { slug, name, tint, summary, currentPhase, nextUp[] } | null,
 //   keepResumeCard: true,    // false hides the resume hero (settings)
 //   presence: [ { slug, name, count, branches[], seen } ],   // live sessions right now
-//   claims:   [ { slug, name, lane, title, id } ],           // open lane-claimed roadmap items
+//   claims:   [ { slug, name, branch, title, id } ],         // open branch-claimed roadmap items
 //   blockers: [ { slug, name, text } ],
 //   stale:    [ { slug, name, since } ],
 //   review:   { total, items: [ { kind: 'bug'|'roadmap'|'future', slug, name, id, title, meta, when } ] },
@@ -61,7 +61,7 @@ overview.get('/', async (_req, res) => {
     q(`SELECT project_id, branch, last_seen_at FROM presence
         WHERE last_seen_at > now() - interval '${PRESENCE_TTL_MINUTES} minutes'
         ORDER BY last_seen_at DESC`),
-    // Open lane-claimed roadmap items — which lanes hold what, across everything.
+    // Open branch-claimed roadmap items — which branches hold what, across everything.
     q(`SELECT project_id, id, title, claimed_by FROM roadmap_items
         WHERE claimed_by IS NOT NULL AND NOT done
         ORDER BY updated_at DESC LIMIT 10`),
@@ -114,10 +114,10 @@ overview.get('/', async (_req, res) => {
   }
   const livePresence = [...liveByProject.values()];
 
-  // claims: open lane-claimed items, flat, tagged with their project.
+  // claims: open branch-claimed items, flat, tagged with their project.
   const claims = claimsR.rows.flatMap((r) => {
     const p = byId.get(r.project_id);
-    return p ? [{ slug: p.slug, name: p.name, lane: r.claimed_by, title: r.title, id: String(r.id) }] : [];
+    return p ? [{ slug: p.slug, name: p.name, branch: r.claimed_by, title: r.title, id: String(r.id) }] : [];
   });
 
   // blockers: every stored blocker line, flat, tagged with its project.

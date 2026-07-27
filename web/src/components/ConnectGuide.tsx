@@ -3,7 +3,7 @@ import { Modal } from './Modal';
 import { PRODUCT_NAME } from '../lib/ui';
 
 // The in-app onboarding guide: how to link a machine + any project to Stack,
-// and the parallel-lanes playbook for running a team of sessions on one
+// and the parallel-branches playbook for running a team of sessions on one
 // project. Commands are stamped with this instance's URL; the token is never
 // shown — the reader pastes their own.
 
@@ -95,12 +95,12 @@ node ~/.stack/stack-session-start.mjs --demo      # prints the block Claude will
             <b> Live now</b> with its branch, and each branch's checkpoints land in Activity under that branch.
           </div>
           <CodeBlock code={`cd /path/to/project
-git worktree add ../project-ui  -b lane/ui     # lane 1
-git worktree add ../project-api -b lane/api    # lane 2
+git worktree add ../project-ui  -b lane/ui     # branch 1
+git worktree add ../project-api -b lane/api    # branch 2
 
-# terminal 1:  cd ../project-ui  && claude   → "you own the UI lane: <task>"
-# terminal 2:  cd ../project-api && claude   → "you own the API lane: <task>"
-#   (set each lane's steer in Overview → Directives before starting)
+# terminal 1:  cd ../project-ui  && claude   → "you own the UI branch: <task>"
+# terminal 2:  cd ../project-api && claude   → "you own the API branch: <task>"
+#   (set each branch's steer in Overview → Directives before starting)
 
 # when both branches have pushed, a third session plays integrator:
 cd /path/to/project && claude

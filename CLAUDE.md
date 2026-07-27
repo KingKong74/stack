@@ -155,7 +155,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             Build nights gate the other way: a Must item with no plan is told to author +
             save its design FIRST, then build against it. A project's `autopilot_area` (#122, the Mission Control
             target picker; '' = whole board) filters the normal pick to one product area —
-            --item pins bypass it. Per item: claim the lane, Gemini spec pre-pass (free tier — expands
+            --item pins bypass it. Per item: claim the branch, Gemini spec pre-pass (free tier — expands
             title/note into goal/acceptance/out-of-scope; keyless = silently spec-less; a
             refine_note item SKIPS it — the refinement is the spec, and the prompt says what
             landed before and to change only the delta, #146), an
@@ -306,7 +306,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   `claude-opus-5`, '' = CLI default) by family + generation, most-specific-alias-wins; a model
   neither role claims stays **unattributed and is drawn as its own slice** rather than guessed
   into a role. Then the LIVE SESSION card beside the terracotta
-  awaiting-review tile (→ the deck inbox) + serious-bugs/claimed-lanes minis, then the
+  awaiting-review tile (→ the deck inbox) + serious-bugs/claimed-branches minis, then the
   autopilot **settled into one line** — arm switch + a mono summary — whose ▸ configure folds
   open the full console (session cap up to 6h + **token budget incl. ∞ Unlimited** + **nightly
   start time** + items per night + the **Executor / Advisor model pickers** (#153) — all
@@ -359,7 +359,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   re-tiers it (both shown as → flags); Save
   order renumbers positions (+ flipped buckets and tiers) through the normal PATCH — the same write the
   board's drag makes, because the board IS the run queue. Ineligible open items sit under OUT
-  OF THE SCHEDULE with the honest why (⚑ lane / parked / outside area / below the line). The
+  OF THE SCHEDULE with the honest why (⚑ claimed / parked / outside area / below the line). The
   **Inbox** holds what the sessions found — hook-extracted unreviewed items as FOUND cards
   (Accept = `{reviewed:true}`, one-step undo; Dismiss = the tombstoning DELETE, labelled as
   such, no undo) — and what Claude proposes: ✧ Ask for proposals runs the board's cleanup
@@ -502,7 +502,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   both resolve to `quality` (#278), so old deep links keep working. `go.settings()` opens Settings.
 - `components/CommandDeck.tsx` — the cross-project deck at the top of the dashboard (resume hero,
   the **live-now strip** — green presence chips per project with branches and session count, gone
-  when quiet — the **lanes strip** — ⚑ chips for open lane-claimed roadmap items, deep-linking to
+  when quiet — the **branches strip** — ⚑ chips for open branch-claimed roadmap items, deep-linking to
   the item, gone when nothing's claimed — the **review inbox**, Blocked/Stale/Bugs attention row
   that goes calm at zero, merged activity stream). Renders the `getOverview()` payload; all click-throughs use `go.detail(slug, tab?)`.
   The review inbox (`ReviewQueue`) lists auto-extracted items no human has looked at yet:
@@ -555,7 +555,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   Roadmap (the Board/**Tiers**/**Parked** switch sits above the content, left, full seg size
   (#129); + Add tops each column (#112); tick moves an item into the **Review room's** queue —
   still counted by progress; hover ✎/× edit + delete, edit reuses RoadmapModal in `mode='edit'`
-  incl. the Lane field and the **Plan** editor (#75 — ordered `{text, done}` steps; the card wears
+  incl. the Branch field and the **Plan** editor (#75 — ordered `{text, done}` steps; the card wears
   a ☰ n/m progress chip and the autopilot works unticked steps top-down); open items show ⚑ claim
   chips; a bucket column **expands to fill the board** (#251 — click its name or ⤢; the others fold
   away, the column takes the viewport's height with its own scroll and a sticky header, and the
@@ -644,7 +644,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   `BugModal`/`RoadmapModal` (both take an optional `initialTitle` for note promotion; RoadmapModal
   also `initialNote` + `mode='edit'`), `NewProjectModal`, `TokenGate`, `ConnectGuide` (the in-app
   onboarding modal — Dashboard "Connect" button; steps stamped with `window.location.origin`, token
-  never shown, plus the **parallel-lanes worktree playbook**), `ExportBriefModal`.
+  never shown, plus the **parallel-branches worktree playbook**), `ExportBriefModal`.
 - `styles.css` — **the formal palette is the named CSS variables at the top of `:root`** (Atlas):
   neutrals (`--paper --surface --sand --keyline --muted --ink`), the terracotta accent ramp
   (`--accent-deep` hover · `--accent` · `--accent-soft` · `--accent-tint` · `--accent-tint-border`)
@@ -690,8 +690,10 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     `built_note` (what actually landed — PATCHed by the completing session/agent alongside
     `done:true`, displayed on the Roadmap tab's **Reviews** view so verdicts are made against
     what was built; the agent template documents the protocol),
-    `claimed_by` (the **lane claim** — which parallel session owns an open item;
-    set via POST/PATCH, shown as a ⚑ chip, injected by the SessionStart hook as "Lane claims —
+    `claimed_by` (the **branch claim** (#277 — called a "lane" until the rename; the `lane/`
+    git ref prefix is deliberately unchanged, since it names branches that already exist on
+    origin and both the dispatcher and `stack tree` group on it) — which parallel session owns
+    an open item; set via POST/PATCH, shown as a ⚑ chip, injected by the SessionStart hook as "Branch claims —
     respect these"; the agent template documents the claim-before-starting protocol) and
     `review_tag` (the **archive verdict**: solid | needs-work | rethink — set from the Archive's
     Review button; needs-work/rethink prefill a follow-up item back onto the board),
@@ -825,7 +827,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 - `routes/ingest.js` — `POST /api/ingest`: see the package + behaviour below.
 - `routes/overview.js` — `GET /api/overview`: the cross-project command deck, computed in seven
   aggregate queries (projects, bugs agg, recent sessions, week count, review inbox, presence,
-  lane claims) — never one-per-project. Reads
+  branch claims) — never one-per-project. Reads
   settings: when `keep_resume_card` is off, `resume` is null and `keepResumeCard:false` lets the deck
   drop the hero. Shape documented below.
 - `routes/search.js` — `GET /api/search?q=…`: the ⌘K palette. Six capped ILIKE queries (projects,
@@ -896,7 +898,7 @@ The cross-project glance layer, computed server-side in four aggregate queries (
                "summary": "…", "currentPhase": "…", "nextUp": ["…"] },   // or null
   "presence": [ { "slug": "…", "name": "…", "count": 2,                  // live sessions now
                   "branches": ["main", "wt-x"], "seen": "5m ago" } ],
-  "claims":   [ { "slug": "…", "name": "…", "lane": "lane/ui",           // open lane-claimed items
+  "claims":   [ { "slug": "…", "name": "…", "branch": "lane/ui",         // open branch-claimed items
                   "title": "…", "id": "42" } ],
   // resume = most-recently-touched live|building project (by last_session_at, not pin order),
   //          falling back to the most-recently-touched of any status; null if there are no projects.
@@ -980,7 +982,8 @@ Single row, client camelCase. Meanings under the no-API model:
                               // that predates the default is upgraded once, guarded by advisor_default_applied,
                               // so an advisor turned off by hand survives every boot
   "assistGuidance": "",       // ✧ Fill from note (#131): standing owner steer folded into the prompt
-  "assistFields": ["title","note","area","lane","priority"], // what the assist may fill (title always)
+  "assistFields": ["title","note","area","branch","priority"], // what the assist may fill (title
+                              // always; a stored "lane" is read as "branch" — #277's rename)
   "accessPinSet": false       // PIN sign-in available; PATCH accepts write-only `accessPin`
                               // ('' disables) — any accessPin change deletes all auth_tokens
                               // (signs out every PIN-connected device)
@@ -1008,7 +1011,7 @@ the silent metadata backstop so the feed never has gaps.
 - `POST /api/ingest` (also the source the SessionStart hook reads back via `GET /api/projects/:slug`)
 - `GET /api/overview` (cross-project command deck — resume, blockers, stale, bugs, activity, totals)
 - `GET /api/control` (Mission Control, `#/control` — per-project automation state in aggregate
-  queries: automode, presence, open lane claims, review counts, serious bugs, blockers, tonight's
+  queries: automode, presence, open branch claims, review counts, serious bugs, blockers, tonight's
   likely autopilot pick per automode project (mirrors the runner's eligibility rules) and the last
   `auto/*` push; plus the full autopilot config (arm, cap, tokens, time, maxItems), the schedule
   rows, the recent job queue and cross-project totals. `fleet` carries the worker slots (#268)
@@ -1071,8 +1074,8 @@ the silent metadata backstop so the feed never has gaps.
   `POST /api/projects/:slug/roadmap/suggest-title` (Gemini titles an item from its note;
   suggestion only, 503 keyless) ·
   `POST /api/projects/:slug/roadmap/assist` (the modal's ✧ Fill-from-note: Gemini reads the note
-  and returns title + tidied note + area + lane + priority — prefills the fields, the human
-  saves; lanes only ever suggested from the open set; honours the `assistGuidance` +
+  and returns title + tidied note + area + branch + priority — prefills the fields, the human
+  saves; branches only ever suggested from the open set; honours the `assistGuidance` +
   `assistFields` settings (#131) — switched-off fields come back empty) ·
   `POST /api/projects/:slug/roadmap/:id/review-brief` (#134 — Gemini's reviewer brief for a
   completed item: summary + test steps + risks from the item, built_note, its landed run and

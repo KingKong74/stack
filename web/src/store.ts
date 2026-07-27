@@ -73,7 +73,7 @@ const ROAD_DRAFT_KEY = 'stack.roadDrafts';
 // Drafts are a crash pad, not storage — stale ones self-clear after this long.
 const ROAD_DRAFT_TTL_MS = 30 * 60 * 1000;
 
-export interface RoadDraft { title: string; note: string; priority: Priority; lane: string; area?: string; savedAt?: number }
+export interface RoadDraft { title: string; note: string; priority: Priority; branch: string; area?: string; savedAt?: number }
 
 function readRoadDrafts(): Record<string, RoadDraft> {
   return readStoredJSON(ROAD_DRAFT_KEY, (p) => (p && typeof p === 'object' ? p : {}));
@@ -267,8 +267,8 @@ export interface ControlProject {
   autopilotArea: string;   // '' = whole board; else the nightly pick's area filter
   areas: string[];         // target options — areas on this project's open must/should items
   live: { count: number; branches: string[] } | null;
-  claims: { id: string; title: string; lane: string }[];
-  // #154 — open lane branches with the item each one owns; powers the merge strip.
+  claims: { id: string; title: string; branch: string }[];
+  // #154 — open branches with the item each one owns; powers the merge strip.
   // #207 — the host's git branch report enriches each chip where it exists:
   // ahead/behind vs main, the merge-tree conflict probe and the last subject.
   // Claim-only chips (no report yet) carry just the first three fields.
@@ -796,7 +796,7 @@ export interface ReviewItem {
   id: string; title: string; bucket: Priority;
   note: string; builtNote: string; refineNote: string;
   reviewTags: string[]; reviewTag: string; shelved: boolean;
-  lane: string; origin: 'auto' | 'lane' | 'manual';
+  branch: string; origin: 'auto' | 'branch' | 'manual';
   when: string; doneAt: string; risk: string;
   run: ReviewRun | null;
 }
@@ -1205,9 +1205,9 @@ export async function getReviewBrief(slug: string, id: number): Promise<ReviewBr
 export async function queueUndo(slug: string, itemId: number): Promise<AutopilotJob> {
   return request<AutopilotJob>('/autopilot/undo', { method: 'POST', body: { slug, itemId } });
 }
-// ⇥ Merge a lane branch (#154): queues a merge job — the host dispatcher fetches,
+// ⇥ Merge a claim branch (#154): queues a merge job — the host dispatcher fetches,
 // merges origin/<branch> into main with --no-ff in a throwaway worktree, pushes
-// main, and deletes the remote lane branch on success. Conflicts fail safely.
+// main, and deletes the remote branch on success. Conflicts fail safely.
 // itemId is advisory metadata only — the dispatcher does NOT tick the item.
 // #193: other queued merges never block a new one (trains run sequentially via
 // /next, each from the fresh main the last one pushed); aiResolve opts a dirty
@@ -1224,13 +1224,13 @@ export async function suggestRoadmapTitle(slug: string, note: string): Promise<s
   return r.title;
 }
 
-// Gemini fills the whole item from its note — title, tidied note, area, lane,
-// priority. Suggestion only: it prefills the modal, the human saves.
+// Gemini fills the whole item from its note — title, tidied note, area, branch
+// claim, priority. Suggestion only: it prefills the modal, the human saves.
 // #277 — the assist may also propose a desire tier. Like every other field it
 // is a SUGGESTION: the modal only takes it into an empty tier, so a tier set by
 // hand is never re-decided.
 export interface RoadmapAssist {
-  title: string; note: string; area: string; lane: string; priority: Priority | null;
+  title: string; note: string; area: string; branch: string; priority: Priority | null;
   tier: RoadmapItem['tier'];   // #277 — '' when the assist has no opinion or the field is off
 }
 export async function assistRoadmapItem(slug: string, note: string): Promise<RoadmapAssist> {
@@ -1311,7 +1311,7 @@ export async function getCheckHistory(slug: string, limit = 20): Promise<CheckHi
 
 // #260 — how many sessions the Plan room assumes you run in parallel. A
 // PLANNING lens, not a runner setting: the overnight autopilot is one lane, the
-// rest are sessions you (or another machine) start, and Stack's lane claims
+// rest are sessions you (or another machine) start, and Stack's branch claims
 // already keep them off each other's items. Device-local, because it describes
 // how you intend to work rather than what the server does.
 const PLAN_LANES_KEY = 'stack.planLanes';

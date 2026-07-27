@@ -824,7 +824,7 @@ export function ControlPanel() {
                     )}
                     {p.claims.map((c) => (
                       <button key={c.id} className="mc-claim" title={c.title}
-                        onClick={() => go.detail(p.slug, 'roadmap', c.id)}>⚑ {c.lane}</button>
+                        onClick={() => go.detail(p.slug, 'roadmap', c.id)}>⚑ {c.branch}</button>
                     ))}
                     {p.reviewCount > 0 && (
                       <button className="mc-review" onClick={() => go.detail(p.slug)}>

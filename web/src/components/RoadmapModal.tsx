@@ -19,26 +19,26 @@ import { PRIORITY_META } from '../lib/ui';
 // stays a genuine discard.
 // What the modal hands back on save (and on a draft-keeping dismiss).
 export interface RoadmapFields {
-  title: string; note: string; priority: Priority; lane: string; area: string;
+  title: string; note: string; priority: Priority; branch: string; area: string;
   plan: PlanStep[]; risk: RoadmapItem['risk']; tier: Tier;
 }
 
 export function RoadmapModal({
   initialPriority, onClose, onSubmit, onDismiss, onAssist,
-  initialTitle = '', initialNote = '', initialLane = '', initialArea = '', initialPlan = [],
-  initialRisk = 'normal', initialTier = '', lanes = [], areas = [], mode = 'add',
+  initialTitle = '', initialNote = '', initialBranch = '', initialArea = '', initialPlan = [],
+  initialRisk = 'normal', initialTier = '', branches = [], areas = [], mode = 'add',
 }: {
   initialPriority: Priority; onClose: () => void;
   onSubmit: (v: RoadmapFields) => void;
   onDismiss?: (v: RoadmapFields) => void;
   onAssist?: (note: string) => Promise<RoadmapAssist>;
-  initialTitle?: string; initialNote?: string; initialLane?: string; initialArea?: string;
+  initialTitle?: string; initialNote?: string; initialBranch?: string; initialArea?: string;
   initialPlan?: PlanStep[]; initialRisk?: RoadmapItem['risk']; initialTier?: Tier;
-  lanes?: string[]; areas?: string[]; mode?: 'add' | 'edit';
+  branches?: string[]; areas?: string[]; mode?: 'add' | 'edit';
 }) {
   const [title, setTitle] = useState(initialTitle);
   const [note, setNote] = useState(initialNote);
-  const [lane, setLane] = useState(initialLane);
+  const [branch, setBranch] = useState(initialBranch);
   const [area, setArea] = useState(initialArea);
   const [priority, setPriority] = useState<Priority>(initialPriority);
   const [risk, setRisk] = useState<RoadmapItem['risk']>(initialRisk);
@@ -59,18 +59,18 @@ export function RoadmapModal({
   const [suggesting, setSuggesting] = useState(false);
   const [suggestErr, setSuggestErr] = useState('');
   const noteRef = useRef<HTMLTextAreaElement>(null);
-  // Lane picker: a dropdown of the lanes already in use on this project, with
-  // "New lane…" flipping to a free-text input. Starts on the input when the
-  // current lane isn't in the list (or there are no lanes yet).
-  const knownLanes = [...new Set([...lanes, ...(initialLane ? [initialLane] : [])])].sort();
-  const [newLane, setNewLane] = useState(knownLanes.length === 0);
+  // Branch picker: a dropdown of the branches already in use on this project, with
+  // "New branch…" flipping to a free-text input. Starts on the input when the
+  // current branch isn't in the list (or there are no branches yet).
+  const knownBranches = [...new Set([...branches, ...(initialBranch ? [initialBranch] : [])])].sort();
+  const [newBranch, setNewBranch] = useState(knownBranches.length === 0);
   // Area combobox: type freely, or pick from the project's known areas.
   const knownAreas = [...new Set([...areas, ...(initialArea ? [initialArea] : [])])].sort();
   const [areaOpen, setAreaOpen] = useState(false);
   const areaMatches = knownAreas.filter(
     (a) => !area.trim() || a.includes(area.trim().toLowerCase()));
   const fields = (): RoadmapFields =>
-    ({ title, note, priority, lane: lane.trim(), area: area.trim().toLowerCase(), plan: fullPlan(), risk, tier });
+    ({ title, note, priority, branch: branch.trim(), area: area.trim().toLowerCase(), plan: fullPlan(), risk, tier });
   const submit = () => { if (title.trim()) onSubmit(fields()); };
   const typed = Boolean(title.trim() || note.trim());
   const dismiss = () => {
@@ -105,7 +105,7 @@ export function RoadmapModal({
       if (!title.trim()) setTitle(s.title);
       if (s.note) { setNote(s.note); requestAnimationFrame(growNote); }
       if (s.area && !area.trim()) setArea(s.area);
-      if (s.lane && !lane.trim()) { setLane(s.lane); setNewLane(false); }
+      if (s.branch && !branch.trim()) { setBranch(s.branch); setNewBranch(false); }
       if (s.priority) setPriority(s.priority);
       // #277 — "adjusted by Gemini unless manually set": a tier already chosen
       // (here or on the Tiers view) is left exactly as it is.
@@ -181,23 +181,23 @@ export function RoadmapModal({
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addStep(); } }} />
       </div>
       <div className="lbl">Branch <span className="optional">optional — who's claiming this</span></div>
-      {!newLane ? (
-        <div className="lane-pick" style={{ marginBottom: 8 }}>
-          <select className="field-input" value={lane} onChange={(e) => setLane(e.target.value)}>
+      {!newBranch ? (
+        <div className="branch-pick" style={{ marginBottom: 8 }}>
+          <select className="field-input" value={branch} onChange={(e) => setBranch(e.target.value)}>
             <option value="">No branch — open for anyone</option>
-            {knownLanes.map((l) => <option key={l} value={l}>⚑ {l}</option>)}
+            {knownBranches.map((l) => <option key={l} value={l}>⚑ {l}</option>)}
           </select>
-          <button type="button" className="btn-cancel sm" onClick={() => { setLane(''); setNewLane(true); }}>
+          <button type="button" className="btn-cancel sm" onClick={() => { setBranch(''); setNewBranch(true); }}>
             + New branch
           </button>
         </div>
       ) : (
-        <div className="lane-pick" style={{ marginBottom: 8 }}>
-          <input className="field-input" value={lane}
-            placeholder="e.g. auto/item-12-ui, autopilot, or a name" onChange={(e) => setLane(e.target.value)}
+        <div className="branch-pick" style={{ marginBottom: 8 }}>
+          <input className="field-input" value={branch}
+            placeholder="e.g. auto/item-12-ui, autopilot, or a name" onChange={(e) => setBranch(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
-          {knownLanes.length > 0 && (
-            <button type="button" className="btn-cancel sm" onClick={() => { setLane(''); setNewLane(false); }}>
+          {knownBranches.length > 0 && (
+            <button type="button" className="btn-cancel sm" onClick={() => { setBranch(''); setNewBranch(false); }}>
               Pick existing
             </button>
           )}

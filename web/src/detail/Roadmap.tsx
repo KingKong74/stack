@@ -24,7 +24,7 @@ export const REVIEW_NOTE_TAGS: { key: string; label: string }[] = [
   { key: 'question', label: 'Question' },
 ];
 
-// MoSCoW roadmap. Open items live in their bucket columns (with lane-claim
+// MoSCoW roadmap. Open items live in their bucket columns (with branch-claim
 // chips and edit/delete on hover); completed items move to the collapsed
 // Archive below — still counted by the progress model, reviewable with a
 // verdict tag, refinable by delta (#146), restorable by un-ticking.
@@ -50,7 +50,7 @@ export function Roadmap({
   onPlanItems?: (ids: number[]) => Promise<string>;
   // #227 — set (or clear, with '') an item's desire tier from the Tiers view.
   onSetTier?: (item: RoadmapItem, tier: Tier) => void;
-  // ⎇ Branch an item for focused work (#205): claim its lane + open a primed session.
+  // ⎇ Branch an item for focused work (#205): claim its branch + open a primed session.
   onBranch?: (item: RoadmapItem) => void;
   // #169 — area management: delete (clears area from all items) and rename
   onDeleteArea?: (area: string, itemIds: number[]) => Promise<void>;
@@ -580,7 +580,7 @@ export function Roadmap({
                 <button className="road-add" onClick={() => onAdd(col.key, areaFilter && areaFilter !== UNCAT ? areaFilter : undefined)}>+ Add</button>
                 {items.map((it) => {
                   // A claim only reads as "in progress" while a LIVE session is
-                  // on that lane (BUG-2: a half-run or killed session must not
+                  // on that branch (BUG-2: a half-run or killed session must not
                   // leave items dimmed and read-only). Live claim: the card
                   // dims, wears the amber tag and goes read-only (edits would
                   // race the worker). Stale claim: the ⚑ chip stays — it is

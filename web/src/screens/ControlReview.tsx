@@ -36,7 +36,7 @@ const VERDICT_LABEL: Record<string, string> = {
 const ARCH_LABEL: Record<string, string> = {
   aligned: 'ALIGNED', drifting: 'DRIFTING', concerning: 'CONCERNING', '': '',
 };
-const ORIGIN_LABEL = { auto: '⚙ autopilot', lane: '⚑ branch', manual: 'by hand' } as const;
+const ORIGIN_LABEL = { auto: '⚙ autopilot', branch: '⚑ branch', manual: 'by hand' } as const;
 
 // Review annotations (#146), unchanged: quick labels you stick on while testing.
 const NOTE_TAGS: { key: string; label: string }[] = [
@@ -489,7 +489,7 @@ function Detail({
   const facts: { k: string; v: string; tone?: string }[] = [
     { k: 'project', v: it.name },
     { k: 'item', v: `#${it.id} · ${it.bucket}` },
-    { k: 'built by', v: it.origin === 'lane' ? `⚑ ${it.lane}` : ORIGIN_LABEL[it.origin] },
+    { k: 'built by', v: it.origin === 'branch' ? `⚑ ${it.branch}` : ORIGIN_LABEL[it.origin] },
     { k: 'completed', v: it.when },
     ...(it.run ? [
       { k: 'branch', v: it.run.branch || '—' },

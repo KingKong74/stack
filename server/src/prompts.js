@@ -78,7 +78,7 @@ The author wrote what they want done (the note below); everything comes from it.
 {{NORTH_STAR_LINE}}
 {{GUIDANCE_LINE}}
 Known areas on this project: {{AREAS}}
-Open branches (parallel work streams that claim items): {{LANES}}
+Open branches (parallel work streams that claim items): {{BRANCHES}}
 
 Produce:
 - "title": a short imperative, 12 words or fewer, no trailing punctuation. When the work clearly
@@ -88,7 +88,7 @@ Produce:
   that will build it; brevity saves tokens.
 - "area": the product area, lowercase, one or two words. Prefer a known area when one fits;
   otherwise coin a sensible new one.
-- "lane": one of the open branches ONLY if the note clearly belongs to that stream, else "".
+- "branch": one of the open branches ONLY if the note clearly belongs to that stream, else "".
 - "priority": "must" | "should" | "could" | "wont" — be honest, most things are not must.
 - "tier": "S" | "A" | "B" | "C" — how much the OWNER is likely to want this NEXT, which is a
   different question from priority. Priority is how necessary the work is; tier is appetite, and
@@ -100,7 +100,7 @@ THE NOTE:
 {{NOTE}}
 
 Use en-AU spelling. Respond with ONLY this JSON:
-{ "title": "…", "note": "…", "area": "…", "lane": "…", "priority": "must|should|could|wont",
+{ "title": "…", "note": "…", "area": "…", "branch": "…", "priority": "must|should|could|wont",
   "tier": "S|A|B|C|" }`;
 
 DEFAULTS.cleanup = `You are tidying a side project's roadmap board. Below are its OPEN items

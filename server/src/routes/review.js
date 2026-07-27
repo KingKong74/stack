@@ -33,7 +33,7 @@ const NIGHT_DAYS = 14;
 function originOf(row) {
   if (row.claimed_by && /^auto\//.test(row.claimed_by)) return 'auto';
   if (row.run_branch && /^auto\//.test(row.run_branch)) return 'auto';
-  if (row.claimed_by) return 'lane';
+  if (row.claimed_by) return 'branch';
   return 'manual';
 }
 
@@ -52,7 +52,7 @@ function itemShape(row) {
     reviewTags: Array.isArray(row.review_tags) ? row.review_tags : [],
     reviewTag: row.review_tag || '',
     shelved: !!row.review_shelved,
-    lane: row.claimed_by || '',
+    branch: row.claimed_by || '',   // #277 — the claim IS a branch name
     origin: originOf(row),
     when: relativeTime(row.updated_at) || 'just now',
     doneAt: row.updated_at,

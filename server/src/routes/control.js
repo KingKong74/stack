@@ -22,7 +22,7 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //   projects: [ {
 //     slug, name, tint, status, automode, progress, lastPush,
 //     live: { count, branches[] } | null,   // presence inside the TTL window
-//     claims: [ { id, title, lane } ],      // open lane-claimed items
+//     claims: [ { id, title, branch } ],    // open branch-claimed items
 //     branches: [ { branch, itemId, itemTitle,      // the merge strip (#154);
 //                   ahead?, behind?, mergeClean?,   // git state via the host's
 //                   subject?, when? } ],            // branch report (#207)
@@ -327,7 +327,7 @@ control.get('/', async (_req, res) => {
          ledgerR, ledgerJobsR, reviewNotesR, verdictR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, automode, autopilot_area, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
-    // claimed_by that starts with 'auto/' or 'lane/' is an open lane branch; we
+    // claimed_by that starts with 'auto/' or 'lane/' is an open claim branch; we
     // also need must/should for progress + pick, so pull everything that's
     // relevant in one query.
     q(`SELECT project_id, id, bucket, title, done, skipped, claimed_by, source,
@@ -618,7 +618,7 @@ control.get('/', async (_req, res) => {
       autopilotArea: p.autopilot_area || '',
       // Target options: areas carried by this project's open must/should items.
       areas: [...new Set(road.filter((r) => !r.done && r.area).map((r) => r.area))].sort(),
-      // Open lane branches with the item they own — for the merge strip (#154).
+      // Open branches with the item they own — for the merge strip (#154).
       branches,
       // (#207) fully-merged origin branches never deleted, and report freshness.
       absorbedBranches,
@@ -633,7 +633,7 @@ control.get('/', async (_req, res) => {
       live: liveByP.get(p.id) || null,
       claims: road
         .filter((r) => r.claimed_by && !r.done)
-        .map((r) => ({ id: String(r.id), title: r.title, lane: r.claimed_by })),
+        .map((r) => ({ id: String(r.id), title: r.title, branch: r.claimed_by })),
       reviewCount: reviewByP.get(p.id) || 0,
       bugs: { serious: bugRow ? bugRow.serious : 0, open: bugRow ? bugRow.open_all : 0 },
       // (#206) Audit pass rate from the checks' stored results; null = no
@@ -671,7 +671,7 @@ control.get('/', async (_req, res) => {
       const road = roadByP.get(j.project_id) || [];
       const item = j.item_id != null
         ? road.find((r) => String(r.id) === String(j.item_id)) : null;
-      // The lane claim IS the branch the runner is on. A general night that
+      // The claim IS the branch the runner is on. A general night that
       // has not claimed its first item yet has none — say so rather than guess.
       const claim = item
         ? item.claimed_by
