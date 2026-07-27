@@ -49,7 +49,21 @@ terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (npm
         relay (server/src/term.js, attached to the same HTTP server as the API) validates each
         browser session's token (both credential classes) BEFORE bridging and strips it — the
         daemon never sees browser credentials. nginx proxies /term* → server:4000 with upgrade
-        headers. Runs from crontab (@reboot line); log ~/.stack/term.log. stack-term-watchdog.mjs
+        headers. Runs from crontab (@reboot line); log ~/.stack/term.log.
+        **Idle sessions are terminated** (#287) after Settings' `termIdleHours` (default 6, 0 =
+        never). This is the second half of a ladder the daemon only had the first half of: the
+        per-child idle timer kills the pty-SHIM, which for a tmux session merely DETACHES the
+        client — the session and the claude inside it then run forever, which is right at four
+        hours and wrong at four days. So detach frees the socket and the reaper frees the machine.
+        Idleness is tmux's own `session_activity` (real output), NOT attachment, since a tab left
+        open overnight is exactly the case it exists for; a reaped attached tab gets the normal
+        exit frame, so it reads as ended rather than silently dead. Only `stack-term-*` names are
+        eligible, so the autopilot's `stack-auto-*` nights — legitimately quiet while a model
+        thinks — are out of scope by construction. The daemon reads the threshold from
+        GET /api/settings on its 10-minute tick and **fails SAFE**: unknown or unreachable = reap
+        NOTHING, deliberately the opposite of the arm-switch convention, because this deletes
+        running work rather than merely declining to start any.
+        stack-term-watchdog.mjs
         (#221, its own */5 crontab line, log ~/.stack/term-watchdog.log) polls the relay's
         GET /api/terminal/agent — the only honest health signal, since a zombie daemon can
         hold a dead uplink while pgrep says fine — and on two confirmed-down probes 30s
@@ -1139,6 +1153,10 @@ Single row, client camelCase. Meanings under the no-API model:
   "autopilotMaxItems": 3,     // most items attempted per night; 0 = UNLIMITED (#260 — the wall
                               // clock and the token budget are then the only governors), positive
                               // values clamped 1–20
+  "termIdleHours": 6,         // #287 — terminate a terminal session silent for this long (0 = NEVER;
+                              // else clamped 1–72). The host daemon reads it and does the killing;
+                              // it FAILS SAFE — an unreachable API means nothing is reaped, the
+                              // opposite of the arm switch, because this deletes running work
   "staleItemDays": 21,        // #247 — a parked roadmap item reads as stale past this many days
                               // (clamped 1–365; surfacing only, nothing is auto-changed)
   "autopilotExecutorModel": "", // #153 — model alias sessions run as ('' = CLI default; haiku|sonnet|opus|claude-opus-5)

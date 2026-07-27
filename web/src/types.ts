@@ -322,6 +322,7 @@ export interface Settings {
   autopilotMaxItems: number;  // most items attempted per night
   autopilotPlanSweep: boolean; // #255 — stand up a plan session for unplanned must/should work
   staleItemDays: number;      // a parked roadmap item reads as stale past this many days (#247)
+  termIdleHours: number;      // #287 — terminate a silent terminal session after this long; 0 = never
   autopilotExecutorModel: string; // model alias sessions run as; '' = CLI default (#153)
   autopilotAdvisorModel: string;  // stronger model exposed as the advisor subagent; '' = off
   assistGuidance: string;     // ✧ Fill from note — standing steer folded into the prompt

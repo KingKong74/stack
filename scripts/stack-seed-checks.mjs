@@ -58,6 +58,10 @@ function suiteFor(slug, ORIGIN) {
     // room writes, and the coverage the Plan room reads. Asserting the PATH
     // exists (not a value) is the point — the numbers change every night.
     { name: 'Settings — plan sweep switch', url: u('/api/settings'), auth: true, json_path: 'autopilotPlanSweep' },
+    // #287 — the host daemon reads this every 10 minutes to decide what to
+    // terminate. If the field stops being served the daemon fails safe and
+    // reaps nothing, which is silent — hence a check rather than trust.
+    { name: 'Settings — idle session timeout', url: u('/api/settings'), auth: true, json_path: 'termIdleHours' },
     // #208 — the preview sweep's contract. `work` is what the host polls every
     // minute; if its shape breaks, previews silently stop being torn down and
     // public URLs outlive their expiry, which is the failure that matters most.

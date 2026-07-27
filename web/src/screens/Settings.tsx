@@ -372,7 +372,7 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
             <section className="set-card">
               <div className="set-card-head">
                 <div className="set-card-title">Terminal</div>
-                <div className="set-card-sub">How the web terminal opens sessions on this device.</div>
+                <div className="set-card-sub">How the web terminal opens sessions on this device — and, at the bottom, one app-wide rule the host enforces.</div>
               </div>
               <div className="set-row col">
                 <div className="set-row-text">
@@ -398,6 +398,30 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
                 checked={termPrefs.skipPermissions}
                 onChange={(v) => saveTermPrefs({ ...termPrefs, skipPermissions: v })}
               />
+              {/* #287 — app-wide, not device-local: the HOST does the
+                  terminating, so this belongs to the system rather than to the
+                  browser that happens to be reading it. */}
+              <div className="set-row col">
+                <div className="set-row-text">
+                  <div className="set-row-label">Terminate idle sessions</div>
+                  <div className="set-row-hint">
+                    A terminal session that produces no output for this long is ended on the host and its
+                    tmux session closed. Idleness is measured by real output, so a tab left open overnight
+                    counts as idle. The overnight autopilot’s own sessions are never touched — they go quiet
+                    for long stretches while a model thinks. <b>Never</b> keeps today’s behaviour: sessions
+                    detach after a few idle hours but run until you end them.
+                  </div>
+                </div>
+                <div className="seg-control" role="tablist" aria-label="Terminate idle terminal sessions after">
+                  {[0, 3, 6, 12, 24].map((h) => (
+                    <button key={h} role="tab" aria-selected={settings.termIdleHours === h}
+                      className={`seg-opt ${settings.termIdleHours === h ? 'on' : ''}`}
+                      onClick={() => update({ termIdleHours: h })}>
+                      {h === 0 ? 'Never' : `${h}h`}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </section>
 
             {/* ---- Appearance (device-local) ---- */}
