@@ -1481,7 +1481,11 @@ a.tab { display: inline-block; }
 .triage-apply.dismiss:hover { color: var(--critical); border-color: var(--critical); }
 
 /* attention row */
-.deck-attention { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+/* minmax(0, 1fr), not 1fr: a `1fr` track floors at its content's min-content
+   width, and .att-text is nowrap — so one long blocker line grew its column
+   past the viewport and pushed the other two cards off-screen. The ellipsis
+   only bites once the track (and the flex item below) may actually shrink. */
+.deck-attention { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
 .att-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 15px 16px; display: flex; flex-direction: column; }
 .att-card.flag { border-color: var(--accent-tint-border); }
 .att-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
@@ -1492,9 +1496,9 @@ a.tab { display: inline-block; }
 .att-count.link:hover { filter: brightness(0.96); }
 .att-clear { font-size: 12.5px; color: var(--faint); }
 .att-body { display: flex; flex-direction: column; gap: 2px; }
-.att-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 7px; margin: 0 -7px; border-radius: 8px; text-align: left; }
+.att-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 7px; margin: 0 -7px; border-radius: 8px; text-align: left; min-width: 0; }
 .att-row:hover { background: var(--panel); }
-.att-text { font-size: 12.5px; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-text { flex: 1 1 0; min-width: 0; font-size: 12.5px; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .att-proj { flex: none; font-size: 11px; color: var(--muted); }
 .att-proj.mono { font-family: var(--mono); }
 .att-more { font-size: 11px; color: var(--faint); padding: 5px 0 1px; }
@@ -1518,7 +1522,9 @@ a.tab { display: inline-block; }
 @media (max-width: 860px) {
   .deck-hero { flex-direction: column; gap: 16px; }
   .hero-side { flex-direction: row; justify-content: flex-start; gap: 16px; }
-  .deck-attention { grid-template-columns: 1fr; }
+  /* minmax(0, …) here too — a single 1fr track floors at min-content just as
+     a three-up one does, so the stacked layout overflowed the same way. */
+  .deck-attention { grid-template-columns: minmax(0, 1fr); }
   .feed-row { grid-template-columns: 50px 1fr auto; }
   .feed-proj { display: none; }
   .review-row { grid-template-columns: 56px 1fr auto; }
@@ -3999,3 +4005,146 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .rv-obs li { font-size: 11.5px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
 .rv-revline .mark.drifting, .rv-revline .mark.concerning { color: var(--building); }
 .rv-revline .mark.aligned { color: var(--live); }
+
+/* ============================================================
+   Dashboard sections (the Stack Dashboard design handoff).
+   The front page is one scroll through five anchored sections —
+   projects · continue · activity · roadmap · audit — behind a
+   sticky section rail. Every surface below reuses an existing
+   Atlas class where one already fit (.section-bar, .seg-control,
+   .resume, .road-grid, .att-card, .bug, .panel); these are only
+   the pieces the composition genuinely needed.
+   ============================================================ */
+
+/* The sticky section rail. `top` is set inline from the measured topbar height
+   — the topbar is sticky at 0 too, and its own height changes when its buttons
+   wrap, so a hardcoded offset hides this rail behind it on a narrow window. */
+.subnav { position: sticky; z-index: 9; background: color-mix(in srgb, var(--paper) 90%, transparent);
+  backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.subnav-inner { max-width: var(--page-max); margin: 0 auto; padding: 0 32px; display: flex; align-items: center;
+  justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.subnav-links { display: flex; align-items: center; gap: 26px; }
+.subnav-links a { padding: 12px 1px; font-size: 13px; font-weight: 500; color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px; text-decoration: none; }
+.subnav-links a:hover { color: var(--ink); text-decoration: none; }
+.subnav-links a.on { font-weight: 600; color: var(--ink); border-bottom-color: var(--accent); }
+.subnav-stats { display: flex; align-items: center; gap: 14px; font-family: var(--mono);
+  font-size: 11.5px; color: var(--muted); }
+.subnav-stats .d { font-size: 9px; vertical-align: 2px; }
+.subnav-stats .d.live { color: var(--live); }
+.subnav-stats .d.building { color: var(--building); }
+.subnav-stats .d.critical { color: var(--critical); }
+
+.dash-section { scroll-margin-top: 128px; margin-bottom: 44px; }
+.dash-section.last { margin-bottom: 0; }
+/* the resume card carries its own bottom margin; the section owns the spacing */
+.dash-section .resume { margin-bottom: 0; }
+.dash-section .resume-head .hero-phase { align-self: center; }
+.dash-section .deck-branches { margin-top: 16px; }
+.dash-section .deck-attention { margin-top: 16px; }
+
+/* ---------- activity: the day-grouped push feed ---------- */
+.push-layout { display: grid; grid-template-columns: minmax(0, 1fr) 292px; gap: 20px; align-items: start; }
+.push-main { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.push-side { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 128px; }
+/* the deck-live strip is a standalone block elsewhere; in the rail it's a row */
+.push-side .deck-live { margin-bottom: 0; }
+
+.push-day { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 14px; min-width: 0; }
+.push-rail { display: flex; flex-direction: column; align-items: center; padding-top: 4px; }
+.push-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-tint); flex: none; }
+.push-line { flex: 1; width: 1px; background: var(--line-2); margin-top: 6px; }
+.push-body { padding-bottom: 6px; min-width: 0; }
+.push-day-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.push-day-label { font-family: var(--disp); font-size: 14px; font-weight: 600; }
+.push-day-meta { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.push-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.push-group + .push-group { border-top: 1px solid var(--line-2); }
+.push-group-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 9px; padding: 10px 15px;
+  background: var(--panel); min-width: 0; }
+/* Dark ink, not white: every tint in the project palette is a pale wash
+   (#cdd9e0…#e6dcc4), so the mock's white-on-tint initial is unreadable here.
+   Fixed rather than var(--ink) because the ground stays pale in dark mode. */
+.push-initial { width: 20px; height: 20px; flex: none; border-radius: 6px; display: flex; align-items: center;
+  justify-content: center; font-family: var(--disp); font-size: 11px; font-weight: 700; color: #2b2721; }
+.push-proj { font-family: var(--disp); font-size: 12.5px; font-weight: 600; }
+.push-verb { font-size: 11.5px; color: var(--muted); }
+.push-branch { font-family: var(--mono); font-size: 11px; color: var(--accent); background: var(--accent-tint);
+  border: 1px solid var(--accent-tint-border); border-radius: 6px; padding: 2px 8px;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.push-group-head .push-when { margin-left: auto; font-family: var(--mono); font-size: 11px;
+  color: var(--faint); flex: none; }
+
+.push-row { display: flex; align-items: center; gap: 12px; padding: 10px 15px; width: 100%;
+  text-align: left; border-top: 1px solid var(--line-2); min-width: 0; }
+.push-row:hover { background: var(--panel); }
+/* a filled mark is an authored /checkpoint; hollow is the hook's metadata backstop */
+.push-mark { width: 12px; height: 12px; border-radius: 50%; flex: none;
+  border: 1.5px solid var(--line-3); background: transparent; }
+.push-mark.authored { background: var(--accent-soft); border-color: var(--accent-soft); }
+.push-msg { flex: 1 1 0; min-width: 0; font-size: 13px; color: var(--body);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.push-gem { display: block; font-size: 11px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.push-row .tag { flex: none; }
+.push-hash { font-family: var(--mono); font-size: 11px; color: var(--muted);
+  border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 7px; flex: none; }
+.push-time { font-family: var(--mono); font-size: 10.5px; color: var(--faint); flex: none; }
+.push-more { align-self: flex-start; margin-left: 36px; }
+.push-note { margin-left: 36px; font-size: 11.5px; line-height: 1.55; color: var(--faint);
+  max-width: 62ch; text-wrap: pretty; }
+
+/* the sidebar heatmap — the same cells as the timeline's grid, right-aligned */
+.heat-total { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.heat-grid { display: flex; gap: 2px; justify-content: flex-end; overflow-x: auto;
+  width: 100%; padding: 0 0 4px; cursor: pointer; }
+.heat-grid:hover { opacity: .85; }
+.push-side .ctb-legend { margin-top: 12px; }
+
+/* ---------- roadmap: the cross-project rollup ---------- */
+/* read-only cards: the check shows state, the row opens the real board */
+.road-item.rollup { width: 100%; text-align: left; }
+.road-item.rollup:hover { border-color: var(--line-3); background: var(--panel); }
+.road-item.rollup .road-check { pointer-events: none; }
+.road-item.rollup .road-body { display: flex; flex-direction: column; min-width: 0; }
+.road-item.rollup .t { display: block; text-wrap: pretty; }
+/* NOT .note — that class is the sticky-note paper on the Notes tab, and it
+   would paint this line yellow with a shadow. */
+.rollup-note { display: block; margin-top: 5px; font-size: 11.5px; line-height: 1.4;
+  color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rollup-claim { display: inline-block; margin-left: 7px; font-family: var(--mono);
+  font-size: 10.5px; color: var(--accent); }
+
+/* ---------- audit: bug list beside the per-app standing ---------- */
+.audit-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px;
+  align-items: start; margin-top: 18px; }
+.audit-layout .buglist { min-width: 0; }
+.audit-layout .bug { width: 100%; text-align: left; cursor: pointer; }
+.audit-layout .bug:hover { border-color: var(--line-3); }
+.health-list { display: flex; flex-direction: column; gap: 14px; }
+.health-row { display: block; width: 100%; text-align: left; }
+.health-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+.health-name { font-family: var(--disp); font-size: 13px; font-weight: 600; }
+.health-score { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.health-track { display: block; height: 5px; border-radius: 3px; background: var(--line-2); overflow: hidden; }
+.health-fill { display: block; height: 100%; border-radius: 3px; }
+.health-meta { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px;
+  font-size: 11px; color: var(--faint); }
+.health-row:hover .health-name { color: var(--accent-deep); }
+.health-note { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-2);
+  font-size: 11px; line-height: 1.55; color: var(--faint); text-wrap: pretty; }
+
+@media (max-width: 1000px) {
+  .push-layout, .audit-layout { grid-template-columns: 1fr; }
+  .push-side { position: static; }
+  .heat-grid { justify-content: flex-start; }
+}
+@media (max-width: 640px) {
+  .subnav-inner { padding: 0 16px; gap: 8px; }
+  .subnav-links { gap: 16px; overflow-x: auto; }
+  .subnav-stats { font-size: 10.5px; gap: 10px; }
+  .push-day { grid-template-columns: 1fr; }
+  .push-rail { display: none; }
+  .push-more, .push-note { margin-left: 0; }
+}

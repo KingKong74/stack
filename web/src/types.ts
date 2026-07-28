@@ -233,7 +233,11 @@ export interface Collections {
 // ---- cross-project command deck (GET /api/overview) ----
 export interface OverviewResume {
   slug: string; name: string; tint: string | null;
-  summary: string; currentPhase: string; nextUp: string[];
+  summary: string; currentPhase: string;
+  when: string;              // last session, relative ('' = never pushed)
+  inProgress: string[];      // the three resume sub-lists, so the deck can render
+  nextUp: string[];          // the full "pick up where you left off" card rather
+  workingWell: string[];     // than only its headline
 }
 export interface OverviewBlocker { slug: string; name: string; text: string }
 // A project with at least one Claude session open right now.
@@ -254,6 +258,23 @@ export interface ReviewItem {
 }
 export interface OverviewStale { slug: string; name: string; since: string }
 export interface OverviewBugProject { slug: string; name: string; count: number }
+// One open bug, anywhere — the dashboard's Audit section lists these directly.
+export interface OverviewBug {
+  slug: string; name: string; key: string; title: string;
+  severity: Severity; status: BugStatus; linkRef: string; when: string;
+}
+// Every project's bug standing, quiet ones included — the per-app health panel.
+export interface OverviewBugCount { slug: string; name: string; serious: number; open: number }
+// One card in the cross-project MoSCoW rollup.
+export interface OverviewRoadmapItem {
+  slug: string; name: string; id: string; title: string; note: string;
+  done: boolean; auto: boolean; claimedBy: string;
+}
+export interface OverviewRoadmapBucket {
+  bucket: Priority;
+  open: number;                     // open items in this bucket across everything
+  items: OverviewRoadmapItem[];     // capped; open first, in run-queue order
+}
 export interface OverviewActivity {
   slug: string; name: string; hash: string; branch: string;
   summary: string; tags: string[]; geminiNote: string; when: string;
@@ -276,7 +297,13 @@ export interface Overview {
   blockers: OverviewBlocker[];
   stale: OverviewStale[];
   review: { total: number; items: ReviewItem[] };
-  bugs: { total: number; projects: OverviewBugProject[] };
+  bugs: {
+    total: number;                    // open critical + high, everywhere
+    projects: OverviewBugProject[];   // only the projects with something serious
+    open: OverviewBug[];              // the rows themselves, worst severity first
+    byProject: OverviewBugCount[];    // every project with bugs on the books
+  };
+  roadmap: { closedThisWeek: number; buckets: OverviewRoadmapBucket[] };
   activity: OverviewActivity[];
   autopilotRuns: OverviewRun[]; // last night's runner, per item ([] = quiet night)
   graph: { date: string; count: number }[]; // a year of daily push counts (contribution strip)
@@ -284,6 +311,10 @@ export interface Overview {
     byStatus: Record<ProjectStatus, number>;
     openBugs: number;
     pushesThisWeek: number;
+    pushesToday: number;
+    projectsTouchedThisWeek: number;
+    roadmapClosedThisWeek: number;
+    bugsFixedThisWeek: number;
   };
 }
 

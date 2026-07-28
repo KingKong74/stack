@@ -6,7 +6,12 @@ import { PRODUCT_NAME } from '../lib/ui';
 import { NewProjectModal } from '../components/NewProjectModal';
 import { ConnectGuide } from '../components/ConnectGuide';
 import { HowToGuide } from '../components/HowToGuide';
-import { CommandDeck } from '../components/CommandDeck';
+import {
+  AttentionRow, BranchClaims, ResumeHero, ReviewQueue,
+} from '../components/CommandDeck';
+import {
+  AuditLists, PushesSection, RoadmapRollup, SubNav,
+} from '../components/DashSections';
 
 type Filter = 'all' | ProjectStatus;
 
@@ -63,11 +68,15 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
     return projects.filter((p) => p.status === filter);
   }, [projects, filter]);
 
-  const chips: { key: Filter; label: string }[] = [
+  // The status filter is a segmented control now, each option carrying its own
+  // count; a status nobody has any of drops out rather than sitting at zero.
+  const filters: { key: Filter; label: string }[] = ([
     { key: 'all', label: 'All' }, { key: 'live', label: 'Live' },
     { key: 'building', label: 'Building' }, { key: 'paused', label: 'Paused' },
     { key: 'archived', label: 'Archived' },
-  ];
+  ] as { key: Filter; label: string }[])
+    .filter((c) => c.key === 'all' || c.key === filter || counts[c.key] > 0)
+    .map((c) => ({ key: c.key, label: `${c.label} ${counts[c.key]}` }));
 
   const onCreate = async (v: { name: string; subtitle: string; status: ProjectStatus }) => {
     try {
@@ -100,63 +109,111 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
         </div>
       </div>
 
+      {overview && <SubNav totals={overview.totals} bugs={overview.bugs.total} />}
+
       <div className="page">
+        {/* ---- projects: the grid leads, since it's what you came for ---- */}
+        <section id="projects" className="dash-section">
+          <div className="section-bar">
+            <div className="titles">
+              <div className="h" style={{ fontSize: 26 }}>All projects</div>
+              <div className="subtitle">
+                {counts.all} app{counts.all === 1 ? '' : 's'} · {counts.live} live · {counts.building} building · {counts.paused} paused
+              </div>
+            </div>
+            <div className="bar-actions">
+              <div className="seg-control sm" role="tablist">
+                {filters.map((c) => (
+                  <button key={c.key} role="tab" aria-selected={filter === c.key}
+                    className={`seg-opt ${filter === c.key ? 'on' : ''}`} onClick={() => setFilter(c.key)}>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="empty-state"><div className="big">Loading…</div><div>Fetching your projects from the API.</div></div>
+          ) : error ? (
+            <div className="empty-state"><div className="big">Couldn't load projects</div><div>{error}</div></div>
+          ) : (
+            <div className="grid">
+              {visible.map((p) => (
+                <button key={p.id} className="pcard" style={{ background: p.tint }} onClick={() => go.detail(p.id)} aria-label={`Open ${p.name}`}>
+                  <span className="stripe" />
+                  {p.siteUrl && !framed && (
+                    // Live view of the deployed site, scaled to the card (à la Vercel).
+                    // Inert to the pointer/keyboard; the tint shows while it loads or
+                    // if the site refuses framing. Skipped when Stack is itself framed
+                    // so its own card can't recurse.
+                    <span className="preview" aria-hidden="true">
+                      <iframe src={p.siteUrl} loading="lazy" tabIndex={-1} title="" referrerPolicy="no-referrer" />
+                    </span>
+                  )}
+                  <span className="scrim" />
+                  <span className="statuspill">{STATUS_LABEL[p.status]}</span>
+                  {p.automode && <span className="autopill" title="Automode — the overnight autopilot may work this project">⚙ auto</span>}
+                  <span className="meta">
+                    <span className="pname">{p.name}</span>
+                    <span className="track"><span className="fill" style={{ width: `${p.progress}%` }} /></span>
+                    <span className="metarow"><span>{p.metaLine}</span><span>{p.progress}%</span></span>
+                  </span>
+                </button>
+              ))}
+              <button className="newtile" onClick={() => setNewOpen(true)}>
+                <span className="plus">+</span>
+                <span className="lab">New project</span>
+              </button>
+            </div>
+          )}
+        </section>
+
         {deckLoading ? (
           <div className="deck deck-skeleton" aria-busy="true">Loading the deck…</div>
         ) : deckError ? (
           <div className="deck-error">Couldn’t load the command deck — {deckError}</div>
         ) : overview ? (
-          <CommandDeck data={overview} />
+          <>
+            {/* ---- continue: where you left off, plus what's in flight ---- */}
+            <section id="continue" className="dash-section">
+              <div className="section-bar">
+                <div className="titles">
+                  <div className="h">Pick up where you left off</div>
+                  {overview.resume && (
+                    <div className="subtitle">
+                      {overview.resume.slug}{overview.resume.when ? ` · last session ${overview.resume.when}` : ''}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <ResumeHero resume={overview.resume} keepResumeCard={overview.keepResumeCard} />
+              <BranchClaims claims={overview.claims} />
+            </section>
+
+            {/* ---- activity: the day-grouped push feed + its sidebar ---- */}
+            <PushesSection overview={overview} projects={projects} />
+
+            {/* ---- roadmap: the cross-project MoSCoW rollup ---- */}
+            <RoadmapRollup roadmap={overview.roadmap} />
+
+            {/* ---- audit: what needs a human ---- */}
+            <section id="audit" className="dash-section last">
+              <div className="section-bar">
+                <div className="titles">
+                  <div className="h">Audit</div>
+                  <div className="subtitle">What needs a human</div>
+                </div>
+                <div className="bar-actions">
+                  <a className="viewall" href="#/control">Open Mission Control →</a>
+                </div>
+              </div>
+              <ReviewQueue initial={overview.review} />
+              <AttentionRow blockers={overview.blockers} stale={overview.stale} bugs={overview.bugs} />
+              <AuditLists overview={overview} projects={projects} />
+            </section>
+          </>
         ) : null}
-
-        <div className="dash-head">
-          <div>
-            <div className="dash-title">All projects</div>
-            <div className="dash-count">{counts.live} live · {counts.building} building · {counts.paused} paused</div>
-          </div>
-          <div className="chips">
-            {chips.map((c) => (
-              <button key={c.key} className={`chip ${filter === c.key ? 'on' : ''}`} onClick={() => setFilter(c.key)}>
-                {c.label} <span className="n">{counts[c.key]}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="empty-state"><div className="big">Loading…</div><div>Fetching your projects from the API.</div></div>
-        ) : error ? (
-          <div className="empty-state"><div className="big">Couldn't load projects</div><div>{error}</div></div>
-        ) : (
-          <div className="grid">
-            {visible.map((p) => (
-              <button key={p.id} className="pcard" style={{ background: p.tint }} onClick={() => go.detail(p.id)} aria-label={`Open ${p.name}`}>
-                <span className="stripe" />
-                {p.siteUrl && !framed && (
-                  // Live view of the deployed site, scaled to the card (à la Vercel).
-                  // Inert to the pointer/keyboard; the tint shows while it loads or
-                  // if the site refuses framing. Skipped when Stack is itself framed
-                  // so its own card can't recurse.
-                  <span className="preview" aria-hidden="true">
-                    <iframe src={p.siteUrl} loading="lazy" tabIndex={-1} title="" referrerPolicy="no-referrer" />
-                  </span>
-                )}
-                <span className="scrim" />
-                <span className="statuspill">{STATUS_LABEL[p.status]}</span>
-                {p.automode && <span className="autopill" title="Automode — the overnight autopilot may work this project">⚙ auto</span>}
-                <span className="meta">
-                  <span className="pname">{p.name}</span>
-                  <span className="track"><span className="fill" style={{ width: `${p.progress}%` }} /></span>
-                  <span className="metarow"><span>{p.metaLine}</span><span>{p.progress}%</span></span>
-                </span>
-              </button>
-            ))}
-            <button className="newtile" onClick={() => setNewOpen(true)}>
-              <span className="plus">+</span>
-              <span className="lab">New project</span>
-            </button>
-          </div>
-        )}
       </div>
 
       {newOpen && <NewProjectModal onClose={() => setNewOpen(false)} onCreate={onCreate} />}

@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Overview, ReviewItem } from '../types';
+import type {
+  ClaimItem, Overview, OverviewBlocker, OverviewRun, OverviewStale, PresenceItem, ReviewItem,
+} from '../types';
 import { go } from '../lib/route';
 import {
   getProjectDetail, patchBug, deleteBug, patchRoadmapItem, deleteRoadmapItem,
@@ -7,209 +9,205 @@ import {
   type TriageAnnotation, type TriageResult,
 } from '../store';
 import { ExportBriefModal } from './ExportBriefModal';
-import { buildWeeks, contribLevel } from '../lib/contrib';
 
-// The cross-project command deck that sits at the top of the dashboard:
-// a resume hero, a quiet attention row, and a merged activity stream.
-// Calm when all's well; loud only where something needs attention.
-export function CommandDeck({ data }: { data: Overview }) {
-  const { resume, keepResumeCard, presence, claims, blockers, stale, bugs, activity } = data;
-  const worstBug = bugs.projects[0] || null;
-  const weeks = buildWeeks(new Map((data.graph || []).map((g) => [g.date, g.count])));
-  const yearTotal = (data.graph || []).reduce((sum, g) => sum + g.count, 0);
+// The command deck's parts. They used to render as one block at the top of the
+// dashboard; the dashboard is now sectioned (projects · continue · activity ·
+// roadmap · audit), so each part is exported on its own and the screen places
+// it in the section it belongs to. The behaviour of each is unchanged.
 
-  // The hero only carries a slice of the project, so the export modal pulls
-  // the full detail on demand when the user confirms.
+// "Pick up where you left off" — the signature cream card, with the full three
+// resume columns the project detail has always shown. The overview payload only
+// carries a slice of the project, so the export modal pulls the detail on demand.
+export function ResumeHero({ resume, keepResumeCard }: {
+  resume: Overview['resume']; keepResumeCard: boolean;
+}) {
   const [exportOpen, setExportOpen] = useState(false);
+  if (!keepResumeCard) return null;
+
   const loadHeroInput = async () => {
     const d = await getProjectDetail(resume!.slug);
     return { project: d.project, currentPhase: d.currentPhase, blockers: d.blockers,
       directives: d.directives, activity: d.activity, bugs: d.bugs, roadmap: d.roadmap };
   };
 
-  return (
-    <section className="deck" aria-label="Command deck">
-      {/* resume hero — hidden entirely when the resume card is switched off */}
-      {!keepResumeCard ? null : resume ? (
-        <div className="deck-hero">
-          <div className="hero-main">
-            <div className="hero-eyebrow"><span className="resume-ico">↩</span> Pick up where you left off</div>
-            <div className="hero-row">
-              <span className="hero-name">{resume.name}</span>
-              {resume.currentPhase && <span className="hero-phase">{resume.currentPhase}</span>}
-            </div>
-            {resume.summary && <div className="hero-summary">{resume.summary}</div>}
-            {resume.nextUp.length > 0 && (
-              <div className="hero-next">
-                {resume.nextUp.slice(0, 2).map((t, i) => (
-                  <div className="hero-step" key={i}><span className="mk arrow">→</span><span>{t}</span></div>
-                ))}
-              </div>
-            )}
+  if (!resume) {
+    return (
+      <div className="resume empty">
+        <div className="resume-head">
+          <div className="left">
+            <div className="resume-ico">↩</div>
+            <div className="resume-title">Pick up where you left off</div>
           </div>
-          <div className="hero-side">
-            <button className="btn-accent hero-continue" onClick={() => go.detail(resume.slug)}>
+        </div>
+        <div className="resume-summary">
+          Nothing on the go yet. Start a project or fire a push, and your resume point lands here.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="resume">
+        <div className="resume-head">
+          <div className="left">
+            <div className="resume-ico">↩</div>
+            <div className="resume-title">{resume.name}</div>
+            {resume.currentPhase && <span className="hero-phase">{resume.currentPhase}</span>}
+          </div>
+          <div className="resume-meta">
+            {resume.when && <div className="resume-when">{resume.when}</div>}
+            <button className="btn-export" onClick={() => setExportOpen(true)}
+              title="Download a markdown brief for starting back into this project">
+              Export session brief <span className="arr">↗</span>
+            </button>
+            <button className="btn-accent" onClick={() => go.detail(resume.slug)}>
               Continue <span className="arr">→</span>
             </button>
-            <button className="hero-export" onClick={() => setExportOpen(true)}
-              title="Download a markdown brief for starting back into this project">
-              Export brief ↓
-            </button>
           </div>
         </div>
-      ) : (
-        <div className="deck-hero empty">
-          <div className="hero-main">
-            <div className="hero-eyebrow"><span className="resume-ico">↩</span> Pick up where you left off</div>
-            <div className="hero-summary">
-              Nothing on the go yet. Start a project or fire a push, and your resume point lands here.
-            </div>
-          </div>
+        {resume.summary && <div className="resume-summary">{resume.summary}</div>}
+        <div className="resume-cols">
+          <ResumeCol kind="progress" label="Currently in progress" mark="dot"
+            items={resume.inProgress} empty="Nothing mid-flight." />
+          <ResumeCol kind="next" label="Suggested next" mark="arrow"
+            items={resume.nextUp} empty="Open road." />
+          <ResumeCol kind="keep" label="Working well — keep" mark="tick"
+            items={resume.workingWell} empty="—" />
         </div>
-      )}
-
-      {/* live now — projects with a Claude session open; gone when quiet */}
-      {presence.length > 0 && (
-        <div className="deck-live">
-          <span className="live-pulse" aria-hidden="true" />
-          <span className="live-label">Live now</span>
-          {presence.map((p) => (
-            <button className="live-chip" key={p.slug} onClick={() => go.detail(p.slug)}
-              title={`Last ping ${p.seen}`}>
-              <span className="live-name">{p.name}</span>
-              <span className="live-branch">{p.branches.join(' · ')}</span>
-              {p.count > 1 && <span className="live-count">×{p.count}</span>}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* branch claims — who holds what, across everything; gone when nothing's claimed */}
-      {claims.length > 0 && (
-        <div className="deck-branches">
-          <span className="branches-label">⚑ Branches</span>
-          {claims.map((c) => (
-            <button className="branch-chip" key={`${c.slug}:${c.id}`}
-              onClick={() => go.detail(c.slug, 'roadmap', c.id)}
-              title={`${c.name} — open in the roadmap`}>
-              <span className="branch-name">{c.branch}</span>
-              <span className="branch-arrow">→</span>
-              <span className="branch-title">{c.title}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* last night's autopilot — the morning digest; gone on quiet nights */}
-      {(data.autopilotRuns || []).length > 0 && (
-        <div className="deck-runs">
-          <div className="deck-section-head">While you were away</div>
-          {(data.autopilotRuns || []).map((r, i) => (
-            <button className="run-row" key={i}
-              onClick={() => go.detail(r.slug, 'roadmap', r.itemId != null ? String(r.itemId) : undefined)}
-              title={r.summary || r.itemTitle}>
-              <span className={`run-outcome ${r.outcome}`}>
-                {r.outcome === 'landed' ? '✓' : r.outcome === 'planned' ? '✎' : r.outcome === 'limit' ? '◐' : r.outcome === 'failed' ? '✗' : '—'}
-              </span>
-              <span className="run-proj">{r.name}</span>
-              <span className="run-title">
-                {r.itemId != null ? `#${r.itemId} ` : ''}{r.itemTitle}
-                <span className="run-meta">
-                  {r.outcome === 'landed' ? `${r.branch} · ${r.commits} commit${r.commits === 1 ? '' : 's'}`
-                    : r.outcome === 'planned' ? 'design saved — review the plan'
-                    : r.outcome === 'limit' ? 'paused on the usage limit'
-                    : r.outcome === 'failed' ? 'failed — see the log'
-                    : 'no commits — branch released'}
-                </span>
-              </span>
-              <span className="run-when">{r.when}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* review inbox — auto-extracted items awaiting a look; gone at zero */}
-      <ReviewQueue initial={data.review} />
-
-      {/* attention row — quiet at zero, loud only where it matters */}
-      <div className="deck-attention">
-        <AttentionCard kind="blocked" title="Blocked" count={blockers.length} clearText="Nothing blocked">
-          {blockers.slice(0, 4).map((b, i) => (
-            <button className="att-row" key={i} onClick={() => go.detail(b.slug)}>
-              <span className="att-text">{b.text}</span>
-              <span className="att-proj">{b.name}</span>
-            </button>
-          ))}
-          {blockers.length > 4 && <div className="att-more">+{blockers.length - 4} more</div>}
-        </AttentionCard>
-
-        <AttentionCard kind="stale" title="Stale" count={stale.length} clearText="All current">
-          {stale.slice(0, 4).map((s, i) => (
-            <button className="att-row" key={i} onClick={() => go.detail(s.slug)}>
-              <span className="att-text">{s.name}</span>
-              <span className="att-proj mono">{s.since}</span>
-            </button>
-          ))}
-          {stale.length > 4 && <div className="att-more">+{stale.length - 4} more</div>}
-        </AttentionCard>
-
-        <AttentionCard kind="bugs" title="Critical & high bugs" count={bugs.total} clearText="No serious bugs"
-          onCount={worstBug ? () => go.detail(worstBug.slug, 'quality') : undefined}>
-          {bugs.projects.slice(0, 4).map((p, i) => (
-            <button className="att-row" key={i} onClick={() => go.detail(p.slug, 'quality')}>
-              <span className="att-text">{p.name}</span>
-              <span className="att-proj">{p.count}</span>
-            </button>
-          ))}
-        </AttentionCard>
       </div>
-
-      {/* merged activity stream */}
-      <div className="deck-activity">
-        <div className="deck-section-head">
-          Across everything
-          <button className="deck-timeline-link" onClick={go.timeline}>Full timeline →</button>
-        </div>
-        {yearTotal > 0 && (
-          // The year in pushes, GitHub-history style but ours — click for the timeline.
-          <button className="ctb compact" onClick={go.timeline}
-            title={`${yearTotal} pushes in the last 12 months — open the timeline`}
-            aria-label={`${yearTotal} pushes in the last 12 months — open the timeline`}>
-            <span className="ctb-grid">
-              {weeks.map((week, wi) => (
-                <span className="ctb-col" key={wi}>
-                  {week.map((day) => (
-                    <span key={day.date}
-                      className={`ctb-cell ${day.future ? 'future' : `l${contribLevel(day.count)}`}`} />
-                  ))}
-                </span>
-              ))}
-            </span>
-          </button>
-        )}
-        {activity.length ? (
-          <div className="deck-feed">
-            {activity.map((a, i) => (
-              <button className="feed-row" key={i} disabled={!a.slug}
-                onClick={() => a.slug && go.detail(a.slug, 'activity')}>
-                <span className="feed-hash">{a.hash}</span>
-                <span className="feed-proj">{a.name}</span>
-                <span className="feed-summary">{a.summary || '—'}</span>
-                <span className="feed-when">{a.when}</span>
-                {a.geminiNote && <span className="feed-gem">✦ {a.geminiNote}</span>}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="deck-empty">No pushes yet across any project.</div>
-        )}
-      </div>
-
-      {exportOpen && resume && (
+      {exportOpen && (
         <ExportBriefModal projectName={resume.name} loadInput={loadHeroInput}
           onClose={() => setExportOpen(false)} />
       )}
-    </section>
+    </>
+  );
+}
+
+function ResumeCol({ kind, label, mark, items, empty }: {
+  kind: string; label: string; mark: 'dot' | 'arrow' | 'tick'; items: string[]; empty: string;
+}) {
+  return (
+    <div className={`resume-col col-${kind}`}>
+      <div className="lbl">{label}</div>
+      <div className="itemlist">
+        {items.length ? items.map((t, i) => (
+          <div className="item" key={i}>
+            <span className={`mk ${mark}`}>{mark === 'arrow' ? '→' : mark === 'tick' ? '✓' : ''}</span>
+            <span>{t}</span>
+          </div>
+        )) : <div className="empty-soft">{empty}</div>}
+      </div>
+    </div>
+  );
+}
+
+// Live now — projects with a Claude session open; renders nothing when quiet.
+export function LiveNowStrip({ presence }: { presence: PresenceItem[] }) {
+  if (!presence.length) return null;
+  return (
+    <div className="deck-live">
+      <span className="live-pulse" aria-hidden="true" />
+      <span className="live-label">Live now</span>
+      {presence.map((p) => (
+        <button className="live-chip" key={p.slug} onClick={() => go.detail(p.slug)}
+          title={`Last ping ${p.seen}`}>
+          <span className="live-name">{p.name}</span>
+          <span className="live-branch">{p.branches.join(' · ')}</span>
+          {p.count > 1 && <span className="live-count">×{p.count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Branch claims — who holds what, across everything; gone when nothing's claimed.
+export function BranchClaims({ claims }: { claims: ClaimItem[] }) {
+  if (!claims.length) return null;
+  return (
+    <div className="deck-branches">
+      <span className="branches-label">⚑ Branches</span>
+      {claims.map((c) => (
+        <button className="branch-chip" key={`${c.slug}:${c.id}`}
+          onClick={() => go.detail(c.slug, 'roadmap', c.id)}
+          title={`${c.name} — open in the roadmap`}>
+          <span className="branch-name">{c.branch}</span>
+          <span className="branch-arrow">→</span>
+          <span className="branch-title">{c.title}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Last night's autopilot — the morning digest; gone on quiet nights.
+export function AutopilotDigest({ runs }: { runs: OverviewRun[] }) {
+  if (!runs.length) return null;
+  return (
+    <div className="deck-runs">
+      <div className="deck-section-head">While you were away</div>
+      {runs.map((r, i) => (
+        <button className="run-row" key={i}
+          onClick={() => go.detail(r.slug, 'roadmap', r.itemId != null ? String(r.itemId) : undefined)}
+          title={r.summary || r.itemTitle}>
+          <span className={`run-outcome ${r.outcome}`}>
+            {r.outcome === 'landed' ? '✓' : r.outcome === 'planned' ? '✎' : r.outcome === 'limit' ? '◐' : r.outcome === 'failed' ? '✗' : '—'}
+          </span>
+          <span className="run-proj">{r.name}</span>
+          <span className="run-title">
+            {r.itemId != null ? `#${r.itemId} ` : ''}{r.itemTitle}
+            <span className="run-meta">
+              {r.outcome === 'landed' ? `${r.branch} · ${r.commits} commit${r.commits === 1 ? '' : 's'}`
+                : r.outcome === 'planned' ? 'design saved — review the plan'
+                : r.outcome === 'limit' ? 'paused on the usage limit'
+                : r.outcome === 'failed' ? 'failed — see the log'
+                : 'no commits — branch released'}
+            </span>
+          </span>
+          <span className="run-when">{r.when}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// The attention row — quiet at zero, loud only where it matters.
+export function AttentionRow({ blockers, stale, bugs }: {
+  blockers: OverviewBlocker[]; stale: OverviewStale[]; bugs: Overview['bugs'];
+}) {
+  const worstBug = bugs.projects[0] || null;
+  return (
+    <div className="deck-attention">
+      <AttentionCard kind="blocked" title="Blocked" count={blockers.length} clearText="Nothing blocked">
+        {blockers.slice(0, 4).map((b, i) => (
+          <button className="att-row" key={i} onClick={() => go.detail(b.slug)}>
+            <span className="att-text">{b.text}</span>
+            <span className="att-proj">{b.name}</span>
+          </button>
+        ))}
+        {blockers.length > 4 && <div className="att-more">+{blockers.length - 4} more</div>}
+      </AttentionCard>
+
+      <AttentionCard kind="stale" title="Stale" count={stale.length} clearText="All current">
+        {stale.slice(0, 4).map((s, i) => (
+          <button className="att-row" key={i} onClick={() => go.detail(s.slug)}>
+            <span className="att-text">{s.name}</span>
+            <span className="att-proj mono">{s.since}</span>
+          </button>
+        ))}
+        {stale.length > 4 && <div className="att-more">+{stale.length - 4} more</div>}
+      </AttentionCard>
+
+      <AttentionCard kind="bugs" title="Critical & high bugs" count={bugs.total} clearText="No serious bugs"
+        onCount={worstBug ? () => go.detail(worstBug.slug, 'quality') : undefined}>
+        {bugs.projects.slice(0, 4).map((p, i) => (
+          <button className="att-row" key={i} onClick={() => go.detail(p.slug, 'quality')}>
+            <span className="att-text">{p.name}</span>
+            <span className="att-proj">{p.count}</span>
+          </button>
+        ))}
+      </AttentionCard>
+    </div>
   );
 }
 
@@ -224,7 +222,7 @@ function triageRef(it: ReviewItem): string {
 // Rows settle optimistically; the whole block disappears at zero.
 // ✧ Triage (≥4 items): Gemini annotates clusters, severity flags and keep/dismiss
 // suggestions in-memory — the human applies them through the same existing handlers.
-function ReviewQueue({ initial }: { initial: Overview['review'] }) {
+export function ReviewQueue({ initial }: { initial: Overview['review'] }) {
   const [items, setItems] = useState(initial.items);
   const [total, setTotal] = useState(initial.total);
   const [busyKey, setBusyKey] = useState<string | null>(null);

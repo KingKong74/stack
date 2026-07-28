@@ -8,17 +8,22 @@ import { readSettings } from '../settings.js';
 //
 // Response shape:
 // {
-//   resume: { slug, name, tint, summary, currentPhase, nextUp[] } | null,
+//   resume: { slug, name, tint, summary, currentPhase, when,
+//             inProgress[], nextUp[], workingWell[] } | null,
 //   keepResumeCard: true,    // false hides the resume hero (settings)
 //   presence: [ { slug, name, count, branches[], seen } ],   // live sessions right now
 //   claims:   [ { slug, name, branch, title, id } ],         // open branch-claimed roadmap items
 //   blockers: [ { slug, name, text } ],
 //   stale:    [ { slug, name, since } ],
 //   review:   { total, items: [ { kind: 'bug'|'roadmap'|'future', slug, name, id, title, meta, when } ] },
-//   bugs:     { total, projects: [ { slug, name, count } ] },
+//   bugs:     { total, projects: [ { slug, name, count } ],
+//               open: [ { slug, name, key, title, severity, status, when, linkRef } ],   // the rows
+//               byProject: [ { slug, name, serious, open } ] },                          // every project
+//   roadmap:  { closedThisWeek, buckets: [ { bucket, open, items: [ … ] } ] }, // cross-project MoSCoW
 //   activity: [ { slug, name, hash, branch, summary, tags[], when } ],
 //   totals:   { byStatus: { live, building, paused, archived },
-//               openBugs, pushesThisWeek }
+//               openBugs, pushesThisWeek, pushesToday,
+//               projectsTouchedThisWeek, roadmapClosedThisWeek, bugsFixedThisWeek }
 // }
 export const overview = Router();
 
@@ -28,10 +33,11 @@ const ms = (ts) => (ts ? new Date(ts).getTime() : -1);
 overview.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
-  // Seven aggregate queries, run together — no per-project fan-out.
-  const [projectsR, bugsR, recentR, weekR, reviewR, presenceR, claimsR, graphR, runsR] = await Promise.all([
+  // Aggregate queries, run together — no per-project fan-out.
+  const [projectsR, bugsR, recentR, weekR, reviewR, presenceR, claimsR, graphR, runsR,
+         bugRowsR, roadR, closedR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, summary, current_phase,
-              next_up, blockers, last_session_at, updated_at
+              in_progress, next_up, working_well, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
     q(`SELECT project_id,
               count(*) FILTER (WHERE severity IN ('critical','high') AND status <> 'fixed')::int AS serious,
@@ -39,9 +45,14 @@ overview.get('/', async (_req, res) => {
          FROM bugs GROUP BY project_id`),
     q(`SELECT project_id, commit_hash, branch, summary, tags, gemini_note, created_at
          FROM sessions ORDER BY created_at DESC LIMIT 12`),
-    q(`SELECT count(*)::int AS n FROM sessions s
-        JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
-       WHERE s.created_at > now() - interval '7 days'`),
+    // One pass over the week's pushes: the count, how many projects they touched
+    // and how many landed today (the sub-nav's live strip reads the last one).
+    q(`SELECT count(*)::int AS n,
+              count(DISTINCT s.project_id)::int AS projects,
+              count(*) FILTER (WHERE s.created_at >= date_trunc('day', now()))::int AS today
+         FROM sessions s
+         JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
+        WHERE s.created_at > now() - interval '7 days'`),
     // The review inbox: auto-extracted items no human has looked at yet.
     // `batch` clusters one ingest's extractions (same push, same minute) so
     // the deck can group them as a session (#140).
@@ -76,6 +87,33 @@ overview.get('/', async (_req, res) => {
         JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
        WHERE r.finished_at > now() - interval '20 hours'
        ORDER BY r.finished_at DESC LIMIT 12`),
+    // The serious bugs themselves, not just their count — the dashboard's Audit
+    // section lists rows across every project, worst severity first.
+    q(`SELECT b.project_id, b.bug_key, b.title, b.severity, b.status, b.link_ref, b.created_at
+         FROM bugs b JOIN projects p ON p.id = b.project_id AND p.deleted_at IS NULL
+        WHERE b.status <> 'fixed'
+        ORDER BY CASE b.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1
+                                 WHEN 'medium' THEN 2 ELSE 3 END,
+                 b.created_at DESC
+        LIMIT 12`),
+    // The cross-project MoSCoW rollup. Open, unparked work plus anything closed
+    // in the last week (so the board shows movement, not only what's left).
+    q(`SELECT r.id, r.project_id, r.bucket, r.title, r.note, r.done, r.source, r.tier,
+              r.position, r.claimed_by, r.updated_at
+         FROM roadmap_items r
+         JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
+        WHERE NOT r.skipped
+          AND (NOT r.done OR r.updated_at > now() - interval '7 days')`),
+    // This week's closures. Both lean on updated_at, which is the only stamp
+    // either table carries for "when it changed" — an edit to an already-done
+    // item counts too, so read these as movement rather than an exact ledger.
+    q(`SELECT
+         (SELECT count(*) FROM roadmap_items r
+            JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
+           WHERE r.done AND r.updated_at > now() - interval '7 days')::int AS roadmap_closed,
+         (SELECT count(*) FROM bugs b
+            JOIN projects p ON p.id = b.project_id AND p.deleted_at IS NULL
+           WHERE b.status = 'fixed' AND b.updated_at > now() - interval '7 days')::int AS bugs_fixed`),
   ]);
 
   const projects = projectsR.rows;
@@ -90,13 +128,19 @@ overview.get('/', async (_req, res) => {
   // keep_resume_card is off the hero is hidden cleanly (resume = null and the
   // flag below lets the deck skip the block entirely).
   const pick = sorted.find(isActive) || sorted[0] || null;
+  // The three resume sub-lists ride along so the deck can render the full
+  // "pick up where you left off" card, not just its headline.
+  const lines = (v, n) => asList(v).map((s) => String(s)).filter(Boolean).slice(0, n);
   const resume = (appSettings.keep_resume_card && pick) ? {
     slug: pick.slug,
     name: pick.name,
     tint: pick.tint || null,
     summary: pick.summary || '',
     currentPhase: pick.current_phase || '',
-    nextUp: asList(pick.next_up).map((s) => String(s)).slice(0, 3),
+    when: relativeTime(pick.last_session_at) || '',
+    inProgress: lines(pick.in_progress, 4),
+    nextUp: lines(pick.next_up, 4),
+    workingWell: lines(pick.working_well, 4),
   } : null;
 
   // presence: live sessions grouped per project, most recently seen first.
@@ -162,16 +206,68 @@ overview.get('/', async (_req, res) => {
   let seriousTotal = 0;
   let openBugs = 0;
   const bugProjects = [];
+  const bugsByProject = [];
   for (const r of bugsR.rows) {
     if (!byId.has(r.project_id)) continue; // soft-deleted project
     openBugs += r.open_all;
+    const p = byId.get(r.project_id);
+    // Every project with bugs on the books — the dashboard's per-app health
+    // panel needs the quiet ones too, not only the ones with something serious.
+    bugsByProject.push({ slug: p.slug, name: p.name, serious: r.serious, open: r.open_all });
     if (r.serious > 0) {
       seriousTotal += r.serious;
-      const p = byId.get(r.project_id);
-      if (p) bugProjects.push({ slug: p.slug, name: p.name, count: r.serious });
+      bugProjects.push({ slug: p.slug, name: p.name, count: r.serious });
     }
   }
   bugProjects.sort((a, b) => b.count - a.count);
+
+  // The open bugs themselves, worst first (already ordered by the query).
+  const openBugRows = bugRowsR.rows.flatMap((r) => {
+    const p = byId.get(r.project_id);
+    return p ? [{
+      slug: p.slug,
+      name: p.name,
+      key: r.bug_key,
+      title: r.title,
+      severity: r.severity,
+      status: r.status,
+      linkRef: r.link_ref || '',
+      when: relativeTime(r.created_at) || 'just now',
+    }] : [];
+  });
+
+  // The cross-project MoSCoW rollup. Within a bucket the order mirrors the run
+  // queue — desire tier first, then board position — so the column reads as
+  // what would actually be worked next; done items sink to the bottom.
+  const BUCKETS = ['must', 'should', 'could', 'wont'];
+  const ROLLUP_CAP = 6;
+  const tierRank = (t) => ({ S: 0, A: 1, B: 2, C: 3 }[t] ?? 4);
+  const roadRows = roadR.rows.filter((r) => byId.has(r.project_id));
+  const roadmapBuckets = BUCKETS.map((bucket) => {
+    const inBucket = roadRows.filter((r) => r.bucket === bucket);
+    const ordered = [...inBucket].sort((a, b) =>
+      Number(a.done) - Number(b.done)
+      || tierRank(a.tier) - tierRank(b.tier)
+      || (a.position - b.position)
+      || (a.id - b.id));
+    return {
+      bucket,
+      open: inBucket.filter((r) => !r.done).length,
+      items: ordered.slice(0, ROLLUP_CAP).map((r) => {
+        const p = byId.get(r.project_id);
+        return {
+          slug: p.slug,
+          name: p.name,
+          id: String(r.id),
+          title: r.title,
+          note: r.note || '',
+          done: !!r.done,
+          auto: r.source === 'hook',
+          claimedBy: r.claimed_by || '',
+        };
+      }),
+    };
+  });
 
   // activity: merged recent checkpoints, newest first (already ordered by the
   // query); soft-deleted projects' pushes are dropped.
@@ -215,10 +311,19 @@ overview.get('/', async (_req, res) => {
     blockers,
     stale,
     review,
-    bugs: { total: seriousTotal, projects: bugProjects },
+    bugs: { total: seriousTotal, projects: bugProjects, open: openBugRows, byProject: bugsByProject },
+    roadmap: { closedThisWeek: closedR.rows[0].roadmap_closed, buckets: roadmapBuckets },
     activity,
     autopilotRuns,
     graph: graphR.rows.map((r) => ({ date: r.d, count: r.n })),
-    totals: { byStatus, openBugs, pushesThisWeek: weekR.rows[0].n },
+    totals: {
+      byStatus,
+      openBugs,
+      pushesThisWeek: weekR.rows[0].n,
+      pushesToday: weekR.rows[0].today,
+      projectsTouchedThisWeek: weekR.rows[0].projects,
+      roadmapClosedThisWeek: closedR.rows[0].roadmap_closed,
+      bugsFixedThisWeek: closedR.rows[0].bugs_fixed,
+    },
   });
 });

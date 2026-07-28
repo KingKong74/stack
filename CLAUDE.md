@@ -691,17 +691,52 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit
   hash (activity), a bug key (quality) or a row id (roadmap/notes). Legacy `bugs`/`audit` tabs
   both resolve to `quality` (#278), so old deep links keep working. `go.settings()` opens Settings.
-- `components/CommandDeck.tsx` — the cross-project deck at the top of the dashboard (resume hero,
-  the **live-now strip** — green presence chips per project with branches and session count, gone
-  when quiet — the **branches strip** — ⚑ chips for open branch-claimed roadmap items, deep-linking to
-  the item, gone when nothing's claimed — the **review inbox**, Blocked/Stale/Bugs attention row
-  that goes calm at zero, merged activity stream). Renders the `getOverview()` payload; all click-throughs use `go.detail(slug, tab?)`.
+- `components/CommandDeck.tsx` — the command deck's PARTS. It used to render as one block above
+  the project grid; the dashboard is now **sectioned** (see below), so each part is exported
+  separately and the screen places it in the section it belongs to. Behaviour is unchanged:
+  `ResumeHero` (the signature cream card — now the FULL three-column resume, Currently in
+  progress / Suggested next / Working well, with Export session brief + Continue in its head),
+  `LiveNowStrip` (green presence chips per project with branches and session count, gone when
+  quiet), `BranchClaims` (⚑ chips for open branch-claimed roadmap items, deep-linking to the
+  item, gone when nothing's claimed), `AutopilotDigest` (last night's per-item runs, gone on a
+  quiet night), `ReviewQueue` (the review inbox) and `AttentionRow` (Blocked / Stale / Bugs,
+  calm at zero). All read the `getOverview()` payload; every click-through uses
+  `go.detail(slug, tab?)`.
   The review inbox (`ReviewQueue`) lists auto-extracted items no human has looked at yet:
   **Keep** = `patchBug/patchRoadmapItem {reviewed:true}` (stays in its tracker), **Dismiss** =
   the existing DELETE (tombstones the fingerprint); rows settle optimistically and the whole
   block disappears at zero. Titles deep-link via `go.detail(slug, tab, highlight)`.
-- `screens/` Dashboard (loads projects + overview independently — a deck hiccup never blanks the
-  grid; renders the deck above the "All projects" grid; status filters, computed progress on cards),
+- `components/DashSections.tsx` — the sectioned dashboard's own pieces (the Stack Dashboard
+  design handoff). **`SubNav`** is the sticky section rail under the topbar: jump links
+  (Projects / Continue / Activity / Roadmap / Audit) with a scroll spy, and the workshop's state
+  on the right (live · building · serious bugs · pushes today), each counter gone at zero. Its
+  `top` is set INLINE from the topbar's measured height via a ResizeObserver — the topbar is
+  sticky at 0 too and its own height changes when its buttons wrap, so a hardcoded offset hides
+  the rail behind it on a narrow window. The links scroll by hand rather than navigating,
+  because a bare `#roadmap` anchor would rewrite the hash ROUTE out from under the app.
+  **`PushesSection`** is the day-grouped push feed: its own `getTimeline()` fetch (independent,
+  like the deck's — a timeline hiccup must not blank the page), a scope seg (All apps / per
+  project), a rail-dot-per-day timeline, and within a day one card per consecutive
+  project+branch run. **A push is one CHECKPOINT, not one commit** — Stack records the session,
+  so there are no per-commit rows and no +/− line counts to show; the row carries the summary,
+  the `✦` gemini note, one tag, the hash and the time, and a note under the feed says so
+  plainly rather than leaving the absence to be read as a gap. A filled row mark is an authored
+  /checkpoint, hollow is the hook's metadata backstop. Its sidebar is the 26-week push heatmap
+  (`overview.graph` through the shared `lib/contrib` maths), the live-now strip and a This week
+  panel. **`RoadmapRollup`** is the cross-project MoSCoW board — four columns from
+  `overview.roadmap`, each card showing `project · #id` and NOT the note (one long note turns a
+  glance into a wall). **Read-only by design**: a tick here would close an item in another
+  project without its plan, claim or built_note in view, so the check shows state and the card
+  opens the real board. **`AuditLists`** is the cross-project open-bug list beside **Progress by
+  app** — deliberately NOT called a health score: the bar is `util.computeProgress`, which is a
+  documented model, and the panel says so in a footnote rather than inventing a second metric.
+- `screens/` Dashboard — **five anchored sections behind the sticky `SubNav`**: `#projects` (the
+  grid leads, since it's what you came for — section bar + a status **seg control** whose options
+  carry their own counts and drop out at zero, replacing the old chip row), `#continue`
+  (`ResumeHero` + `BranchClaims`), `#activity` (`AutopilotDigest` + `PushesSection`), `#roadmap`
+  (`RoadmapRollup`) and `#audit` (`ReviewQueue` + `AttentionRow` + `AuditLists`). Loads projects
+  + overview independently — a deck hiccup never blanks the grid, and vice versa; computed
+  progress on cards),
   ProjectDetail (loads project+activity+collections, owns tab/modal state, persists on mutate;
   initial tab comes from the route so the deck can deep-link to e.g. a project's Activity tab;
   the Quality/Roadmap tab titles carry count badges — Quality's is the one "wrong now" number,
@@ -1106,7 +1141,10 @@ The cross-project glance layer, computed server-side in four aggregate queries (
 ```jsonc
 {
   "resume":  { "slug": "…", "name": "…", "tint": "#…|null",
-               "summary": "…", "currentPhase": "…", "nextUp": ["…"] },   // or null
+               "summary": "…", "currentPhase": "…", "when": "1h ago",
+               // the three resume sub-lists ride along so the deck can render the FULL
+               // "pick up where you left off" card, not just its headline
+               "inProgress": ["…"], "nextUp": ["…"], "workingWell": ["…"] },   // or null
   "presence": [ { "slug": "…", "name": "…", "count": 2,                  // live sessions now
                   "branches": ["main", "wt-x"], "seen": "5m ago" } ],
   "claims":   [ { "slug": "…", "name": "…", "branch": "lane/ui",         // open branch-claimed items
@@ -1119,13 +1157,32 @@ The cross-project glance layer, computed server-side in four aggregate queries (
                             "title": "…", "meta": "high|should", "when": "2h ago" } ] },
   "blockers": [ { "slug": "…", "name": "…", "text": "…" } ],            // every stored blocker line, flat
   "stale":    [ { "slug": "…", "name": "…", "since": "2w ago" } ],      // live|building, last push > STALE_DAYS
-  "bugs":     { "total": 3, "projects": [ { "slug": "…", "name": "…", "count": 2 } ] }, // open critical|high
+  "bugs":     { "total": 3, "projects": [ { "slug": "…", "name": "…", "count": 2 } ], // open critical|high
+                // the ROWS themselves (worst severity first, capped) — the dashboard's Audit
+                // section lists open bugs across every project, not just their counts
+                "open": [ { "slug": "…", "name": "…", "key": "BUG-3", "title": "…",
+                            "severity": "critical", "status": "open", "linkRef": "…", "when": "2h ago" } ],
+                // every project with bugs on the books, quiet ones included — Progress by app
+                "byProject": [ { "slug": "…", "name": "…", "serious": 1, "open": 4 } ] },
+  // the cross-project MoSCoW rollup. Open + unparked work plus anything closed in the last
+  // week (so the board shows movement, not only what's left). Within a bucket the order
+  // mirrors the RUN QUEUE — desire tier first, then board position — so the column reads as
+  // what would actually be worked next; done items sink. `open` is the true count, `items` capped at 6.
+  "roadmap":  { "closedThisWeek": 7,
+                "buckets": [ { "bucket": "must", "open": 4,
+                               "items": [ { "slug": "…", "name": "…", "id": "42", "title": "…",
+                                            "note": "…", "done": false, "auto": true, "claimedBy": "" } ] } ] },
   "activity": [ { "slug": "…", "name": "…", "hash": "…", "branch": "…",
                   "summary": "…", "tags": ["…"], "when": "just now" } ], // merged, newest first, ~12
   "graph":    [ { "date": "YYYY-MM-DD", "count": 3 } ],  // year of daily push counts → the deck's
                                                           // compact contribution strip (click = timeline)
   "totals":   { "byStatus": { "live": 0, "building": 3, "paused": 0, "archived": 0 },
-                "openBugs": 4, "pushesThisWeek": 2 }
+                "openBugs": 4, "pushesThisWeek": 2, "pushesToday": 1,
+                "projectsTouchedThisWeek": 3,
+                // Both closure counts lean on `updated_at`, the only stamp either table carries
+                // for "when it changed" — an edit to an already-done item counts too, so read
+                // them as MOVEMENT rather than an exact ledger.
+                "roadmapClosedThisWeek": 7, "bugsFixedThisWeek": 5 }
 }
 ```
 
