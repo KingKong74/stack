@@ -1175,8 +1175,17 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 
 Ingest, in one transaction: upsert the project by slug (first push creates it + assigns a tint by
 cycling the palette, and fills `repo_url` once — `COALESCE(repo_url, …)` so a hand-set URL is never
-overwritten); record the session, **idempotent on commit_hash / session_id** (re-running for the same
-push updates that row, never duplicates the activity); refresh the live resume fields; then land
+overwritten); record the session, **idempotent on session_id, then commit_hash** (re-running for the
+same push updates that row, never duplicates the activity) — in **that order**, because a session's
+identity is its session id and the commit is only the fallback for a post that carries none. Matching
+the commit first silently collapsed parallel sessions: several sessions in one checkout all end at
+the same `git rev-parse HEAD`, so three sessions ending together posted one commit_hash, all three
+matched the one row, and the feed kept only the last — two real pushes gone, and the survivor's row
+re-stamped with the end time so hours-old work read as minutes old. The commit fallback still lets
+the SessionEnd backstop claim the authored `/checkpoint` row (which posts no session_id), but only
+while that row is **unclaimed**, or the next session at the same HEAD would claim it right back.
+Pinned by `server/test/ingest-identity.test.mjs` (needs a throwaway server + empty DB — the header
+says how); refresh the live resume fields; then land
 extraction — each bug becomes an open bug with `link_ref` = the commit (so the bug→activity chip
 resolves), each next-step a roadmap item in its bucket (default `should`), each future an idea on
 the Futures tab. Dedup by fingerprint: an
@@ -1590,8 +1599,16 @@ won't re-create it.
 - Ingest uses COALESCE / keep-if-empty on update so short/empty checkpoints don't overwrite a good
   summary, and the `authored` flag means a metadata backstop never clobbers a rich /checkpoint for the
   same commit. Preserve both properties when extending.
-- Ingest is idempotent on commit_hash / session_id; auto-extraction dedups on fingerprint and honours
-  the tombstone table. Keep all three when touching ingest.
+- Ingest is idempotent on session_id **then** commit_hash (never the other way round — that loses
+  parallel sessions); auto-extraction dedups on fingerprint and honours the tombstone table. Keep all
+  three when touching ingest.
+- The SessionEnd hook posts **the commit this session made**, read from the results of its own
+  `git commit` calls in the transcript, and only falls back to `git rev-parse HEAD` when it committed
+  nothing. HEAD is wrong whenever sessions run in parallel in one checkout: by the time one ends,
+  another's push has moved it.
+- **The hooks in `~/.stack/` are copies, not symlinks.** Editing `hook/*.mjs` changes nothing until
+  they are copied over — the installed pair had been stale for weeks, which is why `tokens_used` was
+  0 on every session row despite #178. Check `diff hook/<f> ~/.stack/<f>` when a hook fix seems inert.
 - `readSettings()` defaults to "on" when the row is missing, and the hook/poster default to "on" when
   the API is unreachable — so a flaky API degrades to recording, never to silent-off. Keep that.
 - The web Dockerfile is multi-stage (Vite build → nginx). nginx does SPA fallback **and** proxies
@@ -1618,6 +1635,8 @@ node scripts/stack-context.mjs --slug stack --api https://stack.your-domain  # e
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
 node server/test/fleet-roles.test.mjs      # #281's role attribution + drift detection (pure, no DB)
 node server/test/run-shape.test.mjs        # the run ledger's shared shapes still match the old copies
+node server/test/ingest-identity.test.mjs  # one activity row per SESSION (needs a throwaway server — see its header)
+cp hook/*.mjs ~/.stack/                    # install the hooks — ~/.stack holds COPIES, edits here are inert until this
 ./stack start-session [slug] [--item N]    # start an automation session (▶ Run now from the terminal)
 ./stack list-sessions                      # the automation job queue (also [slug], --limit, --json)
 ./stack term [dir]                         # claude in a stack-term tmux session (laptop/ssh — shows on

@@ -27,7 +27,7 @@
 
 import { readFileSync } from 'node:fs';
 import {
-  loadStackEnv, logStderr, projectFromGit, fetchSettings, postIngest, endPresence,
+  loadStackEnv, logStderr, projectFromGit, fetchSettings, postIngest, endPresence, git,
 } from './stack-post.mjs';
 
 loadStackEnv();
@@ -44,7 +44,30 @@ function readStdin() {
 // ---- transcript parsing ----
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'str_replace', 'create_file']);
 
-function parseTranscript(path) {
+// ---- the commit THIS session made ----
+// HEAD is the wrong answer whenever sessions run in parallel in one checkout:
+// by the time this one ends another session has pushed, so posting HEAD files
+// this session's work under someone else's commit — and before the ingest match
+// order was fixed, under someone else's activity row.
+//
+// The honest source is the session's own `git commit` calls: the hashes that
+// came back from a Bash command that actually committed. Not every hash in the
+// transcript — a session reads plenty of other commits — and not a bare
+// `[branch hash]` scrape either, since a committing command is just as likely
+// to be `git commit -q … && git log --oneline -1`. So: pair each tool result
+// with the command that produced it, keep the hashes only from the committing
+// ones, and take the last that still resolves in the repo.
+const HEX = /\b([0-9a-f]{7,40})\b/g;
+const COMMITTING = /\bgit\b(?![^\n]*--dry-run)[^\n]*\bcommit\b/;
+
+function resultText(block) {
+  const c = block.content;
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) return c.map((b) => (b && b.type === 'text' ? b.text : '')).join('\n');
+  return '';
+}
+
+function parseTranscript(path, cwd) {
   let raw = '';
   try { raw = readFileSync(path, 'utf8'); } catch { return null; }
   const turns = [];      // { role, text }
@@ -56,7 +79,8 @@ function parseTranscript(path) {
   // usage-meter) so manual sessions report usage like autopilot runs do.
   let tokens = 0;
   const seenUsage = new Set();
-
+  const committing = new Set();   // tool_use ids of Bash calls that ran `git commit`
+  const commitHits = [];          // hashes those calls printed, in order
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
     let ev;
@@ -88,10 +112,25 @@ function parseTranscript(path) {
         tools.add(block.name);
         const fp = block.input?.file_path || block.input?.path || block.input?.notebook_path;
         if (fp && EDIT_TOOLS.has(block.name)) files.add(String(fp));
+        const cmd = block.input?.command;
+        if (block.id && typeof cmd === 'string' && COMMITTING.test(cmd)) committing.add(block.id);
+      } else if (block.type === 'tool_result' && !block.is_error && committing.has(block.tool_use_id)) {
+        for (const m of resultText(block).matchAll(HEX)) commitHits.push(m[1]);
       }
     }
   }
-  return { turns, tools: [...tools], files: [...files], model, messageCount: turns.length, tokens };
+
+  // Last hash that still resolves to a real commit — a rewritten or discarded
+  // one simply doesn't, and we fall further back rather than posting a hash the
+  // repo has never heard of.
+  let commit = null;
+  for (let i = commitHits.length - 1; i >= 0 && !commit; i--) {
+    commit = git(cwd, ['rev-parse', '--short', `${commitHits[i]}^{commit}`]) || null;
+  }
+
+  return {
+    turns, tools: [...tools], files: [...files], model, messageCount: turns.length, tokens, commit,
+  };
 }
 
 // The last assistant message with real substance (not a one-line tool ack),
@@ -142,7 +181,7 @@ function lastSubstantiveMessage(turns) {
       tokens: 0,
     };
   } else {
-    t = parseTranscript(payload.transcript_path);
+    t = parseTranscript(payload.transcript_path, cwd);
     if (!t || t.messageCount < MIN_MESSAGES) {
       die0('transcript missing or too short; skipping.');
     }
@@ -162,7 +201,8 @@ function lastSubstantiveMessage(turns) {
     project: { slug: project.slug, name: project.name, repo: project.repo, repo_url: project.repo_url },
     session: {
       session_id: payload.session_id || null,
-      commit_hash: project.commit,
+      // this session's own commit; HEAD only when it committed nothing
+      commit_hash: t.commit || project.commit,
       branch: project.branch,
       cwd,
       model: t.model,
@@ -185,6 +225,7 @@ function lastSubstantiveMessage(turns) {
   if (!result.ok) {
     die0(`could not record metadata checkpoint${result.status ? ` (HTTP ${result.status})` : ''}${result.reason ? `: ${result.reason}` : ''}`);
   }
-  logStderr(`metadata checkpoint saved for ${project.slug}${project.commit ? ` @ ${project.commit}` : ''}`);
+  const posted = body.session.commit_hash;
+  logStderr(`metadata checkpoint saved for ${project.slug}${posted ? ` @ ${posted}` : ''}`);
   process.exit(0);
 })();

@@ -149,19 +149,36 @@ ingest.post('/', async (req, res) => {
       projectId = ins.rows[0].id;
     }
 
-    // --- 2. Record the session, idempotent on commit hash / session id ---
+    // --- 2. Record the session, idempotent on session id / commit hash ---
+    // A session's identity is its session_id, and the commit is only a fallback
+    // for posts that carry none. Matching the commit FIRST silently collapsed
+    // parallel sessions: several sessions sharing one checkout all end at the
+    // same `git rev-parse HEAD`, so three sessions ending together posted the
+    // same commit_hash, all three matched the one row, and the feed kept only
+    // the last — two real pushes vanished, and the survivor's row was re-stamped
+    // with the end time so hours-old work read as minutes old.
     let existingSession = null;
-    if (commit) {
-      const r = await client.query(
-        'SELECT id FROM sessions WHERE project_id = $1 AND commit_hash = $2 LIMIT 1',
-        [projectId, commit]
-      );
-      existingSession = r.rows[0] || null;
-    }
-    if (!existingSession && session.session_id) {
+    if (session.session_id) {
       const r = await client.query(
         'SELECT id FROM sessions WHERE project_id = $1 AND session_id = $2 LIMIT 1',
         [projectId, session.session_id]
+      );
+      existingSession = r.rows[0] || null;
+    }
+    if (!existingSession && commit) {
+      // An authored /checkpoint posts no session_id, so the SessionEnd backstop
+      // that follows it must still be able to claim that row by commit — but
+      // only an UNCLAIMED one, or the next session in the same checkout would
+      // claim it right back and we'd be where we started. A post with no
+      // session_id of its own (a re-run /checkpoint) matches either way.
+      const unclaimedOnly = session.session_id
+        ? "AND (session_id IS NULL OR session_id = '')"
+        : '';
+      const r = await client.query(
+        `SELECT id FROM sessions
+           WHERE project_id = $1 AND commit_hash = $2 ${unclaimedOnly}
+           ORDER BY id DESC LIMIT 1`,
+        [projectId, commit]
       );
       existingSession = r.rows[0] || null;
     }
