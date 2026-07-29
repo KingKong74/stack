@@ -51,7 +51,7 @@ import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, paneTail, reapDeadSessions, reapIdleSessions } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, paneTail, reapDeadSessions, reapIdleSessions, setKeep } from './tmux-session.mjs';
 import {
   availableProviders, providerEnv, getProvider,
   loadPreferredProvider, savePreferredProvider,
@@ -254,6 +254,10 @@ function pushDetached() {
     cwd: s.path === ROOT ? '' : s.path.startsWith(ROOT + sep) ? s.path.slice(ROOT.length + 1) : '',
     // The pane's recent content — what the Gemini labeller reads relay-side.
     tail: paneTail(s.name),
+    // #292 — pinned against the idle reaper. Read off the session itself on
+    // every push, so the browser's view of the pin can never be a cache of
+    // what the daemon last did rather than what the host actually holds.
+    keep: s.keep === true,
   }));
   sendUplink({ t: 'detached', sessions: sessionsList });
 }
@@ -748,6 +752,24 @@ function connect() {
       if (validName(m.name) && listDetached().some((s) => s.name === m.name)) {
         log(`killing detached tmux session ${m.name} (browser request)`);
         killSession(m.name);
+      }
+      pushDetached();
+    }
+    else if (m.t === 'keepSession') {
+      // #292 — pin or unpin a session against the idle reaper. Unlike
+      // killDetached this is allowed on an ATTACHED session too: pinning the
+      // tab you are working in is the main case, and the pin only ever DECLINES
+      // to destroy something, so there is nothing here for one browser to do to
+      // another's session that it would mind. Any stack-term-* name the host
+      // actually has is fair game; anything else is refused.
+      const want = m.keep === true;
+      if (validName(m.name) && listStackSessions().some((s) => s.name === m.name)) {
+        const r = setKeep(m.name, want);
+        log(r.ok
+          ? `${want ? 'pinned' : 'unpinned'} ${m.name} (browser request)`
+          : `could not ${want ? 'pin' : 'unpin'} ${m.name}: ${r.error}`);
+      } else {
+        log(`refused keep request for unknown session ${m.name}`);
       }
       pushDetached();
     }

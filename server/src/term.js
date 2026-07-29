@@ -52,13 +52,13 @@ export const termTails = () =>
 // the list (on connect, on session start/end, on a slow tick); the relay just
 // caches it for GET /api/terminal/detached. Cleared when the daemon drops —
 // nothing is attachable without it anyway, and a reconnect re-seeds the cache.
-let detachedSessions = []; // [{ name, cwd, created, attached, tail }]
+let detachedSessions = []; // [{ name, cwd, created, attached, keep, tail }]
 // Gemini labels survive the 60s list re-push (the daemon only sends
-// name/cwd/created/attached/tail); pruned when a name leaves the list.
+// name/cwd/created/attached/keep/tail); pruned when a name leaves the list.
 const detachedLabels = new Map(); // name -> label
 export const termDetached = () =>
-  detachedSessions.map(({ name, cwd, created, attached }) => ({
-    name, cwd, created, attached, label: detachedLabels.get(name) || '',
+  detachedSessions.map(({ name, cwd, created, attached, keep }) => ({
+    name, cwd, created, attached, keep, label: detachedLabels.get(name) || '',
   }));
 export const termDetachedTails = () => detachedSessions;
 export const setDetachedLabel = (name, label) => { detachedLabels.set(name, label); };
@@ -75,6 +75,15 @@ let agentSend = null;
 export function killDetachedTmux(name) {
   if (!agentSend) return false;
   agentSend({ t: 'killDetached', name });
+  return true;
+}
+// #292 — pin/unpin a session against the idle reaper. Like the kill above, the
+// server only RELAYS: the host owns the state (a tmux user option on the
+// session itself) and the daemon re-advertises the truth on its next push, so
+// nothing here has to be kept in step with anything.
+export function keepTmuxSession(name, keep) {
+  if (!agentSend) return false;
+  agentSend({ t: 'keepSession', name, keep: keep === true });
   return true;
 }
 
@@ -163,6 +172,10 @@ export function attachTerm(httpServer) {
             cwd: typeof s.cwd === 'string' ? s.cwd : '',
             created: Number(s.created) || 0,
             attached: s.attached === true,
+            // #292 — the keep pin, as the host reports it. An older daemon
+            // sends no such field, which reads as unpinned: the truthful answer
+            // for a host whose reaper does not know about pins either.
+            keep: s.keep === true,
             tail: typeof s.tail === 'string' ? s.tail.slice(-TAIL_CAP) : '',
           }));
         const alive = new Set(detachedSessions.map((s) => s.name));

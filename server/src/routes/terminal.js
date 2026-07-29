@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { q } from '../db.js';
-import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux } from '../term.js';
+import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux, keepTmuxSession } from '../term.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { readSettings } from '../settings.js';
 
@@ -49,6 +49,21 @@ terminal.post('/detached/kill', (req, res) => {
   const name = String(req.body?.name || '');
   if (!/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(name)) return res.status(400).json({ error: 'Bad session name.' });
   if (!killDetachedTmux(name)) return res.status(503).json({ error: 'The terminal daemon is not connected.' });
+  res.json({ ok: true });
+});
+
+// POST /api/terminal/keep {name, keep} — pin a session against the idle reaper
+// (#292). Unlike the kill above this is allowed on an ATTACHED session, because
+// pinning the tab you are working in is the main case and a pin only ever
+// DECLINES to destroy something. The host owns the state — it is a tmux user
+// option on the session itself — so this route sends and returns; the new value
+// arrives on the daemon's next advertisement, not from here.
+terminal.post('/keep', (req, res) => {
+  const name = String(req.body?.name || '');
+  if (!/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(name)) return res.status(400).json({ error: 'Bad session name.' });
+  if (!keepTmuxSession(name, req.body?.keep === true)) {
+    return res.status(503).json({ error: 'The terminal daemon is not connected.' });
+  }
   res.json({ ok: true });
 });
 

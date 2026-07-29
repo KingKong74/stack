@@ -9,7 +9,7 @@ import {
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
-  getDetachedSessions, killDetachedSession, type DetachedSession,
+  getDetachedSessions, killDetachedSession, keepSession, type DetachedSession,
   labelTerminalSessions,
   getTermTmuxName, setTermTmuxName, clearTermTmuxName,
   getTermOpenTabs, setTermOpenTabs,
@@ -480,6 +480,22 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
     const t = setTimeout(() => void refreshDetached(), 1500);
     return () => clearTimeout(t);
   }, [visible, liveCount]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // #292 — pin a session against the host's idle reaper (#287). The pin lives
+  // on the tmux session itself, so this only ASKS: the row is flipped
+  // optimistically for the press to feel like one, and the daemon's next
+  // advertisement is the value that stands. A failed pin therefore corrects
+  // itself within a beat rather than leaving the chip claiming a protection
+  // the host does not have.
+  const togglePin = async (name: string, keep: boolean) => {
+    setDetached((l) => l.map((d) => (d.name === name ? { ...d, keep } : d)));
+    try { await keepSession(name, keep); } catch { /* the refresh below tells the truth */ }
+    setTimeout(() => void refreshDetached(), 400);
+  };
+  // What the host says about a tab's own tmux session — the pin state a pane
+  // renders. A tab whose session the daemon has not advertised yet has no
+  // answer, which reads as unpinned, the same as the reaper would read it.
+  const pinnedOf = (tmux?: string) => !!tmux && detached.some((d) => d.name === tmux && d.keep);
 
   const attachDetached = (d: DetachedSession) => {
     setDetached((l) => l.filter((x) => x.name !== d.name));
@@ -1237,7 +1253,19 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
               const name = labels[d.name] || d.label || '';
               const picked = killPick.includes(d.name);
               return (
-                <span key={d.name} className={`td-chip${d.attached ? ' away' : ''}${picked ? ' picked' : ''}`}>
+                <span key={d.name} className={`td-chip${d.attached ? ' away' : ''}${picked ? ' picked' : ''}${d.keep ? ' pinned' : ''}`}>
+                  {/* #292 — the keep pin. Offered on EVERY chip, attached or
+                      not: the reaper measures output, not attachment, so a
+                      session mirrored on another device is exactly as
+                      reapable as an orphan and exactly as worth protecting. */}
+                  <button className={`td-pin${d.keep ? ' on' : ''}`} aria-pressed={!!d.keep}
+                    aria-label={d.keep ? `Unpin ${d.name}` : `Pin ${d.name}`}
+                    title={d.keep
+                      ? 'Pinned — the idle reaper will not take this session. Click to unpin.'
+                      : 'Pin this session so the idle reaper never takes it, however quiet it goes'}
+                    onClick={() => void togglePin(d.name, !d.keep)}>
+                    {d.keep ? '📌' : '📍'}
+                  </button>
                   <button className="td-attach"
                     title={d.attached
                       ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
@@ -1307,6 +1335,24 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                   </span>
                   <span className="where">{s.cmd === 'claude' ? 'claude' : 'shell'} · {s.cwd || '~'}</span>
                   {copied?.id === s.id && <span className="pane-copied">⧉ {copied.label}</span>}
+                  {/* #292 — pin this session against the idle reaper. On the
+                      PANE because that is where you are when you realise the
+                      thing you are half-way through should outlive the
+                      threshold: a session parked mid-investigation, or one
+                      waiting out a usage-limit reset, is indistinguishable
+                      from an abandoned tab to the reaper's own measure. */}
+                  {s.tmux && (() => {
+                    const pinned = pinnedOf(s.tmux);
+                    return (
+                      <button className={`pane-btn pin${pinned ? ' on' : ''}`} aria-pressed={pinned}
+                        title={pinned
+                          ? `Pinned — the idle reaper will not take ${s.tmux}. Click to unpin.`
+                          : `Pin ${s.tmux} so the idle reaper never takes it, however quiet it goes`}
+                        onClick={(e) => { e.stopPropagation(); void togglePin(s.tmux!, !pinned); }}>
+                        {pinned ? '📌' : '📍'}
+                      </button>
+                    );
+                  })()}
                   {/* Two different endings, named as such. Closing a claude
                       tab DETACHES it — the host session keeps running, which
                       is the whole point of #171 — so a control called × must

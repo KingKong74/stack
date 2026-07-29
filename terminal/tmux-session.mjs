@@ -96,6 +96,31 @@ export function paneTail(name, lines = 30) {
   return (r.stdout || '').replace(/\s+$/, '').slice(-1500);
 }
 
+// (#292) The KEEP PIN — "the reaper must not take this one".
+//
+// It lives as a tmux user option ON THE SESSION rather than in a store of the
+// daemon's own, and that is the whole point: the state sits where the thing it
+// describes sits. A daemon restart, a browser reload, a re-attach from another
+// device — none of them can drift from it, because there is nothing to drift.
+// It dies exactly when the session does.
+//
+// User options need tmux 3.0+ (2019). Older tmux fails the set, and setKeep
+// reports that rather than returning quietly: a pin that silently did nothing
+// would be worse than no pin at all, since the session would read as protected
+// and be reaped anyway.
+export function setKeep(name, keep) {
+  // `=name:` — exact-match session, trailing colon so tmux reads it as a PANE
+  // target. set-option's -t is a target-pane in tmux 3.x (options can be
+  // pane-scoped), so a bare `=name` fails with "no such session" even though
+  // the session plainly exists. Same trap paneTail() already documents.
+  const args = keep
+    ? ['set-option', '-t', `=${name}:`, '@stack-keep', '1']
+    : ['set-option', '-t', `=${name}:`, '-u', '@stack-keep'];
+  const r = spawnSync('tmux', args, { encoding: 'utf8' });
+  if (r.status === 0) return { ok: true };
+  return { ok: false, error: (r.stderr || '').trim() || 'tmux refused the option' };
+}
+
 // List every stack-term-* tmux session on the host — the web daemon's own and
 // any started by hand (ssh + `stack term`), with whether a client is attached
 // anywhere. Only stack-term-* names: autopilot/test sessions are not the
@@ -104,13 +129,13 @@ export function paneTail(name, lines = 30) {
 export function listStackSessions() {
   const r = spawnSync(
     'tmux',
-    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}\t#{session_activity}'],
+    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}\t#{session_activity}\t#{@stack-keep}'],
     { encoding: 'utf8' },
   );
   if (r.status !== 0) return []; // no server running = no sessions
   const out = [];
   for (const line of r.stdout.split('\n')) {
-    const [name, attached, created, path, activity] = line.split('\t');
+    const [name, attached, created, path, activity, keep] = line.split('\t');
     // One strict pattern (#218: #199) instead of the old two-step
     // validName() + startsWith() pair, whose rules could drift apart.
     if (typeof name !== 'string' || !/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(name)) continue;
@@ -123,6 +148,8 @@ export function listStackSessions() {
       // this on real pane activity, so it measures whether WORK is happening
       // rather than whether a tab happens to be open.
       activity: (parseInt(activity, 10) || 0) * 1000,
+      // #292 — the keep pin, read straight off the session that carries it.
+      keep: keep === '1',
     });
   }
   return out;
@@ -182,6 +209,11 @@ export function reapIdleSessions(hours) {
   const cutoff = Date.now() - hours * 3600_000;
   const reaped = [];
   for (const s of listStackSessions()) {
+    // #292 — the keep pin exempts a session outright. A session parked
+    // mid-investigation, or one waiting out a usage-limit reset, looks exactly
+    // like an abandoned one to session_activity; this is the only way to say
+    // which it is, and saying it must beat guessing at it.
+    if (s.keep) continue;
     // activity 0 = tmux told us nothing; refuse to guess rather than kill on a
     // missing timestamp.
     if (!s.activity || s.activity > cutoff) continue;

@@ -2325,6 +2325,12 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .pane-btn:hover { color: var(--critical); background: var(--card); }
 .pane-btn.end { font-size: 11px; }
 .pane-btn.end:hover { color: #fff; background: var(--critical); }
+/* #292 — the pane's keep pin. A PINNED pane keeps its pin visible without a
+   hover: the other pane buttons are actions you go looking for, this one is a
+   state you need to be able to read at a glance across four terminals. */
+.pane-btn.pin { font-size: 11px; filter: grayscale(1); opacity: 0; }
+.pane-btn.pin:hover { color: var(--live); background: var(--card); }
+.pane-btn.pin.on { opacity: 1; filter: none; }
 .pane-btn:disabled { opacity: 0.5; }
 /* The copy receipt. xterm draws to a canvas, so a copy leaves no visible
    selection behind — without this, a copy that worked and one that silently
@@ -2411,6 +2417,14 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .td-pick { padding: 3px 6px; color: var(--muted); font-size: 12px; line-height: 1; border-left: 1px solid var(--accent-tint-border); }
 .td-pick:hover, .td-pick.on { color: var(--critical); }
 .td-chip.picked { border-color: var(--critical); }
+/* #292 — the keep pin. Offered on every chip (the reaper measures OUTPUT, not
+   attachment, so a mirrored session is as reapable as an orphan), and the
+   pinned state is worn by the whole chip: "safe from the reaper" is a fact
+   about the session, not a state of one small button. */
+.td-pin { padding: 3px 6px; font-size: 11px; line-height: 1; color: var(--muted); border-right: 1px solid var(--accent-tint-border); filter: grayscale(1); opacity: 0.75; }
+.td-pin:hover { opacity: 1; }
+.td-pin.on { filter: none; opacity: 1; }
+.td-chip.pinned { border-color: var(--live); }
 .td-bulk { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
 .td-bulk .btn-repo.sm, .td-bulk .btn-cancel.sm { padding: 3px 9px; font-size: 11.5px; }
 .td-killlist { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; }

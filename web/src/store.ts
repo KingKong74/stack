@@ -1041,6 +1041,7 @@ export interface DetachedSession {
   name: string; cwd: string; created: number;
   attached?: boolean;  // a client holds it elsewhere (another browser / laptop ssh) — attach mirrors it
   label?: string;      // ✧ Gemini's take on what it's doing
+  keep?: boolean;      // #292 — pinned: the host's idle reaper leaves it alone
 }
 export async function getDetachedSessions(): Promise<DetachedSession[]> {
   const r = await request<{ sessions: DetachedSession[] }>('/terminal/detached');
@@ -1048,6 +1049,13 @@ export async function getDetachedSessions(): Promise<DetachedSession[]> {
 }
 export async function killDetachedSession(name: string): Promise<void> {
   await request<{ ok: boolean }>('/terminal/detached/kill', { method: 'POST', body: { name } });
+}
+// #292 — pin a session so the host's idle reaper (#287) never takes it. The
+// state lives on the tmux session itself, so this only ASKS; the new value
+// arrives with the daemon's next advertisement, which is why callers refresh
+// the detached list rather than assuming the write landed.
+export async function keepSession(name: string, keep: boolean): Promise<void> {
+  await request<{ ok: boolean }>('/terminal/keep', { method: 'POST', body: { name, keep } });
 }
 
 // Device-local cwd → tmux session name memory, so a page reload re-attaches
