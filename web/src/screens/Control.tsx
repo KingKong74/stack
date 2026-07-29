@@ -1099,7 +1099,17 @@ export function ControlPanel() {
                   {(p.branches.length > 0 || (p.absorbedBranches ?? 0) > 0) && (
                     <div className="mc-branches" aria-label={`Open branches for ${p.name}`}
                       title={p.branchesWhen ? `git state as of ${p.branchesWhen}` : undefined}>
-                      {p.branches.map((b) => {
+                      {[...p.branches].sort((a, b) => {
+                        // #288 — order by what needs a HUMAN, the same rule the
+                        // lane list sorts on. A conflicting branch is the one
+                        // the machine cannot finish at all; a clean one is a
+                        // decision away; an unprobed one is neither yet.
+                        // Within a group, most work first — a branch with one
+                        // commit on it is rarely what you came to deal with.
+                        const rank = (x: typeof a) => (x.mergeClean === false ? 0 : x.mergeClean === true ? 1 : 2);
+                        return rank(a) - rank(b) || (b.ahead ?? 0) - (a.ahead ?? 0)
+                          || a.branch.localeCompare(b.branch);
+                      }).map((b) => {
                         const mergeJob = data?.jobs.find(
                           (j) => j.slug === p.slug && j.kind === 'merge' && j.detail.includes(b.branch),
                         );
@@ -1108,7 +1118,9 @@ export function ControlPanel() {
                           b.subject ? `Last commit: ${b.subject}${b.when ? ` (${b.when})` : ''}` : '',
                         ].filter(Boolean).join('\n');
                         return (
-                          <span key={b.branch} className={`mc-branch ${mergeJob ? mergeJob.status : ''}`}
+                          <span key={b.branch}
+                            className={`mc-branch ${mergeJob ? mergeJob.status : ''}`
+                              + (b.mergeClean === false ? ' conflicts' : b.mergeClean === true ? ' clean' : '')}
                             title={chipTitle}>
                             <button className="mc-branch-name"
                               onClick={() => go.detail(p.slug, 'roadmap', b.itemId)}>
@@ -1130,6 +1142,17 @@ export function ControlPanel() {
                             )}
                             {b.mergeClean === false && (
                               <span className="mc-branch-conflict" title="Conflicts with main — rebase or merge by hand">⚠</span>
+                            )}
+                            {/* #288 — the last commit's AGE, on the chip rather
+                                than behind a hover. It is the one field that
+                                separates live work from a stranded lane, and a
+                                strip that hides it makes every branch look
+                                equally current. */}
+                            {b.when && (
+                              <span className="mc-branch-age"
+                                title={b.subject ? `Last commit ${b.when}: ${b.subject}` : `Last commit ${b.when}`}>
+                                {b.when}
+                              </span>
                             )}
                             {mergeJob ? (
                               <span className="mc-branch-status">{
@@ -1211,6 +1234,15 @@ export function ControlPanel() {
                           🧹 {p.absorbedBranches} merged branch{p.absorbedBranches === 1 ? '' : 'es'} to prune
                         </span>
                       )}
+                      {/* #288 — every number on this strip is a SNAPSHOT: the
+                          host fetches and probes on its own ~10-minute cycle,
+                          not when this page loads. That was a hover on the
+                          container, which is exactly where a reader who has
+                          been given precise-looking counts will not look. */}
+                      <span className="mc-branch-asof"
+                        title="The host dispatcher fetches each repo and re-probes every ~10 minutes; the ahead/behind counts and the conflict probe are from that pass, not from this page load.">
+                        {p.branchesWhen ? `git as of ${p.branchesWhen}` : 'no git report yet — chips are claims only'}
+                      </span>
                     </div>
                   )}
                 </div>

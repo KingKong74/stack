@@ -1916,6 +1916,13 @@ a.tab { display: inline-block; }
 .mc-branch.running { color: var(--green); border-color: var(--green-tint); background: var(--panel); }
 .mc-branch.done { color: var(--muted); }
 .mc-branch.failed { color: var(--critical); }
+/* #288 — the probe's verdict on the chip's own edge, so the sorted strip reads
+   as three groups without anyone counting glyphs. Deliberately an edge and not
+   a fill: a conflicting branch is a thing to deal with, not an alarm. */
+.mc-branch.conflicts { border-color: var(--critical); }
+.mc-branch.clean { border-color: var(--green-tint); }
+.mc-branch-age { color: var(--faint); font-size: 10.5px; font-weight: 500; white-space: nowrap; }
+.mc-branch-asof { align-self: center; color: var(--fainter); font-family: var(--mono); font-size: 10px; white-space: nowrap; }
 .mc-branch-name { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; color: var(--accent); font-size: 11px; font-weight: 600; }
 .mc-branch-name:hover { color: var(--accent-deep); text-decoration: underline; }
 .mc-branch-item { color: var(--muted); font-size: 11px; font-weight: 500; }
