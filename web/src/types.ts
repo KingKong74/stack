@@ -4,6 +4,20 @@ export type BugStatus = 'open' | 'investigating' | 'fixing' | 'fixed';
 export type Priority = 'must' | 'should' | 'could' | 'wont';
 export type Source = 'hook' | 'manual';   // hook = auto-extracted, manual = hand-entered
 
+// What has pushed since the checkpoint that wrote the resume card. The card's
+// content only moves on an authored /checkpoint, while its timestamp moves on
+// every push — so a session that ended without one (reaped, limit-hit, closed)
+// used to leave a FRESH time over OLD content and last night read as empty.
+// null = the card is current. Optional on both payloads so a not-yet-redeployed
+// server just renders the old card rather than breaking.
+export interface ResumeSince {
+  authoredWhen: string;   // when the card's content was written ('' = never checkpointed)
+  count: number;          // pushes since then (only meaningful when authoredWhen is set)
+  hash: string;           // the newest of those pushes
+  branch: string;
+  when: string;
+  summary: string;        // that session's own sign-off, capped server-side
+}
 export interface Resume {
   when: string;
   ref: string;
@@ -11,6 +25,7 @@ export interface Resume {
   inProgress: string[];
   nextUp: string[];
   liked: string[];
+  since?: ResumeSince | null;
 }
 
 export interface ProjectMeta {
@@ -238,6 +253,7 @@ export interface OverviewResume {
   inProgress: string[];      // the three resume sub-lists, so the deck can render
   nextUp: string[];          // the full "pick up where you left off" card rather
   workingWell: string[];     // than only its headline
+  since?: ResumeSince | null; // pushes since the checkpoint that wrote this card
 }
 export interface OverviewBlocker { slug: string; name: string; text: string }
 // A project with at least one Claude session open right now.

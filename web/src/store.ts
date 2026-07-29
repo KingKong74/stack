@@ -1,7 +1,7 @@
 import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
-  AuthDevice, Tip, Tier,
+  AuthDevice, Tip, Tier, ResumeSince,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -191,7 +191,7 @@ interface ProjectPayload {
   deployPlatform?: string; logsUrl?: string; techStack?: string[];
   inProgress?: string[]; nextUp?: string[]; workingWell?: string[]; blockers?: string[];
   directives?: string[];
-  ref?: string; when?: string;
+  ref?: string; when?: string; resumeSince?: ResumeSince | null;
 }
 
 function toResume(d: ProjectPayload): Resume | null {
@@ -204,6 +204,7 @@ function toResume(d: ProjectPayload): Resume | null {
     inProgress: d.inProgress || [],
     nextUp: d.nextUp || [],
     liked: d.workingWell || [],
+    since: d.resumeSince ?? null,
   };
 }
 

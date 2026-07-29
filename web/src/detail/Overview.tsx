@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Project, Activity, ProjectStatus } from '../types';
 import { isAccentTag, PRODUCT_NAME } from '../lib/ui';
+import { ResumeSinceStrip } from '../components/ResumeSinceStrip';
 
 // One row of the project-scoped review queue (hook-created, not yet reviewed).
 export interface ReviewEntry {
@@ -229,7 +230,14 @@ export function Overview({
           </div>
           {r && (
             <div className="resume-meta">
-              <div className="resume-when">updated {r.when} · after push {r.ref}</div>
+              {/* `when` is the LAST PUSH, which is only when this card was
+                  updated if that push authored a checkpoint. When it didn't,
+                  say when the content was actually written. */}
+              <div className="resume-when">
+                {r.since?.authoredWhen
+                  ? `checkpoint ${r.since.authoredWhen} · ${r.since.count} push${r.since.count === 1 ? '' : 'es'} since`
+                  : `updated ${r.when} · after push ${r.ref}`}
+              </div>
               {onReplan && (
                 <button className="btn-export" onClick={onReplan}
                   title="Gemini drafts a first-session-back plan from the live state">
@@ -245,6 +253,7 @@ export function Overview({
 
         {r ? (
           <>
+            <ResumeSinceStrip since={r.since} slug={project.id} />
             <div className="resume-summary">{r.summary}</div>
             <div className="resume-cols">
               <div className="resume-col col-progress">

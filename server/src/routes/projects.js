@@ -7,7 +7,7 @@ import {
 } from '../util.js';
 import {
   bugShape, groupRoadmap, noteShape, futureShape, checkShape, activityShape,
-  projectListShape, projectDetailShape,
+  projectListShape, projectDetailShape, resumeSince,
 } from '../shape.js';
 import { readSettings, sessionDefaultLines } from '../settings.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
@@ -109,7 +109,10 @@ projects.get('/:slug', async (req, res) => {
   const appSettings = await readSettings();
   const [sessions, bugs, road, notes, futures, checks, weekly, live] = await Promise.all([
     q(
-      `SELECT commit_hash, branch, summary, tags, gemini_note, created_at FROM sessions
+      // `authored` rides along for resumeSince(): which of these pushes actually
+      // wrote the resume card, and what has landed since.
+      `SELECT commit_hash, branch, summary, tags, gemini_note, authored, tokens_used, created_at
+         FROM sessions
         WHERE project_id = $1 ORDER BY created_at DESC LIMIT 50`,
       [p.id]
     ),
@@ -151,6 +154,9 @@ projects.get('/:slug', async (req, res) => {
       liveBranches: live.rows.map((r) => r.branch || 'main'),
       // #278 — the Quality page hides its Gemini surfaces entirely when keyless.
       geminiReady: geminiEnabled(),
+      // The resume card's provenance: pushes that landed after the checkpoint
+      // that wrote it, so a stale card reads as stale.
+      since: resumeSince(sessions.rows),
     })
   );
 });

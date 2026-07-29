@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { relativeTime, STALE_DAYS, PRESENCE_TTL_MINUTES } from '../util.js';
 import { readSettings } from '../settings.js';
+import { resumeSince } from '../shape.js';
 
 // GET /api/overview — the cross-project command deck, computed server-side in a
 // handful of aggregate queries (never one request per project).
@@ -9,7 +10,9 @@ import { readSettings } from '../settings.js';
 // Response shape:
 // {
 //   resume: { slug, name, tint, summary, currentPhase, when,
-//             inProgress[], nextUp[], workingWell[] } | null,
+//             inProgress[], nextUp[], workingWell[],
+//             // null = current; else the pushes since the checkpoint that wrote it
+//             since: { authoredWhen, count, hash, branch, when, summary } | null } | null,
 //   keepResumeCard: true,    // false hides the resume hero (settings)
 //   presence: [ { slug, name, count, branches[], seen } ],   // live sessions right now
 //   claims:   [ { slug, name, branch, title, id } ],         // open branch-claimed roadmap items
@@ -128,6 +131,17 @@ overview.get('/', async (_req, res) => {
   // keep_resume_card is off the hero is hidden cleanly (resume = null and the
   // flag below lets the deck skip the block entirely).
   const pick = sorted.find(isActive) || sorted[0] || null;
+  // One targeted follow-up query, and only for the ONE picked project: which of
+  // its pushes actually wrote the resume fields, and what has landed since. It
+  // can't join the batch above because it needs `pick`, and it can't be read off
+  // `recentR` because that list is global and capped. See shape.resumeSince().
+  const sinceRows = (appSettings.keep_resume_card && pick)
+    ? (await q(
+        `SELECT commit_hash, branch, summary, authored, created_at FROM sessions
+          WHERE project_id = $1 ORDER BY created_at DESC LIMIT 40`,
+        [pick.id]
+      )).rows
+    : [];
   // The three resume sub-lists ride along so the deck can render the full
   // "pick up where you left off" card, not just its headline.
   const lines = (v, n) => asList(v).map((s) => String(s)).filter(Boolean).slice(0, n);
@@ -141,6 +155,9 @@ overview.get('/', async (_req, res) => {
     inProgress: lines(pick.in_progress, 4),
     nextUp: lines(pick.next_up, 4),
     workingWell: lines(pick.working_well, 4),
+    // null = the card is current; otherwise the pushes that landed after the
+    // checkpoint that wrote it, newest one included.
+    since: resumeSince(sinceRows),
   } : null;
 
   // presence: live sessions grouped per project, most recently seen first.

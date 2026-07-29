@@ -9,6 +9,7 @@ import {
   type TriageAnnotation, type TriageResult,
 } from '../store';
 import { ExportBriefModal } from './ExportBriefModal';
+import { ResumeSinceStrip } from './ResumeSinceStrip';
 
 // The command deck's parts. They used to render as one block at the top of the
 // dashboard; the dashboard is now sectioned (projects · continue · activity ·
@@ -56,7 +57,15 @@ export function ResumeHero({ resume, keepResumeCard }: {
             {resume.currentPhase && <span className="hero-phase">{resume.currentPhase}</span>}
           </div>
           <div className="resume-meta">
-            {resume.when && <div className="resume-when">{resume.when}</div>}
+            {/* the time the card's CONTENT was written, not the last push — see
+                ResumeSinceStrip for why those are different */}
+            {(resume.since?.authoredWhen || resume.when) && (
+              <div className="resume-when">
+                {resume.since?.authoredWhen
+                  ? `checkpoint ${resume.since.authoredWhen}`
+                  : resume.when}
+              </div>
+            )}
             <button className="btn-export" onClick={() => setExportOpen(true)}
               title="Download a markdown brief for starting back into this project">
               Export session brief <span className="arr">↗</span>
@@ -66,6 +75,7 @@ export function ResumeHero({ resume, keepResumeCard }: {
             </button>
           </div>
         </div>
+        <ResumeSinceStrip since={resume.since} slug={resume.slug} />
         {resume.summary && <div className="resume-summary">{resume.summary}</div>}
         <div className="resume-cols">
           <ResumeCol kind="progress" label="Currently in progress" mark="dot"

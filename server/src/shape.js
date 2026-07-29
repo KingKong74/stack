@@ -4,6 +4,44 @@
 
 import { relativeTime, cleanPlan } from './util.js';
 
+// ---- the resume card's provenance ----------------------------------------
+// The resume fields (summary / current_phase / the three sub-lists) are written
+// ONLY by an authored /checkpoint (ingest invariant 3), while `last_session_at`
+// is bumped by every push, the metadata backstop included. So a run of sessions
+// that ended without /checkpoint — reaped, limit-hit, or simply closed — leaves
+// the card wearing a FRESH timestamp over OLD content, which reads as "last
+// night produced nothing" when the pushes are sitting right there in the feed.
+//
+// This states the gap instead of hiding it: when the resume content came from a
+// checkpoint and how many pushes have landed since, plus the newest of those
+// pushes and its own sign-off (the backstop's parsed last message). Read-time
+// only — nothing here writes, so invariant 3 stands untouched.
+//
+// `sessions` is the project's session rows, NEWEST FIRST, each with `authored`.
+const SINCE_SUMMARY_CAP = 360; // keep the deck payload lean; the feed has it all
+
+export function resumeSince(sessions) {
+  const rows = Array.isArray(sessions) ? sessions : [];
+  if (!rows.length) return null;
+  const idx = rows.findIndex((s) => s.authored);
+  // No authored row in the window at all: the card has never been checkpointed
+  // (or not within the fetched history). authoredWhen '' is what the UI keys on.
+  const count = idx === -1 ? rows.length : idx;
+  if (!count) return null; // the newest push IS the checkpoint — card is current
+  const latest = rows[0];
+  const summary = String(latest.summary || '');
+  return {
+    authoredWhen: idx === -1 ? '' : relativeTime(rows[idx].created_at) || '',
+    count,
+    hash: latest.commit_hash || '',
+    branch: latest.branch || 'main',
+    when: relativeTime(latest.created_at) || 'just now',
+    summary: summary.length > SINCE_SUMMARY_CAP
+      ? `${summary.slice(0, SINCE_SUMMARY_CAP).trimEnd()}…`
+      : summary,
+  };
+}
+
 export function bugShape(row) {
   return {
     id: row.bug_key,
@@ -182,7 +220,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, since }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
@@ -209,6 +247,9 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, acti
     directives: Array.isArray(p.directives) ? p.directives : [],
     ref: latest ? latest.hash : '',
     when: latest ? latest.when : relativeTime(p.last_session_at) || '',
+    // What has pushed since the checkpoint that wrote the resume fields above
+    // (null = the card is current). See resumeSince().
+    resumeSince: since || null,
     activity,
     bugs,
     roadmap,
