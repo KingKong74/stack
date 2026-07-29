@@ -693,6 +693,11 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
   // #227 — the same overlay for desire tiers: moving a row across a tier
   // boundary re-tiers the moved item, exactly as crossing must/should re-buckets it.
   const [tierFlips, setTierFlips] = useState<Map<number, Tier>>(new Map());
+  // #290 — the drag in flight: the item id being carried, and the row it is
+  // hovering. Ids rather than indices, because the queue re-projects on every
+  // move and an index would be stale the instant the list shifted under it.
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [overId, setOverId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<Settled | null>(null);
   const [settled, setSettled] = useState<Map<string, Settled>>(new Map());
@@ -790,16 +795,23 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
     milestone('the board clears', () => true),
   ];
 
-  // ▲▼ move one slot; crossing the must/should boundary re-buckets the moved
-  // item (it takes its swap partner's bucket) so the shown order stays the
-  // truth about what runs first.
-  const move = (idx: number, dir: -1 | 1) => {
-    const j = idx + dir;
-    if (j < 0 || j >= cur.length) return;
+  // Move the row at `idx` to sit where `toIdx` sits now — the one reorder both
+  // ▲▼ and the drag (#290) go through, so a drag can never mean something
+  // different from two presses of ▼.
+  //
+  // The moved item takes the BUCKET AND TIER of the row it displaced. Crossing
+  // the must/should boundary re-buckets it, and crossing a tier boundary
+  // re-tiers it (#227), because tier is what the queue sorts on first: without
+  // that the row would snap straight back the moment the order was saved. For a
+  // one-slot move, "the row it displaced" is exactly the swap partner, so the
+  // arrows behave precisely as they always did.
+  const reorder = (idx: number, toIdx: number) => {
+    if (toIdx < 0 || toIdx >= cur.length || toIdx === idx) return;
     const next = [...cur];
-    [next[idx], next[j]] = [next[j], next[idx]];
+    const [pulled] = next.splice(idx, 1);
+    next.splice(toIdx, 0, pulled);
     const moved = byId.get(cur[idx]);
-    const partner = byId.get(cur[j]);
+    const partner = byId.get(cur[toIdx]);
     if (moved && partner && bucketOf(moved) !== bucketOf(partner)) {
       const target = bucketOf(partner);
       setFlips((m) => {
@@ -808,9 +820,6 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
         return n;
       });
     }
-    // #227 — crossing a tier boundary re-tiers the moved item the same way,
-    // because tier is what the queue sorts on first: without this the row would
-    // snap back the moment the order was saved.
     if (moved && partner && tierOf(moved) !== tierOf(partner)) {
       const target = tierOf(partner);
       setTierFlips((m) => {
@@ -821,6 +830,7 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
     }
     setOrder(next);
   };
+  const move = (idx: number, dir: -1 | 1) => reorder(idx, idx + dir);
 
   const saveOrder = async () => {
     if (saving) return;
@@ -1074,6 +1084,9 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
           )}
           {cur.map((id, idx) => {
             const it = byId.get(id)!;
+            // Where the carried row currently sits — which side of the hovered
+            // row it will land on, and so which edge the drop marker draws.
+            const dragIdx = dragId === null ? -1 : cur.indexOf(dragId);
             const night = nightOf(idx);
             const lane = laneOf(idx);
             const showBreak = idx === 0 || nightOf(idx - 1) !== night;
@@ -1085,8 +1098,33 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
                     <span className="hair" />
                   </div>
                 )}
-                <div className={`mc16-row ${night === 0 ? 'tonight' : ''}`}>
-                  <span className="grip">⠿</span>
+                {/* #290 — the ⠿ was a picture of a drag that did not exist:
+                    the queue reordered by ▲▼ only, one slot a press, which is
+                    a long way to carry an item down a full board. The whole
+                    row is the handle (the grip is a small target, and the row
+                    has nothing else you can press by accident — the title is
+                    a button, and a click on it still opens the item). The drop
+                    lands the carried row WHERE THE HOVERED ROW SITS, which is
+                    what the ▲▼ swap already meant, so both routes re-bucket
+                    and re-tier identically. */}
+                <div className={`mc16-row ${night === 0 ? 'tonight' : ''}`
+                    + (dragId === id ? ' drag' : '')
+                    + (overId === id && dragIdx >= 0 && dragIdx !== idx
+                        ? (dragIdx < idx ? ' drop-after' : ' drop-before') : '')}
+                  draggable
+                  onDragStart={(e) => { setDragId(id); e.dataTransfer.effectAllowed = 'move'; }}
+                  onDragEnd={() => { setDragId(null); setOverId(null); }}
+                  onDragOver={(e) => {
+                    if (dragId !== null && dragId !== id) { e.preventDefault(); setOverId(id); }
+                  }}
+                  onDragLeave={() => setOverId((o) => (o === id ? null : o))}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const from = cur.indexOf(dragId ?? -1);
+                    if (from >= 0) reorder(from, idx);
+                    setDragId(null); setOverId(null);
+                  }}>
+                  <span className="grip" title="Drag to reorder — the queue IS the run order">⠿</span>
                   <span className="n">{idx + 1}</span>
                   {lanes > 1 && (
                     <span className={`mc16-lane l${lane}`}

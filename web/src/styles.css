@@ -3617,7 +3617,17 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc16-break .hair { flex: 1; height: 1px; background: var(--line-2); }
 .mc16-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--card); }
 .mc16-row.tonight { border-color: var(--accent-tint-border); }
+/* #290 — the drag in flight. The carried row fades IN PLACE: pulling it out of
+   the list would make the queue jump under the cursor. The hovered row draws
+   the accent edge on the side the carried row will land — dropping puts it
+   exactly where that row sits now, which is above it coming up and below it
+   going down. */
+.mc16-row.drag { opacity: 0.4; }
+.mc16-row.drop-before, .mc16-row.drop-after { border-color: var(--accent); }
+.mc16-row.drop-before { box-shadow: inset 0 3px 0 var(--accent); }
+.mc16-row.drop-after { box-shadow: inset 0 -3px 0 var(--accent); }
 .mc16-row .grip { font-family: var(--mono); font-size: 11px; color: var(--fainter); cursor: grab; }
+.mc16-row:active .grip { cursor: grabbing; }
 .mc16-row .n { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--paused); width: 18px; flex: none; }
 .mc16-row.tonight .n { color: var(--accent-deep); }
 .mc16-row .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; }
