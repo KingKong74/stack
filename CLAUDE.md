@@ -543,7 +543,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   so a receipt pinned to the selection would vanish exactly when you wanted it back. ＋ Bug /
   ＋ Audit have no modals here (no project is loaded), so they stash a one-shot prefill
   (`store.setReviewPrefill`) and open the project, where ProjectDetail takes it exactly once.
-  **Debrief** is 24a — a night at a time: night tabs, a header stating what the reviewer read and
+  **Debrief** is 24a — a night at a time: night tabs (#304 — the strip is a CHOOSER, so it leans
+  toward the nights worth opening: one that landed work wears its count in the live tone, one that
+  produced nothing recedes to muted type and loses its chip. Receding is colour and weight, never
+  removal — a quiet night is still openable, and the SELECTED tab is never dimmed or the strip
+  would fade out what you just pressed. The Nights room's own strip follows the same rule and
+  counts what LANDED rather than how many runs were attempted, which read identically for a night
+  that shipped three changes and one that failed three times; only a PAST night can be quiet,
+  since dimming a booked one would read as "this failed" rather than "not yet"), a header stating what the reviewer read and
   called clean, four stat tiles, WHAT LANDED (one card per run with the reviewer's and the
   session's own notes, and Review this change / Open the item), DECISIONS THIS DEBRIEF ASKS FOR
   (blocked reviews, red checks, limit-paused and failed runs — each a real door), and a right rail
@@ -666,6 +673,16 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
     states the claim and offers **release** (PATCH `claimed_by:''`), but only for a `term:` claim,
     since a real lane's claim is not this tab's to drop; **clear** still only forgets the pin. The
     typing happens before the writes, so a failed claim says so rather than pretending.
+    DO NEXT can be **asked a narrower question** (#299 — tab, tier or risk): the top six is the
+    right default and a dead end the moment you want a SET (this tab's area, everything ranked S,
+    the low-risk work you can hand over at once), so three filters narrow the same list without
+    ever reordering it — what the rail offers is still what the night would take. The area picker
+    is a SELECT rather than chips (a real board carries fifteen-odd areas, which is five rows of
+    filter above two rows of list in a 300px rail); tier and risk stay chips because there are
+    only ever six, and a chip is drawn when it has work behind it or while it is the active one.
+    Filtering lifts the cap and offers **tick all N**, and picks resolve against the WHOLE
+    eligible list rather than the shown slice, so one send can carry two tabs and always goes
+    over in the runner's order.
     **ROSTER** is deliberately one line: Stack
     keeps per-model usage for autopilot runs and never for a terminal session (#283), so it names
     who is at the keyboard and says plainly that the figure beside it is the host's whole day.
@@ -809,7 +826,20 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   disabled) when `geminiReady` is false. `.q-*` styles; narrow stacks the cards in priority order
   with the KPIs 2×2),
   Roadmap (the Board/**Tiers**/**Parked** switch sits above the content, left, full seg size
-  (#129); + Add tops each column (#112); tick moves an item into the **Review room's** queue —
+  (#129), and the **area tabs sit under it, shared by all three views** (#300 — the three are the
+  same board read three ways, so a tab you are working in survives switching to the tier ranking
+  or the parked shelf and can be changed from either; before this the Tiers view inherited
+  whatever tab the board was left on and could only be widened by going back to the board).
+  Counts follow the view's own population — open work on Board/Tiers, the shelf on Parked — and
+  on Parked a tab with nothing on the shelf is not drawn at all (fifteen zeros is noise, where on
+  the board an empty tab is still somewhere to file work); the active tab is always drawn, so
+  pressing one can never make it vanish. A **deep link reveals its item** (#303): arriving with
+  `?hl=` puts the board back into a state where the row is genuinely on screen — board view, a
+  hiding area tab cleared, the item's column unfolded, another column's focus dropped — undoing
+  only the ways it was hidden and persisting the result, since a board that looked one way and
+  remembered another would be worse than either; ProjectDetail's scroll-to-row polls briefly
+  rather than querying once, because the reveal lands a render later.
+  + Add tops each column (#112); tick moves an item into the **Review room's** queue —
   still counted by progress; hover ✎/× edit + delete, edit reuses RoadmapModal in `mode='edit'`
   incl. the Branch field and the **Plan** editor (#75 — ordered `{text, done}` steps; the card wears
   a ☰ n/m progress chip and the autopilot works unticked steps top-down); open items show ⚑ claim
@@ -847,7 +877,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   by the SessionStart hook) over the **constellation sky** — the north star at the centre, one
   dashed ring per alignment verdict (on course 132 / tangent 224 / off course 296; unjudged
   ideas float dashed at 178), themes = the ideas' `area` tags as bearings (no area = `loose`),
-  theme bubbles when collapsed, seamless wheel zoom (continuous 0.5–2.4× toward the cursor;
+  theme bubbles when collapsed, seamless wheel zoom (continuous 0.5–5× toward the cursor — #250
+  raised the ceiling to 500%, where the **north star grows at one third of the sky**: riding the
+  field's scale one-for-one would make a 92px star a 460px disc covering the ideas you zoomed in
+  to read, and pinning it would shrink it away from the sky it anchors, so it carries a
+  counter-transform putting it on its own 1:3 curve (5× sky = 2.33× star);
   buttons/ticks glide, wheel/drag track raw; ≥1.2 expands + labels everything, with a
   collision pass on captions), pan + Recentre, the **growth scrub** (design 6b/7a — a hairline
   of ticks across the funnel's real history, computed client-side from each idea's `createdAt`
@@ -1292,8 +1326,20 @@ Single row, client camelCase. Meanings under the no-API model:
                               // that predates the default is upgraded once, guarded by advisor_default_applied,
                               // so an advisor turned off by hand survives every boot
   "assistGuidance": "",       // ✧ Fill from note (#131): standing owner steer folded into the prompt
-  "assistFields": ["title","note","area","branch","priority"], // what the assist may fill (title
-                              // always; a stored "lane" is read as "branch" — #277's rename)
+  "assistFields": ["title","note","area","branch","priority","tier","risk"], // what the assist
+                              // may fill (title always; a stored "lane" is read as "branch" —
+                              // #277's rename). #298 added `tier` + `risk`: the note is where
+                              // "small safe change" or "this touches auth" is actually written,
+                              // so it is where both can honestly be read from. Neither ever
+                              // overrides a value the human set — tier only fills an EMPTY tier,
+                              // risk only an untouched Normal (risk has no empty, so the modal
+                              // tracks whether the control was touched rather than guessing) —
+                              // and **tier S is offered, never assigned**: S decides what the
+                              // machine works tonight, which is the owner's call, so the server
+                              // splits it out as `tierSuggested` and the modal renders it as a
+                              // sentence with a button. A database written before #298 gets both
+                              // keys added once, guarded by `assist_tier_risk_applied`, so a
+                              // field switched off by hand is not switched back on every boot
   "accessPinSet": false       // PIN sign-in available; PATCH accepts write-only `accessPin`
                               // ('' disables) — any accessPin change deletes all auth_tokens
                               // (signs out every PIN-connected device)
