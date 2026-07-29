@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Future } from '../types';
 import type { ClusterSuggestion, ConvergeDraft, JudgeSuggestion } from '../store';
+import { getNorthStarOpen, setNorthStarOpen } from '../store';
 import { Modal } from '../components/Modal';
 import { go } from '../lib/route';
 
@@ -103,7 +104,17 @@ export function Futures({
   onConvergeCreate: (drafts: ConvergeDraft[], retire: number[]) => void;
 }) {
   // ---- north star strip (collapsible band, always on top) ----
-  const [nsOpen, setNsOpen] = useState(true);
+  // #307 — collapsed is the DEFAULT arrival state: the band is a paragraph you
+  // wrote once, and the sky below it is what you came for. The choice is
+  // remembered per slug (device-local) so a session spent rewriting the
+  // direction keeps the editor open across reloads.
+  // An UNSET north star is the exception: collapsed it reads "Not set." with no
+  // way in, so the band stays open until there is something to collapse.
+  const [nsOpen, setNsOpenState] = useState(() => getNorthStarOpen(slug || '') || !northStar.trim());
+  const setNsOpen = (open: boolean) => {
+    setNsOpenState(open);
+    setNorthStarOpen(slug || '', open);
+  };
   const [editingStar, setEditingStar] = useState(false);
   const [starDraft, setStarDraft] = useState(northStar);
   const saveStar = () => {

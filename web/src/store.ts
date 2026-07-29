@@ -1506,6 +1506,22 @@ export function setBoardLayout(slug: string, layout: BoardLayout) {
   catch { /* storage full or unavailable — the layout is a nicety, never a blocker */ }
 }
 
+// #307 — the Polaris tab's north star band, device-local per project. The band
+// is the one thing on the page that never changes between visits: a paragraph
+// you wrote once, sitting above the sky you actually came to read. So it opens
+// COLLAPSED by default and the summary line carries it. Expanding is
+// remembered per slug, because "I am rewriting this project's direction" is a
+// state worth keeping across a reload — but it is never the state you arrive in.
+const NORTH_STAR_KEY = (slug: string) => `stack.northStarOpen.${slug}`;
+
+export function getNorthStarOpen(slug: string): boolean {
+  return readStoredJSON(NORTH_STAR_KEY(slug), (p) => p === true);
+}
+export function setNorthStarOpen(slug: string, open: boolean) {
+  try { localStorage.setItem(NORTH_STAR_KEY(slug), JSON.stringify(open)); }
+  catch { /* storage full or unavailable — the band is a nicety, never a blocker */ }
+}
+
 // ---- tips (the app-wide recipe library — the Tips tab) ----
 
 // The recipe rail's collapsed state — device-local, like the theme. Collapsed
