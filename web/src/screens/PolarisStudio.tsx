@@ -27,6 +27,32 @@ export default function PolarisStudio({ slug }: { slug: string }) {
   const [error, setError] = useState('');
   const [syncedAt, setSyncedAt] = useState('');
 
+  // #308 — full screen for the workspace. The studio is a planning session
+  // against a live board, and both halves are sized off the viewport by hand
+  // (`calc(100vh - 200px)` for the session, `- 160px` for the panel); full
+  // screen drops the guesswork and gives the pair the window. The browser's
+  // Fullscreen API is asked for on the DOCUMENT, not this screen — the CSS
+  // mode is what the layout keys on, so a refused request still works, and
+  // nothing rendered outside this tree can be hidden by it. Transient by
+  // design: fullscreen cannot be re-entered on load without a fresh gesture,
+  // so a remembered `true` would only ever be a lie.
+  const [full, setFull] = useState(false);
+  const toggleFull = () => {
+    const next = !full;
+    setFull(next);
+    if (next) void document.documentElement.requestFullscreen?.().catch(() => {});
+    else if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+  };
+  useEffect(() => {
+    const onChange = () => { if (!document.fullscreenElement) setFull(false); };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  // The session's xterm is sized by its holder and refits on window resize —
+  // entering or leaving full screen changes that holder without a window
+  // resize, so the event it listens for is raised here.
+  useEffect(() => { window.dispatchEvent(new Event('resize')); }, [full]);
+
   // Silent = a background tick; a failure there keeps the last good panel
   // rather than replacing it with an error the human didn't ask about.
   const load = useCallback(async (silent: boolean) => {
@@ -80,7 +106,7 @@ export default function PolarisStudio({ slug }: { slug: string }) {
   );
 
   return (
-    <div className="pol-page">
+    <div className={`pol-page${full ? ' pol-full' : ''}`}>
       <div className="pol-head">
         <button className="btn-repo" onClick={() => go.detail(slug, 'futures')}
           title="Back to the project">← {data?.project.name || slug}</button>
@@ -90,6 +116,13 @@ export default function PolarisStudio({ slug }: { slug: string }) {
           {syncedAt ? `board synced ${syncedAt}` : 'syncing board…'}
           <button className="pol-refresh" onClick={() => load(false)} title="Refresh the planning panel now">↻</button>
         </div>
+        {/* The head bar survives full screen, so the way out is where the way
+            in was — and the board-sync line stays readable while you work. */}
+        <button className={`btn-repo sm pol-fullbtn${full ? ' on' : ''}`} onClick={toggleFull}
+          aria-pressed={full}
+          title={full ? 'Leave full screen (esc also works)' : 'Full screen — the session and the board take the whole window'}>
+          {full ? '⤡' : '⤢'}
+        </button>
       </div>
 
       {error && <div className="action-error">{error}</div>}

@@ -2062,6 +2062,24 @@ a.polaris .polaris-head { cursor: pointer; }
 .pol-main .polaris-holder { height: calc(100vh - 200px); min-height: 420px; }
 /* the planning panel — scrolls on its own so the terminal never moves */
 .pol-side { display: flex; flex-direction: column; gap: 14px; max-height: calc(100vh - 160px); overflow-y: auto; padding-right: 2px; }
+/* #308 — the studio full screen. Both halves are normally sized off the
+   viewport by hand (100vh minus a guess at the chrome above them); here the
+   page is pinned to the viewport and the grid takes what the head bar leaves,
+   so the session and the board share the window exactly. The head bar stays:
+   it carries the way back out and the board-sync line. */
+.pol-page.pol-full {
+  position: fixed; inset: 0; z-index: 40; max-width: none; margin: 0;
+  padding: 12px 16px 14px; background: var(--bg); overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.pol-full .pol-head { margin-bottom: 10px; flex: none; }
+.pol-full .pol-grid { flex: 1; min-height: 0; align-items: stretch; }
+.pol-full .pol-main { min-height: 0; display: flex; flex-direction: column; }
+.pol-full .pol-main .polaris-term { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.pol-full .pol-main .polaris-holder { height: auto; min-height: 0; flex: 1; }
+.pol-full .pol-side { max-height: none; min-height: 0; }
+.pol-fullbtn.on { border-color: var(--accent); color: var(--accent-deep); }
+
 .pol-card { background: var(--card); border: 1px solid var(--line-2); border-radius: 14px; padding: 14px 16px; }
 .pol-card.north { background: var(--sand); border-color: var(--resume-border); }
 .pol-lbl { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
