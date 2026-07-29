@@ -86,6 +86,18 @@ check('advShare ~19%', Math.round(r.worth.advShare), 19);
 check('avgAdvPerRun', Number(r.worth.avgAdvPerRun.toFixed(3)), 0.275);
 check('costBasis', r.worth.costBasis, true);
 
+console.log('\n--- runs (#288 — the run-level headline the role cards lead with) ---');
+// Five rows, every one with a breakdown; only charlie's haiku run used a model
+// neither role names. The per-model counts cannot say this: sonnet alone
+// appears in four runs, so "off policy" has to be counted once per RUN.
+check('total runs (with a breakdown)', r.runs.total, 5);
+check('off-policy runs', r.runs.offPolicy, 1);
+check('on-policy runs', r.runs.onPolicy, 4);
+check('total == advised + plain', r.runs.total, r.worth.advisedRuns + r.worth.plainRuns);
+check('haiku adoptable as executor', byModel['haiku-4-5'].adoptExec, 'haiku');
+check('sonnet adopts the family alias, not the dated id', byModel['sonnet-4-5'].adoptExec, 'sonnet');
+check('opus-5 adoptable as advisor', byModel['opus-5'].adoptAdv, 'claude-opus-5');
+
 console.log('\n--- edge: no runs at all ---');
 const empty = computeFleetRoles({ usageRows: [], projects, execAlias: '', advAlias: '', now: NOW });
 check('models empty', empty.models, []);
@@ -99,6 +111,9 @@ const noBreak = computeFleetRoles({
 });
 check('sits out the advised/unadvised split', [noBreak.worth.advisedRuns, noBreak.worth.plainRuns], [0, 0]);
 check('but the project still counts a run', noBreak.assignments.find((a) => a.slug === 'alpha').runs, 1);
+// (#288) …and the role cards say so rather than reading 0 of 0 as compliance.
+check('runs.total excludes it', noBreak.runs.total, 0);
+check('runs.noBreakdown reports it', noBreak.runs.noBreakdown, 1);
 
 
 

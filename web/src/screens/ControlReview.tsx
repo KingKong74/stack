@@ -733,10 +733,25 @@ function Debrief({ nights, shown, onPickNight, onOpenItem, onReview }: {
   return (
     <div className="rv-debrief">
       <div className="rv-nights">
+        {/* #304 — the strip is a chooser, so it should point at the nights
+            worth opening. A night that LANDED something wears its count in the
+            live tone; a night that produced nothing recedes. Receding is
+            colour and weight, never removal: a quiet night is still a night
+            you can open, and the selected one is never dimmed, or the strip
+            would fade out the very thing you just pressed. */}
         {nights.slice(0, 8).map((x) => (
-          <button key={x.day} className={`rv-night ${x.day === n.day ? 'on' : ''}`} onClick={() => onPickNight(x.day)}>
+          <button key={x.day}
+            className={`rv-night ${x.day === n.day ? 'on' : ''} ${x.landed > 0 ? 'landed' : 'quiet'}`}
+            title={x.landed > 0
+              ? `${x.landed} change${x.landed === 1 ? '' : 's'} landed this night`
+              : 'Nothing landed this night'}
+            onClick={() => onPickNight(x.day)}>
             <span className="d">{x.label}</span>
-            <span className="s">{x.landed} landed{x.failed ? ` · ${x.failed} not` : ''}</span>
+            <span className="s">
+              {x.landed > 0
+                ? `${x.landed} landed${x.failed ? ` · ${x.failed} not` : ''}`
+                : x.failed ? `${x.failed} didn't land` : 'nothing landed'}
+            </span>
           </button>
         ))}
       </div>

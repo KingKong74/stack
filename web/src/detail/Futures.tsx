@@ -33,8 +33,15 @@ const RING_COLOR: Record<string, string> = {
 const RING_TINT: Record<string, string> = {
   'on-course': 'var(--live-tint)', tangent: 'var(--building-tint)', 'off-course': 'var(--paused-tint)', '': 'var(--paused-tint)',
 };
-const Z_TICKS = [0.7, 0.85, 1, 1.2, 1.45, 1.7]; // preset dots — wheel zoom is continuous
-const Z_MIN = 0.5, Z_MAX = 2.4;
+const Z_TICKS = [0.7, 1, 1.5, 2, 3, 4, 5]; // preset dots — wheel zoom is continuous
+const Z_MIN = 0.5, Z_MAX = 5;
+// #250 — the north star does NOT ride the field's scale one-for-one. At 500% a
+// 92px star would be a 460px disc filling the viewport, hiding the very ideas
+// you zoomed in to read; but pinning it at a constant size would make it shrink
+// away from the sky it anchors. So it grows at ONE THIRD of the zoom: 3× the
+// sky, 1× the star. The field is already scaled by z, so the star carries the
+// counter-transform that takes it from z to its own third-rate scale.
+const starScale = (z: number) => 1 + (z - 1) / 3;
 const LOOSE = 'loose'; // theme key for ideas with no area tag
 const TL_TICKS = 6;    // scrub points along the sky's history (design 6b/7a)
 
@@ -276,7 +283,9 @@ export function Futures({
   };
   const zoomBy = (dir: 1 | -1) => {
     setGlide(true);
-    setZ((cur) => Math.min(Z_MAX, Math.max(Z_MIN, dir > 0 ? cur * 1.18 : cur / 1.18)));
+    // A wider range (#250: up to 500%) needs a bigger step, or the ends are a
+    // dozen presses apart. 1.25 crosses 0.5→5 in about ten.
+    setZ((cur) => Math.min(Z_MAX, Math.max(Z_MIN, dir > 0 ? cur * 1.25 : cur / 1.25)));
   };
   // Wheel = continuous zoom toward the cursor: the point under the pointer
   // stays put while the sky scales around it. Native listener (passive:false)
@@ -730,7 +739,15 @@ export function Futures({
                     </div>
                   </div>
                 ))}
-                <div className="psky-star" style={{ left: C - 46, top: C - 46 }}>
+                <div className="psky-star"
+                  style={{
+                    left: C - 46, top: C - 46,
+                    // Counter-scale off the field's z so the star lands on its
+                    // own 1:3 curve (see starScale). Origin is the disc's centre,
+                    // so the ring geometry it sits inside never shifts.
+                    transform: `scale(${(starScale(z) / z).toFixed(4)})`,
+                    transition: glide ? undefined : 'none',
+                  }}>
                   <span>NORTH<br />STAR</span>
                 </div>
                 {bubbles.map((b) => (

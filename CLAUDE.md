@@ -481,20 +481,39 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   #281 — the fleet-wide half of turn 23, where the Now room's lanes are the per-session half):
   which model is doing what, what the advisors are costing, and **where the policy is being
   ignored**. It reads the RUN LEDGER, not the settings — that separation is the whole point,
-  since a screen that renders the policy back at you can never show drift. Per-model cards over
-  the week (role chip, runs, last-24h tokens/cost, share of the week), the **who is doing what**
+  since a screen that renders the policy back at you can never show drift. **#288 (design 1b)
+  organised it BY JOB rather than by model**: there are only ever two jobs — someone writes the
+  code, someone reviews it before it lands — so the room opens on exactly **two cards**, where it
+  used to open on one card per model and then make you assemble the finding from a table, a worth
+  panel and a share meter. The **EXECUTOR** card puts the assigned model beside what actually ran
+  (`N of M runs`), splits the executor slot as one bar with its models named underneath, and
+  carries **Adopt <model>** — a real `patchSettings` write, offered only when exactly ONE
+  off-policy model ran AND the executor catalogue has an alias that claims it (two is a question,
+  not a button; a Fable night is reportable and not adoptable, since no executor alias names
+  Fable). Which SEAT an unattributed model sat in is deliberately not asserted — an unattributed
+  model is by definition one neither role claims, so the card names the fact and the copy carries
+  the caveat. The **ADVISOR** card is the old worth panel and share meter folded into one: the
+  advisor's share of the week, the advised-versus-unadvised landed read (composed client-side
+  from the server's numbers, the same split as a lane's read), an explicit SMALL SAMPLE chip under
+  12 runs, and Turn on / Drop to Sonnet / Advisor off. Still deliberately not called an allowance:
+  nothing enforces a ceiling, and the buttons apply from the next session. Under the cards, the
+  per-model view survives as the **evidence fold** (role chip, runs, share, last-24h tokens, cost,
+  last seen) — it answers "what did this cost", which is the receipt rather than the headline —
+  then the **who is doing what**
   table (one row per project that ran or is in automode, showing the models actually seen in each
   role against the configured policy — `drift` is `off-policy` (a model neither current role
   names: a changed setting, or a host-side `--executor-model` override), `advisor-unused` (an
   advisor configured but never consulted) or `no-runs` (quiet, explicitly NOT drift); drifting
-  rows sort first and the tab badge counts them), the **was the advice worth it** arithmetic
-  (landed rate advised vs unadvised, advisor cost and share, with an explicit small-sample caveat
-  under 12 runs — the numbers come from the server, the sentences are composed client-side, the
-  same split as a lane's read) and the **ADVISOR SHARE** meter — deliberately not called an
-  allowance, because nothing enforces a ceiling; its two buttons (Drop to Sonnet / Advisor off)
-  are real `patchSettings` writes that apply from the next session. Server side it is
+  rows sort first and the tab badge counts them). Server side it is
   `computeFleetRoles()` in `routes/control.js` — exported and PURE (usage rows + projects + the
-  two aliases in, the `roles` block out) so it is testable without a database. The **throughput
+  two aliases in, the `roles` block out) so it is testable without a database. #288 added two
+  things to it: `roles.runs` (`total` / `offPolicy` / `onPolicy` / `noBreakdown` — counted once
+  per RUN, which the per-model tallies cannot do, since one run using three models increments
+  three of them; `total` is runs that recorded a breakdown, the same population the advised/
+  unadvised split uses, so the two headlines share a denominator) and `adoptExec`/`adoptAdv` per
+  model (the inverse of the alias match: which catalogue alias would adopt this model into a role,
+  '' when none claims it). Both are optional in the client types — an older server still renders,
+  saying which MODELS were off policy instead of inventing a run count. The **throughput
   ledger (#269) shares the attribution**: `splitRunRoles()` decides each run's roles by the same
   alias match, so the lanes, the Roles room and the ledger can never disagree about who a model
   was. The old highest-token heuristic survives ONLY as its fallback, for models the current

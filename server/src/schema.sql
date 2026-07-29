@@ -354,7 +354,16 @@ UPDATE settings SET advisor_default_applied = true WHERE id AND NOT advisor_defa
 -- ✧ Fill from note (#131): a standing guidance line folded into the assist
 -- prompt, and which fields the assist is allowed to fill (title always is).
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS assist_guidance TEXT  NOT NULL DEFAULT '';
-ALTER TABLE settings ADD COLUMN IF NOT EXISTS assist_fields   JSONB NOT NULL DEFAULT '["title","note","area","lane","priority"]'::jsonb;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS assist_fields   JSONB NOT NULL DEFAULT '["title","note","area","lane","priority","tier","risk"]'::jsonb;
+-- #298 — tier and risk join the assist catalogue. A fresh install gets them
+-- from the column default above; a database written before they existed is
+-- upgraded ONCE, guarded by its own flag, so a field switched off by hand in
+-- Settings is not switched back on at every boot (same shape as tips_seeded).
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS assist_tier_risk_applied BOOLEAN NOT NULL DEFAULT false;
+UPDATE settings
+   SET assist_fields = assist_fields || '["tier","risk"]'::jsonb
+ WHERE id AND NOT assist_tier_risk_applied;
+UPDATE settings SET assist_tier_risk_applied = true WHERE id AND NOT assist_tier_risk_applied;
 
 -- Google Calendar sync (#222): OAuth2 credentials for one-way push of
 -- autopilot schedule rows to a GCal calendar. All four must be set for sync

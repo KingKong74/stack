@@ -14,6 +14,10 @@ import { PRIORITY_META } from '../lib/ui';
 // how necessary the work is; tier says how much you want it NEXT, and it leads
 // the run queue. Gemini may propose one, but only into an empty field — a tier
 // you set by hand is never re-decided.
+// #298: RISK is read from the note the same way, and with the same rule — it
+// only ever fills a Normal nobody has touched. The one exception in both
+// directions is tier S: it decides what the machine works first, so the assist
+// may argue for it but only a human press applies it.
 // A stray click on the overlay (or Escape) with typed content calls onDismiss
 // with the fields so the caller can keep a draft; the explicit Cancel button
 // stays a genuine discard.
@@ -44,6 +48,16 @@ export function RoadmapModal({
   const [risk, setRisk] = useState<RoadmapItem['risk']>(initialRisk);
   // #277 — the desire tier, '' = unranked (which sorts last in the run queue).
   const [tier, setTier] = useState<Tier>(initialTier);
+  // #298 — "do not override user-selected values". An empty tier says plainly
+  // that nobody has ranked it, but RISK has no empty: every item carries
+  // 'normal', so the field cannot tell a deliberate Normal from a default one.
+  // These flags are what makes the difference legible — once you touch either
+  // control, the assist stops filling it, whatever you set it to.
+  const [tierTouched, setTierTouched] = useState(false);
+  const [riskTouched, setRiskTouched] = useState(false);
+  // An S the assist argued for, held as an OFFER rather than applied (S is the
+  // owner's own call). Cleared once accepted, dismissed or overtaken by a hand-set tier.
+  const [tierOffer, setTierOffer] = useState<Tier>('');
   // The implementation plan (#75): ordered steps for bigger work. A pending
   // draft line is folded in on save so a typed-but-not-entered step isn't lost.
   const [plan, setPlan] = useState<PlanStep[]>(initialPlan);
@@ -109,7 +123,13 @@ export function RoadmapModal({
       if (s.priority) setPriority(s.priority);
       // #277 — "adjusted by Gemini unless manually set": a tier already chosen
       // (here or on the Tiers view) is left exactly as it is.
-      if (s.tier && !tier) setTier(s.tier);
+      if (s.tier && !tier && !tierTouched) setTier(s.tier);
+      // #298 — S is offered, never assigned: it decides what the machine works
+      // tonight, and that ranking is the owner's. Only shown while the tier is
+      // still unset — an S proposed against a rank you already made is noise.
+      setTierOffer(s.tierSuggested === 'S' && !tier && !tierTouched ? 'S' : '');
+      // #298 — risk fills only a Normal nobody has touched (see riskTouched).
+      if (s.risk && !riskTouched && risk === 'normal') setRisk(s.risk);
     } catch (e) {
       setSuggestErr((e as Error)?.message || 'Gemini call failed.');
     } finally {
@@ -218,27 +238,45 @@ export function RoadmapModal({
       <div className="lbl" style={{ marginBottom: 9 }}>
         Tier <span className="optional">how much you want it NEXT — leads the run queue; unranked goes last</span>
       </div>
-      <div className="seg" style={{ marginBottom: 26 }} role="tablist" aria-label="Desire tier">
+      <div className="seg" style={{ marginBottom: tierOffer ? 10 : 26 }} role="tablist" aria-label="Desire tier">
         <button type="button" role="tab" aria-selected={tier === ''}
-          className={`opt ${tier === '' ? 'on' : ''}`} onClick={() => setTier('')}
+          className={`opt ${tier === '' ? 'on' : ''}`}
+          onClick={() => { setTier(''); setTierTouched(true); setTierOffer(''); }}
           title="Unranked — sorts behind every ranked item, so an unranked board queues exactly as it always did">
           Unranked
         </button>
         {TIERS.map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tier === t}
-            className={`opt tier-${t} ${tier === t ? 'on' : ''}`} onClick={() => setTier(t)}
+            className={`opt tier-${t} ${tier === t ? 'on' : ''}`}
+            onClick={() => { setTier(t); setTierTouched(true); setTierOffer(''); }}
             title={`Tier ${t} — the queue works S first, then A, B, C`}>
             {t}
           </button>
         ))}
       </div>
+      {/* #298 — the S offer. Everything else the assist reads it just fills;
+          S is the one rank that says "work this tonight, before the rest", so
+          it arrives as a sentence with a button rather than as a done deal. */}
+      {tierOffer === 'S' && (
+        <div className="gemini-suggest tier-offer" style={{ marginBottom: 26 }}>
+          <span>✧ This reads like <b>S</b> — top of the queue, worked before everything else. S is
+            yours to give.</span>
+          <span className="tier-offer-acts">
+            <button type="button" className="btn-cancel sm"
+              onClick={() => { setTier('S'); setTierTouched(true); setTierOffer(''); }}>Make it S</button>
+            <button type="button" className="g-dismiss" onClick={() => setTierOffer('')}
+              title="Dismiss the suggestion — the tier stays unranked">no</button>
+          </span>
+        </div>
+      )}
       <div className="lbl" style={{ marginBottom: 9 }}>
         Risk <span className="optional">low = a green overnight run merges itself; you still give the verdict</span>
       </div>
       <div className="seg" style={{ marginBottom: 26 }} role="tablist" aria-label="Risk">
         {(['low', 'normal', 'high'] as const).map((r) => (
           <button key={r} type="button" role="tab" aria-selected={risk === r}
-            className={`opt risk-${r} ${risk === r ? 'on' : ''}`} onClick={() => setRisk(r)}>
+            className={`opt risk-${r} ${risk === r ? 'on' : ''}`}
+            onClick={() => { setRisk(r); setRiskTouched(true); }}>
             {r === 'low' ? 'Low' : r === 'normal' ? 'Normal' : 'High'}
           </button>
         ))}

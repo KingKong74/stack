@@ -240,6 +240,8 @@ roadmap.post('/assist', async (req, res) => {
     const answer = await askGemini(prompt, { timeoutMs: 25_000 });
     const title = String(answer?.title || '').trim().slice(0, 300);
     if (!title) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
+    const rawTier = String(answer?.tier || '').trim().toUpperCase();
+    const fillTier = allowed.has('tier') && TIERS.includes(rawTier) ? rawTier : '';
     // A switched-off field comes back empty — the modal leaves it untouched.
     res.json({
       title,
@@ -249,8 +251,16 @@ roadmap.post('/assist', async (req, res) => {
       branch: allowed.has('branch') && branches.includes(String(answer?.branch || '').trim()) ? String(answer.branch).trim() : '',
       priority: allowed.has('priority') && BUCKETS.includes(answer?.priority) ? answer.priority : null,
       // #277 — a desire tier, only ever S/A/B/C; anything else means "no view".
-      tier: allowed.has('tier') && TIERS.includes(String(answer?.tier || '').trim().toUpperCase())
-        ? String(answer.tier).trim().toUpperCase() : '',
+      // #298 splits S back out of it: S is the top of the owner's own queue —
+      // the rank that decides what the machine works TONIGHT — so the model
+      // may argue for it but must never assign it. A/B/C fill an empty field
+      // as before; an S comes back as a suggestion the modal offers, and only
+      // a human press puts it on the item.
+      tier: fillTier && fillTier !== 'S' ? fillTier : '',
+      tierSuggested: fillTier === 'S' ? 'S' : '',
+      // #298 — how much care the change needs, read from the same note.
+      risk: allowed.has('risk') && RISKS.includes(String(answer?.risk || '').trim().toLowerCase())
+        ? String(answer.risk).trim().toLowerCase() : '',
     });
   } catch (err) {
     res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });

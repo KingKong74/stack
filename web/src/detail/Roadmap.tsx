@@ -331,12 +331,31 @@ export function Roadmap({
     if (!Number.isFinite(ms)) return null;
     return { days: Math.max(0, Math.floor((Date.now() - ms) / DAY_MS)), exact: Boolean(it.skippedAt) };
   };
-  const parked = PRIORITY_META
-    .flatMap((col) => roadmap[col.key].filter((it) => !it.done && it.skipped))
+  // #300 — the parked shelf reads through the same area tab as the other two
+  // views. `parkedAll` is the whole shelf (what the tab strip counts against);
+  // `parked` is what the active tab actually shows.
+  const parkedAll = PRIORITY_META.flatMap((col) => roadmap[col.key].filter((it) => !it.done && it.skipped));
+  const parked = parkedAll
+    .filter(inAreaTab)
     .map((it) => ({ it, age: parkedAge(it) }))
     .sort((a, b) => (b.age?.days ?? -1) - (a.age?.days ?? -1));
   const staleDays = Math.max(1, staleItemDays ?? 21);
   const staleCount = parked.filter((p) => (p.age?.days ?? 0) >= staleDays).length;
+
+  // #300 — one tab strip, all three views. The tabs THEMSELVES stay the same
+  // list wherever you are (a strip that reshuffled per view would be a strip
+  // you couldn't rely on), but the counts follow the population the view is
+  // actually about: open work on the board and in the tiers, the shelf in
+  // Parked. A tab reading 0 there says "nothing parked in this one", honestly.
+  const tabPool = view === 'parked' ? parkedAll : openAll;
+  // Which tabs are worth drawing here. On the board and the tiers a tab is a
+  // PLACE — somewhere + Add files new work, somewhere a card can be dropped —
+  // so an empty one still earns its chip. The parked shelf is not a place, it
+  // is a reading: seventeen tabs to say "nothing parked in fifteen of them" is
+  // noise, so there it shows only the tabs that have something on the shelf.
+  // The active tab is always drawn, or pressing one could make it vanish.
+  const showTab = (a: string) =>
+    view !== 'parked' || areaFilter === a || tabPool.some((it) => it.area === a);
 
   // #227 — the tier list. A desire ranking across the whole open board: drag an
   // item into S/A/B/C to say how much you want it NEXT, independently of the
@@ -350,6 +369,35 @@ export function Roadmap({
     { key: 'C', label: 'C', blurb: 'someday — keep it on the board' },
     { key: '', label: 'Unranked', blurb: 'no desire call yet — runs after everything ranked' },
   ];
+  // #303 — a deep link from the ⌘K palette has to open the ITEM, not merely
+  // the tab it lives on. The board has four ways to be showing something else
+  // by the time you arrive — a folded column, another column focused, an area
+  // tab, or the Tiers/Parked view — and in three of them the row is not in the
+  // DOM at all, so the highlight ring lands on nothing and the scroll finds
+  // nothing. Same lesson as #259 in the sky: preserving a selection while every
+  // view hides it is preserving it in name only. So the arrival puts the board
+  // back into a state where the item is genuinely on screen. Only the ways it
+  // was hidden are undone — a fold on some OTHER column is left exactly as you
+  // left it — and the change is persisted, because a board that looked one way
+  // and remembered another would be worse than either.
+  useEffect(() => {
+    if (!highlightId) return;
+    const it = allById.get(Number(highlightId));
+    // A completed item gets the "it moved to the Review room" pointer instead;
+    // there is nothing on this board to reveal.
+    if (!it || it.done) return;
+    setView('board');
+    // Clear an area tab that this item does not belong to.
+    setAreaFilter((f) => (!f || (f === UNCAT ? !it.area : f === it.area) ? f : ''));
+    let nextFocus = focusCol;
+    if (focusCol && focusCol !== it.bucket) { nextFocus = null; setFocusCol(null); }
+    const nextCollapsed = new Set(collapsedCols);
+    if (nextCollapsed.delete(it.bucket)) setCollapsedCols(nextCollapsed);
+    if (slug) setBoardLayout(slug, {
+      focus: nextFocus, collapsed: [...nextCollapsed], foldedTiers: [...foldedTiers],
+    });
+  }, [highlightId]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   const [tierDrag, setTierDrag] = useState<number | null>(null);
   const [tierOver, setTierOver] = useState<Tier | null>(null);
   const openForTiers = openAll.filter(inAreaTab);
@@ -407,32 +455,31 @@ export function Roadmap({
           </button>
         </div>
       </div>
-      {view === 'board' && (<>
-      <div className="subtitle" style={{ marginBottom: 20 }}>
-        What must ship, what should, what could, and what won't — this round. Tick items off as you go;
-        the dashboard progress is computed from Must/Should completion. Drag to reorder — the
-        autopilot works its bucket top-down.
-      </div>
-
-      {(boardAreas.length > 0 || openAll.length > 0) && (
+      {/* #300 — the area tabs sit ABOVE the view switch's content rather than
+          inside the board, because all three views are the same board read
+          three ways: an area you are working in should survive switching to
+          the tier ranking or the parked shelf, and be changeable from either.
+          Before this, Tiers inherited whatever tab the board had been left on
+          and could only be widened by going back to the board to press All. */}
+      {(boardAreas.length > 0 || tabPool.length > 0) && (
         <div className="chips" style={{ marginBottom: 18 }}>
           <button className={`chip-sm ${areaFilter === '' ? 'on' : ''}`} onClick={() => setAreaFilter('')}>
-            All {openAll.length}
+            All {tabPool.length}
           </button>
-          {/* Uncategorised (#198): shown whenever untagged open items exist, so
+          {/* Uncategorised (#198): shown whenever untagged items exist, so
               nothing slips out of sight once the board lives by area tabs. */}
-          {openAll.some((it) => !it.area) && (
+          {tabPool.some((it) => !it.area) && (
             <button className={`chip-sm ${areaFilter === UNCAT ? 'on' : ''}`}
-              title="Open items with no area tag — give them one from ✎ edit"
+              title="Items with no area tag — give them one from ✎ edit"
               onClick={() => setAreaFilter(areaFilter === UNCAT ? '' : UNCAT)}>
-              uncategorised {openAll.filter((it) => !it.area).length}
+              uncategorised {tabPool.filter((it) => !it.area).length}
             </button>
           )}
-          {boardAreas.map((a) => (
+          {boardAreas.filter(showTab).map((a) => (
             <span key={a} className="area-chip-group" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
               <button className={`chip-sm ${areaFilter === a ? 'on' : ''}`}
                 onClick={() => setAreaFilter(areaFilter === a ? '' : a)}>
-                {a} {openAll.filter((it) => it.area === a).length}
+                {a} {tabPool.filter((it) => it.area === a).length}
               </button>
               {/* #169 — manage-area button: opens a small popover with Delete / Rename */}
               <button
@@ -478,7 +525,9 @@ export function Roadmap({
               )}
             </span>
           ))}
-          {addingArea ? (
+          {/* Coining an area is an act on the BOARD — the parked shelf has
+              nothing to file under a new one, so it doesn't offer it. */}
+          {view === 'parked' ? null : addingArea ? (
             <input className="chip-input" autoFocus value={areaDraft} placeholder="new area…"
               onChange={(e) => setAreaDraft(e.target.value)}
               onBlur={commitNewArea}
@@ -494,6 +543,13 @@ export function Roadmap({
           )}
         </div>
       )}
+
+      {view === 'board' && (<>
+      <div className="subtitle" style={{ marginBottom: 20 }}>
+        What must ship, what should, what could, and what won't — this round. Tick items off as you go;
+        the dashboard progress is computed from Must/Should completion. Drag to reorder — the
+        autopilot works its bucket top-down.
+      </div>
 
       {/* #251 — focus mode hides the other three buckets, which would otherwise
           take the board's primary interaction (drag an item across buckets) away
@@ -705,7 +761,7 @@ export function Roadmap({
           its S/A/B/C buttons. The tier leads the run queue: Mission Control's Plan room and the
           overnight runner both work S first, then A, B, C, then everything unranked in board order.
           {areaFilter && <> Showing the <b>{areaFilter === UNCAT ? 'uncategorised' : areaFilter}</b> tab only —
-            switch to All on the Board view to rank the whole project.</>}
+            press All above to rank the whole project.</>}
         </div>
         <div className="tier-board">
           {tierRows.map((row) => {
@@ -786,9 +842,15 @@ export function Roadmap({
           Items you've parked with ⏸ — off the board's run queue and invisible to the autopilot,
           but still counted by progress. Anything sitting longer than {staleDays} day{staleDays === 1 ? '' : 's'} reads
           as stale; change that threshold in Settings → Roadmap.
+          {areaFilter && <> Showing the <b>{areaFilter === UNCAT ? 'uncategorised' : areaFilter}</b> tab
+            only — press All above for the whole shelf.</>}
         </div>
         {parked.length === 0 ? (
-          <div className="empty-state">Nothing parked — every open item is in play.</div>
+          <div className="empty-state">
+            {parkedAll.length > 0
+              ? 'Nothing parked in this tab — press All above for the rest of the shelf.'
+              : 'Nothing parked — every open item is in play.'}
+          </div>
         ) : (
           <>
             <div className="parked-head">

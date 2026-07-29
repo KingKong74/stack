@@ -94,14 +94,22 @@ Produce:
   different question from priority. Priority is how necessary the work is; tier is appetite, and
   it leads the run queue. S is "I want this now", C is "eventually". Answer "" when the note
   gives you no honest signal — an empty tier is far better than a guessed one, because the
-  owner's own ranking is the thing this must not override.
+  owner's own ranking is the thing this must not override. Note that S is the owner's own call:
+  answer S when the note really reads that way, but it will be shown to them to accept rather
+  than applied, so do not reach for it to signal mere enthusiasm.
+- "risk": "low" | "normal" | "high" — how much care the change needs, read from what the note
+  describes touching. "low" is a small, contained, easily-reversed change (copy, one component,
+  a setting) — it is the tier that lets a green overnight run merge itself, so only say it when
+  you would be comfortable with that. "high" is auth, data migrations, deletion, money, anything
+  the note calls risky or says to be careful with. "normal" is everything else, and "" when the
+  note gives you nothing to read it from.
 
 THE NOTE:
 {{NOTE}}
 
 Use en-AU spelling. Respond with ONLY this JSON:
 { "title": "…", "note": "…", "area": "…", "branch": "…", "priority": "must|should|could|wont",
-  "tier": "S|A|B|C|" }`;
+  "tier": "S|A|B|C|", "risk": "low|normal|high|" }`;
 
 DEFAULTS.cleanup = `You are tidying a side project's roadmap board. Below are its OPEN items
 (id | bucket | area | title | note). Known areas: {{AREAS}}

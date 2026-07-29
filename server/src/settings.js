@@ -36,7 +36,11 @@ export const sessionDefaultLines = (keys) =>
 // stored before the rename carry 'lane', so it is accepted as an alias and
 // normalised on read: a setting the owner switched on stays on across the
 // rename rather than silently reverting to the default.
-export const ASSIST_FIELDS = ['title', 'note', 'area', 'branch', 'priority', 'tier'];
+// #298 — 'risk' joins it too: the note is where "this is a small safe change"
+// or "this touches auth, be careful" is actually written, so it is where the
+// risk call can honestly be read from. Like tier, it only ever fills a field
+// the human has left alone.
+export const ASSIST_FIELDS = ['title', 'note', 'area', 'branch', 'priority', 'tier', 'risk'];
 const ASSIST_FIELD_ALIASES = { lane: 'branch' };
 export const cleanAssistFields = (v) => {
   const keys = Array.isArray(v)

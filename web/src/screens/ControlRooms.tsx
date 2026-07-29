@@ -329,13 +329,25 @@ export function NightsRoom({ data, pickSlug, onPick, onOpenPlanner, onRunNow, on
               days={days.map((d) => {
                 const date = fmtDate(d);
                 const c = cellFor(sel.slug, d);
+                // #304 — "N runs" counted attempts, which reads the same for a
+                // night that shipped three changes and one that failed three
+                // times. The tab now says what LANDED, and a night that landed
+                // nothing is marked quiet so the strip leans toward the nights
+                // with something in them.
+                const landed = c.runs.filter((r) => r.outcome === 'landed').length;
                 return {
                   date,
                   label: date === todayStr ? 'Today' : `${DAY_LABELS[d.getDay()]} ${d.getDate()}`,
-                  sub: c.runs.length ? `${c.runs.length} run${c.runs.length === 1 ? '' : 's'}`
+                  sub: landed ? `${landed} landed`
+                    : c.runs.length ? `${c.runs.length} run${c.runs.length === 1 ? '' : 's'}, none landed`
                     : c.books.length ? 'booked'
                     : c.nightly ? 'nightly' : '',
                   on: date === sel.date,
+                  landed,
+                  // Only a PAST night can be quiet — one that hasn't run yet has
+                  // nothing to be quiet about, and dimming a booked night would
+                  // read as "this one didn't work" rather than "not yet".
+                  quiet: c.past && landed === 0,
                 };
               })}
               onPickDay={(date) => setSel({ slug: sel.slug, date })}

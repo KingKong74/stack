@@ -517,6 +517,11 @@ export interface FleetRoleModel {
   runs: number; tokens: number; costUsd: number;
   todayTokens: number; todayCostUsd: number;
   share: number; lastSeen: string;
+  // (#288) The catalogue alias that would ADOPT this model into a role, so an
+  // off-policy model can offer the settings write instead of describing it.
+  // '' = no catalogue entry claims it (a Fable night is reportable, not
+  // adoptable as an executor). Absent on a server that pre-dates #288.
+  adoptExec?: string; adoptAdv?: string;
 }
 
 // drift: '' = the runs match the policy · 'no-runs' = quiet, not drift ·
@@ -543,11 +548,22 @@ export interface FleetRoleWorth {
   costBasis: boolean;   // false = no cost reported, the shares are token-based
 }
 
+// (#288, design 1b) The run-level counts the two role cards lead with. Counted
+// once per RUN, which the per-model tallies cannot do — one run using three
+// models increments three of them. `total` is runs that recorded a per-model
+// breakdown, the same population as the advised/unadvised split, so the two
+// headlines share a denominator; `noBreakdown` is what sat out, said plainly
+// rather than folded in as compliance.
+export interface FleetRoleRuns {
+  total: number; offPolicy: number; onPolicy: number; noBreakdown: number;
+}
+
 export interface FleetRoles {
   days: number;
   models: FleetRoleModel[];
   assignments: FleetRoleAssignment[];
   worth: FleetRoleWorth;
+  runs?: FleetRoleRuns;   // absent on a server that pre-dates #288
 }
 
 export interface ControlData {
@@ -1349,6 +1365,12 @@ export async function suggestRoadmapTitle(slug: string, note: string): Promise<s
 export interface RoadmapAssist {
   title: string; note: string; area: string; branch: string; priority: Priority | null;
   tier: RoadmapItem['tier'];   // #277 — '' when the assist has no opinion or the field is off
+  // #298 — S never arrives as a fill. The top of the desire queue is the
+  // owner's own call, so the server hands an S back here instead, for the
+  // modal to OFFER; everything below it fills an empty tier as usual.
+  tierSuggested?: RoadmapItem['tier'];
+  // #298 — '' when the assist has no read on it or the field is switched off.
+  risk?: RoadmapItem['risk'] | '';
 }
 export async function assistRoadmapItem(slug: string, note: string): Promise<RoadmapAssist> {
   return request<RoadmapAssist>(`${roadmapBase(slug)}/assist`, { method: 'POST', body: { note } });

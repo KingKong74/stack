@@ -53,7 +53,10 @@ export function NightDebrief({
   books: AutopilotSchedule[];
   nightly: boolean;
   past: boolean;
-  days: { date: string; label: string; sub: string; on: boolean }[];
+  // #304 — `landed` is what the tab reports and `quiet` is a past night that
+  // produced nothing; the strip uses them to lean toward the nights with work
+  // in them rather than treating every day the same.
+  days: { date: string; label: string; sub: string; on: boolean; landed?: number; quiet?: boolean }[];
   onClose: () => void;
   onPickDay: (date: string) => void;
   onRunNow: () => void;
@@ -163,7 +166,11 @@ export function NightDebrief({
         <div className="db-tabs" role="tablist" aria-label="Pick a night">
           {days.map((d) => (
             <button key={d.date} role="tab" aria-selected={d.on}
-              className={`db-tab ${d.on ? 'on' : ''}`} onClick={() => onPickDay(d.date)}>
+              className={`db-tab ${d.on ? 'on' : ''} ${d.landed ? 'landed' : ''} ${d.quiet ? 'quiet' : ''}`}
+              title={d.landed
+                ? `${d.landed} change${d.landed === 1 ? '' : 's'} landed`
+                : d.quiet ? 'Nothing landed this night' : undefined}
+              onClick={() => onPickDay(d.date)}>
               <b>{d.label}</b>
               <i>{d.sub || '·'}</i>
             </button>

@@ -23,7 +23,7 @@ import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { wireTermClipboard } from '../lib/termClipboard';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { tierRank, type RoadmapItem } from '../types';
+import { tierRank, TIERS, type RoadmapItem, type Tier } from '../types';
 
 // The web terminal (#/terminal[?cwd=…]) — xterm.js over websocket to the host
 // PTY daemon (via the server relay at /term). Parallel sessions live in tabs
@@ -152,6 +152,10 @@ const RUNBOOK: { name: string; items: (TermCmd & { why: string })[] }[] = [
 // parked or already claimed by a branch. Same rules as the Plan room, applied
 // to one project, so what the rail hands you is what the night would take.
 const BUCKET_RANK: Record<string, number> = { must: 0, should: 1, could: 2, wont: 3 };
+// #299 — the rail's sentinel for "no area tag". The leading space can never
+// collide with a real area (areas are trimmed + lowercased), the same trick
+// the board's Uncategorised tab uses.
+const RAIL_UNTAGGED = ' untagged';
 function nextUpItems(roadmap: ProjectDetailData['roadmap']): RoadmapItem[] {
   const all = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
   return all
@@ -745,7 +749,37 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
     if (!r) return [] as RoadmapItem[];
     return [...r.must, ...r.should, ...r.could, ...r.wont].filter((it) => !it.done);
   }, [board]);
-  const nextUp = useMemo(() => (board ? nextUpItems(board.roadmap).slice(0, 6) : []), [board]);
+  // Everything the rail could hand over, in the runner's own order.
+  const nextAll = useMemo(() => (board ? nextUpItems(board.roadmap) : []), [board]);
+  // #299 — the rail used to offer the top six and nothing else, which is the
+  // right default and a dead end the moment you want a SET: this tab's area,
+  // everything ranked S, the low-risk work you can hand over in one go. These
+  // three narrow the same list — they never reorder it, so what the rail gives
+  // you is still what the night would take, just the slice you asked for.
+  const [railArea, setRailArea] = useState('');          // '' = every tab
+  const [railTier, setRailTier] = useState<Tier>('');    // '' = every tier
+  const [railRisk, setRailRisk] = useState<'' | 'low' | 'high'>('');
+  useEffect(() => { setRailArea(''); setRailTier(''); setRailRisk(''); }, [projectSlug]);
+  const railFiltered = useMemo(() => nextAll.filter((it) =>
+    (!railArea || (railArea === RAIL_UNTAGGED ? !it.area : it.area === railArea))
+    && (!railTier || it.tier === railTier)
+    && (!railRisk || it.risk === railRisk)), [nextAll, railArea, railTier, railRisk]);
+  const railFiltering = Boolean(railArea || railTier || railRisk);
+  // Unfiltered the rail stays a short list — the top of the queue, not the
+  // board. Ask it a question and it shows you the whole answer.
+  const nextUp = useMemo(() => railFiltered.slice(0, railFiltering ? 24 : 6), [railFiltered, railFiltering]);
+  // The tabs the rail can offer, counted over what is actually handable.
+  const railAreas = useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const it of nextAll) {
+      const k = it.area || RAIL_UNTAGGED;
+      seen.set(k, (seen.get(k) ?? 0) + 1);
+    }
+    return [...seen.entries()].sort((a, b) =>
+      (a[0] === RAIL_UNTAGGED ? 1 : 0) - (b[0] === RAIL_UNTAGGED ? 1 : 0) || a[0].localeCompare(b[0]));
+  }, [nextAll]);
+  const railTierCount = (t: Tier) => nextAll.filter((it) => it.tier === t).length;
+  const railRiskCount = (r: 'low' | 'high') => nextAll.filter((it) => it.risk === r).length;
   // The head's claim count — open items a branch holds (#277). Real Stack
   // state, not a guess about how many terminal tabs you have open.
   const claimedItems = openItems.filter((it) => it.claimedBy);
@@ -798,9 +832,10 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   const sendPicked = async () => {
     const h = handles.current.get(active);
     if (!h || picked.length === 0) return;
-    const items = picked
-      .map((id) => nextUp.find((it) => it.id === id))
-      .filter((it): it is RoadmapItem => !!it);
+    // Resolved against the WHOLE eligible list, not the filtered slice, so a
+    // pick survives switching tabs — one send can carry two areas (#299) — and
+    // always goes over in the runner's order rather than the order you ticked.
+    const items = nextAll.filter((it) => picked.includes(it.id));
     if (!items.length) return;
     h.sendText(`\x1b[200~${itemsBrief(items)}\x1b[201~`);
     h.focus();
@@ -1348,8 +1383,66 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                           <span>DO NEXT</span>
                           <button className="tc-link" onClick={() => go.detail(projectSlug, 'roadmap')}>Roadmap ↗</button>
                         </div>
+                        {/* #299 — narrow the list to a tab, a tier or a risk
+                            class, so a whole slice of the board can be handed
+                            over in one send. A chip is drawn when it has work
+                            behind it (or while it is the active one, so the
+                            control you pressed never disappears under you). */}
+                        {nextAll.length > 0 && (railAreas.length > 1 || railTierCount('S') > 0 || railRiskCount('low') > 0 || railFiltering) && (
+                          <div className="tc-filters">
+                            {/* The tabs are a SELECT, not chips: a real board
+                                carries fifteen-odd areas, and fifteen chips in
+                                a 300px rail is five rows of filter above two
+                                rows of list. Tier and risk stay chips because
+                                there are only ever six of them. */}
+                            {railAreas.length > 1 && (
+                              <div className="tc-filter-row">
+                                <span className="k">tab</span>
+                                <select className="tcf-select" value={railArea}
+                                  onChange={(e) => setRailArea(e.target.value)}
+                                  aria-label="Only this area">
+                                  <option value="">all tabs · {nextAll.length}</option>
+                                  {railAreas.map(([a, n]) => (
+                                    <option key={a} value={a}>
+                                      {a === RAIL_UNTAGGED ? 'untagged' : a} · {n}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+                            <div className="tc-filter-row">
+                              <span className="k">tier</span>
+                              {TIERS.filter((t) => railTierCount(t) > 0 || railTier === t).map((t) => (
+                                <button key={t} className={`tcf tier${railTier === t ? ' on' : ''}`}
+                                  title={`Only tier ${t} — the queue works S first, then A, B, C`}
+                                  onClick={() => setRailTier(railTier === t ? '' : t)}>
+                                  {t} <span className="n">{railTierCount(t)}</span>
+                                </button>
+                              ))}
+                              {TIERS.every((t) => railTierCount(t) === 0) && <span className="tcf-none">none ranked</span>}
+                              <span className="k">risk</span>
+                              {(['low', 'high'] as const).filter((r) => railRiskCount(r) > 0 || railRisk === r).map((r) => (
+                                <button key={r} className={`tcf risk-${r}${railRisk === r ? ' on' : ''}`}
+                                  title={r === 'low'
+                                    ? 'Only low-risk work — the kind a green overnight run merges itself'
+                                    : 'Only high-risk work — the kind that wants you watching'}
+                                  onClick={() => setRailRisk(railRisk === r ? '' : r)}>
+                                  {r === 'low' ? '⇣' : '⇡'} <span className="n">{railRiskCount(r)}</span>
+                                </button>
+                              ))}
+                              {railRiskCount('low') === 0 && railRiskCount('high') === 0 && <span className="tcf-none">all normal</span>}
+                            </div>
+                          </div>
+                        )}
                         {nextUp.length === 0 ? (
-                          <div className="tc-empty">Every open item is claimed or parked — nothing free to hand over.</div>
+                          <div className="tc-empty">
+                            {railFiltering ? (
+                              <>Nothing free under this filter.{' '}
+                                <button className="tc-link" onClick={() => { setRailArea(''); setRailTier(''); setRailRisk(''); }}>
+                                  clear it
+                                </button></>
+                            ) : 'Every open item is claimed or parked — nothing free to hand over.'}
+                          </div>
                         ) : (
                           <>
                             <div className="tc-next">
@@ -1365,6 +1458,7 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                                       <span className="m">
                                         #{it.id} · {it.bucket}
                                         {it.tier ? ` · ${it.tier}` : ''}
+                                        {it.risk === 'low' ? ' · ⇣' : it.risk === 'high' ? ' · ⇡' : ''}
                                         {it.area ? ` · ${it.area}` : ''}
                                         {it.plan.length ? ` · ☰ ${it.plan.filter((s) => s.done).length}/${it.plan.length}` : ' · no plan'}
                                       </span>
@@ -1373,6 +1467,25 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                                 );
                               })}
                             </div>
+                            {/* Actioning a whole slice is the point of the
+                                filters, so ticking one is one press. */}
+                            {(nextUp.length > 1 || picked.length > 0) && (
+                              <div className="tc-tickall">
+                                <button className="tc-link"
+                                  onClick={() => setPicked((p) => [...new Set([...p, ...nextUp.map((it) => it.id)])])}
+                                  title={railFiltering
+                                    ? 'Tick everything this filter shows — the send keeps the runner order'
+                                    : 'Tick everything shown'}>
+                                  tick all {nextUp.length}
+                                </button>
+                                {picked.length > 0 && (
+                                  <button className="tc-link dim" onClick={() => setPicked([])}>clear {picked.length}</button>
+                                )}
+                                {railFiltering && railFiltered.length > nextUp.length && (
+                                  <span className="tc-note">{railFiltered.length - nextUp.length} more not shown</span>
+                                )}
+                              </div>
+                            )}
                             <div className="tc-send">
                               <button className="btn-submit sm" disabled={picked.length === 0 || !activeSess}
                                 onClick={() => void sendPicked()}

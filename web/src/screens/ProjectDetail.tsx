@@ -122,10 +122,21 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // linger. (The activity highlight keeps its own explicit clear control.)
   useEffect(() => {
     if (!highlightId) return;
-    const node = document.querySelector(`[data-hl="${highlightId}"]`);
-    node?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // #303 — the row is not always in the DOM on this first pass. A tab may
+    // still be mounting, and the Roadmap board unfolds/unfilters itself to
+    // reveal a deep-linked item (see its own effect), which lands a render
+    // later. A single synchronous query would miss all of that and silently
+    // scroll nowhere, so keep looking briefly and stop at the first hit.
+    let tries = 0;
+    let poll: ReturnType<typeof setTimeout>;
+    const find = () => {
+      const node = document.querySelector(`[data-hl="${highlightId}"]`);
+      if (node) { node.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
+      if (++tries < 12) poll = setTimeout(find, 50);   // ~600ms, then give up quietly
+    };
+    find();
     const t = setTimeout(() => setHighlightId(null), 2800);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t); clearTimeout(poll); };
   }, [highlightId, tab]);
   const [bugModal, setBugModal] = useState<{ open: boolean; title: string; fromNote: number | null }>(
     { open: false, title: '', fromNote: null });

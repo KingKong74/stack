@@ -206,6 +206,10 @@ export function computeFleetRoles({ usageRows, projects, execAlias, advAlias, no
   let advisedRuns = 0, advisedLanded = 0, plainRuns = 0, plainLanded = 0;
   let advCostUsd = 0, execCostUsd = 0, attributedCost = 0, attributedTokens = 0;
   let advTokens = 0, execTokens = 0;
+  // (#288) RUN-level off-policy, which the per-model counts cannot give: a run
+  // using three models increments three of them, so "5 of 9 runs went
+  // elsewhere" has to be counted once per run, at the run.
+  let offPolicyRuns = 0;
 
   for (const r of usageRows) {
     const at = new Date(r.finished_at).getTime();
@@ -218,7 +222,7 @@ export function computeFleetRoles({ usageRows, projects, execAlias, advAlias, no
     proj.runs += 1;
     proj.lastAt = Math.max(proj.lastAt, at);
 
-    let sawAdv = false;
+    let sawAdv = false, sawOff = false;
     for (const [model, u] of entries) {
       const tokens = (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0)
         + (Number(u.cacheReadInputTokens) || 0) + (Number(u.cacheCreationInputTokens) || 0);
@@ -226,6 +230,7 @@ export function computeFleetRoles({ usageRows, projects, execAlias, advAlias, no
       const role = roleOfModel(model, execAlias, advAlias);
       if (role === 'adv') { sawAdv = true; advCostUsd += costUsd; advTokens += tokens; }
       if (role === 'exec') { execCostUsd += costUsd; execTokens += tokens; }
+      if (role === '') sawOff = true;
       attributedCost += costUsd;
       attributedTokens += tokens;
 
@@ -252,6 +257,7 @@ export function computeFleetRoles({ usageRows, projects, execAlias, advAlias, no
     if (entries.length > 0) {
       if (sawAdv) { advisedRuns += 1; if (r.outcome === 'landed') advisedLanded += 1; }
       else { plainRuns += 1; if (r.outcome === 'landed') plainLanded += 1; }
+      if (sawOff) offPolicyRuns += 1;
     }
   }
 
@@ -259,11 +265,27 @@ export function computeFleetRoles({ usageRows, projects, execAlias, advAlias, no
   // and tokens still describe the shape. Same convention as the lane split.
   const basisCost = attributedCost > 0;
   const total = basisCost ? attributedCost : attributedTokens;
+  // (#288) Which catalogue alias would ADOPT this model into a role — the
+  // inverse of the alias match, so an off-policy model can offer "make this the
+  // policy" as a real settings write rather than a sentence telling you to go
+  // and find the picker. '' when no catalogue entry claims it (the executor
+  // catalogue names no Fable, so a Fable night is reportable and not
+  // adoptable), and the most specific claim wins, exactly as roleOfModel does.
+  const adoptAlias = (catalogue, modelId) => {
+    let best = '', score = 0;
+    for (const c of catalogue) {
+      const s = aliasScore(c.model, modelId);
+      if (s > score) { score = s; best = c.model; }
+    }
+    return score > 0 ? best : '';
+  };
   const modelList = [...models.values()]
     .map((m) => ({
       ...m,
       share: total > 0 ? ((basisCost ? m.costUsd : m.tokens) / total) * 100 : 0,
       lastSeen: relativeTime(new Date(m.lastAt).toISOString()) || 'just now',
+      adoptExec: adoptAlias(EXECUTOR_CATALOGUE, m.model),
+      adoptAdv: adoptAlias(ADVISOR_CATALOGUE, m.model),
     }))
     .sort((a, b) => b.tokens - a.tokens);
   for (const m of modelList) delete m.lastAt;
@@ -309,6 +331,16 @@ export function computeFleetRoles({ usageRows, projects, execAlias, advAlias, no
     days: 7,
     models: modelList,
     assignments,
+    // (#288, design 1b) The run-level headline the two role cards lead with.
+    // `total` counts only runs that recorded a per-model breakdown — the same
+    // population the advised/unadvised split uses, so "5 of 9" and "4 of 9"
+    // are drawn from one denominator and cannot contradict each other.
+    runs: {
+      total: advisedRuns + plainRuns,
+      offPolicy: offPolicyRuns,
+      onPolicy: advisedRuns + plainRuns - offPolicyRuns,
+      noBreakdown: usageRows.length - (advisedRuns + plainRuns),
+    },
     // The numbers only. The sentences are composed client-side, the same way
     // a lane's read is — so the two role views phrase things one way.
     worth: {
