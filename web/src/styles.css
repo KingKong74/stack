@@ -3913,6 +3913,8 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .q-finding .t { flex: 1; min-width: 0; font-size: 11.5px; line-height: 1.5; color: var(--ink); text-wrap: pretty; }
 .q-finding .t em { font-style: normal; color: var(--muted); }
 .q-finding .q-out { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--muted); white-space: nowrap; }
+/* #239 — a regression: something the tracker calls fixed, found live again. */
+.q-finding.regressed .q-out { color: var(--critical); }
 
 /* the compact checks card (Now) */
 .q-crow { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 8px; }

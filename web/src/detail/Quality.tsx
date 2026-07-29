@@ -482,17 +482,25 @@ function AuditCard({
           <span className="q-note bad">{error}</span>
         ) : result ? (
           <>
+            {/* #239 — a REOPENED regression is called out first and separately.
+                It is the only outcome here that changed the tracker without a
+                human asking, and folding it into "already known" is how a bug
+                that came back after being fixed used to go unmentioned. */}
             <span className="q-card-sub">
-              {result.logged
-                ? `${result.logged} logged to the review inbox${result.skipped ? ` · ${result.skipped} already known` : ''}`
-                : 'Audit came back clean — nothing worth logging.'}
+              {(result.reopened ?? 0) > 0
+                ? `${result.reopened} fixed bug${result.reopened === 1 ? '' : 's'} found live again and reopened`
+                  + (result.logged ? ` · ${result.logged} new to the review inbox` : '')
+                : result.logged
+                  ? `${result.logged} logged to the review inbox${result.skipped ? ` · ${result.skipped} already known` : ''}`
+                  : 'Audit came back clean — nothing worth logging.'}
             </span>
             {result.findings.map((f, i) => (
-              <div className="q-finding" key={i}>
+              <div className={`q-finding${f.outcome === 'reopened' ? ' regressed' : ''}`} key={i}>
                 <span className={`sev-pill ${f.severity}`}>{f.severity}</span>
                 <span className="t">{f.title}{f.evidence ? <em> — {f.evidence}</em> : null}</span>
                 <span className="q-out">
                   {f.outcome === 'logged' ? `→ ${f.bug?.id} · review inbox`
+                    : f.outcome === 'reopened' ? `↩ ${f.bug?.id ?? 'a fixed bug'} · regression, reopened`
                     : f.outcome === 'duplicate' ? 'already tracked' : 'previously dismissed'}
                 </span>
               </div>

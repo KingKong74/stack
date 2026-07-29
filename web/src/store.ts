@@ -1588,15 +1588,19 @@ export async function runTip(id: number): Promise<Tip> {
 // ---- automated bug audit (#144) ----
 
 // One audit finding and what happened to it: 'logged' = a new review-inbox bug
-// (carried in `bug`), 'duplicate' = already tracked, 'dismissed' = tombstoned.
+// (carried in `bug`), 'duplicate' = already tracked, 'dismissed' = tombstoned,
+// 'reopened' (#239) = it matched a bug the tracker calls FIXED, so the auditor
+// found a regression — that bug is open again, and it carries the row.
 export interface AuditFinding {
   title: string;
   severity: Severity;
   evidence: string;
-  outcome: 'logged' | 'duplicate' | 'dismissed';
+  outcome: 'logged' | 'duplicate' | 'dismissed' | 'reopened';
   bug: Bug | null;
 }
-export interface AuditResult { findings: AuditFinding[]; logged: number; skipped: number }
+// `reopened` is optional: an older server counts a regression as skipped, and
+// the finding rows still say what happened either way.
+export interface AuditResult { findings: AuditFinding[]; logged: number; reopened?: number; skipped: number }
 
 // Gemini audits the project (brief + checks + tracked bugs + the live page)
 // and files suspected bugs straight into the review inbox — the human keeps

@@ -60,13 +60,31 @@ async function fetchPageText(url) {
 }
 
 // Everything both prompts are grounded in, gathered once.
+// (#239) How many known bugs the prompt carries. A cap is right — the context
+// is finite and a hundred bugs would crowd out the brief and the page — but
+// WHICH ones it keeps is the whole question, and how honestly it admits to
+// capping is the other half. See KNOWN_BUGS below.
+const KNOWN_BUGS_CAP = 20;
+
 async function gatherContext(p) {
-  const [checksR, bugsR, actR] = await Promise.all([
+  const [checksR, bugsR, openCountR, actR] = await Promise.all([
     q('SELECT * FROM checks WHERE project_id = $1 ORDER BY created_at', [p.id]),
+    // (#239) WORST first, not NEWEST first. This list is what the auditor is
+    // told is already tracked, so a cap that drops the oldest rows drops
+    // precisely the long-standing criticals — the bugs most worth knowing
+    // about — and keeps twenty recent trivia instead. The replan prompt next
+    // door already ordered by severity; the surface whose whole subject is
+    // bugs was the one that did not. Recency only breaks ties.
     q(
       `SELECT bug_key, title, severity, status FROM bugs
         WHERE project_id = $1 AND status <> 'fixed'
-        ORDER BY created_at DESC LIMIT 20`,
+        ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+                 created_at DESC
+        LIMIT $2`,
+      [p.id, KNOWN_BUGS_CAP]
+    ),
+    q(
+      `SELECT count(*)::int AS n FROM bugs WHERE project_id = $1 AND status <> 'fixed'`,
       [p.id]
     ),
     q(
@@ -76,7 +94,10 @@ async function gatherContext(p) {
     ),
   ]);
   const page = await fetchPageText(p.site_url);
-  return { checks: checksR.rows, bugs: bugsR.rows, activity: actR.rows, page };
+  return {
+    checks: checksR.rows, bugs: bugsR.rows, activity: actR.rows, page,
+    openBugs: openCountR.rows[0]?.n ?? bugsR.rows.length,
+  };
 }
 
 const checkLine = (c) => {
@@ -98,8 +119,16 @@ const contextVars = (p, ctx) => ({
   TECH: Array.isArray(p.tech_stack) && p.tech_stack.length ? p.tech_stack.join(', ') : 'not recorded',
   BRIEF: (p.audit_context || '').trim() || 'none written — audit generally: availability, broken flows, errors on the page.',
   CHECKS: ctx.checks.length ? ctx.checks.map(checkLine).join('\n') : 'no checks configured',
+  // (#239) A truncated list must SAY it is truncated. The auditor reads this as
+  // "what is already tracked" and reasons from absence — so a silent slice
+  // makes it re-report tracked bugs (burning the run on findings that land as
+  // duplicates) and, worse, tells it nothing is known about an area where
+  // plenty is. The count is the true open total, not the length of the slice.
   KNOWN_BUGS: ctx.bugs.length
     ? ctx.bugs.map((b) => `${b.bug_key} (${b.severity}, ${b.status}) ${b.title}`).join('\n')
+      + (ctx.openBugs > ctx.bugs.length
+        ? `\n(showing the ${ctx.bugs.length} worst of ${ctx.openBugs} open bugs — others are tracked but not listed here)`
+        : '')
     : 'none open',
   ACTIVITY: ctx.activity.length
     ? ctx.activity.map((a) => `${relativeTime(a.created_at) || 'recently'} [${a.branch || 'main'}] ${(a.summary || '').slice(0, 200)}`).join('\n')
@@ -136,10 +165,27 @@ export async function landFindings(projectId, findings) {
     if (dead.length) { out.push({ title, severity, evidence, outcome: 'dismissed', bug: null }); continue; }
 
     const { rows: dup } = await q(
-      'SELECT bug_key FROM bugs WHERE project_id=$1 AND fingerprint=$2 LIMIT 1',
+      'SELECT * FROM bugs WHERE project_id=$1 AND fingerprint=$2 LIMIT 1',
       [projectId, fp]
     );
-    if (dup.length) { out.push({ title, severity, evidence, outcome: 'duplicate', bug: null }); continue; }
+    if (dup.length) {
+      // (#239) A match against a FIXED bug is a REGRESSION, not a duplicate —
+      // the same principle #278 already applies to a red check whose linked bug
+      // is fixed. Swallowing it as "already tracked" was the worst outcome
+      // available: the tracker says fixed, the auditor found it live again, and
+      // nobody was told. Reopening keeps the history and the BUG-N (and
+      // satisfies the hook fingerprint index, which a second row would not).
+      if (dup[0].status === 'fixed') {
+        const { rows: back } = await q(
+          `UPDATE bugs SET status='open', updated_at=now() WHERE id=$1 RETURNING *`,
+          [dup[0].id]
+        );
+        out.push({ title, severity, evidence, outcome: 'reopened', bug: back.length ? bugShape(back[0]) : null });
+        continue;
+      }
+      out.push({ title, severity, evidence, outcome: 'duplicate', bug: null });
+      continue;
+    }
 
     n += 1;
     const { rows } = await q(
@@ -170,7 +216,11 @@ audit.post('/', async (req, res) => {
     res.json({
       findings,
       logged: findings.filter((f) => f.outcome === 'logged').length,
-      skipped: findings.filter((f) => f.outcome !== 'logged').length,
+      // (#239) A reopened regression is not "skipped" — the tracker really did
+      // change, and counting it as a non-event would put the one finding that
+      // matters most in the same bucket as the ones nothing happened to.
+      reopened: findings.filter((f) => f.outcome === 'reopened').length,
+      skipped: findings.filter((f) => f.outcome !== 'logged' && f.outcome !== 'reopened').length,
     });
   } catch (err) {
     res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
