@@ -3537,7 +3537,13 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc14-phase .head { display: flex; align-items: center; gap: 11px; padding: 12px 15px; width: 100%; text-align: left; }
 .mc14-phase .head:hover { background: var(--sand); }
 .mc14-phase .head .n { font-family: var(--mono); font-size: 10px; color: var(--paused); }
-.mc14-phase .head .nm { font-family: var(--disp); font-size: 13.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* #301 — the title has to be the thing that GIVES. Without min-width:0 a
+   nowrap title never shrinks below its own text, so a long one pushed the
+   verdict badge, the step count and the caret out of a card that clips its
+   overflow: the row said nothing about its own state, and there was nothing
+   left to click. Everything after the title is now explicitly unshrinkable. */
+.mc14-phase .head .nm { flex: 0 1 auto; min-width: 0; font-family: var(--disp); font-size: 13.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc14-phase .head .n, .mc14-phase .head .badge, .mc14-phase .head .meta, .mc14-phase .head .caret { flex: none; }
 .mc14-phase .badge.building { background: var(--green-tint); color: var(--live); }
 .mc14-phase .badge.verdict { background: var(--accent-tint); color: var(--accent-deep); }
 .mc14-phase .badge.landed { background: var(--panel); color: var(--chip-ink); }
@@ -3551,10 +3557,17 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc14-phase .step.done .mark { color: var(--live); }
 .mc14-phase .step .t { flex: 1; font-size: 12.5px; line-height: 1.5; color: var(--ink); }
 .mc14-phase .step.done .t { color: var(--muted); }
-.mc14-phase .gate { display: flex; align-items: center; gap: 11px; margin-top: 8px; padding: 10px 12px; border-radius: 8px; border: 1px dashed var(--accent-tint-border); background: var(--accent-tint); }
-.mc14-phase .gate .g { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; color: var(--accent-deep); }
-.mc14-phase .gate .t { flex: 1; font-size: 11.5px; line-height: 1.5; color: var(--ink); }
-.mc14-phase .gate .act { padding: 5px 11px; border-radius: 6px; border: 1px solid var(--accent-tint-border); background: var(--card); font-size: 11px; font-weight: 500; color: var(--accent-deep); white-space: nowrap; }
+/* The gate is a crossing the machine will not make alone, so it reads as its
+   own band rather than another step: a clear gap above it, and room to breathe
+   inside. It WRAPS (#301) — the sentence is a full one and the action is a real
+   button, and squeezing a nowrap button to fit one line clipped its own label
+   in the rooms' narrower column. Wrapped, the button drops under the sentence
+   and keeps its size. */
+.mc14-phase .gate { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 11px; margin-top: 11px; padding: 11px 13px; border-radius: 8px; border: 1px dashed var(--accent-tint-border); background: var(--accent-tint); }
+.mc14-phase .gate .g { flex: none; align-self: flex-start; padding: 3px 7px; border-radius: 5px; background: var(--card);
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; color: var(--accent-deep); }
+.mc14-phase .gate .t { flex: 1 1 220px; min-width: 0; font-size: 11.5px; line-height: 1.55; color: var(--ink); }
+.mc14-phase .gate .act { flex: none; margin-left: auto; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--accent-tint-border); background: var(--card); font-size: 11px; font-weight: 500; color: var(--accent-deep); white-space: nowrap; }
 .mc14-phase .gate .act:hover { border-color: var(--accent); }
 .mc14-card.wide { margin-top: 2px; }
 .mc14-diff { display: flex; gap: 11px; align-items: baseline; text-align: left; width: 100%; padding: 4px 2px; border-radius: 6px; }
