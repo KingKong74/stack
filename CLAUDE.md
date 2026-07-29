@@ -63,6 +63,18 @@ terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (npm
         GET /api/settings on its 10-minute tick and **fails SAFE**: unknown or unreachable = reap
         NOTHING, deliberately the opposite of the arm-switch convention, because this deletes
         running work rather than merely declining to start any.
+        A session can be **PINNED out of the reaper's reach** (#292): the pin is a tmux user
+        option ON THE SESSION (`@stack-keep`, set via `setKeep` in `tmux-session.mjs` — note the
+        `=name:` target, since set-option's `-t` is a target-PANE in tmux 3.x and a bare `=name`
+        fails on a session that plainly exists), so the state sits where the thing it describes
+        sits: a daemon restart, a browser reload or a re-attach from another device cannot drift
+        from it, and it dies exactly when the session does. `reapIdleSessions` skips a pinned
+        session before it looks at activity at all. It exists because a session parked
+        mid-investigation, and one waiting out a usage-limit reset, are indistinguishable from an
+        abandoned tab to `session_activity` — both produce nothing. Pinned on the pane and on
+        every detached chip, attached ones included (attachment is not what the reaper measures),
+        through POST /api/terminal/keep → the relay's `keepSession` frame; the host re-advertises
+        `keep` on its next push, so the UI flips optimistically and is corrected within a beat.
         stack-term-watchdog.mjs
         (#221, its own */5 crontab line, log ~/.stack/term-watchdog.log) polls the relay's
         GET /api/terminal/agent — the only honest health signal, since a zombie daemon can
@@ -275,7 +287,17 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             push the revert commits, un-tick the item (which clears verdict + claim). `merge`
             jobs (#154 — Mission Control's ⇥ Merge) too: fetch, merge --no-ff origin/<branch>
             into main in a throwaway worktree, push, delete the remote branch; conflicts abort
-            + report failed, and the item is NEVER ticked (the human disposes). The dispatcher
+            + report failed, and the item is NEVER ticked (the human disposes). A successful merge
+            also **removes the BUILD worktree the branch came from** (#242): the runner keeps it
+            deliberately after a landed run (the branch is pushed, the claim stands until a human
+            merges and ticks), which is right up to exactly that moment — after it, the tree is a
+            full checkout of history sitting on disk forever. The path is not reconstructed from
+            the naming convention (the runner spells it four ways: item / bug / audit / plan) —
+            git is asked which tree holds the branch. Two guards, because a merge job can be
+            pointed at ANY branch including one a human is sitting in: only trees under
+            `~/.stack/autopilot` are eligible, and the removal runs WITHOUT `--force` so git
+            itself refuses a tree with uncommitted changes. A kept tree says so in the job detail.
+            The dispatcher
             also pushes the **branch report** (#207) every ~10 min (stamp file
             ~/.stack/branch-report.stamp): per repo it can find, fetch --prune then every
             origin branch's ahead/behind vs origin/main, a `git merge-tree --write-tree`
@@ -385,6 +407,16 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   hover, and each block is gated on the same data as its full-width counterpart, so the slim rail
   never draws a frame around nothing. Stacked under the rooms (≤1000px) there is no column to be
   slim in, so the blocks run ACROSS as a strip instead of leaving a 76px stub below the page.
+  **The collapse changes neither the toggle's place nor the rail's length** (#306): the same 22px
+  ‹/› sits in the same bar above the card in both states (it used to become a full-width 76px bar,
+  so the control you pressed to collapse was never under the cursor that expands again), and the
+  expanded rail is MEASURED while open (ResizeObserver, the same trick the dashboard's SubNav uses
+  on the topbar) and that height handed to the slim rail as a floor — the slim rail was built for
+  a height it never got, ending in a flex spacer meant to settle the daemon dot at the bottom,
+  which does nothing in a card sized by its own content. The measurement is remembered device-local
+  (`store.getControlRailHeight/setControlRailHeight`, clamped 200–3000) so a reload that STARTS
+  collapsed still has one; never measured = natural height, i.e. the pre-#306 behaviour. Dropped
+  outright below 1000px, where a floor would stretch a horizontal strip down the page.
   **Now** is 11a's dashboard: the **fleet strip** (#268 — one row per worker
   slot, busy or idle; idle slots are RENDERED, never omitted, because the strip's length is how
   you read the fleet's real size) carrying the **ROLES column** (#280, the design's 23a — who is
@@ -455,9 +487,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   Executor / Advisor pickers, the same app-wide settings the Now room's console writes, mirrored
   here because this is where the plan is decided: the queue below, the hands and the mind that
   work it above; the catalogue rides the control payload, and a mono summary reads
-  "Opus builds · consults Opus 5"). ⠿/▲▼ reorder is a dirty overlay (revert = exact);
-  moving across the must/should boundary re-buckets the MOVED item, and crossing a TIER boundary
-  re-tiers it (both shown as → flags); Save
+  "Opus builds · consults Opus 5"). Reorder is a dirty overlay (revert = exact) by **drag or
+  ▲▼** — #290 made the ⠿ real, the whole row being the handle; both routes go through one
+  `reorder(from, to)` so a drag can never mean something different from two presses of ▼ (the
+  carried row lands where the hovered row sits, and the hovered row draws its accent edge on the
+  side the drop will take). Whichever route is used, the moved item takes the DISPLACED row's
+  bucket and tier: crossing the must/should boundary re-buckets it, crossing a TIER boundary
+  re-tiers it (both shown as → flags — and the re-tier is what stops a row snapping back the
+  moment the order is saved); Save
   order renumbers positions (+ flipped buckets and tiers) through the normal PATCH — the same write the
   board's drag makes, because the board IS the run queue. Ineligible open items sit under OUT
   OF THE SCHEDULE with the honest why (⚑ claimed / parked / outside area / below the line). The
@@ -577,7 +614,16 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   The **merge strip** (#154, git-aware via #207): one chip per open branch — the host's branch
   report supplies real state (↑ahead/↓behind, ✓ merges clean / ⚠ conflicts with main, last
   subject on hover), claims the report hasn't seen fall back to plain chips, and a 🧹 count
-  flags fully-merged origin branches never deleted; **⇥ Merge** (`store.queueMerge`) queues a
+  flags fully-merged origin branches never deleted. **#288 made it readable rather than a wall**:
+  chips sort by what needs a HUMAN (conflicting first — the machine cannot finish those at all —
+  then probe-clean, then unprobed; most commits first within a group), the verdict is also worn
+  on the chip's own edge so the groups read without counting glyphs, the last commit's AGE is on
+  the chip instead of behind a hover (the one field separating live work from a stranded lane),
+  and the report's freshness is STATED (`git as of 5m ago`) rather than hovered — every number
+  here is a snapshot from the host's ~10-minute pass, and a reader given exact ahead/behind
+  figures does not go hunting a container tooltip to learn when they were true. Deliberately no
+  GitHub API: PR/CI state would need a token in `~/.stack/env` and a network dependency for facts
+  git already holds locally. **⇥ Merge** (`store.queueMerge`) queues a
   `merge` job with a probe-known-conflict warning in the confirm modal.
   The **paused-sessions strip** (#142) sits above the recent-jobs chips: one ⏸ chip per
   limit-paused `resume` job showing its resume time, with **▶ Resume now**
@@ -600,7 +646,19 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   project, falling back to home on any miss; entry points on Mission Control — the strip's ⌨ Terminal button
   and a per-row ⌨ that prefills the project's slug as the cwd). xterm.js + fit addon over
   `store.openTerminal()` (the only place the ws transport + token live); Shell/Claude seg control,
-  status line, reconnectable. **Two to four terminals at once**: the head bar's pane seg (1/2/3/4,
+  status line, reconnectable. **⤢ FULL SCREEN** (#305, the head bar, beside the pane seg — the
+  same question asked twice: how much screen do these terminals get): the screen pins to the
+  viewport, the topbar and the detached-sessions chooser go, and the grid stops guessing at its
+  own height — everywhere else it is `calc(100vh - 210px)`, a guess at the chrome above it, and
+  in full screen it is simply a flex child taking what is left. The head bar survives, so the way
+  out is where the way in was. The browser's Fullscreen API is asked for on the **document**, not
+  the screen element: in real fullscreen only the fullscreen subtree renders and this screen's
+  kill-confirm is a SIBLING of it, so fullscreening the element would hide a modal that still
+  held the interaction. The CSS mode is what the layout keys on (a refused request still works),
+  the container sits at z-index 40 so `.overlay` (50) stays above it, esc brings the CSS mode back
+  with it, and navigating away drops it. Transient by design — fullscreen cannot be re-entered on
+  load without a gesture, so a remembered `true` would only ever be a lie.
+  **Two to four terminals at once**: the head bar's pane seg (1/2/3/4,
   device-local as `store.getTermViewPrefs().panes`, `TERM_PANE_CHOICES`) replaced the old wide-mode
   toggle — wide mode answered "give the terminal the whole viewport", which was the consequence of
   a question rather than the question, since you widen the screen because you want more than one
@@ -803,7 +861,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   30-run pass-rate trend) over four KPI cards, then three **segments**: **Now** is the card grid —
   **Needs you** (red checks and serious open bugs in ONE list, each row wearing its other half,
   ▸ re-run the red ones), the **✧ Bug audit** card (brief fold, ⧉ Claude prompt, findings with
-  outcomes), the compact **Checks** card (failing first; past eight it shows the red ones and folds
+  outcomes — a `reopened` one, #239's regression, is called out first and in critical tone), the compact **Checks** card (failing first; past eight it shows the red ones and folds
   the rest into a count) and the **Bugs** card (open by severity capped at ten, `show fixed`,
   status pill = the inline editor, ✓ fix / × delete, the ↳ commit chip still jumping to Activity);
   **Suite** is every check with the composer (method/name/URL/expected status, request body,
@@ -874,7 +932,11 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   pointer to the room rather than an empty board),
   Futures — the **Polaris tab** (#227, from the Stack Planning design):
   the collapsible **north star band** (one editable paragraph, PATCHed as `north_star`, injected
-  by the SessionStart hook) over the **constellation sky** — the north star at the centre, one
+  by the SessionStart hook. #307 — it arrives **COLLAPSED**, with the summary line carrying it:
+  it is a paragraph you wrote once, sitting above the sky you actually came to read. Expanding is
+  remembered per slug (`store.getNorthStarOpen/setNorthStarOpen`), and an UNSET north star is the
+  one exception — collapsed it reads "Not set." with no way in, and a default that hides its own
+  affordance is worse than the default it replaced) over the **constellation sky** — the north star at the centre, one
   dashed ring per alignment verdict (on course 132 / tangent 224 / off course 296; unjudged
   ideas float dashed at 178), themes = the ideas' `area` tags as bearings (no area = `loose`),
   theme bubbles when collapsed, seamless wheel zoom (continuous 0.5–5× toward the cursor — #250
@@ -896,7 +958,14 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   draft, so the only write is still the single batched area PATCH on apply, and Cancel really
   does mean nothing happened) —
   beside the **Polaris rail**: the selected idea (verdict pill, → Roadmap promote, Build on it
-  → the studio primed via the one-shot `stack.polaris.thought` handoff PolarisTerm types in,
+  → the studio primed via the one-shot `stack.polaris.thought` handoff PolarisTerm types in —
+  `screens/PolarisStudio.tsx`, whose head bar carries its own **⤢ full screen** (#308): both its
+  halves are normally sized off the viewport by hand (`calc(100vh - 200px)` for the session,
+  `- 160px` for the planning panel), and full screen pins the page to the viewport so the grid
+  takes what the head bar leaves. Same rules as the Terminal's (#305): the Fullscreen API on the
+  DOCUMENT, the CSS mode as the source of truth, the head bar kept as the way out, and a `resize`
+  raised by hand because entering the mode changes the xterm's holder without one,
+
   ✎ edit, dismiss), the **judge queue** (unsorted ideas one at a time — verdict buttons PATCH
   `alignment`, ✦ "What would Polaris say?" = the Gemini judge suggestion, skip is
   session-local; ⤢ pops the queue out into a modal with roomier controls, same state), a
@@ -1555,7 +1624,11 @@ the silent metadata backstop so the feed never has gaps.
   attached, from the relay's cache of the daemon's advertisements, each with its Gemini `label`
   when one has been made; empty while the daemon is offline) · `POST /api/terminal/detached/kill` (`{name}` — kill an orphaned tmux session on the
   host; the daemon refuses names that aren't actually detached, so a live session is unkillable
-  through this route) · `POST /api/terminal/assist` (`{prompt, cwd}` — ✧ the rail's command help:
+  through this route) · `POST /api/terminal/keep` (#292 — `{name, keep}` pins a session against
+  the idle reaper. Unlike the kill this IS allowed on an attached session: pinning the tab you
+  are working in is the main case, and a pin only ever DECLINES to destroy something. The host
+  owns the state, so the route sends and returns — the new value arrives on the daemon's next
+  advertisement, not from here) · `POST /api/terminal/assist` (`{prompt, cwd}` — ✧ the rail's command help:
   Gemini suggests one shell command + a save-label + a caveat line; suggestion only, the client
   types it without Enter; 503 keyless)
 
@@ -1596,6 +1669,14 @@ won't re-create it.
 ## Gotchas
 
 - `server` retries the first Postgres connection — don't "fix" that; it's what survives compose order.
+- **A capped list inside a prompt must say it is capped, and must be capped on the right axis**
+  (#239, `routes/audit.js`). The auditor reads KNOWN_BUGS as "what is already tracked" and reasons
+  from ABSENCE, so a silent slice makes it re-report tracked bugs and tells it nothing is known
+  where plenty is. Order by severity (a cap on `created_at DESC` drops the long-standing
+  criticals), and state the true total beside the shown count. Same rule for any list you add to a
+  prompt. And in `landFindings`, a finding matching a **fixed** bug is a REGRESSION — it reopens
+  that bug and reports `reopened`; swallowing it as "already tracked" is how a bug that came back
+  goes unmentioned.
 - Ingest uses COALESCE / keep-if-empty on update so short/empty checkpoints don't overwrite a good
   summary, and the `authored` flag means a metadata backstop never clobbers a rich /checkpoint for the
   same commit. Preserve both properties when extending.
