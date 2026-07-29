@@ -2131,6 +2131,33 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .term-layout { display: flex; gap: 14px; align-items: stretch; }
 /* #136 — wide mode: terminal page expands past the 1080px max-width */
 .term-page.term-wide { max-width: none; }
+
+/* #305 — FULL SCREEN. Everywhere else the pane grid is sized by
+   `calc(100vh - 210px)`, a number that has to guess at how much chrome sits
+   above it. Here it stops guessing: the screen is fixed to the viewport, the
+   topbar goes, and the grid simply takes what is left over as a flex child —
+   whatever the pane shape, whatever the rail is doing. What survives is what
+   you work the terminals WITH: the head bar (tabs, pane count and the way back
+   out), the usage strip and the cockpit rail. What goes is the page chrome and
+   the detached-sessions chooser — that one is how you START a session, not how
+   you work one, and it is a single press away again. */
+/* z-index 40 is deliberate: it clears the page, and it stays UNDER `.overlay`
+   (50), so a modal opened from this screen still lands on top of it. */
+.term-screen.term-fullscreen {
+  position: fixed; inset: 0; z-index: 40; overflow: hidden;
+  display: flex; flex-direction: column; background: var(--bg);
+}
+.term-fullscreen .topbar, .term-fullscreen .term-detached { display: none; }
+.term-fullscreen .page.term-page {
+  max-width: none; margin: 0; padding: 10px 14px 12px; flex: 1; min-height: 0;
+}
+.term-fullscreen .term-layout { flex: 1; min-height: 0; }
+/* The grid and the rail both give up their viewport-relative heights and take
+   the row's instead — the whole point of the mode is that nothing above them
+   has to be guessed at any more. */
+.term-fullscreen .term-grid,
+.term-fullscreen .term-cockpit { height: auto; min-height: 0; }
+.term-full-btn.on { border-color: var(--accent); color: var(--accent-deep); }
 /* 25b — the cockpit rail: the terminal keeps the width, everything else
    folds in here. Collapsed it is just the toggle. */
 .term-cockpit {

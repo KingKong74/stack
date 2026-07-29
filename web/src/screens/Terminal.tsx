@@ -214,6 +214,38 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   // The dock state while away from #/terminal: chip (default on navigate) or
   // the expanded float. Re-minimises each time the user navigates away.
   const [dock, setDock] = useState<'min' | 'float'>('min');
+  // #305 — full screen. The pane grid is sized by a magic `calc(100vh - 210px)`
+  // that has to guess at the chrome above it; in full screen it stops guessing
+  // and simply takes what is left of a viewport with nothing else in it. The
+  // browser's own Fullscreen API is asked for on top, because it buys the
+  // browser chrome too — but the CSS mode is what the layout keys on, so a
+  // refused or unsupported request still gives the terminals the window.
+  // Deliberately NOT persisted: this is a moment, not a preference, and no
+  // amount of remembering can re-enter the browser's fullscreen without a
+  // fresh gesture — a stored `true` would just come back as a lie.
+  const [full, setFull] = useState(false);
+  const toggleFull = () => {
+    const next = !full;
+    setFull(next);
+    // The DOCUMENT goes fullscreen, not the terminal element. In real
+    // fullscreen only the fullscreen element's subtree renders, and this
+    // screen's modals (the detached-session kill confirm) are SIBLINGS of it —
+    // fullscreening the screen itself would make a confirm dialog invisible
+    // while it still held the interaction.
+    if (next) void document.documentElement.requestFullscreen?.().catch(() => { /* CSS mode carries it */ });
+    else if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+  };
+  // Leaving the browser's fullscreen (esc, or the window chrome) has to bring
+  // the CSS mode back with it, or the page would sit locked over the app with
+  // its only way out being a button the user just tried to press.
+  useEffect(() => {
+    const onChange = () => { if (!document.fullscreenElement) setFull(false); };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  // A session opened away from #/terminal must never strand the screen
+  // full-screen over the rest of the app.
+  useEffect(() => { if (!visible && full) setFull(false); }, [visible, full]);
   const prevVisible = useRef(visible);
   useEffect(() => {
     if (prevVisible.current && !visible) setDock('min');
@@ -386,7 +418,7 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   // dependency says out loud which layout changes are expected to reflow.
   useEffect(() => {
     window.dispatchEvent(new Event('resize'));
-  }, [visible, dock, viewPrefs.panes, viewPrefs.railOpen]);
+  }, [visible, dock, full, viewPrefs.panes, viewPrefs.railOpen]);
 
   const closeSession = (id: number, opts?: { shrink?: boolean }) => {
     handles.current.delete(id);
@@ -941,7 +973,7 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
 
   return (
     <>
-    <div className={`term-screen${visible ? '' : floatOpen ? ' term-float' : ' term-hidden'}`}>
+    <div className={`term-screen${visible ? (full ? ' term-fullscreen' : '') : floatOpen ? ' term-float' : ' term-hidden'}`}>
       {floatOpen && (
         <div className="term-float-head">
           <span className={`dot ${activeSess?.status || 'closed'}`} />
@@ -1052,6 +1084,17 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
               </button>
             ))}
           </span>
+          {/* #305 — the grid takes the whole window. Sits beside the pane
+              count because they are the same question asked twice: how much
+              screen do these terminals get. The head bar itself survives, so
+              the way out is where the way in was. */}
+          <button className={`btn-repo sm term-full-btn${full ? ' on' : ''}`} onClick={toggleFull}
+            aria-pressed={full}
+            title={full
+              ? 'Leave full screen (esc also works)'
+              : 'Full screen — the terminals take the whole window and the page chrome goes away'}>
+            {full ? '⤡' : '⤢'}
+          </button>
           {activeSess && (
             <span className={`term-status ${activeSess.status}`}>
               {activeSess.status === 'live' ? `● live ${activeSess.note}`
