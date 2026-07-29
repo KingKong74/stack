@@ -27,7 +27,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, rmSync, writeFileSync, readFileSync, unlinkSync, statSync, openSync, mkdirSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadStackEnv, logStderr } from '../hook/stack-post.mjs';
 
@@ -193,7 +193,49 @@ if (job.kind === 'merge') {
     const r = spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
     return { ok: r.status === 0, out: (r.stdout || '').trim(), err: (r.stderr || '').trim() };
   };
+  // #242 — remove the autopilot's build worktree once its branch is on main.
+  //
+  // The path is NOT reconstructed from the naming convention: the runner spells
+  // it four different ways (item / bug / audit / plan) and a fifth would be
+  // missed silently. Git already knows which tree holds which branch, so ask it.
+  //
+  // Two guards, both load-bearing, because a merge job can be pointed at ANY
+  // branch — including one a human is sitting in:
+  //   • only trees under ~/.stack/autopilot are eligible. That directory is the
+  //     autopilot's own; a checkout anywhere else is somebody's workspace.
+  //   • `worktree remove` WITHOUT --force, so git refuses a tree with
+  //     uncommitted changes. Unmerged work is exactly what this must not eat,
+  //     and git's own refusal is a better judge of that than any check here.
+  // Returns a short note for the job detail, '' when nothing was removed —
+  // silence would leave "why is that tree gone" unanswerable in the log.
+  const AUTOPILOT_TREES = join(homedir(), '.stack', 'autopilot');
+  const pruneBuildWorktree = (branch) => {
+    const wl = git(repo, 'worktree', 'list', '--porcelain');
+    if (!wl.ok) return '';
+    let path = '';
+    let found = '';
+    for (const line of wl.out.split('\n')) {
+      if (line.startsWith('worktree ')) path = line.slice(9).trim();
+      else if (line === `branch refs/heads/${branch}` && path) { found = path; break; }
+    }
+    if (!found) return '';
+    if (found !== AUTOPILOT_TREES && !found.startsWith(AUTOPILOT_TREES + sep)) {
+      log(`job #${job.id}: ${branch} is checked out at ${found}, outside ${AUTOPILOT_TREES} — left alone.`);
+      return '';
+    }
+    const rm = git(repo, 'worktree', 'remove', found);
+    if (!rm.ok) {
+      log(`job #${job.id}: left ${found} in place — ${rm.err.slice(0, 140)}`);
+      return ' (build worktree kept — it has uncommitted changes)';
+    }
+    git(repo, 'branch', '-D', branch); // the local branch it held, now merged
+    git(repo, 'worktree', 'prune');
+    log(`job #${job.id}: removed the build worktree at ${found}.`);
+    return ' and cleaned up its build worktree';
+  };
+
   const doMerge = async () => {
+    let cleaned = '';
     // Extract the branch name from the pre-stored detail string
     // ("merge origin/<branch> into main (item #N)") or fall back to itemTitle.
     // But the branch was stored in detail as "merge origin/<branch> into main…"
@@ -254,12 +296,17 @@ if (job.kind === 'merge') {
       if (!push.ok) return { ok: false, detail: `[merge/job #${job.id}] push to origin/main failed: ${push.err.slice(0, 150)}` };
       // Delete the remote lane branch on success.
       git(repo, 'push', 'origin', '--delete', branch); // best effort — don't fail if it's already gone
+      // #242 — and the BUILD worktree the branch came from. The runner keeps it
+      // deliberately after a landed run (the branch is pushed, the claim stands
+      // until a human merges and ticks), which is right up to exactly this
+      // moment: once the work is on main the tree is a full checkout of history.
+      cleaned = pruneBuildWorktree(branch);
     } finally {
       git(repo, 'worktree', 'remove', '--force', wt);
       rmSync(wt, { recursive: true, force: true });
     }
     const itemNote = job.itemId ? ` — tick #${job.itemId} in the roadmap when you've verified it` : '';
-    return { ok: true, detail: `merged origin/${branch} into main${aiNote}${itemNote}` };
+    return { ok: true, detail: `merged origin/${branch} into main${aiNote}${cleaned}${itemNote}` };
   };
   await report('running');
   const out = await doMerge();
