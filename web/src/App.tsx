@@ -11,6 +11,9 @@ const Terminal = lazy(() =>
 // The Polaris studio (#226) hosts a terminal too — same deal, lazy so its
 // xterm dependency stays in the shared terminal chunk.
 const PolarisStudio = lazy(() => import('./screens/PolarisStudio'));
+// The skill tree (#228): its own screen, lazy — it is a place you go to
+// change how Claude works, not something every page load needs in the bundle.
+const Skills = lazy(() => import('./screens/Skills'));
 import { TokenGate } from './components/TokenGate';
 import { Showcase } from './screens/Showcase';
 import { CommandPalette } from './components/CommandPalette';
@@ -80,6 +83,8 @@ export default function App() {
         <Settings initialTab="control" />
       ) : route.name === 'terminal' ? (
         null /* the persistent dock below renders it */
+      ) : route.name === 'skills' ? (
+        <Suspense fallback={null}><Skills /></Suspense>
       ) : route.name === 'polaris' ? (
         <Suspense fallback={null}><PolarisStudio slug={route.slug} /></Suspense>
       ) : route.name === 'detail' ? (

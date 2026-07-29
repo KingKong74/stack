@@ -1585,6 +1585,48 @@ export async function runTip(id: number): Promise<Tip> {
   return request<Tip>(`/tips/${id}/run`, { method: 'POST', body: {} });
 }
 
+// ---- the skill tree (#228) ----
+//
+// A managed library of Claude Code skills. The server holds the library; the
+// HOST writes the files (it is the only side that can see ~/.claude) and
+// reports back what is really on disk — so `installedAt` is a fact from the
+// host, and a skill can be in the library without being anywhere yet.
+
+export interface Skill {
+  id: number;
+  name: string;                 // kebab-case; it IS the directory name
+  scope: 'global' | 'project';  // ~/.claude, or <repo>/.claude
+  slug: string;                 // the project, '' for global
+  description: string;          // the frontmatter line that decides relevance
+  body: string;
+  enabled: boolean;             // off = the host removes it from disk
+  installedAt: string | null;   // null = not on disk (yet, or any more)
+  updatedAt: string | null;
+}
+// One skill directory the host found, managed by Stack or not. An UNMANAGED
+// one is reported and never touched — it is somebody else's file, and the tree
+// shows it so it can be adopted rather than silently overwritten.
+export interface SkillOnDisk {
+  name: string; scope: 'global' | 'project'; slug: string;
+  path: string; managed: boolean; description: string; body: string;
+}
+export interface SkillReport { skills: SkillOnDisk[]; detail: string; when: string | null }
+export interface SkillsData { skills: Skill[]; report: SkillReport }
+export type SkillInput = Partial<Pick<Skill, 'name' | 'scope' | 'slug' | 'description' | 'body' | 'enabled'>>;
+
+export async function getSkills(): Promise<SkillsData> {
+  return request<SkillsData>('/skills');
+}
+export async function createSkill(input: SkillInput): Promise<Skill> {
+  return request<Skill>('/skills', { method: 'POST', body: input });
+}
+export async function patchSkill(id: number, input: SkillInput): Promise<Skill> {
+  return request<Skill>(`/skills/${id}`, { method: 'PATCH', body: input });
+}
+export async function deleteSkill(id: number): Promise<void> {
+  await request<{ ok: boolean }>(`/skills/${id}`, { method: 'DELETE' });
+}
+
 // ---- automated bug audit (#144) ----
 
 // One audit finding and what happened to it: 'logged' = a new review-inbox bug

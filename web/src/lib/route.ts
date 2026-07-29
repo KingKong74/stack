@@ -5,6 +5,7 @@ export type Route =
   | { name: 'settings' }
   | { name: 'timeline' }
   | { name: 'control' }
+  | { name: 'skills' }
   | { name: 'terminal'; cwd?: string; attach?: string }
   | { name: 'polaris'; slug: string }
   | { name: 'share'; slug: string; token: string }
@@ -15,6 +16,8 @@ function parse(): Route {
   if (h === '/settings' || h.startsWith('/settings')) return { name: 'settings' };
   if (h === '/timeline' || h.startsWith('/timeline')) return { name: 'timeline' };
   if (h === '/control' || h.startsWith('/control')) return { name: 'control' };
+  // The skill tree (#228) — the managed Claude skill library.
+  if (h === '/skills' || h.startsWith('/skills')) return { name: 'skills' };
   if (h.startsWith('/terminal')) {
     const params = new URLSearchParams(h.split('?')[1] || '');
     return { name: 'terminal', cwd: params.get('cwd') || undefined, attach: params.get('attach') || undefined };
@@ -51,6 +54,7 @@ export function useRoute(): Route {
 export const hrefTo = {
   control: '#/control',
   settings: '#/settings',
+  skills: '#/skills',
   terminal: (cwd?: string, attach?: string) => {
     const q = [
       cwd ? `cwd=${encodeURIComponent(cwd)}` : '',
@@ -66,6 +70,7 @@ export const go = {
   settings: () => { window.location.hash = '#/settings'; },
   timeline: () => { window.location.hash = '#/timeline'; },
   control: () => { window.location.hash = '#/control'; },
+  skills: () => { window.location.hash = '#/skills'; },
   // attach (a stack-term-* tmux name) jumps straight into that running claude
   // session — Mission Control's ▶ chips use it.
   terminal: (cwd?: string, attach?: string) => {

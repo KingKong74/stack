@@ -125,6 +125,24 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             wired in (a later phase, like promote/park/prune from the tree); empty lane/idea
             groups render example placeholder nodes so the intended shape is always visible.
             `--json` emits the underlying model; `--repo <path>` reads another checkout.
+            stack-skills.mjs — the SKILL TREE's host half (#228, `stack skills [--dry]`, and the
+            dispatcher's own 5-minute stamped tick). Skills are what shape how Claude works, and
+            they lived only as files on the host — so tuning the fleet meant hand-editing over ssh.
+            The server holds the LIBRARY, this makes disk match it and reports back what is really
+            there; the split is forced, since the server runs in a container and `~/.claude` is on
+            the host behind the firewall (the #208 preview pattern, not a pretence otherwise).
+            Files go where Claude Code actually reads them — `<root>/skills/<name>/SKILL.md`,
+            `~/.claude` for global and `<repo>/.claude` for a project's — and nothing invents a
+            Stack-specific location. **The rule the whole feature rests on: Stack only ever writes
+            or removes skills IT PLANTED.** Each managed directory carries a `.stack-managed`
+            marker (invisible to Claude, which reads only SKILL.md); a skill without it is
+            REPORTED and never written over, never deleted. A name collision with an unmanaged
+            file is skipped and logged rather than taken ownership of. Removal is driven by the
+            server's KEEP list, never by a diff against the last report — the server does not know
+            what is on disk, and a stale diff would delete a skill that had only just been
+            written. Fails safe in the #287 sense (unreachable API = do NOTHING), because it
+            deletes files. Steady state costs nothing: a skill is rewritten only when its content
+            differs, and a hand-deleted one self-heals on the next tick.
             stack-seed-checks.mjs — the regression suite AS CODE (#261, `stack seed-checks`):
             the ~30 checks that make "green" mean something, matched by name so a re-run
             updates in place and never duplicates; `--dry` writes nothing, `--run` fires the
@@ -145,7 +163,9 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
             must→should; open, unclaimed, not skipped, human-approved;
             up to --max-items, default Settings' autopilotMaxItems — **0 = unlimited** (#260),
             the wall clock and the token budget then governing alone) inside a shared night
-            budget. **Session kinds** (#228, from the session planner): `--kind build|plan|
+            budget. **Session kinds** (from the session planner — the `#228` these notes used to
+            carry is a MISNUMBER: roadmap #228 is the skill tree, and every other `#228` in this
+            file means that. Session kinds have no roadmap id): `--kind build|plan|
             debug|audit` + `--items a,b,c` (an ORDERED roadmap agenda — worked exactly in that
             order, done/claimed skipped) / `--bugs BUG-1,BUG-2` / `--area X` (scopes the
             general pick, overriding autopilot_area). Debug sessions fix bugs — each on branch
@@ -599,7 +619,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   via `getProjectDetail` (60s in-module cache). The **scheduled
   sessions** system is unchanged underneath (one-off / daily / chosen-days sessions per
   project — `store.createAutopilotSchedule` et al). Every scheduled session is a **session
-  plan** (#228): clicking a row (or a week-strip chip, or + Plan a session) opens
+  plan** (the session planner): clicking a row (or a week-strip chip, or + Plan a session) opens
   `components/SessionPlanModal.tsx` — kind seg (Build / Plan / Debug / Audit), time +
   recurrence, an **ordered agenda** picked straight off the open roadmap (or the bug tracker
   for Debug, severity-tagged), ↑↓ reorder, an area scope for agenda-less sessions, and a live
@@ -640,6 +660,16 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   keyless; ✧ Re-label re-asks by hand). The ⌨ Terminal button sits beside the screen's
   Settings / Mission Control tabs (`.tab-term`, in `Settings.tsx`), not in the totals row.
   Renders `getControl()`; automode projects sort first (`.mc-*` styles).
+- `screens/Skills.tsx` — **the skill tree** (`#/skills`, lazy; reached from Settings' Skills
+  card). Two things are on it and they are NOT the same thing, which is why it is a tree and not a
+  list: the LIBRARY (what Stack holds and would write) and the DISK (what the host actually has).
+  Every row states both — installed / edited-sync-pending / missing-from-disk / not-written-yet /
+  disabled — because the sync is the HOST's, on its own 5-minute clock, so nothing here is instant
+  and the screen says so rather than animating a success it cannot observe. Grouped by place
+  (global, then a group per project with skills), a switch per row (off = the host removes it from
+  disk, the library keeps the text — which is why delete and disable are named separately), and a
+  final **Not managed by Stack** group: skills the host already had, reported and never touched,
+  each with **↥ Adopt** to bring it into the library. `.sk-*` styles.
 - `screens/Terminal.tsx` — the web terminal (`#/terminal[?cwd=<dir>][&attach=<tmux>]`,
   lazy-loaded so xterm.js stays out of the main bundle; a bare open — no cwd, no attach —
   resolves its auto-session cwd to the overview's resume slug, the most recently touched
@@ -1130,7 +1160,7 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   - `autopilot_schedule` + `autopilot_jobs` — Mission Control's calendar and the job queue the
     host dispatcher polls (see scripts/stack-autopilot-dispatch.mjs). Schedule rows: host-local
     `at_time`, one-off `run_date` or recurring `days`, optional pinned `item_id`, `enabled`,
-    plus the session plan (#228): `session_kind` (build|plan|debug|audit), `agenda` (ordered
+    plus the session plan: `session_kind` (build|plan|debug|audit), `agenda` (ordered
     jsonb — item ids, or BUG-N keys for debug; [] = the board's priority order) and `area`
     (scope the general pick). Jobs carry copies of all three so the dispatcher gets the whole
     plan from GET /next and turns it into runner flags.
@@ -1556,6 +1586,20 @@ the silent metadata backstop so the feed never has gaps.
   **keyed by check id**, newest first, `limit` clamped to `CHECK_HISTORY_KEEP`. One window
   function, one fetch; the Suite sparklines, the flaky flag and every "failed 4 of the last 6
   runs" line are derived from it client-side)
+- **The skill tree** (#228, `routes/skills.js`, screen `#/skills` off Settings): `GET /api/skills`
+  (the library AND the host's last disk report in one call — a managed skill missing from disk,
+  and a disk skill nobody manages, are both things you only see by holding the two lists side by
+  side) · `POST /api/skills` · `PATCH|DELETE /api/skills/:id` (any edit to what gets WRITTEN
+  clears `installed_at`, so the tree says "sync pending" instead of claiming disk it no longer
+  describes; DELETE is also the instruction to remove it from the host) · `GET /api/skills/work`
+  (the host's sync payload: `write` is the enabled set with its SKILL.md already rendered, `keep`
+  is every managed name that should still exist — a keep list rather than a remove list, because
+  the server does not know what is on disk) · `POST /api/skills/report` (the host's snapshot,
+  replacing it whole like the branch report; it also stamps `installed_at` for what was just
+  written and CLEARS it for anything the host no longer reports, which is what makes the tree
+  honest after somebody deletes a directory by hand). Bodies ride along in the report so an
+  unmanaged skill can be ADOPTED into the library without a second round trip. Nothing in the
+  route touches a filesystem — the host does the doing.
 - `GET|POST /api/tips` · `PATCH|DELETE /api/tips/:id` · `POST /api/tips/:id/run` (the app-wide
   recipe library behind every project's Tips tab — GLOBAL, no slug. PATCH takes any subset
   incl. `{pinned}`; `/run` is just the ledger (uses + last_run_at) — the actual run is the
@@ -1714,6 +1758,7 @@ echo '{"project":{"slug":"stack"},"session":{"summary":"…"}}' | node hook/stac
 node scripts/stack-context.mjs --slug stack --api https://stack.your-domain  # export agent manual
 ./stack tree                               # the branch navigator (also --repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
+./stack skills --dry                       # what the skill-tree sync would write/remove on this host
 node server/test/fleet-roles.test.mjs      # #281's role attribution + drift detection (pure, no DB)
 node server/test/run-shape.test.mjs        # the run ledger's shared shapes still match the old copies
 node server/test/ingest-identity.test.mjs  # one activity row per SESSION (needs a throwaway server — see its header)

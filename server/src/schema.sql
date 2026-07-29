@@ -740,3 +740,45 @@ CREATE INDEX IF NOT EXISTS previews_project_idx ON previews (project_id, created
 CREATE UNIQUE INDEX IF NOT EXISTS previews_open_idx
   ON previews (project_id, branch)
   WHERE status IN ('queued', 'starting', 'live');
+
+-- ---------------------------------------------------------------------------
+-- The SKILL TREE (roadmap #228 — note that CLAUDE.md's older `#228` references
+-- are to session kinds; that numbering is stale, this table is the skill tree).
+--
+-- A managed library of Claude Code skills that Stack owns, so how Claude works
+-- across the fleet is tuned from one place instead of by hand-editing files on
+-- the host. The server cannot see ~/.claude — it runs in a container, and the
+-- skills live on the host behind the firewall — so this follows the PREVIEW
+-- pattern (#208) rather than pretending otherwise: the server holds the library
+-- and the intent, the HOST does the writing, and the host reports back what is
+-- actually on disk. `installed_at` is therefore a fact reported by the host,
+-- never something the server sets when it saves a row.
+CREATE TABLE IF NOT EXISTS skills (
+  id           SERIAL PRIMARY KEY,
+  name         TEXT NOT NULL,                    -- kebab-case; it IS the directory name
+  scope        TEXT NOT NULL DEFAULT 'global',   -- global (~/.claude) | project (<repo>/.claude)
+  project_id   BIGINT REFERENCES projects(id) ON DELETE CASCADE,  -- NULL for global
+  description  TEXT NOT NULL DEFAULT '',         -- the frontmatter line that decides relevance
+  body         TEXT NOT NULL DEFAULT '',         -- the markdown under the frontmatter
+  enabled      BOOLEAN NOT NULL DEFAULT true,    -- off = the host REMOVES it from disk
+  installed_at TIMESTAMPTZ,                      -- when the host last wrote this exact content
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- One skill of a given name per PLACE. Two partial indexes rather than one
+-- UNIQUE (scope, project_id, name), because in Postgres NULLs are distinct —
+-- a plain unique constraint would let 'review' be created twice globally.
+CREATE UNIQUE INDEX IF NOT EXISTS skills_global_name_idx
+  ON skills (name) WHERE scope = 'global';
+CREATE UNIQUE INDEX IF NOT EXISTS skills_project_name_idx
+  ON skills (project_id, name) WHERE scope = 'project';
+
+-- What the host actually has on disk, replaced whole on each sync — the same
+-- shape of arrangement as branch_reports (#207). Single row: the skill tree
+-- describes ONE host, the one the dispatcher runs on.
+CREATE TABLE IF NOT EXISTS skill_reports (
+  only_row    BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (only_row),
+  report      JSONB NOT NULL DEFAULT '[]',       -- [{name, scope, slug, path, managed, description, body}]
+  detail      TEXT NOT NULL DEFAULT '',          -- what the last sync did, for the UI
+  reported_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

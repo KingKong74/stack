@@ -4390,3 +4390,64 @@ button.mc-day-chip:hover { border-color: var(--accent); }
   .push-rail { display: none; }
   .push-more, .push-note { margin-left: 0; }
 }
+
+/* ---- the skill tree (#228) — the skills that shape Claude ----------------
+   Two facts per row and they are not the same fact: what the LIBRARY holds and
+   what the HOST has. The state chip carries the second, which is why it is the
+   only coloured thing in a row — everything else is text you read at leisure,
+   that one is the thing that can be wrong. */
+.sk-page { display: flex; flex-direction: column; gap: 14px; max-width: 1080px; }
+.sk-head { display: flex; align-items: flex-start; gap: 18px; }
+.sk-title { flex: 1; min-width: 0; }
+.sk-title h1 { font-family: var(--disp); font-size: 23px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); margin: 0 0 5px; }
+.sk-title p { font-size: 13px; line-height: 1.6; color: var(--muted); margin: 0; max-width: 62ch; }
+
+.sk-hostline { display: flex; align-items: baseline; gap: 8px; padding: 9px 13px; border-radius: 9px;
+  border: 1px solid var(--line-2); background: var(--panel); font-size: 11.5px; line-height: 1.55; color: var(--muted); }
+.sk-hostline .ddot { width: 6px; height: 6px; border-radius: 50%; background: var(--paused); flex: none; align-self: center; }
+.sk-hostline .ddot.on { background: var(--live); }
+.sk-hostline code { font-family: var(--mono); font-size: 10.5px; color: var(--ink); }
+
+.sk-group { display: flex; flex-direction: column; gap: 2px; }
+.sk-group-head { display: flex; align-items: baseline; gap: 9px; padding: 4px 2px 7px; }
+.sk-group-head .nm { font-family: var(--disp); font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.sk-group-head .sub { font-family: var(--mono); font-size: 10px; color: var(--faint); }
+.sk-group-head .hair { flex: 1; height: 1px; background: var(--line-2); }
+.sk-group-head .n { font-family: var(--mono); font-size: 10.5px; color: var(--paused); }
+.sk-note, .sk-empty { padding: 10px 13px; border-radius: 9px; border: 1px dashed var(--line-2);
+  font-size: 12px; line-height: 1.6; color: var(--muted); }
+
+.sk-row { display: flex; align-items: center; gap: 12px; padding: 10px 13px; border-radius: 10px;
+  border: 1px solid var(--line-2); background: var(--card); }
+/* A disabled skill stays fully legible: it is still in the library, and it is
+   text you may be about to turn back on. Dimming it would read as "gone". */
+.sk-row.off { background: var(--panel); }
+.sk-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sk-row-main .t { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+.sk-row-main .t b { font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.sk-row-main .d { font-size: 11.5px; line-height: 1.55; color: var(--muted); }
+.sk-row-main .d em { font-style: normal; color: var(--fainter); }
+.sk-state { font-family: var(--mono); font-size: 9.5px; white-space: nowrap; cursor: help; }
+.sk-state.on { color: var(--live); }
+.sk-state.wait { color: var(--building); }
+.sk-state.warn { color: var(--critical); }
+.sk-state.off { color: var(--paused); }
+.sk-where { flex: none; font-family: var(--mono); font-size: 10px; color: var(--fainter); white-space: nowrap; }
+.sk-acts { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.sk-x { font-size: 14px; line-height: 1; color: var(--fainter); padding: 2px 6px; border-radius: 6px; }
+.sk-x:hover { color: var(--critical); background: var(--panel); }
+.sk-foreign { flex: none; width: 22px; text-align: center; font-size: 12px; color: var(--faint); cursor: help; }
+.sk-group.unmanaged .sk-row { border-style: dashed; background: transparent; }
+
+.sk-form { display: flex; flex-direction: column; gap: 14px; }
+.sk-field { display: flex; flex-direction: column; gap: 6px; }
+.sk-field > span { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.sk-field em { font-style: normal; font-size: 11px; line-height: 1.5; color: var(--faint); }
+.sk-field code { font-family: var(--mono); font-size: 10.5px; }
+.sk-body { font-family: var(--mono); font-size: 12px; line-height: 1.6; resize: vertical; }
+.sk-form-actions { display: flex; align-items: center; gap: 10px; }
+.sk-hint { flex: 1; min-width: 0; font-size: 11px; color: var(--faint); }
+@media (max-width: 720px) {
+  .sk-row { flex-wrap: wrap; }
+  .sk-where { order: 3; }
+}

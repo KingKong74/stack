@@ -158,6 +158,24 @@ if (reportDue) {
   try { await reportBranches(); } catch { /* next cycle retries */ }
 }
 
+// (#228) The skill-tree sync — the host half of the managed skill library.
+// Its own stamp and its own cadence, because it has nothing to do with the job
+// queue and must not wait behind a three-hour build night. Silent and swallowed
+// like the branch report: a failure here costs a five-minute delay, never the
+// dispatcher's actual job.
+const SKILLS_EVERY_MS = 5 * 60 * 1000;
+const skillsStamp = join(homedir(), '.stack', 'skills.stamp');
+const skillsDue = (() => {
+  try { return Date.now() - statSync(skillsStamp).mtimeMs > SKILLS_EVERY_MS; } catch { return true; }
+})();
+if (skillsDue) {
+  try { writeFileSync(skillsStamp, new Date().toISOString()); } catch { /* best effort */ }
+  try {
+    const { syncSkills } = await import('./stack-skills.mjs');
+    await syncSkills();
+  } catch { /* next cycle retries */ }
+}
+
 // (#208) The preview sweep runs regardless of whether a job came back — it is
 // its own lane, not part of the job queue. Failures are swallowed: an
 // unreachable API or a docker hiccup must never cost the dispatcher its job.

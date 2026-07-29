@@ -275,6 +275,23 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
               ))}
             </section>
 
+            {/* ---- Skills (#228) — the other thing that shapes every session.
+                    A pointer, not a section: the switches above are five fixed
+                    lines, whereas a skill is a document, and the tree has to
+                    hold what the HOST reports beside what the library says. */}
+            <section className="set-card set-mc-pointer">
+              <div className="set-mc-pointer-body">
+                <div className="set-mc-pointer-text">
+                  <div className="set-card-title">Skills</div>
+                  <div className="set-card-sub">
+                    The skills Claude loads when their description matches what you are doing —
+                    global or per project, written to the host from here instead of by hand over ssh.
+                  </div>
+                </div>
+                <a className="btn-accent" href="#/skills">Open the skill tree →</a>
+              </div>
+            </section>
+
             {/* ---- Autopilot — single source of truth in Mission Control ---- */}
             <section className="set-card set-mc-pointer">
               <div className="set-mc-pointer-body">

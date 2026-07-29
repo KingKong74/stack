@@ -27,6 +27,7 @@ import { previews, previewsGlobal } from './routes/previews.js';
 import { terminal } from './routes/terminal.js';
 import { triage } from './routes/triage.js';
 import { tips } from './routes/tips.js';
+import { skills } from './routes/skills.js';
 import { attachTerm } from './term.js';
 
 // Read once at module load: the health endpoint reports the deployed version.
@@ -83,6 +84,7 @@ app.use('/api/previews', requireToken, previewsGlobal);
 app.use('/api/terminal', requireToken, terminal);
 app.use('/api/triage', requireToken, triage);
 app.use('/api/tips', requireToken, tips);
+app.use('/api/skills', requireToken, skills);
 app.use('/api/projects', requireToken, projects);
 
 const port = process.env.PORT || 4000;
