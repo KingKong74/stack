@@ -5,7 +5,7 @@ import {
   resumeAutopilotJob, hangupAutopilotJob, dismissAutopilotJob,
   labelTerminalSessions, queueMerge, AuthError,
   startPreview, getPreviews, stopPreview, extendPreview, type Preview,
-  getControlRailOpen, setControlRailOpen,
+  getControlRailOpen, setControlRailOpen, getControlRailHeight, setControlRailHeight,
   type ControlData, type ControlProject, type AutopilotJob, type AutopilotSchedule,
 } from '../store';
 import { SessionPlanModal } from '../components/SessionPlanModal';
@@ -199,6 +199,29 @@ export function ControlPanel() {
   // the throughput table and NEXT UP are expand-only. Device-local.
   const [railOpen, setRailOpen] = useState(getControlRailOpen);
   const toggleRail = () => setRailOpen((v) => { setControlRailOpen(!v); return !v; });
+  // #306 — the collapse must not change the rail's LENGTH. The slim rail was
+  // built for a height it never got: it ends in a flex spacer meant to settle
+  // the daemon dot at the bottom, which does nothing in a card sized by its own
+  // content. It was waiting on a number. So the expanded
+  // rail is measured while it is open (ResizeObserver, the same trick the
+  // dashboard's SubNav uses on the topbar) and that height is handed to the
+  // slim rail as a floor — the column keeps its length through the toggle and
+  // the sections settle top and bottom instead of the whole rail shrinking to a
+  // stub beside a full-height page. The measurement is remembered device-local
+  // so a reload that STARTS collapsed still has one; with nothing measured ever,
+  // the slim rail falls back to its natural height, which is the old behaviour.
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const [railH, setRailH] = useState(getControlRailHeight);
+  useEffect(() => {
+    const el = railRef.current;
+    if (!railOpen || !el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (h > 0) setRailH((prev) => (Math.abs(prev - h) < 2 ? prev : (setControlRailHeight(h), h)));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [railOpen]);
   const [projFilter, setProjFilter] = useState<'all' | 'auto' | 'live'>('all');
   const [pickSlug, setPickSlug] = useState(''); // the Plan/Build rooms' project
   const load = useCallback(() => {
@@ -1238,11 +1261,14 @@ export function ControlPanel() {
 
               {/* ---- the rail: plan windows, usage, next up — stays put across rooms ---- */}
               {railOpen ? (
-              <div className="mc14-rail">
+              <div className="mc14-rail" ref={railRef}>
                 {/* The collapse control lives on the rail itself, not in the
                     first card's header: which card is first depends on what
                     the host has reported, so a chevron pinned to one of them
-                    would vanish exactly when the daemon was quiet. */}
+                    would vanish exactly when the daemon was quiet. #306 — the
+                    same bar, the same 22px button, at the same distance from
+                    the rail's right edge in BOTH states, so the control you
+                    press to collapse is under the cursor that expands again. */}
                 <div className="mc14-railbar">
                   <button className="mc14-railtoggle" onClick={toggleRail} aria-expanded={true}
                     aria-label="Collapse the rail" title="Collapse the rail">‹</button>
@@ -1465,9 +1491,13 @@ export function ControlPanel() {
                  without hover, and each block is gated on the same data as
                  its full-width counterpart, so the slim rail never draws a
                  frame around nothing. ---- */
-              <div className="mc14-rail mc14-railmini">
-                <button className="mc14-railtoggle wide" onClick={toggleRail} aria-expanded={false}
-                  aria-label="Expand the rail" title="Expand the rail">›</button>
+              <div className="mc14-rail mc14-railslim"
+                style={railH > 0 ? ({ '--rail-h': `${railH}px` } as React.CSSProperties) : undefined}>
+                <div className="mc14-railbar">
+                  <button className="mc14-railtoggle" onClick={toggleRail} aria-expanded={false}
+                    aria-label="Expand the rail" title="Expand the rail">›</button>
+                </div>
+                <div className="mc14-railmini">
 
                 {planMeters.length > 0 && (
                   <div className="mini-sec">
@@ -1531,10 +1561,13 @@ export function ControlPanel() {
                   );
                 })()}
 
-                <div style={{ flex: 1 }} />
+                {/* the spacer that settles the daemon dot at the bottom of the
+                    rail's length (#306) — flattened away when the rail stacks */}
+                <div className="mini-fill" />
                 <div className="mini-daemon" title={data.terminal?.connected ? 'stack-term connected' : 'host daemon offline'}>
                   <span className={`ddot ${data.terminal?.connected ? 'on' : ''}`} />
                   <span>{data.terminal?.connected ? 'live' : 'off'}</span>
+                </div>
                 </div>
               </div>
               )}

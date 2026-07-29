@@ -3112,15 +3112,22 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 /* The rail's collapse control + the slim rail (design 1b). The chevron sits on
    the rail rather than inside the first card, because which card is first
    depends on what the host has reported. */
-.mc14-railbar { display: flex; justify-content: flex-end; }
+.mc14-railbar { display: flex; justify-content: flex-end; flex: none; }
 .mc14-railtoggle { width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--card);
   display: grid; place-items: center; font-family: var(--mono); font-size: 11px; color: var(--muted); flex: none;
   transition: border-color 0.14s ease, color 0.14s ease; }
-.mc14-railtoggle.wide { width: 100%; height: 26px; }
 .mc14-railtoggle:hover { border-color: var(--accent); color: var(--accent-deep); }
 
+/* #306 — the slim rail keeps the expanded rail's LENGTH. `--rail-h` is the last
+   height measured while the rail was open (0/absent = never measured on this
+   device, and the rail then takes its natural height, exactly as before). The
+   bar sits above the card in both states, so the toggle never moves. */
+.mc14-railslim { min-height: var(--rail-h, 0px); }
+.mc14-railslim .mc14-railmini { flex: 1; }
+
 /* 76px, numeric: every value still readable without hover. */
-.mc14-railmini { width: 76px; box-sizing: border-box; align-items: center; gap: 14px;
+.mc14-railmini { width: 100%; box-sizing: border-box; align-items: center; gap: 14px;
+  display: flex; flex-direction: column;
   padding: 12px 8px; border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); }
 .mc14-railmini .mini-sec { width: 100%; display: flex; flex-direction: column; gap: 8px;
   padding-top: 12px; border-top: 1px solid var(--line-2); }
@@ -3148,6 +3155,7 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc14-railmini .mini-stat .v i.good { color: var(--live); }
 .mc14-railmini .mini-stat .v i.bad { color: var(--critical); }
 .mc14-railmini .mini-stat .l { font-family: var(--mono); font-size: 8.5px; color: var(--fainter); }
+.mc14-railmini .mini-fill { flex: 1; min-height: 0; }
 .mc14-railmini .mini-daemon { width: 100%; display: flex; align-items: center; justify-content: center; gap: 5px;
   padding-top: 10px; border-top: 1px solid var(--line-2); font-family: var(--mono); font-size: 9px; color: var(--faint); }
 .mc14-railmini .mini-daemon .ddot { width: 6px; height: 6px; border-radius: 50%; background: var(--paused); flex: none; }
@@ -3155,10 +3163,13 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 /* Stacked under the rooms there is no column to be slim in, so the blocks run
    across instead of leaving a 76px stub below the page. */
 @media (max-width: 1000px) {
+  /* No column to be slim in means no column to match the LENGTH of either:
+     the measured height would stretch a horizontal strip down the page. */
+  .mc14-railslim { min-height: 0; }
   .mc14-railmini { width: auto; flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
   .mc14-railmini .mini-sec { width: auto; flex: 1; min-width: 120px; padding-top: 0; border-top: none; }
   .mc14-railmini .mini-daemon { width: auto; padding-top: 0; border-top: none; }
-  .mc14-railtoggle.wide { width: 26px; }
+  .mc14-railmini .mini-fill { display: none; }
 }
 
 /* #281 (design 23b) — the Roles room. Everything is scoped under

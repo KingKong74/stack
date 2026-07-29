@@ -1477,6 +1477,23 @@ export function setControlRailOpen(open: boolean) {
   localStorage.setItem(CONTROL_RAIL_KEY, JSON.stringify(open));
 }
 
+// #306 — the expanded rail's last measured height, so the slim rail can keep
+// the column's LENGTH through a collapse instead of shrinking to a stub. Only a
+// remembered measurement, never a preference: 0 means "never measured on this
+// device", and the slim rail then takes its natural height (the old behaviour).
+// Clamped because a stored height is applied sight-unseen on the next load, and
+// a corrupt one would otherwise stretch the page.
+const CONTROL_RAIL_H_KEY = 'stack.controlRailH';
+export function getControlRailHeight(): number {
+  return readStoredJSON(CONTROL_RAIL_H_KEY, (v) =>
+    typeof v === 'number' && v >= 200 && v <= 3000 ? Math.round(v) : 0);
+}
+export function setControlRailHeight(px: number) {
+  if (!(px >= 200 && px <= 3000)) return;
+  try { localStorage.setItem(CONTROL_RAIL_H_KEY, JSON.stringify(Math.round(px))); }
+  catch { /* storage full — the rail's length is a nicety, never a blocker */ }
+}
+
 // #251 — the Roadmap board's layout, per project. Which bucket column is
 // FOCUSED (fills the board, the others fold away), which columns are folded to
 // their header, and which tier rows are folded on the Tiers view. Device-local
