@@ -5,6 +5,7 @@ import {
   resumeAutopilotJob, hangupAutopilotJob, dismissAutopilotJob,
   labelTerminalSessions, queueMerge, AuthError,
   startPreview, getPreviews, stopPreview, extendPreview, type Preview,
+  getControlRailOpen, setControlRailOpen,
   type ControlData, type ControlProject, type AutopilotJob, type AutopilotSchedule,
 } from '../store';
 import { SessionPlanModal } from '../components/SessionPlanModal';
@@ -193,6 +194,11 @@ export function ControlPanel() {
   const [buildN, setBuildN] = useState(0);
   const [reviewFocus, setReviewFocus] = useState('');
   const [cfgOpen, setCfgOpen] = useState(false);
+  // The rail collapses to the 76px slim rail (design 1b). What survives the
+  // collapse is budget pressure, spend and connection; the model breakdown,
+  // the throughput table and NEXT UP are expand-only. Device-local.
+  const [railOpen, setRailOpen] = useState(getControlRailOpen);
+  const toggleRail = () => setRailOpen((v) => { setControlRailOpen(!v); return !v; });
   const [projFilter, setProjFilter] = useState<'all' | 'auto' | 'live'>('all');
   const [pickSlug, setPickSlug] = useState(''); // the Plan/Build rooms' project
   const load = useCallback(() => {
@@ -441,6 +447,33 @@ export function ControlPanel() {
   // Per-project run history for the row bars — oldest → newest, this week.
   const historyFor = (slug: string) =>
     (data?.usage?.recentRuns ?? []).filter((r) => r.slug === slug).slice(0, 6).reverse();
+  // The rail's plan meters (#220). Computed once for both rail states: the
+  // full rail names each window, the slim rail abbreviates it, and the same
+  // 10-minute staleness gate applies to both — a snapshot older than that is
+  // no longer "right now", so neither rail claims it is.
+  const planMeters = (() => {
+    const snap = data?.planUsage;
+    if (!snap || Date.now() - snap.at >= 10 * 60_000) return [];
+    const p = snap.plan;
+    const fmtReset = (msAt: number | null | undefined, withDay = false): string => {
+      if (!msAt) return '';
+      const d = new Date(msAt);
+      const h = d.getHours() % 12 || 12;
+      const t = `${h}:${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
+      return withDay ? `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${t}` : t;
+    };
+    // The per-model window's short name: drop the vendor prefix and the date
+    // suffix, then let the slim rail ellipsis what is still too long (the row
+    // carries the full name as its title, so nothing is lost, only folded).
+    const shortModel = (m: string) =>
+      (m || 'model').toLowerCase().replace(/^claude-/, '').replace(/-\d{6,}$/, '');
+    return [
+      p.session && { name: 'Session window', short: 'sess', pct: p.session.pct, reset: p.session.resetAt ? `resets ${fmtReset(p.session.resetAt)}` : '' },
+      p.week && { name: 'Week', short: 'week', pct: p.week.pct, reset: p.week.resetAt ? `resets ${fmtReset(p.week.resetAt, true)}` : '' },
+      p.weekModel && { name: `Week · ${(p.weekModel.model || 'model').toLowerCase()}`, short: shortModel(p.weekModel.model || ''), pct: p.weekModel.pct, reset: '' },
+    ].filter(Boolean) as { name: string; short: string; pct: number; reset: string }[];
+  })();
+
   // The rail's NEXT UP: the coming week's bookings, tonight's nightly first.
   const upcoming = (() => {
     if (!data) return [] as { key: string; day: string; time: string; what: string; count: string }[];
@@ -580,7 +613,7 @@ export function ControlPanel() {
               </>)}
             </div>
 
-            <div className="mc14-cols">
+            <div className={`mc14-cols ${railOpen ? '' : 'rail-slim'}`}>
               <div className="mc14-body">
                 {room === 'now' && (<>
             {/* #270 — LOUD IDLE. The most important fact about an automation
@@ -1204,35 +1237,28 @@ export function ControlPanel() {
               </div>
 
               {/* ---- the rail: plan windows, usage, next up — stays put across rooms ---- */}
+              {railOpen ? (
               <div className="mc14-rail">
-                {data.planUsage && Date.now() - data.planUsage.at < 10 * 60_000 && (() => {
-                  const p = data.planUsage.plan;
-                  const fmtReset = (msAt: number | null | undefined, withDay = false): string => {
-                    if (!msAt) return '';
-                    const d = new Date(msAt);
-                    const h = d.getHours() % 12 || 12;
-                    const t = `${h}:${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() >= 12 ? 'pm' : 'am'}`;
-                    return withDay ? `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${t}` : t;
-                  };
-                  const meters = [
-                    p.session && { name: 'Session window', pct: p.session.pct, reset: p.session.resetAt ? `resets ${fmtReset(p.session.resetAt)}` : '' },
-                    p.week && { name: 'Week', pct: p.week.pct, reset: p.week.resetAt ? `resets ${fmtReset(p.week.resetAt, true)}` : '' },
-                    p.weekModel && { name: `Week · ${(p.weekModel.model || 'model').toLowerCase()}`, pct: p.weekModel.pct, reset: '' },
-                  ].filter(Boolean) as { name: string; pct: number; reset: string }[];
-                  if (!meters.length) return null;
-                  return (
-                    <div className="mc14-rail-sec">
-                      <div className="cap-row"><span className="cap">CLAUDE PLAN</span><span className="sub">right now</span></div>
-                      {meters.map((m) => (
-                        <div key={m.name} className="mc14-meter">
-                          <div className="row"><span className="nm">{m.name}</span><span className={`pct ${m.pct >= 85 ? 'warn' : ''}`}>{m.pct}%</span></div>
-                          <div className="bar"><span className={m.pct >= 85 ? 'warn' : ''} style={{ width: `${Math.min(100, m.pct)}%` }} /></div>
-                          {m.reset && <span className="reset">{m.reset}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
+                {/* The collapse control lives on the rail itself, not in the
+                    first card's header: which card is first depends on what
+                    the host has reported, so a chevron pinned to one of them
+                    would vanish exactly when the daemon was quiet. */}
+                <div className="mc14-railbar">
+                  <button className="mc14-railtoggle" onClick={toggleRail} aria-expanded={true}
+                    aria-label="Collapse the rail" title="Collapse the rail">‹</button>
+                </div>
+                {planMeters.length > 0 && (
+                  <div className="mc14-rail-sec">
+                    <div className="cap-row"><span className="cap">CLAUDE PLAN</span><span className="sub">right now</span></div>
+                    {planMeters.map((m) => (
+                      <div key={m.name} className="mc14-meter">
+                        <div className="row"><span className="nm">{m.name}</span><span className={`pct ${m.pct >= 85 ? 'warn' : ''}`}>{m.pct}%</span></div>
+                        <div className="bar"><span className={m.pct >= 85 ? 'warn' : ''} style={{ width: `${Math.min(100, m.pct)}%` }} /></div>
+                        {m.reset && <span className="reset">{m.reset}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {data.usage && data.usage.weekRuns > 0 && (
                   <div className="mc14-rail-sec">
@@ -1430,6 +1456,88 @@ export function ControlPanel() {
                   </div>
                 </div>
               </div>
+              ) : (
+              /* ---- the slim rail (design 1b) — 76px, numeric. The rule is
+                 that budget pressure, spend and connection survive the
+                 collapse and everything else is expand-only: the model
+                 breakdown, the throughput table, month-to-date and NEXT UP
+                 are all reading, not watching. Every value stays legible
+                 without hover, and each block is gated on the same data as
+                 its full-width counterpart, so the slim rail never draws a
+                 frame around nothing. ---- */
+              <div className="mc14-rail mc14-railmini">
+                <button className="mc14-railtoggle wide" onClick={toggleRail} aria-expanded={false}
+                  aria-label="Expand the rail" title="Expand the rail">›</button>
+
+                {planMeters.length > 0 && (
+                  <div className="mini-sec">
+                    <div className="mini-cap">PLAN</div>
+                    {planMeters.map((m) => (
+                      <div key={m.name} className="mini-meter" title={`${m.name} — ${m.pct}%${m.reset ? `, ${m.reset}` : ''}`}>
+                        <div className="row">
+                          <span className="nm">{m.short}</span>
+                          <span className={`pct ${m.pct >= 85 ? 'warn' : ''}`}>{m.pct}%</span>
+                        </div>
+                        <div className="bar"><span className={m.pct >= 85 ? 'warn' : ''} style={{ width: `${Math.min(100, m.pct)}%` }} /></div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {data.usage && data.usage.weekRuns > 0 && (() => {
+                  const u = data.usage;
+                  const spend = u.weekCostUsd > 0.005 ? `$${u.weekCostUsd.toFixed(2)}` : '';
+                  return (
+                    <div className="mini-sec"
+                      title={`Last 7 days — ${fmtTok(u.weekTokens)} over ${u.weekRuns} run${u.weekRuns === 1 ? '' : 's'} across ${u.weekNights} night${u.weekNights === 1 ? '' : 's'}`}>
+                      <div className="mini-cap">7 DAYS</div>
+                      <div className="mini-big">{spend || fmtTok(u.weekTokens)}</div>
+                      {spend && <div className="mini-sub">{fmtTok(u.weekTokens)}</div>}
+                      {u.models.length > 0 && (
+                        <div className="mc14-stack">
+                          {u.models.map((m, i) => (
+                            <span key={m.model || '__x'} className={`seg c${i % 4}`}
+                              title={`${m.model || 'single-model'} — ${fmtTok(m.tokens)}`}
+                              style={{ width: `${Math.max(2, Math.round((m.tokens / u.weekTokens) * 100))}%` }} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {data.ledger && data.ledger.days.some((d) => d.runs > 0) && (() => {
+                  const L = data.ledger;
+                  const perNight = trend(L.now.perNight, L.prev.perNight, true);
+                  const costItem = trend(L.now.costPerItem, L.prev.costPerItem, false);
+                  return (
+                    <div className="mini-sec">
+                      <div className="mini-cap">FLOW</div>
+                      <div className="mini-stat" title={`${L.now.landed} item${L.now.landed === 1 ? '' : 's'} landed per active night over the last 7 days — ${perNight.delta}.`}>
+                        <span className="v">{L.now.perNight.toFixed(1)}<i className={perNight.cls}>{perNight.mark}</i></span>
+                        <span className="l">ld/night</span>
+                      </div>
+                      <div className="mini-stat" title={`Spend per landed item over the last 7 days — ${costItem.delta}. Down is better.`}>
+                        <span className="v">${L.now.costPerItem.toFixed(2)}<i className={costItem.cls}>{costItem.mark}</i></span>
+                        <span className="l">cost/item</span>
+                      </div>
+                      {L.firstPass.verdicted > 0 && (
+                        <div className="mini-stat" title={`${L.firstPass.solid} of ${L.firstPass.verdicted} verdicted items came back solid — read as the ceiling of the true first-pass rate.`}>
+                          <span className="v">{pct1(L.firstPass.solid / L.firstPass.verdicted)}</span>
+                          <span className="l">solid · {L.firstPass.verdicted}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div style={{ flex: 1 }} />
+                <div className="mini-daemon" title={data.terminal?.connected ? 'stack-term connected' : 'host daemon offline'}>
+                  <span className={`ddot ${data.terminal?.connected ? 'on' : ''}`} />
+                  <span>{data.terminal?.connected ? 'live' : 'off'}</span>
+                </div>
+              </div>
+              )}
             </div>
 
             {/* #228 — the session planner: a scheduled session opened into its own thing */}

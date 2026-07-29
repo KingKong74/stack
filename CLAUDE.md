@@ -374,7 +374,18 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
   rail** that stays put across rooms (the #220 CLAUDE PLAN window meters, the compact #194/#200
   7-day usage — spend, tokens, per-model stacked bar, month-to-date, the collapsed #177 agent
   breakdown — the NEXT UP list of the week's bookings with tonight's nightly first, and the
-  daemon status line). **Now** is 11a's dashboard: the **fleet strip** (#268 — one row per worker
+  daemon status line). The rail **collapses to a 76px numeric rail** (design 1b; device-local via
+  `store.getControlRailOpen/setControlRailOpen`, default open, the ‹/› on the rail itself rather
+  than in the first card — which card is first depends on what the host has reported, so a chevron
+  pinned to one of them would vanish exactly when the daemon went quiet). What survives the
+  collapse is **budget pressure, spend and connection** — the plan meters as `sess`/`week` bars,
+  the 7-day figure with its per-model split, the three FLOW numbers with their trend marks, and
+  the daemon dot; the model breakdown, the throughput table, month-to-date and NEXT UP are
+  expand-only, because those are reading rather than watching. Every value stays legible without
+  hover, and each block is gated on the same data as its full-width counterpart, so the slim rail
+  never draws a frame around nothing. Stacked under the rooms (≤1000px) there is no column to be
+  slim in, so the blocks run ACROSS as a strip instead of leaving a 76px stub below the page.
+  **Now** is 11a's dashboard: the **fleet strip** (#268 — one row per worker
   slot, busy or idle; idle slots are RENDERED, never omitted, because the strip's length is how
   you read the fleet's real size) carrying the **ROLES column** (#280, the design's 23a — who is
   executing, who advised, and what the advice cost): the app-wide role policy stated once above

@@ -2805,8 +2805,11 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc14-livebar .attach { padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line-3); font-size: 11px; font-weight: 500; color: var(--ink); text-decoration: none; white-space: nowrap; }
 .mc14-livebar .attach:hover { border-color: var(--accent); color: var(--accent-deep); }
 
-.mc14-cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
-@media (max-width: 1000px) { .mc14-cols { grid-template-columns: 1fr; } }
+.mc14-cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; transition: grid-template-columns 0.18s ease; }
+/* Collapsed (design 1b): the rooms take the 224px the rail gives back. */
+.mc14-cols.rail-slim { grid-template-columns: minmax(0, 1fr) 76px; }
+@media (max-width: 1000px) { .mc14-cols, .mc14-cols.rail-slim { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .mc14-cols { transition: none; } }
 .mc14-body { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 
 /* Now — the live session card + tiles */
@@ -3081,6 +3084,58 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .daemon-row { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line-2); font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 .daemon-row .ddot { width: 6px; height: 6px; border-radius: 50%; background: var(--paused); }
 .daemon-row .ddot.on { background: var(--live); }
+
+/* The rail's collapse control + the slim rail (design 1b). The chevron sits on
+   the rail rather than inside the first card, because which card is first
+   depends on what the host has reported. */
+.mc14-railbar { display: flex; justify-content: flex-end; }
+.mc14-railtoggle { width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--card);
+  display: grid; place-items: center; font-family: var(--mono); font-size: 11px; color: var(--muted); flex: none;
+  transition: border-color 0.14s ease, color 0.14s ease; }
+.mc14-railtoggle.wide { width: 100%; height: 26px; }
+.mc14-railtoggle:hover { border-color: var(--accent); color: var(--accent-deep); }
+
+/* 76px, numeric: every value still readable without hover. */
+.mc14-railmini { width: 76px; box-sizing: border-box; align-items: center; gap: 14px;
+  padding: 12px 8px; border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); }
+.mc14-railmini .mini-sec { width: 100%; display: flex; flex-direction: column; gap: 8px;
+  padding-top: 12px; border-top: 1px solid var(--line-2); }
+.mc14-railmini .mini-sec:first-of-type { padding-top: 0; border-top: none; }
+.mc14-railmini .mini-cap { font-family: var(--mono); font-size: 8.5px; font-weight: 500; letter-spacing: 0.1em;
+  color: var(--faint); text-align: center; }
+.mc14-railmini .mini-meter { display: flex; flex-direction: column; gap: 4px; cursor: help; }
+.mc14-railmini .mini-meter .row { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; }
+.mc14-railmini .mini-meter .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); font-size: 9px; color: var(--faint); }
+.mc14-railmini .mini-meter .pct { font-family: var(--mono); font-size: 11.5px; font-weight: 500; color: var(--sage); }
+.mc14-railmini .mini-meter .pct.warn { color: var(--critical); }
+.mc14-railmini .mini-meter .bar { height: 3px; border-radius: 2px; background: var(--bg); overflow: hidden; }
+.mc14-railmini .mini-meter .bar span { display: block; height: 3px; border-radius: 2px; background: var(--sage); }
+.mc14-railmini .mini-meter .bar span.warn { background: var(--critical); }
+.mc14-railmini .mini-big { font-family: var(--disp); font-size: 17px; font-weight: 600; letter-spacing: -0.02em;
+  color: var(--ink); text-align: center; }
+.mc14-railmini .mini-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); text-align: center; }
+.mc14-railmini .mc14-stack { height: 4px; }
+.mc14-railmini .mc14-stack .seg { height: 4px; }
+.mc14-railmini .mini-stat { display: flex; flex-direction: column; align-items: center; gap: 1px; cursor: help; }
+.mc14-railmini .mini-stat .v { display: flex; align-items: baseline; gap: 3px; font-family: var(--disp);
+  font-size: 14px; font-weight: 600; color: var(--ink); }
+.mc14-railmini .mini-stat .v i { font-family: var(--mono); font-size: 9px; font-style: normal; color: var(--faint); }
+.mc14-railmini .mini-stat .v i.good { color: var(--live); }
+.mc14-railmini .mini-stat .v i.bad { color: var(--critical); }
+.mc14-railmini .mini-stat .l { font-family: var(--mono); font-size: 8.5px; color: var(--fainter); }
+.mc14-railmini .mini-daemon { width: 100%; display: flex; align-items: center; justify-content: center; gap: 5px;
+  padding-top: 10px; border-top: 1px solid var(--line-2); font-family: var(--mono); font-size: 9px; color: var(--faint); }
+.mc14-railmini .mini-daemon .ddot { width: 6px; height: 6px; border-radius: 50%; background: var(--paused); flex: none; }
+.mc14-railmini .mini-daemon .ddot.on { background: var(--live); }
+/* Stacked under the rooms there is no column to be slim in, so the blocks run
+   across instead of leaving a 76px stub below the page. */
+@media (max-width: 1000px) {
+  .mc14-railmini { width: auto; flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
+  .mc14-railmini .mini-sec { width: auto; flex: 1; min-width: 120px; padding-top: 0; border-top: none; }
+  .mc14-railmini .mini-daemon { width: auto; padding-top: 0; border-top: none; }
+  .mc14-railtoggle.wide { width: 26px; }
+}
 
 /* #281 (design 23b) — the Roles room. Everything is scoped under
    .mc-rolesroom: `.tag`, `.note` and `.big` are all names other parts of the

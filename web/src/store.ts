@@ -1442,6 +1442,19 @@ export function setPlanLanes(n: number) {
   localStorage.setItem(PLAN_LANES_KEY, JSON.stringify(n));
 }
 
+// Mission Control's right rail: open, or collapsed to the 76px slim rail.
+// Device-local like the Terminal's cockpit rail — it describes how much screen
+// you want to give the rooms on THIS machine, not anything about the work.
+// Defaults OPEN, which is the rail exactly as it shipped; the slim state is the
+// thing you opt into, so a wiped browser behaves as before.
+const CONTROL_RAIL_KEY = 'stack.controlRail';
+export function getControlRailOpen(): boolean {
+  return readStoredJSON(CONTROL_RAIL_KEY, (v) => v !== false);
+}
+export function setControlRailOpen(open: boolean) {
+  localStorage.setItem(CONTROL_RAIL_KEY, JSON.stringify(open));
+}
+
 // #251 — the Roadmap board's layout, per project. Which bucket column is
 // FOCUSED (fills the board, the others fold away), which columns are folded to
 // their header, and which tier rows are folded on the Tiers view. Device-local
