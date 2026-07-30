@@ -2,6 +2,13 @@
 
 Context for any Claude (or human) picking this repo up in a terminal. Read this first.
 
+**What this file is for:** the rules and invariants you cannot read off the code — why something is
+the way it is, and what will break if you change it. It is deliberately NOT a feature list or an API
+reference; the code is the reference, and a doc that restates it only drifts. Design rationale for a
+shipped feature lives in its commit message and the roadmap item's `built_note`, which Stack itself
+stores and shows on the Review room. Add to this file only when a session would get something WRONG
+without it.
+
 ## What Stack is
 
 A self-hosted side-project command centre. The point is **frictionless resume**: open a project and
@@ -9,1260 +16,86 @@ the "pick up where you left off" card tells you exactly where you were. A push a
 bugs and next-steps into the trackers, and the dashboard progress is computed, not hand-set. Built
 from the Atlas design handoff (colours, type, spacing, copy and interactions are intended to match).
 
-## Architecture
+The north star: an autonomous software house run from the director's chair — Polaris plans, executor
+fleets build overnight in parallel branches, advisors keep model spend lean, and the human steers and
+gives verdicts.
+
+## Layout
 
 ```
-web/    Vite + React 18 + TS (strict). Hash-routed, three screens (dashboard, project detail,
-        settings) + a global ⌘K command palette. Persistence is the Postgres API, reached ONLY
-        through src/store.ts (every function async, bearer-token auth). Token gate on first load;
-        any 401 clears the token and returns to the gate.
-server/ Express + Postgres. Idempotent schema migrate on boot, retries first DB connect (survives
-        compose start order). Bearer-token auth on every route except GET /api/health; fails closed
-        if API_TOKEN is unset.
-hook/   Zero-dependency Node ESM. stack-post.mjs is the shared lib (env load, git derivation,
-        settings fetch, POST to /api/ingest) imported by both:
-        • stack-session-end.mjs — the SessionEnd hook. A pure METADATA backstop: parses the
-          transcript for commit/branch/files/tools/message-count + the last substantive message and
-          POSTs that (authored:false). Calls NO external API. Always exits 0. Honours auto_record /
-          include_chores. Idempotent + COALESCE-safe (never clobbers an authored checkpoint).
-          Clears the session's presence row first (POST /api/presence/end) — before any gate, so
-          even skipped sessions stop showing as live.
-        • stack-session-start.mjs — the SessionStart hook. GETs /api/projects/:slug and injects a
-          "where you left off" block via additionalContext (nothing if untracked/unreachable),
-          including the project's **north star** when set, the app-wide **session defaults**
-          (standing preference lines from Settings, rendered server-side onto the detail payload)
-          and any **directives** (the standing steer list from the dashboard) — defaults then
-          directives, injected first above everything else; nudges
-          /checkpoint when wrapping up. Also fires a live-now **presence ping**
-          (POST /api/presence) in parallel with that fetch — same timeout budget, silent on any
-          failure, 404 for untracked projects.
-        • stack-checkpoint.mjs — the /checkpoint POSTER (not a hook). Reads a checkpoint JSON on
-          stdin and POSTs it (authored:true); `--settings` prints current settings. Installs to
-          ~/.stack/ alongside the hooks + stack-post.mjs.
-terminal/  The web terminal's host-side daemon (#/terminal). stack-term.mjs (npm deps: `ws` + `meow` —
-        no native modules; `meow` adds a proper CLI interface with --help and type-safe flags) spawns a real
-        login shell or `claude` in a directory jailed to
-        STACK_TERM_ROOT (default $HOME), via pty-shim.py (python3 stdlib owns the PTY + resize,
-        since the host has no build toolchain for node-pty). The host firewall drops
-        container→host traffic, so the daemon dials OUT: one persistent ws to the server's
-        /term-agent (bearer = STACK_TOKEN from ~/.stack/env, reconnect with backoff); the server
-        relay (server/src/term.js, attached to the same HTTP server as the API) validates each
-        browser session's token (both credential classes) BEFORE bridging and strips it — the
-        daemon never sees browser credentials. nginx proxies /term* → server:4000 with upgrade
-        headers. Runs from crontab (@reboot line); log ~/.stack/term.log.
-        **Idle sessions are terminated** (#287) after Settings' `termIdleHours` (default 6, 0 =
-        never). This is the second half of a ladder the daemon only had the first half of: the
-        per-child idle timer kills the pty-SHIM, which for a tmux session merely DETACHES the
-        client — the session and the claude inside it then run forever, which is right at four
-        hours and wrong at four days. So detach frees the socket and the reaper frees the machine.
-        Idleness is tmux's own `session_activity` (real output), NOT attachment, since a tab left
-        open overnight is exactly the case it exists for; a reaped attached tab gets the normal
-        exit frame, so it reads as ended rather than silently dead. Only `stack-term-*` names are
-        eligible, so the autopilot's `stack-auto-*` nights — legitimately quiet while a model
-        thinks — are out of scope by construction. The daemon reads the threshold from
-        GET /api/settings on its 10-minute tick and **fails SAFE**: unknown or unreachable = reap
-        NOTHING, deliberately the opposite of the arm-switch convention, because this deletes
-        running work rather than merely declining to start any.
-        A session can be **PINNED out of the reaper's reach** (#292): the pin is a tmux user
-        option ON THE SESSION (`@stack-keep`, set via `setKeep` in `tmux-session.mjs` — note the
-        `=name:` target, since set-option's `-t` is a target-PANE in tmux 3.x and a bare `=name`
-        fails on a session that plainly exists), so the state sits where the thing it describes
-        sits: a daemon restart, a browser reload or a re-attach from another device cannot drift
-        from it, and it dies exactly when the session does. `reapIdleSessions` skips a pinned
-        session before it looks at activity at all. It exists because a session parked
-        mid-investigation, and one waiting out a usage-limit reset, are indistinguishable from an
-        abandoned tab to `session_activity` — both produce nothing. Pinned on the pane and on
-        every detached chip, attached ones included (attachment is not what the reaper measures),
-        through POST /api/terminal/keep → the relay's `keepSession` frame; the host re-advertises
-        `keep` on its next push, so the UI flips optimistically and is corrected within a beat.
-        stack-term-watchdog.mjs
-        (#221, its own */5 crontab line, log ~/.stack/term-watchdog.log) polls the relay's
-        GET /api/terminal/agent — the only honest health signal, since a zombie daemon can
-        hold a dead uplink while pgrep says fine — and on two confirmed-down probes 30s
-        apart kills every daemon spelling (script path AND the retitled bare name) and
-        relaunches like the @reboot line; a 10-min cool-down stamp prevents kill loops and
-        an unreachable API stands down (fail safe). Frames are JSON with
-        base64 data, multiplexed by sid over the agent socket. usage-meter.mjs (stdlib-only) tails
-        today's real Claude token usage incrementally from ~/.claude/projects transcripts (deduped
-        per message id, day-rollover safe); the daemon pairs it with a limit watch on each pty
-        stream (ANSI-stripped rolling tail, the autopilot's own limit/reset patterns, +4h when the
-        reset time won't parse) and broadcasts `usage` frames — tokens, resetAt/resetLabel and a
-        HOST-local one-off calendar slot just past the reset — per live session every 15s, on
-        ready and on limit sight; the relay forwards them like output. The relay also serves
-        /term-status (#121): any signed-in tab watches ({t:'watch', token} first frame, same
-        credential classes) and gets {t:'status', active, count} on connect and on every session
-        start/end — the push channel behind the app-wide terminal presence pill; no polling.
-        Claude sessions run inside named `stack-term-*` tmux sessions (#171/#188, when tmux is
-        installed — direct spawn otherwise): a browser disconnect only detaches, the process
-        keeps running. The start frame may carry `skipPerms: true` (a boolean the daemon maps to
-        its one allow-listed flag, `--dangerously-skip-permissions` — no path for arbitrary args). The daemon advertises EVERY `stack-term-*` tmux session (`detached`
-        frames — on connect, session start/end and a 60s tick), each entry carrying an
-        `attached` flag (a client holds it elsewhere — another browser, or a laptop over ssh via
-        `stack term`; attaching again just mirrors it, tmux fans one session out to every
-        client) and a `tmux capture-pane` tail so the Gemini labeller can name unattended
-        sessions. The relay caches the list (labels held name-keyed across re-pushes) for
-        GET /api/terminal/detached and forwards browser kill requests (`killDetached`) back —
-        only names actually detached are killable. The relay also notes each claude tab's tmux
-        name from the ready frame, so Mission Control's session chips can deep-link an attach.
-        tmux sessions run with `mouse on` (set server-wide by `sessionArgv`'s command sequence):
-        tmux repaints a fixed viewport so the outer xterm never accumulates scrollback — mouse
-        mode makes the wheel scroll tmux's own history instead. The same sequence sets
-        `set-clipboard on`, which is the other half of that trade: mouse mode makes a plain drag
-        TMUX's selection rather than xterm's, landing it in a paste buffer the browser can't see
-        (the "I highlighted it and nothing copied" bug). tmux's default `external` only forwards
-        an inner application's OSC 52; `on` makes tmux emit its OWN copies, which the browser turns
-        into a real clipboard write (web/src/lib/termClipboard.ts).
-templates/  stack-agent-context.md — the canonical portable agent manual (single source of truth).
-scripts/    stack-context.mjs — prints that template to stdout, optionally stamped with slug + API.
-            stack-tree.mjs — the branch navigator, phase 1 (`stack tree` via the root `stack`
-            dispatcher, or `node scripts/stack-tree.mjs`): renders a repo's branch-and-idea
-            structure as one textual tree — main as the trunk, autopilot lanes (auto/item-N-<slug>) and
-            idea branches (idea/*) hanging off it, other branches grouped, absorbed branches
-            folded back into the trunk (ahead 0 while the trunk has moved on; ahead 0/behind 0 =
-            freshly cut, stays an open lane). Reads git only (local + origin refs, deduped
-            local-first) — no API, no key, no extra persistence. Every node carries a
-            `geminiTake` slot rendered as a placeholder until the stored per-push gemini_note is
-            wired in (a later phase, like promote/park/prune from the tree); empty lane/idea
-            groups render example placeholder nodes so the intended shape is always visible.
-            `--json` emits the underlying model; `--repo <path>` reads another checkout.
-            stack-skills.mjs — the SKILL TREE's host half (#228, `stack skills [--dry]`, and the
-            dispatcher's own 5-minute stamped tick). Skills are what shape how Claude works, and
-            they lived only as files on the host — so tuning the fleet meant hand-editing over ssh.
-            The server holds the LIBRARY, this makes disk match it and reports back what is really
-            there; the split is forced, since the server runs in a container and `~/.claude` is on
-            the host behind the firewall (the #208 preview pattern, not a pretence otherwise).
-            Files go where Claude Code actually reads them — `<root>/skills/<name>/SKILL.md`,
-            `~/.claude` for global and `<repo>/.claude` for a project's — and nothing invents a
-            Stack-specific location. **The rule the whole feature rests on: Stack only ever writes
-            or removes skills IT PLANTED.** Each managed directory carries a `.stack-managed`
-            marker (invisible to Claude, which reads only SKILL.md); a skill without it is
-            REPORTED and never written over, never deleted. A name collision with an unmanaged
-            file is skipped and logged rather than taken ownership of. Removal is driven by the
-            server's KEEP list, never by a diff against the last report — the server does not know
-            what is on disk, and a stale diff would delete a skill that had only just been
-            written. Fails safe in the #287 sense (unreachable API = do NOTHING), because it
-            deletes files. Steady state costs nothing: a skill is rewritten only when its content
-            differs, and a hand-deleted one self-heals on the next tick.
-            stack-seed-checks.mjs — the regression suite AS CODE (#261, `stack seed-checks`):
-            the ~30 checks that make "green" mean something, matched by name so a re-run
-            updates in place and never duplicates; `--dry` writes nothing, `--run` fires the
-            suite and exits 1 on red. Checks left alone if not in the suite. Its design rules
-            (assert contracts not data, read-only, auth for gated routes, URLs reachable from
-            the server container) are in the file header — read them before adding a check.
-            stack-sessions.mjs — automation sessions from the terminal (#115):
-            `stack start-session [<slug>] [--item N]` queues a manual autopilot job via the
-            same POST /api/autopilot/start as Mission Control's ▶ Run now (slug derived from
-            the cwd's git remote when omitted; an already-open session is reported as such,
-            never as a fresh start) and prints the session ID; `stack list-sessions [<slug>]
-            [--limit N] [--json]` (alias `sessions`) renders the job queue from
-            GET /api/autopilot/jobs. Token from ~/.stack/env, never printed; bad/missing
-            arguments error out before anything is queued. The root `stack` dispatcher
-            resolves each command to a script export (`fn`) and awaits async mains.
-            stack-autopilot.mjs — the overnight autopilot (phase 2): works MULTIPLE eligible
-            roadmap items per night (desire TIER first (#227 — S→A→B→C, unranked last), then
-            must→should; open, unclaimed, not skipped, human-approved;
-            up to --max-items, default Settings' autopilotMaxItems — **0 = unlimited** (#260),
-            the wall clock and the token budget then governing alone) inside a shared night
-            budget. **Session kinds** (from the session planner — the `#228` these notes used to
-            carry is a MISNUMBER: roadmap #228 is the skill tree, and every other `#228` in this
-            file means that. Session kinds have no roadmap id): `--kind build|plan|
-            debug|audit` + `--items a,b,c` (an ORDERED roadmap agenda — worked exactly in that
-            order, done/claimed skipped) / `--bugs BUG-1,BUG-2` / `--area X` (scopes the
-            general pick, overriding autopilot_area). Debug sessions fix bugs — each on branch
-            auto/bug-N-<slug>, reproduce-first prompt, never marked fixed (status moves to
-            'fixing'; the human closes); no agenda = open bugs serious-first. Audit sessions
-            are ONE hardening pass: run the suites, hunt verified defects, file them as bugs
-            via the API, push test hardening on auto/audit-<date> — the wall-clock cap (Settings' autopilotMinutes) AND a token budget
-            (--tokens / STACK_AUTOPILOT_TOKENS override; default Settings' autopilotTokens,
-            **0 = unlimited** — the wall clock alone governs) metered from each session's real
-            usage via `claude -p --output-format json`. **Dual-model sessions** (#153,
-            **inverted by #285**): the ADVISOR runs the session. Settings'
-            autopilotAdvisorModel is the DIRECTOR — it holds the main loop (`claude --model`),
-            plans, delegates, verifies and commits — and autopilotExecutorModel is exposed to
-            it as the `executor` subagent (`claude --agents`) with the WRITE tools
-            (Read/Grep/Glob/Edit/Write/Bash) that actually build. The director's contract says
-            plainly: do not write code, do not re-read what the executor summarised, verify with
-            `git diff --stat` and targeted hunks, send work back rather than fixing it yourself.
-            Advisor unset = nothing to direct with, so the session runs single-model on the
-            executor exactly as it did before #153. A **plan night** (#219) is all judgement and
-            no typing, so it runs on the advisor and spawns no executor at all. Every session
-            kind (build / debug / audit) uses the same inversion; the night log names both roles
-            and logs the per-model usage split (`--executor-model`/`--advisor-model` override).
-            **On the token argument, honestly:** the loop's fixed overhead — system prompt, tool
-            and agent definitions, the accumulating transcript — is now billed at the STRONG
-            model's rate every turn, and only the delegated work is cheap. Measured on a trivial
-            two-turn delegation (Jul 2026): director `claude-sonnet-5` 65.8k tok / $0.080 against
-            executor `haiku-4.5` 12.3k tok / $0.005 — 94% of the cost in the loop. So this
-            arrangement buys **better judgement**, and only becomes token-competitive on long
-            sessions where delegated file work dwarfs that overhead — which is the overnight
-            build case, but not a short one. The #280/#281 role split makes the real ratio
-            visible per night, so the claim stays checkable rather than assumed. `--item N` pins a run to exactly that
-            roadmap item in any bucket (done/claimed still refuse) — how scheduled + Run-now
-            jobs target one thing. **Plan nights** (#219, `--plan-only`): no branches, no
-            builds — each picked item (must/should with no plan steps; a pinned --item may
-            replace an untouched plan but never one with ticked steps) gets a bounded design
-            session in a detached throwaway worktree, and the RUNNER PATCHes the result onto
-            the item as plan steps + a design section in the note; run rows say `planned`.
-            Build nights gate the other way: a Must item with no plan is told to author +
-            save its design FIRST, then build against it. A project's `autopilot_area` (#122, the Mission Control
-            target picker; '' = whole board) filters the normal pick to one product area —
-            --item pins bypass it. Per item: claim the branch, Gemini spec pre-pass (free tier — expands
-            title/note into goal/acceptance/out-of-scope; keyless = silently spec-less; a
-            refine_note item SKIPS it — the refinement is the spec, and the prompt says what
-            landed before and to change only the delta, #146), an
-            unattended session in a fresh worktree on branch auto/item-N-<slug> (never main), push,
-            `built_note` stamped on the item (so the Reviews view shows what landed), a checks
-            run + Gemini diff review (→ review inbox) — then the next item while budget remains.
-            **Risk-tiered auto-merge** (#212): an item marked `risk:'low'` (the modal's Risk
-            seg; default normal) whose run lands with ≥1 check all green AND a clean Gemini
-            review (zero bugs — the review script's `--verdict-file`) queues its own `merge`
-            job (`auto:true` bypasses the human-UX 409, since the night's own job holds the
-            queue; /next stays serialised so the merge runs after the night ends). Any signal
-            absent = no auto-merge, reason logged; the item is never auto-ticked — the human
-            still verdicts it in Reviews.
-            The claim stays until the human merges + ticks the item (that's the don't-re-pick
-            marker); a no-commit run releases it. Both the global arm switch AND the project's
-            automode flag must be on. Every item attempt lands as a row in `autopilot_runs`
-            (POST /api/projects/:slug/autopilot/runs) — the deck's "While you were away" digest
-            and the run-history panel read from it. A session that dies on the usage limit
-            closes the night GRACEFULLY: the run row says `limit`, pushed branches keep their
-            claims, and the runner queues its own resume as a DURABLE `resume` job (#142 —
-            POST /api/autopilot/resume, held via `not_before` until just past the reset, parsed
-            from the message else +4h; a pinned --item run keeps its pin). The job survives
-            reboots and shows on Mission Control + the Terminal, where a human can ▶ Resume now
-            (clears the hold — the dispatcher then runs it --force like a manual press), ⏸ Hang
-            up (status `paused` — parked until resumed by hand) or × dismiss it; an auto-fired
-            resume (hold intact) keeps the arm-switch + automode gates. Only when the API can't
-            take the job does the old detached-sleep fallback fire.
-            Night end fires an ntfy.sh notification when STACK_NTFY_TOPIC is set in
-            ~/.stack/env (free, keyless; unset = silent). Lockfile ~/.stack/autopilot.lock; log
-            ~/.stack/autopilot.log. `skipped` items are how you keep human-only work off its plate.
-            stack-preview.mjs — the BRANCH PREVIEW worker (#208, a mirror site for pushed
-            work): brings ONE branch up as an isolated stack so it can be LOOKED AT running
-            before it is merged. Throwaway worktree on `origin/<branch>` under
-            ~/.stack/previews, the main checkout's `.env` copied in (the worktree has none and
-            compose requires it), a free port from 8790-8809, `docker compose -p
-            stack-preview-<slug>-<branch>` up — the project NAME is what buys isolation, since
-            docker namespaces the containers AND the named volumes under it, so the preview gets
-            its own empty database rather than sharing the real one — then it waits for the
-            stack to actually answer before exposing it, and opens a **Cloudflare quick tunnel**
-            (`cloudflared tunnel --url`) for the public URL. **Why a quick tunnel:** this host
-            has exactly one public entry (projects.bkos.dev → a token-managed tunnel → :8787),
-            no wildcard DNS, and the tunnel's ingress lives in Cloudflare's dashboard rather
-            than a file; and serving previews under a PATH breaks any app with root-absolute
-            asset URLs (a Vite build asks the parent origin for /assets/… and gets Stack's own
-            bundle). A quick tunnel needs no DNS and no dashboard, and serves the app at the
-            ROOT of its own random hostname, so the preview is byte-for-byte what production
-            would be. **The trade, plainly: that URL is PUBLIC and unauthenticated while it
-            lives** — unguessable and never listed, but not access-controlled, which is why
-            expiry is a safety property rather than tidiness and the default life is 2h.
-            **The mirror is a real one: the data comes across too.** An empty database renders
-            an empty Stack — the branch runs, but with no projects, board or activity on the
-            screens, so the one question a preview exists to answer (does this look right on MY
-            data?) is the one it could not answer. So once the stack answers, the worker pipes
-            production's `pg_dump` into the preview's database and RESTARTS its server, which
-            re-runs the branch's idempotent migrations over real rows — the rehearsal of the
-            merge nobody otherwise gets until it is production. Two tables are deliberately
-            excluded: `auth_tokens` (PIN-issued device sessions must not be duplicated onto
-            another host) and `previews` (a mirror is not the host and nothing polls it, so its
-            own preview list would show LIVE rows pointing at dead tunnels — better empty than
-            wrong). **The trade:** a second copy of real data lives behind a random public
-            hostname until the preview expires. It is behind the same token gate and the same
-            PIN as production — which is itself public at projects.bkos.dev — so the exposure is
-            the same CLASS, but it is another copy, and expiry is what bounds it.
-            `STACK_PREVIEW_DATA=0` in `~/.stack/env` turns the copy off and returns to an empty
-            mirror. The **access PIN is mirrored separately** (and redundantly once the copy
-            lands, since the settings row carries it): the PIN **hash** verbatim, read live at
-            start so the two stay the same when the PIN is changed — the plaintext is never
-            known, logged or written to disk. It is what gets you in when the data copy is off
-            or fails, and it matters because not even the API token would do: the deployment's
-            comes from Dokploy's env while the preview's comes from the copied `.env`, and they
-            differ. The real database is found BY ITS SCHEMA (a read-only SELECT over every
-            `service=db` container, previews excluded) rather than by name, since this host runs
-            Stack under a Dokploy-generated compose project no script should hardcode. Best
-            effort throughout: an empty mirror is still a mirror, and worth more than a failed
-            one. The preview NEVER writes to the real database — its own is a copy, and that
-            direction of isolation is absolute.
-            Teardown (`--stop`) is all best-effort and independent, so a half-gone preview still
-            gets the rest of itself cleaned up: kill the tunnel, `compose down -v` (its OWN
-            namespaced volumes, never the real stack's), remove the worktree, prune. Never run
-            by hand in normal use — the dispatcher spawns it DETACHED. Log ~/.stack/preview.log.
-            stack-autopilot-dispatch.mjs — the every-minute cron line (the master on/off
-            switch). Polls GET /api/autopilot/next with the HOST's local clock (the server
-            can't reach the host — same dial-out pattern as the terminal daemon); the server
-            lazily enqueues due work — the armed nightly at Settings' autopilotTime per
-            automode project, the **plan sweep** (#255 — a `plan` job for any automode project
-            with eligible unplanned must/should work, so nothing reaches a build night without
-            a design; kept to one open job per project by a partial unique index, and skipped
-            for 20h after a `planned` run so a swept board isn't swept again before anyone has
-            read the designs), due Mission Control calendar rows, manual ▶ Run now presses —
-            and hands out at most ONE job at a time. Nightly AND plan jobs are the SERVER's
-            decision, so both keep the arm-switch + automode gates (no `--force`); only human
-            presses bypass them. The dispatcher runs it (repo resolved as
-            $STACK_AUTOPILOT_ROOT/<slug>, default $HOME) and PATCHes the outcome back.
-            Manual/scheduled jobs run with --force (explicit human config beats the arm
-            switch + automode); nightly keeps both gates. `revert` jobs (#128 — the Reviews
-            view's ⎌ Undo) are handled by the dispatcher itself, not the runner: revert every
-            main commit tagged #<itemId> (last 400, digit-safe match) in a throwaway worktree,
-            push the revert commits, un-tick the item (which clears verdict + claim). `merge`
-            jobs (#154 — Mission Control's ⇥ Merge) too: fetch, merge --no-ff origin/<branch>
-            into main in a throwaway worktree, push, delete the remote branch; conflicts abort
-            + report failed, and the item is NEVER ticked (the human disposes). A successful merge
-            also **removes the BUILD worktree the branch came from** (#242): the runner keeps it
-            deliberately after a landed run (the branch is pushed, the claim stands until a human
-            merges and ticks), which is right up to exactly that moment — after it, the tree is a
-            full checkout of history sitting on disk forever. The path is not reconstructed from
-            the naming convention (the runner spells it four ways: item / bug / audit / plan) —
-            git is asked which tree holds the branch. Two guards, because a merge job can be
-            pointed at ANY branch including one a human is sitting in: only trees under
-            `~/.stack/autopilot` are eligible, and the removal runs WITHOUT `--force` so git
-            itself refuses a tree with uncommitted changes. A kept tree says so in the job detail.
-            The dispatcher
-            also pushes the **branch report** (#207) every ~10 min (stamp file
-            ~/.stack/branch-report.stamp): per repo it can find, fetch --prune then every
-            origin branch's ahead/behind vs origin/main, a `git merge-tree --write-tree`
-            conflict probe (null when git <2.38) and the item id parsed from the lane name,
-            POSTed to /api/projects/:slug/branches — the git truth behind the merge strip.
-            It also runs the **preview sweep** (#208) on every poll, deliberately OUTSIDE the
-            job queue — a preview must not wait behind a three-hour build night, and a build
-            night must not wait behind a docker build. The sweep only CLAIMS work and spawns
-            stack-preview.mjs detached, so the tick stays fast: teardowns first (they free the
-            ports and memory a start may need), then at most ONE start per tick. Expiry is
-            decided SERVER-side and arrives as stop work, so an abandoned preview's public URL
-            is torn down even if nobody presses anything.
-            Silent when idle or the API is unreachable (fail safe). A missed slot stays missed
-            (90-min grace, clamped at midnight) — like the old fixed cron line, but the time
-            is now a setting.
-.claude/commands/checkpoint.md — the /checkpoint slash command (documented for install to
-            ~/.claude/commands/). Tells the session to author the full checkpoint schema and pipe it
-            to ~/.stack/stack-checkpoint.mjs (token read from ~/.stack/env, never printed).
+web/       Vite + React 18 + TS (strict). Hash-routed. Persistence is the Postgres API, reached ONLY
+           through src/store.ts (every function async, bearer-token auth).
+server/    Express + Postgres. Idempotent schema migrate on boot, retries first DB connect. Bearer
+           auth on every route except GET /api/health; fails closed if API_TOKEN is unset.
+hook/      Zero-dependency Node ESM Claude Code hooks + the /checkpoint poster.
+terminal/  The web terminal's host-side daemon (dials OUT to the server; the host firewall drops
+           container→host traffic).
+scripts/   The host-side CLI + automation (autopilot, dispatcher, previews, skills, tree, checks).
+templates/ stack-agent-context.md — the canonical portable agent manual (single source of truth).
+.claude/commands/checkpoint.md — the /checkpoint slash command (install to ~/.claude/commands/).
 ```
 
-### Frontend structure (`web/src`)
-- `store.ts` — **the only module that touches the network.** Auth helpers (`getToken/setToken/
-  clearToken/onAuthChange/verifyToken`) + async data calls: `getOverview` (the command deck),
-  `getSearch` (the ⌘K palette), `getSettings/patchSettings`, `getProjects`, `getProjectDetail`,
-  `createProject/patchProject/deleteProject`, `getBugs/createBug/patchBug/deleteBug`,
-  `getRoadmap/createRoadmapItem/patchRoadmapItem/deleteRoadmapItem`,
-  `getFutures/createFuture/patchFuture/deleteFuture`,
-  `getNotes/createNote/patchNote/deleteNote`,
-  `getTips/createTip/patchTip/deleteTip/runTip` (the app-wide recipe library — the Tips tab).
-  `request()` attaches the bearer and throws `AuthError`
-  on 401 (which clears the token).
-- `components/CommandPalette.tsx` — the global ⌘K palette. Centred modal over a dimmed/blurred
-  backdrop: debounced query, scope chips (All/Bugs/Roadmap/Notes/Activity with counts), grouped
-  results with kind icons, the matched term marked in terracotta, full keyboard control (⌘K toggles,
-  ↑↓ across groups, ↵ opens → `go.detail(slug, tab, highlight)`, esc closes), focus trap + restore,
-  reduced-motion respected. Opened from the dashboard/detail search box or ⌘K anywhere (state lives
-  in `App.tsx`).
-- `screens/Settings.tsx` — the Settings screen (reached from the avatar / `#/settings`). Sections:
-  **Push summaries** (the cream card — switches + Brief/Standard/Detailed segmented control,
-  optimistic with rollback), **Session defaults** (switches over the `DIRECTIVES` catalogue from
-  `lib/brief.ts` — app-wide standing preferences PATCHed as `sessionDefaults` and injected into
-  every session by the start hook, e.g. commits pre-authorised), **Autopilot** (the overnight
-  runner's arm switch + 1h/2h/3h session cap — the cron no-ops while disarmed), **Roadmap**
-  (#247 — the parked-item stale threshold, `staleItemDays`, 7/14/21/30/60d; surfacing only),
-  **Terminal**
-  (device-local like Appearance: opens-with Claude/Shell seg + the skip-permissions switch,
-  `store.getTermSessionPrefs/setTermSessionPrefs`), **Appearance**
-  (theme) and **Access** (masked token, Test connection, the **access PIN** — set/change/disable;
-  any change signs out all PIN-connected devices — and Sign out). Uses `getSettings/patchSettings`;
-  a 401 anywhere returns to the gate. The TokenGate offers "Sign in with a PIN instead"
-  (`store.loginWithPin` → POST /api/auth/login → this browser's own device token).
-- `types.ts` — Project, Bug, RoadmapItem, Future, Note, Activity, Resume. Status is `live | building |
-  paused | archived`. Bug/RoadmapItem/Future/Note carry `source: 'hook' | 'manual'` (drives the
-  "auto" cue).
-- `components/TokenGate.tsx` — first-load token screen; `App.tsx` shows it whenever there's no token.
-- `lib/brief.ts` — the exportable **resume brief**: `buildBrief(input, options)` renders a concise
-  markdown template (status/phase/last push, session preferences, summary, in progress, next up,
-  blockers, open bugs, open must/should roadmap deduped against next-up, working-well, recent
-  pushes) and `downloadBrief` saves it as `<slug>-resume-brief.md`. Options: `compact` (efficiency
-  mode — tighter caps, drops working-well) and `directives` — keys into the exported `DIRECTIVES`
-  catalogue (reduce token usage, commit+push each unit, checkpoint on wrap-up, confirm big changes,
-  verify before done) rendered as a "Session preferences" section. Pure formatting — data comes in
-  via store.ts callers. Export buttons live on both "Pick up where you left off" cards (detail
-  Overview + deck hero); both open `components/ExportBriefModal.tsx`, the curate-then-export step
-  (Full/Compact seg control + preference switches, persisted device-local via
-  `store.getBriefPrefs/setBriefPrefs`; the deck hero fetches `getProjectDetail` on confirm). Step 2
-  is the **tinker view**: the generated markdown in an editable textarea with a token estimate
-  (`estimateTokens`), a deterministic **Tighten** pass (`tightenBrief` — strips decoration + footer,
-  no AI API), copy-to-clipboard and download.
-- **Dark mode** — Settings → Appearance (System/Light/Dark, device-local via
-  `store.getThemePref/setThemePref`; App resolves to `<html data-theme>`). The dark palette is one
-  `[data-theme='dark']` override block on the same named tokens at the top of `styles.css`, plus a
-  short list of literal-background fixups right below it. Stickies keep their paper colours.
-- `screens/Control.tsx` (+ `screens/ControlRooms.tsx`, `screens/ControlRoles.tsx`,
-  `screens/ControlLanes.tsx`) — **Mission
-  Control** (`#/control`, the
-  Dashboard header's "Mission Control" button): every project's automation from one point.
-  **What is running is ONE list** (#283, design 22a — `SessionLanes` in `ControlLanes.tsx`):
-  the autopilot's own workers AND every terminal session the host daemon can see (web tabs,
-  detached tmux survivors, sessions attached from another device) as rows in a single lane
-  list, replacing the old split between the fleet strip and the terminal chip strip — two
-  widgets fed by two unrelated paths (`autopilot_jobs` via the control payload vs the relay's
-  socket) that between them made "what is happening now" something you assembled yourself.
-  Sorted by **who needs you**: an unattended claude session on the host outranks the autopilot
-  (which is unattended BY DESIGN), which outranks a tab you already have open. The sources stay
-  honestly different where they differ — an autopilot lane carries its #280 role split and
-  spend panel but is reachable only over `tmux attach` on the host, while a terminal lane can be
-  jumped into but reads **"no model record"** in the role column, because Stack keeps no
-  per-model usage for one (the Terminal screen's meter is a daily transcript total, not a
-  per-session one). Idle autopilot capacity is still rendered (#268's contract), queued jobs sit
-  behind the lanes, and × on a detached row kills the host process behind a ConfirmModal.
-  Every project's automation from one point,
-  restructured to the Stack Planning design's **14a shell**: six rooms — **Now / Nights /
-  Plan / Build / Review / Roles** — behind one **pinned live strip** (the primary claude/web session, or the
-  first detached survivor, with Attach; ALL QUIET when nothing runs) and a **persistent right
-  rail** that stays put across rooms (the #220 CLAUDE PLAN window meters, the compact #194/#200
-  7-day usage — spend, tokens, per-model stacked bar, month-to-date, the collapsed #177 agent
-  breakdown — the NEXT UP list of the week's bookings with tonight's nightly first, and the
-  daemon status line). The rail **collapses to a 76px numeric rail** (design 1b; device-local via
-  `store.getControlRailOpen/setControlRailOpen`, default open, the ‹/› on the rail itself rather
-  than in the first card — which card is first depends on what the host has reported, so a chevron
-  pinned to one of them would vanish exactly when the daemon went quiet). What survives the
-  collapse is **budget pressure, spend and connection** — the plan meters as `sess`/`week` bars,
-  the 7-day figure with its per-model split, the three FLOW numbers with their trend marks, and
-  the daemon dot; the model breakdown, the throughput table, month-to-date and NEXT UP are
-  expand-only, because those are reading rather than watching. Every value stays legible without
-  hover, and each block is gated on the same data as its full-width counterpart, so the slim rail
-  never draws a frame around nothing. Stacked under the rooms (≤1000px) there is no column to be
-  slim in, so the blocks run ACROSS as a strip instead of leaving a 76px stub below the page.
-  **The collapse changes neither the toggle's place nor the rail's length** (#306): the same 22px
-  ‹/› sits in the same bar above the card in both states (it used to become a full-width 76px bar,
-  so the control you pressed to collapse was never under the cursor that expands again), and the
-  expanded rail is MEASURED while open (ResizeObserver, the same trick the dashboard's SubNav uses
-  on the topbar) and that height handed to the slim rail as a floor — the slim rail was built for
-  a height it never got, ending in a flex spacer meant to settle the daemon dot at the bottom,
-  which does nothing in a card sized by its own content. The measurement is remembered device-local
-  (`store.getControlRailHeight/setControlRailHeight`, clamped 200–3000) so a reload that STARTS
-  collapsed still has one; never measured = natural height, i.e. the pre-#306 behaviour. Dropped
-  outright below 1000px, where a floor would stretch a horizontal strip down the page.
-  **Now** is 11a's dashboard: the **fleet strip** (#268 — one row per worker
-  slot, busy or idle; idle slots are RENDERED, never omitted, because the strip's length is how
-  you read the fleet's real size) carrying the **ROLES column** (#280, the design's 23a — who is
-  executing, who advised, and what the advice cost): the app-wide role policy stated once above
-  the lanes (EXEC green / ADV terracotta, the same two colours the split bars use), each lane
-  wearing its EXEC/ADV models and a spend-split bar, expandable to the **role panel** — the ROLE
-  LEDGER (one row per item the session has BANKED, with the roles that were on it and what the
-  advice cost), the SPEND bar with a per-model legend, and an arithmetic read (`roleRead`, no API)
-  that judges the split: advice-heavy / in proportion / cheap counsel — or refuses to judge when
-  there is no advisor, nothing banked, or the advisor was never actually consulted. Attribution
-  joins the runner's real model ids (`claude-opus-4-5-…`) to the settings' aliases (`opus`,
-  `claude-opus-5`, '' = CLI default) by family + generation, most-specific-alias-wins; a model
-  neither role claims stays **unattributed and is drawn as its own slice** rather than guessed
-  into a role. Then the **MIRROR SITES** strip (#208 — the running branch previews, straight under
-  the lanes): one row per open preview with its STATUS, project + branch, the **public URL as the
-  row's payload**, a countdown to expiry and ＋1h / × Stop. Previously a preview was visible only as
-  a chip on its own branch in the merge strip, which answers "is this branch previewed?" but never
-  "what is running, and what is the link?" — and the link IS the mirror site, since it is how a
-  branch reaches a phone or anyone you want to show. Rendered even when EMPTY, on the same
-  reasoning as the fleet's idle slots: a feature invisible while idle is a feature nobody finds.
-  Fed by the room's own 15s `getPreviews()` poll, not the control payload, because a preview moves
-  on the host's clock while everything else sits still. Then the LIVE SESSION card beside the terracotta
-  awaiting-review tile (→ the deck inbox) + serious-bugs/claimed-branches minis, then the
-  autopilot **settled into one line** — arm switch + a mono summary — whose ▸ configure folds
-  open the full console (session cap up to 6h + **token budget incl. ∞ Unlimited** + **nightly
-  start time** + items per night + the **Executor / Advisor model pickers** (#153) — all
-  PATCHed straight to settings, optimistic with rollback), then the running/paused/jobs strips
-  and the PROJECTS hairline (All/Automode/Live filter chips; each row wears this week's
-  run-history bars from `usage.recentRuns`). **Nights** is 12a's calendar: a 7-day window
-  (3 back, 3 ahead) of per-project lanes — past cells carry real run outcomes (landed/failed/
-  limit, coloured, with tokens; `recentRuns` now carries a UTC `day` for the placement),
-  future cells their bookings (schedule rows + the armed nightly) — with a legend, a per-day
-  load strip and the standing schedule list (the editing surface) below — all unchanged. Clicking
-  a cell opens the **night DEBRIEF** (#286, design 24a — `screens/ControlDebrief.tsx`), which
-  replaced the thin detail card: night tabs across the week, a hero with the night's stats, **WHAT
-  LANDED** (one card per run — branch, commits, tokens/cost, the item's current verdict or
-  AWAITING VERDICT, the session's own account and the **reviewer's** stored verdict from #282 — `clean`/`concerns`/`blocked` with its own sentence
-  and how many findings it filed; no stored verdict reads as "no review ran", deliberately NOT as
-  "nothing found") and
-  **DECISIONS THIS DEBRIEF ASKS FOR** — the crossings the autopilot cannot make alone: items
-  awaiting a verdict (→ Reviews), branches the host still reports open (⇥ Merge, through the same
-  confirm modal as the merge strip), red checks (→ Quality) and a limit-held resume. A night in
-  the FUTURE has nothing to debrief, so the same panel becomes **Planned** — what is booked, with
-  ✎ Edit the plan reaching the SessionPlanModal exactly as the old card did. The design's roster is
-  a reviewer AND an architect, and **both seats are filled**: the reviewer's stored read (#282 —
-  `clean`/`concerns`/`blocked`, with a BLOCKED change becoming one of the decisions the debrief
-  asks for) and the architect's (#284 — `aligned`/`drifting`/`concerning` plus its structural
-  observations), each stored on the run row and each its own panel. **WHERE THEY DISAGREE** renders
-  only when the two land on opposite sides of the SAME change (clean-but-drifting, or
-  blocked-but-aligned) — one opinion cannot disagree, and neither can two opinions about different
-  changes. Either panel with no stored read says "no pass ran", never "nothing found".
-  There is no revert-the-night button: reverting is per item from Reviews (#128), since
-  a night is several independent items and undoing them as a block would take back work already
-  accepted. **Plan** is 16a (the
-  design's 15a+15b, superseding the 12b tree): the **ordered schedule with the inbox beside
-  it**. TONIGHT AND AFTER lists exactly what the runner would work, in its real order (desire
-  TIER first (#227), then musts before shoulds, then board order — eligibility mirrored
-  client-side), broken into nights by the real
-  capacity — Settings' items/night (1/2/3/5/8/**∞**, editable in the header seg) times the
-  **lanes** you plan to run in parallel (#260 — 1–4, device-local via
-  `store.getPlanLanes/setPlanLanes`; rows wear an L1/L2 chip and a note states plainly that lane 1
-  is the overnight runner and the rest are sessions you start with ⎇, so the projected dates never
-  imply parallelism the machine does alone) — each row wearing the night it
-  lands on; the header projects the milestones ("musts land Wed 30", "the board clears …") with
-  ▲/▼ deltas while a reorder is unsaved. Under the queue, **✧ Plan the N unplanned items** hands
-  exactly those ids, in the shown order, to the planning agent (the #255 push). OUT OF THE
-  SCHEDULE no longer truncates silently — it folds behind an honest count. Under the header sits the **MODELS line** (#153 — the
-  Executor / Advisor pickers, the same app-wide settings the Now room's console writes, mirrored
-  here because this is where the plan is decided: the queue below, the hands and the mind that
-  work it above; the catalogue rides the control payload, and a mono summary reads
-  "Opus builds · consults Opus 5"). Reorder is a dirty overlay (revert = exact) by **drag or
-  ▲▼** — #290 made the ⠿ real, the whole row being the handle; both routes go through one
-  `reorder(from, to)` so a drag can never mean something different from two presses of ▼ (the
-  carried row lands where the hovered row sits, and the hovered row draws its accent edge on the
-  side the drop will take). Whichever route is used, the moved item takes the DISPLACED row's
-  bucket and tier: crossing the must/should boundary re-buckets it, crossing a TIER boundary
-  re-tiers it (both shown as → flags — and the re-tier is what stops a row snapping back the
-  moment the order is saved); Save
-  order renumbers positions (+ flipped buckets and tiers) through the normal PATCH — the same write the
-  board's drag makes, because the board IS the run queue. Ineligible open items sit under OUT
-  OF THE SCHEDULE with the honest why (⚑ claimed / parked / outside area / below the line). The
-  **Inbox** holds what the sessions found — hook-extracted unreviewed items as FOUND cards
-  (Accept = `{reviewed:true}`, one-step undo; Dismiss = the tombstoning DELETE, labelled as
-  such, no undo) — and what Claude proposes: ✧ Ask for proposals runs the board's cleanup
-  route and lists MOVE/RETITLE/AREA cards (Apply = the delta PATCH, undo = the reverse PATCH,
-  old values kept client-side); "accept all safe" sweeps the pending accepts. Every accept
-  updates the schedule + milestones in place and lands in the JUST CHANGED banner with its
-  undo. The Plan tab wears the picked project's review count as its badge. **Build** is 12c grounded in Stack's real
-  gates: every roadmap item carrying #75 plan steps as a phase card (building / queued /
-  awaiting verdict / landed) with step marks, and GATE rows for the two crossings the autopilot
-  never makes alone — the human verdict (→ Review, which switches rooms carrying the change to
-  judge: the room takes an optional `focus` of "slug#id" and opens on that item once its queue
-  lands, falling back to the normal list if it has already been verdicted — since #282 the
-  Roadmap board holds only a pointer back here) and the merge (→ the merge strip) — plus
-  LAST NIGHTS MOVED THE PLAN from the run ledger. The tab's badge is those open gate rows,
-  reported up by the room like Review's count, because the plan steps come from the room's own
-  per-project detail fetches and not the control payload — so the tab is unbadged until the room
-  has loaded once (absent, never a false zero). **Roles** is 23b (`screens/ControlRoles.tsx`,
-  #281 — the fleet-wide half of turn 23, where the Now room's lanes are the per-session half):
-  which model is doing what, what the advisors are costing, and **where the policy is being
-  ignored**. It reads the RUN LEDGER, not the settings — that separation is the whole point,
-  since a screen that renders the policy back at you can never show drift. **#288 (design 1b)
-  organised it BY JOB rather than by model**: there are only ever two jobs — someone writes the
-  code, someone reviews it before it lands — so the room opens on exactly **two cards**, where it
-  used to open on one card per model and then make you assemble the finding from a table, a worth
-  panel and a share meter. The **EXECUTOR** card puts the assigned model beside what actually ran
-  (`N of M runs`), splits the executor slot as one bar with its models named underneath, and
-  carries **Adopt <model>** — a real `patchSettings` write, offered only when exactly ONE
-  off-policy model ran AND the executor catalogue has an alias that claims it (two is a question,
-  not a button; a Fable night is reportable and not adoptable, since no executor alias names
-  Fable). Which SEAT an unattributed model sat in is deliberately not asserted — an unattributed
-  model is by definition one neither role claims, so the card names the fact and the copy carries
-  the caveat. The **ADVISOR** card is the old worth panel and share meter folded into one: the
-  advisor's share of the week, the advised-versus-unadvised landed read (composed client-side
-  from the server's numbers, the same split as a lane's read), an explicit SMALL SAMPLE chip under
-  12 runs, and Turn on / Drop to Sonnet / Advisor off. Still deliberately not called an allowance:
-  nothing enforces a ceiling, and the buttons apply from the next session. Under the cards, the
-  per-model view survives as the **evidence fold** (role chip, runs, share, last-24h tokens, cost,
-  last seen) — it answers "what did this cost", which is the receipt rather than the headline —
-  then the **who is doing what**
-  table (one row per project that ran or is in automode, showing the models actually seen in each
-  role against the configured policy — `drift` is `off-policy` (a model neither current role
-  names: a changed setting, or a host-side `--executor-model` override), `advisor-unused` (an
-  advisor configured but never consulted) or `no-runs` (quiet, explicitly NOT drift); drifting
-  rows sort first and the tab badge counts them). Server side it is
-  `computeFleetRoles()` in `routes/control.js` — exported and PURE (usage rows + projects + the
-  two aliases in, the `roles` block out) so it is testable without a database. #288 added two
-  things to it: `roles.runs` (`total` / `offPolicy` / `onPolicy` / `noBreakdown` — counted once
-  per RUN, which the per-model tallies cannot do, since one run using three models increments
-  three of them; `total` is runs that recorded a breakdown, the same population the advised/
-  unadvised split uses, so the two headlines share a denominator) and `adoptExec`/`adoptAdv` per
-  model (the inverse of the alias match: which catalogue alias would adopt this model into a role,
-  '' when none claims it). Both are optional in the client types — an older server still renders,
-  saying which MODELS were off policy instead of inventing a run count. The **throughput
-  ledger (#269) shares the attribution**: `splitRunRoles()` decides each run's roles by the same
-  alias match, so the lanes, the Roles room and the ledger can never disagree about who a model
-  was. The old highest-token heuristic survives ONLY as its fallback, for models the current
-  policy names for neither role — dropping them would quietly shrink the 14-day totals the
-  ledger exists to trend — and that share comes back as `roles.assumed`, which the rail states
-  as "N% assumed" rather than passing a partly-guessed split off as measured. (The lane and
-  fleet views deliberately do NOT use the fallback: they show an unattributed model as its own
-  slice, because reporting what is known costs them nothing. Same rule for deciding a role,
-  different handling of what the rule cannot decide.)
-  **Review** (`screens/ControlReview.tsx` — #282, design 24b + 24a) is where review LIVES now,
-  moved wholesale out of the Roadmap tab: the nights run across projects, so the morning's queue
-  does too. Two views behind one seg. **Queue** is 24b — a rail of every completed item nobody has
-  verdicted yet (newest first, each card wearing the reviewer's stored verdict chip — CLEAN /
-  CONCERNS / BLOCKED / **NO REVIEW**, which is deliberately not green — plus a CHECKS flag, the
-  project, #id and commit count) beside the change itself: THE CHANGE (the built_note and the
-  session's own account — there is **no line-by-line diff**, because the server cannot run git, and
-  the pane says so rather than inventing a diffstat), WHAT THE AGENTS SAID (the REVIEWER's stored
-  note and findings count, and — since #284 — the ARCHITECT's structural read with its
-  observations, an ARCH chip on the card whenever it said anything other than "aligned", and the
-  same honest dashed line only when no architect pass ran), your annotation chips (#146), a FACTS panel, and a **DECIDE** panel whose three
-  keyed actions — **1** Solid, **2** ✎ Refine, **3** ⏸ Later — also work from the keyboard (j/k
-  walk the queue; keys are ignored while a modal or field has focus). Everything the old Reviews
-  view could do is still here, under ALSO: ↩ Board, ⎌ Undo (#128), ✧ Brief (#134), ⌨ Session,
-  ＋ Bug, ＋ Audit and × Delete. Filter chips are To review / Flagged (the reviewer said blocked,
-  or the run left checks red) / Shelved (#148) / Settled (the archive), and ✓ All solid clears a
-  whole list. The verdict receipt sits at ROOM level with its undo — a verdict removes its own row,
-  so a receipt pinned to the selection would vanish exactly when you wanted it back. ＋ Bug /
-  ＋ Audit have no modals here (no project is loaded), so they stash a one-shot prefill
-  (`store.setReviewPrefill`) and open the project, where ProjectDetail takes it exactly once.
-  **Debrief** is 24a — a night at a time: night tabs (#304 — the strip is a CHOOSER, so it leans
-  toward the nights worth opening: one that landed work wears its count in the live tone, one that
-  produced nothing recedes to muted type and loses its chip. Receding is colour and weight, never
-  removal — a quiet night is still openable, and the SELECTED tab is never dimmed or the strip
-  would fade out what you just pressed. The Nights room's own strip follows the same rule and
-  counts what LANDED rather than how many runs were attempted, which read identically for a night
-  that shipped three changes and one that failed three times; only a PAST night can be quiet,
-  since dimming a booked one would read as "this failed" rather than "not yet"), a header stating what the reviewer read and
-  called clean, four stat tiles, WHAT LANDED (one card per run with the reviewer's and the
-  session's own notes, and Review this change / Open the item), DECISIONS THIS DEBRIEF ASKS FOR
-  (blocked reviews, red checks, limit-paused and failed runs — each a real door), and a right rail
-  of REVIEWER / ARCHITECT (#284 — how many of the night's changes drifted, with the notes; a night
-  that is entirely aligned says so in one line rather than listing what was fine) / SPEND. The room owns its own fetch (`store.getReview`)
-  and reports the pending count up so the room tab can badge it; it mutates nothing itself — every
-  verdict, refinement, shelve and undo goes through the same per-project routes the Roadmap tab
-  used. Plan/Build fetch the picked project's detail
-  via `getProjectDetail` (60s in-module cache). The **scheduled
-  sessions** system is unchanged underneath (one-off / daily / chosen-days sessions per
-  project — `store.createAutopilotSchedule` et al). Every scheduled session is a **session
-  plan** (the session planner): clicking a row (or a week-strip chip, or + Plan a session) opens
-  `components/SessionPlanModal.tsx` — kind seg (Build / Plan / Debug / Audit), time +
-  recurrence, an **ordered agenda** picked straight off the open roadmap (or the bug tracker
-  for Debug, severity-tagged), ↑↓ reorder, an area scope for agenda-less sessions, and a live
-  preview of what a general session would take (the board's own priority order — the board IS
-  the priority list). Rows and chips wear the kind chip + ☰ agenda count; kind/agenda/area
-  land on the schedule row, ride the job through GET /next, and become runner flags
-  (`--kind`, `--items`/`--bugs`, `--area`) via the dispatcher. And
-  one row per project: automode toggle (`patchProject {automode}`), status, live presence, last
-  push, **▶ Run now** (queues a manual job via `store.startAutopilot`; open jobs show as live
-  queued/running/done chips, refreshed on a 30s tick), tonight's likely pick (deep-links to the
-  roadmap item), last `auto/*` run, claim chips, review/serious-bug counts and blockers.
-  The **merge strip** (#154, git-aware via #207): one chip per open branch — the host's branch
-  report supplies real state (↑ahead/↓behind, ✓ merges clean / ⚠ conflicts with main, last
-  subject on hover), claims the report hasn't seen fall back to plain chips, and a 🧹 count
-  flags fully-merged origin branches never deleted. **#288 made it readable rather than a wall**:
-  chips sort by what needs a HUMAN (conflicting first — the machine cannot finish those at all —
-  then probe-clean, then unprobed; most commits first within a group), the verdict is also worn
-  on the chip's own edge so the groups read without counting glyphs, the last commit's AGE is on
-  the chip instead of behind a hover (the one field separating live work from a stranded lane),
-  and the report's freshness is STATED (`git as of 5m ago`) rather than hovered — every number
-  here is a snapshot from the host's ~10-minute pass, and a reader given exact ahead/behind
-  figures does not go hunting a container tooltip to learn when they were true. Deliberately no
-  GitHub API: PR/CI state would need a token in `~/.stack/env` and a network dependency for facts
-  git already holds locally. **⇥ Merge** (`store.queueMerge`) queues a
-  `merge` job with a probe-known-conflict warning in the confirm modal.
-  The **paused-sessions strip** (#142) sits above the recent-jobs chips: one ⏸ chip per
-  limit-paused `resume` job showing its resume time, with **▶ Resume now**
-  (`store.resumeAutopilotJob`), **⏸ Hang up** (`hangupAutopilotJob` — parks it until resumed
-  by hand) and **× Dismiss** (`dismissAutopilotJob`); a project row with a held resume shows
-  "resumes <time>" in place of ▶ Run now.
-  The **running-sessions strip** (below the totals row) is one ▶ chip per terminal session —
-  web-attached ones, detached tmux survivors AND sessions attached on another device (a laptop
-  over ssh via `stack term`; deduped against the web chips by tmux name, `.away` green-dashed) —
-  each a jump-in that opens `go.terminal(cwd, tmuxName)` (`#/terminal?cwd=…&attach=…`; the
-  Terminal screen switches to the tab that already holds the session, re-attaches, or mirrors an
-  attached one), wearing Gemini's label of what the session is doing: labelling fires
-  automatically whenever unlabelled sessions appear (`labelTerminalSessions`, silent when
-  keyless; ✧ Re-label re-asks by hand). The ⌨ Terminal button sits beside the screen's
-  Settings / Mission Control tabs (`.tab-term`, in `Settings.tsx`), not in the totals row.
-  Renders `getControl()`; automode projects sort first (`.mc-*` styles).
-- `screens/Skills.tsx` — **the skill tree** (`#/skills`, lazy; reached from Settings' Skills
-  card). Two things are on it and they are NOT the same thing, which is why it is a tree and not a
-  list: the LIBRARY (what Stack holds and would write) and the DISK (what the host actually has).
-  Every row states both — installed / edited-sync-pending / missing-from-disk / not-written-yet /
-  disabled — because the sync is the HOST's, on its own 5-minute clock, so nothing here is instant
-  and the screen says so rather than animating a success it cannot observe. Grouped by place
-  (global, then a group per project with skills), a switch per row (off = the host removes it from
-  disk, the library keeps the text — which is why delete and disable are named separately), and a
-  final **Not managed by Stack** group: skills the host already had, reported and never touched,
-  each with **↥ Adopt** to bring it into the library. `.sk-*` styles.
-- `screens/Terminal.tsx` — the web terminal (`#/terminal[?cwd=<dir>][&attach=<tmux>]`,
-  lazy-loaded so xterm.js stays out of the main bundle; a bare open — no cwd, no attach —
-  resolves its auto-session cwd to the overview's resume slug, the most recently touched
-  project, falling back to home on any miss; entry points on Mission Control — the strip's ⌨ Terminal button
-  and a per-row ⌨ that prefills the project's slug as the cwd). xterm.js + fit addon over
-  `store.openTerminal()` (the only place the ws transport + token live); Shell/Claude seg control,
-  status line, reconnectable. **⤢ FULL SCREEN** (#305, the head bar, beside the pane seg — the
-  same question asked twice: how much screen do these terminals get): the screen pins to the
-  viewport, the topbar and the detached-sessions chooser go, and the grid stops guessing at its
-  own height — everywhere else it is `calc(100vh - 210px)`, a guess at the chrome above it, and
-  in full screen it is simply a flex child taking what is left. The head bar survives, so the way
-  out is where the way in was. The browser's Fullscreen API is asked for on the **document**, not
-  the screen element: in real fullscreen only the fullscreen subtree renders and this screen's
-  kill-confirm is a SIBLING of it, so fullscreening the element would hide a modal that still
-  held the interaction. The CSS mode is what the layout keys on (a refused request still works),
-  the container sits at z-index 40 so `.overlay` (50) stays above it, esc brings the CSS mode back
-  with it, and navigating away drops it. Transient by design — fullscreen cannot be re-entered on
-  load without a gesture, so a remembered `true` would only ever be a lie.
-  **Two to four terminals at once**: the head bar's pane seg (1/2/3/4,
-  device-local as `store.getTermViewPrefs().panes`, `TERM_PANE_CHOICES`) replaced the old wide-mode
-  toggle — wide mode answered "give the terminal the whole viewport", which was the consequence of
-  a question rather than the question, since you widen the screen because you want more than one
-  session on it. So panes > 1 takes the full width by itself, and a device that stored `wide:true`
-  migrates to 2. The window of shown sessions STARTS at the active tab (backing up near the end of
-  the list so panes stay full), so picking a tab puts it top-left with its neighbours beside it and
-  the tab strip is never reordered under you. The shapes are 2 = side by side, **3 = one tall pane
-  on the LEFT with two stacked beside it** (not three columns — three abreast leaves each too
-  narrow to read), 4 = 2×2; the tall one is the first pane on screen, i.e. the active session,
-  marked with a `lead` class rather than `:first-child` because off-screen panes stay in the DOM
-  and would win that selector while invisible. Under 900px every shape stacks to one column. Off-screen panes are HIDDEN, never unmounted — their
-  sockets and scrollback have to survive, the same reason the screen itself never unmounts — and
-  `visible` (on screen) is now separate from `focused` (takes keystrokes), because with a grid
-  those stopped being the same thing. The floating dock collapses to one pane whatever the count.
-  **Choosing N panes FILLS the screen**, rather than setting a number and leaving holes: the grid
-  clamps to the sessions that exist, so picking 4 with one tab open used to show one pane while
-  claude was still running on the host in sessions nobody was attached to. The control now jumps
-  into those first (unattached survivors before ones a client holds elsewhere, newest first — an
-  attach of the latter only mirrors it), then opens fresh sessions in the active tab's directory
-  for whatever is still short. **A reload brings the whole screen back**: the open tabs are
-  remembered device-local (`store.getTermOpenTabs/setTermOpenTabs` — cwd, kind and tmux name per
-  tab, in tab order), because the cwd→tmux map can only ever hold ONE session per directory, which
-  is why four panes used to come back as one. Claude tabs restore by re-attaching their tmux
-  session (the process really did survive); a shell tab restores as a fresh shell in the same
-  directory, since its process died with the socket. The route still gets the last word — an
-  `?attach=`/`?cwd=` a restored tab already covers focuses that tab instead of duplicating it —
-  and with nothing remembered the old single auto-open is exactly unchanged.
-  Each pane carries its own **× close** and, when it has a tmux session, **⏻ end**: closing a claude
-  tab only DETACHES it (the host session keeps running — the point of #171), so the two endings are
-  named separately rather than one × implying the work stopped. ⏻ closes the tab and then kills the
-  tmux session, in that order and as two steps, because the daemon only accepts a kill for a name in
-  its DETACHED list — a name a client still holds never matches, which is what stops one browser
-  killing another's session. Closing a session that is ON SCREEN **lessens the grid** (panes − 1),
-  from the tab or the pane alike: the count would clamp to what is left anyway, but leaving the
-  stored number high means the next session you open silently re-splits the screen.
-  **Every terminal wears its own title** — what that session is working on, from the #120 labeller,
-  ON the pane rather than only on the tab, because with four terminals up the tab strip is not
-  where you are looking. The title is a loose paraphrase of **the last thing the assistant said** —
-  the subject it just wrote about — deliberately NOT a status report: the prompt tells the model to
-  name the topic and not to work out whether the session is running, waiting or idle, since "claude
-  is running a command" is true of every session and therefore says nothing. Names are keyed by the relay's **sid**, which is the only id EVERY session
-  has (a shell has no tmux name, which is why shells used to go unnamed); the browser learns it
-  from the daemon's frames, since the relay multiplexes by sid and forwards them whole. The tmux
-  name stays a second key so a tab that re-attached a detached session inherits the name it wore as
-  a chip. The re-ask is driven by OUTPUT, not a timer — a session that has emitted ~1.5k of new
-  conversation is due a fresh title, floored at one call a minute and checked on a slow tick so a
-  re-render can never re-ask — so an idle screen costs nothing and a busy one keeps up. Silent when
-  the server is keyless: an unnamed pane reads as unnamed, never as idle. **The screen is the COCKPIT (25b)**: the terminal keeps the width and
-  all the chrome folds into ONE right rail. The old left quick-commands rail, the horizontal usage
-  strip and the tab strip above the canvas are gone — the **tabs live in the head bar** (with the
-  cwd field, the Shell/Claude mode button, + New session and the real count of **branches claimed**
-  on this project, #277), which is most of the height the canvas gains, and the canvas keeps its
-  git-bash colours untouched (black, the mintty palette, the black active tab — the redesign
-  changed what surrounds the box, never the box). The rail has two segments, device-local via
-  `store.getTermViewPrefs().railSeg`, and collapses to its toggle:
-  • **Session** — what ties this tab to the plan. **WORKING ON** is the item you last handed the
-    session, pinned device-locally per cwd (`store.getTermWorkingItem/setTermWorkingItem`): Stack
-    has no server-side notion of "the item this TAB is on" — a claim belongs to a branch, not a
-    browser tab — so inventing one from claims would be a guess. **DO NEXT** lists the cwd
-    project's next eligible items in the RUNNER's own order (tier → bucket → board position, never
-    parked or claimed — the Plan room's rules applied to one project, so what the rail offers is
-    what the night would take); tick rows and **Send N to the prompt** types them as one bracketed
-    block — typed, not run, like every other handoff here — pins the first as WORKING ON and
-    **CLAIMS every sent item** (`claimed_by = term:<tmux name>`, or `term:<slug>` for a tab with no
-    tmux). The pin is a browser fact; "I am working this now" is not, so the send writes real
-    state: the items drop out of DO NEXT everywhere, wear the ⚑ chip on the board and the
-    overnight runner leaves them alone rather than picking up work you are half-way through in a
-    tab. The claim names the SESSION rather than a branch — a terminal tab has no branch, and one
-    that invented a branch name would be worse than one that says where it came from. WORKING ON
-    states the claim and offers **release** (PATCH `claimed_by:''`), but only for a `term:` claim,
-    since a real lane's claim is not this tab's to drop; **clear** still only forgets the pin. The
-    typing happens before the writes, so a failed claim says so rather than pretending.
-    DO NEXT can be **asked a narrower question** (#299 — tab, tier or risk): the top six is the
-    right default and a dead end the moment you want a SET (this tab's area, everything ranked S,
-    the low-risk work you can hand over at once), so three filters narrow the same list without
-    ever reordering it — what the rail offers is still what the night would take. The area picker
-    is a SELECT rather than chips (a real board carries fifteen-odd areas, which is five rows of
-    filter above two rows of list in a 300px rail); tier and risk stay chips because there are
-    only ever six, and a chip is drawn when it has work behind it or while it is the active one.
-    Filtering lifts the cap and offers **tick all N**, and picks resolve against the WHOLE
-    eligible list rather than the shown slice, so one send can carry two tabs and always goes
-    over in the runner's order.
-    **ROSTER** is deliberately one line: Stack
-    keeps per-model usage for autopilot runs and never for a terminal session (#283), so it names
-    who is at the keyboard and says plainly that the figure beside it is the host's whole day.
-  • **Runbook** — the commands you type every day, grouped (GIT / COMPOSE / HOST / YOURS) with the
-    reason you reach for each on the right. A row **loads the command at the prompt**; the row's
-    ↵ runs it. It also hosts + Add a command and the ✧ command help.
-  Two things deliberately stayed OUT of the rail. The **usage strip** sits above the canvas as it
-  always did — it is about the machine and the day, not about this session, so reading it should
-  never cost a segment switch. And **every claude tab wears its own live name** (#120): Gemini's
-  one-line take on what that session is doing, keyed by the host **tmux session** — the only id
-  both sides agree on, since the browser never learns the relay's `sid` — auto-requested whenever
-  an unnamed claude session appears (silent when the server is keyless; a tab with no name reads
-  as unnamed, never as idle) and re-askable with ✧ Re-label. The same names ride the
-  PICK UP WHERE IT STOPPED chips.
-  The **usage** data itself is unchanged: the daemon's `usage` frames give today's token count
-  against an editable device-local daily budget (`store.getTermUsagePrefs/setTermUsagePrefs`), the
-  limit-reset time when a usage limit hits, and session booking around the reset — manual mode is a
-  ▶ Book button, the auto-book toggle books the one-off Mission Control calendar slot itself (once
-  per slot; project = the cwd's first segment, which IS the dispatcher's slug). The cwd project's
-  **paused session** (#142) shows when one sits in the queue — a limit-hit `resume` job with its
-  resume time and in-place ▶ Resume now / Hang up (polled via `store.getAutopilotJobs` while the
-  screen shows, re-checked when a limit frame lands). **Detached sessions** (#188) sit above the
-  canvas as **PICK UP WHERE IT STOPPED**: ↺ re-attach chips for claude sessions still running on
-  the host with no browser attached
-  (`store.getDetachedSessions`, refreshed when the screen shows and on live-count changes; ×
-  kills the host process behind a ConfirmModal via `store.killDetachedSession`, and ☐ selects for
-  a **bulk kill** — all/none plus × Kill N, one confirm listing every session by cwd and name,
-  killed sequentially so a failure part-way still ends the rest. Selection is offered on DETACHED
-  chips only: the daemon refuses a name a client still holds, so a checkbox on an attached one
-  would be a button that cannot work — close the tab first, which detaches it). A claude tab
-  also remembers its tmux session name device-locally (`store.getTermTmuxName` et al, keyed by
-  cwd) so a plain page reload re-attaches the same session automatically; an exit frame while
-  attached — the process really ending — forgets the mapping. The screen auto-opens a session on
-  arrival per the device's **Terminal prefs** (Settings → Terminal, `store.getTermSessionPrefs`:
-  opens-with claude|shell, default claude; skip-permissions default on — sent as the start
-  frame's `skipPerms` boolean). The cockpit rail defaults COLLAPSED, the runbook's starter kit is
-  essentials-only (git/compose/autopilot-log — deliberately NO claude commands: claude typed
-  into a shell tab bypasses tmux persistence), and it hosts the **✧ command help**
-  (`store.termAssist` → POST /api/terminal/assist): describe a goal, Gemini returns one command
-  — ⌨ types it into the active session without Enter, + Save adds it to the runbook's YOURS group.
-- `lib/termClipboard.ts` — copy/paste for both xterms (the Terminal screen and PolarisTerm), because
-  a browser is not a terminal emulator and none of it came for free: a released selection copies
-  itself, ⌃⇧C copies explicitly, ⌃C copies ONLY while a selection exists and clears it (so the next
-  press is still SIGINT), ⌃V/⌃⇧V return false WITHOUT preventDefault so the browser's own paste event
-  reaches xterm's bracketed-paste-aware handler (no clipboard-READ permission, which Firefox never
-  grants), and an OSC 52 handler turns tmux's own copy-mode selection into a clipboard write. A '?'
-  payload — the host READING the clipboard — is never answered. `copyText()` falls back to
-  execCommand when `navigator.clipboard` is absent, which is any insecure origin (Stack over plain
-  http on the LAN). The pane shows a copy receipt: xterm draws to a canvas, so a copy that worked and
-  one that silently failed look identical otherwise.
-- `lib/ui.ts` — `PRODUCT_NAME`, label/colour maps, `isAccentTag`. `lib/route.ts` — hash router; routes
-  are `#/`, `#/settings`, `#/control`, `#/terminal`, and `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` opens
-  straight on a tab and (via `hl`) flags an item — the tab disambiguates what `hl` means: a commit
-  hash (activity), a bug key (quality) or a row id (roadmap/notes). Legacy `bugs`/`audit` tabs
-  both resolve to `quality` (#278), so old deep links keep working. `go.settings()` opens Settings.
-- `components/CommandDeck.tsx` — the command deck's PARTS. It used to render as one block above
-  the project grid; the dashboard is now **sectioned** (see below), so each part is exported
-  separately and the screen places it in the section it belongs to. Behaviour is unchanged:
-  `ResumeHero` (the signature cream card — now the FULL three-column resume, Currently in
-  progress / Suggested next / Working well, with Export session brief + Continue in its head),
-  `LiveNowStrip` (green presence chips per project with branches and session count, gone when
-  quiet), `BranchClaims` (⚑ chips for open branch-claimed roadmap items, deep-linking to the
-  item, gone when nothing's claimed), `AutopilotDigest` (last night's per-item runs, gone on a
-  quiet night), `ReviewQueue` (the review inbox) and `AttentionRow` (Blocked / Stale / Bugs,
-  calm at zero). All read the `getOverview()` payload; every click-through uses
-  `go.detail(slug, tab?)`.
-  The review inbox (`ReviewQueue`) lists auto-extracted items no human has looked at yet:
-  **Keep** = `patchBug/patchRoadmapItem {reviewed:true}` (stays in its tracker), **Dismiss** =
-  the existing DELETE (tombstones the fingerprint); rows settle optimistically and the whole
-  block disappears at zero. Titles deep-link via `go.detail(slug, tab, highlight)`.
-- `components/DashSections.tsx` — the sectioned dashboard's own pieces (the Stack Dashboard
-  design handoff). **`SubNav`** is the sticky section rail under the topbar: jump links
-  (Projects / Continue / Activity / Roadmap / Audit) with a scroll spy, and the workshop's state
-  on the right (live · building · serious bugs · pushes today), each counter gone at zero. Its
-  `top` is set INLINE from the topbar's measured height via a ResizeObserver — the topbar is
-  sticky at 0 too and its own height changes when its buttons wrap, so a hardcoded offset hides
-  the rail behind it on a narrow window. The links scroll by hand rather than navigating,
-  because a bare `#roadmap` anchor would rewrite the hash ROUTE out from under the app.
-  **`PushesSection`** is the day-grouped push feed: its own `getTimeline()` fetch (independent,
-  like the deck's — a timeline hiccup must not blank the page), a scope seg (All apps / per
-  project), a rail-dot-per-day timeline, and within a day one card per consecutive
-  project+branch run. **A push is one CHECKPOINT, not one commit** — Stack records the session,
-  so there are no per-commit rows and no +/− line counts to show; the row carries the summary,
-  the `✦` gemini note, one tag, the hash and the time, and a note under the feed says so
-  plainly rather than leaving the absence to be read as a gap. A filled row mark is an authored
-  /checkpoint, hollow is the hook's metadata backstop. Its sidebar is the 26-week push heatmap
-  (`overview.graph` through the shared `lib/contrib` maths), the live-now strip and a This week
-  panel. **`RoadmapRollup`** is the cross-project MoSCoW board — four columns from
-  `overview.roadmap`, each card showing `project · #id` and NOT the note (one long note turns a
-  glance into a wall). **Read-only by design**: a tick here would close an item in another
-  project without its plan, claim or built_note in view, so the check shows state and the card
-  opens the real board. **`AuditLists`** is the cross-project open-bug list beside **Progress by
-  app** — deliberately NOT called a health score: the bar is `util.computeProgress`, which is a
-  documented model, and the panel says so in a footnote rather than inventing a second metric.
-- `screens/` Dashboard — **five anchored sections behind the sticky `SubNav`**: `#projects` (the
-  grid leads, since it's what you came for — section bar + a status **seg control** whose options
-  carry their own counts and drop out at zero, replacing the old chip row), `#continue`
-  (`ResumeHero` + `BranchClaims`), `#activity` (`AutopilotDigest` + `PushesSection`), `#roadmap`
-  (`RoadmapRollup`) and `#audit` (`ReviewQueue` + `AttentionRow` + `AuditLists`). Loads projects
-  + overview independently — a deck hiccup never blanks the grid, and vice versa; computed
-  progress on cards),
-  ProjectDetail (loads project+activity+collections, owns tab/modal state, persists on mutate;
-  initial tab comes from the route so the deck can deep-link to e.g. a project's Activity tab;
-  the Quality/Roadmap tab titles carry count badges — Quality's is the one "wrong now" number,
-  red checks + serious open bugs, toned critical).
-- The detail payload carries `liveBranches` (presence rows inside the TTL): the board's
-  in-progress lock (dim + read-only) only bites while an item's `claimed_by` matches a live
-  branch — a stale claim keeps its ⚑ don't-re-pick chip but stays editable (BUG-2).
-- `detail/` Overview (resume card, the **project-scoped review queue** — same Keep/Dismiss semantics
-  as the deck inbox, computed client-side from the collections' `reviewed` flags — the **Directives
-  card** (add/remove steer lines, persisted whole via `patchProject {directives}`) and the
-  **editable Deployment panel** — status/platform/logs URL via `patchProject` — and the **editable
-  Tech stack panel** — chips via `patchProject {tech_stack}`),
-  **Quality** (`detail/Quality.tsx` — #278, the Stack Planning design's 20b: the old **Bugs and
-  Audit tabs merged into one page**, because they were halves of one loop — run the checks → see
-  what's red → file what's real → fix → re-run → close — that used to cross a tab boundary twice.
-  One health verdict (Good / Needs work / Down / Untested, read over checks AND bugs, with the
-  30-run pass-rate trend) over four KPI cards, then three **segments**: **Now** is the card grid —
-  **Needs you** (red checks and serious open bugs in ONE list, each row wearing its other half,
-  ▸ re-run the red ones), the **✧ Bug audit** card (brief fold, ⧉ Claude prompt, findings with
-  outcomes — a `reopened` one, #239's regression, is called out first and in critical tone), the compact **Checks** card (failing first; past eight it shows the red ones and folds
-  the rest into a count) and the **Bugs** card (open by severity capped at ten, `show fixed`,
-  status pill = the inline editor, ✓ fix / × delete, the ↳ commit chip still jumping to Activity);
-  **Suite** is every check with the composer (method/name/URL/expected status, request body,
-  the assertion tabs — ✧ Semantic absent when keyless — the #261 **Authenticated** opt-in, and
-  ▸ ✎ × / → Bug per row, authenticated rows wearing 🔒) plus **each check's own memory** (#279):
-  a **sparkline** per row — colour = the outcome, height = that run's latency against the slowest
-  in the window, so a check that's passing but slowing reads that way before it goes red — which
-  is also the button that unfolds the check's last N runs (when · code · ms · error). Red rows
-  carry a plain-language **diagnosis** ("failed every one of the last 6 runs" / "failed for the
-  first time in 12 runs" / "failed 4 of the last 6 runs"), a green-but-mixed row wears a `flaky`
-  chip, and the health card's second line names the worst offender — the one sentence a single
-  stored result could never answer. Two runs is the floor for saying anything at all;
-  **History** is
-  the `check_runs` ledger (when · scope · pass bar · note · duration). `+ Report` is an inline
-  composer (title + C/H/M/L, Enter files, esc closes), and `→ Bug` on a red check opens it
-  prefilled with the failure AND links the two (#278). Distinct states are drawn, not implied:
-  virgin teaches (no KPIs until there's a number), clean goes calm rather than empty, **all red
-  with one shared error signature reads as the host, not N bugs** (nothing is auto-filed), a run
-  in flight greys the numbers instead of blanking them, and every Gemini surface is ABSENT (not
-  disabled) when `geminiReady` is false. `.q-*` styles; narrow stacks the cards in priority order
-  with the KPIs 2×2),
-  Roadmap (the Board/**Tiers**/**Parked** switch sits above the content, left, full seg size
-  (#129), and the **area tabs sit under it, shared by all three views** (#300 — the three are the
-  same board read three ways, so a tab you are working in survives switching to the tier ranking
-  or the parked shelf and can be changed from either; before this the Tiers view inherited
-  whatever tab the board was left on and could only be widened by going back to the board).
-  Counts follow the view's own population — open work on Board/Tiers, the shelf on Parked — and
-  on Parked a tab with nothing on the shelf is not drawn at all (fifteen zeros is noise, where on
-  the board an empty tab is still somewhere to file work); the active tab is always drawn, so
-  pressing one can never make it vanish. A **deep link reveals its item** (#303): arriving with
-  `?hl=` puts the board back into a state where the row is genuinely on screen — board view, a
-  hiding area tab cleared, the item's column unfolded, another column's focus dropped — undoing
-  only the ways it was hidden and persisting the result, since a board that looked one way and
-  remembered another would be worse than either; ProjectDetail's scroll-to-row polls briefly
-  rather than querying once, because the reveal lands a render later.
-  + Add tops each column (#112); tick moves an item into the **Review room's** queue —
-  still counted by progress; hover ✎/× edit + delete, edit reuses RoadmapModal in `mode='edit'`
-  incl. the Branch field and the **Plan** editor (#75 — ordered `{text, done}` steps; the card wears
-  a ☰ n/m progress chip and the autopilot works unticked steps top-down); open items show ⚑ claim
-  chips; a bucket column **expands to fill the board** (#251 — click its name or ⤢; the others fold
-  away, the column takes the viewport's height with its own scroll and a sticky header, and the
-  card's text is capped at a readable measure rather than set as one board-wide line) or **folds
-  to its header** (▾). Both are **device-local per slug** (`store.getBoardLayout/setBoardLayout`,
-  which also holds the Tiers view's folded rows), so a board you have arranged stays arranged
-  across reloads; absent or corrupt storage falls back to all-sections-open, i.e. the pre-#251
-  board. Expansion must not cost the board its primary interaction, so the crossings survive
-  being hidden: a **folded column still takes a drop** (and unfolds after a short dwell so you
-  can place the card precisely), focus mode renders the three hidden buckets as a **rail of drop
-  targets** (click one to focus it instead), esc leaves focus, and every card carries a **⇄ move
-  menu** so moving across buckets is never drag-only;
-  the bar's **✧ To planning agent** (#255) picks open items — pre-ticked to everything with no
-  plan, bulk ticks for all-workable / only-unplanned / none — and queues a **plan-kind autopilot
-  session whose ordered agenda IS the picked list** via `store.startAutopilot(slug, {kind:'plan',
-  agenda})`; the old terminal handoff survives as the modal's second destination;
-  the **Tiers view** (#227) is the desire ranking over the whole open board — S/A/B/C rows plus
-  Unranked, drag a card between them (or use its S/A/B/C buttons) → `patchRoadmapItem {tier}`;
-  cards fill their row (#251 dropped the 330px cap that ribboned long titles) and each tier row
-  ▾ folds, staying a drop target while folded since dropping onto a tier is a whole-row gesture.
-  Tier is the PRIMARY sort of the run queue (Plan room + the runner both apply it) and unranked
-  sorts last, so an unranked board behaves exactly as before; board columns sort tier-first and
-  cards wear the tier chip.
-  The **Parked view** (#247) lists every open ⏸ item oldest-park-first with its age in days (from
-  `skipped_at`, falling back to `updated_at` shown as `~n days`) and a stale flag past Settings'
-  `staleItemDays`; unpark/edit/delete per row, the tab badge counts parked + stale.
-  **There is no Reviews view here any more (#282)** — verdicts, the archive and the whole review
-  pipeline moved to Mission Control's **Review room**, because the nights run across projects so
-  the morning's queue does too. A deep link that lands on a completed item shows a one-line
-  pointer to the room rather than an empty board),
-  Futures — the **Polaris tab** (#227, from the Stack Planning design):
-  the collapsible **north star band** (one editable paragraph, PATCHed as `north_star`, injected
-  by the SessionStart hook. #307 — it arrives **COLLAPSED**, with the summary line carrying it:
-  it is a paragraph you wrote once, sitting above the sky you actually came to read. Expanding is
-  remembered per slug (`store.getNorthStarOpen/setNorthStarOpen`), and an UNSET north star is the
-  one exception — collapsed it reads "Not set." with no way in, and a default that hides its own
-  affordance is worse than the default it replaced) over the **constellation sky** — the north star at the centre, one
-  dashed ring per alignment verdict (on course 132 / tangent 224 / off course 296; unjudged
-  ideas float dashed at 178), themes = the ideas' `area` tags as bearings (no area = `loose`),
-  theme bubbles when collapsed, seamless wheel zoom (continuous 0.5–5× toward the cursor — #250
-  raised the ceiling to 500%, where the **north star grows at one third of the sky**: riding the
-  field's scale one-for-one would make a 92px star a 460px disc covering the ideas you zoomed in
-  to read, and pinning it would shrink it away from the sky it anchors, so it carries a
-  counter-transform putting it on its own 1:3 curve (5× sky = 2.33× star);
-  buttons/ticks glide, wheel/drag track raw; ≥1.2 expands + labels everything, with a
-  collision pass on captions), pan + Recentre, the **growth scrub** (design 6b/7a — a hairline
-  of ticks across the funnel's real history, computed client-side from each idea's `createdAt`
-  (now on the future shape): scrub back and the sky shows only the ideas that had arrived by
-  that tick, the newest aglow, with an honest arithmetic caption; view-only, snaps to now when
-  the population changes; hidden under 4 ideas / 2 days), an All-ideas/Themes toggle, theme chips and
-  **✧ Cluster** (POST `futures/cluster` — Gemini groups the funnel into themes; the preview
-  modal is an EDITABLE DRAFT (#254), not an accept-or-reject list: themes lay out in columns so
-  the funnel reads at a glance, each theme renames in place, a per-idea picker moves ONE idea
-  between themes (which ticks it back on — a move you had to remember to re-tick would be a
-  trap), and **+ new theme** coins one Gemini never proposed. All of it is local state over the
-  draft, so the only write is still the single batched area PATCH on apply, and Cancel really
-  does mean nothing happened) —
-  beside the **Polaris rail**: the selected idea (verdict pill, → Roadmap promote, Build on it
-  → the studio primed via the one-shot `stack.polaris.thought` handoff PolarisTerm types in —
-  `screens/PolarisStudio.tsx`, whose head bar carries its own **⤢ full screen** (#308): both its
-  halves are normally sized off the viewport by hand (`calc(100vh - 200px)` for the session,
-  `- 160px` for the planning panel), and full screen pins the page to the viewport so the grid
-  takes what the head bar leaves. Same rules as the Terminal's (#305): the Fullscreen API on the
-  DOCUMENT, the CSS mode as the source of truth, the head bar kept as the way out, and a `resize`
-  raised by hand because entering the mode changes the xterm's holder without one,
+### web/src
 
-  ✎ edit, dismiss), the **judge queue** (unsorted ideas one at a time — verdict buttons PATCH
-  `alignment`, ✦ "What would Polaris say?" = the Gemini judge suggestion, skip is
-  session-local; ⤢ pops the queue out into a modal with roomier controls, same state), a
-  computed ✦ POLARIS observation (arithmetic, no API) and the think-out-loud
-  — plus **Converge → tickets** (the design's board→converge→tickets flow, realised in the
-  sky): shift-click stars (or ⊕ Converge on the selected idea) into a tray strip, then the
-  converge panel drafts tickets — Ticket-per-idea or One-epic mode, keyless direct-mapped
-  drafts with ✧ Draft-with-Gemini enrichment (POST `futures/converge`), every field editable
-  — and creates through the normal roadmap POST (plan steps included), optionally retiring
-  the converged ideas (tombstone-safe delete); "✦ Design in the studio instead" hands the
-  set to the Polaris studio via the thought handoff
-  input (stashes the thought, opens the studio). The pre-sky list view survives behind a
-  Sky/List seg (promote/dismiss/edit/judge per row, area chips, "first line = idea" composer).
-  **The two views share ONE selection** (#259): a list row's title selects it and wears the
-  selection the sky made, and switching views CARRIES that selection rather than merely keeping
-  the id — the list clears an area filter that would hide it and scrolls the row in, the sky
-  opens the selected idea's theme so its star is actually drawn. Landing on a view where the
-  selection is filtered out or folded away preserves it in name and loses it in every sense
-  that matters;
-  the old drag-canvas (`FuturesCanvas`) is retired), Tips (`detail/Tips.tsx` — the recipe library from the
-  Stack Planning design's Tips tab: kept Claude prompts with the context of WHEN to reach for
-  them. The library is **app-wide** (`store.getTips` et al hit the global `/api/tips` — every
-  project's tab shows the same recipes; the tab fetches its own data like Audit). Left rail =
-  search + stage chips (Diverge/Converge/Judge/Ship) + the list (pinned first, then most-run) —
-  collapsible to a slim re-open strip so the recipe gets the full width, remembered
-  device-local via `store.getTipsRailCollapsed/setTipsRailCollapsed`;
-  the detail pane shows the prompt with its `[square-bracket]` fill-in slots highlighted, the
-  works-best-when list and provenance. **▶ Run in a session** records the run (`store.runTip`
-  — uses + last-run, best-effort) and opens a terminal in THIS project with the prompt handed
-  over via the board's one-shot `stack.term.brief` paste — slots get filled in the session,
-  nothing runs until Enter. + New recipe / ✎ Edit share a TipModal; pin sorts to the top;
-  delete warns it's library-wide (`.tips-*` styles)), Notes (inline
-  edit on the sticky; promote → bug/roadmap prefills the existing modal, then a
-  keep/delete-the-note confirm), Activity. ProjectDetail also owns: the Visit-site/Repo buttons (open the URL, or inline-set it when
-  unset via `patchProject`), and a quiet delete-project control behind a `ConfirmModal`.
-- `components/TermStatusPill.tsx` — the global terminal presence pill (#121): mounted once in
-  `App.tsx` so every open Stack tab shows when a web-terminal session is live anywhere. Fed by
-  `store.watchTermStatus` (a small ws to the relay's `/term-status` — pushed on connect + every
-  session start/end + detached-list change, 15s reconnect that reads as quiet while down). The
-  status frame is claude-aware: `{active, count, claude, unattended}` — claude tabs outrank shells
-  in the wording ("Claude session active"), and claude running on the host with NO client anywhere
-  still shows ("Claude running unattended"), so a walked-away session is never invisible. Renders
-  nothing at zero and on the Terminal screen itself; an anchor to `#/terminal` (middle-click opens
-  a new tab; `.term-presence` styles, terracotta dot via `.claude`).
-- `components/` — `Modal` (scrolls when tall), `ConfirmModal` (delete / keep-or-delete),
-  `BugModal`/`RoadmapModal` (both take an optional `initialTitle` for note promotion; RoadmapModal
-  also `initialNote` + `mode='edit'`), `NewProjectModal`, `TokenGate`, `ConnectGuide` (the in-app
-  onboarding modal — Dashboard "Connect" button; steps stamped with `window.location.origin`, token
-  never shown, plus the **parallel-branches worktree playbook**), `ExportBriefModal`.
+- **`store.ts` is the only module that touches the network or device storage.** Components never
+  `fetch` and never touch localStorage directly. `request()` attaches the bearer and throws
+  `AuthError` on 401, which clears the token and returns to the gate.
+- `lib/route.ts` — hash router. Routes: `#/`, `#/settings`, `#/control`, `#/terminal`, `#/skills`,
+  `#/timeline`, `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` deep-links; the TAB
+  decides what `hl` means (commit hash → activity, bug key → quality, row id → roadmap/notes).
+  Legacy `bugs`/`audit` tabs both resolve to `quality` (#278), so old links keep working.
+- `screens/` — Dashboard (five anchored sections behind a sticky SubNav), ProjectDetail (owns tab +
+  modal state), Settings, Control (Mission Control — six rooms: Now / Nights / Plan / Build /
+  Review / Roles, behind a live strip and a persistent right rail), Terminal, Skills, Polaris
+  studio. `detail/` holds the project tabs: Overview, Quality (#278 — Bugs and Audit merged into
+  one page), Roadmap (Board / Tiers / Parked), Futures (the Polaris sky), Tips, Notes, Activity.
+- `lib/brief.ts` — the exportable resume brief + the `DIRECTIVES` catalogue (keys mirror the
+  server's `SESSION_DEFAULTS`). Pure formatting; data arrives via store.ts callers.
+- `lib/termClipboard.ts` — copy/paste for both xterms. A browser is not a terminal emulator: ⌃C
+  copies only while a selection exists (so the next press is still SIGINT), ⌃V returns false WITHOUT
+  preventDefault so the browser's own paste event reaches xterm's bracketed-paste handler (no
+  clipboard-READ permission, which Firefox never grants), and an OSC 52 `?` payload — the host
+  READING the clipboard — is never answered.
 - `styles.css` — **the formal palette is the named CSS variables at the top of `:root`** (Atlas):
   neutrals (`--paper --surface --sand --keyline --muted --ink`), the terracotta accent ramp
   (`--accent-deep` hover · `--accent` · `--accent-soft` · `--accent-tint` · `--accent-tint-border`)
-  and semantic tones (`--live --building --sage --critical --paused`). Every terracotta button hovers
-  to `--accent-deep`. Supporting tokens below alias these (no value changes). Command palette
-  (`.cmdk-*`), Settings (`.set-*`, `.switch`, `.seg-control`) and the search deep-link `.hl` rows
-  live near the bottom, after the command-deck block.
+  and semantic tones (`--live --building --sage --critical --paused`). Add or adjust tones THERE,
+  never as inline hexes; every terracotta button hovers to `--accent-deep`. Dark mode is one
+  `[data-theme='dark']` override block on the same named tokens plus a short list of literal-
+  background fixups.
 
-### Backend shape (`server/src`)
-- `schema.sql` — idempotent (ADD COLUMN IF NOT EXISTS + convergent data migrations). Tables:
-  - `projects` — + `subtitle, site_url, repo_url, tint, in_progress, next_up, working_well` (the
-    jsonb fields are the resume sub-lists), `north_star` (the direction paragraph — PATCHable,
-    injected by the SessionStart hook, shown/edited on the Futures tab) and `directives` (jsonb
-    list — the standing steer instructions, edited on the detail Overview's Directives card,
-    injected FIRST by the SessionStart hook and echoed in the exported brief; lines stay until
-    removed in the UI), `automode` (bool, default false — this project is open to the overnight
-    autopilot; the runner refuses a project with it off, on top of the global arm switch; drives
-    the ⚙ auto pill on dashboard cards and the click-toggle badge in the detail title row),
-    plus `deploy_platform` + `logs_url` (the hand-edited Deployment panel) and
-    `tech_stack` (jsonb — the hand-edited chips on the Tech stack panel). Status default `building`; legacy `active` rows migrate
-    to `live`. `repo` is the `owner/repo` identity; `repo_url` is the browseable URL the Repo button
-    opens (filled once by ingest, never overwriting a hand-set value).
-  - `sessions` — the activity feed. + `commit_hash`, `tags` jsonb, `authored` bool (a rich
-    /checkpoint vs the hook's metadata backstop; sticky — once true it stays true).
-  - `settings` — single row (boolean PK = true, CHECK singleton). `auto_record`, `keep_resume_card`,
-    `checkpoint_detail` (brief|standard|detailed), `include_chores`, `session_defaults` (jsonb list
-    of catalogue keys — the app-wide standing session preferences, default `["ship"]` = commits
-    pre-authorised; the catalogue lives in `settings.js` `SESSION_DEFAULTS`, keys mirror the web's
-    `DIRECTIVES` in `lib/brief.ts`). Seeded once on migrate.
-  - `bugs` — `bug_key` (BUG-N per project), title, severity, status, `link_ref` (commit), `source`,
-    `fingerprint`, `reviewed_at`, plus `check_id` (#278 — **the bug↔check link**, the one data change
-    the merged Quality page needed: which check caught this bug. NULL = filed by hand. Declared
-    after the `checks` table in schema.sql because it references it, `ON DELETE SET NULL` so
-    deleting a check never takes its bug with it. The Quality page renders it BOTH ways — a red
-    check wears `↳ BUG-7 open`, the bug wears `↳ <check name>`, each chip jumping to the other
-    half — and `→ Bug` on a red check sets it. A red check whose linked bug is already *fixed*
-    offers → Bug again: that's a regression, not a tracked failure). Partial unique index on
-    (project, fingerprint) WHERE source='hook'.
-  - `roadmap_items` — `bucket`, title, note, `done`, `position` (PATCHable — the board is
-    drag-reorderable and its order is the autopilot queue), `source`, `fingerprint`,
-    `reviewed_at`, `area` (the product-area tag, mirroring `futures.area` — chips + filter on the
-    board, set from the RoadmapModal's Area field with a datalist of the project's known areas),
-    `built_note` (what actually landed — PATCHed by the completing session/agent alongside
-    `done:true`, displayed on the Roadmap tab's **Reviews** view so verdicts are made against
-    what was built; the agent template documents the protocol),
-    `claimed_by` (the **branch claim** (#277 — called a "lane" until the rename; the `lane/`
-    git ref prefix is deliberately unchanged, since it names branches that already exist on
-    origin and both the dispatcher and `stack tree` group on it) — which parallel session owns
-    an open item; set via POST/PATCH, shown as a ⚑ chip, injected by the SessionStart hook as "Branch claims —
-    respect these"; the agent template documents the claim-before-starting protocol) and
-    `review_tag` (the **archive verdict**: solid | needs-work | rethink — set from the Archive's
-    Review button; needs-work/rethink prefill a follow-up item back onto the board),
-    `review_tags` (#146 — jsonb list of short review annotations, 'fix' / 'needs-more' / …,
-    toggled as chips on To-verify rows), `refine_note` (#146 — the refinement delta: a refine
-    sends the item back to the board as itself carrying just this instruction; the runner builds
-    against it instead of a fresh spec) and `review_shelved` (#148 — the **review shelf**: a
-    completed item set aside to review later, off the main To-verify list into the collapsed
-    Shelved strip; cleared by `done` in either direction and by a real verdict, so a row is
-    never both awaiting verification and shelved). A fresh completion (`done:true`) clears all
-    three — each To-verify round starts unannotated, unshelved, and an addressed refinement
-    retires. Plus `tier` (#227 — the **desire tier**: S | A | B | C, NULL = unranked. Deliberately
-    distinct from `bucket`: bucket is how necessary the work is, tier is how much the owner wants
-    it NEXT. It is the PRIMARY sort of the run queue — the Plan room's TONIGHT AND AFTER and the
-    runner's candidate sort both apply it, bucket and position tiebreak, unranked ranks last — so
-    an unranked board queues exactly as before. Set only from the Tiers view; agents are told never
-    to change it) and `skipped_at` (#247 — when the item was parked, stamped COALESCE-style as
-    `skipped` flips true and cleared as it flips false, so the Parked view ages the park rather
-    than the last edit; NULL on a pre-existing parked row falls back to `updated_at`, shown as ~n).
-  - `futures` — loose directional ideas: title, `note`, `source`, `fingerprint`, `reviewed_at`,
-    `alignment` (the curation verdict against the north star: on-course | tangent | off-course,
-    NULL = unsorted; PATCHable, '' clears; the Futures tab groups by it — on-course first,
-    off-course last). Same dedup index and tombstone semantics as bugs/roadmap (kind `future`);
-    promotion to the roadmap is a client flow (create the roadmap item, delete the idea).
-  - `reviewed_at` (bugs + roadmap_items + futures) drives the **review inbox**: a hook-created item
-    needs review while NULL; PATCH `{reviewed:true}` sets it (approve), DELETE dismisses (tombstone).
-    Ingest's dedup re-point never touches it, so approving is sticky across pushes. Marking a
-    roadmap item `done` also sets it (a human touch counts as review — archived items never
-    linger in the inbox).
-  - `notes` — text, `colour`, `source`.
-  - `checks` — the Quality tab's test suite (the Suite segment): HTTP tests against the project's live app. A row is
-    a probe or a function test (#143): name, url, `method` (GET|POST|PUT|PATCH|DELETE|HEAD),
-    `expect_status`, `req_body` (sent for non-GET/HEAD; JSON bodies as application/json), and
-    the assertions — optional `contains` keyword, `json_path` + `json_expect` (dot path into a
-    JSON response; empty expect = the path just has to exist) and the Gemini-judged `semantic`
-    line — with the last result on the row (`last_status/code/ms/error/run_at`). Run on demand,
-    bounded (8s), never scheduled. `auth` (#261) is the opt-in that makes a real suite possible:
-    every route but GET /api/health is behind bearer auth, so the runner attaches the server's
-    **own** `API_TOKEN` for flagged checks. The token is never stored on the row and never sent to
-    the client; `authAllowedFor()` attaches it ONLY when the check's origin is the project's own
-    `site_url` (or a loopback/compose-internal host), and such requests use `redirect: 'manual'`
-    so a redirect can't replay the Authorization header off-origin. An authenticated check pointed
-    anywhere else fails with a stated reason rather than leaking the token or lying about a 401.
-    **The bar (#261):** a green suite is the evidence that risk-tiered auto-merge (#212) and
-    auto-verdict (#263) spend. Checks are Stack's only automated regression net — when a route's
-    payload contract changes, change its check in the same commit.
-  - `check_runs` — the Quality tab's run history (the History segment): one summary row per POST /checks/run
-    (scope all|one, total/passed/failed, duration_ms) — the health card's pass-rate trend, the
-    KPI deltas and the History ledger. Written best-effort after the checks save their results (an insert hiccup
-    never fails the run); the autopilot's nightly checks run lands here too.
-  - `check_results` — **each check's own history** (#279): one row per check per run
-    (status/code/ms/error + `run_id`). The checks row holds only the latest result and `check_runs`
-    only per-run totals, so "this has been flaky for a week" used to be unanswerable — a red light
-    with no diagnosis. These rows are what let the Quality page sparkline a check, say
-    "failed 4 of the last 6 runs" and tell a fresh regression from a long-standing failure.
-    Written best-effort in ONE statement per run (`INSERT … SELECT` off the just-updated checks, so
-    the recorded result always equals what the row shows), then **pruned to `util.CHECK_HISTORY_KEEP`
-    rows per check** (60 — the third single-knob constant, alongside `STALE_DAYS` and
-    `PRESENCE_TTL_MINUTES`) so nightly runs can't grow the table without bound. Deleting a check
-    cascades; **editing what a check TESTS clears its history** — the same reasoning that already
-    clears the stored result, since past passes were against a different test — while renaming
-    keeps it.
-  - `dismissed_items` — tombstones, keyed (project, kind `bug|roadmap|future`, fingerprint).
-  - `autopilot_schedule` + `autopilot_jobs` — Mission Control's calendar and the job queue the
-    host dispatcher polls (see scripts/stack-autopilot-dispatch.mjs). Schedule rows: host-local
-    `at_time`, one-off `run_date` or recurring `days`, optional pinned `item_id`, `enabled`,
-    plus the session plan: `session_kind` (build|plan|debug|audit), `agenda` (ordered
-    jsonb — item ids, or BUG-N keys for debug; [] = the board's priority order) and `area`
-    (scope the general pick). Jobs carry copies of all three so the dispatcher gets the whole
-    plan from GET /next and turns it into runner flags.
-    Jobs: kind manual|nightly|scheduled|revert|resume|merge, status queued|claimed|running|
-    done|failed|paused; a partial unique index on (project, night_date) makes the nightly
-    enqueue idempotent. `resume` jobs (#142) carry `not_before` — GET /next skips a queued job
-    until its hold passes, and a `paused` (hung-up) job is never handed out at all.
-  - `autopilot_runs` also carries **the architect's read** (#284): `architect_verdict`
-    (aligned | drifting | concerning | NULL), `architect_note` and `architect_obs` (jsonb, max 4
-    short structural lines). A second Gemini pass over the same diff asking a DIFFERENT question:
-    the reviewer asks "is this correct?", the architect asks "where is this codebase going?" —
-    duplication introduced, boundaries crossed, drift from the patterns already there. Separate
-    columns because a change can be correct and still drift, and collapsing them would hide
-    exactly that. It **files nothing** — structure notes are not bugs, and filing them would clog
-    the review inbox with items nobody can close. Run by `hook/stack-gemini-review.mjs
-    --architect` (verdict file only, no ingest post), which also feeds it a capped `git ls-files`
-    listing: a diff alone cannot show duplication of an untouched file. Keyless = skipped
-    silently, and on the free tier's lite fallback its reads are shallow — an annotation, like
-    every other Gemini surface here.
-  - `autopilot_runs` also carries **the reviewer's stored read** (#282): `review_verdict`
-    (clean | concerns | blocked | NULL), `review_note` (the reviewer's own sentence) and
-    `review_findings` (how many bugs it filed to the review inbox). The night already ran a Gemini
-    second-model review of the branch diff and wrote a verdict for the #212 auto-merge gate — and
-    then discarded it, so the morning's queue started blank. The runner now attaches it via
-    `PATCH /runs/:id` (a second, narrow write: the run row is recorded BEFORE the review so a crash
-    mid-review costs the review, never the record). NULL means **no review ran** — deliberately not
-    the same as "nothing found", and the Review room's chip says NO REVIEW rather than showing green.
-  - `previews` — (#208) branch previews, one row each: branch, item, status
-    (queued → starting → live → stopping → stopped | failed), the public `url`, the host
-    handles (port, compose project, worktree, tunnel pid) and `expires_at`. The server holds
-    the state and the URL; the HOST does the doing, so a preview survives a browser reload, a
-    dispatcher restart and a host reboot. A partial unique index on (project, branch) WHERE
-    status is open makes "preview this branch" idempotent — a double-click returns the same row
-    rather than racing a second docker stack onto the host. `expires_at` is the SAFETY property:
-    the quick-tunnel URL is public while it lives, so the sweep tears the preview down when it
-    passes.
-  - `branch_reports` — the host dispatcher's git snapshot (#207), one row per project replaced
-    whole every ~10 min: jsonb list of origin branches with ahead/behind vs main, the
-    merge-tree conflict probe (`mergeClean` true|false|null) and the parsed item id, plus
-    `reported_at`. Read only by the control payload — Mission Control's merge strip.
-  - `tips` — the **app-wide** recipe library (the Tips tab; no project_id — one library, every
-    project reads it): name, `stage` (diverge|converge|judge|ship), `surface` (where it runs
-    best), `blurb`, `when_note`, `prompt` ([square-bracket] slots = fill-ins), `best` (jsonb
-    "works best when" lines), `who_note` (provenance), `pinned`, `uses` + `last_run_at` (the
-    run ledger — POST /api/tips/:id/run bumps them; the run itself is the terminal session the
-    client opens). A starter kit of 7 recipes seeds ONCE, guarded by `settings.tips_seeded`
-    (not table-emptiness — deleting every recipe never resurrects them).
-  - `presence` — live sessions, keyed (project, session_id). SessionStart upserts, an authored
-    /checkpoint bumps `last_seen_at`, SessionEnd (and ingest's metadata backstop) deletes;
-    liveness = within `util.PRESENCE_TTL_MINUTES` (default 240 — the crashed-session backstop,
-    and the second single-knob constant alongside `STALE_DAYS`).
-- `util.js` — `slugify`, `fingerprint` (title normalised: lowercased, punctuation + extra
-  whitespace stripped), `relativeTime`, palettes, **`computeProgress` — the one documented progress
-  model** (see below), and **`STALE_DAYS`** — the single knob for the command deck's stale threshold
-  (default 14; the only place to change it).
-- `shape.js` — row → client-shape mappers (bug/roadmap/note/activity/project), plus the **run
-  ledger's shared shapes**: `runCore(row)` (what a run produced — branch, outcome, commits,
-  tokens, costUsd, checksFailing, summary) and `agentReads(row)` (both second-model reads —
-  #282's reviewer and #284's architect). Four routes serve `autopilot_runs` rows — the job
-  ledger (`autopilot.js`), the Review room's queue AND its nights list (`review.js`), and
-  Mission Control's `recentRuns` (`control.js`) — and each had grown its own copy, drifting on
-  the coercions that matter: **BIGINT and NUMERIC come back as STRINGS**, so `tokens`/`cost_usd`
-  need `Number()`, while INT columns only need their null preserved. The split is deliberate:
-  `runCore` needs the columns under their own names, so it does not fit the Review room's item
-  query where the run is LEFT JOINed and wears `run_` aliases; `agentReads` uses columns that are
-  never aliased and so fits all four. Both encode the rule that '' means **no pass ran** — not
-  "nothing found". Pinned by `server/test/run-shape.test.mjs`, which keeps the original
-  hand-rolled copies transcribed so the equivalence stays checkable. The detail shape also
-  carries `keepResumeCard` (the global flag) so the detail Overview hides its resume card cleanly,
-  and `sessionDefaults` (the rendered standing-preference lines) for the SessionStart hook.
-- `settings.js` — the single-row settings: `readSettings(client?)` (accepts a txn client; defaults on
-  failure) and `settingsShape` (row → client camelCase). Imported by ingest/overview/projects.
-- `routes/ingest.js` — `POST /api/ingest`: see the package + behaviour below.
-- `routes/overview.js` — `GET /api/overview`: the cross-project command deck, computed in seven
-  aggregate queries (projects, bugs agg, recent sessions, week count, review inbox, presence,
-  branch claims) — never one-per-project. Reads
-  settings: when `keep_resume_card` is off, `resume` is null and `keepResumeCard:false` lets the deck
-  drop the hero. Shape documented below.
-- `routes/search.js` — `GET /api/search?q=…`: the ⌘K palette. Six capped ILIKE queries (projects,
-  bugs, roadmap, futures, notes, activity); grouped results, each with kind, owning project, title,
-  meta and a `{slug, tab, highlight}` target. Per-group + total caps; empty query → nothing.
-- `routes/settings.js` — `GET|PATCH /api/settings`: the single-row settings (camelCase). Shape below.
-- `routes/projects.js` — list (computed progress), combined detail, create, extended PATCH, delete.
-- `routes/{bugs,roadmap,notes}.js` — per-project collection CRUD, mounted under
-  `/api/projects/:slug/...` (mergeParams).
-- `seed.js` — optional `npm run seed`, NOT run on boot.
+### server/src
+
+- `schema.sql` — idempotent (ADD COLUMN IF NOT EXISTS + convergent data migrations). Read it for the
+  real column list; the non-obvious semantics are under **Data rules** below.
+- `util.js` — `slugify`, `fingerprint` (title normalised), `relativeTime`, palettes, and the
+  **three single-knob constants**: `STALE_DAYS` (14 — the deck's stale threshold),
+  `PRESENCE_TTL_MINUTES` (240 — the crashed-session backstop) and `CHECK_HISTORY_KEEP` (60 — rows
+  kept per check). Plus `computeProgress` (see below).
+- `shape.js` — row → client-shape mappers, plus the run ledger's SHARED shapes: `runCore(row)` and
+  `agentReads(row)`. Four routes serve `autopilot_runs` rows and each had grown its own drifting
+  copy. **BIGINT and NUMERIC come back from pg as STRINGS**, so `tokens`/`cost_usd` need `Number()`
+  while INT columns only need their null preserved — that coercion is what the copies got wrong.
+  Pinned by `server/test/run-shape.test.mjs`.
+- `settings.js` — the single-row settings. `readSettings()` **defaults to "on" when the row is
+  missing**, and the hooks default to "on" when the API is unreachable, so a flaky API degrades to
+  recording rather than silent-off. Keep that.
+- `routes/` — one file per surface. `ingest.js` and `audit.js` carry the most invariants; both have
+  long explanatory headers, read them before editing.
 
 ## The ingest package (what /checkpoint and the hook send)
 
 ```jsonc
 {
-  "project": { "slug": "stack", "name": "Stack", "repo": "owner/repo",
-               "repo_url": "https://github.com/owner/repo" },
+  "project": { "slug": "stack", "name": "Stack", "repo": "owner/repo", "repo_url": "https://…" },
   "session": {
-    "session_id": "…", "commit_hash": "6234a79", "branch": "main",
-    "cwd": "…", "model": "…", "reason": "exit", "message_count": 12,
+    "session_id": "…", "commit_hash": "6234a79", "branch": "main", "cwd": "…", "model": "…",
+    "reason": "exit", "message_count": 12,
     "authored": true,                  // true = rich /checkpoint; false = the hook's metadata backstop
     "summary": "…", "current_phase": "…",
     "next_steps": ["…"], "blockers": ["…"],
     "in_progress": ["…"], "next_up": ["…"], "working_well": ["…"],
-    "tags": ["backend", "in progress"],
-    "files_touched": ["…"], "tools_used": ["…"]
+    "tags": ["…"], "files_touched": ["…"], "tools_used": ["…"]
   },
   "extract": {
     "bugs":       [{ "title": "…", "severity": "critical|high|medium|low" }],
@@ -1272,412 +105,158 @@ scripts/    stack-context.mjs — prints that template to stdout, optionally sta
 }
 ```
 
-Ingest, in one transaction: upsert the project by slug (first push creates it + assigns a tint by
-cycling the palette, and fills `repo_url` once — `COALESCE(repo_url, …)` so a hand-set URL is never
-overwritten); record the session, **idempotent on session_id, then commit_hash** (re-running for the
-same push updates that row, never duplicates the activity) — in **that order**, because a session's
-identity is its session id and the commit is only the fallback for a post that carries none. Matching
-the commit first silently collapsed parallel sessions: several sessions in one checkout all end at
-the same `git rev-parse HEAD`, so three sessions ending together posted one commit_hash, all three
-matched the one row, and the feed kept only the last — two real pushes gone, and the survivor's row
-re-stamped with the end time so hours-old work read as minutes old. The commit fallback still lets
-the SessionEnd backstop claim the authored `/checkpoint` row (which posts no session_id), but only
-while that row is **unclaimed**, or the next session at the same HEAD would claim it right back.
-Pinned by `server/test/ingest-identity.test.mjs` (needs a throwaway server + empty DB — the header
-says how); refresh the live resume fields; then land
-extraction — each bug becomes an open bug with `link_ref` = the commit (so the bug→activity chip
-resolves), each next-step a roadmap item in its bucket (default `should`), each future an idea on
-the Futures tab. Dedup by fingerprint: an
-existing auto item is re-pointed at the commit, not duplicated; a fingerprint in `dismissed_items` is
-skipped; manual items are never touched.
+Ingest, in one transaction: upsert the project by slug (first push creates it, assigns a tint and
+fills `repo_url` once via COALESCE so a hand-set URL is never overwritten); record the session;
+refresh the live resume fields; then land extraction — bugs become open bugs with `link_ref` = the
+commit, next-steps become roadmap items, futures become ideas.
 
-**`authored` is what makes the metadata backstop safe.** A `/checkpoint` posts `authored:true` (rich);
-the SessionEnd hook posts `authored:false` (metadata). The session-row update is COALESCE-safe: a
-metadata post never overwrites an existing authored summary/current_phase, and the jsonb lists only
-overwrite when non-empty — so the activity feed always has content but a thin post can't blank a rich
-one. `authored` is sticky (`authored OR $incoming`). The project **resume refresh (step 3) runs only
-for `authored:true` posts** (and only when `keep_resume_card` is on) — the metadata hook never touches
-the resume card; it just records the activity row and bumps `last_session_at`.
+**Four invariants. Preserve all four when extending:**
+
+1. **Idempotent on session_id, THEN commit_hash — never the other way round.** A session's identity
+   is its session id; the commit is only the fallback for a post that carries none. Matching the
+   commit first silently collapsed parallel sessions: several sessions in one checkout all end at
+   the same HEAD, so three real pushes became one row. The commit fallback still lets the SessionEnd
+   backstop claim the authored `/checkpoint` row (which posts no session_id), but only while that
+   row is **unclaimed**. Pinned by `server/test/ingest-identity.test.mjs`.
+2. **`authored` is what makes the metadata backstop safe.** The session-row update is COALESCE-safe:
+   a metadata post never overwrites an existing authored summary/current_phase, and the jsonb lists
+   only overwrite when non-empty. `authored` is sticky (`authored OR $incoming`).
+3. **The resume refresh runs only for `authored:true` posts** (and only while `keep_resume_card` is
+   on). The metadata hook records the activity row and bumps `last_session_at`, nothing more.
+4. **Auto-extraction dedups on fingerprint and honours the `dismissed_items` tombstone table.** An
+   existing auto item is re-pointed at the new commit, never duplicated; a dismissed fingerprint is
+   skipped; manual items are never touched. `reviewed_at` is never touched by a re-point, so
+   approving is sticky across pushes.
 
 ## Progress model (`util.computeProgress`)
 
 The single, tweakable definition of "how done is a project". Only Must/Should roadmap items count; a
 done Must weighs double a done Should; `progress = doneWeight / totalWeight` as a 0–100 integer;
-capped at 90% while any critical/high bug is open; 0% when there are no Must/Should items. Exposed on
-every project payload (`progress`) and recomputed on the dashboard each load.
+capped at 90% while any critical/high bug is open; 0% when there are no Must/Should items. Exposed as
+`progress` on every project payload. The Dashboard's "Progress by app" panel is this and says so in a
+footnote — it is deliberately NOT called a health score.
 
-## The overview payload (`GET /api/overview` → the command deck)
+## Data rules (the non-obvious column semantics)
 
-The cross-project glance layer, computed server-side in four aggregate queries (never one-per-project):
+These are the ones a session gets wrong by guessing. Everything else, read off `schema.sql`.
 
-```jsonc
-{
-  "resume":  { "slug": "…", "name": "…", "tint": "#…|null",
-               "summary": "…", "currentPhase": "…", "when": "1h ago",
-               // the three resume sub-lists ride along so the deck can render the FULL
-               // "pick up where you left off" card, not just its headline
-               "inProgress": ["…"], "nextUp": ["…"], "workingWell": ["…"] },   // or null
-  "presence": [ { "slug": "…", "name": "…", "count": 2,                  // live sessions now
-                  "branches": ["main", "wt-x"], "seen": "5m ago" } ],
-  "claims":   [ { "slug": "…", "name": "…", "branch": "lane/ui",         // open branch-claimed items
-                  "title": "…", "id": "42" } ],
-  // resume = most-recently-touched live|building project (by last_session_at, not pin order),
-  //          falling back to the most-recently-touched of any status; null if there are no projects.
-  "keepResumeCard": true,   // false when keep_resume_card is off → the deck drops the hero entirely
-  "review":  { "total": 2,  // hook-created items with reviewed_at IS NULL, newest first, items capped at 8
-               "items": [ { "kind": "bug|roadmap", "slug": "…", "name": "…", "id": "BUG-3|42",
-                            "title": "…", "meta": "high|should", "when": "2h ago" } ] },
-  "blockers": [ { "slug": "…", "name": "…", "text": "…" } ],            // every stored blocker line, flat
-  "stale":    [ { "slug": "…", "name": "…", "since": "2w ago" } ],      // live|building, last push > STALE_DAYS
-  "bugs":     { "total": 3, "projects": [ { "slug": "…", "name": "…", "count": 2 } ], // open critical|high
-                // the ROWS themselves (worst severity first, capped) — the dashboard's Audit
-                // section lists open bugs across every project, not just their counts
-                "open": [ { "slug": "…", "name": "…", "key": "BUG-3", "title": "…",
-                            "severity": "critical", "status": "open", "linkRef": "…", "when": "2h ago" } ],
-                // every project with bugs on the books, quiet ones included — Progress by app
-                "byProject": [ { "slug": "…", "name": "…", "serious": 1, "open": 4 } ] },
-  // the cross-project MoSCoW rollup. Open + unparked work plus anything closed in the last
-  // week (so the board shows movement, not only what's left). Within a bucket the order
-  // mirrors the RUN QUEUE — desire tier first, then board position — so the column reads as
-  // what would actually be worked next; done items sink. `open` is the true count, `items` capped at 6.
-  "roadmap":  { "closedThisWeek": 7,
-                "buckets": [ { "bucket": "must", "open": 4,
-                               "items": [ { "slug": "…", "name": "…", "id": "42", "title": "…",
-                                            "note": "…", "done": false, "auto": true, "claimedBy": "" } ] } ] },
-  "activity": [ { "slug": "…", "name": "…", "hash": "…", "branch": "…",
-                  "summary": "…", "tags": ["…"], "when": "just now" } ], // merged, newest first, ~12
-  "graph":    [ { "date": "YYYY-MM-DD", "count": 3 } ],  // year of daily push counts → the deck's
-                                                          // compact contribution strip (click = timeline)
-  "totals":   { "byStatus": { "live": 0, "building": 3, "paused": 0, "archived": 0 },
-                "openBugs": 4, "pushesThisWeek": 2, "pushesToday": 1,
-                "projectsTouchedThisWeek": 3,
-                // Both closure counts lean on `updated_at`, the only stamp either table carries
-                // for "when it changed" — an edit to an already-done item counts too, so read
-                // them as MOVEMENT rather than an exact ledger.
-                "roadmapClosedThisWeek": 7, "bugsFixedThisWeek": 5 }
-}
-```
+- **`roadmap_items.bucket` vs `tier`** — bucket (must/should/could/wont) is how NECESSARY the work
+  is; `tier` (#227 — S/A/B/C, NULL = unranked) is how much the owner wants it NEXT. Tier is the
+  **primary sort of the run queue** (the Plan room and the runner both apply it; bucket and
+  `position` tiebreak; unranked sorts last, so an unranked board queues exactly as before). Tier is
+  set only from the Tiers view — **agents must never change it.**
+- **The board order IS the run queue.** `position` is PATCHable and drag-reorderable, and the Plan
+  room's Save-order write is the same PATCH the board's drag makes.
+- **`claimed_by` is the branch claim** (#277 — called a "lane" until the rename; the `lane/` git ref
+  prefix is deliberately unchanged, since it names branches that already exist on origin). It marks
+  which parallel session owns an open item, shows as a ⚑ chip and is injected by the SessionStart
+  hook as "Branch claims — respect these". Claim before starting; a terminal tab's claim is
+  `term:<name>`. The claim is the don't-re-pick marker and stays until a human merges and ticks.
+- **`built_note`** — what actually landed, PATCHed by the completing session alongside `done:true`.
+  The Review room verdicts against it. Always write one.
+- **An empty second-model read means NO PASS RAN, not "nothing found".** `review_verdict` /
+  `architect_verdict` NULL renders as NO REVIEW, deliberately not as green. Same rule anywhere else
+  an agent's opinion is stored.
+- **Un-ticking a roadmap item clears `review_tag` and `claimed_by`** (unless the same PATCH sets
+  them), so a sent-back item re-enters play fresh. Ticking `done:true` clears `review_tags`,
+  `refine_note` and `review_shelved` — each verify round starts unannotated.
+- **Deleting a `source='hook'` bug, roadmap item or future tombstones its fingerprint** so the next
+  push won't re-create it. That is what Dismiss means, and why it has no undo.
+- **`DELETE /api/projects/:slug` is SOFT** — it stamps `deleted_at`, clears the share link and keeps
+  every row. Deleted projects vanish from all live queries and their collection routes 404. The real
+  cascade is `/purge`, valid only on binned projects.
+- **`checks.auth`** (#261) attaches the server's OWN `API_TOKEN`, and only when the check's origin is
+  the project's `site_url` or a loopback/compose-internal host. The token is never stored on the row
+  and never sent to the client; such requests use `redirect: 'manual'` so a redirect can't replay the
+  Authorization header off-origin. A check pointed elsewhere fails with a stated reason rather than
+  leaking the token or lying about a 401.
+- **Editing what a check TESTS clears its stored result AND its `check_results` history** — past
+  passes were against a different test. Renaming keeps both.
+- **`0 = unlimited`** for `autopilotTokens` and `autopilotMaxItems` (#260); positive values are
+  clamped. `termIdleHours` `0 = never`.
 
-`stale` excludes paused/archived (dormant on purpose) and projects that have never pushed; the
-threshold is the single constant `util.STALE_DAYS` (default 14). The deck loads independently of the
-project grid on the dashboard, so an overview hiccup never blanks the grid.
+## Fail-safe direction (get this right or you delete work)
 
-## The search payload (`GET /api/search?q=…` → the ⌘K palette)
+Every host-side automation reads the API and must decide what an unreachable API means. **The
+direction is not uniform, and it is not a bug that it isn't:**
 
-Five capped, case-insensitive ILIKE queries (project name/subtitle, bug title, roadmap title/note,
-note text, session summary). Results grouped by kind; each result carries its owning project and a
-navigation target. An empty query returns empty groups.
+- **Fail SAFE = do nothing** where the action destroys or spends: the terminal idle reaper (#287),
+  the skills sync (#228 — it deletes files), the dispatcher, the autopilot arm switch (unreachable =
+  no run). An unknown threshold reaps NOTHING.
+- **Fail OPEN = keep recording** where the action only records: `readSettings()` and both hooks
+  default to "on", so a flaky API degrades to recording rather than to silent-off.
 
-```jsonc
-{
-  "query": "fog",
-  "groups": {
-    // kind ∈ project|bug|roadmap|future|note|activity; meta = status (bug) / priority (roadmap) / 'idea' (future) / relative time (note,activity)
-    "projects": [ { "kind": "project", "slug": "…", "name": "…", "tint": "#…|null",
-                    "title": "…", "meta": "…",
-                    "target": { "slug": "…", "tab": "overview", "highlight": null } } ],
-    "bugs":     [ { …, "target": { "slug": "…", "tab": "quality",  "highlight": "BUG-3" } } ],
-    "roadmap":  [ { …, "target": { "slug": "…", "tab": "roadmap",  "highlight": "42" } } ],
-    "notes":    [ { …, "target": { "slug": "…", "tab": "notes",    "highlight": "7" } } ],
-    "activity": [ { …, "target": { "slug": "…", "tab": "activity", "highlight": "6234a79" } } ]
-  },
-  "counts": { "projects": 0, "bugs": 1, "roadmap": 1, "notes": 1, "activity": 1, "total": 4 },
-  "projectCount": 2          // distinct projects across all results → "N results across M projects"
-}
-```
+Related, and just as absolute: **Stack only ever writes or removes skills IT PLANTED.** Each managed
+directory carries a `.stack-managed` marker; a skill without one is REPORTED and never touched.
+Removal is driven by the server's KEEP list, never by a diff against the last report. And **a preview
+never writes to the real database** — its own is a copy, and that isolation is one-directional and
+absolute.
 
-Caps: `PER_GROUP` (6) + `TOTAL_CAP` (24, trimming the largest groups first). `highlight` is consumed
-by `go.detail(slug, tab, highlight)` → the tab decides what it means (commit / bug key / row id) and
-the existing `.hl` ring flags the row.
+## Hooks and the host
 
-## The settings payload (`GET|PATCH /api/settings`)
-
-Single row, client camelCase. Meanings under the no-API model:
-
-```jsonc
-{
-  "autoRecord": true,         // does the SessionEnd hook post its metadata backstop
-  "keepResumeCard": true,     // does ingest refresh resume fields + does the deck/Overview show the card
-  "checkpointDetail": "standard", // brief|standard|detailed — read by /checkpoint to shape the summary
-  "includeChores": false,     // do chore-only sessions get a checkpoint (hook + /checkpoint guidance)
-  "sessionDefaults": ["ship"],// standing session preferences (catalogue keys: lean|ship|checkpoint|
-                              // confirm|verify). Rendered to lines server-side and injected by the
-                              // SessionStart hook into EVERY project's block (above directives) via
-                              // the detail payload's `sessionDefaults` — permissions granted once,
-                              // e.g. "ship" = commits pre-authorised, never re-asked per chat
-  "autopilotEnabled": false,  // the ARM SWITCH — the dispatcher polls every minute but nightly +
-                              // scheduled jobs only enqueue while this is on (fails SAFE:
-                              // unreachable API = no run); ▶ Run now stays manual-only
-  "autopilotMinutes": 120,    // wall-clock cap per unattended session (clamped 15–360)
-  "autopilotTokens": 1500000, // token budget per run; 0 = UNLIMITED (positive values floored at 100k)
-  "autopilotTime": "23:05",   // nightly start, HOST-local HH:MM (the dispatcher supplies its clock)
-  "autopilotPlanSweep": true, // #255 — the STANDING plan sweep. While on, GET /next lazily
-                              // enqueues a `plan` job for any automode project that still has
-                              // eligible unplanned must/should work (open, unparked, unclaimed,
-                              // empty plan) and hasn't been swept in 20h. The board's ✧ To
-                              // planning agent is the pressed version of the same idea; this is
-                              // the default one. Gated by the arm switch + automode exactly like
-                              // the nightly, and the partial unique index autopilot_jobs_plan_idx
-                              // keeps one open plan job per project under an every-minute poll
-  "autopilotMaxItems": 3,     // most items attempted per night; 0 = UNLIMITED (#260 — the wall
-                              // clock and the token budget are then the only governors), positive
-                              // values clamped 1–20
-  "termIdleHours": 6,         // #287 — terminate a terminal session silent for this long (0 = NEVER;
-                              // else clamped 1–72). The host daemon reads it and does the killing;
-                              // it FAILS SAFE — an unreachable API means nothing is reaped, the
-                              // opposite of the arm switch, because this deletes running work
-  "staleItemDays": 21,        // #247 — a parked roadmap item reads as stale past this many days
-                              // (clamped 1–365; surfacing only, nothing is auto-changed)
-  "autopilotExecutorModel": "", // #153 — model alias sessions run as ('' = CLI default; haiku|sonnet|opus|claude-opus-5)
-  "autopilotAdvisorModel": "claude-opus-5", // #153 — stronger model exposed as the "advisor" subagent
-                              // (DEFAULT: Opus 5; '' = off; sonnet|opus|claude-opus-5|fable). A database
-                              // that predates the default is upgraded once, guarded by advisor_default_applied,
-                              // so an advisor turned off by hand survives every boot
-  "assistGuidance": "",       // ✧ Fill from note (#131): standing owner steer folded into the prompt
-  "assistFields": ["title","note","area","branch","priority","tier","risk"], // what the assist
-                              // may fill (title always; a stored "lane" is read as "branch" —
-                              // #277's rename). #298 added `tier` + `risk`: the note is where
-                              // "small safe change" or "this touches auth" is actually written,
-                              // so it is where both can honestly be read from. Neither ever
-                              // overrides a value the human set — tier only fills an EMPTY tier,
-                              // risk only an untouched Normal (risk has no empty, so the modal
-                              // tracks whether the control was touched rather than guessing) —
-                              // and **tier S is offered, never assigned**: S decides what the
-                              // machine works tonight, which is the owner's call, so the server
-                              // splits it out as `tierSuggested` and the modal renders it as a
-                              // sentence with a button. A database written before #298 gets both
-                              // keys added once, guarded by `assist_tier_risk_applied`, so a
-                              // field switched off by hand is not switched back on every boot
-  "accessPinSet": false       // PIN sign-in available; PATCH accepts write-only `accessPin`
-                              // ('' disables) — any accessPin change deletes all auth_tokens
-                              // (signs out every PIN-connected device)
-}
-```
-
-PATCH accepts any subset; unknown keys ignored, `checkpointDetail` coerced to the allowed set. The
-hook and the /checkpoint poster read these (bounded, **default-on if the API is unreachable**, never
-blocking). `keep_resume_card` off → ingest still inserts the activity row but doesn't touch resume
-fields, the overview drops the hero, and the detail Overview hides its resume card.
+- **Both hooks must always exit 0** and log only to stderr — never block Claude Code start or stop.
+  (`stack-checkpoint.mjs` is a poster, not a hook, so it may exit non-zero; it still never prints the
+  token.) Shared logic lives in `hook/stack-post.mjs`.
+- **The SessionStart hook is registered WITHOUT `async`** (SessionEnd stays `async`): its
+  `additionalContext` has to be captured synchronously to land in the session. It guards the API call
+  with a short timeout and emits nothing on any miss.
+- **`~/.stack/` holds COPIES, not symlinks.** Editing `hook/*.mjs` changes nothing until they are
+  copied over — the installed pair was stale for weeks. `diff hook/<f> ~/.stack/<f>` when a hook fix
+  seems inert.
+- **The SessionEnd hook posts the commit THIS session made**, read from its own `git commit` results
+  in the transcript, falling back to `git rev-parse HEAD` only when it committed nothing. HEAD is
+  wrong whenever sessions run in parallel in one checkout.
+- The host dials OUT for everything (terminal daemon, dispatcher, branch report, skills sync): the
+  server runs in a container and the host firewall drops container→host traffic. Anything needing
+  host state is a poll-and-report, never a push from the server.
+- Host-side logs live in `~/.stack/` (`term.log`, `autopilot.log`, `preview.log`, …); the dispatcher
+  is a crontab line and removing it disables all runs.
 
 ## The /checkpoint command + poster
 
 Rich resume content is **Claude-authored, free, no external API**. `.claude/commands/checkpoint.md`
-(install to `~/.claude/commands/`) tells the session to: read settings via
-`stack-checkpoint.mjs --settings` (honour `checkpointDetail` + `includeChores`), derive the slug from
-the git remote, compose the full schema (summary, current_phase, in_progress, next_up, working_well,
-blockers, tags, plus `extract.bugs` + `extract.next_steps`), and pipe that JSON to
-`~/.stack/stack-checkpoint.mjs`. The poster sets `authored:true`, fills commit/branch from git, reads
-the token from `~/.stack/env` (**never printed**) and POSTs to `/api/ingest`. The SessionEnd hook is
-the silent metadata backstop so the feed never has gaps.
+tells the session to read settings via `stack-checkpoint.mjs --settings` (honour `checkpointDetail` +
+`includeChores`), derive the slug from the git remote, compose the full schema and pipe it to
+`~/.stack/stack-checkpoint.mjs`, which sets `authored:true`, fills commit/branch from git, reads the
+token from `~/.stack/env` (never printed) and POSTs to `/api/ingest`. The SessionEnd hook is the
+silent metadata backstop so the feed never has gaps. **Don't replace /checkpoint with an API
+summariser.**
 
-## Routes (all behind bearer auth except GET /api/health)
+## Settings that change behaviour
 
-- `POST /api/ingest` (also the source the SessionStart hook reads back via `GET /api/projects/:slug`)
-- `GET /api/overview` (cross-project command deck — resume, blockers, stale, bugs, activity, totals)
-- `GET /api/control` (Mission Control, `#/control` — per-project automation state in aggregate
-  queries: automode, presence, open branch claims, review counts, serious bugs, blockers, tonight's
-  likely autopilot pick per automode project (mirrors the runner's eligibility rules),
-  `planCoverage` per project (#255 — `unplanned`: open unparked unclaimed must/should with an
-  empty plan, counted by the SAME condition the sweep's enqueue tests, so the number shown and
-  the condition acted on cannot drift; `queued`: plan jobs already standing by) and the last
-  `auto/*` push; plus the full autopilot config (arm, cap, tokens, time, maxItems), the schedule
-  rows, the recent job queue and cross-project totals. `fleet` carries the worker slots (#268)
-  and, per slot, the ROLES (#280): `exec`/`adv` (the app-wide policy), `spend` (banked usage
-  split per model with a `role` and a `share`; `role:''` = unattributed, `inferred` = the one
-  documented inference — a lone unattributed model while the executor is on the CLI default),
-  `execCostUsd`/`advCostUsd`/`advShare`, `advisorSeen` (the advisor's model actually appears in
-  the banked usage — an advisor configured but never called is spend policy on paper) and
-  `ledger` (the last 6 items the session banked, each with its per-model role split).
-  Spend is always **banked, never estimated**: a run row lands per finished item, so the item
-  in flight honestly contributes nothing until it completes. A top-level `roles` block (#281,
-  from the pure `computeFleetRoles()`) carries the fleet-wide view the Roles room renders:
-  `models` (per model over the window — role, runs, tokens/cost, last 24h, share, last seen),
-  `assignments` (per project: the models actually seen in each role, plus `drift` —
-  `off-policy` | `advisor-unused` | `no-runs` | '') and `worth` (advised vs unadvised run and
-  landed counts, advisor/executor cost and share, average advice per run, and `costBasis` —
-  false when no cost was reported and the shares are token-based))
-- `GET /api/search?q=…` (the ⌘K palette — grouped results across all kinds; see shape below)
-- `GET /api/timeline` (the #/timeline screen — last month of pushes grouped by day + 53 weeks of
-  daily counts for the contribution grid; soft-deleted projects excluded)
-- `GET /api/public/:slug/:token` (**no bearer** — the public showcase, guarded by the project's
-  own share_token; strictly overview + activity, wrong slug/token both 404)
-- `POST /api/auth/login` (**no bearer** — PIN sign-in: `{pin}` → `{token}`, a device token whose
-  sha256 lands in `auth_tokens`; the bearer gate accepts API_TOKEN **or** a live device token.
-  403 until an access PIN is set in Settings; 5 wrong PINs per IP → 15-minute lockout)
-- `GET|PATCH /api/settings` (single-row app settings; see shape below)
-- `POST /api/presence` (live-now ping from the SessionStart hook; 404 for untracked projects) ·
-  `POST /api/presence/end` (idempotent clear from the SessionEnd hook)
-- `GET /api/projects` · `POST /api/projects` · `GET /api/projects/:slug` (project + activity +
-  collections + progress; the detail payload includes `blockers` for the start hook,
-  `keepResumeCard`, `sessionDefaults` (rendered lines), `shareToken` and `geminiReady` (#278 —
-  whether a key is configured, so the Quality page's AI surfaces are absent rather than dead;
-  an older server that omits it is read as ready, since those surfaces 503 honestly)) ·
-  `PATCH /api/projects/:slug` (subtitle, site_url, repo_url, status, pin, …) ·
-  `DELETE /api/projects/:slug` (**soft** — stamps `deleted_at`, clears the share link, keeps every
-  row; deleted projects vanish from all live queries and their collection routes 404) ·
-  `GET /api/projects/deleted` (the bin) · `POST /api/projects/:slug/restore` ·
-  `DELETE /api/projects/:slug/purge` (the real cascade delete — only valid on binned projects) ·
-  `POST /api/projects/:slug/share` (mint/rotate the showcase token) · `DELETE .../share` (disable)
-- `GET|POST /api/projects/:slug/bugs` · `PATCH|DELETE /api/projects/:slug/bugs/:bugKey`
-  (PATCH also takes `reviewed: bool` — the review-inbox approve — and `check_id` (#278: link the
-  check that caught it, null/'' unlinks); POST takes `check_id` too. Only THIS project's checks
-  are linkable — a bogus or foreign id lands as NULL rather than erroring)
-- `GET|POST /api/projects/:slug/roadmap` · `PATCH|DELETE /api/projects/:slug/roadmap/:id`
-  (POST takes `claimed_by` + `area`; PATCH also takes `reviewed: bool`, `claimed_by` ('' releases),
-  `review_tag: solid|needs-work|rethink` ('' clears), `done: bool` — ticking stamps `reviewed_at`;
-  un-ticking also clears `review_tag` + `claimed_by` (unless the same PATCH sets them explicitly)
-  so a sent-back item re-enters play fresh: through To verify on re-completion, pickable by the
-  autopilot again — `skipped: bool` — the parked flag:
-  sinks to the bottom of its bucket, agents never pick it up, still counts toward progress —
-  plus `area`, `position` (drag-reorder), `built_note` (the what-landed account), `plan`
-  (#75 — the implementation plan, a whole-list jsonb of `{text, done}` steps; agents tick a step
-  by re-sending the list, the autopilot injects it into its session prompt), `review_tags`
-  (#146 — whole-list like plan; cleaned + deduped), `refine_note` (#146 — '' clears; ticking
-  `done:true` clears both unless the same PATCH sets them) and `review_shelved: bool` (#148 —
-  the review shelf; cleared by `done` in either direction and by a real `review_tag` verdict,
-  unless the same PATCH sets it explicitly) and `tier` (#227 — S|A|B|C, anything else unranks it;
-  POST takes it too). `skipped` also stamps/clears `skipped_at` (#247) so the Parked view can age
-  the park honestly) ·
-  `POST /api/projects/:slug/roadmap/suggest-title` (Gemini titles an item from its note;
-  suggestion only, 503 keyless) ·
-  `POST /api/projects/:slug/roadmap/assist` (the modal's ✧ Fill-from-note: Gemini reads the note
-  and returns title + tidied note + area + branch + priority — prefills the fields, the human
-  saves; branches only ever suggested from the open set; honours the `assistGuidance` +
-  `assistFields` settings (#131) — switched-off fields come back empty) ·
-  `POST /api/projects/:slug/roadmap/:id/review-brief` (#134 — Gemini's reviewer brief for a
-  completed item: summary + test steps + risks from the item, built_note, its landed run and
-  the checks; annotation only, 503 keyless) ·
-  `POST /api/projects/:slug/roadmap/cleanup` (the board's ✧ Clean up: Gemini reviews all open
-  items and suggests missing areas / cleaned titles / honest buckets, only where something's
-  off; the client shows a tickable list and applies through the normal PATCH)
-- `GET|POST /api/projects/:slug/futures` · `PATCH|DELETE /api/projects/:slug/futures/:id`
-  (PATCH: title/note/reviewed/`alignment: on-course|tangent|off-course` ('' clears);
-  DELETE tombstones a hook idea) · `POST /api/projects/:slug/futures/cluster` (Gemini groups the
-  funnel into themes — a suggested `area` per unthemed idea; suggestion only, 503 keyless) ·
-  `POST /api/projects/:slug/futures/converge` (`{ids, mode: tickets|epic}` — Gemini drafts
-  roadmap tickets from picked ideas; drafts only, the client creates via the roadmap POST;
-  503 keyless and the client's direct-mapped drafts carry the flow) ·
-  `POST /api/projects/:slug/futures/:id/judge` (Gemini-suggested
-  verdict + why — suggestion only, 503 without a server key, 400 without a north star)
-- **Polaris** (#209) is NOT a server route any more — the old Gemini `polaris` + `intake` routes
-  were culled. It's a real `claude` session over the web-terminal transport: the Futures tab's
-  click-to-expand panel (`components/Polaris.tsx`, head only in the main bundle) lazy-loads
-  `components/PolarisTerm.tsx` (xterm — shares the Terminal screen's chunk) which opens
-  `store.openTerminal({cwd: slug, cmd: 'claude'})` — tmux-backed via a device-local mapping
-  keyed `polaris:<slug>` (never colliding with the Terminal screen's cwd map), honouring the
-  skip-permissions device pref. On a FRESH spawn it auto-types the Polaris kickoff once the TUI
-  settles (~1.5s output quiet, 15s cap): planning-only copilot, grounded by the SessionStart
-  hook's injected context, which creates agreed work as roadmap items / futures via the Stack
-  API — always confirming with the human first; manual-source items are immediately eligible
-  for the overnight autopilot. Re-attach skips the kickoff; a real exit forgets the mapping.
-- `GET|POST /api/projects/:slug/notes` · `PATCH /api/projects/:slug/notes/:id` (text) ·
-  `DELETE /api/projects/:slug/notes/:id`
-- `GET|POST /api/projects/:slug/checks` (POST/PATCH also take `auth: bool` — #261, run the check
-  with the server's own token, same-origin only) · `PATCH /api/projects/:slug/checks/:id` (#143 — edit
-  any subset of the POST fields; changing anything but the name — `auth` included — clears the stored
-  result AND that check's `check_results` history (#279)) ·
-  `DELETE /api/projects/:slug/checks/:id` ·
-  `POST /api/projects/:slug/checks/run` (all, or one with `{id}`; returns updated rows — and
-  lands a summary row in `check_runs` plus one `check_results` row per check probed, then prunes
-  each check to `CHECK_HISTORY_KEEP`) ·
-  `GET /api/projects/:slug/checks/runs?limit=` (the run history, newest first — the pass-rate
-  trend + the History ledger) ·
-  `GET /api/projects/:slug/checks/history?limit=` (#279 — each check's own last N results,
-  **keyed by check id**, newest first, `limit` clamped to `CHECK_HISTORY_KEEP`. One window
-  function, one fetch; the Suite sparklines, the flaky flag and every "failed 4 of the last 6
-  runs" line are derived from it client-side)
-- **The skill tree** (#228, `routes/skills.js`, screen `#/skills` off Settings): `GET /api/skills`
-  (the library AND the host's last disk report in one call — a managed skill missing from disk,
-  and a disk skill nobody manages, are both things you only see by holding the two lists side by
-  side) · `POST /api/skills` · `PATCH|DELETE /api/skills/:id` (any edit to what gets WRITTEN
-  clears `installed_at`, so the tree says "sync pending" instead of claiming disk it no longer
-  describes; DELETE is also the instruction to remove it from the host) · `GET /api/skills/work`
-  (the host's sync payload: `write` is the enabled set with its SKILL.md already rendered, `keep`
-  is every managed name that should still exist — a keep list rather than a remove list, because
-  the server does not know what is on disk) · `POST /api/skills/report` (the host's snapshot,
-  replacing it whole like the branch report; it also stamps `installed_at` for what was just
-  written and CLEARS it for anything the host no longer reports, which is what makes the tree
-  honest after somebody deletes a directory by hand). Bodies ride along in the report so an
-  unmanaged skill can be ADOPTED into the library without a second round trip. Nothing in the
-  route touches a filesystem — the host does the doing.
-- `GET|POST /api/tips` · `PATCH|DELETE /api/tips/:id` · `POST /api/tips/:id/run` (the app-wide
-  recipe library behind every project's Tips tab — GLOBAL, no slug. PATCH takes any subset
-  incl. `{pinned}`; `/run` is just the ledger (uses + last_run_at) — the actual run is the
-  terminal session the client opens with the prompt via the `stack.term.brief` handoff)
-- `GET|POST /api/projects/:slug/autopilot/runs` (the overnight runner's ledger — one row per
-  item attempt: outcome landed|no-commits|failed|limit, commits, tokens, cost, checks, the
-  session's own summary; the overview's `autopilotRuns` digest reads the last 20h)
-- `GET /api/review` (#282 — the Review room's cross-project payload: the unverdicted `queue`
-  (each item with the run that built it and its stored reviewer read), the capped `settled`
-  archive, a fortnight of `nights` (runs grouped by the UTC day they finished, for the debrief)
-  and `totals` (pending / shelved / flagged / projects / settled). Three aggregate queries, never
-  one per project. READ-ONLY: every verdict still goes through the per-project roadmap routes) ·
-  `PATCH /api/projects/:slug/autopilot/runs/:id` (#282 — review fields only: `review_verdict`,
-  `review_note`, `review_findings`. Nothing else about a finished run is editable after the fact,
-  and an unrecognised verdict lands NULL rather than inventing a read nobody gave)
-- **Branch previews** (#208): `GET|POST /api/projects/:slug/previews` (POST `{branch, itemId?,
-  hours?}` queues one — idempotent per branch, hours clamped 15m–24h, default 2h) ·
-  `GET /api/previews` (open first, then recent history — what Mission Control renders) ·
-  `GET /api/previews/work` (the dispatcher's sweep: `start` and `stop`, where EXPIRY is
-  resolved server-side and reported as stop work, and a 'starting' row stuck 20min is recovered
-  to 'queued') · `PATCH /api/previews/:id` (the host's progress/outcome report — url, detail,
-  port, handles — plus `{hours}` to re-arm expiry) · `POST /api/previews/:id/stop` (marks
-  `stopping` ONLY; the teardown is the host's, so Stop works even while the host is briefly
-  unreachable and the UI never lies about what has happened). Nothing here runs anything.
-- `POST /api/projects/:slug/branches` (#207 — the host dispatcher's branch report, replacing
-  the project's `branch_reports` row whole; write side only, Mission Control reads it folded
-  into the control payload: enriched `branches` chips (ahead/behind/mergeClean/subject/when),
-  `absorbedBranches` (fully-merged origin branches never deleted — prune hint) and
-  `branchesWhen` (report freshness))
-- **Global autopilot scheduling** (`/api/autopilot/…`, routes/autopilot.js `autopilotGlobal`):
-  `GET|POST /schedule` + `PATCH|DELETE /schedule/:id` (the Mission Control calendar — one-off
-  `runDate` or recurring `days` getDay() ints, host-local `atTime`, optional pinned `itemId`;
-  one-offs disable themselves after firing) · `POST /start` (the ▶ Run now button AND the
-  `stack start-session` CLI — queues a manual job; an open job for the project is returned
-  instead of duplicated — and if that open job is a held `resume`, Run now clears its hold so
-  it fires immediately) · `POST /merge` (#154 — the merge strip's ⇥ Merge: `{slug, branch,
-  itemId?}` queues a `merge` job the dispatcher runs — merge --no-ff into main in a throwaway
-  worktree, push, delete the remote branch; idempotent per branch, 409 while another job is
-  open, and the item is never auto-ticked) · `POST /resume` (#142 — the runner's graceful limit-pause:
-  `{slug, itemId?, minutes}` queues/re-points the project's `resume` job, held for `minutes`
-  — relative, so host/server clock skew never matters) · `POST /undo` (#128 — the Reviews view's ⎌ Undo: queues a `revert`
-  job for a completed item; idempotent per item, 409 while another job is open. The dispatcher
-  reverts the item's #N-tagged main commits in a throwaway worktree, pushes, then un-ticks the
-  item) · `GET /jobs?slug=&limit=` (recent automation sessions newest
-  first — the read side of /start, what `stack list-sessions` renders; Mission Control
-  keeps reading jobs off the control payload) ·
-  `GET /next?local=YYYY-MM-DDTHH:MM&dow=N` (the host dispatcher's poll: recovers stale jobs,
-  lazily enqueues due nightly/scheduled work, hands out at most one claimed job — serialised) ·
-  `POST /resume` also takes `kind` (#255 — a limit-hit session resumes as the SAME kind of
-  session: a plan sweep that came back as a build night would start writing code nobody asked
-  for, so the runner sends its kind, the job stores it in session_kind and the dispatcher
-  re-derives `--plan-only`) ·
-  `PATCH /jobs/:id` (the dispatcher's outcome report: running|done|failed|queued + detail;
-  #142 adds the human controls — `{status:'paused'}` hangs a queued/claimed job up (409
-  otherwise — a running session has no kill channel), `{status:'queued', notBefore:null}`
-  resumes it now; returns the updated job shape) · `DELETE /jobs/:id` (#142 — dismiss a
-  queued/paused job; 409 for anything claimed/running/finished)
-- `POST /api/terminal/label` (#120 — ✧ Gemini names what each running terminal session is doing:
-  the open web sessions (relay's rolling ANSI-stripped output tail) AND the detached tmux
-  survivors (the daemon's captured pane tails) in one pass; annotation only, in-memory, 503
-  keyless. Returns `{sessions, detached}`; both lists also ride the control payload's
-  `terminal.{sessions,detached}`, where Mission Control renders them as ▶ jump-in chips —
-  `#/terminal?cwd=…&attach=<tmux name>` — and auto-fires this route whenever unlabelled
-  sessions appear.) ·
-  `GET /api/terminal/detached` (#188 — the surviving `stack-term-*` tmux sessions with no client
-  attached, from the relay's cache of the daemon's advertisements, each with its Gemini `label`
-  when one has been made; empty while the daemon is offline) · `POST /api/terminal/detached/kill` (`{name}` — kill an orphaned tmux session on the
-  host; the daemon refuses names that aren't actually detached, so a live session is unkillable
-  through this route) · `POST /api/terminal/keep` (#292 — `{name, keep}` pins a session against
-  the idle reaper. Unlike the kill this IS allowed on an attached session: pinning the tab you
-  are working in is the main case, and a pin only ever DECLINES to destroy something. The host
-  owns the state, so the route sends and returns — the new value arrives on the daemon's next
-  advertisement, not from here) · `POST /api/terminal/assist` (`{prompt, cwd}` — ✧ the rail's command help:
-  Gemini suggests one shell command + a save-label + a caveat line; suggestion only, the client
-  types it without Enter; 503 keyless)
+`GET|PATCH /api/settings` is a single row in client camelCase; PATCH takes any subset. Full list in
+`routes/settings.js`. The ones whose meaning isn't obvious from the name:
 
-Deleting a `source='hook'` bug, roadmap item or future tombstones its fingerprint so the next push
-won't re-create it.
+| key | meaning |
+| --- | --- |
+| `autoRecord` | does the SessionEnd hook post its metadata backstop |
+| `keepResumeCard` | off → ingest skips the resume refresh and the deck/Overview drop the card |
+| `sessionDefaults` | catalogue keys (lean/ship/checkpoint/confirm/verify) rendered server-side to lines and injected by SessionStart into EVERY project. `ship` = commits pre-authorised, granted once and never re-asked |
+| `autopilotEnabled` | the ARM SWITCH. Nightly + scheduled jobs only enqueue while on; ▶ Run now stays manual-only |
+| `autopilotPlanSweep` | standing sweep — GET /next stands a `plan` job up for any automode project with unplanned must/should work, same gates as the nightly |
+| `autopilotExecutorModel` / `autopilotAdvisorModel` | #153, **inverted by #285**: the ADVISOR runs the session (holds the main loop, plans, delegates, verifies, commits) and the EXECUTOR is exposed to it as a subagent with the write tools. Advisor unset = single-model on the executor |
+| `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set, and **tier S is offered, never assigned** |
+| `termIdleHours` | the idle-session reaper's threshold (0 = never); the host does the killing and fails SAFE |
+| `accessPinSet` | PIN sign-in available; PATCH takes write-only `accessPin` ('' disables). Any change signs out every PIN-connected device |
+
+## Routes
+
+All behind bearer auth except `GET /api/health`, `POST /api/auth/login` and
+`GET /api/public/:slug/:token`. One file per surface in `server/src/routes/` — the file is the
+reference. The index:
+
+- **Read layers** — `overview.js` (the dashboard deck), `control.js` (Mission Control, incl. the pure
+  exported `computeFleetRoles()`), `review.js` (the cross-project Review room), `search.js` (⌘K),
+  `timeline.js`, `public.js`. All computed in a handful of aggregate queries — **never one query per
+  project**; keep it that way.
+- **Per-project collections** — `bugs.js`, `roadmap.js`, `notes.js`, `futures.js`, `checks.js`,
+  `audit.js`, mounted under `/api/projects/:slug/…` with `mergeParams`.
+- **Automation** — `autopilot.js` (the schedule, the job queue and the host dispatcher's
+  `GET /next`), `previews.js`, `branches.js`, `skills.js`, `terminal.js`.
+- **Plumbing** — `ingest.js`, `settings.js`, `projects.js`, `presence.js`, `auth.js`, `devices.js`,
+  `tips.js` (app-wide, no slug).
+
+`GET /api/projects/:slug` is the combined detail payload the SessionStart hook reads back.
 
 ## Conventions
 
@@ -1685,64 +264,42 @@ won't re-create it.
 - **No secrets in the repo.** `.env` (server) and `~/.stack/env` (hooks) are gitignored and load at
   runtime. The hooks never read tokens from the shell profile or settings.json, and never print them.
 - Frontend is **strict TS** with `noUnusedLocals`/`noUnusedParameters` on — keep it clean.
-- All persistence/network stays behind `store.ts`. Components never `fetch` or touch storage directly.
-- Both **hooks** must **always exit 0** and log only to stderr — never block Claude Code start or stop.
-  (The `stack-checkpoint.mjs` poster is not a hook — it may exit non-zero so /checkpoint can report a
-  failure — but it still never prints the token.) Shared logic lives in `hook/stack-post.mjs`.
-- **No PAID external AI APIs.** (Owner's decision 2026-07-16, superseding the 2026-07-05
-  one-exception rule: that rule was about paid APIs all along.) Gemini on the free tier is
-  sanctioned **everywhere** — routes, ingest, hooks, cron, the autopilot — no longer
-  manual-only. Two principles survive the loosening:
-  • **Gemini annotates, the human disposes.** Gemini output lands as suggestions and annotations
-    (review-inbox items, alignment verdicts to accept, the per-push `gemini_note`) — it never
-    mutates tracker state itself (no auto-closing bugs, ticking roadmap items, merging branches).
+- All persistence and network stays behind `store.ts`.
+- **No PAID external AI APIs.** (Owner's decision 2026-07-16.) Gemini on the free tier is sanctioned
+  everywhere — routes, ingest, hooks, cron, the autopilot. Two principles survive the loosening:
+  • **Gemini annotates, the human disposes.** Its output lands as suggestions (review-inbox items,
+    alignment verdicts to accept, the per-push `gemini_note`) — it never mutates tracker state
+    itself: no auto-closing bugs, ticking items or merging branches. (#263 carves out one sanctioned
+    exception: machine verdicts on low-risk, all-green runs.)
   • **Absent key = silent degrade.** Every Gemini surface no-ops or 503s cleanly without
-    `GEMINI_API_KEY`; nothing blocks, nothing errors user-visibly.
-  Rich checkpoints stay Claude-authored via `/checkpoint` (free, in-session) — don't replace that
-  with an API summariser. Surfaces: `hook/stack-gemini-review.mjs` (second-model diff review →
-  review inbox; run manually or from the autopilot — and `--architect` (#284) for the structural
-  read, which posts nothing and writes only a verdict file), `server/src/gemini.js` + judge/
-  semantic-checks/replan routes, and the post-ingest `gemini_note` (a one-line second-model take
-  stamped onto each push in the activity feed). Key from server env / `~/.stack/env`; model
-  default gemini-2.5-flash for all surfaces.
-- Colour is the named CSS variables at the top of `styles.css` `:root` — add/adjust tones there, not
-  as inline hexes; terracotta buttons hover to `--accent-deep`.
-- `templates/stack-agent-context.md` is the single source of truth for the portable agent manual; if
-  the API or hook contract changes, update it (it's exported verbatim by `scripts/stack-context.mjs`).
+    `GEMINI_API_KEY`; nothing blocks, nothing errors user-visibly. The client renders those surfaces
+    ABSENT rather than disabled, keyed off the detail payload's `geminiReady`.
+- **Checks are Stack's only automated regression net.** When a route's payload contract changes,
+  change its check in the same commit. A green suite is the evidence that risk-tiered auto-merge
+  (#212) and auto-verdict (#263) spend.
+- `templates/stack-agent-context.md` is the single source of truth for the portable agent manual — if
+  the API or hook contract changes, update it (`scripts/stack-context.mjs` exports it verbatim).
+- **UI work ships on a strict build plus reasoning, never on a look** — a session cannot see its own
+  rendering. Two real layout bugs reached the owner that way (#291).
 
 ## Gotchas
 
 - `server` retries the first Postgres connection — don't "fix" that; it's what survives compose order.
 - **A capped list inside a prompt must say it is capped, and must be capped on the right axis**
   (#239, `routes/audit.js`). The auditor reads KNOWN_BUGS as "what is already tracked" and reasons
-  from ABSENCE, so a silent slice makes it re-report tracked bugs and tells it nothing is known
-  where plenty is. Order by severity (a cap on `created_at DESC` drops the long-standing
-  criticals), and state the true total beside the shown count. Same rule for any list you add to a
-  prompt. And in `landFindings`, a finding matching a **fixed** bug is a REGRESSION — it reopens
-  that bug and reports `reopened`; swallowing it as "already tracked" is how a bug that came back
-  goes unmentioned.
-- Ingest uses COALESCE / keep-if-empty on update so short/empty checkpoints don't overwrite a good
-  summary, and the `authored` flag means a metadata backstop never clobbers a rich /checkpoint for the
-  same commit. Preserve both properties when extending.
-- Ingest is idempotent on session_id **then** commit_hash (never the other way round — that loses
-  parallel sessions); auto-extraction dedups on fingerprint and honours the tombstone table. Keep all
-  three when touching ingest.
-- The SessionEnd hook posts **the commit this session made**, read from the results of its own
-  `git commit` calls in the transcript, and only falls back to `git rev-parse HEAD` when it committed
-  nothing. HEAD is wrong whenever sessions run in parallel in one checkout: by the time one ends,
-  another's push has moved it.
-- **The hooks in `~/.stack/` are copies, not symlinks.** Editing `hook/*.mjs` changes nothing until
-  they are copied over — the installed pair had been stale for weeks, which is why `tokens_used` was
-  0 on every session row despite #178. Check `diff hook/<f> ~/.stack/<f>` when a hook fix seems inert.
-- `readSettings()` defaults to "on" when the row is missing, and the hook/poster default to "on" when
-  the API is unreachable — so a flaky API degrades to recording, never to silent-off. Keep that.
-- The web Dockerfile is multi-stage (Vite build → nginx). nginx does SPA fallback **and** proxies
-  `/api` to `server:4000` on the compose network. In local `npm run dev`, Vite proxies `/api` to
-  `localhost:4000` instead (see `vite.config.ts`).
+  from ABSENCE, so a silent slice makes it re-report tracked bugs and tells it nothing is known where
+  plenty is. Order by severity (a cap on `created_at DESC` drops the long-standing criticals), and
+  state the true total beside the shown count. **Same rule for any list you put in a prompt.**
+- In `landFindings`, a finding matching a **fixed** bug is a REGRESSION — it reopens that bug and
+  reports `reopened`. Swallowing it as "already tracked" is how a bug that came back goes unmentioned.
 - Status vocabulary is `live | building | paused | archived`. The old `active` migrates to `live`.
-- The SessionStart hook is registered **without** `async` (SessionEnd stays `async`): its
-  `additionalContext` has to be captured synchronously to land in the session. It guards the API call
-  with a short timeout and emits nothing on any miss, so it never delays startup.
+- The web Dockerfile is multi-stage (Vite build → nginx). nginx does SPA fallback **and** proxies
+  `/api` to `server:4000` on the compose network; nginx also proxies `/term*` with upgrade headers.
+  In local `npm run dev`, Vite proxies `/api` to `localhost:4000` instead.
+- Both closure counts in `totals` lean on `updated_at`, the only stamp either table carries — an edit
+  to an already-done item counts too. Read them as MOVEMENT, not an exact ledger.
+- `set-option`'s `-t` in tmux 3.x is a target-PANE, so session user options need the `=name:` target
+  form (`tmux-session.mjs`); a bare `=name` fails on a session that plainly exists.
 
 ## Quick commands
 
@@ -1751,29 +308,29 @@ cd web && npm install && npm run dev     # frontend on :5173 (needs the server r
 cd web && npm run build                  # strict typecheck + production bundle
 docker compose up -d --build             # full stack
 docker compose exec server npm run seed  # optional demo projects (off by default)
+
 node hook/stack-session-end.mjs --demo     # fire the metadata backstop (no external API)
 node hook/stack-session-start.mjs --demo   # print the "where you left off" block for this repo
 node hook/stack-checkpoint.mjs --settings  # print current settings (what /checkpoint reads)
-echo '{"project":{"slug":"stack"},"session":{"summary":"…"}}' | node hook/stack-checkpoint.mjs  # author a checkpoint
-node scripts/stack-context.mjs --slug stack --api https://stack.your-domain  # export agent manual
-./stack tree                               # the branch navigator (also --repo <path>, --json)
+cp hook/*.mjs ~/.stack/                    # install the hooks — ~/.stack holds COPIES
+
+node server/test/ingest-identity.test.mjs  # one activity row per SESSION (needs a throwaway server)
+node server/test/run-shape.test.mjs        # the run ledger's shared shapes match the old copies
+node server/test/fleet-roles.test.mjs      # role attribution + drift detection (pure, no DB)
+
+./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
 ./stack skills --dry                       # what the skill-tree sync would write/remove on this host
-node server/test/fleet-roles.test.mjs      # #281's role attribution + drift detection (pure, no DB)
-node server/test/run-shape.test.mjs        # the run ledger's shared shapes still match the old copies
-node server/test/ingest-identity.test.mjs  # one activity row per SESSION (needs a throwaway server — see its header)
-cp hook/*.mjs ~/.stack/                    # install the hooks — ~/.stack holds COPIES, edits here are inert until this
-./stack start-session [slug] [--item N]    # start an automation session (▶ Run now from the terminal)
-./stack list-sessions                      # the automation job queue (also [slug], --limit, --json)
-./stack term [dir]                         # claude in a stack-term tmux session (laptop/ssh — shows on
-                                           # Mission Control, mirrorable from the web; --shell, --safe)
-node terminal/stack-term.mjs               # the web-terminal daemon (normally via the @reboot cron line)
-tail -f ~/.stack/term.log                  # its log
-node hook/stack-gemini-review.mjs --dry    # second-model review of the last commit (Gemini; --dry = print only)
-node hook/stack-gemini-review.mjs --architect --range main..HEAD  # the structural read (#284) — prints, posts nothing
-node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack --dry  # what would tonight's run pick?
-node scripts/stack-preview.mjs --start <id>  # bring a branch up as a preview (normally the dispatcher spawns it)
-node scripts/stack-preview.mjs --stop <id>   # tear one down; log ~/.stack/preview.log
+./stack start-session [slug] [--item N]    # queue an automation session (▶ Run now from the terminal)
+./stack list-sessions                      # the automation job queue ([slug], --limit, --json)
+./stack term [dir]                         # claude in a stack-term tmux session (--shell, --safe)
+
+node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack --dry  # tonight's pick?
 node scripts/stack-autopilot-dispatch.mjs  # one dispatcher poll by hand (normally the cron line)
-crontab -l                                 # the dispatcher line (every minute; remove it to disable all runs)
+node scripts/stack-preview.mjs --start <id>  # bring a branch up as a preview (normally spawned)
+node hook/stack-gemini-review.mjs --dry    # second-model review of the last commit
+node hook/stack-gemini-review.mjs --architect --range main..HEAD  # the structural read (#284)
+node terminal/stack-term.mjs               # the web-terminal daemon (normally the @reboot cron line)
+crontab -l                                 # the dispatcher line — remove it to disable all runs
+tail -f ~/.stack/{term,autopilot,preview}.log
 ```
