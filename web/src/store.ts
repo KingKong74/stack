@@ -746,7 +746,7 @@ export interface ProjectDetailData {
   project: Project;
   currentPhase: string;
   northStar: string;
-  auditContext: string;  // the audit brief (#144) — the Testing panel's steer for the bug audit
+  auditContext: string;  // the audit brief (#144) — the Quality tab's steer for the bug audit
   blockers: string[];
   directives: string[];
   activity: Activity[];
@@ -1415,7 +1415,7 @@ export async function deleteFuture(slug: string, id: number): Promise<void> {
   await request<void>(`${futuresBase(slug)}/${id}`, { method: 'DELETE' });
 }
 
-// ---- checks (the Audit tab) ----
+// ---- checks (the Quality tab's Suite segment) ----
 
 const checksBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/checks`;
 

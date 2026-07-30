@@ -6,8 +6,8 @@ import { bugShape } from '../shape.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
 
-// Mounted at /api/projects/:slug/audit — the Testing panel's automated bug
-// audit (#144). Two surfaces:
+// Mounted at /api/projects/:slug/audit — the Quality tab's automated bug
+// audit (#144; the ✧ Bug audit card on the Now segment). Two surfaces:
 //   POST /        — Gemini reads the owner's audit brief, the check results,
 //                   the tracked bugs and the live page, and reports suspected
 //                   bugs. Findings land as review-inbox bug rows (source

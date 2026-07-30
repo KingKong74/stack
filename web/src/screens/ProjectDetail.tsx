@@ -556,7 +556,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       });
     });
 
-  // ---- checks (the Audit tab's test suite) ----
+  // ---- checks (the Quality tab's test suite) ----
   const runProjectChecks = (id?: number) =>
     guard(async () => {
       setChecksBusy(true);

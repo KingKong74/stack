@@ -2,7 +2,7 @@
 // stack-seed-checks.mjs — the regression suite, as code (#261).
 //
 // Stack's checks ARE its test suite: HTTP tests run against the live app from
-// the Audit tab. Before this, the suite was one probe of the site root, so
+// the Quality tab. Before this, the suite was one probe of the site root, so
 // "checks green" carried no information — which is why the #212 auto-merge gate
 // could never honestly fire and every verdict fell to a human.
 //

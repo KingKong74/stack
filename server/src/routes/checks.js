@@ -273,7 +273,7 @@ async function probe(row, project) {
 }
 
 // POST /run  -> run every check (or one, with body {id}); returns updated shapes.
-// Every run also lands a summary row in check_runs — the Audit tab's history.
+// Every run also lands a summary row in check_runs — the Quality tab's History.
 checks.post('/run', async (req, res) => {
   const one = Number(req.body?.id);
   const { rows } = await q(
@@ -347,7 +347,7 @@ checks.get('/history', async (req, res) => {
   res.json(out);
 });
 
-// GET /runs  -> the run history, newest first (the Audit tab's trend strip)
+// GET /runs  -> the run history, newest first (the Quality tab's trend strip)
 checks.get('/runs', async (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 40, 1), 200);
   const { rows } = await q(
