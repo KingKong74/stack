@@ -2196,17 +2196,28 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .term-fullscreen .term-cockpit { height: auto; min-height: 0; }
 .term-full-btn.on { border-color: var(--accent); color: var(--accent-deep); }
 /* 25b — the cockpit rail: the terminal keeps the width, everything else
-   folds in here. Collapsed it is just the toggle. */
+   folds in here. Collapsed it is just the toggle.
+   The rail's ground is --panel and the LIST sits on --surface, so the part you
+   read scrolling is the lightest thing in it. Hairlines only between the parts
+   that genuinely separate (head · list · footer) — the old rail drew a bordered
+   card inside a bordered block inside the rail's own border, and three nested
+   frames is what made a 300px column feel like a form. */
 .term-cockpit {
-  width: 300px; flex: none; display: flex; flex-direction: column; gap: 8px;
-  height: calc(100vh - 210px); background: var(--surface);
-  border: 1px solid var(--line-2); border-radius: 14px; padding: 10px 0 0;
+  width: 300px; flex: none; display: flex; flex-direction: column; gap: 0;
+  height: calc(100vh - 210px); background: var(--panel);
+  border: 1px solid var(--line-2); border-radius: 14px; padding: 8px 0 0;
 }
 .term-cockpit.collapsed { width: 34px; overflow: hidden; padding: 10px 0; }
-.term-cockpit .term-rail-toggle { margin: 0 8px 0 auto; }
+.tc-top { display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; }
+.term-cockpit.collapsed .tc-top { padding: 0 5px; }
+.tc-top .term-rail-toggle { align-self: center; margin: 0 0 0 auto; }
 .term-rail-toggle { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; align-self: flex-end; background: var(--card); border: 1px solid var(--line-2); color: var(--muted); flex: none; margin-bottom: 2px; }
 .term-rail-toggle:hover { border-color: var(--accent); color: var(--accent); }
 .term-rail-toggle-icon { font-size: 13px; line-height: 1; }
+/* The two Session layouts (1a tier stack / 1b up next), named by where the
+   press takes you. Rail chrome, so it sits with the collapse control. */
+.tc-style { font-family: var(--mono); font-size: 10px; color: var(--muted); padding: 2px 6px; border-radius: 6px; }
+.tc-style:hover { color: var(--accent); background: var(--card); }
 /* #136 — connect-time mode toggle + wide mode button */
 .term-mode-btn { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .term-mode-btn.on { color: var(--accent); border-color: var(--accent-tint-border); background: var(--accent-tint); }
@@ -2214,8 +2225,13 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 /* How many terminals are on screen — this replaced the wide-mode toggle. */
 .term-panes .seg-opt { font-size: 11.5px; padding: 4px 8px; font-variant-numeric: tabular-nums; }
 /* ---- the cockpit's two segments ---- */
-.tc-segs { margin: 0 10px 2px; }
-.tc-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 14px; }
+.tc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 12px 9px; }
+.tc-segs { margin: 0; flex: none; align-self: center; }
+/* The rail head carries the segment picker AND the control that narrows the
+   list in 300px. The picker keeps its full labels; the scope is the part that
+   gives, and ellipsises its own label rather than pushing the row out. */
+.tc-segs .seg-opt { padding: 4px 9px; }
+.tc-body { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 12px 12px; display: flex; flex-direction: column; gap: 14px; }
 .tc-block { display: flex; flex-direction: column; gap: 6px; }
 .tc-cap { font-family: var(--mono, ui-monospace), Menlo, Consolas, monospace; font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; color: var(--muted); }
 .tc-cap.row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
@@ -2223,54 +2239,126 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tc-link:hover { color: var(--accent-deep); }
 .tc-link.dim { color: var(--muted); }
 .tc-link.dim:hover { color: var(--critical); }
+.tc-link:disabled { color: var(--fainter); cursor: default; }
 .tc-empty { font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+.tc-empty.pad { padding: 14px 6px; }
 .tc-note { font-size: 10.5px; line-height: 1.5; color: var(--muted); }
 .tc-warn { font-size: 11px; color: var(--critical); font-weight: 600; }
 .tc-foot { font-size: 10.5px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--line-3); padding-top: 10px; }
-/* WORKING ON */
-.tc-work { border: 1px solid var(--accent-tint-border); background: var(--accent-tint); border-radius: 8px; padding: 10px 11px; }
+/* ---- the Session rail: head (never scrolls) · list · footer that acts ---- */
+.tc-session { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tcs-lede { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 7px; }
+/* Nothing to show yet — a dashed hint, not an error and not a card. */
+.tcs-none { border: 1px dashed var(--line-3); border-radius: 8px; padding: 11px; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+/* Tier ink, the app's own ranking colours (#227): S wears the accent. */
+.tc-session .tS { color: var(--accent); }
+.tc-session .tA { color: var(--building); }
+.tc-session .tB { color: var(--sage); }
+.tc-session .tC { color: #8f897d; }
+.tc-session .tnone { color: var(--fainter); }
+.tcs-grade { font-family: var(--mono); font-size: 10px; font-weight: 700; line-height: 1.5; border-radius: 4px; padding: 1px 5px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line-2); flex: none; }
+/* WORKING ON (1a) */
+.tc-work { display: flex; align-items: flex-start; gap: 9px; border: 1px solid var(--accent-tint-border); background: var(--accent-tint); border-radius: 8px; padding: 10px 11px; }
+.tc-work .b { min-width: 0; }
 .tc-work .t { font-size: 12px; line-height: 1.45; font-weight: 600; color: var(--ink); }
-.tc-work .m { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+.tc-work .m { font-family: var(--mono); font-size: 10px; line-height: 1.5; color: var(--muted); margin-top: 4px; }
 .tc-work .tc-claim { font-size: 10.5px; font-weight: 600; color: var(--accent-deep); margin-top: 6px; }
 .tc-work .tc-claim.off { color: var(--muted); font-weight: 500; }
-.tc-work-acts { display: flex; align-items: baseline; gap: 10px; margin-top: 7px; }
-/* DO NEXT */
-.tc-next { display: flex; flex-direction: column; gap: 4px; }
-.tc-item { display: flex; align-items: flex-start; gap: 8px; width: 100%; text-align: left; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--card); }
-.tc-item:hover { border-color: var(--accent); }
-.tc-item.on { border-color: var(--accent); background: var(--accent-tint); }
-.tc-item .mark { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10px; color: var(--faint); width: 11px; flex: none; line-height: 1.6; }
-.tc-item.on .mark { color: var(--accent); }
-.tc-item .body { min-width: 0; }
-.tc-item .t { display: block; font-size: 11px; line-height: 1.4; color: var(--ink); }
-.tc-item .m { display: block; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 9.5px; color: var(--muted); margin-top: 2px; }
-/* #299 — the DO NEXT filters: tab, tier and risk, so a whole slice of the
-   board can be handed to a session in one send. Deliberately quiet chrome —
-   the list underneath is the thing, these only ask it a narrower question. */
-.tc-filters { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 7px; }
-.tc-filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
-.tc-filter-row .k { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 9px; letter-spacing: 0.06em; color: var(--faint); flex: none; }
-.tc-filter-row .k:not(:first-child) { margin-left: 4px; }
-.tcf { display: inline-flex; align-items: baseline; gap: 3px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--card); font-size: 10px; line-height: 1.6; color: var(--muted); }
-.tcf:hover { border-color: var(--accent); color: var(--ink); }
-.tcf.on { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-deep); font-weight: 600; }
-.tcf .n { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 9px; color: var(--faint); }
-.tcf.on .n { color: var(--accent); }
-.tcf.tier { font-family: ui-monospace, Menlo, Consolas, monospace; }
-.tcf-none { font-size: 9.5px; color: var(--faint); }
-.tcf-select { flex: 1; min-width: 0; padding: 1px 4px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--card); color: var(--ink); font-size: 10px; line-height: 1.7; }
-.tcf-select:hover { border-color: var(--accent); }
-.tc-tickall { display: flex; align-items: baseline; gap: 10px; margin-top: 2px; }
-.tc-send { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
-.tc-send .btn-submit.sm { padding: 4px 10px; font-size: 11px; }
-/* ROSTER */
-.tc-roster { display: flex; align-items: baseline; gap: 8px; }
-.tc-roster .l { font-size: 11px; line-height: 1.5; color: var(--ink); }
-.tc-roster .s { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10px; color: var(--muted); margin-left: auto; flex: none; }
-/* RUNBOOK — cmd on the left, the reason you reach for it on the right */
+.tc-work-acts { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin-top: 7px; }
+/* DO NEXT's head strip: the count, the census, and what a click does. The shape
+   line is why an empty tier lane is worth drawing below — it says the queue has
+   nothing at S before you go looking for it. */
+.tcs-strip { border-top: 1px solid var(--line-2); background: var(--surface); padding: 10px 12px 9px; display: flex; flex-direction: column; gap: 6px; }
+.tcs-shape { font-family: var(--mono); font-size: 10px; line-height: 1.5; color: var(--body); }
+.tcs-hint { font-family: var(--mono); font-size: 9.5px; color: var(--fainter); }
+/* the scrolling list — the lightest surface in the rail */
+.tcs-list { flex: 1; min-height: 0; overflow-y: auto; background: var(--surface); padding: 7px 9px 12px; display: flex; flex-direction: column; gap: 11px; }
+.tcs-lane { display: flex; flex-direction: column; gap: 3px; }
+.tcs-lane-head, .tcs-group-head { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; padding: 3px 2px; }
+.tcs-lane-head .bar { width: 3px; height: 12px; border-radius: 2px; background: currentColor; flex: none; }
+.tcs-lane-head .k, .tcs-group-head .k { font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
+.tcs-lane-head .n, .tcs-group-head .n { font-family: var(--mono); font-size: 9.5px; color: var(--fainter); }
+.tcs-lane-head .rule, .tcs-group-head .rule { flex: 1; height: 1px; background: var(--line-2); }
+.tcs-lane-head .w { font-size: 10px; color: var(--fainter); flex: none; }
+.tcs-lane-none { margin-left: 10px; font-size: 10px; color: var(--fainter); }
+.tcs-more { align-self: flex-start; margin-left: 10px; font-family: var(--mono); font-size: 10px; color: var(--muted); padding: 2px 0; }
+.tcs-more:hover { color: var(--accent); }
+/* A row is a LINE, not a box: the ring only appears once it is ticked. */
+.tcs-row { display: flex; align-items: flex-start; gap: 9px; width: 100%; text-align: left; padding: 7px 8px; border-radius: 8px; }
+.tcs-row:hover { background: var(--panel); }
+.tcs-row.on { background: var(--accent-tint); box-shadow: inset 0 0 0 1px var(--accent-soft); }
+.tcs-row .box { width: 15px; height: 15px; flex: none; margin-top: 1px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 9px; color: #fff; box-shadow: inset 0 0 0 1.5px var(--line-3); }
+.tcs-row .box.on { background: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.tcs-row .b { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.tcs-row .t { font-size: 11.5px; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+.tcs-row .m { font-family: var(--mono); font-size: 9.5px; color: var(--faint); }
+.tcs-row .m .sep { color: var(--line-3); margin: 0 4px; }
+.tcs-row .m .tab { color: var(--chip-ink); }
+/* the footer that acts */
+.tcs-foot { border-top: 1px solid var(--line-2); background: var(--panel); padding: 10px 12px 11px; display: flex; flex-direction: column; gap: 7px; }
+.tcs-foot .r { display: flex; align-items: center; gap: 10px; }
+.tcs-foot .r .s { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-left: auto; white-space: nowrap; }
+.tcs-foot .btn-submit.sm { height: 30px; padding: 0 12px; font-size: 11.5px; flex: none; }
+/* 1a's scope — one control where three rows of chips and a fifteen-option
+   select used to be. The popover scrolls; it never grows to the board's size. */
+.tcs-scope { position: relative; flex: 0 1 auto; min-width: 0; }
+.tcs-scope-btn { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--line-3); background: var(--card); font-family: var(--mono); font-size: 10px; color: var(--ink); max-width: 100%; }
+.tcs-scope-btn.on, .tcs-scope-btn:hover { border-color: var(--accent); }
+.tcs-scope-btn .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex: none; }
+.tcs-scope-btn .l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tcs-scope-btn .c { color: var(--faint); flex: none; }
+.tcs-pop { position: absolute; top: 30px; right: 0; z-index: 5; width: 190px; max-height: 240px; overflow-y: auto; background: var(--surface); border: 1px solid var(--line-3); border-radius: 9px; box-shadow: var(--shadow-pop, 0 10px 28px rgba(28, 25, 18, 0.12)); padding: 5px; }
+.tcs-pop-cap { font-family: var(--mono); font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--fainter); padding: 6px 8px 5px; }
+.tcs-pop-opt { display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; padding: 5px 8px; border-radius: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--body); }
+.tcs-pop-opt:hover { background: var(--panel); color: var(--ink); }
+.tcs-pop-opt.on { background: var(--accent-tint); color: var(--accent-deep); font-weight: 600; }
+.tcs-pop-opt .l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tcs-pop-opt .n { color: var(--fainter); flex: none; }
+/* 1b — one item promoted, everything else typed for */
+.tcs-bulk-btn { height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--card); font-family: var(--mono); font-size: 10px; color: var(--faint); flex: none; }
+.tcs-bulk-btn:hover { border-color: var(--accent); color: var(--ink); }
+.tcs-bulk-btn.on { border-color: var(--accent); color: var(--accent-deep); background: var(--accent-tint); }
+.tcs-on { display: flex; align-items: baseline; gap: 7px; padding: 0 12px 9px; font-size: 10.5px; color: var(--muted); }
+.tcs-on .k { color: var(--accent-deep); flex: none; }
+.tcs-on .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--body); }
+.tcs-on .tc-link { flex: none; font-size: 10px; }
+.tcs-top { background: var(--sand); border: 1px solid var(--resume-border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 9px; }
+.tcs-top .h { display: flex; align-items: flex-start; gap: 8px; }
+.tcs-top .h .t { font-size: 13px; line-height: 1.4; color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
+.tcs-top .m { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.tcs-top .m .tag { border: 1px solid var(--line-3); border-radius: 999px; padding: 1px 7px; color: var(--chip-ink); }
+.tcs-top .a { display: flex; align-items: center; gap: 10px; }
+.tcs-top .a .btn-submit.sm { height: 32px; padding: 0 13px; font-size: 12px; }
+.tcs-top .w { font-size: 10px; color: #a9947f; }
+.tcs-unpass { align-self: flex-start; font-size: 10px; }
+.tcs-filter { border-top: 1px solid var(--line-2); background: var(--surface); padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 8px; }
+.tcs-field { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 9px; }
+.tcs-field.on { border-color: var(--accent-soft); }
+.tcs-field .s { font-family: var(--mono); font-size: 11px; color: var(--accent); flex: none; }
+.tcs-field input { flex: 1; min-width: 0; background: none; border: none; outline: none; color: var(--ink); font-family: var(--mono); font-size: 11px; }
+.tcs-field .tc-link { flex: none; font-family: var(--mono); font-size: 10px; }
+.tcs-tokens { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.tcs-token { flex: none; border: 1px solid var(--line-2); border-radius: 999px; padding: 2px 9px; font-family: var(--mono); font-size: 10px; color: var(--chip-ink); white-space: nowrap; }
+.tcs-token:hover { border-color: var(--accent-soft); color: var(--ink); }
+.tcs-token.on { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-deep); }
+.tcs-group { display: flex; flex-direction: column; gap: 2px; }
+.tcs-group-head:hover { background: var(--panel); border-radius: 7px; }
+.tcs-group-head .c { font-family: var(--mono); font-size: 9px; color: var(--faint); width: 9px; flex: none; }
+.tcs-group .tcs-row { padding-left: 20px; }
+.tcs-bulk { border-top: 1px solid var(--line-2); background: var(--accent-tint); padding: 10px 12px; display: flex; align-items: center; gap: 10px; }
+.tcs-bulk .s { flex: 1; min-width: 0; font-family: var(--mono); font-size: 10px; color: var(--body-2); }
+.tcs-bulk .btn-submit.sm { height: 30px; padding: 0 12px; font-size: 11.5px; flex: none; }
+.tcs-roster { border-top: 1px solid var(--line-2); padding: 10px 12px 11px; display: flex; align-items: center; gap: 9px; }
+.tcs-roster .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--paused); flex: none; }
+.tcs-roster .dot.live { background: var(--live); }
+.tcs-roster .l { font-size: 11.5px; color: var(--body); }
+.tcs-roster .s { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: auto; flex: none; border-bottom: 1px dotted var(--line-3); cursor: help; }
+/* RUNBOOK — cmd on the left, the reason you reach for it on the right. The
+   hovers lift to --card: the rail's own ground is --panel now, so hovering to
+   panel would have been a no-op. */
 .tc-cmd-row { display: flex; gap: 2px; align-items: center; }
 .tc-cmd { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; text-align: left; padding: 5px 8px; border-radius: 7px; color: var(--ink); }
-.tc-cmd:hover { background: var(--panel); }
+.tc-cmd:hover { background: var(--card); }
 .tc-cmd .c { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tc-cmd .w { margin-left: auto; font-size: 10px; color: var(--muted); flex: none; }
 .tc-cmd.add { color: var(--muted); border: 1px dashed var(--line-2); font-size: 11.5px; }
@@ -2278,7 +2366,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tc-cmd.brief { border: 1px solid var(--accent-tint-border); background: var(--accent-tint); color: var(--accent-deep); font-size: 11.5px; }
 .tc-cmd.brief:hover { border-color: var(--accent); }
 .tc-run { color: var(--faint); font-size: 12px; padding: 3px 6px; border-radius: 5px; flex: none; }
-.tc-run:hover { color: var(--accent); background: var(--panel); }
+.tc-run:hover { color: var(--accent); background: var(--card); }
 .term-cmd-x { color: var(--faint); font-size: 14px; padding: 2px 5px; border-radius: 5px; }
 .term-cmd-x:hover { color: var(--critical); }
 .term-cmd-add { display: flex; flex-direction: column; gap: 6px; }
@@ -2499,7 +2587,9 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .term-mini .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
 @media (max-width: 760px) {
   .term-layout { flex-direction: column-reverse; }
-  .term-cockpit { width: 100%; height: auto; max-height: 320px; }
+  /* The Session rail spends a fixed head and a fixed footer before the list
+     gets any height, so 320px left the list a couple of rows on a phone. */
+  .term-cockpit { width: 100%; height: auto; max-height: 420px; }
   .term-cockpit.collapsed { width: 100%; height: 40px; }
   .term-cockpit .term-rail-toggle { transform: rotate(90deg); }
 }

@@ -799,23 +799,41 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   }, [board]);
   // Everything the rail could hand over, in the runner's own order.
   const nextAll = useMemo(() => (board ? nextUpItems(board.roadmap) : []), [board]);
-  // #299 — the rail used to offer the top six and nothing else, which is the
-  // right default and a dead end the moment you want a SET: this tab's area,
-  // everything ranked S, the low-risk work you can hand over in one go. These
-  // three narrow the same list — they never reorder it, so what the rail gives
-  // you is still what the night would take, just the slice you asked for.
+  // #299, reshaped this turn — the rail offers the same list two ways, and
+  // NEITHER of them reorders it, so what the rail hands over is still what the
+  // night would take. The old version stacked three rows of filter chips and a
+  // fifteen-option tab select above two rows of list; both layouts below spend
+  // that chrome on the list instead:
+  //   tiers  (1a) the TIER is the layout — one lane per tier, each showing its
+  //          first two rows — and the tab narrows to one scope behind a single
+  //          control. Nothing to read to know the shape of the queue.
+  //   upnext (1b) ONE item is promoted, ready to send in a press; everything
+  //          else is reached by typing (`tier:a`, `tab:polaris`, free text) and
+  //          the tier groups fold away.
+  // Which one is on screen is device-local (viewPrefs.railStyle).
+  const railStyle = viewPrefs.railStyle;
   const [railArea, setRailArea] = useState('');          // '' = every tab
-  const [railTier, setRailTier] = useState<Tier>('');    // '' = every tier
   const [railRisk, setRailRisk] = useState<'' | 'low' | 'high'>('');
-  useEffect(() => { setRailArea(''); setRailTier(''); setRailRisk(''); }, [projectSlug]);
-  const railFiltered = useMemo(() => nextAll.filter((it) =>
-    (!railArea || (railArea === RAIL_UNTAGGED ? !it.area : it.area === railArea))
-    && (!railTier || it.tier === railTier)
-    && (!railRisk || it.risk === railRisk)), [nextAll, railArea, railTier, railRisk]);
-  const railFiltering = Boolean(railArea || railTier || railRisk);
-  // Unfiltered the rail stays a short list — the top of the queue, not the
-  // board. Ask it a question and it shows you the whole answer.
-  const nextUp = useMemo(() => railFiltered.slice(0, railFiltering ? 24 : 6), [railFiltered, railFiltering]);
+  const [scopeOpen, setScopeOpen] = useState(false);     // 1a — the scope popover
+  const [laneOpen, setLaneOpen] = useState<string[]>([]); // 1a — lanes past their first two
+  const [railQuery, setRailQuery] = useState('');        // 1b — the typed filter
+  const [bulk, setBulk] = useState(false);               // 1b — tick-several mode
+  const [tierShut, setTierShut] = useState<string[]>([]); // 1b — folded tier groups
+  // 1b — which item is promoted, and the ones you have waved past. Both are
+  // ways of LOOKING at the queue: skipping changes nothing on the board (the
+  // runner's order is unmoved), it just asks the rail for the next one down.
+  const [promoted, setPromoted] = useState<number | null>(null);
+  const [passed, setPassed] = useState<number[]>([]);
+  // What is ticked for the next send. ONE list across both layouts: flipping the
+  // rail is a change of view, and a view change that dropped your ticks would
+  // make the switch cost something.
+  const [picked, setPicked] = useState<number[]>([]);
+  const togglePick = (id: number) =>
+    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  useEffect(() => {
+    setRailArea(''); setRailRisk(''); setRailQuery(''); setPicked([]);
+    setLaneOpen([]); setPromoted(null); setPassed([]);
+  }, [projectSlug]);
   // The tabs the rail can offer, counted over what is actually handable.
   const railAreas = useMemo(() => {
     const seen = new Map<string, number>();
@@ -828,6 +846,113 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   }, [nextAll]);
   const railTierCount = (t: Tier) => nextAll.filter((it) => it.tier === t).length;
   const railRiskCount = (r: 'low' | 'high') => nextAll.filter((it) => it.risk === r).length;
+  // Lanes and groups run S → A → B → C → unranked, the run queue's own order
+  // (tierRank sorts '' last), so reading the rail top to bottom reads the queue.
+  const LANES: Tier[] = [...TIERS, ''];
+  const laneKey = (t: Tier) => t || 'none';
+  const laneName = (t: Tier) => (t ? `tier ${t}` : 'unranked');
+
+  // ---- 1a: the tier stack ----
+  // The scope: a tab, a risk class, or both. Tier is deliberately NOT one of
+  // them here — it is the shape of the list, so scoping by it would be asking
+  // the same question twice.
+  const scoped = useMemo(() => nextAll.filter((it) =>
+    (!railArea || (railArea === RAIL_UNTAGGED ? !it.area : it.area === railArea))
+    && (!railRisk || it.risk === railRisk)), [nextAll, railArea, railRisk]);
+  const scopeLabel = [
+    railArea ? (railArea === RAIL_UNTAGGED ? 'untagged' : railArea) : 'all tabs',
+    railRisk === 'low' ? '⇣ low' : railRisk === 'high' ? '⇡ high' : '',
+  ].filter(Boolean).join(' · ');
+  const LANE_CAP = 2; // rows per lane before "+N more" — the lane, not the rail, is the unit
+  const lanes = useMemo(() => LANES.map((t) => {
+    const all = scoped.filter((it) => it.tier === t);
+    const open = laneOpen.includes(laneKey(t));
+    const shown = open ? all : all.slice(0, LANE_CAP);
+    const hidden = all.length - shown.length;
+    return {
+      tier: t, all, shown,
+      // The fold is only offered where it does something: a lane that fits in
+      // LANE_CAP has nothing to open and nothing to close.
+      more: hidden > 0 ? `+${hidden} more` : open && all.length > LANE_CAP ? 'fewer' : '',
+      note: t === 'S' && all.length > 0 ? 'send first' : t === '' ? 'needs a tier' : '',
+    };
+    // An unranked lane with nothing in it is not news; an empty TIER is — a
+    // board with nothing at S says so, and that is why the lane is drawn.
+  }).filter((ln) => ln.tier !== '' || ln.all.length > 0), [scoped, laneOpen]);
+  const laneShape = LANES
+    .map((t) => `${t || 'unranked'} ${scoped.filter((it) => it.tier === t).length}`).join(' · ');
+  // Ticks are resolved against the SCOPE, so "select all" and the count on the
+  // send button mean the list you are looking at.
+  const scopedPicked = picked.filter((id) => scoped.some((it) => it.id === id));
+  const allScopedPicked = scoped.length > 0 && scopedPicked.length === scoped.length;
+
+  // ---- 1b: up next ----
+  // Typed filter. `tier:`, `tab:`, `risk:` and `plan:none` are exact questions;
+  // anything else is free text over the title, the tab and the #id. Every term
+  // must match, so two tokens narrow rather than widen.
+  const matched = useMemo(() => {
+    const terms = railQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return nextAll;
+    return nextAll.filter((it) => terms.every((t) => {
+      if (t.startsWith('tier:')) return it.tier.toLowerCase() === t.slice(5);
+      if (t.startsWith('tab:')) return (it.area || 'untagged').toLowerCase().includes(t.slice(4));
+      if (t.startsWith('risk:')) return it.risk === t.slice(5);
+      if (t === 'plan:none') return it.plan.length === 0;
+      return `${it.title} ${it.area} #${it.id}`.toLowerCase().includes(t);
+    }));
+  }, [nextAll, railQuery]);
+  // The promoted item: the one you picked if it survives the filter, else the
+  // top of the queue you haven't waved past. Skipping the last one leaves NO
+  // promotion rather than quietly re-offering something you just passed on —
+  // the card says so, and every skipped item is still in the list below.
+  const topItem = matched.find((it) => it.id === promoted)
+    ?? matched.find((it) => !passed.includes(it.id))
+    ?? null;
+  const groups = useMemo(() => LANES.map((t) => ({
+    tier: t,
+    items: matched.filter((it) => it.tier === t && it.id !== topItem?.id),
+    open: !tierShut.includes(laneKey(t)),
+  })).filter((g) => g.items.length > 0), [matched, topItem, tierShut]);
+  // Filter tokens are offered only where they'd land on something — a chip for
+  // a tier nothing sits at is a dead press.
+  const railTokens = useMemo(() => {
+    const out: string[] = [];
+    for (const t of TIERS) if (railTierCount(t) > 0) out.push(`tier:${t.toLowerCase()}`);
+    for (const r of ['low', 'high'] as const) if (railRiskCount(r) > 0) out.push(`risk:${r}`);
+    for (const [a] of railAreas) if (a !== RAIL_UNTAGGED) out.push(`tab:${a}`);
+    if (nextAll.some((it) => it.plan.length === 0)) out.push('plan:none');
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextAll, railAreas]);
+  const matchedPicked = picked.filter((id) => matched.some((it) => it.id === id));
+  const allMatchedPicked = matched.length > 0 && matchedPicked.length === matched.length;
+
+  // One list row, shared by both layouts: the title, then the machine facts on a
+  // mono line. Borderless by default — the ring only appears on a ticked row, so
+  // a list of twelve is twelve lines rather than twelve boxes. The tick square
+  // is drawn only where a tick is what a click MEANS (1a always, 1b in select
+  // mode); in 1b a bare click promotes instead, and a checkbox would lie about
+  // that.
+  const railRow = (it: RoadmapItem, opts: { tick: boolean; toggle: boolean; onClick: () => void }) => {
+    const on = picked.includes(it.id);
+    return (
+      <button key={it.id} className={`tcs-row${on ? ' on' : ''}`} onClick={opts.onClick}
+        aria-pressed={opts.toggle ? on : undefined}
+        title={it.note ? it.note.trim().slice(0, 300) : undefined}>
+        {opts.tick && <span className={`box${on ? ' on' : ''}`}>{on ? '✓' : ''}</span>}
+        <span className="b">
+          <span className="t">{it.title}</span>
+          <span className="m">
+            #{it.id}<span className="sep">·</span>{it.bucket}
+            <span className="sep">·</span><span className="tab">{it.area || 'untagged'}</span>
+            {it.risk !== 'normal' && <><span className="sep">·</span>{it.risk === 'low' ? '⇣' : '⇡'}</>}
+            {it.plan.length === 0 && <><span className="sep">·</span>no plan</>}
+          </span>
+        </span>
+      </button>
+    );
+  };
+
   // The head's claim count — open items a branch holds (#277). Real Stack
   // state, not a guess about how many terminal tabs you have open.
   const claimedItems = openItems.filter((it) => it.claimedBy);
@@ -868,28 +993,30 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
     };
   });
 
-  const [picked, setPicked] = useState<number[]>([]);
-  useEffect(() => { setPicked([]); }, [projectSlug]);
-  const togglePick = (id: number) =>
-    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   // Send = type the brief at the prompt (bracketed, so a multi-line block
   // lands as one paste), remember the first item as what this session is on
   // and claim the lot. Nothing runs: the human presses Enter. The typing is
   // unconditional — it has already happened by the time the claims are
   // written, so a failed claim reports itself rather than pretending.
-  const sendPicked = async () => {
+  //
+  // Both layouts come through here: 1a sends the ticked set, 1b sends the one
+  // promoted item (and the ticked set when it is in select mode).
+  const sendItems = async (send: number[]) => {
     const h = handles.current.get(active);
-    if (!h || picked.length === 0) return;
+    if (!h || send.length === 0) return;
     // Resolved against the WHOLE eligible list, not the filtered slice, so a
-    // pick survives switching tabs — one send can carry two areas (#299) — and
+    // pick survives switching scope — one send can carry two areas (#299) — and
     // always goes over in the runner's order rather than the order you ticked.
-    const items = nextAll.filter((it) => picked.includes(it.id));
+    const items = nextAll.filter((it) => send.includes(it.id));
     if (!items.length) return;
     h.sendText(`\x1b[200~${itemsBrief(items)}\x1b[201~`);
     h.focus();
     pinWorking(items[0].id);
-    setPicked([]);
     const ids = items.map((it) => it.id);
+    setPicked((p) => p.filter((x) => !ids.includes(x)));
+    // Sending consumes the promotion: the claim drops the item out of the queue,
+    // so the next one down is what 1b should be offering.
+    setPromoted(null);
     applyClaim(ids, claimLabel);
     setClaimNote('');
     try {
@@ -1396,56 +1523,268 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
               Collapsing it gives the canvas the whole width; the choice and
               the open segment are device-local. ---- */}
           <div className={`term-cockpit${viewPrefs.railOpen ? '' : ' collapsed'}`}>
-            <button
-              className="term-rail-toggle"
-              title={viewPrefs.railOpen ? 'Collapse the cockpit rail' : 'Expand the cockpit rail'}
-              onClick={() => saveViewPrefs({ railOpen: !viewPrefs.railOpen })}>
-              <span className="term-rail-toggle-icon">{viewPrefs.railOpen ? '›' : '‹'}</span>
-            </button>
+            <div className="tc-top">
+              {/* The two Session layouts, switchable in a press so they can be
+                  compared against real work rather than against a mock. Named
+                  by what you are going TO, since that is the choice. */}
+              {viewPrefs.railOpen && viewPrefs.railSeg === 'session' && (
+                <button className="tc-style" onClick={() => {
+                  saveViewPrefs({ railStyle: railStyle === 'tiers' ? 'upnext' : 'tiers' });
+                  setScopeOpen(false);
+                }}
+                  title={railStyle === 'tiers'
+                    ? 'Switch the rail to Up next — one item promoted to send, the rest reached by typing'
+                    : 'Switch the rail to Tier stack — one lane per tier, the tab as a single scope'}>
+                  ⇄ {railStyle === 'tiers' ? 'up next' : 'tiers'}
+                </button>
+              )}
+              <button
+                className="term-rail-toggle"
+                title={viewPrefs.railOpen ? 'Collapse the cockpit rail' : 'Expand the cockpit rail'}
+                onClick={() => saveViewPrefs({ railOpen: !viewPrefs.railOpen })}>
+                <span className="term-rail-toggle-icon">{viewPrefs.railOpen ? '›' : '‹'}</span>
+              </button>
+            </div>
             {viewPrefs.railOpen && (
               <>
-                <div className="tc-segs seg-control sm" role="tablist" aria-label="Cockpit rail">
-                  {([['session', 'Session'], ['runbook', 'Runbook']] as const).map(([k, label]) => (
-                    <button key={k} role="tab" aria-selected={viewPrefs.railSeg === k}
-                      className={`seg-opt ${viewPrefs.railSeg === k ? 'on' : ''}`}
-                      onClick={() => saveViewPrefs({ railSeg: k })}>
-                      {label}
+                {/* One head row: the segment picker, and the control that
+                    narrows the list — a scope in 1a, tick-mode in 1b. */}
+                <div className="tc-head">
+                  <div className="tc-segs seg-control sm" role="tablist" aria-label="Cockpit rail">
+                    {([['session', 'Session'], ['runbook', 'Runbook']] as const).map(([k, label]) => (
+                      <button key={k} role="tab" aria-selected={viewPrefs.railSeg === k}
+                        className={`seg-opt ${viewPrefs.railSeg === k ? 'on' : ''}`}
+                        onClick={() => saveViewPrefs({ railSeg: k })}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {board && viewPrefs.railSeg === 'session' && (railStyle === 'tiers' ? (
+                    // 1a — the scope. ONE control for "which tab", where there
+                    // used to be a select carrying every area on the board plus
+                    // two rows of chips. Risk rides along in the same popover:
+                    // it is the same question (which slice of the queue), and it
+                    // has only ever had two answers.
+                    // A popover that only closed by pressing its own button again
+                    // would sit over the list you opened it to narrow. Closing on
+                    // focus LEAVING the group covers both the option press (which
+                    // closes it itself) and a click anywhere else on the screen.
+                    <div className="tcs-scope"
+                      onBlur={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setScopeOpen(false);
+                      }}>
+                      <button className={`tcs-scope-btn${scopeOpen ? ' on' : ''}`}
+                        aria-expanded={scopeOpen}
+                        title="Scope the queue to one tab, or to a risk class"
+                        onClick={() => setScopeOpen((o) => !o)}>
+                        <span className="dot" />
+                        <span className="l">{scopeLabel}</span>
+                        <span className="c">▾</span>
+                      </button>
+                      {scopeOpen && (
+                        <div className="tcs-pop">
+                          <div className="tcs-pop-cap">scope to a tab</div>
+                          {[['', 'all tabs', nextAll.length] as const,
+                            ...railAreas.map(([a, n]) =>
+                              [a, a === RAIL_UNTAGGED ? 'untagged' : a, n] as const)]
+                            .map(([k, label, n]) => (
+                              <button key={k || 'all'} className={`tcs-pop-opt${railArea === k ? ' on' : ''}`}
+                                onClick={() => { setRailArea(k); setScopeOpen(false); }}>
+                                <span className="l">{label}</span>
+                                <span className="n">{n}</span>
+                              </button>
+                            ))}
+                          {(railRiskCount('low') > 0 || railRiskCount('high') > 0) && (
+                            <>
+                              <div className="tcs-pop-cap">and a risk class</div>
+                              {([['', 'any risk'], ['low', '⇣ low — merges itself'],
+                                ['high', '⇡ high — wants watching']] as const)
+                                .filter(([r]) => !r || railRiskCount(r) > 0)
+                                .map(([r, label]) => (
+                                  <button key={r || 'any'} className={`tcs-pop-opt${railRisk === r ? ' on' : ''}`}
+                                    onClick={() => { setRailRisk(r); setScopeOpen(false); }}>
+                                    <span className="l">{label}</span>
+                                    <span className="n">{r ? railRiskCount(r) : nextAll.length}</span>
+                                  </button>
+                                ))}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    // 1b — one item sends in a press, so ticking several is the
+                    // deliberate mode rather than the standing one.
+                    <button className={`tcs-bulk-btn${bulk ? ' on' : ''}`} aria-pressed={bulk}
+                      title="Tick several items and send them as one prompt"
+                      onClick={() => { setBulk((b) => !b); setPicked([]); }}>
+                      select
                     </button>
                   ))}
                 </div>
 
                 {viewPrefs.railSeg === 'session' ? (
-                  <div className="tc-body">
-                    {/* WORKING ON — what you handed this session. Device-local:
-                        Stack has no server-side "the item this TAB is on", and
-                        inventing one from lane claims would be a guess. */}
-                    <div className="tc-block">
-                      <div className="tc-cap">WORKING ON</div>
-                      {workingItem ? (
-                        <div className="tc-work">
-                          <div className="t">{workingItem.title}</div>
-                          <div className="m">
-                            #{workingItem.id} · {workingItem.bucket}
-                            {workingItem.tier ? ` · tier ${workingItem.tier}` : ''}
-                            {workingItem.area ? ` · ${workingItem.area}` : ''}
-                            {workingItem.plan.length
-                              ? ` · ☰ ${workingItem.plan.filter((s) => s.done).length}/${workingItem.plan.length}`
-                              : ''}
+                  // The Session rail, both layouts on one skeleton: a head that
+                  // never scrolls (what you are on, what to send next), the list,
+                  // and a footer that acts. One panel ground with hairlines only
+                  // where the parts genuinely separate — no card inside a block
+                  // inside the rail's own border, which is what made the old rail
+                  // read as three nested boxes.
+                  <div className="tc-session">
+                    {!board ? (
+                      <div className="tcs-lede">
+                        <div className="tc-cap">{railStyle === 'tiers' ? 'WORKING ON' : 'UP NEXT'}</div>
+                        <div className="tcs-none">
+                          {!projectSlug ? 'Open a session in a project directory to tie it to the plan.'
+                            : detailErr ? `Could not read ~/${projectSlug} just now — the plan is there, this rail isn't.`
+                            : `~/${projectSlug} isn't a tracked project — there is no plan to tie this session to.`}
+                        </div>
+                      </div>
+                    ) : railStyle === 'tiers' ? (
+                      /* ---- 1a · tier stack: the tier IS the layout ---- */
+                      <>
+                        {/* WORKING ON — what you handed this session. Device-local:
+                            Stack has no server-side "the item this TAB is on", and
+                            inventing one from branch claims would be a guess. */}
+                        <div className="tcs-lede">
+                          <div className="tc-cap">WORKING ON</div>
+                          {workingItem ? (
+                            <div className="tc-work">
+                              <span className={`tcs-grade t${workingItem.tier || 'none'}`}>{workingItem.tier || '·'}</span>
+                              <div className="b">
+                                <div className="t">{workingItem.title}</div>
+                                <div className="m">
+                                  #{workingItem.id} · {workingItem.bucket}
+                                  {workingItem.area ? ` · ${workingItem.area}` : ''}
+                                  {workingItem.plan.length
+                                    ? ` · ☰ ${workingItem.plan.filter((s) => s.done).length}/${workingItem.plan.length}`
+                                    : ''}
+                                  {' · in the prompt'}
+                                </div>
+                                {/* The claim is what makes this more than a note to
+                                    yourself: while it stands, the runner leaves the
+                                    item alone. A claim from a real branch is shown
+                                    but never dropped from here. */}
+                                <div className={`tc-claim${workingItem.claimedBy ? '' : ' off'}`}>
+                                  {workingItem.claimedBy
+                                    ? `⚑ in progress · ${workingItem.claimedBy}`
+                                    : '○ not claimed — the runner may still pick this up'}
+                                </div>
+                                <div className="tc-work-acts">
+                                  <button className="tc-link"
+                                    onClick={() => go.detail(projectSlug, 'roadmap', String(workingItem.id))}>
+                                    Open on the board ↗
+                                  </button>
+                                  {workingItem.claimedBy && isTermClaim(workingItem.claimedBy) && (
+                                    <button className="tc-link" onClick={() => void releaseWorking()}
+                                      title="Give the item back to the board — it becomes pickable again">release</button>
+                                  )}
+                                  <button className="tc-link dim" onClick={() => pinWorking(null)}
+                                    title="Forget what this session is on (the claim, if any, stays)">clear</button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="tcs-none">Nothing handed over yet. Select below and send.</div>
+                          )}
+                        </div>
+
+                        {/* DO NEXT — the runner's own order, so what the rail offers
+                            is what the night would take. The shape line is the
+                            queue's whole census in one line, which is what makes a
+                            lane with nothing in it worth drawing below. */}
+                        <div className="tcs-strip">
+                          <div className="tc-cap row">
+                            <span>DO NEXT · {scoped.length}</span>
+                            <button className="tc-link" onClick={() => go.detail(projectSlug, 'roadmap')}>roadmap ↗</button>
                           </div>
-                          {/* The claim is what makes this more than a note to
-                              yourself: while it stands, the runner leaves the
-                              item alone. A claim from a real branch is shown
-                              but never dropped from here. */}
-                          <div className={`tc-claim${workingItem.claimedBy ? '' : ' off'}`}>
-                            {workingItem.claimedBy
-                              ? `⚑ in progress · ${workingItem.claimedBy}`
-                              : '○ not claimed — the runner may still pick this up'}
-                          </div>
-                          <div className="tc-work-acts">
-                            <button className="tc-link"
-                              onClick={() => go.detail(projectSlug, 'roadmap', String(workingItem.id))}>
-                              Open on the board ↗
+                          <div className="tcs-shape">{scoped.length ? laneShape : 'Queue clear in this scope.'}</div>
+                          <div className="tcs-hint">click to select, click again to drop it</div>
+                        </div>
+
+                        <div className="tcs-list">
+                          {nextAll.length === 0 ? (
+                            <div className="tc-empty pad">Every open item is claimed or parked — nothing free to hand over.</div>
+                          ) : scoped.length === 0 ? (
+                            <div className="tc-empty pad">
+                              Nothing free in this scope.{' '}
+                              <button className="tc-link" onClick={() => { setRailArea(''); setRailRisk(''); }}>clear it</button>
+                            </div>
+                          ) : lanes.map((ln) => (
+                            <div className="tcs-lane" key={laneKey(ln.tier)}>
+                              <div className="tcs-lane-head">
+                                <span className={`bar t${ln.tier || 'none'}`} />
+                                <span className={`k t${ln.tier || 'none'}`}>{laneName(ln.tier)}</span>
+                                <span className="n">{ln.all.length}</span>
+                                <span className="rule" />
+                                {ln.note && <span className="w">{ln.note}</span>}
+                              </div>
+                              {ln.all.length === 0 ? (
+                                <div className="tcs-lane-none">nothing at {ln.tier}</div>
+                              ) : (
+                                <>
+                                  {ln.shown.map((it) => railRow(it, {
+                                    // No checkbox in this layout: the row IS the
+                                    // tick, and the accent ring is the state.
+                                    tick: false, toggle: true,
+                                    onClick: () => togglePick(it.id),
+                                  }))}
+                                  {ln.more && (
+                                    <button className="tcs-more"
+                                      onClick={() => setLaneOpen((l) => {
+                                        const k = laneKey(ln.tier);
+                                        return l.includes(k) ? l.filter((x) => x !== k) : [...l, k];
+                                      })}>
+                                      {ln.more}
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="tcs-foot">
+                          {claimNote && <div className="tc-warn">{claimNote}</div>}
+                          <div className="r">
+                            {/* Select-all works on the SCOPE, so the count on the
+                                button always means the list you are looking at —
+                                and clearing only drops what this scope shows, so a
+                                pick made in another tab's scope survives. */}
+                            <button className="tc-link dim" disabled={scoped.length === 0}
+                              onClick={() => setPicked((p) => (allScopedPicked
+                                ? p.filter((id) => !scoped.some((it) => it.id === id))
+                                : [...new Set([...p, ...scoped.map((it) => it.id)])]))}>
+                              {allScopedPicked ? 'clear' : `select all ${scoped.length}`}
                             </button>
+                            <span className="s">
+                              {scopedPicked.length ? `${scopedPicked.length} selected` : 'nothing selected'}
+                            </span>
+                            <button className="btn-submit sm" disabled={scopedPicked.length === 0 || !activeSess}
+                              onClick={() => void sendItems(scopedPicked)}
+                              title="Types the selected items at the prompt as one block and claims them — read it, then press Enter yourself">
+                              send →
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      /* ---- 1b · up next: one item to send, type to filter ---- */
+                      <>
+                        {/* Already sent? Say so in a line. This layout's card is
+                            about what to send NEXT, but the claim made a minute ago
+                            is still the thing keeping the runner off it — and the
+                            release has to live wherever the claim is shown. */}
+                        {workingItem && (
+                          <div className="tcs-on">
+                            <span className="k">{workingItem.claimedBy ? '⚑' : '○'}</span>
+                            <span className="t" title={workingItem.claimedBy
+                              ? `In progress · ${workingItem.claimedBy}`
+                              : 'Not claimed — the runner may still pick this up'}>
+                              #{workingItem.id} {workingItem.title}
+                            </span>
+                            <button className="tc-link"
+                              onClick={() => go.detail(projectSlug, 'roadmap', String(workingItem.id))}>board ↗</button>
                             {workingItem.claimedBy && isTermClaim(workingItem.claimedBy) && (
                               <button className="tc-link" onClick={() => void releaseWorking()}
                                 title="Give the item back to the board — it becomes pickable again">release</button>
@@ -1453,156 +1792,148 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                             <button className="tc-link dim" onClick={() => pinWorking(null)}
                               title="Forget what this session is on (the claim, if any, stays)">clear</button>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="tc-empty">
-                          {board ? 'Nothing handed over yet — pick from DO NEXT and send it to the prompt.'
-                            : !projectSlug ? 'Open a session in a project directory to tie it to the plan.'
-                            : detailErr ? `Could not read ~/${projectSlug} just now — the plan is there, this rail isn't.`
-                            : `~/${projectSlug} isn't a tracked project — there is no plan to tie this session to.`}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* DO NEXT — the runner's own order, so what the rail
-                        offers is what the night would take. */}
-                    {board && (
-                      <div className="tc-block">
-                        <div className="tc-cap row">
-                          <span>DO NEXT</span>
-                          <button className="tc-link" onClick={() => go.detail(projectSlug, 'roadmap')}>Roadmap ↗</button>
-                        </div>
-                        {/* #299 — narrow the list to a tab, a tier or a risk
-                            class, so a whole slice of the board can be handed
-                            over in one send. A chip is drawn when it has work
-                            behind it (or while it is the active one, so the
-                            control you pressed never disappears under you). */}
-                        {nextAll.length > 0 && (railAreas.length > 1 || railTierCount('S') > 0 || railRiskCount('low') > 0 || railFiltering) && (
-                          <div className="tc-filters">
-                            {/* The tabs are a SELECT, not chips: a real board
-                                carries fifteen-odd areas, and fifteen chips in
-                                a 300px rail is five rows of filter above two
-                                rows of list. Tier and risk stay chips because
-                                there are only ever six of them. */}
-                            {railAreas.length > 1 && (
-                              <div className="tc-filter-row">
-                                <span className="k">tab</span>
-                                <select className="tcf-select" value={railArea}
-                                  onChange={(e) => setRailArea(e.target.value)}
-                                  aria-label="Only this area">
-                                  <option value="">all tabs · {nextAll.length}</option>
-                                  {railAreas.map(([a, n]) => (
-                                    <option key={a} value={a}>
-                                      {a === RAIL_UNTAGGED ? 'untagged' : a} · {n}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            )}
-                            <div className="tc-filter-row">
-                              <span className="k">tier</span>
-                              {TIERS.filter((t) => railTierCount(t) > 0 || railTier === t).map((t) => (
-                                <button key={t} className={`tcf tier${railTier === t ? ' on' : ''}`}
-                                  title={`Only tier ${t} — the queue works S first, then A, B, C`}
-                                  onClick={() => setRailTier(railTier === t ? '' : t)}>
-                                  {t} <span className="n">{railTierCount(t)}</span>
-                                </button>
-                              ))}
-                              {TIERS.every((t) => railTierCount(t) === 0) && <span className="tcf-none">none ranked</span>}
-                              <span className="k">risk</span>
-                              {(['low', 'high'] as const).filter((r) => railRiskCount(r) > 0 || railRisk === r).map((r) => (
-                                <button key={r} className={`tcf risk-${r}${railRisk === r ? ' on' : ''}`}
-                                  title={r === 'low'
-                                    ? 'Only low-risk work — the kind a green overnight run merges itself'
-                                    : 'Only high-risk work — the kind that wants you watching'}
-                                  onClick={() => setRailRisk(railRisk === r ? '' : r)}>
-                                  {r === 'low' ? '⇣' : '⇡'} <span className="n">{railRiskCount(r)}</span>
-                                </button>
-                              ))}
-                              {railRiskCount('low') === 0 && railRiskCount('high') === 0 && <span className="tcf-none">all normal</span>}
-                            </div>
-                          </div>
                         )}
-                        {nextUp.length === 0 ? (
-                          <div className="tc-empty">
-                            {railFiltering ? (
-                              <>Nothing free under this filter.{' '}
-                                <button className="tc-link" onClick={() => { setRailArea(''); setRailTier(''); setRailRisk(''); }}>
-                                  clear it
-                                </button></>
-                            ) : 'Every open item is claimed or parked — nothing free to hand over.'}
-                          </div>
-                        ) : (
-                          <>
-                            <div className="tc-next">
-                              {nextUp.map((it) => {
-                                const on = picked.includes(it.id);
-                                return (
-                                  <button key={it.id} className={`tc-item${on ? ' on' : ''}`}
-                                    onClick={() => togglePick(it.id)}
-                                    title={it.note ? it.note.slice(0, 300) : undefined}>
-                                    <span className="mark">{on ? '✓' : '○'}</span>
-                                    <span className="body">
-                                      <span className="t">{it.title}</span>
-                                      <span className="m">
-                                        #{it.id} · {it.bucket}
-                                        {it.tier ? ` · ${it.tier}` : ''}
-                                        {it.risk === 'low' ? ' · ⇣' : it.risk === 'high' ? ' · ⇡' : ''}
-                                        {it.area ? ` · ${it.area}` : ''}
-                                        {it.plan.length ? ` · ☰ ${it.plan.filter((s) => s.done).length}/${it.plan.length}` : ' · no plan'}
-                                      </span>
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            {/* Actioning a whole slice is the point of the
-                                filters, so ticking one is one press. */}
-                            {(nextUp.length > 1 || picked.length > 0) && (
-                              <div className="tc-tickall">
-                                <button className="tc-link"
-                                  onClick={() => setPicked((p) => [...new Set([...p, ...nextUp.map((it) => it.id)])])}
-                                  title={railFiltering
-                                    ? 'Tick everything this filter shows — the send keeps the runner order'
-                                    : 'Tick everything shown'}>
-                                  tick all {nextUp.length}
-                                </button>
-                                {picked.length > 0 && (
-                                  <button className="tc-link dim" onClick={() => setPicked([])}>clear {picked.length}</button>
-                                )}
-                                {railFiltering && railFiltered.length > nextUp.length && (
-                                  <span className="tc-note">{railFiltered.length - nextUp.length} more not shown</span>
-                                )}
+
+                        <div className="tcs-lede">
+                          <div className="tc-cap">UP NEXT</div>
+                          {topItem ? (
+                            <div className="tcs-top">
+                              <div className="h">
+                                <span className={`tcs-grade t${topItem.tier || 'none'}`}>{topItem.tier || '·'}</span>
+                                <span className="t">{topItem.title}</span>
                               </div>
+                              <div className="m">
+                                <span className="ref">#{topItem.id}</span>
+                                <span className="tag">{topItem.area || 'untagged'}</span>
+                                <span className="tag">{topItem.bucket}</span>
+                                <span className="tag">
+                                  {topItem.plan.length
+                                    ? `☰ ${topItem.plan.filter((s) => s.done).length}/${topItem.plan.length}`
+                                    : 'no plan'}
+                                </span>
+                              </div>
+                              <div className="a">
+                                <button className="btn-submit sm" disabled={!activeSess}
+                                  onClick={() => void sendItems([topItem.id])}
+                                  title="Types this item at the prompt and claims it — read it, then press Enter yourself">
+                                  send to the prompt
+                                </button>
+                                <button className="tc-link dim"
+                                  onClick={() => { setPassed((p) => [...p, topItem.id]); setPromoted(null); }}
+                                  title="Offer the next one down instead — nothing on the board changes, this is only what the rail shows">
+                                  skip
+                                </button>
+                              </div>
+                              <div className="w">typed, not run · sending claims the item</div>
+                            </div>
+                          ) : (
+                            <div className="tcs-none">
+                              {nextAll.length === 0
+                                ? 'Every open item is claimed or parked — nothing free to hand over.'
+                                : matched.length === 0 ? 'No match for that filter.'
+                                : 'Skipped past everything here — pick one below, or offer them again.'}
+                            </div>
+                          )}
+                          {passed.length > 0 && (
+                            <button className="tc-link dim tcs-unpass" onClick={() => setPassed([])}>
+                              {passed.length} skipped past · offer them again
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Typing is the filter: `tier:a`, `tab:polaris`, `risk:low`,
+                            `plan:none`, or any words from the title. Terms narrow
+                            each other, and the chips are only the ones with work
+                            behind them — a token that matches nothing is a dead
+                            press. */}
+                        <div className="tcs-filter">
+                          <div className={`tcs-field${railQuery ? ' on' : ''}`}>
+                            <span className="s">/</span>
+                            <input value={railQuery} onChange={(e) => setRailQuery(e.target.value)}
+                              aria-label="Filter the queue"
+                              placeholder="filter — tier:a, tab:polaris, branching" />
+                            {railQuery && (
+                              <button className="tc-link dim" onClick={() => setRailQuery('')}>clear</button>
                             )}
-                            <div className="tc-send">
-                              <button className="btn-submit sm" disabled={picked.length === 0 || !activeSess}
-                                onClick={() => void sendPicked()}
-                                title="Types the picked items at the prompt as one block and claims them — read it, then press Enter yourself">
-                                Send{picked.length ? ` ${picked.length}` : ''} to the prompt
+                          </div>
+                          <div className="tcs-tokens">
+                            {railTokens.map((t) => (
+                              <button key={t} className={`tcs-token${railQuery === t ? ' on' : ''}`}
+                                onClick={() => setRailQuery(railQuery === t ? '' : t)}>{t}</button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="tcs-list">
+                          {groups.length === 0 ? (
+                            <div className="tc-empty pad">
+                              {nextAll.length === 0 ? 'Every open item is claimed or parked — nothing free to hand over.'
+                                : matched.length > 0 ? 'That is the whole queue — nothing below the promoted item.'
+                                : 'No match for that filter.'}
+                            </div>
+                          ) : groups.map((g) => (
+                            <div className="tcs-group" key={laneKey(g.tier)}>
+                              <button className="tcs-group-head" aria-expanded={g.open}
+                                onClick={() => setTierShut((l) => {
+                                  const k = laneKey(g.tier);
+                                  return l.includes(k) ? l.filter((x) => x !== k) : [...l, k];
+                                })}>
+                                <span className="c">{g.open ? '▾' : '▸'}</span>
+                                <span className={`k t${g.tier || 'none'}`}>{laneName(g.tier)}</span>
+                                <span className="n">{g.items.length}</span>
+                                <span className="rule" />
                               </button>
-                              <span className="tc-note">typed, not run · claims the item</span>
+                              {g.open && g.items.map((it) => railRow(it, {
+                                tick: bulk, toggle: bulk,
+                                onClick: () => {
+                                  if (bulk) { togglePick(it.id); return; }
+                                  // Not a tick: promote it. One press moves the
+                                  // send target, which is the whole argument of
+                                  // this layout.
+                                  setPromoted(it.id);
+                                  setPassed((p) => p.filter((x) => x !== it.id));
+                                },
+                              }))}
                             </div>
-                            {claimNote && <div className="tc-warn">{claimNote}</div>}
-                          </>
-                        )}
-                      </div>
-                    )}
+                          ))}
+                        </div>
 
-                    {/* ROSTER — deliberately thin. Stack keeps per-model usage
-                        for autopilot runs, never for a terminal session (#283),
-                        so the honest line is who is at the keyboard and the
-                        host-wide day; anything more would be invented. */}
-                    <div className="tc-block">
-                      <div className="tc-cap">ROSTER</div>
-                      <div className="tc-roster">
-                        <span className="l">You and claude, in this tab</span>
-                        <span className="s">{fmtTok(usedTokens)} tok today</span>
-                      </div>
-                      <div className="tc-note">
-                        No per-model record for a terminal session — that figure is this host's whole day.
-                      </div>
-                    </div>
+                        {bulk && (
+                          <div className="tcs-bulk">
+                            <span className="s">
+                              {matchedPicked.length
+                                ? `${matchedPicked.length} ticked · sends as one prompt`
+                                : 'tick items to batch them'}
+                            </span>
+                            <button className="tc-link dim" disabled={matched.length === 0}
+                              onClick={() => setPicked((p) => (allMatchedPicked
+                                ? p.filter((id) => !matched.some((it) => it.id === id))
+                                : [...new Set([...p, ...matched.map((it) => it.id)])]))}>
+                              {allMatchedPicked ? 'clear' : 'tick all'}
+                            </button>
+                            <button className="btn-submit sm" disabled={matchedPicked.length === 0 || !activeSess}
+                              onClick={() => void sendItems(matchedPicked)}
+                              title="Types the ticked items at the prompt as one block and claims them">
+                              send →
+                            </button>
+                          </div>
+                        )}
+                        {claimNote && <div className="tcs-foot"><div className="tc-warn">{claimNote}</div></div>}
+
+                        {/* ROSTER as a line, not a block. Stack keeps per-model
+                            usage for autopilot runs, never for a terminal session
+                            (#283), so the honest read is who is at the keyboard and
+                            the host's whole day; anything more would be invented. */}
+                        <div className="tcs-roster">
+                          <span className={`dot ${claudeLive ? 'live' : 'closed'}`} />
+                          <span className="l">you and claude, in this tab</span>
+                          <span className="s"
+                            title="No per-model record for a terminal session — that figure is this host's whole day.">
+                            {fmtTok(usedTokens)} tok today
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="tc-body">

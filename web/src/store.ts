@@ -971,7 +971,15 @@ export function setTermUsagePrefs(p: TermUsagePrefs) {
 // reason people actually wanted it.
 export const TERM_PANE_CHOICES = [1, 2, 3, 4] as const;
 export type TermPaneCount = (typeof TERM_PANE_CHOICES)[number];
-export interface TermViewPrefs { railOpen: boolean; panes: TermPaneCount; railSeg: 'session' | 'runbook' }
+// `railStyle` picks which reading of the Session rail is on screen. They are two
+// layouts over the SAME list, never two lists: `tiers` makes the tier the shape
+// of the rail and the tab a single scope; `upnext` promotes one item to send and
+// reaches the rest by typing. Device-local because it is a way of looking, not a
+// property of the project.
+export type TermRailStyle = 'tiers' | 'upnext';
+export interface TermViewPrefs {
+  railOpen: boolean; panes: TermPaneCount; railSeg: 'session' | 'runbook'; railStyle: TermRailStyle;
+}
 const TERM_VIEW_KEY = 'stack.termView';
 export function getTermViewPrefs(): TermViewPrefs {
   // Rail defaults COLLAPSED — the terminal canvas is the point of the screen;
@@ -983,6 +991,7 @@ export function getTermViewPrefs(): TermViewPrefs {
     // asking for. Anything unrecognised falls back to a single pane.
     panes: TERM_PANE_CHOICES.includes(p?.panes) ? p.panes as TermPaneCount : (p?.wide ? 2 : 1),
     railSeg: p?.railSeg === 'runbook' ? 'runbook' as const : 'session' as const,
+    railStyle: p?.railStyle === 'upnext' ? 'upnext' as const : 'tiers' as const,
   }));
 }
 export function setTermViewPrefs(p: TermViewPrefs) {
