@@ -92,11 +92,19 @@ Produce:
 - "priority": "must" | "should" | "could" | "wont" — be honest, most things are not must.
 - "tier": "S" | "A" | "B" | "C" — how much the OWNER is likely to want this NEXT, which is a
   different question from priority. Priority is how necessary the work is; tier is appetite, and
-  it leads the run queue. S is "I want this now", C is "eventually". Answer "" when the note
-  gives you no honest signal — an empty tier is far better than a guessed one, because the
-  owner's own ranking is the thing this must not override. Note that S is the owner's own call:
-  answer S when the note really reads that way, but it will be shown to them to accept rather
-  than applied, so do not reach for it to signal mere enthusiasm.
+  it leads the run queue. Read the appetite the note is written with, not just what it asks for:
+    S — they say they want it now, or it is blocking them today.
+    A — real appetite: an irritation they name, something they say matters or keeps costing them.
+    B — worth doing, written plainly, no urgency expressed. This is the honest default for a
+        note that describes work without saying how much they want it.
+    C — explicitly deferred: "eventually", "sometime", "no rush", "nice to have".
+  Answer "" only when the note is a bare fragment with nothing to read appetite from at all.
+  Do NOT abstain merely because the note is not explicit about wanting it — a considered B is
+  more use than a blank, and you are not at risk of overriding anybody: the tier you give is
+  applied only into a field the owner has left empty and untouched, and they re-rank freely.
+  S is the one exception, because it decides what the machine builds tonight: answer S when the
+  note really reads that way, but it is shown to the owner to accept rather than applied, so do
+  not reach for it to signal mere enthusiasm.
 - "risk": "low" | "normal" | "high" — how much care the change needs, read from what the note
   describes touching. "low" is a small, contained, easily-reversed change (copy, one component,
   a setting) — it is the tier that lets a green overnight run merge itself, so only say it when
