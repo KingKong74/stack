@@ -464,6 +464,52 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
       void refreshDetached();
     }
   };
+
+  // The per-tab ⏻ done to every tab at once. Same two steps as `endSession` —
+  // close the tab (which detaches its tmux session), then kill the name once
+  // the daemon advertises it — but the closes are ONE state write so the tab
+  // strip and the panes cannot disagree about what is open, and the poll is
+  // SHARED so N sessions cost one wait rather than N. A tab with no tmux
+  // session needs no kill: closing it already ends the process. As in
+  // `confirmKill`, `clearTermTmuxName` is called per killed name so a reload
+  // does not try to resume a name that is now dead. A name the daemon never
+  // advertises inside the poll window is NOT killed — it stays detached and
+  // reappears in the detached strip (`refreshDetached` re-reads on the way
+  // out), where it can be killed by hand. A kill that quietly did not land
+  // must not read as one that did.
+  const [endingAll, setEndingAll] = useState(false);
+  // `sessions` empties synchronously below, so the button's own label has
+  // nothing to count off while the kills are still landing — this is the
+  // count it reads instead for exactly that window.
+  const [endingAllCount, setEndingAllCount] = useState(0);
+  const [endAllAsk, setEndAllAsk] = useState(false);
+  const endAllSessions = async () => {
+    const list = sessions;
+    setEndingAllCount(list.length);
+    const cwdOf = new Map(list.filter((s) => s.tmux).map((s) => [s.tmux!, s.cwd]));
+    handles.current.clear();
+    setSessions([]);
+    setActive(0);
+    if (viewPrefs.panes > 1) saveViewPrefs({ panes: 1 });
+    const left = new Set(cwdOf.keys());
+    if (!left.size) return;
+    setEndingAll(true);
+    try {
+      for (let i = 0; i < 12 && left.size; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        const adv = await getDetachedSessions().catch(() => []);
+        for (const d of adv) {
+          if (!left.has(d.name)) continue;
+          left.delete(d.name);
+          clearTermTmuxName(cwdOf.get(d.name) ?? d.cwd, d.name);
+          await killDetachedSession(d.name).catch(() => { /* the refresh below tells the truth */ });
+        }
+      }
+    } finally {
+      setEndingAll(false);
+      void refreshDetached();
+    }
+  };
   const setStatus = (id: number, status: Status, note: string) =>
     setSessions((s) => s.map((x) => (x.id === id ? { ...x, status, note } : x)));
 
@@ -1202,6 +1248,17 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
               );
             })}
           </div>
+          {/* Called END, not close, on purpose — the tab and pane controls
+              already name the two endings apart (× closes a tab and the host
+              session keeps running, ⏻ is the one that stops it), so a control
+              that kills must not be spelled "close". It sits at the end of
+              the tab strip because that is the thing it acts on. */}
+          {(sessions.length > 0 || endingAll) && (
+            <button className="btn-cancel sm" disabled={endingAll} onClick={() => setEndAllAsk(true)}
+              title={`End every session — closes all ${sessions.length} tab${sessions.length === 1 ? '' : 's'} and kills the ones still running on the host`}>
+              {endingAll ? `⏻ Ending ${endingAllCount}…` : `⏻ End all ${sessions.length}`}
+            </button>
+          )}
           <div className="term-bar-gap" />
           {/* ✧ re-ask for the session names. They arrive by themselves when an
               unnamed claude session appears; this is for when one has moved on
@@ -2083,6 +2140,28 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
         danger
         onConfirm={() => void confirmKill()}
         onCancel={() => setKillTargets(null)}
+      />
+    )}
+    {endAllAsk && sessions.length > 0 && (
+      <ConfirmModal
+        title={`End all ${sessions.length} sessions?`}
+        body={
+          <>Every tab closes, and each session still running on the host is killed — anything
+            unfinished in those conversations is lost.
+            <ul className="td-killlist">
+              {sessions.map((s) => (
+                <li key={s.id}>
+                  <b>{s.cmd === 'claude' ? 'claude' : 'shell'}</b> in <b>{s.cwd ? `~/${s.cwd}` : '~'}</b>
+                  {s.tmux ? ` — tmux ${s.tmux}` : ' — the tab is the whole session, so closing it ends it'}
+                </li>
+              ))}
+            </ul>
+          </>
+        }
+        confirmLabel={`End all ${sessions.length}`}
+        danger
+        onConfirm={() => { setEndAllAsk(false); void endAllSessions(); }}
+        onCancel={() => setEndAllAsk(false)}
       />
     )}
     {/* the minimised dock chip (#139) — the default whenever the user
