@@ -163,6 +163,9 @@ type NightCell = {
   runs: NonNullable<NonNullable<ControlData['usage']>['recentRuns']>;
   books: AutopilotSchedule[];
   nightly: boolean;
+  // (#266) A night is now N jobs for one project, not one — how many of this
+  // project's nightly jobs for this date are still queued/claimed/running.
+  fanCount: number;
 };
 
 const scheduleWhen = (s: { days: number[]; runDate: string | null; atTime: string }) => {
@@ -218,6 +221,12 @@ export function NightsRoom({ data, pickSlug, onPick, onOpenPlanner, onRunNow, on
         && date >= todayStr),
       nightly: data.autopilot.enabled && date >= todayStr
         && !!data.projects.find((p) => p.slug === slug)?.automode,
+      // (#266) The fan-out itself, for this project and this night: nightly
+      // jobs still in play. The cell aggregates them rather than showing one
+      // job for what is now N.
+      fanCount: data.jobs.filter((j) => j.kind === 'nightly' && j.slug === slug
+        && j.nightDate === date
+        && (j.status === 'queued' || j.status === 'claimed' || j.status === 'running')).length,
     };
   };
 
@@ -288,7 +297,10 @@ export function NightsRoom({ data, pickSlug, onPick, onOpenPlanner, onRunNow, on
                     ? (cell.books[0].agenda.length ? `${cell.books[0].kind} ☰${cell.books[0].agenda.length}`
                       : cell.books[0].kind !== 'build' ? cell.books[0].kind
                       : cell.books[0].area || 'board order')
-                  : cell.nightly ? 'nightly' : '';
+                  // (#266) The fan-out count alongside the time hint above,
+                  // when the night has actually stood up jobs; unchanged copy
+                  // otherwise.
+                  : cell.nightly ? (cell.fanCount > 0 ? `${cell.fanCount} queued` : 'nightly') : '';
                 return (
                   <button key={cell.date} className={`mc14-cell ${kind} ${on ? 'on' : ''} ${cell.today ? 'today' : ''}`}
                     onClick={() => setSel(on ? null : { slug: p.slug, date: cell.date })}

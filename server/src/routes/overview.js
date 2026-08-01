@@ -86,10 +86,15 @@ overview.get('/', async (_req, res) => {
         GROUP BY 1`),
     // Last night's autopilot runs — the morning digest card. 20h keeps one
     // night in view through the whole next day without dragging in the last.
-    q(`SELECT r.*, p.slug, p.name FROM autopilot_runs r
+    // (#266) A fanned night is now N rows for one project, not one — a silent
+    // slice at 12 would drop part of a night while looking complete, so this
+    // is raised to 40.
+    q(`SELECT r.*, p.slug, p.name,
+              to_char(COALESCE(r.night_date, (r.finished_at AT TIME ZONE 'UTC')::date), 'YYYY-MM-DD') AS night_key
+        FROM autopilot_runs r
         JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
        WHERE r.finished_at > now() - interval '20 hours'
-       ORDER BY r.finished_at DESC LIMIT 12`),
+       ORDER BY r.finished_at DESC LIMIT 40`),
     // The serious bugs themselves, not just their count — the dashboard's Audit
     // section lists rows across every project, worst severity first.
     q(`SELECT b.project_id, b.bug_key, b.title, b.severity, b.status, b.link_ref, b.created_at
@@ -306,8 +311,23 @@ overview.get('/', async (_req, res) => {
   const byStatus = { live: 0, building: 0, paused: 0, archived: 0 };
   for (const p of projects) if (byStatus[p.status] !== undefined) byStatus[p.status]++;
 
+  // (#266) Make the digest read as ONE night: within the rolling 20h window,
+  // keep only rows from the most recent night_date, PLUS every row with no
+  // night_date at all. That NULL passthrough is deliberate — historical rows
+  // and non-night runs (a manual press, a scheduled session) have no night to
+  // belong to and keep appearing exactly as they do today; without it, one
+  // fanned night would hide them. Compared as raw Date values (not strings)
+  // so nothing shifts a day with the server's timezone.
+  const maxNightDate = runsR.rows.reduce((max, r) => {
+    if (!r.night_date) return max;
+    const t = new Date(r.night_date).getTime();
+    return max === null || t > max ? t : max;
+  }, null);
+  const digestRuns = runsR.rows.filter((r) =>
+    r.night_date == null || new Date(r.night_date).getTime() === maxNightDate);
+
   // last night's autopilot, per item — the deck's morning digest ([] = quiet night)
-  const autopilotRuns = runsR.rows.map((r) => ({
+  const autopilotRuns = digestRuns.map((r) => ({
     slug: r.slug,
     name: r.name,
     itemId: r.item_id,
@@ -317,6 +337,7 @@ overview.get('/', async (_req, res) => {
     commits: r.commits,
     tokens: Number(r.tokens) || 0,
     summary: r.summary || '',
+    day: r.night_key,
     when: relativeTime(r.finished_at) || 'just now',
   }));
 

@@ -111,7 +111,8 @@ review.get('/', async (req, res) => {
     // The debrief's raw material: every run of the last fortnight with its
     // project, so the client can group by night without a second round trip.
     q(
-      `SELECT r.*, p.slug, p.name, p.tint
+      `SELECT r.*, p.slug, p.name, p.tint,
+              to_char(COALESCE(r.night_date, (r.finished_at AT TIME ZONE 'UTC')::date), 'YYYY-MM-DD') AS night_key
          FROM autopilot_runs r
          JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
         WHERE r.finished_at > now() - interval '${NIGHT_DAYS} days'
@@ -137,9 +138,12 @@ review.get('/', async (req, res) => {
       itemId: r.item_id != null ? String(r.item_id) : '',
       itemTitle: r.item_title || '',
       ...runCore(r),
-      // The UTC calendar day the run finished — the client groups nights on it,
-      // the same convention Mission Control's week strip already uses.
-      day: r.finished_at ? new Date(r.finished_at).toISOString().slice(0, 10) : '',
+      // The night this run belongs to — its own night_date when the fan-out
+      // (#266) gave it one, else the UTC calendar day it finished, which is
+      // what every historical row falls back to. A fanned night runs its jobs
+      // one after another and can cross midnight, so "when it finished" is no
+      // longer the same thing as "which night it was" — night_key is.
+      day: r.night_key || '',
       when: relativeTime(r.finished_at) || 'just now',
       finishedAt: r.finished_at,
     })),
