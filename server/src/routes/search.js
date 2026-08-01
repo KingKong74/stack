@@ -134,7 +134,9 @@ search.get('/', async (req, res) => {
     slug: r.slug, name: r.name, tint: r.tint || null,
     title: trim(r.text, 90),
     meta: relativeTime(r.created_at) || 'just now',
-    target: { slug: r.slug, tab: 'notes', highlight: String(r.id) },
+    // The Workbench is where a note is read now; `highlight` is still the NOTE
+    // id, and the canvas resolves it to the card wrapping it.
+    target: { slug: r.slug, tab: 'workbench', highlight: String(r.id) },
   }));
 
   const activity = actR.rows.map((r) => ({

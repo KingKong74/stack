@@ -169,6 +169,38 @@ export function noteShape(row) {
   };
 }
 
+// One Workbench card. The route joins the row it wraps, so `title` here is
+// always the text the canvas should DRAW — read through from notes/futures for
+// those kinds, and the card's own only for 'ai'. The client never has to know
+// which table a card's words came from.
+export function workbenchCardShape(row) {
+  const ai = row.kind === 'ai';
+  // Age is the WRAPPED row's, not the card's: a note filed months ago that only
+  // got a card when the Workbench backfilled would otherwise read as brand new.
+  const born = row.note_created_at || row.future_created_at || row.created_at;
+  return {
+    id: row.id,
+    kind: row.kind,
+    op: row.op || '',
+    noteId: row.note_id ?? null,
+    futureId: row.future_id ?? null,
+    title: ai ? row.title : (row.note_text ?? row.future_title ?? row.title),
+    // The sticky's palette colour, so a note keeps the tint it was filed with.
+    colour: row.note_colour || '',
+    // The corner stamp: an idea's P-number, an op's name, or a note's age.
+    meta: row.kind === 'polaris' ? `P-${row.future_id}` : ai ? (row.op || 'ai') : (relativeTime(born) || 'now'),
+    body: row.body && typeof row.body === 'object' ? row.body : {},
+    x: row.x,
+    y: row.y,
+    w: row.w,
+    when: relativeTime(born) || 'just now',
+  };
+}
+
+export const workbenchEdgeShape = (row) => ({
+  id: row.id, a: row.a_id, b: row.b_id, ai: Boolean(row.ai),
+});
+
 // One Tips-library recipe: a kept Claude prompt plus the context of when to
 // reach for it. `when`/`who` are the human framing; `best` the checklist.
 export function tipShape(row) {

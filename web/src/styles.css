@@ -52,6 +52,12 @@
   --fainter: #b3ab9e;
   --placeholder: #b0a896;
 
+  /* the sand-card's own muted ink (the resume card's timestamp, the Workbench's
+     "from polaris" stamp) — warmer than --muted, which reads grey on cream */
+  --resume-when: #a9947f;
+  /* the ink a sticky's own paper wants; dark re-bases it rather than inverting */
+  --note-ink: #473f30;
+
   --green: var(--live);
   --green-tint: #e4efe8;
 
@@ -112,6 +118,10 @@
   --green-tint: #1e2b23;
   --chip-ink: #b0a89b;
   --panel: #262320;
+  /* on a dark ground the cream card is gone, so the warm stamp goes plain
+     muted; the sticky's ink follows its remixed paper rather than staying brown */
+  --resume-when: var(--muted);
+  --note-ink: #e4ddd1;
 }
 
 /* ============================================================
@@ -158,7 +168,17 @@
 [data-theme='dark'] .sev-pill.critical { background: #3a2323; }
 [data-theme='dark'] .tl .node { background: var(--card); }
 /* Sticky notes + the composer go properly dark: each note's paper colour is
-   remixed into the dark ground (hue survives, glare doesn't). */
+   remixed into the dark ground (hue survives, glare doesn't). The Workbench's
+   note cards are the same paper and take the same remix. */
+[data-theme='dark'] .wb-card.note {
+  background: color-mix(in srgb, var(--note-c, #fef4a8) 22%, #1d1a16);
+  border-color: color-mix(in srgb, var(--note-c, #fef4a8) 30%, #1d1a16);
+  box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+[data-theme='dark'] .wb-card.note .wb-card-head .k,
+[data-theme='dark'] .wb-card.note .wb-card-head .m { color: var(--faint); }
+[data-theme='dark'] .wb-card { box-shadow: 0 2px 8px rgba(0,0,0,.34); }
+[data-theme='dark'] .wb-zoom, [data-theme='dark'] .wb-tray { box-shadow: 0 6px 18px rgba(0,0,0,.4); }
 [data-theme='dark'] .note {
   background: color-mix(in srgb, var(--note-c, #fef4a8) 22%, #1d1a16);
   border-color: color-mix(in srgb, var(--note-c, #fef4a8) 30%, #1d1a16);
@@ -168,8 +188,6 @@
 [data-theme='dark'] .note .when { color: rgba(236, 231, 223, .45); }
 [data-theme='dark'] .note .x { color: rgba(236, 231, 223, .35); }
 [data-theme='dark'] .note .x:hover { color: rgba(236, 231, 223, .7); }
-[data-theme='dark'] .note-actions .promote { color: rgba(236, 231, 223, .6); border-color: rgba(236, 231, 223, .22); background: rgba(0,0,0,.18); }
-[data-theme='dark'] .note-actions .promote:hover { color: #ece7df; border-color: rgba(236, 231, 223, .45); }
 [data-theme='dark'] .composer {
   background: color-mix(in srgb, #fef4a8 16%, #1d1a16);
   border-color: color-mix(in srgb, #ecdf8a 26%, #1d1a16);
@@ -934,20 +952,178 @@ a.tab { display: inline-block; }
 .parked-row .road-actions.arch button { font-size: 12px; }
 .parked-row.hl { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 12px; }
 
-/* ---------- notes ---------- */
-.note-intro { font-size: 13px; color: var(--muted); margin-bottom: 22px; }
+/* ---------- notes ----------
+   The notes WALL is gone (the Workbench replaced that tab), so its layout and
+   composer-chrome classes went with it. What survives is deliberate: `.composer`
+   is the shared quick-capture box on Polaris/Overview/Quality, and `.note` is
+   the sticky paper itself — the Workbench's note cards reuse it and its
+   --note-c dark remix. */
 .composer { background: #fef4a8; border: 1px solid #ecdf8a; border-radius: 14px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.09); max-width: 540px; margin-bottom: 28px; transform: rotate(-0.5deg); }
 .composer textarea { width: 100%; border: none; background: transparent; resize: none; outline: none; font-size: 14px; line-height: 1.5; color: #5a513a; min-height: 62px; }
-.note-edit { width: 100%; border: none; background: transparent; resize: none; outline: none; font: inherit; color: inherit; min-height: 60px; }
 .composer .row { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
 .composer .hint { font-size: 11px; color: #b0a14f; }
 .composer .add { height: 30px; padding: 0 15px; border-radius: 8px; background: var(--ink); color: #fff; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; }
-.notes-wall { column-count: 3; column-gap: 16px; }
 .note { break-inside: avoid; -webkit-column-break-inside: avoid; margin-bottom: 16px; border: 1px solid rgba(0,0,0,.06); border-radius: 12px; padding: 15px 16px; position: relative; box-shadow: 0 1px 4px rgba(0,0,0,.1); background: var(--note-c, #fef4a8); }
 .note .x { position: absolute; top: 7px; right: 10px; color: rgba(0,0,0,.28); font-size: 15px; line-height: 1; }
 .note .x:hover { color: rgba(0,0,0,.55); }
 .note .txt { font-size: 14px; line-height: 1.5; color: #473f30; white-space: pre-wrap; padding-right: 10px; }
 .note .when { font-size: 11px; color: rgba(0,0,0,.34); margin-top: 11px; }
+
+/* ---------- the Workbench canvas (replaces the notes wall) ----------
+   Cards are absolutely placed in field coordinates and the field is one CSS
+   transform, so only the transform and the width are inline; every colour and
+   every hairline comes from the named palette above. */
+.wb { display: flex; flex-direction: column; }
+.wb-hint { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.wb-body { display: flex; min-height: 0; height: calc(100vh - 300px); min-height: 520px;
+  border: 1px solid var(--line-2); border-radius: 14px; overflow: hidden; background: var(--card); }
+
+.wb-ground { flex: 1; position: relative; overflow: hidden; cursor: grab; background-color: var(--paper);
+  background-image: radial-gradient(var(--line-3) 1px, transparent 1px); touch-action: none; }
+.wb-ground:active { cursor: grabbing; }
+.wb-ground.linking { cursor: crosshair; }
+.wb-field { position: absolute; inset: 0; transform-origin: 0 0; }
+.wb-wires { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.wb-wire { stroke: var(--line-3); stroke-width: 1.5; }
+.wb-wire.ai { stroke: var(--accent-soft); stroke-dasharray: 4 4; }
+.wb-wire.hot { stroke: var(--critical); stroke-width: 2.5; stroke-dasharray: 0; }
+.wb-wire-hit { pointer-events: auto; }
+.wb-wire-hit path { pointer-events: stroke; cursor: pointer; }
+.wb-scissor { pointer-events: none; }
+.wb-scissor circle { fill: var(--critical); }
+.wb-scissor text { fill: #fff; font-size: 11px; }
+
+@keyframes wb-in { from { opacity: 0; } to { opacity: 1; } }
+
+.wb-card { position: absolute; left: 0; top: 0; border-radius: 12px; padding: 12px 13px 13px;
+  cursor: grab; user-select: none; animation: wb-in .18s ease both;
+  background: var(--card); border: 1px solid var(--line); box-shadow: 0 2px 8px rgba(28,26,23,.06); }
+.wb-card.note { background: var(--note-c, #fef4a8); border-color: #ecdf8a; }
+.wb-card.polaris { background: var(--sand); border-color: var(--resume-border); }
+.wb-card.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint), 0 8px 22px rgba(28,26,23,.10); }
+.wb-card.linking { border-color: var(--accent); border-style: dashed; }
+.wb-card.hl { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.wb-card-head { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+.wb-card-head .k { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.wb-card-head .m { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--faint); }
+.wb-card.polaris .wb-card-head .k { color: var(--resume-when); }
+.wb-card.ai .wb-card-head .k { color: var(--accent); }
+.wb-card.note .wb-card-head .k,
+.wb-card.note .wb-card-head .m { color: rgba(0,0,0,.36); }
+
+/* The card suppresses selection so dragging it never smears a text highlight —
+   which would also make its editable lines unselectable, so they take it back. */
+.wb-card [contenteditable='true'] { user-select: text; cursor: text; }
+.wb-card [contenteditable='true']:empty { min-width: 60px; min-height: 1em; }
+
+.wb-title { font-family: var(--disp); font-size: 13.5px; font-weight: 600; line-height: 1.3;
+  text-wrap: pretty; outline: none; border-radius: 4px; }
+.wb-card.note .wb-title { color: var(--note-ink, #473f30); font-family: var(--sans); font-weight: 500; }
+.wb-title[contenteditable='true']:focus { background: var(--accent-tint); box-shadow: 0 0 0 3px var(--accent-tint); }
+
+.wb-lines { display: flex; flex-direction: column; gap: 6px; margin-top: 9px; }
+.wb-line { display: flex; gap: 7px; width: 100%; text-align: left; font-size: 12px; line-height: 1.45;
+  color: var(--body); border: 1px solid transparent; border-radius: 8px; cursor: default; }
+.wb-line .mk { flex: none; font-weight: 600; color: var(--accent); }
+.wb-line .t { flex: 1; text-wrap: pretty; }
+.wb-line .tick { flex: none; color: var(--accent); font-size: 11px; }
+.wb-line.pick { padding: 7px 9px; border-color: var(--line-2); cursor: pointer; }
+.wb-line.pick:hover { border-color: var(--accent-tint-border); }
+.wb-line.chosen { background: var(--accent-tint); border-color: var(--accent-tint-border); }
+.wb-line.dim { opacity: .45; }
+
+.wb-phases { display: flex; flex-direction: column; margin-top: 10px; border-top: 1px solid var(--line-2); }
+.wb-phase { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.wb-phase .n { flex: none; width: 22px; font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--accent); }
+.wb-phase .b { flex: 1; min-width: 0; }
+.wb-phase .t { font-size: 12.5px; font-weight: 600; line-height: 1.3; outline: none; border-radius: 4px; }
+.wb-phase .d { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.4; outline: none; border-radius: 4px; }
+.wb-phase .g { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.wb-phase .gk { font-family: var(--mono); font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--building); }
+.wb-phase .gv { font-family: var(--mono); font-size: 10.5px; color: var(--body); outline: none; border-radius: 4px; }
+.wb-phase .gb { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 5px; }
+.wb-phase .t:focus, .wb-phase .d:focus, .wb-phase .gv:focus { background: var(--accent-tint); box-shadow: 0 0 0 3px var(--accent-tint); }
+.wb-phase .x { flex: none; width: 20px; height: 20px; border-radius: 6px; color: var(--fainter); font-size: 13px; line-height: 1; }
+.wb-phase .x:hover { color: var(--critical); }
+.wb-addphase { text-align: left; padding: 8px 0 2px; font-size: 11.5px; color: var(--fainter); }
+.wb-addphase:hover { color: var(--accent); }
+.wb-phasehint { font-family: var(--mono); font-size: 10.5px; color: var(--fainter); padding: 6px 0 0; }
+.wb-ship { margin-top: 12px; width: 100%; height: 32px; border-radius: 9px; background: var(--ink); color: #fff;
+  font-size: 12px; font-weight: 600; }
+.wb-ship:hover:not(:disabled) { filter: brightness(1.15); }
+.wb-ship:disabled { background: var(--panel); color: var(--live); border: 1px solid var(--line-2); cursor: default; }
+
+.wb-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+
+.wb-zoom { position: absolute; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 2px;
+  background: var(--card); border: 1px solid var(--line-2); border-radius: 10px; padding: 3px; box-shadow: 0 4px 14px rgba(28,26,23,.08); }
+.wb-zoom button { height: 26px; border-radius: 7px; color: var(--body); font-size: 14px; min-width: 28px; }
+.wb-zoom button:nth-child(2) { min-width: 44px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.wb-zoom button:hover { background: var(--panel); }
+
+.wb-tray { position: absolute; left: 18px; bottom: 18px; max-width: 520px; background: var(--card);
+  border: 1px solid var(--line-2); border-radius: 12px; padding: 11px 13px; box-shadow: 0 6px 18px rgba(28,26,23,.08); }
+.wb-tray .head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.wb-tray .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.wb-tray .k { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.wb-tray .head .chip-sm { margin-left: auto; }
+.wb-tray .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.wb-tray .none { font-size: 11.5px; color: var(--faint); }
+
+/* Sits above the grid but takes no pointer events — panning an empty canvas
+   still has to work, and there is nothing here to click. */
+.wb-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 6px; pointer-events: none; text-align: center; padding: 0 24px; }
+.wb-empty .big { font-family: var(--disp); font-size: 17px; font-weight: 600; color: var(--muted); }
+.wb-empty div:last-child { font-size: 13px; color: var(--faint); max-width: 42ch; }
+
+.wb-rail { width: 312px; flex: none; border-left: 1px solid var(--line-2); background: var(--card);
+  display: flex; flex-direction: column; min-height: 0; }
+.wb-rail.closed { width: 46px; align-items: center; gap: 14px; padding: 14px 0; }
+.wb-rail.closed .collapse { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line-2); color: var(--body); font-size: 12px; }
+.wb-rail .spine { writing-mode: vertical-rl; font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted); }
+
+.wb-rail-head { padding: 15px 17px 13px; border-bottom: 1px solid var(--line-2); }
+.wb-rail-head .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.wb-rail-head .k, .wb-ops .k, .wb-log .k { font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted); }
+.wb-rail-head .collapse { margin-left: auto; width: 24px; height: 24px; border-radius: 7px;
+  border: 1px solid var(--line-2); color: var(--muted); font-size: 12px; line-height: 1; }
+.wb-rail-head .t { font-family: var(--disp); font-size: 14.5px; font-weight: 600; line-height: 1.3; text-wrap: pretty; }
+.wb-rail-head .m { font-size: 12px; color: var(--muted); margin-top: 5px; }
+.wb-rail-head .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.wb-rail-head .acts .chip-sm { padding: 4px 10px; font-size: 11.5px; }
+.wb-rail-head .acts .chip-sm.danger:hover { color: var(--critical); border-color: var(--critical-line); }
+.wb-rail-head .linking-hint { margin-top: 9px; font-size: 11.5px; color: var(--accent); }
+
+.wb-ops { padding: 14px 17px; border-bottom: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 6px; }
+.wb-ops .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.wb-ops .note { font-family: var(--mono); font-size: 10px; color: var(--faint); }
+.wb-op { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 9px 11px;
+  border-radius: 10px; border: 1px solid var(--line-3); background: var(--surface); transition: border-color .14s; }
+.wb-op:hover:not(:disabled) { border-color: var(--accent); }
+.wb-op:disabled { opacity: .5; cursor: default; }
+.wb-op .g { flex: none; width: 20px; font-family: var(--mono); font-size: 12px; color: var(--accent); }
+.wb-op .b { flex: 1; min-width: 0; }
+.wb-op .l { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.wb-op .h { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+.wb-op .s { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--accent); }
+.wb-op.busy { border-color: var(--accent); background: var(--accent-tint); }
+
+.wb-ask { margin-top: 4px; display: flex; flex-direction: column; gap: 5px; }
+.wb-ask input { width: 100%; height: 32px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--accent);
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; outline: none; }
+.wb-ask .hint { font-size: 10.5px; color: var(--faint); line-height: 1.4; }
+
+.wb-log { padding: 14px 17px; flex: 1; min-height: 0; overflow: auto; }
+.wb-log .k { display: block; margin-bottom: 10px; }
+.wb-log .none { font-size: 11.5px; color: var(--faint); }
+.wb-log .line { display: flex; gap: 9px; margin-bottom: 9px; }
+.wb-log .w { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--faint); width: 46px; }
+.wb-log .t { font-size: 12px; line-height: 1.45; color: var(--body); text-wrap: pretty; }
 
 /* ---------- activity timeline ---------- */
 .linkbanner { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 11px; padding: 11px 15px; margin-bottom: 18px; }
@@ -1021,7 +1197,6 @@ a.tab { display: inline-block; }
   .resume-cols { grid-template-columns: 1fr; gap: 18px; }
   .stats { grid-template-columns: 1fr; }
   .road-grid { grid-template-columns: 1fr 1fr; }
-  .notes-wall { column-count: 2; }
 }
 @media (max-width: 640px) {
   .page, .page.detail { padding: 22px 16px 56px; }
@@ -1034,7 +1209,6 @@ a.tab { display: inline-block; }
   .road-grid.focused .road-item .t,
   .road-grid.focused .road-item .note { max-width: none; }
   .tier-card { flex-basis: 100%; max-width: none; }
-  .notes-wall { column-count: 1; }
   .dash-title { font-size: 26px; }
 
   /* phone pass: tighter chrome, scrollable tabs, roomier modals */
@@ -1214,18 +1388,6 @@ a.tab { display: inline-block; }
 .url-edit { display: flex; align-items: center; gap: 8px; }
 .url-edit .field-input.sm { height: 38px; width: 260px; margin: 0; font-size: 13px; }
 .btn-submit.sm, .btn-cancel.sm { height: 38px; padding: 0 14px; font-size: 12.5px; }
-
-/* ---------- notes: inline edit + promote actions ---------- */
-.note-edit { width: 100%; border: none; background: rgba(255,255,255,.5); border-radius: 8px; resize: vertical;
-  outline: none; font: inherit; font-size: 14px; line-height: 1.5; color: #473f30; min-height: 64px; padding: 6px 8px; }
-.note .txt { cursor: text; }
-.note-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 11px; }
-.note-foot .when { margin-top: 0; }
-.note-actions { display: flex; gap: 6px; opacity: 0; transition: opacity .12s; }
-.note:hover .note-actions { opacity: 1; }
-.note-actions .promote { font-size: 11px; font-weight: 600; color: rgba(0,0,0,.5); border: 1px solid rgba(0,0,0,.14);
-  border-radius: 7px; padding: 2px 7px; background: rgba(255,255,255,.4); }
-.note-actions .promote:hover { color: rgba(0,0,0,.78); border-color: rgba(0,0,0,.3); }
 
 /* ---------- the Audit area (the Bugs tab — probes + function tests) ---------- */
 .checks { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 17px; margin-bottom: 24px; }

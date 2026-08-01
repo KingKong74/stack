@@ -42,15 +42,16 @@ templates/ stack-agent-context.md — the canonical portable agent manual (singl
   `AuthError` on 401, which clears the token and returns to the gate.
 - `lib/route.ts` — hash router. Routes: `#/`, `#/settings`, `#/control`, `#/terminal`, `#/skills`,
   `#/timeline`, `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` deep-links; the TAB
-  decides what `hl` means (commit hash → activity, bug key → quality, row id → roadmap/notes).
-  Legacy `bugs`/`audit` tabs both resolve to `quality` (#278) and `tips` to `overview` (the library
-  moved to the corner dock), so old links keep working.
+  decides what `hl` means (commit hash → activity, bug key → quality, row id → roadmap, NOTE id →
+  workbench). Legacy `bugs`/`audit` tabs both resolve to `quality` (#278), `tips` to `overview` (the
+  library moved to the corner dock) and `notes` to `workbench`, so old links keep working.
 - `screens/` — Dashboard (five anchored sections behind a sticky SubNav), ProjectDetail (owns tab +
   modal state), Settings, Control (Mission Control — six rooms: Now / Nights / Plan / Build /
   Review / Roles, behind a live strip and a persistent right rail), Terminal, Skills.
   `detail/` holds the project tabs: Overview, Quality (#278 — Bugs and Audit merged into
   one page), Roadmap (Board / Tiers / Parked), Futures (the Polaris galaxy — Sky / Board / List,
-  geometry in `detail/Galaxy.tsx`), Notes, Activity. `detail/Tips.tsx` is NOT a tab: the recipe
+  geometry in `detail/Galaxy.tsx`), Workbench (the planning canvas that replaced the notes wall —
+  see **The Workbench** below), Activity. `detail/Tips.tsx` is NOT a tab: the recipe
   library is app-wide, so it opens from the bottom-left `components/TipsDock` on every screen and a
   legacy `/tips` link opens the dock rather than a tab.
 - `lib/brief.ts` — the exportable resume brief + the `DIRECTIVES` catalogue (keys mirror the
@@ -170,6 +171,23 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   smallest and the panel says "not sized yet" rather than the sky inventing an estimate nobody gave.
   `area` survives as a plain tag (the list groups by it, ✧ Cluster suggests it) but no longer decides
   where anything sits.
+- **A Workbench card is a PLACEMENT, not content.** `workbench_cards` holds where something sits on
+  the canvas; a `note` card carries `note_id` and a `polaris` card carries `future_id`, and their
+  words are read THROUGH from `notes`/`futures` on the way out and written through on the way in.
+  Never copy a note's text onto its card — a second copy is what leaves ⌘K searching a stale one.
+  Only an `ai` card owns its `title`/`body`, because nothing else does. Three consequences a session
+  gets wrong by guessing: **removing a `polaris` card must NOT delete the idea** (it returns to the
+  tray; removing a `note` card DOES delete the note, which has no other home); **cutting an edge
+  drops the `ai` branch below it** and only ever `ai` cards, which is what makes an op undoable
+  without an undo stack; and **a read backfills a card for any note that lacks one**, which is how
+  pre-Workbench notes and notes filed elsewhere (the ✧ re-entry plan) reach the canvas at all.
+  Positions come from the CLIENT — only it knows how tall a card rendered. Pinned by
+  `server/test/workbench.test.mjs`.
+- **The Workbench's ops are the propose half, and nothing else.** Every ✧ op writes a card and stops
+  there. `Promote N phases → Roadmap` is the dispose half and it goes through the ordinary roadmap
+  POST. Two op hints are deliberately narrower than the design handoff's copy — Gemini cannot read
+  the repository, so `Ask` and `Touches` answer from the project RECORD (roadmap, bugs, the files
+  recent sessions touched) and say so. Don't "fix" that copy back.
 - **An empty second-model read means NO PASS RAN, not "nothing found".** `review_verdict` /
   `architect_verdict` NULL renders as NO REVIEW, deliberately not as green. Same rule anywhere else
   an agent's opinion is stored.
@@ -266,7 +284,8 @@ reference. The index:
   `timeline.js`, `public.js`. All computed in a handful of aggregate queries — **never one query per
   project**; keep it that way.
 - **Per-project collections** — `bugs.js`, `roadmap.js`, `notes.js`, `futures.js`, `checks.js`,
-  `audit.js`, mounted under `/api/projects/:slug/…` with `mergeParams`.
+  `audit.js`, `workbench.js` (the canvas over notes+futures, and the seven ✧ ops), mounted under
+  `/api/projects/:slug/…` with `mergeParams`.
 - **Automation** — `autopilot.js` (the schedule, the job queue and the host dispatcher's
   `GET /next`), `previews.js`, `branches.js`, `skills.js`, `terminal.js`.
 - **Plumbing** — `ingest.js`, `settings.js`, `projects.js`, `presence.js`, `auth.js`, `devices.js`,
@@ -333,6 +352,7 @@ cp hook/*.mjs ~/.stack/                    # install the hooks — ~/.stack hold
 node server/test/ingest-identity.test.mjs  # one activity row per SESSION (needs a throwaway server)
 node server/test/run-shape.test.mjs        # the run ledger's shared shapes match the old copies
 node server/test/fleet-roles.test.mjs      # role attribution + drift detection (pure, no DB)
+node server/test/workbench.test.mjs        # the canvas is a placement layer (needs API + DATABASE_URL)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)

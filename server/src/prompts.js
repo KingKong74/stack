@@ -261,8 +261,140 @@ Report at most {{MAX}} distinct suspected bugs, most serious first. Each needs:
 Respond with ONLY this JSON:
 { "findings": [ { "title": "…", "severity": "critical|high|medium|low", "evidence": "…" } ] }`;
 
+// ---- the Workbench ops (the canvas that replaced the notes wall) ----
+//
+// Every op shares one frame: the card you ran it ON, the cards wired to it, and
+// what Stack knows about the project. The frame is spliced into each template
+// as {{CONTEXT}} so an override only has to restate its own instruction and
+// JSON shape. Output is a CARD — a suggestion sitting on the canvas that the
+// owner keeps, edits or cuts. No op writes tracker state; promoting a plan to
+// the roadmap is a separate thing the human clicks.
+DEFAULTS.wbcontext = `You are the thinking partner on a side project's planning canvas.
+
+PROJECT: {{PROJECT}}
+{{NORTH_STAR_LINE}}
+
+THE CARD THIS WAS RUN ON ({{SELECTED_KIND}}):
+{{SELECTED}}
+
+WIRED TO IT ON THE CANVAS (what the owner has already connected — may be empty):
+{{NEIGHBOURS}}
+
+EVERYTHING ELSE ON THE CANVAS ({{CANVAS_SHOWN}} of {{CANVAS_TOTAL}} cards):
+{{CANVAS}}
+
+WHAT STACK KNOWS ABOUT THIS PROJECT:
+{{RECORD}}
+
+You can see ONLY what is above — you have no access to the source code. Never
+claim to have read a file. Use en-AU spelling. Be concrete and short; this is a
+card on a canvas, not an essay.`;
+
+DEFAULTS.wbexpand = `{{CONTEXT}}
+
+TASK — EXPAND. Turn this rough idea into 3 distinct readings of what it could
+mean in practice. They must genuinely differ in shape or cost, not be three
+wordings of one thing. Then add ONE closing observation naming the cheapest of
+the three or a collision with something else on the canvas.
+
+Respond with ONLY this JSON:
+{ "title": "Expand — pick a reading of …", "choices": 3,
+  "lines": [ { "mk": "A", "t": "…" }, { "mk": "B", "t": "…" }, { "mk": "C", "t": "…" },
+             { "mk": "·", "t": "the closing observation" } ] }
+Each "t" is one sentence under 22 words.`;
+
+DEFAULTS.wbcluster = `{{CONTEXT}}
+
+TASK — CLUSTER. Group the canvas into the 2–4 themes actually present. Name each
+theme in the owner's own words where they used them, and say how many cards it
+holds. Then flag any near-duplicate pair worth merging (use "!" as its marker);
+if there is none, say so plainly rather than inventing one.
+
+Respond with ONLY this JSON:
+{ "title": "Cluster — pick a thread to work",
+  "lines": [ { "mk": "1", "t": "\\"theme\\" — which cards, (n)" }, { "mk": "!", "t": "…" } ] }
+Each "t" is one sentence under 22 words.`;
+
+DEFAULTS.wbplan = `{{CONTEXT}}
+
+TASK — DRAFT PLAN. Sequence this into 3–5 phases that each ship something on
+their own. Phase 0 must be the cheapest thing that proves the idea works.
+Every phase needs a GATE: the observable condition that must hold before the
+next phase starts. A gate must be checkable from something the project already
+records — if you want a metric nobody collects yet, make instrumenting it part
+of an earlier phase instead.
+
+"bucket" is how necessary the phase is: must | should | could | wont.
+Later, riskier or clearly-deferred phases belong lower.
+
+Respond with ONLY this JSON:
+{ "title": "Phased plan — …",
+  "phases": [ { "n": "P0", "t": "short phase name", "d": "one or two sentences on what ships",
+                "gate": "the observable condition", "bucket": "must|should|could|wont" } ] }`;
+
+DEFAULTS.wbblast = `{{CONTEXT}}
+
+TASK — BLAST RADIUS. Say how far this reaches and what it destabilises. Cover
+the read path, the write path, and schema/data changes — one line each, and say
+"none" where there is none rather than padding. Grade the whole thing low,
+medium or high in the title. Reason only from the record above; where you are
+guessing, say the word.
+
+Respond with ONLY this JSON:
+{ "title": "Blast radius — low|medium|high",
+  "lines": [ { "mk": "·", "t": "…" } ] }
+3–5 lines, each one sentence under 24 words.`;
+
+DEFAULTS.wbtouches = `{{CONTEXT}}
+
+TASK — TOUCHES. From the files recent sessions actually touched and the open
+bugs listed above, name what this work would most likely collide with: at most
+6 chips, each a real file path or bug id copied EXACTLY from the record. Invent
+nothing — if the record does not support a chip, leave it out. Then one line
+saying what the list is based on and how confident that makes it.
+
+Respond with ONLY this JSON:
+{ "title": "Touches N files, M open bugs",
+  "chips": [ "path/from/the/record.ts", "BUG-12" ],
+  "lines": [ { "mk": "·", "t": "…" } ] }`;
+
+DEFAULTS.wbcritique = `{{CONTEXT}}
+
+TASK — CRITIQUE. Argue AGAINST this. Give the 3 strongest reasons not to build
+it, or to build something else: evidence the canvas does not actually support
+it, a cost being waved away, a surface it damages, an assumption about the
+owner's behaviour that the record contradicts. No hedging, no balancing
+positives. If the idea is genuinely sound, say which single part is weakest and
+why — do not manufacture objections.
+
+Respond with ONLY this JSON:
+{ "title": "Counter-case", "lines": [ { "mk": "×", "t": "…" } ] }
+Each "t" is one sentence under 26 words.`;
+
+DEFAULTS.wbask = `{{CONTEXT}}
+
+THE OWNER ASKS: {{QUESTION}}
+
+TASK — ANSWER, strictly from the record above. You cannot read the source code,
+so if the answer is not in the record, say exactly that and name what would
+answer it (a file to open, a tab to check). A short honest "not in the record"
+beats a plausible guess.
+
+Respond with ONLY this JSON:
+{ "title": "the question, restated in under 9 words",
+  "lines": [ { "mk": "→", "t": "…" } ] }
+1–4 lines, each one sentence under 26 words.`;
+
 const ENV_KEYS = {
   judge: 'GEMINI_JUDGE_PROMPT',
+  wbcontext: 'GEMINI_WBCONTEXT_PROMPT',
+  wbexpand: 'GEMINI_WBEXPAND_PROMPT',
+  wbcluster: 'GEMINI_WBCLUSTER_PROMPT',
+  wbplan: 'GEMINI_WBPLAN_PROMPT',
+  wbblast: 'GEMINI_WBBLAST_PROMPT',
+  wbtouches: 'GEMINI_WBTOUCHES_PROMPT',
+  wbcritique: 'GEMINI_WBCRITIQUE_PROMPT',
+  wbask: 'GEMINI_WBASK_PROMPT',
   semantic: 'GEMINI_SEMANTIC_PROMPT',
   replan: 'GEMINI_REPLAN_PROMPT',
   pushnote: 'GEMINI_PUSHNOTE_PROMPT',

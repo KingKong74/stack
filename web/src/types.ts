@@ -139,6 +139,55 @@ export interface Note {
   source: Source;
 }
 
+// ---- the Workbench canvas (the tab that replaced the notes wall) ----
+
+// A card is a PLACEMENT. 'note' and 'polaris' cards wrap a Note / Future row
+// and read their title through from it, so the collections stay authoritative;
+// only 'ai' cards own their own words.
+export type WorkbenchKind = 'note' | 'polaris' | 'ai';
+export type WorkbenchOp = 'expand' | 'cluster' | 'plan' | 'blast' | 'touches' | 'critique' | 'ask';
+
+export interface WorkbenchLine { mk: string; t: string }
+export interface WorkbenchPhase {
+  n: string; t: string; d: string; gate: string; bucket: Priority;
+}
+
+export interface WorkbenchBody {
+  lines?: WorkbenchLine[];
+  phases?: WorkbenchPhase[];
+  chips?: string[];
+  // Expand's first `choices` lines are a fork, not a list — picking one records
+  // `chosen` so a later op can be told which branch the owner took.
+  choices?: number;
+  chosen?: number;
+  question?: string;   // what Ask was asked
+  shipped?: boolean;   // this plan's phases already went to the roadmap
+}
+
+export interface WorkbenchCard {
+  id: number;
+  kind: WorkbenchKind;
+  op: WorkbenchOp | '';
+  noteId: number | null;
+  futureId: number | null;
+  title: string;
+  colour: string;      // the sticky's palette tint ('' for anything but a note)
+  meta: string;        // the corner stamp: P-number, op name, or a note's age
+  body: WorkbenchBody;
+  x: number; y: number; w: number;
+  when: string;
+}
+
+export interface WorkbenchEdge { id: number; a: number; b: number; ai: boolean }
+export interface WorkbenchTrayItem { id: number; title: string; meta: string }
+
+export interface WorkbenchData {
+  cards: WorkbenchCard[];
+  edges: WorkbenchEdge[];
+  tray: WorkbenchTrayItem[];   // Polaris ideas not on the canvas yet
+  ops: { key: WorkbenchOp; glyph: string; label: string }[];
+}
+
 // A future: a loose directional idea, curated against the project's north star
 // and promoted into the roadmap when it firms up.
 export interface Future {

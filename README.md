@@ -6,8 +6,11 @@ removes the friction of re-loading context when you jump between projects.
 
 Each project tracks its live site, repo, deploy status, an auto-generated **activity feed**
 (one summary per session/push), a **bug tracker**, a **MoSCoW roadmap**, and freeform
-**sticky notes**. Two screens: a cover-forward **projects dashboard** and a five-tab
-**project detail** (Overview · Bugs · Roadmap · Notes · Activity).
+**sticky notes**. Two screens: a cover-forward **projects dashboard** and a six-tab
+**project detail** (Overview · Quality · Roadmap · Polaris · Workbench · Activity) — where
+**Workbench** is the planning canvas the notes wall became: notes and Polaris ideas placed and
+wired on a ground, with an ✧ ops rail that expands, critiques or phases a card into a plan you
+promote onto the roadmap.
 
 The dashboard opens with a **cross-project command deck** — a console that glances across everything:
 a resume hero (the one project to jump back into), a quiet attention row (**Blocked · Stale · Bugs**

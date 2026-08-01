@@ -2,6 +2,7 @@ import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Tip, Tier, ResumeSince,
+  WorkbenchData, WorkbenchCard, WorkbenchEdge, WorkbenchBody, WorkbenchOp,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1713,4 +1714,64 @@ export async function patchNote(slug: string, id: number, patch: { text: string 
 }
 export async function deleteNote(slug: string, id: number): Promise<void> {
   await request<void>(`${notesBase(slug)}/${id}`, { method: 'DELETE' });
+}
+
+// ---- the Workbench canvas ----
+//
+// Positions travel from here, not the server: only the client knows how tall a
+// card actually rendered, and stacking an op's output under the last one needs
+// that. Every write returns the server's row, so the canvas never guesses what
+// it just saved.
+
+const wbBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/workbench`;
+
+export async function getWorkbench(slug: string): Promise<WorkbenchData> {
+  return request<WorkbenchData>(wbBase(slug));
+}
+
+// A note card writes a REAL note (it shows up in ⌘K and promotes to a bug like
+// any other); a polaris card pulls an existing idea onto the canvas.
+export async function addWorkbenchCard(
+  slug: string,
+  input: { kind: 'note'; text: string; x: number; y: number }
+       | { kind: 'polaris'; futureId: number; x: number; y: number },
+): Promise<WorkbenchCard> {
+  return request<WorkbenchCard>(`${wbBase(slug)}/cards`, { method: 'POST', body: input });
+}
+
+// `title` writes THROUGH to the note or idea the card wraps — there is no
+// second copy of the text to drift.
+export async function patchWorkbenchCard(
+  slug: string, id: number,
+  patch: Partial<{ x: number; y: number; w: number; title: string; body: WorkbenchBody }>,
+): Promise<WorkbenchCard> {
+  return request<WorkbenchCard>(`${wbBase(slug)}/cards/${id}`, { method: 'PATCH', body: patch });
+}
+
+// `dropped` is every card that went with it: an op's output takes the branch it
+// fed. A polaris card returns to the tray rather than deleting the idea.
+export async function deleteWorkbenchCard(
+  slug: string, id: number,
+): Promise<{ dropped: number[]; returnedToTray?: number }> {
+  return request<{ dropped: number[]; returnedToTray?: number }>(
+    `${wbBase(slug)}/cards/${id}`, { method: 'DELETE' });
+}
+
+export async function linkWorkbenchCards(slug: string, a: number, b: number): Promise<WorkbenchEdge> {
+  return request<WorkbenchEdge>(`${wbBase(slug)}/edges`, { method: 'POST', body: { a, b } });
+}
+
+export async function cutWorkbenchEdge(slug: string, id: number): Promise<{ dropped: number[] }> {
+  return request<{ dropped: number[] }>(`${wbBase(slug)}/edges/${id}`, { method: 'DELETE' });
+}
+
+// ✧ Run an op. Gemini proposes: the answer lands as a card to keep, edit or
+// cut — it never writes tracker state. 503 when the server has no key, which
+// is why the rail hides the ops rather than disabling them.
+export async function runWorkbenchOp(
+  slug: string,
+  input: { op: WorkbenchOp; cardId: number; x: number; y: number; question?: string },
+): Promise<{ card: WorkbenchCard; edge: WorkbenchEdge }> {
+  return request<{ card: WorkbenchCard; edge: WorkbenchEdge }>(
+    `${wbBase(slug)}/ops`, { method: 'POST', body: input });
 }

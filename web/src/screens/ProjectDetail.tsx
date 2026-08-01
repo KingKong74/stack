@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Severity, Priority, Bug, BugStatus } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Future, Severity, Priority, Bug, BugStatus, WorkbenchPhase } from '../types';
 import {
   getProjectDetail, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
-  createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture, getFutures,
+  createNote, deleteNote, createFuture, patchFuture, deleteFuture, getFutures,
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
   runAudit, getAuditPrompt, type AuditResult,
   patchProject, deleteProject, createShareLink, deleteShareLink,
@@ -18,7 +18,7 @@ import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview
 import { Quality } from '../detail/Quality';
 import { Roadmap } from '../detail/Roadmap';
 import { Futures, type Alignment } from '../detail/Futures';
-import { Notes } from '../detail/Notes';
+import { Workbench } from '../detail/Workbench';
 import { Activity } from '../detail/Activity';
 import { Modal } from '../components/Modal';
 import { BugModal } from '../components/BugModal';
@@ -27,23 +27,25 @@ import { ConfirmModal } from '../components/ConfirmModal';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
 // (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
-type Tab = 'overview' | 'quality' | 'roadmap' | 'futures' | 'notes' | 'activity';
+type Tab = 'overview' | 'quality' | 'roadmap' | 'futures' | 'workbench' | 'activity';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Overview' }, { key: 'quality', label: 'Quality' },
   { key: 'roadmap', label: 'Roadmap' }, { key: 'futures', label: 'Polaris' },
-  { key: 'notes', label: 'Notes' }, { key: 'activity', label: 'Activity' },
+  { key: 'workbench', label: 'Workbench' }, { key: 'activity', label: 'Activity' },
 ];
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
 
 const roadmapTotal = (r: RoadmapData) => r.must.length + r.should.length + r.could.length + r.wont.length;
 
-const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'futures', 'notes', 'activity']);
+const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'futures', 'workbench', 'activity']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
 // payload from an older server, a ⌘K target) keep working. 'tips' is the same
 // idea: the recipe library left the tab strip for the bottom-left dock, which
 // opens itself on that link (components/TipsDock) and rewrites the hash, so the
-// page underneath just shows Overview.
-const LEGACY_TABS: Record<string, Tab> = { bugs: 'quality', audit: 'quality', tips: 'overview' };
+// page underneath just shows Overview. 'notes' resolves to the Workbench, which
+// is where a note is read now — and `hl` on that link is still a NOTE id, which
+// the canvas resolves to the card wrapping it.
+const LEGACY_TABS: Record<string, Tab> = { bugs: 'quality', audit: 'quality', tips: 'overview', notes: 'workbench' };
 const asTab = (t: string | undefined): Tab =>
   (t && TAB_KEYS.has(t as Tab) ? (t as Tab) : (t && LEGACY_TABS[t]) || 'overview');
 
@@ -166,6 +168,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const [cleanupErr, setCleanupErr] = useState('');
   const [cleanupPicked, setCleanupPicked] = useState<Set<number>>(new Set());
   const [promotedNote, setPromotedNote] = useState<{ id: number; kind: 'bug' | 'roadmap' } | null>(null);
+  // Bumped whenever a note is deleted from outside the canvas, so the Workbench
+  // reloads instead of drawing a card whose note no longer exists.
+  const [notesNonce, setNotesNonce] = useState(0);
   const [promotedFuture, setPromotedFuture] = useState<number | null>(null);
   const [pendingFuture, setPendingFuture] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -432,22 +437,17 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     setData({ ...data, roadmap: road });
   };
 
-  const addNote = (text: string) =>
-    guard(async () => {
-      const note = await createNote(slug, { text });
-      setData({ ...data, notes: [note, ...notes] });
-    });
-
-  const editNote = (nid: number, text: string) =>
-    guard(async () => {
-      const updated = await patchNote(slug, nid, { text });
-      setData({ ...data, notes: notes.map((n) => (n.id === nid ? updated : n)) });
-    });
-
+  // Notes are created and edited on the Workbench now, through its own route
+  // (which writes the note AND places its card in one transaction). What is
+  // left here is the one path that still deletes a note from OUTSIDE the
+  // canvas: "you promoted it, delete the original?". Bumping `notesNonce` is
+  // how the canvas hears about it — its card is gone server-side (the FK
+  // cascades) and it would otherwise keep drawing a card for a dead note.
   const removeNote = (nid: number) =>
     guard(async () => {
       await deleteNote(slug, nid);
       setData({ ...data, notes: notes.filter((n) => n.id !== nid) });
+      setNotesNonce((n) => n + 1);
     });
 
   // ---- futures (the ideas curated against the north star) ----
@@ -662,9 +662,36 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   };
 
   // Promote a note into the existing create-bug / create-roadmap flow, prefilled.
-  const promoteNote = (note: Note, kind: 'bug' | 'roadmap') => {
-    if (kind === 'bug') setBugModal({ open: true, title: note.text, fromNote: note.id });
-    else setRoadModal({ open: true, priority: 'should', title: note.text, note: '', fromNote: note.id, editing: null });
+  // The Workbench hands over the note id and the text it is currently showing —
+  // it holds cards, not Note rows, and the text on the card IS the note's text.
+  const promoteNote = (noteId: number, text: string, kind: 'bug' | 'roadmap') => {
+    if (kind === 'bug') setBugModal({ open: true, title: text, fromNote: noteId });
+    else setRoadModal({ open: true, priority: 'should', title: text, note: '', fromNote: noteId, editing: null });
+  };
+
+  // A plan card's phases → real roadmap items. THIS is the dispose half of the
+  // Workbench's propose/dispose split: everything an op writes stays a card
+  // until the human presses this, and then it goes through the ordinary roadmap
+  // POST like anything else. The gate travels in the item's note, because a
+  // phase without its gate is just a title.
+  const promotePlan = async (phases: WorkbenchPhase[]): Promise<boolean> => {
+    try {
+      setActionError('');
+      const road = { ...roadmap };
+      for (const p of phases) {
+        const item = await createRoadmapItem(slug, {
+          title: p.t,
+          note: [p.d, p.gate ? `Gate: ${p.gate}` : ''].filter(Boolean).join('\n\n'),
+          bucket: p.bucket,
+        });
+        road[item.bucket] = [...road[item.bucket], item];
+      }
+      setData({ ...data, roadmap: road });
+      return true;
+    } catch (e) {
+      setActionError((e as Error)?.message || 'Could not promote the plan.');
+      return false;
+    }
   };
 
   const keepPromotedNote = () => setPromotedNote(null);
@@ -713,10 +740,18 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setReplanErr((e as Error)?.message || 'Gemini call failed.');
     }
   };
+  // Keeps a re-entry plan as a plain note. It gets no position of its own, which
+  // is fine: the Workbench's backfill places any note that arrived without a
+  // card the next time the canvas is opened.
   const saveReplanAsNote = () => {
     const text = replan;
     setReplan(null);
-    if (text) addNote(`✧ Re-entry plan\n${text}`);
+    if (!text) return;
+    void guard(async () => {
+      const note = await createNote(slug, { text: `✧ Re-entry plan\n${text}` });
+      setData({ ...data, notes: [note, ...notes] });
+      setNotesNonce((n) => n + 1);
+    });
   };
 
   // ---- public showcase link ----
@@ -815,7 +850,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             // (red checks + serious open bugs). Two badges gave two counts and
             // no sense of how bad it was.
             const n = t.key === 'quality' ? needsAttention
-              : t.key === 'roadmap' ? openRoadCount : t.key === 'futures' ? unsortedFutures : 0;
+              : t.key === 'roadmap' ? openRoadCount : t.key === 'futures' ? unsortedFutures
+                : t.key === 'workbench' ? notes.length : 0;
             return (
               <button key={t.key} className={`tab ${tab === t.key ? 'on' : ''}`} onClick={() => setTab(t.key)}>
                 {t.label}{n > 0 && <span className={`tab-n${t.key === 'quality' ? ' bad' : ''}`}>{n}</span>}
@@ -875,8 +911,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onShape={shapeFuture}
             onDelete={removeFuture} onPromote={promoteFuture} />
         )}
-        {tab === 'notes' && (
-          <Notes notes={notes} highlightId={highlightId} onAdd={addNote} onEdit={editNote} onDelete={removeNote} onPromote={promoteNote} />
+        {tab === 'workbench' && (
+          <Workbench slug={slug} geminiReady={data.geminiReady} highlightId={highlightId}
+            notesNonce={notesNonce} onPromoteNote={promoteNote} onPromotePlan={promotePlan} />
         )}
         {tab === 'activity' && (
           <Activity activity={activity} highlightRef={highlightRef} linkedBugId={linkedBugId} onClear={() => setHighlightRef(null)} />

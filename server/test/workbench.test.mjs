@@ -1,0 +1,165 @@
+#!/usr/bin/env node
+// The Workbench canvas — the four properties that keep it honest.
+//
+// The canvas is a PLACEMENT layer over rows that live somewhere else, and every
+// bug worth pinning here comes from forgetting that:
+//
+//   • BACKFILL — notes that predate the canvas (and any note filed from
+//     elsewhere, like the ✧ re-entry plan) must get a card on read, and a
+//     second read must not give them a second one.
+//   • WRITE-THROUGH — retitling a card retitles the NOTE. A second copy of the
+//     text would leave ⌘K searching a stale one.
+//   • DELETE ASYMMETRY — a note card's × deletes the note (it has no other
+//     home); a polaris card's × only takes the idea OFF the canvas. Deleting
+//     someone's Polaris idea because they tidied their workspace is the
+//     expensive version of this bug.
+//   • CUT DROPS THE BRANCH — cutting an op's line drops the output it fed and
+//     everything downstream of THAT, but never a note or an idea that happens
+//     to sit below the cut.
+//
+// Needs a running server on an EMPTY database (it writes real rows):
+//   docker run -d --rm --name pg -e POSTGRES_PASSWORD=t -e POSTGRES_USER=t \
+//     -e POSTGRES_DB=t -p 55432:5432 postgres:16-alpine
+//   DATABASE_URL=postgres://t:t@127.0.0.1:55432/t API_TOKEN=testtok PORT=4599 \
+//     node server/src/index.js &
+//   DATABASE_URL=postgres://t:t@127.0.0.1:55432/t node server/test/workbench.test.mjs
+//
+// It needs DATABASE_URL as well as the API: one case stands an op's output up
+// directly, because ops are the only way to make an 'ai' card through the API
+// and they need a live Gemini key.
+//
+// Override the API with STACK_TEST_API / STACK_TEST_TOKEN.
+//
+// The ops are NOT exercised here: they are the one path that calls Gemini, and
+// a test that needs a live key and a daily quota is a test that gets skipped.
+// What the ops produce is a card like any other, and the card is what this
+// covers.
+
+const API = process.env.STACK_TEST_API || 'http://127.0.0.1:4599';
+const TOKEN = process.env.STACK_TEST_TOKEN || 'testtok';
+const SLUG = 'workbench-test';
+
+let failed = 0;
+function check(name, got, want) {
+  const ok = Object.is(got, want);
+  if (!ok) failed++;
+  console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok ? '' : `  (got ${JSON.stringify(got)}, want ${JSON.stringify(want)})`}`);
+}
+
+const call = async (path, opts = {}) => {
+  const r = await fetch(`${API}/api${path}`, {
+    ...opts,
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${TOKEN}`,
+      ...(opts.headers || {}),
+    },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  const text = await r.text();
+  if (!r.ok) throw new Error(`${opts.method || 'GET'} ${path} → ${r.status}: ${text}`);
+  return text ? JSON.parse(text) : null;
+};
+
+const board = () => call(`/projects/${SLUG}/workbench`);
+
+(async () => {
+  // A project, one note filed the OLD way (straight at the notes route, as the
+  // ✧ re-entry plan and every pre-Workbench note was), and one Polaris idea.
+  await call('/ingest', {
+    method: 'POST',
+    body: {
+      project: { slug: SLUG, name: 'Workbench test' },
+      session: { session_id: 'wb-1', commit_hash: 'wb00001', branch: 'main', summary: 'seed', message_count: 1 },
+    },
+  });
+  const legacyNote = await call(`/projects/${SLUG}/notes`, { method: 'POST', body: { text: 'a note from before the canvas' } });
+  const idea = await call(`/projects/${SLUG}/futures`, { method: 'POST', body: { title: 'an idea in the tray' } });
+
+  // 1. BACKFILL — the legacy note gets a card on read, and only ever one.
+  const first = await board();
+  check('a pre-canvas note is materialised as a card', first.cards.length, 1);
+  check('its title reads through from the note', first.cards[0].title, 'a note from before the canvas');
+  check('the unplaced idea sits in the tray', first.tray.length, 1);
+  const second = await board();
+  check('reading twice does not double the card', second.cards.length, 1);
+
+  // 2. WRITE-THROUGH — retitling the card retitles the note itself.
+  const noteCard = second.cards[0];
+  await call(`/projects/${SLUG}/workbench/cards/${noteCard.id}`, {
+    method: 'PATCH', body: { title: 'retitled on the canvas', x: 120, y: 240 },
+  });
+  const notes = await call(`/projects/${SLUG}/notes`);
+  check('the note row itself carries the new text', notes[0].text, 'retitled on the canvas');
+  const moved = (await board()).cards[0];
+  check('and the move persisted', `${moved.x},${moved.y}`, '120,240');
+
+  // 3. Pulling an idea takes it out of the tray; putting it back is not a delete.
+  const polarisCard = await call(`/projects/${SLUG}/workbench/cards`, {
+    method: 'POST', body: { kind: 'polaris', futureId: idea.id, x: 400, y: 40 },
+  });
+  const withIdea = await board();
+  check('pulling an idea empties the tray', withIdea.tray.length, 0);
+  check('and puts a second card on the canvas', withIdea.cards.length, 2);
+  await call(`/projects/${SLUG}/workbench/cards/${polarisCard.id}`, { method: 'DELETE' });
+  const afterReturn = await board();
+  check('removing a polaris card returns it to the tray', afterReturn.tray.length, 1);
+  check('and does NOT delete the idea', (await call(`/projects/${SLUG}/futures`)).length, 1);
+
+  // 4. CUT DROPS THE BRANCH. Ops need a live Gemini key, so the shapes an op
+  //    would make are built by hand: note → ai → ai, plus a plain note wired
+  //    below the cut that must survive it.
+  const bystander = await call(`/projects/${SLUG}/workbench/cards`, {
+    method: 'POST', body: { kind: 'note', text: 'a bystander note', x: 40, y: 600 },
+  });
+  const { rootId, leafId } = await seedAiChain(noteCard.id, bystander.id);
+  const wired = await board();
+  check('the chain is on the canvas', wired.cards.length, 4);
+
+  const aiEdge = wired.edges.find((e) => e.ai && e.b === rootId);
+  const res = await call(`/projects/${SLUG}/workbench/edges/${aiEdge.id}`, { method: 'DELETE' });
+  check('cutting the op line drops it and everything it fed', res.dropped.length, 2);
+  check('both dropped cards were the ai ones', res.dropped.slice().sort().join(), [rootId, leafId].sort().join());
+  const after = await board();
+  check('the note and the bystander are untouched', after.cards.length, 2);
+  check('the bystander note still exists', (await call(`/projects/${SLUG}/notes`)).length, 2);
+
+  // 5. A note card's × really does delete the note.
+  await call(`/projects/${SLUG}/workbench/cards/${bystander.id}`, { method: 'DELETE' });
+  check('removing a note card deletes the note', (await call(`/projects/${SLUG}/notes`)).length, 1);
+  check('and its card goes with it', (await board()).cards.length, 1);
+
+  console.log(failed ? `\n${failed} check(s) failed.` : '\nall checks passed.');
+  process.exit(failed ? 1 : 0);
+})().catch((e) => { console.error(e); process.exit(1); });
+
+// Ops are the only way to make an 'ai' card through the API, and they need a
+// key. The chain is stood up directly in the DB instead — the thing under test
+// is the CUT, not how the cards got there.
+async function seedAiChain(fromCardId, bystanderCardId) {
+  if (!process.env.DATABASE_URL) {
+    throw new Error('This test writes the ai chain directly — run it with the same DATABASE_URL as the server.');
+  }
+  const { default: pg } = await import('pg');
+  const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await db.connect();
+  try {
+    const { rows: p } = await db.query('SELECT id FROM projects WHERE slug = $1', [SLUG]);
+    const pid = p[0].id;
+    const mk = async (title) => (await db.query(
+      `INSERT INTO workbench_cards (project_id, kind, op, title, x, y, w)
+       VALUES ($1,'ai','critique',$2,0,0,258) RETURNING id`, [pid, title])).rows[0].id;
+    const rootId = await mk('op output');
+    const leafId = await mk('op output of the op output');
+    const link = (a, b, ai) => db.query(
+      'INSERT INTO workbench_edges (project_id, a_id, b_id, ai) VALUES ($1,$2,$3,$4)', [pid, a, b, ai]);
+    await link(fromCardId, rootId, true);
+    await link(rootId, leafId, true);
+    // A hand-drawn line from the doomed branch to a plain note: the recursion
+    // must stop at it rather than follow the edge into a card it does not own.
+    await link(rootId, bystanderCardId, false);
+    return { rootId, leafId };
+  } finally {
+    await db.end();
+  }
+}

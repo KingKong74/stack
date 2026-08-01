@@ -225,7 +225,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_futures_auto_fp
   ON futures (project_id, fingerprint) WHERE source = 'hook';
 CREATE INDEX IF NOT EXISTS idx_futures_project ON futures (project_id, created_at DESC);
 
--- Per-project sticky notes.
+-- Per-project sticky notes. The Workbench canvas is where they are READ now
+-- (the notes wall is gone), but the rows still live here: ingest, search and
+-- promote-to-bug/roadmap all address a note, not a card.
 CREATE TABLE IF NOT EXISTS notes (
   id          SERIAL PRIMARY KEY,
   project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -237,6 +239,53 @@ CREATE TABLE IF NOT EXISTS notes (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_notes_project ON notes (project_id, created_at DESC);
+
+-- The Workbench canvas — the tab that replaced the notes wall. A row here is a
+-- PLACEMENT, not content: a note card carries note_id and a polaris card
+-- carries future_id, so `notes` and `futures` stay the one source of truth for
+-- their own text (edit a card title and the write goes through to the row it
+-- wraps). Only an 'ai' card owns its body, because nothing else does.
+--
+-- Both foreign keys are ON DELETE CASCADE: delete the note or the idea anywhere
+-- in the app and its card leaves the canvas with it, so a card can never
+-- outlive what it points at.
+CREATE TABLE IF NOT EXISTS workbench_cards (
+  id          SERIAL PRIMARY KEY,
+  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL,                           -- note | polaris | ai
+  note_id     INTEGER REFERENCES notes(id) ON DELETE CASCADE,
+  future_id   INTEGER REFERENCES futures(id) ON DELETE CASCADE,
+  op          TEXT NOT NULL DEFAULT '',                -- ai only: which op made it
+  title       TEXT NOT NULL DEFAULT '',                -- ai only (others read through)
+  body        JSONB NOT NULL DEFAULT '{}'::jsonb,      -- lines | phases | chips | chosen
+  x           INTEGER NOT NULL DEFAULT 0,
+  y           INTEGER NOT NULL DEFAULT 0,
+  w           INTEGER NOT NULL DEFAULT 244,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- One card per note and per idea: the canvas shows a thing once, and the
+-- backfill that materialises cards for pre-Workbench notes leans on this to be
+-- safely re-runnable.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_cards_note
+  ON workbench_cards (note_id) WHERE note_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_cards_future
+  ON workbench_cards (future_id) WHERE future_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_wb_cards_project ON workbench_cards (project_id, created_at);
+
+-- Lines between cards. `ai` marks the ones an op drew (dashed on the canvas);
+-- cutting one of those drops the output it fed, which is what makes an op
+-- undoable without an undo stack.
+CREATE TABLE IF NOT EXISTS workbench_edges (
+  id          SERIAL PRIMARY KEY,
+  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  a_id        INTEGER NOT NULL REFERENCES workbench_cards(id) ON DELETE CASCADE,
+  b_id        INTEGER NOT NULL REFERENCES workbench_cards(id) ON DELETE CASCADE,
+  ai          BOOLEAN NOT NULL DEFAULT false,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_wb_edges_project ON workbench_edges (project_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_edges_pair ON workbench_edges (a_id, b_id);
 
 -- Per-project checks: HTTP probes run against the project's live application
 -- from the Bugs tab ("is the site up, does the API answer"). Run on demand;
