@@ -857,6 +857,17 @@ a.tab { display: inline-block; }
 .refine-note-body li + li { margin-top: 1px; }
 .refine-note-body strong { font-weight: 600; }
 .refine-note-body code { font-family: var(--mono); font-size: 10.5px; background: var(--accent-tint); border-radius: 3px; padding: 0 3px; }
+/* #319 — the refinement is editable right on the card: the whole block is the
+   click target, and the ✎ button is the keyboard/screen-reader path to the same edit. */
+.refine-note-open { border-radius: 6px; padding: 2px 3px; cursor: pointer; }
+.refine-note-open:hover { background: var(--accent-tint); }
+.refine-note-edit-btn { flex: none; align-self: flex-start; color: var(--faint); background: transparent; border: none; font-size: 12px; line-height: 1; padding: 2px 4px; border-radius: 6px; cursor: pointer; opacity: 0; transition: opacity 0.12s ease; }
+.refine-note-open:hover .refine-note-edit-btn, .refine-note-edit-btn:focus-visible { opacity: 1; }
+.refine-note-edit-btn:hover { color: var(--accent); }
+.refine-note-edit { margin-top: 5px; }
+.refine-note-edit .field-input { font-size: 11.5px; height: auto; min-height: 64px; padding: 6px 9px; resize: vertical; }
+.refine-edit-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.refine-edit-err { font-size: 11px; color: var(--critical); }
 .chip-input:focus { border-color: var(--accent); }
 .draft-chip { display: inline-block; font-size: 12px; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 8px; padding: 5px 11px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .draft-chip:hover { border-color: var(--accent); }

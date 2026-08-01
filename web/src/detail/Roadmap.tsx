@@ -6,6 +6,7 @@ import { getBoardLayout, setBoardLayout } from '../store';
 import { hrefTo } from '../lib/route';
 import { Modal } from '../components/Modal';
 import { renderMarkdownLite } from '../lib/markdownLite';
+import { REFINE_MAX, planRefineSave } from '../lib/refineEdit';
 
 export type ReviewTag = 'solid' | 'needs-work' | 'rethink';
 export const REVIEW_TAGS: { key: ReviewTag; label: string }[] = [
@@ -29,7 +30,7 @@ export const REVIEW_NOTE_TAGS: { key: string; label: string }[] = [
 // Archive below — still counted by the progress model, reviewable with a
 // verdict tag, refinable by delta (#146), restorable by un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onPlanItems, onSetTier, onBranch, onDeleteArea, onRenameArea, slug, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onPlanItems, onSetTier, onBranch, onDeleteArea, onRenameArea, onRefineNote, slug, highlightId,
   draft, onResumeDraft, onDiscardDraft, liveBranches, staleItemDays,
 }: {
   roadmap: RoadmapData;
@@ -55,6 +56,10 @@ export function Roadmap({
   // #169 — area management: delete (clears area from all items) and rename
   onDeleteArea?: (area: string, itemIds: number[]) => Promise<void>;
   onRenameArea?: (from: string, to: string, itemIds: number[]) => Promise<void>;
+  // #319 — save the item's refinement straight from the card. Resolves when the
+  // PATCH has landed; REJECTS with a message the editor shows in place, so a
+  // failed save keeps the draft rather than losing what was typed.
+  onRefineNote?: (item: RoadmapItem, text: string) => Promise<void>;
   slug?: string;
   highlightId?: string | null;
   draft?: { title: string } | null;
@@ -83,6 +88,30 @@ export function Roadmap({
   const unfoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelUnfold = () => { if (unfoldTimer.current) { clearTimeout(unfoldTimer.current); unfoldTimer.current = null; } };
   useEffect(() => cancelUnfold, []);
+
+  // #319 — the refine note's inline editor: one open at a time, seeded from
+  // the item when opened and NEVER re-seeded from props while it's open — a
+  // background refresh must not stomp a draft mid-edit.
+  const [refineEdit, setRefineEdit] = useState<{ id: number; draft: string } | null>(null);
+  const [refineBusy, setRefineBusy] = useState(false);
+  const [refineErr, setRefineErr] = useState<string | null>(null);
+  const openRefineEdit = (it: RoadmapItem) => {
+    setRefineEdit({ id: it.id, draft: it.refineNote });
+    setRefineErr(null);
+  };
+  const closeRefineEdit = () => { setRefineEdit(null); setRefineErr(null); };
+  const saveRefineEdit = (it: RoadmapItem) => {
+    if (!onRefineNote || !refineEdit || refineEdit.id !== it.id) return;
+    const plan = planRefineSave(it.refineNote, refineEdit.draft);
+    if (plan.kind === 'none') { closeRefineEdit(); return; }
+    const text = plan.kind === 'clear' ? '' : plan.text;
+    setRefineBusy(true);
+    setRefineErr(null);
+    onRefineNote(it, text)
+      .then(() => { setRefineBusy(false); closeRefineEdit(); })
+      .catch((e) => { setRefineBusy(false); setRefineErr((e as Error)?.message || 'Could not save.'); });
+  };
+
   const allById = new Map(PRIORITY_META.flatMap((c) => roadmap[c.key]).map((i) => [i.id, i]));
   const handleDrop = (toBucket: Priority, beforeId: number | null) => {
     const dragged = dragId != null ? allById.get(dragId) : null;
@@ -647,7 +676,9 @@ export function Roadmap({
                   <div
                     className={`road-item ${working ? 'working' : ''} ${it.skipped ? 'skipped' : ''} ${highlightId === String(it.id) ? 'hl' : ''} ${dragId === it.id ? 'drag' : ''} ${overKey === String(it.id) ? 'drop-before' : ''}`}
                     key={it.id} data-hl={it.id}
-                    draggable={!!onReorder && !working}
+                    // #319 — not draggable while ITS refine editor is open: selecting
+                    // text in the textarea would otherwise start a card drag instead.
+                    draggable={!!onReorder && !working && refineEdit?.id !== it.id}
                     onDragStart={(e) => { if (working) return; setDragId(it.id); e.dataTransfer.effectAllowed = 'move'; }}
                     onDragEnd={() => { setDragId(null); setOverKey(null); }}
                     onDragOver={(e) => {
@@ -690,12 +721,61 @@ export function Roadmap({
                         )}
                       </div>
                       {it.note && <div className="note">{it.note}</div>}
-                      {it.refineNote && (
-                        <div className="refine-note refine-note-rich"
-                          title="Sent back for refinement — the next session changes only this, on top of what landed">
-                          <span className="refine-note-icon">↻</span>
-                          <span className="refine-note-body">{renderMarkdownLite(it.refineNote)}</span>
+                      {refineEdit?.id === it.id ? (
+                        <div className="refine-note refine-note-edit">
+                          <textarea
+                            className="field-input"
+                            rows={4}
+                            autoFocus
+                            maxLength={REFINE_MAX}
+                            value={refineEdit.draft}
+                            onChange={(e) => setRefineEdit({ id: it.id, draft: e.target.value })}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              // An explicit Save/Cancel is what keeps this from
+                              // fighting the card's own click-away and drag handlers —
+                              // no auto-save on blur.
+                              e.stopPropagation();
+                              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); saveRefineEdit(it); }
+                              if (e.key === 'Escape') { e.preventDefault(); closeRefineEdit(); }
+                            }}
+                          />
+                          <div className="refine-edit-actions">
+                            <button type="button" className="btn-submit sm" disabled={refineBusy}
+                              onClick={() => saveRefineEdit(it)}>
+                              {refineBusy ? '◴' : 'Save'}
+                            </button>
+                            <button type="button" className="btn-cancel sm" disabled={refineBusy}
+                              onClick={closeRefineEdit}>
+                              Cancel
+                            </button>
+                            {refineErr && <span className="refine-edit-err">{refineErr}</span>}
+                          </div>
                         </div>
+                      ) : it.refineNote && (
+                        onRefineNote && !working ? (
+                          // A <button> can only hold phrasing content, and markdown-lite renders
+                          // block elements (<p>, <ul>, <li>) — so the click target is a div, and
+                          // the ✎ button below is the keyboard/screen-reader path to the same edit.
+                          <div className="refine-note refine-note-rich refine-note-open"
+                            onClick={() => openRefineEdit(it)}
+                            title="Sent back for refinement — the next session changes only this, on top of what landed. Click to edit it here.">
+                            <span className="refine-note-icon">↻</span>
+                            <span className="refine-note-body">{renderMarkdownLite(it.refineNote)}</span>
+                            <button type="button" className="refine-note-edit-btn"
+                              aria-label={`Edit refinement on #${it.id}`}
+                              title="Edit this refinement"
+                              onClick={(e) => { e.stopPropagation(); openRefineEdit(it); }}>
+                              ✎
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="refine-note refine-note-rich"
+                            title="Sent back for refinement — the next session changes only this, on top of what landed">
+                            <span className="refine-note-icon">↻</span>
+                            <span className="refine-note-body">{renderMarkdownLite(it.refineNote)}</span>
+                          </div>
+                        )
                       )}
                       {it.claimedBy && (
                         <div className="claim-chip"
