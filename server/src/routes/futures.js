@@ -291,6 +291,168 @@ futures.post('/converge', async (req, res) => {
   }
 });
 
+// Validates a model's orbit proposals against the real rows we sent it — never
+// trust the model. `stars`/`loose` are `{ id, title }` arrays; `raw` may be
+// junk. Exported so the test exercises exactly what the route runs.
+export function filterOrbitProposals(raw, { stars, loose }) {
+  const items = Array.isArray(raw?.items) ? raw.items : [];
+  const starById = new Map(stars.map((s) => [s.id, s]));
+  const looseById = new Map(loose.map((l) => [l.id, l]));
+  const seen = new Set();
+  const out = [];
+  for (const it of items) {
+    if (out.length >= 20) break;
+    const id = Number(it?.id);
+    const parentId = Number(it?.parentId);
+    if (!Number.isInteger(id) || !Number.isInteger(parentId)) continue;
+    if (id === parentId) continue;
+    if (seen.has(id)) continue;
+    const idea = looseById.get(id);
+    const star = starById.get(parentId);
+    if (!idea || !star) continue;
+    seen.add(id);
+    out.push({
+      id,
+      title: idea.title,
+      parentId,
+      parentTitle: star.title,
+      why: String(it?.why || '').trim().slice(0, 200),
+    });
+  }
+  return out;
+}
+
+// POST /orbits  -> Gemini proposes which loose ideas (shells + drift belt)
+// thematically belong in an existing star's orbit, i.e. should become that
+// star's planets. Suggestions only — the client offers each as a PATCH
+// parentId the human applies; nothing is written here. 503 keyless.
+const ORBIT_STAR_CAP = 40;
+const ORBIT_LOOSE_CAP = 60;
+
+futures.post('/orbits', async (req, res) => {
+  if (!geminiEnabled()) {
+    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
+  }
+  const { rows: starRows } = await q(
+    `SELECT id, title, note FROM futures
+      WHERE project_id = $1 AND is_star = true
+      ORDER BY created_at ASC`,
+    [req.project.id]
+  );
+  const { rows: looseRows } = await q(
+    `SELECT id, title, note, area FROM futures
+      WHERE project_id = $1 AND is_star = false AND parent_id IS NULL
+      ORDER BY created_at DESC`,
+    [req.project.id]
+  );
+  if (!starRows.length || !looseRows.length) return res.json({ items: [] });
+
+  const stars = starRows.slice(0, ORBIT_STAR_CAP);
+  const loose = looseRows.slice(0, ORBIT_LOOSE_CAP);
+
+  const prompt = buildPrompt('futureorbits', {
+    NORTH_STAR_LINE: req.project.north_star
+      ? `The project's north star: "${String(req.project.north_star).slice(0, 400)}"`
+      : '',
+    STARS: stars.map((s) => `${s.id} | ${s.title} | ${(s.note || '-').slice(0, 200)}`).join('\n')
+      + (starRows.length > stars.length
+        ? `\n(showing ${stars.length} of ${starRows.length} stars — others exist but are not listed here)`
+        : ''),
+    LOOSE: loose.map((l) => `${l.id} | ${l.title} | ${(l.note || '-').slice(0, 200)} | ${l.area || '-'}`).join('\n')
+      + (looseRows.length > loose.length
+        ? `\n(showing ${loose.length} of ${looseRows.length} loose ideas — others exist but are not listed here)`
+        : ''),
+  });
+
+  try {
+    const answer = await askGemini(prompt, { timeoutMs: 30_000 });
+    const items = filterOrbitProposals(answer, { stars, loose });
+    res.json({ items });
+  } catch (err) {
+    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+  }
+});
+
+// POST /:id/restate  -> Gemini drafts a sharper title/note/area for one idea,
+// grounded in its own wording and (if a star) its children — the sky's own
+// help sharpening a definition. Suggestions only, offered as inline edits;
+// nothing is written here. 503 keyless.
+const RESTATE_CHILD_CAP = 20;
+
+futures.post('/:id/restate', async (req, res) => {
+  const { rows } = await q(
+    'SELECT * FROM futures WHERE project_id = $1 AND id = $2',
+    [req.project.id, Number(req.params.id)]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Idea not found.' });
+  if (!geminiEnabled()) {
+    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
+  }
+  const idea = rows[0];
+
+  const { rows: childRows } = await q(
+    'SELECT id, title FROM futures WHERE project_id = $1 AND parent_id = $2 ORDER BY created_at ASC',
+    [req.project.id, idea.id]
+  );
+  const children = childRows.slice(0, RESTATE_CHILD_CAP);
+
+  let grandchildTitles = [];
+  if (idea.is_star && children.length) {
+    const { rows: gcRows } = await q(
+      `SELECT title FROM futures WHERE project_id = $1 AND parent_id = ANY($2::int[])
+        ORDER BY created_at ASC LIMIT $3`,
+      [req.project.id, children.map((c) => c.id), RESTATE_CHILD_CAP]
+    );
+    grandchildTitles = gcRows.map((r) => r.title);
+  }
+
+  const childrenBlock = children.length
+    ? `THIS IDEA'S CHILDREN (${idea.is_star ? 'its planets' : 'its moons'}):\n`
+      + children.map((c) => `- ${c.title}`).join('\n')
+      + (childRows.length > children.length
+        ? `\n(showing ${children.length} of ${childRows.length} — others exist but are not listed here)`
+        : '')
+      + (grandchildTitles.length ? `\nTHEIR OWN MOONS:\n${grandchildTitles.map((t) => `- ${t}`).join('\n')}` : '')
+    : 'This idea has no children yet.';
+
+  const prompt = buildPrompt('futurerestate', {
+    NORTH_STAR_LINE: req.project.north_star
+      ? `The project's north star: "${String(req.project.north_star).slice(0, 400)}"`
+      : '',
+    STAR_LINE: idea.is_star ? ' (a STAR — a body of work with its own orbit)' : '',
+    TITLE: idea.title,
+    NOTE_LINE: idea.note || '(none)',
+    AREA_LINE: idea.area || '(none)',
+    MAGNITUDE_LINE: idea.magnitude ? `Magnitude: ${idea.magnitude}/5` : '',
+    ALIGNMENT_LINE: idea.alignment ? `Alignment: ${idea.alignment}` : '',
+    CHILDREN_BLOCK: childrenBlock,
+  });
+
+  try {
+    const answer = await askGemini(prompt, { timeoutMs: 30_000 });
+    if (!answer || typeof answer !== 'object') {
+      return res.status(502).json({ error: 'Gemini gave an unusable answer — try again.' });
+    }
+    const clean = (v, cap, lower = false) => {
+      let s = String(v ?? '').trim();
+      if (lower) s = s.toLowerCase();
+      return s.slice(0, cap);
+    };
+    let title = clean(answer.title, 300);
+    let note = clean(answer.note, 1000);
+    let area = clean(answer.area, 40, true);
+    const why = clean(answer.why, 200);
+
+    if (title && title === String(idea.title || '').trim()) title = '';
+    if (note && note === String(idea.note || '').trim()) note = '';
+    if (area && area === String(idea.area || '').trim().toLowerCase()) area = '';
+
+    res.json({ title, note, area, why });
+  } catch (err) {
+    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+  }
+});
+
 // DELETE /:id  -> remove; auto (hook) ideas leave a tombstone
 futures.delete('/:id', async (req, res) => {
   const { rows } = await q(
