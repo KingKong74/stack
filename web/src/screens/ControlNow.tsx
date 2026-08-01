@@ -74,6 +74,12 @@ export interface NowRoomProps {
   // branches
   onMerge: (p: ControlProject, b: ControlProject['branches'][number]) => void;
   onMergeTrain: (p: ControlProject) => void;
+  // #243 — the merge advisor: queue a read-only conflict report, and open the
+  // report once one has landed. adviseBusy is the same composite-key
+  // (`slug:branch`) pattern previewBusy already uses.
+  onAdvise: (slug: string, branch: string, itemId: string | null) => void;
+  onOpenAdvice: (jobId: string) => void;
+  adviseBusy: string | null;
   // previews
   previews: Preview[];
   previewBusy: string | null;
@@ -484,7 +490,8 @@ export function NowRoom(p: NowRoomProps) {
               {isOpen && (
                 <BranchStrip project={x} data={data} previewFor={previewFor}
                   previewBusy={p.previewBusy} onStartPreview={p.onStartPreview}
-                  onStopPreview={p.onStopPreview} onMerge={p.onMerge} onMergeTrain={p.onMergeTrain} />
+                  onStopPreview={p.onStopPreview} onMerge={p.onMerge} onMergeTrain={p.onMergeTrain}
+                  onAdvise={p.onAdvise} onOpenAdvice={p.onOpenAdvice} adviseBusy={p.adviseBusy} />
               )}
             </div>
           );
@@ -513,7 +520,7 @@ export function NowRoom(p: NowRoomProps) {
 // page load. That caveat rides at the end of the strip rather than in a hover
 // on the container, which is exactly where a reader given precise-looking
 // counts will not look (#288).
-function BranchStrip({ project: x, data, previewFor, previewBusy, onStartPreview, onStopPreview, onMerge, onMergeTrain }: {
+function BranchStrip({ project: x, data, previewFor, previewBusy, onStartPreview, onStopPreview, onMerge, onMergeTrain, onAdvise, onOpenAdvice, adviseBusy }: {
   project: ControlProject;
   data: ControlData;
   previewFor: (slug: string, branch: string) => Preview | null;
@@ -522,6 +529,9 @@ function BranchStrip({ project: x, data, previewFor, previewBusy, onStartPreview
   onStopPreview: (pv: Preview) => void;
   onMerge: (p: ControlProject, b: ControlProject['branches'][number]) => void;
   onMergeTrain: (p: ControlProject) => void;
+  onAdvise: (slug: string, branch: string, itemId: string | null) => void;
+  onOpenAdvice: (jobId: string) => void;
+  adviseBusy: string | null;
 }) {
   const openMergeJobs = (branch: string) => data.jobs.some((j) => j.slug === x.slug && j.kind === 'merge'
     && j.detail.includes(`origin/${branch} into`) && OPEN_JOB.has(j.status));
@@ -611,6 +621,51 @@ function BranchStrip({ project: x, data, previewFor, previewBusy, onStartPreview
                 {pv.status === 'stopping' ? 'stopping…' : pv.status === 'queued' ? 'preview queued…' : 'preview building…'}
               </span>
             )}
+            {/* #243 — the merge advisor: only offered where there is a conflict
+                to explain. A branch the probe calls clean has nothing for it to
+                read; an unprobed branch (mergeClean == null) is not clean, so it
+                still gets offered. Found structurally (kind + branch column),
+                not by the merge row's detail-substring trick — an advise job
+                has a real branch column to match on. */}
+            {b.mergeClean !== true && (() => {
+              const adviseJob = data.jobs.find((j) => j.slug === x.slug && j.kind === 'advise' && j.branch === b.branch);
+              const adviseBusyHere = adviseBusy === `${x.slug}:${b.branch}`;
+              if (!adviseJob) {
+                return (
+                  <button className="mc-branch-advise" disabled={adviseBusyHere}
+                    title={`Reads the real conflict between origin/${b.branch} and main on the host and reports back — a review, not a resolve. Nothing is merged.`}
+                    onClick={() => onAdvise(x.slug, b.branch, b.itemId || null)}>
+                    {adviseBusyHere ? '◴ …' : '⚖ Advise'}
+                  </button>
+                );
+              }
+              if (adviseJob.status === 'queued' || adviseJob.status === 'claimed') {
+                return <span className="mc-branch-status">advising…</span>;
+              }
+              if (adviseJob.status === 'running') {
+                return <span className="mc-branch-status">reading conflict…</span>;
+              }
+              if (adviseJob.status === 'done' && adviseJob.adviceReady) {
+                return (
+                  <button className="mc-branch-advice"
+                    title={`Open the advisor's report (${adviseJob.when}) — a review, never an auto-resolve`}
+                    onClick={() => onOpenAdvice(adviseJob.id)}>⚖ Advice</button>
+                );
+              }
+              if (adviseJob.status === 'done') {
+                // A pass that reported nothing is not a statement the branch
+                // merges — never render this as clean or as a tick.
+                return <span className="mc-branch-status">no report</span>;
+              }
+              if (adviseJob.status === 'failed') {
+                return (
+                  <span className="mc-branch-status" title={adviseJob.detail}>
+                    {adviseJob.detail.slice(0, 60) || 'advise failed'}
+                  </span>
+                );
+              }
+              return null;
+            })()}
           </span>
         );
       })}

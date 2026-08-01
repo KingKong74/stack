@@ -1212,6 +1212,10 @@ a.tab { display: inline-block; }
 .overlay { position: fixed; inset: 0; z-index: 50; background: rgba(28, 26, 23, 0.42); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; padding: 24px; animation: fade 0.12s ease; }
 .modal { width: 460px; max-width: 100%; max-height: calc(100vh - 48px); overflow-y: auto; background: var(--card); border-radius: 18px; padding: 24px 26px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28); animation: pop 0.14s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .modal.wide { width: 640px; }
+/* #243 — the advisor report needs room: diff3-style conflict blocks with
+   `  Common ancestor:` / `    | ` / `    > ` indentation scroll unreadably at
+   640px, and reading the report IS the feature. */
+.modal.advice { width: 860px; max-width: calc(100vw - 48px); }
 .modal h3 { font-family: var(--disp); font-size: 19px; font-weight: 600; margin: 0 0 18px; }
 .modal .lbl { margin-bottom: 8px; }
 .field-input { width: 100%; height: 42px; border: 1px solid var(--line-3); border-radius: 10px; padding: 0 13px; font-size: 14px; outline: none; color: var(--ink); background: var(--card); }
@@ -1287,7 +1291,7 @@ a.tab { display: inline-block; }
   .tabs::-webkit-scrollbar { display: none; }
   .detail-title { font-size: 25px; }
   .overlay { padding: 12px; align-items: flex-end; }
-  .modal, .modal.wide { width: 100%; max-height: calc(100vh - 24px); padding: 20px 18px; }
+  .modal, .modal.wide, .modal.advice { width: 100%; max-height: calc(100vh - 24px); padding: 20px 18px; }
   .set-card { padding: 18px 16px; }
 }
 
@@ -2173,6 +2177,39 @@ a.tab { display: inline-block; }
   background: color-mix(in srgb, var(--critical) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--critical) 25%, transparent);
   border-radius: 8px; padding: 8px 12px; margin: -8px 0 18px;
+}
+
+/* #243 — the merge advisor: ⚖ Advise reads the real conflict on the host and
+   reports back, read-only. ⚖ Advice (once a report has landed) is styled apart
+   from ⚖ Advise so a ready report reads as something to READ, not an action
+   still to take — same accent family, filled rather than washed. */
+.mc-branch-advise {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  border: 1px solid var(--line-2); background: var(--card);
+  border-radius: 12px; padding: 1px 8px;
+}
+.mc-branch-advise:hover:not(:disabled) { color: var(--accent-deep); border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.mc-branch-advise:disabled { opacity: 0.55; }
+.mc-branch-advice {
+  font-size: 11px; font-weight: 600; color: var(--accent);
+  border: 1px solid var(--accent-tint-border); background: var(--accent-tint);
+  border-radius: 12px; padding: 1px 8px;
+}
+.mc-branch-advice:hover { color: #fff; background: var(--accent-deep); border-color: var(--accent-deep); }
+/* the advisor report modal */
+.mc-advice-sub { font-size: 12.5px; color: var(--muted); margin: -10px 0 14px; }
+.mc-advice-report {
+  font-family: var(--mono); font-size: 12px; line-height: 1.55; color: var(--body);
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px;
+  padding: 12px 14px; white-space: pre; overflow-x: auto; overflow-y: auto;
+  max-height: 46vh; margin: 0 0 14px;
+}
+.mc-advice-caveat { font-size: 12px; color: var(--muted); font-style: italic; margin: 0 0 4px; }
+.mc-advice-none {
+  font-size: 13px; line-height: 1.6; color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--critical) 25%, transparent);
+  border-radius: 8px; padding: 10px 12px; margin: 0 0 4px;
 }
 
 /* scheduled sessions — the week ahead + the standing list */
