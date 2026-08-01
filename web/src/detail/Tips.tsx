@@ -8,11 +8,13 @@ import { go } from '../lib/route';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 
-// The Tips tab (from the Stack Planning design): the library of Claude
-// recipes — prompts that worked, kept with the context of WHEN to reach for
-// them. The library is app-wide (every project's tab shows the same recipes);
-// ▶ Run opens a terminal session in THIS project with the prompt handed over
-// via the board's one-shot brief mechanism — nothing runs until Enter.
+// The recipe library (from the Stack Planning design): prompts that worked,
+// kept with the context of WHEN to reach for them. The library is app-wide —
+// it is the same list from anywhere — so it opens from the bottom-left dock
+// (components/TipsDock) rather than owning a per-project tab. ▶ Run opens a
+// terminal session in the project you're on with the prompt handed over via
+// the board's one-shot brief mechanism — nothing runs until Enter. With no
+// project in view (`slug` undefined) the session opens without a cwd.
 
 const STAGES: { key: TipStage | 'all'; label: string }[] = [
   { key: 'all', label: 'All' }, { key: 'diverge', label: 'Diverge' },
@@ -33,7 +35,7 @@ function PromptText({ prompt }: { prompt: string }) {
   );
 }
 
-export function Tips({ slug }: { slug: string }) {
+export function Tips({ slug, onClose }: { slug?: string; onClose?: () => void }) {
   const [tips, setTips] = useState<Tip[] | null>(null);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -113,11 +115,14 @@ export function Tips({ slug }: { slug: string }) {
     <div>
       <div className="section-bar" style={{ marginBottom: 14 }}>
         <div className="titles">
-          <div className="h">Tips</div>
+          <div className="h">Recipes</div>
           <div className="subtitle">Claude recipes, runnable in place — the library is shared across every project</div>
         </div>
         <span className="tips-count">{total} recipe{total === 1 ? '' : 's'}{pinnedCount ? ` · ${pinnedCount} pinned` : ''}</span>
         <button className="btn-repo" onClick={() => setModal({ open: true, editing: null })}>+ New recipe</button>
+        {onClose && (
+          <button className="tips-close" onClick={onClose} title="Close the library" aria-label="Close the library">×</button>
+        )}
       </div>
 
       {error && <div className="action-error">{error}</div>}

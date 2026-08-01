@@ -19,7 +19,6 @@ import { Quality } from '../detail/Quality';
 import { Roadmap } from '../detail/Roadmap';
 import { Futures, type Alignment } from '../detail/Futures';
 import { Notes } from '../detail/Notes';
-import { Tips } from '../detail/Tips';
 import { Activity } from '../detail/Activity';
 import { Modal } from '../components/Modal';
 import { BugModal } from '../components/BugModal';
@@ -28,21 +27,23 @@ import { ConfirmModal } from '../components/ConfirmModal';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
 // (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
-type Tab = 'overview' | 'quality' | 'roadmap' | 'futures' | 'tips' | 'notes' | 'activity';
+type Tab = 'overview' | 'quality' | 'roadmap' | 'futures' | 'notes' | 'activity';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Overview' }, { key: 'quality', label: 'Quality' },
   { key: 'roadmap', label: 'Roadmap' }, { key: 'futures', label: 'Polaris' },
-  { key: 'tips', label: 'Tips' },
   { key: 'notes', label: 'Notes' }, { key: 'activity', label: 'Activity' },
 ];
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
 
 const roadmapTotal = (r: RoadmapData) => r.must.length + r.should.length + r.could.length + r.wont.length;
 
-const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'futures', 'tips', 'notes', 'activity']);
+const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'futures', 'notes', 'activity']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
-// payload from an older server, a ⌘K target) keep working.
-const LEGACY_TABS: Record<string, Tab> = { bugs: 'quality', audit: 'quality' };
+// payload from an older server, a ⌘K target) keep working. 'tips' is the same
+// idea: the recipe library left the tab strip for the bottom-left dock, which
+// opens itself on that link (components/TipsDock) and rewrites the hash, so the
+// page underneath just shows Overview.
+const LEGACY_TABS: Record<string, Tab> = { bugs: 'quality', audit: 'quality', tips: 'overview' };
 const asTab = (t: string | undefined): Tab =>
   (t && TAB_KEYS.has(t as Tab) ? (t as Tab) : (t && LEGACY_TABS[t]) || 'overview');
 
@@ -874,7 +875,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onShape={shapeFuture}
             onDelete={removeFuture} onPromote={promoteFuture} />
         )}
-        {tab === 'tips' && <Tips slug={slug} />}
         {tab === 'notes' && (
           <Notes notes={notes} highlightId={highlightId} onAdd={addNote} onEdit={editNote} onDelete={removeNote} onPromote={promoteNote} />
         )}

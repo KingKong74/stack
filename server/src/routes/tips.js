@@ -2,10 +2,10 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { tipShape } from '../shape.js';
 
-// The Tips library — app-wide Claude recipes (the Stack Planning design's
-// Tips tab). Mounted at /api/tips: one library, every project's Tips tab
-// reads it. Running a recipe is a client flow (the terminal's one-shot brief
-// handoff); POST /:id/run just records that it happened.
+// The recipe library — app-wide Claude recipes (the Stack Planning design's
+// Tips). Mounted at /api/tips: one library, read from the client's bottom-left
+// dock wherever you are. Running a recipe is a client flow (the terminal's
+// one-shot brief handoff); POST /:id/run just records that it happened.
 export const tips = Router();
 
 const STAGES = new Set(['diverge', 'converge', 'judge', 'ship']);

@@ -16,6 +16,7 @@ import { Showcase } from './screens/Showcase';
 import { CommandPalette } from './components/CommandPalette';
 import { TermStatusPill } from './components/TermStatusPill';
 import { ToTop } from './components/ToTop';
+import { TipsDock } from './components/TipsDock';
 import { getToken, onAuthChange, getThemePref, onThemeChange } from './store';
 
 // Resolve the stored preference to a concrete theme on <html data-theme>.
@@ -97,6 +98,10 @@ export default function App() {
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <TermStatusPill hidden={route.name === 'terminal' || termAlive > 0} />
       {route.name !== 'terminal' && <ToTop />}
+      {/* The recipe library: app-wide, so it opens from the corner on every
+          screen rather than from one project's tab strip. Not on the terminal
+          screen — ▶ Run lands you there, and the dock would sit over it. */}
+      {route.name !== 'terminal' && <TipsDock />}
     </>
   );
 }

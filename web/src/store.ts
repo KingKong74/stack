@@ -1557,7 +1557,7 @@ export function setNorthStarOpen(slug: string, open: boolean) {
   catch { /* storage full or unavailable — the band is a nicety, never a blocker */ }
 }
 
-// ---- tips (the app-wide recipe library — the Tips tab) ----
+// ---- tips (the app-wide recipe library — the bottom-left dock) ----
 
 // The recipe rail's collapsed state — device-local, like the theme. Collapsed
 // = the detail pane takes the full width; a slim strip re-opens the list.

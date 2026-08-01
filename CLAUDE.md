@@ -43,13 +43,16 @@ templates/ stack-agent-context.md — the canonical portable agent manual (singl
 - `lib/route.ts` — hash router. Routes: `#/`, `#/settings`, `#/control`, `#/terminal`, `#/skills`,
   `#/timeline`, `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` deep-links; the TAB
   decides what `hl` means (commit hash → activity, bug key → quality, row id → roadmap/notes).
-  Legacy `bugs`/`audit` tabs both resolve to `quality` (#278), so old links keep working.
+  Legacy `bugs`/`audit` tabs both resolve to `quality` (#278) and `tips` to `overview` (the library
+  moved to the corner dock), so old links keep working.
 - `screens/` — Dashboard (five anchored sections behind a sticky SubNav), ProjectDetail (owns tab +
   modal state), Settings, Control (Mission Control — six rooms: Now / Nights / Plan / Build /
   Review / Roles, behind a live strip and a persistent right rail), Terminal, Skills.
   `detail/` holds the project tabs: Overview, Quality (#278 — Bugs and Audit merged into
   one page), Roadmap (Board / Tiers / Parked), Futures (the Polaris galaxy — Sky / Board / List,
-  geometry in `detail/Galaxy.tsx`), Tips, Notes, Activity.
+  geometry in `detail/Galaxy.tsx`), Notes, Activity. `detail/Tips.tsx` is NOT a tab: the recipe
+  library is app-wide, so it opens from the bottom-left `components/TipsDock` on every screen and a
+  legacy `/tips` link opens the dock rather than a tab.
 - `lib/brief.ts` — the exportable resume brief + the `DIRECTIVES` catalogue (keys mirror the
   server's `SESSION_DEFAULTS`). Pure formatting; data arrives via store.ts callers.
 - `lib/termClipboard.ts` — copy/paste for both xterms. A browser is not a terminal emulator: ⌃C
