@@ -669,7 +669,8 @@ export function Workbench({
     : nights.every((n) => n.insights.length === 0)
       ? `The last ${debrief?.runsShown ?? nights.length} nights left nothing to pick up.`
       : dQuery.trim() ? 'Nothing matches that.'
-        : 'Everything these nights turned up is already on the canvas.';
+        : dFilter === 'advisor' ? 'No reviewer or architect read is attached to these nights.'
+          : 'Everything these nights turned up is already on the canvas.';
 
   const toggleDPick = (key: string) => setDPicked((prev) => {
     const next = new Set(prev);
@@ -891,7 +892,7 @@ export function Workbench({
             <button className={`wb-debrief${debriefOpen ? ' on' : ''}`}
               onClick={() => (debriefOpen ? closeDebrief() : openDebrief())}>
               <span className="dot" />
-              <span className="l">⤓ debrief</span>
+              <span className="l">⤓ Pull from a night</span>
               {debrief && <span className="n">{debriefNewCount} new</span>}
             </button>
             <button className="chip-sm add" onClick={addNote}>+ note</button>
