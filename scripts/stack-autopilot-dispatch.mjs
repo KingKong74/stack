@@ -389,6 +389,12 @@ await report('running');
 const runner = join(dirname(fileURLToPath(import.meta.url)), 'stack-autopilot.mjs');
 const args = ['--project', job.slug, '--repo', repo];
 if (job.itemId) args.push('--item', String(job.itemId));
+// The fan-out's bookkeeping (#266) — a fanned job carries its slice of the
+// night's budget and the night it belongs to, so N jobs cannot between them
+// spend N times the night's budget, and a night whose jobs run past midnight
+// still groups as one night.
+if (job.tokenBudget != null) args.push('--tokens', String(job.tokenBudget));
+if (job.nightDate) args.push('--night', String(job.nightDate));
 // #228 — the session plan: kind picks the runner mode, the agenda rides as an
 // ordered list (item ids → --items, bug keys → --bugs), area scopes the pick.
 const sessionKind = job.sessionKind || 'build';

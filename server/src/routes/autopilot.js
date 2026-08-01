@@ -43,6 +43,8 @@ export function runShape(r) {
     // Named tmux session (#171): set when the run was started inside a tmux session
     // so the web terminal can re-attach for live monitoring while the run is active.
     tmuxSession: r.tmux_session || null,
+    // #266 — which night (if any) produced this run.
+    nightDate: dateKey(r.night_date),
     when: relativeTime(r.finished_at) || 'just now',
     finishedAt: r.finished_at,
   };
@@ -84,6 +86,11 @@ const cleanAgenda = (v) => (Array.isArray(v) ? v : [])
   .filter((x) => x != null)
   .slice(0, 20);
 const cleanArea = (v) => String(v || '').trim().toLowerCase().slice(0, 40);
+
+// A pg DATE parses to LOCAL midnight, so toISOString() shifts the day
+// whenever the server TZ is ahead of UTC. Read the local components.
+const dateKey = (v) => { if (!v) return null; const d = new Date(v);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 // #266 — the runner's own token-budget floor: below this, a job's share gets
 // rounded back UP to it (scripts/stack-autopilot.mjs), so funding a job under
@@ -130,7 +137,7 @@ function scheduleShape(r) {
     itemTitle: r.item_title || '',
     atTime: r.at_time,
     days: DAY_LIST(r.days),
-    runDate: r.run_date ? new Date(r.run_date).toISOString().slice(0, 10) : null,
+    runDate: dateKey(r.run_date),
     note: r.note || '',
     enabled: !!r.enabled,
     // #228 — the session plan
@@ -159,7 +166,7 @@ function jobShape(r) {
     area: r.area || '',
     // #266 — the fan-out's own bookkeeping: which night this job belongs to,
     // and its slice of that night's token budget.
-    nightDate: r.night_date ? new Date(r.night_date).toISOString().slice(0, 10) : null,
+    nightDate: dateKey(r.night_date),
     // BIGINT comes back from pg as a STRING — Number() it, unlike an INT column.
     tokenBudget: r.token_budget != null ? Number(r.token_budget) : null,
     when: relativeTime(r.finished_at || r.started_at || r.created_at) || 'just now',
@@ -693,10 +700,13 @@ autopilot.post('/runs', async (req, res) => {
   const reviewNote = b.review_note ? String(b.review_note).slice(0, 1200) : null;
   const reviewFindings = Number.isFinite(Number(b.review_findings))
     ? Math.max(0, Math.trunc(Number(b.review_findings))) : null;
+  // #266 — which night (if any) produced this run. Only a plain ISO date is
+  // stored — an unrecognised value becomes NULL rather than inventing one.
+  const nightDate = /^\d{4}-\d{2}-\d{2}$/.test(String(b.night_date || '')) ? b.night_date : null;
   const { rows } = await q(
     `INSERT INTO autopilot_runs
-       (project_id, item_id, item_title, branch, outcome, commits, tokens, cost_usd, checks_failing, summary, model_usage, tmux_session, review_verdict, review_note, review_findings, started_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15, COALESCE($16, now())) RETURNING *`,
+       (project_id, item_id, item_title, branch, outcome, commits, tokens, cost_usd, checks_failing, summary, model_usage, tmux_session, review_verdict, review_note, review_findings, night_date, started_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16, COALESCE($17, now())) RETURNING *`,
     [
       req.project.id,
       Number.isFinite(Number(b.item_id)) ? Number(b.item_id) : null,
@@ -711,6 +721,7 @@ autopilot.post('/runs', async (req, res) => {
       modelUsage ? JSON.stringify(modelUsage) : null,
       tmuxSession,
       reviewVerdict, reviewNote, reviewFindings,
+      nightDate,
       b.started_at ? new Date(b.started_at) : null,
     ]
   );
