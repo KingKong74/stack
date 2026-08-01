@@ -302,6 +302,14 @@ function lastSubstantiveMessage(turns) {
     t.agentTokens = sub.agentTokens;
     t.agentsRecorded = sub.agentsRecorded;
     if (Object.keys(sub.agentTypes).length) t.agentTypes = sub.agentTypes;
+    // Neither source alone is a complete count. A `fork` subagent leaves NO
+    // Agent tool_use block in the parent, so the tool_use tally undercounts it;
+    // a delegation whose transcript has been cleaned up leaves a tool_use and
+    // no directory, so the directory undercounts that. The larger is the only
+    // one that cannot claim fewer delegations than certainly happened — and
+    // without this the panel read "2 Agent calls" above a type list that
+    // plainly summed to three.
+    t.agentCalls = Math.max(t.agentCalls || 0, sub.agentsRecorded);
   }
 
   // include_chores off → skip a session that edited no files (nothing of

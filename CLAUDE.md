@@ -225,6 +225,9 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   spend is unrecoverable. It is routinely the LARGER half: a director handing units to a cheap
   executor bills most of its work in those files. `agents_recorded` is the count that `agent_usage`
   actually prices, so a delegation whose transcript is gone reads as unpriced rather than as free.
+  **Neither source is a complete count of delegations**: a `fork` subagent leaves no Agent tool_use
+  block in the parent (so the tool_use tally misses it) and a cleaned-up transcript leaves no
+  directory (so the directory misses that), which is why `agent_calls` is the MAX of the two.
 - **A plan night is the advisor working, not the advisor idle.** Outcome `planned` commits nothing by
   design, so it can never be `landed`: it is counted apart (`planRuns`/`advisedPlanRuns`) and sits
   out the advised-versus-unadvised land rate, while keeping its spend and role attribution in full.
