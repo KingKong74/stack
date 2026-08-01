@@ -97,6 +97,13 @@ Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
   MoSCoW bucket's sizing. It is the primary sort of the run queue: work S before
   A before B before C, and unranked items last. Never set or change a tier
   yourself — it's the owner's ground truth for what matters.
+- **A claim is on the ITEM; the collision is on the FILE.** Mission Control now
+  watches which files each live session is writing (read off the transcripts —
+  two sessions in one checkout share a dirty tree, so git cannot tell them
+  apart) and flags a file two of you are editing at once. The claim is still
+  the protocol; this only means the owner sees it when the protocol is not
+  enough. If you are in a shared checkout, prefer a worktree for anything that
+  rewrites a large file.
 - If you're one of several parallel sessions and you pick up a roadmap item,
   **claim it first** (your claim label = your branch name):
 

@@ -46,8 +46,10 @@ templates/ stack-agent-context.md — the canonical portable agent manual (singl
   workbench). Legacy `bugs`/`audit` tabs both resolve to `quality` (#278), `tips` to `overview` (the
   library moved to the corner dock) and `notes` to `workbench`, so old links keep working.
 - `screens/` — Dashboard (five anchored sections behind a sticky SubNav), ProjectDetail (owns tab +
-  modal state), Settings, Control (Mission Control — six rooms: Now / Nights / Plan / Build /
-  Review / Roles, behind a live strip and a persistent right rail), Terminal, Skills.
+  modal state), Settings, Control (Mission Control — six rooms behind a live strip and a persistent
+  right rail; `Control.tsx` is the shell and each room has its own file: `ControlNow` /
+  `ControlRooms` (Nights, Plan, Build) / `ControlReview` / `ControlRoles`, with the merged session
+  list in `ControlLanes`), Terminal, Skills.
   `detail/` holds the project tabs: Overview, Quality (#278 — Bugs and Audit merged into
   one page), Roadmap (Board / Tiers / Parked), Futures (the Polaris galaxy — Sky / Board / List,
   geometry in `detail/Galaxy.tsx`), Workbench (the planning canvas that replaced the notes wall —
@@ -239,11 +241,45 @@ direction is not uniform, and it is not a bug that it isn't:**
 - **Fail OPEN = keep recording** where the action only records: `readSettings()` and both hooks
   default to "on", so a flaky API degrades to recording rather than to silent-off.
 
+- **Fail SILENT = report nothing** where the reader would otherwise mistake absence for good news.
+  `attention[]` and `conflicts[]` are empty with no host daemon on the line, so the Now room reads
+  `terminal.connected` and says "Stack cannot see whether a session is stopped" rather than
+  "nothing is waiting on you". Same rule as a NULL `review_verdict`: no pass ran ≠ nothing found.
+
 Related, and just as absolute: **Stack only ever writes or removes skills IT PLANTED.** Each managed
 directory carries a `.stack-managed` marker; a skill without one is REPORTED and never touched.
 Removal is driven by the server's KEEP list, never by a diff against the last report. And **a preview
 never writes to the real database** — its own is a copy, and that isolation is one-directional and
 absolute.
+
+## Answering a permission prompt from the browser
+
+`POST /api/terminal/answer` is the ONLY path by which anything but a human at the keyboard types
+into a running session, and every rule on it exists because of one hazard: **the row the human
+clicked was drawn from a pane read up to twenty seconds ago.** In twenty seconds a session can be
+answered at the keyboard and be sitting on a text input where the menu was, and "1" is then a stray
+digit in someone's message.
+
+- **The HOST decides, the server only relays.** The check cannot move server-side: only the host can
+  see the pane, and a check against the relay's own cache would be a check against the very
+  staleness it exists to catch. The daemon re-reads the pane and refuses unless the prompt it finds
+  still matches.
+- **The fingerprint covers the BODY, not just the question.** "Do you want to proceed?" is the
+  question for every bash command there has ever been — a question-only hash would let a yes aimed
+  at `rm -rf build` land on whatever replaced it.
+- **Approve sends the plain Yes, never "and don't ask again".** Widening a permission for the rest
+  of a session is a decision for the keyboard, where the human can see what they are widening.
+  Deny sends Escape, the one keystroke that cannot mean anything else if the pane moved.
+- **The refusal is shown, verbatim and beside the row.** "Already answered", "the session moved on"
+  are the NORMAL outcomes; swallowing them leaves a button that silently does nothing.
+- Autopilot sessions never appear here **by construction** — the runner passes
+  `--dangerously-skip-permissions`, so it cannot be blocked this way. Only `stack-term-*` can.
+
+`terminal/prompt-scan.mjs` is pure and leans hard towards null (it wants a numbered menu with both a
+yes and a no, a question above it, nothing but key hints below): a false block puts an Approve
+button in front of a question nobody asked, which is far worse than a real block noticed a minute
+late. `terminal/edit-watch.mjs` reads who is editing what off the **transcripts, not git** — two
+sessions in one checkout share a dirty tree, so git cannot say who wrote what and a transcript can.
 
 ## Hooks and the host
 
@@ -378,6 +414,8 @@ node server/test/ingest-identity.test.mjs  # one activity row per SESSION (needs
 node server/test/run-shape.test.mjs        # the run ledger's shared shapes match the old copies
 node server/test/fleet-roles.test.mjs      # role attribution + drift detection (pure, no DB)
 node server/test/workbench.test.mjs        # the canvas is a placement layer (needs API + DATABASE_URL)
+node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
+node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)

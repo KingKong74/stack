@@ -83,6 +83,22 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Control — roles interactive sessions', url: u('/api/control'), auth: true, json_path: 'roles.manual.sessions' },
     { name: 'Control — roles delegation count', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentCalls' },
     { name: 'Control — roles merged model receipt', url: u('/api/control'), auth: true, json_path: 'roles.everyModel' },
+    // The Now room's two host-fed signals. Both are ARRAYS that are usually
+    // EMPTY — nothing is normally stopped and nobody is normally colliding —
+    // which is exactly why they need a check: if the key stops being served,
+    // the room renders "nothing is waiting on you" and looks entirely correct
+    // while a session sits blocked on a permission prompt all night. Asserting
+    // the path, not a count: the count is meant to be zero most of the time.
+    { name: 'Control — what is waiting on you', url: u('/api/control'), auth: true, json_path: 'attention' },
+    { name: 'Control — same-file collisions', url: u('/api/control'), auth: true, json_path: 'conflicts' },
+    // The answer channel's front door. A bad fingerprint must be REFUSED with
+    // a 400 rather than relayed — the host's re-read is the real guard, but a
+    // server that forwarded anything shaped like a request would put the whole
+    // weight of "do not type a stray keystroke into a live session" on a
+    // websocket round trip that may not happen.
+    { name: 'Terminal — a malformed prompt answer is refused', method: 'POST',
+      url: u('/api/terminal/answer'), auth: true, expect_status: 400,
+      req_body: '{"name":"stack-term-nope","fingerprint":"not-a-fingerprint","choice":"approve"}' },
     { name: 'Search — grouped counts', url: u('/api/search?q=roadmap'), auth: true, json_path: 'counts.total' },
     { name: 'Search — empty query is empty', url: u('/api/search?q='), auth: true, json_path: 'counts.total', json_expect: '0' },
     { name: 'Timeline — daily graph', url: u('/api/timeline'), auth: true, json_path: 'graph.0.date' },
@@ -232,9 +248,13 @@ export async function main(argv = process.argv.slice(2)) {
     if (failed.length) code = 1;
   }
 
-  process.stdout.write('\nNot covered on purpose: write paths (POST/PATCH/DELETE). Checks run on every'
-    + '\nRun-all and every autopilot night, so a mutating check would write junk into real'
-    + '\ntrackers forever. Covering writes needs a disposable project — a separate item.\n');
+  process.stdout.write('\nNot covered on purpose: write paths that WRITE. Checks run on every Run-all and'
+    + '\nevery autopilot night, so a mutating check would put junk into real trackers'
+    + '\nforever. Covering those needs a disposable project — a separate item.'
+    + '\n\nThe exception is a POST that must be REFUSED: it is a write path only in shape,'
+    + '\nand the refusal is the whole assertion. /api/terminal/answer is checked that way'
+    + '\nbecause it is the one route that can type into a live session — its argument'
+    + '\nvalidation failing open is not something a read could ever notice.\n');
   return code;
 }
 
