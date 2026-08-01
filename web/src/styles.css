@@ -356,7 +356,7 @@ a { color: inherit; }
 /* Navigation "buttons" that are really anchors (so middle/ctrl-click opens a
    new tab) keep their button look — the classes carry the styling. */
 a.btn-repo, a.btn-accent, a.tab, a.mc-term,
-a.mc14-tab, a.link { text-decoration: none; cursor: pointer; }
+a.mc14-tab, a.link, a.tc-link { text-decoration: none; cursor: pointer; }
 a.tab { display: inline-block; }
 .tab:hover { color: var(--ink); }
 .tab.on { font-weight: 600; color: var(--accent); border-bottom-color: var(--accent); }

@@ -1540,6 +1540,21 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
               the open segment are device-local. ---- */}
           <div className={`term-cockpit${viewPrefs.railOpen ? '' : ' collapsed'}`}>
             <div className="tc-top">
+              {/* #316 — the jump link, at the top of the rail and in the same
+                  hand as DO NEXT's `roadmap ↗` below: the rail is where this
+                  session's work is picked up, so it is also where the verdict
+                  on the last one belongs. Sits above the segment picker, so it
+                  is there whichever segment is open. An anchor (`#/control/review`
+                  is a real URL now), so it can be opened in a tab beside the
+                  session rather than replacing it. Absent while the rail is
+                  collapsed — 34px of strip has nowhere to put it — which is why
+                  the top bar keeps its own ✓ Review. */}
+              {viewPrefs.railOpen && (
+                <a className="tc-link" href={hrefTo.control('review')}
+                  title="Review — every change waiting on your verdict, across every project">
+                  review ↗
+                </a>
+              )}
               {/* The two Session layouts, switchable in a press so they can be
                   compared against real work rather than against a mock. Named
                   by what you are going TO, since that is the choice. */}
