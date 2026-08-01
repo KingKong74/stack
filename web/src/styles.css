@@ -4655,6 +4655,13 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .rv-detail-head h3 { margin: 8px 0 0; font-family: var(--disp); font-size: 18px; font-weight: 600; line-height: 1.3; color: var(--ink); text-wrap: pretty; }
 .rv-detail-head .what { margin: 7px 0 0; max-width: 640px; font-size: 12.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
 .rv-detail-head .what.refine { color: var(--accent-deep); }
+/* #313 — reuses .note-row/.note-clear from the Roadmap tab (#313's first
+   unit); the .what text keeps its own 7px top margin so the row sits where
+   the bare <p> used to, and the × gets the same 7px so it lands on the
+   text's first line rather than the row's own top edge. */
+.rv-detail-head .note-row { align-items: flex-start; }
+.rv-detail-head .note-row > .what { flex: 1 1 auto; min-width: 0; }
+.rv-detail-head .note-clear { margin-top: 7px; }
 .rv-detail-body { display: grid; grid-template-columns: 1fr 270px; gap: 18px; padding: 16px 20px 20px; align-items: start; }
 .rv-main { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 .rv-main section { display: flex; flex-direction: column; gap: 9px; }
