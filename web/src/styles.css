@@ -1209,6 +1209,9 @@ a.tab { display: inline-block; }
 .wb-copy:disabled { opacity: .6; cursor: default; }
 .wb-design .hint { font-size: 11px; color: var(--muted); line-height: 1.45; }
 .wb-design .hint code { font-family: var(--mono); font-size: 10.5px; }
+.wb-design .pasterow { display: flex; gap: 8px; align-items: center; }
+.wb-design .pasterow .wb-copy { width: auto; flex: 1; }
+.wb-design .pastehint { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
 
 /* ---------- activity timeline ---------- */
 .linkbanner { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 11px; padding: 11px 15px; margin-bottom: 18px; }

@@ -59,19 +59,44 @@ export function composeDesignBrief(
   return sections.join('\n\n');
 }
 
-export function WorkbenchDesign({ card, slug, lineage, onSay }: {
+export function WorkbenchDesign({ card, slug, lineage, onSay, onPasteBack }: {
   card: WorkbenchCard | null;
   slug: string;
   lineage: { card: WorkbenchCard; depth: number; kind: string }[];
   onSay: (t: string) => void;
+  onPasteBack: (text: string) => Promise<void>;
 }): JSX.Element {
   // Kept per-card rather than reset on selection change: the ask is the
   // human's steer, not the card's, so switching cards shouldn't lose it.
   const [ask, setAsk] = useState('');
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The return leg. What comes back is the human's own words — Stack has no
+  // `ai` card the client is allowed to write, and even if it did, a design
+  // pasted from elsewhere isn't Gemini's output to own. It lands as a note,
+  // the same kind ⌘K already finds and → Bug / → Roadmap already promotes.
+  const [pasting, setPasting] = useState(false);
+  const [paste, setPaste] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  // `ask` persists ACROSS a change of selection on purpose — it is the human's
+  // standing steer, not the card's. A half-typed paste is the opposite: it is
+  // aimed at ONE card, and carrying it to whatever gets clicked next would wire
+  // a design to the wrong subject silently, while the placeholder still says
+  // "wired to this card". Same reasoning as the pull picker's closePicker
+  // dropping its ticks. Keyed on `card?.id` alone — NOT on `busy` — because
+  // this only ever needs to fire on a change of selection; putting `busy` in
+  // the deps would re-run it the moment a submit finishes, including a FAILED
+  // one, and clear the very paste the failure path above is keeping on screen.
+  // `busy` is read, not depended on: the guard just skips the one case where a
+  // card change lands mid-submit.
+  useEffect(() => {
+    if (busy) return;
+    setPasting(false);
+    setPaste('');
+  }, [card?.id]);
 
   const brief = useMemo(() => (card ? composeDesignBrief(slug, card, lineage, ask) : ''),
     [slug, card, lineage, ask]);
@@ -86,6 +111,24 @@ export function WorkbenchDesign({ card, slug, lineage, onSay }: {
       timer.current = setTimeout(() => setCopied(false), 1600);
     } catch {
       onSay('Could not reach the clipboard — the brief was not copied.');
+    }
+  };
+
+  const cancelPaste = () => { setPasting(false); setPaste(''); };
+
+  const submitPaste = async () => {
+    const text = paste.trim();
+    if (!text || busy) return;
+    setBusy(true);
+    try {
+      await onPasteBack(text);
+      // Workbench's own guard reports a failure; resolving here is not proof
+      // the card landed, only that nothing THREW — so only clear on that path,
+      // never lose a paste the human just made to a swallowed error.
+      setPaste('');
+      setPasting(false);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -107,6 +150,39 @@ export function WorkbenchDesign({ card, slug, lineage, onSay }: {
             (a <code>./stack term</code> tab, or claude.ai's design system) and bring the design back
             onto the canvas.
           </div>
+
+          {!pasting ? (
+            <button className="chip-sm" onClick={() => setPasting(true)}>⌦ Paste a design back</button>
+          ) : (
+            <>
+              <textarea className="ask" rows={4} autoFocus value={paste}
+                placeholder="Paste the design here — it lands as a note wired to this card."
+                onChange={(e) => setPaste(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void submitPaste(); }
+                  else if (e.key === 'Escape') {
+                    // Workbench's own window-level keydown handler treats Esc as a
+                    // chain that ends in deselecting the card — and deselecting
+                    // unmounts this whole section, box and all. That chain has no
+                    // idea this box exists, so it can't be taught to skip it; the
+                    // box has to claim the key itself while it holds the cursor,
+                    // stopping the bubble rather than merely preventing the
+                    // textarea's own default. Esc here means cancel-this-paste,
+                    // full stop.
+                    e.preventDefault();
+                    e.stopPropagation();
+                    cancelPaste();
+                  }
+                }} />
+              <div className="pasterow">
+                <button className="wb-copy" disabled={!paste.trim() || busy} onClick={() => void submitPaste()}>
+                  {busy ? 'adding…' : 'Add to canvas'}
+                </button>
+                <button className="chip-sm" onClick={cancelPaste}>cancel</button>
+              </div>
+              <div className="pastehint">⌘⏎ to add · Esc to cancel</div>
+            </>
+          )}
         </>
       )}
     </div>
