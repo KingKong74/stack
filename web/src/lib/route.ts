@@ -1,10 +1,21 @@
 import { useEffect, useState } from 'react';
 
+// #316 — Mission Control's rooms are part of the URL: `#/control/review` is a
+// link straight to the Review room, so giving a verdict is one press from
+// anywhere rather than Mission Control plus a tab hunt. `#/control` stays the
+// canonical form of the default room, and an unrecognised room reads as the
+// default rather than as a dead end — a link that outlives a renamed room
+// should still land somewhere useful.
+export const CONTROL_ROOMS = ['now', 'nights', 'plan', 'build', 'review', 'roles'] as const;
+export type ControlRoom = (typeof CONTROL_ROOMS)[number];
+export const isControlRoom = (v: unknown): v is ControlRoom =>
+  typeof v === 'string' && (CONTROL_ROOMS as readonly string[]).includes(v);
+
 export type Route =
   | { name: 'dashboard' }
   | { name: 'settings' }
   | { name: 'timeline' }
-  | { name: 'control' }
+  | { name: 'control'; room?: ControlRoom }
   | { name: 'skills' }
   | { name: 'terminal'; cwd?: string; attach?: string }
   | { name: 'share'; slug: string; token: string }
@@ -14,7 +25,10 @@ function parse(): Route {
   const h = window.location.hash.replace(/^#/, '');
   if (h === '/settings' || h.startsWith('/settings')) return { name: 'settings' };
   if (h === '/timeline' || h.startsWith('/timeline')) return { name: 'timeline' };
-  if (h === '/control' || h.startsWith('/control')) return { name: 'control' };
+  if (h === '/control' || h.startsWith('/control')) {
+    const room = h.split('?')[0].split('/')[2];
+    return { name: 'control', room: isControlRoom(room) ? room : undefined };
+  }
   // The skill tree (#228) — the managed Claude skill library.
   if (h === '/skills' || h.startsWith('/skills')) return { name: 'skills' };
   if (h.startsWith('/terminal')) {
@@ -48,7 +62,9 @@ export function useRoute(): Route {
 // middle/ctrl-click open a new tab, while a plain left click just changes the
 // hash — which IS the router, so no onClick is needed for pure navigation.
 export const hrefTo = {
-  control: '#/control',
+  // A room other than the default is named in the path; the default room keeps
+  // the bare '#/control' as its one canonical URL, so nothing has two spellings.
+  control: (room?: ControlRoom) => (room && room !== 'now' ? `#/control/${room}` : '#/control'),
   settings: '#/settings',
   skills: '#/skills',
   terminal: (cwd?: string, attach?: string) => {
@@ -64,7 +80,11 @@ export const go = {
   dashboard: () => { window.location.hash = '#/'; },
   settings: () => { window.location.hash = '#/settings'; },
   timeline: () => { window.location.hash = '#/timeline'; },
-  control: () => { window.location.hash = '#/control'; },
+  // The argument is VALIDATED rather than trusted: several call sites pass this
+  // straight to onClick, which would hand it a mouse event as the room.
+  control: (room?: unknown) => {
+    window.location.hash = hrefTo.control(isControlRoom(room) ? room : undefined);
+  },
   skills: () => { window.location.hash = '#/skills'; },
   // attach (a stack-term-* tmux name) jumps straight into that running claude
   // session — Mission Control's ▶ chips use it.

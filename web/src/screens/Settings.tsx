@@ -8,7 +8,7 @@ import {
   getTermSessionPrefs, setTermSessionPrefs, type TermSessionPrefs,
   getAutoRefreshSeconds, setAutoRefreshSeconds, AUTO_REFRESH_CHOICES, type AutoRefreshSeconds,
 } from '../store';
-import { go } from '../lib/route';
+import { go, type ControlRoom } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { DIRECTIVES } from '../lib/brief';
 import { ControlPanel } from './Control';
@@ -30,10 +30,18 @@ function maskToken(t: string | null): string {
   return `${'•'.repeat(Math.min(t.length - 4, 16))}${t.slice(-4)}`;
 }
 
-export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' | 'control' }) {
+export function Settings({ initialTab = 'settings', initialRoom }: {
+  initialTab?: 'settings' | 'control'; initialRoom?: ControlRoom;
+}) {
   // One screen, two tabs: the app's settings, and Mission Control (#/control
-  // deep-links straight onto the control tab).
+  // deep-links straight onto the control tab, and #/control/<room> onto a room
+  // — #316).
   const [screenTab, setScreenTab] = useState<'settings' | 'control'>(initialTab);
+  // App renders this same component for both routes, so React keeps the
+  // instance and the tab would otherwise be whatever it was left on: a
+  // `#/control/review` link pressed while the Settings tab is showing changed
+  // the URL and nothing else. The route is the authority.
+  useEffect(() => { setScreenTab(initialTab); }, [initialTab]);
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -194,7 +202,7 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
           </a>
         </div>
 
-        {screenTab === 'control' && <ControlPanel />}
+        {screenTab === 'control' && <ControlPanel initialRoom={initialRoom} />}
 
         {screenTab === 'settings' && (error ? <div className="action-error">{error}</div> : null)}
 

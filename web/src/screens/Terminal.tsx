@@ -19,7 +19,7 @@ import {
   patchRoadmapItem,
   getOverview,
 } from '../store';
-import { go } from '../lib/route';
+import { go, hrefTo } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
@@ -1144,7 +1144,14 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
           <span className="here">Terminal</span>
         </div>
         <div className="right">
-          <button className="btn-repo" onClick={go.control} title="Mission Control">Mission Control</button>
+          {/* #316 — the quick link. What you do after a session says it is done
+              is give a verdict, and that was Mission Control plus finding the
+              Review tab; the room has its own URL now, so it is one press from
+              the screen the work happened on. An anchor, not a button, so it
+              opens in a new tab beside the terminal if that is what you want. */}
+          <a className="btn-repo" href={hrefTo.control('review')}
+            title="Review — every change waiting on your verdict, across every project">✓ Review</a>
+          <a className="btn-repo" href={hrefTo.control()} title="Mission Control">Mission Control</a>
           <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
         </div>
       </div>

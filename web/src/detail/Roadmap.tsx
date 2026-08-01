@@ -3,7 +3,7 @@ import type { Roadmap as RoadmapData, RoadmapItem, Priority, Tier } from '../typ
 import { TIERS, tierRank } from '../types';
 import { PRIORITY_META } from '../lib/ui';
 import { getBoardLayout, setBoardLayout } from '../store';
-import { go } from '../lib/route';
+import { hrefTo } from '../lib/route';
 import { Modal } from '../components/Modal';
 import { renderMarkdownLite } from '../lib/markdownLite';
 
@@ -1071,7 +1071,9 @@ export function Roadmap({
         <div className="road-moved">
           <span>
             #{highlightId} is complete — completed work is reviewed in
-            {' '}<button className="link" onClick={go.control}>Mission Control → Review</button>.
+            {/* #316 — this promised the Review room and delivered the Now room;
+                the room has a URL of its own now, so the link keeps its word. */}
+            {' '}<a className="link" href={hrefTo.control('review')}>Mission Control → Review</a>.
           </span>
         </div>
       )}

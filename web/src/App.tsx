@@ -78,7 +78,7 @@ export default function App() {
       ) : route.name === 'timeline' ? (
         <Timeline />
       ) : route.name === 'control' ? (
-        <Settings initialTab="control" />
+        <Settings initialTab="control" initialRoom={route.room} />
       ) : route.name === 'terminal' ? (
         null /* the persistent dock below renders it */
       ) : route.name === 'skills' ? (

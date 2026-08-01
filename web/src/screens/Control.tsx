@@ -14,7 +14,7 @@ import { RolesRoom } from './ControlRoles';
 import { ReviewRoom } from './ControlReview';
 import { NowRoom } from './ControlNow';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
-import { go, hrefTo } from '../lib/route';
+import { go, hrefTo, type ControlRoom } from '../lib/route';
 import { useAutoRefresh } from '../lib/autoRefresh';
 
 const CAPS = [
@@ -70,7 +70,7 @@ function trend(now: number, prev: number, higherIsBetter: boolean) {
 const pct1 = (n: number) => `${Math.round(n * 100)}%`;
 
 
-export function ControlPanel() {
+export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
   const [data, setData] = useState<ControlData | null>(null);
   const [error, setError] = useState('');
   // #228 — the session planner: null = closed; row = editing; row: null = new.
@@ -142,7 +142,22 @@ export function ControlPanel() {
   const [mergeBusy, setMergeBusy] = useState(false);
   // 14a — the shell: Now / Nights / Plan / Build are rooms behind one pinned
   // live strip and a persistent rail; the autopilot config folds away.
-  const [room, setRoom] = useState<'now' | 'nights' | 'plan' | 'build' | 'review' | 'roles'>('now');
+  // #316 — the room is now in the URL, so it comes IN from the route and goes
+  // back OUT on every switch. The write is a REPLACE, not a push: flipping
+  // between rooms is reading, not navigating, and Back should leave Mission
+  // Control rather than walk you through the rooms you just looked at.
+  const [room, setRoom] = useState<ControlRoom>(initialRoom ?? 'now');
+  // The route is the authority whenever it actually changes — a link pressed
+  // anywhere in the app moves the room, not just the tabs above.
+  useEffect(() => { setRoom(initialRoom ?? 'now'); }, [initialRoom]);
+  useEffect(() => {
+    // Only ever RE-SPELL a control URL. This must not be able to navigate: the
+    // tab click that mounts this panel can land here while the hash still says
+    // '#/settings', and replacing that entry would eat it out of the history.
+    if (!window.location.hash.replace(/^#/, '').startsWith('/control')) return;
+    const want = hrefTo.control(room);
+    if (window.location.hash !== want) window.history.replaceState(null, '', want);
+  }, [room]);
   // #282 — how many changes are waiting on a verdict, for the room's badge.
   // The Review room owns the fetch and reports the count back up.
   const [reviewN, setReviewN] = useState(0);
@@ -699,10 +714,15 @@ export function ControlPanel() {
                   #282 — Review badges what is waiting on a verdict, reported up
                   by the room itself (it owns that fetch). */}
               {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['build', 'Build', buildN], ['review', 'Review', reviewN], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => isDrift(a.drift)).length]] as const).map(([key, label, n]) => (
-                <button key={key} role="tab" aria-selected={room === key}
+                // #316 — anchors, not buttons: each room has a URL now, so the
+                // tab that opens it should be a real link (middle-click opens a
+                // new tab, and the address bar is honest either way). The
+                // onClick still sets the room, because the component stays
+                // mounted and a same-page hash change alone wouldn't switch it.
+                <a key={key} role="tab" aria-selected={room === key} href={hrefTo.control(key)}
                   className={`mc14-tab ${room === key ? 'on' : ''}`} onClick={() => setRoom(key)}>
                   {label}{n > 0 && <span className="n">{n}</span>}
-                </button>
+                </a>
               ))}
               <div style={{ flex: 1 }} />
               <a className="mc14-headlink" href={hrefTo.terminal()}>▸ Terminal</a>

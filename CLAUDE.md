@@ -40,11 +40,16 @@ templates/ stack-agent-context.md — the canonical portable agent manual (singl
 - **`store.ts` is the only module that touches the network or device storage.** Components never
   `fetch` and never touch localStorage directly. `request()` attaches the bearer and throws
   `AuthError` on 401, which clears the token and returns to the gate.
-- `lib/route.ts` — hash router. Routes: `#/`, `#/settings`, `#/control`, `#/terminal`, `#/skills`,
-  `#/timeline`, `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)` deep-links; the TAB
-  decides what `hl` means (commit hash → activity, bug key → quality, row id → roadmap, NOTE id →
-  workbench). Legacy `bugs`/`audit` tabs both resolve to `quality` (#278), `tips` to `overview` (the
-  library moved to the corner dock) and `notes` to `workbench`, so old links keep working.
+- `lib/route.ts` — hash router. Routes: `#/`, `#/settings`, `#/control[/<room>]`, `#/terminal`,
+  `#/skills`, `#/timeline`, `#/p/<slug>[/<tab>][?hl=<x>]`. `go.detail(slug, tab, highlight)`
+  deep-links; the TAB decides what `hl` means (commit hash → activity, bug key → quality, row id →
+  roadmap, NOTE id → workbench). Legacy `bugs`/`audit` tabs both resolve to `quality` (#278), `tips`
+  to `overview` (the library moved to the corner dock) and `notes` to `workbench`, so old links keep
+  working. **Mission Control's room is part of the URL** (#316 — `#/control/review` is the quick link
+  to a verdict): the room comes in from the route and Control.tsx writes it back with
+  `history.replaceState`, never a push, so Back leaves Mission Control rather than walking the rooms
+  you looked at — and that write only ever re-spells a URL that is already `/control`. `#/control` is
+  the one canonical spelling of the default room, and an unknown room lands there rather than 404ing.
 - `screens/` — Dashboard (five anchored sections behind a sticky SubNav), ProjectDetail (owns tab +
   modal state), Settings, Control (Mission Control — six rooms behind a live strip and a persistent
   right rail; `Control.tsx` is the shell and each room has its own file: `ControlNow` /
