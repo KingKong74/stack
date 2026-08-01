@@ -1961,7 +1961,7 @@ export async function cutWorkbenchEdge(slug: string, id: number): Promise<{ drop
 // is why the rail hides the ops rather than disabling them.
 export async function runWorkbenchOp(
   slug: string,
-  input: { op: WorkbenchOp; cardId: number; x: number; y: number; question?: string },
+  input: { op: WorkbenchOp; cardId: number; x: number; y: number; question?: string; model?: string },
 ): Promise<{ card: WorkbenchCard; edge: WorkbenchEdge }> {
   return request<{ card: WorkbenchCard; edge: WorkbenchEdge }>(
     `${wbBase(slug)}/ops`, { method: 'POST', body: input });
