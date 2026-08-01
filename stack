@@ -21,6 +21,7 @@ const COMMANDS = {
   term: { script: 'stack-term-cli.mjs', blurb: 'claude in a stack-term tmux session (visible on Mission Control; --shell, --safe)' },
   'seed-checks': { script: 'stack-seed-checks.mjs', blurb: 'sync the regression suite onto a project (--dry, --run)' },
   'seed-galaxy': { script: 'stack-seed-galaxy.mjs', blurb: 'shape a flat idea funnel into stars and planets (dry unless --run)' },
+  'risk-backfill': { script: 'stack-risk-backfill.mjs', blurb: 'tier the open board\'s risk at plan time (dry unless --run)' },
   skills: { script: 'stack-skills.mjs', blurb: 'sync the managed skill tree onto this host (--dry)' },
 };
 
