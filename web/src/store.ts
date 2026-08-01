@@ -528,7 +528,12 @@ export interface FleetRoleModel {
 // 'off-policy' = a model ran that neither current role claims (a changed
 // setting, or a host-side --executor-model override) · 'advisor-unused' = an
 // advisor is configured but never appeared in this project's runs.
-export type RoleDrift = '' | 'no-runs' | 'off-policy' | 'advisor-unused';
+// 'no-runs' and 'no-breakdown' are absences of EVIDENCE, not disagreements:
+// a run that recorded no per-model breakdown cannot say what it ran on, so it
+// can neither prove nor disprove the policy. Only isDrift() values are a real
+// finding, and only they colour a row or count toward the room's tab badge.
+export type RoleDrift = '' | 'no-runs' | 'no-breakdown' | 'off-policy' | 'advisor-unused';
+export const isDrift = (d: RoleDrift) => d === 'off-policy' || d === 'advisor-unused';
 
 export interface FleetRoleAssignment {
   slug: string; name: string; tint: string | null; automode: boolean;

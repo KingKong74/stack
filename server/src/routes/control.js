@@ -115,6 +115,11 @@ const tmuxNameFor = (slug, jobId) =>
 // correctly against a run that carries both. A model matching neither stays
 // unattributed rather than being guessed into a role; the client renders that
 // as its own bucket, so the split never asserts more than it knows.
+// The drift values that are a real disagreement between policy and runs, as
+// opposed to an absence of evidence ('no-runs', 'no-breakdown'). Exported so
+// the room's tab count and the table's sort can never drift from each other.
+export const isDrift = (d) => d === 'off-policy' || d === 'advisor-unused';
+
 const MODEL_FAMILY_RE = /(haiku|sonnet|opus|fable)/i;
 const modelFamily = (s) => {
   const m = MODEL_FAMILY_RE.exec(String(s || ''));
@@ -243,10 +248,15 @@ export function computeFleetRoles({ usageRows, sessionRows = [], projects, execA
     const entries = r.model_usage && typeof r.model_usage === 'object'
       ? Object.entries(r.model_usage) : [];
     if (!perProject.has(r.slug)) {
-      perProject.set(r.slug, { runs: 0, byRole: { exec: new Map(), adv: new Map(), '': new Map() }, sawAdv: false, lastAt: 0 });
+      perProject.set(r.slug, {
+        runs: 0, withUsage: 0,
+        byRole: { exec: new Map(), adv: new Map(), '': new Map() },
+        sawAdv: false, lastAt: 0,
+      });
     }
     const proj = perProject.get(r.slug);
     proj.runs += 1;
+    if (entries.length > 0) proj.withUsage += 1;
     proj.lastAt = Math.max(proj.lastAt, at);
 
     let sawAdv = false, sawOff = false;
@@ -337,8 +347,14 @@ export function computeFleetRoles({ usageRows, sessionRows = [], projects, execA
       // (something ran that the current policy names for neither role — a
       // changed setting, or a --executor-model override on the host), then an
       // advisor that was configured but never actually consulted.
+      // A run that recorded no per-model breakdown cannot say WHAT it ran on,
+      // so it cannot convict the advisor of having been idle — the same reason
+      // `worth` excludes it from the land rate. Before this it did: three
+      // breakdown-less runs read as 'advisor-unused', an accusation drawn from
+      // an absence of evidence rather than from evidence of absence.
       let drift = '';
       if (runs === 0) drift = 'no-runs';
+      else if (seen.withUsage === 0) drift = 'no-breakdown';
       else if (off.label) drift = 'off-policy';
       else if (advAlias && !seen.sawAdv) drift = 'advisor-unused';
       return {
@@ -351,8 +367,10 @@ export function computeFleetRoles({ usageRows, sessionRows = [], projects, execA
         lastRun: seen ? relativeTime(new Date(seen.lastAt).toISOString()) || 'just now' : '',
       };
     })
-    // Drift first — the whole point of the table is finding it.
-    .sort((a, b) => (a.drift && a.drift !== 'no-runs' ? 0 : 1) - (b.drift && b.drift !== 'no-runs' ? 0 : 1)
+    // Drift first — the whole point of the table is finding it. Only a real
+    // disagreement counts: 'no-runs' and 'no-breakdown' are both absences of
+    // evidence, and sorting them up would bury the row that means something.
+    .sort((a, b) => (isDrift(a.drift) ? 0 : 1) - (isDrift(b.drift) ? 0 : 1)
       || b.runs - a.runs);
 
   // ---- the interactive half -------------------------------------------

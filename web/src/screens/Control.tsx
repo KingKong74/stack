@@ -3,7 +3,7 @@ import {
   getControl, patchProject, patchSettings, startAutopilot,
   patchAutopilotSchedule, deleteAutopilotSchedule,
   resumeAutopilotJob, hangupAutopilotJob, dismissAutopilotJob,
-  labelTerminalSessions, queueMerge, AuthError,
+  labelTerminalSessions, queueMerge, AuthError, isDrift,
   startPreview, getPreviews, stopPreview, extendPreview, type Preview,
   getControlRailOpen, setControlRailOpen, getControlRailHeight, setControlRailHeight,
   type ControlData, type ControlProject, type AutopilotJob, type AutopilotSchedule,
@@ -601,7 +601,7 @@ export function ControlPanel() {
                   house, not zero; picking one narrows the badge with the room.
                   #282 — Review badges what is waiting on a verdict, reported up
                   by the room itself (it owns that fetch). */}
-              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['build', 'Build', buildN], ['review', 'Review', reviewN], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => a.drift && a.drift !== 'no-runs').length]] as const).map(([key, label, n]) => (
+              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['build', 'Build', buildN], ['review', 'Review', reviewN], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => isDrift(a.drift)).length]] as const).map(([key, label, n]) => (
                 <button key={key} role="tab" aria-selected={room === key}
                   className={`mc14-tab ${room === key ? 'on' : ''}`} onClick={() => setRoom(key)}>
                   {label}{n > 0 && <span className="n">{n}</span>}

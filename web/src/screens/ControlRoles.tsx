@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { patchSettings, type ControlData, type FleetRoleAssignment, type FleetRoleModel, type FleetRoleWorth, type FleetEveryModel } from '../store';
+import { patchSettings, isDrift, type ControlData, type FleetRoleAssignment, type FleetRoleModel, type FleetRoleWorth, type FleetEveryModel } from '../store';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
 import { go } from '../lib/route';
 
@@ -44,6 +44,15 @@ const ROLE_LABEL: Record<string, string> = { exec: 'EXEC', adv: 'ADV', '': 'OFF-
 const driftNote = (a: FleetRoleAssignment, advisorLabel: string): { text: string; tone: 'ok' | 'warn' | 'quiet' } => {
   if (a.drift === 'no-runs') {
     return { text: a.automode ? 'automode on · no runs this week' : 'no runs this week', tone: 'quiet' };
+  }
+  // Quiet, not warn: nothing disagrees here, we simply cannot see. Saying which
+  // is the difference between "your policy is being ignored" and "these runs
+  // pre-date the breakdown being recorded".
+  if (a.drift === 'no-breakdown') {
+    return {
+      text: `${plural(a.runs, 'run')}, none recorded a per-model breakdown — nothing to attribute`,
+      tone: 'quiet',
+    };
   }
   if (a.drift === 'off-policy') {
     return {
@@ -144,7 +153,7 @@ export function RolesRoom({ data, onReload, onConfigure }: {
   }
 
   const { models, assignments, worth } = roles;
-  const drifting = assignments.filter((a) => a.drift && a.drift !== 'no-runs');
+  const drifting = assignments.filter((a) => isDrift(a.drift));
   const ranProjects = assignments.filter((a) => a.runs > 0);
 
   // Run-level counts (#288). A server that pre-dates them still knows how many
