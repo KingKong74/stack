@@ -5,7 +5,7 @@ import {
   Galaxy, GalaxyBoard, buildGalaxy, flattenGalaxy,
   GX_GLYPH, GX_LABEL, GX_TONE, MAG_WORD, type GxKind, type GxModel,
 } from './Galaxy';
-import type { ClusterSuggestion, ConvergeDraft, JudgeSuggestion } from '../store';
+import type { ClusterSuggestion, ConvergeDraft, JudgeSuggestion, OrbitProposal, RestateDraft } from '../store';
 import { getNorthStarOpen, setNorthStarOpen } from '../store';
 import { Modal } from '../components/Modal';
 
@@ -45,7 +45,8 @@ function ago(ms: number): string {
 
 export function Futures({
   northStar, futures, highlightId, onSaveNorthStar, onAdd, onEdit, onAlign, onDelete, onPromote,
-  onAskGemini, onCluster, onSetAreas, onConvergeDraft, onConvergeCreate, onShape, slug,
+  onAskGemini, onCluster, onSetAreas, onConvergeDraft, onConvergeCreate, onShape, onAdoptOrbit, slug,
+  geminiReady, onProposeOrbits, onRestate,
 }: {
   northStar: string;
   futures: Future[];
@@ -60,11 +61,23 @@ export function Futures({
   // Where an idea sits in the galaxy and how big it is (#312) — one call for
   // all three, because promoting and adopting are each a move of both.
   onShape: (id: number, patch: { parentId?: number | null; isStar?: boolean; magnitude?: number | null }) => void;
+  // The orbit rail's own adopt path (#330 follow-up) — deliberately separate
+  // from onShape. onShape swallows a rejection into the page-level banner
+  // (every other caller wants that), but the server legitimately REJECTS some
+  // adoptions, and a refusal here has to land beside the row that caused it,
+  // not read as an apply that silently removed the row. This one must reject.
+  onAdoptOrbit: (id: number, parentId: number) => Promise<void>;
   onAskGemini?: (id: number) => Promise<JudgeSuggestion>;
   onCluster?: () => Promise<ClusterSuggestion[]>;
   onSetAreas: (pairs: { id: number; area: string }[]) => void;
   onConvergeDraft?: (ids: number[], mode: 'tickets' | 'epic') => Promise<ConvergeDraft[]>;
   onConvergeCreate: (drafts: ConvergeDraft[], retire: number[]) => void;
+  // #330 — keyless, both render ABSENT rather than disabled (same rule as the
+  // Workbench's ✧ ops): the rail's "which loose ideas belong in a star's
+  // orbit" pass, and the selected idea's "restate it more clearly" draft.
+  geminiReady: boolean;
+  onProposeOrbits: () => Promise<OrbitProposal[]>;
+  onRestate: (id: number) => Promise<RestateDraft>;
 }) {
   // ---- north star strip (collapsible band, always on top) ----
   // #307 — collapsed is the DEFAULT arrival state: the band is a paragraph you
@@ -428,6 +441,60 @@ export function Futures({
     setConvergeOpen(false);
     setTray(new Set());
   };
+
+  // ---- #330: ✧ Arrange orbits — the rail's own AI pass, over the WHOLE
+  // funnel rather than one idea. `orbitProps === null` is "hasn't run since
+  // the last change", `[]` is "ran, and found nothing loose to place" — the
+  // two read very differently in the rail, so they can't share one falsy
+  // check. Per-row busy/err track an Adopt in flight without touching the
+  // rest of the list, and everything here is transient: never persisted, and
+  // wiped whenever the project changes.
+  const [orbitBusy, setOrbitBusy] = useState(false);
+  const [orbitErr, setOrbitErr] = useState('');
+  const [orbitProps, setOrbitProps] = useState<OrbitProposal[] | null>(null);
+  const [orbitRowBusy, setOrbitRowBusy] = useState<Set<number>>(new Set());
+  const [orbitRowErr, setOrbitRowErr] = useState<Record<number, string>>({});
+  useEffect(() => {
+    setOrbitBusy(false); setOrbitErr(''); setOrbitProps(null);
+    setOrbitRowBusy(new Set()); setOrbitRowErr({});
+  }, [slug]);
+  const runOrbits = async () => {
+    if (orbitBusy) return;
+    setOrbitBusy(true);
+    setOrbitErr('');
+    setOrbitProps(null);
+    setOrbitRowErr({});
+    try {
+      setOrbitProps(await onProposeOrbits());
+    } catch (e) {
+      setOrbitErr((e as Error)?.message || 'Gemini call failed.');
+    } finally {
+      setOrbitBusy(false);
+    }
+  };
+  const dropOrbitRowErr = (id: number) =>
+    setOrbitRowErr((er) => {
+      if (!(id in er)) return er;
+      const rest = { ...er };
+      delete rest[id];
+      return rest;
+    });
+  const adoptOrbit = async (p: OrbitProposal) => {
+    setOrbitRowBusy((s) => new Set(s).add(p.id));
+    dropOrbitRowErr(p.id);
+    try {
+      await onAdoptOrbit(p.id, p.parentId);
+      setOrbitProps((ps) => (ps ? ps.filter((x) => x.id !== p.id) : ps));
+    } catch (e) {
+      setOrbitRowErr((er) => ({ ...er, [p.id]: (e as Error)?.message || 'Something went wrong.' }));
+    } finally {
+      setOrbitRowBusy((s) => { const n = new Set(s); n.delete(p.id); return n; });
+    }
+  };
+  const dismissOrbit = (id: number) => {
+    setOrbitProps((ps) => (ps ? ps.filter((x) => x.id !== id) : ps));
+    dropOrbitRowErr(id);
+  };
   // ---- composers ----
   const [draft, setDraft] = useState('');
   const add = () => {
@@ -702,14 +769,64 @@ export function Futures({
                 title="Collapse the panel — the sky takes the width" aria-label="Collapse the Polaris panel">›</button>
             </div>
 
+            {/* #330 — the rail's own AI pass: which loose ideas (the north
+                star's shells, the belt) read as part of an existing star's
+                orbit. Kept small and fixed here — the button, its caption and
+                any error/empty line — so a long result list can't push the
+                selected-idea panel out of view; the list itself lives in the
+                scroll region below. */}
+            {geminiReady && (
+              <div className="psky-orbits">
+                <button className="psky-orbit-btn" disabled={orbitBusy} onClick={runOrbits}
+                  title="Gemini looks for loose ideas that read as part of an existing star's orbit — nothing moves until you adopt one">
+                  {orbitBusy ? '✧ thinking…' : '✧ Arrange orbits'}
+                </button>
+                <div className="psky-orbit-sub">which loose ideas belong in a star's orbit</div>
+                {orbitErr && <div className="psky-orbit-err">✧ {orbitErr}</div>}
+                {orbitProps !== null && orbitProps.length === 0 && !orbitErr && (
+                  <div className="psky-orbit-empty">Nothing loose looks like it belongs in a star's orbit.</div>
+                )}
+              </div>
+            )}
+
             <SelectedPanel selected={selected} themeLabel={selected ? (selected.area || LOOSE) : ''}
               galaxy={galaxy} kind={selKind}
               inTray={selected ? tray.has(selected.id) : false}
               onToggleTray={selected ? () => toggleTray(selected.id) : undefined}
               onSelect={setSelId} onShape={onShape}
-              onPromote={onPromote} onEdit={onEdit} onAlign={onAlign} onDelete={onDelete} />
+              onPromote={onPromote} onEdit={onEdit} onAlign={onAlign} onDelete={onDelete}
+              geminiReady={geminiReady} onRestate={onRestate} />
 
             <div className="psky-rail-scroll">
+              {/* The ✧ Arrange orbits result — a review list, not a write: each
+                  row Adopts (through the same onShape the sky itself uses) or
+                  Dismisses (local only). Lives in the rail's one scroll region
+                  so a long list scrolls rather than displacing anything. */}
+              {orbitProps && orbitProps.length > 0 && (
+                <div className="psky-orbit-list">
+                  <div className="head">
+                    <span className="label">✧ ORBIT PROPOSALS</span>
+                    <span className="n">{orbitProps.length}</span>
+                    <span className="rule" />
+                    <button className="clear" onClick={() => setOrbitProps(null)}>clear</button>
+                  </div>
+                  {orbitProps.map((p) => (
+                    <div className="psky-orbit-row" key={p.id}>
+                      <div className="t">{p.title}</div>
+                      <div className="into">→ {p.parentTitle}</div>
+                      {p.why && <div className="why">{p.why}</div>}
+                      {orbitRowErr[p.id] && <div className="err">✧ {orbitRowErr[p.id]}</div>}
+                      <div className="ctl">
+                        <button className="adopt" disabled={orbitRowBusy.has(p.id)} onClick={() => adoptOrbit(p)}>
+                          {orbitRowBusy.has(p.id) ? 'adopting…' : 'Adopt'}
+                        </button>
+                        <button className="dismiss" onClick={() => dismissOrbit(p.id)}>Dismiss</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* What still rides the north star with no star of its own — the
                   pile the next promotion comes out of, and invisible in the sky
                   once eight systems are drawn over the shells. */}
@@ -1015,7 +1132,7 @@ function QueueCard({
 // queue is just the other door in.
 function SelectedPanel({
   selected, themeLabel, galaxy, kind, inTray, onToggleTray, onSelect, onShape,
-  onPromote, onEdit, onAlign, onDelete,
+  onPromote, onEdit, onAlign, onDelete, geminiReady, onRestate,
 }: {
   selected: Future | null;
   themeLabel: string;
@@ -1029,6 +1146,9 @@ function SelectedPanel({
   onEdit: (id: number, patch: { title: string; note: string; area: string }) => void;
   onAlign: (id: number, alignment: Alignment | '') => void;
   onDelete: (id: number) => void;
+  // #330 — keyless, absent rather than disabled.
+  geminiReady: boolean;
+  onRestate: (id: number) => Promise<RestateDraft>;
 }) {
   const [editing, setEditing] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -1036,7 +1156,18 @@ function SelectedPanel({
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
   const [area, setArea] = useState('');
-  useEffect(() => { setEditing(false); setPicking(false); setAdopting(false); }, [selected?.id]);
+  // ✧ Restate: a draft only. `restateWhy` rides above the edit fields it
+  // pre-filled so the human sees the reasoning they are about to accept;
+  // `restateFlat` is the OTHER valid answer — the record already reads right,
+  // so there is no draft to open (null = not shown; '' or text = the why).
+  const [restateBusy, setRestateBusy] = useState(false);
+  const [restateErr, setRestateErr] = useState('');
+  const [restateWhy, setRestateWhy] = useState('');
+  const [restateFlat, setRestateFlat] = useState<string | null>(null);
+  useEffect(() => {
+    setEditing(false); setPicking(false); setAdopting(false);
+    setRestateBusy(false); setRestateErr(''); setRestateWhy(''); setRestateFlat(null);
+  }, [selected?.id]);
 
   if (!selected) {
     return (
@@ -1064,26 +1195,57 @@ function SelectedPanel({
       onEdit(f.id, { title: t, note: note.trim(), area: area.trim().toLowerCase() });
     }
     setEditing(false);
+    setRestateWhy('');
+  };
+  const cancelEdit = () => { setEditing(false); setRestateWhy(''); };
+
+  // ✧ Restate: never writes. It pre-fills this same edit-mode draft (falling
+  // back to the idea's current value for any field Gemini returned '' —
+  // '' means the stored wording is already right, not missing) and opens it,
+  // so Save is still the human's own act. All three '' is the OTHER valid
+  // answer: the record has nothing clearer to say, so edit mode never opens.
+  const runRestate = async () => {
+    if (restateBusy) return;
+    setRestateBusy(true);
+    setRestateErr('');
+    setRestateFlat(null);
+    try {
+      const draft = await onRestate(f.id);
+      if (!draft.title && !draft.note && !draft.area) {
+        setRestateFlat(draft.why || '');
+      } else {
+        setTitle(draft.title || f.title);
+        setNote(draft.note || f.note);
+        setArea(draft.area || f.area);
+        setRestateWhy(draft.why || '');
+        setEditing(true);
+      }
+    } catch (e) {
+      setRestateErr((e as Error)?.message || 'Gemini call failed.');
+    } finally {
+      setRestateBusy(false);
+    }
   };
 
   if (editing) {
     return (
       <div className="psky-sel">
+        {restateWhy && <div className="psky-restate-why">✧ {restateWhy}</div>}
         <input className="field-input sm" value={title} autoFocus
           onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') setEditing(false); }} />
+          onKeyDown={(e) => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') cancelEdit(); }} />
         <textarea className="field-area" style={{ marginTop: 8, minHeight: 46 }} value={note}
           placeholder="Why it might matter…" onChange={(e) => setNote(e.target.value)}
           onKeyDown={(e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
-            else if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
+            else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
           }} />
         <input className="field-input sm" style={{ marginTop: 8 }} value={area}
           placeholder="theme — e.g. agents, mirrors (optional)"
           onChange={(e) => setArea(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') setEditing(false); }} />
+          onKeyDown={(e) => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') cancelEdit(); }} />
         <div className="future-edit-row">
-          <button className="btn-cancel sm" onClick={() => setEditing(false)}>Cancel</button>
+          <button className="btn-cancel sm" onClick={cancelEdit}>Cancel</button>
           <button className="btn-submit sm" onClick={save}>Save</button>
         </div>
       </div>
@@ -1188,9 +1350,22 @@ function SelectedPanel({
             {inTray ? '✓ In tray' : '⊕ Converge'}
           </button>
         )}
+        {geminiReady && (
+          <button className="act" disabled={restateBusy} onClick={runRestate}
+            title="Gemini drafts a clearer title, note or theme from the project's own record — nothing saves until you press Save">
+            {restateBusy ? '✧ thinking…' : '✧ Restate'}
+          </button>
+        )}
         <button className="act" onClick={() => { setTitle(f.title); setNote(f.note); setArea(f.area); setEditing(true); }}>✎ Edit</button>
         <button className="act quiet" onClick={() => onDelete(f.id)}>Dismiss</button>
       </div>
+      {restateErr && <div className="psky-restate-err">✧ {restateErr}</div>}
+      {restateFlat !== null && (
+        <div className="psky-restate-flat">
+          The record does not evidence a clearer wording.
+          {restateFlat && <div className="why">✧ {restateFlat}</div>}
+        </div>
+      )}
     </div>
   );
 }
