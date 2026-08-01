@@ -28,6 +28,19 @@ const Z_MIN = 0.4;
 const Z_MAX = 2;
 const GRID = 26;
 
+// A deep-link's hl token is a NOTE id (bare, ⌘K's form) or a FUTURE id
+// (f<id>, a pulled Polaris idea) — the two tables' ids collide, so the form is
+// what tells them apart. Resolved to a card once, so the centring effect and
+// the per-card highlight prop can never disagree.
+const matchHighlight = (cards: WorkbenchCard[], token: string): WorkbenchCard | undefined => {
+  const future = /^f(\d+)$/.exec(token);
+  if (future) {
+    const futureId = Number(future[1]);
+    return cards.find((c) => c.futureId === futureId);
+  }
+  return cards.find((c) => String(c.noteId) === token);
+};
+
 // The hint under each op. Deliberately narrower than the design's copy for two
 // of them: Gemini cannot read the repository, so 'Ask' answers from the project
 // RECORD (roadmap, bugs, notes, the files recent sessions touched) and 'Touches'
@@ -61,7 +74,7 @@ export function Workbench({
 }: {
   slug: string;
   geminiReady: boolean;
-  highlightId?: string | null;      // a NOTE id from a ⌘K deep-link
+  highlightId?: string | null;      // a NOTE id (⌘K) or f<futureId> (a Polaris-idea deep-link)
   notesNonce: number;               // bumped when a note is deleted elsewhere
   onPromoteNote: (noteId: number, text: string, kind: 'bug' | 'roadmap') => void;
   onPromotePlan: (phases: WorkbenchPhase[]) => Promise<boolean>;
@@ -403,12 +416,15 @@ export function Workbench({
     say(`${phases.length} phases promoted to the Roadmap as ${phases.map((p) => p.bucket).join(' / ')}.`);
   });
 
-  // ---- a ⌘K deep-link lands on a NOTE id; find the card wrapping it ----
+  // ---- a deep-link (⌘K's note id, or a sidebar's f<futureId>) finds its card ----
+  const highlightedCard = useMemo(
+    () => (data && highlightId ? matchHighlight(data.cards, highlightId) : undefined),
+    [data, highlightId],
+  );
   const centred = useRef<string | null>(null);
   useEffect(() => {
-    if (!data || !highlightId || centred.current === highlightId) return;
-    const card = data.cards.find((c) => String(c.noteId) === highlightId);
-    if (!card) return;
+    if (!highlightId || !highlightedCard || centred.current === highlightId) return;
+    const card = highlightedCard;
     centred.current = highlightId;
     setSel(card.id);
     const el = groundRef.current;
@@ -417,7 +433,7 @@ export function Workbench({
       x: (el?.clientWidth ?? 900) / 2 - card.x - card.w / 2,
       y: (el?.clientHeight ?? 600) / 2 - card.y - 60,
     });
-  }, [data, highlightId]);
+  }, [highlightedCard, highlightId]);
 
   // ---- what is attached to the selection ----
   // One breadth-first walk out from the selected card, in BOTH directions along
@@ -597,7 +613,7 @@ export function Workbench({
                 key={c.id} card={c}
                 selected={c.id === sel}
                 linkingFrom={linking === c.id}
-                highlighted={highlightId != null && String(c.noteId) === highlightId}
+                highlighted={c.id === highlightedCard?.id}
                 dimmed={dimming && !attached.has(c.id)}
                 nodeRef={(el) => { if (el) nodeRef.current[c.id] = el; else delete nodeRef.current[c.id]; }}
                 onDown={(e) => startDrag(e, c)}

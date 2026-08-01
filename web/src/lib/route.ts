@@ -96,6 +96,7 @@ export const go = {
   // tab picks which collection opens; highlight (when given) flags the matching
   // item/commit on that tab via the existing highlight mechanism. The tab
   // disambiguates what `highlight` means (commit hash, bug key, or row id).
+  // workbench takes either a bare note id or f<futureId> for a Polaris idea.
   detail: (id: string, tab?: string, highlight?: string) => {
     const q = highlight ? `?hl=${encodeURIComponent(highlight)}` : '';
     window.location.hash = `#/p/${encodeURIComponent(id)}${tab ? `/${tab}` : ''}${q}`;
