@@ -31,6 +31,14 @@ export class AuthError extends Error {
   constructor() { super('Unauthorised'); this.name = 'AuthError'; }
 }
 
+// Carries the HTTP status alongside the server's message — some 4xx are a
+// legitimate outcome for a caller to branch on (e.g. a 409 meaning "already
+// there"), not just a failure to report.
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) { super(message); this.name = 'ApiError'; this.status = status; }
+}
+
 // Typed localStorage reader (#218: #192 + #185) — every device-local
 // preference parses through here. `shape` receives the parsed value (null when
 // absent) and returns the typed result, so each pref keeps its own defaults;
@@ -174,7 +182,7 @@ async function request<T>(path: string, opts: { method?: string; body?: unknown 
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
     try { const j = await res.json(); if (j?.error) msg = j.error; } catch { /* keep default */ }
-    throw new Error(msg);
+    throw new ApiError(res.status, msg);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
