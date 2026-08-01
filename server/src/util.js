@@ -20,6 +20,16 @@ export const PROJECT_STATUSES = ['live', 'building', 'paused', 'archived'];
 // Short MoSCoW labels, used by the search route's meta field.
 export const PRIORITY_SHORT = { must: 'Must', should: 'Should', could: 'Could', wont: "Won't" };
 
+// #262 — who is allowed to write the risk tier. ABSENT source = the modal, i.e.
+// a person, and a person's tier always wins. PRESENT but unrecognised takes the
+// guarded 'auto' path: a machine typo must never be able to claim a row as
+// human-decided, because nothing can unclaim it afterwards.
+export const RISK_SOURCES = ['human', 'auto'];
+export function riskWriteSource(incoming) {
+  if (incoming === undefined || incoming === null) return 'human';
+  return RISK_SOURCES.includes(incoming) ? incoming : 'auto';
+}
+
 // Days since last push after which a live/building project counts as "stale"
 // on the command deck. Single knob — change it here and GET /api/overview
 // follows. Paused/archived projects are dormant on purpose and never stale.

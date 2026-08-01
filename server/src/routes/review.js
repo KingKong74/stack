@@ -58,6 +58,8 @@ function itemShape(row) {
     when: relativeTime(row.updated_at) || 'just now',
     doneAt: row.updated_at,
     risk: row.risk || 'normal',
+    riskSource: row.risk_source || '',
+    riskReason: row.risk_reason || '',
     // The run that built it, when there was one. `reviewVerdict` is the stored
     // second-model read: '' means no review ran, which is deliberately NOT the
     // same as "nothing found".
@@ -86,6 +88,7 @@ function itemShape(row) {
 const ITEM_SQL = `
   SELECT i.id, i.title, i.bucket, i.note, i.built_note, i.refine_note, i.review_tag,
          i.review_tags, i.review_shelved, i.claimed_by, i.updated_at, i.risk,
+         i.risk_source, i.risk_reason,
          p.slug, p.name, p.tint,
          r.id AS run_id, r.branch AS run_branch, r.outcome AS run_outcome,
          r.commits AS run_commits, r.tokens AS run_tokens, r.cost_usd AS run_cost,

@@ -75,6 +75,8 @@ export function roadmapItemShape(row) {
     skipped: !!row.skipped,            // parked — planned, but not to be picked up yet
     skippedAt: row.skipped_at || null, // ISO — when it was parked; ages the Parked view (#247)
     risk: row.risk || 'normal',        // graduated trust (#212): low auto-merges a green run
+    riskSource: row.risk_source || '', // 'human' | 'auto' | '' — '' = the default nobody chose (#262)
+    riskReason: row.risk_reason || '', // one line: why the auto tier is what it is
     tier: row.tier || '',              // desire tier S|A|B|C ('' = unranked, sorts last) — #227
     plan: cleanPlan(row.plan),         // implementation steps [{text, done}] (#75)
     updatedAt: row.updated_at || null, // ISO — the archive sorts latest-touched first
