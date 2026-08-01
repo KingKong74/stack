@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Future } from '../types';
+import type { Pan } from '../lib/skyView';
 
 // The Polaris galaxy (#312) — the sky rebuilt as a solar system, from the
 // Polaris Galaxy design handoff.
@@ -183,7 +184,7 @@ const STARFIELD = (() => {
 })();
 
 export function Galaxy({
-  model, northOnly, sourceFilter, focus, selId, onSelect, zoom, onZoom,
+  model, northOnly, sourceFilter, focus, selId, onSelect, zoom, onZoom, pan, onPan, onFitAll,
 }: {
   model: GxModel;
   northOnly: boolean;                     // the North star scope: its shells alone
@@ -199,13 +200,17 @@ export function Galaxy({
   onSelect: (id: number | null, shift?: boolean) => void;
   zoom: number;
   onZoom: (z: number) => void;
+  // The hand-pan, added on top of the automatic pan toward the focused system.
+  // Zoomed in past Fit the sky is bigger than the stage, and without this the
+  // only way to see a neighbour is to select it. Lifted to the tab (#318) so
+  // "fit all" can clear it — Galaxy could reset its own state but not the
+  // parent's focus, so neither half of a reset could ever be whole.
+  pan: Pan;
+  onPan: (p: Pan) => void;
+  onFitAll: () => void;
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState({ w: 900, h: 860 });
-  // The hand-pan, added on top of the automatic pan toward the focused system.
-  // Zoomed in past Fit the sky is bigger than the stage, and without this the
-  // only way to see a neighbour is to select it.
-  const [pan, setPan] = useState({ x: 0, y: 0 });
   const panRef = useRef(pan);
   panRef.current = pan;
   const zoomRef = useRef(zoom);
@@ -256,7 +261,7 @@ export function Galaxy({
     if (e.button !== 0) return;
     const x0 = e.clientX, y0 = e.clientY;
     const p0 = panRef.current;
-    const move = (ev: MouseEvent) => setPan({ x: p0.x + ev.clientX - x0, y: p0.y + ev.clientY - y0 });
+    const move = (ev: MouseEvent) => onPan({ x: p0.x + ev.clientX - x0, y: p0.y + ev.clientY - y0 });
     const up = () => {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
@@ -580,8 +585,8 @@ export function Galaxy({
             onClick={() => onZoom(ZOOM_STOPS[Math.min(ZOOM_STOPS.length - 1, zi + 1)].z)}>+</button>
           <span className="zpct">{Math.round(zoom * 100)}%</span>
         </div>
-        <button className="pgx-fit" onClick={() => { onZoom(1); setPan({ x: 0, y: 0 }); onSelect(null); }}
-          title="Back to Fit, centred on the north star — clears the drag too">Recentre</button>
+        <button className="pgx-fit" onClick={onFitAll}
+          title="Back to Fit, centred on the north star — clears the drag and the focused system too">Recentre</button>
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import {
 import type { ClusterSuggestion, ConvergeDraft, JudgeSuggestion } from '../store';
 import { getNorthStarOpen, setNorthStarOpen } from '../store';
 import { Modal } from '../components/Modal';
+import { fitAll, isFitAll, type Pan, type SkyView } from '../lib/skyView';
 
 export type Alignment = 'on-course' | 'tangent' | 'off-course';
 export const ALIGNMENTS: { key: Alignment; label: string; hint: string }[] = [
@@ -104,6 +105,14 @@ export function Futures({
   // shape you learned and can see that a thing is excluded rather than absent.
   const [focus, setFocus] = useState<string | null>(null);
   const [selId, setSelId] = useState<number | null>(null);
+  // The hand-drag lives here, not in Galaxy (#318) — "fit all" has to be able
+  // to clear it, and a reset that can only touch its own component's state is
+  // not a reset.
+  const [pan, setPan] = useState<Pan>({ x: 0, y: 0 });
+  const skyView: SkyView = { northOnly, zoom: z, focus, selId, pan };
+  const applySky = (v: SkyView) => {
+    setNorthOnly(v.northOnly); setZ(v.zoom); setFocus(v.focus); setSelId(v.selId); setPan(v.pan);
+  };
 
   // #248 — the sky wants the window. The stage was a fixed 860px box inside a
   // page inside a tab, and at any real zoom you were reading a galaxy through a
@@ -562,17 +571,22 @@ export function Futures({
                 {/* Scope: the whole galaxy, or the north star's own shells alone.
                     Its shells crowd the middle when eight systems are drawn over
                     them, and reading them is a different job from reading the
-                    systems — so it is a scope, not a zoom. */}
+                    systems — so it is a scope, not a zoom. Picking one always
+                    re-fits (#318): the shape you switch TO is the thing you
+                    asked to see, and a focus or a drag carried over from the
+                    other scope may point at a system this one does not draw —
+                    re-picking the scope you are already in is the "take me
+                    back" gesture, so it is never guarded on a change of scope. */}
                 <div className="seg-control sm" role="tablist" aria-label="Sky scope">
-                  <button className={`seg-opt ${!northOnly ? 'on' : ''}`} onClick={() => setNorthOnly(false)}>
+                  <button className={`seg-opt ${!northOnly ? 'on' : ''}`} onClick={() => applySky(fitAll(false))}>
                     Galaxy <span className="n">{galaxy.stars.length} stars</span>
                   </button>
-                  <button className={`seg-opt ${northOnly ? 'on' : ''}`} onClick={() => setNorthOnly(true)}>
+                  <button className={`seg-opt ${northOnly ? 'on' : ''}`} onClick={() => applySky(fitAll(true))}>
                     North star <span className="n">{galaxy.shells.length} of its own</span>
                   </button>
                 </div>
-                <button className={`psky-chip ${focus === null ? 'on' : ''}`}
-                  onClick={() => { setFocus(null); setZ(1); setSelId(null); }}
+                <button className={`psky-chip ${isFitAll(skyView) ? 'on' : ''}`}
+                  onClick={() => applySky(fitAll(northOnly))}
                   title="Everything lit, back at Fit">
                   <span className="name">fit all</span>
                   <span className="n">{galaxy.all.length}</span>
@@ -608,7 +622,8 @@ export function Futures({
               </div>
 
               <Galaxy model={galaxy} northOnly={northOnly} sourceFilter={sourceFilter} focus={focus}
-                selId={selId} zoom={z} onZoom={setZ}
+                selId={selId} zoom={z} onZoom={setZ} pan={pan} onPan={setPan}
+                onFitAll={() => applySky(fitAll(northOnly))}
                 onSelect={(id, shift) => { if (shift && id != null) toggleTray(id); else setSelId(id); }} />
 
               {/* The time window: drag anywhere on the track. The shaded part is
