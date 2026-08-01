@@ -447,6 +447,7 @@ node server/test/fleet-roles.test.mjs      # role attribution + drift detection 
 node server/test/workbench.test.mjs        # the canvas is a placement layer (needs API + DATABASE_URL)
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
+node web/test/sky-view.test.mts            # the sky's one "fit all" (pure, no DOM)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
