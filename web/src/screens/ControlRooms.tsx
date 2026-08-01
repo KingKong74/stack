@@ -935,9 +935,9 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
     }
   };
   // #260 — ✧ AI assistance for the plan: hand the queue's undesigned items to
-  // the planning agent in the order shown. Same push as the board's ✧ To
-  // planning agent (#255) — one plan-kind session, ordered agenda, results
-  // saved back as plan steps. Nothing is built and nothing is ticked.
+  // the planning agent in the order shown — one plan-kind session, ordered
+  // agenda, results saved back as plan steps. Nothing is built and nothing
+  // is ticked.
   const unplannedIds = cur.filter((id) => (byId.get(id)?.plan.length ?? 0) === 0);
   // How much of the visible queue carries a desire tier (#227) — the header says
   // "tier leads" only when a tier is actually doing work in the order.

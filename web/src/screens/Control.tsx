@@ -552,17 +552,17 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
               ))}
             </span>
           </label>
-          {/* #255 — the standing plan sweep. The board's ✧ To planning
-              agent is the pressed version of this; here it becomes the
-              default behaviour, so work never reaches a build night
-              without a design. Same gates as the nightly. */}
+          {/* #255 — the standing plan sweep. The Plan room's own ✧ Plan the
+              N unplanned items is the pressed version of this; here it
+              becomes the default behaviour, so work never reaches a build
+              night without a design. Same gates as the nightly. */}
           <label className="mc-knob">
             <span className="mc-knob-label">Plan sweep</span>
             <button type="button" role="switch" aria-checked={data.autopilot.planSweep}
               className={`switch ${data.autopilot.planSweep ? 'on' : ''}`}
               title={data.autopilot.planSweep
                 ? 'On — a project with unplanned must/should work gets a plan session queued for it automatically. The arm switch and the project’s automode still gate the run.'
-                : 'Off — items are only designed when you press ✧ To planning agent or book a plan night.'}
+                : 'Off — items are only designed when you press the Plan room’s ✧ Plan the unplanned items or book a plan night.'}
               onClick={() => setAutopilot({ autopilotPlanSweep: !data.autopilot.planSweep })} />
           </label>
         </div>
