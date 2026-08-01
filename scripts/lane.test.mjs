@@ -3,7 +3,7 @@
 // Run: node scripts/lane.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { branchSlug, laneFor } from './lib/lane.mjs';
+import { branchSlug, laneFor, laneForBug, laneForAudit, freeBranchName } from './lib/lane.mjs';
 
 // --- branchSlug ---
 
@@ -31,6 +31,29 @@ test('branchSlug: unicode/emoji becomes hyphen', () => {
   assert.ok(/^[a-z0-9-]+$/.test(slug), `non-safe chars in slug: ${slug}`);
 });
 
+test('branchSlug: leading hyphens collapse rather than survive at the front', () => {
+  const slug = branchSlug('-- fixed');
+  assert.equal(slug, 'fixed');
+  assert.ok(!slug.startsWith('-'), `slug looks like a CLI flag: ${slug}`);
+});
+
+test('branchSlug: never contains a ".." run', () => {
+  assert.ok(!branchSlug('a..b').includes('..'));
+});
+
+test('branchSlug: a bare "@" returns empty, not a lone punctuation slug', () => {
+  assert.equal(branchSlug('@'), '');
+});
+
+test('branchSlug: general shape invariant holds for nasty inputs', () => {
+  const SAFE_SHAPE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+  const nasty = ['-- fixed', 'a..b', '@', '---', '..', '-a-', '  --  ', 'feat/foo: bar!!', '@@@---@@@'];
+  for (const input of nasty) {
+    const slug = branchSlug(input);
+    assert.ok(slug === '' || SAFE_SHAPE.test(slug), `unsafe slug shape for ${JSON.stringify(input)}: ${JSON.stringify(slug)}`);
+  }
+});
+
 // --- laneFor ---
 
 test('laneFor: basic item', () => {
@@ -45,6 +68,55 @@ test('laneFor: item 224 title slug', () => {
 
 test('laneFor: empty slug falls back to numeric-only lane', () => {
   assert.equal(laneFor({ id: 7, title: '!!! ---' }), 'auto/item-7');
+});
+
+// --- laneForBug ---
+
+test('laneForBug: basic bug matches the old inline auto/bug-N-<slug> format', () => {
+  const lane = laneForBug({ id: 'BUG-12', title: 'Login form loses focus on retry' });
+  assert.equal(lane, 'auto/bug-12-login-form-loses-focus-on-retr');
+  assert.ok(lane.startsWith('auto/bug-12-'), `lane lost the key: ${lane}`);
+});
+
+test('laneForBug: title that slugs to empty falls back to the key alone', () => {
+  assert.equal(laneForBug({ id: 'BUG-3', title: '!!! ---' }), 'auto/bug-3');
+});
+
+// --- laneForAudit ---
+
+test('laneForAudit: with a scope', () => {
+  assert.equal(laneForAudit('20260802', 'control'), 'auto/audit-20260802-control');
+});
+
+test('laneForAudit: without a scope', () => {
+  assert.equal(laneForAudit('20260802', ''), 'auto/audit-20260802');
+});
+
+test('laneForAudit: a scope that slugs to empty behaves as no scope', () => {
+  assert.equal(laneForAudit('20260802', '!!!'), 'auto/audit-20260802');
+});
+
+// --- freeBranchName ---
+
+test('freeBranchName: returns the name as-is when free', () => {
+  assert.equal(freeBranchName('auto/audit-20260802', () => false), 'auto/audit-20260802');
+});
+
+test('freeBranchName: first collision resolves to -2', () => {
+  const taken = new Set(['auto/audit-20260802']);
+  assert.equal(freeBranchName('auto/audit-20260802', (n) => taken.has(n)), 'auto/audit-20260802-2');
+});
+
+test('freeBranchName: -2 also taken resolves to -3', () => {
+  const taken = new Set(['auto/audit-20260802', 'auto/audit-20260802-2']);
+  assert.equal(freeBranchName('auto/audit-20260802', (n) => taken.has(n)), 'auto/audit-20260802-3');
+});
+
+test('freeBranchName: every slot taken up to the cap throws', () => {
+  assert.throws(
+    () => freeBranchName('auto/audit-20260802', () => true, 3),
+    /auto\/audit-20260802/,
+  );
 });
 
 // --- item-ID extraction, mirrors stack-autopilot-dispatch.mjs:104 ---
