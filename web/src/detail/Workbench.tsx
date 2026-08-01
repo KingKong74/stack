@@ -45,6 +45,17 @@ const OP_HINT: Record<WorkbenchOp, string> = {
 
 type LogEntry = { when: string; t: string };
 
+type PolarisFilter = 'unpicked' | 'recent' | 'all';
+const POLARIS_FILTERS: { key: PolarisFilter; label: string }[] = [
+  { key: 'unpicked', label: 'Unpicked' },
+  { key: 'recent', label: 'Recent' },
+  { key: 'all', label: 'All' },
+];
+// What "Recent" means in the picker. A fortnight, and its own constant rather
+// than borrowing util.js's STALE_DAYS — that one is the deck's stale threshold
+// and coupling the two would make a change to one silently move the other.
+const RECENT_DAYS = 14;
+
 export function Workbench({
   slug, geminiReady, highlightId, notesNonce, onPromoteNote, onPromotePlan,
 }: {
@@ -71,6 +82,15 @@ export function Workbench({
   const [log, setLog] = useState<LogEntry[]>([]);
   const [lastGen, setLastGen] = useState<number | null>(null);
 
+  // Focus mode: dim everything not attached to the selection. On a canvas that
+  // has been worked for a while this is the only way to read one thread.
+  const [focus, setFocus] = useState(false);
+  // The pull-from-Polaris picker.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pQuery, setPQuery] = useState('');
+  const [pFilter, setPFilter] = useState<PolarisFilter>('unpicked');
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+
   const groundRef = useRef<HTMLDivElement | null>(null);
   const panRef = useRef(pan); panRef.current = pan;
   const zoomRef = useRef(zoom); zoomRef.current = zoom;
@@ -79,6 +99,14 @@ export function Workbench({
   // actually gave a card — not one we guessed from its content.
   const nodeRef = useRef<Record<number, HTMLDivElement | null>>({});
   const [heights, setHeights] = useState<Record<number, number>>({});
+
+  // Closing drops the ticks too: a selection you left behind and forgot would
+  // pull an idea you didn't mean to the next time you opened the panel.
+  const closePicker = useCallback(() => {
+    setPickerOpen(false);
+    setPicked(new Set());
+    setPQuery('');
+  }, []);
 
   // A wall-clock stamp rather than "now / 1m / 5m": this log is not re-rendered
   // on a timer, so a relative age would freeze at whatever it said when it was
@@ -128,13 +156,15 @@ export function Workbench({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (linking !== null) setLinking(null);
+      if (pickerOpen) closePicker();
+      else if (linking !== null) setLinking(null);
       else if (asking) { setAsking(false); setQuestion(''); }
+      else if (focus) setFocus(false);
       else setSel(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [linking, asking]);
+  }, [linking, asking, pickerOpen, focus, closePicker]);
 
   // ---- pan + zoom ----
   // Native wheel listener with passive:false, so the page never scrolls out
@@ -254,14 +284,29 @@ export function Workbench({
     say('Added a note. Click its text to write it.');
   });
 
-  const pullIdea = (futureId: number) => guard(async () => {
+  // Pull the whole selection in one go, laid out in a column of four that steps
+  // sideways — a batch dumped on one spot is a stack you then have to unpile.
+  // Each idea is its own POST (the route is per-card and already pinned); they
+  // go concurrently because their positions are decided here, not server-side.
+  const pullPicked = () => guard(async () => {
+    const ids = [...picked];
+    if (!ids.length) return;
     const at = centreOfView();
-    const card = await addWorkbenchCard(slug, { kind: 'polaris', futureId, x: at.x, y: at.y });
+    const made = await Promise.all(ids.map((futureId, i) => addWorkbenchCard(slug, {
+      kind: 'polaris', futureId,
+      x: at.x + Math.floor(i / 4) * 268,
+      y: at.y + (i % 4) * 128,
+    })));
+    const pulled = new Set(ids);
     setData((d) => (d ? {
-      ...d, cards: [...d.cards, card], tray: d.tray.filter((t) => t.id !== futureId),
+      ...d,
+      cards: [...d.cards, ...made],
+      polaris: d.polaris.map((p) => (pulled.has(p.id) ? { ...p, onCanvas: true } : p)),
     } : d));
-    setSel(card.id);
-    say(`Pulled ${card.meta} in from Polaris.`);
+    setPicked(new Set());
+    setPickerOpen(false);
+    setSel(made[0].id);
+    say(`Pulled ${made.map((c) => c.meta).join(', ')} in from Polaris.`);
   });
 
   const saveTitle = (card: WorkbenchCard, title: string) => {
@@ -287,13 +332,14 @@ export function Workbench({
       ...d,
       cards: d.cards.filter((c) => !gone.has(c.id)),
       edges: d.edges.filter((e) => !gone.has(e.a) && !gone.has(e.b)),
-      tray: res.returnedToTray
-        ? [{ id: res.returnedToTray, title: card.title, meta: card.meta }, ...d.tray]
-        : d.tray,
+      // The idea itself never left — it just becomes pickable again.
+      polaris: res.returnedToTray
+        ? d.polaris.map((p) => (p.id === res.returnedToTray ? { ...p, onCanvas: false } : p))
+        : d.polaris,
     } : d));
     if (sel != null && gone.has(sel)) setSel(null);
     say(card.kind === 'polaris'
-      ? `Put ${card.meta} back in the tray. The idea is untouched.`
+      ? `Took ${card.meta} off the canvas. The idea is untouched.`
       : `Removed ${gone.size} card${gone.size > 1 ? 's' : ''}.`);
   });
 
@@ -373,6 +419,60 @@ export function Workbench({
     });
   }, [data, highlightId]);
 
+  // ---- what is attached to the selection ----
+  // One breadth-first walk out from the selected card, in BOTH directions along
+  // every edge, giving each reachable card its hop count. The rail's "attached"
+  // list and focus mode's dimming are two readings of this one map, which is
+  // why it is computed once here rather than twice where it is used.
+  const attached = useMemo(() => {
+    const reach = new Map<number, number>();
+    if (!data || sel == null) return reach;
+    const byId = new Set(data.cards.map((c) => c.id));
+    if (!byId.has(sel)) return reach;
+    reach.set(sel, 0);
+    const queue = [sel];
+    while (queue.length) {
+      const id = queue.shift() as number;
+      const depth = reach.get(id) as number;
+      for (const e of data.edges) {
+        const nb = e.a === id ? e.b : e.b === id ? e.a : null;
+        if (nb == null || reach.has(nb) || !byId.has(nb)) continue;
+        reach.set(nb, depth + 1);
+        queue.push(nb);
+      }
+    }
+    return reach;
+  }, [data, sel]);
+
+  // Centre the canvas on a card and select it — how the attached list navigates.
+  const goTo = (card: WorkbenchCard) => {
+    const el = groundRef.current;
+    const z = zoomRef.current;
+    setSel(card.id);
+    setPan({
+      x: (el?.clientWidth ?? 900) / 2 - (card.x + card.w / 2) * z,
+      y: (el?.clientHeight ?? 600) / 2 - (card.y + 60) * z,
+    });
+  };
+
+  // Dimming needs something to dim AGAINST. With nothing selected — click the
+  // ground and the selection is gone — an unguarded `focus` would grey the whole
+  // canvas out at once with nothing on screen explaining why.
+  const dimming = focus && sel != null && attached.size > 0;
+
+  const lineage = useMemo(() => {
+    if (!data) return [];
+    return data.cards
+      .filter((c) => c.id !== sel && attached.has(c.id))
+      .sort((a, b) => (attached.get(a.id) as number) - (attached.get(b.id) as number)
+        || a.id - b.id)
+      .map((c) => ({
+        card: c,
+        depth: (attached.get(c.id) as number),
+        kind: c.kind === 'polaris' ? c.meta : c.kind === 'note' ? 'note' : (c.op || 'ai'),
+      }));
+  }, [data, sel, attached]);
+
   // ---- edge geometry ----
   const paths = useMemo(() => {
     if (!data) return [];
@@ -404,11 +504,14 @@ export function Workbench({
       }
       return {
         id: e.id, d, ai: e.ai,
+        // A line dims unless BOTH its ends are in the thread — a wire that
+        // trails off into dimmed space reads as a thread that continues.
+        dim: dimming && !(attached.has(e.a) && attached.has(e.b)),
         mx: Math.round((a.x + a.w / 2 + b.x + b.w / 2) / 2),
         my: Math.round((ay + by) / 2),
       };
-    }).filter(Boolean) as { id: number; d: string; ai: boolean; mx: number; my: number }[];
-  }, [data, hOf]);
+    }).filter(Boolean) as { id: number; d: string; ai: boolean; dim: boolean; mx: number; my: number }[];
+  }, [data, hOf, dimming, attached]);
 
   if (loading && !data) {
     return <div className="empty-state"><div className="big">Loading the workbench…</div></div>;
@@ -417,6 +520,32 @@ export function Workbench({
   const cards = data?.cards ?? [];
   const selCard = cards.find((c) => c.id === sel) || null;
   const ops = data?.ops ?? [];
+
+  // ---- the Polaris picker's derived view ----
+  const ideas = data?.polaris ?? [];
+  const unpickedCount = ideas.filter((p) => !p.onCanvas).length;
+  const shownIdeas = (() => {
+    const needle = pQuery.trim().toLowerCase();
+    return ideas
+      .filter((p) => (pFilter === 'all' ? true
+        : pFilter === 'recent' ? p.days <= RECENT_DAYS
+          : !p.onCanvas))
+      .filter((p) => !needle
+        || `${p.title} ${p.meta} ${p.area}`.toLowerCase().includes(needle));
+  })();
+  // Four ways to have an empty list, and they want four different sentences —
+  // "no matches" over an empty funnel is the unhelpful version of the truth.
+  const emptyPickerCopy = ideas.length === 0
+    ? 'No Polaris ideas yet — capture them on the Polaris tab.'
+    : pQuery.trim() ? 'Nothing matches that.'
+      : pFilter === 'unpicked' ? 'Every idea is already on the canvas.'
+        : `Nothing captured in the last ${RECENT_DAYS} days.`;
+
+  const togglePick = (id: number) => setPicked((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   return (
     <div className="wb">
@@ -444,7 +573,7 @@ export function Workbench({
             <svg className="wb-wires" width="2400" height="1800">
               {paths.map((p) => (
                 <path key={`w${p.id}`} d={p.d} fill="none"
-                  className={`wb-wire${p.ai ? ' ai' : ''}${hotEdge === p.id ? ' hot' : ''}`} />
+                  className={`wb-wire${p.ai ? ' ai' : ''}${hotEdge === p.id ? ' hot' : ''}${p.dim ? ' dim' : ''}`} />
               ))}
               {paths.map((p) => (
                 <g key={`h${p.id}`} className="wb-wire-hit">
@@ -469,6 +598,7 @@ export function Workbench({
                 selected={c.id === sel}
                 linkingFrom={linking === c.id}
                 highlighted={highlightId != null && String(c.noteId) === highlightId}
+                dimmed={dimming && !attached.has(c.id)}
                 nodeRef={(el) => { if (el) nodeRef.current[c.id] = el; else delete nodeRef.current[c.id]; }}
                 onDown={(e) => startDrag(e, c)}
                 onTitle={(t) => saveTitle(c, t)}
@@ -486,31 +616,69 @@ export function Workbench({
             <button onClick={() => zoomBy(1.2)} aria-label="Zoom in">+</button>
           </div>
 
-          <div className="wb-tray" onPointerDown={(e) => e.stopPropagation()}>
-            <div className="head">
-              <span className="dot" />
-              <span className="k">from Polaris · unpicked</span>
-              <button className="chip-sm add" onClick={addNote}>+ note</button>
-            </div>
-            {data && data.tray.length > 0 ? (
-              <div className="chips">
-                {data.tray.slice(0, 8).map((t) => (
-                  <button key={t.id} className="chip-sm add" onClick={() => pullIdea(t.id)}
-                    title={t.title}>{t.meta} · {t.title.slice(0, 46)}</button>
+          {pickerOpen && (
+            <div className="wb-picker" onPointerDown={(e) => e.stopPropagation()}>
+              <div className="head">
+                <span className="dot" />
+                <span className="t">Polaris</span>
+                <span className="n">{ideas.length} idea{ideas.length === 1 ? '' : 's'}</span>
+                <button className="x" onClick={closePicker} aria-label="Close">×</button>
+              </div>
+              <div className="find">
+                <div className="searchbox">
+                  <span className="glass" />
+                  <input value={pQuery} autoFocus placeholder="Filter ideas…"
+                    onChange={(e) => setPQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); closePicker(); } }} />
+                </div>
+                <div className="filters">
+                  {POLARIS_FILTERS.map((f) => (
+                    <button key={f.key} className={`chip-sm${pFilter === f.key ? ' on' : ''}`}
+                      onClick={() => setPFilter(f.key)}>{f.label}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="list">
+                {shownIdeas.map((p) => (
+                  <button key={p.id} type="button"
+                    className={`wb-idea${picked.has(p.id) ? ' picked' : ''}${p.onCanvas ? ' on-canvas' : ''}`}
+                    disabled={p.onCanvas}
+                    onClick={() => togglePick(p.id)}>
+                    <span className="box">{picked.has(p.id) ? '✓' : ''}</span>
+                    <span className="b">
+                      <span className="top">
+                        <span className="meta">{p.meta}</span>
+                        <span className="age">{p.age}</span>
+                      </span>
+                      <span className="t">{p.title}</span>
+                      <span className="sub">
+                        {p.onCanvas ? 'already on the canvas'
+                          : [p.area || 'untagged', `${p.links} linked`].join(' · ')}
+                      </span>
+                    </span>
+                  </button>
                 ))}
-                {data.tray.length > 8 && (
-                  <span className="none">+{data.tray.length - 8} more on the Polaris tab</span>
+                {shownIdeas.length === 0 && (
+                  <div className="none">{emptyPickerCopy}</div>
                 )}
               </div>
-            ) : (
-              // "None left" and "none to begin with" are different things to be
-              // told, and only one of them is an achievement.
-              <div className="none">
-                {cards.some((c) => c.kind === 'polaris')
-                  ? 'Every idea is on the canvas.'
-                  : 'No Polaris ideas yet — capture them on the Polaris tab.'}
+              <div className="foot">
+                <span className="n">{picked.size ? `${picked.size} selected` : 'Select one or more'}</span>
+                <button className="btn-accent" disabled={picked.size === 0} onClick={pullPicked}>
+                  Pull → canvas
+                </button>
               </div>
-            )}
+            </div>
+          )}
+
+          <div className="wb-dock" onPointerDown={(e) => e.stopPropagation()}>
+            <button className={`wb-pull${pickerOpen ? ' on' : ''}`}
+              onClick={() => (pickerOpen ? closePicker() : setPickerOpen(true))}>
+              <span className="dot" />
+              <span className="l">Pull from Polaris</span>
+              <span className="n">{unpickedCount} unpicked</span>
+            </button>
+            <button className="chip-sm add" onClick={addNote}>+ note</button>
           </div>
 
           {!loading && cards.length === 0 && (
@@ -540,12 +708,36 @@ export function Workbench({
                     </>
                   )}
                   <button className="chip-sm danger" onClick={() => void dropCard(selCard)}>
-                    {selCard.kind === 'polaris' ? '↩ to tray' : '× remove'}
+                    {selCard.kind === 'polaris' ? '↩ off canvas' : '× remove'}
                   </button>
                 </div>
               )}
               {linking !== null && <div className="linking-hint">Click another card to wire them. Esc or the ground cancels.</div>}
             </div>
+
+            {/* What this card is attached to, at any depth — the thread it sits
+                in, which the canvas itself can only show you by eye once there
+                is more than a screenful on it. */}
+            {selCard && (
+              <div className="wb-lineage">
+                <div className="row">
+                  <span className="k">attached · {lineage.length}</span>
+                  <button className={`focus${focus ? ' on' : ''}`} onClick={() => setFocus((f) => !f)}
+                    title={focus ? 'Show the whole canvas again' : 'Dim everything not in this thread'}>
+                    {focus ? '✦ focused' : 'focus'}
+                  </button>
+                </div>
+                {lineage.length === 0 ? (
+                  <div className="none">Nothing attached yet. Run an ✧ op, or use ⁃ link to wire this to another card.</div>
+                ) : lineage.map((n) => (
+                  <button key={n.card.id} className="line" onClick={() => goTo(n.card)} title={n.card.title}>
+                    <span className="d">{'·'.repeat(n.depth)}</span>
+                    <span className="kind">{n.kind}</span>
+                    <span className="t">{n.card.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Keyless, the ops are ABSENT rather than disabled — the same rule
                 every other ✧ surface follows. */}
@@ -643,12 +835,13 @@ const kindLine = (c: WorkbenchCard) =>
 // One card. Note and Polaris cards read their title through from the row they
 // wrap, so editing here writes to the note or the idea, never to a copy.
 function CardView({
-  card, selected, linkingFrom, highlighted, nodeRef, onDown, onTitle, onBody, onShip,
+  card, selected, linkingFrom, highlighted, dimmed, nodeRef, onDown, onTitle, onBody, onShip,
 }: {
   card: WorkbenchCard;
   selected: boolean;
   linkingFrom: boolean;
   highlighted: boolean;
+  dimmed: boolean;
   nodeRef: (el: HTMLDivElement | null) => void;
   onDown: (e: React.PointerEvent) => void;
   onTitle: (t: string) => void;
@@ -667,7 +860,7 @@ function CardView({
   return (
     <div
       ref={nodeRef}
-      className={`wb-card ${card.kind}${selected ? ' on' : ''}${linkingFrom ? ' linking' : ''}${highlighted ? ' hl' : ''}`}
+      className={`wb-card ${card.kind}${selected ? ' on' : ''}${linkingFrom ? ' linking' : ''}${highlighted ? ' hl' : ''}${dimmed ? ' dim' : ''}`}
       onPointerDown={onDown}
       style={{
         transform: `translate(${card.x}px,${card.y}px)`,

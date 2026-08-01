@@ -1939,7 +1939,8 @@ export async function patchWorkbenchCard(
 }
 
 // `dropped` is every card that went with it: an op's output takes the branch it
-// fed. A polaris card returns to the tray rather than deleting the idea.
+// fed. A polaris card only comes OFF the canvas — `returnedToTray` is the idea
+// id to flip back to pickable, never a deletion.
 export async function deleteWorkbenchCard(
   slug: string, id: number,
 ): Promise<{ dropped: number[]; returnedToTray?: number }> {

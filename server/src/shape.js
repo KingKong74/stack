@@ -201,6 +201,25 @@ export const workbenchEdgeShape = (row) => ({
   id: row.id, a: row.a_id, b: row.b_id, ai: Boolean(row.ai),
 });
 
+// One row in the Workbench's Polaris picker. `days` is sent alongside `age`
+// because the picker's "Recent" filter has to compare, and re-parsing "3w ago"
+// on the client to get a number back would be inventing precision the string
+// already threw away. `links` is how many ideas orbit this one in the galaxy —
+// a rough "how developed is this thought", visible before you pull it.
+export function workbenchIdeaShape(row) {
+  const created = new Date(row.created_at);
+  return {
+    id: row.id,
+    title: row.title,
+    meta: `P-${row.id}`,
+    area: row.area || '',
+    links: row.links || 0,
+    age: relativeTime(row.created_at) || 'just now',
+    days: Math.max(0, Math.floor((Date.now() - created.getTime()) / 86_400_000)),
+    onCanvas: Boolean(row.on_canvas),
+  };
+}
+
 // One Tips-library recipe: a kept Claude prompt plus the context of when to
 // reach for it. `when`/`who` are the human framing; `best` the checklist.
 export function tipShape(row) {

@@ -140,9 +140,12 @@ function suiteFor(slug, ORIGIN) {
     // The Workbench canvas. `cards` is the load-bearing key — the tab renders
     // nothing without it, and the read is also what BACKFILLS a card for any
     // note filed outside the canvas, so a green here means old notes are still
-    // reachable. `tray` proves the Polaris side of the join answered too.
+    // reachable. `polaris` is the pull picker's whole funnel — its onCanvas
+    // flag is what stops an idea being pulled onto the canvas twice, and a
+    // missing flag would read as "nothing is picked yet" for every idea.
     { name: 'Workbench — the canvas', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'cards' },
-    { name: 'Workbench — the Polaris tray', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'tray' },
+    { name: 'Workbench — the Polaris picker', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'polaris' },
+    { name: 'Workbench — picker already-on-canvas flag', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'polaris.0.onCanvas' },
     { name: 'Checks — collection', url: u(`/api/projects/${slug}/checks`), auth: true, json_path: '0.name' },
     { name: 'Tips — app-wide library', url: u('/api/tips'), auth: true, json_path: '0.name' },
 

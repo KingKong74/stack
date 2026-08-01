@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The Workbench canvas — the four properties that keep it honest.
+// The Workbench canvas — the five properties that keep it honest.
 //
 // The canvas is a PLACEMENT layer over rows that live somewhere else, and every
 // bug worth pinning here comes from forgetting that:
@@ -16,6 +16,9 @@
 //   • CUT DROPS THE BRANCH — cutting an op's line drops the output it fed and
 //     everything downstream of THAT, but never a note or an idea that happens
 //     to sit below the cut.
+//   • THE PICKER SEES THE WHOLE FUNNEL — a pulled idea stays in the list with
+//     `onCanvas` flipped rather than vanishing from it. That flag is the only
+//     thing stopping the same idea being pulled onto the canvas twice.
 //
 // Needs a running server on an EMPTY database (it writes real rows):
 //   docker run -d --rm --name pg -e POSTGRES_PASSWORD=t -e POSTGRES_USER=t \
@@ -73,14 +76,15 @@ const board = () => call(`/projects/${SLUG}/workbench`);
       session: { session_id: 'wb-1', commit_hash: 'wb00001', branch: 'main', summary: 'seed', message_count: 1 },
     },
   });
-  const legacyNote = await call(`/projects/${SLUG}/notes`, { method: 'POST', body: { text: 'a note from before the canvas' } });
-  const idea = await call(`/projects/${SLUG}/futures`, { method: 'POST', body: { title: 'an idea in the tray' } });
+  await call(`/projects/${SLUG}/notes`, { method: 'POST', body: { text: 'a note from before the canvas' } });
+  const idea = await call(`/projects/${SLUG}/futures`, { method: 'POST', body: { title: 'an idea to pull' } });
 
   // 1. BACKFILL — the legacy note gets a card on read, and only ever one.
   const first = await board();
   check('a pre-canvas note is materialised as a card', first.cards.length, 1);
   check('its title reads through from the note', first.cards[0].title, 'a note from before the canvas');
-  check('the unplaced idea sits in the tray', first.tray.length, 1);
+  check('the funnel comes down for the picker', first.polaris.length, 1);
+  check('and the idea reads as not yet pulled', first.polaris[0].onCanvas, false);
   const second = await board();
   check('reading twice does not double the card', second.cards.length, 1);
 
@@ -94,16 +98,21 @@ const board = () => call(`/projects/${SLUG}/workbench`);
   const moved = (await board()).cards[0];
   check('and the move persisted', `${moved.x},${moved.y}`, '120,240');
 
-  // 3. Pulling an idea takes it out of the tray; putting it back is not a delete.
+  // 3. THE PICKER'S ONE INVARIANT: an idea stays in the list once pulled and
+  //    flips `onCanvas`, rather than disappearing — the picker's All filter has
+  //    to be able to show it, greyed, and that flag is the only thing stopping
+  //    it being pulled onto the canvas a second time. Putting it back is not a
+  //    delete: the flag flips off and the idea itself never moved.
   const polarisCard = await call(`/projects/${SLUG}/workbench/cards`, {
     method: 'POST', body: { kind: 'polaris', futureId: idea.id, x: 400, y: 40 },
   });
   const withIdea = await board();
-  check('pulling an idea empties the tray', withIdea.tray.length, 0);
+  check('a pulled idea stays listed', withIdea.polaris.length, 1);
+  check('and now reads as on the canvas', withIdea.polaris[0].onCanvas, true);
   check('and puts a second card on the canvas', withIdea.cards.length, 2);
   await call(`/projects/${SLUG}/workbench/cards/${polarisCard.id}`, { method: 'DELETE' });
   const afterReturn = await board();
-  check('removing a polaris card returns it to the tray', afterReturn.tray.length, 1);
+  check('taking it off the canvas clears the flag', afterReturn.polaris[0].onCanvas, false);
   check('and does NOT delete the idea', (await call(`/projects/${SLUG}/futures`)).length, 1);
 
   // 4. CUT DROPS THE BRANCH. Ops need a live Gemini key, so the shapes an op

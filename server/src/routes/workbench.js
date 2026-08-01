@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { pool, q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { NOTE_PALETTE } from '../util.js';
-import { workbenchCardShape, workbenchEdgeShape } from '../shape.js';
+import { workbenchCardShape, workbenchEdgeShape, workbenchIdeaShape } from '../shape.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
 
@@ -121,24 +121,32 @@ async function backfillNoteCards(projectId) {
   );
 }
 
-// GET / -> the whole canvas plus the tray of ideas not on it yet.
+// GET / -> the whole canvas, plus EVERY Polaris idea for the pull picker.
+//
+// The picker sends the whole funnel rather than only what is unpicked, because
+// its "All" filter has to be able to show an idea that is already on the canvas
+// — greyed, with `onCanvas` saying why it can't be picked twice. Uncapped on
+// purpose: `GET /futures` and the detail payload already return the funnel in
+// full, and a silent slice here would read as "that's all the ideas you have".
 workbench.get('/', async (req, res) => {
   await backfillNoteCards(req.project.id);
-  const [cards, edges, tray] = await Promise.all([
+  const [cards, edges, ideas] = await Promise.all([
     cardsOf(req.project.id),
     q('SELECT * FROM workbench_edges WHERE project_id = $1 ORDER BY id', [req.project.id]),
     q(
-      `SELECT f.id, f.title FROM futures f
+      `SELECT f.id, f.title, f.area, f.created_at,
+              (SELECT count(*) FROM futures ch WHERE ch.parent_id = f.id)::int AS links,
+              EXISTS (SELECT 1 FROM workbench_cards c WHERE c.future_id = f.id) AS on_canvas
+         FROM futures f
         WHERE f.project_id = $1
-          AND NOT EXISTS (SELECT 1 FROM workbench_cards c WHERE c.future_id = f.id)
-        ORDER BY f.created_at DESC LIMIT 40`,
+        ORDER BY f.created_at DESC`,
       [req.project.id]
     ),
   ]);
   res.json({
     cards,
     edges: edges.rows.map(workbenchEdgeShape),
-    tray: tray.rows.map((r) => ({ id: r.id, title: r.title, meta: `P-${r.id}` })),
+    polaris: ideas.rows.map(workbenchIdeaShape),
     ops: Object.entries(OPS).map(([key, o]) => ({ key, glyph: o.glyph, label: o.label })),
   });
 });

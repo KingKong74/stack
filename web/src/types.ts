@@ -179,12 +179,25 @@ export interface WorkbenchCard {
 }
 
 export interface WorkbenchEdge { id: number; a: number; b: number; ai: boolean }
-export interface WorkbenchTrayItem { id: number; title: string; meta: string }
+
+// One row in the pull-from-Polaris picker. The WHOLE funnel comes down, not
+// just what is unpicked — the picker's All filter shows an idea already on the
+// canvas too, greyed, with `onCanvas` saying why it can't be picked again.
+export interface WorkbenchIdea {
+  id: number;
+  title: string;
+  meta: string;        // P-<id>
+  area: string;        // '' = untagged
+  links: number;       // ideas orbiting this one in the galaxy
+  age: string;         // '3w ago'
+  days: number;        // the same age as a number, for the Recent filter
+  onCanvas: boolean;
+}
 
 export interface WorkbenchData {
   cards: WorkbenchCard[];
   edges: WorkbenchEdge[];
-  tray: WorkbenchTrayItem[];   // Polaris ideas not on the canvas yet
+  polaris: WorkbenchIdea[];
   ops: { key: WorkbenchOp; glyph: string; label: string }[];
 }
 

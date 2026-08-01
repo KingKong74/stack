@@ -988,6 +988,7 @@ a.tab { display: inline-block; }
 .wb-wire { stroke: var(--line-3); stroke-width: 1.5; }
 .wb-wire.ai { stroke: var(--accent-soft); stroke-dasharray: 4 4; }
 .wb-wire.hot { stroke: var(--critical); stroke-width: 2.5; stroke-dasharray: 0; }
+.wb-wire.dim { opacity: .15; }
 .wb-wire-hit { pointer-events: auto; }
 .wb-wire-hit path { pointer-events: stroke; cursor: pointer; }
 .wb-scissor { pointer-events: none; }
@@ -996,14 +997,21 @@ a.tab { display: inline-block; }
 
 @keyframes wb-in { from { opacity: 0; } to { opacity: 1; } }
 
+/* No `both` on the fill: the entry animation's `to { opacity: 1 }` would
+   otherwise stick as the card's final style and win against focus dimming. */
 .wb-card { position: absolute; left: 0; top: 0; border-radius: 12px; padding: 12px 13px 13px;
-  cursor: grab; user-select: none; animation: wb-in .18s ease both;
+  cursor: grab; user-select: none; animation: wb-in .18s ease;
+  transition: opacity .16s;
   background: var(--card); border: 1px solid var(--line); box-shadow: 0 2px 8px rgba(28,26,23,.06); }
 .wb-card.note { background: var(--note-c, #fef4a8); border-color: #ecdf8a; }
 .wb-card.polaris { background: var(--sand); border-color: var(--resume-border); }
 .wb-card.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint), 0 8px 22px rgba(28,26,23,.10); }
 .wb-card.linking { border-color: var(--accent); border-style: dashed; }
 .wb-card.hl { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* Focus mode. Dimmed cards stay interactive on purpose — clicking one is how
+   you move the focus to a different thread rather than switching focus off. */
+.wb-card.dim { opacity: .2; }
+.wb-card.dim:hover { opacity: .55; }
 
 .wb-card-head { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
 .wb-card-head .k { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
@@ -1064,14 +1072,70 @@ a.tab { display: inline-block; }
 .wb-zoom button:nth-child(2) { min-width: 44px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .wb-zoom button:hover { background: var(--panel); }
 
-.wb-tray { position: absolute; left: 18px; bottom: 18px; max-width: 520px; background: var(--card);
-  border: 1px solid var(--line-2); border-radius: 12px; padding: 11px 13px; box-shadow: 0 6px 18px rgba(28,26,23,.08); }
-.wb-tray .head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
-.wb-tray .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-.wb-tray .k { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.wb-tray .head .chip-sm { margin-left: auto; }
-.wb-tray .chips { display: flex; flex-wrap: wrap; gap: 7px; }
-.wb-tray .none { font-size: 11.5px; color: var(--faint); }
+/* The bottom-left dock: pull ideas across, or start a note. */
+.wb-dock { position: absolute; left: 18px; bottom: 18px; display: flex; align-items: center; gap: 8px; }
+.wb-pull { display: flex; align-items: center; gap: 9px; padding: 9px 13px; border-radius: 11px;
+  border: 1px solid var(--line-3); background: var(--surface); box-shadow: 0 6px 18px rgba(28,26,23,.08); }
+.wb-pull:hover, .wb-pull.on { border-color: var(--accent); }
+.wb-pull .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.wb-pull .l { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.wb-pull .n { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.wb-dock .chip-sm { background: var(--surface); box-shadow: 0 6px 18px rgba(28,26,23,.08); }
+
+/* The picker itself, standing above the dock. */
+.wb-picker { position: absolute; left: 18px; bottom: 66px; width: 344px; max-height: min(560px, calc(100% - 90px));
+  background: var(--surface); border: 1px solid var(--line-3); border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(28,26,23,.18); display: flex; flex-direction: column; overflow: hidden; z-index: 5; }
+.wb-picker .head { display: flex; align-items: center; gap: 9px; padding: 13px 15px 11px; border-bottom: 1px solid var(--line-2); }
+.wb-picker .head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.wb-picker .head .t { font-family: var(--disp); font-size: 14px; font-weight: 600; }
+.wb-picker .head .n { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.wb-picker .head .x { margin-left: auto; width: 24px; height: 24px; border-radius: 7px; color: var(--muted); font-size: 14px; line-height: 1; }
+.wb-picker .head .x:hover { background: var(--panel); color: var(--ink); }
+.wb-picker .find { padding: 11px 15px 0; }
+/* The shared .searchbox already styles its own input — this only sizes it. */
+.wb-picker .searchbox { width: 100%; }
+.wb-picker .filters { display: flex; gap: 6px; margin-top: 10px; }
+.wb-picker .list { flex: 1; min-height: 0; overflow: auto; padding: 10px 10px 6px; }
+.wb-picker .list .none { padding: 26px 12px; text-align: center; font-size: 12.5px; color: var(--faint); line-height: 1.5; }
+.wb-picker .foot { display: flex; align-items: center; gap: 10px; padding: 11px 15px; border-top: 1px solid var(--line-2); }
+.wb-picker .foot .n { font-size: 11.5px; color: var(--muted); }
+.wb-picker .foot .btn-accent { margin-left: auto; height: 32px; font-size: 12px; }
+.wb-picker .foot .btn-accent:disabled { opacity: .4; cursor: default; }
+.wb-picker .foot .btn-accent:disabled:hover { background: var(--accent); }
+
+.wb-idea { display: flex; gap: 10px; width: 100%; text-align: left; padding: 9px 10px; margin-bottom: 5px;
+  border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); }
+.wb-idea:hover:not(:disabled) { border-color: var(--accent-tint-border); }
+.wb-idea.picked { background: var(--accent-tint); border-color: var(--accent-tint-border); }
+.wb-idea.on-canvas { opacity: .45; cursor: default; }
+.wb-idea .box { flex: none; width: 15px; height: 15px; margin-top: 2px; border-radius: 5px;
+  border: 1.5px solid var(--line-3); color: #fff; font-size: 10px; line-height: 12px; text-align: center; }
+.wb-idea.picked .box { background: var(--accent); border-color: var(--accent); }
+.wb-idea .b { flex: 1; min-width: 0; }
+.wb-idea .top { display: flex; align-items: baseline; gap: 7px; }
+.wb-idea .meta { font-family: var(--mono); font-size: 10px; color: var(--accent); }
+.wb-idea .age { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-left: auto; }
+.wb-idea .b > .t { display: block; font-size: 12.5px; font-weight: 500; line-height: 1.35; margin-top: 3px; text-wrap: pretty; }
+.wb-idea .sub { display: block; font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+
+/* The rail's "attached" list — the thread the selected card sits in. */
+.wb-lineage { padding: 13px 17px; border-bottom: 1px solid var(--line-2); }
+.wb-lineage .row { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.wb-lineage .focus { margin-left: auto; font-family: var(--mono); font-size: 10px; padding: 3px 8px;
+  border-radius: 6px; border: 1px solid var(--line-2); color: var(--muted); }
+.wb-lineage .focus:hover:not(:disabled) { border-color: var(--accent-tint-border); color: var(--accent); }
+.wb-lineage .focus.on { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent); }
+.wb-lineage .focus:disabled { opacity: .45; cursor: default; }
+.wb-lineage .none { font-size: 11.5px; color: var(--faint); line-height: 1.45; }
+.wb-lineage .line { display: flex; align-items: baseline; gap: 8px; width: calc(100% + 16px); margin: 0 -8px;
+  text-align: left; padding: 6px 8px; border-radius: 8px; }
+.wb-lineage .line:hover { background: var(--panel); }
+.wb-lineage .line .d { flex: none; width: 14px; font-family: var(--mono); font-size: 9.5px; color: var(--accent); }
+.wb-lineage .line .kind { flex: none; width: 52px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-lineage .line .t { flex: 1; min-width: 0; font-size: 12px; color: var(--body);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Sits above the grid but takes no pointer events — panning an empty canvas
    still has to work, and there is nothing here to click. */
