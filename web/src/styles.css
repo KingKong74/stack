@@ -261,8 +261,10 @@ a { color: inherit; }
 .btn-accent {
   height: 36px; padding: 0 16px; border-radius: 9px; background: var(--accent);
   color: #fff; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 7px;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 .btn-accent:hover { background: var(--accent-deep); }
+.btn-accent:active { background: var(--accent-deep); transform: translateY(1px); }
 
 /* ---------- page shell ----------
    Every screen fills the viewport; --page-max is the ONE knob if a cap is ever
@@ -347,10 +349,12 @@ a { color: inherit; }
 .btn-repo {
   height: 38px; padding: 0 15px; border-radius: 10px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border);
   color: var(--accent); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 .btn-repo .blk { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
 .btn-repo:hover { background: var(--accent-tint-deep); border-color: var(--accent); color: var(--accent-deep); }
 .btn-repo:hover .blk { background: var(--accent-deep); }
+.btn-repo:active { background: var(--accent-tint-deep); border-color: var(--accent-deep); color: var(--accent-deep); transform: translateY(1px); }
 .btn-visit { height: 38px; padding: 0 17px; }
 
 /* ---------- tabs ---------- */
@@ -378,8 +382,10 @@ a.tab { display: inline-block; }
 .resume-when { font-family: var(--mono); font-size: 11px; color: #a9947f; }
 .resume-meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .btn-export { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 8px;
-  border: 1px solid var(--accent-tint-border); font-size: 12px; font-weight: 500; color: var(--accent); }
+  border: 1px solid var(--accent-tint-border); font-size: 12px; font-weight: 500; color: var(--accent);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
 .btn-export:hover { background: var(--accent-tint); color: var(--accent-deep); }
+.btn-export:active { background: var(--accent-tint-deep); color: var(--accent-deep); transform: translateY(1px); }
 .btn-export .arr { font-size: 12px; }
 
 /* ---------- futures tab (north star + idea funnel) ---------- */
@@ -587,8 +593,9 @@ a.tab { display: inline-block; }
 .bar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .chip-sm { padding: 6px 13px; border-radius: 20px; font-size: 12.5px; font-weight: 500; background: var(--card); color: var(--chip-ink); border: 1px solid var(--line-2); user-select: none; }
 .chip-sm.on { background: var(--accent); color: #fff; border-color: var(--accent); }
-.btn-dark { height: 34px; padding: 0 14px; border-radius: 9px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.btn-dark { height: 34px; padding: 0 14px; border-radius: 9px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
 .btn-dark:hover { filter: brightness(1.15); }
+.btn-dark:active { filter: brightness(1.05); transform: translateY(1px); }
 .buglist { display: flex; flex-direction: column; gap: 10px; }
 .bug { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 13px; overflow: hidden; }
 .bug .sev-bar { width: 4px; flex: none; }
@@ -1223,10 +1230,12 @@ a.tab { display: inline-block; }
 .seg { display: flex; gap: 8px; }
 .seg .opt { padding: 7px 13px; border-radius: 9px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--line-2); background: var(--card); color: var(--chip-ink); user-select: none; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
-.btn-cancel { height: 38px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line-3); font-size: 13px; font-weight: 500; color: var(--ink); display: inline-flex; align-items: center; }
+.btn-cancel { height: 38px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line-3); font-size: 13px; font-weight: 500; color: var(--ink); display: inline-flex; align-items: center; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
 .btn-cancel:hover { border-color: var(--muted); }
-.btn-submit { height: 38px; padding: 0 18px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; }
+.btn-cancel:active { border-color: var(--muted); transform: translateY(1px); }
+.btn-submit { height: 38px; padding: 0 18px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
 .btn-submit:hover { background: var(--accent-deep); }
+.btn-submit:active { background: var(--accent-deep); transform: translateY(1px); }
 .optional { text-transform: none; letter-spacing: 0; color: #c0b9ab; }
 .field-hint { font-size: 12px; line-height: 1.5; color: var(--muted); }
 .branch-pick { display: flex; gap: 8px; align-items: center; }
@@ -1451,7 +1460,8 @@ a.tab { display: inline-block; }
 
 /* ---------- detail head: muted (unset) site/repo + inline URL editor ---------- */
 .btn-muted { color: var(--muted); background: var(--panel); border: 1px dashed var(--line-3); font-weight: 500; }
-.btn-muted:hover { border-color: var(--muted); color: var(--ink); }
+.btn-muted:hover { background: var(--panel); border-color: var(--muted); color: var(--ink); }
+.btn-muted:active { background: var(--panel); border-color: var(--muted); color: var(--ink); transform: translateY(1px); }
 .btn-repo.btn-muted .blk { background: var(--line-3); }
 .url-edit { display: flex; align-items: center; gap: 8px; }
 .url-edit .field-input.sm { height: 38px; width: 260px; margin: 0; font-size: 13px; }
@@ -1576,8 +1586,9 @@ a.tab { display: inline-block; }
 
 /* ---------- confirm dialog + delete-project control ---------- */
 .confirm-body { font-size: 13.5px; line-height: 1.55; color: var(--muted); margin-bottom: 22px; }
-.btn-danger { height: 38px; padding: 0 18px; border-radius: 10px; background: var(--critical); color: #fff; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; }
+.btn-danger { height: 38px; padding: 0 18px; border-radius: 10px; background: var(--critical); color: #fff; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
 .btn-danger:hover { filter: brightness(1.05); }
+.btn-danger:active { filter: brightness(0.95); transform: translateY(1px); }
 .danger-zone { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line-2); display: flex; justify-content: flex-end; }
 .delete-project { font-size: 12.5px; font-weight: 500; color: var(--muted); }
 .delete-project:hover { color: var(--critical); }
@@ -5202,3 +5213,11 @@ button.mc-day-chip:hover { border-color: var(--accent); }
    failure — it is the assist's most useful answer and must not read as one. */
 .rv-draft-say.err { color: var(--critical); }
 .rv-draft-say.note { color: var(--muted); border-left: 2px solid var(--accent-tint-border); padding-left: 9px; }
+
+/* A pressed button dips 1px. That is motion, so it goes when the OS
+   asks for less of it — the colour half of every :active state stays. */
+@media (prefers-reduced-motion: reduce) {
+  .btn-repo:active, .btn-accent:active, .btn-submit:active, .btn-cancel:active,
+  .btn-export:active, .btn-danger:active, .btn-dark:active, .btn-muted:active { transform: none; }
+  .btn-repo, .btn-accent, .btn-submit, .btn-cancel, .btn-export, .btn-danger, .btn-dark { transition: none; }
+}
