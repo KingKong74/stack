@@ -51,6 +51,10 @@ const STAGE_H = 860;
 const SQ = 0.9;              // the sky is squashed: an orbit is an ellipse, not a circle
 const MAG = (f: Future) => f.magnitude ?? 2;   // geometry needs a size; the panel still says "not sized"
 
+// Wheel zoom is continuous between the ends of the stops; the stops stay as
+// named presets and the dots light to whichever is nearest.
+export const Z_MIN = 0.6, Z_MAX = 7;
+
 export const ZOOM_STOPS = [
   { z: 0.6, name: 'Wide — the whole galaxy, small' },
   { z: 1, name: 'Fit — every orbit and the belt in view' },
@@ -189,6 +193,16 @@ export function Galaxy({
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageW, setStageW] = useState(900);
+  // The hand-pan, added on top of the automatic pan toward the focused system.
+  // Zoomed in past Fit the sky is bigger than the stage, and without this the
+  // only way to see a neighbour is to select it.
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const panRef = useRef(pan);
+  panRef.current = pan;
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const onZoomRef = useRef(onZoom);
+  onZoomRef.current = onZoom;
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
@@ -202,6 +216,43 @@ export function Galaxy({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Wheel = continuous zoom. A native listener with passive:false, so the page
+  // never scrolls out from under the sky while you are zooming it.
+  //
+  // It zooms about the CENTRE, not the cursor. The old field was one CSS
+  // scale() and could keep the point under the pointer fixed by adjusting pan
+  // in the same frame; the galaxy is re-laid-out at every zoom instead — shells,
+  // orbits and node sizes each move on their own curve — so there is no single
+  // transform to anchor, and a cursor anchor could only ever be approximate.
+  // Centre zoom plus drag is honest and lands you in the same places.
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const z0 = zoomRef.current;
+      const nz = Math.min(Z_MAX, Math.max(Z_MIN, z0 * Math.exp(-e.deltaY * 0.0016)));
+      if (Math.abs(nz - z0) > 0.0005) onZoomRef.current(nz);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // Drag anywhere on the ground to pan. A press that never moves still delivers
+  // its click to the node underneath, so dragging costs the sky no selections.
+  const startPan = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    const x0 = e.clientX, y0 = e.clientY;
+    const p0 = panRef.current;
+    const move = (ev: MouseEvent) => setPan({ x: p0.x + ev.clientX - x0, y: p0.y + ev.clientY - y0 });
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
 
   const g = useMemo(() => {
     const sel = selId != null ? model.all.find((f) => f.id === selId) || null : null;
@@ -259,8 +310,8 @@ export function Galaxy({
     const panK = Math.min(1, Math.max(0, (zoom - 1) / 0.6));
     const panX = fIdx >= 0 ? -starPos[fIdx].dx * panK : 0;
     const panY = fIdx >= 0 ? -starPos[fIdx].dy * panK : 0;
-    const ax = (dx: number) => CX + dx + panX;
-    const ay = (dy: number) => CY + dy + panY;
+    const ax = (dx: number) => CX + dx + panX + pan.x;
+    const ay = (dy: number) => CY + dy + panY + pan.y;
 
     const dots: Dot[] = [];
     const discs: Disc[] = [];
@@ -403,7 +454,7 @@ export function Galaxy({
       beltW: Math.round(beltR * 2), beltH: Math.round(beltR * 2 * SQ),
       dots, discs, orbits, planetOrbits, moonOrbits, shellRings, sectors,
     };
-  }, [model, northOnly, sourceFilter, selId, zoom, stageW]);
+  }, [model, northOnly, sourceFilter, selId, zoom, stageW, pan]);
 
   const zi = zoomIndex(zoom);
   const px = (v: number) => `${v}px`;
@@ -416,7 +467,7 @@ export function Galaxy({
   );
 
   return (
-    <div className="pgx-stage" ref={stageRef}>
+    <div className="pgx-stage" ref={stageRef} onMouseDown={startPan}>
       <div className="pgx-glow warm" />
       <div className="pgx-glow cool" />
       {STARFIELD.map((s, i) => (
@@ -512,8 +563,8 @@ export function Galaxy({
             onClick={() => onZoom(ZOOM_STOPS[Math.min(ZOOM_STOPS.length - 1, zi + 1)].z)}>+</button>
           <span className="zpct">{Math.round(zoom * 100)}%</span>
         </div>
-        <button className="pgx-fit" onClick={() => { onZoom(1); onSelect(null); }}
-          title="Back to Fit, centred on the north star">Fit all</button>
+        <button className="pgx-fit" onClick={() => { onZoom(1); setPan({ x: 0, y: 0 }); onSelect(null); }}
+          title="Back to Fit, centred on the north star — clears the drag too">Fit all</button>
       </div>
     </div>
   );

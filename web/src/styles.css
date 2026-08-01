@@ -2592,9 +2592,13 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 }
 
 .pgx-stage {
-  position: relative; height: 860px; overflow: hidden; flex: none;
+  position: relative; height: 860px; overflow: hidden; flex: none; cursor: grab;
   border-bottom: 1px solid var(--line-2); background: var(--gx-ground);
 }
+.pgx-stage:active { cursor: grabbing; }
+/* The controls are chrome, not ground — they keep their own cursors. */
+.pgx-controls, .pgx-node, .pgx-disc, .pgx-core { cursor: pointer; }
+.pgx-controls:active, .pgx-node:active, .pgx-disc:active, .pgx-core:active { cursor: pointer; }
 .pgx-glow { position: absolute; border-radius: 50%; pointer-events: none; }
 .pgx-glow.warm { left: -10%; top: -6%; width: 70%; height: 62%;
   background: radial-gradient(circle, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%); }
