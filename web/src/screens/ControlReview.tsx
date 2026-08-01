@@ -171,7 +171,38 @@ export function ReviewRoom({ onCount }: {
       if (existing) existing.items.push(it);
       else byKey.set(k, { id: k, day, branch, items: [it] });
     }
-    return [...byKey.values()].map((c) => ({ ...c, label: nightLabel(c.day) }));
+    // unit 3 — the cluster's evidence summary, folded into this same pass
+    // rather than a second memo: `list` is the performance-sensitive path (a
+    // big night is a lot of rows), and every number below is a running total
+    // over the same `items` this memo already builds.
+    return [...byKey.values()].map((c) => {
+      let commits = 0, tokens = 0, checksRed = 0, checksUnrun = 0, checksGreen = 0, noRun = 0;
+      // Reviewer verdicts, counted apart from "clean" on purpose: `none` holds
+      // both an item with a run that carries no `reviewVerdict` AND an item
+      // with no run at all, because in both cases NO PASS RAN — the same rule
+      // this room applies to a single NULL review verdict, just totalled
+      // across a cluster instead of read off one row.
+      const verdicts = { clean: 0, concerns: 0, blocked: 0, none: 0 };
+      for (const it of c.items) {
+        const run = it.run;
+        if (!run) { noRun++; verdicts.none++; continue; }
+        commits += run.commits ?? 0;
+        tokens += run.tokens ?? 0;
+        // Checks-never-ran is counted apart from checks-green for the same
+        // reason: `checksFailing === null` means the checks never ran on that
+        // item, and folding it into green would let a cluster read as "all
+        // passing" when some of it was never tested at all.
+        if (run.checksFailing == null) checksUnrun++;
+        else if (run.checksFailing > 0) checksRed++;
+        else checksGreen++;
+        if (run.reviewVerdict === 'clean' || run.reviewVerdict === 'concerns' || run.reviewVerdict === 'blocked') {
+          verdicts[run.reviewVerdict]++;
+        } else {
+          verdicts.none++;
+        }
+      }
+      return { ...c, label: nightLabel(c.day), ev: { commits, tokens, checksRed, checksUnrun, checksGreen, verdicts, noRun } };
+    });
   }, [list]);
 
   // A picked row belongs to one filter's list; switching filters looks at an
@@ -602,7 +633,64 @@ export function ReviewRoom({ onCount }: {
                       <span className="night">{c.label}</span>
                       <span className="branch" title={c.branch || undefined}>{c.branch || 'no branch'}</span>
                       <span className="count">{c.items.length} change{c.items.length === 1 ? '' : 's'}</span>
-                      {/* unit 3 — the cluster's evidence summary lands here. */}
+                      {/* unit 3 — the evidence a select-all is asking you to trust
+                          in one glance. A quiet cluster shows nothing: a chip only
+                          appears when it has something to say, so silence reads as
+                          silence rather than as a row of confident zeroes. */}
+                      <span className="rv-ev">
+                        {c.ev.noRun === c.items.length ? (
+                          <span className="rv-ev-chip muted"
+                            title="None of these were built by an autopilot run — there is no run log, no checks and no reviewer read behind them to summarise.">
+                            no run behind it
+                          </span>
+                        ) : (<>
+                          {c.ev.checksGreen > 0 && (
+                            <span className="rv-ev-chip good" title={`The checks ran and came back green on ${c.ev.checksGreen} of these.`}>
+                              ✓ {c.ev.checksGreen}
+                            </span>
+                          )}
+                          {c.ev.checksRed > 0 && (
+                            <span className="rv-ev-chip bad" title={`The checks ran and failed on ${c.ev.checksRed} of these.`}>
+                              ✕ {c.ev.checksRed}
+                            </span>
+                          )}
+                          {c.ev.checksUnrun > 0 && (
+                            <span className="rv-ev-chip muted" title={`The checks never ran on ${c.ev.checksUnrun} of these — that is not the same as a pass.`}>
+                              — {c.ev.checksUnrun}
+                            </span>
+                          )}
+                          {c.ev.verdicts.clean > 0 && (
+                            <span className="rv-ev-chip good" title={`The reviewer called ${c.ev.verdicts.clean} of these clean.`}>
+                              {c.ev.verdicts.clean} clean
+                            </span>
+                          )}
+                          {c.ev.verdicts.concerns > 0 && (
+                            <span className="rv-ev-chip paused" title={`The reviewer raised concerns on ${c.ev.verdicts.concerns} of these.`}>
+                              {c.ev.verdicts.concerns} concerns
+                            </span>
+                          )}
+                          {c.ev.verdicts.blocked > 0 && (
+                            <span className="rv-ev-chip bad" title={`The reviewer blocked ${c.ev.verdicts.blocked} of these.`}>
+                              {c.ev.verdicts.blocked} blocked
+                            </span>
+                          )}
+                          {c.ev.verdicts.none > 0 && (
+                            <span className="rv-ev-chip muted" title={`No second-model review ran on ${c.ev.verdicts.none} of these — that is not the same as nothing being found.`}>
+                              {c.ev.verdicts.none} no review
+                            </span>
+                          )}
+                          {c.ev.commits > 0 && (
+                            <span className="rv-ev-num" title={`${c.ev.commits} commit${c.ev.commits === 1 ? '' : 's'} across this cluster.`}>
+                              {c.ev.commits} commit{c.ev.commits === 1 ? '' : 's'}
+                            </span>
+                          )}
+                          {c.ev.tokens > 0 && (
+                            <span className="rv-ev-num" title={`${fmtTok(c.ev.tokens)} spent building this cluster.`}>
+                              {fmtTok(c.ev.tokens)}
+                            </span>
+                          )}
+                        </>)}
+                      </span>
                     </div>
                     {c.items.map((it) => {
                       const v = it.run?.reviewVerdict ?? '';
