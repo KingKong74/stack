@@ -203,6 +203,24 @@ ALTER TABLE futures ADD COLUMN IF NOT EXISTS alignment TEXT;
 -- Canvas coordinates for the visual canvas view. NULL = auto-layout by alignment group.
 ALTER TABLE futures ADD COLUMN IF NOT EXISTS x_coord FLOAT;
 ALTER TABLE futures ADD COLUMN IF NOT EXISTS y_coord FLOAT;
+-- The Polaris galaxy (#312). An idea's SHAPE in the sky is derived from two
+-- columns, never stored as a kind — so there is one place a thing can be:
+--   is_star             -> a STAR: a promoted idea with its own orbit
+--   parent is a star    -> a PLANET in that star's orbit
+--   parent is a planet  -> a MOON, a piece of that planet
+--   no parent, judged   -> rides one of the north star's three shells
+--   no parent, unjudged -> the drift belt
+-- Depth is capped at star → planet → moon by the PATCH route, and a star never
+-- carries a parent. ON DELETE SET NULL is the honest fallback: dismissing a
+-- planet returns its moons to the shells rather than deleting work you kept.
+ALTER TABLE futures ADD COLUMN IF NOT EXISTS parent_id INTEGER
+  REFERENCES futures(id) ON DELETE SET NULL;
+ALTER TABLE futures ADD COLUMN IF NOT EXISTS is_star BOOLEAN NOT NULL DEFAULT false;
+-- Magnitude 1–5 = how much work the idea is (an afternoon → a quarter). NULL is
+-- "not sized yet" and stays NULL: the sky draws an unsized idea at its smallest
+-- and the panel says so, rather than inventing an estimate nobody gave.
+ALTER TABLE futures ADD COLUMN IF NOT EXISTS magnitude SMALLINT;
+CREATE INDEX IF NOT EXISTS idx_futures_parent ON futures (parent_id) WHERE parent_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_futures_auto_fp
   ON futures (project_id, fingerprint) WHERE source = 'hook';
 CREATE INDEX IF NOT EXISTS idx_futures_project ON futures (project_id, created_at DESC);

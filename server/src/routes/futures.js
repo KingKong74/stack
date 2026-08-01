@@ -42,12 +42,67 @@ futures.post('/', async (req, res) => {
   res.status(201).json(futureShape(rows[0]));
 });
 
+// The galaxy's shape rules (#312), enforced here because the client derives
+// what a thing IS from where it sits: a star holds planets, a planet holds
+// moons, and that is the whole depth. Returns an error string, or null when the
+// move is legal. `id` is the idea being moved, `pid` the idea it would orbit.
+async function checkAdoption(projectId, id, pid) {
+  const { rows } = await q(
+    'SELECT id, is_star, parent_id FROM futures WHERE project_id = $1 AND id = $2',
+    [projectId, pid]
+  );
+  if (!rows.length) return 'No such idea to orbit.';
+  const target = rows[0];
+  // The only cycle two levels can make: the target already orbits this idea.
+  if (target.parent_id === id) return 'That idea already orbits this one.';
+  if (!target.is_star) {
+    const { rows: up } = await q(
+      'SELECT is_star FROM futures WHERE project_id = $1 AND id = $2',
+      [projectId, target.parent_id]
+    );
+    // A moon cannot be orbited — star → planet → moon is the whole depth.
+    if (!up[0]?.is_star) return 'Only a star or a planet can be orbited. Promote it to a star first.';
+    const { rows: kids } = await q('SELECT 1 FROM futures WHERE parent_id = $1 LIMIT 1', [id]);
+    if (kids.length) return 'This idea already carries moons of its own — only a star can adopt it.';
+  }
+  return null;
+}
+
 // PATCH /:id  -> title/note edit, reviewed (the review inbox), alignment (the
-//                north-star curation verdict; '' clears back to unsorted)
+//                north-star curation verdict; '' clears back to unsorted), and
+//                the galaxy's three: parentId, isStar, magnitude (#312)
 futures.patch('/:id', async (req, res) => {
   const sets = [];
   const vals = [];
   let i = 1;
+  const id = Number(req.params.id);
+  // Setting a parent DEMOTES a star (adopting one is exactly that), so the two
+  // are resolved together and only one of them ever reaches the statement.
+  const adopting = req.body?.parentId !== undefined && req.body.parentId !== null;
+  if (req.body?.parentId !== undefined) {
+    const pid = req.body.parentId === null ? null : Number(req.body.parentId);
+    if (pid !== null) {
+      if (!Number.isInteger(pid) || pid === id) {
+        return res.status(400).json({ error: 'An idea cannot orbit itself.' });
+      }
+      const why = await checkAdoption(req.project.id, id, pid);
+      if (why) return res.status(400).json({ error: why });
+    }
+    sets.push(`parent_id = $${i++}`);
+    vals.push(pid);
+    if (pid !== null) sets.push('is_star = false');
+  }
+  if (req.body?.isStar !== undefined && !adopting) {
+    // A star has no parent by definition — promoting cuts the old orbit, and
+    // its moons come with it as planets (their parent is unchanged; it is the
+    // parent's new is_star that renames them).
+    sets.push(req.body.isStar ? 'is_star = true, parent_id = NULL' : 'is_star = false');
+  }
+  if (req.body?.magnitude !== undefined) {
+    const m = req.body.magnitude === null ? null : Number(req.body.magnitude);
+    sets.push(`magnitude = $${i++}`);
+    vals.push(m !== null && Number.isInteger(m) && m >= 1 && m <= 5 ? m : null);
+  }
   if (req.body?.reviewed !== undefined) {
     sets.push(`reviewed_at = ${req.body.reviewed ? 'now()' : 'NULL'}`);
   }
@@ -77,10 +132,22 @@ futures.patch('/:id', async (req, res) => {
   }
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
 
-  vals.push(req.project.id, Number(req.params.id));
+  // Un-starring back to a loose idea is the one move that would orphan a
+  // branch — nothing loose can hold planets — so the same statement returns its
+  // planets to the north star's shells. One CTE rather than two round trips:
+  // the two writes have to agree or the sky renders a shape with no name.
+  const detach = req.body?.isStar === false && !adopting;
+  vals.push(req.project.id, id);
+  const pIdx = i, idIdx = i + 1;
+  const update = `UPDATE futures SET ${sets.join(', ')}, updated_at = now()
+      WHERE project_id = $${pIdx} AND id = $${idIdx} RETURNING *`;
   const { rows } = await q(
-    `UPDATE futures SET ${sets.join(', ')}, updated_at = now()
-      WHERE project_id = $${i++} AND id = $${i} RETURNING *`,
+    detach
+      ? `WITH upd AS (${update}), loose AS (
+           UPDATE futures SET parent_id = NULL, updated_at = now()
+            WHERE project_id = $${pIdx} AND parent_id = $${idIdx}
+         ) SELECT * FROM upd`
+      : update,
     vals
   );
   if (!rows.length) return res.status(404).json({ error: 'No such idea.' });

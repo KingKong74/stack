@@ -153,6 +153,12 @@ export interface Future {
   area: string;        // product-area tag ('' = untagged) — filters the funnel
   canvasX: number | null;  // visual canvas position (null = auto-layout)
   canvasY: number | null;
+  // The galaxy (#312). What an idea IS is derived from these, never stored:
+  // isStar = its own orbit; parent a star = a planet; parent a planet = a moon;
+  // no parent and judged = a shell of the north star; unjudged = the drift belt.
+  parentId: number | null;
+  isStar: boolean;
+  magnitude: number | null;  // 1–5 how much work; null = not sized yet
 }
 
 // The methods a check may use — GET probes a page, the rest exercise an API

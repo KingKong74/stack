@@ -104,6 +104,10 @@ export function futureShape(row) {
     area: row.area || '',            // product-area tag ('' = untagged) — filters the funnel
     canvasX: row.x_coord ?? null,   // visual canvas position (null = auto-layout)
     canvasY: row.y_coord ?? null,
+    // The galaxy (#312): shape is derived from these two, never stored as a kind.
+    parentId: row.parent_id ?? null, // the idea this one orbits (null = loose)
+    isStar: !!row.is_star,           // promoted to its own orbit
+    magnitude: row.magnitude ?? null,// 1–5 how much work; null = not sized yet
   };
 }
 
