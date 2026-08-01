@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Future } from '../types';
 import {
-  Galaxy, GalaxyBoard, buildGalaxy, flattenGalaxy,
+  Galaxy, GalaxyBoard, buildGalaxy, flattenGalaxy, orbitIds,
   GX_GLYPH, GX_LABEL, GX_TONE, MAG_WORD, type GxKind, type GxModel,
 } from './Galaxy';
 import type { ClusterSuggestion, ConvergeDraft, JudgeSuggestion } from '../store';
@@ -371,9 +371,46 @@ export function Futures({
   const [convergeBusy, setConvergeBusy] = useState(false);
   const [convergeErr, setConvergeErr] = useState('');
   const [retire, setRetire] = useState(true);
-  const trayIdeas = bySource.filter((f) => tray.has(f.id));
-  const toggleTray = (id: number) =>
-    setTray((t) => { const n = new Set(t); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  // The FULL list, never `bySource`: a filter dims a dot in the sky, it must
+  // never silently drop that idea's orbit out of the drafts converge builds.
+  // Order is the whole forest's own depth-first order (not tray insertion
+  // order), so a parent sits immediately above its own orbit regardless of
+  // which member was ticked first — the order `directDrafts('epic')` wants.
+  // Walks its OWN model over the full `futures` list, deliberately not
+  // `galaxy` (the arrived/windowed one): the source filter must never drop a
+  // picked idea from the drafts (the original bug) and narrowing the date
+  // window AFTER picking must not silently vanish one either — never drop
+  // what was already picked. One rebuild per `futures` change, not per
+  // render, so it stays cheap.
+  const trayIdeas = useMemo(() => {
+    const model = buildGalaxy(futures);
+    const seen = new Set<number>();
+    const out: Future[] = [];
+    const walk = (f: Future) => {
+      if (seen.has(f.id)) return;
+      seen.add(f.id);
+      if (tray.has(f.id)) out.push(f);
+      model.childrenOf(f).forEach(walk);
+    };
+    model.all.forEach((f) => { if (model.parentOf(f) == null) walk(f); });
+    return out;
+  }, [futures, tray]);
+  // Sweeps `galaxy` (the arrived/windowed model), not the full list: this
+  // decides what the sweep can PULL from, and it should match what the
+  // "PLANETS IN ITS ORBIT" list on screen shows — sweep what you can see, or
+  // the Converge button would read "+5" above a visible list of two.
+  // Ticking an idea sweeps its whole orbit into the tray; unticking sweeps it
+  // back out. The whole set goes in, the whole set comes out — the simplest
+  // rule that stays consistent when a child was already in the tray on its own.
+  const toggleTray = (id: number) => {
+    const orbit = orbitIds(galaxy, id);
+    setTray((t) => {
+      const n = new Set(t);
+      if (n.has(id)) orbit.forEach((oid) => n.delete(oid));
+      else orbit.forEach((oid) => n.add(oid));
+      return n;
+    });
+  };
 
   // The keyless drafts: a direct mapping of the picked ideas — Gemini is the
   // enrichment on top, never the gate.
@@ -705,6 +742,7 @@ export function Futures({
             <SelectedPanel selected={selected} themeLabel={selected ? (selected.area || LOOSE) : ''}
               galaxy={galaxy} kind={selKind}
               inTray={selected ? tray.has(selected.id) : false}
+              orbitExtra={selected ? orbitIds(galaxy, selected.id).length - 1 : 0}
               onToggleTray={selected ? () => toggleTray(selected.id) : undefined}
               onSelect={setSelId} onShape={onShape}
               onPromote={onPromote} onEdit={onEdit} onAlign={onAlign} onDelete={onDelete} />
@@ -1014,7 +1052,7 @@ function QueueCard({
 // adopt into one, converge, edit, dismiss. Judging happens right here too; the
 // queue is just the other door in.
 function SelectedPanel({
-  selected, themeLabel, galaxy, kind, inTray, onToggleTray, onSelect, onShape,
+  selected, themeLabel, galaxy, kind, inTray, orbitExtra, onToggleTray, onSelect, onShape,
   onPromote, onEdit, onAlign, onDelete,
 }: {
   selected: Future | null;
@@ -1022,6 +1060,9 @@ function SelectedPanel({
   galaxy: GxModel;
   kind: GxKind | null;
   inTray: boolean;
+  // How many more ideas ride in this one's orbit — 0 for a plain idea. Shown
+  // on the Converge button so picking a star says up front what comes with it.
+  orbitExtra: number;
   onToggleTray?: () => void;
   onSelect: (id: number) => void;
   onShape: (id: number, patch: { parentId?: number | null; isStar?: boolean; magnitude?: number | null }) => void;
@@ -1184,8 +1225,12 @@ function SelectedPanel({
         <button className="act primary" onClick={() => onPromote(f)}>→ Roadmap</button>
         {onToggleTray && (
           <button className={`act ${inTray ? 'in-tray' : ''}`} onClick={onToggleTray}
-            title="The converge tray — pick ideas across the sky, then converge the set into tickets">
-            {inTray ? '✓ In tray' : '⊕ Converge'}
+            title={inTray
+              ? (orbitExtra > 0 ? 'In the tray, with its orbit — untick to pull both back out' : 'In the tray')
+              : (orbitExtra > 0
+                ? `The converge tray — its orbit comes with it (${orbitExtra} more idea${orbitExtra === 1 ? '' : 's'})`
+                : 'The converge tray — pick ideas across the sky, then converge the set into tickets')}>
+            {inTray ? '✓ In tray' : orbitExtra > 0 ? `⊕ Converge +${orbitExtra}` : '⊕ Converge'}
           </button>
         )}
         <button className="act" onClick={() => { setTitle(f.title); setNote(f.note); setArea(f.area); setEditing(true); }}>✎ Edit</button>
