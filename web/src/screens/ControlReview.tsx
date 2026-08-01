@@ -60,6 +60,7 @@ const sizeOf = (it: ReviewItem) =>
 // Nights are grouped on the run's UTC day (the same convention the week strip
 // uses); the label is relative so "last night" reads as last night.
 function nightLabel(day: string): string {
+  if (!day) return 'Undated';
   const today = new Date().toISOString().slice(0, 10);
   const yday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
   if (day === today) return 'Tonight';
@@ -79,6 +80,10 @@ export function ReviewRoom({ onCount }: {
   const [view, setView] = useState<View>('queue');
   const [filter, setFilter] = useState<Filter>('todo');
   const [selId, setSelId] = useState<string>('');       // "slug#id"
+  // #264 unit 1 — the batch-verdict selection. Keys are `key(it)` strings, not
+  // row objects, so a row that has since gained/lost a verdict is compared by
+  // identity, not by a stale object reference. The action itself is unit 2.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const [night, setNight] = useState<string>('');        // the debrief's chosen day
   const [busy, setBusy] = useState(false);
   const [settledNote, setSettledNote] = useState<{ key: string; text: string; undo?: () => void } | null>(null);
@@ -133,6 +138,51 @@ export function ReviewRoom({ onCount }: {
     if (!list.length) { setSelId(''); return; }
     if (!list.some((it) => key(it) === selId)) setSelId(key(list[0]));
   }, [list, selId]);
+
+  // #264 unit 1 — ten items from one night is one decision, not ten. Group
+  // `list` into clusters keyed on night + branch (the branch CLAIM, #277 — the
+  // rail says BRANCH, never "lane") so a select-all can offer one decision per
+  // cluster instead of one per row. `list` already arrives newest-first, and a
+  // Map keyed on insertion preserves that order for both the clusters and the
+  // rows inside each one — re-sorting here would put the newest cluster out of
+  // step with the newest row it was built to track.
+  const clusters = useMemo(() => {
+    const byKey = new Map<string, { id: string; day: string; branch: string; items: ReviewItem[] }>();
+    for (const it of list) {
+      const finished = it.run?.finishedAt || it.doneAt;
+      const day = finished ? new Date(finished).toISOString().slice(0, 10) : '';
+      const branch = it.branch || it.run?.branch || '';
+      const k = `${day} ${branch}`;
+      const existing = byKey.get(k);
+      if (existing) existing.items.push(it);
+      else byKey.set(k, { id: k, day, branch, items: [it] });
+    }
+    return [...byKey.values()].map((c) => ({ ...c, label: nightLabel(c.day) }));
+  }, [list]);
+
+  // A picked row belongs to one filter's list; switching filters looks at an
+  // entirely different set of rows, so the selection can't survive the switch
+  // without "3 selected" surviving into a list where none of those three show.
+  useEffect(() => { setPicked(new Set()); }, [filter]);
+
+  // Never trust a stale key: a verdict removes its row from `list` without
+  // ever touching `picked`, so every count/render intersects the two rather
+  // than reading `picked` on its own.
+  const pickedInList = useMemo(() => list.filter((it) => picked.has(key(it))), [list, picked]);
+
+  const togglePick = (k: string) => setPicked((s) => {
+    const n = new Set(s);
+    if (n.has(k)) n.delete(k); else n.add(k);
+    return n;
+  });
+  // One click toggles the whole cluster: on if any row in it was still
+  // unpicked, off only once every row in it already was.
+  const toggleClusterPick = (items: ReviewItem[]) => setPicked((s) => {
+    const n = new Set(s);
+    const allOn = items.every((it) => n.has(key(it)));
+    for (const it of items) { if (allOn) n.delete(key(it)); else n.add(key(it)); }
+    return n;
+  });
 
   // ---- mutations. Each one PATCHes, then reloads: the queue is a server-side
   // read over two tables, and re-deriving it locally would be a second source
@@ -418,32 +468,78 @@ export function ReviewRoom({ onCount }: {
               <div className="rv-spacer" />
               <span className="prog">{list.length ? `${list.findIndex((x) => sel && key(x) === key(sel)) + 1} of ${list.length}` : '—'}</span>
             </div>
+            {/* #264 unit 1 — the batch bar. Room level like the receipt above:
+                a row leaving the list on verdict must not take the count with
+                it silently, so it reads off `pickedInList`, never `picked`
+                raw. The Solid-N action itself is unit 2. */}
+            {pickedInList.length > 0 && (
+              <div className="rv-selbar">
+                <span>{pickedInList.length} selected</span>
+                <button onClick={() => setPicked(new Set())}>Clear</button>
+              </div>
+            )}
             <div className="rv-rail-list">
-              {list.map((it) => {
-                const v = it.run?.reviewVerdict ?? '';
+              {clusters.map((c) => {
+                // A checkbox can't nest inside the existing `<button class="rv-card">`
+                // (two interactive elements, one control) — so each cluster's
+                // rows are siblings: a checkbox, then the untouched card.
+                const selectable = filter !== 'settled';
+                const allOn = c.items.length > 0 && c.items.every((it) => picked.has(key(it)));
+                const someOn = !allOn && c.items.some((it) => picked.has(key(it)));
                 return (
-                  <button key={key(it)} className={`rv-card ${sel && key(sel) === key(it) ? 'on' : ''}`}
-                    onClick={() => setSelId(key(it))}>
-                    <span className="row1">
-                      <span className={`rv-verdict ${v || 'none'}`}>{VERDICT_LABEL[v]}</span>
-                      {(it.run?.checksFailing ?? 0) > 0 && (
-                        <span className="rv-flag" title="The run finished with checks red">CHECKS</span>
+                  <div className="rv-cluster" key={c.id}>
+                    <div className="rv-cluster-head">
+                      {selectable && (
+                        <input
+                          type="checkbox"
+                          checked={allOn}
+                          // React has no `indeterminate` attribute — it's a DOM
+                          // property only, so it has to be set imperatively.
+                          ref={(el) => { if (el) el.indeterminate = someOn; }}
+                          aria-label={`Select all ${c.items.length} change${c.items.length === 1 ? '' : 's'} in this cluster`}
+                          onChange={() => toggleClusterPick(c.items)}
+                        />
                       )}
-                      {/* #284 — ARCH only when the architect had something to say;
-                          "aligned" is not news and would just add noise. */}
-                      {it.run?.architectVerdict && it.run.architectVerdict !== 'aligned' && (
-                        <span className="rv-arch" title={it.run.architectNote || 'The architect flagged structure'}>ARCH</span>
-                      )}
-                      {it.reviewTag && <span className="rv-settled-chip">{it.reviewTag}</span>}
-                      <span className="rv-spacer" />
-                      <span className="age">{it.when}</span>
-                    </span>
-                    <span className="t">{it.title}</span>
-                    <span className="row2">
-                      <span className="where">{it.name} · #{it.id}</span>
-                      <span className="size">{sizeOf(it)}</span>
-                    </span>
-                  </button>
+                      <span className="night">{c.label}</span>
+                      <span className="branch" title={c.branch || undefined}>{c.branch || 'no branch'}</span>
+                      <span className="count">{c.items.length} change{c.items.length === 1 ? '' : 's'}</span>
+                      {/* unit 3 — the cluster's evidence summary lands here. */}
+                    </div>
+                    {c.items.map((it) => {
+                      const v = it.run?.reviewVerdict ?? '';
+                      return (
+                        <div className="rv-row" key={key(it)}>
+                          {selectable && (
+                            <input type="checkbox" className="rv-pick"
+                              checked={picked.has(key(it))} aria-label={it.title}
+                              onChange={() => togglePick(key(it))} />
+                          )}
+                          <button className={`rv-card ${sel && key(sel) === key(it) ? 'on' : ''}`}
+                            onClick={() => setSelId(key(it))}>
+                            <span className="row1">
+                              <span className={`rv-verdict ${v || 'none'}`}>{VERDICT_LABEL[v]}</span>
+                              {(it.run?.checksFailing ?? 0) > 0 && (
+                                <span className="rv-flag" title="The run finished with checks red">CHECKS</span>
+                              )}
+                              {/* #284 — ARCH only when the architect had something to say;
+                                  "aligned" is not news and would just add noise. */}
+                              {it.run?.architectVerdict && it.run.architectVerdict !== 'aligned' && (
+                                <span className="rv-arch" title={it.run.architectNote || 'The architect flagged structure'}>ARCH</span>
+                              )}
+                              {it.reviewTag && <span className="rv-settled-chip">{it.reviewTag}</span>}
+                              <span className="rv-spacer" />
+                              <span className="age">{it.when}</span>
+                            </span>
+                            <span className="t">{it.title}</span>
+                            <span className="row2">
+                              <span className="where">{it.name} · #{it.id}</span>
+                              <span className="size">{sizeOf(it)}</span>
+                            </span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 );
               })}
               {!list.length && (
