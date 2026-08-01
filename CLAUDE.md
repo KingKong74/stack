@@ -333,6 +333,7 @@ node server/test/fleet-roles.test.mjs      # role attribution + drift detection 
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
+./stack seed-galaxy                        # shape a flat idea funnel into stars/planets (DRY until --run)
 ./stack skills --dry                       # what the skill-tree sync would write/remove on this host
 ./stack start-session [slug] [--item N]    # queue an automation session (▶ Run now from the terminal)
 ./stack list-sessions                      # the automation job queue ([slug], --limit, --json)
