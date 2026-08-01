@@ -97,6 +97,7 @@ const DEFAULTS = {
   term_idle_hours: 6,          // #287 — terminate a silent terminal session after this long; 0 = never
   autopilot_executor_model: '',            // '' = the claude CLI's own default model
   autopilot_advisor_model: 'claude-opus-5', // the default advisor ('' = no advisor subagent)
+  workbench_model: '', // #327 — '' = the server's own GEMINI_MODEL
   assist_guidance: '',
   assist_fields: [...ASSIST_FIELDS],
   access_pin_hash: null,
@@ -137,6 +138,7 @@ export async function readSettings(client) {
     term_idle_hours: Number.isFinite(r.term_idle_hours) ? r.term_idle_hours : 6,
     autopilot_executor_model: cleanModelAlias(r.autopilot_executor_model),
     autopilot_advisor_model: cleanModelAlias(r.autopilot_advisor_model),
+    workbench_model: cleanModelAlias(r.workbench_model),
     assist_guidance: String(r.assist_guidance || ''),
     assist_fields: cleanAssistFields(r.assist_fields),
     access_pin_hash: r.access_pin_hash || null,
@@ -165,6 +167,7 @@ export function settingsShape(s) {
     termIdleHours: s.term_idle_hours,        // #287 — reap a silent terminal session after this long; 0 = never
     autopilotExecutorModel: s.autopilot_executor_model, // '' = CLI default (#153)
     autopilotAdvisorModel: s.autopilot_advisor_model,   // '' = no advisor
+    workbenchModel: s.workbench_model, // #327 — '' = the server's own GEMINI_MODEL
     assistGuidance: s.assist_guidance,       // standing steer for ✧ Fill from note
     assistFields: s.assist_fields,           // which fields the assist may fill
     accessPinSet: Boolean(s.access_pin_hash), // the hash itself never leaves the server

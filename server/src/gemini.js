@@ -29,6 +29,17 @@ const defaultTemperature = () => {
 
 export const geminiEnabled = () => Boolean(process.env.GEMINI_API_KEY);
 
+// The UI catalogue served to the Workbench's model picker — the SINGLE source
+// of truth for what it offers, the same role EXECUTOR_CATALOGUE plays for
+// Mission Control's model pickers in settings.js. '' = the server default.
+export const GEMINI_MODELS = [
+  { model: '', label: 'Server default', note: 'whatever the server is configured with' },
+  { model: 'gemini-2.5-pro', label: 'Pro', note: 'deepest read, smallest free quota' },
+  { model: 'gemini-2.5-flash', label: 'Flash', note: 'balanced — the usual default' },
+  { model: 'gemini-flash-latest', label: 'Flash (latest)', note: 'tracks the current flash release' },
+  { model: 'gemini-flash-lite-latest', label: 'Lite', note: 'fastest, biggest free quota' },
+];
+
 // One bounded generateContent call against one model, JSON-mode. Throws with
 // a short, key-free message; a 429 gets `quota = true` so the caller can try
 // another model.
@@ -75,13 +86,19 @@ async function callModel(model, prompt, { timeoutMs, generation }) {
 // quota is exhausted, retries once on the fallback model (quotas are per
 // model). Both exhausted → a 503-tagged error with a message worth showing
 // (502 would be swallowed by Cloudflare in front of the deployment).
-export async function askGemini(prompt, { timeoutMs = 25_000, generation = {} } = {}) {
+// `model` (#327 — the Workbench's picker) overrides the primary; everything
+// else about the fallback dance is unchanged.
+export async function askGemini(prompt, { timeoutMs = 25_000, generation = {}, model } = {}) {
+  const primary = model || MODEL();
   try {
-    return await callModel(MODEL(), prompt, { timeoutMs, generation });
+    return await callModel(primary, prompt, { timeoutMs, generation });
   } catch (err) {
     if (!err.quota) throw err;
     const fallback = FALLBACK_MODEL();
-    if (!fallback || fallback === MODEL()) throw quotaError();
+    // Compare against the PRIMARY actually used, not MODEL() — otherwise an
+    // override that picked the lite model (or the lite model itself as the
+    // fallback) would retry itself and never actually fall back.
+    if (!fallback || fallback === primary) throw quotaError();
     try {
       return await callModel(fallback, prompt, { timeoutMs, generation });
     } catch (err2) {
