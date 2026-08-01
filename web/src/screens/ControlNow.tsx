@@ -69,7 +69,6 @@ export interface NowRoomProps {
   onDismissJob: (j: AutopilotJob) => void;
   // projects
   onRunNow: (p: ControlProject) => void;
-  onToggleAutomode: (p: ControlProject) => void;
   onSetTargetArea: (p: ControlProject, area: string) => void;
   // branches
   onMerge: (p: ControlProject, b: ControlProject['branches'][number]) => void;
@@ -429,6 +428,14 @@ export function NowRoom(p: NowRoomProps) {
                 {x.reviewCount > 0 && (
                   <button onClick={() => p.onGoRoom('review')}>{x.reviewCount} to review</button>
                 )}
+                {/* Read-only here — Automode is CHANGED on the project's own
+                    page (the ⚙ badge there), not flipped from the fleet view. */}
+                <span className={`mc-mode${x.automode ? ' on' : ''}`}
+                  title={x.automode
+                    ? 'Automode on — the autopilot may work this project. Change it on the project’s page.'
+                    : 'Automode off — the autopilot leaves this project alone. Change it on the project’s page.'}>
+                  ⚙ {x.automode ? 'auto' : 'manual'}
+                </span>
               </div>
               {/* Tonight's pick and its target area — the two facts that decide
                   what an automode project actually does when the night comes. */}
@@ -466,11 +473,6 @@ export function NowRoom(p: NowRoomProps) {
                   </button>
                 )}
                 <a className="term" href={hrefTo.terminal(x.slug)} title={`Open a terminal in ~/${x.slug}`}>⌨</a>
-                <button role="switch" aria-checked={x.automode} aria-label={`Automode for ${x.name}`}
-                  className={`switch sm ${x.automode ? 'on' : ''}`} onClick={() => p.onToggleAutomode(x)}
-                  title={x.automode ? 'Automode on — the autopilot may work this project' : 'Automode off — hands off'}>
-                  <span className="switch-knob" />
-                </button>
                 {/* The merge strip lives under the card rather than beside the
                     name. 2a's grid has no room for it, and it is the one thing
                     on the old project row that cannot be cut: with the Build
