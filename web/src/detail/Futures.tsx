@@ -45,7 +45,7 @@ function ago(ms: number): string {
 
 export function Futures({
   northStar, futures, highlightId, onSaveNorthStar, onAdd, onEdit, onAlign, onDelete, onPromote,
-  onAskGemini, onCluster, onSetAreas, onConvergeDraft, onConvergeCreate, onShape, slug,
+  onAskGemini, onCluster, onSetAreas, onConvergeDraft, onConvergeCreate, onShape, onOpenInWorkbench, slug,
 }: {
   northStar: string;
   futures: Future[];
@@ -65,6 +65,9 @@ export function Futures({
   onSetAreas: (pairs: { id: number; area: string }[]) => void;
   onConvergeDraft?: (ids: number[], mode: 'tickets' | 'epic') => Promise<ConvergeDraft[]>;
   onConvergeCreate: (drafts: ConvergeDraft[], retire: number[]) => void;
+  // #321 — send the idea to the Workbench canvas (creating its card if it
+  // doesn't have one yet) and open it there.
+  onOpenInWorkbench: (futureId: number) => Promise<void> | void;
 }) {
   // ---- north star strip (collapsible band, always on top) ----
   // #307 — collapsed is the DEFAULT arrival state: the band is a paragraph you
@@ -707,7 +710,8 @@ export function Futures({
               inTray={selected ? tray.has(selected.id) : false}
               onToggleTray={selected ? () => toggleTray(selected.id) : undefined}
               onSelect={setSelId} onShape={onShape}
-              onPromote={onPromote} onEdit={onEdit} onAlign={onAlign} onDelete={onDelete} />
+              onPromote={onPromote} onEdit={onEdit} onAlign={onAlign} onDelete={onDelete}
+              onOpenInWorkbench={onOpenInWorkbench} />
 
             <div className="psky-rail-scroll">
               {/* What still rides the north star with no star of its own — the
@@ -1015,7 +1019,7 @@ function QueueCard({
 // queue is just the other door in.
 function SelectedPanel({
   selected, themeLabel, galaxy, kind, inTray, onToggleTray, onSelect, onShape,
-  onPromote, onEdit, onAlign, onDelete,
+  onPromote, onEdit, onAlign, onDelete, onOpenInWorkbench,
 }: {
   selected: Future | null;
   themeLabel: string;
@@ -1029,6 +1033,7 @@ function SelectedPanel({
   onEdit: (id: number, patch: { title: string; note: string; area: string }) => void;
   onAlign: (id: number, alignment: Alignment | '') => void;
   onDelete: (id: number) => void;
+  onOpenInWorkbench: (futureId: number) => Promise<void> | void;
 }) {
   const [editing, setEditing] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -1036,7 +1041,11 @@ function SelectedPanel({
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
   const [area, setArea] = useState('');
-  useEffect(() => { setEditing(false); setPicking(false); setAdopting(false); }, [selected?.id]);
+  // Guards against two fast clicks racing two POSTs for the same idea (the
+  // second one would 409) — reset whenever the selected idea changes so it
+  // can never stick on past this idea's own call.
+  const [wbBusy, setWbBusy] = useState(false);
+  useEffect(() => { setEditing(false); setPicking(false); setAdopting(false); setWbBusy(false); }, [selected?.id]);
 
   if (!selected) {
     return (
@@ -1182,6 +1191,14 @@ function SelectedPanel({
             title="Put it in orbit around a star or a planet">⊙ Orbit…</button>
         )}
         <button className="act primary" onClick={() => onPromote(f)}>→ Roadmap</button>
+        <button className="act" disabled={wbBusy}
+          onClick={() => {
+            setWbBusy(true);
+            Promise.resolve(onOpenInWorkbench(f.id)).finally(() => setWbBusy(false));
+          }}
+          title="Put it on the planning canvas (or find its card if it's already there) and open it.">
+          Open in Workbench
+        </button>
         {onToggleTray && (
           <button className={`act ${inTray ? 'in-tray' : ''}`} onClick={onToggleTray}
             title="The converge tray — pick ideas across the sky, then converge the set into tickets">

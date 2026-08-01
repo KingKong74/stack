@@ -10,9 +10,11 @@ import {
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, convergeFutures,
   type ConvergeDraft, assistRoadmapItem,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
-  replanProject, startAutopilot, AuthError, takeReviewPrefill,
+  replanProject, startAutopilot, AuthError, ApiError, takeReviewPrefill,
+  getWorkbench, addWorkbenchCard,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
+import { planWorkbenchOpen } from '../lib/workbenchOpen';
 import { ExportBriefModal } from '../components/ExportBriefModal';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Quality } from '../detail/Quality';
@@ -661,6 +663,26 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     setRoadModal({ open: true, priority: 'should', title: f.title, note: f.note, fromNote: null, editing: null });
   };
 
+  // #321 — the sidebar's "Open in Workbench": create the idea's card if it
+  // doesn't have one yet (planWorkbenchOpen decides which), then navigate to
+  // it. The Workbench tab fetches its own data on mount, so there's nothing
+  // to refresh here.
+  const openFutureInWorkbench = (futureId: number) =>
+    guard(async () => {
+      try {
+        const wb = await getWorkbench(slug);
+        const plan = planWorkbenchOpen(wb.cards, futureId);
+        if (plan.action === 'create') await addWorkbenchCard(slug, { kind: 'polaris', futureId, x: plan.x, y: plan.y });
+      } catch (e) {
+        // A 409 from POST /cards means the partial unique index on future_id
+        // refused a second card — another tab (or a lost race between two
+        // clicks) already put this idea on the canvas. The user's intent is
+        // still met, so only that case is swallowed.
+        if (!(e instanceof ApiError && e.status === 409)) throw e;
+      }
+      go.detail(slug, 'workbench', `f${futureId}`);
+    });
+
   // Promote a note into the existing create-bug / create-roadmap flow, prefilled.
   // The Workbench hands over the note id and the text it is currently showing —
   // it holds cards, not Note rows, and the text on the card IS the note's text.
@@ -909,7 +931,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onConvergeDraft={(ids, mode) => convergeFutures(slug, ids, mode)}
             onConvergeCreate={convergeCreate}
             onShape={shapeFuture}
-            onDelete={removeFuture} onPromote={promoteFuture} />
+            onDelete={removeFuture} onPromote={promoteFuture}
+            onOpenInWorkbench={openFutureInWorkbench} />
         )}
         {tab === 'workbench' && (
           <Workbench slug={slug} geminiReady={data.geminiReady} highlightId={highlightId}
