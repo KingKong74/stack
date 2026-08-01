@@ -7,6 +7,7 @@
 //   stack tree [--repo <path>] [--json]        the branch navigator
 //   stack start-session [<slug>] [--item N]    start an automation session
 //   stack list-sessions [<slug>] [--limit N]   list recent automation sessions
+//   stack agents [list|show|set|reset|assign]  the agent spawn profile catalogue
 //   stack help
 const { join } = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -22,6 +23,7 @@ const COMMANDS = {
   'seed-checks': { script: 'stack-seed-checks.mjs', blurb: 'sync the regression suite onto a project (--dry, --run)' },
   'seed-galaxy': { script: 'stack-seed-galaxy.mjs', blurb: 'shape a flat idea funnel into stars and planets (dry unless --run)' },
   skills: { script: 'stack-skills.mjs', blurb: 'sync the managed skill tree onto this host (--dry)' },
+  agents: { script: 'stack-agents.mjs', blurb: 'list and customise the agent spawn profiles (list, show, set, reset, assign)' },
 };
 
 const [cmd, ...rest] = process.argv.slice(2);
