@@ -55,7 +55,9 @@ export function runShape(r) {
 // has come due (the armed nightly per automode project, due calendar rows,
 // manual Run-now presses) and hands over at most ONE job at a time. All times
 // are the DISPATCHER's local clock, passed in as ?local=YYYY-MM-DDTHH:MM&dow=N
-// — the server's own TZ never matters.
+// — the server's own TZ never matters. #243 adds an `advise` lane: a
+// read-only, non-serialised job that runs the host-side merge advisor
+// against a branch and reports its text back onto the job row.
 // ---------------------------------------------------------------------------
 export const autopilotGlobal = Router();
 
@@ -122,6 +124,11 @@ function jobShape(r) {
     sessionKind: cleanKind(r.session_kind),
     agenda: Array.isArray(r.agenda) ? r.agenda : [],
     area: r.area || '',
+    // #243 — an advise job's target branch, and whether a pass has reported
+    // back. The report text itself is fetched separately (GET .../advice) —
+    // these rows ride the Mission Control poll and stay light.
+    branch: r.branch || '',
+    adviceReady: !!r.advice_ready,
     when: relativeTime(r.finished_at || r.started_at || r.created_at) || 'just now',
   };
 }
@@ -136,8 +143,19 @@ const SCHEDULE_SELECT = `
     JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
     LEFT JOIN roadmap_items ri ON ri.id = s.item_id`;
 
-const JOB_SELECT = `
-  SELECT j.*, p.slug, p.name AS project_name, ri.title AS item_title
+// #243 — everything on autopilot_jobs EXCEPT advice: these rows ride the
+// Mission Control poll and the report can run to kilobytes. advice_ready is
+// a boolean stand-in; the text itself is fetched separately (GET
+// .../jobs/:id/advice), only when a human opens it. control.js's own jobs
+// query reads off this same SELECT rather than growing its own `j.*` copy —
+// a job row shaped by jobShape() must come from here, or advice_ready drifts
+// silently false and the report text rides a list payload it was built to avoid.
+export const JOB_SELECT = `
+  SELECT j.id, j.project_id, j.kind, j.item_id, j.schedule_id, j.night_date, j.status, j.detail,
+         j.created_at, j.claimed_at, j.started_at, j.finished_at, j.not_before,
+         j.session_kind, j.agenda, j.area, j.branch,
+         (j.advice IS NOT NULL AND j.advice <> '') AS advice_ready,
+         p.slug, p.name AS project_name, ri.title AS item_title
     FROM autopilot_jobs j
     JOIN projects p ON p.id = j.project_id AND p.deleted_at IS NULL
     LEFT JOIN roadmap_items ri ON ri.id = j.item_id`;
@@ -277,6 +295,34 @@ autopilotGlobal.post('/merge', async (req, res) => {
   const { rows } = await q(
     `INSERT INTO autopilot_jobs (project_id, kind, item_id, detail) VALUES ($1,'merge',$2,$3) RETURNING id`,
     [project.id, itemId, detail]);
+  const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [rows[0].id]);
+  res.status(201).json(jobShape(full.rows[0]));
+});
+
+// POST /advise — queue a pre-merge conflict-advisor pass (#243) for a branch.
+// The host dispatcher (the only thing with the repo) runs the read-only
+// scripts/run_merge_advisor.sh against origin/<branch> and PATCHes its report
+// text back. { slug, branch, itemId? }.
+// Advising never touches the working tree, index or refs, so — unlike
+// /merge — an unrelated open job never blocks it: it's always safe to queue
+// alongside other automation.
+autopilotGlobal.post('/advise', async (req, res) => {
+  const b = req.body || {};
+  const project = await projectBySlug(String(b.slug || ''));
+  if (!project) return res.status(404).json({ error: 'No such project.' });
+  const branch = String(b.branch || '').trim();
+  if (!branch) return res.status(400).json({ error: 'branch required.' });
+  const itemId = Number.isFinite(Number(b.itemId)) && b.itemId !== '' && b.itemId != null
+    ? Number(b.itemId) : null;
+  const open = await q(
+    `${JOB_SELECT} WHERE j.project_id = $1 AND j.kind = 'advise' AND j.branch = $2
+      AND j.status IN ('queued','claimed','running')
+      ORDER BY j.created_at LIMIT 1`, [project.id, branch]);
+  if (open.rows.length) return res.status(200).json(jobShape(open.rows[0]));
+  const detail = `advise origin/${branch} vs main`;
+  const { rows } = await q(
+    `INSERT INTO autopilot_jobs (project_id, kind, item_id, branch, detail) VALUES ($1,'advise',$2,$3,$4) RETURNING id`,
+    [project.id, itemId, branch, detail]);
   const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [rows[0].id]);
   res.status(201).json(jobShape(full.rows[0]));
 });
@@ -519,19 +565,32 @@ autopilotGlobal.get('/next', async (req, res) => {
 // job's status mid-run and kills the session (tmux path) within ~30s; the job
 // stays paused with partial work on its branch. (A pre-#150 dispatcher just
 // finishes and overwrites the status — nothing breaks, nothing dies.)
+// #243 adds { advice }: an advise job's host pass reporting its report text
+// back. Written only when the key is present, so an omitted advice never
+// clears one already stored; capped at 20000 characters with a visible
+// truncation marker, because a silently-cut report reads as a complete one.
 autopilotGlobal.patch('/jobs/:id', async (req, res) => {
   const b = req.body || {};
   const status = ['running', 'done', 'failed', 'queued', 'paused'].includes(b.status) ? b.status : null;
   if (!status) return res.status(400).json({ error: 'status must be running|done|failed|queued|paused.' });
+  if ('advice' in b && typeof b.advice !== 'string') {
+    return res.status(400).json({ error: 'advice must be a string.' });
+  }
   const clearHold = 'notBefore' in b && b.notBefore == null;
   const stampCol = status === 'running' ? 'started_at = now()'
     : status === 'queued' || status === 'paused' ? 'claimed_at = NULL' : 'finished_at = now()';
   const guard = status === 'paused' ? `AND status IN ('queued','claimed','running')` : '';
+  const ADVICE_LIMIT = 20000;
+  let advice = 'advice' in b ? b.advice : null;
+  if (advice != null && advice.length > ADVICE_LIMIT) {
+    const marker = '\n\n[truncated — report exceeded 20000 characters]';
+    advice = advice.slice(0, ADVICE_LIMIT - marker.length) + marker;
+  }
   const r = await q(
-    `UPDATE autopilot_jobs SET status = $1, detail = COALESCE($2, detail),
+    `UPDATE autopilot_jobs SET status = $1, detail = COALESCE($2, detail), advice = COALESCE($5, advice),
             not_before = CASE WHEN $4 THEN NULL ELSE not_before END, ${stampCol}
       WHERE id = $3 ${guard} RETURNING id`,
-    [status, 'detail' in b ? String(b.detail || '').slice(0, 500) : null, req.params.id, clearHold]);
+    [status, 'detail' in b ? String(b.detail || '').slice(0, 500) : null, req.params.id, clearHold, advice]);
   if (!r.rowCount) {
     if (status === 'paused') {
       const exists = await q('SELECT status FROM autopilot_jobs WHERE id = $1', [req.params.id]);
@@ -556,6 +615,33 @@ autopilotGlobal.delete('/jobs/:id', async (req, res) => {
     return res.status(404).json({ error: 'No such job.' });
   }
   res.json({ ok: true });
+});
+
+// GET /jobs/:id/advice — the merge advisor's report text (#243), kept apart
+// from the job list precisely so the long text is fetched only when a human
+// opens it. advice is the raw text or null — never coerced to '' — because
+// null means no pass has reported back yet, not "no conflicts found".
+autopilotGlobal.get('/jobs/:id/advice', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id.' });
+  const { rows } = await q(
+    `SELECT j.id, j.branch, j.kind, j.status, j.detail, j.advice,
+            j.finished_at, j.started_at, j.created_at, p.slug
+       FROM autopilot_jobs j
+       JOIN projects p ON p.id = j.project_id
+      WHERE j.id = $1`, [id]);
+  if (!rows.length) return res.status(404).json({ error: 'No such job.' });
+  const r = rows[0];
+  res.json({
+    id: String(r.id),
+    slug: r.slug,
+    branch: r.branch || '',
+    kind: r.kind,
+    status: r.status,
+    detail: r.detail || '',
+    advice: r.advice || null,
+    when: relativeTime(r.finished_at || r.started_at || r.created_at) || 'just now',
+  });
 });
 
 // GET /runs -> recent run history, newest first

@@ -592,7 +592,7 @@ CREATE TABLE IF NOT EXISTS autopilot_schedule (
 CREATE TABLE IF NOT EXISTS autopilot_jobs (
   id          BIGSERIAL PRIMARY KEY,
   project_id  BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  kind        TEXT NOT NULL DEFAULT 'manual',   -- manual | nightly | scheduled | revert (#128) | resume (#142)
+  kind        TEXT NOT NULL DEFAULT 'manual',   -- manual | nightly | scheduled | revert (#128) | resume (#142) | advise (#243)
   item_id     BIGINT,                           -- pin to one roadmap item (manual/scheduled/revert/resume)
   schedule_id BIGINT,                           -- the autopilot_schedule row that spawned it
   night_date  DATE,                             -- nightly dedup: one per project per local date
@@ -630,6 +630,20 @@ ALTER TABLE autopilot_schedule ADD COLUMN IF NOT EXISTS area         TEXT  NOT N
 ALTER TABLE autopilot_jobs     ADD COLUMN IF NOT EXISTS session_kind TEXT  NOT NULL DEFAULT 'build';
 ALTER TABLE autopilot_jobs     ADD COLUMN IF NOT EXISTS agenda       JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE autopilot_jobs     ADD COLUMN IF NOT EXISTS area         TEXT  NOT NULL DEFAULT '';
+
+-- #243 — an `advise` job runs the host-side merge advisor
+-- (scripts/run_merge_advisor.sh) against a branch and stores its report here.
+-- The server never runs git; the host dispatcher does, the same dial-out
+-- pattern as `merge`, and PATCHes the text back when the pass finishes.
+-- `branch` is STRUCTURED on purpose: a merge job's branch round-trips through
+-- the free-text `detail` string and three separate places re-parse it. An
+-- advise job carries its branch in a column instead, so the strip can match
+-- on it directly rather than substring-matching prose. (Merge's existing
+-- detail contract is deliberately left alone.)
+-- `advice` is NULL until a pass reports back, and NULL means NO PASS RAN —
+-- never "no conflicts". Same rule as a NULL review_verdict.
+ALTER TABLE autopilot_jobs ADD COLUMN IF NOT EXISTS branch TEXT NOT NULL DEFAULT '';
+ALTER TABLE autopilot_jobs ADD COLUMN IF NOT EXISTS advice TEXT;
 
 -- Audit area (#143, named by #145): a check can exercise a function of the app, not just
 -- probe a page — request method + optional body, plus a JSON-path assertion
