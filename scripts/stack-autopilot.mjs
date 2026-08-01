@@ -83,7 +83,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadStackEnv, logStderr, git } from '../hook/stack-post.mjs';
-import { laneFor, branchSlug, freeBranchName } from './lib/lane.mjs';
+import { laneFor, laneForBug, laneForAudit, freeBranchName } from './lib/lane.mjs';
 
 loadStackEnv();
 
@@ -527,14 +527,15 @@ function execSession(prompt, cwd, capMin) {
 // marked fixed — a pushed fix moves its status to 'fixing'; the human closes.
 async function runBug(bug, capMin) {
   const key = String(bug.id); // client shape: id IS the bug key (BUG-N)
-  const slugPart = branchSlug(bug.title);
-  const branch = `auto/${key.toLowerCase()}${slugPart ? `-${slugPart}` : ''}`;
   const startedAt = new Date().toISOString();
   log(`picked ${key} [${bug.severity}] ${bug.title} (cap ${Math.round(capMin)}m)`);
 
   const wt = join(lockDir, 'autopilot', `${SLUG}-${key.toLowerCase()}`);
   git(REPO, ['worktree', 'remove', '--force', wt]);
-  git(REPO, ['branch', '-D', branch]);
+
+  const branch = resolveRunBranch(laneForBug(bug));
+  if (branch !== laneForBug(bug)) log(`${key}: ${laneForBug(bug)} is taken — building on ${branch} instead`);
+
   mkdirSync(join(lockDir, 'autopilot'), { recursive: true });
   const added = git(REPO, ['worktree', 'add', wt, '-b', branch]);
   if (!existsSync(join(wt, '.git'))) throw new Error(`worktree add failed (${added || 'no output'})`);
@@ -676,11 +677,15 @@ async function auditNight() {
   log(`AUDIT session${scope ? ` (area "${scope}")` : ''}: budget ${MINUTES}m.`);
 
   const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const branch = `auto/audit-${day}`;
   const startedAt = new Date().toISOString();
   const wt = join(lockDir, 'autopilot', `${SLUG}-audit`);
   git(REPO, ['worktree', 'remove', '--force', wt]);
-  git(REPO, ['branch', '-D', branch]);
+
+  // Scoped by area so two audits on one day (a broad sweep, then a scoped
+  // one) don't collide on the same branch and delete each other's work.
+  const branch = resolveRunBranch(laneForAudit(day, scope));
+  if (branch !== laneForAudit(day, scope)) log(`audit: ${laneForAudit(day, scope)} is taken — building on ${branch} instead`);
+
   mkdirSync(join(lockDir, 'autopilot'), { recursive: true });
   const added = git(REPO, ['worktree', 'add', wt, '-b', branch]);
   if (!existsSync(join(wt, '.git'))) throw new Error(`worktree add failed (${added || 'no output'})`);
