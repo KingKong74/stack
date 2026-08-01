@@ -2536,10 +2536,22 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
    API still gets the whole viewport. The stage stops being a fixed box and
    becomes whatever is left after the chrome; Galaxy.tsx MEASURES that height
    rather than assuming one, so the sky re-lays out into it. */
+/* z-index 40 matches .term-fullscreen and is deliberate for the same reason:
+   it clears the page but stays UNDER `.overlay` (50), so the judge queue and
+   every other modal opened from this tab still lands on top of the sky. */
 .psky.full {
-  position: fixed; inset: 0; z-index: 60; border-radius: 0; border: none;
+  position: fixed; inset: 0; z-index: 40; border-radius: 0; border: none;
   height: 100vh; max-height: 100vh;
 }
+/* The control row that holds the ⤢ is a SIBLING of .psky, so full screen
+   covers it. The way out has to live inside the thing that covered it. */
+.psky-exitfull {
+  position: absolute; z-index: 13; left: 14px; top: 12px;
+  display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px;
+  border: 1px solid var(--line-2); border-radius: 5px; background: var(--gx-plate);
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+}
+.psky-exitfull:hover { border-color: var(--accent); color: var(--accent); }
 .psky.full .psky-main { min-height: 0; }
 .psky.full .pgx-stage { flex: 1; height: auto; min-height: 0; }
 .psky.full .pgx-board-wrap { min-height: 0; overflow-y: auto; }
@@ -2562,7 +2574,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
   background: var(--accent); color: var(--on-accent, #fff);
 }
 
-.psky { display: flex; border: 1px solid var(--line-2); border-radius: 14px; background: var(--card); overflow: hidden; }
+.psky { display: flex; position: relative; border: 1px solid var(--line-2); border-radius: 14px; background: var(--card); overflow: hidden; }
 .psky-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
 
 .psky-chips { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-bottom: 1px solid var(--line-2); flex-wrap: wrap; }

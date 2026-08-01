@@ -548,6 +548,12 @@ export function Futures({
       {clusterErr && <div className="psky-cluster-err">✧ {clusterErr}</div>}
 
         <div className={`psky${full ? ' full' : ''}${railOpen ? '' : ' railed'}`}>
+          {/* The control row is a sibling, so full screen covers the ⤢ that got
+              you here. The way out lives inside the thing that covered it. */}
+          {full && (
+            <button className="psky-exitfull" onClick={toggleFull}
+              title="Leave full screen (esc also works)">⤡ Leave full screen</button>
+          )}
           {/* ---- the sky ---- */}
           <div className="psky-main">
             {view === 'sky' && (
