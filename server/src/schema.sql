@@ -869,3 +869,24 @@ CREATE TABLE IF NOT EXISTS skill_reports (
   detail      TEXT NOT NULL DEFAULT '',          -- what the last sync did, for the UI
   reported_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------------------
+-- AGENT PROFILES — customisations over the agent spawn-and-customisation
+-- engine (server/src/agents.js). This table holds ONLY overrides: the two
+-- built-in profiles ('executor', 'reviewer') live in code and are NOT seeded
+-- into this table, so a fresh database and an untouched install spawn
+-- identically, and a builtin only gets a row here once someone actually
+-- overrides it. `mergeProfiles()` in agents.js is what layers a stored row
+-- over its builtin's fields at read time.
+CREATE TABLE IF NOT EXISTS agent_profiles (
+  id          BIGSERIAL PRIMARY KEY,
+  key         TEXT NOT NULL UNIQUE,          -- the spawn name, e.g. 'executor'
+  name        TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  prompt      TEXT NOT NULL DEFAULT '',
+  model       TEXT NOT NULL DEFAULT '',      -- '' = inherit the spawn's executor model
+  tools       JSONB NOT NULL DEFAULT '[]',
+  enabled     BOOLEAN NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

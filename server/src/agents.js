@@ -190,8 +190,9 @@ export function resolveSpawn({ profiles, requested, executorModel = '' } = {}) {
 
 // Merges stored/custom profiles over BUILTIN_PROFILES by key. A stored
 // profile with a builtin's key overrides that builtin's fields but keeps
-// `builtin: true`, so unit 2 can refuse to delete it; a stored profile with a
-// new key stays `builtin: false`. Never mutates its input. Sorted by key.
+// `builtin: true`, so the route can refuse to delete it and reset it instead;
+// a stored profile with a new key stays `builtin: false`. Never mutates its
+// input. Sorted by key.
 export function mergeProfiles(stored) {
   const byKey = new Map(BUILTIN_PROFILES.map((p) => [p.key, { ...p }]));
   if (Array.isArray(stored)) {
