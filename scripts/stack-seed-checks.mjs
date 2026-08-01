@@ -91,6 +91,10 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Checks — per-check history', url: u(`/api/projects/${slug}/checks/history?limit=5`), auth: true },
     { name: 'Roadmap — collection', url: u(`/api/projects/${slug}/roadmap`), auth: true, json_path: 'must' },
     { name: 'Futures — collection', url: u(`/api/projects/${slug}/futures`), auth: true, json_path: '0.title' },
+    // #312 — the whole Polaris galaxy is derived from this field: no isStar and
+    // every idea renders loose, with no star, no planet and no moon anywhere in
+    // the sky. Existence only — false is the common value and a real answer.
+    { name: 'Futures — galaxy shape field', url: u(`/api/projects/${slug}/futures`), auth: true, json_path: '0.isStar' },
     { name: 'Notes — collection', url: u(`/api/projects/${slug}/notes`), auth: true, expect_status: 200 },
     { name: 'Checks — collection', url: u(`/api/projects/${slug}/checks`), auth: true, json_path: '0.name' },
     { name: 'Tips — app-wide library', url: u('/api/tips'), auth: true, json_path: '0.name' },

@@ -48,7 +48,8 @@ templates/ stack-agent-context.md — the canonical portable agent manual (singl
   modal state), Settings, Control (Mission Control — six rooms: Now / Nights / Plan / Build /
   Review / Roles, behind a live strip and a persistent right rail), Terminal, Skills.
   `detail/` holds the project tabs: Overview, Quality (#278 — Bugs and Audit merged into
-  one page), Roadmap (Board / Tiers / Parked), Futures (the Polaris sky), Tips, Notes, Activity.
+  one page), Roadmap (Board / Tiers / Parked), Futures (the Polaris galaxy — Sky / Board / List,
+  geometry in `detail/Galaxy.tsx`), Tips, Notes, Activity.
 - `lib/brief.ts` — the exportable resume brief + the `DIRECTIVES` catalogue (keys mirror the
   server's `SESSION_DEFAULTS`). Pure formatting; data arrives via store.ts callers.
 - `lib/termClipboard.ts` — copy/paste for both xterms. A browser is not a terminal emulator: ⌃C
@@ -154,6 +155,18 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   `term:<name>`. The claim is the don't-re-pick marker and stays until a human merges and ticks.
 - **`built_note`** — what actually landed, PATCHed by the completing session alongside `done:true`.
   The Review room verdicts against it. Always write one.
+- **A future's SHAPE in the Polaris galaxy (#312) is derived, never stored.** There is no `kind`
+  column and there must not be one: `is_star` = ★ its own orbit; parent is a star = ● a planet;
+  parent is a planet = ○ a moon; no parent + judged = ◦ one of the north star's three shells
+  (`alignment` picks which, on-course innermost); no parent + unjudged = · the drift belt, which is
+  also the judge queue. `PATCH /futures/:id` owns the invariants the client reads back —
+  **star → planet → moon is the whole depth**, adopting an idea demotes a star (that IS what adopting
+  one is), and un-starring returns its planets to the shells in the same statement, because nothing
+  loose can hold planets. Never write these columns from SQL directly; the derivation has no other
+  guard. `magnitude` (1–5, how much work) is **nullable on purpose** — an unsized idea draws at its
+  smallest and the panel says "not sized yet" rather than the sky inventing an estimate nobody gave.
+  `area` survives as a plain tag (the list groups by it, ✧ Cluster suggests it) but no longer decides
+  where anything sits.
 - **An empty second-model read means NO PASS RAN, not "nothing found".** `review_verdict` /
   `architect_verdict` NULL renders as NO REVIEW, deliberately not as green. Same rule anywhere else
   an agent's opinion is stored.

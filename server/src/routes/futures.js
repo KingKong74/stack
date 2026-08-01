@@ -136,6 +136,9 @@ futures.patch('/:id', async (req, res) => {
   // branch — nothing loose can hold planets — so the same statement returns its
   // planets to the north star's shells. One CTE rather than two round trips:
   // the two writes have to agree or the sky renders a shape with no name.
+  // Only the planets are cut: a moon keeps pointing at its planet, so the
+  // client draws it loose for now and it becomes a moon again the moment that
+  // planet gets a star. Forgetting the relationship would be the lossy choice.
   const detach = req.body?.isStar === false && !adopting;
   vals.push(req.project.id, id);
   const pIdx = i, idIdx = i + 1;
