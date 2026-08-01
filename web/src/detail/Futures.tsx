@@ -56,7 +56,10 @@ export function Futures({
   onEdit: (id: number, patch: { title: string; note: string; area: string }) => void;
   onAlign: (id: number, alignment: Alignment | '') => void;
   onDelete: (id: number) => void;
-  onPromote: (future: Future) => void;
+  // #314 — promoting a star has to carry its orbit with it, not just its own
+  // title and note: `orbit` is every idea that rides underneath it (planets
+  // and their moons for a star, moons for a planet, empty for a plain idea).
+  onPromote: (future: Future, orbit: Future[]) => void;
   // Where an idea sits in the galaxy and how big it is (#312) — one call for
   // all three, because promoting and adopting are each a move of both.
   onShape: (id: number, patch: { parentId?: number | null; isStar?: boolean; magnitude?: number | null }) => void;
@@ -195,6 +198,20 @@ export function Futures({
   const rows = useMemo(() => flattenGalaxy(galaxy), [galaxy]);
   const selected = selId != null ? galaxy.all.find((f) => f.id === selId) || null : null;
   const selKind: GxKind | null = selected ? galaxy.kindOf(selected) : null;
+
+  // #314 — promoting an idea has to carry its orbit into the roadmap draft.
+  // Walks `galaxy` (the arrived/windowed model), the same one the panel's
+  // "PLANETS IN ITS ORBIT" list is drawn from, so what gets promoted matches
+  // what the human can see — never the full `futures` list. `orbitIds` returns
+  // the idea itself first, so drop that and hand the rest up as `Future`s: the
+  // caller needs their titles and notes, and re-deriving them from bare ids
+  // would just redo the walk this already did.
+  const promoteWithOrbit = (f: Future) => {
+    const orbit = orbitIds(galaxy, f.id).slice(1)
+      .map((id) => galaxy.all.find((x) => x.id === id))
+      .filter((x): x is Future => !!x);
+    onPromote(f, orbit);
+  };
 
   // #259 — the views are two doors into ONE selection, so switching has to
   // CARRY it rather than merely keep the id. Landing on a view where the
@@ -745,7 +762,7 @@ export function Futures({
               orbitExtra={selected ? orbitIds(galaxy, selected.id).length - 1 : 0}
               onToggleTray={selected ? () => toggleTray(selected.id) : undefined}
               onSelect={setSelId} onShape={onShape}
-              onPromote={onPromote} onEdit={onEdit} onAlign={onAlign} onDelete={onDelete} />
+              onPromote={promoteWithOrbit} onEdit={onEdit} onAlign={onAlign} onDelete={onDelete} />
 
             <div className="psky-rail-scroll">
               {/* What still rides the north star with no star of its own — the

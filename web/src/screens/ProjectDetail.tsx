@@ -171,8 +171,13 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // Bumped whenever a note is deleted from outside the canvas, so the Workbench
   // reloads instead of drawing a card whose note no longer exists.
   const [notesNonce, setNotesNonce] = useState(0);
-  const [promotedFuture, setPromotedFuture] = useState<number | null>(null);
-  const [pendingFuture, setPendingFuture] = useState<number | null>(null);
+  // #314 — the ids a promotion actually carried through: the idea plus its
+  // orbit (planets/moons), never just the one that was clicked. Keep-or-delete
+  // has to cover the whole set, or a deleted star leaves its planets pointing
+  // at a row that no longer exists (the server only cuts them loose when a
+  // star is UN-starred, not when it's deleted).
+  const [promotedFuture, setPromotedFuture] = useState<number[] | null>(null);
+  const [pendingFuture, setPendingFuture] = useState<number[] | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [checksBusy, setChecksBusy] = useState(false);
@@ -487,6 +492,16 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, futures: futures.filter((f) => f.id !== fid) });
     });
 
+  // #314 — keep-or-delete after a promotion has to cover the whole set that
+  // rode through (the idea plus its orbit), or a deleted star leaves its
+  // planets pointing at a row that's gone.
+  const removeFutures = (ids: number[]) =>
+    guard(async () => {
+      for (const id of ids) await deleteFuture(slug, id);
+      const removed = new Set(ids);
+      setData({ ...data, futures: futures.filter((f) => !removed.has(f.id)) });
+    });
+
   // Applies a ✧ Cluster batch in one go — one state write, so N area patches
   // never clobber each other on the shared snapshot.
   const applyFutureAreas = (pairs: { id: number; area: string }[]) =>
@@ -653,12 +668,20 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, directives: next });
     });
 
-  // Promote an idea into the existing create-roadmap flow, prefilled; after the
-  // item lands, offer to keep or delete the original idea (delete tombstones a
-  // hook idea so the next push won't re-extract it).
-  const promoteFuture = (f: Future) => {
-    setPendingFuture(f.id);
-    setRoadModal({ open: true, priority: 'should', title: f.title, note: f.note, fromNote: null, editing: null });
+  // Promote an idea (and everything in its orbit) into the existing
+  // create-roadmap flow, prefilled; after the item lands, offer to keep or
+  // delete the original idea AND its orbit (delete tombstones a hook idea so
+  // the next push won't re-extract it). The note carries the idea's own words
+  // first — untouched when there's no orbit — with the orbit appended as a
+  // plain list, same '- title — note' shape the converge tray's epic draft
+  // already uses.
+  const promoteFuture = (f: Future, orbit: Future[]) => {
+    setPendingFuture([f.id, ...orbit.map((o) => o.id)]);
+    const note = orbit.length
+      ? [f.note, `Orbiting this idea:\n${orbit.map((o) => `- ${o.title}${o.note ? ` — ${o.note}` : ''}`).join('\n')}`]
+        .filter(Boolean).join('\n\n')
+      : f.note;
+    setRoadModal({ open: true, priority: 'should', title: f.title, note, fromNote: null, editing: null });
   };
 
   // Promote a note into the existing create-bug / create-roadmap flow, prefilled.
@@ -1053,14 +1076,20 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           onConfirm={() => { const it = confirmRoadDelete; setConfirmRoadDelete(null); removeRoad(it); }}
           onCancel={() => setConfirmRoadDelete(null)} />
       )}
-      {promotedFuture != null && (
-        <ConfirmModal
-          title="Promoted to a roadmap item"
-          body="Keep the original idea in Futures, or delete it now that it's on the roadmap?"
-          confirmLabel="Delete idea" cancelLabel="Keep idea" danger
-          onConfirm={() => { const id = promotedFuture; setPromotedFuture(null); removeFuture(id); }}
-          onCancel={() => setPromotedFuture(null)} />
-      )}
+      {promotedFuture != null && (() => {
+        const orbitCount = promotedFuture.length - 1;
+        return (
+          <ConfirmModal
+            title="Promoted to a roadmap item"
+            body={orbitCount > 0
+              ? <>Keep the idea and the {orbitCount} that orbit it in Futures, or delete all {promotedFuture.length} now that they're on the roadmap?</>
+              : "Keep the original idea in Futures, or delete it now that it's on the roadmap?"}
+            confirmLabel={orbitCount > 0 ? `Delete ${promotedFuture.length} ideas` : 'Delete idea'}
+            cancelLabel={orbitCount > 0 ? 'Keep ideas' : 'Keep idea'} danger
+            onConfirm={() => { const ids = promotedFuture; setPromotedFuture(null); removeFutures(ids); }}
+            onCancel={() => setPromotedFuture(null)} />
+        );
+      })()}
       {exportOpen && (
         <ExportBriefModal projectName={project.name} onClose={() => setExportOpen(false)}
           loadInput={async () => ({
