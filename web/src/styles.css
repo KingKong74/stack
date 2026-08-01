@@ -4650,6 +4650,13 @@ button.mc-day-chip:hover { border-color: var(--accent); }
   color: var(--muted); background: var(--sand); border-bottom: 1px solid var(--line-2); }
 .rv-selbar button { font-family: var(--mono); font-size: 10.5px; font-weight: 600; color: var(--accent-deep); }
 .rv-selbar button:hover { color: var(--ink); }
+/* #264 unit 2 — the batch verdict is the primary action in this bar, so it
+   gets the same filled-terracotta treatment as every other primary action
+   in this room (.rv-act.primary), pinned to the far end past Clear. */
+.rv-selbar .go { margin-left: auto; padding: 4px 12px; border-radius: 7px;
+  background: var(--accent); color: #fff; }
+.rv-selbar .go:hover:not(:disabled) { background: var(--accent-deep); color: #fff; }
+.rv-selbar .go:disabled { opacity: 0.5; }
 
 /* the reviewer's verdict, as a chip. NO REVIEW is deliberately not green. */
 .rv-verdict { flex: none; padding: 1px 7px; border-radius: 4px; font-family: var(--mono); font-size: 8.5px; font-weight: 500; letter-spacing: 0.04em; }

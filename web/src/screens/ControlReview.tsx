@@ -84,6 +84,13 @@ export function ReviewRoom({ onCount }: {
   // row objects, so a row that has since gained/lost a verdict is compared by
   // identity, not by a stale object reference. The action itself is unit 2.
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  // #264 unit 2 — the optimistic overlay for a batch verdict. Keys of rows a
+  // batch has already PATCHed but whose reload has not landed yet: they must
+  // vanish from the list at once, before the server round-trip finishes, and
+  // this is read INSIDE `lists` below so the filter-chip counts, the rail and
+  // the header total all move together off the one source rather than each
+  // growing its own "minus the ones I just sent" arithmetic.
+  const [pendingTag, setPendingTag] = useState<Set<string>>(new Set());
   const [night, setNight] = useState<string>('');        // the debrief's chosen day
   const [busy, setBusy] = useState(false);
   const [settledNote, setSettledNote] = useState<{ key: string; text: string; undo?: () => void } | null>(null);
@@ -108,8 +115,10 @@ export function ReviewRoom({ onCount }: {
   const [refineSay, setRefineSay] = useState<{ tone: 'note' | 'err'; text: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<ReviewItem | null>(null);
 
+  // Returns the fetch so a batch verdict can await the reload that actually
+  // settles it — nothing else about this changes.
   const load = () => {
-    getReview()
+    return getReview()
       .then((d) => { setData(d); setError(''); onCount?.(d.totals.pending); })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load the review queue.'));
   };
@@ -121,14 +130,19 @@ export function ReviewRoom({ onCount }: {
   // the reviewer said blocked, or the run finished with checks red.
   const lists = useMemo(() => {
     const q = data?.queue ?? [];
-    const active = q.filter((it) => !it.shelved);
+    // A row a batch has already verdicted is filtered out here, not just
+    // hidden in the render — that is the whole optimistic effect, and doing
+    // it at the one place every other list derives from is what keeps the
+    // chip counts, the rail and the header total from disagreeing with
+    // each other for the second or two before the reload lands.
+    const active = q.filter((it) => !it.shelved && !pendingTag.has(key(it)));
     return {
       todo: active,
       flagged: active.filter((it) => it.run?.reviewVerdict === 'blocked' || (it.run?.checksFailing ?? 0) > 0),
       shelved: q.filter((it) => it.shelved),
       settled: data?.settled ?? [],
     } as Record<Filter, ReviewItem[]>;
-  }, [data]);
+  }, [data, pendingTag]);
 
   const list = lists[filter];
   const sel = list.find((it) => key(it) === selId) ?? list[0] ?? null;
@@ -197,6 +211,90 @@ export function ReviewRoom({ onCount }: {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not go through.');
     } finally {
+      setBusy(false);
+    }
+  };
+
+  // #264 unit 2 — the batch verdict. One PATCH per row, fired concurrently:
+  // `act()` reloads on every call and folds a partial failure into one error
+  // string, which is exactly wrong for a batch, so this does its own
+  // PATCH/settle/reload instead of reusing it.
+  const batchVerdict = async (items: ReviewItem[]) => {
+    if (!items.length || busy) return;
+    setBusy(true);
+    const keys = items.map(key);
+    // Snapshot the keys and clear the selection up front — the rows leave
+    // the list immediately, before a single PATCH has resolved.
+    setPendingTag((s) => { const n = new Set(s); for (const k of keys) n.add(k); return n; });
+    setPicked(new Set());
+    try {
+      const results = await Promise.allSettled(
+        items.map((it) => patchRoadmapItem(it.slug, Number(it.id), { review_tag: 'solid' })),
+      );
+      const succeeded = items.filter((_, i) => results[i].status === 'fulfilled');
+      const failed = items.filter((_, i) => results[i].status === 'rejected');
+      // A failed row must not stay hidden behind the optimistic overlay —
+      // it still needs a verdict, so it has to reappear right away rather
+      // than wait on the reload below.
+      if (failed.length) {
+        const failedKeys = new Set(failed.map(key));
+        setPendingTag((s) => { const n = new Set(s); for (const k of failedKeys) n.delete(k); return n; });
+        const firstFailure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+        setError(firstFailure && firstFailure.reason instanceof Error
+          ? firstFailure.reason.message : 'Some changes did not go through.');
+      } else {
+        setError('');
+      }
+      const n = items.length;
+      setSettledNote({
+        key: 'bulk',
+        text: failed.length
+          ? `${succeeded.length} change${succeeded.length === 1 ? '' : 's'} marked solid · ${failed.length} did not go through.`
+          : `${n} change${n === 1 ? '' : 's'} marked solid.`,
+        // One decision in, one decision out: the undo re-PATCHes only the
+        // rows that actually landed, in the same all-concurrent shape.
+        undo: succeeded.length ? () => undoBatch(succeeded) : undefined,
+      });
+    } finally {
+      // The reload is what actually settles the state — the server read is
+      // authoritative and the overlay only ever covers the gap until it
+      // lands. Clearing the WHOLE snapshot here, succeeded and failed alike,
+      // means a reload that fails outright can't leave a row hidden forever.
+      await load();
+      setPendingTag((s) => { const n = new Set(s); for (const k of keys) n.delete(k); return n; });
+      setBusy(false);
+    }
+  };
+
+  // The batch's undo, mirroring batchVerdict's shape rather than reusing
+  // `act()` — `Promise.allSettled` never rejects, so `act()`'s catch could
+  // never fire and a partly-failed revert would report as a clean one. A
+  // batch's error reporting has to be explicit in both directions. No
+  // optimistic overlay here: `pendingTag` HIDES rows, and an undo puts rows
+  // BACK — the honest reload already does that, so there is nothing to fake.
+  const undoBatch = async (items: ReviewItem[]) => {
+    setBusy(true);
+    try {
+      const results = await Promise.allSettled(
+        items.map((it) => patchRoadmapItem(it.slug, Number(it.id), { review_tag: '' })),
+      );
+      const failed = results.filter((r) => r.status === 'rejected');
+      const n = items.length;
+      if (failed.length) {
+        const firstFailure = failed.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+        setError(firstFailure && firstFailure.reason instanceof Error
+          ? firstFailure.reason.message : 'Some changes did not go through.');
+        setSettledNote({
+          key: 'bulk',
+          text: `${n - failed.length} change${n - failed.length === 1 ? '' : 's'} back on the list · ${failed.length} did not go through.`,
+        });
+      } else {
+        setError('');
+        // No further undo — undoing an undo is the Solid button, right there.
+        setSettledNote({ key: 'bulk', text: `${n} change${n === 1 ? '' : 's'} back on the list.` });
+      }
+    } finally {
+      await load();
       setBusy(false);
     }
   };
@@ -437,9 +535,7 @@ export function ReviewRoom({ onCount }: {
         {view === 'queue' && filter === 'todo' && list.length > 1 && (
           <button className="rv-bulk" disabled={busy}
             title="Mark every change in this list solid — for the mornings where you have already seen them all"
-            onClick={() => act(async () => {
-              for (const it of list) await patchRoadmapItem(it.slug, Number(it.id), { review_tag: 'solid' });
-            }, { key: 'bulk', text: `${list.length} change${list.length === 1 ? '' : 's'} marked solid.` })}>
+            onClick={() => batchVerdict(list)}>
             ✓ All solid
           </button>
         )}
@@ -476,6 +572,9 @@ export function ReviewRoom({ onCount }: {
               <div className="rv-selbar">
                 <span>{pickedInList.length} selected</span>
                 <button onClick={() => setPicked(new Set())}>Clear</button>
+                <button className="go" disabled={busy} onClick={() => batchVerdict(pickedInList)}>
+                  ✓ Solid ({pickedInList.length})
+                </button>
               </div>
             )}
             <div className="rv-rail-list">
