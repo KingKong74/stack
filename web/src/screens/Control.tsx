@@ -70,7 +70,9 @@ function trend(now: number, prev: number, higherIsBetter: boolean) {
 const pct1 = (n: number) => `${Math.round(n * 100)}%`;
 
 
-export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
+export function ControlPanel({ initialRoom, full, onToggleFull }: {
+  initialRoom?: ControlRoom; full: boolean; onToggleFull: () => void;
+}) {
   const [data, setData] = useState<ControlData | null>(null);
   const [error, setError] = useState('');
   // #228 — the session planner: null = closed; row = editing; row: null = new.
@@ -720,6 +722,15 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
                 </a>
               ))}
               <div style={{ flex: 1 }} />
+              {/* The room strip is Mission Control's own navigation, not page
+                  chrome — full screen hides the topbar and the Settings tabs
+                  but never this, because the way out has to be where the way
+                  in was. Hiding it would strand you in whichever room you
+                  entered full screen from. */}
+              <button className={`mc14-headbtn${full ? ' on' : ''}`} onClick={onToggleFull} aria-pressed={full}
+                title={full ? 'Leave full screen (esc also works)' : 'Full screen — Mission Control takes the whole window'}>
+                {full ? '⤡' : '⤢'}
+              </button>
               <a className="mc14-headlink" href={hrefTo.terminal()}>▸ Terminal</a>
             </div>
 
