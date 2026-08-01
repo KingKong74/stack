@@ -84,6 +84,10 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadStackEnv, logStderr, git } from '../hook/stack-post.mjs';
 import { laneFor, branchSlug } from './lib/lane.mjs';
+// The agent spawn-and-customisation engine (pure, no DB, no side effects) —
+// see server/src/agents.js. GET /api/agents already merges stored profiles
+// over the builtins server-side, so this script only needs resolveSpawn.
+import { resolveSpawn } from '../server/src/agents.js';
 
 loadStackEnv();
 
@@ -140,6 +144,23 @@ async function api(method, path, body) {
   });
   if (!res.ok) throw new Error(`${method} ${path} → ${res.status}`);
   return res.json();
+}
+
+// Fetch the agent profile catalogue ONCE per run. FAIL-SAFE DIRECTION: an
+// unreachable API must NOT mean "spawn no subagent" — a spawn with no
+// executor leaves the expensive director model to do all the building
+// itself, which is the most expensive arrangement there is. So this path
+// fails to the BUILT-IN EXECUTOR: an empty array here is exactly what
+// resolveSpawn() already turns into the built-in executor with
+// `fallback: true`, i.e. today's hardcoded behaviour, unchanged.
+async function fetchAgentProfiles() {
+  try {
+    const body = await api('GET', '/api/agents');
+    return Array.isArray(body?.profiles) ? body.profiles : [];
+  } catch (e) {
+    log(`could not read agent profiles (${e.message}) — using the built-in executor.`);
+    return [];
+  }
 }
 
 // The run ledger: one row per item attempt lands in the app (the dashboard's
@@ -388,6 +409,10 @@ const cleanModel = (v) => {
 };
 const EXECUTOR_MODEL = cleanModel(arg('executor-model') ?? appSettings.autopilotExecutorModel);
 const ADVISOR_MODEL = cleanModel(arg('advisor-model') ?? appSettings.autopilotAdvisorModel);
+// The agent profile catalogue — fetched once for the whole night, not once
+// per session, since it does not change mid-run. resolveSpawn() turns an
+// empty array (an unreachable/failed fetch) into the built-in executor.
+const AGENT_PROFILES = await fetchAgentProfiles();
 const nightStart = Date.now();
 const elapsedMin = () => (Date.now() - nightStart) / 60_000;
 const remainingMin = () => MINUTES - elapsedMin();
@@ -456,34 +481,20 @@ reason to take over.
 // Kept under the old name so the #228 session kinds read unchanged.
 const advisorPromptBlock = directorBlock;
 
-// The executor subagent (#285): the cheap model with the write access. Defined
-// once so every session kind spawns the same worker. Tools are deliberately the
-// full building set — a read-only executor could not build anything, which was
-// the point of the old arrangement and is not the point of this one.
-const executorAgent = () => ({
-  executor: {
-    description: 'The executor — a cheaper model that does the building. Delegate each commit-sized unit of work to it with the exact files, the intended change and how to verify.',
-    prompt: 'You are the executor working under a director model on one unit of work in a git worktree. '
-      + 'Do exactly what you are asked and nothing more: no refactors nobody asked for, no scope you were not given. '
-      + 'Read what you need, make the change, run whatever verifies it, and report back BRIEFLY — what you changed, '
-      + 'what you verified, and anything you could not do. Do not commit; the director commits. '
-      + 'If the instruction is ambiguous or wrong, say so in your report instead of guessing.',
-    model: EXECUTOR_MODEL || undefined,
-    tools: ['Read', 'Grep', 'Glob', 'Edit', 'Write', 'Bash'],
-  },
-});
-
 // One bounded claude session (#228 — shared by the debug/audit kinds): spawn,
 // meter real usage into the night budget, hand back the parsed result.
 function execSession(prompt, cwd, capMin) {
   // #285 — same inversion for the debug and audit kinds: the advisor directs,
-  // the executor subagent builds.
+  // the executor subagent builds. No `requested` — these kinds keep the plain
+  // executor rather than naming a profile.
+  const resolved = resolveSpawn({ profiles: AGENT_PROFILES, executorModel: EXECUTOR_MODEL });
   const claudeArgs = ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'json'];
   if (ADVISOR_MODEL) claudeArgs.push('--model', ADVISOR_MODEL);
   else if (EXECUTOR_MODEL) claudeArgs.push('--model', EXECUTOR_MODEL);
-  if (ADVISOR_MODEL) claudeArgs.push('--agents', JSON.stringify(executorAgent()));
+  if (ADVISOR_MODEL) claudeArgs.push('--agents', JSON.stringify(resolved.agents));
   log(ADVISOR_MODEL
-    ? `starting claude session (director ${ADVISOR_MODEL}, executor subagent ${EXECUTOR_MODEL || 'CLI default'})…`
+    ? `starting claude session (director ${ADVISOR_MODEL}, executor subagent ${EXECUTOR_MODEL || 'CLI default'}) — `
+      + `agents: ${resolved.keys.join(', ')}${resolved.fallback ? ` (${resolved.reason})` : ''}…`
     : `starting claude session (single model ${EXECUTOR_MODEL || 'CLI default'})…`);
   const run = spawnSync('claude', claudeArgs, {
     cwd,
@@ -907,12 +918,25 @@ Rules for this run:
   // the cheap model, with the write tools it needs to actually build. With no
   // advisor set there is nothing to direct with, so it falls back to exactly the
   // pre-#153 single-model session on the executor model.
+  //
+  // The Polaris hook: the item may name which agent_profiles key should build
+  // it (agentProfile — set from the roadmap item's modal, '' = the default
+  // executor). resolveSpawn() always keeps the executor in the mix so the
+  // director never loses its builder, and falls back to the built-in executor
+  // if the requested key does not exist or the profile catalogue could not be
+  // read.
+  const resolved = resolveSpawn({
+    profiles: AGENT_PROFILES,
+    requested: item.agentProfile || '',
+    executorModel: EXECUTOR_MODEL,
+  });
   const claudeArgs = ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'json'];
   if (ADVISOR_MODEL) claudeArgs.push('--model', ADVISOR_MODEL);
   else if (EXECUTOR_MODEL) claudeArgs.push('--model', EXECUTOR_MODEL);
-  if (ADVISOR_MODEL) claudeArgs.push('--agents', JSON.stringify(executorAgent()));
+  if (ADVISOR_MODEL) claudeArgs.push('--agents', JSON.stringify(resolved.agents));
   log(ADVISOR_MODEL
-    ? `starting claude session (director ${ADVISOR_MODEL}, executor subagent ${EXECUTOR_MODEL || 'CLI default'})…`
+    ? `starting claude session (director ${ADVISOR_MODEL}, executor subagent ${EXECUTOR_MODEL || 'CLI default'}) — `
+      + `agents: ${resolved.keys.join(', ')}${resolved.fallback ? ` (${resolved.reason})` : ''}…`
     : `starting claude session (single model ${EXECUTOR_MODEL || 'CLI default'})…`);
   const run = spawnSync('claude', claudeArgs, {
     cwd: wt,

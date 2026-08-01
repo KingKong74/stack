@@ -200,6 +200,8 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS tier TEXT;
 -- of the last edit. NULL on a parked row = parked before this column existed;
 -- the UI falls back to updated_at and says so.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS skipped_at TIMESTAMPTZ;
+-- '' = the default executor; otherwise the agent_profiles key that should build this item
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS agent_profile TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
 -- Per-project futures: loose directional ideas, curated against the north star
