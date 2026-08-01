@@ -615,6 +615,15 @@ a.tab { display: inline-block; }
 .road-item .t { font-size: 13px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
 .road-item .note { font-size: 11.5px; color: var(--muted); margin-top: 5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
 
+/* #313 — the remove-this-note affordance sits beside the note/refine-note
+   text without disturbing either's own margin/measure rules, which stay
+   keyed off the .note / .refine-note class itself. Shared by the board card
+   and the Parked row. */
+.note-row { display: flex; align-items: flex-start; gap: 4px; }
+.note-row > .note, .note-row > .refine-note { flex: 1 1 auto; min-width: 0; }
+.note-clear { flex: none; background: none; border: none; padding: 0 1px; margin-top: 5px; color: var(--muted); font-size: 13px; line-height: 1.4; cursor: pointer; }
+.note-clear:hover { color: var(--critical); }
+
 /* #251 — section expand / fold. Folding leaves the header as a hairline row;
    expanding drops the grid to one column so the section fills the board and
    its cards get the full width for their text. */
