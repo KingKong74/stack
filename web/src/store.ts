@@ -2,7 +2,7 @@ import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Tip, Tier, ResumeSince,
-  WorkbenchData, WorkbenchCard, WorkbenchEdge, WorkbenchBody, WorkbenchOp,
+  WorkbenchData, WorkbenchCard, WorkbenchEdge, WorkbenchBody, WorkbenchOp, WorkbenchCascade,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1925,8 +1925,9 @@ export async function addWorkbenchCard(
   slug: string,
   input: { kind: 'note'; text: string; x: number; y: number }
        | { kind: 'polaris'; futureId: number; x: number; y: number },
-): Promise<WorkbenchCard> {
-  return request<WorkbenchCard>(`${wbBase(slug)}/cards`, { method: 'POST', body: input });
+): Promise<WorkbenchCard & { cascaded?: WorkbenchCascade }> {
+  return request<WorkbenchCard & { cascaded?: WorkbenchCascade }>(
+    `${wbBase(slug)}/cards`, { method: 'POST', body: input });
 }
 
 // `title` writes THROUGH to the note or idea the card wraps — there is no

@@ -192,6 +192,18 @@ export interface WorkbenchIdea {
   age: string;         // '3w ago'
   days: number;        // the same age as a number, for the Recent filter
   onCanvas: boolean;
+  isStar: boolean;
+}
+
+// Pulling a star onto the canvas also cascades its direct planets in (#326).
+// `cards`/`edges` are only what THIS call newly created — a planet already on
+// the canvas isn't repeated, and `placed` (capped at 24) vs `total` is how the
+// caller knows to say the fan-out was capped.
+export interface WorkbenchCascade {
+  cards: WorkbenchCard[];
+  edges: WorkbenchEdge[];
+  placed: number;
+  total: number;
 }
 
 export interface WorkbenchData {
