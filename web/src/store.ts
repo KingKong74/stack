@@ -2,7 +2,7 @@ import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Tip, Tier, ResumeSince,
-  WorkbenchData, WorkbenchCard, WorkbenchEdge, WorkbenchBody, WorkbenchOp,
+  WorkbenchData, WorkbenchCard, WorkbenchEdge, WorkbenchBody, WorkbenchOp, WorkbenchDebrief,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1965,4 +1965,25 @@ export async function runWorkbenchOp(
 ): Promise<{ card: WorkbenchCard; edge: WorkbenchEdge }> {
   return request<{ card: WorkbenchCard; edge: WorkbenchEdge }>(
     `${wbBase(slug)}/ops`, { method: 'POST', body: input });
+}
+
+// A night's own account of itself, pulled onto the canvas the same way an idea
+// is: `days` narrows the window (server default 21) and is only put on the
+// query string when the caller actually wants something other than that.
+export async function getWorkbenchDebrief(slug: string, days?: number): Promise<WorkbenchDebrief> {
+  const qs = days ? `?days=${encodeURIComponent(days)}` : '';
+  return request<WorkbenchDebrief>(`${wbBase(slug)}/debrief${qs}`);
+}
+
+// Picks travel as KEYS, never text — the server re-reads the words out of the
+// debrief itself, so the canvas can never hold a copy that drifted from the
+// record. `skipped` is why a caller must not assume every pick landed (a key
+// already imported elsewhere, or one that no longer matches, comes back here
+// instead of as a card).
+export async function importWorkbenchDebrief(
+  slug: string,
+  input: { as: 'note' | 'idea'; picks: { key: string; x: number; y: number }[] },
+): Promise<{ cards: WorkbenchCard[]; skipped: { key: string; why: string }[] }> {
+  return request<{ cards: WorkbenchCard[]; skipped: { key: string; why: string }[] }>(
+    `${wbBase(slug)}/debrief`, { method: 'POST', body: input });
 }

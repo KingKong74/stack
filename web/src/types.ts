@@ -201,6 +201,47 @@ export interface WorkbenchData {
   ops: { key: WorkbenchOp; glyph: string; label: string }[];
 }
 
+// The Workbench's second pull source: a night's own account of itself, not an
+// idea. `kind`/`from` are provenance, not content — the picker groups by kind
+// but the text is what a session, a reviewer, an architect or the debrief pass
+// itself actually said.
+export type DebriefInsightKind = 'blocker' | 'next-step' | 'advisor' | 'note';
+export type DebriefInsightFrom = 'session' | 'reviewer' | 'architect' | 'debrief';
+
+// The fingerprint IS the pick id — the server re-reads the words off it on
+// import, so the canvas can never hold a copy that drifted from the record.
+// The whole night's list comes down including what is already imported,
+// exactly like `WorkbenchIdea.onCanvas`: `imported` greys a row rather than
+// the server filtering it out, so the picker can still show it was taken.
+export interface DebriefInsight {
+  key: string;
+  kind: DebriefInsightKind;
+  from: DebriefInsightFrom;
+  text: string;
+  imported: boolean;
+  importedAs: '' | 'note' | 'idea' | 'dismissed';
+}
+
+export interface DebriefNight {
+  runId: number;
+  branch: string;
+  day: string;          // UTC calendar day the run finished
+  when: string;
+  itemId: number | null;
+  itemTitle: string;
+  outcome: 'landed' | 'no-commits' | 'failed' | 'limit' | 'planned';
+  insights: DebriefInsight[];
+  truncated: number;    // insights this night's cap dropped — so a capped list can say so
+}
+
+export interface WorkbenchDebrief {
+  nights: DebriefNight[];
+  days: number;
+  runsShown: number;
+  runsTotal: number;    // vs runsShown: how much the `days` window is hiding
+  total: number;
+}
+
 // A future: a loose directional idea, curated against the project's north star
 // and promoted into the roadmap when it firms up.
 export interface Future {
