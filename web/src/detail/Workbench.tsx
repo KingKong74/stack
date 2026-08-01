@@ -6,6 +6,7 @@ import {
   getWorkbench, addWorkbenchCard, patchWorkbenchCard, deleteWorkbenchCard,
   linkWorkbenchCards, cutWorkbenchEdge, runWorkbenchOp,
 } from '../store';
+import { WorkbenchDesign } from './WorkbenchDesign';
 
 // The Workbench — the planning canvas that replaced the notes wall.
 //
@@ -773,6 +774,8 @@ export function Workbench({
                 )}
               </div>
             )}
+
+            <WorkbenchDesign card={selCard} slug={slug} lineage={lineage} onSay={say} />
 
             <div className="wb-log">
               <div className="k">log</div>

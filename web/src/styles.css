@@ -1190,6 +1190,26 @@ a.tab { display: inline-block; }
 .wb-log .w { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--faint); width: 46px; }
 .wb-log .t { font-size: 12px; line-height: 1.45; color: var(--body); text-wrap: pretty; }
 
+/* ◈ design — composes a brief from the canvas for a Claude session elsewhere.
+   No key, no request, no round trip: that absence is stated in the .hint,
+   never dressed up as a live integration. */
+.wb-design { padding: 14px 17px; border-bottom: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 8px; }
+.wb-design .row { display: flex; align-items: center; justify-content: space-between; }
+.wb-design .k { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.wb-design .note { font-family: var(--mono); font-size: 10px; color: var(--faint); }
+.wb-design .none { font-size: 11.5px; color: var(--faint); line-height: 1.45; }
+.wb-design .ask { width: 100%; resize: vertical; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--line-2); background: var(--surface); color: var(--ink); font: inherit;
+  font-size: 12px; line-height: 1.4; outline: none; }
+.wb-design .ask:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+.wb-design .count { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.wb-copy { width: 100%; padding: 9px 11px; border-radius: 10px; border: none; background: var(--accent);
+  color: #fff; font-size: 12.5px; font-weight: 600; transition: background-color .14s; }
+.wb-copy:hover:not(:disabled) { background: var(--accent-deep); }
+.wb-copy:disabled { opacity: .6; cursor: default; }
+.wb-design .hint { font-size: 11px; color: var(--muted); line-height: 1.45; }
+.wb-design .hint code { font-family: var(--mono); font-size: 10.5px; }
+
 /* ---------- activity timeline ---------- */
 .linkbanner { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 11px; padding: 11px 15px; margin-bottom: 18px; }
 .linkbanner .txt { font-size: 13px; color: #9a4f30; }
