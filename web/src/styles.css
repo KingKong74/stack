@@ -18,6 +18,7 @@
   --accent-soft: #dc8b63;       /* lighter accent */
   --accent-tint: #f4e4dc;       /* accent wash */
   --accent-tint-border: #ecd3c6;/* accent wash border */
+  --accent-tint-deep: #ecd5c8;  /* stronger wash — hover/active for tinted accent buttons */
 
   /* semantic tones */
   --live: #3f8a5b;
@@ -90,6 +91,7 @@
   --accent-soft: #a85a39;
   --accent-tint: #322019;
   --accent-tint-border: #4c2f21;
+  --accent-tint-deep: #43291f;
 
   /* semantic tones */
   --live: #6fbe8c;
@@ -343,11 +345,12 @@ a { color: inherit; }
 .autobadge.on { color: var(--green); background: var(--green-tint); border-color: transparent; }
 .head-actions { display: flex; gap: 9px; flex: none; }
 .btn-repo {
-  height: 38px; padding: 0 15px; border-radius: 10px; background: var(--card); border: 1px solid var(--line-3);
-  color: var(--ink); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 15px; border-radius: 10px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border);
+  color: var(--accent); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px;
 }
-.btn-repo .blk { width: 14px; height: 14px; border-radius: 50%; background: var(--ink); }
-.btn-repo:hover { border-color: var(--muted); }
+.btn-repo .blk { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
+.btn-repo:hover { background: var(--accent-tint-deep); border-color: var(--accent); color: var(--accent-deep); }
+.btn-repo:hover .blk { background: var(--accent-deep); }
 .btn-visit { height: 38px; padding: 0 17px; }
 
 /* ---------- tabs ---------- */
@@ -1447,7 +1450,7 @@ a.tab { display: inline-block; }
 .pcard .meta > * + * { margin-top: 0; }
 
 /* ---------- detail head: muted (unset) site/repo + inline URL editor ---------- */
-.btn-muted { color: var(--muted); background: var(--card); border: 1px dashed var(--line-3); font-weight: 500; }
+.btn-muted { color: var(--muted); background: var(--panel); border: 1px dashed var(--line-3); font-weight: 500; }
 .btn-muted:hover { border-color: var(--muted); color: var(--ink); }
 .btn-repo.btn-muted .blk { background: var(--line-3); }
 .url-edit { display: flex; align-items: center; gap: 8px; }
