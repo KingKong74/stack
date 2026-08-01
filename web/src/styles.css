@@ -2566,25 +2566,190 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .psky-recentre { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--keyline); background: var(--card); font-size: 11px; font-weight: 500; color: var(--muted); white-space: nowrap; }
 .psky-recentre:hover { color: var(--accent-deep); border-color: var(--accent); }
 
-/* -- the sky itself -- */
-.psky-viewport { flex: 1; min-height: 640px; overflow: hidden; display: flex; justify-content: center; align-items: center; }
-.psky-field { width: 700px; height: 700px; flex: none; position: relative; cursor: grab; transition: transform 0.18s ease-out; }
-.psky-field:active { cursor: grabbing; }
-.psky-ring { position: absolute; border-radius: 50%; border: 1px dashed var(--keyline); pointer-events: none; }
-.psky-ring-name { position: absolute; text-align: center; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; pointer-events: none; }
-/* #250 — the star carries its own counter-scale (1:3 against the field's zoom),
-   so it needs the field's transition to glide with it rather than snapping. */
-.psky-star { position: absolute; width: 92px; height: 92px; border-radius: 50%; background: var(--sand); border: 1.5px solid var(--accent); display: grid; place-items: center; transition: transform 0.18s ease-out; }
-.psky-star span { font-family: var(--mono); font-size: 9.5px; font-weight: 500; color: var(--accent-deep); letter-spacing: 0.08em; text-align: center; line-height: 1.5; }
-.psky-bubble { position: absolute; border-radius: 50%; background: var(--sand); border: 1px solid var(--keyline); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: opacity 0.3s ease; }
-.psky-bubble:hover { border-color: var(--accent); }
-.psky-bubble .count { font-family: var(--disp); font-size: 13px; font-weight: 600; color: var(--ink); }
-.psky-bubble .name { font-family: var(--mono); font-size: 9px; color: var(--muted); }
-.psky-node { position: absolute; border-radius: 50%; cursor: pointer; display: grid; place-items: center; transition: opacity 0.3s ease; padding: 0; }
-.psky-node:hover { border-color: var(--accent) !important; }
-.psky-caption { position: absolute; left: 50%; top: 50%; white-space: nowrap; background: var(--bg); padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: 10.5px; font-weight: 400; color: var(--muted); pointer-events: none; }
-.psky-caption.sel { font-weight: 600; color: var(--ink); }
-.psky-empty { position: absolute; left: 50%; top: 72%; transform: translateX(-50%); width: 340px; text-align: center; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
+/* -- the galaxy (#312) --------------------------------------------------
+   Tones first, as named tokens. The stage is a lit ground rather than a flat
+   panel, and it is the one surface in the app whose LIGHT theme is the odd one
+   out — a galaxy on paper reads as a diagram, so light mode keeps the same
+   geometry on a cool parchment while dark mode gets the deep sky the design
+   asked for. Everything below references these, never a literal.               */
+:root {
+  --gx-ground: radial-gradient(circle at 50% 46%, #f2ede4 0%, #ebe5da 52%, #e3ddd1 100%);
+  --gx-line: color-mix(in srgb, var(--keyline) 78%, transparent);
+  --gx-line-soft: color-mix(in srgb, var(--keyline) 42%, transparent);
+  --gx-speck: var(--muted);
+  --gx-plate: color-mix(in srgb, var(--paper) 88%, transparent);
+  --gx-core: radial-gradient(circle at 42% 38%, #fbeadf 0%, #f3ddcd 45%, #ecd0bd 100%);
+  --gx-disc: radial-gradient(circle at 36% 30%, var(--surface), var(--sand) 72%);
+  --gx-disc-sel: radial-gradient(circle at 36% 30%, #ffeee3, #f6dccb 72%);
+}
+[data-theme='dark'] {
+  --gx-ground: radial-gradient(circle at 50% 46%, #201b17 0%, #15120f 52%, #0e0c0b 100%);
+  --gx-speck: var(--ink);
+  --gx-plate: color-mix(in srgb, #100e0c 86%, transparent);
+  --gx-core: radial-gradient(circle at 42% 38%, #5a3220 0%, #3a2317 45%, #23170f 100%);
+  --gx-disc: radial-gradient(circle at 36% 30%, #332b25, #191612 72%);
+  --gx-disc-sel: radial-gradient(circle at 36% 30%, #5c3520, #2a1b13 72%);
+}
+
+.pgx-stage {
+  position: relative; height: 860px; overflow: hidden; flex: none;
+  border-bottom: 1px solid var(--line-2); background: var(--gx-ground);
+}
+.pgx-glow { position: absolute; border-radius: 50%; pointer-events: none; }
+.pgx-glow.warm { left: -10%; top: -6%; width: 70%; height: 62%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%); }
+.pgx-glow.cool { right: -12%; bottom: -10%; width: 76%; height: 66%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--live) 5%, transparent), transparent 70%); }
+.pgx-speck { position: absolute; border-radius: 50%; background: var(--gx-speck); pointer-events: none; }
+.pgx-speck.accent { background: var(--accent); }
+
+/* Orbits, shells and the belt: decoration, never a click target. */
+.pgx-orbit { position: absolute; border-radius: 50%; border: 1px solid var(--gx-line-soft); pointer-events: none; }
+.pgx-orbit.ring.on, .pgx-orbit.planet.on { border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.pgx-orbit.shell { opacity: 0.5; }   /* the tone is set inline, per shell */
+.pgx-orbit.shell.dashed { border-style: dashed; }
+.pgx-orbit.belt { border: 1px dashed var(--gx-line); opacity: 0.7; }
+.pgx-orbit.moon { border-color: color-mix(in srgb, var(--muted) 26%, transparent); }
+.pgx-sector {
+  position: absolute; transform: translate(-100%, -50%); z-index: 5; pointer-events: none;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em; white-space: nowrap;
+  background: var(--gx-plate); padding: 1px 6px; border-radius: 3px;
+}
+
+.pgx-core {
+  position: absolute; transform: translate(-50%, -50%); z-index: 3; padding: 0;
+  border-radius: 50%; border: 1px solid var(--accent); background: var(--gx-core);
+  box-shadow: 0 0 90px color-mix(in srgb, var(--accent) 26%, transparent);
+  display: grid; place-items: center; cursor: pointer;
+}
+.pgx-core span {
+  font-family: var(--mono); letter-spacing: 0.14em; line-height: 1.5; text-align: center;
+  color: var(--accent-deep);
+}
+[data-theme='dark'] .pgx-core span { color: #f2c9b2; }
+
+/* A node is the dot plus its (selected-only) name chip, so the chip can flip to
+   the other side near the right edge without the dot moving. --vc is the
+   verdict tone, set inline; everything tonal here is mixed from it. */
+/* The button is exactly its dot, so the node sits ON its coordinate; the name
+   chip hangs out of flow beside it and cannot shift the dot when it appears. */
+.pgx-node {
+  position: absolute; transform: translate(-50%, -50%); padding: 0; background: none;
+  display: flex; cursor: pointer;
+}
+.pgx-node .dot {
+  flex: none; border-radius: 50%; border: 1.5px solid var(--vc);
+  background: radial-gradient(circle at 34% 30%, color-mix(in srgb, var(--vc) 40%, transparent),
+                              color-mix(in srgb, var(--vc) 10%, transparent) 70%);
+  transition: box-shadow 0.15s ease;
+}
+.pgx-node.dashed .dot { border-style: dashed; }
+.pgx-node.moon .dot { background: color-mix(in srgb, var(--vc) 33%, transparent); }
+.pgx-node.planet .dot { box-shadow: 0 0 10px color-mix(in srgb, var(--ink) 30%, transparent); }
+.pgx-node:hover .dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--vc) 22%, transparent); }
+.pgx-node.sel .dot {
+  background: var(--vc);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--vc) 55%, transparent);
+}
+.pgx-node .cap {
+  position: absolute; top: 50%; left: calc(100% + 7px); transform: translateY(-50%);
+  white-space: nowrap; font-size: 11.5px; color: var(--ink);
+  background: var(--gx-plate); padding: 2px 7px; border-radius: 4px;
+  border-left: 2px solid var(--vc);
+}
+.pgx-node.flip .cap { left: auto; right: calc(100% + 7px); border-left: none; border-right: 2px solid var(--vc); }
+.pgx-node.tray .dot { box-shadow: 0 0 0 3px var(--accent-tint), 0 0 0 4.5px var(--accent); }
+
+/* A star is a disc with a ★ in it and a nameplate above, drawn only when the
+   plate has a patch of sky to itself (see the collision pass in Galaxy.tsx). */
+.pgx-disc {
+  position: absolute; transform: translate(-50%, -50%); padding: 0;
+  border-radius: 50%; border: 1.5px solid var(--vc); background: var(--gx-disc);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--ink) 32%, transparent);
+  display: grid; place-items: center; cursor: pointer;
+}
+.pgx-disc.sel {
+  background: var(--gx-disc-sel);
+  box-shadow: 0 0 44px color-mix(in srgb, var(--accent) 36%, transparent);
+}
+.pgx-disc:hover { border-color: var(--accent); }
+.pgx-disc .glyph { color: var(--vc); line-height: 1; }
+.pgx-disc .plate {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  background: var(--gx-plate); padding: 2px 8px; border-radius: 4px;
+}
+.pgx-disc .plate .name {
+  font-family: var(--disp); font-weight: 600; letter-spacing: -0.01em;
+  color: var(--body-2); white-space: nowrap;
+}
+.pgx-disc.sel .plate .name { color: var(--ink); }
+.pgx-disc .plate .meta { font-family: var(--mono); font-size: 9.5px; color: var(--fainter); white-space: nowrap; }
+
+.pgx-empty {
+  position: absolute; left: 50%; top: 72%; transform: translateX(-50%); width: 340px;
+  text-align: center; font-size: 12.5px; line-height: 1.6; color: var(--muted);
+}
+.pgx-legend {
+  position: absolute; z-index: 11; left: 0; right: 0; bottom: 10px; padding: 0 16px; pointer-events: none;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  font-family: var(--mono); font-size: 10px; color: var(--fainter);
+}
+.pgx-legend .key { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pgx-legend .key b { color: var(--accent); font-weight: 400; }
+.pgx-legend .count { white-space: nowrap; flex: none; }
+
+.pgx-controls { position: absolute; z-index: 12; right: 14px; top: 12px; display: flex; align-items: center; gap: 10px; }
+.pgx-controls .hint {
+  font-family: var(--mono); font-size: 10px; color: var(--fainter); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 230px;
+}
+.pgx-zoom {
+  display: flex; align-items: center; gap: 9px; padding: 4px 10px;
+  border: 1px solid var(--line-2); border-radius: 5px; background: var(--gx-plate);
+}
+.pgx-zoom .zbtn { font-family: var(--mono); font-size: 14px; color: var(--muted); line-height: 1; }
+.pgx-zoom .zbtn:hover { color: var(--accent); }
+.pgx-zoom .zticks { display: flex; align-items: center; gap: 4px; }
+.pgx-zoom .ztick { width: 6px; height: 6px; border-radius: 50%; padding: 0; border: 1px solid var(--keyline); }
+.pgx-zoom .ztick.on { background: var(--accent); border-color: var(--accent); }
+.pgx-zoom .zpct { font-family: var(--mono); font-size: 10.5px; color: var(--ink); width: 38px; text-align: right; }
+.pgx-fit {
+  padding: 5px 11px; border: 1px solid var(--line-2); border-radius: 5px; background: var(--gx-plate);
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted); white-space: nowrap;
+}
+.pgx-fit:hover { border-color: var(--accent); color: var(--accent); }
+
+/* -- the board: every idea filed by verdict, same selection as the sky -- */
+.pgx-board-wrap { flex: 1; min-height: 560px; padding: 14px 18px 18px; }
+.pgx-board-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.pgx-board-head .lede { font-size: 13px; color: var(--muted); }
+.pgx-board-head .lede b { color: var(--body); font-weight: 500; }
+.pgx-board-head .key { font-family: var(--mono); font-size: 10.5px; color: var(--fainter); white-space: nowrap; }
+.pgx-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.pgx-col { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.pgx-col-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 8px; border-bottom: 2px solid var(--keyline);
+}
+.pgx-col-head .label { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; white-space: nowrap; }
+.pgx-col-head .n { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.pgx-col-more { font-family: var(--mono); font-size: 10.5px; color: var(--fainter); padding-left: 2px; }
+.pgx-card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 9px;
+  padding: 11px 12px; display: flex; flex-direction: column; gap: 8px; text-align: left;
+}
+.pgx-card:hover { border-color: var(--accent-tint-border); }
+.pgx-card.sel { border-color: var(--accent); background: var(--accent-tint); }
+.pgx-card .top { display: flex; gap: 7px; align-items: flex-start; }
+.pgx-card .glyph { font-family: var(--mono); font-size: 10px; color: var(--accent); line-height: 1.4; flex: none; }
+.pgx-card .title { font-size: 12.5px; color: var(--body-2); line-height: 1.4; text-wrap: pretty; }
+.pgx-card .foot { display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 9.5px; color: var(--fainter); }
+.pgx-card .orbit {
+  border: 1px solid var(--line-2); padding: 2px 5px; border-radius: 3px; color: var(--chip-ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 118px;
+}
+.pgx-card .mag { white-space: nowrap; }
 
 /* -- sky composer -- */
 .psky-composer { flex: none; display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: var(--card); border-top: 1px solid var(--line-2); }
@@ -2601,7 +2766,10 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .psky-sel { padding: 18px 20px; border-bottom: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 10px; }
 .psky-sel-empty { font-size: 12.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
 .psky-sel-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.psky-pill { padding: 4px 9px; border-radius: 5px; font-family: var(--mono); font-size: 10.5px; font-weight: 500; }
+.psky-pill {
+  padding: 4px 9px; border-radius: 5px; font-family: var(--mono); font-size: 10.5px; font-weight: 500;
+  color: var(--vc); background: color-mix(in srgb, var(--vc) 14%, transparent);
+}
 .psky-sel-meta .theme { font-family: var(--mono); font-size: 10.5px; color: var(--paused); }
 .psky-sel-meta .when { font-size: 11px; color: var(--faint); margin-left: auto; }
 .psky-sel-title { font-family: var(--disp); font-size: 16px; font-weight: 600; line-height: 1.35; color: var(--ink); text-wrap: pretty; }
@@ -2613,6 +2781,54 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .psky-sel-actions .act.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
 .psky-sel-actions .act.quiet { border-color: transparent; color: var(--muted); }
 .psky-sel-actions .act.quiet:hover { color: var(--critical); border-color: var(--critical); }
+
+/* -- the rail, galaxy additions (#312) -- */
+.psky-census { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--fainter); flex-wrap: wrap; }
+.psky-census .stars { color: var(--accent); }
+.psky-chips .seg-control .n { font-family: var(--mono); font-size: 9.5px; color: var(--fainter); margin-left: 5px; }
+
+.psky-sel-kind { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em; color: var(--fainter); }
+
+.psky-mag { display: flex; align-items: center; gap: 10px; }
+.psky-mag .lbl { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em; color: var(--fainter); white-space: nowrap; }
+.psky-mag .pips { flex: 1; display: flex; gap: 3px; }
+.psky-mag .pip { flex: 1; height: 6px; border-radius: 2px; background: var(--keyline); padding: 0; }
+.psky-mag .pip.on { background: var(--accent); }
+.psky-mag .pips:hover .pip { background: color-mix(in srgb, var(--accent) 28%, var(--keyline)); }
+.psky-mag .pips .pip.on, .psky-mag .pips:hover .pip.on { background: var(--accent); }
+.psky-mag .word { font-size: 11.5px; color: var(--faint); white-space: nowrap; }
+
+.psky-kids { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line-2); }
+.psky-kids .lbl { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em; color: var(--fainter); }
+.psky-kids .row { display: grid; grid-template-columns: 7px 1fr auto; gap: 9px; align-items: center; text-align: left; }
+.psky-kids .row:hover { opacity: 0.72; }
+.psky-kids .row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--vc); }
+.psky-kids .row .t { font-size: 12.5px; color: var(--body-2); line-height: 1.35; text-wrap: pretty; }
+.psky-kids .row .m { font-family: var(--mono); font-size: 9.5px; color: var(--fainter); white-space: nowrap; }
+.psky-kids .empty { font-size: 12px; color: var(--faint); line-height: 1.5; }
+
+.psky-sel-actions .act.star { border-color: var(--accent-tint-border); background: var(--accent-tint); color: var(--accent-deep); }
+.psky-sel-actions .act.star:hover { border-color: var(--accent); }
+.psky-adopt {
+  padding: 6px 10px; border-radius: 6px; border: 1px solid var(--accent); background: var(--surface);
+  font-size: 11.5px; color: var(--ink); max-width: 190px;
+}
+
+.psky-shells { padding: 16px 20px; border-bottom: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 11px; }
+.psky-shells .head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.psky-shells .head .label { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; color: var(--muted); }
+.psky-shells .head .n { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.psky-shells .grp { display: flex; flex-direction: column; gap: 6px; }
+.psky-shells .grp-head { display: flex; align-items: center; gap: 8px; }
+.psky-shells .grp-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--vc); flex: none; }
+.psky-shells .grp-head .name { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--vc); white-space: nowrap; }
+.psky-shells .grp-head .n { font-family: var(--mono); font-size: 10px; color: var(--fainter); }
+.psky-shells .grp-head .rule { flex: 1; height: 1px; background: var(--line); }
+.psky-shells .row { display: grid; grid-template-columns: 1fr auto; gap: 9px; align-items: baseline; padding-left: 15px; text-align: left; }
+.psky-shells .row:hover { opacity: 0.72; }
+.psky-shells .row .t { font-size: 12.5px; color: var(--chip-ink); line-height: 1.35; text-wrap: pretty; }
+.psky-shells .row.sel .t { color: var(--ink); font-weight: 500; }
+.psky-shells .row .m { font-family: var(--mono); font-size: 9.5px; color: var(--fainter); white-space: nowrap; }
 
 .psky-rail-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .psky-queue { padding: 16px 20px; border-bottom: 1px solid var(--line-2); background: var(--sand); }
@@ -2626,10 +2842,10 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .psky-verdict .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .psky-verdict.on-course .dot { background: var(--live); }
 .psky-verdict.tangent .dot { background: var(--building); }
-.psky-verdict.off-course .dot { background: var(--paused); }
+.psky-verdict.off-course .dot { background: var(--critical); }
 .psky-verdict.on-course:hover { border-color: var(--live); background: var(--live-tint); }
 .psky-verdict.tangent:hover { border-color: var(--building); background: var(--building-tint); }
-.psky-verdict.off-course:hover { border-color: var(--paused); background: var(--paused-tint); }
+.psky-verdict.off-course:hover { border-color: var(--critical); background: var(--critical-tint); }
 .psky-queue-foot { display: flex; align-items: flex-start; gap: 12px; margin-top: 11px; }
 .psky-ask { font-size: 11px; font-weight: 500; color: var(--accent-deep); }
 .psky-ask:hover { color: var(--accent); }
@@ -2650,7 +2866,8 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 @media (max-width: 1080px) {
   .psky { flex-direction: column; }
   .psky-rail { width: auto; border-left: none; border-top: 1px solid var(--line-2); }
-  .psky-viewport { min-height: 540px; }
+  .pgx-stage { height: 620px; }
+  .pgx-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* -- judge-queue pop-out + ✧ Cluster preview -- */
@@ -2694,7 +2911,6 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .psky-cluster-new { display: flex; align-items: center; gap: 8px; max-width: 240px; }
 
 /* -- the converge tray + panel (board → converge → tickets, realised in the sky) -- */
-.psky-node.tray { box-shadow: 0 0 0 3px var(--accent-tint), 0 0 0 4.5px var(--accent); }
 .psky-tray { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 18px; background: var(--sand); border-top: 1px solid var(--resume-border); }
 .psky-tray .label { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; color: var(--accent-deep); }
 .psky-tray .hint { font-family: var(--mono); font-size: 10px; color: var(--paused); }
@@ -2877,7 +3093,6 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .psky-scrub-caption { display: flex; align-items: baseline; gap: 10px; padding: 7px 18px 0; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
 .psky-scrub-caption button { font-family: var(--mono); font-size: 10px; color: var(--accent-deep); padding: 0; white-space: nowrap; }
 .psky-scrub-caption button:hover { color: var(--accent); }
-.psky-node.fresh { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 9%, transparent); }
 
 /* ---- Mission Control 14a: rooms behind one live strip + a persistent rail ---- */
 .mc14-tabs { display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 9px; background: var(--panel); width: fit-content; min-width: 100%; margin-bottom: 10px; }

@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { Future } from '../types';
+import {
+  Galaxy, GalaxyBoard, buildGalaxy, flattenGalaxy,
+  GX_GLYPH, GX_LABEL, GX_TONE, MAG_WORD, type GxKind, type GxModel,
+} from './Galaxy';
 import type { ClusterSuggestion, ConvergeDraft, JudgeSuggestion } from '../store';
 import { getNorthStarOpen, setNorthStarOpen } from '../store';
 import { Modal } from '../components/Modal';
@@ -21,29 +26,22 @@ const GROUPS: { key: string; label: string }[] = [
   { key: 'off-course', label: 'Off course' },
 ];
 
-// ---- the sky's geometry (from the Stack Planning design, turn 9a) ----------
-// A 700×700 field: north star at the centre, one dashed ring per verdict, and
-// each theme (area tag) holding a 60°-ish arc. Verdict = ring; theme = bearing.
-const SKY = 700;
-const C = SKY / 2;
-const RING: Record<string, number> = { 'on-course': 132, '': 178, tangent: 224, 'off-course': 296 };
-const RING_COLOR: Record<string, string> = {
-  'on-course': 'var(--live)', tangent: 'var(--building)', 'off-course': 'var(--paused)', '': 'var(--paused)',
-};
-const RING_TINT: Record<string, string> = {
-  'on-course': 'var(--live-tint)', tangent: 'var(--building-tint)', 'off-course': 'var(--paused-tint)', '': 'var(--paused-tint)',
-};
-const Z_TICKS = [0.7, 1, 1.5, 2, 3, 4, 5]; // preset dots — wheel zoom is continuous
-const Z_MIN = 0.5, Z_MAX = 5;
-// #250 — the north star does NOT ride the field's scale one-for-one. At 500% a
-// 92px star would be a 460px disc filling the viewport, hiding the very ideas
-// you zoomed in to read; but pinning it at a constant size would make it shrink
-// away from the sky it anchors. So it grows at ONE THIRD of the zoom: 3× the
-// sky, 1× the star. The field is already scaled by z, so the star carries the
-// counter-transform that takes it from z to its own third-rate scale.
-const starScale = (z: number) => 1 + (z - 1) / 3;
-const LOOSE = 'loose'; // theme key for ideas with no area tag
+const LOOSE = 'loose'; // theme label for ideas with no area tag
 const TL_TICKS = 6;    // scrub points along the sky's history (design 6b/7a)
+
+// #312 — the sky IS the galaxy now. The old field put every idea on a verdict
+// ring and gave each theme (area tag) a bearing: it said everything about how
+// an idea was judged and nothing about how ideas relate. The galaxy says both,
+// and the geometry that draws it lives in Galaxy.tsx. Area survives as a plain
+// tag — the list groups by it and ✧ Cluster still suggests it — but it no
+// longer decides where anything sits.
+const KIND_LABEL: Record<GxKind, string> = {
+  star: 'STAR · ITS OWN ORBIT',
+  planet: 'PLANET · ORBITS A STAR',
+  moon: 'MOON · PART OF A PLANET',
+  shell: 'IDEA · ORBITS THE NORTH STAR',
+  belt: 'IDEA · IN THE DRIFT BELT',
+};
 
 // Short relative label for the scrub ticks ("3w ago" … "now").
 function ago(ms: number): string {
@@ -55,36 +53,9 @@ function ago(ms: number): string {
   return `${(d / 365).toFixed(1)}y ago`;
 }
 
-type Theme = { key: string; label: string; a0: number; span: number; items: Future[] };
-
-function buildThemes(list: Future[]): Theme[] {
-  const byArea = new Map<string, Future[]>();
-  for (const f of list) {
-    const k = f.area || LOOSE;
-    const arr = byArea.get(k);
-    if (arr) arr.push(f); else byArea.set(k, [f]);
-  }
-  // Alphabetical, loose last — stable bearings as ideas come and go.
-  const keys = [...byArea.keys()].sort((a, b) =>
-    (a === LOOSE ? 1 : 0) - (b === LOOSE ? 1 : 0) || a.localeCompare(b));
-  const step = 360 / Math.max(1, keys.length);
-  const span = Math.min(60, step * 0.85);
-  return keys.map((k, i) => ({
-    key: k, label: k, a0: (196 + i * step) % 360, span, items: byArea.get(k)!,
-  }));
-}
-
-type SkyNode = {
-  f: Future; theme: string; x: number; y: number; d: number; opacity: number;
-  border: string; bw: number; bg: string; dashed: boolean; sel: boolean; fresh: boolean;
-  wants: boolean; showLabel: boolean; label: string; halfW: number;
-  nx: number; ny: number; ca: number; sa: number; rad: number; lx: number; ly: number;
-};
-type SkyBubble = { key: string; label: string; count: number; x: number; y: number; d: number; opacity: number };
-
 export function Futures({
   northStar, futures, highlightId, onSaveNorthStar, onAdd, onEdit, onAlign, onDelete, onPromote,
-  onAskGemini, onCluster, onSetAreas, onConvergeDraft, onConvergeCreate, slug,
+  onAskGemini, onCluster, onSetAreas, onConvergeDraft, onConvergeCreate, onShape, slug,
 }: {
   northStar: string;
   futures: Future[];
@@ -96,6 +67,9 @@ export function Futures({
   onAlign: (id: number, alignment: Alignment | '') => void;
   onDelete: (id: number) => void;
   onPromote: (future: Future) => void;
+  // Where an idea sits in the galaxy and how big it is (#312) — one call for
+  // all three, because promoting and adopting are each a move of both.
+  onShape: (id: number, patch: { parentId?: number | null; isStar?: boolean; magnitude?: number | null }) => void;
   onAskGemini?: (id: number) => Promise<JudgeSuggestion>;
   onCluster?: () => Promise<ClusterSuggestion[]>;
   onSetAreas: (pairs: { id: number; area: string }[]) => void;
@@ -123,73 +97,24 @@ export function Futures({
   };
 
   // ---- view + filters ----
-  const [view, setView] = useState<'sky' | 'list'>('sky');
+  const [view, setView] = useState<'sky' | 'board' | 'list'>('sky');
   const [sourceFilter, setSourceFilter] = useState<'' | 'hook' | 'manual'>('');
   const mixedSources = futures.some((f) => f.source === 'hook') && futures.some((f) => f.source !== 'hook');
   const bySource = futures
     .filter((f) => !sourceFilter || (sourceFilter === 'hook' ? f.source === 'hook' : f.source !== 'hook'));
 
-  // ---- sky state ----
+  // ---- galaxy state (#312) ----
+  // Zoom is six named stops rather than a continuum: each one is a thing you
+  // wanted to see ("in on the focused star", "one idea, nothing else"), and the
+  // stage pans to the selected system on its own as you pass Fit.
   const [z, setZ] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  // Buttons/ticks glide (CSS transition); wheel + drag track the pointer raw.
-  const [glide, setGlide] = useState(true);
-  const [allIdeas, setAllIdeas] = useState(false);
-  const [openTheme, setOpenTheme] = useState<string | null>(null);
+  const [northOnly, setNorthOnly] = useState(false);
   const [selId, setSelId] = useState<number | null>(null);
-  const panRef = useRef<{ x0: number; y0: number; px: number; py: number } | null>(null);
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const zRef = useRef(z);
-  zRef.current = z;
-  const panLive = useRef(pan);
-  panLive.current = pan;
-
-  const themes = useMemo(() => buildThemes(bySource), [bySource]);
-  const selected = selId != null ? bySource.find((f) => f.id === selId) || null : null;
-
-  // #259 — the sky and the list are two views of ONE selection, so switching
-  // between them has to CARRY the selection rather than merely keep the id.
-  // Landing on a view where the selected idea is filtered out, folded away or
-  // below the fold would technically preserve the selection while losing it in
-  // every sense that matters, so each view is made to actually show it.
-  useEffect(() => {
-    if (!selected) return;
-    if (view === 'list') {
-      // The list groups by verdict and filters by area — clear a filter that
-      // would hide the selection, then bring the row into view.
-      if (areaFilter && areaFilter !== (selected.area || '')) setAreaFilter('');
-      const t = setTimeout(() => {
-        document.querySelector(`.future-row[data-hl="${selected.id}"]`)
-          ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      }, 60);
-      return () => clearTimeout(t);
-    }
-    // The sky collapses unopened themes into a bubble, so open the selected
-    // idea's own theme — otherwise the star it points at isn't drawn.
-    const theme = selected.area || LOOSE;
-    if (!allIdeas && openTheme !== theme) setOpenTheme(theme);
-    return undefined;
-  }, [view, selected?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
-
-  // A search deep-link picks the idea out of the sky: select it and open its theme.
-  const hlDone = useRef<string | null>(null);
-  useEffect(() => {
-    if (!highlightId || hlDone.current === highlightId) return;
-    const f = futures.find((x) => String(x.id) === highlightId);
-    if (!f) return;
-    hlDone.current = highlightId;
-    setSelId(f.id);
-    setOpenTheme(f.area || LOOSE);
-  }, [highlightId, futures]);
-
-  const expandAll = allIdeas || z >= 1.2;
-  const labelAll = z >= 1.2;
 
   // ---- the time scrub (design 6b/7a): the same sky over time ----
   // Ticks are evenly spaced across the sky's real history (idea created_at);
-  // scrubbing back hides ideas that hadn't arrived yet and glows the ones
-  // born since the previous tick. View-only and session-local — the queue,
-  // list and composer keep working on today's data.
+  // scrubbing back hides ideas that hadn't arrived yet. View-only and
+  // session-local — the queue, list and composer keep working on today's data.
   const [tlStep, setTlStep] = useState<number | null>(null); // null = now
   const timeline = useMemo(() => {
     const times = bySource.map((f) => Date.parse(f.createdAt)).filter(Number.isFinite);
@@ -207,124 +132,51 @@ export function Futures({
   // hidden behind an old cutoff.
   useEffect(() => { setTlStep(null); }, [futures.length]);
   const scrub = timeline && tlStep != null && tlStep < timeline.ticks.length - 1
-    ? {
-        cutoff: timeline.ticks[tlStep].at,
-        prev: tlStep > 0 ? timeline.ticks[tlStep - 1].at : Infinity, // the origin tick glows nothing
-        label: timeline.ticks[tlStep].label,
-      }
+    ? { cutoff: timeline.ticks[tlStep].at, label: timeline.ticks[tlStep].label }
     : null;
   const arrivedCount = scrub ? bySource.filter((f) => Date.parse(f.createdAt) <= scrub.cutoff).length : 0;
-  const freshCount = scrub
-    ? bySource.filter((f) => { const t = Date.parse(f.createdAt); return t <= scrub.cutoff && t > scrub.prev; }).length
-    : 0;
 
-  // Nodes, bubbles and the caption collision pass (ported from the design).
-  const { nodes, bubbles } = useMemo(() => {
-    const nodes: SkyNode[] = [];
-    const bubbles: SkyBubble[] = [];
-    for (const t of themes) {
-      // A scrubbed sky only holds the ideas that had arrived by the cutoff.
-      const items = scrub ? t.items.filter((f) => Date.parse(f.createdAt) <= scrub.cutoff) : t.items;
-      if (!items.length) continue;
-      const mid = ((t.a0 + t.span / 2) * Math.PI) / 180;
-      const expanded = expandAll || openTheme === t.key;
-      if (!expanded) {
-        const r = 178, rad = 26 + Math.min(16, items.length * 1.8);
-        bubbles.push({
-          key: t.key, label: t.label, count: items.length,
-          x: C + Math.cos(mid) * r - rad, y: C + Math.sin(mid) * r - rad, d: rad * 2,
-          opacity: openTheme ? 0.3 : 1,
-        });
-        continue;
-      }
-      const dim = openTheme && openTheme !== t.key ? 0.28 : 1;
-      items.forEach((f, i) => {
-        const a = ((t.a0 + (t.span * (i + 0.5)) / items.length) * Math.PI) / 180;
-        const v = f.alignment || '';
-        const r = RING[v], rad = 10;
-        const nx = C + Math.cos(a) * r, ny = C + Math.sin(a) * r;
-        const on = selId === f.id;
-        const fresh = !!scrub && Date.parse(f.createdAt) > scrub.prev;
-        const disp = f.title.length > 20 ? f.title.slice(0, 19).trim() + '…' : f.title;
-        nodes.push({
-          f, theme: t.label, x: nx - rad, y: ny - rad, d: rad * 2, opacity: dim,
-          border: fresh && !on ? 'var(--accent-soft)' : v ? RING_COLOR[v] : 'var(--keyline)',
-          bw: on ? 3 : 2, dashed: !v && !fresh,
-          bg: on ? RING_TINT[v] : 'var(--surface)', sel: on, fresh,
-          wants: labelAll || on, showLabel: false, label: disp, halfW: disp.length * 3.2 + 6,
-          nx, ny, ca: Math.cos(a), sa: Math.sin(a), rad, lx: 0, ly: 0,
-        });
-      });
-    }
-    // Collision pass: push each caption outward until its box clears every placed box.
-    const boxes: { x: number; y: number; w: number; h: number }[] = [];
-    const hit = (a: typeof boxes[0], b: typeof boxes[0]) =>
-      a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-    nodes.forEach((n) => { if (n.wants) boxes.push({ x: n.x - 3, y: n.y - 3, w: n.d + 6, h: n.d + 6 }); });
-    nodes.filter((n) => n.wants).sort((a, b) => (b.sel ? 1 : 0) - (a.sel ? 1 : 0)).forEach((n) => {
-      for (let k = 0; k <= 132; k += 22) {
-        const lx = Math.min(Math.max(n.ca * (n.rad + 12 + k + n.halfW), n.halfW + 10 - n.nx), SKY - 10 - n.halfW - n.nx);
-        const ly = Math.min(Math.max(n.sa * (n.rad + 14 + k), 16 - n.ny), SKY - 16 - n.ny);
-        const box = { x: n.nx + lx - n.halfW - 5, y: n.ny + ly - 9, w: n.halfW * 2 + 10, h: 18 };
-        if (!boxes.some((b) => hit(box, b))) {
-          n.showLabel = true; n.lx = Math.round(lx); n.ly = Math.round(ly);
-          boxes.push(box);
-          return;
-        }
-      }
-    });
-    return { nodes, bubbles };
-  }, [themes, expandAll, labelAll, openTheme, selId, scrub]);
+  // The galaxy is built from EVERY idea that had arrived, not from the
+  // source-filtered slice: the filter decides which dots are DRAWN, not which
+  // orbits exist, so switching it can never orphan a star's planets or make
+  // the sky jump between two shapes of the same data.
+  const arrived = useMemo(
+    () => (scrub ? futures.filter((f) => Date.parse(f.createdAt) <= scrub.cutoff) : futures),
+    [futures, scrub?.cutoff],   // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const galaxy = useMemo(() => buildGalaxy(arrived), [arrived]);
+  const rows = useMemo(() => flattenGalaxy(galaxy), [galaxy]);
+  const selected = selId != null ? galaxy.all.find((f) => f.id === selId) || null : null;
+  const selKind: GxKind | null = selected ? galaxy.kindOf(selected) : null;
 
-  const startPan = (e: React.MouseEvent) => {
-    setGlide(false);
-    panRef.current = { x0: e.clientX, y0: e.clientY, px: pan.x, py: pan.y };
-    const move = (ev: MouseEvent) => {
-      const p = panRef.current;
-      if (p) setPan({ x: p.px + ev.clientX - p.x0, y: p.py + ev.clientY - p.y0 });
-    };
-    const up = () => {
-      panRef.current = null;
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  };
-  const zoomBy = (dir: 1 | -1) => {
-    setGlide(true);
-    // A wider range (#250: up to 500%) needs a bigger step, or the ends are a
-    // dozen presses apart. 1.25 crosses 0.5→5 in about ten.
-    setZ((cur) => Math.min(Z_MAX, Math.max(Z_MIN, dir > 0 ? cur * 1.25 : cur / 1.25)));
-  };
-  // Wheel = continuous zoom toward the cursor: the point under the pointer
-  // stays put while the sky scales around it. Native listener (passive:false)
-  // so the page never scrolls behind the sky.
+  // #259 — the views are two doors into ONE selection, so switching has to
+  // CARRY it rather than merely keep the id. Landing on a view where the
+  // selected idea is filtered out or below the fold would preserve the
+  // selection while losing it in every sense that matters.
   useEffect(() => {
-    if (view !== 'sky') return;
-    const el = viewportRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const z0 = zRef.current;
-      const nz = Math.min(Z_MAX, Math.max(Z_MIN, z0 * Math.exp(-e.deltaY * 0.0016)));
-      if (nz === z0) return;
-      const r = el.getBoundingClientRect();
-      const p = panLive.current;
-      // Cursor position in field space (origin = the field's centre).
-      const fx = (e.clientX - (r.left + r.width / 2) - p.x) / z0;
-      const fy = (e.clientY - (r.top + r.height / 2) - p.y) / z0;
-      setGlide(false);
-      setZ(nz);
-      setPan({ x: p.x + fx * (z0 - nz), y: p.y + fy * (z0 - nz) });
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, [view]);
-  const offCentre = pan.x !== 0 || pan.y !== 0 || Math.abs(z - 1) > 0.01;
-  const lodNote = z < 0.85 ? 'Zoomed out — themes only.'
-    : z < 1.2 ? 'Theme bodies. Open one, or keep zooming.'
-    : 'Every idea, every name — drag the sky to move around it.';
+    if (!selected) return;
+    if (view === 'list') {
+      // The list groups by verdict and filters by area — clear a filter that
+      // would hide the selection, then bring the row into view.
+      if (areaFilter && areaFilter !== (selected.area || '')) setAreaFilter('');
+    }
+    if (view === 'sky') return undefined;
+    const sel = view === 'list' ? `.future-row[data-hl="${selected.id}"]` : '.pgx-card.sel';
+    const t = setTimeout(() => {
+      document.querySelector(sel)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, 60);
+    return () => clearTimeout(t);
+  }, [view, selected?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A search deep-link picks the idea out of the sky and goes to its system.
+  const hlDone = useRef<string | null>(null);
+  useEffect(() => {
+    if (!highlightId || hlDone.current === highlightId) return;
+    const f = futures.find((x) => String(x.id) === highlightId);
+    if (!f) return;
+    hlDone.current = highlightId;
+    setSelId(f.id);
+  }, [highlightId, futures]);
 
   // ---- the judge queue (rail): unsorted ideas, one verdict at a time ----
   const [skipped, setSkipped] = useState<Set<number>>(new Set());
@@ -362,28 +214,35 @@ export function Futures({
   const resetSkips = () => setSkipped(new Set());
 
   // ---- Polaris's computed observation — honest arithmetic, no API ----
+  // Every branch has to be TRUE of the galaxy as it stands, which is why each
+  // one names the count it is reading. A line that says something about a shape
+  // nobody has built yet is worse than no line.
   const observation = useMemo(() => {
-    for (const t of themes) {
-      if (t.key !== LOOSE && t.items.length >= 3 && t.items.every((f) => f.alignment === 'off-course')) {
-        return `${t.label} is ${t.items.length} ideas and every one sits on the outer ring. That's a whole theme pulling away from the star — worth deciding once, out loud, rather than ${t.items.length} times in the queue.`;
-      }
+    const heaviest = [...galaxy.stars]
+      .map((s) => ({ s, on: s.planets.filter((p) => p.f.alignment === 'on-course').length }))
+      .sort((a, b) => b.on - a.on)[0];
+    const drifting = galaxy.stars.find((s) =>
+      s.planets.length >= 3 && s.planets.every((p) => p.f.alignment === 'off-course'));
+    if (drifting) {
+      return `Every one of ${drifting.f.title}'s ${drifting.planets.length} planets is off course. That is a whole system pulling away from the star — worth deciding once, out loud, rather than ${drifting.planets.length} times in the queue.`;
     }
-    for (const t of themes) {
-      if (t.key !== LOOSE && t.items.length >= 3 && t.items.every((f) => f.alignment === 'on-course')) {
-        return `${t.label} is pulling hard toward the star — all ${t.items.length} on course. The ripest of them belongs on the roadmap.`;
-      }
+    if (galaxy.belt.length >= 5) {
+      return `${galaxy.belt.length} ideas are still drifting in the belt with no verdict — one pass through the queue and the sky files itself.`;
     }
-    if (unjudged.length >= 5) {
-      return `${unjudged.length} ideas still carry no verdict — one pass through the queue and the sky sorts itself.`;
+    const biggestShell = galaxy.shells
+      .filter((f) => f.alignment === 'on-course')
+      .sort((a, b) => (b.magnitude ?? 0) - (a.magnitude ?? 0))[0];
+    if (biggestShell && (biggestShell.magnitude ?? 0) >= 4) {
+      return `${galaxy.shells.length} judged ideas still ride the north star with no star of their own — "${biggestShell.title}" is magnitude ${biggestShell.magnitude} and looks like your next star.`;
     }
-    const biggest = [...themes].sort((a, b) => b.items.length - a.items.length)[0];
-    if (biggest && biggest.items.length >= 4) {
-      const on = biggest.items.filter((f) => f.alignment === 'on-course').length;
-      const off = biggest.items.filter((f) => f.alignment === 'off-course').length;
-      return `${biggest.label} is the biggest constellation at ${biggest.items.length} ideas — ${on} on course, ${off} drifting.`;
+    if (heaviest && heaviest.on >= 3) {
+      return `${heaviest.s.f.title} holds the most on-course mass — ${heaviest.on} of its ${heaviest.s.planets.length} planets. The ripest of them belongs on the roadmap.`;
+    }
+    if (galaxy.stars.length === 0 && galaxy.all.length >= 4) {
+      return `Nothing has been promoted to a star yet, so every idea is loose. Promote the one you keep coming back to and the rest can orbit it.`;
     }
     return '';
-  }, [themes, unjudged.length]);
+  }, [galaxy]);
 
   // ---- judge queue pop-out + Gemini theme clustering ----
   const [queueOut, setQueueOut] = useState(false);
@@ -601,6 +460,15 @@ export function Futures({
       {/* control row: total · source · sky/list · themes/all */}
       <div className="psky-top">
         <span className="psky-total">{bySource.length} ideas</span>
+        {/* The census: what shape the galaxy is in, before you look at it. */}
+        <span className="psky-census">
+          <span className="stars">★ {galaxy.stars.length} stars</span>
+          <span>·</span><span>{galaxy.stars.reduce((n, s) => n + s.planets.length, 0)} planets</span>
+          <span>·</span>
+          <span>{galaxy.stars.reduce((n, s) => n + s.planets.reduce((m, p) => m + p.moons.length, 0), 0)} moons</span>
+          <span>·</span><span>{galaxy.shells.length} on the north star</span>
+          <span>·</span><span>{galaxy.belt.length} in the belt</span>
+        </span>
         <div style={{ flex: 1 }} />
         {mixedSources && (
           <div className="seg-control sm" role="tablist" aria-label="Idea sources">
@@ -611,20 +479,15 @@ export function Futures({
               title="Ideas you typed (or agreed with Polaris)">Manual</button>
           </div>
         )}
-        {view === 'sky' && onCluster && bySource.length > 0 && (
+        {onCluster && bySource.length > 0 && (
           <button className="psky-all" onClick={runCluster} disabled={clusterBusy}
-            title="Gemini groups the funnel into themes — you review before anything is written">
+            title="Gemini groups the funnel into area tags — you review before anything is written">
             {clusterBusy ? '✧ clustering…' : '✧ Cluster'}
-          </button>
-        )}
-        {view === 'sky' && (
-          <button className={`psky-all ${allIdeas ? 'on' : ''}`}
-            onClick={() => { setAllIdeas((v) => !v); setOpenTheme(null); }}>
-            {allIdeas ? 'Themes' : 'All ideas'}
           </button>
         )}
         <div className="seg-control sm" role="tablist" aria-label="Ideas view">
           <button className={`seg-opt ${view === 'sky' ? 'on' : ''}`} onClick={() => setView('sky')}>Sky</button>
+          <button className={`seg-opt ${view === 'board' ? 'on' : ''}`} onClick={() => setView('board')}>Board</button>
           <button className={`seg-opt ${view === 'list' ? 'on' : ''}`} onClick={() => setView('list')}>List</button>
         </div>
       </div>
@@ -687,117 +550,91 @@ export function Futures({
         <div className="psky">
           {/* ---- the sky ---- */}
           <div className="psky-main">
-            <div className="psky-chips">
-              {themes.map((t) => (
-                <button key={t.key} className={`psky-chip ${openTheme === t.key ? 'on' : ''}`}
-                  onClick={() => { setOpenTheme(openTheme === t.key ? null : t.key); setAllIdeas(false); }}>
-                  <span className="name">{t.label}</span>
-                  <span className="n">{t.items.length}</span>
-                </button>
-              ))}
-              <div style={{ flex: 1 }} />
-              <span className="psky-lod">{lodNote}</span>
-              <div className="psky-zoom">
-                <button className="zbtn" onClick={() => zoomBy(-1)} aria-label="Zoom out">−</button>
-                <span className="zticks">
-                  {Z_TICKS.map((v) => (
-                    <button key={v} className={`ztick ${v <= z + 0.001 ? 'on' : ''}`}
-                      onClick={() => { setGlide(true); setZ(v); }}
-                      aria-label={`Zoom ${Math.round(v * 100)}%`} />
-                  ))}
-                </span>
-                <button className="zbtn" onClick={() => zoomBy(1)} aria-label="Zoom in">+</button>
-                <span className="zpct">{Math.round(z * 100)}%</span>
-              </div>
-              {offCentre && (
-                <button className="psky-recentre"
-                  onClick={() => { setGlide(true); setPan({ x: 0, y: 0 }); setZ(1); }}>Recentre</button>
-              )}
-            </div>
-
-            <div className="psky-viewport" ref={viewportRef}>
-              <div className="psky-field" onMouseDown={startPan}
-                style={{
-                  transform: `translate(${pan.x}px,${pan.y}px) scale(${z})`,
-                  transition: glide ? undefined : 'none',
-                }}>
-                {(['on-course', 'tangent', 'off-course'] as const).map((v) => (
-                  <div key={v}>
-                    <div className="psky-ring" style={{ left: C - RING[v], top: C - RING[v], width: RING[v] * 2, height: RING[v] * 2 }} />
-                    <div className="psky-ring-name" style={{ left: C - RING[v], top: C + RING[v] + 8, width: RING[v] * 2, color: RING_COLOR[v] }}>
-                      {alignLabel(v).toLowerCase()}
-                    </div>
-                  </div>
-                ))}
-                <div className="psky-star"
-                  style={{
-                    left: C - 46, top: C - 46,
-                    // Counter-scale off the field's z so the star lands on its
-                    // own 1:3 curve (see starScale). Origin is the disc's centre,
-                    // so the ring geometry it sits inside never shifts.
-                    transform: `scale(${(starScale(z) / z).toFixed(4)})`,
-                    transition: glide ? undefined : 'none',
-                  }}>
-                  <span>NORTH<br />STAR</span>
+            {view === 'sky' && (
+              <>
+              <div className="psky-chips">
+                {/* Scope: the whole galaxy, or the north star's own shells alone.
+                    Its shells crowd the middle when eight systems are drawn over
+                    them, and reading them is a different job from reading the
+                    systems — so it is a scope, not a zoom. */}
+                <div className="seg-control sm" role="tablist" aria-label="Sky scope">
+                  <button className={`seg-opt ${!northOnly ? 'on' : ''}`} onClick={() => setNorthOnly(false)}>
+                    Galaxy <span className="n">{galaxy.stars.length} stars</span>
+                  </button>
+                  <button className={`seg-opt ${northOnly ? 'on' : ''}`} onClick={() => setNorthOnly(true)}>
+                    North star <span className="n">{galaxy.shells.length} of its own</span>
+                  </button>
                 </div>
-                {bubbles.map((b) => (
-                  <button key={b.key} className="psky-bubble"
-                    style={{ left: b.x, top: b.y, width: b.d, height: b.d, opacity: b.opacity }}
-                    onClick={() => setOpenTheme(b.key)}>
-                    <span className="count">{b.count}</span>
-                    <span className="name">{b.label}</span>
+                {galaxy.stars.map((s) => (
+                  <button key={s.f.id} className={`psky-chip ${selId === s.f.id ? 'on' : ''}`}
+                    onClick={() => { setNorthOnly(false); setSelId(s.f.id); setZ(1.7); }}
+                    title={`Go to ${s.f.title}'s system`}>
+                    <span className="name">{s.f.title}</span>
+                    <span className="n">{s.planets.length}</span>
                   </button>
                 ))}
-                {nodes.map((n) => (
-                  <button key={n.f.id} className={`psky-node ${tray.has(n.f.id) ? 'tray' : ''} ${n.fresh ? 'fresh' : ''}`}
-                    style={{
-                      left: n.x, top: n.y, width: n.d, height: n.d, opacity: n.opacity,
-                      background: n.bg, borderWidth: n.bw, borderColor: n.border,
-                      borderStyle: n.dashed ? 'dashed' : 'solid',
-                    }}
-                    onClick={(e) => { if (e.shiftKey) toggleTray(n.f.id); else setSelId(n.f.id); }}>
-                    {n.showLabel && (
-                      <span className={`psky-caption ${n.sel ? 'sel' : ''}`}
-                        style={{ transform: `translate(${n.lx}px,${n.ly}px) translate(-50%,-50%)` }}>
-                        {n.label}
-                      </span>
-                    )}
+                {galaxy.belt.length > 0 && (
+                  <button className={`psky-chip ${selected && galaxy.kindOf(selected) === 'belt' ? 'on' : ''}`}
+                    onClick={() => { setZ(1); setSelId(galaxy.belt[0].id); }}
+                    title="The drift belt — everything still waiting on a verdict">
+                    <span className="name">belt</span>
+                    <span className="n">{galaxy.belt.length}</span>
                   </button>
-                ))}
-                {bySource.length === 0 && (
-                  <div className="psky-empty">No ideas yet — add the first one below and it takes its place in the sky.</div>
                 )}
+                <div style={{ flex: 1 }} />
+                <span className="psky-lod">
+                  {northOnly
+                    ? 'Only the north star and its own unadopted ideas, on three tiered shells.'
+                    : `${galaxy.stars.length} star systems around the north star, plus the drift belt.`}
+                </span>
               </div>
-            </div>
 
-            {/* The growth scrub (design 6b/7a): the same sky along its own history. */}
-            {timeline && (
-              <div className="psky-scrub">
-                <span className="edge">{timeline.spanLabel}</span>
-                <div className="hairline">
-                  <div className="hair" />
-                  {timeline.ticks.map((t, i) => {
-                    const curIdx = tlStep ?? timeline.ticks.length - 1;
-                    return (
-                      <button key={i}
-                        className={`ptick ${i === curIdx ? 'cur' : i < curIdx ? 'past' : ''}`}
-                        style={{ left: `${(i / (timeline.ticks.length - 1)) * 100}%` }}
-                        onClick={() => setTlStep(i === timeline.ticks.length - 1 ? null : i)}
-                        title={t.label} aria-label={`The sky as of ${t.label}`} />
-                    );
-                  })}
+              <Galaxy model={galaxy} northOnly={northOnly} sourceFilter={sourceFilter}
+                selId={selId} zoom={z} onZoom={setZ}
+                onSelect={(id, shift) => { if (shift && id != null) toggleTray(id); else setSelId(id); }} />
+
+              {/* The growth scrub (design 6b/7a): the same sky along its own history. */}
+              {timeline && (
+                <div className="psky-scrub">
+                  <span className="edge">{timeline.spanLabel}</span>
+                  <div className="hairline">
+                    <div className="hair" />
+                    {timeline.ticks.map((t, i) => {
+                      const curIdx = tlStep ?? timeline.ticks.length - 1;
+                      return (
+                        <button key={i}
+                          className={`ptick ${i === curIdx ? 'cur' : i < curIdx ? 'past' : ''}`}
+                          style={{ left: `${(i / (timeline.ticks.length - 1)) * 100}%` }}
+                          onClick={() => setTlStep(i === timeline.ticks.length - 1 ? null : i)}
+                          title={t.label} aria-label={`The sky as of ${t.label}`} />
+                      );
+                    })}
+                  </div>
+                  <button className={`nowlbl ${scrub ? 'then' : ''}`} onClick={() => setTlStep(null)}
+                    title={scrub ? 'Back to now' : 'The sky as it stands'}>
+                    {scrub ? scrub.label : 'now'}
+                  </button>
                 </div>
-                <button className={`nowlbl ${scrub ? 'then' : ''}`} onClick={() => setTlStep(null)}
-                  title={scrub ? 'Back to now' : 'The sky as it stands'}>
-                  {scrub ? scrub.label : 'now'}
-                </button>
-              </div>
+              )}
+              {scrub && (
+                <div className="psky-scrub-caption">
+                  The sky as it stood {scrub.label} — {arrivedCount} of {futures.length} idea{futures.length === 1 ? '' : 's'} had
+                  arrived. Verdicts and shapes are today's; only the population is then.
+                  <button onClick={() => setTlStep(null)}>▸ Back to now</button>
+                </div>
+              )}
+              </>
             )}
-            {scrub && (
-              <div className="psky-scrub-caption">
-                The sky as it stood {scrub.label} — {arrivedCount} of {bySource.length} idea{bySource.length === 1 ? '' : 's'} had
-                arrived{freshCount > 0 ? `; the ${freshCount} newest glow terracotta` : ''}.
-                <button onClick={() => setTlStep(null)}>▸ Back to now</button>
+
+            {view === 'board' && (
+              <div className="pgx-board-wrap">
+                <div className="pgx-board-head">
+                  <span className="lede">
+                    Every idea, filed by verdict. <b>Selecting here selects in the sky.</b>
+                  </span>
+                  <span className="key">★ star · ● planet · ○ moon · ◦ north star · · belt</span>
+                </div>
+                <GalaxyBoard rows={rows} selId={selId} onSelect={setSelId} />
               </div>
             )}
 
@@ -810,7 +647,7 @@ export function Futures({
                     <button onClick={() => toggleTray(f.id)} aria-label="Remove from the tray">×</button>
                   </span>
                 ))}
-                <span className="hint">shift-click stars to add more</span>
+                <span className="hint">shift-click anything in the sky to add more</span>
                 <div style={{ flex: 1 }} />
                 <button className="psky-tray-clear" onClick={() => setTray(new Set())}>clear</button>
                 <button className="psky-tray-go" onClick={openConverge}>Converge → tickets</button>
@@ -819,7 +656,7 @@ export function Futures({
             <div className="psky-composer">
               <span className="plus">+</span>
               <input value={draft}
-                placeholder="Add an idea — it lands unjudged, and the queue files it onto a ring"
+                placeholder="Add an idea — it lands unjudged in the belt, and the queue files it onto a shell"
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') { e.preventDefault(); add(); }
@@ -836,8 +673,10 @@ export function Futures({
             </div>
 
             <SelectedPanel selected={selected} themeLabel={selected ? (selected.area || LOOSE) : ''}
+              galaxy={galaxy} kind={selKind}
               inTray={selected ? tray.has(selected.id) : false}
               onToggleTray={selected ? () => toggleTray(selected.id) : undefined}
+              onSelect={setSelId} onShape={onShape}
               onPromote={onPromote} onEdit={onEdit} onAlign={onAlign} onDelete={onDelete} />
 
             <div className="psky-rail-scroll">
@@ -845,6 +684,40 @@ export function Futures({
                 hint={hint} hintBusy={hintBusy} hintErr={hintErr} canAsk={!!onAskGemini}
                 onJudge={judge} onAsk={askPolaris} onSkip={skipCur} onReset={resetSkips}
                 onPopOut={() => setQueueOut(true)} />
+
+              {/* What still rides the north star with no star of its own — the
+                  pile the next promotion comes out of, and invisible in the sky
+                  once eight systems are drawn over the shells. */}
+              {galaxy.shells.length > 0 && (
+                <div className="psky-shells">
+                  <div className="head">
+                    <span className="label">ON THE NORTH STAR</span>
+                    <span className="n">{galaxy.shells.length} unadopted</span>
+                  </div>
+                  {(['on-course', 'tangent', 'off-course'] as const).map((v) => {
+                    const items = galaxy.shells.filter((f) => f.alignment === v)
+                      .sort((a, b) => (b.magnitude ?? 0) - (a.magnitude ?? 0));
+                    if (!items.length) return null;
+                    return (
+                      <div className="grp" key={v} style={{ ['--vc']: GX_TONE[v] } as CSSProperties}>
+                        <div className="grp-head">
+                          <span className="dot" />
+                          <span className="name">{GX_LABEL[v]}</span>
+                          <span className="n">{items.length}</span>
+                          <span className="rule" />
+                        </div>
+                        {items.slice(0, 3).map((f) => (
+                          <button key={f.id} className={`row${selId === f.id ? ' sel' : ''}`}
+                            onClick={() => setSelId(f.id)}>
+                            <span className="t">{f.title}</span>
+                            <span className="m">{f.magnitude ? `mag ${f.magnitude}` : '—'}</span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {observation && (
                 <div className="psky-note">
@@ -1090,7 +963,7 @@ function QueueCard({
             {hintErr && <span className="psky-hint-err">✦ {hintErr}</span>}
             {hint && hint.id === cur.id && (
               <div className="psky-hint">
-                <div className="verdict" style={{ color: RING_COLOR[hint.s.alignment] }}>✦ {alignLabel(hint.s.alignment)}</div>
+                <div className="verdict" style={{ color: GX_TONE[hint.s.alignment] }}>✦ {alignLabel(hint.s.alignment)}</div>
                 <div className="why">{hint.s.why}</div>
               </div>
             )}
@@ -1110,16 +983,22 @@ function QueueCard({
   );
 }
 
-// The rail's selected-idea panel: verdict pill + theme, title, and the
-// dispositions (promote / edit / dismiss). Judging an unjudged selection
-// happens right here too — the queue is just the other door in.
+// The rail's selected-idea panel: what the thing IS, how big it is, what
+// orbits it, and every disposition — verdict, magnitude, promote to a star,
+// adopt into one, converge, edit, dismiss. Judging happens right here too; the
+// queue is just the other door in.
 function SelectedPanel({
-  selected, themeLabel, inTray, onToggleTray, onPromote, onEdit, onAlign, onDelete,
+  selected, themeLabel, galaxy, kind, inTray, onToggleTray, onSelect, onShape,
+  onPromote, onEdit, onAlign, onDelete,
 }: {
   selected: Future | null;
   themeLabel: string;
+  galaxy: GxModel;
+  kind: GxKind | null;
   inTray: boolean;
   onToggleTray?: () => void;
+  onSelect: (id: number) => void;
+  onShape: (id: number, patch: { parentId?: number | null; isStar?: boolean; magnitude?: number | null }) => void;
   onPromote: (future: Future) => void;
   onEdit: (id: number, patch: { title: string; note: string; area: string }) => void;
   onAlign: (id: number, alignment: Alignment | '') => void;
@@ -1127,20 +1006,31 @@ function SelectedPanel({
 }) {
   const [editing, setEditing] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [adopting, setAdopting] = useState(false);
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
   const [area, setArea] = useState('');
-  useEffect(() => { setEditing(false); setPicking(false); }, [selected?.id]);
+  useEffect(() => { setEditing(false); setPicking(false); setAdopting(false); }, [selected?.id]);
 
   if (!selected) {
     return (
       <div className="psky-sel">
-        <div className="psky-sel-empty">Pick a star — click any idea in the sky and it lands here for a verdict or a promotion.</div>
+        <div className="psky-sel-empty">Pick something — click any idea in the sky and it lands here for a verdict, a size or a promotion.</div>
       </div>
     );
   }
   const f = selected;
   const v = f.alignment || '';
+  const children = galaxy.childrenOf(f);
+  // Only a star or a planet can be orbited, and an idea carrying moons of its
+  // own can only go to a star — the same two rules the route enforces, so the
+  // picker never offers a move the server would refuse.
+  const adoptTargets = galaxy.all.filter((t) => {
+    if (t.id === f.id || t.parentId === f.id) return false;
+    const tk = galaxy.kindOf(t);
+    if (tk === 'star') return true;
+    return tk === 'planet' && children.length === 0;
+  });
 
   const save = () => {
     const t = title.trim();
@@ -1187,7 +1077,7 @@ function SelectedPanel({
             ))}
           </span>
         ) : (
-          <button className="psky-pill" style={{ background: RING_TINT[v], color: RING_COLOR[v] }}
+          <button className="psky-pill" style={{ ['--vc']: GX_TONE[v] } as CSSProperties}
             onClick={() => setPicking(true)}
             title={v ? 'Change the verdict (pick the same to clear)' : 'Judge this against the north star'}>
             {v ? alignLabel(v) : '✦ judge'}
@@ -1197,9 +1087,74 @@ function SelectedPanel({
         {f.source === 'hook' && <span className="auto-badge">✦ auto</span>}
         <span className="when">{f.when}</span>
       </div>
+      {kind && <div className="psky-sel-kind">{GX_GLYPH[kind]} {KIND_LABEL[kind]}</div>}
       <div className="psky-sel-title">{f.title}</div>
       {f.note && <div className="psky-sel-note">{f.note}</div>}
+
+      {/* Magnitude: how much work, and therefore how big it draws. Clicking the
+          lit pip again clears it back to unsized — an estimate you no longer
+          stand behind should be removable, not merely changeable. */}
+      <div className="psky-mag">
+        <span className="lbl">MAG {f.magnitude ? `${f.magnitude}/5` : '—'}</span>
+        <span className="pips">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <button key={i} className={`pip${f.magnitude && i <= f.magnitude ? ' on' : ''}`}
+              title={`${i}/5 — ${MAG_WORD[i]}`} aria-label={`Magnitude ${i} of 5 — ${MAG_WORD[i]}`}
+              onClick={() => onShape(f.id, { magnitude: f.magnitude === i ? null : i })} />
+          ))}
+        </span>
+        <span className="word">{f.magnitude ? MAG_WORD[f.magnitude] : 'not sized yet'}</span>
+      </div>
+
+      {/* What orbits it — and the way in to the pieces without hunting the sky. */}
+      {(kind === 'star' || kind === 'planet') && (
+        <div className="psky-kids">
+          <div className="lbl">{kind === 'star' ? 'PLANETS IN ITS ORBIT' : 'MOONS'}</div>
+          {children.map((c) => (
+            <button key={c.id} className="row" onClick={() => onSelect(c.id)}
+              style={{ ['--vc']: GX_TONE[c.alignment || ''] } as CSSProperties}>
+              <span className="dot" />
+              <span className="t">{c.title}</span>
+              <span className="m">{c.magnitude ? `mag ${c.magnitude}` : '—'}</span>
+            </button>
+          ))}
+          {children.length === 0 && (
+            <div className="empty">Nothing orbits it yet — adopt an idea from the north star or the belt.</div>
+          )}
+        </div>
+      )}
+
       <div className="psky-sel-actions">
+        {kind === 'star' ? (
+          <button className="act" onClick={() => onShape(f.id, { isStar: false })}
+            title="Back to a plain idea. Nothing loose can hold planets, so its planets return to the north star's shells.">
+            ☆ Dissolve the star
+          </button>
+        ) : (
+          <button className="act star" onClick={() => onShape(f.id, { isStar: true })}
+            title={kind === 'planet'
+              ? 'Its own orbit. Its moons come with it and become planets.'
+              : 'Give it an orbit of its own — other ideas can then be adopted into it.'}>
+            ★ Promote to its own star
+          </button>
+        )}
+        {adopting ? (
+          <select className="psky-adopt" autoFocus defaultValue=""
+            aria-label="Adopt this idea into an orbit"
+            onChange={(e) => { setAdopting(false); onShape(f.id, { parentId: e.target.value ? Number(e.target.value) : null }); }}
+            onBlur={() => setAdopting(false)}>
+            <option value="" disabled>orbit around…</option>
+            {f.parentId != null && <option value="">— cut it loose —</option>}
+            {adoptTargets.map((t) => (
+              <option key={t.id} value={t.id}>
+                {galaxy.kindOf(t) === 'star' ? '★' : '●'} {t.title}
+              </option>
+            ))}
+          </select>
+        ) : (kind !== 'star' && (adoptTargets.length > 0 || f.parentId != null)) && (
+          <button className="act" onClick={() => setAdopting(true)}
+            title="Put it in orbit around a star or a planet">⊙ Orbit…</button>
+        )}
         <button className="act primary" onClick={() => onPromote(f)}>→ Roadmap</button>
         {onToggleTray && (
           <button className={`act ${inTray ? 'in-tray' : ''}`} onClick={onToggleTray}

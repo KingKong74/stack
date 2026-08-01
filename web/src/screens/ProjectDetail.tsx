@@ -3,7 +3,7 @@ import type { Roadmap as RoadmapData, RoadmapItem, Note, Future, Severity, Prior
 import {
   getProjectDetail, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
-  createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture,
+  createNote, patchNote, deleteNote, createFuture, patchFuture, deleteFuture, getFutures,
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
   runAudit, getAuditPrompt, type AuditResult,
   patchProject, deleteProject, createShareLink, deleteShareLink,
@@ -468,6 +468,18 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, futures: futures.map((f) => (f.id === fid ? updated : f)) });
     });
 
+  // #312 — where an idea sits in the galaxy and how big it is. One handler for
+  // all three because the moves overlap: adopting demotes a star, promoting
+  // cuts the old orbit, and the server resolves that pair in one statement.
+  // It re-reads the whole collection rather than patching the one row: a
+  // promotion or a dissolve moves the idea's CHILDREN too, and those rows come
+  // back changed without being in the response.
+  const shapeFuture = (fid: number, patch: { parentId?: number | null; isStar?: boolean; magnitude?: number | null }) =>
+    guard(async () => {
+      await patchFuture(slug, fid, patch);
+      setData({ ...data, futures: await getFutures(slug) });
+    });
+
   const removeFuture = (fid: number) =>
     guard(async () => {
       await deleteFuture(slug, fid);
@@ -859,6 +871,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onSetAreas={applyFutureAreas}
             onConvergeDraft={(ids, mode) => convergeFutures(slug, ids, mode)}
             onConvergeCreate={convergeCreate}
+            onShape={shapeFuture}
             onDelete={removeFuture} onPromote={promoteFuture} />
         )}
         {tab === 'tips' && <Tips slug={slug} />}
