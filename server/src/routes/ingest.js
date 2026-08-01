@@ -71,6 +71,45 @@ function asFutureCandidates(v) {
  * the auto-extracted bugs and roadmap items (deduped by fingerprint, honouring
  * tombstones, never touching manual items).
  */
+// The SessionEnd hook's per-model transcript usage, shaped like the autopilot
+// runner's `model_usage` so one reader serves both populations. Untrusted
+// input: model ids are capped and bounded in number, and every count is
+// coerced to a finite non-negative integer. Cost is deliberately absent — a
+// transcript carries none, and inventing one would put a made-up dollar figure
+// beside the runner's real ones.
+const USAGE_KEYS = ['inputTokens', 'outputTokens', 'cacheReadInputTokens', 'cacheCreationInputTokens'];
+function asModelUsage(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  const out = {};
+  for (const [model, u] of Object.entries(v).slice(0, 12)) {
+    const id = String(model || '').trim().slice(0, 120);
+    if (!id || !u || typeof u !== 'object') continue;
+    const row = {};
+    let any = 0;
+    for (const k of USAGE_KEYS) {
+      const n = Number(u[k]);
+      row[k] = Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+      any += row[k];
+    }
+    if (any > 0) out[id] = row;
+  }
+  return out;
+}
+
+// { 'Explore': 3, … } — how many subagents of each type a session spawned.
+// A COUNT, never a cost: the parent transcript never records what a subagent
+// spent, and the client says so rather than letting the number read as spend.
+function asAgentTypes(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  const out = {};
+  for (const [type, n] of Object.entries(v).slice(0, 20)) {
+    const t = String(type || '').trim().slice(0, 40);
+    const c = Number(n);
+    if (t && Number.isFinite(c) && c > 0) out[t] = Math.trunc(c);
+  }
+  return out;
+}
+
 ingest.post('/', async (req, res) => {
   const body = req.body || {};
   const p = body.project || {};
@@ -108,6 +147,13 @@ ingest.post('/', async (req, res) => {
     message_count: Number.isFinite(s.message_count) ? Math.trunc(s.message_count) : null,
     // Real transcript token usage from the SessionEnd hook (#178) — 0 = unknown.
     tokens_used: Number.isFinite(s.tokens_used) && s.tokens_used > 0 ? Math.trunc(s.tokens_used) : 0,
+    // Per-model usage + delegations, only ever sent by the SessionEnd hook: it
+    // is the only thing that reads the transcript. `{}` means the post carried
+    // none (a /checkpoint, or a hook that could not read one), which is why the
+    // writes below treat empty as "leave what is there" rather than as zero.
+    model_usage: asModelUsage(s.model_usage),
+    agent_calls: Number.isFinite(s.agent_calls) && s.agent_calls > 0 ? Math.trunc(s.agent_calls) : 0,
+    agent_types: asAgentTypes(s.agent_types),
   };
 
   const bugCandidates = asBugCandidates(extract.bugs);
@@ -218,25 +264,34 @@ ingest.post('/', async (req, res) => {
            branch=COALESCE($11, branch), cwd=COALESCE($12, cwd), model=COALESCE($13, model),
            reason=$14, message_count=COALESCE($16, message_count),
            tokens_used = GREATEST(tokens_used, $17),  -- keep the fullest count (#178)
+           -- Same rule as the jsonb lists: empty means the post carried none,
+           -- so it leaves what is there. Only the hook ever sends these, and a
+           -- /checkpoint landing on the same row must not blank them.
+           model_usage = CASE WHEN $18::jsonb = '{}'::jsonb THEN model_usage ELSE $18::jsonb END,
+           agent_types = CASE WHEN $20::jsonb = '{}'::jsonb THEN agent_types ELSE $20::jsonb END,
+           agent_calls = GREATEST(agent_calls, $19),
            authored = (authored OR $15)
          WHERE id=$1`,
-        // $1=id, $2..$14 as listed, $15=authored (boolean), $16=message_count, $17=tokens_used
+        // $1=id, $2..$14 as listed, $15=authored (boolean), $16=message_count,
+        // $17=tokens_used, $18=model_usage, $19=agent_calls, $20=agent_types
         [existingSession.id, session.session_id, session.commit_hash, session.summary,
          session.current_phase, JSON.stringify(session.next_steps), JSON.stringify(session.blockers),
          JSON.stringify(session.files_touched), JSON.stringify(session.tools_used),
          JSON.stringify(session.tags), session.branch, session.cwd, session.model,
-         session.reason, authored, session.message_count, session.tokens_used]
+         session.reason, authored, session.message_count, session.tokens_used,
+         JSON.stringify(session.model_usage), session.agent_calls, JSON.stringify(session.agent_types)]
       );
     } else {
       const ins = await client.query(
         `INSERT INTO sessions
            (project_id, session_id, commit_hash, summary, current_phase, next_steps,
             blockers, files_touched, tools_used, tags, branch, cwd, model, reason,
-            message_count, authored, tokens_used, source)
+            message_count, authored, tokens_used, model_usage, agent_calls, agent_types, source)
          VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,
-                 $11,$12,$13,$14,$15,$16,$17,'hook')
+                 $11,$12,$13,$14,$15,$16,$17,$18::jsonb,$19,$20::jsonb,'hook')
          RETURNING id`,
-        [projectId, ...sessionCols, session.tokens_used]
+        [projectId, ...sessionCols, session.tokens_used,
+         JSON.stringify(session.model_usage), session.agent_calls, JSON.stringify(session.agent_types)]
       );
       sessionRowId = ins.rows[0].id;
     }

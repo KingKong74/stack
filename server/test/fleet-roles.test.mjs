@@ -15,6 +15,7 @@ const usage = (tok, cost) => ({ inputTokens: tok, outputTokens: 0, cacheReadInpu
 const SONNET = 'claude-sonnet-4-5-20250929';
 const OPUS5 = 'claude-opus-5-20260115';
 const HAIKU = 'claude-haiku-4-5-20251001';
+const FABLE = 'claude-fable-5';
 
 const projects = [
   { slug: 'alpha', name: 'Alpha', tint: '#a1', automode: true },
@@ -160,6 +161,61 @@ const planNoAdv = computeFleetRoles({
 check('unadvised plan night still counts as a plan run', planNoAdv.worth.planRuns, 1);
 check('…but not as an advised one', planNoAdv.worth.advisedPlanRuns, 0);
 check('…and claims no advisor cost', planNoAdv.worth.advCostUsd, 0);
+
+// --------------------------------------------------------------------------
+// Interactive sessions. The executor/advisor policy governs the AUTOPILOT, so
+// a model the human picked in a terminal is a different population: it shows
+// in the merged evidence list and in `manual`, and it must never reach the
+// role cards, `worth` or drift. A hand-picked Opus is not off-policy.
+// --------------------------------------------------------------------------
+console.log('\n--- interactive sessions (evidence, never policy) ---');
+const withManual = computeFleetRoles({
+  usageRows: rows,
+  sessionRows: [
+    // one session that switched model mid-flight, and delegated
+    { slug: 'alpha', created_at: hoursAgo(5), agent_calls: 3,
+      agent_types: { Explore: 2, 'general-purpose': 1 },
+      model_usage: { [OPUS5]: usage(4000), [FABLE]: usage(1000) } },
+    { slug: 'alpha', created_at: hoursAgo(9), agent_calls: 0, agent_types: {},
+      model_usage: { [OPUS5]: usage(2000) } },
+    // a session recorded before the hook sent a breakdown: counted, but it
+    // cannot claim a model. The denominator has to say so.
+    { slug: 'bravo', created_at: hoursAgo(12), agent_calls: 0, agent_types: {}, model_usage: {} },
+  ],
+  projects, execAlias: 'sonnet', advAlias: 'claude-opus-5', now: NOW,
+});
+check('sessions counted', withManual.manual.sessions, 3);
+check('…and the ones that actually carried usage', withManual.manual.sessionsWithUsage, 2);
+check('manual tokens summed', withManual.manual.tokens, 7000);
+check('manual models, biggest first', withManual.manual.models.map((m) => m.label), ['opus-5', 'fable-5']);
+check('a mid-session switch counts both', withManual.manual.models.find((m) => m.label === 'fable-5').sessions, 1);
+check('delegations counted', [withManual.manual.delegatedSessions, withManual.manual.agentCalls], [1, 3]);
+check('agent types ranked', withManual.manual.agentTypes, [{ type: 'Explore', count: 2 }, { type: 'general-purpose', count: 1 }]);
+
+// The separation that matters — everything policy-shaped must be untouched.
+check('worth is identical with or without sessions',
+  JSON.stringify(withManual.worth), JSON.stringify(r.worth));
+check('runs are identical', JSON.stringify(withManual.runs), JSON.stringify(r.runs));
+check('assignments are identical',
+  JSON.stringify(withManual.assignments), JSON.stringify(r.assignments));
+check('the role-card model list is identical',
+  JSON.stringify(withManual.models), JSON.stringify(r.models));
+
+console.log('\n--- everyModel (the merged receipt) ---');
+const byEvery = Object.fromEntries(withManual.everyModel.map((m) => [m.label, m]));
+check('fable-5 is manual-only', [byEvery['fable-5'].source, byEvery['fable-5'].role], ['manual', '']);
+check('sonnet-4-5 is autopilot-only', byEvery['sonnet-4-5'].source, 'autopilot');
+check('opus-5 ran in both', byEvery['opus-5'].source, 'both');
+// The regression this separation exists to prevent: a manual model must not
+// arrive carrying a role, or the executor card renders it as drift.
+check('no manual-only model carries a role',
+  withManual.everyModel.filter((m) => m.source === 'manual' && m.role !== '').length, 0);
+check('opus-5 tokens are the sum of both halves', byEvery['opus-5'].tokens, 300 + 6000);
+check('shares are token-based and total 100',
+  Math.round(withManual.everyModel.reduce((n, m) => n + m.share, 0)), 100);
+check('a week with no sessions still returns the list', r.everyModel.length > 0, true);
+check('…and every row of it is autopilot',
+  r.everyModel.every((m) => m.source === 'autopilot'), true);
 
 
 

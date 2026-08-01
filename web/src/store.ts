@@ -562,12 +562,42 @@ export interface FleetRoleRuns {
   plan?: number;   // absent on a server that pre-dates the plan-night split
 }
 
+// A model in the merged receipt: nights and the human's own sessions in one
+// list. `role` is only ever set on an autopilot row — the executor/advisor
+// policy governs the autopilot, so a model picked by hand in a terminal
+// carries none and must never be rendered as drift. `share` is TOKEN-based on
+// both sides, the only basis both populations have (a transcript has no cost).
+export interface FleetEveryModel {
+  model: string; label: string;
+  role: 'exec' | 'adv' | '';    // '' on every manual-only row, by construction
+  source: 'autopilot' | 'manual' | 'both';
+  runs: number; sessions: number;
+  tokens: number; costUsd: number; todayTokens: number;
+  share: number; lastSeen: string;
+}
+
+// The interactive population. `agentCalls` is a COUNT of delegations and never
+// a cost: the parent transcript records the Agent call and its result but
+// never the subagent's own usage, so there is nothing to price.
+export interface FleetManual {
+  sessions: number;
+  sessionsWithUsage: number;   // the honest denominator — the rest sent no breakdown
+  tokens: number;
+  models: { model: string; label: string; sessions: number; tokens: number; share: number; lastSeen: string }[];
+  delegatedSessions: number;
+  agentCalls: number;
+  agentTypes: { type: string; count: number }[];
+}
+
 export interface FleetRoles {
   days: number;
   models: FleetRoleModel[];
   assignments: FleetRoleAssignment[];
   worth: FleetRoleWorth;
   runs?: FleetRoleRuns;   // absent on a server that pre-dates #288
+  // Both absent on a server that pre-dates interactive sessions being read.
+  everyModel?: FleetEveryModel[];
+  manual?: FleetManual;
 }
 
 export interface ControlData {

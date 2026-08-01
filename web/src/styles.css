@@ -3782,6 +3782,24 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc-roleev .evr .day { width: 82px; }
 .mc-roleev .evr .cost { width: 56px; color: var(--ink); }
 .mc-roleev .evr .seen { width: 66px; }
+/* A manual row is the human's own session: neither role, and no fault. It
+   wears the neutral so it can never be mistaken for the amber that means
+   off-policy — the policy governs the autopilot, not a model picked by hand. */
+.mc-roleev .evr.manual .sw { background: var(--muted); }
+.mc-roleev .evr .bar i.manual { background: var(--muted); }
+.mc-roleev .evr .tag { font-size: 8.5px; letter-spacing: 0.08em; padding: 2px 6px; border-radius: 4px; flex: none; width: 64px; text-align: center; }
+.mc-roleev .evr .tag.exec { background: var(--live-tint); border-color: var(--line-2); color: var(--sage); }
+.mc-roleev .evr .tag.adv { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent); }
+.mc-roleev .evr .tag.other { background: var(--building-tint); border-color: var(--line-2); color: var(--building); }
+.mc-roleev .evr .tag.manual { background: var(--panel); border-color: var(--line-2); color: var(--muted); }
+.mc-roleev .evnote { padding: 7px 8px 0; font-size: 10.5px; line-height: 1.45; color: var(--muted); }
+
+/* delegations — a count of Agent calls, never a cost */
+.mc-roledeleg { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); padding: 11px 15px; }
+.mc-roledeleg .k { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.1em; color: var(--paused); flex: none; }
+.mc-roledeleg .v { font-size: 11.5px; color: var(--ink); }
+.mc-roledeleg .v b { font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--muted); }
+.mc-roledeleg .hint { font-size: 10.5px; color: var(--paused); margin-left: auto; }
 
 /* who is doing what — the policy beside what actually ran */
 .mc-roletable { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); overflow: hidden; }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { patchSettings, type ControlData, type FleetRoleAssignment, type FleetRoleModel, type FleetRoleWorth } from '../store';
+import { patchSettings, type ControlData, type FleetRoleAssignment, type FleetRoleModel, type FleetRoleWorth, type FleetEveryModel } from '../store';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
 import { go } from '../lib/route';
 
@@ -154,6 +154,17 @@ export function RolesRoom({ data, onReload, onConfigure }: {
   const offRuns = roles.runs ? roles.runs.offPolicy : null;
   const noBreakdown = roles.runs ? roles.runs.noBreakdown : 0;
   const planRuns = roles.runs?.plan ?? worth.planRuns ?? 0;
+
+  // The receipt is the merged list where the server sends one, and the
+  // autopilot-only list where it doesn't — an older server still renders
+  // exactly what it always did rather than an empty panel.
+  const manual = roles.manual;
+  const evRows: FleetEveryModel[] = roles.everyModel
+    ?? models.map((m) => ({ ...m, source: 'autopilot' as const, sessions: 0 }));
+  // Only worth explaining the basis when the two populations are actually
+  // mixed; on an autopilot-only week the cost column IS the basis.
+  const mergedShares = evRows.some((m) => m.source !== 'autopilot')
+    && evRows.some((m) => m.source !== 'manual');
 
   // The executor's slot: the model the policy names, plus anything that ran
   // that neither role claims. The advisor's models are a different job and sit
@@ -369,41 +380,92 @@ export function RolesRoom({ data, onReload, onConfigure }: {
         </div>
       </div>
 
-      {/* ---- evidence: what each model did. The receipt, not the headline ---- */}
+      {/* ---- evidence: what each model did. The receipt, not the headline ----
+           Nights and the human's own sessions in ONE list, because "what ran
+           this week" is one question. What does NOT merge is the judgement
+           above: a manual row carries no role, so it is never toned or tagged
+           as off-policy — the policy governs the autopilot, and a model picked
+           by hand in a terminal was never under it. */}
       <div className="mc-roleev">
         <button className="evhead" onClick={() => setEvidence((v) => !v)}>
           <span className="tw">{evidence ? '▾' : '▸'}</span>
           <span className="k">EVERY MODEL THAT RAN</span>
           <span className="n">
-            {models.length === 0 ? 'nothing recorded' : plural(models.length, 'model')}
+            {evRows.length === 0 ? 'nothing recorded' : plural(evRows.length, 'model')}
+            {manual && manual.sessions > 0 && ` · ${plural(manual.sessions, 'session')}`}
             {planRuns > 0 && ` · ${plural(planRuns, 'plan night')}`}
             {noBreakdown > 0 && ` · ${plural(noBreakdown, 'run')} recorded no breakdown`}
           </span>
         </button>
-        {evidence && (models.length > 0 ? (
+        {evidence && (evRows.length > 0 ? (
           <div className="evrows">
-            {models.map((m) => (
-              <div className={`evr ${m.role || 'other'}`} key={m.model}>
-                <span className="sw" />
-                <span className="nm" title={m.model}>{m.label}</span>
-                <span className={`tag ${m.role || 'other'}`}>{ROLE_LABEL[m.role]}</span>
-                <span className="runs">{plural(m.runs, 'run')}</span>
-                <div className="bar"><i className={m.role || 'other'} style={{ width: `${m.share}%` }} /></div>
-                <span className="pct">{Math.round(m.share)}%</span>
-                <span className="day">{fmtTok(m.todayTokens)} tok/24h</span>
-                <span className="cost">{m.costUsd > 0 ? fmtUsd(m.costUsd) : '—'}</span>
-                <span className="seen">{m.lastSeen}</span>
+            {evRows.map((m) => {
+              // Tone follows the ROLE for a night and the source for a session.
+              // A manual row must not wear the amber the off-policy rows wear.
+              const tone = m.source === 'manual' ? 'manual' : (m.role || 'other');
+              return (
+                <div className={`evr ${tone}`} key={m.model}>
+                  <span className="sw" />
+                  <span className="nm" title={m.model}>{m.label}</span>
+                  <span className={`tag ${tone}`}>
+                    {m.source === 'manual' ? 'MANUAL' : ROLE_LABEL[m.role]}
+                  </span>
+                  <span className="runs">
+                    {m.runs > 0 ? plural(m.runs, 'run') : ''}
+                    {m.runs > 0 && m.sessions > 0 ? ' · ' : ''}
+                    {m.sessions > 0 ? `${m.sessions}s` : ''}
+                  </span>
+                  <div className="bar"><i className={tone} style={{ width: `${m.share}%` }} /></div>
+                  <span className="pct">{Math.round(m.share)}%</span>
+                  <span className="day">{fmtTok(m.todayTokens)} tok/24h</span>
+                  {/* A transcript carries no cost, so a manual-only row shows
+                      none rather than a zero that reads as "it was free". */}
+                  <span className="cost">{m.costUsd > 0 ? fmtUsd(m.costUsd) : '—'}</span>
+                  <span className="seen">{m.lastSeen}</span>
+                </div>
+              );
+            })}
+            {mergedShares && (
+              <div className="evnote">
+                Shares are token-based across both — a transcript records no cost, so it is
+                the one basis a night and a session share.
               </div>
-            ))}
+            )}
+            {manual && manual.sessions > manual.sessionsWithUsage && (
+              <div className="evnote">
+                {plural(manual.sessions - manual.sessionsWithUsage, 'session')} of {manual.sessions} recorded
+                no per-model breakdown — sessions from before the hook sent one, or whose
+                transcript could not be read.
+              </div>
+            )}
           </div>
         ) : (
           <div className="mc14-quiet" style={{ padding: '4px 12px 12px' }}>
-            No run in the last {roles.days} days recorded a per-model breakdown, so there is
-            nothing to attribute yet. The breakdown arrives with each finished item — one
-            night's runs will fill this in.
+            Nothing in the last {roles.days} days recorded a per-model breakdown — no run, and no
+            interactive session either. The breakdown arrives with each finished item and with
+            each session the SessionEnd hook records.
           </div>
         ))}
       </div>
+
+      {/* ---- delegations. A COUNT and never a cost: the parent transcript
+           records the Agent call and its result but never the subagent's own
+           usage, so there is nothing to price and the line says so. ---- */}
+      {manual && manual.agentCalls > 0 && (
+        <div className="mc-roledeleg">
+          <span className="k">DELEGATED</span>
+          <span className="v">
+            {plural(manual.agentCalls, 'Agent call')} across {plural(manual.delegatedSessions, 'session')}
+            {manual.agentTypes.length > 0 && ' — '}
+            {manual.agentTypes.map((t, i) => (
+              <span key={t.type}>
+                {i > 0 && ', '}<b>{t.type}</b> ×{t.count}
+              </span>
+            ))}
+          </span>
+          <span className="hint">subagent tokens are not recorded in the transcript</span>
+        </div>
+      )}
 
       {/* ---- who is doing what: the policy beside what actually ran, per project ---- */}
       <div className="mc-roletable">

@@ -87,6 +87,16 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS gemini_note TEXT;
 -- per message id), so manual sessions report usage like autopilot runs do.
 -- 0 = unknown (pre-#178 rows, or a hook that couldn't read the transcript).
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS tokens_used BIGINT NOT NULL DEFAULT 0;
+-- Per-model transcript usage for an INTERACTIVE session, shaped exactly like
+-- autopilot_runs.model_usage so the Roles room reads one shape for both. No
+-- costUSD key: a transcript carries no cost, which is why manual spend is
+-- reported on tokens. '{}' = the post carried none, NOT "it ran nothing".
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS model_usage JSONB NOT NULL DEFAULT '{}'::jsonb;
+-- Subagent delegations: how many Agent calls, and of which types. A COUNT and
+-- never a cost — the parent transcript records the call and its result but
+-- never the subagent's own usage, so there is nothing to sum.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS agent_calls INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS agent_types JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- Per-project bug tracker. bug_key is the human "BUG-N" id, unique per project.
 CREATE TABLE IF NOT EXISTS bugs (

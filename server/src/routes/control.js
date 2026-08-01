@@ -55,6 +55,18 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //     days,                                 // the window these numbers cover
 //     models: [ { model, label, role, runs, tokens, costUsd,
 //                 todayTokens, todayCostUsd, share, lastSeen } ],
+//     everyModel: [ { …, source, sessions } ],  // nights + interactive, one
+//                                           // list; share is TOKEN-based on
+//                                           // both sides (a transcript has no
+//                                           // cost, so it is the only basis
+//                                           // both populations share)
+//     manual: { sessions, sessionsWithUsage, tokens, models[],
+//               delegatedSessions, agentCalls, agentTypes[] },
+//                                           // the human's own sessions. Never
+//                                           // scored against the policy: it
+//                                           // governs the autopilot, so a
+//                                           // hand-picked model is not drift.
+//                                           // agentCalls is a COUNT, not spend
 //     assignments: [ { slug, name, tint, automode, runs,   // what ACTUALLY ran
 //                      exec, execExtra, adv, advExtra,     // per project, vs
 //                      drift, driftModel, lastRun } ],     // the configured policy
@@ -199,7 +211,15 @@ export function splitRunRoles(modelUsage, execAlias, advAlias) {
 // model_usage, finished_at); `projects` is the already-shaped project list.
 // Attribution uses the same alias match as the per-lane split (#280), so a
 // lane and the fleet can never disagree about who a model was.
-export function computeFleetRoles({ usageRows, projects, execAlias, advAlias, now = Date.now() }) {
+//
+// `sessionRows` are the 7-day INTERACTIVE sessions (slug, model_usage,
+// agent_calls, agent_types, created_at). They are a different population and
+// are kept one: the executor/advisor policy governs the AUTOPILOT, so a
+// hand-picked model in a terminal is not drift and must never be scored as
+// such. They therefore feed `manual` and the merged `everyModel` evidence list
+// ONLY — `models`, `assignments`, `worth` and `runs` stay autopilot-only, which
+// is what lets the two role cards keep meaning what they say.
+export function computeFleetRoles({ usageRows, sessionRows = [], projects, execAlias, advAlias, now = Date.now() }) {
   const dayCut = now - 24 * 60 * 60 * 1000;
   const models = new Map();   // model id → its week
   const perProject = new Map(); // slug → what actually ran there
@@ -335,10 +355,115 @@ export function computeFleetRoles({ usageRows, projects, execAlias, advAlias, no
     .sort((a, b) => (a.drift && a.drift !== 'no-runs' ? 0 : 1) - (b.drift && b.drift !== 'no-runs' ? 0 : 1)
       || b.runs - a.runs);
 
+  // ---- the interactive half -------------------------------------------
+  // What the human's own sessions ran on. Tokens only: a transcript carries no
+  // cost, so there is nothing to report and nothing is invented. Delegations
+  // are counted, never priced — the parent transcript records the Agent call
+  // and its result but never the subagent's usage.
+  const manualModels = new Map();
+  const agentTypeTotals = new Map();
+  let manualSessions = 0, manualTokens = 0, manualWithUsage = 0;
+  let delegatedSessions = 0, agentCalls = 0;
+  for (const s of sessionRows) {
+    manualSessions += 1;
+    const at = new Date(s.created_at).getTime();
+    const entries = s.model_usage && typeof s.model_usage === 'object'
+      ? Object.entries(s.model_usage) : [];
+    if (entries.length > 0) manualWithUsage += 1;
+    for (const [model, u] of entries) {
+      const tokens = (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0)
+        + (Number(u.cacheReadInputTokens) || 0) + (Number(u.cacheCreationInputTokens) || 0);
+      manualTokens += tokens;
+      if (!manualModels.has(model)) {
+        manualModels.set(model, {
+          model, label: shortModel(model), sessions: 0, tokens: 0, todayTokens: 0, lastAt: 0,
+        });
+      }
+      const m = manualModels.get(model);
+      m.sessions += 1;
+      m.tokens += tokens;
+      if (at > dayCut) m.todayTokens += tokens;
+      m.lastAt = Math.max(m.lastAt, at);
+    }
+    const calls = Number(s.agent_calls) || 0;
+    if (calls > 0) { delegatedSessions += 1; agentCalls += calls; }
+    const types = s.agent_types && typeof s.agent_types === 'object' ? Object.entries(s.agent_types) : [];
+    for (const [type, n] of types) agentTypeTotals.set(type, (agentTypeTotals.get(type) || 0) + (Number(n) || 0));
+  }
+
+  // The merged receipt. Shares are TOKEN-based on both sides on purpose: the
+  // runner reports cost and a transcript cannot, so a merged percentage is only
+  // honest on the one basis both populations actually have.
+  const everyTokens = attributedTokens + manualTokens;
+  const everyModel = new Map();
+  const touch = (model) => {
+    if (!everyModel.has(model)) {
+      everyModel.set(model, {
+        model, label: shortModel(model), role: '', source: '',
+        runs: 0, sessions: 0, tokens: 0, costUsd: 0, todayTokens: 0, lastAt: 0,
+      });
+    }
+    return everyModel.get(model);
+  };
+  for (const m of modelList) {
+    const e = touch(m.model);
+    e.role = m.role; e.source = 'autopilot';
+    e.runs = m.runs; e.tokens += m.tokens; e.costUsd += m.costUsd;
+    e.todayTokens += m.todayTokens;
+    // modelList's own rows have had `lastAt` stripped in favour of the rendered
+    // `lastSeen`; the source Map still carries the raw stamp.
+    e.lastAt = Math.max(e.lastAt, models.get(m.model)?.lastAt || 0);
+  }
+  for (const m of manualModels.values()) {
+    const e = touch(m.model);
+    // A model the human runs by hand carries no role: the policy never named
+    // it for one. 'both' is the honest label when it also ran on a night.
+    e.source = e.source === 'autopilot' ? 'both' : 'manual';
+    e.sessions = m.sessions; e.tokens += m.tokens;
+    e.todayTokens += m.todayTokens;
+    e.lastAt = Math.max(e.lastAt, m.lastAt);
+  }
+  const everyModelList = [...everyModel.values()]
+    .map((e) => ({
+      ...e,
+      share: everyTokens > 0 ? (e.tokens / everyTokens) * 100 : 0,
+      lastSeen: relativeTime(new Date(e.lastAt).toISOString()) || 'just now',
+    }))
+    .sort((a, b) => b.tokens - a.tokens);
+  for (const e of everyModelList) delete e.lastAt;
+
   return {
     days: 7,
     models: modelList,
     assignments,
+    // Every model that ran ANYWHERE this week — nights and the human's own
+    // sessions in one list, each row saying which it was. `role` is only ever
+    // set on an autopilot row; a manual row carries none, because the policy
+    // never named it for one.
+    everyModel: everyModelList,
+    // The interactive population, kept whole and separate. `sessionsWithUsage`
+    // is the honest denominator: a session recorded before the hook learned to
+    // send a breakdown, or one whose transcript could not be read, contributes
+    // nothing here and says so rather than reading as a session that ran no
+    // model at all.
+    manual: {
+      sessions: manualSessions,
+      sessionsWithUsage: manualWithUsage,
+      tokens: manualTokens,
+      models: [...manualModels.values()]
+        .map(({ lastAt, ...m }) => ({   // eslint-disable-line no-unused-vars
+          ...m,
+          share: manualTokens > 0 ? (m.tokens / manualTokens) * 100 : 0,
+          lastSeen: relativeTime(new Date(lastAt).toISOString()) || 'just now',
+        }))
+        .sort((a, b) => b.tokens - a.tokens),
+      // Counts, not spend. The client must say so wherever it shows them.
+      delegatedSessions,
+      agentCalls,
+      agentTypes: [...agentTypeTotals.entries()]
+        .map(([type, count]) => ({ type, count }))
+        .sort((a, b) => b.count - a.count),
+    },
     // (#288, design 1b) The run-level headline the two role cards lead with.
     // `total` counts every run that recorded a per-model breakdown — the same
     // population the off-policy count is drawn from, so "5 of 9 went elsewhere"
@@ -377,7 +502,7 @@ control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
   const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR, branchR, checksR, monthR, hbR,
-         ledgerR, ledgerJobsR, reviewNotesR, verdictR] = await Promise.all([
+         ledgerR, ledgerJobsR, reviewNotesR, verdictR, sessionUsageR] = await Promise.all([
     q(`SELECT id, slug, name, tint, status, automode, autopilot_area, blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
     // claimed_by that starts with 'auto/' or 'lane/' is an open claim branch; we
@@ -492,6 +617,16 @@ control.get('/', async (_req, res) => {
          JOIN autopilot_runs r ON r.item_id = ri.id
         WHERE r.finished_at > now() - interval '14 days' AND r.outcome = 'landed'
           AND COALESCE(ri.review_tag, '') <> ''`),
+    // The INTERACTIVE half of the Roles room: what the human's own sessions ran
+    // on, recorded by the SessionEnd hook from the transcript. Same 7-day
+    // window as the run ledger above so the two halves describe one week.
+    // Sessions with an empty breakdown are still selected — they are the
+    // denominator that makes "3 of 12 recorded one" sayable.
+    q(`SELECT p.slug, s.model_usage, s.agent_calls, s.agent_types, s.created_at
+         FROM sessions s
+         JOIN projects p ON p.id = s.project_id
+        WHERE s.created_at > now() - interval '7 days' AND p.deleted_at IS NULL
+        ORDER BY s.created_at DESC`),
   ]);
 
   const roadByP = new Map();
@@ -1058,7 +1193,7 @@ control.get('/', async (_req, res) => {
   // attributes models with the same alias match #280 uses — so a lane's split
   // and the fleet's split can never disagree about who a model was.
   const fleetRoles = computeFleetRoles({
-    usageRows: usageR.rows, projects, execAlias, advAlias,
+    usageRows: usageR.rows, sessionRows: sessionUsageR.rows, projects, execAlias, advAlias,
   });
 
   res.json({

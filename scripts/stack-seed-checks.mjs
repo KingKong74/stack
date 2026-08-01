@@ -76,6 +76,13 @@ function suiteFor(slug, ORIGIN) {
     // advisor as having failed to land runs it was never asked to land.
     { name: 'Control — roles run counters', url: u('/api/control'), auth: true, json_path: 'roles.runs.plan' },
     { name: 'Control — roles plan-night split', url: u('/api/control'), auth: true, json_path: 'roles.worth.advisedPlanRuns' },
+    // The interactive half. `manual` is what makes the room readable while the
+    // arm switch is off; `everyModel` is the merged receipt. Both are pure
+    // reads over sessions the hook already records, so losing either is silent
+    // — the room simply falls back to autopilot-only and looks correct.
+    { name: 'Control — roles interactive sessions', url: u('/api/control'), auth: true, json_path: 'roles.manual.sessions' },
+    { name: 'Control — roles delegation count', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentCalls' },
+    { name: 'Control — roles merged model receipt', url: u('/api/control'), auth: true, json_path: 'roles.everyModel' },
     { name: 'Search — grouped counts', url: u('/api/search?q=roadmap'), auth: true, json_path: 'counts.total' },
     { name: 'Search — empty query is empty', url: u('/api/search?q='), auth: true, json_path: 'counts.total', json_expect: '0' },
     { name: 'Timeline — daily graph', url: u('/api/timeline'), auth: true, json_path: 'graph.0.date' },

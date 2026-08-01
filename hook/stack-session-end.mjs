@@ -79,6 +79,29 @@ function parseTranscript(path, cwd) {
   // usage-meter) so manual sessions report usage like autopilot runs do.
   let tokens = 0;
   const seenUsage = new Set();
+  // Per-model usage for an INTERACTIVE session. Same shape the autopilot
+  // persists for its runs (`model_usage`), so the Roles room reads one shape
+  // for both populations — minus costUSD, which a transcript never carries.
+  // A session that switches model mid-flight (⇥ fast mode, /model) genuinely
+  // ran two, and this is the only record that it did.
+  const modelUsage = {};
+  // Agent delegations. The parent transcript records the CALL and its result
+  // but never the subagent's own usage — there is no isSidechain row to sum —
+  // so this is a count of delegations and the types used, and must never be
+  // presented as spend.
+  let agentCalls = 0;
+  const agentTypes = {};
+  const bump = (id, u) => {
+    // '<synthetic>' marks a message the CLI generated rather than a model call.
+    if (!id || id === '<synthetic>') return;
+    const m = modelUsage[id] || (modelUsage[id] = {
+      inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0,
+    });
+    m.inputTokens += Number(u.input_tokens) || 0;
+    m.outputTokens += Number(u.output_tokens) || 0;
+    m.cacheReadInputTokens += Number(u.cache_read_input_tokens) || 0;
+    m.cacheCreationInputTokens += Number(u.cache_creation_input_tokens) || 0;
+  };
   const committing = new Set();   // tool_use ids of Bash calls that ran `git commit`
   const commitHits = [];          // hashes those calls printed, in order
   for (const line of raw.split('\n')) {
@@ -95,6 +118,9 @@ function parseTranscript(path, cwd) {
       if (msg.id) seenUsage.add(msg.id);
       tokens += (Number(u.input_tokens) || 0) + (Number(u.output_tokens) || 0)
         + (Number(u.cache_creation_input_tokens) || 0);
+      // Attributed to THIS message's model, not the last one seen: `model`
+      // above is the session's headline and moves as the session switches.
+      bump(msg.model || ev.model, u);
     }
 
     const content = msg.content;
@@ -110,6 +136,12 @@ function parseTranscript(path, cwd) {
         if (role === 'user' || role === 'assistant') turns.push({ role, text: block.text });
       } else if (block.type === 'tool_use' && block.name) {
         tools.add(block.name);
+        // Both names: Task is what the tool was called before Agent.
+        if (block.name === 'Agent' || block.name === 'Task') {
+          agentCalls += 1;
+          const t = String(block.input?.subagent_type || 'claude').slice(0, 40);
+          agentTypes[t] = (agentTypes[t] || 0) + 1;
+        }
         const fp = block.input?.file_path || block.input?.path || block.input?.notebook_path;
         if (fp && EDIT_TOOLS.has(block.name)) files.add(String(fp));
         const cmd = block.input?.command;
@@ -130,6 +162,7 @@ function parseTranscript(path, cwd) {
 
   return {
     turns, tools: [...tools], files: [...files], model, messageCount: turns.length, tokens, commit,
+    modelUsage, agentCalls, agentTypes,
   };
 }
 
@@ -179,6 +212,9 @@ function lastSubstantiveMessage(turns) {
       model: null,
       messageCount: 12,
       tokens: 0,
+      modelUsage: {},
+      agentCalls: 0,
+      agentTypes: {},
     };
   } else {
     t = parseTranscript(payload.transcript_path, cwd);
@@ -209,6 +245,12 @@ function lastSubstantiveMessage(turns) {
       reason: payload.reason || (DEMO ? 'demo' : 'exit'),
       message_count: t.messageCount,
       tokens_used: t.tokens || 0, // real transcript usage (#178)
+      // Per-model usage + delegations, so the Roles room can show what an
+      // INTERACTIVE session ran on. Only the hook can know either — it is the
+      // only thing that reads the transcript — so /checkpoint never sends them.
+      model_usage: t.modelUsage && Object.keys(t.modelUsage).length ? t.modelUsage : null,
+      agent_calls: t.agentCalls || 0,
+      agent_types: t.agentTypes && Object.keys(t.agentTypes).length ? t.agentTypes : null,
       authored: false,
       summary,
       files_touched: t.files,

@@ -100,7 +100,12 @@ templates/ stack-agent-context.md — the canonical portable agent manual (singl
     "summary": "…", "current_phase": "…",
     "next_steps": ["…"], "blockers": ["…"],
     "in_progress": ["…"], "next_up": ["…"], "working_well": ["…"],
-    "tags": ["…"], "files_touched": ["…"], "tools_used": ["…"]
+    "tags": ["…"], "files_touched": ["…"], "tools_used": ["…"],
+    // hook-only (it alone reads the transcript); /checkpoint never sends these
+    "tokens_used": 123456,
+    "model_usage": { "claude-opus-5": { "inputTokens": 1, "outputTokens": 1,
+                                        "cacheReadInputTokens": 1, "cacheCreationInputTokens": 1 } },
+    "agent_calls": 3, "agent_types": { "Explore": 2, "general-purpose": 1 }
   },
   "extract": {
     "bugs":       [{ "title": "…", "severity": "critical|high|medium|low" }],
@@ -188,6 +193,20 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   POST. Two op hints are deliberately narrower than the design handoff's copy — Gemini cannot read
   the repository, so `Ask` and `Touches` answer from the project RECORD (roadmap, bugs, the files
   recent sessions touched) and say so. Don't "fix" that copy back.
+- **The Roles room reads two populations and must never mix their judgement.** `autopilot_runs`
+  answers to the executor/advisor policy; `sessions.model_usage` (the human's own interactive work,
+  recorded by the SessionEnd hook from the transcript) does not — the policy governs the AUTOPILOT,
+  so a model picked by hand in a terminal is **not drift**. They merge only in the `everyModel`
+  receipt and `manual`; `models`, `assignments`, `worth` and `runs` stay autopilot-only, which is
+  pinned by four "identical with or without sessions" assertions in `fleet-roles.test.mjs`. Two
+  consequences: merged shares are **token-based**, because a transcript carries no cost and that is
+  the only basis both halves have; and `sessions.agent_calls` is a **count of delegations, never a
+  cost** — the parent transcript records the Agent call and its result but never the subagent's own
+  usage, so there is nothing to price and every surface showing it says so.
+- **A plan night is the advisor working, not the advisor idle.** Outcome `planned` commits nothing by
+  design, so it can never be `landed`: it is counted apart (`planRuns`/`advisedPlanRuns`) and sits
+  out the advised-versus-unadvised land rate, while keeping its spend and role attribution in full.
+  Folding it back in scores the advisor as having failed to land runs nobody asked it to land.
 - **An empty second-model read means NO PASS RAN, not "nothing found".** `review_verdict` /
   `architect_verdict` NULL renders as NO REVIEW, deliberately not as green. Same rule anywhere else
   an agent's opinion is stored.
