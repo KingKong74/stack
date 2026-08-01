@@ -647,6 +647,58 @@ export interface FleetRoles {
   manual?: FleetManual;
 }
 
+// A permission prompt a host session has stopped on. `fingerprint` is the
+// handle answerPrompt() sends back: the host re-reads the pane and refuses
+// unless the prompt it finds is still this exact one, so a stale row cannot
+// approve something the human never read.
+export interface BlockedPrompt {
+  question: string;
+  title: string;
+  detail: string;        // the command, the file, the URL — what it is ABOUT
+  options: { n: number; label: string }[];
+  yes: number;           // the plain Yes, never "and don't ask again"
+  fingerprint: string;
+  since: number;         // epoch ms the relay first saw this question
+}
+
+// What has STOPPED and is waiting on the human, worst first. Three kinds, and
+// the difference matters: `permission` is a session that would be working,
+// `paused` is one the limit or a hang-up holds, `review` is work that landed
+// and nobody has judged. Empty with no host daemon on the line — which is
+// "we cannot see", not "all clear", and the room says so.
+export interface AttentionRow {
+  key: string;
+  kind: 'permission' | 'paused' | 'review';
+  slug: string;
+  name: string;
+  text: string;
+  detail: string;
+  at: number;
+  when: string;
+  tmux?: string;         // permission — the session to answer in
+  cwd?: string;
+  fingerprint?: string;  // permission — the answer handle
+  jobId?: string;        // paused — the resume handle
+  notBefore?: string | null;
+  count?: number;        // review — how many are queued
+}
+
+// Two live sessions writing one file in one checkout. Read off the sessions'
+// own transcripts, not off git: a shared checkout has one dirty tree and git
+// cannot say who wrote what.
+export interface SessionConflict {
+  key: string;
+  file: string;
+  cwd: string;
+  branch: string;
+  slug: string;
+  name: string;
+  count: number;
+  sessions: { sessionId: string; at: number; when: string }[];
+  at: number;
+  when: string;
+}
+
 export interface ControlData {
   // (#269) The throughput ledger; absent on a server that pre-dates it.
   ledger?: Ledger;
@@ -693,6 +745,11 @@ export interface ControlData {
   // instead of drawing a reviewer with nothing to say.
   reviewNotes?: ReviewNote[];
   geminiReady?: boolean;
+  // What is waiting on you, and who is about to collide. Both default to []
+  // on a server that pre-dates them, which renders as nothing waiting — the
+  // same reading as a host with nothing to report.
+  attention?: AttentionRow[];
+  conflicts?: SessionConflict[];
 }
 
 export async function getControl(): Promise<ControlData> {
@@ -724,6 +781,11 @@ export async function getControl(): Promise<ControlData> {
     // #281 — null when the server pre-dates the fleet roles block; the Roles
     // room draws its own "this server has no roles data" state.
     roles: d.roles ?? null,
+    // Nothing waiting and nobody colliding, on a server that cannot yet see
+    // either. The Now room reads the daemon's own connected flag to tell that
+    // apart from "the host says all clear".
+    attention: d.attention ?? [],
+    conflicts: d.conflicts ?? [],
   };
 }
 
@@ -1132,6 +1194,24 @@ export interface DetachedSession {
   attached?: boolean;  // a client holds it elsewhere (another browser / laptop ssh) — attach mirrors it
   label?: string;      // ✧ Gemini's take on what it's doing
   keep?: boolean;      // #292 — pinned: the host's idle reaper leaves it alone
+  blocked?: BlockedPrompt | null;  // stopped on a permission prompt right now
+}
+
+// Say yes or no to a permission prompt a host session is stopped on.
+//
+// The host is the one that decides. It re-reads the pane before it types
+// anything and refuses if the prompt has changed — the row on screen can be up
+// to twenty seconds old, and in twenty seconds a session can be answered at the
+// keyboard and be sitting on a text input where the menu was. A refusal comes
+// back as a thrown Error carrying the host's own sentence, which is the thing
+// worth showing: "already answered", "moved on to a different prompt".
+//
+// `state` on success is what the host saw a beat later — 'cleared' (it took),
+// 'still-up' (the keystroke did not land) or 'next-prompt' (it took and the
+// session immediately asked something else).
+export async function answerPrompt(name: string, fingerprint: string, choice: 'approve' | 'deny'):
+Promise<{ ok: boolean; state: string; choice: string }> {
+  return request('/terminal/answer', { method: 'POST', body: { name, fingerprint, choice } });
 }
 export async function getDetachedSessions(): Promise<DetachedSession[]> {
   const r = await request<{ sessions: DetachedSession[] }>('/terminal/detached');

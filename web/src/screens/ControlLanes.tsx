@@ -73,7 +73,7 @@ const roleRead = (s: FleetSlot): { tag: string; tone: 'good' | 'warn' | 'quiet';
     text: `The advisor is ${pct}% ${basis} — barely consulted. Cheap, but worth checking the executor actually asks when it gets stuck rather than guessing.`,
   };
 };
-export type LaneSort = 'needs' | 'newest' | 'project';
+export type LaneSort = 'needs' | 'newest';
 
 type Origin = 'autopilot' | 'web' | 'detached';
 
@@ -107,10 +107,14 @@ interface Lane {
 // presence pill, applied to the ordering. An autopilot lane is unattended BY
 // DESIGN, so it ranks below that. A session already open in a browser tab
 // ranks last: you are, by definition, already there.
+// (design 2a) The list is GROUPED BY PROJECT now — the grouping is the layout,
+// not a sort option, because "how many sessions is this project running" is the
+// first question a shared checkout raises and a flat list buries it. What the
+// chips still choose is the order INSIDE a group, and the order of the groups
+// themselves (a group leads with its most-needy lane).
 const SORTS: { key: LaneSort; label: string; title: string }[] = [
   { key: 'needs', label: 'needs you', title: 'Unattended claude first (running with nobody watching), then the autopilot, then sessions you already have open. Shells last.' },
   { key: 'newest', label: 'newest', title: 'Most recently started first.' },
-  { key: 'project', label: 'project', title: 'Grouped by project name.' },
 ];
 
 function buildLanes(data: ControlData): Lane[] {
@@ -210,8 +214,28 @@ function buildLanes(data: ControlData): Lane[] {
 
 const sortLanes = (lanes: Lane[], sort: LaneSort) => [...lanes].sort((a, b) =>
   sort === 'newest' ? (b.startedAt ?? 0) - (a.startedAt ?? 0)
-  : sort === 'project' ? a.name.localeCompare(b.name) || a.needs - b.needs
   : a.needs - b.needs || (b.startedAt ?? 0) - (a.startedAt ?? 0));
+
+// One entry per project with something running. A group leads with its most
+// needy lane, so a project holding a blocked session sorts above one quietly
+// working — the same ordering rule the lanes themselves use, one level up.
+interface LaneGroup { key: string; slug: string; name: string; where: string; lanes: Lane[]; needs: number }
+function groupLanes(lanes: Lane[]): LaneGroup[] {
+  const groups = new Map<string, LaneGroup>();
+  for (const l of lanes) {
+    const key = l.slug || l.name;
+    if (!groups.has(key)) {
+      groups.set(key, { key, slug: l.slug, name: l.name, where: l.where, lanes: [], needs: 9 });
+    }
+    const g = groups.get(key)!;
+    g.lanes.push(l);
+    g.needs = Math.min(g.needs, l.needs);
+    // The shortest path in the group is the checkout they share; a worktree
+    // hanging off it is deeper and would misdescribe the rest.
+    if (l.where && l.where.length < g.where.length) g.where = l.where;
+  }
+  return [...groups.values()].sort((a, b) => a.needs - b.needs || a.name.localeCompare(b.name));
+}
 
 export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onReload }: {
   data: ControlData;
@@ -223,8 +247,12 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
   const [sort, setSort] = useState<LaneSort>('needs');
   const [open, setOpen] = useState('');
   const [killing, setKilling] = useState<string | null>(null);
+  // Which project groups are folded away. Names, not indexes — a group that
+  // finishes and disappears must not fold whichever one takes its place.
+  const [shut, setShut] = useState<Set<string>>(() => new Set());
 
   const lanes = sortLanes(buildLanes(data), sort);
+  const groups = groupLanes(lanes);
   const capacity = data.fleet?.capacity ?? 1;
   const autoLanes = lanes.filter((l) => l.origin === 'autopilot').length;
   // #268's contract survives the merge: idle autopilot capacity is RENDERED,
@@ -267,7 +295,7 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
         <span className="sum">
           {lanes.length === 0
             ? `nothing running · ${capacity} autopilot slot${capacity === 1 ? '' : 's'} idle`
-            : `${lanes.length} running · ${autoLanes} of ${capacity} autopilot slot${capacity === 1 ? '' : 's'}${unattended > 0 ? ` · ${unattended} unattended` : ''}`}
+            : `${lanes.length} live · ${groups.length} project${groups.length === 1 ? '' : 's'} · ${autoLanes} of ${capacity} autopilot slot${capacity === 1 ? '' : 's'}${unattended > 0 ? ` · ${unattended} unattended` : ''}`}
         </span>
         <span className="mc-lane-sorts" role="tablist" aria-label="Sort the lanes">
           {SORTS.map((s) => (
@@ -303,7 +331,45 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
       )}
 
       <div className="mc-fleet-lanes">
-        {lanes.map((l) => {
+        {/* (design 2a) The column header. Four words above a table of rows is
+            the cheapest way to make a dense list readable, and this list had
+            grown dense enough to need it. */}
+        {groups.length > 0 && (
+          <div className="lane-cols" aria-hidden>
+            <span>project</span><span>doing</span><span>age</span><span />
+          </div>
+        )}
+        {groups.map((g) => {
+          const shutG = shut.has(g.key);
+          // What this project's group is dealing with, in the header rather
+          // than only inside the rows: a blocked session and a file collision
+          // are the two facts you would collapse the group and miss.
+          const blockedN = (data.attention ?? [])
+            .filter((a) => a.kind === 'permission' && (a.slug || a.name) === (g.slug || g.name)).length;
+          const clashN = (data.conflicts ?? []).filter((c) => c.slug === g.slug).length;
+          const branches = data.projects.find((p) => p.slug === g.slug)?.live?.branches ?? [];
+          const summary = [
+            blockedN > 0 && `${blockedN} blocked`,
+            clashN > 0 && `${clashN} conflict${clashN === 1 ? '' : 's'}`,
+            branches.join(' · '),
+          ].filter(Boolean).join(' · ');
+          return (
+        <div className={`lane-group${shutG ? ' shut' : ''}`} key={g.key}>
+          <div className="lane-grouphead" role="button" tabIndex={0} aria-expanded={!shutG}
+            onClick={() => setShut((cur) => {
+              const next = new Set(cur);
+              if (next.has(g.key)) next.delete(g.key); else next.add(g.key);
+              return next;
+            })}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } }}>
+            <span className="caret" aria-hidden>{shutG ? '▸' : '▾'}</span>
+            <span className="nm">{g.name}</span>
+            <span className="x">×{g.lanes.length}</span>
+            <span className="path" title={g.where}>{g.where}</span>
+            <span className={`sum${blockedN || clashN ? ' flag' : ''}`}>{summary}</span>
+            <span className="act">{shutG ? 'Expand' : 'Collapse'}</span>
+          </div>
+        {!shutG && g.lanes.map((l) => {
           const isOpen = open === l.key;
           const s = l.slot;
           const spend = s?.spend ?? [];
@@ -482,6 +548,9 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
                 </div>
               )}
             </div>
+          );
+        })}
+        </div>
           );
         })}
 

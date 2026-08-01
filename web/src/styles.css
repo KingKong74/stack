@@ -4928,3 +4928,153 @@ button.mc-day-chip:hover { border-color: var(--accent); }
   .sk-row { flex-wrap: wrap; }
   .sk-where { order: 3; }
 }
+
+/* ============================================================
+   Mission Control — the NOW room (design 2a)
+   "Work on the left, meters on the right."
+
+   Ordered by what a stalled fleet costs: the arm switch, then
+   what has STOPPED and wants a human, then collisions, then
+   what is running. Everything below rides the named tokens at
+   the top of this file, so dark mode follows for free.
+   ============================================================ */
+
+/* 2a's rail is 296px and sits on its own recessed ground, so the
+   meters read as instrumentation beside the work rather than as
+   another card in the column. --panel is that tone in both themes. */
+.mc14-cols { grid-template-columns: minmax(0, 1fr) 296px; }
+.mc14-rail { background: var(--panel); border-radius: 12px; padding: 10px; }
+/* Restated, not inherited: the single-column collapse above is declared
+   EARLIER in this file at the same specificity as the rule on the line above,
+   so without repeating it here the narrow layout would lose to a rule written
+   further down. */
+@media (max-width: 1000px) {
+  .mc14-cols { grid-template-columns: 1fr; }
+  .mc14-rail { background: none; padding: 0; }
+}
+
+/* ---- 1. the arm switch ---- */
+/* #270's loud-idle line and the old settle bar were two rows saying
+   one thing; 2a folds them into one, in the tone the reason deserves.
+   `bad` is the red bar — an unarmed autopilot is not a neutral fact. */
+.now-arm { border: 1px solid var(--line-2); border-left: 3px solid var(--line-3); border-radius: 10px; background: var(--card); }
+.now-arm .row { display: flex; align-items: center; gap: 12px; padding: 11px 14px; }
+.now-arm .lbl { font-family: var(--mono); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink); white-space: nowrap; }
+.now-arm .sum { flex: 1; min-width: 0; font-size: 13.5px; color: var(--body); }
+.now-arm .cfg { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 5px 9px; border-radius: 7px; white-space: nowrap; }
+.now-arm .cfg:hover { color: var(--ink); background: var(--panel); }
+.now-arm.good { border-left-color: var(--live); }
+.now-arm.good .lbl { color: var(--live); }
+.now-arm.warn { border-color: var(--building); border-left-color: var(--building); background: var(--building-tint); }
+.now-arm.warn .lbl { color: var(--building); }
+.now-arm.bad { border-color: var(--critical); border-left-color: var(--critical); background: var(--critical-tint); }
+.now-arm.bad .lbl { color: var(--critical); }
+.now-arm .mc14-cfg { border-top: 1px solid var(--line); padding: 14px; }
+.btn-danger.sm { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12px; }
+
+/* ---- 2. Needs you ---- */
+.now-needs { gap: 8px; }
+.now-rows { display: flex; flex-direction: column; gap: 8px; }
+.now-row { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); }
+/* A session STOPPED on a prompt is the only row here that is costing
+   time right now, so it is the only one that gets the accent wash. */
+.now-row.permission { background: var(--accent-tint); border-color: var(--accent-tint-border); }
+.now-row.paused { background: var(--building-tint); border-color: var(--building); }
+.now-row .tag { font-family: var(--mono); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
+.now-row.permission .tag { color: var(--accent); }
+.now-row.paused .tag { color: var(--building); }
+.now-row.review .tag { color: var(--sage); }
+.now-row .txt { flex: 1; min-width: 0; font-size: 13.5px; color: var(--ink); line-height: 1.45; }
+.now-row .txt code { font-family: var(--mono); font-size: 11px; color: var(--body); background: var(--panel); border-radius: 5px; padding: 1px 6px; margin-left: 8px; }
+.now-row .txt .note { display: block; margin-top: 4px; font-family: var(--mono); font-size: 11px; font-style: normal; color: var(--muted); }
+.now-row .when, .now-clash .when { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.now-row .acts, .now-clash .acts { display: flex; align-items: center; gap: 8px; }
+.now-x { width: 24px; height: 24px; border-radius: 6px; color: var(--faint); font-size: 14px; line-height: 1; }
+.now-x:hover { color: var(--critical); background: var(--critical-tint); }
+.now-none { font-size: 13px; color: var(--muted); line-height: 1.5; padding: 4px 2px; }
+
+/* ---- 3. collisions ---- */
+.now-clash { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--building); border-left: 3px solid var(--building); background: var(--building-tint); }
+.now-clash .tag { font-family: var(--mono); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--building); white-space: nowrap; }
+.now-clash .txt { flex: 1; min-width: 0; font-size: 13.5px; color: var(--ink); line-height: 1.45; }
+.now-clash .txt code { font-family: var(--mono); font-size: 11.5px; }
+
+/* ---- shared section frame (mirrors / up next / projects) ---- */
+.now-sec { display: flex; flex-direction: column; gap: 8px; }
+.now-cap { display: flex; align-items: center; gap: 10px; }
+.now-cap .cap { font-family: var(--mono); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.now-cap .hair { flex: 1; height: 1px; background: var(--line); }
+.now-cap .note { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.now-idlelink { font-size: 12px; color: var(--muted); }
+.now-idlelink:hover { color: var(--accent); }
+.now-table { border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.now-table > * + * { border-top: 1px solid var(--line); }
+.now-table > .now-none { padding: 13px 14px; }
+
+/* ---- 5. mirror sites ---- */
+.now-mirror { display: grid; grid-template-columns: 150px minmax(0, 1fr) 96px auto; gap: 12px; align-items: center; padding: 10px 14px; }
+.now-mirror .who { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.now-mirror .who b { font-family: var(--disp); font-size: 14px; font-weight: 700; color: var(--ink); }
+.now-mirror .dot { width: 7px; height: 7px; border-radius: 99px; background: var(--paused); flex: none; }
+.now-mirror .dot.live { background: var(--live); }
+.now-mirror .dot.starting, .now-mirror .dot.queued { background: var(--building); }
+.now-mirror .what { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.now-mirror .what code { font-family: var(--mono); font-size: 11px; color: var(--body); white-space: nowrap; }
+.now-mirror .what a, .now-mirror .what em { font-family: var(--mono); font-size: 11px; font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.now-mirror .what em { color: var(--muted); }
+.now-mirror .left { font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; }
+.now-mirror .acts { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+
+/* ---- 6. up next ---- */
+.now-queued { display: grid; grid-template-columns: 26px 150px minmax(0, 1fr) 130px auto; gap: 12px; align-items: center; padding: 10px 14px; }
+.now-queued .n { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--accent); }
+.now-queued.nightly .n { color: var(--muted); }
+.now-queued .who b { font-family: var(--disp); font-size: 14px; font-weight: 700; color: var(--ink); }
+.now-queued .what { font-size: 13.5px; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.now-queued .left { font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; }
+.now-queued .acts { display: flex; justify-content: flex-end; }
+
+/* ---- 7. active projects ---- */
+.now-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: start; }
+@media (max-width: 1180px) { .now-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .now-grid { grid-template-columns: 1fr; } }
+.now-card { border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); padding: 11px 13px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.now-card.auto { border-color: var(--accent-tint-border); }
+/* An opened card holds a whole merge strip, so it takes the full row
+   rather than stretching its two neighbours to match. */
+.now-card.open { grid-column: 1 / -1; }
+.now-card .head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.now-card .nm { display: flex; align-items: center; gap: 7px; font-family: var(--disp); font-size: 14.5px; font-weight: 700; color: var(--ink); min-width: 0; }
+.now-card .nm:hover { color: var(--accent); }
+.now-card .nm .tintdot { width: 8px; height: 8px; border-radius: 99px; flex: none; }
+.now-card .facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.now-card .facts .live { color: var(--live); }
+.now-card .facts button { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.now-card .facts button:hover { color: var(--accent); }
+.now-card .facts button.bad { color: var(--critical); }
+.now-card .pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; }
+.now-card .pick .quiet { color: var(--faint); font-family: var(--mono); font-size: 11px; }
+.now-card .acts { display: flex; align-items: center; gap: 6px; margin-top: auto; }
+.now-card .acts .btn-accent.sm, .now-card .acts .btn-repo.sm { flex: 1; justify-content: center; }
+.now-card .acts .term { width: 30px; height: 30px; border: 1px solid var(--line-2); border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
+.now-card .acts .term:hover { border-color: var(--muted); color: var(--ink); }
+.now-card .acts .drop { display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 8px; border: 1px solid var(--line-2); border-radius: 8px; color: var(--muted); font-size: 11px; }
+.now-card .acts .drop:hover { border-color: var(--muted); color: var(--ink); }
+.now-card .acts .drop em { font-family: var(--mono); font-style: normal; font-size: 10.5px; color: var(--accent); }
+.now-card .mc-branches { margin-top: 2px; }
+
+/* ---- the lane list, grouped by project (design 2a) ---- */
+.lane-cols { display: grid; grid-template-columns: 186px minmax(0, 1fr) 64px 92px; gap: 12px; padding: 7px 14px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fainter); border-bottom: 1px solid var(--line); }
+.lane-group + .lane-group { border-top: 1px solid var(--line); }
+.lane-grouphead { display: flex; align-items: center; gap: 8px; padding: 9px 14px; background: var(--panel); cursor: pointer; }
+.lane-grouphead:hover { filter: brightness(0.99); }
+.lane-grouphead .caret { font-family: var(--mono); font-size: 11px; color: var(--muted); width: 10px; }
+.lane-grouphead .nm { font-family: var(--disp); font-size: 14px; font-weight: 700; color: var(--ink); }
+.lane-grouphead .x { font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
+.lane-grouphead .path { font-family: var(--mono); font-size: 10.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.lane-grouphead .sum { flex: 1; min-width: 0; font-family: var(--mono); font-size: 11px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane-grouphead .sum.flag { color: var(--building); }
+.lane-grouphead .act { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+/* The lanes inside a group are indented, so the group reads as a
+   container rather than as one more row of the same rank. */
+.lane-group .mc-lane .lane-head { padding-left: 28px; }

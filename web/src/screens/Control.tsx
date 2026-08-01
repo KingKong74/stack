@@ -12,15 +12,11 @@ import { SessionPlanModal } from '../components/SessionPlanModal';
 import { NightsRoom, PlanRoom, BuildRoom } from './ControlRooms';
 import { RolesRoom } from './ControlRoles';
 import { ReviewRoom } from './ControlReview';
-import { SessionLanes } from './ControlLanes';
+import { NowRoom } from './ControlNow';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
 import { go, hrefTo } from '../lib/route';
 import { useAutoRefresh } from '../lib/autoRefresh';
-import type { ProjectStatus } from '../types';
 
-const STATUS_LABEL: Record<ProjectStatus, string> = {
-  live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived',
-};
 const CAPS = [
   { minutes: 60, label: '1h' }, { minutes: 120, label: '2h' },
   { minutes: 180, label: '3h' }, { minutes: 360, label: '6h' },
@@ -34,7 +30,6 @@ const BUDGETS = [
 const NIGHT_ITEMS = [1, 2, 3, 5, 8, 0];
 export const nightItemsLabel = (n: number) => (n === 0 ? '∞' : String(n));
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const OPEN_JOB = new Set(['queued', 'claimed', 'running']);
 
 const fmtDate = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -74,21 +69,6 @@ function trend(now: number, prev: number, higherIsBetter: boolean) {
 
 const pct1 = (n: number) => `${Math.round(n * 100)}%`;
 
-const JOB_LABEL: Record<AutopilotJob['status'], string> = {
-  queued: 'queued', claimed: 'starting', running: 'running', done: 'done', failed: 'failed',
-  paused: 'hung up',
-};
-
-// #142 — a paused session in the strip: a resume job holding for the limit
-// reset (queued + notBefore) or hung up by hand (status 'paused').
-const isPausedSession = (j: AutopilotJob) =>
-  j.kind === 'resume' && (j.status === 'paused' || j.status === 'queued');
-const resumeWhen = (iso?: string | null) => {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  return d.toDateString() === new Date().toDateString() ? t : `${DAY_LABELS[d.getDay()]} ${t}`;
-};
 
 export function ControlPanel() {
   const [data, setData] = useState<ControlData | null>(null);
@@ -121,9 +101,6 @@ export function ControlPanel() {
   // "starting". #312 put the cadence under the device's Auto refresh setting;
   // with it off, the list still re-reads whenever you start, stop or extend one.
   useAutoRefresh(loadPreviews);
-  const previewFor = (slug: string, branch: string) =>
-    previews.find((v) => v.slug === slug && v.branch === branch
-      && ['queued', 'starting', 'live', 'stopping'].includes(v.status)) || null;
   const openPreview = async (slug: string, branch: string, itemId: string | null) => {
     setPreviewBusy(`${slug}:${branch}`);
     setPreviewErr('');
@@ -146,25 +123,6 @@ export function ControlPanel() {
     } catch (e) {
       if (!(e instanceof AuthError)) setPreviewErr((e as Error)?.message || 'Could not stop the preview.');
     }
-  };
-  // (#208) Every preview still on the host, in the order it will matter to you:
-  // live first, then the ones on their way. `stopped`/`failed` are history and
-  // belong to the failure banner, not here.
-  const MIRROR_ORDER = ['live', 'stopping', 'starting', 'queued'];
-  const openMirrors = previews
-    .filter((v) => MIRROR_ORDER.includes(v.status))
-    .sort((a, b) => MIRROR_ORDER.indexOf(a.status) - MIRROR_ORDER.indexOf(b.status));
-  // How long this URL has left. Expiry is a safety property here rather than
-  // tidiness — the URL is public while it lives — so it is stated as a
-  // countdown, not as a timestamp you would have to do arithmetic on.
-  const mirrorLeft = (iso: string | null) => {
-    if (!iso) return '';
-    const ms = new Date(iso).getTime() - Date.now();
-    if (!Number.isFinite(ms)) return '';
-    if (ms <= 0) return 'expiring now';
-    const mins = Math.round(ms / 60_000);
-    if (mins < 60) return `${mins}m left`;
-    return `${Math.floor(mins / 60)}h ${mins % 60}m left`;
   };
   const [mirrorBusy, setMirrorBusy] = useState('');
   const extendMirror = async (pv: Preview) => {
@@ -222,7 +180,6 @@ export function ControlPanel() {
     ro.observe(el);
     return () => ro.disconnect();
   }, [railOpen]);
-  const [projFilter, setProjFilter] = useState<'all' | 'auto' | 'live'>('all');
   const [pickSlug, setPickSlug] = useState(''); // the Plan/Build rooms' project
   const load = useCallback(() => {
     getControl()
@@ -292,7 +249,6 @@ export function ControlPanel() {
     }
   };
 
-  const openJobFor = (slug: string) => data?.jobs.find((j) => j.slug === slug && OPEN_JOB.has(j.status));
 
   // #122 — the nightly pick's area filter, per project ('' = whole board).
   const setTargetArea = async (p: ControlProject, area: string) => {
@@ -363,6 +319,22 @@ export function ControlPanel() {
       if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not queue the merge.');
     } finally {
       setMergeBusy(false);
+    }
+  };
+
+  // #193 — the merge train: queue every probe-clean branch in one press. They
+  // run sequentially (the dispatcher takes one job at a time), each merging
+  // into the main the previous one pushed. The first failure stops the train
+  // rather than queueing the rest onto a main that never arrived.
+  const mergeTrain = async (p: ControlProject) => {
+    for (const b of p.branches.filter((x) => x.mergeClean === true)) {
+      try {
+        const job = await queueMerge(p.slug, b.branch, b.itemId || undefined);
+        setData((cur) => cur && { ...cur, jobs: [job, ...cur.jobs.filter((j) => j.id !== job.id)] });
+      } catch (e) {
+        if (!(e instanceof AuthError)) setError((e as Error)?.message || `Could not queue ${b.branch}.`);
+        break;
+      }
     }
   };
 
@@ -456,17 +428,8 @@ export function ControlPanel() {
     const seg = homely(cwd).split('/')[0];
     return data?.projects.find((p) => p.slug === seg)?.name ?? (seg === '~' ? 'home' : seg);
   };
-  const seriousTotal = data?.projects.reduce((n, p) => n + p.bugs.serious, 0) ?? 0;
   // #268's slots and capacity are read inside <SessionLanes> now (#283) — it
   // owns the merged list and still renders idle capacity rather than omitting it.
-  // #270 — the honest reason the fleet is or is not running. Absent only on a
-  // server that pre-dates the resolver, where the line simply doesn't render.
-  const fleetStatus = data?.fleet?.status;
-  const shownProjects = (data?.projects ?? []).filter((p) =>
-    projFilter === 'auto' ? p.automode : projFilter === 'live' ? !!p.live : true);
-  // Per-project run history for the row bars — oldest → newest, this week.
-  const historyFor = (slug: string) =>
-    (data?.usage?.recentRuns ?? []).filter((r) => r.slug === slug).slice(0, 6).reverse();
   // The rail's plan meters (#220). Computed once for both rail states: the
   // full rail names each window, the slim rail abbreviates it, and the same
   // 10-minute staleness gate applies to both — a snapshot older than that is
@@ -523,6 +486,143 @@ export function ControlPanel() {
     }
     return out;
   })();
+
+  // The autopilot knobs, lifted out of the Now room so the room renders them
+  // inside its arm bar while the Roles room can still open them from another
+  // room. Same controls, same writes — only the frame moved.
+  const configPanel = data && (
+    <div className="mc-console-clusters">
+      {/* Night budget cluster */}
+      <div className="mc-cluster">
+        <div className="mc-cluster-label">Night budget</div>
+        <div className="mc-knobs">
+          <label className="mc-knob">
+            <span className="mc-knob-label">Session cap</span>
+            <span className="seg-control sm" role="tablist" aria-label="Session cap">
+              {CAPS.map((c) => (
+                <button key={c.minutes} role="tab" aria-selected={data.autopilot.minutes === c.minutes}
+                  className={`seg-opt ${data.autopilot.minutes === c.minutes ? 'on' : ''}`}
+                  onClick={() => setAutopilot({ autopilotMinutes: c.minutes })}>
+                  {c.label}
+                </button>
+              ))}
+            </span>
+          </label>
+          <label className="mc-knob">
+            <span className="mc-knob-label">Token budget</span>
+            <span className="seg-control sm" role="tablist" aria-label="Token budget per run">
+              {BUDGETS.map((b) => (
+                <button key={b.tokens} role="tab" aria-selected={data.autopilot.tokens === b.tokens}
+                  className={`seg-opt ${data.autopilot.tokens === b.tokens ? 'on' : ''}`}
+                  title={b.tokens === 0 ? 'No token ceiling — the session cap is the only governor' : `${b.label} tokens per run`}
+                  onClick={() => setAutopilot({ autopilotTokens: b.tokens })}>
+                  {b.label}
+                </button>
+              ))}
+            </span>
+          </label>
+          <label className="mc-knob">
+            <span className="mc-knob-label">Nightly at</span>
+            <input type="time" className="mc-time" value={data.autopilot.time}
+              aria-label="Nightly start time (host local)"
+              onChange={(e) => e.target.value && setAutopilot({ autopilotTime: e.target.value })} />
+          </label>
+          <label className="mc-knob">
+            <span className="mc-knob-label">Items / night</span>
+            <span className="seg-control sm" role="tablist" aria-label="Most items per night">
+              {NIGHT_ITEMS.map((n) => (
+                <button key={n} role="tab" aria-selected={data.autopilot.maxItems === n}
+                  className={`seg-opt ${data.autopilot.maxItems === n ? 'on' : ''}`}
+                  title={n === 0
+                    ? 'Unlimited — the night works items until the wall-clock cap or the token budget runs out'
+                    : `At most ${n} item${n === 1 ? '' : 's'} a night`}
+                  onClick={() => setAutopilot({ autopilotMaxItems: n })}>
+                  {nightItemsLabel(n)}
+                </button>
+              ))}
+            </span>
+          </label>
+          {/* #255 — the standing plan sweep. The board's ✧ To planning
+              agent is the pressed version of this; here it becomes the
+              default behaviour, so work never reaches a build night
+              without a design. Same gates as the nightly. */}
+          <label className="mc-knob">
+            <span className="mc-knob-label">Plan sweep</span>
+            <button type="button" role="switch" aria-checked={data.autopilot.planSweep}
+              className={`switch ${data.autopilot.planSweep ? 'on' : ''}`}
+              title={data.autopilot.planSweep
+                ? 'On — a project with unplanned must/should work gets a plan session queued for it automatically. The arm switch and the project’s automode still gate the run.'
+                : 'Off — items are only designed when you press ✧ To planning agent or book a plan night.'}
+              onClick={() => setAutopilot({ autopilotPlanSweep: !data.autopilot.planSweep })} />
+          </label>
+        </div>
+      </div>
+
+      {/* Models cluster with hierarchy viz */}
+      <div className="mc-cluster">
+        <div className="mc-cluster-label">Models</div>
+        <div className="mc-knobs">
+          <label className="mc-knob">
+            <span className="mc-knob-label">Executor</span>
+            <span className="seg-control sm" role="tablist" aria-label="Executor model — runs the session">
+              {(data.models?.executors ?? FALLBACK_EXECUTORS).map((m) => (
+                <button key={m.model} role="tab" aria-selected={data.autopilot.executorModel === m.model}
+                  className={`seg-opt ${data.autopilot.executorModel === m.model ? 'on' : ''}`}
+                  title={m.model === '' ? "The claude CLI's own default model runs the session" : `Sessions run on ${m.label}`}
+                  onClick={() => setAutopilot({ autopilotExecutorModel: m.model })}>
+                  {m.label}
+                </button>
+              ))}
+            </span>
+          </label>
+          <label className="mc-knob">
+            <span className="mc-knob-label">Advisor</span>
+            <span className="seg-control sm" role="tablist" aria-label="Advisor model — a stronger model the session consults">
+              {(data.models?.advisors ?? FALLBACK_ADVISORS).map((m) => (
+                <button key={m.model} role="tab" aria-selected={data.autopilot.advisorModel === m.model}
+                  className={`seg-opt ${data.autopilot.advisorModel === m.model ? 'on' : ''}`}
+                  title={m.model === '' ? 'No advisor — single-model sessions' : `The executor consults ${m.label} for plans and unblocking`}
+                  onClick={() => setAutopilot({ autopilotAdvisorModel: m.model })}>
+                  {m.label}
+                </button>
+              ))}
+            </span>
+          </label>
+        </div>
+        {/* Hierarchy diagram — shows the dual-model flow when an advisor is set */}
+        <div className="mc-hierarchy">
+          {data.autopilot.advisorModel ? (
+            <>
+              <div className="mc-hier-node exec" title="Runs every turn of the session">
+                <span className="mc-hier-role">Executor</span>
+                <span className="mc-hier-model">
+                  {modelLabel(data.models?.executors ?? FALLBACK_EXECUTORS, data.autopilot.executorModel)}
+                </span>
+              </div>
+              <div className="mc-hier-arrow" aria-hidden>
+                <span className="mc-hier-edge">consults</span>
+                <span className="mc-hier-line">→</span>
+              </div>
+              <div className="mc-hier-node advisor" title="Read-only counsel — plans, unblocking, sanity check">
+                <span className="mc-hier-role">Advisor</span>
+                <span className="mc-hier-model">
+                  {modelLabel(data.models?.advisors ?? FALLBACK_ADVISORS, data.autopilot.advisorModel, 'Off')}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="mc-hier-node exec single" title="Single-model session — no advisor">
+              <span className="mc-hier-role">Executor</span>
+              <span className="mc-hier-model">
+                {modelLabel(data.models?.executors ?? FALLBACK_EXECUTORS, data.autopilot.executorModel)}
+              </span>
+              <span className="mc-hier-sub">single-model</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -635,621 +735,22 @@ export function ControlPanel() {
 
             <div className={`mc14-cols ${railOpen ? '' : 'rail-slim'}`}>
               <div className="mc14-body">
-                {room === 'now' && (<>
-            {/* #270 — LOUD IDLE. The most important fact about an automation
-                system is whether it is actually running, so it gets the first
-                line of the room, with the one-click fix beside it. */}
-            {fleetStatus && (
-              <div className={`mc-idle ${fleetStatus.tone}`} role={fleetStatus.tone === 'bad' ? 'alert' : undefined}>
-                <span className="dot" />
-                <span className="txt">
-                  {fleetStatus.text}
-                  {fleetStatus.hint && <em>{fleetStatus.hint}</em>}
-                </span>
-                {fleetStatus.fix?.kind === 'arm' && (
-                  <button className="fix" onClick={() => setAutopilot({ autopilotEnabled: true })}>
-                    {fleetStatus.fix.label}
-                  </button>
+                {room === 'now' && (
+                  <NowRoom data={data}
+                    cfgOpen={cfgOpen} onToggleCfg={() => setCfgOpen((v) => !v)}
+                    onSetArmed={(on) => void setAutopilot({ autopilotEnabled: on })}
+                    configPanel={configPanel}
+                    onGoRoom={setRoom}
+                    onResumeJob={resumeJob} onHangupJob={hangupJob} onDismissJob={dismissJob}
+                    onRunNow={runNow} onToggleAutomode={toggleAutomode} onSetTargetArea={setTargetArea}
+                    onMerge={(pr, b) => setMergePending({ slug: pr.slug, branch: b.branch, itemId: b.itemId, itemTitle: b.itemTitle, mergeClean: b.mergeClean })}
+                    onMergeTrain={mergeTrain}
+                    previews={previews} previewBusy={previewBusy} mirrorBusy={mirrorBusy}
+                    onStartPreview={(slug, branch, itemId) => void openPreview(slug, branch, itemId)}
+                    onStopPreview={setStopPending} onExtendPreview={(pv) => void extendMirror(pv)}
+                    labelBusy={labelBusy} onLabel={() => labelSessions()} onReload={load}
+                    />
                 )}
-                {fleetStatus.fix?.kind === 'plan' && (
-                  <button className="fix" onClick={() => setRoom('plan')}>{fleetStatus.fix.label}</button>
-                )}
-                {fleetStatus.fix?.kind === 'resume' && (() => {
-                  const j = data.jobs.find(isPausedSession);
-                  return j ? (
-                    <button className="fix" onClick={() => resumeJob(j)}>{fleetStatus.fix!.label}</button>
-                  ) : null;
-                })()}
-              </div>
-            )}
-
-            {/* #283 (design 22a) — ONE lane list over both sources: the
-                autopilot's workers and every terminal session the daemon can
-                see. Replaces the separate fleet strip and terminal chip strip,
-                which split "what is running" across two widgets fed by two
-                unrelated paths. */}
-            <SessionLanes data={data} labelBusy={labelBusy} onLabel={() => labelSessions()}
-              onConfigureRoles={() => setCfgOpen(true)} onReload={load} />
-
-            {/* (#208) MIRROR SITES. A preview used to be visible only as a chip
-                on its own branch in the merge strip — which answers "is this
-                branch previewed?" but not "what is running, and what is the
-                link?", and the link is the entire point of a mirror site: it is
-                how the branch reaches a phone, or anyone you want to show. So
-                the running previews get their own line in the room that says
-                what is running now, beside the sessions.
-                Rendered even when empty, on the same reasoning as the fleet's
-                idle slots (#268): a feature you cannot see when it is idle is a
-                feature nobody finds. */}
-            <div className="mc-mirrors">
-              <div className="mc-mirror-cap">
-                <span className="cap">MIRROR SITES</span>
-                <span className="note">
-                  one branch running on its own stack, own empty database — the link is public while it lives
-                </span>
-              </div>
-              {openMirrors.length === 0 ? (
-                <div className="mc-mirror-empty">
-                  Nothing mirrored right now. ◱ Preview on a branch in the merge strip below brings one
-                  up — a minute or two for a warm build.
-                </div>
-              ) : (
-                <ul className="mc-mirror-list">
-                  {openMirrors.map((v) => (
-                    <li key={v.id} className={`mc-mirror ${v.status}`}>
-                      <span className="st">
-                        {v.status === 'live' ? 'LIVE'
-                          : v.status === 'stopping' ? 'STOPPING'
-                            : v.status === 'starting' ? 'BUILDING' : 'QUEUED'}
-                      </span>
-                      <span className="who">
-                        <b>{v.name || v.slug}</b>
-                        <code>{v.branch}</code>
-                        {v.itemTitle && <em>#{v.itemId} {v.itemTitle}</em>}
-                      </span>
-                      {/* A live row with no url yet is still arriving — say that
-                          rather than rendering a dead link. */}
-                      {v.status === 'live' && v.url ? (
-                        <a className="url" href={v.url} target="_blank" rel="noreferrer noopener"
-                          title="Opens the mirror in a new tab — public link, no sign-in wall in front of it">
-                          {v.url.replace(/^https?:\/\//, '')}
-                        </a>
-                      ) : (
-                        <span className="detail">{v.detail || 'starting on the host'}</span>
-                      )}
-                      <span className="left">{mirrorLeft(v.expiresAt)}</span>
-                      <span className="acts">
-                        {(v.status === 'live' || v.status === 'starting') && (
-                          <button className="mc-mirror-more" disabled={mirrorBusy === v.id}
-                            title="Give this mirror another hour before it expires"
-                            onClick={() => void extendMirror(v)}>
-                            {mirrorBusy === v.id ? '◴' : '＋1h'}
-                          </button>
-                        )}
-                        {v.status !== 'stopping' && (
-                          <button className="mc-mirror-x" title="Stop this mirror and free the host"
-                            onClick={() => setStopPending(v)}>× Stop</button>
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-
-            {/* the live session card + the tiles (11a) */}
-            <div className="mc14-toprow">
-              <div className={`mc14-livecard ${primary || primaryDet ? 'live' : ''}`}>
-                <div className="cap-row">
-                  <span className="cap">LIVE SESSION</span>
-                  <span className="host">{data.terminal?.connected ? 'host daemon online' : 'host daemon offline'}</span>
-                </div>
-                {(primary || primaryDet) ? (<>
-                  <div className="name-row">
-                    <span className="nm">{projectNameOf((primary?.cwd ?? primaryDet?.cwd) || '~')}</span>
-                    <span className="path">~/{homely((primary?.cwd ?? primaryDet?.cwd) || '')}</span>
-                  </div>
-                  <div className="task">{(primary?.label ?? primaryDet?.label) || 'Working — ✧ labelling names the task as output arrives.'}</div>
-                  {liveCount > 1 && <span className="others">{liveCount - 1} other session{liveCount === 2 ? '' : 's'} live — the chips below jump in</span>}
-                </>) : (
-                  <div className="task quiet">Nothing running. ▶ Run now on a project queues an unattended session; the terminal is one key away.</div>
-                )}
-              </div>
-              <div className="mc14-tiles">
-                <button className="mc14-review" onClick={() => go.dashboard()}
-                  title="Auto-extracted items waiting for keep/dismiss — the deck's review inbox">
-                  <span className="n">{data.totals.review}</span>
-                  <span className="l">awaiting review</span>
-                  <span className="note">{data.totals.review > 0 ? 'keep or dismiss from the deck — approvals stick across pushes' : 'inbox clear'}</span>
-                </button>
-                <div className="mc14-minis">
-                  <div className="mc14-mini"><span className="n">{seriousTotal}</span><span className={`l ${seriousTotal ? 'bad' : ''}`}>serious bugs</span></div>
-                  <div className="mc14-mini"><span className="n">{data.totals.claims}</span><span className="l">claimed branches</span></div>
-                </div>
-              </div>
-            </div>
-
-            {/* the autopilot, settled into one line — config folds open (11a) */}
-            <div className="mc14-settle">
-              <div className="row">
-                <button role="switch" aria-checked={data.autopilot.enabled} aria-label="Autopilot armed"
-                  className={`switch ${data.autopilot.enabled ? 'on' : ''}`}
-                  onClick={() => setAutopilot({ autopilotEnabled: !data.autopilot.enabled })}>
-                  <span className="switch-knob" />
-                </button>
-                <span className="lbl">Autopilot {data.autopilot.enabled ? 'armed' : 'off'}</span>
-                <span className="sum">
-                  {data.autopilot.enabled
-                    ? `nightly ${data.autopilot.time} · ${data.autopilot.maxItems === 0 ? '∞' : `≤${data.autopilot.maxItems}`}/night · ${data.autopilot.minutes % 60 === 0 ? `${data.autopilot.minutes / 60}h` : `${data.autopilot.minutes}m`} cap · ${data.autopilot.tokens === 0 ? '∞ tokens' : fmtTok(data.autopilot.tokens)}${data.autopilot.executorModel ? ` · ${data.autopilot.executorModel}` : ''}${data.autopilot.advisorModel ? ` → ${data.autopilot.advisorModel}` : ''}`
-                    : 'nightly + scheduled sessions paused — Run now still works'}
-                </span>
-                <button className="cfg" onClick={() => setCfgOpen((v) => !v)} aria-expanded={cfgOpen}>
-                  {cfgOpen ? '▾ close' : '▸ configure'}
-                </button>
-              </div>
-              {cfgOpen && (
-              <div className="mc14-cfg">
-              <div className="mc-console-clusters">
-                {/* Night budget cluster */}
-                <div className="mc-cluster">
-                  <div className="mc-cluster-label">Night budget</div>
-                  <div className="mc-knobs">
-                    <label className="mc-knob">
-                      <span className="mc-knob-label">Session cap</span>
-                      <span className="seg-control sm" role="tablist" aria-label="Session cap">
-                        {CAPS.map((c) => (
-                          <button key={c.minutes} role="tab" aria-selected={data.autopilot.minutes === c.minutes}
-                            className={`seg-opt ${data.autopilot.minutes === c.minutes ? 'on' : ''}`}
-                            onClick={() => setAutopilot({ autopilotMinutes: c.minutes })}>
-                            {c.label}
-                          </button>
-                        ))}
-                      </span>
-                    </label>
-                    <label className="mc-knob">
-                      <span className="mc-knob-label">Token budget</span>
-                      <span className="seg-control sm" role="tablist" aria-label="Token budget per run">
-                        {BUDGETS.map((b) => (
-                          <button key={b.tokens} role="tab" aria-selected={data.autopilot.tokens === b.tokens}
-                            className={`seg-opt ${data.autopilot.tokens === b.tokens ? 'on' : ''}`}
-                            title={b.tokens === 0 ? 'No token ceiling — the session cap is the only governor' : `${b.label} tokens per run`}
-                            onClick={() => setAutopilot({ autopilotTokens: b.tokens })}>
-                            {b.label}
-                          </button>
-                        ))}
-                      </span>
-                    </label>
-                    <label className="mc-knob">
-                      <span className="mc-knob-label">Nightly at</span>
-                      <input type="time" className="mc-time" value={data.autopilot.time}
-                        aria-label="Nightly start time (host local)"
-                        onChange={(e) => e.target.value && setAutopilot({ autopilotTime: e.target.value })} />
-                    </label>
-                    <label className="mc-knob">
-                      <span className="mc-knob-label">Items / night</span>
-                      <span className="seg-control sm" role="tablist" aria-label="Most items per night">
-                        {NIGHT_ITEMS.map((n) => (
-                          <button key={n} role="tab" aria-selected={data.autopilot.maxItems === n}
-                            className={`seg-opt ${data.autopilot.maxItems === n ? 'on' : ''}`}
-                            title={n === 0
-                              ? 'Unlimited — the night works items until the wall-clock cap or the token budget runs out'
-                              : `At most ${n} item${n === 1 ? '' : 's'} a night`}
-                            onClick={() => setAutopilot({ autopilotMaxItems: n })}>
-                            {nightItemsLabel(n)}
-                          </button>
-                        ))}
-                      </span>
-                    </label>
-                    {/* #255 — the standing plan sweep. The board's ✧ To planning
-                        agent is the pressed version of this; here it becomes the
-                        default behaviour, so work never reaches a build night
-                        without a design. Same gates as the nightly. */}
-                    <label className="mc-knob">
-                      <span className="mc-knob-label">Plan sweep</span>
-                      <button type="button" role="switch" aria-checked={data.autopilot.planSweep}
-                        className={`switch ${data.autopilot.planSweep ? 'on' : ''}`}
-                        title={data.autopilot.planSweep
-                          ? 'On — a project with unplanned must/should work gets a plan session queued for it automatically. The arm switch and the project’s automode still gate the run.'
-                          : 'Off — items are only designed when you press ✧ To planning agent or book a plan night.'}
-                        onClick={() => setAutopilot({ autopilotPlanSweep: !data.autopilot.planSweep })} />
-                    </label>
-                  </div>
-                </div>
-
-                {/* Models cluster with hierarchy viz */}
-                <div className="mc-cluster">
-                  <div className="mc-cluster-label">Models</div>
-                  <div className="mc-knobs">
-                    <label className="mc-knob">
-                      <span className="mc-knob-label">Executor</span>
-                      <span className="seg-control sm" role="tablist" aria-label="Executor model — runs the session">
-                        {(data.models?.executors ?? FALLBACK_EXECUTORS).map((m) => (
-                          <button key={m.model} role="tab" aria-selected={data.autopilot.executorModel === m.model}
-                            className={`seg-opt ${data.autopilot.executorModel === m.model ? 'on' : ''}`}
-                            title={m.model === '' ? "The claude CLI's own default model runs the session" : `Sessions run on ${m.label}`}
-                            onClick={() => setAutopilot({ autopilotExecutorModel: m.model })}>
-                            {m.label}
-                          </button>
-                        ))}
-                      </span>
-                    </label>
-                    <label className="mc-knob">
-                      <span className="mc-knob-label">Advisor</span>
-                      <span className="seg-control sm" role="tablist" aria-label="Advisor model — a stronger model the session consults">
-                        {(data.models?.advisors ?? FALLBACK_ADVISORS).map((m) => (
-                          <button key={m.model} role="tab" aria-selected={data.autopilot.advisorModel === m.model}
-                            className={`seg-opt ${data.autopilot.advisorModel === m.model ? 'on' : ''}`}
-                            title={m.model === '' ? 'No advisor — single-model sessions' : `The executor consults ${m.label} for plans and unblocking`}
-                            onClick={() => setAutopilot({ autopilotAdvisorModel: m.model })}>
-                            {m.label}
-                          </button>
-                        ))}
-                      </span>
-                    </label>
-                  </div>
-                  {/* Hierarchy diagram — shows the dual-model flow when an advisor is set */}
-                  <div className="mc-hierarchy">
-                    {data.autopilot.advisorModel ? (
-                      <>
-                        <div className="mc-hier-node exec" title="Runs every turn of the session">
-                          <span className="mc-hier-role">Executor</span>
-                          <span className="mc-hier-model">
-                            {modelLabel(data.models?.executors ?? FALLBACK_EXECUTORS, data.autopilot.executorModel)}
-                          </span>
-                        </div>
-                        <div className="mc-hier-arrow" aria-hidden>
-                          <span className="mc-hier-edge">consults</span>
-                          <span className="mc-hier-line">→</span>
-                        </div>
-                        <div className="mc-hier-node advisor" title="Read-only counsel — plans, unblocking, sanity check">
-                          <span className="mc-hier-role">Advisor</span>
-                          <span className="mc-hier-model">
-                            {modelLabel(data.models?.advisors ?? FALLBACK_ADVISORS, data.autopilot.advisorModel, 'Off')}
-                          </span>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="mc-hier-node exec single" title="Single-model session — no advisor">
-                        <span className="mc-hier-role">Executor</span>
-                        <span className="mc-hier-model">
-                          {modelLabel(data.models?.executors ?? FALLBACK_EXECUTORS, data.autopilot.executorModel)}
-                        </span>
-                        <span className="mc-hier-sub">single-model</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              </div>
-              )}
-            </div>
-              {/* The running-sessions chips moved into the #283 lane list above —
-                  one place for what is running, rather than the same sessions
-                  described twice in two shapes. */}
-              {/* #142 — paused sessions: limit-hit resumes holding for the reset,
-                  or hung up by hand. Resume clears the hold, hang-up parks it. */}
-              {data.jobs.some(isPausedSession) && (
-                <div className="mc-paused" aria-label="Paused sessions">
-                  {data.jobs.filter(isPausedSession).map((j) => (
-                    <span key={j.id} className={`mc-pause ${j.status}`}
-                      title={[j.itemTitle && `#${j.itemId} ${j.itemTitle}`, j.detail].filter(Boolean).join(' — ') || undefined}>
-                      ⏸ {j.name}{j.itemId ? ` #${j.itemId}` : ''} ·{' '}
-                      {j.status === 'paused' ? 'hung up — resumes only by hand'
-                        : j.notBefore ? `paused on the usage limit · resumes ${resumeWhen(j.notBefore)}`
-                        : 'resuming — the host picks it up within a minute'}
-                      {(j.status === 'paused' || j.notBefore) && (
-                        <button className="mc-run" onClick={() => resumeJob(j)}
-                          title="Resume this session now — the dispatcher picks it up within a minute">
-                          ▶ Resume now
-                        </button>
-                      )}
-                      {j.status === 'queued' && j.notBefore && (
-                        <button className="btn-repo sm" onClick={() => hangupJob(j)}
-                          title="Hang up — hold the session so it only resumes when you say">
-                          ⏸ Hang up
-                        </button>
-                      )}
-                      <button className="mc-pause-x" onClick={() => dismissJob(j)}
-                        aria-label="Dismiss this paused session"
-                        title="Dismiss — drop the pending resume entirely">×</button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              {data.jobs.some((j) => !isPausedSession(j)) && (
-                <div className="mc-jobs" aria-label="Recent autopilot jobs">
-                  {data.jobs.filter((j) => !isPausedSession(j)).slice(0, 6).map((j) => (
-                    <span key={j.id} className={`mc-job ${j.status}`}
-                      title={[j.itemTitle && `#${j.itemId} ${j.itemTitle}`, j.detail].filter(Boolean).join(' — ') || undefined}>
-                      {j.name} · {j.kind}{j.itemId ? ` #${j.itemId}` : ''} · {JOB_LABEL[j.status]}
-                      {OPEN_JOB.has(j.status) ? '' : ` ${j.when}`}
-                      {/* #150 — the kill channel: pausing a RUNNING job asks the
-                          dispatcher to kill the session (within ~30s); partial
-                          work stays on the branch, the job parks as paused. */}
-                      {j.status === 'running' && (
-                        <button className="btn-repo sm" onClick={() => hangupJob(j)}
-                          title="Hang up this running session — the host kills it within ~30s; partial commits stay on its branch">
-                          ⏸ Hang up
-                        </button>
-                      )}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-            {/* the projects become the page (11a) — hairline + filters, then rows */}
-            <div className="mc14-projhead">
-              <span className="cap">PROJECTS</span>
-              <span className="hair" />
-              {([['all', 'All'], ['auto', 'Automode'], ['live', 'Live']] as const).map(([key, label]) => (
-                <button key={key} className={`mc14-filter ${projFilter === key ? 'on' : ''}`}
-                  onClick={() => setProjFilter(key)}>{label}</button>
-              ))}
-            </div>
-            <div className="mc-list">
-              {shownProjects.map((p) => {
-                const job = openJobFor(p.slug);
-                const hist = historyFor(p.slug);
-                return (
-                <div className={`mc-row ${p.automode ? 'auto' : ''}`} key={p.slug}>
-                  <div className="mc-main">
-                    <button className="mc-name" onClick={() => go.detail(p.slug)}>
-                      <span className="tintdot" style={{ background: p.tint || 'var(--sand)' }} />
-                      {p.name}
-                    </button>
-                    <span className={`statusbadge ${p.status}`}><span className="dot" />{STATUS_LABEL[p.status]}</span>
-                    {hist.length > 0 && (
-                      <span className="mc14-hist" title="This week's runs, oldest first">
-                        {hist.map((r, i) => (
-                          <i key={i} className={r.outcome}
-                            title={`${r.itemId ? `#${r.itemId} ` : ''}${r.itemTitle || 'general'} — ${r.outcome} ${r.when}`} />
-                        ))}
-                      </span>
-                    )}
-                    {p.live && (
-                      <span className="mc-live" title={`${p.live.count} live session${p.live.count === 1 ? '' : 's'}`}>
-                        ● {p.live.branches.join(' · ')}
-                      </span>
-                    )}
-                    <a className="mc-term" href={hrefTo.terminal(p.slug)}
-                      aria-label={`Open terminal for ${p.name}`}
-                      title={`Open a terminal in ~/${p.slug}`}>⌨</a>
-                    <span className="mc-push">{p.lastPush ? `pushed ${p.lastPush}` : 'no pushes yet'}</span>
-                    {job ? (
-                      <span className={`mc-job ${job.status}`} title={job.detail || undefined}>
-                        {job.kind === 'resume' && job.notBefore
-                          ? `resumes ${resumeWhen(job.notBefore)}` : JOB_LABEL[job.status]}
-                        {job.itemId ? ` #${job.itemId}` : ''}
-                      </span>
-                    ) : (
-                      <button className="mc-run" onClick={() => runNow(p)}
-                        title="Queue an autopilot session on this project now — the host picks it up within a minute">
-                        ▶ Run now
-                      </button>
-                    )}
-                    <button role="switch" aria-checked={p.automode} aria-label={`Automode for ${p.name}`}
-                      className={`switch sm ${p.automode ? 'on' : ''}`} onClick={() => toggleAutomode(p)}
-                      title={p.automode ? 'Automode on — the autopilot may work this project' : 'Automode off — hands off'}>
-                      <span className="switch-knob" />
-                    </button>
-                  </div>
-                  <div className="mc-facts">
-                    <span className="mc-fact">
-                      {p.automode ? (
-                        p.nextPick
-                          ? <>tonight: <button className="mc-pick" onClick={() => go.detail(p.slug, 'roadmap', p.nextPick!.id)}>#{p.nextPick.id} {p.nextPick.title}</button></>
-                          : <span className="quiet">tonight: nothing eligible{p.autopilotArea ? ` in ${p.autopilotArea}` : ''}</span>
-                      ) : (
-                        <span className="quiet">manual only</span>
-                      )}
-                    </span>
-                    {p.automode && (p.areas.length > 0 || p.autopilotArea) && (
-                      <select className="mc-area" value={p.autopilotArea} aria-label={`Target area for ${p.name}`}
-                        title="Point the nightly pick at one product area; the whole board otherwise"
-                        onChange={(e) => setTargetArea(p, e.target.value)}>
-                        <option value="">target: all areas</option>
-                        {[...new Set([...p.areas, ...(p.autopilotArea ? [p.autopilotArea] : [])])].map((a) => (
-                          <option key={a} value={a}>target: {a}</option>
-                        ))}
-                      </select>
-                    )}
-                    {p.lastAuto && (
-                      <span className="mc-fact" title={p.lastAuto.summary}>
-                        last run: <button className="mc-pick" onClick={() => go.detail(p.slug, 'activity')}>{p.lastAuto.branch}</button> {p.lastAuto.when}
-                      </span>
-                    )}
-                    {p.claims.map((c) => (
-                      <button key={c.id} className="mc-claim" title={c.title}
-                        onClick={() => go.detail(p.slug, 'roadmap', c.id)}>⚑ {c.branch}</button>
-                    ))}
-                    {p.reviewCount > 0 && (
-                      <button className="mc-review" onClick={() => go.detail(p.slug)}>
-                        {p.reviewCount} to review
-                      </button>
-                    )}
-                    {p.bugs.serious > 0 && (
-                      <button className="mc-bugs" onClick={() => go.detail(p.slug, 'quality')}>
-                        {p.bugs.serious} serious bug{p.bugs.serious === 1 ? '' : 's'}
-                      </button>
-                    )}
-                    {/* #206 — audit pass rate from the checks' stored results */}
-                    {p.audit && (
-                      <button
-                        className={`mc-fact mc-audit${p.audit.passing < p.audit.run ? ' warn' : ''}`}
-                        title={`${p.audit.passing} of ${p.audit.run} checks passing (last stored results) — open the Quality tab`}
-                        onClick={() => go.detail(p.slug, 'quality')}>
-                        ⚗ {Math.round((p.audit.passing / p.audit.run) * 100)}% audit
-                      </button>
-                    )}
-                    {p.blockers.length > 0 && (
-                      <span className="mc-fact mc-blocked" title={p.blockers.join('\n')}>
-                        ⛔ {p.blockers.length} blocker{p.blockers.length === 1 ? '' : 's'}
-                      </span>
-                    )}
-                  </div>
-                  {/* #154 — branch management strip: one chip per open branch,
-                      enriched with the host's git report where it exists (#207) */}
-                  {(p.branches.length > 0 || (p.absorbedBranches ?? 0) > 0) && (
-                    <div className="mc-branches" aria-label={`Open branches for ${p.name}`}
-                      title={p.branchesWhen ? `git state as of ${p.branchesWhen}` : undefined}>
-                      {[...p.branches].sort((a, b) => {
-                        // #288 — order by what needs a HUMAN, the same rule the
-                        // lane list sorts on. A conflicting branch is the one
-                        // the machine cannot finish at all; a clean one is a
-                        // decision away; an unprobed one is neither yet.
-                        // Within a group, most work first — a branch with one
-                        // commit on it is rarely what you came to deal with.
-                        const rank = (x: typeof a) => (x.mergeClean === false ? 0 : x.mergeClean === true ? 1 : 2);
-                        return rank(a) - rank(b) || (b.ahead ?? 0) - (a.ahead ?? 0)
-                          || a.branch.localeCompare(b.branch);
-                      }).map((b) => {
-                        const mergeJob = data?.jobs.find(
-                          (j) => j.slug === p.slug && j.kind === 'merge' && j.detail.includes(b.branch),
-                        );
-                        const chipTitle = [
-                          b.itemTitle ? `#${b.itemId} ${b.itemTitle}` : b.branch,
-                          b.subject ? `Last commit: ${b.subject}${b.when ? ` (${b.when})` : ''}` : '',
-                        ].filter(Boolean).join('\n');
-                        return (
-                          <span key={b.branch}
-                            className={`mc-branch ${mergeJob ? mergeJob.status : ''}`
-                              + (b.mergeClean === false ? ' conflicts' : b.mergeClean === true ? ' clean' : '')}
-                            title={chipTitle}>
-                            <button className="mc-branch-name"
-                              onClick={() => go.detail(p.slug, 'roadmap', b.itemId)}>
-                              {b.branch}
-                            </button>
-                            {b.itemId && (
-                              <span className="mc-branch-item">
-                                #{b.itemId}
-                              </span>
-                            )}
-                            {typeof b.ahead === 'number' && (
-                              <span className="mc-branch-diff"
-                                title={`${b.ahead} commit${b.ahead === 1 ? '' : 's'} ahead of main${b.behind ? `, ${b.behind} behind` : ''}`}>
-                                ↑{b.ahead}{(b.behind ?? 0) > 0 && <> ↓{b.behind}</>}
-                              </span>
-                            )}
-                            {b.mergeClean === true && (
-                              <span className="mc-branch-clean" title="Merges cleanly into main">✓</span>
-                            )}
-                            {b.mergeClean === false && (
-                              <span className="mc-branch-conflict" title="Conflicts with main — rebase or merge by hand">⚠</span>
-                            )}
-                            {/* #288 — the last commit's AGE, on the chip rather
-                                than behind a hover. It is the one field that
-                                separates live work from a stranded lane, and a
-                                strip that hides it makes every branch look
-                                equally current. */}
-                            {b.when && (
-                              <span className="mc-branch-age"
-                                title={b.subject ? `Last commit ${b.when}: ${b.subject}` : `Last commit ${b.when}`}>
-                                {b.when}
-                              </span>
-                            )}
-                            {mergeJob ? (
-                              <span className="mc-branch-status">{
-                                mergeJob.status === 'queued' || mergeJob.status === 'claimed' ? 'queuing…'
-                                  : mergeJob.status === 'running' ? 'merging…'
-                                  : mergeJob.status === 'done' ? 'merged'
-                                  : mergeJob.detail.slice(0, 60) || mergeJob.status
-                              }</span>
-                            ) : (
-                              <button className="mc-branch-merge"
-                                title={`Merge origin/${b.branch} into main on the host — conflicts fail safely`}
-                                onClick={() => setMergePending({ slug: p.slug, branch: b.branch, itemId: b.itemId, itemTitle: b.itemTitle, mergeClean: b.mergeClean })}>
-                                ⇥ Merge
-                              </button>
-                            )}
-                            {/* (#208) Look at the branch RUNNING before deciding
-                                on it. The chip shows the live state, because a
-                                preview is a slow thing on someone else's clock. */}
-                            {(() => {
-                              const pv = previewFor(p.slug, b.branch);
-                              const busy = previewBusy === `${p.slug}:${b.branch}`;
-                              if (!pv) {
-                                return (
-                                  <button className="mc-branch-preview" disabled={busy}
-                                    title={`Bring ${b.branch} up as an isolated stack on the host and open it on a temporary public URL. Expires in 2 hours.`}
-                                    onClick={() => void openPreview(p.slug, b.branch, b.itemId || null)}>
-                                    {busy ? '◴ …' : '◱ Preview'}
-                                  </button>
-                                );
-                              }
-                              if (pv.status === 'live' && pv.url) {
-                                return (
-                                  <span className="mc-branch-previewlive">
-                                    <a className="url" href={pv.url} target="_blank" rel="noopener noreferrer"
-                                      title={`${pv.url} — public while it lives, expires ${pv.expiresAt ? new Date(pv.expiresAt).toLocaleTimeString() : 'soon'}`}>
-                                      ◱ Open
-                                    </a>
-                                    <button className="x" aria-label="Stop preview" title="Stop this preview and free the host"
-                                      onClick={() => setStopPending(pv)}>×</button>
-                                  </span>
-                                );
-                              }
-                              return (
-                                <span className="mc-branch-status" title={pv.detail}>
-                                  {pv.status === 'stopping' ? 'stopping…'
-                                    : pv.status === 'queued' ? 'preview queued…'
-                                    : 'preview building…'}
-                                </span>
-                              );
-                            })()}
-                          </span>
-                        );
-                      })}
-                      {/* #193 — the merge train: queue every probe-clean branch in one
-                          press; they run sequentially (one dispatcher job at a time),
-                          each merging into the main the previous one pushed. */}
-                      {p.branches.filter((b) => b.mergeClean === true
-                        && !data.jobs.some((j) => j.slug === p.slug && j.kind === 'merge' && j.detail.includes(`origin/${b.branch} into`) && ['queued', 'claimed', 'running'].includes(j.status))).length >= 2 && (
-                        <button className="mc-branch-merge mc-train"
-                          title="Queue a merge for every branch the probe calls clean — they merge one after another, each onto the main the last one produced"
-                          onClick={async () => {
-                            const clean = p.branches.filter((b) => b.mergeClean === true);
-                            for (const b of clean) {
-                              try {
-                                const job = await queueMerge(p.slug, b.branch, b.itemId || undefined);
-                                setData((cur) => cur && { ...cur, jobs: [job, ...cur.jobs.filter((j) => j.id !== job.id)] });
-                              } catch (e) {
-                                if (!(e instanceof AuthError)) setError((e as Error)?.message || `Could not queue ${b.branch}.`);
-                                break;
-                              }
-                            }
-                          }}>
-                          ⇥ Merge train ({p.branches.filter((b) => b.mergeClean === true).length} clean)
-                        </button>
-                      )}
-                      {(p.absorbedBranches ?? 0) > 0 && (
-                        <span className="mc-branch-absorbed"
-                          title="Fully merged into main but never deleted on origin — prune with: git push origin --delete <branch>">
-                          🧹 {p.absorbedBranches} merged branch{p.absorbedBranches === 1 ? '' : 'es'} to prune
-                        </span>
-                      )}
-                      {/* #288 — every number on this strip is a SNAPSHOT: the
-                          host fetches and probes on its own ~10-minute cycle,
-                          not when this page loads. That was a hover on the
-                          container, which is exactly where a reader who has
-                          been given precise-looking counts will not look. */}
-                      <span className="mc-branch-asof"
-                        title="The host dispatcher fetches each repo and re-probes every ~10 minutes; the ahead/behind counts and the conflict probe are from that pass, not from this page load.">
-                        {p.branchesWhen ? `git as of ${p.branchesWhen}` : 'no git report yet — chips are claims only'}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                );
-              })}
-              {data.projects.length === 0 && (
-                <div className="empty-state">
-                  <div className="big">No projects yet</div>
-                  <div>Connect a repo from the dashboard and it'll appear here.</div>
-                </div>
-              )}
-            </div>
-                </>)}
 
                 {room === 'nights' && (
                   <NightsRoom data={data} pickSlug={pickSlug} onPick={setPickSlug}
