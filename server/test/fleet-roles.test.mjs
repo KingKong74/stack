@@ -93,7 +93,8 @@ console.log('\n--- runs (#288 — the run-level headline the role cards lead wit
 check('total runs (with a breakdown)', r.runs.total, 5);
 check('off-policy runs', r.runs.offPolicy, 1);
 check('on-policy runs', r.runs.onPolicy, 4);
-check('total == advised + plain', r.runs.total, r.worth.advisedRuns + r.worth.plainRuns);
+check('total == advised + plain + plan', r.runs.total,
+  r.worth.advisedRuns + r.worth.plainRuns + r.worth.planRuns);
 check('haiku adoptable as executor', byModel['haiku-4-5'].adoptExec, 'haiku');
 check('sonnet adopts the family alias, not the dated id', byModel['sonnet-4-5'].adoptExec, 'sonnet');
 check('opus-5 adoptable as advisor', byModel['opus-5'].adoptAdv, 'claude-opus-5');
@@ -114,6 +115,51 @@ check('but the project still counts a run', noBreak.assignments.find((a) => a.sl
 // (#288) …and the role cards say so rather than reading 0 of 0 as compliance.
 check('runs.total excludes it', noBreak.runs.total, 0);
 check('runs.noBreakdown reports it', noBreak.runs.noBreakdown, 1);
+
+// --------------------------------------------------------------------------
+// Plan nights. A plan night runs on the ADVISOR alone and commits nothing by
+// design (outcome 'planned'), so it can never be 'landed'. Counting it in the
+// advised/unadvised comparison scored the advisor as having failed to land a
+// run it was never asked to land — and, before the runner recorded its
+// breakdown at all, left a plan-only week reading 'advisor-unused', which is
+// the one arrangement where that is certainly false.
+// --------------------------------------------------------------------------
+console.log('\n--- plan nights (advisor evidence, but not a land rate) ---');
+const planOnly = computeFleetRoles({
+  usageRows: [
+    { slug: 'alpha', outcome: 'planned', tokens: 500, cost_usd: 0.50, finished_at: hoursAgo(4),
+      model_usage: { [OPUS5]: usage(500, 0.50) } },
+    { slug: 'alpha', outcome: 'planned', tokens: 300, cost_usd: 0.30, finished_at: hoursAgo(8),
+      model_usage: { [OPUS5]: usage(300, 0.30) } },
+  ],
+  projects, execAlias: 'sonnet', advAlias: 'claude-opus-5', now: NOW,
+});
+check('plan nights sit out the land rate', [planOnly.worth.advisedRuns, planOnly.worth.plainRuns], [0, 0]);
+check('…and are counted as their own', planOnly.worth.planRuns, 2);
+check('…the advisor held both', planOnly.worth.advisedPlanRuns, 2);
+check('runs.total includes them', planOnly.runs.total, 2);
+check('runs.plan names them', planOnly.runs.plan, 2);
+check('nothing sat out unexplained', planOnly.runs.noBreakdown, 0);
+check('their spend still counts', Number(planOnly.worth.advCostUsd.toFixed(2)), 0.80);
+check('avgAdvPerRun divides by the runs advice was seen in', Number(planOnly.worth.avgAdvPerRun.toFixed(2)), 0.40);
+// The regression this whole change exists to prevent.
+check('a plan-only week is NOT advisor-unused',
+  planOnly.assignments.find((a) => a.slug === 'alpha').drift, '');
+check('…and the advisor is the model shown', planOnly.assignments.find((a) => a.slug === 'alpha').adv, 'opus-5');
+
+// With no advisor configured a plan night falls back to the executor model, so
+// it is a plan run that advice never touched — a different question, and the
+// two counters have to be able to disagree.
+const planNoAdv = computeFleetRoles({
+  usageRows: [
+    { slug: 'alpha', outcome: 'planned', tokens: 500, cost_usd: 0.50, finished_at: hoursAgo(4),
+      model_usage: { [SONNET]: usage(500, 0.50) } },
+  ],
+  projects, execAlias: 'sonnet', advAlias: '', now: NOW,
+});
+check('unadvised plan night still counts as a plan run', planNoAdv.worth.planRuns, 1);
+check('…but not as an advised one', planNoAdv.worth.advisedPlanRuns, 0);
+check('…and claims no advisor cost', planNoAdv.worth.advCostUsd, 0);
 
 
 

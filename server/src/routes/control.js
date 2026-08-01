@@ -206,6 +206,13 @@ export function computeFleetRoles({ usageRows, projects, execAlias, advAlias, no
   let advisedRuns = 0, advisedLanded = 0, plainRuns = 0, plainLanded = 0;
   let advCostUsd = 0, execCostUsd = 0, attributedCost = 0, attributedTokens = 0;
   let advTokens = 0, execTokens = 0;
+  // A plan night (outcome 'planned') writes a design and commits nothing by
+  // design — it CANNOT land. Counting it in the advised/unadvised comparison
+  // would score the advisor as having failed to land a run it was never asked
+  // to land, so it is tallied on its own and sits out that arithmetic. Its
+  // SPEND and its role attribution still count in full: a plan night runs on
+  // the advisor alone, which makes it the plainest evidence the advisor ran.
+  let planRuns = 0, advisedPlanRuns = 0;
   // (#288) RUN-level off-policy, which the per-model counts cannot give: a run
   // using three models increments three of them, so "5 of 9 runs went
   // elsewhere" has to be counted once per run, at the run.
@@ -255,7 +262,8 @@ export function computeFleetRoles({ usageRows, projects, execAlias, advAlias, no
     // Runs with no per-model breakdown at all can't say whether they were
     // advised, so they sit out of the comparison rather than skewing it.
     if (entries.length > 0) {
-      if (sawAdv) { advisedRuns += 1; if (r.outcome === 'landed') advisedLanded += 1; }
+      if (r.outcome === 'planned') { planRuns += 1; if (sawAdv) advisedPlanRuns += 1; }
+      else if (sawAdv) { advisedRuns += 1; if (r.outcome === 'landed') advisedLanded += 1; }
       else { plainRuns += 1; if (r.outcome === 'landed') plainLanded += 1; }
       if (sawOff) offPolicyRuns += 1;
     }
@@ -332,24 +340,35 @@ export function computeFleetRoles({ usageRows, projects, execAlias, advAlias, no
     models: modelList,
     assignments,
     // (#288, design 1b) The run-level headline the two role cards lead with.
-    // `total` counts only runs that recorded a per-model breakdown — the same
-    // population the advised/unadvised split uses, so "5 of 9" and "4 of 9"
-    // are drawn from one denominator and cannot contradict each other.
+    // `total` counts every run that recorded a per-model breakdown — the same
+    // population the off-policy count is drawn from, so "5 of 9 went elsewhere"
+    // cannot contradict the headline. `plan` is the slice of that total which
+    // built nothing by design; the advised/unadvised land rates exclude it and
+    // carry their own denominators, which is why they may sum to less.
     runs: {
-      total: advisedRuns + plainRuns,
+      total: advisedRuns + plainRuns + planRuns,
+      plan: planRuns,
       offPolicy: offPolicyRuns,
-      onPolicy: advisedRuns + plainRuns - offPolicyRuns,
-      noBreakdown: usageRows.length - (advisedRuns + plainRuns),
+      onPolicy: advisedRuns + plainRuns + planRuns - offPolicyRuns,
+      noBreakdown: usageRows.length - (advisedRuns + plainRuns + planRuns),
     },
     // The numbers only. The sentences are composed client-side, the same way
     // a lane's read is — so the two role views phrase things one way.
     worth: {
       advisedRuns, advisedLanded, plainRuns, plainLanded,
+      // Plan nights: how many ran, and how many of those the advisor actually
+      // held. With no advisor configured a plan night falls back to the
+      // executor model, so the two numbers are not the same question.
+      planRuns, advisedPlanRuns,
       advCostUsd, execCostUsd,
       totalCostUsd: attributedCost,
       advShare: total > 0 ? ((basisCost ? advCostUsd : advTokens) / total) * 100 : 0,
       execShare: total > 0 ? ((basisCost ? execCostUsd : execTokens) / total) * 100 : 0,
-      avgAdvPerRun: advisedRuns > 0 ? advCostUsd / advisedRuns : 0,
+      // Averaged over every run the advisor was SEEN in, plan nights included —
+      // their cost is in advCostUsd, so leaving them out of the divisor would
+      // overstate what a run of advice costs.
+      avgAdvPerRun: advisedRuns + advisedPlanRuns > 0
+        ? advCostUsd / (advisedRuns + advisedPlanRuns) : 0,
       costBasis: basisCost,
     },
   };

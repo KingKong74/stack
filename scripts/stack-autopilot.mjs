@@ -761,6 +761,7 @@ Read the relevant code first — real file paths, real tables, real routes. Then
   let resultText = '';
   let usedTokens = 0;
   let usedCost = 0;
+  let modelUsage = null; // per-model breakdown (#167), same as the build path
   try {
     const out = JSON.parse(run.stdout || '{}');
     const u = out.usage || {};
@@ -772,6 +773,19 @@ Read the relevant code first — real file paths, real tables, real routes. Then
     resultText = String(out.result || '').trim();
     log(`plan session finished: ${out.num_turns ?? '?'} turns, ~${Math.round(usedTokens / 1000)}k tokens`
       + (usedCost ? ` ($${usedCost.toFixed(2)})` : ''));
+    // A plan night runs on the advisor and spawns no executor, so its breakdown
+    // is the cleanest evidence the advisor exists at all. Omitting it is what
+    // made the Roles room read a week of plan nights as "advisor configured but
+    // never consulted" — the one arrangement where that is certainly false.
+    if (out.modelUsage && typeof out.modelUsage === 'object') {
+      modelUsage = out.modelUsage;
+      const perModel = Object.entries(out.modelUsage).map(([model, mu]) => {
+        const t = (mu.inputTokens || 0) + (mu.outputTokens || 0)
+          + (mu.cacheReadInputTokens || 0) + (mu.cacheCreationInputTokens || 0);
+        return `${model} ~${Math.round(t / 1000)}k${mu.costUSD ? ` ($${mu.costUSD.toFixed(2)})` : ''}`;
+      });
+      if (perModel.length) log(`model usage: ${perModel.join(' · ')}`);
+    }
   } catch {
     log(`plan session finished (status ${run.status ?? 'killed at cap'}) — output unreadable.`);
   }
@@ -779,6 +793,7 @@ Read the relevant code first — real file paths, real tables, real routes. Then
   const runRecord = {
     item_id: item.id, item_title: item.title, branch: '',
     tokens: usedTokens, cost_usd: usedCost, started_at: startedAt,
+    ...(modelUsage ? { model_usage: modelUsage } : {}), // per-model breakdown (#167)
   };
 
   let design = null;

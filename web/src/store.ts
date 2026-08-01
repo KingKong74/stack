@@ -542,6 +542,9 @@ export interface FleetRoleAssignment {
 export interface FleetRoleWorth {
   advisedRuns: number; advisedLanded: number;
   plainRuns: number; plainLanded: number;
+  // Plan nights build nothing by design, so they sit out the land-rate
+  // comparison above and are counted here instead. Absent on an older server.
+  planRuns?: number; advisedPlanRuns?: number;
   advCostUsd: number; execCostUsd: number; totalCostUsd: number;
   advShare: number; execShare: number; avgAdvPerRun: number;
   costBasis: boolean;   // false = no cost reported, the shares are token-based
@@ -549,12 +552,13 @@ export interface FleetRoleWorth {
 
 // (#288, design 1b) The run-level counts the two role cards lead with. Counted
 // once per RUN, which the per-model tallies cannot do — one run using three
-// models increments three of them. `total` is runs that recorded a per-model
-// breakdown, the same population as the advised/unadvised split, so the two
-// headlines share a denominator; `noBreakdown` is what sat out, said plainly
-// rather than folded in as compliance.
+// models increments three of them. `total` is every run that recorded a
+// per-model breakdown, which is the population `offPolicy` is drawn from;
+// `plan` is the slice of it that built nothing by design, and `noBreakdown` is
+// what sat out entirely, said plainly rather than folded in as compliance.
 export interface FleetRoleRuns {
   total: number; offPolicy: number; onPolicy: number; noBreakdown: number;
+  plan?: number;   // absent on a server that pre-dates the plan-night split
 }
 
 export interface FleetRoles {

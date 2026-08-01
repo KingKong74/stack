@@ -65,23 +65,40 @@ const driftNote = (a: FleetRoleAssignment, advisorLabel: string): { text: string
 // because at these run counts a landed-rate difference is a hint and not a
 // finding, and the sentence should not pretend otherwise.
 function advisorRead(w: FleetRoleWorth, days: number): string {
-  if (w.advisedRuns === 0 && w.plainRuns === 0) {
-    return `Nothing in the last ${days} days recorded a per-model breakdown, so there is no advised-versus-unadvised comparison to make yet.`;
-  }
+  const planRuns = w.planRuns ?? 0;
+  const advisedPlan = w.advisedPlanRuns ?? 0;
   const cost = w.advCostUsd > 0
     ? ` The advice came to ${fmtUsd(w.advCostUsd)} — ${Math.round(w.advShare)}% of what was attributed this week, averaging ${fmtUsd(w.avgAdvPerRun)} on each run that used it.`
     : '';
+  if (w.advisedRuns === 0 && w.plainRuns === 0) {
+    // A week of nothing but plan nights is the case that used to read as an
+    // idle advisor. It is the opposite: the advisor ran every one of them, and
+    // there is simply no build to rate it against.
+    if (advisedPlan > 0) {
+      return `The advisor ran ${advisedPlan === planRuns ? 'every' : `${advisedPlan} of ${planRuns}`} `
+        + `${plural(planRuns, 'plan night')} this week and no build night ran at all. A plan night writes a design and commits nothing, `
+        + `so there is no landed rate to read here yet.${cost}`;
+    }
+    if (planRuns > 0) {
+      return `The only runs in the last ${days} days were ${plural(planRuns, 'plan night')}, and none of them ran on the advisor — `
+        + `with no advisor configured a plan night falls back to the executor model.`;
+    }
+    return `Nothing in the last ${days} days recorded a per-model breakdown, so there is no advised-versus-unadvised comparison to make yet.`;
+  }
+  const planNote = planRuns > 0
+    ? ` ${plural(planRuns, 'plan night')} sat out — a plan night commits nothing by design, so it cannot land.`
+    : '';
   if (w.advisedRuns === 0) {
-    return `Every run landed with the executor working unadvised — and ${w.plainLanded} of ${w.plainRuns} landed clean. `
-      + `${plural(w.plainRuns, 'run')} is too few to credit the absence of advice; treat it as a hint, not a result.`;
+    return `Every build run went with the executor working unadvised — and ${w.plainLanded} of ${w.plainRuns} landed clean. `
+      + `${plural(w.plainRuns, 'run')} is too few to credit the absence of advice; treat it as a hint, not a result.${planNote}`;
   }
   if (w.plainRuns === 0) {
-    return `Every run this week was advised: ${w.advisedLanded} of ${w.advisedRuns} landed `
-      + `(${pc(w.advisedLanded, w.advisedRuns)}%). There is no unadvised run to compare it against.${cost}`;
+    return `Every build run this week was advised: ${w.advisedLanded} of ${w.advisedRuns} landed `
+      + `(${pc(w.advisedLanded, w.advisedRuns)}%). There is no unadvised run to compare it against.${cost}${planNote}`;
   }
   return `${w.advisedLanded} of ${w.advisedRuns} advised ${w.advisedRuns === 1 ? 'run' : 'runs'} landed `
     + `(${pc(w.advisedLanded, w.advisedRuns)}%), against ${w.plainLanded} of ${w.plainRuns} unadvised `
-    + `(${pc(w.plainLanded, w.plainRuns)}%).${cost}`;
+    + `(${pc(w.plainLanded, w.plainRuns)}%).${cost}${planNote}`;
 }
 
 // The colour a model wears in the executor split. Role decides it — the model
@@ -136,6 +153,7 @@ export function RolesRoom({ data, onReload, onConfigure }: {
   const totalRuns = roles.runs ? roles.runs.total : worth.advisedRuns + worth.plainRuns;
   const offRuns = roles.runs ? roles.runs.offPolicy : null;
   const noBreakdown = roles.runs ? roles.runs.noBreakdown : 0;
+  const planRuns = roles.runs?.plan ?? worth.planRuns ?? 0;
 
   // The executor's slot: the model the policy names, plus anything that ran
   // that neither role claims. The advisor's models are a different job and sit
@@ -158,7 +176,11 @@ export function RolesRoom({ data, onReload, onConfigure }: {
   // two models both running outside the policy is a question, not a button.
   const adoptable = offModels.length === 1 && offModels[0].adoptExec ? offModels[0] : null;
 
-  const advState = !policy?.advisor ? 'off' : worth.advisedRuns > 0 ? 'used' : 'unused';
+  // A plan night counts as the advisor having been used — it is the one session
+  // kind that runs on the advisor and nothing else, so a week of them is the
+  // last thing that should wear an UNUSED badge.
+  const advSeenRuns = worth.advisedRuns + (worth.advisedPlanRuns ?? 0);
+  const advState = !policy?.advisor ? 'off' : advSeenRuns > 0 ? 'used' : 'unused';
   const advBasis = worth.costBasis ? fmtUsd(worth.totalCostUsd) : `${fmtTok(worth.advCostUsd > 0 ? worth.totalCostUsd : 0)} tokens`;
   const sampled = worth.advisedRuns + worth.plainRuns;
 
@@ -354,6 +376,7 @@ export function RolesRoom({ data, onReload, onConfigure }: {
           <span className="k">EVERY MODEL THAT RAN</span>
           <span className="n">
             {models.length === 0 ? 'nothing recorded' : plural(models.length, 'model')}
+            {planRuns > 0 && ` · ${plural(planRuns, 'plan night')}`}
             {noBreakdown > 0 && ` · ${plural(noBreakdown, 'run')} recorded no breakdown`}
           </span>
         </button>

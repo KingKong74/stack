@@ -69,6 +69,13 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Control — plan coverage', url: u('/api/control'), auth: true, json_path: 'projects.0.planCoverage.unplanned' },
     { name: 'Control — per-project rows', url: u('/api/control'), auth: true, json_path: 'projects' },
     { name: 'Control — model catalogue', url: u('/api/control'), auth: true, json_path: 'models' },
+    // The Roles room's run-level counters. `plan` is the one that carries a
+    // rule rather than a number: a plan night commits nothing by design, so it
+    // is counted apart from the advised/unadvised land rate. Losing the field
+    // would fold plan nights back into that comparison and quietly score the
+    // advisor as having failed to land runs it was never asked to land.
+    { name: 'Control — roles run counters', url: u('/api/control'), auth: true, json_path: 'roles.runs.plan' },
+    { name: 'Control — roles plan-night split', url: u('/api/control'), auth: true, json_path: 'roles.worth.advisedPlanRuns' },
     { name: 'Search — grouped counts', url: u('/api/search?q=roadmap'), auth: true, json_path: 'counts.total' },
     { name: 'Search — empty query is empty', url: u('/api/search?q='), auth: true, json_path: 'counts.total', json_expect: '0' },
     { name: 'Timeline — daily graph', url: u('/api/timeline'), auth: true, json_path: 'graph.0.date' },
