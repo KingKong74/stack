@@ -1083,6 +1083,15 @@ try {
   const nightLines = [];
   let landed = 0;
   let stepsSpent = 0;
+  // #325 — the night's progress report, distinct from stepsSpent (the START
+  // charge that paces the loop): stepsTicked is what BUILD sessions landed,
+  // stepsDesigned is what PLAN sessions authored (a plan night's items start
+  // plan-less, so its whole product lives here, not in stepsTicked), and
+  // stepsRemaining is what's still open on the items this night touched.
+  let stepsTicked = 0;
+  let stepsDesigned = 0;
+  let stepsRemaining = 0;
+  let anyPlanned = false; // did any attempted item actually carry (or gain) a plan?
   let nightLimited = false;
   // #325 — a pinned item, an agenda or an audit keep their exact structural
   // cap (there's nothing else TO pick); otherwise the item cap is only a
@@ -1188,6 +1197,11 @@ try {
     // cannot run free, since the cost is spent before the try/catch below
     // knows whether the item lands.
     stepsSpent += stepCost(item);
+    // #325 — the plan size BEFORE the session touches it, so a re-read after
+    // can say how many steps it actually ticked rather than just that it ran.
+    const planTotalBefore = item.plan?.length ?? 0;
+    const stepsLeftBefore = stepsLeft(item);
+    if (planTotalBefore > 0) anyPlanned = true;
     try {
       // Designs are quick — cap each plan session well under the night so one
       // rambler can't eat the batch.
@@ -1195,7 +1209,34 @@ try {
         ? await runPlanItem(item, detail.northStar || '', Math.min(remainingMin(), 20))
         : await runItem(item, detail.northStar || '', remainingMin());
       if (r.landed) landed++;
-      nightLines.push(`#${item.id} ${item.title}: ${r.landed ? (PLAN_ONLY ? 'design saved' : `${laneFor(item)} pushed`) : (PLAN_ONLY ? 'no design' : 'no commits')}${r.limitHit ? ' (hit the usage limit)' : ''}`);
+      // Best-effort re-read (same reason as postRun): the item's plan after
+      // the session is the ONLY place "steps actually ticked" lives, but a
+      // failed read must not sink a run that already landed — fall back to
+      // "nothing ticked" and keep going.
+      let stepsLeftAfter = stepsLeftBefore;
+      try {
+        const roadmap = await api('GET', `/api/projects/${SLUG}/roadmap`);
+        const all = ['must', 'should', 'could', 'wont'].flatMap((b) => roadmap?.[b] || []);
+        const after = all.find((it) => Number(it.id) === item.id);
+        if (after) stepsLeftAfter = stepsLeft(after);
+      } catch { /* best effort — count it as unticked rather than sink the run */ }
+      // Clamp at 0 both ways: a build session that ticks steps must never
+      // read as having DESIGNED negative ones, and — the mirror image — a
+      // plan session that authors a fresh plan must never read as having
+      // TICKED negative ones. A plan night's whole output lives on this
+      // second number, since the item it picked started with no plan at all.
+      const ticked = Math.max(0, stepsLeftBefore - stepsLeftAfter);
+      const designed = Math.max(0, stepsLeftAfter - stepsLeftBefore);
+      stepsTicked += ticked;
+      stepsDesigned += designed;
+      stepsRemaining += stepsLeftAfter;
+      // An item that started plan-less but ended with steps counts as
+      // "planned" for reporting purposes, same as one that already had a plan.
+      if (stepsLeftAfter > 0) anyPlanned = true;
+      const stepNote = PLAN_ONLY
+        ? (designed > 0 ? ` — ${designed} step(s) designed` : '')
+        : (planTotalBefore > 0 ? ` — ${ticked} of ${planTotalBefore} step(s) ticked, ${stepsLeftAfter} left` : '');
+      nightLines.push(`#${item.id} ${item.title}: ${r.landed ? (PLAN_ONLY ? 'design saved' : `${laneFor(item)} pushed`) : (PLAN_ONLY ? 'no design' : 'no commits')}${stepNote}${r.limitHit ? ' (hit the usage limit)' : ''}`);
       if (r.limitHit) {
         // Graceful close: stop starting work, tell the human, and come back
         // when the allocation does. Partial branches are already pushed.
@@ -1215,8 +1256,22 @@ try {
     }
   }
 
+  // #325 — steps ticked (or, on a PLAN night, steps designed) is the real
+  // measure of progress an item count can't give (a one-liner and a
+  // ten-step rebuild both count as "1 item"); say "no plan steps" rather
+  // than a bare 0 of 0 when nothing attempted had — or gained — one.
+  const stepBudgetSpent = STEP_BUDGET === Infinity
+    ? `${stepsSpent} step(s) charged (unlimited budget)`
+    : `${stepsSpent} of ${STEP_BUDGET} step budget spent`;
+  const stepsReport = PLAN_ONLY
+    ? (stepsDesigned > 0
+        ? `${stepsDesigned} step(s) designed, ${stepBudgetSpent}, `
+        : `no plan steps on tonight's items, `)
+    : (anyPlanned
+        ? `${stepsTicked} step(s) ticked (${stepsRemaining} still open), ${stepBudgetSpent}, `
+        : `no plan steps on tonight's items, `);
   const closing = `${landed} ${PLAN_ONLY ? 'design(s) awaiting review' : 'branch(es) awaiting the morning verdict'}, ${attempted.size} item(s) attempted, `
-    + `~${Math.round(tokensSpent / 1000)}k tokens${costSpent ? ` ($${costSpent.toFixed(2)})` : ''}, ${Math.round(elapsedMin())}m elapsed.`;
+    + `${stepsReport}~${Math.round(tokensSpent / 1000)}k tokens${costSpent ? ` ($${costSpent.toFixed(2)})` : ''}, ${Math.round(elapsedMin())}m elapsed.`;
   log(`night over: ${closing}`);
   if (attempted.size > 0) {
     await notify(
