@@ -139,6 +139,16 @@ test('dispatch regex: no match on unrelated branch', () => {
   assert.equal(ITEM_RE.exec('idea/some-idea'), null);
 });
 
+// A collision suffix (freeBranchName's -2, -3, …) must stay invisible to anything that
+// reads the item id out of a branch name.
+test('dispatch regex: collision suffix does not change the extracted id', () => {
+  assert.equal(ITEM_RE.exec('auto/item-42-add-dark-mode-2')?.[1], '42');
+});
+
+test('dispatch regex: suffix as the only thing after a slugless id', () => {
+  assert.equal(ITEM_RE.exec('auto/item-7-2')?.[1], '7');
+});
+
 // --- tree sort, mirrors stack-tree.mjs:116 ---
 const itemNo = (name) => { const m = name.match(/(\d+)/); return m ? Number(m[1]) : Infinity; };
 
@@ -146,4 +156,10 @@ test('tree sorter: extracts item number from descriptive lane', () => {
   assert.equal(itemNo('auto/item-12-some-feature'), 12);
   assert.equal(itemNo('auto/item-104-another-feature'), 104);
   assert.ok(itemNo('auto/item-12-some-feature') < itemNo('auto/item-104-another-feature'));
+});
+
+// A collision suffix must stay invisible to the sort too — it must not be mistaken for a
+// second, later number in the name.
+test('tree sorter: collision suffix does not shift where a lane sorts', () => {
+  assert.equal(itemNo('auto/item-12-some-feature-2'), 12);
 });
