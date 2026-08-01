@@ -51,10 +51,12 @@ templates/ stack-agent-context.md — the canonical portable agent manual (singl
   you looked at — and that write only ever re-spells a URL that is already `/control`. `#/control` is
   the one canonical spelling of the default room, and an unknown room lands there rather than 404ing.
 - `screens/` — Dashboard (five anchored sections behind a sticky SubNav), ProjectDetail (owns tab +
-  modal state), Settings, Control (Mission Control — six rooms behind a live strip and a persistent
+  modal state), Settings, Control (Mission Control — five rooms behind a live strip and a persistent
   right rail; `Control.tsx` is the shell and each room has its own file: `ControlNow` /
-  `ControlRooms` (Nights, Plan, Build) / `ControlReview` / `ControlRoles`, with the merged session
-  list in `ControlLanes`), Terminal, Skills.
+  `ControlRooms` (Nights, Plan) / `ControlReview` / `ControlRoles`, with the merged session
+  list in `ControlLanes`). A sixth, BUILD, was removed with its tab: its two gates belong to other
+  rooms now — the verdict is Review's whole subject, the merge is the Now room's branch strip — and
+  `#/control/build` falls back to the default room. Then Terminal, Skills.
   `detail/` holds the project tabs: Overview, Quality (#278 — Bugs and Audit merged into
   one page), Roadmap (Board / Tiers / Parked), Futures (the Polaris galaxy — Sky / Board / List,
   geometry in `detail/Galaxy.tsx`), Workbench (the planning canvas that replaced the notes wall —

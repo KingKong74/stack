@@ -62,7 +62,7 @@ export interface NowRoomProps {
   onSetArmed: (on: boolean) => void;
   configPanel: React.ReactNode;
   // rooms
-  onGoRoom: (room: 'nights' | 'plan' | 'build' | 'review') => void;
+  onGoRoom: (room: 'nights' | 'plan' | 'review') => void;
   // jobs
   onResumeJob: (j: AutopilotJob) => void;
   onHangupJob: (j: AutopilotJob) => void;
@@ -365,8 +365,13 @@ export function NowRoom(p: NowRoomProps) {
               <span className="what">{j.itemId ? `#${j.itemId} ${j.itemTitle || 'item'}` : `${j.kind} job`}</span>
               <span className="left">{j.when || 'waits for a slot'}</span>
               <span className="acts">
-                <button className="btn-repo sm" onClick={() => p.onGoRoom('build')}
-                  title="Open the Build room on what this session will work">Open</button>
+                {/* The Build room used to own this jump; with it gone, "open
+                    what this session will work" is the item itself on its own
+                    board — a room-free answer, and a truer one. A job with no
+                    item (a plan sweep) opens the board it will plan. */}
+                <button className="btn-repo sm"
+                  onClick={() => go.detail(j.slug, 'roadmap', j.itemId || undefined)}
+                  title="Open what this session will work, on its project's board">Open</button>
               </span>
             </div>
           ))}
@@ -468,8 +473,8 @@ export function NowRoom(p: NowRoomProps) {
                 </button>
                 {/* The merge strip lives under the card rather than beside the
                     name. 2a's grid has no room for it, and it is the one thing
-                    on the old project row that cannot be cut: the Build room
-                    sends you here by name for it. */}
+                    on the old project row that cannot be cut: with the Build
+                    room gone this is the only ⇥ Merge in the app. */}
                 <button className="drop" aria-expanded={isOpen}
                   onClick={() => setOpenProject(isOpen ? '' : x.slug)}
                   title={branchN ? `${branchN} open branch${branchN === 1 ? '' : 'es'}` : 'No open branches'}>

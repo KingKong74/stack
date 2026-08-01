@@ -6,7 +6,9 @@ import { useEffect, useState } from 'react';
 // canonical form of the default room, and an unrecognised room reads as the
 // default rather than as a dead end — a link that outlives a renamed room
 // should still land somewhere useful.
-export const CONTROL_ROOMS = ['now', 'nights', 'plan', 'build', 'review', 'roles'] as const;
+// ('build' was a room until its tab was removed; `#/control/build` now falls
+// back to the default room, which is what the unknown-room rule is for.)
+export const CONTROL_ROOMS = ['now', 'nights', 'plan', 'review', 'roles'] as const;
 export type ControlRoom = (typeof CONTROL_ROOMS)[number];
 export const isControlRoom = (v: unknown): v is ControlRoom =>
   typeof v === 'string' && (CONTROL_ROOMS as readonly string[]).includes(v);

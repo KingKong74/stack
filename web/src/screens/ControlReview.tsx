@@ -68,12 +68,11 @@ function nightLabel(day: string): string {
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' });
 }
 
-export function ReviewRoom({ onCount, focus }: {
+export function ReviewRoom({ onCount }: {
   onCount?: (n: number) => void;
-  // "slug#id" — a specific change another room wants judged (the Build room's
-  // verdict gate). Applied once the queue lands; a stale link falls back to
-  // the normal list rather than selecting nothing.
-  focus?: string;
+  // There was a `focus` prop here — "slug#id", a specific change another room
+  // wanted judged. Its only caller was the Build room's verdict gate, and it
+  // went out with that room; the queue's own selection is the whole story now.
 }) {
   const [data, setData] = useState<ReviewData | null>(null);
   const [error, setError] = useState('');
@@ -134,20 +133,6 @@ export function ReviewRoom({ onCount, focus }: {
     if (!list.length) { setSelId(''); return; }
     if (!list.some((it) => key(it) === selId)) setSelId(key(list[0]));
   }, [list, selId]);
-
-  // An incoming focus wins over that fallback, so it is declared AFTER it:
-  // both fire in the same commit, and the later setSelId is the one that
-  // sticks. Applied once per requested key — after that the room is yours.
-  const [focused, setFocused] = useState('');
-  useEffect(() => {
-    if (!focus || !data || focused === focus) return;
-    setFocused(focus);
-    const hit = (data.queue ?? []).find((it) => key(it) === focus);
-    if (!hit) return;          // already verdicted, or never in the queue
-    setView('queue');
-    setFilter(hit.shelved ? 'shelved' : 'todo');
-    setSelId(focus);
-  }, [focus, data, focused]);
 
   // ---- mutations. Each one PATCHes, then reloads: the queue is a server-side
   // read over two tables, and re-deriving it locally would be a second source

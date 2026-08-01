@@ -10,9 +10,14 @@ import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
 import type { RoadmapItem, Priority, Tier } from '../types';
 import { tierRank } from '../types';
 
-// The Nights / Plan / Build rooms of Mission Control (Stack Planning design,
-// turn 14a). Each room is a different lens on data the shell already holds —
-// plus, for Plan and Build, the picked project's own detail payload.
+// The Nights / Plan rooms of Mission Control (Stack Planning design, turn
+// 14a). Each room is a different lens on data the shell already holds — plus,
+// for Plan, the picked project's own detail payload.
+//
+// The BUILD room lived here too — plan steps as phase cards, with the verdict
+// and merge gates on them — and was removed with its tab. Its two gates are
+// both somebody else's job now: the verdict is the Review room's whole
+// subject, and the merge is the Now room's branch strip.
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const fmtDate = (d: Date) =>
@@ -1289,191 +1294,6 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Build — the implementation plan (12c inside 14a): every item carrying plan
-// steps, as phase cards with the runner's real gates. Stack's gates are the
-// honest ones: the human verdict (autopilot never ticks its own work) and the
-// merge (⇥ stays yours). "Last night moved the plan" is the run ledger.
-// ---------------------------------------------------------------------------
-
-export function BuildRoom({ data, pickSlug, onPick, onGoNow, onGoReview, onCount }: {
-  data: ControlData; pickSlug: string; onPick: (slug: string) => void; onGoNow: () => void;
-  // #282 moved review into its own room, so the verdict gate switches rooms
-  // with the change to judge, rather than deep-linking to a Roadmap board
-  // that now only holds a pointer back here.
-  onGoReview: (slug: string, itemId: number) => void;
-  // What this room is asking of you: the gate rows it renders. Reported up
-  // like the Review room's count, since plan steps live behind this room's
-  // own detail fetches and not the control payload — so the tab is unbadged
-  // until the room has loaded once, which is honest rather than a false zero.
-  onCount?: (n: number) => void;
-}) {
-  // (#271) '' = every project. The room reads the same either way — a phase
-  // card carries its project's tint, so one board can hold the whole house.
-  const slugs = useMemo(
-    () => (pickSlug ? [pickSlug] : data.projects.map((p) => p.slug)),
-    [pickSlug, data.projects]);
-  const { details, err } = useProjectDetails(slugs);
-  const [open, setOpen] = useState<Set<string> | null>(null);
-
-  const house = pickSlug === '';
-  // Rows key by project+item, since ids only mean something inside a project.
-  const planned: HouseItem[] = [];
-  for (const p of data.projects) {
-    if (!slugs.includes(p.slug)) continue;
-    const d = details.get(p.slug);
-    if (!d) continue;
-    [...d.roadmap.must, ...d.roadmap.should, ...d.roadmap.could, ...d.roadmap.wont].forEach((it, rank) => {
-      if (it.plan.length > 0) {
-        planned.push({ it, slug: p.slug, name: p.name, tint: p.tint, area: p.autopilotArea || '', rank });
-      }
-    });
-  }
-
-  const phase = (it: RoadmapItem) =>
-    it.claimedBy && !it.done ? 'building'
-    : !it.done ? 'queued'
-    : !it.reviewTag ? 'verdict'
-    : 'landed';
-  const orderKey: Record<string, number> = { building: 0, queued: 1, verdict: 2, landed: 3 };
-  const rowKey = (r: HouseItem) => `${r.slug}#${r.it.id}`;
-  const phases = [...planned].sort((a, b) =>
-    orderKey[phase(a.it)] - orderKey[phase(b.it)]
-    || a.name.localeCompare(b.name)
-    || a.it.id - b.it.id);
-  const openSet = open
-    ?? new Set(phases.filter((r) => phase(r.it) !== 'landed').slice(0, 2).map(rowKey));
-  const toggle = (k: string) => {
-    const next = new Set(openSet);
-    if (next.has(k)) next.delete(k); else next.add(k);
-    setOpen(next);
-  };
-
-  const totalSteps = planned.reduce((n, r) => n + r.it.plan.length, 0);
-  const doneSteps = planned.reduce((n, r) => n + r.it.plan.filter((s) => s.done).length, 0);
-  const BADGE: Record<string, string> = {
-    building: 'building', queued: 'queued', verdict: 'awaiting verdict', landed: 'landed',
-  };
-  const runsHere = (data.usage?.recentRuns ?? [])
-    .filter((r) => (house ? true : r.slug === pickSlug))
-    .slice(0, house ? 6 : 4);
-  const branchFor = (r: HouseItem) =>
-    data.projects.find((p) => p.slug === r.slug)?.branches.find((b) => b.itemId === String(r.it.id));
-  const loaded = slugs.filter((s) => details.has(s)).length;
-
-  // The badge counts exactly the gate rows below — a change awaiting your
-  // verdict, or a branch waiting on your merge. Both are crossings the
-  // autopilot never makes alone, which is the one thing this room is for.
-  const gates = phases.filter((r) =>
-    phase(r.it) === 'verdict' || (phase(r.it) === 'building' && branchFor(r))).length;
-  useEffect(() => { onCount?.(gates); }, [gates, onCount]);
-
-  const title = house
-    ? `Every project · implementation plans`
-    : `${details.get(pickSlug)?.project.name ?? pickSlug} · implementation plans`;
-
-  if (err && loaded === 0) return <div className="mc14-empty">{err}</div>;
-  if (loaded === 0) return <div className="mc14-empty">Loading the build…</div>;
-
-  return (
-    <div className="mc14-build">
-      <ProjectPicker data={data} pickSlug={pickSlug} onPick={onPick} />
-      {err && <div className="action-error">{err}</div>}
-      {planned.length === 0 ? (
-        <div className="mc14-empty">
-          No implementation plans yet — plan steps land on roadmap items from the board's ✎ Plan editor,
-          or a plan night writes them overnight. Build nights then work them top-down.
-        </div>
-      ) : (
-        <>
-          <div className="mc14-room-head">
-            <span className="title">{title}</span>
-            <span className="meta">
-              {doneSteps}/{totalSteps} steps · {planned.length} planned item{planned.length === 1 ? '' : 's'}
-              {house && loaded < slugs.length ? ` · loading ${slugs.length - loaded} more` : ''}
-            </span>
-            <div className="mc14-buildbar">
-              {Array.from({ length: 12 }, (_, i) => (
-                <span key={i} className={totalSteps > 0 && i < Math.round((doneSteps / totalSteps) * 12) ? 'on' : ''} />
-              ))}
-            </div>
-          </div>
-          {phases.map((r) => {
-            const it = r.it;
-            const ph = phase(it);
-            const k = rowKey(r);
-            const isOpen = openSet.has(k);
-            const br = branchFor(r);
-            return (
-              <div key={k} className={`mc14-phase ${ph}`}>
-                <button className="head" onClick={() => toggle(k)}>
-                  {house && (
-                    <span className="tintdot" style={{ background: r.tint || 'var(--sand)' }} title={r.name} />
-                  )}
-                  <span className="n">#{it.id}</span>
-                  <span className="nm">{it.title}</span>
-                  <span className={`badge ${ph}`}>{BADGE[ph]}</span>
-                  <div style={{ flex: 1 }} />
-                  <span className="meta">
-                    {house ? `${r.name} · ` : ''}
-                    {it.plan.filter((s) => s.done).length}/{it.plan.length} steps{it.claimedBy ? ` · ${it.claimedBy}` : ''}
-                  </span>
-                  <span className="caret">{isOpen ? '▾' : '▸'}</span>
-                </button>
-                {isOpen && (
-                  <div className="body">
-                    {(it.refineNote || it.builtNote) && (
-                      <div className="why">{it.refineNote ? `↻ Refinement: ${it.refineNote}` : it.builtNote}</div>
-                    )}
-                    {it.plan.map((s, i) => (
-                      <div key={i} className={`step ${s.done ? 'done' : ''}`}>
-                        <span className="mark">{s.done ? '✓' : '○'}</span>
-                        <span className="t">{s.text}</span>
-                      </div>
-                    ))}
-                    {ph === 'verdict' && (
-                      <div className="gate">
-                        <span className="g">GATE</span>
-                        <span className="t">Human verdict — the autopilot never ticks its own work. Judge what landed in Reviews.</span>
-                        <button className="act" onClick={() => onGoReview(r.slug, it.id)}>→ Review</button>
-                      </div>
-                    )}
-                    {ph === 'building' && br && (
-                      <div className="gate">
-                        <span className="g">GATE</span>
-                        <span className="t">
-                          The merge stays yours — {br.branch}
-                          {typeof br.ahead === 'number' ? ` is ↑${br.ahead}${br.behind ? ` ↓${br.behind}` : ''}` : ''}
-                          {br.mergeClean === true ? ' and merges clean.' : br.mergeClean === false ? ' and conflicts with main.' : '.'}
-                        </span>
-                        <button className="act" onClick={onGoNow}>⇥ merge strip</button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {runsHere.length > 0 && (
-            <div className="mc14-card wide">
-              <span className="cap">LAST NIGHTS MOVED THE PLAN</span>
-              {runsHere.map((r, i) => (
-                <button key={i} className="mc14-diff" onClick={() => r.itemId && go.detail(r.slug, 'roadmap', r.itemId)}>
-                  <span className={`tag ${r.outcome}`}>{r.outcome.toUpperCase()}</span>
-                  <span className="t">
-                    {house ? `${r.name} · ` : ''}{r.itemId ? `#${r.itemId} ` : ''}
-                    {r.itemTitle || 'general session'} — {r.when}, {fmtTok(r.tokens)} tok
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </>
-      )}
     </div>
   );
 }

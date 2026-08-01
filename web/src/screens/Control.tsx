@@ -9,7 +9,7 @@ import {
   type ControlData, type ControlProject, type AutopilotJob, type AutopilotSchedule,
 } from '../store';
 import { SessionPlanModal } from '../components/SessionPlanModal';
-import { NightsRoom, PlanRoom, BuildRoom } from './ControlRooms';
+import { NightsRoom, PlanRoom } from './ControlRooms';
 import { RolesRoom } from './ControlRoles';
 import { ReviewRoom } from './ControlReview';
 import { NowRoom } from './ControlNow';
@@ -161,11 +161,6 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
   // #282 — how many changes are waiting on a verdict, for the room's badge.
   // The Review room owns the fetch and reports the count back up.
   const [reviewN, setReviewN] = useState(0);
-  // The Build room's open gates, reported up the same way (the room owns the
-  // per-project detail fetches the plan steps come from), plus the change the
-  // room's verdict gate has asked the Review room to open on ("slug#id").
-  const [buildN, setBuildN] = useState(0);
-  const [reviewFocus, setReviewFocus] = useState('');
   const [cfgOpen, setCfgOpen] = useState(false);
   // The rail collapses to the 76px slim rail (design 1b). What survives the
   // collapse is budget pressure, spend and connection; the model breakdown,
@@ -195,7 +190,7 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [railOpen]);
-  const [pickSlug, setPickSlug] = useState(''); // the Plan/Build rooms' project
+  const [pickSlug, setPickSlug] = useState(''); // the Plan room's project
   const load = useCallback(() => {
     getControl()
       .then(setData)
@@ -713,7 +708,7 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
                   house, not zero; picking one narrows the badge with the room.
                   #282 — Review badges what is waiting on a verdict, reported up
                   by the room itself (it owns that fetch). */}
-              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['build', 'Build', buildN], ['review', 'Review', reviewN], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => isDrift(a.drift)).length]] as const).map(([key, label, n]) => (
+              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['review', 'Review', reviewN], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => isDrift(a.drift)).length]] as const).map(([key, label, n]) => (
                 // #316 — anchors, not buttons: each room has a URL now, so the
                 // tab that opens it should be a real link (middle-click opens a
                 // new tab, and the address bar is honest either way). The
@@ -789,17 +784,12 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
                     onSetMaxItems={(n) => void setAutopilot({ autopilotMaxItems: n })}
                     onSetModel={(p) => void setAutopilot(p)} />
                 )}
-                {room === 'build' && (
-                  <BuildRoom data={data} pickSlug={pickSlug} onPick={setPickSlug} onGoNow={() => setRoom('now')}
-                    onCount={setBuildN}
-                    onGoReview={(slug, itemId) => { setReviewFocus(`${slug}#${itemId}`); setRoom('review'); }} />
-                )}
                 {/* #281 — Roles: the fleet-wide half of turn 23. "Edit the
                     policy" lands you on the Now room's model pickers, which
                     are the one place the policy is actually written. */}
                 {/* #282 — Review: the cross-project queue and the night
                     debrief, moved out of the Roadmap tab. */}
-                {room === 'review' && <ReviewRoom onCount={setReviewN} focus={reviewFocus} />}
+                {room === 'review' && <ReviewRoom onCount={setReviewN} />}
                 {room === 'roles' && (
                   <RolesRoom data={data} onReload={load}
                     onConfigure={() => { setRoom('now'); setCfgOpen(true); }} />
