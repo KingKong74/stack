@@ -47,7 +47,11 @@ const SHELL_LABEL: Record<string, string> = {
 const SHELL_TIER: Record<string, number> = { 'on-course': 0, tangent: 1, 'off-course': 2 };
 const SHELL_BEARING: Record<string, number> = { 'on-course': 200, tangent: 215, 'off-course': 230 };
 
-const STAGE_H = 860;
+// The stage's height is MEASURED, not assumed (#248): full screen makes it the
+// window, and the geometry — the fit radius, the plate cut-offs, the vertical
+// centre — is all computed off it. A constant here would lay the galaxy out for
+// a box it is no longer in.
+const STAGE_H_MIN = 420;
 const SQ = 0.9;              // the sky is squashed: an orbit is an ellipse, not a circle
 const MAG = (f: Future) => f.magnitude ?? 2;   // geometry needs a size; the panel still says "not sized"
 
@@ -192,7 +196,7 @@ export function Galaxy({
   onZoom: (z: number) => void;
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
-  const [stageW, setStageW] = useState(900);
+  const [stage, setStage] = useState({ w: 900, h: 860 });
   // The hand-pan, added on top of the automatic pan toward the focused system.
   // Zoomed in past Fit the sky is bigger than the stage, and without this the
   // only way to see a neighbour is to select it.
@@ -207,8 +211,10 @@ export function Galaxy({
     const el = stageRef.current;
     if (!el) return;
     const read = () => {
-      const w = el.getBoundingClientRect().width;
-      setStageW((cur) => (w && Math.abs(w - cur) > 2 ? w : cur));
+      const r = el.getBoundingClientRect();
+      setStage((cur) => (r.width && r.height
+        && (Math.abs(r.width - cur.w) > 2 || Math.abs(r.height - cur.h) > 2)
+        ? { w: r.width, h: r.height } : cur));
     };
     read();
     if (typeof ResizeObserver === 'undefined') return;
@@ -259,12 +265,13 @@ export function Galaxy({
     const focusStar = sel ? model.starOf(sel) : null;
     const visible = (f: Future) => !sourceFilter
       || (sourceFilter === 'hook' ? f.source === 'hook' : f.source !== 'hook');
-    const W = Math.max(360, stageW);
+    const W = Math.max(360, stage.w);
+    const H = Math.max(STAGE_H_MIN, stage.h);
     const n = model.stars.length;
     const CX = W / 2;
-    const CY = 0.46 * STAGE_H;
+    const CY = 0.46 * H;
     // The largest radius that still leaves room for a label at every edge.
-    const FIT = Math.max(120, Math.min(CX - 58, (Math.min(CY, STAGE_H - CY) - 72) / SQ));
+    const FIT = Math.max(120, Math.min(CX - 58, (Math.min(CY, H - CY) - 72) / SQ));
     const coreR = Math.max(26, Math.min(FIT * 0.1, 46));
     // Nodes grow with zoom, but far more slowly than the field — otherwise one
     // planet swallows the system you zoomed in to read.
@@ -359,7 +366,7 @@ export function Galaxy({
       const text = `${SHELL_LABEL[key]} · ${group.length}`;
       const w = text.length * 6.2 + 14;
       const rect = { x1: lx - w, x2: lx, y1: ly - 8, y2: ly + 8 };
-      const fits = rect.x1 > 6 && rect.x2 < W - 6 && rect.y1 > 6 && rect.y2 < STAGE_H - 36;
+      const fits = rect.x1 > 6 && rect.x2 < W - 6 && rect.y1 > 6 && rect.y2 < H - 36;
       sectors.push({ key, x: Math.round(lx), y: Math.round(ly), text, tone: GX_TONE[key], show: fits, rect });
       if (fits) labelRects.push(rect);
     });
@@ -392,7 +399,7 @@ export function Galaxy({
         tone: isSel ? 'var(--accent)' : GX_TONE[v], sel: isSel, z: isSel ? 8 : 7,
         plate: false, plateGap: Math.round(plateGap), meta,
         rect: { x1: nx - halfW, x2: nx + halfW, y1: plateTop, y2: plateTop + 38 },
-        fits: nx - halfW > 6 && nx + halfW < W - 6 && plateTop > 6 && ny < STAGE_H - 64,
+        fits: nx - halfW > 6 && nx + halfW < W - 6 && plateTop > 6 && ny < H - 64,
       });
 
       s.planets.forEach((pl, j) => {
@@ -454,7 +461,7 @@ export function Galaxy({
       beltW: Math.round(beltR * 2), beltH: Math.round(beltR * 2 * SQ),
       dots, discs, orbits, planetOrbits, moonOrbits, shellRings, sectors,
     };
-  }, [model, northOnly, sourceFilter, selId, zoom, stageW, pan]);
+  }, [model, northOnly, sourceFilter, selId, zoom, stage, pan]);
 
   const zi = zoomIndex(zoom);
   const px = (v: number) => `${v}px`;

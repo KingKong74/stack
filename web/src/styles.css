@@ -373,37 +373,10 @@ a.tab { display: inline-block; }
 .northstar-editor textarea { width: 100%; border: 1px solid var(--line-3); border-radius: 10px; background: var(--card); padding: 10px 12px; font: inherit; font-size: 13.5px; line-height: 1.55; resize: vertical; }
 .northstar-editor .row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
 .northstar-editor .hint { font-size: 11px; color: var(--faint); }
-.futures-list { display: flex; flex-direction: column; gap: 10px; }
-.future-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 13px; padding: 14px 16px; }
-.future-title { font-size: 14px; font-weight: 500; color: var(--ink); text-align: left; }
-/* #259 — the title is the select handle: the list and the sky share one
-   selection, so a row can make it and wears it when the sky did. */
-.future-title:hover { color: var(--accent-deep); }
-.future-row.sel { border-color: var(--accent-tint-border); background: var(--accent-tint); }
-.future-row.sel .future-title { color: var(--accent-deep); }
-.future-note { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
-.future-meta { display: flex; align-items: center; gap: 9px; margin-top: 8px; }
-.future-meta .when { font-family: var(--mono); font-size: 11px; color: var(--faint); }
-.future-actions { display: flex; gap: 7px; flex: none; }
-.future-actions .promote { font-size: 12px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent-tint-border); border-radius: 8px; padding: 5px 11px; white-space: nowrap; }
-.future-actions .promote:hover { background: var(--accent-tint); color: var(--accent-deep); }
-.future-actions .dismiss { font-size: 12px; font-weight: 500; color: var(--muted); border: 1px solid var(--line-2); border-radius: 8px; padding: 5px 11px; }
-.future-actions .dismiss:hover { color: var(--critical); border-color: var(--critical); }
-.future-actions .edit { font-size: 13px; color: var(--faint); border: 1px solid var(--line-2); border-radius: 8px; padding: 5px 9px; }
-.future-actions .edit:hover { color: var(--accent-deep); }
-.future-row.editing { display: block; }
+/* The list view is gone (#310): the sky and the board are the two ways to
+   read the funnel, and a third that could only ever repeat them earned its
+   removal. .future-edit-row survives — it is the rail's inline editor. */
 .future-edit-row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
-.futures-group { margin-bottom: 20px; }
-.futures-group-head { font-family: var(--disp); font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 9px; }
-.futures-group-head.on-course { color: var(--green); }
-.futures-group-head.off-course { color: var(--critical); }
-.futures-group-head .n { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-left: 4px; }
-.align-chip { font-size: 11px; font-weight: 600; border-radius: 7px; padding: 3px 9px; border: 1px solid var(--line-2); white-space: nowrap; }
-.align-chip.none { color: var(--muted); }
-.align-chip.none:hover { color: var(--accent); border-color: var(--accent-tint-border); }
-.align-chip.on-course { color: var(--green); background: var(--green-tint); border-color: var(--green-tint); }
-.align-chip.tangent { color: var(--building); background: var(--accent-tint); border-color: var(--accent-tint-border); }
-.align-chip.off-course { color: var(--critical); border-color: var(--critical); }
 .review-pick-opt.on-course:hover { color: var(--green); border-color: var(--green); background: var(--green-tint); }
 .review-pick-opt.tangent:hover { color: var(--building); border-color: var(--building); }
 .review-pick-opt.off-course:hover { color: var(--critical); border-color: var(--critical); }
@@ -1076,7 +1049,6 @@ a.tab { display: inline-block; }
   .detail-title { font-size: 25px; }
   .overlay { padding: 12px; align-items: flex-end; }
   .modal, .modal.wide { width: 100%; max-height: calc(100vh - 24px); padding: 20px 18px; }
-  .future-row { flex-wrap: wrap; }
   .set-card { padding: 18px 16px; }
 }
 
@@ -1686,7 +1658,6 @@ a.tab { display: inline-block; }
    row with the same terracotta ring on whichever tab it opens. */
 .bug.hl { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(196, 98, 61, 0.16); }
 .road-item.hl { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(196, 98, 61, 0.16); }
-.future-row.hl { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(196, 98, 61, 0.16); }
 .note.hl { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ---------- mission control · mirror sites (#208) ---------- */
@@ -2540,11 +2511,57 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 /* -- control row above the sky -- */
 .psky-top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .psky-total { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+/* #246 — the judge queue's door: a control-row button carrying the funnel's
+   own count. `due` is "there is something to judge", which is the only state
+   worth colouring; a cleared queue keeps the button but stops asking. */
+.psky-queue-btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 5px 11px;
+  border-radius: 6px; border: 1px solid var(--keyline); background: transparent;
+  font-size: 11px; font-weight: 500; color: var(--muted); white-space: nowrap;
+}
+.psky-queue-btn:hover { border-color: var(--accent); color: var(--accent-deep); }
+.psky-queue-btn .badge {
+  font-family: var(--mono); font-size: 10px; padding: 1px 6px; border-radius: 4px;
+  background: var(--panel); color: var(--chip-ink);
+}
+.psky-queue-btn.due { border-color: var(--accent-tint-border); background: var(--accent-tint); color: var(--accent-deep); }
+.psky-queue-btn.due .badge { background: var(--accent); color: var(--on-accent, #fff); }
+
 .psky-all { padding: 5px 11px; border-radius: 6px; border: 1px solid var(--keyline); font-size: 11px; font-weight: 500; color: var(--muted); }
 .psky-all:hover { border-color: var(--accent); }
 .psky-all.on { background: var(--accent-tint); color: var(--accent-deep); border-color: var(--accent-tint-border); }
 
 /* -- layout: sky + rail -- */
+/* #248 — full screen is a CSS mode, so a browser that refuses the Fullscreen
+   API still gets the whole viewport. The stage stops being a fixed box and
+   becomes whatever is left after the chrome; Galaxy.tsx MEASURES that height
+   rather than assuming one, so the sky re-lays out into it. */
+.psky.full {
+  position: fixed; inset: 0; z-index: 60; border-radius: 0; border: none;
+  height: 100vh; max-height: 100vh;
+}
+.psky.full .psky-main { min-height: 0; }
+.psky.full .pgx-stage { flex: 1; height: auto; min-height: 0; }
+.psky.full .pgx-board-wrap { min-height: 0; overflow-y: auto; }
+
+/* The rail folded down to a spine: still legible, still says what is waiting. */
+.psky-rail-fold { font-family: var(--mono); font-size: 14px; color: var(--muted); line-height: 1; padding: 0 4px; }
+.psky-rail-fold:hover { color: var(--accent); }
+.psky-spine {
+  flex: none; width: 34px; border-left: 1px solid var(--line-2); background: var(--card);
+  display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 0;
+}
+.psky-spine:hover { background: var(--panel); }
+.psky-spine .chev { font-family: var(--mono); font-size: 14px; color: var(--muted); line-height: 1; }
+.psky-spine .name {
+  writing-mode: vertical-rl; font-family: var(--disp); font-size: 13px; font-weight: 600;
+  color: var(--muted); letter-spacing: 0.02em;
+}
+.psky-spine .n {
+  font-family: var(--mono); font-size: 9.5px; padding: 2px 4px; border-radius: 4px;
+  background: var(--accent); color: var(--on-accent, #fff);
+}
+
 .psky { display: flex; border: 1px solid var(--line-2); border-radius: 14px; background: var(--card); overflow: hidden; }
 .psky-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
 

@@ -17,15 +17,6 @@ export const ALIGNMENTS: { key: Alignment; label: string; hint: string }[] = [
 ];
 const alignLabel = (a: string) => ALIGNMENTS.find((x) => x.key === a)?.label || 'Unjudged';
 
-// The ideas group in curation order: judged on-course first, then the unsorted
-// pile, then tangents and off-course at the bottom.
-const GROUPS: { key: string; label: string }[] = [
-  { key: 'on-course', label: 'On course' },
-  { key: '', label: 'Unsorted' },
-  { key: 'tangent', label: 'Tangents' },
-  { key: 'off-course', label: 'Off course' },
-];
-
 const LOOSE = 'loose'; // theme label for ideas with no area tag
 const TL_TICKS = 6;    // scrub points along the sky's history (design 6b/7a)
 
@@ -97,7 +88,7 @@ export function Futures({
   };
 
   // ---- view + filters ----
-  const [view, setView] = useState<'sky' | 'board' | 'list'>('sky');
+  const [view, setView] = useState<'sky' | 'board'>('sky');
   const [sourceFilter, setSourceFilter] = useState<'' | 'hook' | 'manual'>('');
   const mixedSources = futures.some((f) => f.source === 'hook') && futures.some((f) => f.source !== 'hook');
   const bySource = futures
@@ -110,6 +101,34 @@ export function Futures({
   const [z, setZ] = useState(1);
   const [northOnly, setNorthOnly] = useState(false);
   const [selId, setSelId] = useState<number | null>(null);
+
+  // #248 — the sky wants the window. The stage was a fixed 860px box inside a
+  // page inside a tab, and at any real zoom you were reading a galaxy through a
+  // letterbox. Full screen is a CSS mode first and a Fullscreen API request
+  // second: the layout keys on the class, so a refused or unavailable request
+  // still gives you the whole viewport, and nothing outside this tree can be
+  // hidden by it. Transient by design — the API cannot be re-entered on load
+  // without a fresh gesture, so a remembered `true` would only ever be a lie.
+  const [full, setFull] = useState(false);
+  const toggleFull = () => {
+    const next = !full;
+    setFull(next);
+    if (next) void document.documentElement.requestFullscreen?.().catch(() => {});
+    else if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+  };
+  useEffect(() => {
+    const onChange = () => { if (!document.fullscreenElement) setFull(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.fullscreenElement) setFull(false); };
+    document.addEventListener('fullscreenchange', onChange);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, []);
+  // The rail folds to a spine you can still see the count on. Collapsing it is
+  // what makes full screen worth entering, so the two live together.
+  const [railOpen, setRailOpen] = useState(true);
 
   // ---- the time scrub (design 6b/7a): the same sky over time ----
   // Ticks are evenly spaced across the sky's real history (idea created_at);
@@ -154,16 +173,9 @@ export function Futures({
   // selected idea is filtered out or below the fold would preserve the
   // selection while losing it in every sense that matters.
   useEffect(() => {
-    if (!selected) return;
-    if (view === 'list') {
-      // The list groups by verdict and filters by area — clear a filter that
-      // would hide the selection, then bring the row into view.
-      if (areaFilter && areaFilter !== (selected.area || '')) setAreaFilter('');
-    }
-    if (view === 'sky') return undefined;
-    const sel = view === 'list' ? `.future-row[data-hl="${selected.id}"]` : '.pgx-card.sel';
+    if (!selected || view !== 'board') return undefined;
     const t = setTimeout(() => {
-      document.querySelector(sel)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      document.querySelector('.pgx-card.sel')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }, 60);
     return () => clearTimeout(t);
   }, [view, selected?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -398,13 +410,6 @@ export function Futures({
     setDraft('');
   };
   // ---- list view (the pre-sky layout, kept as a secondary view) ----
-  const [areaFilter, setAreaFilter] = useState('');
-  const areas = [...new Set(futures.map((f) => f.area).filter(Boolean))].sort();
-  const visible = bySource.filter((f) => !areaFilter || f.area === areaFilter);
-  const judged = futures.some((f) => f.alignment);
-  const listGroups = GROUPS
-    .map((g) => ({ ...g, items: visible.filter((f) => f.alignment === g.key) }))
-    .filter((g) => g.items.length > 0);
 
   return (
     <div>
@@ -479,75 +484,42 @@ export function Futures({
               title="Ideas you typed (or agreed with Polaris)">Manual</button>
           </div>
         )}
+        {/* #246 — the judge queue is a BUTTON, not a rail card. It was the
+            second-biggest thing in the side panel and you only want it when you
+            are actually judging; as a button it carries its own count and stays
+            reachable from every view. The badge is the FUNNEL's state (judged of
+            all), not this session's tally — a badge reading 0/9 on arrival every
+            time would be measuring the wrong thing. */}
+        <button className={`psky-queue-btn${unjudged.length ? ' due' : ''}`}
+          onClick={() => setQueueOut(true)}
+          title={unjudged.length
+            ? `${unjudged.length} idea${unjudged.length === 1 ? '' : 's'} still carry no verdict — open the queue`
+            : 'Every idea carries a verdict. Open the queue anyway'}>
+          ✦ Judge queue
+          <span className="badge">{bySource.length - unjudged.length}/{bySource.length}</span>
+        </button>
         {onCluster && bySource.length > 0 && (
           <button className="psky-all" onClick={runCluster} disabled={clusterBusy}
             title="Gemini groups the funnel into area tags — you review before anything is written">
             {clusterBusy ? '✧ clustering…' : '✧ Cluster'}
           </button>
         )}
+        {/* The head bar survives full screen, so the way out is where the way
+            in was — and esc leaves too, whether or not the browser granted the
+            real Fullscreen API. */}
+        <button className={`psky-all${full ? ' on' : ''}`} onClick={toggleFull} aria-pressed={full}
+          title={full ? 'Leave full screen (esc also works)' : 'Full screen — the sky takes the whole window'}>
+          {full ? '⤡' : '⤢'}
+        </button>
         <div className="seg-control sm" role="tablist" aria-label="Ideas view">
           <button className={`seg-opt ${view === 'sky' ? 'on' : ''}`} onClick={() => setView('sky')}>Sky</button>
           <button className={`seg-opt ${view === 'board' ? 'on' : ''}`} onClick={() => setView('board')}>Board</button>
-          <button className={`seg-opt ${view === 'list' ? 'on' : ''}`} onClick={() => setView('list')}>List</button>
         </div>
       </div>
 
       {clusterErr && <div className="psky-cluster-err">✧ {clusterErr}</div>}
 
-      {view === 'list' ? (
-        <>
-          {areas.length > 0 && (
-            <div className="chips" style={{ marginBottom: 10 }}>
-              <button className={`chip-sm ${areaFilter === '' ? 'on' : ''}`} onClick={() => setAreaFilter('')}>
-                All {futures.length}
-              </button>
-              {areas.map((a) => (
-                <button key={a} className={`chip-sm ${areaFilter === a ? 'on' : ''}`}
-                  onClick={() => setAreaFilter(areaFilter === a ? '' : a)}>
-                  {a} {futures.filter((f) => f.area === a).length}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="composer">
-            <textarea
-              value={draft}
-              placeholder={'Could this become… ?\nFirst line is the idea — add lines below for the why.'}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); add(); }
-                else if (e.key === 'Escape') { e.preventDefault(); setDraft(''); }
-              }}
-            />
-            <div className="row">
-              <span className="hint">⏎ to add · ⇧⏎ for a "why" line</span>
-              <button className="add" onClick={add}>Add idea</button>
-            </div>
-          </div>
-          {futures.length ? (
-            listGroups.map((g) => (
-              <div className="futures-group" key={g.key || 'unsorted'}>
-                {judged && <div className={`futures-group-head ${g.key || 'unsorted'}`}>{g.label} <span className="n">{g.items.length}</span></div>}
-                <div className="futures-list">
-                  {g.items.map((f) => (
-                    <IdeaRow key={f.id} future={f} highlighted={highlightId === String(f.id)}
-                      selected={selId === f.id}
-                      onSelect={() => setSelId(selId === f.id ? null : f.id)}
-                      onEdit={onEdit} onAlign={onAlign} onDelete={onDelete} onPromote={onPromote}
-                      onAskGemini={onAskGemini} />
-                  ))}
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="empty-state">
-              <div className="big">No ideas yet</div>
-              <div>Futures land here from you or from checkpoints — the loose "what ifs" worth keeping.</div>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="psky">
+        <div className={`psky${full ? ' full' : ''}${railOpen ? '' : ' railed'}`}>
           {/* ---- the sky ---- */}
           <div className="psky-main">
             {view === 'sky' && (
@@ -666,10 +638,21 @@ export function Futures({
           </div>
 
           {/* ---- the rail: Polaris ---- */}
+          {!railOpen ? (
+            <button className="psky-spine" onClick={() => setRailOpen(true)}
+              title="Open the Polaris panel">
+              <span className="chev">‹</span>
+              <span className="name">Polaris</span>
+              {unjudged.length > 0 && <span className="n">{unjudged.length}</span>}
+            </button>
+          ) : (
           <div className="psky-rail">
             <div className="psky-rail-head">
               <span className="name">Polaris</span>
               <span className="sub">plans only</span>
+              <div style={{ flex: 1 }} />
+              <button className="psky-rail-fold" onClick={() => setRailOpen(false)}
+                title="Collapse the panel — the sky takes the width" aria-label="Collapse the Polaris panel">›</button>
             </div>
 
             <SelectedPanel selected={selected} themeLabel={selected ? (selected.area || LOOSE) : ''}
@@ -680,11 +663,6 @@ export function Futures({
               onPromote={onPromote} onEdit={onEdit} onAlign={onAlign} onDelete={onDelete} />
 
             <div className="psky-rail-scroll">
-              <QueueCard cur={cur} unjudgedCount={unjudged.length} judgedCount={judgedCount}
-                hint={hint} hintBusy={hintBusy} hintErr={hintErr} canAsk={!!onAskGemini}
-                onJudge={judge} onAsk={askPolaris} onSkip={skipCur} onReset={resetSkips}
-                onPopOut={() => setQueueOut(true)} />
-
               {/* What still rides the north star with no star of its own — the
                   pile the next promotion comes out of, and invisible in the sky
                   once eight systems are drawn over the shells. */}
@@ -727,15 +705,20 @@ export function Futures({
               )}
             </div>
           </div>
+          )}
         </div>
-      )}
 
-      {/* judge queue, popped out — same state, roomier controls */}
+      {/* #246 — the queue lives here now: one popup, opened by the button in
+          the control row. Same state it always had, just no longer taking a
+          third of the rail while you are reading the sky. */}
       {queueOut && (
         <Modal onClose={() => setQueueOut(false)}>
           <div className="psky-pop">
             <div className="psky-pop-head">
               <span className="name">Judge queue</span>
+              <span className="cvg-count">
+                {bySource.length - unjudged.length} of {bySource.length} judged
+              </span>
               <button className="psky-pop-close" onClick={() => setQueueOut(false)} aria-label="Close">×</button>
             </div>
             <QueueCard big cur={cur} unjudgedCount={unjudged.length} judgedCount={judgedCount}
@@ -914,7 +897,7 @@ export function Futures({
 // (with the ⤢ pop-out) and big inside the pop-out modal; same state both ways.
 function QueueCard({
   cur, unjudgedCount, judgedCount, hint, hintBusy, hintErr, canAsk,
-  onJudge, onAsk, onSkip, onReset, onPopOut, big,
+  onJudge, onAsk, onSkip, onReset, big,
 }: {
   cur: Future | null;
   unjudgedCount: number;
@@ -927,7 +910,6 @@ function QueueCard({
   onAsk: (f: Future) => void;
   onSkip: () => void;
   onReset: () => void;
-  onPopOut?: () => void;
   big?: boolean;
 }) {
   return (
@@ -936,9 +918,6 @@ function QueueCard({
         <span className="label">JUDGE QUEUE</span>
         <div style={{ flex: 1 }} />
         <span className="progress">{judgedCount} of {judgedCount + unjudgedCount} judged</span>
-        {onPopOut && (
-          <button className="psky-pop-btn" onClick={onPopOut} title="Pop the queue out" aria-label="Pop the queue out">⤢</button>
-        )}
       </div>
       {cur ? (
         <div>
@@ -1164,136 +1143,6 @@ function SelectedPanel({
         )}
         <button className="act" onClick={() => { setTitle(f.title); setNote(f.note); setArea(f.area); setEditing(true); }}>✎ Edit</button>
         <button className="act quiet" onClick={() => onDelete(f.id)}>Dismiss</button>
-      </div>
-    </div>
-  );
-}
-
-function IdeaRow({
-  future: f, highlighted, selected, onSelect, onEdit, onAlign, onDelete, onPromote, onAskGemini,
-}: {
-  future: Future;
-  highlighted?: boolean;
-  // #259 — the sky and the list are two views of ONE selection. A row wears the
-  // selection the sky made and can make it itself, so switching views never
-  // loses your place.
-  selected?: boolean;
-  onSelect?: () => void;
-  onEdit: (id: number, patch: { title: string; note: string; area: string }) => void;
-  onAlign: (id: number, alignment: Alignment | '') => void;
-  onDelete: (id: number) => void;
-  onPromote: (future: Future) => void;
-  onAskGemini?: (id: number) => Promise<JudgeSuggestion>;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(f.title);
-  const [note, setNote] = useState(f.note);
-  const [area, setArea] = useState(f.area);
-  const [picking, setPicking] = useState(false);
-  // Gemini's suggested verdict: shown until applied or waved away, never
-  // written to the idea by itself.
-  const [suggesting, setSuggesting] = useState(false);
-  const [suggestion, setSuggestion] = useState<JudgeSuggestion | null>(null);
-  const [suggestErr, setSuggestErr] = useState('');
-
-  const askGemini = async () => {
-    if (!onAskGemini || suggesting) return;
-    setSuggesting(true);
-    setSuggestErr('');
-    try {
-      setSuggestion(await onAskGemini(f.id));
-    } catch (e) {
-      setSuggestErr((e as Error)?.message || 'Gemini call failed.');
-    } finally {
-      setSuggesting(false);
-    }
-  };
-
-  const save = () => {
-    const t = title.trim();
-    const a = area.trim().toLowerCase();
-    if (t && (t !== f.title || note.trim() !== f.note || a !== f.area)) {
-      onEdit(f.id, { title: t, note: note.trim(), area: a });
-    }
-    setEditing(false);
-  };
-
-  if (editing) {
-    return (
-      <div className="future-row editing" data-hl={f.id}>
-        <div className="future-body">
-          <input className="field-input sm" value={title} autoFocus
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') setEditing(false); }} />
-          <textarea className="field-area" style={{ marginTop: 8, minHeight: 46 }} value={note}
-            placeholder="Why it might matter…" onChange={(e) => setNote(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
-              else if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
-            }} />
-          <input className="field-input sm" style={{ marginTop: 8, maxWidth: 220 }} value={area}
-            placeholder="area — e.g. settings, mobile (optional)"
-            onChange={(e) => setArea(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') setEditing(false); }} />
-          <div className="future-edit-row">
-            <button className="btn-cancel sm" onClick={() => setEditing(false)}>Cancel</button>
-            <button className="btn-submit sm" onClick={save}>Save</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className={`future-row ${highlighted ? 'hl' : ''} ${selected ? 'sel' : ''}`} data-hl={f.id}>
-      <div className="future-body">
-        <button className="future-title" onClick={onSelect}
-          title="Select this idea — the Polaris rail and the sky follow the same selection">
-          {f.title}
-        </button>
-        {f.note && <div className="future-note">{f.note}</div>}
-        <div className="future-meta">
-          {picking ? (
-            <span className="review-pick">
-              {ALIGNMENTS.map((a) => (
-                <button key={a.key} className={`review-pick-opt ${a.key}`} title={a.hint}
-                  onClick={() => { setPicking(false); onAlign(f.id, f.alignment === a.key ? '' : a.key); }}>
-                  {a.label}
-                </button>
-              ))}
-            </span>
-          ) : (
-            <button className={`align-chip ${f.alignment || 'none'}`} onClick={() => setPicking(true)}
-              title={f.alignment ? 'Change the verdict (pick the same to clear)' : 'Judge this against the north star'}>
-              {f.alignment ? alignLabel(f.alignment) : '✦ Judge'}
-            </button>
-          )}
-          {onAskGemini && !suggestion && (
-            <button className="gemini-btn" onClick={askGemini} disabled={suggesting}
-              title="Ask Gemini for a suggested verdict — you still make the call">
-              {suggesting ? '✧ Asking…' : '✧ Ask Gemini'}
-            </button>
-          )}
-          {f.area && <span className="area-chip" title="Product area — edit the idea to change it">{f.area}</span>}
-          {f.source === 'hook' && <span className="auto-badge">✦ auto</span>}
-          <span className="when">{f.when}</span>
-        </div>
-        {suggestErr && <div className="gemini-suggest err">✧ {suggestErr}</div>}
-        {suggestion && (
-          <div className="gemini-suggest">
-            <span className="g-verdict">✧ Gemini suggests <b>{alignLabel(suggestion.alignment)}</b></span>
-            <span className="g-why">— {suggestion.why}</span>
-            <button className="g-apply" onClick={() => { onAlign(f.id, suggestion.alignment); setSuggestion(null); }}>
-              Apply
-            </button>
-            <button className="g-dismiss" onClick={() => setSuggestion(null)} aria-label="Dismiss suggestion">×</button>
-          </div>
-        )}
-      </div>
-      <div className="future-actions">
-        <button className="edit" onClick={() => { setTitle(f.title); setNote(f.note); setEditing(true); }} aria-label="Edit idea" title="Edit idea">✎</button>
-        <button className="promote" onClick={() => onPromote(f)}>→ Roadmap</button>
-        <button className="dismiss" onClick={() => onDelete(f.id)}>Dismiss</button>
       </div>
     </div>
   );
