@@ -173,6 +173,20 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   `term:<name>`. The claim is the don't-re-pick marker and stays until a human merges and ticks.
 - **`built_note`** — what actually landed, PATCHed by the completing session alongside `done:true`.
   The Review room verdicts against it. Always write one.
+- **`agent_profiles` holds only OVERRIDES.** The built-in profiles (`executor`, `reviewer`) live in
+  `server/src/agents.js` and are never seeded, so a fresh database spawns identically to a
+  customised one and a row exists only where someone actually changed something; `mergeProfiles()`
+  layers the row over its builtin at read time. Consequence a session gets wrong by guessing: DELETE
+  on a builtin RESETS it to factory rather than removing it, because the spawn path needs `executor`
+  to exist. `roadmap_items.agent_profile` ('' = the default executor) is the Polaris hook — a planned
+  item naming which profile should build it. It's a free string the server does not validate
+  (`stack agents assign` validates it client-side instead), and it's deliberately absent from the
+  tick/un-tick clearing lists, because which agent builds an item is a planning decision that
+  survives a verify round-trip. The invariant with teeth: **a spawn always gets at least one building
+  agent** — no profiles, all disabled, or a requested key that doesn't exist all fall back to the
+  built-in executor, exactly what the autopilot hardcoded before the engine existed, so an
+  unreachable API spawns what it always did. The failure this prevents is the silent one: no
+  `--agents` at all leaves the expensive director model doing all the building itself.
 - **A future's SHAPE in the Polaris galaxy (#312) is derived, never stored.** There is no `kind`
   column and there must not be one: `is_star` = ★ its own orbit; parent is a star = ● a planet;
   parent is a planet = ○ a moon; no parent + judged = ◦ one of the north star's three shells
@@ -447,11 +461,14 @@ node server/test/fleet-roles.test.mjs      # role attribution + drift detection 
 node server/test/workbench.test.mjs        # the canvas is a placement layer (needs API + DATABASE_URL)
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
+node server/test/agent-profiles.test.mjs   # the spawn engine: profiles, validation, the executor fallback (pure, no DB)
+node server/test/agents-api.test.mjs       # the profile API + the Polaris hook (needs API + a throwaway Postgres)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
 ./stack seed-galaxy                        # shape a flat idea funnel into stars/planets (DRY until --run)
 ./stack skills --dry                       # what the skill-tree sync would write/remove on this host
+./stack agents                             # list/customise the spawn profiles (list|show|set|reset|assign)
 ./stack start-session [slug] [--item N]    # queue an automation session (▶ Run now from the terminal)
 ./stack list-sessions                      # the automation job queue ([slug], --limit, --json)
 ./stack term [dir]                         # claude in a stack-term tmux session (--shell, --safe)

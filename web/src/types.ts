@@ -97,6 +97,7 @@ export interface RoadmapItem {
   tier: Tier;          // desire tier (#227) — what the owner wants NEXT; '' = unranked (sorts last)
   plan: PlanStep[];    // the implementation plan ([] = none)
   updatedAt: string | null; // ISO — latest-first ordering in the archive
+  agentProfile: string; // '' = the default executor; else the agent profile that should build it
 }
 export interface Roadmap { must: RoadmapItem[]; should: RoadmapItem[]; could: RoadmapItem[]; wont: RoadmapItem[] }
 
