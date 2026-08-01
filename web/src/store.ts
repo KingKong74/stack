@@ -1354,6 +1354,41 @@ export async function convergeFutures(
   return r.items;
 }
 
+// ---- orbits (POST .../futures/orbits — Gemini proposes parent/child pairings
+// among ideas already on the canvas; suggestions only, the human applies each
+// through the normal PATCH) ----
+
+export interface OrbitProposal {
+  id: number;
+  title: string;
+  parentId: number;
+  parentTitle: string;
+  why: string;
+}
+
+export async function proposeOrbits(slug: string): Promise<OrbitProposal[]> {
+  const r = await request<{ items: OrbitProposal[] }>(
+    `/projects/${encodeURIComponent(slug)}/futures/orbits`, { method: 'POST' });
+  return r.items;
+}
+
+// ---- restate (POST .../futures/:id/restate — Gemini drafts a clearer title/
+// note for one idea; a draft only, the human applies it through the normal
+// PATCH) ----
+
+export interface RestateDraft { title: string; note: string; area: string; why: string }
+
+export async function restateFuture(slug: string, id: number): Promise<RestateDraft> {
+  const d = await request<Partial<RestateDraft>>(
+    `/projects/${encodeURIComponent(slug)}/futures/${id}/restate`, { method: 'POST' });
+  return {
+    title: d.title || '',
+    note: d.note || '',
+    area: d.area || '',
+    why: d.why || '',
+  };
+}
+
 // ---- timeline (GET /api/timeline — cross-project pushes + contribution graph) ----
 
 export interface TimelineEntry {
