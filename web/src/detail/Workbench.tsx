@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
   WorkbenchCard, WorkbenchData, WorkbenchOp, WorkbenchPhase,
+  WorkbenchDebrief, DebriefInsight, DebriefInsightKind,
 } from '../types';
 import {
   getWorkbench, addWorkbenchCard, patchWorkbenchCard, deleteWorkbenchCard,
   linkWorkbenchCards, cutWorkbenchEdge, runWorkbenchOp,
+  getWorkbenchDebrief, importWorkbenchDebrief,
 } from '../store';
 
 // The Workbench — the planning canvas that replaced the notes wall.
@@ -56,6 +58,21 @@ const POLARIS_FILTERS: { key: PolarisFilter; label: string }[] = [
 // and coupling the two would make a change to one silently move the other.
 const RECENT_DAYS = 14;
 
+type DebriefFilter = 'new' | 'advisor' | 'all';
+const DEBRIEF_FILTERS: { key: DebriefFilter; label: string }[] = [
+  { key: 'new', label: 'New' },
+  { key: 'advisor', label: 'Advisor' },
+  { key: 'all', label: 'All' },
+];
+// Glyph + label for an insight's KIND — kept beside the filters it sits next
+// to, the same way OP_HINT sits beside the ops it labels.
+const DEBRIEF_KIND: Record<DebriefInsightKind, string> = {
+  blocker: '⚠ blocker', 'next-step': '→ next', advisor: '◈ advisor', note: '· debrief',
+};
+const DEBRIEF_FROM: Record<DebriefInsight['from'], string> = {
+  session: 'session', reviewer: 'reviewer', architect: 'architect', debrief: 'the debrief prose',
+};
+
 export function Workbench({
   slug, geminiReady, highlightId, notesNonce, onPromoteNote, onPromotePlan,
 }: {
@@ -91,6 +108,16 @@ export function Workbench({
   const [pFilter, setPFilter] = useState<PolarisFilter>('unpicked');
   const [picked, setPicked] = useState<Set<number>>(new Set());
 
+  // The pull-from-debrief picker. Loaded lazily on first open, not with the
+  // tab — most sessions on this project never touch it, and a night's account
+  // is a heavier read than the Polaris list already sitting in `data`.
+  const [debriefOpen, setDebriefOpen] = useState(false);
+  const [debrief, setDebrief] = useState<WorkbenchDebrief | null>(null);
+  const [debriefLoading, setDebriefLoading] = useState(false);
+  const [dQuery, setDQuery] = useState('');
+  const [dFilter, setDFilter] = useState<DebriefFilter>('new');
+  const [dPicked, setDPicked] = useState<Set<string>>(new Set());
+
   const groundRef = useRef<HTMLDivElement | null>(null);
   const panRef = useRef(pan); panRef.current = pan;
   const zoomRef = useRef(zoom); zoomRef.current = zoom;
@@ -107,6 +134,16 @@ export function Workbench({
     setPicked(new Set());
     setPQuery('');
   }, []);
+
+  // Same rule for the debrief picker — and the two are mutually exclusive, so
+  // opening either one first closes the other rather than stacking two panels
+  // over the same dock corner.
+  const closeDebrief = useCallback(() => {
+    setDebriefOpen(false);
+    setDPicked(new Set());
+    setDQuery('');
+  }, []);
+  const openPicker = useCallback(() => { closeDebrief(); setPickerOpen(true); }, [closeDebrief]);
 
   // A wall-clock stamp rather than "now / 1m / 5m": this log is not re-rendered
   // on a timer, so a relative age would freeze at whatever it said when it was
@@ -156,7 +193,8 @@ export function Workbench({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (pickerOpen) closePicker();
+      if (debriefOpen) closeDebrief();
+      else if (pickerOpen) closePicker();
       else if (linking !== null) setLinking(null);
       else if (asking) { setAsking(false); setQuestion(''); }
       else if (focus) setFocus(false);
@@ -164,7 +202,7 @@ export function Workbench({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [linking, asking, pickerOpen, focus, closePicker]);
+  }, [linking, asking, pickerOpen, debriefOpen, focus, closePicker, closeDebrief]);
 
   // ---- pan + zoom ----
   // Native wheel listener with passive:false, so the page never scrolls out
@@ -307,6 +345,64 @@ export function Workbench({
     setPickerOpen(false);
     setSel(made[0].id);
     say(`Pulled ${made.map((c) => c.meta).join(', ')} in from Polaris.`);
+  });
+
+  // Opens the debrief picker and loads it on first open only — the tab does
+  // not warm it, and a re-open reuses what is already in state rather than
+  // re-reading a night's account every time the dock button is pressed.
+  const openDebrief = () => {
+    closePicker();
+    setDebriefOpen(true);
+    if (debrief || debriefLoading) return;
+    setDebriefLoading(true);
+    void guard(async () => {
+      const d = await getWorkbenchDebrief(slug);
+      setDebrief(d);
+    }).finally(() => setDebriefLoading(false));
+  };
+
+  // Land the ticked insights in one POST, laid out exactly like `pullPicked` —
+  // same origin, same column-of-four step, so the two pickers feel like the
+  // same object dropping cards on the same ground.
+  const importPicked = (as: 'note' | 'idea') => guard(async () => {
+    const keys = [...dPicked];
+    if (!keys.length || !debrief) return;
+    const at = centreOfView();
+    const picks = keys.map((key, i) => ({
+      key,
+      x: at.x + Math.floor(i / 4) * 268,
+      y: at.y + (i % 4) * 128,
+    }));
+    const { cards: made, skipped } = await importWorkbenchDebrief(slug, { as, picks });
+    if (made.length) {
+      setData((d) => (d ? { ...d, cards: [...d.cards, ...made] } : d));
+      setSel(made[0].id);
+    }
+    // The picks that DID land — a key can come back in `skipped` instead, and
+    // that key must not be flipped as if it landed.
+    const skippedKeys = new Set(skipped.map((s) => s.key));
+    const landed = keys.filter((k) => !skippedKeys.has(k));
+    const landedSet = new Set(landed);
+    setDebrief((d) => (d ? {
+      ...d,
+      nights: d.nights.map((n) => ({
+        ...n,
+        insights: n.insights.map((ins) => (landedSet.has(ins.key)
+          ? { ...ins, imported: true, importedAs: as } : ins)),
+      })),
+    } : d));
+    setDPicked(new Set());
+    setDebriefOpen(false);
+    setDQuery('');
+    if (landed.length) {
+      const nights = debrief.nights.filter((n) => n.insights.some((ins) => landedSet.has(ins.key)));
+      const from = nights.length === 1 ? `the ${nights[0].day} night`
+        : nights.length > 1 ? `${nights.length} nights` : 'the debrief';
+      say(`Imported ${landed.length} insight${landed.length > 1 ? 's' : ''} from ${from} as ${as === 'note' ? 'notes' : 'ideas'}.`);
+    }
+    // A refusal that is swallowed leaves a button that silently does nothing —
+    // every skip is reported, verbatim, in the reason the server gave.
+    for (const s of skipped) say(s.why);
   });
 
   const saveTitle = (card: WorkbenchCard, title: string) => {
@@ -547,6 +643,40 @@ export function Workbench({
     return next;
   });
 
+  // ---- the debrief picker's derived view ----
+  const nights = debrief?.nights ?? [];
+  const debriefNewCount = nights.reduce((n, night) => n + night.insights.filter((i) => !i.imported).length, 0);
+  // Grouped by night, newest first — the server already orders nights that
+  // way, so this only has to filter within each and drop a night left empty.
+  const shownNights = (() => {
+    const needle = dQuery.trim().toLowerCase();
+    return nights
+      .map((night) => ({
+        night,
+        insights: night.insights
+          .filter((ins) => (dFilter === 'all' ? true
+            : dFilter === 'advisor' ? ins.from === 'reviewer' || ins.from === 'architect'
+              : !ins.imported))
+          .filter((ins) => !needle || ins.text.toLowerCase().includes(needle)),
+      }))
+      .filter((g) => g.insights.length > 0);
+  })();
+  // Four ways to have an empty list, the same way emptyPickerCopy earns its
+  // four — "nothing matches" said over a debrief that never ran, or one
+  // that already gave everything up, is the unhelpful version of the truth.
+  const emptyDebriefCopy = nights.length === 0
+    ? 'No autopilot night has finished here yet — there is nothing to import.'
+    : nights.every((n) => n.insights.length === 0)
+      ? `The last ${debrief?.runsShown ?? nights.length} nights left nothing to pick up.`
+      : dQuery.trim() ? 'Nothing matches that.'
+        : 'Everything these nights turned up is already on the canvas.';
+
+  const toggleDPick = (key: string) => setDPicked((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
   return (
     <div className="wb">
       <div className="section-bar" style={{ marginBottom: 6 }}>
@@ -671,12 +801,98 @@ export function Workbench({
             </div>
           )}
 
+          {debriefOpen && (
+            <div className="wb-picker" onPointerDown={(e) => e.stopPropagation()}>
+              <div className="head">
+                <span className="dot" />
+                <span className="t">Debrief</span>
+                <span className="n">{debrief ? `${debrief.total} insight${debrief.total === 1 ? '' : 's'}` : '…'}</span>
+                <button className="x" onClick={closeDebrief} aria-label="Close">×</button>
+              </div>
+              {/* A capped list has to say it is capped — the same rule the
+                  server's own prompts follow. */}
+              {debrief && debrief.runsTotal > debrief.runsShown && (
+                <div className="cap">showing the last {debrief.runsShown} of {debrief.runsTotal} nights</div>
+              )}
+              <div className="find">
+                <div className="searchbox">
+                  <span className="glass" />
+                  <input value={dQuery} autoFocus placeholder="Filter insights…"
+                    onChange={(e) => setDQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); closeDebrief(); } }} />
+                </div>
+                <div className="filters">
+                  {DEBRIEF_FILTERS.map((f) => (
+                    <button key={f.key} className={`chip-sm${dFilter === f.key ? ' on' : ''}`}
+                      onClick={() => setDFilter(f.key)}>{f.label}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="list">
+                {debriefLoading && <div className="none">Reading the last few nights…</div>}
+                {!debriefLoading && shownNights.map(({ night, insights }) => (
+                  <div className="wb-debrief-night" key={night.runId}>
+                    <div className="wb-debrief-head">
+                      <span className="w">{night.day} · {night.when}</span>
+                      <span className="i">{night.itemId != null
+                        ? `#${night.itemId} ${night.itemTitle}` : (night.itemTitle || night.branch)}</span>
+                      <span className="o">{night.outcome}</span>
+                      {night.truncated > 0 && (
+                        <span className="more">+{night.truncated} more this night were not listed</span>
+                      )}
+                    </div>
+                    {insights.map((ins) => (
+                      <button key={ins.key} type="button"
+                        className={`wb-insight${dPicked.has(ins.key) ? ' picked' : ''}${ins.imported ? ' imported' : ''}`}
+                        disabled={ins.imported}
+                        onClick={() => toggleDPick(ins.key)}>
+                        <span className="box">{dPicked.has(ins.key) ? '✓' : ''}</span>
+                        <span className="b">
+                          <span className="top">
+                            <span className="kind">{DEBRIEF_KIND[ins.kind]}</span>
+                            <span className="from">{DEBRIEF_FROM[ins.from]}</span>
+                          </span>
+                          <span className="t">{ins.text}</span>
+                          {ins.imported && (
+                            <span className="sub">
+                              {ins.importedAs === 'note' ? 'already a note on the canvas'
+                                : ins.importedAs === 'idea' ? 'already an idea'
+                                  : 'dismissed earlier, not offered again'}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+                {!debriefLoading && shownNights.length === 0 && (
+                  <div className="none">{emptyDebriefCopy}</div>
+                )}
+              </div>
+              <div className="foot">
+                <span className="n">{dPicked.size ? `${dPicked.size} selected` : 'Select one or more'}</span>
+                <button className="btn-accent" disabled={dPicked.size === 0} onClick={() => void importPicked('note')}>
+                  Import → canvas
+                </button>
+                <button className="chip-sm" disabled={dPicked.size === 0} onClick={() => void importPicked('idea')}>
+                  → Ideas
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="wb-dock" onPointerDown={(e) => e.stopPropagation()}>
             <button className={`wb-pull${pickerOpen ? ' on' : ''}`}
-              onClick={() => (pickerOpen ? closePicker() : setPickerOpen(true))}>
+              onClick={() => (pickerOpen ? closePicker() : openPicker())}>
               <span className="dot" />
               <span className="l">Pull from Polaris</span>
               <span className="n">{unpickedCount} unpicked</span>
+            </button>
+            <button className={`wb-debrief${debriefOpen ? ' on' : ''}`}
+              onClick={() => (debriefOpen ? closeDebrief() : openDebrief())}>
+              <span className="dot" />
+              <span className="l">⤓ debrief</span>
+              {debrief && <span className="n">{debriefNewCount} new</span>}
             </button>
             <button className="chip-sm add" onClick={addNote}>+ note</button>
           </div>

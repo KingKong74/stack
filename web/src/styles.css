@@ -1082,6 +1082,15 @@ a.tab { display: inline-block; }
 .wb-pull .n { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
 .wb-dock .chip-sm { background: var(--surface); box-shadow: 0 6px 18px rgba(28,26,23,.08); }
 
+/* The debrief dock button is the same family as .wb-pull — same shape, same
+   accent-on-hover, so the two read as one object with two sources. */
+.wb-debrief { display: flex; align-items: center; gap: 9px; padding: 9px 13px; border-radius: 11px;
+  border: 1px solid var(--line-3); background: var(--surface); box-shadow: 0 6px 18px rgba(28,26,23,.08); }
+.wb-debrief:hover, .wb-debrief.on { border-color: var(--accent); }
+.wb-debrief .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.wb-debrief .l { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.wb-debrief .n { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+
 /* The picker itself, standing above the dock. */
 .wb-picker { position: absolute; left: 18px; bottom: 66px; width: 344px; max-height: min(560px, calc(100% - 90px));
   background: var(--surface); border: 1px solid var(--line-3); border-radius: 14px;
@@ -1103,6 +1112,13 @@ a.tab { display: inline-block; }
 .wb-picker .foot .btn-accent { margin-left: auto; height: 32px; font-size: 12px; }
 .wb-picker .foot .btn-accent:disabled { opacity: .4; cursor: default; }
 .wb-picker .foot .btn-accent:disabled:hover { background: var(--accent); }
+/* The debrief foot has a second landing action beside Import — Ideas, which
+   is a plain chip-sm and needs the same disabled dimming spelled out again. */
+.wb-picker .foot .chip-sm:disabled { opacity: .4; cursor: default; }
+
+/* The head note under a capped picker — "a capped list must say it is
+   capped" (CLAUDE.md), read here rather than folded into the count. */
+.wb-picker .cap { padding: 0 15px 9px; font-family: var(--mono); font-size: 10px; color: var(--faint); }
 
 .wb-idea { display: flex; gap: 10px; width: 100%; text-align: left; padding: 9px 10px; margin-bottom: 5px;
   border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); }
@@ -1118,6 +1134,36 @@ a.tab { display: inline-block; }
 .wb-idea .age { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-left: auto; }
 .wb-idea .b > .t { display: block; font-size: 12.5px; font-weight: 500; line-height: 1.35; margin-top: 3px; text-wrap: pretty; }
 .wb-idea .sub { display: block; font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+
+/* One night's own account, grouped in the debrief list: a header row naming
+   the run, then its insights below it — an insight picked without its night
+   attached would be a pick with no context for what it came from. */
+.wb-debrief-night { margin-bottom: 10px; }
+.wb-debrief-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 4px 10px 6px;
+  font-family: var(--mono); font-size: 10px; color: var(--faint); }
+.wb-debrief-head .w { color: var(--muted); }
+.wb-debrief-head .i { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-debrief-head .o { text-transform: uppercase; letter-spacing: .05em; }
+.wb-debrief-head .more { flex-basis: 100%; color: var(--fainter); }
+
+/* An insight row is .wb-idea's own family — same box, same picked wash — so
+   the two pickers read as the same object with two sources. */
+.wb-insight { display: flex; gap: 10px; width: 100%; text-align: left; padding: 9px 10px; margin-bottom: 5px;
+  border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); }
+.wb-insight:hover:not(:disabled) { border-color: var(--accent-tint-border); }
+.wb-insight.picked { background: var(--accent-tint); border-color: var(--accent-tint-border); }
+/* Greys the way .wb-idea.on-canvas does — already spoken for, not pickable
+   twice. */
+.wb-insight.imported { opacity: .45; cursor: default; }
+.wb-insight .box { flex: none; width: 15px; height: 15px; margin-top: 2px; border-radius: 5px;
+  border: 1.5px solid var(--line-3); color: #fff; font-size: 10px; line-height: 12px; text-align: center; }
+.wb-insight.picked .box { background: var(--accent); border-color: var(--accent); }
+.wb-insight .b { flex: 1; min-width: 0; }
+.wb-insight .top { display: flex; align-items: baseline; gap: 7px; }
+.wb-insight .kind { font-family: var(--mono); font-size: 10px; color: var(--accent); }
+.wb-insight .from { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-left: auto; }
+.wb-insight .b > .t { display: block; font-size: 12.5px; font-weight: 500; line-height: 1.35; margin-top: 3px; text-wrap: pretty; }
+.wb-insight .sub { display: block; font-size: 10.5px; color: var(--muted); margin-top: 4px; }
 
 /* The rail's "attached" list — the thread the selected card sits in. */
 .wb-lineage { padding: 13px 17px; border-bottom: 1px solid var(--line-2); }
