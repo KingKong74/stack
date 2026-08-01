@@ -94,9 +94,10 @@ export function Futures({
     .filter((f) => !sourceFilter || (sourceFilter === 'hook' ? f.source === 'hook' : f.source !== 'hook'));
 
   // ---- galaxy state (#312) ----
-  // Zoom is six named stops rather than a continuum: each one is a thing you
-  // wanted to see ("in on the focused star", "one idea, nothing else"), and the
-  // stage pans to the selected system on its own as you pass Fit.
+  // Zoom is a percentage capped at 200% (#320), not the field multiplier the
+  // sky used to expose raw: six named stops ("in on the focused star", "one
+  // idea, nothing else") pin the visible zoom to the geometry's own spread, and
+  // the stage pans to the selected system on its own as you pass Fit.
   const [z, setZ] = useState(1);
   const [northOnly, setNorthOnly] = useState(false);
   // Which system is in the light. Everything outside it dims rather than
@@ -578,14 +579,14 @@ export function Futures({
                   <span className="n">{galaxy.all.length}</span>
                 </button>
                 <button className={`psky-chip ${focus === 'core' ? 'on' : ''}`}
-                  onClick={() => { setNorthOnly(false); setFocus('core'); setSelId(null); setZ(2.2); }}
+                  onClick={() => { setNorthOnly(false); setFocus('core'); setSelId(null); setZ(1.4); }} // ≈ the old 2.2 field spread
                   title="The north star's own shells">
                   <span className="name">north star</span>
                   <span className="n">{galaxy.shells.length}</span>
                 </button>
                 {galaxy.stars.map((s) => (
                   <button key={s.f.id} className={`psky-chip ${focus === String(s.f.id) ? 'on' : ''}`}
-                    onClick={() => { setNorthOnly(false); setFocus(String(s.f.id)); setSelId(s.f.id); setZ(2.8); }}
+                    onClick={() => { setNorthOnly(false); setFocus(String(s.f.id)); setSelId(s.f.id); setZ(1.5); }}
                     title={`Go to ${s.f.title}'s system — the rest of the sky dims`}>
                     <span className="name">{s.f.title}</span>
                     <span className="n">{s.planets.length}</span>

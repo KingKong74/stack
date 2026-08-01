@@ -56,17 +56,40 @@ const SQ = 0.9;              // the sky is squashed: an orbit is an ellipse, not
 const MAG = (f: Future) => f.magnitude ?? 2;   // geometry needs a size; the panel still says "not sized"
 
 // Wheel zoom is continuous between the ends of the stops; the stops stay as
-// named presets and the dots light to whichever is nearest.
-export const Z_MIN = 0.6, Z_MAX = 7;
+// named presets and the dots light to whichever is nearest. `zoom` is the
+// real, capped 50–200% the human sees; `spread` (below) is the old 0.6–7
+// field multiplier the geometry still runs on.
+export const Z_MIN = 0.5, Z_MAX = 2;
+
+export function clampZoom(z: number): number {
+  return Number.isFinite(z) ? Math.min(Z_MAX, Math.max(Z_MIN, z)) : 1;
+}
 
 export const ZOOM_STOPS = [
-  { z: 0.6, name: 'Wide — the whole galaxy, small' },
-  { z: 1, name: 'Fit — every orbit and the belt in view' },
-  { z: 1.7, name: 'System — in on the focused star' },
-  { z: 2.8, name: 'Close — planets and their moons' },
-  { z: 4.4, name: 'Surface — one system fills the sky' },
-  { z: 7, name: 'Ground — one idea, nothing else' },
+  { z: 0.5,  spread: 0.6, name: 'Wide — the whole galaxy, small' },
+  { z: 1,    spread: 1,   name: 'Fit — every orbit and the belt in view' },
+  { z: 1.25, spread: 1.7, name: 'System — in on the focused star' },
+  { z: 1.5,  spread: 2.8, name: 'Close — planets and their moons' },
+  { z: 1.75, spread: 4.4, name: 'Surface — one system fills the sky' },
+  { z: 2,    spread: 7,   name: 'Ground — one idea, nothing else' },
 ];
+
+// The zoom the human sees is a percentage capped at 200%; the spread that lays
+// the sky out is the old 0.6–7 field multiplier. Each named stop pins one to
+// the other, and between two stops the spread moves geometrically, so the
+// wheel is still a smooth continuum and 100% / 200% land on exactly the field
+// Fit and Ground always drew.
+export function spreadFor(z: number): number {
+  const c = clampZoom(z);
+  for (let i = 1; i < ZOOM_STOPS.length; i++) {
+    const a = ZOOM_STOPS[i - 1], b = ZOOM_STOPS[i];
+    if (c <= b.z) {
+      const t = (c - a.z) / (b.z - a.z);
+      return a.spread * Math.pow(b.spread / a.spread, t);
+    }
+  }
+  return ZOOM_STOPS[ZOOM_STOPS.length - 1].spread;
+}
 
 // ---------------------------------------------------------------- the model
 
@@ -243,7 +266,7 @@ export function Galaxy({
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const z0 = zoomRef.current;
-      const nz = Math.min(Z_MAX, Math.max(Z_MIN, z0 * Math.exp(-e.deltaY * 0.0016)));
+      const nz = clampZoom(z0 * Math.exp(-e.deltaY * 0.0009));
       if (Math.abs(nz - z0) > 0.0005) onZoomRef.current(nz);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
@@ -266,6 +289,7 @@ export function Galaxy({
   };
 
   const g = useMemo(() => {
+    const spread = spreadFor(zoom);
     const sel = selId != null ? model.all.find((f) => f.id === selId) || null : null;
     const focusStar = sel ? model.starOf(sel) : null;
     const srcMatch = (f: Future) => !sourceFilter
@@ -281,17 +305,17 @@ export function Galaxy({
     const coreR = Math.max(26, Math.min(FIT * 0.1, 46));
     // Nodes grow with zoom, but far more slowly than the field — otherwise one
     // planet swallows the system you zoomed in to read.
-    const nodeK = Math.min(2.2, Math.max(0.72, zoom));
+    const nodeK = Math.min(2.2, Math.max(0.72, spread));
     const dotFor = (m: number) => Math.round((7 + m * 3.2) * nodeK);
     const planetDot = (m: number) => Math.round((7 + m * 2.7) * nodeK);
     const moonDot = (m: number) => Math.round((5 + m * 1.7) * nodeK);
 
     // ---- the north star's three shells: on course closest, off course furthest
     const maxShellDot = dotFor(Math.max(2, ...model.shells.map(MAG)));
-    const shellBase = Math.max(FIT * (northOnly ? 0.3 : 0.13) * zoom, (coreR + 12 + maxShellDot / 2) / SQ);
+    const shellBase = Math.max(FIT * (northOnly ? 0.3 : 0.13) * spread, (coreR + 12 + maxShellDot / 2) / SQ);
     const shellGap = northOnly
-      ? Math.max(maxShellDot + 14, FIT * 0.14 * zoom)
-      : Math.max(maxShellDot * 0.85 + 5, FIT * 0.046 * zoom);
+      ? Math.max(maxShellDot + 14, FIT * 0.14 * spread)
+      : Math.max(maxShellDot * 0.85 + 5, FIT * 0.046 * spread);
     const tierR = (k: number) => shellBase + k * shellGap;
     const shellOuter = tierR(2) + maxShellDot / 2;
 
@@ -304,7 +328,7 @@ export function Galaxy({
       + (s.planets.some((p) => p.moons.length) ? 10 * Math.min(1.7, nodeK) : 0);
     const SYS = model.stars.reduce((m, s) => Math.max(m, systemRad(s)), 40);
 
-    const beltR = FIT * zoom * (northOnly ? 1 : 1.14);
+    const beltR = FIT * spread * (northOnly ? 1 : 1.14);
     const innerPx = shellOuter + SYS + 18;
     const outerPx = Math.max(beltR - SYS - 22, innerPx + 12);
     const orbitR = (i: number) => (n < 2 ? (innerPx + outerPx) / 2 : innerPx + (outerPx - innerPx) * (i / (n - 1)));
@@ -320,7 +344,7 @@ export function Galaxy({
     // The focused system slides toward the centre as you zoom past Fit, so
     // zooming in reads as "go there" rather than "crop the middle".
     const fIdx = focusStar ? model.stars.findIndex((s) => s.f.id === focusStar.id) : -1;
-    const panK = Math.min(1, Math.max(0, (zoom - 1) / 0.6));
+    const panK = Math.min(1, Math.max(0, (spread - 1) / 0.6));
     const panX = fIdx >= 0 ? -starPos[fIdx].dx * panK : 0;
     const panY = fIdx >= 0 ? -starPos[fIdx].dy * panK : 0;
     const ax = (dx: number) => CX + dx + panX + pan.x;
@@ -404,7 +428,7 @@ export function Galaxy({
       discs.push({
         f: s.f, x: Math.round(nx), y: Math.round(ny), size,
         glyph: Math.round(Math.min(26, size * 0.44)),
-        nameSize: Math.round(Math.min(19, 13 * Math.max(1, Math.min(1.5, zoom)))),
+        nameSize: Math.round(Math.min(19, 13 * Math.max(1, Math.min(1.5, spread)))),
         tone: isSel ? 'var(--accent)' : GX_TONE[v], sel: isSel, z: isSel ? 8 : 7,
         op: srcMatch(s.f) && sysMatch(String(s.f.id)) ? 1 : 0.22,
         plate: false, plateGap: Math.round(plateGap), meta,
@@ -467,7 +491,7 @@ export function Galaxy({
 
     return {
       coreX: Math.round(ax(0)), coreY: Math.round(ay(0)), coreSize: Math.round(coreR * 2),
-      coreText: Math.round(Math.min(14, 9 * Math.max(1, Math.min(1.6, zoom)))),
+      coreText: Math.round(Math.min(14, 9 * Math.max(1, Math.min(1.6, spread)))),
       beltW: Math.round(beltR * 2), beltH: Math.round(beltR * 2 * SQ),
       dots, discs, orbits, planetOrbits, moonOrbits, shellRings, sectors,
     };
