@@ -1144,13 +1144,8 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
           <span className="here">Terminal</span>
         </div>
         <div className="right">
-          {/* #316 — the quick link. What you do after a session says it is done
-              is give a verdict, and that was Mission Control plus finding the
-              Review tab; the room has its own URL now, so it is one press from
-              the screen the work happened on. An anchor, not a button, so it
-              opens in a new tab beside the terminal if that is what you want. */}
-          <a className="btn-repo" href={hrefTo.control('review')}
-            title="Review — every change waiting on your verdict, across every project">✓ Review</a>
+          {/* #316 — the review quick link is the rail's `review ↗`, not a
+              second button up here: one entrance per screen. */}
           <a className="btn-repo" href={hrefTo.control()} title="Mission Control">Mission Control</a>
           <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
         </div>
@@ -1546,9 +1541,10 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
                   on the last one belongs. Sits above the segment picker, so it
                   is there whichever segment is open. An anchor (`#/control/review`
                   is a real URL now), so it can be opened in a tab beside the
-                  session rather than replacing it. Absent while the rail is
-                  collapsed — 34px of strip has nowhere to put it — which is why
-                  the top bar keeps its own ✓ Review. */}
+                  session rather than replacing it. This is the screen's ONE
+                  entrance to Review — a second button in the top bar was tried
+                  and taken back out — so a collapsed rail reaches it by opening
+                  the rail, the same as everything else the rail holds. */}
               {viewPrefs.railOpen && (
                 <a className="tc-link" href={hrefTo.control('review')}
                   title="Review — every change waiting on your verdict, across every project">

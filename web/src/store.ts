@@ -620,19 +620,35 @@ export interface FleetEveryModel {
   source: 'autopilot' | 'manual' | 'both';
   runs: number; sessions: number;
   tokens: number; costUsd: number; todayTokens: number;
+  // How much of `tokens` was spent by SUBAGENTS rather than in a main loop.
+  agentTokens?: number;
   share: number; lastSeen: string;
 }
 
-// The interactive population. `agentCalls` is a COUNT of delegations and never
-// a cost: the parent transcript records the Agent call and its result but
-// never the subagent's own usage, so there is nothing to price.
+export interface FleetManualModel {
+  model: string; label: string;
+  sessions: number; tokens: number; todayTokens: number;
+  share: number; lastSeen: string;
+}
+
+// The interactive population, split the way the work actually splits: `tokens`
+// and `models` are the MAIN LOOP, `agentTokens` and `agentModels` are the
+// subagents — read from their own transcripts under `<session>/subagents/`,
+// which is the only place a delegation's real cost exists. In an interactive
+// session those two are the director/executor split, and the delegated half is
+// routinely the larger one.
 export interface FleetManual {
   sessions: number;
   sessionsWithUsage: number;   // the honest denominator — the rest sent no breakdown
   tokens: number;
-  models: { model: string; label: string; sessions: number; tokens: number; share: number; lastSeen: string }[];
+  models: FleetManualModel[];
   delegatedSessions: number;
   agentCalls: number;
+  // Delegations that left a readable transcript. `agentTokens` prices exactly
+  // these, so a cleaned-up subagent directory reads as unpriced, not as free.
+  agentsRecorded?: number;
+  agentTokens?: number;
+  agentModels?: FleetManualModel[];
   agentTypes: { type: string; count: number }[];
 }
 
@@ -977,10 +993,27 @@ export interface ReviewData {
   settled: ReviewItem[];
   nights: ReviewNightRun[];
   totals: { pending: number; shelved: number; flagged: number; projects: number; settled: number };
+  // Turn 3 — a Gemini key exists on the server. The Refine dialog's ✦ draft
+  // button is ABSENT without one, never a disabled button explaining itself.
+  geminiReady?: boolean;
 }
 
 export async function getReview(): Promise<ReviewData> {
   return request<ReviewData>('/review');
+}
+
+// Turn 3 — ✦ the Refine draft: Gemini's first pass at the delta that sends a
+// completed item back to the board. Offered, never forced; it returns text for
+// a box the human edits and sends, and writes nothing itself.
+//
+// `read` is what the server actually had to go on. It exists because the design
+// captions this "reads the run log + diff" and the server has no checkout —
+// what it really reads is the record (the session's account, the second model's
+// stored read OF the diff, the files touched), and how much of that exists
+// varies per item. The dialog prints this list rather than the fixed caption.
+export interface RefineDraft { draft: string; basis: string; read: string[] }
+export async function getRefineDraft(slug: string, id: number): Promise<RefineDraft> {
+  return request<RefineDraft>(`${roadmapBase(slug)}/${id}/refine-draft`, { method: 'POST' });
 }
 
 // The one-shot hand-off behind the Review room's ＋ Bug / ＋ Audit: the room has

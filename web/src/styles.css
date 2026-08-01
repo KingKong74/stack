@@ -3795,12 +3795,35 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc-roleev .evr .tag.manual { background: var(--panel); border-color: var(--line-2); color: var(--muted); }
 .mc-roleev .evnote { padding: 7px 8px 0; font-size: 10.5px; line-height: 1.45; color: var(--muted); }
 
-/* delegations — a count of Agent calls, never a cost */
-.mc-roledeleg { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); padding: 11px 15px; }
+/* delegations — the interactive director/executor split, priced from each
+   subagent's own transcript */
+.mc-roledeleg { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); padding: 11px 15px 12px; }
+.mc-roledeleg .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .mc-roledeleg .k { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.1em; color: var(--paused); flex: none; }
 .mc-roledeleg .v { font-size: 11.5px; color: var(--ink); }
 .mc-roledeleg .v b { font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--muted); }
 .mc-roledeleg .hint { font-size: 10.5px; color: var(--paused); margin-left: auto; }
+.mc-roledeleg .split { display: flex; align-items: center; gap: 9px; margin-top: 11px; }
+.mc-roledeleg .split .lbl { font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em; color: var(--paused); flex: none; }
+.mc-roledeleg .split .bar { flex: 1; display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--bg); }
+.mc-roledeleg .split .bar i { display: block; }
+.mc-roledeleg .split .bar i.loop { background: var(--accent); }
+.mc-roledeleg .split .bar i.agents { background: var(--sage); }
+.mc-roledeleg .nums { margin-top: 7px; font-size: 10.5px; color: var(--muted); }
+.mc-roledeleg .nums b { font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--ink); }
+.mc-roledeleg .nums .sep { margin: 0 6px; color: var(--line-3); }
+.mc-roledeleg .evrows { margin-top: 9px; display: flex; flex-direction: column; gap: 1px; }
+.mc-roledeleg .evr { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-radius: 7px; min-width: 0; }
+.mc-roledeleg .evr .sw { width: 7px; height: 7px; border-radius: 2px; flex: none; background: var(--sage); }
+.mc-roledeleg .evr .nm { width: 118px; flex: none; font-family: var(--mono); font-size: 11px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-roledeleg .evr .tag { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.08em; padding: 2px 6px; border-radius: 4px; flex: none; width: 64px; text-align: center; background: var(--live-tint); border: 1px solid var(--line-2); color: var(--sage); }
+.mc-roledeleg .evr .runs { width: 40px; flex: none; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.mc-roledeleg .evr .bar { flex: 1; min-width: 40px; height: 4px; border-radius: 2px; background: var(--bg); overflow: hidden; }
+.mc-roledeleg .evr .bar i { display: block; height: 4px; background: var(--sage); }
+.mc-roledeleg .evr .pct, .mc-roledeleg .evr .day, .mc-roledeleg .evr .seen { font-family: var(--mono); font-size: 10px; color: var(--paused); text-align: right; flex: none; }
+.mc-roledeleg .evr .pct { width: 34px; }
+.mc-roledeleg .evr .day { width: 82px; color: var(--ink); }
+.mc-roledeleg .evr .seen { width: 66px; }
 
 /* who is doing what — the policy beside what actually ran */
 .mc-roletable { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); overflow: hidden; }

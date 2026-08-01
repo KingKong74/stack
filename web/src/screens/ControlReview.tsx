@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  getReview, getReviewBrief, patchRoadmapItem, deleteRoadmapItem, queueUndo, startAutopilot,
-  setReviewPrefill, type ReviewBrief, type ReviewData, type ReviewItem, type ReviewNightRun,
+  getReview, getReviewBrief, getRefineDraft, patchRoadmapItem, deleteRoadmapItem, queueUndo,
+  startAutopilot, setReviewPrefill,
+  type ReviewBrief, type ReviewData, type ReviewItem, type ReviewNightRun,
 } from '../store';
 import { go } from '../lib/route';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -90,6 +91,14 @@ export function ReviewRoom({ onCount, focus }: {
   const [refineFor, setRefineFor] = useState<ReviewItem | null>(null);
   const [refineText, setRefineText] = useState('');
   const [refineQueue, setRefineQueue] = useState(false);
+  // Turn 3 — the ✦ draft. `draft` non-null is design 3b: the same text, wearing
+  // the accent chrome that says a machine wrote the first pass. It is the SAME
+  // refineText either way, so an edit in 3b is just an edit — there is no
+  // "accept the draft" step to forget, and Send it back sends whatever the box
+  // says. `before` is what the human had typed, restored if they dismiss it.
+  const [refineDraft, setRefineDraft] = useState<{ basis: string; read: string[]; secs: number; before: string } | null>(null);
+  const [refineBusy, setRefineBusy] = useState(false);
+  const [refineErr, setRefineErr] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<ReviewItem | null>(null);
 
   const load = () => {
@@ -185,7 +194,12 @@ export function ReviewRoom({ onCount, focus }: {
     if (!it) return;
     const text = refineText.trim();
     const queue = refineQueue;
+    // Whether the words were typed or drafted, what is sent is what the box
+    // said — so the receipt below never distinguishes the two, and neither
+    // does refine_note. A draft the human sent is the human's instruction.
     setRefineFor(null);
+    setRefineDraft(null);
+    setRefineErr('');
     act(async () => {
       await patchRoadmapItem(it.slug, Number(it.id), { done: false, refine_note: text });
       if (queue) await startAutopilot(it.slug, it.id);
@@ -195,6 +209,55 @@ export function ReviewRoom({ onCount, focus }: {
         ? `#${it.id} sent back with your refinement, and a session is queued on it.`
         : `#${it.id} sent back with your refinement — what landed stays on record.`,
     });
+  };
+
+  // Opening the dialog always starts from the item's own refine note and a
+  // clear draft — a chrome left over from the last item would caption someone
+  // else's words as this one's draft.
+  const openRefine = (it: ReviewItem) => {
+    setRefineFor(it);
+    setRefineText(it.refineNote);
+    setRefineQueue(false);
+    setRefineDraft(null);
+    setRefineErr('');
+  };
+
+  // Turn 3 — ✦ Draft it with Gemini. Offered from the empty box (3a) and again
+  // as ↻ redraft once there is one (3b).
+  //
+  // What it deliberately does NOT do: tick "Queue a session on it now". The
+  // design shows that box checked in the drafted state, and it stays the
+  // human's — ticking it spends a session, and a machine writing a sentence is
+  // not grounds for a machine deciding to spend on it. Same fail-safe direction
+  // the arm switch follows.
+  const draftRefine = () => {
+    const it = refineFor;
+    if (!it || refineBusy) return;
+    const before = refineDraft ? refineDraft.before : refineText;
+    const t0 = Date.now();
+    setRefineBusy(true);
+    setRefineErr('');
+    getRefineDraft(it.slug, Number(it.id))
+      .then((d) => {
+        setRefineText(d.draft);
+        setRefineDraft({ basis: d.basis, read: d.read, secs: Math.max(1, Math.round((Date.now() - t0) / 1000)), before });
+      })
+      .catch((e) => setRefineErr(e instanceof Error ? e.message : 'Gemini call failed.'))
+      .finally(() => setRefineBusy(false));
+  };
+  // ✕ — drop the draft and put back what the human had typed before it. A
+  // dismiss that silently kept the machine's words would be the one way this
+  // dialog could send something nobody chose.
+  const dropDraft = () => {
+    setRefineText(refineDraft?.before ?? '');
+    setRefineDraft(null);
+    setRefineErr('');
+  };
+  const closeRefine = () => {
+    setRefineFor(null);
+    setRefineDraft(null);
+    setRefineErr('');
+    setRefineBusy(false);
   };
 
   // ⎌ Undo (#128): the host reverts the item's #N-tagged main commits.
@@ -255,7 +318,7 @@ export function ReviewRoom({ onCount, focus }: {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const idx = list.findIndex((x) => key(x) === key(sel));
       if (e.key === '1') { e.preventDefault(); giveVerdict(sel); }
-      else if (e.key === '2') { e.preventDefault(); setRefineFor(sel); setRefineText(sel.refineNote); setRefineQueue(false); }
+      else if (e.key === '2') { e.preventDefault(); openRefine(sel); }
       else if (e.key === '3') { e.preventDefault(); shelve(sel); }
       else if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); if (idx < list.length - 1) setSelId(key(list[idx + 1])); }
       else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); if (idx > 0) setSelId(key(list[idx - 1])); }
@@ -402,7 +465,7 @@ export function ReviewRoom({ onCount, focus }: {
             brief={briefs.get(key(sel))}
             undoNote={undoNotes.get(key(sel))}
             onVerdict={() => giveVerdict(sel)}
-            onRefine={() => { setRefineFor(sel); setRefineText(sel.refineNote); setRefineQueue(false); }}
+            onRefine={() => { openRefine(sel); }}
             onShelve={() => shelve(sel)}
             onBoard={() => toBoard(sel)}
             onUndo={() => setUndoFor(sel)}
@@ -427,23 +490,65 @@ export function ReviewRoom({ onCount, focus }: {
           onReview={(slug, id) => { setView('queue'); setFilter('todo'); setSelId(`${slug}#${id}`); }} />
       )}
 
+      {/* ✎ Refine (#146) + the ✦ assist (Turn 3). Two states of one dialog:
+          3a offers the draft from an empty box, 3b wraps the same box in the
+          accent chrome once a machine has written the first pass. The text is
+          one piece of state across both, so the draft is editable the instant
+          it lands and there is no accept step between it and Send it back. */}
       {refineFor && (
-        <Modal onClose={() => setRefineFor(null)}>
+        <Modal onClose={closeRefine}>
           <h3>✎ Refine #{refineFor.id}</h3>
           <div className="confirm-body" style={{ marginBottom: 12 }}>
             Say only what to change on top of what landed. The item goes back to the board as
             itself — same id, what landed stays on record — carrying just this instruction.
           </div>
-          <textarea className="field-input" rows={5} autoFocus value={refineText}
-            placeholder="e.g. the totals are right but the empty state still says “no items”"
-            onChange={(e) => setRefineText(e.target.value)}
-            onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') doRefine(); }} />
+          {refineDraft ? (
+            <div className="rv-draft">
+              <div className="rv-draft-head">
+                <span className="who">✦ Gemini draft</span>
+                <span className="from" title={refineDraft.read.length
+                  ? `Written from ${refineDraft.read.join(', ')}. Gemini cannot read the repository — there is no diff here, only the project's record of the work.`
+                  : 'This item had almost no record behind it — read the draft twice.'}>
+                  {refineDraft.read.length ? `from ${refineDraft.read.join(' · ')}` : 'from a thin record'}
+                  {refineDraft.basis && ` · leaned on ${refineDraft.basis}`}
+                  {` · ${refineDraft.secs}s`}
+                </span>
+                <button className="act" disabled={refineBusy} onClick={draftRefine}
+                  title="Ask again — the record has not changed, but the wording will">
+                  {refineBusy ? '◴' : '↻ redraft'}
+                </button>
+                <button className="act" onClick={dropDraft}
+                  title="Drop the draft and put back what you had typed">✕</button>
+              </div>
+              <textarea className="field-input" rows={5} autoFocus value={refineText}
+                onChange={(e) => setRefineText(e.target.value)}
+                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') doRefine(); }} />
+            </div>
+          ) : (<>
+            <textarea className="field-input" rows={5} autoFocus value={refineText}
+              placeholder="e.g. the totals are right but the empty state still says “no items”"
+              onChange={(e) => setRefineText(e.target.value)}
+              onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') doRefine(); }} />
+            {/* Absent, not disabled, on a keyless server — the same rule every
+                other Gemini surface follows. */}
+            {data?.geminiReady && (
+              <div className="rv-draft-offer">
+                <button className="btn-repo sm" disabled={refineBusy} onClick={draftRefine}>
+                  {refineBusy ? '◴ Drafting…' : '✦ Draft it with Gemini'}
+                </button>
+                <span className="note" title="Gemini cannot read the repository. It reads the project's RECORD of the work: the session's own account, the second model's stored read of the branch diff, the architect's structural read, and the files the sessions on that branch touched.">
+                  reads the run log and the reviewer's notes
+                </span>
+              </div>
+            )}
+          </>)}
+          {refineErr && <div className="rv-draft-err">{refineErr}</div>}
           <label className="rv-queue-toggle">
             <input type="checkbox" checked={refineQueue} onChange={(e) => setRefineQueue(e.target.checked)} />
             <span>Queue a session on it now</span>
           </label>
           <div className="modal-actions" style={{ marginTop: 14 }}>
-            <button className="btn-cancel" onClick={() => setRefineFor(null)}>Cancel</button>
+            <button className="btn-cancel" onClick={closeRefine}>Cancel</button>
             <button className="btn-submit" disabled={!refineText.trim()} onClick={doRefine}>Send it back</button>
           </div>
         </Modal>

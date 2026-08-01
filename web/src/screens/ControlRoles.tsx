@@ -174,6 +174,12 @@ export function RolesRoom({ data, onReload, onConfigure }: {
   // mixed; on an autopilot-only week the cost column IS the basis.
   const mergedShares = evRows.some((m) => m.source !== 'autopilot')
     && evRows.some((m) => m.source !== 'manual');
+  // The delegated half. `agentsRecorded` is what `agentTokens` actually prices,
+  // so a delegation whose transcript is gone is reported as unpriced rather
+  // than silently averaged away.
+  const agentModels = manual?.agentModels ?? [];
+  const agentTokens = manual?.agentTokens ?? 0;
+  const unpriced = Math.max(0, (manual?.agentCalls ?? 0) - (manual?.agentsRecorded ?? 0));
 
   // The executor's slot: the model the policy names, plus anything that ran
   // that neither role claims. The advisor's models are a different job and sit
@@ -457,22 +463,67 @@ export function RolesRoom({ data, onReload, onConfigure }: {
         ))}
       </div>
 
-      {/* ---- delegations. A COUNT and never a cost: the parent transcript
-           records the Agent call and its result but never the subagent's own
-           usage, so there is nothing to price and the line says so. ---- */}
+      {/* ---- delegations. Priced, because each subagent writes its own
+           transcript under `<session>/subagents/` — the parent's records only
+           the call and its result. In an interactive session the main loop and
+           the subagents ARE the director/executor split, so this panel is the
+           interactive answer to the two role cards above. ---- */}
       {manual && manual.agentCalls > 0 && (
         <div className="mc-roledeleg">
-          <span className="k">DELEGATED</span>
-          <span className="v">
-            {plural(manual.agentCalls, 'Agent call')} across {plural(manual.delegatedSessions, 'session')}
-            {manual.agentTypes.length > 0 && ' — '}
-            {manual.agentTypes.map((t, i) => (
-              <span key={t.type}>
-                {i > 0 && ', '}<b>{t.type}</b> ×{t.count}
+          <div className="top">
+            <span className="k">DELEGATED</span>
+            <span className="v">
+              {plural(manual.agentCalls, 'Agent call')} across {plural(manual.delegatedSessions, 'session')}
+              {manual.agentTypes.length > 0 && ' — '}
+              {manual.agentTypes.map((t, i) => (
+                <span key={t.type}>
+                  {i > 0 && ', '}<b>{t.type}</b> ×{t.count}
+                </span>
+              ))}
+            </span>
+            {unpriced > 0 && (
+              <span className="hint">
+                {unpriced} left no transcript — unpriced, not free
               </span>
-            ))}
-          </span>
-          <span className="hint">subagent tokens are not recorded in the transcript</span>
+            )}
+          </div>
+          {agentModels.length > 0 && (
+            <>
+              {/* The split that matters: what the loop spent deciding versus
+                  what the subagents spent building. A session that delegates
+                  well is mostly the second, on a cheaper model. */}
+              <div className="split">
+                <span className="lbl">main loop</span>
+                <div className="bar">
+                  <i className="loop" style={{ flex: Math.max(0.001, manual.tokens) }} />
+                  <i className="agents" style={{ flex: Math.max(0.001, agentTokens) }} />
+                </div>
+                <span className="lbl right">delegated</span>
+              </div>
+              <div className="nums">
+                <b>{fmtTok(manual.tokens)}</b> in the loop
+                <span className="sep">·</span>
+                <b>{fmtTok(agentTokens)}</b> delegated
+                <span className="sep">·</span>
+                {Math.round((agentTokens / Math.max(1, manual.tokens + agentTokens)) * 100)}% of the work
+                went to subagents
+              </div>
+              <div className="evrows">
+                {agentModels.map((m) => (
+                  <div className="evr manual" key={m.model}>
+                    <span className="sw" />
+                    <span className="nm" title={m.model}>{m.label}</span>
+                    <span className="tag manual">SUBAGENT</span>
+                    <span className="runs">{m.sessions}×</span>
+                    <div className="bar"><i className="manual" style={{ width: `${m.share}%` }} /></div>
+                    <span className="pct">{Math.round(m.share)}%</span>
+                    <span className="day">{fmtTok(m.tokens)} tok</span>
+                    <span className="seen">{m.lastSeen}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
 
