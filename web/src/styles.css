@@ -827,6 +827,7 @@ a.tab { display: inline-block; }
 .risk-chip { display: inline-block; margin-left: 8px; font-size: 10.5px; font-weight: 600; border-radius: 6px; padding: 1px 7px; vertical-align: 1px; }
 .risk-chip.low { color: var(--sage); background: transparent; border: 1px solid var(--sage); }
 .risk-chip.high { color: var(--critical); background: transparent; border: 1px solid var(--critical); }
+.risk-chip .src { margin-left: 5px; font-size: 9px; font-weight: 600; color: inherit; opacity: 0.6; }
 /* claimed = someone's on it right now: dimmed, amber-tagged, read-only */
 .road-item.working { opacity: 0.68; }
 .road-item.working:hover { opacity: 1; }
@@ -1331,6 +1332,9 @@ a.tab { display: inline-block; }
 .seg .opt.risk-low.on    { background: var(--sage); border-color: var(--sage); color: #fff; }
 .seg .opt.risk-normal.on { background: #8f897d; border-color: #8f897d; color: #fff; }
 .seg .opt.risk-high.on   { background: var(--critical); border-color: var(--critical); color: #fff; }
+
+/* #262 — who set the risk tier, shown under the Risk seg control in the roadmap modal */
+.risk-prov { font-size: 12px; line-height: 1.5; color: var(--muted); margin-top: 8px; }
 
 /* status segmented control in the new-project modal */
 .seg .opt.pstatus.on.live     { background: var(--live); border-color: var(--live); color: #fff; }

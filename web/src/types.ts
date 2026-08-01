@@ -94,6 +94,8 @@ export interface RoadmapItem {
   skipped: boolean;    // parked — planned, but not to be picked up yet
   skippedAt: string | null; // ISO — when it was parked; ages the Parked view (#247)
   risk: 'low' | 'normal' | 'high'; // graduated trust (#212): low auto-merges a green run
+  riskSource: 'human' | 'auto' | ''; // who set the tier (#262) — '' = the default nobody chose
+  riskReason: string;                // one line: why the auto tier is what it is ('' when none)
   tier: Tier;          // desire tier (#227) — what the owner wants NEXT; '' = unranked (sorts last)
   plan: PlanStep[];    // the implementation plan ([] = none)
   updatedAt: string | null; // ISO — latest-first ordering in the archive

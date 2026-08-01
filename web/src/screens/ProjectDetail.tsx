@@ -266,11 +266,19 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     });
 
   // Create, or save an edit, depending on how the modal was opened.
-  const submitRoad = ({ title, note, priority, branch, area, plan, risk, tier }: RoadmapFields) =>
+  const submitRoad = ({ title, note, priority, branch, area, plan, risk, tier, riskChanged }: RoadmapFields) =>
     guard(async () => {
       const editing = roadModal.editing;
       if (editing) {
-        const updated = await patchRoadmapItem(slug, editing.id, { title, note, bucket: priority, claimed_by: branch, area, plan, risk, tier });
+        const updated = await patchRoadmapItem(slug, editing.id, {
+          title, note, bucket: priority, claimed_by: branch, area, plan,
+          // #262 — a save the human made without touching Risk must not write the
+          // tier back, because the server records any risk write with no explicit
+          // source as human-set. Reclaiming it that way would freeze the tier and
+          // leave the plan-time pre-pass unable to ever re-tier the item again.
+          ...(riskChanged ? { risk } : {}),
+          tier,
+        });
         const without = { ...roadmap, [editing.bucket]: roadmap[editing.bucket].filter((i) => i.id !== editing.id) };
         setData({ ...data, roadmap: { ...without, [updated.bucket]: [...without[updated.bucket], updated] } });
         setRoadModal(roadModalClosed);
@@ -934,6 +942,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           initialArea={roadModal.editing?.area ?? roadModal.area ?? ''}
           initialPlan={roadModal.editing?.plan ?? []}
           initialRisk={roadModal.editing?.risk ?? 'normal'}
+          initialRiskSource={roadModal.editing?.riskSource ?? ''}
+          initialRiskReason={roadModal.editing?.riskReason ?? ''}
           initialTier={roadModal.editing?.tier ?? ''}
           branches={[...new Set(allRoadmap.map((i) => i.claimedBy))].filter(Boolean).sort()}
           areas={[...new Set([...allRoadmap.map((i) => i.area), ...futures.map((f) => f.area)])].filter(Boolean).sort()}

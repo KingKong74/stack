@@ -676,10 +676,11 @@ export function Roadmap({
                         {it.skipped && <span className="skip-chip" title="Parked — not to be picked up yet">⏸ parked</span>}
                         {it.risk !== 'normal' && (
                           <span className={`risk-chip ${it.risk}`}
-                            title={it.risk === 'low'
+                            title={(it.risk === 'low'
                               ? 'Low risk — a green overnight run (checks + clean review) merges itself; you still give the verdict'
-                              : 'High risk — extra care; never auto-merged'}>
+                              : 'High risk — extra care; never auto-merged') + (it.riskReason ? `\n${it.riskReason}` : '')}>
                             {it.risk === 'low' ? '⇣ low risk' : '⇡ high risk'}
+                            {it.riskSource === 'auto' && <span className="src">auto</span>}
                           </span>
                         )}
                         {it.plan.length > 0 && (
