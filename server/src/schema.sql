@@ -565,6 +565,13 @@ ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS architect_verdict TEXT;
 ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS architect_note    TEXT;
 ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS architect_obs     JSONB;
 
+-- #266 — the local date of the NIGHT that produced this run, not just the
+-- moment it finished: a fanned-out night whose jobs run one after another can
+-- cross midnight, and without this a late job's run would count against the
+-- following night. NULL on historical rows, which fall back to finished_at's
+-- date.
+ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS night_date DATE;
+
 -- Scheduled sessions — Mission Control's calendar. A row is "run the autopilot
 -- on this project at this time": one-off (run_date set, days empty) or
 -- recurring (days = ISO getDay() ints 0-6, run_date NULL). item_id optionally
@@ -603,8 +610,20 @@ CREATE TABLE IF NOT EXISTS autopilot_jobs (
   started_at  TIMESTAMPTZ,
   finished_at TIMESTAMPTZ
 );
-CREATE UNIQUE INDEX IF NOT EXISTS autopilot_jobs_nightly_idx
-  ON autopilot_jobs (project_id, night_date) WHERE kind = 'nightly';
+-- #266 — the night fans out to one job PER ELIGIBLE ITEM (up to Settings'
+-- max-items), not one multi-item job. The old index allowed only one nightly
+-- row per project per night; this one keys on the item too, so it now
+-- guarantees one nightly job per project per night PER ITEM. Postgres treats
+-- NULLs as distinct in a unique index, so a legacy/fallback nightly row with
+-- no item_id would otherwise dedup against nothing — COALESCE(item_id, 0) is
+-- what keeps that case deduped exactly as before.
+DROP INDEX IF EXISTS autopilot_jobs_nightly_idx;
+CREATE UNIQUE INDEX IF NOT EXISTS autopilot_jobs_night_item_idx
+  ON autopilot_jobs (project_id, night_date, COALESCE(item_id, 0)) WHERE kind = 'nightly';
+-- #266 — this job's share of the night's token budget, split across the
+-- night's fanned-out jobs. NULL = the runner falls back to Settings' own
+-- budget (a pre-fan-out job, or one never given a share); 0 = unlimited.
+ALTER TABLE autopilot_jobs ADD COLUMN IF NOT EXISTS token_budget BIGINT;
 -- #255 — the plan sweep enqueues at most ONE open plan job per project. The
 -- index is what makes the lazy enqueue idempotent under a dispatcher that polls
 -- every minute: a second insert while one is still open simply conflicts.
