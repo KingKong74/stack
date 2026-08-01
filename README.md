@@ -182,6 +182,25 @@ node ~/.stack/stack-checkpoint.mjs --settings
 echo '{"project":{"slug":"stack"},"session":{"summary":"Quick manual checkpoint."}}' | node ~/.stack/stack-checkpoint.mjs
 ```
 
+## Model switching (optional)
+
+When Claude hits a usage limit, the web terminal can offer these Anthropic-API-compatible providers
+as drop-in replacements — same interface, different backend. Configuring one is just a line in
+`~/.stack/env` (see `templates/stack-env.example`) or an existing `~/.ccm_config`, if you already use
+the [claude-code-switch](https://github.com/foreveryh/claude-code-switch) `ccm` tool:
+
+| Provider | Env key | Model |
+| --- | --- | --- |
+| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek-chat` |
+| Kimi | `KIMI_API_KEY` | `kimi-k2.5` |
+| GLM | `GLM_API_KEY` | `glm-5` |
+| Qwen | `QWEN_API_KEY` | `qwen3-max-2026-01-23` |
+| MiniMax | `MINIMAX_API_KEY` | `MiniMax-M2.5` |
+
+Run `./stack models` to see which providers are configured and which file the key came from (it
+never prints the key itself). No key configured simply means the switcher offers nothing to switch
+to — nothing breaks.
+
 ## Set up a new project (and get Claude connected)
 
 One-time machine setup first (hooks + `~/.stack/env` + `/checkpoint` — the section above). After

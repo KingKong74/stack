@@ -1,0 +1,38 @@
+# Stack — host-side ~/.stack/env template.
+#
+# This is NOT the repo-root .env.example (that one is the server/compose file,
+# read by Docker Compose on the machine running the API). This file is copied
+# to ~/.stack/env on whichever machine runs Claude Code — the hooks, the
+# /checkpoint poster and the web terminal daemon read it from there. Never
+# commit the real file; it holds live secrets.
+#
+# Usage: cp templates/stack-env.example ~/.stack/env, then edit the real file.
+
+# The Stack app origin the hooks and terminal daemon POST to.
+STACK_API=https://stack.your-domain
+
+# The bearer token the hooks and terminal daemon authenticate with — must
+# match the server's API_TOKEN.
+STACK_TOKEN=the-same-value-as-API_TOKEN
+
+# ---- Optional: alternative model provider keys ----
+#
+# The web terminal offers these as drop-in replacements when Claude hits a
+# usage limit (all expose the Anthropic API surface). Uncomment a line and
+# fill in a real key to activate that provider in the switcher — that's the
+# whole configuration step. Run `./stack models` to see what's configured and
+# where it was read from (never prints the key itself).
+#
+# DEEPSEEK_API_KEY=your-deepseek-key-here   # DeepSeek — deepseek-chat
+# KIMI_API_KEY=your-kimi-key-here           # Kimi — kimi-k2.5
+# GLM_API_KEY=your-glm-key-here             # GLM — glm-5
+# QWEN_API_KEY=your-qwen-key-here           # Qwen — qwen3-max-2026-01-23
+# MINIMAX_API_KEY=your-minimax-key-here     # MiniMax — MiniMax-M2.5
+
+# Notes:
+# - This file is host-side, lives at ~/.stack/env, and is read at process
+#   start — a key you add here is picked up by the NEXT terminal session, not
+#   a running one.
+# - If you already use the ccm tool (claude-code-switch), it may have written
+#   these same keys to ~/.ccm_config instead — Stack reads that file too, so
+#   there's nothing to duplicate.
