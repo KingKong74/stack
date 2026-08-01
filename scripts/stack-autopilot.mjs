@@ -84,6 +84,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadStackEnv, logStderr, git } from '../hook/stack-post.mjs';
 import { laneFor, branchSlug } from './lib/lane.mjs';
+import { cleanRiskTier, cleanRiskReason, riskLabel } from './lib/risk.mjs';
 
 loadStackEnv();
 
@@ -297,11 +298,20 @@ Roadmap item #${item.id} (${item.bucket}): ${item.title}
 ${item.note ? `The author's note (what they actually want): ${item.note.slice(0, 1200)}` : '(no note)'}
 ${item.plan?.length ? `The author's own implementation plan (the spec must serve it, not replace it):\n${item.plan.map((s) => `  ${s.done ? '[x]' : '[ ]'} ${s.text}`).join('\n')}` : ''}
 
+Judge the RISK of building this unattended, and be conservative — "low" means an
+overnight run of it could land on main without a human reading the diff first.
+Reserve "low" for small, reversible, well-fenced work: copy and styling, a chip or
+label, a doc, one self-contained pure function with tests. Anything touching the
+database schema, auth, money, deletion, migrations, the hooks, or a contract other
+code reads is "high". Everything else is "normal" — when in doubt, say normal.
+
 Respond with ONLY this JSON:
 { "goal": "one sentence — the outcome",
   "acceptance": ["3-6 verifiable criteria, each checkable from the terminal"],
   "outOfScope": ["what NOT to touch tonight"],
-  "risks": ["traps to avoid — max 3"] }`;
+  "risks": ["traps to avoid — max 3"],
+  "risk": "low | normal | high — how much damage a wrong build does, NOT how hard the work is",
+  "riskReason": "one line — why that tier" }`;
   const models = [GEMINI_MODEL];
   if (GEMINI_FALLBACK && GEMINI_FALLBACK !== GEMINI_MODEL) models.push(GEMINI_FALLBACK);
   for (const [i, model] of models.entries()) {
@@ -330,6 +340,8 @@ Respond with ONLY this JSON:
       const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
       const spec = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || text);
       if (!spec?.goal || !Array.isArray(spec.acceptance)) return null;
+      spec.risk = cleanRiskTier(spec.risk);
+      spec.riskReason = cleanRiskReason(spec.riskReason);
       return spec;
     } catch (e) {
       log(`spec pre-pass skipped (${e.message})`);
@@ -348,7 +360,7 @@ The build spec (from the planning pre-pass — verify yourself against it before
 ${spec.acceptance.map((a) => `  • ${a}`).join('\n')}
 ${spec.outOfScope?.length ? `- Out of scope tonight:\n${spec.outOfScope.map((o) => `  • ${o}`).join('\n')}` : ''}
 ${spec.risks?.length ? `- Watch out for:\n${spec.risks.map((r) => `  • ${r}`).join('\n')}` : ''}
-`;
+${spec.risk ? `- Risk tier: ${riskLabel(spec.risk, spec.riskReason)} (derived at plan time; a human's own tier always wins)\n` : ''}`;
 
 // ---- 0a. The in-app arm switch (Settings → Autopilot) ----
 let appSettings;
@@ -734,11 +746,22 @@ async function runPlanItem(item, northStar, capMin) {
 
 Roadmap item #${item.id} (bucket: ${item.bucket}): ${item.title}
 ${item.note ? `The author's note: ${item.note.slice(0, 1500)}\n` : ''}${northStar ? `The project's north star: "${northStar.slice(0, 400)}"\n` : ''}
-Read the relevant code first — real file paths, real tables, real routes. Then answer with ONLY this JSON as your final output (no prose around it):
+Read the relevant code first — real file paths, real tables, real routes.
+
+Judge the RISK of building this unattended, and be conservative — "low" means an
+overnight run of it could land on main without a human reading the diff first.
+Reserve "low" for small, reversible, well-fenced work: copy and styling, a chip or
+label, a doc, one self-contained pure function with tests. Anything touching the
+database schema, auth, money, deletion, migrations, the hooks, or a contract other
+code reads is "high". Everything else is "normal" — when in doubt, say normal.
+
+Then answer with ONLY this JSON as your final output (no prose around it):
 { "approach": "2-4 sentences — how to build it and where it hooks in",
   "interfaces": ["the routes/functions/props touched or added — file paths included"],
   "dataChanges": ["schema/storage changes, or 'none'"],
   "risks": ["what could bite — max 3"],
+  "risk": "low | normal | high — how much damage a wrong build does, NOT how hard the work is",
+  "riskReason": "one line — why that tier",
   "steps": ["4-8 ordered implementation steps, each one commit-sized"] }`;
 
   // #285 — a plan night writes a design and nothing else: all judgement, no
@@ -809,6 +832,9 @@ Read the relevant code first — real file paths, real tables, real routes. Then
     return { landed: false, limitHit };
   }
 
+  const risk = cleanRiskTier(design.risk);
+  const riskReason = cleanRiskReason(design.riskReason);
+
   const list = (v) => (Array.isArray(v) ? v : [v]).map((x) => String(x).trim()).filter(Boolean);
   const docLines = [
     `— Design (plan night ${startedAt.slice(0, 10)}):`,
@@ -816,13 +842,20 @@ Read the relevant code first — real file paths, real tables, real routes. Then
     ...(list(design.interfaces).length ? [`Interfaces: ${list(design.interfaces).join('; ')}`] : []),
     ...(list(design.dataChanges).length ? [`Data: ${list(design.dataChanges).join('; ')}`] : []),
     ...(list(design.risks).length ? [`Risks: ${list(design.risks).join('; ')}`] : []),
+    `Risk tier: ${riskLabel(risk, riskReason)}`,
   ];
   const note = `${(item.note || '').trim()}\n\n${docLines.join('\n')}`.trim().slice(0, 4000);
-  await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, {
+  const updated = await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, {
     note,
     plan: steps.map((text) => ({ text, done: false })),
+    risk, risk_reason: riskReason, risk_source: 'auto',
   });
-  log(`#${item.id}: design saved — ${steps.length} plan step(s) + design note. Review it on the board, then a build night executes it.`);
+  // Trust the response over what we sent — a human's own tier refuses our write
+  // and hands its own tier back.
+  const riskLog = updated?.riskSource === 'human'
+    ? ` (risk tier: kept the human's own tier — ${updated.risk} — ours was ignored)`
+    : ` (risk tier: ${updated?.risk ?? risk}, auto)`;
+  log(`#${item.id}: design saved — ${steps.length} plan step(s) + design note${riskLog}. Review it on the board, then a build night executes it.`);
   await postRun({ ...runRecord, outcome: limitHit ? 'limit' : 'planned', commits: 0,
     summary: `Design authored: ${String(design.approach).trim()}`.slice(0, 1800) });
   return { landed: true, limitHit };
@@ -843,6 +876,25 @@ async function runItem(item, northStar, capMin) {
   // fresh full-item spec would drown the delta in re-derived scope.
   const spec = item.refineNote ? null : await geminiSpec(item, northStar);
   if (spec) log(`spec ready: ${spec.goal}`);
+
+  // #262 — land the pre-pass's tier on the item itself: an annotation only, so
+  // a failure here must never take the build down with it. The auto-merge lever
+  // further down reads item.risk LATER IN THIS SAME RUN, so it has to act on the
+  // tier the server actually holds (trust the response, not what we sent) — and
+  // that response is also how a human's own tier survives: the server refuses
+  // an 'auto' write over one and hands its tier back instead.
+  if (spec?.risk) {
+    try {
+      const updated = await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`,
+        { risk: spec.risk, risk_reason: spec.riskReason, risk_source: 'auto' });
+      item.risk = updated.risk;
+      if (updated.riskSource === 'human') {
+        log(`risk tier: kept the human's own tier (${updated.risk}) — ours was ignored`);
+      } else {
+        log(`risk tier: ${riskLabel(updated.risk, spec.riskReason)} (auto)`);
+      }
+    } catch (e) { log(`risk tier not saved (${e.message}) — the item keeps the tier it had`); }
+  }
 
   // A fresh worktree so the human's checkout is never disturbed.
   const wt = join(lockDir, 'autopilot', `${SLUG}-item-${item.id}`);
