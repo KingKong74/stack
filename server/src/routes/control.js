@@ -3,7 +3,7 @@ import { q } from '../db.js';
 import { relativeTime, computeProgress, PRESENCE_TTL_MINUTES } from '../util.js';
 import { readSettings, EXECUTOR_CATALOGUE, ADVISOR_CATALOGUE } from '../settings.js';
 import { runCore } from '../shape.js';
-import { termAgentConnected, termSessions, termDetached, termPlanUsage } from '../term.js';
+import { termAgentConnected, termSessions, termDetached, termEdits, termPlanUsage } from '../term.js';
 import { geminiEnabled } from '../gemini.js';
 import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 
@@ -36,6 +36,17 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //     lastAuto: { branch, summary, when } | null // most recent auto/* push
 //   } ],
 //   totals: { automode, liveSessions, claims, review },
+//   attention: [ {                          // what has STOPPED and wants you
+//     key, kind: 'permission'|'paused'|'review', slug, name, text, detail,
+//     at, when,
+//     tmux?, cwd?, fingerprint?,            // permission: the answer handle
+//     jobId?, notBefore?,                   // paused: the resume handle
+//     count?                                // review: how many are queued
+//   } ],                                    // worst first; [] with no daemon
+//   conflicts: [ {                          // two live sessions, one file
+//     key, file, cwd, branch, slug, name, count,
+//     sessions: [ { sessionId, at, when } ], at, when
+//   } ],
 //   fleet: {                                // (#268) the worker slots
 //     capacity,                             // how many jobs may run at once
 //     slots: [ { jobId, slug, name, tint, status, kind, sessionKind,
@@ -100,6 +111,158 @@ const FLEET_CAPACITY = 1;
 // Kept in step with that file — it is the only other place this shape exists.
 const tmuxNameFor = (slug, jobId) =>
   `stack-auto-${String(slug).replace(/[^A-Za-z0-9_]/g, '_').slice(0, 30)}-j${jobId}`;
+
+// ---- What is actually waiting on the human ------------------------------
+//
+// The Now room used to answer "what is running". It could not answer "what has
+// stopped and is waiting for me", which is the more expensive question: a
+// session blocked on a permission prompt burns the night doing nothing, and
+// nothing in the payload said so.
+//
+// Three sources, one list, ordered by what a stalled fleet costs:
+//
+//   permission — a host session stopped on a prompt. The most urgent thing
+//                here by a wide margin: it is a session that WOULD be working.
+//   paused     — a run held by the usage limit or hung up mid-flight (#142).
+//                Also stopped, but stopped for a reason that will clear.
+//   review     — work that landed and is waiting on a verdict. Not stopping
+//                anything; it is the queue that grows while nobody looks.
+//
+// Pure and exported so the ordering can be pinned without a database:
+//   node server/test/attention.test.mjs
+export function computeAttention({ detached = [], jobs = [], projects = [], now = Date.now() }) {
+  const rows = [];
+  const byCwd = (cwd) => projectForPath(projects, cwd);
+  const rel = (at) => relativeTime(new Date(at)) || 'just now';
+
+  for (const s of detached) {
+    if (!s?.blocked) continue;
+    const p = byCwd(s.cwd);
+    rows.push({
+      key: `perm:${s.name}`,
+      kind: 'permission',
+      slug: p?.slug || '',
+      name: p?.name || (s.cwd ? `~/${s.cwd}` : 'this host'),
+      tmux: s.name,
+      cwd: s.cwd || '',
+      // The question as Claude asked it, and the one line saying what of —
+      // the command, the file, the URL. Both verbatim: a paraphrase is how a
+      // human approves something other than what they read.
+      text: s.blocked.question,
+      detail: s.blocked.detail || s.blocked.title || '',
+      fingerprint: s.blocked.fingerprint,
+      at: s.blocked.since || now,
+      when: rel(s.blocked.since || now),
+    });
+  }
+
+  for (const j of jobs) {
+    // The shape Control's own isPausedSession uses — a resume job standing by,
+    // whether the queue calls it paused or has already re-queued it.
+    if (j.kind !== 'resume' || (j.status !== 'paused' && j.status !== 'queued')) continue;
+    rows.push({
+      key: `paused:${j.id}`,
+      kind: 'paused',
+      slug: j.slug,
+      name: j.name,
+      jobId: j.id,
+      text: j.itemId ? `#${j.itemId} ${j.itemTitle || 'item'} is paused mid-flight` : 'A session is paused mid-flight',
+      detail: j.detail || '',
+      notBefore: j.notBefore || null,
+      at: ms(j.notBefore) > 0 ? ms(j.notBefore) : now,
+      when: j.when || '',
+    });
+  }
+
+  for (const p of projects) {
+    if (!p.reviewCount) continue;
+    rows.push({
+      key: `review:${p.slug}`,
+      kind: 'review',
+      slug: p.slug,
+      name: p.name,
+      count: p.reviewCount,
+      text: `${p.reviewCount} item${p.reviewCount === 1 ? '' : 's'} built and waiting on a verdict`,
+      detail: '',
+      at: now,
+      when: '',
+    });
+  }
+
+  const RANK = { permission: 0, paused: 1, review: 2 };
+  return rows.sort((a, b) => RANK[a.kind] - RANK[b.kind]
+    // Inside a kind, longest-waiting first for the two that are stopped, and
+    // biggest queue first for the one that is merely accumulating.
+    || (a.kind === 'review' ? (b.count || 0) - (a.count || 0) : a.at - b.at));
+}
+
+// ---- Two sessions, one file ---------------------------------------------
+//
+// Parallel sessions in ONE checkout is the arrangement Stack encourages, and
+// the arrangement that occasionally eats work: both see the same dirty tree,
+// so git cannot say who wrote what and neither session can see the other
+// coming. The collision only surfaces at the rebase.
+//
+// The read comes off the transcripts, not off git, for exactly that reason —
+// each session writes its own, so an edit has an author. Two authors on one
+// path inside the window is the warning.
+//
+// A session counts as still going by its LAST LINE, not its last edit: one
+// deep in a five-minute tool call has not left. `at: 0` (no daemon has
+// reported) yields nothing at all rather than an all-clear, the same
+// absent-is-not-green rule the verdict columns follow.
+const CONFLICT_LIVE_MS = 20 * 60_000; // a session silent this long has left
+export function computeConflicts({ edits, projects = [], now = Date.now() }) {
+  if (!edits || !edits.at || !Array.isArray(edits.sessions)) return [];
+  const live = edits.sessions.filter((s) => s && s.lastAt > now - CONFLICT_LIVE_MS && s.cwd);
+  if (live.length < 2) return [];
+
+  const byFile = new Map(); // `${cwd} ${path}` -> { cwd, path, branch, sessions[] }
+  for (const s of live) {
+    for (const f of s.files || []) {
+      const key = `${s.cwd} ${f.path}`;
+      if (!byFile.has(key)) byFile.set(key, { cwd: s.cwd, path: f.path, branch: s.branch || '', sessions: [] });
+      const e = byFile.get(key);
+      if (!e.branch && s.branch) e.branch = s.branch;
+      e.sessions.push({ sessionId: s.sessionId, at: f.at });
+    }
+  }
+
+  const out = [];
+  for (const e of byFile.values()) {
+    if (e.sessions.length < 2) continue;
+    const p = projectForPath(projects, e.cwd);
+    const newest = Math.max(...e.sessions.map((s) => s.at));
+    out.push({
+      key: `conflict:${e.cwd}:${e.path}`,
+      file: e.path,
+      cwd: e.cwd,
+      branch: e.branch,
+      slug: p?.slug || '',
+      name: p?.name || e.cwd.split('/').filter(Boolean).pop() || e.cwd,
+      count: e.sessions.length,
+      sessions: e.sessions.sort((a, b) => b.at - a.at)
+        .map((s) => ({ sessionId: s.sessionId, at: s.at, when: relativeTime(new Date(s.at)) || 'just now' })),
+      at: newest,
+      when: relativeTime(new Date(newest)) || 'just now',
+    });
+  }
+  return out.sort((a, b) => b.at - a.at);
+}
+
+// Which project a host path belongs to. An exact path segment matching a slug
+// covers the ordinary checkout (~/stack); the `<slug>-item-N` form covers the
+// autopilot's worktrees, whose directory is named for the job rather than the
+// project. No match returns null and the caller says where it is instead of
+// claiming a project it cannot prove.
+function projectForPath(projects, path) {
+  const segs = String(path || '').split('/').filter(Boolean);
+  if (!segs.length) return null;
+  for (const p of projects) if (segs.includes(p.slug)) return p;
+  const last = segs[segs.length - 1];
+  for (const p of projects) if (last.startsWith(`${p.slug}-`)) return p;
+  return null;
+}
 
 // ---- (#280 / design 23a) Roles inside a session -------------------------
 // Who is executing, who advised, and what the advice cost. The two roles are
@@ -1214,6 +1377,16 @@ control.get('/', async (_req, res) => {
     usageRows: usageR.rows, sessionRows: sessionUsageR.rows, projects, execAlias, advAlias,
   });
 
+  // What has stopped and is waiting on the human, and where two live sessions
+  // are about to collide. Both read the host's own live report (the terminal
+  // daemon's pane scan and transcript tail) — with no daemon on the line they
+  // are simply empty, which renders as "nothing waiting" rather than as a
+  // guarantee that nothing is.
+  const detachedNow = termDetached();
+  const jobsNow = jobShapeRows(jobsR.rows);
+  const attention = computeAttention({ detached: detachedNow, jobs: jobsNow, projects });
+  const conflicts = computeConflicts({ edits: termEdits(), projects });
+
   res.json({
     // (#286) Is a Gemini key configured at all? The debrief's reviewer column
     // reads "no key configured" rather than "the reviewer said nothing" — the
@@ -1271,12 +1444,18 @@ control.get('/', async (_req, res) => {
     usage,
     // The host PTY daemon's agent socket + every open web-terminal session
     // (labels are the ✧ Gemini annotations, '' until asked for).
-    terminal: { connected: termAgentConnected(), sessions: termSessions(), detached: termDetached() },
+    terminal: { connected: termAgentConnected(), sessions: termSessions(), detached: detachedNow },
+    // What is waiting on the human, worst first — a session stopped on a
+    // permission prompt, a run the limit paused, work awaiting a verdict.
+    attention,
+    // Two live sessions writing one file. Empty when the daemon is away: no
+    // report is not an all-clear, and the room says which it is.
+    conflicts,
     // Account-level Plan windows (#220): the daemon's cached session/week usage
     // snapshot ({plan, tokens, at}) — null until the daemon has pushed one.
     planUsage: termPlanUsage(),
     schedules: scheduleShapeRows(schedR.rows),
-    jobs: jobShapeRows(jobsR.rows),
+    jobs: jobsNow,
     projects,
     totals: {
       automode: projects.filter((p) => p.automode).length,

@@ -56,9 +56,57 @@ let detachedSessions = []; // [{ name, cwd, created, attached, keep, tail }]
 // name/cwd/created/attached/keep/tail); pruned when a name leaves the list.
 const detachedLabels = new Map(); // name -> label
 export const termDetached = () =>
-  detachedSessions.map(({ name, cwd, created, attached, keep }) => ({
+  detachedSessions.map(({ name, cwd, created, attached, keep, blocked }) => ({
     name, cwd, created, attached, keep, label: detachedLabels.get(name) || '',
+    // …plus HOW LONG it has been waiting. The host reports what the prompt is,
+    // not when it appeared — a pane read has no memory. The relay supplies the
+    // clock by stamping the first push that carried this fingerprint, which is
+    // the number the row actually needs: a prompt up for two minutes and one up
+    // since last night are the same sentence and very different problems.
+    blocked: blocked ? { ...blocked, since: blockedSince.get(name)?.at || Date.now() } : null,
   }));
+
+// name -> { fingerprint, at }. Reset when the question changes, dropped when
+// the session goes. Deliberately not persisted: a relay restart honestly does
+// not know how long a prompt has been up, and re-stamping now says "at least
+// this long" rather than inventing a history.
+const blockedSince = new Map();
+function stampBlocked(sessions) {
+  for (const s of sessions) {
+    const fp = s.blocked?.fingerprint;
+    if (!fp) { blockedSince.delete(s.name); continue; }
+    const prev = blockedSince.get(s.name);
+    if (!prev || prev.fingerprint !== fp) blockedSince.set(s.name, { fingerprint: fp, at: Date.now() });
+  }
+  const alive = new Set(sessions.map((s) => s.name));
+  for (const name of blockedSince.keys()) if (!alive.has(name)) blockedSince.delete(name);
+}
+
+// A session stopped on a permission prompt, narrowed to the fields a row and
+// its Approve button need. The BODY the host fingerprinted is deliberately not
+// among them: it can be a whole diff, it would ride in every control payload,
+// and nothing client-side reads it — the fingerprint is the handle.
+const blockedShape = (b) => (b && typeof b.question === 'string' && typeof b.fingerprint === 'string'
+  ? {
+    question: String(b.question).slice(0, 300),
+    title: String(b.title || '').slice(0, 120),
+    detail: String(b.detail || '').slice(0, 300),
+    options: (Array.isArray(b.options) ? b.options : []).slice(0, 12)
+      .map((o) => ({ n: Number(o?.n) || 0, label: String(o?.label || '').slice(0, 200) })),
+    yes: Number(b.yes) || 0,
+    fingerprint: b.fingerprint,
+  }
+  : null);
+
+// Live per-session file edits (the same-file collision signal). Like the
+// detached list this is a relay cache with no table behind it: it describes
+// what the host is doing THIS MINUTE, and a server restart re-learns it on the
+// daemon's next push. `liveEditsAt` is what lets a reader tell "nobody is
+// editing anything" from "nobody has told us anything" — Mission Control shows
+// no collisions at all rather than a false all-clear when the daemon is away.
+let liveEdits = [];
+let liveEditsAt = 0;
+export const termEdits = () => ({ sessions: liveEdits, at: liveEditsAt });
 export const termDetachedTails = () => detachedSessions;
 export const setDetachedLabel = (name, label) => { detachedLabels.set(name, label); };
 // Plan usage snapshot (#220): the account-level Plan windows (#195) the daemon
@@ -84,6 +132,32 @@ export function keepTmuxSession(name, keep) {
   if (!agentSend) return false;
   agentSend({ t: 'keepSession', name, keep: keep === true });
   return true;
+}
+
+// Answer a permission prompt in a host session — the one relay call that gets
+// a REPLY, because it is the one where "we asked" is not the same as "it
+// happened". The host re-reads the pane before it types anything and can
+// legitimately refuse (the prompt was answered at the keyboard, the session
+// moved on, tmux said no); the human needs that sentence, not a silent 200.
+//
+// Correlation is a counter and a Map of resolvers. A daemon that never answers
+// times out here rather than leaving an HTTP request open forever.
+let answerSeq = 0;
+const pendingAnswers = new Map(); // id -> resolve
+export function answerTmuxPrompt(name, fingerprint, choice, timeoutMs = 8_000) {
+  if (!agentSend) return Promise.resolve({ ok: false, error: 'the host daemon is not connected' });
+  const id = `a${++answerSeq}`;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingAnswers.delete(id);
+      resolve({ ok: false, error: 'the host did not answer in time' });
+    }, timeoutMs);
+    pendingAnswers.set(id, (m) => {
+      clearTimeout(timer);
+      resolve({ ok: m.ok === true, error: String(m.error || ''), state: String(m.state || '') });
+    });
+    agentSend({ t: 'answerPrompt', id, name, fingerprint, choice });
+  });
 }
 
 export function attachTerm(httpServer) {
@@ -176,10 +250,42 @@ export function attachTerm(httpServer) {
             // for a host whose reaper does not know about pins either.
             keep: s.keep === true,
             tail: typeof s.tail === 'string' ? s.tail.slice(-TAIL_CAP) : '',
+            // Stopped on a permission prompt, as the host read it a moment ago.
+            // An older daemon sends nothing, which reads as "not blocked" — the
+            // truthful answer for a host that cannot see a block at all.
+            blocked: blockedShape(s.blocked),
           }));
+        stampBlocked(detachedSessions);
         const alive = new Set(detachedSessions.map((s) => s.name));
         for (const name of detachedLabels.keys()) if (!alive.has(name)) detachedLabels.delete(name);
         broadcastStatus(); // unattended claude count may have changed
+        return;
+      }
+
+      // edits — who is mid-edit in which file, read off the live transcripts.
+      // Cache-only, like 'plan': nothing to forward to a browser.
+      if (m.t === 'edits' && Array.isArray(m.sessions)) {
+        liveEdits = m.sessions
+          .filter((s) => s && typeof s.sessionId === 'string')
+          .slice(0, 64)
+          .map((s) => ({
+            sessionId: s.sessionId,
+            cwd: typeof s.cwd === 'string' ? s.cwd : '',
+            branch: typeof s.branch === 'string' ? s.branch : '',
+            lastAt: Number(s.lastAt) || 0,
+            dropped: Number(s.dropped) || 0,
+            files: (Array.isArray(s.files) ? s.files : []).slice(0, 60)
+              .filter((f) => f && typeof f.path === 'string')
+              .map((f) => ({ path: f.path, at: Number(f.at) || 0 })),
+          }));
+        liveEditsAt = Date.now();
+        return;
+      }
+
+      // answered — the host's verdict on an answerPrompt it was asked to send.
+      if (m.t === 'answered' && m.id) {
+        const waiting = pendingAnswers.get(m.id);
+        if (waiting) { pendingAnswers.delete(m.id); waiting(m); }
         return;
       }
 
@@ -220,7 +326,13 @@ export function attachTerm(httpServer) {
       if (m.t === 'exit') { send(browser, m); browser.close(); sessions.delete(m.sid); termMeta.delete(m.sid); broadcastStatus(); }
     });
     ws.on('close', () => {
-      if (agent === ws) { agent = null; agentConnected = false; agentSend = null; detachedSessions = []; }
+      if (agent === ws) {
+        agent = null; agentConnected = false; agentSend = null; detachedSessions = [];
+        // No daemon, no claim. Stale edits would keep a collision warning on
+        // screen for a host nobody can see any more — worse than silence,
+        // because it reads as current.
+        liveEdits = []; liveEditsAt = 0;
+      }
       console.log('[term] daemon disconnected');
       // Do NOT kill browser connections here — the daemon may reconnect and
       // re-announce surviving PTYs (#123).  Browsers will see silence until the

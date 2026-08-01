@@ -51,7 +51,9 @@ import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, paneTail, reapDeadSessions, reapIdleSessions, setKeep } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, paneTail, reapDeadSessions, reapIdleSessions, sendKeys, setKeep } from './tmux-session.mjs';
+import { detectPrompt } from './prompt-scan.mjs';
+import { createEditWatch } from './edit-watch.mjs';
 import {
   availableProviders, providerEnv, getProvider,
   loadPreferredProvider, savePreferredProvider,
@@ -245,23 +247,62 @@ function sendUplink(obj) {
 // creates one) and on a slow tick as a catch-all.
 function pushDetached() {
   if (!tmuxAvailable()) return;
-  const sessionsList = listStackSessions().map((s) => ({
-    name: s.name,
-    created: s.created,
-    attached: s.attached,
-    // Jail-relative cwd, the same form the browser sends in start frames
-    // ('' = the root). A path outside the jail (shouldn't happen) maps to ''.
-    cwd: s.path === ROOT ? '' : s.path.startsWith(ROOT + sep) ? s.path.slice(ROOT.length + 1) : '',
-    // The pane's recent content — what the Gemini labeller reads relay-side.
-    tail: paneTail(s.name),
-    // #292 — pinned against the idle reaper. Read off the session itself on
-    // every push, so the browser's view of the pin can never be a cache of
-    // what the daemon last did rather than what the host actually holds.
-    keep: s.keep === true,
-  }));
+  const sessionsList = listStackSessions().map((s) => {
+    // The pane's recent content — what the Gemini labeller reads relay-side,
+    // and what the permission-prompt read below works off. One capture, two
+    // readers: watching for a block costs no extra fork.
+    const tail = paneTail(s.name);
+    return {
+      name: s.name,
+      created: s.created,
+      attached: s.attached,
+      // Jail-relative cwd, the same form the browser sends in start frames
+      // ('' = the root). A path outside the jail (shouldn't happen) maps to ''.
+      cwd: s.path === ROOT ? '' : s.path.startsWith(ROOT + sep) ? s.path.slice(ROOT.length + 1) : '',
+      tail,
+      // #292 — pinned against the idle reaper. Read off the session itself on
+      // every push, so the browser's view of the pin can never be a cache of
+      // what the daemon last did rather than what the host actually holds.
+      keep: s.keep === true,
+      // Stopped, waiting on a human. null unless a permission prompt is
+      // genuinely sitting at the end of the pane right now.
+      blocked: detectPrompt(tail),
+    };
+  });
   sendUplink({ t: 'detached', sessions: sessionsList });
 }
 setInterval(pushDetached, 60_000);
+
+// ---- the block watch --------------------------------------------------------
+// A session that has stopped to ask permission is the most time-sensitive thing
+// the host knows: every second it waits is a second nothing is happening. Sixty
+// is too many, so a light tick re-reads the panes and pushes the moment the set
+// of blocked sessions CHANGES — no change, no frame. A capture-pane is a couple
+// of milliseconds, and this is the only cost of noticing within twenty seconds
+// instead of within sixty.
+let blockedKey = '';
+function watchBlocks() {
+  if (!tmuxAvailable()) return;
+  const key = listStackSessions()
+    .map((s) => `${s.name}:${detectPrompt(paneTail(s.name))?.fingerprint || ''}`)
+    .join('|');
+  if (key === blockedKey) return;
+  blockedKey = key;
+  pushDetached();
+}
+setInterval(watchBlocks, 20_000);
+
+// ---- who is editing what (live) --------------------------------------------
+// Read off the transcripts Claude Code is writing, not off git: two sessions in
+// ONE checkout both have the same dirty working tree, so git cannot say which
+// of them wrote a file. The transcript can, because each session writes its own.
+const editWatch = createEditWatch();
+function pushEdits() {
+  let sessionsList;
+  try { sessionsList = editWatch.read(); } catch { return; }
+  sendUplink({ t: 'edits', sessions: sessionsList });
+}
+setInterval(pushEdits, 60_000);
 
 // Orphan GC (#197): every 10 minutes reap detached stack-term-* sessions whose
 // pane is DEAD (the process inside already exited — tmux holding a corpse).
@@ -667,6 +708,58 @@ function startSession(msg) {
   if (tmuxSession) pushDetached(); // a re-attach just consumed a detached entry
 }
 
+// ---- answering a permission prompt from Mission Control ---------------------
+//
+// The only path by which anything other than a human at the keyboard types
+// into a running session, so it is deliberately the most suspicious code here.
+//
+// The hazard is staleness, not authorisation: the row the human clicked was
+// drawn from a pane read up to twenty seconds ago, and in those twenty seconds
+// the session may have been answered at the keyboard and moved on to a
+// different question — or to no question at all, with a text input where the
+// menu used to be. Typing "1" into that is a stray digit in someone's prompt.
+//
+// So the host does not trust the request. It re-reads the pane NOW, and refuses
+// unless the prompt it finds is byte-for-byte the one the human was answering
+// (fingerprint covers the question, the options AND the body, so "yes to
+// `rm -rf build`" cannot land on whatever replaced it). Then it looks again a
+// beat later and reports what actually happened rather than assuming.
+function answerPrompt(m) {
+  const done = (ok, error, state) => sendUplink({ t: 'answered', id: m.id, ok, error: error || '', state: state || '' });
+  if (!tmuxAvailable()) return done(false, 'no tmux on this host');
+  if (!validName(m.name) || !listStackSessions().some((s) => s.name === m.name)) {
+    return done(false, 'that session is not on this host any more');
+  }
+  const p = detectPrompt(paneTail(m.name));
+  if (!p) return done(false, 'nothing is waiting — that prompt has already been answered');
+  if (p.fingerprint !== m.fingerprint) {
+    return done(false, 'the session has moved on to a different prompt — read it again');
+  }
+
+  // Approve types the number of the PLAIN yes. Never the "and don't ask again"
+  // variant: widening a permission for the rest of a session is a decision the
+  // human has to make at the keyboard, where they can see what they are
+  // widening. Deny is Escape — Claude's own hint for cancelling the prompt, and
+  // the one keystroke that cannot mean anything else if the pane has changed
+  // under us between the check above and the write below.
+  const r = m.choice === 'approve'
+    ? sendKeys(m.name, [String(p.yes)], { literal: true })
+    : sendKeys(m.name, ['Escape']);
+  if (!r.ok) return done(false, r.error);
+  log(`${m.choice === 'approve' ? 'approved' : 'denied'} a prompt in ${m.name}: ${p.question}`);
+
+  // Did it take? Claude redraws within a frame or two. Reporting "still up"
+  // beats reporting success and leaving the human to notice on the next push
+  // that nothing moved.
+  setTimeout(() => {
+    const after = detectPrompt(paneTail(m.name));
+    const state = !after ? 'cleared' : after.fingerprint === p.fingerprint ? 'still-up' : 'next-prompt';
+    done(true, '', state);
+    blockedKey = ''; // force the next watch tick to re-push
+    pushDetached();
+  }, 700);
+}
+
 // ---- the one outbound agent connection, kept alive forever ----
 let backoff = 5_000;
 function connect() {
@@ -681,6 +774,7 @@ function connect() {
     // buffered output so browsers can re-attach and catch up.
     pushDetached(); // seed the relay's detached-session cache straight away
     pushPlan();     // …and its plan-usage snapshot (#220)
+    pushEdits();    // …and who is mid-edit in which file right now
 
     if (sessions.size > 0) {
       const liveSids = [...sessions.keys()];
@@ -769,6 +863,7 @@ function connect() {
       }
       pushDetached();
     }
+    else if (m.t === 'answerPrompt') answerPrompt(m);
     else if (m.t === 'kill') {
       if (sess?.switchMode) {
         // Browser tab closed during the switch prompt — clean up gracefully.

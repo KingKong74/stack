@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { q } from '../db.js';
-import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux, keepTmuxSession } from '../term.js';
+import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux, keepTmuxSession, answerTmuxPrompt } from '../term.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { readSettings } from '../settings.js';
 
@@ -65,6 +65,29 @@ terminal.post('/keep', (req, res) => {
     return res.status(503).json({ error: 'The terminal daemon is not connected.' });
   }
   res.json({ ok: true });
+});
+
+// POST /api/terminal/answer {name, fingerprint, choice} — say yes or no to a
+// permission prompt a host session is stopped on, from Mission Control.
+//
+// The server decides nothing here and it must stay that way: it relays, the
+// HOST re-reads the pane, and the host refuses unless the prompt still matches
+// the fingerprint the human was looking at. That check cannot move up here —
+// only the host can see the pane, and a check against the relay's up-to-20s-old
+// cache would be a check against the very staleness it is meant to catch.
+//
+// The reply is awaited rather than fire-and-forget, because "we asked" is not
+// "it happened": the honest outcomes include "already answered at the keyboard"
+// and "the session moved on", and the human needs the sentence.
+terminal.post('/answer', async (req, res) => {
+  const name = String(req.body?.name || '');
+  const fingerprint = String(req.body?.fingerprint || '');
+  const choice = req.body?.choice === 'approve' ? 'approve' : 'deny';
+  if (!/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(name)) return res.status(400).json({ error: 'Bad session name.' });
+  if (!/^[0-9a-f]{16}$/.test(fingerprint)) return res.status(400).json({ error: 'Bad prompt fingerprint.' });
+  const r = await answerTmuxPrompt(name, fingerprint, choice);
+  if (!r.ok) return res.status(409).json({ error: r.error || 'The host would not answer that prompt.' });
+  res.json({ ok: true, state: r.state, choice });
 });
 
 // POST /api/terminal/assist {prompt, cwd} — ✧ command help for the terminal

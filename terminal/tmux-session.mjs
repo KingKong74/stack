@@ -96,6 +96,24 @@ export function paneTail(name, lines = 30) {
   return (r.stdout || '').replace(/\s+$/, '').slice(-1500);
 }
 
+// Type into a session's pane. The ONLY writer into a running session that is
+// not the browser's own PTY, and it exists for exactly one caller: answering a
+// permission prompt from Mission Control (prompt-scan.mjs).
+//
+// `literal` decides how tmux reads what it is given — `-l` sends the string as
+// keystrokes ('1' is the character one), without it tmux resolves key NAMES
+// ('Escape', 'Enter'). Sending a digit non-literally would have tmux hunt for a
+// key called "1"; sending 'Escape' literally would type the six letters.
+//
+// Same `=name:` exact-target rule as everything else here, and the same reason.
+export function sendKeys(name, keys, { literal = false } = {}) {
+  const args = ['send-keys', '-t', `=${name}:`];
+  if (literal) args.push('-l');
+  const r = spawnSync('tmux', [...args, ...keys], { encoding: 'utf8' });
+  if (r.status === 0) return { ok: true };
+  return { ok: false, error: (r.stderr || '').trim() || 'tmux refused the keys' };
+}
+
 // (#292) The KEEP PIN — "the reaper must not take this one".
 //
 // It lives as a tmux user option ON THE SESSION rather than in a store of the
