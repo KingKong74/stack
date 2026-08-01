@@ -83,7 +83,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadStackEnv, logStderr, git } from '../hook/stack-post.mjs';
-import { laneFor, branchSlug } from './lib/lane.mjs';
+import { laneFor, branchSlug, freeBranchName } from './lib/lane.mjs';
 
 loadStackEnv();
 
@@ -419,6 +419,11 @@ const TIER_RANK = { S: 0, A: 1, B: 2, C: 3 };
 const tierRank = (t) => TIER_RANK[String(t || '').toUpperCase()] ?? 4;
 let tokensSpent = 0;
 let costSpent = 0;
+// The branch resolveRunBranch most recently resolved, so a run that throws
+// before finishing has something honest to post: the closing catch block
+// points a failed run's ledger row at the branch that actually exists (if
+// any), never at a name that was claimed but never created.
+let lastRunBranch = '';
 
 // #285 — the roles, inverted. The ADVISOR now runs the session: the strong model
 // holds the main loop as the DIRECTOR (it plans, delegates, reads results and
@@ -828,15 +833,64 @@ Read the relevant code first — real file paths, real tables, real routes. Then
   return { landed: true, limitHit };
 }
 
+// Resolves the branch a run will actually create. Never deletes a branch that
+// holds work: every run kind used to `git branch -D` its lane name
+// unconditionally before creating the worktree, which is exactly wrong when
+// the same item runs a second time — that deleted the EARLIER run's branch
+// and started again from HEAD, and the closing `git push -u origin <branch>`
+// was then rejected as non-fast-forward, orphaning the first run's work on
+// origin with nothing left pointing at it. This picks a name that is
+// genuinely free instead of destroying whatever already holds the one asked for.
+function resolveRunBranch(base) {
+  // Best-effort remote read, one call. On '' (offline/unreachable) this falls
+  // back to the local view only — safe because the run's closing push is a
+  // plain, never-forced push: a name that turns out to already be taken on
+  // origin fails loudly there rather than silently destroying anything.
+  const remote = git(REPO, ['ls-remote', '--heads', 'origin', `${base}*`]);
+  const remoteNames = new Set(
+    remote.split('\n')
+      .map((line) => line.split('\t')[1])
+      .filter(Boolean)
+      .map((ref) => ref.replace(/^refs\/heads\//, ''))
+  );
+  const localExists = (n) => !!git(REPO, ['rev-parse', '--verify', '--quiet', `refs/heads/${n}`]);
+
+  // The one case the base name IS reused: it exists locally, was never
+  // pushed, and carries no commits of its own — precisely the leftover of an
+  // attempt that committed nothing, which is what the old unconditional
+  // `branch -D` was actually clearing. Delete just that one branch and reuse
+  // the name; anything else (pushed, or holding commits) is left alone.
+  if (localExists(base) && !remoteNames.has(base)) {
+    const ahead = parseInt(git(REPO, ['rev-list', '--count', `main..${base}`]) || '0', 10) || 0;
+    if (ahead === 0) {
+      git(REPO, ['branch', '-D', base]);
+      return base;
+    }
+  }
+
+  return freeBranchName(base, (n) => localExists(n) || remoteNames.has(n));
+}
+
 // ---- one item, one branch, one bounded session ----
 async function runItem(item, northStar, capMin) {
-  const lane = laneFor(item);
-  const branch = lane;
   const startedAt = new Date().toISOString();
   log(`picked #${item.id} [${item.bucket}] ${item.title} (cap ${Math.round(capMin)}m)`);
+  lastRunBranch = '';
 
-  // Claim the lane (visible on the deck's lanes strip immediately).
-  await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, { claimed_by: lane });
+  // A stale worktree from a previous attempt holds its branch checked out,
+  // and git refuses to touch a branch that's checked out elsewhere — clear
+  // it BEFORE resolving the branch name so that check sees an honest picture.
+  const wt = join(lockDir, 'autopilot', `${SLUG}-item-${item.id}`);
+  git(REPO, ['worktree', 'remove', '--force', wt]);
+
+  const branch = resolveRunBranch(laneFor(item));
+  lastRunBranch = branch;
+  if (branch !== laneFor(item)) log(`#${item.id}: ${laneFor(item)} is taken — building on ${branch} instead`);
+
+  // Claim the lane (visible on the deck's lanes strip immediately). The claim
+  // names the branch actually being created — the ⚑ chip, the branch report
+  // and the dispatcher all read it, so it must never name a branch that never gets made.
+  await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, { claimed_by: branch });
 
   // The spec pre-pass — Gemini plans, the session builds, the human disposes.
   // A refined item (#146) skips it: the owner's refine_note IS the spec — a
@@ -845,9 +899,6 @@ async function runItem(item, northStar, capMin) {
   if (spec) log(`spec ready: ${spec.goal}`);
 
   // A fresh worktree so the human's checkout is never disturbed.
-  const wt = join(lockDir, 'autopilot', `${SLUG}-item-${item.id}`);
-  git(REPO, ['worktree', 'remove', '--force', wt]); // clear a previous attempt's tree
-  git(REPO, ['branch', '-D', branch]);              // (branch survives on origin if pushed)
   mkdirSync(join(lockDir, 'autopilot'), { recursive: true });
   const added = git(REPO, ['worktree', 'add', wt, '-b', branch]);
   if (!existsSync(join(wt, '.git'))) throw new Error(`worktree add failed (${added || 'no output'})`);
@@ -978,7 +1029,8 @@ Rules for this run:
     log(`#${item.id}: no commits — lane released, worktree removed. Check the checkpoint/blockers for why.`);
     await postRun({ ...runRecord, outcome: limitHit ? 'limit' : 'no-commits', commits: 0,
       summary: resultText.slice(0, 1800) });
-    return { landed: false, limitHit };
+    // '' — the branch was just deleted, so nothing exists to point at.
+    return { landed: false, limitHit, branch: '' };
   }
 
   // Belt-and-braces: make sure the branch is on origin even if the session forgot.
@@ -1047,7 +1099,7 @@ Rules for this run:
         + `${reviewClean ? 'review clean' : reviewVerdict ? `review flagged ${reviewVerdict.bugs} bug(s)` : 'no review verdict'}.`);
     }
   }
-  return { landed: true, limitHit, resultText };
+  return { landed: true, limitHit, resultText, branch };
 }
 
 // ---- the night loop: items until a budget runs dry ----
@@ -1146,7 +1198,7 @@ try {
     if (DRY) {
       log(PLAN_ONLY
         ? `dry run — would author a design for #${item.id} "${item.title}" (then keep going while budget lasts).`
-        : `dry run — would claim ${laneFor(item)} for "${item.title}" (then keep going while budget lasts).`);
+        : `dry run — would claim ${laneFor(item)} (or the next free suffix if that name is taken) for "${item.title}" (then keep going while budget lasts).`);
       process.exit(0);
     }
 
@@ -1158,7 +1210,7 @@ try {
         ? await runPlanItem(item, detail.northStar || '', Math.min(remainingMin(), 20))
         : await runItem(item, detail.northStar || '', remainingMin());
       if (r.landed) landed++;
-      nightLines.push(`#${item.id} ${item.title}: ${r.landed ? (PLAN_ONLY ? 'design saved' : `${laneFor(item)} pushed`) : (PLAN_ONLY ? 'no design' : 'no commits')}${r.limitHit ? ' (hit the usage limit)' : ''}`);
+      nightLines.push(`#${item.id} ${item.title}: ${r.landed ? (PLAN_ONLY ? 'design saved' : `${r.branch || laneFor(item)} pushed`) : (PLAN_ONLY ? 'no design' : 'no commits')}${r.limitHit ? ' (hit the usage limit)' : ''}`);
       if (r.limitHit) {
         // Graceful close: stop starting work, tell the human, and come back
         // when the allocation does. Partial branches are already pushed.
@@ -1173,7 +1225,9 @@ try {
       log(`#${item.id} failed (${e.message}) — releasing the lane and moving on.`);
       nightLines.push(`#${item.id} ${item.title}: failed (${e.message})`);
       try { await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, { claimed_by: '' }); } catch { /* best effort */ }
-      await postRun({ item_id: item.id, item_title: item.title, branch: laneFor(item),
+      // The branch resolveRunBranch actually resolved, if the run got that far —
+      // never laneFor(item) plain, which may name a branch that was never created.
+      await postRun({ item_id: item.id, item_title: item.title, branch: lastRunBranch,
         outcome: 'failed', summary: String(e.message || '').slice(0, 500) });
     }
   }
