@@ -5102,3 +5102,36 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 /* The lanes inside a group are indented, so the group reads as a
    container rather than as one more row of the same rank. */
 .lane-group .mc-lane .lane-head { padding-left: 28px; }
+
+/* ============================================================
+   ✎ Refine — the ✦ Gemini draft (design 3a / 3b)
+
+   3a is the plain box with the assist OFFERED beneath it; 3b is
+   the same box wrapped in accent chrome once a machine has
+   written the first pass. One state, two frames — the draft is
+   editable the moment it lands, so there is no accept step
+   between it and Send it back.
+   ============================================================ */
+
+/* 3a — offered, not forced. Absent entirely on a keyless server. */
+.rv-draft-offer { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.rv-draft-offer .note { font-family: var(--mono); font-size: 11px; color: var(--faint); cursor: help; }
+
+/* 3b — the drafted state. The wash is the accent tint every other
+   "a machine wrote this" surface uses, so a drafted box can never
+   be mistaken for one the human typed. */
+.rv-draft { border: 1px solid var(--accent-tint-border); border-radius: 12px; background: var(--accent-tint); padding: 9px 10px 10px; }
+.rv-draft-head { display: flex; align-items: center; gap: 8px; padding: 0 3px 8px; }
+.rv-draft-head .who { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.rv-draft-head .from { flex: 1; min-width: 0; font-family: var(--mono); font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
+.rv-draft-head .act { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 2px 6px; border-radius: 6px; white-space: nowrap; }
+.rv-draft-head .act:hover { color: var(--ink); background: var(--surface); }
+.rv-draft-head .act:disabled { opacity: 0.5; cursor: default; }
+/* The textarea keeps its own ground inside the wash, so the words
+   the human is editing read as theirs rather than as the tint's. */
+.rv-draft .field-input { background: var(--surface); }
+.rv-draft-say { margin-top: 8px; font-size: 12px; line-height: 1.5; }
+/* A Gemini failure is red; "the record evidences nothing to change" is not a
+   failure — it is the assist's most useful answer and must not read as one. */
+.rv-draft-say.err { color: var(--critical); }
+.rv-draft-say.note { color: var(--muted); border-left: 2px solid var(--accent-tint-border); padding-left: 9px; }

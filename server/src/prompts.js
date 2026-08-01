@@ -195,6 +195,64 @@ Produce:
 Use en-AU spelling. Respond with ONLY this JSON:
 { "summary": "…", "test": ["…"], "risks": ["…"] }`;
 
+// Turn 3 — the ✦ draft behind the Refine dialog. The reviewer has looked at a
+// completed item and wants it sent back with a DELTA: only what to change on
+// top of what landed. This writes a first pass at that sentence.
+//
+// Note what it is NOT given: the diff. The server cannot read the repository
+// (same limit the Workbench ops document), so the material is the RECORD — the
+// session's own account, the second model's read of the diff, the architect's
+// structural read, the files the work touched. The reviewer's note is a read of
+// the diff and is the closest thing here to one; the prompt says so plainly so
+// the model does not write as though it had seen the code.
+DEFAULTS.refinedraft = `You are helping the owner of a side project send a completed item back to
+the board with a REFINEMENT — a short instruction saying only what to change on top of what
+already landed. The item keeps its id and its record; your sentence is the whole brief the next
+session gets.
+{{NORTH_STAR_LINE}}
+
+The item:
+#{{ID}} ({{BUCKET}}) {{TITLE}}
+{{NOTE_LINE}}
+What the builder says landed: {{BUILT_NOTE}}
+{{RUN_BLOCK}}
+{{REVIEW_BLOCK}}
+{{ARCHITECT_BLOCK}}
+{{FILES_BLOCK}}
+{{OWNER_BLOCK}}
+
+You have NOT been shown the diff — you cannot read the repository. Everything above is the
+project's record of the work.
+
+Write ONE instruction, 1-3 plain sentences, in the owner's voice, addressed to whoever picks the
+item up next:
+- Say what to CHANGE, not what was built. No preamble, no restating the item.
+- Prefer the specific over the general: name the behaviour, the file or the case, when the record
+  names it.
+- Only raise what the record actually EVIDENCES: a finding the reviewer wrote, an observation the
+  architect made, a specific claim in the item that the built note does not answer.
+
+**An empty draft is a correct answer, and often the right one.** If the record does not evidence
+something to change, return "draft": "" — the owner is then told plainly that nothing in the
+record calls for a refinement, which is far more useful than a manufactured one. Do not reach.
+In particular, these are NOT deltas and must never be the draft:
+- "verify it works", "test it in real use", "make sure it behaves correctly" — the owner is the
+  one testing it; that is why they are in this dialog.
+- "review the code", "run a review", "get a second pass" — a missing review is a missing review,
+  not a change to make.
+- restating the item's own goal back as an instruction.
+
+Two things you must not misread:
+- Failing CHECKS listed above are project-wide and may long predate this item. Only mention one
+  if this item's own subject plausibly caused it; otherwise ignore it.
+- "No review ran" and "no run recorded" are ABSENCES OF EVIDENCE. They are never themselves a
+  fault to fix, and never a reason to write a draft.
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "draft": "…", "basis": "…" }
+where "basis" is a 2-5 word phrase naming what you leaned on ("the reviewer's finding", "the
+architect's note", "a gap in the built note"), or "" when the draft is empty.`;
+
 DEFAULTS.triage = `You are a triage assistant for a side project command centre's review inbox.
 The inbox holds auto-extracted bugs, roadmap items and ideas that no human has approved yet.
 Your job is purely advisory — the human keeps or dismisses each item themselves.
@@ -404,6 +462,7 @@ const ENV_KEYS = {
   cluster: 'GEMINI_CLUSTER_PROMPT',
   converge: 'GEMINI_CONVERGE_PROMPT',
   reviewbrief: 'GEMINI_REVIEWBRIEF_PROMPT',
+  refinedraft: 'GEMINI_REFINEDRAFT_PROMPT',
   audit: 'GEMINI_AUDIT_PROMPT',
   triage: 'GEMINI_TRIAGE_PROMPT',
 };

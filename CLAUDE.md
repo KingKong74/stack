@@ -199,7 +199,11 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   there. `Promote N phases → Roadmap` is the dispose half and it goes through the ordinary roadmap
   POST. Two op hints are deliberately narrower than the design handoff's copy — Gemini cannot read
   the repository, so `Ask` and `Touches` answer from the project RECORD (roadmap, bugs, the files
-  recent sessions touched) and say so. Don't "fix" that copy back.
+  recent sessions touched) and say so. Don't "fix" that copy back. **Same correction on the ✎ Refine
+  draft**: the design captions it "reads the run log + diff" and it reads neither directly — what it
+  gets is the session's own account, the second model's STORED read of the diff, the architect's
+  read and the files that branch touched. The dialog prints the list the server actually assembled
+  (`read[]`) rather than a fixed caption, so an item with no run behind it says so.
 - **The Roles room reads two populations and must never mix their judgement.** `autopilot_runs`
   answers to the executor/advisor policy; `sessions.model_usage` (the human's own interactive work,
   recorded by the SessionEnd hook from the transcript) does not — the policy governs the AUTOPILOT,
@@ -376,6 +380,12 @@ reference. The index:
   • **Absent key = silent degrade.** Every Gemini surface no-ops or 503s cleanly without
     `GEMINI_API_KEY`; nothing blocks, nothing errors user-visibly. The client renders those surfaces
     ABSENT rather than disabled, keyed off the detail payload's `geminiReady`.
+  • **An empty answer is a valid answer, and the prompt has to invite one.** The ✎ Refine draft
+    (`refinedraft`) returns `draft: ""` when the record does not evidence a change, and the dialog
+    says so — because a model told to produce a delta will otherwise produce one, and what comes
+    back is "verify it works" dressed as a finding. Tested both ways before it shipped: with a
+    reviewer finding it names the finding; with a bare run it returns nothing. Any prompt asked for
+    a judgement needs the same escape hatch, or it manufactures the judgement.
 - **Checks are Stack's only automated regression net.** When a route's payload contract changes,
   change its check in the same commit. A green suite is the evidence that risk-tiered auto-merge
   (#212) and auto-verdict (#263) spend.

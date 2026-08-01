@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { relativeTime } from '../util.js';
 import { agentReads, runCore } from '../shape.js';
+import { geminiEnabled } from '../gemini.js';
 
 // GET /api/review — the Review room's payload (#282, design 24b + 24a).
 //
@@ -122,6 +123,10 @@ review.get('/', async (req, res) => {
   const active = queue.filter((it) => !it.shelved);
 
   res.json({
+    // Turn 3 — is a key configured at all. The Refine dialog's ✦ draft button
+    // is ABSENT without one rather than disabled, the same absent-not-broken
+    // rule the Quality page follows (#278).
+    geminiReady: geminiEnabled(),
     queue,
     settled: settled.rows.map(itemShape),
     nights: nights.rows.map((r) => ({

@@ -89,6 +89,11 @@ function suiteFor(slug, ORIGIN) {
     // session goes unreported.
     { name: 'Control — roles subagent spend', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentTokens' },
     { name: 'Control — roles priced delegations', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentsRecorded' },
+    // Turn 3 — whether the Refine dialog offers its ✦ draft at all. The button
+    // is ABSENT without a key, so losing this field silently removes an
+    // affordance rather than breaking one: the dialog still works and nobody
+    // finds out the assist stopped being offered.
+    { name: 'Review — the Gemini-ready flag', url: u('/api/review'), auth: true, json_path: 'geminiReady' },
     // The Now room's two host-fed signals. Both are ARRAYS that are usually
     // EMPTY — nothing is normally stopped and nobody is normally colliding —
     // which is exactly why they need a check: if the key stops being served,

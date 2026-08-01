@@ -98,7 +98,10 @@ export function ReviewRoom({ onCount, focus }: {
   // says. `before` is what the human had typed, restored if they dismiss it.
   const [refineDraft, setRefineDraft] = useState<{ basis: string; read: string[]; secs: number; before: string } | null>(null);
   const [refineBusy, setRefineBusy] = useState(false);
-  const [refineErr, setRefineErr] = useState('');
+  // Two different things get said under the box and they must not look alike:
+  // a Gemini failure is an error, and "the record evidences nothing to change"
+  // is a finding — arguably the most useful answer the assist gives.
+  const [refineSay, setRefineSay] = useState<{ tone: 'note' | 'err'; text: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<ReviewItem | null>(null);
 
   const load = () => {
@@ -199,7 +202,7 @@ export function ReviewRoom({ onCount, focus }: {
     // does refine_note. A draft the human sent is the human's instruction.
     setRefineFor(null);
     setRefineDraft(null);
-    setRefineErr('');
+    setRefineSay(null);
     act(async () => {
       await patchRoadmapItem(it.slug, Number(it.id), { done: false, refine_note: text });
       if (queue) await startAutopilot(it.slug, it.id);
@@ -219,7 +222,7 @@ export function ReviewRoom({ onCount, focus }: {
     setRefineText(it.refineNote);
     setRefineQueue(false);
     setRefineDraft(null);
-    setRefineErr('');
+    setRefineSay(null);
   };
 
   // Turn 3 — ✦ Draft it with Gemini. Offered from the empty box (3a) and again
@@ -236,13 +239,23 @@ export function ReviewRoom({ onCount, focus }: {
     const before = refineDraft ? refineDraft.before : refineText;
     const t0 = Date.now();
     setRefineBusy(true);
-    setRefineErr('');
+    setRefineSay(null);
     getRefineDraft(it.slug, Number(it.id))
       .then((d) => {
+        // Nothing to say is a real answer, not a failure. The prompt asks for an
+        // empty draft whenever the record does not evidence a change, so an
+        // empty one means the record is clean — say that and leave the box
+        // alone, rather than dressing up silence as a draft.
+        if (!d.draft) {
+          setRefineSay({ tone: 'note', text: d.read.length
+            ? `Nothing in the record calls for a refinement — Gemini read ${d.read.join(', ')} and found no evidenced change to ask for. Say what you saw yourself.`
+            : 'There is almost no record behind this item — no run log and no reviewer read — so there was nothing to draft from. Say what you saw yourself.' });
+          return;
+        }
         setRefineText(d.draft);
         setRefineDraft({ basis: d.basis, read: d.read, secs: Math.max(1, Math.round((Date.now() - t0) / 1000)), before });
       })
-      .catch((e) => setRefineErr(e instanceof Error ? e.message : 'Gemini call failed.'))
+      .catch((e) => setRefineSay({ tone: 'err', text: e instanceof Error ? e.message : 'Gemini call failed.' }))
       .finally(() => setRefineBusy(false));
   };
   // ✕ — drop the draft and put back what the human had typed before it. A
@@ -251,12 +264,12 @@ export function ReviewRoom({ onCount, focus }: {
   const dropDraft = () => {
     setRefineText(refineDraft?.before ?? '');
     setRefineDraft(null);
-    setRefineErr('');
+    setRefineSay(null);
   };
   const closeRefine = () => {
     setRefineFor(null);
     setRefineDraft(null);
-    setRefineErr('');
+    setRefineSay(null);
     setRefineBusy(false);
   };
 
@@ -542,7 +555,7 @@ export function ReviewRoom({ onCount, focus }: {
               </div>
             )}
           </>)}
-          {refineErr && <div className="rv-draft-err">{refineErr}</div>}
+          {refineSay && <div className={`rv-draft-say ${refineSay.tone}`}>{refineSay.text}</div>}
           <label className="rv-queue-toggle">
             <input type="checkbox" checked={refineQueue} onChange={(e) => setRefineQueue(e.target.checked)} />
             <span>Queue a session on it now</span>
