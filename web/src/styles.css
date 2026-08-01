@@ -3136,13 +3136,24 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 /* The sky's growth scrub (design 6b/7a): ticks along the funnel's real history. */
 .psky-scrub { display: flex; align-items: center; gap: 14px; padding: 10px 18px 0; }
 .psky-scrub .edge { font-family: var(--mono); font-size: 10px; color: var(--paused); white-space: nowrap; }
-.psky-scrub .hairline { flex: 1; position: relative; height: 16px; }
-.psky-scrub .hair { position: absolute; left: 0; right: 0; top: 7.5px; height: 1px; background: var(--keyline); }
-.psky-scrub .ptick { position: absolute; top: 8px; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; padding: 0; border-radius: 50%; background: var(--keyline); cursor: pointer; transition: all 0.25s ease; }
-.psky-scrub .ptick:hover { background: var(--accent-soft); }
-.psky-scrub .ptick.past { background: var(--accent-soft); }
-.psky-scrub .ptick.cur { width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; background: var(--accent); }
-.psky-scrub .nowlbl { font-family: var(--mono); font-size: 10px; font-weight: 500; color: var(--muted); white-space: nowrap; min-width: 52px; text-align: right; padding: 0; }
+/* The window track: day (or week) ticks for rhythm, a shaded region for what
+   the window excludes, and a grip you can grab anywhere along the bar. */
+.psky-scrub .track {
+  flex: 1; position: relative; height: 22px; cursor: ew-resize; touch-action: none;
+  border-bottom: 1px solid var(--line);
+}
+.psky-scrub .tk { position: absolute; bottom: 0; width: 1px; height: 4px; background: var(--keyline); }
+.psky-scrub .tk.tall { height: 10px; }
+.psky-scrub .shade {
+  position: absolute; top: 0; bottom: 0; left: 0;
+  background: color-mix(in srgb, var(--paper) 72%, transparent);
+}
+.psky-scrub .lit { position: absolute; right: 0; bottom: -1px; height: 1px; background: var(--accent); }
+.psky-scrub .grip {
+  position: absolute; bottom: -4px; width: 3px; height: 20px; border-radius: 2px;
+  background: var(--accent); transform: translateX(-1.5px);
+}
+.psky-scrub .nowlbl { font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--muted); white-space: nowrap; min-width: 74px; text-align: right; padding: 0; }
 .psky-scrub .nowlbl.then { color: var(--accent-deep); }
 .psky-scrub .nowlbl:hover { color: var(--accent); }
 .psky-scrub-caption { display: flex; align-items: baseline; gap: 10px; padding: 7px 18px 0; font-size: 11.5px; line-height: 1.5; color: var(--muted); }

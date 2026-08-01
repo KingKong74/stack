@@ -152,10 +152,10 @@ type Vec = { dx: number; dy: number };
 type Rect = { x1: number; x2: number; y1: number; y2: number };
 type Dot = {
   f: Future; kind: GxKind; x: number; y: number; size: number; tone: string;
-  dashed: boolean; sel: boolean; flip: boolean; z: number; tip: string;
+  dashed: boolean; sel: boolean; flip: boolean; z: number; tip: string; op: number;
 };
 type Disc = {
-  f: Future; x: number; y: number; size: number; glyph: number; tone: string;
+  f: Future; x: number; y: number; size: number; glyph: number; tone: string; op: number;
   sel: boolean; z: number; plate: boolean; plateGap: number; nameSize: number; meta: string;
   rect: Rect; fits: boolean;
 };
@@ -183,11 +183,16 @@ const STARFIELD = (() => {
 })();
 
 export function Galaxy({
-  model, northOnly, sourceFilter, selId, onSelect, zoom, onZoom,
+  model, northOnly, sourceFilter, focus, selId, onSelect, zoom, onZoom,
 }: {
   model: GxModel;
   northOnly: boolean;                     // the North star scope: its shells alone
-  sourceFilter: '' | 'hook' | 'manual';   // dims dots only, never the orbits they sit on
+  // Both filters DIM rather than hide. A sky that removes what it filters
+  // stops being a map: you lose the shape you learned, and you cannot see that
+  // the thing you are looking for was excluded rather than absent. Dimmed, the
+  // galaxy holds still and the answer is legible against everything it is not.
+  sourceFilter: '' | 'hook' | 'manual';
+  focus: string | null;                   // 'core' | 'belt' | a star id — the system in the light
   selId: number | null;
   // shift = "and add it to the converge tray" — the sky's one modifier, kept
   // from the old field because picking a set across the sky is how converge starts.
@@ -263,8 +268,9 @@ export function Galaxy({
   const g = useMemo(() => {
     const sel = selId != null ? model.all.find((f) => f.id === selId) || null : null;
     const focusStar = sel ? model.starOf(sel) : null;
-    const visible = (f: Future) => !sourceFilter
+    const srcMatch = (f: Future) => !sourceFilter
       || (sourceFilter === 'hook' ? f.source === 'hook' : f.source !== 'hook');
+    const sysMatch = (sys: string) => !focus || focus === sys;
     const W = Math.max(360, stage.w);
     const H = Math.max(STAGE_H_MIN, stage.h);
     const n = model.stars.length;
@@ -330,7 +336,7 @@ export function Galaxy({
     const labelRects: Rect[] = [];
     const selChips: Rect[] = [];
 
-    const pushDot = (f: Future, kind: GxKind, size: number, p: Vec, z: number) => {
+    const pushDot = (f: Future, kind: GxKind, sys: string, size: number, p: Vec, z: number) => {
       const x = ax(p.dx), y = ay(p.dy);
       const isSel = selId === f.id;
       const v = f.alignment || '';
@@ -343,12 +349,15 @@ export function Galaxy({
       dots.push({
         f, kind, x: Math.round(x), y: Math.round(y), size, tone: GX_TONE[v],
         dashed: v === 'off-course', sel: isSel, flip: W - x < 230, z: isSel ? 9 : z,
+        // A dimmed dot is still a dot: it keeps its place, its size and its
+        // click, so filtering narrows what you read, never what is there.
+        op: srcMatch(f) && sysMatch(sys) ? 1 : 0.16,
         tip: `${f.title} — ${GX_LABEL[v]}${f.magnitude ? ` · magnitude ${f.magnitude}` : ' · not sized'}`,
       });
     };
 
     SHELLS.forEach((key) => {
-      const group = model.shells.filter((f) => f.alignment === key && visible(f));
+      const group = model.shells.filter((f) => f.alignment === key);
       const r = tierR(SHELL_TIER[key]);
       shellRings.push({
         key, w: Math.round(r * 2), h: Math.round(r * 2 * SQ),
@@ -359,7 +368,7 @@ export function Galaxy({
         // closing the ring, so the systems always have somewhere to be.
         const t = group.length < 2 ? 0.5 : j / (group.length - 1);
         const rad = ((-70 + t * 240) * Math.PI) / 180;
-        pushDot(f, 'shell', dotFor(MAG(f)), { dx: Math.cos(rad) * r, dy: Math.sin(rad) * r * SQ }, 3);
+        pushDot(f, 'shell', 'core', dotFor(MAG(f)), { dx: Math.cos(rad) * r, dy: Math.sin(rad) * r * SQ }, 3);
       });
       const lrad = (SHELL_BEARING[key] * Math.PI) / 180;
       const lx = ax(Math.cos(lrad) * r), ly = ay(Math.sin(lrad) * r * SQ);
@@ -397,6 +406,7 @@ export function Galaxy({
         glyph: Math.round(Math.min(26, size * 0.44)),
         nameSize: Math.round(Math.min(19, 13 * Math.max(1, Math.min(1.5, zoom)))),
         tone: isSel ? 'var(--accent)' : GX_TONE[v], sel: isSel, z: isSel ? 8 : 7,
+        op: srcMatch(s.f) && sysMatch(String(s.f.id)) ? 1 : 0.22,
         plate: false, plateGap: Math.round(plateGap), meta,
         rect: { x1: nx - halfW, x2: nx + halfW, y1: plateTop, y2: plateTop + 38 },
         fits: nx - halfW > 6 && nx + halfW < W - 6 && plateTop > 6 && ny < H - 64,
@@ -408,7 +418,7 @@ export function Galaxy({
         const x0 = Math.cos(a) * po, y0 = Math.sin(a) * po * 0.56;
         const pdx = dx + x0 * Math.cos(trad) - y0 * Math.sin(trad);
         const pdy = dy + x0 * Math.sin(trad) + y0 * Math.cos(trad);
-        if (visible(pl.f)) pushDot(pl.f, 'planet', planetDot(MAG(pl.f)), { dx: pdx, dy: pdy }, 6);
+        pushDot(pl.f, 'planet', String(s.f.id), planetDot(MAG(pl.f)), { dx: pdx, dy: pdy }, 6);
         if (!pl.moons.length) return;
         const mo = moonOrbitOf(pl);
         moonOrbits.push({
@@ -417,7 +427,7 @@ export function Galaxy({
         });
         pl.moons.forEach((mn, qi) => {
           const ma = ((-40 + (qi * 360) / Math.max(3, pl.moons.length)) * Math.PI) / 180;
-          if (visible(mn)) pushDot(mn, 'moon', moonDot(MAG(mn)),
+          pushDot(mn, 'moon', String(s.f.id), moonDot(MAG(mn)),
             { dx: pdx + Math.cos(ma) * mo, dy: pdy + Math.sin(ma) * mo * 0.7 }, 5);
         });
       });
@@ -428,7 +438,7 @@ export function Galaxy({
       const deg = -170 + (i * 360) / Math.max(12, model.belt.length);
       const rad = (deg * Math.PI) / 180;
       const rr = beltR * (i % 3 === 1 ? 1 : i % 3 === 2 ? 0.94 : 0.97);
-      if (visible(f)) pushDot(f, 'belt', dotFor(MAG(f)),
+      pushDot(f, 'belt', 'belt', dotFor(MAG(f)),
         { dx: Math.cos(rad) * rr, dy: Math.sin(rad) * rr * SQ }, 2);
     });
 
@@ -447,7 +457,7 @@ export function Galaxy({
 
     // Ideas beat decoration: a shell label steps aside for the selected chip or
     // for any dot that would sit on top of it.
-    const dotRects = dots.map((d) => ({
+    const dotRects = dots.filter((d) => d.op === 1).map((d) => ({
       x1: d.x - d.size / 2, x2: d.x + d.size / 2, y1: d.y - d.size / 2, y2: d.y + d.size / 2,
     }));
     sectors.forEach((l) => {
@@ -461,7 +471,7 @@ export function Galaxy({
       beltW: Math.round(beltR * 2), beltH: Math.round(beltR * 2 * SQ),
       dots, discs, orbits, planetOrbits, moonOrbits, shellRings, sectors,
     };
-  }, [model, northOnly, sourceFilter, selId, zoom, stage, pan]);
+  }, [model, northOnly, sourceFilter, focus, selId, zoom, stage, pan]);
 
   const zi = zoomIndex(zoom);
   const px = (v: number) => `${v}px`;
@@ -514,7 +524,7 @@ export function Galaxy({
         <button key={d.f.id}
           className={`pgx-node ${d.kind}${d.sel ? ' sel' : ''}${d.dashed ? ' dashed' : ''}${d.flip ? ' flip' : ''}`}
           onClick={(e) => onSelect(d.f.id, e.shiftKey)} title={d.tip}
-          style={{ left: px(d.x), top: px(d.y), zIndex: d.z, ['--vc' as string]: d.tone } as CSSProperties}>
+          style={{ left: px(d.x), top: px(d.y), zIndex: d.z, opacity: d.op, ['--vc' as string]: d.tone } as CSSProperties}>
           <span className="dot" style={{ width: px(d.size), height: px(d.size) }} />
           {d.sel && <span className="cap">{d.f.title}</span>}
         </button>
@@ -525,7 +535,7 @@ export function Galaxy({
           onClick={(e) => onSelect(d.f.id, e.shiftKey)} title={`${d.f.title} — ${d.meta}`}
           style={{
             left: px(d.x), top: px(d.y), width: px(d.size), height: px(d.size), zIndex: d.z,
-            ['--vc' as string]: d.tone,
+            opacity: d.op, ['--vc' as string]: d.tone,
           } as CSSProperties}>
           <span className="glyph" style={{ fontSize: px(d.glyph) }}>★</span>
           {d.plate && (
@@ -571,7 +581,7 @@ export function Galaxy({
           <span className="zpct">{Math.round(zoom * 100)}%</span>
         </div>
         <button className="pgx-fit" onClick={() => { onZoom(1); setPan({ x: 0, y: 0 }); onSelect(null); }}
-          title="Back to Fit, centred on the north star — clears the drag too">Fit all</button>
+          title="Back to Fit, centred on the north star — clears the drag too">Recentre</button>
       </div>
     </div>
   );

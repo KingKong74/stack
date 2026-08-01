@@ -18,7 +18,6 @@ export const ALIGNMENTS: { key: Alignment; label: string; hint: string }[] = [
 const alignLabel = (a: string) => ALIGNMENTS.find((x) => x.key === a)?.label || 'Unjudged';
 
 const LOOSE = 'loose'; // theme label for ideas with no area tag
-const TL_TICKS = 6;    // scrub points along the sky's history (design 6b/7a)
 
 // #312 — the sky IS the galaxy now. The old field put every idea on a verdict
 // ring and gave each theme (area tag) a bearing: it said everything about how
@@ -100,6 +99,10 @@ export function Futures({
   // stage pans to the selected system on its own as you pass Fit.
   const [z, setZ] = useState(1);
   const [northOnly, setNorthOnly] = useState(false);
+  // Which system is in the light. Everything outside it dims rather than
+  // vanishes (the design's change): the galaxy holds still, so you keep the
+  // shape you learned and can see that a thing is excluded rather than absent.
+  const [focus, setFocus] = useState<string | null>(null);
   const [selId, setSelId] = useState<number | null>(null);
 
   // #248 — the sky wants the window. The stage was a fixed 860px box inside a
@@ -130,38 +133,63 @@ export function Futures({
   // what makes full screen worth entering, so the two live together.
   const [railOpen, setRailOpen] = useState(true);
 
-  // ---- the time scrub (design 6b/7a): the same sky over time ----
-  // Ticks are evenly spaced across the sky's real history (idea created_at);
-  // scrubbing back hides ideas that hadn't arrived yet. View-only and
-  // session-local — the queue, list and composer keep working on today's data.
-  const [tlStep, setTlStep] = useState<number | null>(null); // null = now
-  const timeline = useMemo(() => {
+  // ---- the time window: the same sky over its own history ----
+  // The design turned the six snap-to ticks into a draggable WINDOW, and the
+  // window is the better instrument: "the last N days" is a question you
+  // actually have ("what has landed since I last looked?"), where "as of tick
+  // 3 of 6" was only ever an approximation of one. Continuous, so you can
+  // close in on the week you mean.
+  //
+  // The span is the funnel's REAL history, not the design's fixed four weeks —
+  // a track that says 4w over a nine-month funnel is a lie you drag.
+  const span = useMemo(() => {
     const times = bySource.map((f) => Date.parse(f.createdAt)).filter(Number.isFinite);
-    if (times.length < 4) return null; // not enough history to be worth a scrub
-    const first = Math.min(...times);
-    const now = Date.now();
-    if (now - first < 2 * 86400000) return null; // a days-old sky has no past to visit
-    const ticks = Array.from({ length: TL_TICKS }, (_, i) => {
-      const at = first + ((now - first) * i) / (TL_TICKS - 1);
-      return { at, label: i === TL_TICKS - 1 ? 'now' : ago(now - at) };
-    });
-    return { ticks, spanLabel: ago(now - first) };
+    if (times.length < 4) return null;          // too little history to be worth a scrub
+    const days = Math.ceil((Date.now() - Math.min(...times)) / 86400000);
+    if (days < 2) return null;                  // a days-old sky has no past to visit
+    // Ticks are a rhythm, not a claim: one per day while that stays legible,
+    // one per week after, with every seventh (or fourth) drawn taller.
+    const byDay = days <= 60;
+    const step = byDay ? 1 : 7;
+    const big = byDay ? 7 : 28;
+    const ticks = [];
+    for (let d = 0; d <= days; d += step) ticks.push({ x: (d / days) * 100, tall: d % big === 0 });
+    return { days, ticks, label: ago(days * 86400000) };
   }, [bySource]);
-  // Any change to the population snaps back to now, so a fresh idea is never
-  // hidden behind an old cutoff.
-  useEffect(() => { setTlStep(null); }, [futures.length]);
-  const scrub = timeline && tlStep != null && tlStep < timeline.ticks.length - 1
-    ? { cutoff: timeline.ticks[tlStep].at, label: timeline.ticks[tlStep].label }
-    : null;
-  const arrivedCount = scrub ? bySource.filter((f) => Date.parse(f.createdAt) <= scrub.cutoff).length : 0;
+
+  // null = the whole span. Any change to the population snaps back, so a fresh
+  // idea is never hidden behind a window you set before it arrived.
+  const [since, setSince] = useState<number | null>(null);
+  useEffect(() => { setSince(null); }, [futures.length]);
+  const windowDays = span && since != null && since < span.days ? since : null;
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragWindow = (e: React.PointerEvent) => {
+    const el = trackRef.current;
+    if (!el || !span) return;
+    const move = (ev: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      const f = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
+      setSince(Math.max(1, Math.round(span.days - f * span.days)));
+    };
+    move(e.nativeEvent);
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  const cutoff = windowDays != null ? Date.now() - windowDays * 86400000 : 0;
+  const arrivedCount = windowDays != null
+    ? bySource.filter((f) => Date.parse(f.createdAt) >= cutoff).length : 0;
 
   // The galaxy is built from EVERY idea that had arrived, not from the
   // source-filtered slice: the filter decides which dots are DRAWN, not which
   // orbits exist, so switching it can never orphan a star's planets or make
   // the sky jump between two shapes of the same data.
   const arrived = useMemo(
-    () => (scrub ? futures.filter((f) => Date.parse(f.createdAt) <= scrub.cutoff) : futures),
-    [futures, scrub?.cutoff],   // eslint-disable-line react-hooks/exhaustive-deps
+    () => (windowDays != null ? futures.filter((f) => Date.parse(f.createdAt) >= cutoff) : futures),
+    [futures, windowDays],      // eslint-disable-line react-hooks/exhaustive-deps
   );
   const galaxy = useMemo(() => buildGalaxy(arrived), [arrived]);
   const rows = useMemo(() => flattenGalaxy(galaxy), [galaxy]);
@@ -462,7 +490,7 @@ export function Futures({
         )}
       </div>
 
-      {/* control row: total · source · sky/list · themes/all */}
+      {/* control row: the census · source filter · the queue's door · full screen · sky/board */}
       <div className="psky-top">
         <span className="psky-total">{bySource.length} ideas</span>
         {/* The census: what shape the galaxy is in, before you look at it. */}
@@ -479,9 +507,9 @@ export function Futures({
           <div className="seg-control sm" role="tablist" aria-label="Idea sources">
             <button className={`seg-opt ${sourceFilter === '' ? 'on' : ''}`} onClick={() => setSourceFilter('')}>All</button>
             <button className={`seg-opt ${sourceFilter === 'hook' ? 'on' : ''}`} onClick={() => setSourceFilter('hook')}
-              title="Ideas auto-extracted from pushes and reviews">Generated</button>
+              title="Ideas auto-extracted from pushes and reviews — the others dim, they do not vanish">Generated</button>
             <button className={`seg-opt ${sourceFilter === 'manual' ? 'on' : ''}`} onClick={() => setSourceFilter('manual')}
-              title="Ideas you typed (or agreed with Polaris)">Manual</button>
+              title="Ideas you typed (or agreed with Polaris) — the others dim, they do not vanish">Manual</button>
           </div>
         )}
         {/* #246 — the judge queue is a BUTTON, not a rail card. It was the
@@ -537,17 +565,29 @@ export function Futures({
                     North star <span className="n">{galaxy.shells.length} of its own</span>
                   </button>
                 </div>
+                <button className={`psky-chip ${focus === null ? 'on' : ''}`}
+                  onClick={() => { setFocus(null); setZ(1); setSelId(null); }}
+                  title="Everything lit, back at Fit">
+                  <span className="name">fit all</span>
+                  <span className="n">{galaxy.all.length}</span>
+                </button>
+                <button className={`psky-chip ${focus === 'core' ? 'on' : ''}`}
+                  onClick={() => { setNorthOnly(false); setFocus('core'); setSelId(null); setZ(2.2); }}
+                  title="The north star's own shells">
+                  <span className="name">north star</span>
+                  <span className="n">{galaxy.shells.length}</span>
+                </button>
                 {galaxy.stars.map((s) => (
-                  <button key={s.f.id} className={`psky-chip ${selId === s.f.id ? 'on' : ''}`}
-                    onClick={() => { setNorthOnly(false); setSelId(s.f.id); setZ(1.7); }}
-                    title={`Go to ${s.f.title}'s system`}>
+                  <button key={s.f.id} className={`psky-chip ${focus === String(s.f.id) ? 'on' : ''}`}
+                    onClick={() => { setNorthOnly(false); setFocus(String(s.f.id)); setSelId(s.f.id); setZ(2.8); }}
+                    title={`Go to ${s.f.title}'s system — the rest of the sky dims`}>
                     <span className="name">{s.f.title}</span>
                     <span className="n">{s.planets.length}</span>
                   </button>
                 ))}
                 {galaxy.belt.length > 0 && (
-                  <button className={`psky-chip ${selected && galaxy.kindOf(selected) === 'belt' ? 'on' : ''}`}
-                    onClick={() => { setZ(1); setSelId(galaxy.belt[0].id); }}
+                  <button className={`psky-chip ${focus === 'belt' ? 'on' : ''}`}
+                    onClick={() => { setNorthOnly(false); setFocus('belt'); setZ(1); setSelId(galaxy.belt[0].id); }}
                     title="The drift belt — everything still waiting on a verdict">
                     <span className="name">belt</span>
                     <span className="n">{galaxy.belt.length}</span>
@@ -561,38 +601,39 @@ export function Futures({
                 </span>
               </div>
 
-              <Galaxy model={galaxy} northOnly={northOnly} sourceFilter={sourceFilter}
+              <Galaxy model={galaxy} northOnly={northOnly} sourceFilter={sourceFilter} focus={focus}
                 selId={selId} zoom={z} onZoom={setZ}
                 onSelect={(id, shift) => { if (shift && id != null) toggleTray(id); else setSelId(id); }} />
 
-              {/* The growth scrub (design 6b/7a): the same sky along its own history. */}
-              {timeline && (
+              {/* The time window: drag anywhere on the track. The shaded part is
+                  what the window excludes, so the handle's position reads as
+                  "everything to the right of here". */}
+              {span && (
                 <div className="psky-scrub">
-                  <span className="edge">{timeline.spanLabel}</span>
-                  <div className="hairline">
-                    <div className="hair" />
-                    {timeline.ticks.map((t, i) => {
-                      const curIdx = tlStep ?? timeline.ticks.length - 1;
-                      return (
-                        <button key={i}
-                          className={`ptick ${i === curIdx ? 'cur' : i < curIdx ? 'past' : ''}`}
-                          style={{ left: `${(i / (timeline.ticks.length - 1)) * 100}%` }}
-                          onClick={() => setTlStep(i === timeline.ticks.length - 1 ? null : i)}
-                          title={t.label} aria-label={`The sky as of ${t.label}`} />
-                      );
-                    })}
+                  <span className="edge">{span.label}</span>
+                  <div className="track" ref={trackRef} onPointerDown={dragWindow}
+                    role="slider" aria-label="How far back the sky reaches"
+                    aria-valuemin={1} aria-valuemax={span.days} aria-valuenow={windowDays ?? span.days}>
+                    {span.ticks.map((t, i) => (
+                      <span key={i} className={`tk${t.tall ? ' tall' : ''}`} style={{ left: `${t.x}%` }} />
+                    ))}
+                    <span className="shade" style={{ width: `${100 - ((windowDays ?? span.days) / span.days) * 100}%` }} />
+                    <span className="lit" style={{ left: `${100 - ((windowDays ?? span.days) / span.days) * 100}%` }} />
+                    <span className="grip" style={{ left: `${100 - ((windowDays ?? span.days) / span.days) * 100}%` }} />
                   </div>
-                  <button className={`nowlbl ${scrub ? 'then' : ''}`} onClick={() => setTlStep(null)}
-                    title={scrub ? 'Back to now' : 'The sky as it stands'}>
-                    {scrub ? scrub.label : 'now'}
+                  <button className={`nowlbl ${windowDays != null ? 'then' : ''}`}
+                    onClick={() => setSince(null)}
+                    title={windowDays != null ? 'Back to the whole span' : 'The sky as it stands'}>
+                    {windowDays != null ? `last ${windowDays}d` : `all ${span.label}`}
                   </button>
                 </div>
               )}
-              {scrub && (
+              {windowDays != null && (
                 <div className="psky-scrub-caption">
-                  The sky as it stood {scrub.label} — {arrivedCount} of {futures.length} idea{futures.length === 1 ? '' : 's'} had
-                  arrived. Verdicts and shapes are today's; only the population is then.
-                  <button onClick={() => setTlStep(null)}>▸ Back to now</button>
+                  Only the {arrivedCount} of {futures.length} idea{futures.length === 1 ? '' : 's'} added in the
+                  last {windowDays} day{windowDays === 1 ? '' : 's'}. Verdicts and shapes are today's; only
+                  the population is windowed — an idea whose star is outside the window draws loose.
+                  <button onClick={() => setSince(null)}>▸ The whole span</button>
                 </div>
               )}
               </>
