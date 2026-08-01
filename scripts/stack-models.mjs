@@ -23,19 +23,18 @@
 //
 // Zero dependencies.
 
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join, dirname } from 'node:path';
 import { statSync } from 'node:fs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const {
   PROVIDERS, keySources, resolveProviderKey, loadPreferredProvider,
-} = await import(join(HERE, '..', 'terminal', 'model-switch.mjs'));
+} = await import(pathToFileURL(join(HERE, '..', 'terminal', 'model-switch.mjs')).href);
 
-// existsSync-then-read is a race; statSync inside a try is the same check
-// without one, and it never throws on a missing file or an unreadable path.
+// statSync inside a try is existsSync-then-read without the race.
 function pathExists(path) {
-  try { return statSync(path).isFile() || statSync(path).isDirectory(); }
+  try { statSync(path); return true; }
   catch { return false; }
 }
 
@@ -85,7 +84,7 @@ function renderTable(state) {
     ? `Preferred provider: ${state.preferred} — offered first when Claude hits a usage limit.`
     : 'No preferred provider saved yet — the web terminal will offer whichever is configured.');
 
-  if (state.configuredCount === 0 || state.providers.some((p) => !p.configured)) {
+  if (state.providers.some((p) => !p.configured)) {
     out.push('');
     out.push('To add one, append a line to ~/.stack/env, e.g.:');
     out.push("  echo 'DEEPSEEK_API_KEY=your-key-here' >> ~/.stack/env");

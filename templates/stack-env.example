@@ -29,6 +29,15 @@ STACK_TOKEN=the-same-value-as-API_TOKEN
 # QWEN_API_KEY=your-qwen-key-here           # Qwen — qwen3-max-2026-01-23
 # MINIMAX_API_KEY=your-minimax-key-here     # MiniMax — MiniMax-M2.5
 
+# ---- Optional: Gemini (second-model review, free tier) ----
+#
+# GEMINI_API_KEY=your-gemini-key-here       # AI Studio key, free tier is fine
+# GEMINI_MODEL=gemini-2.5-flash             # optional override
+# GEMINI_FALLBACK_MODEL=gemini-flash-lite-latest   # optional, used on a 429
+#
+# With no key set, every Gemini surface degrades silently — nothing blocks
+# and nothing errors.
+
 # Notes:
 # - This file is host-side, lives at ~/.stack/env, and is read at process
 #   start — a key you add here is picked up by the NEXT terminal session, not

@@ -325,6 +325,12 @@ sessions in one checkout share a dirty tree, so git cannot say who wrote what an
   host state is a poll-and-report, never a push from the server.
 - Host-side logs live in `~/.stack/` (`term.log`, `autopilot.log`, `preview.log`, …); the dispatcher
   is a crontab line and removing it disables all runs.
+- **An alternative-provider key resolves `process.env` → `~/.stack/env` → `~/.ccm_config`** (the ccm
+  tool's file, key=value OR JSON) — `templates/stack-env.example` is the template for the former. The
+  resolution lives in `terminal/model-switch.mjs` and every reader must go through it rather than
+  reading `process.env` directly, since a standalone script has not loaded `~/.stack/env`. No surface
+  ever prints any part of a key — `./stack models` reports the SOURCE and a character count, and that
+  is the whole allowance.
 
 ## The /checkpoint command + poster
 
@@ -447,8 +453,10 @@ node server/test/fleet-roles.test.mjs      # role attribution + drift detection 
 node server/test/workbench.test.mjs        # the canvas is a placement layer (needs API + DATABASE_URL)
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
+node server/test/model-switch.test.mjs     # provider key resolution from both key files (pure)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
+./stack models                             # which alt providers have a key (--json, --check)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
 ./stack seed-galaxy                        # shape a flat idea funnel into stars/planets (DRY until --run)
 ./stack skills --dry                       # what the skill-tree sync would write/remove on this host
