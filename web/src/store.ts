@@ -325,8 +325,6 @@ export interface TermSession {
   label: string;           // ✧ Gemini's take on what it's doing ('' until asked)
   tmux?: string;           // the host tmux session behind a claude tab ('' for
                            // shells / pre-tmux daemons) — the jump-in target
-  polaris?: boolean;       // a Polaris planning session (#213) — the strip
-                           // labels it planning and jumps to the studio
 }
 export interface ModelEntry { model: string; label: string }
 
@@ -876,7 +874,7 @@ export async function replanProject(slug: string): Promise<string> {
 // attaches its handlers to the returned socket but never touches storage. The
 // start frame goes out on open; the daemon validates the token against the API
 // before anything spawns.
-export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number; tmuxSession?: string; skipPerms?: boolean; polaris?: boolean }): WebSocket {
+export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number; tmuxSession?: string; skipPerms?: boolean }): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${window.location.host}/term`);
   ws.addEventListener('open', () => {
@@ -1120,10 +1118,6 @@ export function getTermOpenTabs(): TermOpenTab[] {
 export function setTermOpenTabs(tabs: TermOpenTab[]) {
   localStorage.setItem(TERM_TABS_KEY, JSON.stringify(tabs.slice(0, TERM_TABS_MAX)));
 }
-
-// Polaris (#209) is no longer a server chat route — it's a claude session over
-// openTerminal() above (components/PolarisTerm.tsx); the Gemini polaris/intake
-// routes were culled with it.
 
 // ---- Gemini judge assist (POST .../futures/:id/judge — suggestion only) ----
 
@@ -1416,7 +1410,13 @@ export async function createFuture(slug: string, input: { title: string; note?: 
 }
 export async function patchFuture(
   slug: string, id: number,
-  patch: Partial<{ title: string; note: string; reviewed: boolean; alignment: string; area: string; canvasX: number | null; canvasY: number | null }>,
+  patch: Partial<{
+    title: string; note: string; reviewed: boolean; alignment: string; area: string;
+    canvasX: number | null; canvasY: number | null;
+    // The galaxy's three (#312) — where it orbits, whether it has its own orbit,
+    // and how much work it is.
+    parentId: number | null; isStar: boolean; magnitude: number | null;
+  }>,
 ): Promise<Future> {
   return request<Future>(`${futuresBase(slug)}/${id}`, { method: 'PATCH', body: patch });
 }

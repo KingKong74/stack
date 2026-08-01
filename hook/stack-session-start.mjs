@@ -122,9 +122,9 @@ function buildBlock(p) {
   }
   if (claims.length) lines.push('', '**Branch claims — respect these**', bullets(claims, 6));
 
-  // The idea funnel + the To-verify queue (#215): planning sessions (Polaris)
-  // steer with the full picture — what's brewing and what awaits a verdict —
-  // and any session benefits from knowing both. Kept short; the app has the rest.
+  // The idea funnel + the To-verify queue (#215): a session steers with the
+  // full picture — what's brewing and what awaits a verdict. Kept short; the
+  // app has the rest.
   const ideas = (Array.isArray(p.futures) ? p.futures : [])
     .map((f) => f && `${f.title}${f.alignment ? ` [${f.alignment}]` : ''} (#${f.id})`)
     .filter(Boolean);

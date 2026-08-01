@@ -3,7 +3,6 @@ import type { Future } from '../types';
 import type { ClusterSuggestion, ConvergeDraft, JudgeSuggestion } from '../store';
 import { getNorthStarOpen, setNorthStarOpen } from '../store';
 import { Modal } from '../components/Modal';
-import { go } from '../lib/route';
 
 export type Alignment = 'on-course' | 'tangent' | 'off-course';
 export const ALIGNMENTS: { key: Alignment; label: string; hint: string }[] = [
@@ -530,16 +529,6 @@ export function Futures({
     setConvergeOpen(false);
     setTray(new Set());
   };
-  const convergeInStudio = () => {
-    if (!slug) return;
-    try {
-      sessionStorage.setItem('stack.polaris.thought',
-        `Let's converge these ideas into concrete roadmap tickets (design first, then create via the API after my yes): ` +
-        trayIdeas.map((f) => `"${f.title}"${f.note ? ` (${f.note.slice(0, 120)})` : ''}`).join('; '));
-    } catch { /* private mode — the handoff just won't appear */ }
-    go.polaris(slug);
-  };
-
   // ---- composers ----
   const [draft, setDraft] = useState('');
   const add = () => {
@@ -549,16 +538,6 @@ export function Futures({
     onAdd(title, lines.slice(1).join('\n').trim());
     setDraft('');
   };
-  const [polDraft, setPolDraft] = useState('');
-  const thinkOutLoud = () => {
-    if (!slug) return;
-    const t = polDraft.trim();
-    if (t) {
-      try { sessionStorage.setItem('stack.polaris.thought', t); } catch { /* private mode — the handoff just won't appear */ }
-    }
-    go.polaris(slug);
-  };
-
   // ---- list view (the pre-sky layout, kept as a secondary view) ----
   const [areaFilter, setAreaFilter] = useState('');
   const areas = [...new Set(futures.map((f) => f.area).filter(Boolean))].sort();
@@ -859,16 +838,7 @@ export function Futures({
             <SelectedPanel selected={selected} themeLabel={selected ? (selected.area || LOOSE) : ''}
               inTray={selected ? tray.has(selected.id) : false}
               onToggleTray={selected ? () => toggleTray(selected.id) : undefined}
-              onPromote={onPromote} onEdit={onEdit} onAlign={onAlign} onDelete={onDelete}
-              onBuildOn={slug ? () => {
-                if (selected) {
-                  try {
-                    sessionStorage.setItem('stack.polaris.thought',
-                      `Let's build on this idea: "${selected.title}"${selected.note ? ` — ${selected.note}` : ''}. Pressure-test it against the north star and design the concrete work.`);
-                  } catch { /* private mode — the handoff just won't appear */ }
-                  go.polaris(slug);
-                }
-              } : undefined} />
+              onPromote={onPromote} onEdit={onEdit} onAlign={onAlign} onDelete={onDelete} />
 
             <div className="psky-rail-scroll">
               <QueueCard cur={cur} unjudgedCount={unjudged.length} judgedCount={judgedCount}
@@ -883,17 +853,6 @@ export function Futures({
                 </div>
               )}
             </div>
-
-            {slug && (
-              <div className="psky-think">
-                <div className="box">
-                  <span className="mark">›</span>
-                  <input value={polDraft} placeholder="Think out loud with Polaris…"
-                    onChange={(e) => setPolDraft(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); thinkOutLoud(); } }} />
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -967,12 +926,6 @@ export function Futures({
               ))}
             </div>
             <div className="psky-pop-foot cvg-foot">
-              {slug && (
-                <button className="cvg-studio" onClick={convergeInStudio}
-                  title="Take the set to the Polaris studio and design it in conversation instead">
-                  ✦ Design in the studio instead
-                </button>
-              )}
               <label className="cvg-retire">
                 <input type="checkbox" checked={retire} onChange={() => setRetire((r) => !r)} />
                 retire the converged ideas from the funnel
@@ -1158,10 +1111,10 @@ function QueueCard({
 }
 
 // The rail's selected-idea panel: verdict pill + theme, title, and the
-// dispositions (promote / build on / edit / dismiss). Judging an unjudged
-// selection happens right here too — the queue is just the other door in.
+// dispositions (promote / edit / dismiss). Judging an unjudged selection
+// happens right here too — the queue is just the other door in.
 function SelectedPanel({
-  selected, themeLabel, inTray, onToggleTray, onPromote, onEdit, onAlign, onDelete, onBuildOn,
+  selected, themeLabel, inTray, onToggleTray, onPromote, onEdit, onAlign, onDelete,
 }: {
   selected: Future | null;
   themeLabel: string;
@@ -1171,7 +1124,6 @@ function SelectedPanel({
   onEdit: (id: number, patch: { title: string; note: string; area: string }) => void;
   onAlign: (id: number, alignment: Alignment | '') => void;
   onDelete: (id: number) => void;
-  onBuildOn?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -1255,7 +1207,6 @@ function SelectedPanel({
             {inTray ? '✓ In tray' : '⊕ Converge'}
           </button>
         )}
-        {onBuildOn && <button className="act" onClick={onBuildOn}>Build on it</button>}
         <button className="act" onClick={() => { setTitle(f.title); setNote(f.note); setArea(f.area); setEditing(true); }}>✎ Edit</button>
         <button className="act quiet" onClick={() => onDelete(f.id)}>Dismiss</button>
       </div>

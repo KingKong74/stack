@@ -8,9 +8,6 @@ import { Timeline } from './screens/Timeline';
 // xterm.js is heavy and only the terminal needs it — loaded on first visit.
 const Terminal = lazy(() =>
   import('./screens/Terminal').then((m) => ({ default: m.Terminal })));
-// The Polaris studio (#226) hosts a terminal too — same deal, lazy so its
-// xterm dependency stays in the shared terminal chunk.
-const PolarisStudio = lazy(() => import('./screens/PolarisStudio'));
 // The skill tree (#228): its own screen, lazy — it is a place you go to
 // change how Claude works, not something every page load needs in the bundle.
 const Skills = lazy(() => import('./screens/Skills'));
@@ -85,8 +82,6 @@ export default function App() {
         null /* the persistent dock below renders it */
       ) : route.name === 'skills' ? (
         <Suspense fallback={null}><Skills /></Suspense>
-      ) : route.name === 'polaris' ? (
-        <Suspense fallback={null}><PolarisStudio slug={route.slug} /></Suspense>
       ) : route.name === 'detail' ? (
         <ProjectDetail id={route.id} tab={route.tab} highlight={route.highlight} onOpenSearch={() => setPaletteOpen(true)} />
       ) : (
@@ -100,7 +95,7 @@ export default function App() {
         </Suspense>
       )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
-      <TermStatusPill hidden={route.name === 'terminal' || route.name === 'polaris' || termAlive > 0} />
+      <TermStatusPill hidden={route.name === 'terminal' || termAlive > 0} />
       {route.name !== 'terminal' && <ToTop />}
     </>
   );

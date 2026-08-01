@@ -46,8 +46,8 @@ templates/ stack-agent-context.md — the canonical portable agent manual (singl
   Legacy `bugs`/`audit` tabs both resolve to `quality` (#278), so old links keep working.
 - `screens/` — Dashboard (five anchored sections behind a sticky SubNav), ProjectDetail (owns tab +
   modal state), Settings, Control (Mission Control — six rooms: Now / Nights / Plan / Build /
-  Review / Roles, behind a live strip and a persistent right rail), Terminal, Skills, Polaris
-  studio. `detail/` holds the project tabs: Overview, Quality (#278 — Bugs and Audit merged into
+  Review / Roles, behind a live strip and a persistent right rail), Terminal, Skills.
+  `detail/` holds the project tabs: Overview, Quality (#278 — Bugs and Audit merged into
   one page), Roadmap (Board / Tiers / Parked), Futures (the Polaris sky), Tips, Notes, Activity.
 - `lib/brief.ts` — the exportable resume brief + the `DIRECTIVES` catalogue (keys mirror the
   server's `SESSION_DEFAULTS`). Pure formatting; data arrives via store.ts callers.

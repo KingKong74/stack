@@ -80,7 +80,7 @@ type Origin = 'autopilot' | 'web' | 'detached';
 interface Lane {
   key: string;
   origin: Origin;
-  cls: string;            // extra row classes (claude / shell / polaris / …)
+  cls: string;            // extra row classes (claude / shell / away / …)
   name: string;
   where: string;
   phase: string;
@@ -154,25 +154,22 @@ function buildLanes(data: ControlData): Lane[] {
 
   // ---- terminal sessions attached in a browser ---------------------------
   for (const s of data.terminal?.sessions ?? []) {
-    const polaris = !!s.polaris;
     lanes.push({
       key: `sid${s.sid}`,
       origin: 'web',
-      cls: `${s.cmd}${polaris ? ' polaris' : ''}`,
+      cls: s.cmd,
       name: projectNameOf(s.cwd),
       where: `~/${homely(s.cwd)}`,
-      phase: polaris ? 'PLANNING' : s.cmd === 'claude' ? 'ATTACHED' : 'SHELL',
+      phase: s.cmd === 'claude' ? 'ATTACHED' : 'SHELL',
       phaseTone: s.cmd === 'claude' ? 'live' : 'quiet',
-      tail: s.label || (polaris ? 'a Polaris planning session' : `${s.cmd} session, open in a tab`),
+      tail: s.label || `${s.cmd} session, open in a tab`,
       startedAt: s.startedAt,
       elapsed: age(s.startedAt),
       burn: '—',
       burnTitle: 'Stack records no per-session token usage for terminal sessions — the meter on the Terminal screen is a daily total from the transcripts, not this session alone',
       needs: s.cmd === 'claude' ? 4 : 5,
-      attachHref: polaris
-        ? hrefTo.polaris(s.cwd.split('/')[0] || s.cwd)
-        : hrefTo.terminal(s.cwd === '~' ? undefined : s.cwd, s.tmux || undefined),
-      attachLabel: polaris ? 'Studio' : 'Jump in',
+      attachHref: hrefTo.terminal(s.cwd === '~' ? undefined : s.cwd, s.tmux || undefined),
+      attachLabel: 'Jump in',
       tmuxHint: '',
       slug: slugOf(s.cwd),
     });
@@ -183,16 +180,15 @@ function buildLanes(data: ControlData): Lane[] {
   const webTmux = new Set((data.terminal?.sessions ?? []).map((s) => s.tmux).filter(Boolean));
   for (const d of data.terminal?.detached ?? []) {
     if (webTmux.has(d.name)) continue;
-    const polaris = d.name.startsWith('stack-term-pol-');
     lanes.push({
       key: `det${d.name}`,
       origin: 'detached',
-      cls: `${d.attached ? 'away' : 'detached'}${polaris ? ' polaris' : ''}`,
+      cls: d.attached ? 'away' : 'detached',
       name: projectNameOf(d.cwd || '~'),
       where: d.cwd ? `~/${d.cwd}` : '~',
       phase: d.attached ? 'ELSEWHERE' : 'UNATTENDED',
       phaseTone: d.attached ? 'quiet' : 'warn',
-      tail: d.label || (polaris ? 'a Polaris planning session' : `claude running in tmux ${d.name}`),
+      tail: d.label || `claude running in tmux ${d.name}`,
       startedAt: d.created || null,
       elapsed: d.created ? age(d.created) : '—',
       burn: '—',
