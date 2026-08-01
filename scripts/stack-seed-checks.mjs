@@ -152,6 +152,16 @@ function suiteFor(slug, ORIGIN) {
     // -- the automation spine: the payloads the fleet itself depends on
     { name: 'Autopilot — run ledger', url: u(`/api/projects/${slug}/autopilot/runs`), auth: true, json_path: '0.outcome' },
     { name: 'Autopilot — job queue', url: u('/api/autopilot/jobs'), auth: true, json_path: '0.kind' },
+    // #243 — the advice lane's front door. A read-only pass is queued and read
+    // through /api/autopilot/jobs/:id/advice; a nonexistent job must 404 rather
+    // than 200 with a hollow body, which is the whole assertion.
+    { name: 'Autopilot — advice route 404s an unknown job', url: u('/api/autopilot/jobs/999999999/advice'), auth: true, expect_status: 404 },
+    // #243 — jobShape()'s new field. Depends, like the check above it, on at
+    // least one job ever having been queued. `adviceReady` is a boolean and
+    // false is the common value, so existence (not truth) is the assertion —
+    // losing the field would leave Mission Control's advice affordance dark
+    // with no visible error.
+    { name: 'Autopilot — job payload carries advice state', url: u('/api/autopilot/jobs'), auth: true, json_path: '0.adviceReady' },
     { name: 'Autopilot — schedule', url: u('/api/autopilot/schedule'), auth: true, expect_status: 200 },
 
     // -- one semantic check: what a path assertion cannot express (#261 step 3).

@@ -237,6 +237,11 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
 - **An empty second-model read means NO PASS RAN, not "nothing found".** `review_verdict` /
   `architect_verdict` NULL renders as NO REVIEW, deliberately not as green. Same rule anywhere else
   an agent's opinion is stored.
+- **`autopilot_jobs.branch` is a real column; a merge job's branch still round-trips through
+  free-text `detail`** (#243) — three places already re-parse that string, and merge's contract was
+  deliberately left alone rather than touched to match. The `advise` lane matches on the column
+  instead. And its `advice` NULL means **NO PASS RAN**, never "no conflicts" — the same rule as the
+  NULL `review_verdict` bullet above.
 - **Un-ticking a roadmap item clears `review_tag` and `claimed_by`** (unless the same PATCH sets
   them), so a sent-back item re-enters play fresh. Ticking `done:true` clears `review_tags`,
   `refine_note` and `review_shelved` — each verify round starts unannotated.
@@ -320,9 +325,9 @@ sessions in one checkout share a dirty tree, so git cannot say who wrote what an
 - **The SessionEnd hook posts the commit THIS session made**, read from its own `git commit` results
   in the transcript, falling back to `git rev-parse HEAD` only when it committed nothing. HEAD is
   wrong whenever sessions run in parallel in one checkout.
-- The host dials OUT for everything (terminal daemon, dispatcher, branch report, skills sync): the
-  server runs in a container and the host firewall drops container→host traffic. Anything needing
-  host state is a poll-and-report, never a push from the server.
+- The host dials OUT for everything (terminal daemon, dispatcher, branch report, skills sync, the
+  merge advisor): the server runs in a container and the host firewall drops container→host traffic.
+  Anything needing host state is a poll-and-report, never a push from the server.
 - Host-side logs live in `~/.stack/` (`term.log`, `autopilot.log`, `preview.log`, …); the dispatcher
   is a crontab line and removing it disables all runs.
 
@@ -366,8 +371,9 @@ reference. The index:
 - **Per-project collections** — `bugs.js`, `roadmap.js`, `notes.js`, `futures.js`, `checks.js`,
   `audit.js`, `workbench.js` (the canvas over notes+futures, and the seven ✧ ops), mounted under
   `/api/projects/:slug/…` with `mergeParams`.
-- **Automation** — `autopilot.js` (the schedule, the job queue and the host dispatcher's
-  `GET /next`), `previews.js`, `branches.js`, `skills.js`, `terminal.js`.
+- **Automation** — `autopilot.js` (the schedule, the job queue, the advise lane and its
+  `GET /jobs/:id/advice` read, and the host dispatcher's `GET /next`), `previews.js`, `branches.js`,
+  `skills.js`, `terminal.js`.
 - **Plumbing** — `ingest.js`, `settings.js`, `projects.js`, `presence.js`, `auth.js`, `devices.js`,
   `tips.js` (app-wide, no slug).
 
@@ -427,6 +433,10 @@ reference. The index:
   to an already-done item counts too. Read them as MOVEMENT, not an exact ledger.
 - `set-option`'s `-t` in tmux 3.x is a target-PANE, so session user options need the `=name:` target
   form (`tmux-session.mjs`); a bare `=name` fails on a session that plainly exists.
+- **`autopilot.js`'s `JOB_SELECT` is shared with `control.js` and must stay that way** (#243) —
+  `control.js` used to run its own `SELECT j.*`, which would ship the kilobyte `advice` text on every
+  Mission Control poll AND leave `adviceReady` false forever, silently disabling the feature. The same
+  drift-by-copy risk `shape.js`'s run-ledger shapes exist to guard against.
 
 ## Quick commands
 
