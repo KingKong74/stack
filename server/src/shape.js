@@ -217,6 +217,7 @@ export function workbenchIdeaShape(row) {
     age: relativeTime(row.created_at) || 'just now',
     days: Math.max(0, Math.floor((Date.now() - created.getTime()) / 86_400_000)),
     onCanvas: Boolean(row.on_canvas),
+    isStar: !!row.is_star,
   };
 }
 
