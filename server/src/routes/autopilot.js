@@ -404,9 +404,10 @@ autopilotGlobal.get('/next', async (req, res) => {
       [localDate]);
   }
 
-  // The plan sweep (#255). The board's ✧ To planning agent is the pressed
-  // version of this; the sweep is the standing one — "the system must plan the
-  // implementation of all roadmap items" without anyone asking.
+  // The plan sweep (#255). The Plan room's own ✧ Plan the N unplanned items
+  // (#260) is the pressed version of this; the sweep is the standing one —
+  // "the system must plan the implementation of all roadmap items" without
+  // anyone asking.
   //
   // It stands up ONE plan job per project that still has eligible unplanned
   // must/should work, and the partial unique index makes that idempotent under
