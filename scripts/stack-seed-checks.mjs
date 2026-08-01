@@ -146,6 +146,13 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Workbench — the canvas', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'cards' },
     { name: 'Workbench — the Polaris picker', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'polaris' },
     { name: 'Workbench — picker already-on-canvas flag', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'polaris.0.onCanvas' },
+    // #327 — the ✧ ops' model picker. Losing `models` silently empties the
+    // picker (the rail still renders, ops still fire against whatever the
+    // stored setting resolves to); losing `model` loses the current pick, so
+    // the client would fall back to the FIRST catalogue entry rather than
+    // what's actually stored.
+    { name: 'Workbench — model catalogue', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'models' },
+    { name: 'Workbench — current model pick', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'model' },
     { name: 'Checks — collection', url: u(`/api/projects/${slug}/checks`), auth: true, json_path: '0.name' },
     { name: 'Tips — app-wide library', url: u('/api/tips'), auth: true, json_path: '0.name' },
 

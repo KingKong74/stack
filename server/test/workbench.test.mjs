@@ -88,6 +88,14 @@ const board = () => call(`/projects/${SLUG}/workbench`);
   const second = await board();
   check('reading twice does not double the card', second.cards.length, 1);
 
+  // #327 — the model picker's catalogue and current pick ride along on the
+  // same payload.
+  check('the model catalogue is non-empty', first.models.length > 0, true);
+  check('every catalogue entry names a model, a label and a note',
+    first.models.every((m) => typeof m.model === 'string' && typeof m.label === 'string' && typeof m.note === 'string'), true);
+  check('exactly one entry is the server default', first.models.filter((m) => m.model === '').length, 1);
+  check('the current pick is a string', typeof first.model, 'string');
+
   // 2. WRITE-THROUGH — retitling the card retitles the note itself.
   const noteCard = second.cards[0];
   await call(`/projects/${SLUG}/workbench/cards/${noteCard.id}`, {
