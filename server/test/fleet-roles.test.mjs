@@ -16,6 +16,10 @@ const SONNET = 'claude-sonnet-4-5-20250929';
 const OPUS5 = 'claude-opus-5-20260115';
 const HAIKU = 'claude-haiku-4-5-20251001';
 const FABLE = 'claude-fable-5';
+// A model that ONLY ever appears in a subagent transcript — and one the
+// executor alias 'sonnet' would happily claim by family. It must still carry
+// no role: it did not run on a night, so the policy has no say over it.
+const AGENTM = 'claude-sonnet-4-6';
 
 const projects = [
   { slug: 'alpha', name: 'Alpha', tint: '#a1', automode: true },
@@ -173,8 +177,11 @@ const withManual = computeFleetRoles({
   usageRows: rows,
   sessionRows: [
     // one session that switched model mid-flight, and delegated
-    { slug: 'alpha', created_at: hoursAgo(5), agent_calls: 3,
+    // 4 delegations made, only 3 left a readable transcript: agentTokens
+    // prices those 3, and the 4th must read as unpriced rather than as free.
+    { slug: 'alpha', created_at: hoursAgo(5), agent_calls: 4,
       agent_types: { Explore: 2, 'general-purpose': 1 },
+      agents_recorded: 3, agent_usage: { [AGENTM]: usage(9000) },
       model_usage: { [OPUS5]: usage(4000), [FABLE]: usage(1000) } },
     { slug: 'alpha', created_at: hoursAgo(9), agent_calls: 0, agent_types: {},
       model_usage: { [OPUS5]: usage(2000) } },
@@ -185,11 +192,21 @@ const withManual = computeFleetRoles({
   projects, execAlias: 'sonnet', advAlias: 'claude-opus-5', now: NOW,
 });
 check('sessions counted', withManual.manual.sessions, 3);
+// The delegated half — read from each subagent's OWN transcript, which is the
+// only place it exists. Kept apart from the main loop because in an
+// interactive session those two are the director/executor split, and a session
+// that delegates well spends most of its tokens on the cheaper delegated side.
+check('subagent tokens are their own number', withManual.manual.agentTokens, 9000);
+check('…on their own model', withManual.manual.agentModels.map((m) => m.label), ['sonnet-4-6']);
+check('…and do not inflate the main loop', withManual.manual.tokens, 7000);
+check('recorded delegations are the priced denominator', withManual.manual.agentsRecorded, 3);
+check('a delegation with no transcript stays unpriced',
+  withManual.manual.agentCalls - withManual.manual.agentsRecorded, 1);
 check('…and the ones that actually carried usage', withManual.manual.sessionsWithUsage, 2);
 check('manual tokens summed', withManual.manual.tokens, 7000);
 check('manual models, biggest first', withManual.manual.models.map((m) => m.label), ['opus-5', 'fable-5']);
 check('a mid-session switch counts both', withManual.manual.models.find((m) => m.label === 'fable-5').sessions, 1);
-check('delegations counted', [withManual.manual.delegatedSessions, withManual.manual.agentCalls], [1, 3]);
+check('delegations counted', [withManual.manual.delegatedSessions, withManual.manual.agentCalls], [1, 4]);
 check('agent types ranked', withManual.manual.agentTypes, [{ type: 'Explore', count: 2 }, { type: 'general-purpose', count: 1 }]);
 
 // The separation that matters — everything policy-shaped must be untouched.
@@ -205,6 +222,15 @@ console.log('\n--- everyModel (the merged receipt) ---');
 const byEvery = Object.fromEntries(withManual.everyModel.map((m) => [m.label, m]));
 check('fable-5 is manual-only', [byEvery['fable-5'].source, byEvery['fable-5'].role], ['manual', '']);
 check('sonnet-4-5 is autopilot-only', byEvery['sonnet-4-5'].source, 'autopilot');
+// The sharpest form of the separation: sonnet-4-6 ran ONLY as a subagent, and
+// the executor alias 'sonnet' matches it by family — so a reader that
+// attributed by alias alone would file the human's delegation under the
+// autopilot's executor role. It must stay manual, and roleless.
+check('a subagent-only model joins as manual',
+  [byEvery['sonnet-4-6'].source, byEvery['sonnet-4-6'].role], ['manual', '']);
+check('…with its tokens marked as delegated', byEvery['sonnet-4-6'].agentTokens, 9000);
+check('…and it never reaches the role-card list',
+  withManual.models.some((m) => m.label === 'sonnet-4-6'), false);
 check('opus-5 ran in both', byEvery['opus-5'].source, 'both');
 // The regression this separation exists to prevent: a manual model must not
 // arrive carrying a role, or the executor card renders it as drift.

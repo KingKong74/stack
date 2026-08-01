@@ -207,9 +207,16 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   receipt and `manual`; `models`, `assignments`, `worth` and `runs` stay autopilot-only, which is
   pinned by four "identical with or without sessions" assertions in `fleet-roles.test.mjs`. Two
   consequences: merged shares are **token-based**, because a transcript carries no cost and that is
-  the only basis both halves have; and `sessions.agent_calls` is a **count of delegations, never a
-  cost** — the parent transcript records the Agent call and its result but never the subagent's own
-  usage, so there is nothing to price and every surface showing it says so.
+  the only basis both halves have; and a manual session's spend has **two halves that must stay
+  apart** — `model_usage` is the main loop, `agent_usage` is the subagents, and in an interactive
+  session those two ARE the director/executor split.
+- **A subagent's usage is NOT in the parent transcript — it has its own.** Claude Code writes each
+  one to `<transcript-dir>/<session-id>/subagents/agent-*.jsonl` with a sibling `.meta.json` naming
+  the `agentType`. The parent records only the Agent call and its result, and `isSidechain` is never
+  set there, so a reader that globs `*.jsonl` at the top level concludes — wrongly — that subagent
+  spend is unrecoverable. It is routinely the LARGER half: a director handing units to a cheap
+  executor bills most of its work in those files. `agents_recorded` is the count that `agent_usage`
+  actually prices, so a delegation whose transcript is gone reads as unpriced rather than as free.
 - **A plan night is the advisor working, not the advisor idle.** Outcome `planned` commits nothing by
   design, so it can never be `landed`: it is counted apart (`planRuns`/`advisedPlanRuns`) and sits
   out the advised-versus-unadvised land rate, while keeping its spend and role attribution in full.

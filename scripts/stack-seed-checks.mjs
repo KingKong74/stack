@@ -83,6 +83,12 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Control — roles interactive sessions', url: u('/api/control'), auth: true, json_path: 'roles.manual.sessions' },
     { name: 'Control — roles delegation count', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentCalls' },
     { name: 'Control — roles merged model receipt', url: u('/api/control'), auth: true, json_path: 'roles.everyModel' },
+    // The delegated half, read from each subagent's OWN transcript. Losing it
+    // is the silent failure that matters: the room keeps rendering main-loop
+    // spend and looks complete while the larger half of every delegating
+    // session goes unreported.
+    { name: 'Control — roles subagent spend', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentTokens' },
+    { name: 'Control — roles priced delegations', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentsRecorded' },
     // The Now room's two host-fed signals. Both are ARRAYS that are usually
     // EMPTY — nothing is normally stopped and nobody is normally colliding —
     // which is exactly why they need a check: if the key stops being served,

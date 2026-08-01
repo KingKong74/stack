@@ -25,7 +25,8 @@
 //
 // Test without a real session:  node stack-session-end.mjs --demo
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { dirname, join, basename } from 'node:path';
 import {
   loadStackEnv, logStderr, projectFromGit, fetchSettings, postIngest, endPresence, git,
 } from './stack-post.mjs';
@@ -65,6 +66,74 @@ function resultText(block) {
   if (typeof c === 'string') return c;
   if (Array.isArray(c)) return c.map((b) => (b && b.type === 'text' ? b.text : '')).join('\n');
   return '';
+}
+
+// Sum a transcript's per-message usage into a `{ model: {…} }` map. Shared by
+// the session's own transcript and every subagent's, because they are the same
+// file format — the only difference is which loop wrote it.
+function sumUsage(file, into) {
+  let raw = '';
+  try { raw = readFileSync(file, 'utf8'); } catch { return into; }
+  const seen = new Set();
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    let ev;
+    try { ev = JSON.parse(line); } catch { continue; }
+    const msg = ev.message || ev;
+    const u = msg.usage;
+    if (!u || typeof u !== 'object') continue;
+    if (msg.id && seen.has(msg.id)) continue;
+    if (msg.id) seen.add(msg.id);
+    const id = msg.model || ev.model;
+    // '<synthetic>' marks a message the CLI generated rather than a model call.
+    if (!id || id === '<synthetic>') continue;
+    const m = into[id] || (into[id] = {
+      inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0,
+    });
+    m.inputTokens += Number(u.input_tokens) || 0;
+    m.outputTokens += Number(u.output_tokens) || 0;
+    m.cacheReadInputTokens += Number(u.cache_read_input_tokens) || 0;
+    m.cacheCreationInputTokens += Number(u.cache_creation_input_tokens) || 0;
+  }
+  return into;
+}
+
+// The subagents a session actually ran. Claude Code writes each one its OWN
+// transcript beside the session's, under `<session-id>/subagents/`, with a
+// `.meta.json` naming the agent type — so a delegation's real model and real
+// token cost are recoverable, and they are NOT in the parent transcript (which
+// records only the Agent call and its result). Missing directory is the normal
+// case for a session that delegated nothing, and must stay silent.
+//
+// This is where the bulk of a delegating session's spend lives: a director
+// that hands twelve units to a cheap executor bills most of the night in here
+// and almost nothing in its own loop, so a Roles room reading only the parent
+// transcript would report the expensive model and miss the actual work.
+function parseSubagents(transcriptPath) {
+  const out = { agentUsage: {}, agentTypes: {}, agentsRecorded: 0, agentTokens: 0 };
+  if (!transcriptPath) return out;
+  let dir;
+  try {
+    dir = join(dirname(transcriptPath), basename(transcriptPath).replace(/\.jsonl$/, ''), 'subagents');
+  } catch { return out; }
+  if (!existsSync(dir)) return out;
+  let files = [];
+  try { files = readdirSync(dir); } catch { return out; }
+  for (const f of files) {
+    if (!f.endsWith('.meta.json')) continue;
+    let meta = {};
+    try { meta = JSON.parse(readFileSync(join(dir, f), 'utf8')); } catch { /* an unreadable meta still has a transcript */ }
+    const type = String(meta.agentType || 'claude').slice(0, 40);
+    out.agentTypes[type] = (out.agentTypes[type] || 0) + 1;
+    const jsonl = join(dir, f.replace(/\.meta\.json$/, '.jsonl'));
+    if (!existsSync(jsonl)) continue;
+    out.agentsRecorded += 1;
+    sumUsage(jsonl, out.agentUsage);
+  }
+  for (const u of Object.values(out.agentUsage)) {
+    out.agentTokens += u.inputTokens + u.outputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens;
+  }
+  return out;
 }
 
 function parseTranscript(path, cwd) {
@@ -215,12 +284,24 @@ function lastSubstantiveMessage(turns) {
       modelUsage: {},
       agentCalls: 0,
       agentTypes: {},
+      agentUsage: {},
+      agentTokens: 0,
+      agentsRecorded: 0,
     };
   } else {
     t = parseTranscript(payload.transcript_path, cwd);
     if (!t || t.messageCount < MIN_MESSAGES) {
       die0('transcript missing or too short; skipping.');
     }
+    // The subagents' own transcripts, which the parent's does not contain.
+    // Types come from the meta files when they exist — ground truth, including
+    // the default type an Agent call left unnamed — and fall back to what the
+    // tool_use blocks said when a session's directory has been cleaned up.
+    const sub = parseSubagents(payload.transcript_path);
+    t.agentUsage = sub.agentUsage;
+    t.agentTokens = sub.agentTokens;
+    t.agentsRecorded = sub.agentsRecorded;
+    if (Object.keys(sub.agentTypes).length) t.agentTypes = sub.agentTypes;
   }
 
   // include_chores off → skip a session that edited no files (nothing of
@@ -251,6 +332,12 @@ function lastSubstantiveMessage(turns) {
       model_usage: t.modelUsage && Object.keys(t.modelUsage).length ? t.modelUsage : null,
       agent_calls: t.agentCalls || 0,
       agent_types: t.agentTypes && Object.keys(t.agentTypes).length ? t.agentTypes : null,
+      // The subagents' REAL spend, read from their own transcripts. Usually the
+      // larger half of a delegating session, and invisible in the parent's.
+      agent_usage: t.agentUsage && Object.keys(t.agentUsage).length ? t.agentUsage : null,
+      // How many delegations left a readable transcript — the denominator, so
+      // "3 delegated, 2 recorded" never reads as though all three were priced.
+      agents_recorded: t.agentsRecorded || 0,
       authored: false,
       summary,
       files_touched: t.files,

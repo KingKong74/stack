@@ -72,12 +72,18 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //                                           // cost, so it is the only basis
 //                                           // both populations share)
 //     manual: { sessions, sessionsWithUsage, tokens, models[],
-//               delegatedSessions, agentCalls, agentTypes[] },
+//               delegatedSessions, agentCalls, agentsRecorded,
+//               agentTokens, agentModels[], agentTypes[] },
 //                                           // the human's own sessions. Never
 //                                           // scored against the policy: it
 //                                           // governs the autopilot, so a
 //                                           // hand-picked model is not drift.
-//                                           // agentCalls is a COUNT, not spend
+//                                           // `tokens`/`models` are the MAIN
+//                                           // LOOP; `agentTokens`/`agentModels`
+//                                           // are the subagents, read from
+//                                           // their own transcripts. In an
+//                                           // interactive session those two
+//                                           // ARE the director/executor split
 //     assignments: [ { slug, name, tint, automode, runs,   // what ACTUALLY ran
 //                      exec, execExtra, adv, advExtra,     // per project, vs
 //                      drift, driftModel, lastRun } ],     // the configured policy
@@ -542,9 +548,10 @@ export function computeFleetRoles({ usageRows, sessionRows = [], projects, execA
   // are counted, never priced — the parent transcript records the Agent call
   // and its result but never the subagent's usage.
   const manualModels = new Map();
+  const agentModels = new Map();
   const agentTypeTotals = new Map();
   let manualSessions = 0, manualTokens = 0, manualWithUsage = 0;
-  let delegatedSessions = 0, agentCalls = 0;
+  let delegatedSessions = 0, agentCalls = 0, agentsRecorded = 0, agentTokens = 0;
   for (const s of sessionRows) {
     manualSessions += 1;
     const at = new Date(s.created_at).getTime();
@@ -566,6 +573,30 @@ export function computeFleetRoles({ usageRows, sessionRows = [], projects, execA
       if (at > dayCut) m.todayTokens += tokens;
       m.lastAt = Math.max(m.lastAt, at);
     }
+    // The delegated half. Kept apart from the main loop on purpose: in an
+    // interactive session those two ARE the director/executor split — the loop
+    // decides and the subagents build — and a session that delegates well
+    // spends most of its tokens here, on a different (usually cheaper) model.
+    // Folding them together would hide exactly the thing worth seeing.
+    const agentEntries = s.agent_usage && typeof s.agent_usage === 'object'
+      ? Object.entries(s.agent_usage) : [];
+    for (const [model, u] of agentEntries) {
+      const tokens = (Number(u.inputTokens) || 0) + (Number(u.outputTokens) || 0)
+        + (Number(u.cacheReadInputTokens) || 0) + (Number(u.cacheCreationInputTokens) || 0);
+      agentTokens += tokens;
+      if (!agentModels.has(model)) {
+        agentModels.set(model, {
+          model, label: shortModel(model), sessions: 0, tokens: 0, todayTokens: 0, lastAt: 0,
+        });
+      }
+      const m = agentModels.get(model);
+      m.sessions += 1;
+      m.tokens += tokens;
+      if (at > dayCut) m.todayTokens += tokens;
+      m.lastAt = Math.max(m.lastAt, at);
+    }
+    agentsRecorded += Number(s.agents_recorded) || 0;
+
     const calls = Number(s.agent_calls) || 0;
     if (calls > 0) { delegatedSessions += 1; agentCalls += calls; }
     const types = s.agent_types && typeof s.agent_types === 'object' ? Object.entries(s.agent_types) : [];
@@ -575,13 +606,13 @@ export function computeFleetRoles({ usageRows, sessionRows = [], projects, execA
   // The merged receipt. Shares are TOKEN-based on both sides on purpose: the
   // runner reports cost and a transcript cannot, so a merged percentage is only
   // honest on the one basis both populations actually have.
-  const everyTokens = attributedTokens + manualTokens;
+  const everyTokens = attributedTokens + manualTokens + agentTokens;
   const everyModel = new Map();
   const touch = (model) => {
     if (!everyModel.has(model)) {
       everyModel.set(model, {
         model, label: shortModel(model), role: '', source: '',
-        runs: 0, sessions: 0, tokens: 0, costUsd: 0, todayTokens: 0, lastAt: 0,
+        runs: 0, sessions: 0, tokens: 0, costUsd: 0, todayTokens: 0, agentTokens: 0, lastAt: 0,
       });
     }
     return everyModel.get(model);
@@ -600,7 +631,19 @@ export function computeFleetRoles({ usageRows, sessionRows = [], projects, execA
     // A model the human runs by hand carries no role: the policy never named
     // it for one. 'both' is the honest label when it also ran on a night.
     e.source = e.source === 'autopilot' ? 'both' : 'manual';
-    e.sessions = m.sessions; e.tokens += m.tokens;
+    e.sessions += m.sessions; e.tokens += m.tokens;
+    e.todayTokens += m.todayTokens;
+    e.lastAt = Math.max(e.lastAt, m.lastAt);
+  }
+  // Subagent models join the same receipt — they ran, in an interactive
+  // session — and carry `agentTokens` so a row can say how much of it was
+  // delegated rather than typed in the main loop.
+  for (const m of agentModels.values()) {
+    const e = touch(m.model);
+    e.source = e.source === 'autopilot' || e.source === 'both' ? 'both' : 'manual';
+    e.sessions += m.sessions;
+    e.tokens += m.tokens;
+    e.agentTokens += m.tokens;
     e.todayTokens += m.todayTokens;
     e.lastAt = Math.max(e.lastAt, m.lastAt);
   }
@@ -638,9 +681,20 @@ export function computeFleetRoles({ usageRows, sessionRows = [], projects, execA
           lastSeen: relativeTime(new Date(lastAt).toISOString()) || 'just now',
         }))
         .sort((a, b) => b.tokens - a.tokens),
-      // Counts, not spend. The client must say so wherever it shows them.
       delegatedSessions,
       agentCalls,
+      // How many of those delegations left a readable transcript. `agentTokens`
+      // prices exactly these and no others, so a session whose subagent
+      // directory has been cleaned up shows as unpriced rather than as free.
+      agentsRecorded,
+      agentTokens,
+      agentModels: [...agentModels.values()]
+        .map(({ lastAt, ...m }) => ({   // eslint-disable-line no-unused-vars
+          ...m,
+          share: agentTokens > 0 ? (m.tokens / agentTokens) * 100 : 0,
+          lastSeen: relativeTime(new Date(lastAt).toISOString()) || 'just now',
+        }))
+        .sort((a, b) => b.tokens - a.tokens),
       agentTypes: [...agentTypeTotals.entries()]
         .map(([type, count]) => ({ type, count }))
         .sort((a, b) => b.count - a.count),
@@ -803,7 +857,8 @@ control.get('/', async (_req, res) => {
     // window as the run ledger above so the two halves describe one week.
     // Sessions with an empty breakdown are still selected — they are the
     // denominator that makes "3 of 12 recorded one" sayable.
-    q(`SELECT p.slug, s.model_usage, s.agent_calls, s.agent_types, s.created_at
+    q(`SELECT p.slug, s.model_usage, s.agent_calls, s.agent_types,
+              s.agent_usage, s.agents_recorded, s.created_at
          FROM sessions s
          JOIN projects p ON p.id = s.project_id
         WHERE s.created_at > now() - interval '7 days' AND p.deleted_at IS NULL

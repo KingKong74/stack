@@ -97,6 +97,16 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS model_usage JSONB NOT NULL DEFAULT
 -- never the subagent's own usage, so there is nothing to sum.
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS agent_calls INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS agent_types JSONB NOT NULL DEFAULT '{}'::jsonb;
+-- The subagents' OWN per-model usage, same shape as model_usage. Claude Code
+-- writes each subagent its own transcript under `<session-id>/subagents/`; the
+-- parent's records only the Agent call and its result, so this is the only
+-- place a delegation's real cost exists. It is routinely the LARGER half of a
+-- delegating session — a director handing units to a cheap executor bills most
+-- of its work here — which is why main-loop-only spend is not the answer.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS agent_usage JSONB NOT NULL DEFAULT '{}'::jsonb;
+-- How many delegations left a readable transcript, so "3 delegated, 2 recorded"
+-- is sayable rather than implying every one of them was priced.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS agents_recorded INTEGER NOT NULL DEFAULT 0;
 
 -- Per-project bug tracker. bug_key is the human "BUG-N" id, unique per project.
 CREATE TABLE IF NOT EXISTS bugs (

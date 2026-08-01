@@ -154,6 +154,8 @@ ingest.post('/', async (req, res) => {
     model_usage: asModelUsage(s.model_usage),
     agent_calls: Number.isFinite(s.agent_calls) && s.agent_calls > 0 ? Math.trunc(s.agent_calls) : 0,
     agent_types: asAgentTypes(s.agent_types),
+    agent_usage: asModelUsage(s.agent_usage),
+    agents_recorded: Number.isFinite(s.agents_recorded) && s.agents_recorded > 0 ? Math.trunc(s.agents_recorded) : 0,
   };
 
   const bugCandidates = asBugCandidates(extract.bugs);
@@ -269,29 +271,35 @@ ingest.post('/', async (req, res) => {
            -- /checkpoint landing on the same row must not blank them.
            model_usage = CASE WHEN $18::jsonb = '{}'::jsonb THEN model_usage ELSE $18::jsonb END,
            agent_types = CASE WHEN $20::jsonb = '{}'::jsonb THEN agent_types ELSE $20::jsonb END,
+           agent_usage = CASE WHEN $21::jsonb = '{}'::jsonb THEN agent_usage ELSE $21::jsonb END,
            agent_calls = GREATEST(agent_calls, $19),
+           agents_recorded = GREATEST(agents_recorded, $22),
            authored = (authored OR $15)
          WHERE id=$1`,
         // $1=id, $2..$14 as listed, $15=authored (boolean), $16=message_count,
-        // $17=tokens_used, $18=model_usage, $19=agent_calls, $20=agent_types
+        // $17=tokens_used, $18=model_usage, $19=agent_calls, $20=agent_types,
+        // $21=agent_usage, $22=agents_recorded
         [existingSession.id, session.session_id, session.commit_hash, session.summary,
          session.current_phase, JSON.stringify(session.next_steps), JSON.stringify(session.blockers),
          JSON.stringify(session.files_touched), JSON.stringify(session.tools_used),
          JSON.stringify(session.tags), session.branch, session.cwd, session.model,
          session.reason, authored, session.message_count, session.tokens_used,
-         JSON.stringify(session.model_usage), session.agent_calls, JSON.stringify(session.agent_types)]
+         JSON.stringify(session.model_usage), session.agent_calls, JSON.stringify(session.agent_types),
+         JSON.stringify(session.agent_usage), session.agents_recorded]
       );
     } else {
       const ins = await client.query(
         `INSERT INTO sessions
            (project_id, session_id, commit_hash, summary, current_phase, next_steps,
             blockers, files_touched, tools_used, tags, branch, cwd, model, reason,
-            message_count, authored, tokens_used, model_usage, agent_calls, agent_types, source)
+            message_count, authored, tokens_used, model_usage, agent_calls, agent_types,
+            agent_usage, agents_recorded, source)
          VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,
-                 $11,$12,$13,$14,$15,$16,$17,$18::jsonb,$19,$20::jsonb,'hook')
+                 $11,$12,$13,$14,$15,$16,$17,$18::jsonb,$19,$20::jsonb,$21::jsonb,$22,'hook')
          RETURNING id`,
         [projectId, ...sessionCols, session.tokens_used,
-         JSON.stringify(session.model_usage), session.agent_calls, JSON.stringify(session.agent_types)]
+         JSON.stringify(session.model_usage), session.agent_calls, JSON.stringify(session.agent_types),
+         JSON.stringify(session.agent_usage), session.agents_recorded]
       );
       sessionRowId = ins.rows[0].id;
     }
