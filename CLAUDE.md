@@ -335,6 +335,12 @@ reference. The index:
   the API or hook contract changes, update it (`scripts/stack-context.mjs` exports it verbatim).
 - **UI work ships on a strict build plus reasoning, never on a look** — a session cannot see its own
   rendering. Two real layout bugs reached the owner that way (#291).
+- **A recurring re-fetch goes through `lib/autoRefresh.ts` (#312), never a bare `setInterval`.** One
+  device-local setting (Settings → Auto refresh; 0 = off) governs every screen that watches the host —
+  the terminal's sessions, previews, Mission Control, the skill tree — and the hook is also what stops
+  a hidden tab polling and what refreshes it on return. Device-local because the BROWSER does the
+  polling, so a phone and the desktop may answer differently; contrast `termIdleHours`, which is
+  app-wide because the HOST does that killing.
 
 ## Gotchas
 

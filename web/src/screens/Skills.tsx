@@ -5,6 +5,7 @@ import {
 } from '../store';
 import { go, hrefTo } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
+import { useAutoRefresh } from '../lib/autoRefresh';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 
@@ -156,11 +157,12 @@ export default function Skills() {
   useEffect(() => {
     load();
     getProjects().then((ps) => setProjects(ps.map((p) => p.id))).catch(() => { /* global skills still work */ });
-    // The host syncs on its own clock, so the screen re-reads rather than
-    // pretending an edit landed on disk the moment it was saved.
-    const t = window.setInterval(() => { if (!document.hidden) load(); }, 30_000);
-    return () => window.clearInterval(t);
   }, [load]);
+  // The host syncs on its own clock, so the screen re-reads rather than
+  // pretending an edit landed on disk the moment it was saved. #312 — the
+  // cadence (and the hidden-tab rule this poll already followed) is the
+  // device's Auto refresh setting now.
+  useAutoRefresh(load);
 
   const skills = data?.skills ?? [];
   const disk = data?.report.skills ?? [];

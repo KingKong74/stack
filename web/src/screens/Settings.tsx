@@ -6,6 +6,7 @@ import {
   getDeletedProjects, restoreProject, purgeProject, type DeletedProject,
   getAuthDevices, revokeAuthDevice,
   getTermSessionPrefs, setTermSessionPrefs, type TermSessionPrefs,
+  getAutoRefreshSeconds, setAutoRefreshSeconds, AUTO_REFRESH_CHOICES, type AutoRefreshSeconds,
 } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
@@ -41,6 +42,10 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
   // Terminal behaviour — device-local, like the theme.
   const [termPrefs, setTermPrefsState] = useState<TermSessionPrefs>(() => getTermSessionPrefs());
   const saveTermPrefs = (p: TermSessionPrefs) => { setTermPrefsState(p); setTermSessionPrefs(p); };
+  // #312 — how often the moving screens re-read. Device-local like the theme:
+  // the browser is what does the polling.
+  const [refreshSecs, setRefreshSecs] = useState<AutoRefreshSeconds>(() => getAutoRefreshSeconds());
+  const saveRefresh = (s: AutoRefreshSeconds) => { setRefreshSecs(s); setAutoRefreshSeconds(s); };
   const [deleted, setDeleted] = useState<DeletedProject[]>([]);
   const [purgeArmed, setPurgeArmed] = useState<string | null>(null);
   const [pin, setPin] = useState('');
@@ -436,6 +441,38 @@ export function Settings({ initialTab = 'settings' }: { initialTab?: 'settings' 
                       className={`seg-opt ${settings.termIdleHours === h ? 'on' : ''}`}
                       onClick={() => update({ termIdleHours: h })}>
                       {h === 0 ? 'Never' : `${h}h`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            {/* ---- Auto refresh (#312 — device-local, like Appearance) ---- */}
+            <section className="set-card">
+              <div className="set-card-head">
+                <div className="set-card-title">Auto refresh</div>
+                <div className="set-card-sub">
+                  How often the screens that watch the host re-read themselves on this device.
+                </div>
+              </div>
+              <div className="set-row col">
+                <div className="set-row-text">
+                  <div className="set-row-label">Refresh every</div>
+                  <div className="set-row-hint">
+                    The terminal’s running sessions, branch previews, Mission Control’s queue and the
+                    skill tree all move on the <b>host’s</b> clock — a preview comes up, a session is
+                    reaped, a night’s job finishes. This is how often they re-read, so finding out
+                    doesn’t mean reloading the page. A tab you aren’t looking at never polls, and
+                    refreshes the moment you come back to it. <b>Off</b> leaves every screen reading
+                    on arrival and after anything you do, which is what they did before.
+                  </div>
+                </div>
+                <div className="seg-control" role="tablist" aria-label="Auto refresh interval">
+                  {AUTO_REFRESH_CHOICES.map((s) => (
+                    <button key={s} role="tab" aria-selected={refreshSecs === s}
+                      className={`seg-opt ${refreshSecs === s ? 'on' : ''}`}
+                      onClick={() => saveRefresh(s)}>
+                      {s === 0 ? 'Off' : `${s}s`}
                     </button>
                   ))}
                 </div>

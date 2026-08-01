@@ -15,6 +15,7 @@ import { ReviewRoom } from './ControlReview';
 import { SessionLanes } from './ControlLanes';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
 import { go, hrefTo } from '../lib/route';
+import { useAutoRefresh } from '../lib/autoRefresh';
 import type { ProjectStatus } from '../types';
 
 const STATUS_LABEL: Record<ProjectStatus, string> = {
@@ -114,13 +115,12 @@ export function ControlPanel() {
       if (!(e instanceof AuthError)) setPreviews([]);
     });
   };
-  useEffect(() => {
-    loadPreviews();
-    // Poll faster while something is mid-flight — a docker build reports
-    // progress, and a finished one should not sit reading "building".
-    const t = setInterval(loadPreviews, 15_000);
-    return () => clearInterval(t);
-  }, []);
+  useEffect(() => { loadPreviews(); }, []);
+  // A preview moves on the host's clock — queued → starting → live, then out
+  // at expiry — so a finished build should never sit on screen reading
+  // "starting". #312 put the cadence under the device's Auto refresh setting;
+  // with it off, the list still re-reads whenever you start, stop or extend one.
+  useAutoRefresh(loadPreviews);
   const previewFor = (slug: string, branch: string) =>
     previews.find((v) => v.slug === slug && v.branch === branch
       && ['queued', 'starting', 'live', 'stopping'].includes(v.status)) || null;
@@ -230,13 +230,10 @@ export function ControlPanel() {
       .catch((e) => { if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Failed to load mission control.'); });
   }, []);
 
-  // Refresh on a slow tick so queued → running → done progresses on screen
-  // (the dispatcher polls the queue once a minute).
-  useEffect(() => {
-    load();
-    const t = window.setInterval(load, 30_000);
-    return () => window.clearInterval(t);
-  }, [load]);
+  // Refresh so queued → running → done progresses on screen (the dispatcher
+  // polls the queue once a minute). #312 — cadence from the device setting.
+  useEffect(() => { load(); }, [load]);
+  useAutoRefresh(load);
 
   // Optimistic with rollback — same contract as Settings.
   const setAutopilot = async (patch: {

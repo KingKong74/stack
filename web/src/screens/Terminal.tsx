@@ -21,6 +21,7 @@ import {
 } from '../store';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
+import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { tierRank, TIERS, type RoadmapItem, type Tier } from '../types';
@@ -480,6 +481,12 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
     const t = setTimeout(() => void refreshDetached(), 1500);
     return () => clearTimeout(t);
   }, [visible, liveCount]); // eslint-disable-line react-hooks/exhaustive-deps
+  // #312 — and then it KEEPS UP. The two triggers above are both things this
+  // browser did; everything that happens to a session happens somewhere else —
+  // the host's idle reaper takes one (#287), `stack term` on the laptop opens
+  // one, a night's session ends. None of those reach here, so the strip used to
+  // be as old as the last thing you clicked and the only fix was a reload.
+  useAutoRefresh(() => void refreshDetached(), visible);
 
   // #292 — pin a session against the host's idle reaper (#287). The pin lives
   // on the tmux session itself, so this only ASKS: the row is flipped
@@ -1067,25 +1074,31 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
   }, [usagePrefs.autoSchedule, usage?.sched?.runDate, usage?.sched?.atTime, projectSlug]);
 
   // #142 — this project's paused session, if any: a limit-hit autopilot run
-  // sits in the queue as a kind='resume' job. Polled while the screen is
-  // showing (the component never unmounts), and re-checked when a limit frame
-  // lands. Resume clears the hold; hang-up parks it for later.
+  // sits in the queue as a kind='resume' job. Read while the screen is showing
+  // (the component never unmounts), re-checked when a limit frame lands, and
+  // kept up by the device's auto refresh (#312). Resume clears the hold;
+  // hang-up parks it for later.
   const [resumeJob, setResumeJob] = useState<AutopilotJob | null>(null);
+  // Sequenced rather than flag-guarded: a poll and a cwd change can be in
+  // flight together, and only the LAST ask may answer — otherwise a slow reply
+  // for the directory you just left paints its resume chip over the new one.
+  const resumeAsk = useRef(0);
+  const checkResume = () => {
+    if (!visible || !projectSlug) return;
+    const seq = ++resumeAsk.current;
+    getAutopilotJobs(projectSlug, 8)
+      .then((jobs) => {
+        if (seq !== resumeAsk.current) return;
+        setResumeJob(jobs.find((j) => j.kind === 'resume' && (j.status === 'queued' || j.status === 'paused')) ?? null);
+      })
+      .catch(() => { /* quiet — the chip just stays away */ });
+  };
   useEffect(() => {
     if (!visible || !projectSlug) { setResumeJob(null); return; }
-    let gone = false;
-    const check = () => {
-      getAutopilotJobs(projectSlug, 8)
-        .then((jobs) => {
-          if (gone) return;
-          setResumeJob(jobs.find((j) => j.kind === 'resume' && (j.status === 'queued' || j.status === 'paused')) ?? null);
-        })
-        .catch(() => { /* quiet — the chip just stays away */ });
-    };
-    check();
-    const t = window.setInterval(check, 60_000);
-    return () => { gone = true; window.clearInterval(t); };
+    checkResume();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, projectSlug, usage?.resetAt]);
+  useAutoRefresh(checkResume, visible && !!projectSlug);
   const resumeAt = resumeJob?.notBefore
     ? new Date(resumeJob.notBefore).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     : '';
@@ -1094,20 +1107,16 @@ export function Terminal({ initialCwd = '', initialAttach, visible = true, onAli
     try { setResumeJob(await act(resumeJob.id)); } catch { /* next poll corrects */ }
   };
 
-  // Poll /api/terminal/usage for the nightly token budget and 24h autopilot totals.
-  // Gated on visible; silent on error (strip just falls back to daemon data alone).
-  useEffect(() => {
-    if (!visible) return;
-    let gone = false;
-    const fetch = () => {
-      getTerminalUsage()
-        .then((u) => { if (!gone) setServerUsage(u); })
-        .catch(() => { /* silent — strip shows daemon data when server is unreachable */ });
-    };
-    fetch();
-    const t = window.setInterval(fetch, 30_000);
-    return () => { gone = true; window.clearInterval(t); };
-  }, [visible]);
+  // Read /api/terminal/usage for the nightly token budget and 24h autopilot
+  // totals. Gated on visible; silent on error (the strip falls back to daemon
+  // data alone), and kept current by the device's auto refresh (#312).
+  const loadServerUsage = () => {
+    getTerminalUsage()
+      .then(setServerUsage)
+      .catch(() => { /* silent — strip shows daemon data when server is unreachable */ });
+  };
+  useEffect(() => { if (visible) loadServerUsage(); }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+  useAutoRefresh(loadServerUsage, visible);
 
   const dockLabel = activeSess
     ? `${activeSess.cmd === 'claude' ? 'claude' : 'shell'}${activeSess.cwd ? ` · ${activeSess.cwd}` : ''}`

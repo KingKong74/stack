@@ -118,6 +118,48 @@ export function onThemeChange(cb: () => void): () => void {
   return () => { themeListeners = themeListeners.filter((x) => x !== cb); };
 }
 
+// ---- auto refresh (#312, device-local like the theme) ----
+//
+// How often a screen that watches something MOVING re-reads it: the terminal's
+// running sessions, the branch previews, Mission Control's queue, the skill
+// tree. All four change on the HOST's clock — a preview goes queued → starting
+// → live, a session is reaped, a night's job finishes — so without a re-read
+// the only way to learn about it was to reload the page.
+//
+// Device-local, deliberately: the polling is done by the BROWSER, so it is a
+// property of the device doing it rather than of the system being watched. A
+// phone on mobile data and the desktop beside the terminal want different
+// answers, and a server-side setting could not give them one. (Contrast
+// `termIdleHours`, which is app-wide because the HOST does that killing.)
+//
+// 0 = off — nothing polls, and the screens fall back to what they already did:
+// re-read on arrival and after an action. Every recurring re-fetch in the app
+// goes through `lib/autoRefresh.ts`, so this one control governs the lot;
+// don't add a bare setInterval beside it.
+export const AUTO_REFRESH_CHOICES = [0, 10, 30, 60] as const;
+export type AutoRefreshSeconds = (typeof AUTO_REFRESH_CHOICES)[number];
+const AUTO_REFRESH_KEY = 'stack.autoRefresh';
+
+export function getAutoRefreshSeconds(): AutoRefreshSeconds {
+  const n = Number(localStorage.getItem(AUTO_REFRESH_KEY));
+  return (AUTO_REFRESH_CHOICES as readonly number[]).includes(n)
+    ? n as AutoRefreshSeconds
+    : 30; // the cadence the hardcoded polls used before this was a choice
+}
+
+export function setAutoRefreshSeconds(s: AutoRefreshSeconds) {
+  localStorage.setItem(AUTO_REFRESH_KEY, String(s));
+  for (const cb of refreshListeners) cb();
+}
+
+// Changing the setting takes hold on every open screen at once — the hook
+// re-arms on this rather than waiting for the reload it exists to avoid.
+let refreshListeners: Array<() => void> = [];
+export function onAutoRefreshChange(cb: () => void): () => void {
+  refreshListeners.push(cb);
+  return () => { refreshListeners = refreshListeners.filter((x) => x !== cb); };
+}
+
 async function request<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
   const token = getToken();
   const res = await fetch(`/api${path}`, {
