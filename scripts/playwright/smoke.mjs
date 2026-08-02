@@ -219,13 +219,14 @@ function printTable(report, out) {
   }
 
   const totals = report.totals;
-  const s = totals.suppressed || { ellipsis: 0, lineClamp: 0, thirdParty: 0, clippedAncestor: 0 };
-  const suppressedTotal = s.ellipsis + s.lineClamp + s.thirdParty + s.clippedAncestor;
+  const s = totals.suppressed || { ellipsis: 0, lineClamp: 0, thirdParty: 0, clippedAncestor: 0, foreignFrame: 0 };
+  const suppressedTotal = s.ellipsis + s.lineClamp + s.thirdParty + s.clippedAncestor + (s.foreignFrame || 0);
   const suppressedParts = [];
   if (s.ellipsis) suppressedParts.push(`${s.ellipsis} ellipsis`);
   if (s.lineClamp) suppressedParts.push(`${s.lineClamp} line-clamp`);
   if (s.thirdParty) suppressedParts.push(`${s.thirdParty} third-party`);
   if (s.clippedAncestor) suppressedParts.push(`${s.clippedAncestor} clipped-ancestor`);
+  if (s.foreignFrame) suppressedParts.push(`${s.foreignFrame} foreign-frame`);
   const suppressedStr = suppressedTotal ? ` (${suppressedTotal} suppressed: ${suppressedParts.join(', ')})` : '';
 
   process.stdout.write(
@@ -298,7 +299,7 @@ function scanLayout() {
   // so a reader can always see how much was filtered and why.
   const results = {
     pageOverflowX: null, elementOverflowX: [], elementOverflowY: [], elementPastViewport: [],
-    suppressed: { ellipsis: 0, lineClamp: 0, clippedAncestor: 0 },
+    suppressed: { ellipsis: 0, lineClamp: 0, clippedAncestor: 0, foreignFrame: 0 },
   };
 
   const docWidth = document.documentElement.scrollWidth;
@@ -313,6 +314,23 @@ function scanLayout() {
   const reportedPast = [];
 
   const hasReportedAncestor = (el, list) => list.some((r) => r !== el && r.contains(el));
+
+  // An element that holds NOTHING but cross-origin iframes is measuring someone
+  // else's document, at that document's own intrinsic size. The dashboard's
+  // project cards are exactly this: `span.preview` clips a live iframe of each
+  // deployed site, à la Vercel, so scrollWidth 1043 > clientWidth 261 is the
+  // whole point of the card and cannot be "fixed" from inside this app. Same
+  // family as BUG-7 — a stranger's page reported as this one's defect — and
+  // deliberately the tightest form of the rule: one non-frame child, or one
+  // same-origin frame, and it is Stack's layout again and gets reported.
+  const onlyForeignFrames = (el) => {
+    const kids = Array.from(el.children);
+    if (!kids.length) return false;
+    return kids.every((k) => {
+      if (k.tagName !== 'IFRAME') return false;
+      try { return new URL(k.src, location.href).origin !== location.origin; } catch { return false; }
+    });
+  };
 
   const CLIPPING_OVERFLOW = ['hidden', 'clip', 'auto', 'scroll'];
   const hasClippingAncestor = (el) => {
@@ -333,6 +351,8 @@ function scanLayout() {
     if ((cs.overflowX === 'hidden' || cs.overflowX === 'clip') && el.scrollWidth > el.clientWidth + 1) {
       if (cs.textOverflow === 'ellipsis') {
         results.suppressed.ellipsis++;
+      } else if (onlyForeignFrames(el)) {
+        results.suppressed.foreignFrame++;
       } else if (!hasReportedAncestor(el, reportedX)) {
         reportedX.push(el);
         results.elementOverflowX.push({
@@ -348,6 +368,8 @@ function scanLayout() {
       const clamped = clamp && clamp !== 'none' && !Number.isNaN(Number(clamp));
       if (clamped) {
         results.suppressed.lineClamp++;
+      } else if (onlyForeignFrames(el)) {
+        results.suppressed.foreignFrame++;
       } else if (!hasReportedAncestor(el, reportedY)) {
         reportedY.push(el);
         results.elementOverflowY.push({
@@ -415,11 +437,9 @@ function describeLayoutFinding(kind, item) {
 // this harness never navigated to on purpose. Attributing that to Stack is
 // the same mistake the preflight already guards the whole run against
 // (README "Preflight"): reporting a stranger's problem as this app's own.
-// `page-error` is deliberately NOT reclassified here — an uncaught exception
-// fires via `window.onerror` inside STACK'S OWN page even when a third-party
-// script threw it, so the dashboard's `Minified React error #418` correctly
-// stays a real, page-attributed finding: it is Stack's own hydration bug.
-// `auth-rejected` is untouched for the same reason: it is judged by path
+// `page-error` is reclassified too, but only ever by its stack — see
+// foreignStackOrigin below, and BUG-7, which is what that rule is for.
+// `auth-rejected` is untouched for a reason that does hold: it is judged by path
 // (`/api/`), not by message content, so there is nothing to misattribute.
 function originOf(candidateUrl) {
   try { return new URL(candidateUrl).origin; } catch { return null; }
@@ -438,6 +458,34 @@ function foreignOriginIn(text, baseOrigin) {
     if (origin && origin !== baseOrigin) return origin;
   }
   return null;
+}
+
+// A page error is attributed by its STACK, and by nothing else (BUG-7).
+//
+// The rule above this one used to exempt page-error entirely, reasoning that an
+// uncaught exception fires through window.onerror inside Stack's own page even
+// when a third party threw it. That is true of a third-party SCRIPT on the
+// page. It is not true of a cross-origin IFRAME, which is a separate document
+// with its own window — and the dashboard renders one per project card, a live
+// preview of each deployed site. Playwright reports an exception from any frame
+// of the page as the page's own, so a stranger's site crashing in a 261px-wide
+// card was filed against Stack at medium severity. Proved by running the
+// dashboard twice: with the preview iframes refused, the page throws nothing.
+//
+// The MESSAGE is not evidence and is never read here: "Minified React error
+// #418" carries a react.dev URL in its own text, so a genuine Stack error would
+// attribute itself to react.dev. Only frames — `at fn (https://host/file:1:2)`
+// — say where code was actually running. If any frame is same-origin the
+// finding stays Stack's; if none can be parsed it stays Stack's too, which is
+// the same conservative direction as everything else in this section.
+function foreignStackOrigin(stack, baseOrigin) {
+  const origins = [];
+  for (const m of String(stack || '').matchAll(/\bat\s[^\n]*?(https?:\/\/[^\s)]+)/g)) {
+    const origin = originOf(m[1].replace(/[.,;:]+$/, ''));
+    if (origin) origins.push(origin);
+  }
+  if (!origins.length || origins.includes(baseOrigin)) return null;
+  return origins[0];
 }
 
 // ---- preflight --------------------------------------------------------------
@@ -664,7 +712,14 @@ export async function main(argv = process.argv.slice(2)) {
         const onConsole = (msg) => {
           if (msg.type() === 'error') {
             const text = msg.text();
-            const foreign = foreignOriginIn(text, baseOrigin);
+            // The text first, then where the console message was RAISED. The
+            // browser's own "Failed to load resource: … 404" carries no URL in
+            // its text at all, so text alone attributed a framed site's missing
+            // avatar.jpg to Stack — the same misattribution as BUG-7, reaching
+            // the finding by a different road. location() names it exactly.
+            const at = msg.location()?.url;
+            const foreign = foreignOriginIn(text, baseOrigin)
+              || (at && originOf(at) && originOf(at) !== baseOrigin ? originOf(at) : null);
             if (foreign) {
               thirdPartyCount++;
               findings.push({
@@ -680,10 +735,19 @@ export async function main(argv = process.argv.slice(2)) {
           }
         };
         const onPageError = (err) => {
-          findings.push({
-            kind: 'page-error', severity: 'error', screen: screen.id, viewport: viewportName,
-            detail: String(err && err.message ? err.message : err).slice(0, 300),
-          });
+          const detail = String(err && err.message ? err.message : err).slice(0, 300);
+          const foreign = foreignStackOrigin(err && err.stack, baseOrigin);
+          if (foreign) {
+            thirdPartyCount++;
+            findings.push({
+              kind: 'third-party-page-error', severity: 'info', screen: screen.id, viewport: viewportName,
+              detail, origin: foreign,
+            });
+          } else {
+            findings.push({
+              kind: 'page-error', severity: 'error', screen: screen.id, viewport: viewportName, detail,
+            });
+          }
         };
         const onRequestFailed = (req) => {
           const reqUrl = req.url();
@@ -749,7 +813,7 @@ export async function main(argv = process.argv.slice(2)) {
 
         let layout = {
           pageOverflowX: null, elementOverflowX: [], elementOverflowY: [], elementPastViewport: [],
-          suppressed: { ellipsis: 0, lineClamp: 0, clippedAncestor: 0 },
+          suppressed: { ellipsis: 0, lineClamp: 0, clippedAncestor: 0, foreignFrame: 0 },
         };
         try {
           layout = await page.evaluate(scanLayout);
@@ -798,6 +862,7 @@ export async function main(argv = process.argv.slice(2)) {
           lineClamp: layout.suppressed?.lineClamp || 0,
           thirdParty: thirdPartyCount,
           clippedAncestor: layout.suppressed?.clippedAncestor || 0,
+          foreignFrame: layout.suppressed?.foreignFrame || 0,
         };
 
         screenReports.push({
@@ -826,6 +891,7 @@ export async function main(argv = process.argv.slice(2)) {
       lineClamp: screenReports.reduce((n, r) => n + (r.suppressed?.lineClamp || 0), 0),
       thirdParty: screenReports.reduce((n, r) => n + (r.suppressed?.thirdParty || 0), 0),
       clippedAncestor: screenReports.reduce((n, r) => n + (r.suppressed?.clippedAncestor || 0), 0),
+      foreignFrame: screenReports.reduce((n, r) => n + (r.suppressed?.foreignFrame || 0), 0),
     },
     screenshots: screenReports.length,
   };

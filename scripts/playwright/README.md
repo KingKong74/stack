@@ -75,10 +75,11 @@ from noise this harness chose not to hold Stack responsible for:
 
 **`error`** — something is actually broken:
 - `console-error` — the page logged a console error.
-- `page-error` — an uncaught exception in the page. Always kept, even when a
-  third-party script is what threw it, because it fires via `window.onerror`
-  inside Stack's OWN page — see "What the harness deliberately does not
-  report" below for why this is NOT the same as a third-party console error.
+- `page-error` — an uncaught exception in the page. Kept when a stack frame
+  names this app's own origin, or when no frame can be parsed at all; a
+  cross-origin frame throwing inside an embedded iframe reclassifies to
+  `third-party-page-error` (BUG-7 — see "What the harness deliberately does
+  not report").
 - `request-failed` — a network request failed outright.
 - `http-error` — a response came back 5xx.
 - `auth-rejected` — a `/api/` response came back 401. This is worse than the
@@ -104,6 +105,9 @@ from noise this harness chose not to hold Stack responsible for:
   different origin to the app under test.
 - `third-party-request` — a failed request, or a 5xx response, whose URL is
   on a different origin to the app under test.
+- `third-party-page-error` — an uncaught exception whose stack frames all sit
+  on a different origin: something thrown inside one of the embedded preview
+  iframes, not in this app.
 
 ## What the harness deliberately does not report
 
@@ -113,7 +117,7 @@ harness cry wolf loudly enough that nobody would read it — which defeats the
 whole point (CLAUDE.md: "a harness that cries wolf ... is a harness nobody
 reads"). None of this is a silent slice: every filtered item is **counted**,
 in a per-screen `suppressed: { ellipsis, lineClamp, thirdParty,
-clippedAncestor }` object in `report.json` and in the run's printed summary
+clippedAncestor, foreignFrame }` object in `report.json` and in the run's printed summary
 line (e.g. `... (47 suppressed: 41 ellipsis, 6 third-party)`), and `info`
 findings are shown in full, in their own section — filtered out of the
 pass/fail count, never out of the report.
@@ -139,12 +143,36 @@ pass/fail count, never out of the report.
   that origin differs from the base URL's own origin. This is deliberately
   conservative: an ambiguous message is left as a real `console-error`,
   because a false "someone else's problem" hides a real defect, which is
-  worse than one noisy true finding. `page-error` and `auth-rejected` are
-  never reclassified this way — an uncaught exception fires inside Stack's
-  own page even when a third-party script threw it (the dashboard's
-  `Minified React error #418` hydration error stays a real, page-attributed
-  finding under this rule, correctly, because it is Stack's own bug), and
-  `auth-rejected` is judged by request path, not by message content.
+  worse than one noisy true finding. A `console-error` whose message carries
+  no URL — the browser's own "Failed to load resource: … 404" never does — is
+  attributed by `location().url`, where the console message was raised.
+
+  `page-error` was originally exempt from all of this, on the grounds that an
+  uncaught exception fires inside Stack's own page even when a third party
+  threw it. That holds for a third-party SCRIPT on the page. It does not hold
+  for a cross-origin IFRAME, which is a separate document with its own window
+  — and the dashboard renders one per project card. Playwright reports an
+  exception from any frame as the page's own, so the `Minified React error
+  #418` on the dashboard was filed against Stack as a hydration bug it could
+  not have (this app calls `createRoot` and never hydrates; React 18's #418
+  takes no arguments, and the observed one carries the React 19 `args[]=text`
+  form). It comes from the Next.js site framed in a card. Proved by loading
+  the dashboard twice: with cross-origin document requests refused, the page
+  throws nothing at all.
+
+  So a `page-error` is now attributed by its **stack frames only** — never by
+  its message, which for that React error names `react.dev` and would
+  misattribute a genuine Stack error to the docs site. Any same-origin frame,
+  or no parseable frame, keeps it a real finding. `auth-rejected` stays
+  exempt on its original grounds, which do hold: it is judged by request
+  path, not message content.
+- **An element holding nothing but a cross-origin iframe is measuring someone
+  else's document.** `span.preview` on each project card clips a live iframe
+  of that project's deployed site at the site's own intrinsic size — a
+  1043px-wide document inside a 261px card is the entire design of the card,
+  and nothing inside this app can change it. Suppressed as `foreignFrame`,
+  and deliberately the tightest form of the rule: one non-frame child, or one
+  same-origin frame, and it is this app's layout again and gets reported.
 - **A pannable canvas clipped by its container is not a bug.** The Workbench
   canvas (`svg.wb-wires` inside `div.wb-ground`) is a deliberately-oversized,
   pannable 2400px surface that its container clips with `overflow: hidden` —
@@ -183,7 +211,8 @@ updates the same row by name.
 - `error` (fail only) is a compact one-line summary: the error/layout counts,
   how many screens and viewports were covered, and the single worst finding
   — e.g. `6 errors, 29 layout findings over 14 screens / 2 viewports — worst:
-  page-error on dashboard@desktop: Minified React error #418`.
+  element-overflow-y on terminal@narrow: div.term-pane.focused clips
+  overflow-y but scrollHeight 569 > clientHeight 558`.
 
 A failed report **warns loudly but never reddens a clean run**: the exit code
 answers "is the UI sound?", which is a question about the app, not about
