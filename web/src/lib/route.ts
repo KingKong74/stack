@@ -86,6 +86,13 @@ export const hrefTo = {
     ].filter(Boolean).join('&');
     return `#/terminal${q ? `?${q}` : ''}`;
   },
+  // tab picks which collection opens; highlight (when given) flags the matching
+  // item/commit on that tab via the existing highlight mechanism. The tab
+  // disambiguates what `highlight` means (commit hash, bug key, or row id).
+  detail: (id: string, tab?: string, highlight?: string) => {
+    const q = highlight ? `?hl=${encodeURIComponent(highlight)}` : '';
+    return `#/p/${encodeURIComponent(id)}${tab ? `/${tab}` : ''}${q}`;
+  },
 };
 
 export const go = {
@@ -107,7 +114,6 @@ export const go = {
   // item/commit on that tab via the existing highlight mechanism. The tab
   // disambiguates what `highlight` means (commit hash, bug key, or row id).
   detail: (id: string, tab?: string, highlight?: string) => {
-    const q = highlight ? `?hl=${encodeURIComponent(highlight)}` : '';
-    window.location.hash = `#/p/${encodeURIComponent(id)}${tab ? `/${tab}` : ''}${q}`;
+    window.location.hash = hrefTo.detail(id, tab, highlight);
   },
 };

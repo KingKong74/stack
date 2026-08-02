@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   getProjectDetail, patchRoadmapItem, deleteRoadmapItem, cleanupRoadmap,
-  getPlanLanes, setPlanLanes, startAutopilot, PLAN_LANE_CHOICES,
+  getPlanLanes, setPlanLanes, startAutopilot, PLAN_LANE_CHOICES, getLastViewedProject,
   type ProjectDetailData, type ControlData, type AutopilotSchedule, type RoadmapCleanupSuggestion,
 } from '../store';
-import { go } from '../lib/route';
+import { go, hrefTo } from '../lib/route';
 import { NightDebrief } from './ControlDebrief';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
+import { roadmapTarget } from '../lib/roadmapLink';
 import type { RoadmapItem, Priority, Tier } from '../types';
 import { tierRank } from '../types';
 
@@ -141,6 +142,14 @@ function houseQueue(
 function ProjectPicker({ data, pickSlug, onPick }: {
   data: ControlData; pickSlug: string; onPick: (slug: string) => void;
 }) {
+  // #297 — a picked project links to ITS roadmap; ⌂ All projects (pickSlug
+  // === '') falls through to the last-viewed project, read once per mount
+  // rather than on every render.
+  const lastViewed = useMemo(getLastViewedProject, []);
+  const known = data.projects.map((p) => p.slug);
+  const target = roadmapTarget({ selected: pickSlug, lastViewed, known });
+  const href = target ? hrefTo.detail(target, 'roadmap') : null;
+  const linkedProject = target ? data.projects.find((p) => p.slug === target) : null;
   return (
     <div className="mc14-picker" role="tablist" aria-label="Project">
       <button role="tab" aria-selected={pickSlug === ''}
@@ -157,6 +166,16 @@ function ProjectPicker({ data, pickSlug, onPick }: {
           {p.name}
         </button>
       ))}
+      {href && (
+        // Not a tab — role="none" keeps it out of the tablist's implicit
+        // "only tabs live here" reading for assistive tech.
+        <div role="none" className="mc14-pick-open-wrap">
+          <a className="mc14-pick-open" href={href}
+            title={linkedProject ? `Open the roadmap for ${linkedProject.name}` : 'Open the roadmap'}>
+            Open Roadmap →
+          </a>
+        </div>
+      )}
     </div>
   );
 }
