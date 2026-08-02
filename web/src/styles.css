@@ -3596,7 +3596,10 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc-lane .lane-read .txt { font-size: 11px; line-height: 1.6; color: var(--ink); }
 .mc-lane .lane-acts { display: flex; gap: 6px; }
 .mc-lane .lane-acts .btn-repo { flex: 1; }
-.mc-lane .tmux { font-family: var(--mono); font-size: 9.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
+.mc-lane .tmux { font-family: var(--mono); font-size: 9.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; text-align: left; }
+.mc-lane .tmux:hover { color: var(--accent-deep); }
+.mc-lane .tmux.ok { color: var(--sage); }
+.mc-lane .tmux.fail { color: var(--critical); }
 
 /* #283 (design 22a) — the merged lane list: terminal sessions alongside the
    autopilot's workers, plus the queued rows behind them. */

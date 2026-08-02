@@ -247,6 +247,10 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
   const [sort, setSort] = useState<LaneSort>('needs');
   const [open, setOpen] = useState('');
   const [killing, setKilling] = useState<string | null>(null);
+  // Copy-to-clipboard state for the tmux attach command, keyed by lane —
+  // several lanes can be expanded at once, so a single boolean would light up
+  // the wrong one. A '!' prefix marks a failed copy.
+  const [copied, setCopied] = useState('');
   // Which project groups are folded away. Names, not indexes — a group that
   // finishes and disappears must not fold whichever one takes its place.
   const [shut, setShut] = useState<Set<string>>(() => new Set());
@@ -272,6 +276,19 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
     setKilling(null);
     if (!name) return;
     try { await killDetachedSession(name); } finally { onReload(); }
+  };
+
+  // The reachable version of "deep-link to its tmux session": there is
+  // nothing in the browser to attach to (stack-auto-* is host-only), so a
+  // click copies the command instead, ready to paste into an ssh session.
+  const copyTmux = async (key: string, cmd: string) => {
+    try {
+      await navigator.clipboard.writeText(cmd);
+      setCopied(key);
+    } catch {
+      setCopied(`!${key}`);
+    }
+    setTimeout(() => setCopied((cur) => (cur === key || cur === `!${key}` ? '' : cur)), 1500);
   };
 
   return (
@@ -521,7 +538,19 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
                           Autopilot sessions are not attachable from the browser — the terminal daemon
                           carries <code>stack-term-*</code> only. Watch this one over ssh:
                         </span>
-                        {l.tmuxHint && <code className="tmux">tmux attach -t {l.tmuxHint}</code>}
+                        {l.tmuxHint && (() => {
+                          const cmd = `tmux attach -t ${l.tmuxHint}`;
+                          const isCopied = copied === l.key;
+                          const isFailed = copied === `!${l.key}`;
+                          return (
+                            <button type="button"
+                              className={`tmux${isCopied ? ' ok' : ''}${isFailed ? ' fail' : ''}`}
+                              title="Copy this command — autopilot sessions live on the host, not in the browser"
+                              onClick={() => void copyTmux(l.key, cmd)}>
+                              {isCopied ? 'copied' : isFailed ? 'could not copy — select it by hand' : cmd}
+                            </button>
+                          );
+                        })()}
                       </div>
                       <div className="lane-acts">
                         <button className="btn-repo sm" onClick={onConfigureRoles}>Change the roles</button>
