@@ -70,6 +70,10 @@ export function ResumeHero({ resume, keepResumeCard }: {
               title="Download a markdown brief for starting back into this project">
               Export session brief <span className="arr">↗</span>
             </button>
+            <button className="btn-export" onClick={() => go.terminal(resume.slug, undefined, true)}
+              title="Open a Claude session in this project with a debrief of where things stand">
+              Jump back in <span className="arr">↗</span>
+            </button>
             <button className="btn-accent" onClick={() => go.detail(resume.slug)}>
               Continue <span className="arr">→</span>
             </button>

@@ -205,7 +205,7 @@ function ActivityCard({ a }: { a: Activity }) {
 export function Overview({
   project, activity, directives, reviewQueue, openBugCount, fixingCount, roadmapCount,
   onViewAll, onExport, onChangeDirectives, onReviewKeep, onReviewDismiss, onSaveDeploy, onSaveStack,
-  keepResumeCard = true, onReplan,
+  keepResumeCard = true, onJumpBack,
 }: {
   project: Project; activity: Activity[]; directives: string[]; reviewQueue: ReviewEntry[];
   openBugCount: number; fixingCount: number; roadmapCount: number;
@@ -213,7 +213,7 @@ export function Overview({
   onReviewKeep: (e: ReviewEntry) => void; onReviewDismiss: (e: ReviewEntry) => void;
   onSaveDeploy: (patch: DeployPatch) => void; onSaveStack: (next: string[]) => void;
   keepResumeCard?: boolean;
-  onReplan?: () => void;
+  onJumpBack?: () => void;
 }) {
   const r = project.resume;
   const latest = activity.slice(0, 2);
@@ -238,10 +238,10 @@ export function Overview({
                   ? `checkpoint ${r.since.authoredWhen} · ${r.since.count} push${r.since.count === 1 ? '' : 'es'} since`
                   : `updated ${r.when} · after push ${r.ref}`}
               </div>
-              {onReplan && (
-                <button className="btn-export" onClick={onReplan}
-                  title="Gemini drafts a first-session-back plan from the live state">
-                  ✧ Re-entry plan
+              {onJumpBack && (
+                <button className="btn-export" onClick={onJumpBack}
+                  title="Open a Claude session in this project with a debrief of where things stand">
+                  Jump back in <span className="arr">↗</span>
                 </button>
               )}
               <button className="btn-export" onClick={onExport} title="Download a markdown brief for starting back into this project">

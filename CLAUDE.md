@@ -194,8 +194,9 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   picker as pickable again; removing a `note` card DOES delete the note, which has no other home);
   **cutting an edge drops the `ai` branch below it** and only ever `ai` cards, which is what makes an
   op undoable without an undo stack; and **a read backfills a card for any note that lacks one**,
-  which is how pre-Workbench notes and notes filed elsewhere (the ✧ re-entry plan) reach the canvas
-  at all. Positions come from the CLIENT — only it knows how tall a card rendered.
+  which is how pre-Workbench notes and notes filed elsewhere (the plain `POST .../notes` route,
+  outside the canvas) reach the canvas at all. Positions come from the CLIENT — only it knows how
+  tall a card rendered.
 - **The Workbench's `polaris` payload is the WHOLE funnel, not what's left of it.** Every idea comes
   down carrying `onCanvas`, because the pull picker's All filter shows an idea already on the canvas
   too — greyed, unpickable — and that flag is the only thing stopping the same idea being pulled

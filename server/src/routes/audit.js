@@ -72,9 +72,10 @@ async function gatherContext(p) {
     // (#239) WORST first, not NEWEST first. This list is what the auditor is
     // told is already tracked, so a cap that drops the oldest rows drops
     // precisely the long-standing criticals — the bugs most worth knowing
-    // about — and keeps twenty recent trivia instead. The replan prompt next
-    // door already ordered by severity; the surface whose whole subject is
-    // bugs was the one that did not. Recency only breaks ties.
+    // about — and keeps twenty recent trivia instead. The resume debrief
+    // (GET /:slug/debrief in routes/projects.js) already ordered its bug
+    // list by severity for the same reason; the surface whose whole subject
+    // is bugs was the one that did not. Recency only breaks ties.
     q(
       `SELECT bug_key, title, severity, status FROM bugs
         WHERE project_id = $1 AND status <> 'fixed'

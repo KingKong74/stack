@@ -1053,13 +1053,6 @@ export function takeReviewPrefill(slug: string): ReviewPrefill | null {
   } catch { return null; }
 }
 
-// ---- Gemini re-entry plan (POST .../replan — suggestion only) ----
-
-export async function replanProject(slug: string): Promise<string> {
-  const r = await request<{ plan: string }>(`/projects/${encodeURIComponent(slug)}/replan`, { method: 'POST' });
-  return r.plan;
-}
-
 // ---- web terminal (ws to /term — the host PTY daemon behind nginx) ----
 
 // The only place the terminal's transport and token live — the Terminal screen
