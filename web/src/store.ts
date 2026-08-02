@@ -1397,10 +1397,16 @@ export interface TimelineEntry {
   summary: string; tags: string[]; geminiNote: string; authored: boolean; time: string;
 }
 export interface TimelineDay { date: string; label: string; entries: TimelineEntry[] }
-export interface TimelineData { days: TimelineDay[]; graph: { date: string; count: number }[]; total: number }
+export interface TimelineData {
+  days: TimelineDay[]; graph: { date: string; count: number }[]; total: number;
+  windowDays: number; hasMore: boolean; capped: boolean;
+}
 
-export async function getTimeline(): Promise<TimelineData> {
-  return request<TimelineData>('/timeline');
+export async function getTimeline(opts?: { days?: number; graph?: boolean }): Promise<TimelineData> {
+  const parts: string[] = [];
+  if (opts?.days) parts.push(`days=${opts.days}`);
+  if (opts?.graph === false) parts.push('graph=0');
+  return request<TimelineData>(`/timeline${parts.length ? `?${parts.join('&')}` : ''}`);
 }
 
 // ---- deleted projects (the soft-delete bin: restore or purge from Settings) ----
