@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  getReview, getReviewBrief, getRefineDraft, patchRoadmapItem, deleteRoadmapItem, queueUndo,
-  startAutopilot, setReviewPrefill,
-  type ReviewBrief, type ReviewData, type ReviewItem, type ReviewNightRun,
+  getReview, getReviewBrief, getReviewDebrief, getRefineDraft, patchRoadmapItem, deleteRoadmapItem,
+  queueUndo, startAutopilot, setReviewPrefill,
+  type ReviewBrief, type ReviewData, type ReviewDebrief, type ReviewDebriefDecision,
+  type ReviewItem, type ReviewNightRun,
 } from '../store';
 import { go } from '../lib/route';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -326,6 +327,12 @@ export function ReviewRoom({ onCount }: {
   });
 
   // ---- the debrief's nights ----
+  // This stays a client-side index over the fortnight: the chooser strip
+  // shows all 14 days at once, and fetching each of them from the server
+  // would be 14 round trips for one strip. The debrief itself — the body
+  // shown for the ONE night the reader picks — is composed server-side per
+  // night (see the Debrief component below); the two must not be folded back
+  // into each other.
   const nights = useMemo(() => {
     const byDay = new Map<string, ReviewNightRun[]>();
     for (const r of data?.nights ?? []) {
@@ -792,11 +799,56 @@ type Night = {
   landed: number; failed: number; tokens: number; costUsd: number;
 };
 
+// Each decision kind maps to one tone and one call to action — the same
+// mapping debrief.js's DECISION_KINDS encodes server-side, kept here only
+// because the button and its colour are presentation, not arithmetic.
+const DECISION_TONE: Record<ReviewDebriefDecision['kind'], 'bad' | 'warn'> = {
+  blocked: 'bad', checks: 'bad', paused: 'warn', failed: 'bad',
+};
+const DECISION_ACT: Record<ReviewDebriefDecision['kind'], string> = {
+  blocked: 'Review it', checks: 'Review it', paused: 'Open the item', failed: 'Open the item',
+};
+
 function Debrief({ nights, shown, onPickNight, onOpenItem, onReview }: {
   nights: Night[]; shown: Night | null; onPickNight: (day: string) => void;
   onOpenItem: (slug: string, id: string) => void;
   onReview: (slug: string, id: string) => void;
 }) {
+  // The body for the ONE shown night, composed server-side (debrief.js) and
+  // fetched fresh whenever the picked day changes — see the note above
+  // `nights` for why this is fetched per-night while the strip is not.
+  const [debrief, setDebrief] = useState<ReviewDebrief | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  // The day the in-flight (or most recently landed) request is FOR. Clicking
+  // through nights quickly fires several requests, and a slow one for a night
+  // the reader has since clicked away from must never overwrite what they are
+  // looking at now — every setter below checks the response's day against
+  // this before touching state.
+  const latestDay = useRef('');
+
+  const fetchDebrief = useCallback((day: string) => {
+    latestDay.current = day;
+    setLoading(true);
+    setError('');
+    setDebrief(null);
+    getReviewDebrief(day)
+      .then((d) => {
+        if (latestDay.current !== day) return;
+        setDebrief(d);
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (latestDay.current !== day) return;
+        setError(e instanceof Error ? e.message : 'Failed to load the debrief.');
+        setLoading(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (shown) fetchDebrief(shown.day);
+  }, [shown?.day, fetchDebrief]);
+
   if (!nights.length) {
     return (
       <div className="empty-state">
@@ -806,95 +858,110 @@ function Debrief({ nights, shown, onPickNight, onOpenItem, onReview }: {
     );
   }
   const n = shown!;
-  // What the night is asking you for — each one a real decision with a real
-  // door, not a summary line.
-  const decisions = [
-    ...n.runs.filter((r) => r.reviewVerdict === 'blocked').map((r) => ({
-      tag: 'BLOCKED', tone: 'bad' as const,
-      t: `The reviewer blocked ${r.itemTitle || `#${r.itemId}`} — ${r.reviewNote || 'it flagged serious findings'}`,
-      act: 'Review it', run: r,
-    })),
-    ...n.runs.filter((r) => (r.checksFailing ?? 0) > 0).map((r) => ({
-      tag: 'CHECKS', tone: 'bad' as const,
-      t: `${r.itemTitle || `#${r.itemId}`} landed with ${r.checksFailing} check${r.checksFailing === 1 ? '' : 's'} red`,
-      act: 'Review it', run: r,
-    })),
-    ...n.runs.filter((r) => r.outcome === 'limit').map((r) => ({
-      tag: 'PAUSED', tone: 'warn' as const,
-      t: `${r.itemTitle || `#${r.itemId}`} stopped on the usage limit — its branch keeps its claim`,
-      act: 'Open the item', run: r,
-    })),
-    ...n.runs.filter((r) => r.outcome === 'failed').map((r) => ({
-      tag: 'FAILED', tone: 'bad' as const,
-      t: `${r.itemTitle || `#${r.itemId}`} failed — ${r.summary?.slice(0, 120) || 'no account left behind'}`,
-      act: 'Open the item', run: r,
-    })),
-  ];
-  const reviewed = n.runs.filter((r) => r.reviewVerdict);
-  const clean = reviewed.filter((r) => r.reviewVerdict === 'clean').length;
+
+  const strip = (
+    <div className="rv-nights">
+      {/* #304 — the strip is a chooser, so it should point at the nights
+          worth opening. A night that LANDED something wears its count in the
+          live tone; a night that produced nothing recedes. Receding is
+          colour and weight, never removal: a quiet night is still a night
+          you can open, and the selected one is never dimmed, or the strip
+          would fade out the very thing you just pressed. */}
+      {nights.slice(0, 8).map((x) => (
+        <button key={x.day}
+          className={`rv-night ${x.day === n.day ? 'on' : ''} ${x.landed > 0 ? 'landed' : 'quiet'}`}
+          title={x.landed > 0
+            ? `${x.landed} change${x.landed === 1 ? '' : 's'} landed this night`
+            : 'Nothing landed this night'}
+          onClick={() => onPickNight(x.day)}>
+          <span className="d">{x.label}</span>
+          <span className="s">
+            {x.landed > 0
+              ? `${x.landed} landed${x.failed ? ` · ${x.failed} not` : ''}`
+              : x.failed ? `${x.failed} didn't land` : 'nothing landed'}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+
+  // ---- the four async states ----
+  if (loading) {
+    return (
+      <div className="rv-debrief">
+        {strip}
+        <div className="rv-quiet">Composing the debrief for {n.label}…</div>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="rv-debrief">
+        {strip}
+        <div className="mc-error">
+          {error} <button className="btn-repo sm" onClick={() => fetchDebrief(n.day)}>Retry</button>
+        </div>
+      </div>
+    );
+  }
+  if (!debrief) return null;   // between states for an instant — loading covers every real frame
+  if (!debrief.ran) {
+    return (
+      <div className="rv-debrief">
+        {strip}
+        <div className="empty-state">
+          <div className="big">{n.label}: nothing ran</div>
+          <div>No autopilot session finished this night, so there is nothing to debrief.</div>
+        </div>
+      </div>
+    );
+  }
+
+  const { stats, reviewer, architect, decisions, runs } = debrief;
+  const reviewedRuns = runs.filter((r) => r.reviewVerdict);
+  const archedRuns = runs.filter((r) => r.architectVerdict);
+  const flaggedRuns = archedRuns.filter((r) => r.architectVerdict !== 'aligned');
 
   return (
     <div className="rv-debrief">
-      <div className="rv-nights">
-        {/* #304 — the strip is a chooser, so it should point at the nights
-            worth opening. A night that LANDED something wears its count in the
-            live tone; a night that produced nothing recedes. Receding is
-            colour and weight, never removal: a quiet night is still a night
-            you can open, and the selected one is never dimmed, or the strip
-            would fade out the very thing you just pressed. */}
-        {nights.slice(0, 8).map((x) => (
-          <button key={x.day}
-            className={`rv-night ${x.day === n.day ? 'on' : ''} ${x.landed > 0 ? 'landed' : 'quiet'}`}
-            title={x.landed > 0
-              ? `${x.landed} change${x.landed === 1 ? '' : 's'} landed this night`
-              : 'Nothing landed this night'}
-            onClick={() => onPickNight(x.day)}>
-            <span className="d">{x.label}</span>
-            <span className="s">
-              {x.landed > 0
-                ? `${x.landed} landed${x.failed ? ` · ${x.failed} not` : ''}`
-                : x.failed ? `${x.failed} didn't land` : 'nothing landed'}
-            </span>
-          </button>
-        ))}
-      </div>
+      {strip}
 
       <div className="rv-debrief-head">
         <div className="left">
           <div className="row">
             <h3>{n.label}</h3>
-            <span className={`rv-badge ${n.failed ? 'warn' : 'good'}`}>
-              {n.failed ? `${n.landed} landed · ${n.failed} didn't` : `${n.landed} landed`}
+            <span className={`rv-badge ${stats.failed ? 'warn' : 'good'}`}>
+              {stats.failed ? `${stats.landed} landed · ${stats.failed} didn't` : `${stats.landed} landed`}
             </span>
           </div>
           <p>
-            {n.runs.length} run{n.runs.length === 1 ? '' : 's'} across{' '}
-            {new Set(n.runs.map((r) => r.slug)).size} project{new Set(n.runs.map((r) => r.slug)).size === 1 ? '' : 's'}
-            {reviewed.length
-              ? `. The reviewer read ${reviewed.length} of them and called ${clean} clean.`
+            {stats.runs} run{stats.runs === 1 ? '' : 's'} across{' '}
+            {stats.projects} project{stats.projects === 1 ? '' : 's'}
+            {reviewer.ran
+              ? `. The reviewer read ${reviewer.ran} of them and called ${reviewer.clean} clean.`
               : '. No second-model review ran, so nothing arrived pre-verdicted.'}
-            {(() => {
-              const arch = n.runs.filter((r) => r.architectVerdict);
-              const drift = arch.filter((r) => r.architectVerdict !== 'aligned').length;
-              if (!arch.length) return '';
-              return drift
-                ? ` The architect flagged ${drift} for structure.`
-                : ' The architect found nothing drifting.';
-            })()}
+            {architect.ran
+              ? (architect.drifted ? ` The architect flagged ${architect.drifted} for structure.` : ' The architect found nothing drifting.')
+              : ''}
           </p>
         </div>
         <div className="stats">
-          <div className="st"><span className="n">{n.landed}</span><span className="l">landed</span></div>
-          <div className="st"><span className={`n ${n.failed ? 'bad' : ''}`}>{n.failed}</span><span className="l">didn't</span></div>
-          <div className="st"><span className="n">{fmtTok(n.tokens)}</span><span className="l">spent</span></div>
-          <div className="st"><span className="n">${n.costUsd.toFixed(2)}</span><span className="l">cost</span></div>
+          <div className="st"><span className="n">{stats.landed}</span><span className="l">landed</span></div>
+          <div className="st"><span className={`n ${stats.failed ? 'bad' : ''}`}>{stats.failed}</span><span className="l">didn't</span></div>
+          {/* A plan night is the advisor working, not the advisor idle
+              (CLAUDE.md) — its own tile, not folded into "didn't". Same for a
+              run that legitimately found no commits to make. */}
+          <div className="st"><span className="n">{stats.planned}</span><span className="l">planned</span></div>
+          <div className="st"><span className="n">{stats.noCommits}</span><span className="l">no commits</span></div>
+          <div className="st"><span className="n">{fmtTok(stats.tokens)}</span><span className="l">spent</span></div>
+          <div className="st"><span className="n">${stats.costUsd.toFixed(2)}</span><span className="l">cost</span></div>
         </div>
       </div>
 
       <div className="rv-debrief-body">
         <div className="rv-main">
-          <div className="rv-rule"><span className="rv-lbl">WHAT LANDED</span><i /><span className="mono">{n.landed} of {n.runs.length} runs</span></div>
-          {n.runs.map((r) => (
+          <div className="rv-rule"><span className="rv-lbl">WHAT LANDED</span><i /><span className="mono">{stats.landed} of {stats.runs} runs</span></div>
+          {runs.map((r) => (
             <div className={`rv-change ${r.outcome}`} key={r.id}>
               <div className="head">
                 <span className={`dot ${r.outcome === 'landed' ? 'good' : r.outcome === 'planned' ? 'plan' : 'bad'}`} />
@@ -924,6 +991,16 @@ function Debrief({ nights, shown, onPickNight, onOpenItem, onReview }: {
                     <span className="t">{r.summary.slice(0, 400)}</span>
                   </div>
                 )}
+                {/* The reviewer's per-push note — a different thing from its
+                    stored verdict note above. Only the server can match one
+                    to a run (by branch, not array position), so this line
+                    only exists once the debrief is server-composed. */}
+                {r.pushNote && (
+                  <div className="rv-opinion session tight">
+                    <span className="agent">PUSH NOTE</span>
+                    <span className="t">{r.pushNote}</span>
+                  </div>
+                )}
                 <div className="acts">
                   {r.itemId && <button className="primary" onClick={() => onReview(r.slug, r.itemId)}>Review this change</button>}
                   {r.itemId && <button onClick={() => onOpenItem(r.slug, r.itemId)}>Open the item</button>}
@@ -937,12 +1014,12 @@ function Debrief({ nights, shown, onPickNight, onOpenItem, onReview }: {
           {decisions.length > 0 && (<>
             <div className="rv-rule"><span className="rv-lbl">DECISIONS THIS DEBRIEF ASKS FOR</span><i /></div>
             {decisions.map((d, i) => (
-              <div className={`rv-decision ${d.tone}`} key={i}>
+              <div className={`rv-decision ${DECISION_TONE[d.kind]}`} key={i}>
                 <span className="tag">{d.tag}</span>
-                <span className="t">{d.t}</span>
-                <button onClick={() => (d.act === 'Review it'
-                  ? onReview(d.run.slug, d.run.itemId)
-                  : onOpenItem(d.run.slug, d.run.itemId))}>{d.act}</button>
+                <span className="t">{d.sentence}</span>
+                <button onClick={() => (DECISION_ACT[d.kind] === 'Review it'
+                  ? onReview(d.slug ?? '', d.itemId ?? '')
+                  : onOpenItem(d.slug ?? '', d.itemId ?? ''))}>{DECISION_ACT[d.kind]}</button>
               </div>
             ))}
           </>)}
@@ -956,11 +1033,11 @@ function Debrief({ nights, shown, onPickNight, onOpenItem, onReview }: {
         <div className="rv-side">
           <div className="rv-panel">
             <div className="rv-lbl">REVIEWER</div>
-            {reviewed.length ? (<>
-              <div className={`rv-verdict-big ${clean === reviewed.length ? 'clean' : 'concerns'}`}>
-                {clean === reviewed.length ? 'Nothing to flag' : `${reviewed.length - clean} of ${reviewed.length} flagged`}
+            {reviewer.ran ? (<>
+              <div className={`rv-verdict-big ${reviewer.clean === reviewer.ran ? 'clean' : 'concerns'}`}>
+                {reviewer.clean === reviewer.ran ? 'Nothing to flag' : `${reviewer.ran - reviewer.clean} of ${reviewer.ran} flagged`}
               </div>
-              {reviewed.map((r) => (
+              {reviewedRuns.map((r) => (
                 <div className="rv-revline" key={r.id}>
                   <span className={`mark ${r.reviewVerdict}`}>{r.reviewVerdict === 'clean' ? '✓' : r.reviewVerdict === 'blocked' ? '✕' : '!'}</span>
                   <span className="t">{r.itemTitle || `#${r.itemId}`}{r.reviewNote ? ` — ${r.reviewNote}` : ''}</span>
@@ -976,52 +1053,45 @@ function Debrief({ nights, shown, onPickNight, onOpenItem, onReview }: {
 
           <div className="rv-panel">
             <div className="rv-lbl">ARCHITECT</div>
-            {(() => {
-              // #284 — the night's structural reads. Drifting and concerning are
-              // the news; a night that is entirely aligned says so in one line
-              // rather than listing every change that was fine.
-              const read = n.runs.filter((r) => r.architectVerdict);
-              const flagged = read.filter((r) => r.architectVerdict !== 'aligned');
-              if (!read.length) {
-                return (
-                  <div className="rv-quiet">
-                    No structural pass ran on this night's work. The architect reads each branch diff
-                    at run end and needs a Gemini key.
-                  </div>
-                );
-              }
-              return (<>
-                <div className={`rv-verdict-big ${flagged.length ? 'concerns' : 'clean'}`}>
-                  {flagged.length
-                    ? `${flagged.length} of ${read.length} drifting`
-                    : `All ${read.length} aligned`}
+            {/* #284 — the night's structural reads. Drifting and concerning are
+                the news; a night that is entirely aligned says so in one line
+                rather than listing every change that was fine. */}
+            {architect.ran ? (<>
+              <div className={`rv-verdict-big ${architect.drifted ? 'concerns' : 'clean'}`}>
+                {architect.drifted
+                  ? `${architect.drifted} of ${architect.ran} drifting`
+                  : `All ${architect.ran} aligned`}
+              </div>
+              {flaggedRuns.length === 0 && (
+                <div className="rv-quiet">Nothing this night pushed the codebase anywhere it wasn't already going.</div>
+              )}
+              {flaggedRuns.map((r) => (
+                <div className="rv-revline" key={r.id}>
+                  <span className={`mark ${r.architectVerdict}`}>
+                    {r.architectVerdict === 'concerning' ? '✕' : '~'}
+                  </span>
+                  <span className="t">
+                    {r.itemTitle || `#${r.itemId}`}{r.architectNote ? ` — ${r.architectNote}` : ''}
+                    {r.architectObs.length > 0 && (
+                      <ul className="rv-obs">{r.architectObs.map((o, i) => <li key={i}>{o}</li>)}</ul>
+                    )}
+                  </span>
                 </div>
-                {flagged.length === 0 && (
-                  <div className="rv-quiet">Nothing this night pushed the codebase anywhere it wasn't already going.</div>
-                )}
-                {flagged.map((r) => (
-                  <div className="rv-revline" key={r.id}>
-                    <span className={`mark ${r.architectVerdict}`}>
-                      {r.architectVerdict === 'concerning' ? '✕' : '~'}
-                    </span>
-                    <span className="t">
-                      {r.itemTitle || `#${r.itemId}`}{r.architectNote ? ` — ${r.architectNote}` : ''}
-                      {r.architectObs.length > 0 && (
-                        <ul className="rv-obs">{r.architectObs.map((o, i) => <li key={i}>{o}</li>)}</ul>
-                      )}
-                    </span>
-                  </div>
-                ))}
-              </>);
-            })()}
+              ))}
+            </>) : (
+              <div className="rv-quiet">
+                No structural pass ran on this night's work. The architect reads each branch diff
+                at run end and needs a Gemini key.
+              </div>
+            )}
           </div>
 
           <div className="rv-panel">
             <div className="rv-lbl">SPEND</div>
-            <div className="rv-fact"><span className="k">tokens</span><span className="v">{fmtTok(n.tokens)}</span></div>
-            <div className="rv-fact"><span className="k">cost</span><span className="v">${n.costUsd.toFixed(2)}</span></div>
+            <div className="rv-fact"><span className="k">tokens</span><span className="v">{fmtTok(stats.tokens)}</span></div>
+            <div className="rv-fact"><span className="k">cost</span><span className="v">${stats.costUsd.toFixed(2)}</span></div>
             <div className="rv-fact"><span className="k">per landed</span>
-              <span className="v">{n.landed ? `$${(n.costUsd / n.landed).toFixed(2)}` : '—'}</span></div>
+              <span className="v">{stats.costPerLanded != null ? `$${stats.costPerLanded.toFixed(2)}` : 'nothing landed'}</span></div>
           </div>
         </div>
       </div>
