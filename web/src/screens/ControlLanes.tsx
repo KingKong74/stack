@@ -581,7 +581,7 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
           {queued.map((j: AutopilotJob) => (
             <div className="mc-lane queued" key={j.id}>
               <div className="lane-head">
-                <span className="tintdot queued" />
+                <span className="tintdot queued" style={{ background: j.tint || 'var(--sand)' }} />
                 <span className="who">
                   <b className="quiet">{j.name}</b>
                   <i>{j.itemId ? `#${j.itemId} ${j.itemTitle || 'item'}` : `${j.kind} job`}</i>

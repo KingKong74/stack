@@ -101,6 +101,9 @@ export function NowRoom(p: NowRoomProps) {
   const attention = data.attention ?? [];
   const conflicts = data.conflicts ?? [];
   const hostSeen = data.terminal?.connected === true;
+  // AttentionRow / SessionConflict carry a slug + name but no tint of their
+  // own — resolve one off the project list, the #271 pattern (ControlRooms.tsx).
+  const tintOf = (slug: string) => data.projects.find((x) => x.slug === slug)?.tint || 'var(--sand)';
 
   const answer = async (row: AttentionRow, choice: 'approve' | 'deny') => {
     if (!row.tmux || !row.fingerprint || answering) return;
@@ -225,6 +228,7 @@ export function NowRoom(p: NowRoomProps) {
             <div className={`now-row ${a.kind}`} key={a.key}>
               <span className="tag">{a.kind}</span>
               <span className="txt">
+                <span className="tintdot" style={{ background: tintOf(a.slug) }} />
                 <b>{a.name}</b> {a.text}
                 {a.detail && <code>{a.detail}</code>}
                 {answerNote[a.key] && <em className="note">{answerNote[a.key]}</em>}
@@ -275,6 +279,7 @@ export function NowRoom(p: NowRoomProps) {
       <div className="now-clash" key={c.key}>
         <span className="tag">conflict</span>
         <span className="txt">
+          <span className="tintdot" style={{ background: tintOf(c.slug) }} />
           {c.count} <b>{c.name}</b> session{c.count === 1 ? '' : 's'} are editing <code>{c.file}</code>
           {c.branch && <> on <code>{c.branch}</code></>} — whoever lands second will rebase.
         </span>
@@ -361,7 +366,10 @@ export function NowRoom(p: NowRoomProps) {
           {queued.map((j, i) => (
             <div className="now-queued" key={j.id}>
               <span className="n">{i + 1}</span>
-              <span className="who"><b>{j.name}</b></span>
+              <span className="who">
+                <span className="tintdot" style={{ background: j.tint || 'var(--sand)' }} />
+                <b>{j.name}</b>
+              </span>
               <span className="what">{j.itemId ? `#${j.itemId} ${j.itemTitle || 'item'}` : `${j.kind} job`}</span>
               <span className="left">{j.when || 'waits for a slot'}</span>
               <span className="acts">
@@ -559,6 +567,7 @@ function BranchStrip({ project: x, data, previewFor, previewBusy, onStartPreview
           <span key={b.branch} title={chipTitle}
             className={`mc-branch ${mergeJob ? mergeJob.status : ''}`
               + (b.mergeClean === false ? ' conflicts' : b.mergeClean === true ? ' clean' : '')}>
+            <span className="tintdot" style={{ background: x.tint || 'var(--sand)' }} />
             <button className="mc-branch-name" onClick={() => go.detail(x.slug, 'roadmap', b.itemId)}>
               {b.branch}
             </button>
