@@ -509,6 +509,7 @@ node server/test/ingest-identity.test.mjs  # one activity row per SESSION (needs
 node server/test/run-shape.test.mjs        # the run ledger's shared shapes match the old copies
 node server/test/fleet-roles.test.mjs      # role attribution + drift detection (pure, no DB)
 node server/test/workbench.test.mjs        # the canvas is a placement layer (needs API + DATABASE_URL)
+node server/test/timeline-window.test.mjs  # days clamp, Extend widens the window, the 30-day default (needs API + DATABASE_URL)
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
 node server/test/agents.test.mjs           # each tab agent is bound to its own tab (pure, no DB)
