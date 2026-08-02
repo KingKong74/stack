@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { q } from '../db.js';
+import { q, pool } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { relativeTime } from '../util.js';
 import { runCore } from '../shape.js';
 import { readSettings, cleanAutopilotTime } from '../settings.js';
+import { cleanWorkers, pickClaimable } from '../slots.js';
 
 // Mounted at /api/projects/:slug/autopilot — the overnight runner's history.
 // The runner POSTs one row per item attempt; the dashboard's morning digest
@@ -84,6 +85,11 @@ const cleanAgenda = (v) => (Array.isArray(v) ? v : [])
   .filter((x) => x != null)
   .slice(0, 20);
 const cleanArea = (v) => String(v || '').trim().toLowerCase().slice(0, 40);
+
+// #265 — the autopilot claim lock. An arbitrary fixed bigint held only for
+// the span of GET /next's claim transaction below; the only thing that ever
+// contends for it is another poll landing at the same moment.
+const AUTOPILOT_CLAIM_LOCK = 826145;
 
 function scheduleShape(r) {
   return {
@@ -369,8 +375,9 @@ autopilotGlobal.get('/jobs', async (req, res) => {
 });
 
 // GET /next?local=YYYY-MM-DDTHH:MM&dow=N — the host dispatcher's poll.
-// Recovers stale jobs, lazily enqueues due work, then claims at most one job
-// (serialised: nothing is handed out while another job is claimed/running).
+// Recovers stale jobs, lazily enqueues due work, then claims up to
+// autopilotWorkers jobs (#265 — the rule for how many and which combinations
+// may share the deck lives in slots.js, not here).
 autopilotGlobal.get('/next', async (req, res) => {
   const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(String(req.query.local || ''));
   if (!m) return res.status(400).json({ error: 'local=YYYY-MM-DDTHH:MM required.' });
@@ -469,23 +476,38 @@ autopilotGlobal.get('/next', async (req, res) => {
     }
   }
 
-  // Serialise: one job in flight at a time (the runner's lockfile agrees).
-  const busy = await q(`SELECT 1 FROM autopilot_jobs WHERE status IN ('claimed','running') LIMIT 1`);
-  if (busy.rows.length) return res.json({ job: null });
-  // A queued resume job stays held until its not_before passes (#142); a
-  // 'paused' (hung-up) job is never handed out at all.
-  //
-  // Rotation ordering (#82): nightly jobs for all automode projects are enqueued
-  // at the same instant, so a plain created_at ORDER BY would always hand the
-  // same project out first. Instead we pick the project whose last COMPLETED
-  // nightly run is oldest (NULL = never run → goes first), breaking ties by
-  // created_at. Non-nightly jobs (manual / scheduled / revert / resume) carry
-  // their own created_at and slot into the queue normally in front of nightly
-  // batches when they arrive first, preserving the one-job-at-a-time guarantee.
-  const claimed = await q(
-    `UPDATE autopilot_jobs SET status = 'claimed', claimed_at = now()
-      WHERE id = (
-        SELECT j.id FROM autopilot_jobs j
+  // #265 — up to `autopilotWorkers` jobs may be in flight at once. The rule
+  // for how many, and which combinations may share the deck, is spelled ONCE
+  // in slots.js (canClaim/pickClaimable) — this SQL only supplies the
+  // in-flight and queued rows, in the right order, and never re-derives the
+  // rule itself. A candidate the rule blocks is stepped over so the next
+  // eligible one wins in the same poll. The advisory lock makes "read what's
+  // in flight" and "claim a job" one atomic decision — without it, two
+  // dispatcher polls landing together could both see room on the deck and
+  // both claim, which is exactly the race N workers is supposed to bound.
+  const workers = cleanWorkers(settings.autopilot_workers);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock($1)', [AUTOPILOT_CLAIM_LOCK]);
+
+    const { rows: inFlight } = await client.query(
+      `SELECT id, project_id AS "projectId", item_id AS "itemId", kind
+         FROM autopilot_jobs WHERE status IN ('claimed','running')`);
+
+    // A queued resume job stays held until its not_before passes (#142); a
+    // 'paused' (hung-up) job is never handed out at all.
+    //
+    // Rotation ordering (#82): nightly jobs for all automode projects are enqueued
+    // at the same instant, so a plain created_at ORDER BY would always hand the
+    // same project out first. Instead we pick the project whose last COMPLETED
+    // nightly run is oldest (NULL = never run → goes first), breaking ties by
+    // created_at. Non-nightly jobs (manual / scheduled / revert / resume) carry
+    // their own created_at and slot into the queue normally in front of nightly
+    // batches when they arrive first, preserving the one-job-at-a-time guarantee.
+    const { rows: queued } = await client.query(
+      `SELECT j.id, j.project_id AS "projectId", j.item_id AS "itemId", j.kind
+        FROM autopilot_jobs j
         LEFT JOIN LATERAL (
           SELECT finished_at FROM autopilot_jobs
            WHERE project_id = j.project_id
@@ -501,13 +523,28 @@ autopilotGlobal.get('/next', async (req, res) => {
            -- Rotate nightly projects: least recently run goes first (NULL = never run).
            last_run.finished_at ASC NULLS FIRST,
            -- Stable tie-break across everything else.
-           j.created_at ASC
-         LIMIT 1 FOR UPDATE OF j SKIP LOCKED
-      )
-      RETURNING id`);
-  if (!claimed.rows.length) return res.json({ job: null });
-  const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [claimed.rows[0].id]);
-  res.json({ job: jobShape(full.rows[0]) });
+           j.created_at ASC`);
+
+    const { job: pick } = pickClaimable(queued, inFlight, workers);
+    if (!pick) {
+      await client.query('COMMIT');
+      return res.json({ job: null });
+    }
+
+    const claimed = await client.query(
+      `UPDATE autopilot_jobs SET status = 'claimed', claimed_at = now()
+        WHERE id = $1 AND status = 'queued' RETURNING id`,
+      [pick.id]);
+    await client.query('COMMIT');
+    if (!claimed.rows.length) return res.json({ job: null });
+    const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [claimed.rows[0].id]);
+    return res.json({ job: jobShape(full.rows[0]) });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 // PATCH /jobs/:id — the dispatcher reports { status: running|done|failed|queued, detail? }.
