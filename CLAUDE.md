@@ -449,6 +449,7 @@ node server/test/workbench.test.mjs        # the canvas is a placement layer (ne
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
 node server/test/cap-note.test.mjs         # a capped note says it was capped (pure, no DB)
+node scripts/context-budget.test.mjs       # THIS file and the agent manual are within budget
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
