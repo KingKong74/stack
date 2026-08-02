@@ -987,7 +987,11 @@ Rules for this run:
 
   // Stamp what landed on the item (annotation only — done stays the human's
   // call; the Reviews view shows this the moment they tick it).
-  const builtNote = (resultText || `Built overnight on ${branch} (${nCommits} commit(s)) — see the branch diff and the checkpoint on the activity feed.`).slice(0, 1800);
+  // Sent whole: the server caps built_note at 2000 and SAYS it capped (BUG-12).
+  // Slicing here as well would truncate at a second, lower, silent limit — and
+  // the end of a session's account is where it puts what it could not finish.
+  const builtNote = resultText
+    || `Built overnight on ${branch} (${nCommits} commit(s)) — see the branch diff and the checkpoint on the activity feed.`;
   try {
     await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, { built_note: `[${branch}] ${builtNote}` });
   } catch (e) { log(`built_note skipped (${e.message})`); }

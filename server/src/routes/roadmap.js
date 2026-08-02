@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags } from '../util.js';
+import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags, capNote } from '../util.js';
 
 // Risk tiers (#212) — graduated trust. 'low' lets a green overnight run
 // auto-queue its own merge; anything else keeps the human on the merge button.
@@ -155,8 +155,11 @@ roadmap.patch('/:id', async (req, res) => {
     sets.push(`tier = $${i++}`); vals.push(cleanTier(req.body.tier));
   }
   if (req.body?.built_note !== undefined) {
+    // Capped out loud — see capNote. This is the ONLY writer of the column, so
+    // everything downstream can read it whole rather than re-capping (which
+    // would cut the marker off the end and hide the cap again).
     sets.push(`built_note = $${i++}`);
-    vals.push(String(req.body.built_note || '').trim().slice(0, 2000) || null);
+    vals.push(capNote(req.body.built_note) || null);
   }
   if (req.body?.position !== undefined && Number.isFinite(req.body.position)) {
     sets.push(`position = $${i++}`); vals.push(Math.trunc(req.body.position));
@@ -345,7 +348,7 @@ roadmap.post('/:id/review-brief', async (req, res) => {
     BUCKET: item.bucket,
     TITLE: item.title,
     NOTE_LINE: item.note ? `The item's note: ${String(item.note).slice(0, 1000)}` : '',
-    BUILT_NOTE: String(item.built_note || '(none recorded)').slice(0, 2000),
+    BUILT_NOTE: String(item.built_note || '(none recorded)'),
     RUN_BLOCK: run
       ? `Built by an unattended session on branch ${run.branch} (${run.commits} commit${run.commits === 1 ? '' : 's'}). The session's own account:\n${String(run.summary || '').slice(0, 3000)}`
       : 'No autopilot run recorded for it — likely built by hand or an interactive session.',
@@ -440,7 +443,7 @@ roadmap.post('/:id/refine-draft', async (req, res) => {
     BUCKET: item.bucket,
     TITLE: item.title,
     NOTE_LINE: item.note ? `The item's note: ${String(item.note).slice(0, 1000)}` : '',
-    BUILT_NOTE: String(item.built_note || '(none recorded — the builder left no account)').slice(0, 2000),
+    BUILT_NOTE: String(item.built_note || '(none recorded — the builder left no account)'),
     RUN_BLOCK: run
       ? `The run: branch ${run.branch}, ${run.commits} commit${run.commits === 1 ? '' : 's'}, outcome ${run.outcome}`
         + `${run.checks_failing == null ? ', checks never run' : `, ${run.checks_failing} check${run.checks_failing === 1 ? '' : 's'} failing`}.`
