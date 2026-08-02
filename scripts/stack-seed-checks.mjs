@@ -89,6 +89,16 @@ function suiteFor(slug, ORIGIN) {
     // session goes unreported.
     { name: 'Control — roles subagent spend', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentTokens' },
     { name: 'Control — roles priced delegations', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentsRecorded' },
+    // #269 — the throughput ledger. Mission Control's only record of whether
+    // the machine is getting BETTER, not just what it did tonight. Paths only,
+    // never values — the numbers move every night by design. `reverts.rateNow`
+    // is deliberately NOT covered here: it reads null whenever nothing landed
+    // in the window, and a null is not a fault this suite should raise on.
+    { name: 'Control — throughput spine', url: u('/api/control'), auth: true, json_path: 'ledger.days' },
+    { name: 'Control — throughput per night', url: u('/api/control'), auth: true, json_path: 'ledger.now.perNight' },
+    { name: 'Control — auto-merge share', url: u('/api/control'), auth: true, json_path: 'ledger.merges.now.auto' },
+    { name: 'Control — first-pass verdicts', url: u('/api/control'), auth: true, json_path: 'ledger.firstPass.now.verdicted' },
+    { name: 'Control — executor vs advisor spend', url: u('/api/control'), auth: true, json_path: 'ledger.roles.executor.costUsd' },
     // Turn 3 — whether the Refine dialog offers its ✦ draft at all. The button
     // is ABSENT without a key, so losing this field silently removes an
     // affordance rather than breaking one: the dialog still works and nobody

@@ -47,9 +47,9 @@ const jobRows = [
 ];
 
 const verdictRows = [
-  { review_tag: 'solid' },
-  { review_tag: 'solid' },
-  { review_tag: 'needs-work' },
+  { review_tag: 'solid', finished_at: '2026-07-25T10:00:00Z' },      // recent (1 day ago)
+  { review_tag: 'solid', finished_at: '2026-07-21T10:00:00Z' },      // recent (5 days ago)
+  { review_tag: 'needs-work', finished_at: '2026-07-14T10:00:00Z' }, // prev (12 days ago)
 ];
 
 const ledger = computeLedger({ runRows, jobRows, verdictRows, execAlias: 'sonnet', advAlias: 'claude-opus-5', now: NOW });
@@ -93,8 +93,56 @@ console.log('\n--- reverts: created_at, not finished_at (autopilot_jobs has no f
 check('reverts.now (2 days ago)', ledger.reverts.now, 1);
 check('reverts.prev (10 days ago)', ledger.reverts.prev, 1);
 
-console.log('\n--- firstPass ---');
-check('solid over every verdicted row', ledger.firstPass, { solid: 2, verdicted: 3 });
+console.log('\n--- reverts: rate carries a direction, and a denominator ---');
+// A dedicated fixture: 4 runs land in the recent half, one revert alongside
+// them, so the rate (0.25) reads as something a raw count of 1 could not.
+const rateRuns = [
+  { outcome: 'landed', tokens: '100', cost_usd: '0.10', finished_at: '2026-07-24T09:00:00Z' },
+  { outcome: 'landed', tokens: '100', cost_usd: '0.10', finished_at: '2026-07-24T10:00:00Z' },
+  { outcome: 'landed', tokens: '100', cost_usd: '0.10', finished_at: '2026-07-24T11:00:00Z' },
+  { outcome: 'landed', tokens: '100', cost_usd: '0.10', finished_at: '2026-07-24T12:00:00Z' },
+];
+const rateJobs = [{ kind: 'revert', created_at: '2026-07-24T12:00:00Z' }];
+const rateLedger = computeLedger({
+  runRows: rateRuns, jobRows: rateJobs, verdictRows: [], execAlias: 'sonnet', advAlias: 'claude-opus-5', now: NOW,
+});
+check('reverts.rateNow: 1 revert over 4 landed', rateLedger.reverts.rateNow, 0.25);
+
+console.log('\n--- reverts.rateNow is null, not 0, with no landed denominator ---');
+// A revert alongside a night that landed nothing — the rate over a zero
+// denominator must read as unknown, not as a suspiciously perfect zero.
+const noLandedRuns = [
+  { outcome: 'no-commits', tokens: '0', cost_usd: '0', finished_at: '2026-07-24T10:00:00Z' },
+];
+const noLandedJobs = [{ kind: 'revert', created_at: '2026-07-24T12:00:00Z' }];
+const noLandedLedger = computeLedger({
+  runRows: noLandedRuns, jobRows: noLandedJobs, verdictRows: [], execAlias: 'sonnet', advAlias: 'claude-opus-5', now: NOW,
+});
+check('a revert with nothing landed reads as null, never 0', noLandedLedger.reverts.rateNow, null);
+if (noLandedLedger.reverts.rateNow !== null) {
+  fails++;
+  console.log(`FAIL  reverts.rateNow must be === null (strict), got ${JSON.stringify(noLandedLedger.reverts.rateNow)}`);
+} else {
+  console.log('ok    reverts.rateNow === null (strict)');
+}
+
+console.log('\n--- firstPass: 14-day totals unchanged ---');
+check('solid over every verdicted row', { solid: ledger.firstPass.solid, verdicted: ledger.firstPass.verdicted }, { solid: 2, verdicted: 3 });
+
+console.log('\n--- firstPass: now/prev split on finished_at ---');
+check('firstPass.now: the two recent solids', ledger.firstPass.now, { solid: 2, verdicted: 2 });
+check('firstPass.prev: the one older needs-work', ledger.firstPass.prev, { solid: 0, verdicted: 1 });
+check('firstPass.solid equals now.solid + prev.solid', ledger.firstPass.solid, ledger.firstPass.now.solid + ledger.firstPass.prev.solid);
+check('firstPass.verdicted equals now.verdicted + prev.verdicted', ledger.firstPass.verdicted, ledger.firstPass.now.verdicted + ledger.firstPass.prev.verdicted);
+
+console.log('\n--- firstPass.prev.verdicted is 0 with no older verdicts — the client\'s "no arrow" case ---');
+const fpAllRecent = [
+  { review_tag: 'solid', finished_at: '2026-07-25T10:00:00Z' },
+];
+const fpAllRecentLedger = computeLedger({
+  runRows: [], jobRows: [], verdictRows: fpAllRecent, execAlias: 'sonnet', advAlias: 'claude-opus-5', now: NOW,
+});
+check('firstPass.prev.verdicted === 0 when nothing older exists', fpAllRecentLedger.firstPass.prev.verdicted, 0);
 
 console.log('\n--- roles: executor/advisor split by alias, assumed only for neither ---');
 const roleRows = [

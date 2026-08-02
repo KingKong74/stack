@@ -94,8 +94,13 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //   ledger: {                               // (#269) the throughput trend
 //     days: [ { day, landed, runs, tokens, costUsd } ],   // 14, oldest first
 //     now, prev,                            // 7-day windows → direction
-//     merges: { now: { total, auto }, prev }, reverts: { now, prev },
-//     firstPass: { solid, verdicted },
+//     merges: { now: { total, auto }, prev },
+//     reverts: { now, prev,                  // raw counts, unchanged
+//                rateNow, ratePrev },         // share of that window's landed
+//                                             // work; null (not 0) with no
+//                                             // landed denominator
+//     firstPass: { solid, verdicted,          // 14-day totals, unchanged
+//                  now: { solid, verdicted }, prev: { solid, verdicted } },
 //     roles: { executor, advisor, assumed } // spend split via splitRunRoles();
 //                                           // `assumed` = the fallback's share
 //   }
@@ -804,6 +809,14 @@ export function computeLedger({ runRows = [], jobRows = [], verdictRows = [], ex
   // true first-pass rate, and the client says so.
   const verdicted = verdictRows;
   const solid = verdicted.filter((r) => r.review_tag === 'solid').length;
+  // Split the same rows on the 7-day boundary so the rate can show direction
+  // too. This only means something when the PREVIOUS half has verdicted
+  // items of its own to compare against — with none, "now" has nothing to be
+  // better OR worse than, and it's the client's job to decline the arrow
+  // rather than Stack inventing a trend out of a lopsided sample.
+  const verdictedNow = half(verdicted, true);
+  const verdictedPrev = half(verdicted, false);
+  const solidIn = (rows) => rows.filter((r) => r.review_tag === 'solid').length;
 
   // Executor vs advisor spend (#153's "cheap hands, strong minds" claim,
   // finally measurable). Attribution is `splitRunRoles` — the SAME alias
@@ -829,13 +842,31 @@ export function computeLedger({ runRows = [], jobRows = [], verdictRows = [], ex
     }
   }
 
+  const nowW = window(half(runs, true));
+  const prevW = window(half(runs, false));
+  const nowReverts = half(reverts, true).length;
+  const prevReverts = half(reverts, false).length;
+
   return {
     days,
-    now: window(half(runs, true)),
-    prev: window(half(runs, false)),
+    now: nowW,
+    prev: prevW,
     merges: { now: mergeSplit(half(merges, true)), prev: mergeSplit(half(merges, false)) },
-    reverts: { now: half(reverts, true).length, prev: half(reverts, false).length },
-    firstPass: { solid, verdicted: verdicted.length },
+    reverts: {
+      now: nowReverts,
+      prev: prevReverts,
+      // Undone work as a share of the window's landed work — a bare count
+      // says nothing next to a night that landed twice as much. NULL, never
+      // 0, when nothing landed in the window: a rate over no denominator is
+      // unknown, and Stack does not render an absence as good news.
+      rateNow: nowW.landed ? nowReverts / nowW.landed : null,
+      ratePrev: prevW.landed ? prevReverts / prevW.landed : null,
+    },
+    firstPass: {
+      solid, verdicted: verdicted.length,
+      now: { solid: solidIn(verdictedNow), verdicted: verdictedNow.length },
+      prev: { solid: solidIn(verdictedPrev), verdicted: verdictedPrev.length },
+    },
     roles,
   };
 }
@@ -953,11 +984,15 @@ control.get('/', async (_req, res) => {
           AND s.branch LIKE 'auto/%' AND COALESCE(s.gemini_note, '') <> ''
         ORDER BY s.created_at DESC LIMIT 80`),
     // Verdicts on items the runner landed in the window — the first-pass rate.
-    q(`SELECT DISTINCT ri.id, ri.review_tag
+    // GROUP BY (not the old SELECT DISTINCT) collapses an item with several
+    // runs the same way, but also gives us MAX(finished_at) — the item's most
+    // recent landing — so the row can be split into a now/prev window below.
+    q(`SELECT ri.id, ri.review_tag, MAX(r.finished_at) AS finished_at
          FROM roadmap_items ri
          JOIN autopilot_runs r ON r.item_id = ri.id
         WHERE r.finished_at > now() - interval '14 days' AND r.outcome = 'landed'
-          AND COALESCE(ri.review_tag, '') <> ''`),
+          AND COALESCE(ri.review_tag, '') <> ''
+        GROUP BY ri.id, ri.review_tag`),
     // The INTERACTIVE half of the Roles room: what the human's own sessions ran
     // on, recorded by the SessionEnd hook from the transcript. Same 7-day
     // window as the run ledger above so the two halves describe one week.
