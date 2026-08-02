@@ -1,7 +1,7 @@
 import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
-  AuthDevice, Tip, Tier, ResumeSince,
+  AuthDevice, Tip, Tier, ResumeSince, ProjectDebrief,
   WorkbenchData, WorkbenchCard, WorkbenchEdge, WorkbenchBody, WorkbenchOp,
 } from './types';
 
@@ -29,6 +29,14 @@ export function onAuthChange(cb: () => void): () => void {
 
 export class AuthError extends Error {
   constructor() { super('Unauthorised'); this.name = 'AuthError'; }
+}
+
+// Carries the HTTP status alongside the server's message, so a caller that
+// needs to tell "not found" apart from any other failure (#276 — the
+// terminal's debrief panel) can check `.status` instead of pattern-matching
+// message text, which is exactly the fragility that broke it the first time.
+export class HttpError extends Error {
+  constructor(public status: number, message: string) { super(message); this.name = 'HttpError'; }
 }
 
 // Typed localStorage reader (#218: #192 + #185) — every device-local
@@ -174,7 +182,7 @@ async function request<T>(path: string, opts: { method?: string; body?: unknown 
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
     try { const j = await res.json(); if (j?.error) msg = j.error; } catch { /* keep default */ }
-    throw new Error(msg);
+    throw new HttpError(res.status, msg);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -943,6 +951,13 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   };
 }
 
+// The terminal's "Jump back in" debrief: current resume state plus the last
+// few commits (#276), shown so a session opened from the terminal screen
+// arrives already briefed. NOT the autopilot's night debrief (GET /api/review).
+export async function getProjectDebrief(slug: string): Promise<ProjectDebrief> {
+  return request<ProjectDebrief>(`/projects/${encodeURIComponent(slug)}/debrief`);
+}
+
 // ---- the Review room (#282, GET /api/review) ----
 //
 // Cross-project, because the nights are: one payload holds every completed item
@@ -1036,13 +1051,6 @@ export function takeReviewPrefill(slug: string): ReviewPrefill | null {
     sessionStorage.removeItem(REVIEW_PREFILL_KEY);
     return p;
   } catch { return null; }
-}
-
-// ---- Gemini re-entry plan (POST .../replan — suggestion only) ----
-
-export async function replanProject(slug: string): Promise<string> {
-  const r = await request<{ plan: string }>(`/projects/${encodeURIComponent(slug)}/replan`, { method: 'POST' });
-  return r.plan;
 }
 
 // ---- web terminal (ws to /term — the host PTY daemon behind nginx) ----
@@ -1153,7 +1161,7 @@ export type TermPaneCount = (typeof TERM_PANE_CHOICES)[number];
 // property of the project.
 export type TermRailStyle = 'tiers' | 'upnext';
 export interface TermViewPrefs {
-  railOpen: boolean; panes: TermPaneCount; railSeg: 'session' | 'runbook'; railStyle: TermRailStyle;
+  railOpen: boolean; panes: TermPaneCount; railSeg: 'session' | 'runbook' | 'debrief'; railStyle: TermRailStyle;
 }
 const TERM_VIEW_KEY = 'stack.termView';
 export function getTermViewPrefs(): TermViewPrefs {
@@ -1165,7 +1173,11 @@ export function getTermViewPrefs(): TermViewPrefs {
     // landing on two panes, which is the nearest honest reading of what it was
     // asking for. Anything unrecognised falls back to a single pane.
     panes: TERM_PANE_CHOICES.includes(p?.panes) ? p.panes as TermPaneCount : (p?.wide ? 2 : 1),
-    railSeg: p?.railSeg === 'runbook' ? 'runbook' as const : 'session' as const,
+    // #276 — 'debrief' is the third segment: the "Jump back in" button lands
+    // here so it opens already showing it, but the choice is still sticky
+    // per device like the other two.
+    railSeg: p?.railSeg === 'runbook' ? 'runbook' as const
+      : p?.railSeg === 'debrief' ? 'debrief' as const : 'session' as const,
     railStyle: p?.railStyle === 'upnext' ? 'upnext' as const : 'tiers' as const,
   }));
 }

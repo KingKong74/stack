@@ -10,8 +10,7 @@ import {
   projectListShape, projectDetailShape, resumeSince,
 } from '../shape.js';
 import { readSettings, sessionDefaultLines } from '../settings.js';
-import { askGemini, geminiEnabled } from '../gemini.js';
-import { buildPrompt } from '../prompts.js';
+import { geminiEnabled } from '../gemini.js';
 
 export const projects = Router();
 
@@ -161,6 +160,81 @@ projects.get('/:slug', async (req, res) => {
   );
 });
 
+// GET /api/projects/:slug/debrief  -> the per-project RESUME debrief: current
+// status plus the last few commits, shown on the terminal screen when "Jump
+// back in" drops the owner into a Claude session, so they can resume without
+// reconstructing context. NOT the same thing as the autopilot's NIGHT debrief
+// (routes/review.js's GET /api/review/ — one night's runs across every
+// project); this one is a single project's live resume state. Don't collapse
+// the two.
+projects.get('/:slug/debrief', async (req, res) => {
+  const { rows } = await q('SELECT * FROM projects WHERE slug = $1 AND deleted_at IS NULL', [req.params.slug]);
+  if (!rows.length) return res.status(404).json({ error: 'No such project.' });
+  const p = rows[0];
+
+  const [bugCounts, bugTop, road, sessions] = await Promise.all([
+    q(
+      `SELECT count(*) FILTER (WHERE status <> 'fixed')::int AS open,
+              count(*) FILTER (WHERE status <> 'fixed' AND severity = 'critical')::int AS critical,
+              count(*) FILTER (WHERE status <> 'fixed' AND severity = 'high')::int AS high,
+              count(*) FILTER (WHERE status <> 'fixed' AND severity = 'medium')::int AS medium,
+              count(*) FILTER (WHERE status <> 'fixed' AND severity = 'low')::int AS low
+         FROM bugs WHERE project_id = $1`,
+      [p.id]
+    ),
+    q(
+      `SELECT bug_key, title, severity FROM bugs
+        WHERE project_id = $1 AND status <> 'fixed'
+        ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at
+        LIMIT 3`,
+      [p.id]
+    ),
+    q(
+      `SELECT id, title, bucket, tier, claimed_by FROM roadmap_items
+        WHERE project_id = $1 AND NOT done AND bucket IN ('must', 'should')
+        ORDER BY CASE tier WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END,
+                 CASE bucket WHEN 'must' THEN 0 WHEN 'should' THEN 1 ELSE 2 END,
+                 position
+        LIMIT 5`,
+      [p.id]
+    ),
+    q(
+      `SELECT commit_hash, branch, summary, tags, gemini_note, tokens_used, created_at
+         FROM sessions WHERE project_id = $1 ORDER BY created_at DESC LIMIT 5`,
+      [p.id]
+    ),
+  ]);
+  const bc = bugCounts.rows[0];
+
+  res.json({
+    slug: p.slug,
+    name: p.name,
+    status: p.status,
+    phase: p.current_phase || '',
+    summary: p.summary || '',
+    when: relativeTime(p.last_session_at),
+    inProgress: Array.isArray(p.in_progress) ? p.in_progress : [],
+    nextUp: Array.isArray(p.next_up) ? p.next_up : [],
+    blockers: Array.isArray(p.blockers) ? p.blockers : [],
+    bugs: {
+      open: bc.open,
+      critical: bc.critical,
+      high: bc.high,
+      medium: bc.medium,
+      low: bc.low,
+      top: bugTop.rows.map((b) => ({ key: b.bug_key, title: b.title, severity: b.severity })),
+    },
+    roadmap: road.rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      bucket: r.bucket,
+      tier: r.tier || '',
+      claimedBy: r.claimed_by || '',
+    })),
+    commits: sessions.rows.map(activityShape),
+  });
+});
+
 // Fields the client may PATCH directly on a project.
 const PATCHABLE = new Set([
   'name', 'repo', 'repo_url', 'subtitle', 'site_url', 'status', 'pinned', 'automode', 'autopilot_area',
@@ -242,52 +316,6 @@ projects.delete('/:slug/share', async (req, res) => {
   );
   if (!rowCount) return res.status(404).json({ error: 'No such project.' });
   res.json({ ok: true });
-});
-
-// POST /api/projects/:slug/replan  -> Gemini drafts a re-entry plan from the
-// project's live state. A suggestion only — the client offers to save it as a
-// note; nothing is written here. 503 without a server key.
-projects.post('/:slug/replan', async (req, res) => {
-  if (!geminiEnabled()) {
-    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
-  }
-  const { rows } = await q('SELECT * FROM projects WHERE slug = $1 AND deleted_at IS NULL', [req.params.slug]);
-  if (!rows.length) return res.status(404).json({ error: 'No such project.' });
-  const p = rows[0];
-
-  const [bugsR, roadR] = await Promise.all([
-    q(`SELECT bug_key, title, severity FROM bugs
-        WHERE project_id = $1 AND status <> 'fixed'
-        ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
-        LIMIT 10`, [p.id]),
-    q(`SELECT bucket, title FROM roadmap_items
-        WHERE project_id = $1 AND NOT done AND NOT skipped
-        ORDER BY CASE bucket WHEN 'must' THEN 0 WHEN 'should' THEN 1 WHEN 'could' THEN 2 ELSE 3 END, position
-        LIMIT 15`, [p.id]),
-  ]);
-
-  const list = (arr) => (Array.isArray(arr) && arr.length ? arr.map(String).join('; ') : 'none recorded');
-  const prompt = buildPrompt('replan', {
-    NAME: p.name,
-    LAST_PUSH: relativeTime(p.last_session_at) || 'unknown',
-    NORTH_STAR_LINE: p.north_star ? `North star: ${p.north_star}` : '',
-    PHASE: p.current_phase || 'not recorded',
-    SUMMARY: p.summary || 'not recorded',
-    IN_PROGRESS: list(p.in_progress),
-    NEXT_UP: list(p.next_up),
-    BLOCKERS: list(p.blockers),
-    BUGS: bugsR.rows.length ? bugsR.rows.map((b) => `${b.bug_key} (${b.severity}) ${b.title}`).join('; ') : 'none open',
-    ROADMAP: roadR.rows.length ? roadR.rows.map((r) => `${r.bucket} — ${r.title}`).join('; ') : 'board is empty',
-  });
-
-  try {
-    const answer = await askGemini(prompt, { timeoutMs: 30_000 });
-    const plan = String(answer?.plan || '').trim().slice(0, 4000);
-    if (!plan) return res.status(502).json({ error: 'Gemini gave an unusable answer — try again.' });
-    res.json({ plan });
-  } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
-  }
 });
 
 // POST /api/projects/:slug/restore  -> bring a soft-deleted project back whole

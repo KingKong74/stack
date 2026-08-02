@@ -32,23 +32,6 @@ Be strict but fair: judge only what the text can evidence. Respond with ONLY thi
 PAGE TEXT:
 {{PAGE}}`;
 
-DEFAULTS.replan = `You are helping someone re-enter a side project they haven't touched in a while.
-Project: {{NAME}} (last push {{LAST_PUSH}})
-{{NORTH_STAR_LINE}}
-Current phase: {{PHASE}}
-Last summary: {{SUMMARY}}
-In progress when they left: {{IN_PROGRESS}}
-Suggested next (from back then): {{NEXT_UP}}
-Blockers: {{BLOCKERS}}
-Open bugs: {{BUGS}}
-Open roadmap (bucket — title): {{ROADMAP}}
-
-Write a short, calm re-entry plan for their FIRST session back: two or three sentences of
-"where you actually left off", then 3-5 numbered steps ordered to rebuild momentum (start
-small and verifiable, then the highest-value open work). Reference real items from above —
-no invented work. Use en-AU spelling. Respond with ONLY this JSON:
-{ "plan": "the plan as plain text — short paragraph, then numbered lines separated by \\n" }`;
-
 DEFAULTS.pushnote = `You are the second model keeping a quiet eye on a solo builder's side project.
 A session just pushed. Give ONE useful outside take on it: the sharpest next move, a risk the
 summary hints at, or a question worth asking before the next session. Ground it in the text
@@ -454,7 +437,6 @@ const ENV_KEYS = {
   wbcritique: 'GEMINI_WBCRITIQUE_PROMPT',
   wbask: 'GEMINI_WBASK_PROMPT',
   semantic: 'GEMINI_SEMANTIC_PROMPT',
-  replan: 'GEMINI_REPLAN_PROMPT',
   pushnote: 'GEMINI_PUSHNOTE_PROMPT',
   titler: 'GEMINI_TITLER_PROMPT',
   assist: 'GEMINI_ASSIST_PROMPT',

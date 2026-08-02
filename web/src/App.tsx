@@ -92,6 +92,7 @@ export default function App() {
         <Suspense fallback={null}>
           <Terminal initialCwd={route.name === 'terminal' ? route.cwd : ''}
             initialAttach={route.name === 'terminal' ? route.attach : undefined}
+            initialBrief={route.name === 'terminal' ? route.brief : undefined}
             visible={route.name === 'terminal'} onAlive={setTermAlive} />
         </Suspense>
       )}

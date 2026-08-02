@@ -3,14 +3,14 @@ import type { Roadmap as RoadmapData, RoadmapItem, Future, Severity, Priority, B
 import {
   getProjectDetail, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
-  createNote, deleteNote, createFuture, patchFuture, deleteFuture, getFutures,
+  deleteNote, createFuture, patchFuture, deleteFuture, getFutures,
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
   runAudit, getAuditPrompt, type AuditResult,
   patchProject, deleteProject, createShareLink, deleteShareLink,
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, convergeFutures,
   type ConvergeDraft, assistRoadmapItem,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
-  replanProject, startAutopilot, AuthError, takeReviewPrefill,
+  startAutopilot, takeReviewPrefill,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
@@ -160,9 +160,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const [confirmBugDelete, setConfirmBugDelete] = useState<Bug | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
-  // Gemini's re-entry plan: null = closed, '' = loading, text = the suggestion.
-  const [replan, setReplan] = useState<string | null>(null);
-  const [replanErr, setReplanErr] = useState('');
   // Gemini board clean-up: null = closed, 'loading', or the suggestion list.
   const [cleanup, setCleanup] = useState<RoadmapCleanupSuggestion[] | 'loading' | null>(null);
   const [cleanupErr, setCleanupErr] = useState('');
@@ -728,32 +725,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const removeProject = () =>
     guard(async () => { await deleteProject(slug); go.dashboard(); });
 
-  // Gemini drafts a first-session-back plan; the human decides whether it
-  // becomes a note. Suggestion only.
-  const openReplan = async () => {
-    setReplan('');
-    setReplanErr('');
-    try {
-      setReplan(await replanProject(slug));
-    } catch (e) {
-      if (e instanceof AuthError) return;
-      setReplanErr((e as Error)?.message || 'Gemini call failed.');
-    }
-  };
-  // Keeps a re-entry plan as a plain note. It gets no position of its own, which
-  // is fine: the Workbench's backfill places any note that arrived without a
-  // card the next time the canvas is opened.
-  const saveReplanAsNote = () => {
-    const text = replan;
-    setReplan(null);
-    if (!text) return;
-    void guard(async () => {
-      const note = await createNote(slug, { text: `✧ Re-entry plan\n${text}` });
-      setData({ ...data, notes: [note, ...notes] });
-      setNotesNonce((n) => n + 1);
-    });
-  };
-
   // ---- public showcase link ----
   const shareUrl = data.shareToken
     ? `${window.location.origin}/#/share/${encodeURIComponent(slug)}/${encodeURIComponent(data.shareToken)}`
@@ -864,7 +835,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           <Overview project={project} activity={activity} directives={data.directives}
             reviewQueue={reviewQueue} keepResumeCard={data.keepResumeCard}
             openBugCount={openBugCount} fixingCount={fixingCount} roadmapCount={roadmapCount}
-            onViewAll={viewAll} onExport={() => setExportOpen(true)} onReplan={openReplan}
+            onViewAll={viewAll} onExport={() => setExportOpen(true)} onJumpBack={() => go.terminal(slug, undefined, true)}
             onChangeDirectives={changeDirectives}
             onReviewKeep={reviewKeep} onReviewDismiss={reviewDismiss} onSaveDeploy={saveDeploy}
             onSaveStack={saveStack} />
@@ -987,28 +958,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
                 Apply {cleanupPicked.size} fix{cleanupPicked.size === 1 ? '' : 'es'}
               </button>
             )}
-          </div>
-        </Modal>
-      )}
-      {(replan !== null || replanErr) && (
-        <Modal onClose={() => { setReplan(null); setReplanErr(''); }}>
-          <h3>✧ Re-entry plan</h3>
-          {replanErr ? (
-            <div className="gemini-suggest err">✧ {replanErr}</div>
-          ) : replan === '' ? (
-            <div className="confirm-body">Gemini is reading the project's live state…</div>
-          ) : (
-            <>
-              <div className="replan-text">{replan}</div>
-              <div className="confirm-body" style={{ marginTop: 12, fontSize: 12 }}>
-                A suggestion from the resume card, open bugs and roadmap — save it as a sticky if
-                it's a keeper.
-              </div>
-            </>
-          )}
-          <div className="modal-actions" style={{ marginTop: 16 }}>
-            <button className="btn-cancel" onClick={() => { setReplan(null); setReplanErr(''); }}>Close</button>
-            {replan && <button className="btn-submit" onClick={saveReplanAsNote}>Save as note</button>}
           </div>
         </Modal>
       )}
