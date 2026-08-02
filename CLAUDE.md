@@ -184,8 +184,20 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   `branch LIKE 'auto/%'` now goes through `laneSql()` in `routes/control.js` — a predicate that still
   only knew `auto/` would blank the last-auto chip and the reviewer's notes, which reads as "nothing
   ran" on a fleet that ran all night.
-- **`built_note`** — what actually landed, PATCHed by the completing session alongside `done:true`.
-  The Review room verdicts against it. Always write one.
+- **`built_note`** — what actually landed, PATCHed by the completing session. The Review room
+  verdicts against it. Always write one.
+- **The Review queue is BUILT-or-ticked, not ticked (#374).** Nothing in Stack ticks an item: the
+  runner pushes and logs "claim stays until you merge + tick it", the merge job ends with "tick #N
+  when you've verified it", and sessions leave items unticked on purpose. So a queue of `done = true`
+  showed an empty room every morning over a full night's work. `routes/review.js` queues
+  `done = true` **OR** (`built_note` non-empty **AND** `claimed_by` non-empty), and each row carries
+  `stage: 'built' | 'ticked'`. **Both halves of the built predicate are load-bearing**: un-ticking
+  clears `claimed_by` and keeps `built_note`, so testing `built_note` alone re-queues every change
+  the human already rejected, and testing `claimed_by` alone queues items the moment a session claims
+  a branch. Consequently `settled` tests the verdict and **nothing about `done`** — approving a change
+  before it merges must move it to the archive, not out of both lists. Approving does NOT tick:
+  `done` is what `computeProgress` weighs, and the merge job does the tick, but only when a human
+  verdict is already stored on the item. Pinned by `server/test/review-queue.test.mjs`.
 - **A future's SHAPE in the Polaris galaxy (#312) is derived, never stored.** There is no `kind`
   column and there must not be one: `is_star` = ★ its own orbit; parent is a star = ● a planet;
   parent is a planet = ○ a moon; no parent + judged = ◦ one of the north star's three shells
@@ -510,6 +522,7 @@ node server/test/run-shape.test.mjs        # the run ledger's shared shapes matc
 node server/test/fleet-roles.test.mjs      # role attribution + drift detection (pure, no DB)
 node server/test/workbench.test.mjs        # the canvas is a placement layer (needs API + DATABASE_URL)
 node server/test/plan-night.test.mjs       # a booked plan night carries no item id (needs API + DATABASE_URL)
+node server/test/review-queue.test.mjs     # a change is in Review once BUILT (needs API + DATABASE_URL)
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
 node server/test/agents.test.mjs           # each tab agent is bound to its own tab (pure, no DB)

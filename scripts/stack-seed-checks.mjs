@@ -100,6 +100,13 @@ function suiteFor(slug, ORIGIN) {
     // affordance rather than breaking one: the dialog still works and nobody
     // finds out the assist stopped being offered.
     { name: 'Review — the Gemini-ready flag', url: u('/api/review'), auth: true, json_path: 'geminiReady' },
+    // #374 — how much of the queue is still on a branch. Like `attention`, this
+    // is a count that is MEANT to be zero much of the time, so the check asserts
+    // the path rather than a value: losing the key would take every unmerged
+    // change back out of the queue and the room would read "Nothing waiting on
+    // you" all over again — the exact failure #374 exists to fix, and one that
+    // looks completely correct from the screen.
+    { name: 'Review — changes still on a branch', url: u('/api/review'), auth: true, json_path: 'totals.unmerged' },
     // The Now room's two host-fed signals. Both are ARRAYS that are usually
     // EMPTY — nothing is normally stopped and nobody is normally colliding —
     // which is exactly why they need a check: if the key stops being served,

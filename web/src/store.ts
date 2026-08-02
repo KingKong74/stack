@@ -1011,6 +1011,19 @@ export interface ReviewRun {
   finishedAt: string;
 }
 
+// #374 — the host's probe on the branch a change is still sitting on. Only a
+// 'built' item carries one, and `null` is its own answer: no report names the
+// branch, which leaves "the host has not reported since it was pushed" and
+// "somebody merged it without ticking" both open. Never drawn as clean.
+export interface ReviewMerge {
+  branch: string;
+  ahead: number;
+  behind: number;
+  mergeClean: boolean | null;   // false = conflicts with main; null = not probed
+  subject: string;
+  when: string;
+}
+
 export interface ReviewItem {
   slug: string; name: string; tint: string | null;
   id: string; title: string; bucket: Priority;
@@ -1018,6 +1031,11 @@ export interface ReviewItem {
   reviewTags: string[]; reviewTag: string; shelved: boolean;
   branch: string; origin: 'auto' | 'branch' | 'manual';
   when: string; doneAt: string; risk: string;
+  // #374 — 'built' = the work is on a branch and wants reading BEFORE it
+  // lands; 'ticked' = the human has already closed it out. Absent on a
+  // pre-#374 server, where everything in the queue was ticked by definition.
+  stage?: 'built' | 'ticked';
+  merge?: ReviewMerge | null;
   run: ReviewRun | null;
 }
 
@@ -1031,7 +1049,9 @@ export interface ReviewData {
   queue: ReviewItem[];
   settled: ReviewItem[];
   nights: ReviewNightRun[];
-  totals: { pending: number; shelved: number; flagged: number; projects: number; settled: number };
+  // `unmerged` (#374) is a subset of `pending`, not a sibling of `flagged`:
+  // how many of the changes waiting on you are still on a branch.
+  totals: { pending: number; shelved: number; flagged: number; projects: number; settled: number; unmerged?: number };
   // Turn 3 — a Gemini key exists on the server. The Refine dialog's ✦ draft
   // button is ABSENT without one, never a disabled button explaining itself.
   geminiReady?: boolean;

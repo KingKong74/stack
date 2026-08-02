@@ -379,7 +379,40 @@ if (job.kind === 'merge') {
       git(repo, 'worktree', 'remove', '--force', wt);
       rmSync(wt, { recursive: true, force: true });
     }
-    const itemNote = job.itemId ? ` — tick #${job.itemId} in the roadmap when you've verified it` : '';
+    // #374 — the tick, when and only when the human already approved it.
+    //
+    // Nothing used to tick: this job ended by TELLING the owner to, which is
+    // why every built item sat at done=false and the Review room read empty.
+    // The queue now shows a change while it is still on its branch, so the
+    // verdict lands BEFORE the merge — and once it has, this merge is the
+    // moment the work is actually shipped, which is what `done` means.
+    //
+    // The gate is a stored human verdict on this item, nothing weaker. An
+    // unverdicted merge still ends with the ask, exactly as before: a merge
+    // nobody reviewed must not tick itself off. This is not the #263 machine
+    // verdict either — no model is consulted; the tick only ever follows a
+    // verdict a human pressed.
+    let itemNote = job.itemId ? ` — tick #${job.itemId} in the roadmap when you've verified it` : '';
+    if (job.itemId) {
+      try {
+        // The collection route, not the whole detail payload — this needs one
+        // item's verdict, and the detail payload is a dozen queries wide.
+        // It comes back grouped by bucket (groupRoadmap), so flatten first.
+        const road = await api('GET', `/api/projects/${job.slug}/roadmap`);
+        const item = Object.values(road || {}).flat()
+          .find((r) => String(r.id) === String(job.itemId));
+        if (item && item.reviewTag) {
+          await api('PATCH', `/api/projects/${job.slug}/roadmap/${job.itemId}`, { done: true });
+          itemNote = ` — #${job.itemId} ticked off (you approved it "${item.reviewTag}" before the merge)`;
+        } else if (item) {
+          itemNote = ` — #${job.itemId} left unticked: it has no verdict yet, so give it one in Review`;
+        }
+      } catch (e) {
+        // Fail SILENT in the direction that keeps the ask: a lookup that did
+        // not happen must never read as "no verdict, nothing to do".
+        log(`job #${job.id}: could not check #${job.itemId}'s verdict (${e.message}) — left it unticked.`);
+      }
+    }
     return { ok: true, detail: `merged origin/${branch} into main${aiNote}${cleaned}${itemNote}` };
   };
   await report('running');

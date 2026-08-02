@@ -5,6 +5,7 @@ import {
   type ReviewBrief, type ReviewData, type ReviewItem, type ReviewNightRun,
 } from '../store';
 import { go } from '../lib/route';
+import { mergeStateOf, MERGE_STATE_META, type MergeState } from '../lib/branch';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { Modal } from '../components/Modal';
 
@@ -25,6 +26,18 @@ import { Modal } from '../components/Modal';
 //
 // The room mutates nothing itself: verdicts, refinements, shelving and undo all
 // go through the same per-project routes the Roadmap tab used.
+//
+// #374 — the queue holds changes at two STAGES, and the difference decides what
+// the verdict means:
+//   built   still on its branch. Nothing ticks an item — the runner pushes and
+//           says "claim stays until you merge + tick it" — so this is where
+//           every overnight change actually is, and reading it here is reading
+//           it BEFORE it lands, which is the order you want.
+//   ticked  the human has already closed it out. What the queue used to hold,
+//           exclusively, which is why it read as empty every morning.
+// Approving a built change therefore does NOT tick it: `done` means shipped and
+// an unmerged branch has not shipped. It records the verdict and hands the
+// change to the Merge room, which ticks it once the merge lands (#374).
 
 type View = 'queue' | 'debrief';
 type Filter = 'todo' | 'flagged' | 'shelved' | 'settled';
@@ -38,6 +51,16 @@ const ARCH_LABEL: Record<string, string> = {
   aligned: 'ALIGNED', drifting: 'DRIFTING', concerning: 'CONCERNING', '': '',
 };
 const ORIGIN_LABEL = { auto: '⚙ autopilot', branch: '⚑ branch', manual: 'by hand' } as const;
+
+// #374 — a server that predates the stage sent only ticked changes, so the
+// absent field reads as 'ticked' rather than as unknown.
+const isBuilt = (it: ReviewItem) => (it.stage ?? 'ticked') === 'built';
+
+// The branch state under a built change, or null when no report names its
+// branch. Null is NOT clean — see the note on ReviewMerge — and the copy below
+// says what it actually leaves open rather than picking one.
+const mergeStateFor = (it: ReviewItem): MergeState | null =>
+  (isBuilt(it) && it.merge ? mergeStateOf(it.merge) : null);
 
 // Review annotations (#146), unchanged: quick labels you stick on while testing.
 const NOTE_TAGS: { key: string; label: string }[] = [
@@ -151,11 +174,20 @@ export function ReviewRoom({ onCount }: {
     }
   };
 
+  // The verdict is one PATCH either way — `review_tag: 'solid'` — and it
+  // deliberately never writes `done`. On a ticked change that is what it always
+  // did. On a BUILT one it is the point: approving is not shipping, and ticking
+  // an unmerged branch would put work into `computeProgress` that is not on
+  // main. What follows the approval is the merge, and the merge job does the
+  // tick (#374). Only the receipt differs, because only the receipt can say
+  // what happens next.
   const giveVerdict = (it: ReviewItem) => act(
     () => patchRoadmapItem(it.slug, Number(it.id), { review_tag: 'solid' }),
     {
       key: key(it),
-      text: `#${it.id} ${it.title} — marked solid.`,
+      text: isBuilt(it)
+        ? `#${it.id} ${it.title} — approved. It is still on ${it.branch || 'its branch'}; merging it ticks it off.`
+        : `#${it.id} ${it.title} — marked solid.`,
       undo: () => act(() => patchRoadmapItem(it.slug, Number(it.id), { review_tag: '' })),
     },
   );
@@ -372,6 +404,10 @@ export function ReviewRoom({ onCount }: {
             ? `${data.totals.pending} change${data.totals.pending === 1 ? '' : 's'} waiting on you across ${data.totals.projects} project${data.totals.projects === 1 ? '' : 's'}`
             : 'Nothing waiting on you'}
           {data.totals.flagged > 0 && ` · ${data.totals.flagged} flagged`}
+          {/* #374 — said out loud, because the whole queue used to be work that
+              had already landed, and reading a branch before it merges is a
+              different act from signing off something that is already on main. */}
+          {(data.totals.unmerged ?? 0) > 0 && ` · ${data.totals.unmerged} still on a branch`}
         </span>
         <div className="rv-spacer" />
         {view === 'queue' && (
@@ -386,7 +422,7 @@ export function ReviewRoom({ onCount }: {
         )}
         {view === 'queue' && filter === 'todo' && list.length > 1 && (
           <button className="rv-bulk" disabled={busy}
-            title="Mark every change in this list solid — for the mornings where you have already seen them all"
+            title="Mark every change in this list solid — for the mornings where you have already seen them all. Changes still on a branch are approved, not ticked: merging is still yours to press."
             onClick={() => act(async () => {
               for (const it of list) await patchRoadmapItem(it.slug, Number(it.id), { review_tag: 'solid' });
             }, { key: 'bulk', text: `${list.length} change${list.length === 1 ? '' : 's'} marked solid.` })}>
@@ -421,11 +457,23 @@ export function ReviewRoom({ onCount }: {
             <div className="rv-rail-list">
               {list.map((it) => {
                 const v = it.run?.reviewVerdict ?? '';
+                const ms = mergeStateFor(it);
                 return (
                   <button key={key(it)} className={`rv-card ${sel && key(sel) === key(it) ? 'on' : ''}`}
                     onClick={() => setSelId(key(it))}>
                     <span className="row1">
                       <span className={`rv-verdict ${v || 'none'}`}>{VERDICT_LABEL[v]}</span>
+                      {/* #374 — the stage, in the tone of the branch state where
+                          the host has probed it. A built change with no report
+                          gets the neutral chip, never the clean one. */}
+                      {isBuilt(it) && (
+                        <span className="rv-stage" style={ms ? { color: MERGE_STATE_META[ms].tone } : undefined}
+                          title={ms
+                            ? `Still on ${it.merge?.branch} — ${MERGE_STATE_META[ms].hint}`
+                            : 'Still on its branch. No branch report names it, so either the host has not reported since it was pushed, or it was merged without being ticked.'}>
+                          BRANCH{ms ? ` · ${MERGE_STATE_META[ms].label}` : ''}
+                        </span>
+                      )}
                       {(it.run?.checksFailing ?? 0) > 0 && (
                         <span className="rv-flag" title="The run finished with checks red">CHECKS</span>
                       )}
@@ -448,7 +496,7 @@ export function ReviewRoom({ onCount }: {
               })}
               {!list.length && (
                 <div className="rv-empty">
-                  {filter === 'todo' ? 'Nothing waiting. Completed work lands here with a note on what was built.'
+                  {filter === 'todo' ? 'Nothing waiting. A change lands here as soon as something builds it on a branch, with a note on what was built — you do not have to merge or tick it first.'
                     : filter === 'flagged' ? 'Nothing flagged — no reviewer said blocked and no run left checks red.'
                       : filter === 'shelved' ? 'Nothing shelved.'
                         : 'Nothing verdicted yet.'}
@@ -589,11 +637,22 @@ function Detail({
   onToggleTag: (t: string) => void; onDelete: () => void;
 }) {
   const v = it.run?.reviewVerdict ?? '';
+  const built = isBuilt(it);
+  const ms = mergeStateFor(it);
   const facts: { k: string; v: string; tone?: string }[] = [
     { k: 'project', v: it.name },
     { k: 'item', v: `#${it.id} · ${it.bucket}` },
     { k: 'built by', v: it.origin === 'branch' ? `⚑ ${it.branch}` : ORIGIN_LABEL[it.origin] },
-    { k: 'completed', v: it.when },
+    // #374 — "completed" was the only word here because the queue only ever
+    // held completed work. A built change was not completed; it was built.
+    { k: built ? 'built' : 'completed', v: it.when },
+    ...(built ? [{
+      k: 'merges',
+      v: ms
+        ? `${MERGE_STATE_META[ms].label}${it.merge && it.merge.behind > 0 ? ` · ${it.merge.behind} behind main` : ''}`
+        : 'not reported',
+      tone: ms === 'conflict' ? 'bad' : ms === 'clean' ? 'good' : undefined,
+    }] : []),
     ...(it.run ? [
       { k: 'branch', v: it.run.branch || '—' },
       { k: 'commits', v: String(it.run.commits) },
@@ -613,9 +672,22 @@ function Detail({
       <div className="rv-detail-head">
         <div className="row">
           <span className={`rv-verdict ${v || 'none'}`}>{VERDICT_LABEL[v]}</span>
-          <span className="meta">{it.name} · #{it.id} · {sizeOf(it)} · completed {it.when}</span>
+          <span className="meta">{it.name} · #{it.id} · {sizeOf(it)} · {built ? 'built' : 'completed'} {it.when}</span>
         </div>
         <h3>{it.title}</h3>
+        {/* #374 — where the work IS, before anything about whether it is good.
+            The branch state is the host's probe or nothing at all; "not
+            reported" names both things it could mean rather than implying the
+            merge is safe. */}
+        {built && (
+          <p className={`what branchline ${ms ?? 'unreported'}`}>
+            ⚑ Still on <span className="mono">{it.merge?.branch || it.branch || 'its branch'}</span> — this
+            has not landed on main yet.{' '}
+            {ms
+              ? MERGE_STATE_META[ms].hint
+              : 'No branch report names it: either the host has not reported since it was pushed, or it was merged without being ticked. Check the Merge room before assuming either.'}
+          </p>
+        )}
         {it.note && <p className="what">{it.note}</p>}
         {it.refineNote && (
           <p className="what refine">↻ Pending refinement: {it.refineNote}</p>
@@ -750,8 +822,12 @@ function Detail({
 
           <div className="rv-panel">
             <div className="rv-lbl">DECIDE</div>
+            {/* Same PATCH at both stages; different promise, so different
+                words. Approving a branch does not close anything out — the
+                merge does, and it is the merge that ticks the item. */}
             <button className="rv-act primary" disabled={busy} onClick={onVerdict}>
-              <span className="k">1</span><span>Solid — close it out</span>
+              <span className="k">1</span>
+              <span>{built ? 'Solid — approve it for merge' : 'Solid — close it out'}</span>
             </button>
             <button className="rv-act" disabled={busy} onClick={onRefine}>
               <span className="k">2</span><span>✎ Refine — send back the delta</span>
@@ -763,13 +839,27 @@ function Detail({
               Solid is the only verdict — dissatisfaction goes through Refine, which sends the item
               back carrying just what to change. 1/2/3 work from the keyboard; j/k walk the queue.
             </span>
+            {built && (
+              <span className="rv-note">
+                Approving does not tick this item: it is still on a branch, and{' '}
+                <b>done</b> means shipped. It moves to Settled and the Merge room ticks it off when
+                the merge lands.
+              </span>
+            )}
           </div>
 
           <div className="rv-panel">
             <div className="rv-lbl">ALSO</div>
             <div className="rv-more">
               <button disabled={busy} onClick={onBoard} title="Didn't hold up — send it back to the board unchanged">↩ Board</button>
-              <button disabled={busy} onClick={onUndo} title="Revert this item's commits on main and send it back">⎌ Undo</button>
+              {/* ⎌ Undo reverts this item's commits ON MAIN. A built change has
+                  none there, so the button is absent rather than disabled: it
+                  would queue a host job that finds nothing to revert and then
+                  un-claims the branch, which is ↩ Board by a slower route.
+                  Absent, not disabled, is the same rule the ✦ draft follows. */}
+              {!built && (
+                <button disabled={busy} onClick={onUndo} title="Revert this item's commits on main and send it back">⎌ Undo</button>
+              )}
               <button onClick={onBrief} title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">✧ Brief</button>
               <button onClick={onSession} title="Open a terminal in this project primed with this review">⌨ Session</button>
               <button onClick={onLogBug} title="Log a bug ticket against this item">＋ Bug</button>
