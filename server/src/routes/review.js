@@ -75,6 +75,18 @@ function itemShape(row) {
       // so `branch` and `summary` would collide) — the agent columns are not
       // aliased, so this half of the shape is shared and the rest is local.
       ...agentReads(row),
+      // #273 — the stored reviewer's brief. Kept local rather than folded into
+      // agentReads(): that helper is shared by three other run-ledger routes
+      // (pinned by run-shape.test.mjs) that have no use for it. Defensively
+      // re-shaped rather than trusted verbatim; null (not an empty object) is
+      // what lets the client say no brief was written, same rule as an empty
+      // second-model verdict.
+      reviewBrief: row.review_brief ? {
+        summary: String(row.review_brief.summary || ''),
+        test: Array.isArray(row.review_brief.test) ? row.review_brief.test.map(String) : [],
+        risks: Array.isArray(row.review_brief.risks) ? row.review_brief.risks.map(String) : [],
+      } : null,
+      reviewBriefAt: row.review_brief_at || null,
       when: relativeTime(row.run_finished) || '',
       finishedAt: row.run_finished,
     } : null,
@@ -92,6 +104,7 @@ const ITEM_SQL = `
          r.checks_failing AS run_checks, r.summary AS run_summary,
          r.review_verdict, r.review_note, r.review_findings,
          r.architect_verdict, r.architect_note, r.architect_obs,
+         r.review_brief, r.review_brief_at,
          r.finished_at AS run_finished
     FROM roadmap_items i
     JOIN projects p ON p.id = i.project_id AND p.deleted_at IS NULL

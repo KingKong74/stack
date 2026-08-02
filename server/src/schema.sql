@@ -565,6 +565,17 @@ ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS architect_verdict TEXT;
 ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS architect_note    TEXT;
 ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS architect_obs     JSONB;
 
+-- #273 — the REVIEWER'S BRIEF, generated and stored the moment a run lands
+-- instead of only on demand behind the ✧ Brief button. Same rule as
+-- review_verdict above: NULL means no brief was generated (keyless, a
+-- failed Gemini call, or a row predating the column), deliberately NOT
+-- "nothing to say".
+--   review_brief     { summary, test[], risks[] } — jsonb, see reviewbrief.js
+--   review_brief_at  when it was written (re-asking from the Review room
+--                     overwrites both)
+ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS review_brief    JSONB;
+ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS review_brief_at TIMESTAMPTZ;
+
 -- Scheduled sessions — Mission Control's calendar. A row is "run the autopilot
 -- on this project at this time": one-off (run_date set, days empty) or
 -- recurring (days = ISO getDay() ints 0-6, run_date NULL). item_id optionally
