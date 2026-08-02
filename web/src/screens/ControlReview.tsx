@@ -189,12 +189,15 @@ export function ReviewRoom({ onCount }: {
     setRefineDraft(null);
     setRefineSay(null);
     act(async () => {
+      // The refine note has to land first: the runner refuses to work a
+      // refine job on an item that carries no note, so queueing before the
+      // patch would hand it a job it immediately rejects.
       await patchRoadmapItem(it.slug, Number(it.id), { done: false, refine_note: text });
-      if (queue) await startAutopilot(it.slug, it.id);
+      if (queue) await startAutopilot(it.slug, { itemId: String(it.id), kind: 'refine' });
     }, {
       key: key(it),
       text: queue
-        ? `#${it.id} sent back with your refinement, and a session is queued on it.`
+        ? `#${it.id} sent back with your refinement — a refine round is queued on it.`
         : `#${it.id} sent back with your refinement — what landed stays on record.`,
     });
   };
@@ -543,7 +546,7 @@ export function ReviewRoom({ onCount }: {
           {refineSay && <div className={`rv-draft-say ${refineSay.tone}`}>{refineSay.text}</div>}
           <label className="rv-queue-toggle">
             <input type="checkbox" checked={refineQueue} onChange={(e) => setRefineQueue(e.target.checked)} />
-            <span>Queue a session on it now</span>
+            <span>Queue a refine round on it now</span>
           </label>
           <div className="modal-actions" style={{ marginTop: 14 }}>
             <button className="btn-cancel" onClick={closeRefine}>Cancel</button>
