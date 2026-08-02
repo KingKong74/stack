@@ -25,6 +25,15 @@ const fmtDate = (d: Date) =>
 const fmtTok = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
 
+// #272 — the standing plan night. --plan-only has always worked end to end,
+// but the room's only entry point opened the planner on Build+Once, so a
+// weekly design pass was four manual choices and has never been booked.
+// Wednesday 20:00 puts the design pass before the build nights that run on
+// what it plans; no agenda means the general pass over unplanned must/should.
+const PLAN_NIGHT_PRESET: Partial<AutopilotSchedule> = {
+  kind: 'plan', days: [3], atTime: '20:00', runDate: null, agenda: [], area: '', note: '',
+};
+
 // ---- shared: the picked project's detail, cached briefly so switching rooms
 // (Plan ↔ Build share the pick) doesn't refetch every mount ----
 const detailCache = new Map<string, { data: ProjectDetailData; at: number }>();
@@ -242,6 +251,8 @@ export function NightsRoom({ data, pickSlug, onPick, onOpenPlanner, onRunNow, on
         <span className="mc14-legend"><i className="failed" /> failed</span>
         <span className="mc14-legend"><i className="limit" /> limit</span>
         <span className="mc14-legend"><i className="booked" /> booked</span>
+        <button className="btn-repo sm" title="A standing weekly design pass — no code, no branches; each unplanned must/should gets plan steps and a design note."
+          onClick={() => onOpenPlanner({ ...PLAN_NIGHT_PRESET, slug: pickSlug || undefined })}>+ Book a weekly plan night</button>
         <button className="btn-repo sm" onClick={() => onOpenPlanner(null)}>+ Plan a session</button>
       </div>
 
