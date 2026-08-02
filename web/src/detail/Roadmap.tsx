@@ -420,7 +420,7 @@ export function Roadmap({
           )}
           {onCleanup && view === 'board' && (
             <button className="gemini-btn sm" onClick={onCleanup}
-              title="Gemini reviews the open board — missing areas, sloppy titles, wrong buckets — and suggests fixes for you to apply">
+              title="The Curator reviews the open board — missing areas, sloppy titles, wrong buckets — and suggests fixes for you to apply">
               ✧ Clean up
             </button>
           )}

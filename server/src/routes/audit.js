@@ -8,16 +8,17 @@ import { agentClient } from '../agents.js';
 
 // Mounted at /api/projects/:slug/audit — the Quality tab's automated bug
 // audit (#144; the ✧ Bug audit card on the Now segment). Two surfaces:
-//   POST /        — Gemini reads the owner's audit brief, the check results,
-//                   the tracked bugs and the live page, and reports suspected
-//                   bugs. Findings land as review-inbox bug rows (source
-//                   'hook', reviewed_at NULL) — the ONE sanctioned way Gemini
-//                   output touches state: as suggestions the human keeps or
-//                   dismisses, deduped by fingerprint and honouring tombstones.
+//   POST /        — the Auditor reads the owner's audit brief, the check
+//                   results, the tracked bugs and the live page, and reports
+//                   suspected bugs. Findings land as review-inbox bug rows
+//                   (source 'hook', reviewed_at NULL) — the ONE sanctioned way
+//                   the Auditor's output touches state: as suggestions the
+//                   human keeps or dismisses, deduped by fingerprint and
+//                   honouring tombstones.
 //   GET  /prompt  — the Claude hand-off: the same context composed as a deep
 //                   investigation prompt to paste into a Claude session (the
-//                   web terminal's Claude mode, or any chat). No Gemini key
-//                   needed — Claude runs on the owner's own subscription.
+//                   web terminal's Claude mode, or any chat) — a separate,
+//                   human-driven session, not a call to the Auditor.
 export const audit = Router({ mergeParams: true });
 
 // #361 — this surface IS the Auditor, and it is bound here once. Every model
@@ -208,7 +209,7 @@ export async function landFindings(projectId, findings) {
   return out;
 }
 
-// POST /  -> run the Gemini audit and log findings to the review inbox
+// POST /  -> run the Auditor's audit and log findings to the review inbox
 audit.post('/', async (req, res) => {
   const p = req.project;
   try {
@@ -235,12 +236,12 @@ audit.post('/', async (req, res) => {
       skipped: findings.filter((f) => f.outcome !== 'logged' && f.outcome !== 'reopened').length,
     });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || "The Auditor's call failed." });
   }
 });
 
 // GET /prompt  -> the deep-audit prompt for a Claude session (keyless — no
-// Gemini involved; the client copies it to the clipboard).
+// model call at all; the client copies it to the clipboard).
 audit.get('/prompt', async (req, res) => {
   const p = req.project;
   // Keyless, but still the Auditor's op: switching the agent off means it

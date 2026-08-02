@@ -194,8 +194,9 @@ roadmap.patch('/:id', async (req, res) => {
   res.json(roadmapItemShape(rows[0]));
 });
 
-// POST /suggest-title  -> Gemini titles an item from its note (the ✧ button in
-// the modal). Suggestion only — the human applies or ignores it. 503 keyless.
+// POST /suggest-title  -> the Curator titles an item from its note (the ✧
+// button in the modal). Suggestion only — the human applies or ignores it.
+// 503 if the host is unreachable.
 roadmap.post('/suggest-title', async (req, res) => {
   if (await refused('titler', res)) return;
   const note = String(req.body?.note || '').trim().slice(0, 2000);
@@ -209,18 +210,19 @@ roadmap.post('/suggest-title', async (req, res) => {
   try {
     const answer = await curator.ask('titler', prompt, { timeoutMs: 20_000 });
     const title = String(answer?.title || '').trim().slice(0, 300);
-    if (!title) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
+    if (!title) return res.status(502).json({ error: 'The Curator returned nothing usable.' });
     res.json({ title });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
   }
 });
 
-// POST /assist  -> Gemini fills the whole item from its note (the modal's ✧
-// button): title, tidied note, area, branch claim, priority and tier (#277).
-// Suggestion only — it prefills the fields and the human saves (or doesn't),
-// and the modal only takes a tier into an EMPTY tier, so a rank you set by
-// hand is never re-decided by the model. 503 keyless.
+// POST /assist  -> the Curator fills the whole item from its note (the
+// modal's ✧ button): title, tidied note, area, branch claim, priority and
+// tier (#277). Suggestion only — it prefills the fields and the human saves
+// (or doesn't), and the modal only takes a tier into an EMPTY tier, so a rank
+// you set by hand is never re-decided by the model. 503 if the host is
+// unreachable.
 roadmap.post('/assist', async (req, res) => {
   if (await refused('assist', res)) return;
   const note = String(req.body?.note || '').trim().slice(0, 4000);
@@ -256,7 +258,7 @@ roadmap.post('/assist', async (req, res) => {
   try {
     const answer = await curator.ask('assist', prompt, { timeoutMs: 25_000 });
     const title = String(answer?.title || '').trim().slice(0, 300);
-    if (!title) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
+    if (!title) return res.status(502).json({ error: 'The Curator returned nothing usable.' });
     const rawTier = String(answer?.tier || '').trim().toUpperCase();
     const fillTier = allowed.has('tier') && TIERS.includes(rawTier) ? rawTier : '';
     // A switched-off field comes back empty — the modal leaves it untouched.
@@ -280,13 +282,14 @@ roadmap.post('/assist', async (req, res) => {
         ? String(answer.risk).trim().toLowerCase() : '',
     });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
   }
 });
 
-// POST /cleanup  -> Gemini reviews the OPEN board and suggests fixes: areas
-// for untagged items, cleaned titles, honest buckets. Suggestions only — the
-// client shows them for the human to apply through the normal PATCH. 503 keyless.
+// POST /cleanup  -> the Curator reviews the OPEN board and suggests fixes:
+// areas for untagged items, cleaned titles, honest buckets. Suggestions only —
+// the client shows them for the human to apply through the normal PATCH.
+// 503 if the host is unreachable.
 roadmap.post('/cleanup', async (req, res) => {
   if (await refused('cleanup', res)) return;
   const { rows } = await q(
@@ -326,14 +329,15 @@ roadmap.post('/cleanup', async (req, res) => {
       .filter((s) => s.area || s.title || s.bucket);
     res.json({ items });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
   }
 });
 
-// POST /:id/review-brief  -> Gemini writes the reviewer's brief for a completed
-// item (#134): what actually shipped, hands-on test steps, likely risks — from
-// the item, its built_note, the autopilot run that built it and the project's
-// checks. Annotation only, nothing stored. 503 keyless.
+// POST /:id/review-brief  -> the Curator writes the reviewer's brief for a
+// completed item (#134): what actually shipped, hands-on test steps, likely
+// risks — from the item, its built_note, the autopilot run that built it and
+// the project's checks. Annotation only, nothing stored. 503 if the host is
+// unreachable.
 roadmap.post('/:id/review-brief', async (req, res) => {
   if (await refused('reviewbrief', res)) return;
   const { rows } = await q(
@@ -372,23 +376,23 @@ roadmap.post('/:id/review-brief', async (req, res) => {
   try {
     const answer = await curator.ask('reviewbrief', prompt, { timeoutMs: 25_000 });
     const summary = String(answer?.summary || '').trim().slice(0, 1200);
-    if (!summary) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
+    if (!summary) return res.status(502).json({ error: 'The Curator returned nothing usable.' });
     const list = (v, cap) => (Array.isArray(v) ? v : [])
       .map((s) => String(s).trim().slice(0, 300)).filter(Boolean).slice(0, cap);
     res.json({ summary, test: list(answer?.test, 6), risks: list(answer?.risks, 3) });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
   }
 });
 
-// POST /:id/refine-draft  -> Gemini drafts the ✎ Refine delta (Turn 3): the one
-// instruction that sends a completed item back to the board saying only what to
-// change on top of what landed.
+// POST /:id/refine-draft  -> the Curator drafts the ✎ Refine delta (Turn 3):
+// the one instruction that sends a completed item back to the board saying
+// only what to change on top of what landed.
 //
 // The affordance is the roadmap tab's, deliberately: OFFERED, never forced, and
 // the result is a draft in an editable box that the human still has to send.
-// Gemini annotates, the human disposes — this one never writes the note itself,
-// never sends the item back and never queues the session.
+// The Curator annotates, the human disposes — this one never writes the note
+// itself, never sends the item back and never queues the session.
 //
 // What it reads is the RECORD, not the repository. The server has no checkout,
 // so there is no diff to hand it; what it gets instead is the session's own
@@ -396,7 +400,7 @@ roadmap.post('/:id/review-brief', async (req, res) => {
 // by the night), the architect's structural read, and the files the sessions on
 // that branch touched. The UI's subtext says exactly that rather than the
 // design's "run log + diff" — same correction the Workbench ops carry, and for
-// the same reason. 503 keyless.
+// the same reason. 503 if the host is unreachable.
 roadmap.post('/:id/refine-draft', async (req, res) => {
   if (await refused('refinedraft', res)) return;
   const { rows } = await q(
@@ -500,7 +504,7 @@ roadmap.post('/:id/refine-draft', async (req, res) => {
       ].filter(Boolean),
     });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
   }
 });
 

@@ -160,7 +160,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const [confirmBugDelete, setConfirmBugDelete] = useState<Bug | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
-  // Gemini board clean-up: null = closed, 'loading', or the suggestion list.
+  // The Curator's board clean-up: null = closed, 'loading', or the suggestion list.
   const [cleanup, setCleanup] = useState<RoadmapCleanupSuggestion[] | 'loading' | null>(null);
   const [cleanupErr, setCleanupErr] = useState('');
   const [cleanupPicked, setCleanupPicked] = useState<Set<number>>(new Set());
@@ -341,9 +341,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
     });
 
-  // Board clean-up: Gemini proposes area/title/bucket fixes over the open
-  // board; the human unticks what they don't want and each applied fix lands
-  // through the normal PATCH path. Gemini proposes, the human disposes.
+  // Board clean-up: the Curator proposes area/title/bucket fixes over the
+  // open board; the human unticks what they don't want and each applied fix
+  // lands through the normal PATCH path. The Curator proposes, the human
+  // disposes.
   const openCleanup = async () => {
     setCleanup('loading');
     setCleanupErr('');
@@ -353,7 +354,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setCleanupPicked(new Set(items.map((s) => s.id)));
     } catch (e) {
       setCleanup(null);
-      setCleanupErr((e as Error)?.message || 'Gemini call failed.');
+      setCleanupErr((e as Error)?.message || "The Curator's call failed.");
     }
   };
   const closeCleanup = () => { setCleanup(null); setCleanupErr(''); };
@@ -598,7 +599,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     });
 
   // ---- the automated bug audit (#144) ----
-  // Re-runs the checks first so Gemini judges fresh evidence, then audits;
+  // Re-runs the checks first so the Auditor judges fresh evidence, then audits;
   // logged findings are review-inbox bugs, merged straight into the list.
   const runProjectAudit = async () => {
     setAuditBusy(true); setAuditError(''); setAuditResult(null);
@@ -882,7 +883,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId} slug={slug}
             onSaveNorthStar={saveNorthStar} onAdd={addFuture} onEdit={editFuture} onAlign={alignFuture}
-            onAskGemini={agentCan(data.agents, 'polaris', 'judge') ? (id) => judgeFuture(slug, id) : undefined}
+            onAskPolaris={agentCan(data.agents, 'polaris', 'judge') ? (id) => judgeFuture(slug, id) : undefined}
             onCluster={agentCan(data.agents, 'polaris', 'cluster') ? () => clusterFutures(slug) : undefined}
             onSetAreas={applyFutureAreas}
             onConvergeDraft={agentCan(data.agents, 'polaris', 'converge')
@@ -929,7 +930,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           {cleanupErr ? (
             <div className="gemini-suggest err">✧ {cleanupErr}</div>
           ) : cleanup === 'loading' ? (
-            <div className="confirm-body">Gemini is reading the open board…</div>
+            <div className="confirm-body">The Curator is reading the open board…</div>
           ) : Array.isArray(cleanup) && cleanup.length === 0 ? (
             <div className="confirm-body">Nothing to tidy — every open item has an area and reads cleanly.</div>
           ) : Array.isArray(cleanup) && (

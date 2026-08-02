@@ -45,7 +45,7 @@ function ago(ms: number): string {
 
 export function Futures({
   northStar, futures, highlightId, onSaveNorthStar, onAdd, onEdit, onAlign, onDelete, onPromote,
-  onAskGemini, onCluster, onSetAreas, onConvergeDraft, onConvergeCreate, onShape, slug,
+  onAskPolaris, onCluster, onSetAreas, onConvergeDraft, onConvergeCreate, onShape, slug,
 }: {
   northStar: string;
   futures: Future[];
@@ -60,7 +60,7 @@ export function Futures({
   // Where an idea sits in the galaxy and how big it is (#312) — one call for
   // all three, because promoting and adopting are each a move of both.
   onShape: (id: number, patch: { parentId?: number | null; isStar?: boolean; magnitude?: number | null }) => void;
-  onAskGemini?: (id: number) => Promise<JudgeSuggestion>;
+  onAskPolaris?: (id: number) => Promise<JudgeSuggestion>;
   onCluster?: () => Promise<ClusterSuggestion[]>;
   onSetAreas: (pairs: { id: number; area: string }[]) => void;
   onConvergeDraft?: (ids: number[], mode: 'tickets' | 'epic') => Promise<ConvergeDraft[]>;
@@ -234,13 +234,13 @@ export function Futures({
     setHintErr('');
   };
   const askPolaris = async (f: Future) => {
-    if (!onAskGemini || hintBusy) return;
+    if (!onAskPolaris || hintBusy) return;
     setHintBusy(true);
     setHintErr('');
     try {
-      setHint({ id: f.id, s: await onAskGemini(f.id) });
+      setHint({ id: f.id, s: await onAskPolaris(f.id) });
     } catch (e) {
-      setHintErr((e as Error)?.message || 'Gemini call failed.');
+      setHintErr((e as Error)?.message || "Polaris's call failed.");
     } finally {
       setHintBusy(false);
     }
@@ -284,7 +284,7 @@ export function Futures({
     return '';
   }, [galaxy]);
 
-  // ---- judge queue pop-out + Gemini theme clustering ----
+  // ---- judge queue pop-out + Polaris theme clustering ----
   const [queueOut, setQueueOut] = useState(false);
   const [clusterBusy, setClusterBusy] = useState(false);
   const [clusterErr, setClusterErr] = useState('');
@@ -297,18 +297,18 @@ export function Futures({
     try {
       const items = await onCluster();
       if (!items.length) {
-        setClusterErr('Gemini had no theme suggestions — the funnel may already be sorted.');
+        setClusterErr('Polaris had no theme suggestions — the funnel may already be sorted.');
       } else {
         setClusterSugs(items);
         setClusterPicks(new Set(items.map((s) => s.id)));
-        // #254 — a fresh run starts from Gemini's grouping, not the last
+        // #254 — a fresh run starts from Polaris's grouping, not the last
         // session's hand-edits.
         setClusterExtraThemes([]);
         setClusterRename(null);
         setClusterAdding(false);
       }
     } catch (e) {
-      setClusterErr((e as Error)?.message || 'Gemini call failed.');
+      setClusterErr((e as Error)?.message || "Polaris's call failed.");
     } finally {
       setClusterBusy(false);
     }
@@ -323,7 +323,7 @@ export function Futures({
   };
 
   // #254 — the suggestion list is EDITABLE before it is applied: rename a
-  // theme, move a single idea between themes, or coin a theme Gemini never
+  // theme, move a single idea between themes, or coin a theme Polaris never
   // proposed. All of it is local state over the draft — the only write is
   // still applyCluster's one onSetAreas call, so an edit costs nothing and
   // Cancel really does mean nothing happened.
@@ -375,7 +375,7 @@ export function Futures({
   const toggleTray = (id: number) =>
     setTray((t) => { const n = new Set(t); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
-  // The keyless drafts: a direct mapping of the picked ideas — Gemini is the
+  // The keyless drafts: a direct mapping of the picked ideas — Polaris is the
   // enrichment on top, never the gate.
   const directDrafts = (mode: 'tickets' | 'epic'): ConvergeDraft[] => {
     if (!trayIdeas.length) return [];
@@ -405,14 +405,14 @@ export function Futures({
     setConvergeDrafts(directDrafts(mode));
     setConvergeErr('');
   };
-  const draftWithGemini = async () => {
+  const draftWithPolaris = async () => {
     if (!onConvergeDraft || convergeBusy) return;
     setConvergeBusy(true);
     setConvergeErr('');
     try {
       setConvergeDrafts(await onConvergeDraft(trayIdeas.map((f) => f.id), convergeMode));
     } catch (e) {
-      setConvergeErr((e as Error)?.message || 'Gemini call failed.');
+      setConvergeErr((e as Error)?.message || "Polaris's call failed.");
     } finally {
       setConvergeBusy(false);
     }
@@ -528,7 +528,7 @@ export function Futures({
         </button>
         {onCluster && bySource.length > 0 && (
           <button className="psky-all" onClick={runCluster} disabled={clusterBusy}
-            title="Gemini groups the funnel into area tags — you review before anything is written">
+            title="Polaris groups the funnel into area tags — you review before anything is written">
             {clusterBusy ? '✧ clustering…' : '✧ Cluster'}
           </button>
         )}
@@ -769,7 +769,7 @@ export function Futures({
               <button className="psky-pop-close" onClick={() => setQueueOut(false)} aria-label="Close">×</button>
             </div>
             <QueueCard big cur={cur} unjudgedCount={unjudged.length} judgedCount={judgedCount}
-              hint={hint} hintBusy={hintBusy} hintErr={hintErr} canAsk={!!onAskGemini}
+              hint={hint} hintBusy={hintBusy} hintErr={hintErr} canAsk={!!onAskPolaris}
               onJudge={judge} onAsk={askPolaris} onSkip={skipCur} onReset={resetSkips} />
           </div>
         </Modal>
@@ -793,9 +793,9 @@ export function Futures({
               </div>
               <div style={{ flex: 1 }} />
               {onConvergeDraft && (
-                <button className="psky-all" onClick={draftWithGemini} disabled={convergeBusy}
-                  title="Gemini drafts the tickets against the north star — everything stays editable">
-                  {convergeBusy ? '✧ drafting…' : '✧ Draft with Gemini'}
+                <button className="psky-all" onClick={draftWithPolaris} disabled={convergeBusy}
+                  title="Polaris drafts the tickets against the north star — everything stays editable">
+                  {convergeBusy ? '✧ drafting…' : '✧ Draft with Polaris'}
                 </button>
               )}
             </div>
@@ -844,10 +844,10 @@ export function Futures({
         </Modal>
       )}
 
-      {/* Gemini's suggested clustering — nothing is written until Apply */}
+      {/* Polaris's suggested clustering — nothing is written until Apply */}
       {/* #254 — the suggestions are a DRAFT you edit, not a list you accept or
           reject wholesale. Rename a theme, move an idea to another theme, coin
-          a theme Gemini never thought of — then apply. Nothing is written until
+          a theme Polaris never thought of — then apply. Nothing is written until
           you do, so every edit here is free. */}
       {clusterSugs && (
         <Modal onClose={() => setClusterSugs(null)} closeOnOverlay={false} wide>
@@ -857,7 +857,7 @@ export function Futures({
               <button className="psky-pop-close" onClick={() => setClusterSugs(null)} aria-label="Close">×</button>
             </div>
             <div className="psky-cluster-hint">
-              Gemini's grouping of the funnel against the north star — a draft, not a verdict.
+              Polaris's grouping of the funnel against the north star — a draft, not a verdict.
               Untick what's wrong, rename a theme, move an idea with its ▾ picker, or coin a new
               theme below. Nothing is written until you apply.
             </div>
@@ -921,7 +921,7 @@ export function Futures({
                   }} />
               ) : (
                 <button className="chip-sm add" onClick={() => setClusterAdding(true)}
-                  title="Coin a theme Gemini didn't suggest, then move ideas into it">
+                  title="Coin a theme Polaris didn't suggest, then move ideas into it">
                   + new theme
                 </button>
               )}
@@ -940,7 +940,7 @@ export function Futures({
 }
 
 // The judge queue's card — one unsorted idea at a time, three verdicts, the
-// Gemini hint behind "What would Polaris say?". Rendered small in the rail
+// Polaris hint behind "What would Polaris say?". Rendered small in the rail
 // (with the ⤢ pop-out) and big inside the pop-out modal; same state both ways.
 function QueueCard({
   cur, unjudgedCount, judgedCount, hint, hintBusy, hintErr, canAsk,
