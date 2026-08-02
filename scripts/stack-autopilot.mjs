@@ -83,7 +83,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadStackEnv, logStderr, git } from '../hook/stack-post.mjs';
-import { laneFor, branchSlug } from './lib/lane.mjs';
+import { laneFor, branchSlug, lockFor } from './lib/lane.mjs';
 
 loadStackEnv();
 
@@ -392,13 +392,25 @@ const nightStart = Date.now();
 const elapsedMin = () => (Date.now() - nightStart) / 60_000;
 const remainingMin = () => MINUTES - elapsedMin();
 
-// ---- 0b. One run at a time (a crashed run's stale lock is cleared by age) ----
+// ---- 0b. One run per lane (a crashed run's stale lock is cleared by age) ----
+// A lane is a project plus either the single item it's pinned to (--item) or
+// the kind of night it is (build/plan/debug/audit) — see lib/lane.mjs. The
+// server side of the old global gate is already per-project (server/src/
+// slots.js hands out up to N jobs), so the last thing serialising the whole
+// host was this lockfile; it's now taken per lane instead, so a night pinned
+// to one item and a night pinned to another (or a plan sweep, or a debug
+// session) on the same host no longer block each other. The old single
+// ~/.stack/autopilot.lock is retired and inert — nothing reads or writes it
+// any more.
 const lockDir = join(homedir(), '.stack');
-const lock = join(lockDir, 'autopilot.lock');
+const lockName = lockFor({ slug: SLUG, itemId: ITEM_ID, kind: KIND });
+const lock = join(lockDir, lockName);
 mkdirSync(lockDir, { recursive: true });
 if (existsSync(lock)) {
   const { statSync } = await import('node:fs');
   const ageMin = (Date.now() - statSync(lock).mtimeMs) / 60_000;
+  // Clearing on age is inherently safe now: a run only ever looks at its own
+  // lane's lockfile, so no age threshold can reap a neighbouring lane's lock.
   if (ageMin < MINUTES + 30) die(`another run appears live (lock ${Math.round(ageMin)}m old) — bailing.`);
   log(`clearing stale lock (${Math.round(ageMin)}m old)`);
 }
@@ -602,7 +614,7 @@ async function debugNight() {
   let nightLimited = false;
   const sevOrder = { critical: 0, high: 1, medium: 2, low: 3 };
   log(`DEBUG session: ${BUG_AGENDA.length ? `agenda ${BUG_AGENDA.join(' → ')}` : 'open bugs, serious first'} — `
-    + `budget ${MINUTES}m, ${MAX_ITEMS === Infinity ? 'unlimited bugs (the clock governs)' : `up to ${MAX_ITEMS} bug(s)`}.`);
+    + `budget ${MINUTES}m, ${MAX_ITEMS === Infinity ? 'unlimited bugs (the clock governs)' : `up to ${MAX_ITEMS} bug(s)`}, lane lock ${lockName}.`);
 
   for (let n = 0; n < MAX_ITEMS; n++) {
     if (remainingMin() < MIN_SESSION_MIN) { log(`wall clock nearly spent (${Math.round(remainingMin())}m left) — stopping.`); break; }
@@ -668,7 +680,7 @@ async function auditNight() {
   }
   const scope = AREA_ARG ? String(AREA_ARG).toLowerCase() : '';
   if (DRY) { log(`dry run — would run an audit session${scope ? ` scoped to "${scope}"` : ''}.`); process.exit(0); }
-  log(`AUDIT session${scope ? ` (area "${scope}")` : ''}: budget ${MINUTES}m.`);
+  log(`AUDIT session${scope ? ` (area "${scope}")` : ''}: budget ${MINUTES}m, lane lock ${lockName}.`);
 
   const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const branch = `auto/audit-${day}`;
@@ -1063,7 +1075,7 @@ try {
   log(`${PLAN_ONLY ? 'PLAN night (#219 — designs only, no builds): ' : ''}night budget: ${MINUTES}m wall clock, `
     + `${TOKEN_BUDGET === Infinity ? 'UNLIMITED tokens' : `${Math.round(TOKEN_BUDGET / 1000)}k tokens`}, `
     + `${MAX_ITEMS === Infinity ? 'UNLIMITED items (the clock and the token budget govern)' : `up to ${MAX_ITEMS} item(s)`}${ITEM_ID != null ? ` (pinned to #${ITEM_ID})`
-      : AGENDA.length ? ` (agenda: ${AGENDA.map((i) => `#${i}`).join(' → ')})` : ''}.`);
+      : AGENDA.length ? ` (agenda: ${AGENDA.map((i) => `#${i}`).join(' → ')})` : ''}, lane lock ${lockName}.`);
   log(`models: executor ${EXECUTOR_MODEL || 'CLI default'}, advisor ${ADVISOR_MODEL || 'off'}.`);
 
   for (let n = 0; n < MAX_ITEMS; n++) {

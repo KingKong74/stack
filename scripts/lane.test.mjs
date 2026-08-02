@@ -3,7 +3,7 @@
 // Run: node scripts/lane.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { branchSlug, laneFor } from './lib/lane.mjs';
+import { branchSlug, laneFor, lockFor } from './lib/lane.mjs';
 
 // --- branchSlug ---
 
@@ -65,6 +65,80 @@ test('dispatch regex: bare item-N-slug', () => {
 test('dispatch regex: no match on unrelated branch', () => {
   assert.equal(ITEM_RE.exec('main'), null);
   assert.equal(ITEM_RE.exec('idea/some-idea'), null);
+});
+
+// --- lockFor ---
+
+test('lockFor: pinned item', () => {
+  assert.equal(lockFor({ slug: 'stack', itemId: 265, kind: 'build' }), 'autopilot-stack-item-265.lock');
+});
+
+test('lockFor: unpinned build night', () => {
+  assert.equal(lockFor({ slug: 'stack', itemId: null, kind: 'build' }), 'autopilot-stack-build.lock');
+});
+
+test('lockFor: plan sweep', () => {
+  assert.equal(lockFor({ slug: 'stack', itemId: null, kind: 'plan' }), 'autopilot-stack-plan.lock');
+});
+
+test('lockFor: audit night', () => {
+  assert.equal(lockFor({ slug: 'stack', itemId: null, kind: 'audit' }), 'autopilot-stack-audit.lock');
+});
+
+test('lockFor: debug night', () => {
+  assert.equal(lockFor({ slug: 'stack', itemId: undefined, kind: 'debug' }), 'autopilot-stack-debug.lock');
+});
+
+test('lockFor: numeric-string itemId still pins', () => {
+  assert.equal(lockFor({ slug: 'stack', itemId: '265', kind: 'build' }), 'autopilot-stack-item-265.lock');
+});
+
+test('lockFor: itemId 0 is not a pin', () => {
+  assert.equal(lockFor({ slug: 'stack', itemId: 0, kind: 'build' }), 'autopilot-stack-build.lock');
+});
+
+test('lockFor: itemId null is not a pin', () => {
+  assert.equal(lockFor({ slug: 'stack', itemId: null, kind: 'build' }), 'autopilot-stack-build.lock');
+});
+
+test('lockFor: itemId undefined is not a pin', () => {
+  assert.equal(lockFor({ slug: 'stack', itemId: undefined, kind: 'build' }), 'autopilot-stack-build.lock');
+});
+
+test('lockFor: negative itemId is not a pin', () => {
+  assert.equal(lockFor({ slug: 'stack', itemId: -5, kind: 'build' }), 'autopilot-stack-build.lock');
+});
+
+test('lockFor: slug with spaces and capitals is sanitised', () => {
+  assert.equal(lockFor({ slug: 'My Project', itemId: null, kind: 'build' }), 'autopilot-my-project-build.lock');
+});
+
+test('lockFor: empty slug falls back to unknown', () => {
+  assert.equal(lockFor({ slug: '', itemId: null, kind: 'build' }), 'autopilot-unknown-build.lock');
+});
+
+test('lockFor: empty/missing kind falls back to build', () => {
+  assert.equal(lockFor({ slug: 'stack', itemId: null, kind: '' }), 'autopilot-stack-build.lock');
+  assert.equal(lockFor({ slug: 'stack', itemId: null }), 'autopilot-stack-build.lock');
+});
+
+test('lockFor: dispatcher and runner spellings agree for a pinned job', () => {
+  // The dispatcher computes its lock from job.slug/job.itemId/sessionKind; the
+  // runner computes its own from SLUG/ITEM_ID/KIND for the same job. Same
+  // inputs must produce the exact same filename on both sides of the fork.
+  const job = { slug: 'stack', itemId: 265, sessionKind: 'build' };
+  const dispatcherLock = lockFor({ slug: job.slug, itemId: job.itemId, kind: job.sessionKind || 'build' });
+  const runnerLock = lockFor({ slug: 'stack', itemId: 265, kind: 'build' });
+  assert.equal(dispatcherLock, runnerLock);
+  assert.equal(dispatcherLock, 'autopilot-stack-item-265.lock');
+});
+
+test('lockFor: dispatcher and runner spellings agree for an unpinned plan job', () => {
+  const job = { slug: 'stack', itemId: null, sessionKind: 'plan' };
+  const dispatcherLock = lockFor({ slug: job.slug, itemId: job.itemId, kind: job.sessionKind || 'build' });
+  const runnerLock = lockFor({ slug: 'stack', itemId: null, kind: 'plan' });
+  assert.equal(dispatcherLock, runnerLock);
+  assert.equal(dispatcherLock, 'autopilot-stack-plan.lock');
 });
 
 // --- tree sort, mirrors stack-tree.mjs:116 ---

@@ -30,6 +30,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadStackEnv, logStderr } from '../hook/stack-post.mjs';
+import { lockFor } from './lib/lane.mjs';
 
 loadStackEnv();
 const API = (process.env.STACK_API || '').replace(/\/$/, '');
@@ -466,7 +467,11 @@ echo \${PIPESTATUS[0]} > ${shq(exitFile)}
           if (mine && mine.status === 'paused') {
             hungUp = true;
             spawnSync('tmux', ['kill-session', '-t', `=${tmuxName}`], { stdio: 'ignore' });
-            try { rmSync(join(homedir(), '.stack', 'autopilot.lock')); } catch { /* already gone */ }
+            // sessionKind here must agree with the KIND the runner itself derives
+            // (--plan-only → plan, --kind debug/audit → that, else build) — it's
+            // the same value that built the runner's --plan-only/--kind args above,
+            // so the lockFor() inputs match on both sides of the fork.
+            try { rmSync(join(homedir(), '.stack', lockFor({ slug: job.slug, itemId: job.itemId, kind: sessionKind }))); } catch { /* already gone */ }
             log(`job #${job.id}: hung up from the app — session ${tmuxName} killed; partial work stays on the branch.`);
             break;
           }
