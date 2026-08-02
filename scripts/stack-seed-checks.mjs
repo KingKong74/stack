@@ -136,6 +136,7 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Search — grouped counts', url: u('/api/search?q=roadmap'), auth: true, json_path: 'counts.total' },
     { name: 'Search — empty query is empty', url: u('/api/search?q='), auth: true, json_path: 'counts.total', json_expect: '0' },
     { name: 'Timeline — daily graph', url: u('/api/timeline'), auth: true, json_path: 'graph.0.date' },
+    { name: 'Timeline — 3-day window', url: u('/api/timeline?days=3&graph=0'), auth: true, json_path: 'windowDays' },
     { name: 'Settings — session defaults', url: u('/api/settings'), auth: true, json_path: 'sessionDefaults' },
 
     // -- projects and their collections
