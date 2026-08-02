@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Bug, BugStatus, Check, CheckHistory, CheckMethod, CheckResult, CheckRun, Severity } from '../types';
-import { getCheckHistory, getCheckRuns, type CheckInput, type AuditResult } from '../store';
+import { getCheckHistory, getCheckRuns, agentCan, agentOffReason, type CheckInput, type AuditResult, type TabAgentState } from '../store';
 import { STATUS_LABEL } from '../lib/ui';
 
 // The Quality page (#278, design 20b) — Bugs and Audit merged into one card grid.
@@ -424,10 +424,14 @@ function OneCause({ signature, count, busy, onRunAll, onFileHost }: {
 // ---- the Gemini bug audit ------------------------------------------------
 
 function AuditCard({
-  context, onSaveBrief, busy, result, error, onRun, claudeCopy, onCopyClaude, checkCount,
+  context, onSaveBrief, busy, result, error, onRun, canPrompt, claudeCopy, onCopyClaude, checkCount,
 }: {
   context: string; onSaveBrief: (t: string) => void;
   busy: boolean; result: AuditResult | null; error: string; onRun: () => void;
+  // #361 — the deep-audit hand-off is the Auditor's SECOND op and switches
+  // separately: it needs no key, so it is the half that still works on a
+  // keyless server and the half worth being able to keep when the other goes.
+  canPrompt: boolean;
   claudeCopy: 'idle' | 'busy' | 'copied' | 'failed'; onCopyClaude: () => void; checkCount: number;
 }) {
   const [briefOpen, setBriefOpen] = useState(false);
@@ -444,10 +448,12 @@ function AuditCard({
         <button className="q-card-act" onClick={() => { setDraft(context); setBriefOpen(!briefOpen); }}>
           {briefOpen ? 'close brief' : context ? '✎ brief' : '+ brief'}
         </button>
-        <button className="q-card-act" disabled={claudeCopy === 'busy'} onClick={onCopyClaude}
-          title="Copy a deep-audit prompt for a Claude session — the investigation Gemini can't do from outside">
-          {claudeLabel}
-        </button>
+        {canPrompt && (
+          <button className="q-card-act" disabled={claudeCopy === 'busy'} onClick={onCopyClaude}
+            title="Copy a deep-audit prompt for a Claude session — the investigation Gemini can't do from outside">
+            {claudeLabel}
+          </button>
+        )}
         <button className="btn-submit sm" disabled={busy} onClick={onRun}>{busy ? 'Auditing…' : '✧ Run'}</button>
       </div>
 
@@ -991,7 +997,7 @@ function HistoryPanel({ runs }: { runs: CheckRun[] }) {
 // ---- the page ----------------------------------------------------------
 
 export function Quality({
-  slug, checks, bugs, siteUrl, geminiReady, highlightId,
+  slug, checks, bugs, siteUrl, geminiReady, agents, highlightId,
   checksBusy, onRunChecks, onAddCheck, onEditCheck, onDeleteCheck,
   onFileBug, onSetBugStatus, onDeleteBug, onOpenCommit,
   auditContext, onSaveAuditContext, auditBusy, auditResult, auditError, onRunAudit,
@@ -999,6 +1005,10 @@ export function Quality({
 }: {
   slug: string;
   checks: Check[]; bugs: Bug[]; siteUrl: string; geminiReady: boolean;
+  // #361 — the AUDITOR's live state. This page is the Auditor's tab, and it is
+  // the one tab with room to say so when the agent is off, so it reads the
+  // state itself rather than taking pre-chewed booleans.
+  agents: TabAgentState;
   highlightId?: string | null;
   checksBusy: boolean;
   onRunChecks: (id?: number) => void;
@@ -1013,6 +1023,13 @@ export function Quality({
   auditBusy: boolean; auditResult: AuditResult | null; auditError: string; onRunAudit: () => void;
   claudeCopy: 'idle' | 'busy' | 'copied' | 'failed'; onCopyClaudePrompt: () => void;
 }) {
+  // #361 — what the Auditor may do on this project right now. Unknown reads as
+  // yes (an older server sends no agent state), so this only ever hides a
+  // surface the server has actually said it will refuse.
+  const canAudit = agentCan(agents, 'auditor', 'audit');
+  const canPrompt = agentCan(agents, 'auditor', 'auditprompt');
+  const auditorOff = agentOffReason(agents, 'auditor', 'audit');
+
   const [seg, setSeg] = useState<Seg>('now');
   const [runs, setRuns] = useState<CheckRun[]>([]);
   const [history, setHistory] = useState<CheckHistory>({});
@@ -1209,10 +1226,28 @@ export function Quality({
                 </div>
               )}
 
-              {geminiReady && (
+              {/* #361 — the ✧ Bug audit is the AUDITOR's, and the Auditor can be
+                  switched off in Mission Control → Agents. Off, the card is
+                  absent rather than dead (the same treatment a missing key
+                  gets), but unlike a missing key this is a state somebody
+                  chose, so the note below names the agent and where to undo it
+                  — a vanished feature with no explanation is the worse half of
+                  "render it absent". */}
+              {geminiReady && canAudit && (
                 <AuditCard context={auditContext} onSaveBrief={onSaveAuditContext}
                   busy={auditBusy} result={auditResult} error={auditError} onRun={onRunAudit}
+                  canPrompt={canPrompt}
                   claudeCopy={claudeCopy} onCopyClaude={onCopyClaudePrompt} checkCount={checks.length} />
+              )}
+
+              {geminiReady && !canAudit && (
+                <div className="q-card span">
+                  <div className="q-note dashed">
+                    {auditorOff} The bug audit and its Claude hand-off are hidden until it is switched
+                    back on in Mission Control → Agents. Everything else here — filing, linking,
+                    triage, the whole suite — never needed it.
+                  </div>
+                </div>
               )}
 
               <ChecksCard checks={checks} bugFor={bugFor} busy={checksBusy}

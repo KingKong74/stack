@@ -14,8 +14,8 @@ const cleanTier = (v) => {
   return TIERS.includes(t) ? t : null;
 };
 import { roadmapItemShape, groupRoadmap } from '../shape.js';
-import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
+import { agentClient } from '../agents.js';
 import { readSettings } from '../settings.js';
 
 // Mounted at /api/projects/:slug/roadmap.
@@ -27,6 +27,27 @@ roadmap.use(async (req, res, next) => {
   req.project = project;
   next();
 });
+
+// #361 — every ✧ surface on this file is the CURATOR, the Roadmap tab's agent,
+// and it is bound once here. The client refuses any op the Curator does not own
+// (the Auditor's audit, Polaris's judge), so the board cannot quietly become
+// somebody else's workspace, and it carries the agent's switch, model and
+// standing guidance.
+const curator = agentClient('curator');
+
+// The Curator's gate, as a response. `true` = it refused and the reply is
+// already sent, so the route returns. This replaced the `if (!geminiEnabled())`
+// line each ✧ route used to open with: a missing key is now one of several
+// reasons an agent may not act, and the agent is the thing that knows them all.
+const refused = async (op, res) => {
+  try {
+    await curator.gate(op);
+    return false;
+  } catch (err) {
+    res.status(err.httpStatus || 503).json({ error: err.message });
+    return true;
+  }
+};
 
 // GET  /  -> grouped MoSCoW roadmap
 roadmap.get('/', async (req, res) => {
@@ -176,9 +197,7 @@ roadmap.patch('/:id', async (req, res) => {
 // POST /suggest-title  -> Gemini titles an item from its note (the ✧ button in
 // the modal). Suggestion only — the human applies or ignores it. 503 keyless.
 roadmap.post('/suggest-title', async (req, res) => {
-  if (!geminiEnabled()) {
-    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
-  }
+  if (await refused('titler', res)) return;
   const note = String(req.body?.note || '').trim().slice(0, 2000);
   if (!note) return res.status(400).json({ error: 'Write the note first — the title comes from it.' });
   const prompt = buildPrompt('titler', {
@@ -188,7 +207,7 @@ roadmap.post('/suggest-title', async (req, res) => {
       : '',
   });
   try {
-    const answer = await askGemini(prompt, { timeoutMs: 20_000 });
+    const answer = await curator.ask('titler', prompt, { timeoutMs: 20_000 });
     const title = String(answer?.title || '').trim().slice(0, 300);
     if (!title) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
     res.json({ title });
@@ -203,9 +222,7 @@ roadmap.post('/suggest-title', async (req, res) => {
 // and the modal only takes a tier into an EMPTY tier, so a rank you set by
 // hand is never re-decided by the model. 503 keyless.
 roadmap.post('/assist', async (req, res) => {
-  if (!geminiEnabled()) {
-    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
-  }
+  if (await refused('assist', res)) return;
   const note = String(req.body?.note || '').trim().slice(0, 4000);
   if (!note) return res.status(400).json({ error: 'Write the note first — everything comes from it.' });
   const [{ rows: areaRows }, { rows: branchRows }] = await Promise.all([
@@ -237,7 +254,7 @@ roadmap.post('/assist', async (req, res) => {
       : '',
   });
   try {
-    const answer = await askGemini(prompt, { timeoutMs: 25_000 });
+    const answer = await curator.ask('assist', prompt, { timeoutMs: 25_000 });
     const title = String(answer?.title || '').trim().slice(0, 300);
     if (!title) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
     const rawTier = String(answer?.tier || '').trim().toUpperCase();
@@ -271,9 +288,7 @@ roadmap.post('/assist', async (req, res) => {
 // for untagged items, cleaned titles, honest buckets. Suggestions only — the
 // client shows them for the human to apply through the normal PATCH. 503 keyless.
 roadmap.post('/cleanup', async (req, res) => {
-  if (!geminiEnabled()) {
-    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
-  }
+  if (await refused('cleanup', res)) return;
   const { rows } = await q(
     `SELECT id, bucket, area, title, note FROM roadmap_items
       WHERE project_id = $1 AND NOT done ORDER BY bucket, position`,
@@ -290,7 +305,7 @@ roadmap.post('/cleanup', async (req, res) => {
       : '',
   });
   try {
-    const answer = await askGemini(prompt, { timeoutMs: 30_000 });
+    const answer = await curator.ask('cleanup', prompt, { timeoutMs: 30_000 });
     const items = (Array.isArray(answer?.items) ? answer.items : [])
       .filter((s) => openById.has(Number(s?.id)))
       .map((s) => {
@@ -320,9 +335,7 @@ roadmap.post('/cleanup', async (req, res) => {
 // the item, its built_note, the autopilot run that built it and the project's
 // checks. Annotation only, nothing stored. 503 keyless.
 roadmap.post('/:id/review-brief', async (req, res) => {
-  if (!geminiEnabled()) {
-    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
-  }
+  if (await refused('reviewbrief', res)) return;
   const { rows } = await q(
     'SELECT * FROM roadmap_items WHERE project_id = $1 AND id = $2',
     [req.project.id, req.params.id]
@@ -357,7 +370,7 @@ roadmap.post('/:id/review-brief', async (req, res) => {
       : '',
   });
   try {
-    const answer = await askGemini(prompt, { timeoutMs: 25_000 });
+    const answer = await curator.ask('reviewbrief', prompt, { timeoutMs: 25_000 });
     const summary = String(answer?.summary || '').trim().slice(0, 1200);
     if (!summary) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
     const list = (v, cap) => (Array.isArray(v) ? v : [])
@@ -385,9 +398,7 @@ roadmap.post('/:id/review-brief', async (req, res) => {
 // design's "run log + diff" — same correction the Workbench ops carry, and for
 // the same reason. 503 keyless.
 roadmap.post('/:id/refine-draft', async (req, res) => {
-  if (!geminiEnabled()) {
-    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
-  }
+  if (await refused('refinedraft', res)) return;
   const { rows } = await q(
     'SELECT * FROM roadmap_items WHERE project_id = $1 AND id = $2',
     [req.project.id, req.params.id]
@@ -469,7 +480,7 @@ roadmap.post('/:id/refine-draft', async (req, res) => {
   });
 
   try {
-    const answer = await askGemini(prompt, { timeoutMs: 25_000 });
+    const answer = await curator.ask('refinedraft', prompt, { timeoutMs: 25_000 });
     // An EMPTY draft is a valid answer here, and not an error — the prompt asks
     // for one whenever the record does not evidence something to change. That
     // is the whole difference between an assistant and a complaint generator:

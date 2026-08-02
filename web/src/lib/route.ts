@@ -8,7 +8,9 @@ import { useEffect, useState } from 'react';
 // should still land somewhere useful.
 // ('build' was a room until its tab was removed; `#/control/build` now falls
 // back to the default room, which is what the unknown-room rule is for.)
-export const CONTROL_ROOMS = ['now', 'nights', 'plan', 'review', 'roles'] as const;
+// #361 — 'agents' joins them: the three tab agents are controlled from their
+// own room, so `#/control/agents` is the link to "why is the Auditor quiet".
+export const CONTROL_ROOMS = ['now', 'nights', 'plan', 'review', 'roles', 'agents'] as const;
 export type ControlRoom = (typeof CONTROL_ROOMS)[number];
 export const isControlRoom = (v: unknown): v is ControlRoom =>
   typeof v === 'string' && (CONTROL_ROOMS as readonly string[]).includes(v);

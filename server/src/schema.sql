@@ -869,3 +869,29 @@ CREATE TABLE IF NOT EXISTS skill_reports (
   detail      TEXT NOT NULL DEFAULT '',          -- what the last sync did, for the UI
   reported_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- THE TAB AGENTS (#361) — per-agent configuration for Stack's three in-app
+-- specialists (Auditor · Quality, Curator · Roadmap, Polaris · Futures).
+--
+-- The REGISTRY is code (server/src/agents.js): which agents exist, which tab
+-- each is bound to and which ops it owns are not data and must not become
+-- data — they are the restriction the item asks for, and a row that could
+-- widen an agent's op list would be a row that could unbind it from its tab.
+-- This table holds only what the owner tunes from Mission Control → Agents.
+--
+-- A MISSING ROW MEANS ON, with the registry's defaults. Same direction as
+-- readSettings(): these agents are how three tabs already work, so a fresh
+-- deploy must degrade to working rather than to silently dead ✧ buttons.
+-- Only an explicit switch-off switches one off.
+CREATE TABLE IF NOT EXISTS agent_configs (
+  key          TEXT PRIMARY KEY,                 -- registry key: auditor | curator | polaris
+  enabled      BOOLEAN NOT NULL DEFAULT true,    -- off = the agent refuses every op, 409
+  model        TEXT NOT NULL DEFAULT '',         -- Gemini model override; '' = the server's
+  guidance     TEXT NOT NULL DEFAULT '',         -- the owner's standing steer, prefixed to every prompt
+  ops_off      JSONB NOT NULL DEFAULT '[]',      -- op names this agent may not run (subset of its own)
+  runs         INTEGER NOT NULL DEFAULT 0,       -- how many times it has been asked
+  last_run_at  TIMESTAMPTZ,
+  last_op      TEXT NOT NULL DEFAULT '',
+  last_outcome TEXT NOT NULL DEFAULT '',         -- 'ok' or the error — an agent that keeps failing says so
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -3948,6 +3948,54 @@ button.mc-day-chip:hover { border-color: var(--accent); }
   .mc-roleev .evr .day, .mc-roleev .evr .seen { display: none; }
 }
 
+/* #361 — the AGENTS room: the three tab agents, one card each.
+   Everything here is scoped under .mc-agentsroom / .mc-agcard rather than
+   leaning on the room-head's own `.meta` and friends — those are scoped to
+   .mc14-room-head, so a class borrowed outside it renders as unstyled body
+   text (the exact bug class #291 exists to catch, and a worktree has no eyes
+   to notice it). */
+.mc-agentsroom { display: flex; flex-direction: column; gap: 14px; }
+.mc-agerr { padding: 10px 13px; border-radius: 10px; border: 1px solid var(--critical); background: var(--card); font-size: 12px; color: var(--critical); }
+.mc-agnokey { padding: 11px 13px; border-radius: 10px; border: 1px dashed var(--line-3); background: var(--panel); font-size: 11.5px; line-height: 1.6; color: var(--muted); }
+.mc-agnokey code { font-family: var(--mono); font-size: 10.5px; }
+.mc-aglist { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; align-items: start; }
+.mc-agfoot { padding: 11px 13px; border-radius: 10px; border: 1px dashed var(--line-3); font-size: 11px; line-height: 1.6; color: var(--muted); margin: 0; }
+
+.mc-agcard { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); padding: 14px 15px; display: flex; flex-direction: column; gap: 9px; }
+/* A switched-off agent reads as off at a glance, without going grey enough to
+   look broken — it is a deliberate state, not a fault. */
+.mc-agcard.off { background: var(--panel); border-style: dashed; }
+.mc-agcard .cap { display: flex; align-items: center; gap: 9px; }
+.mc-agcard .cap .nm { font-family: var(--disp); font-size: 14px; font-weight: 600; color: var(--ink); }
+.mc-agcard .cap .tab { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.06em; color: var(--accent-deep); background: var(--accent-tint); border-radius: 4px; padding: 2px 7px; white-space: nowrap; }
+.mc-agcard .cap .tag { font-family: var(--mono); font-size: 8.5px; font-weight: 500; padding: 1px 7px; border-radius: 4px; background: var(--panel); color: var(--paused); white-space: nowrap; }
+.mc-agcard .cap .tag.idle { background: var(--accent-tint); color: var(--accent-deep); }
+.mc-agcard .blurb { margin: 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.mc-agcard .ledger { display: flex; flex-wrap: wrap; gap: 6px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.mc-agcard .ledger .bad { color: var(--critical); }
+.mc-agcard .ledger .quiet { color: var(--paused); }
+
+.mc-agcard .tune { display: flex; flex-direction: column; gap: 5px; }
+.mc-agcard .tune label { display: flex; align-items: center; gap: 9px; }
+.mc-agcard .tune .k, .mc-agcard .steer .k { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--paused); }
+.mc-agcard .tune select.field-input { appearance: auto; flex: 1; }
+.mc-agcard .field-input.sm { height: 34px; font-size: 12.5px; padding: 0 9px; }
+.mc-agcard .field-area.sm { font-size: 12.5px; padding: 8px 10px; min-height: 46px; }
+.mc-agcard .why { font-size: 10.5px; line-height: 1.55; color: var(--paused); }
+.mc-agcard .steer { display: flex; flex-direction: column; gap: 5px; }
+.mc-agcard .steer .row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+
+.mc-agops-toggle { align-self: flex-start; background: none; border: none; padding: 0; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.mc-agops-toggle:hover { color: var(--accent-deep); }
+.mc-agops { display: flex; flex-direction: column; gap: 7px; padding: 9px 11px; border-radius: 9px; background: var(--panel); }
+.mc-agops .op { display: flex; align-items: center; gap: 10px; }
+.mc-agops .op.off .txt { opacity: 0.55; }
+.mc-agops .op .txt { flex: 1; min-width: 0; }
+.mc-agops .op .lb { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--ink); }
+.mc-agops .op .free { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.06em; color: var(--live); background: var(--green-tint); border-radius: 4px; padding: 1px 6px; }
+.mc-agops .op .hint { font-size: 10.5px; line-height: 1.5; color: var(--muted); }
+.mc-agops .scope { margin: 2px 0 0; font-size: 10.5px; line-height: 1.55; color: var(--paused); }
+
 /* Rooms — shared */
 .mc14-room-head { display: flex; align-items: center; gap: 12px; }
 .mc14-room-head .title { font-family: var(--disp); font-size: 15px; font-weight: 600; color: var(--ink); }

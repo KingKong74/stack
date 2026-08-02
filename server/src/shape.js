@@ -275,7 +275,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, since }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, agents, since }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
@@ -286,6 +286,13 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, acti
     // it to make its AI surfaces ABSENT rather than dead when there's no key:
     // no error, no button that can only 503.
     geminiReady: geminiReady !== false,
+    // #361 — the TAB AGENTS' live state, keyed by agent: { name, tab, enabled,
+    // ops[] }. Same job as geminiReady one level down: a tab reads its own
+    // agent here and renders its ✧ surfaces absent-with-a-reason rather than
+    // offering a button whose only possible answer is a 409. Absent (an older
+    // server) reads as "no agent switches", i.e. everything on, which is what
+    // the missing-row default means server-side too.
+    agents: agents || {},
     liveBranches: liveBranches || [],         // branches with a live session now (board lock, BUG-2)
     shareToken: p.share_token || '',          // non-empty = the public showcase link is live
     summary: p.summary || '',

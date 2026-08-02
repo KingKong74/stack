@@ -11,6 +11,7 @@ import {
 } from '../shape.js';
 import { readSettings, sessionDefaultLines } from '../settings.js';
 import { geminiEnabled } from '../gemini.js';
+import { agentsForClient } from '../agents.js';
 
 export const projects = Router();
 
@@ -106,6 +107,9 @@ projects.get('/:slug', async (req, res) => {
   const p = rows[0];
 
   const appSettings = await readSettings();
+  // #361 — the tab agents' live state rides the detail payload (one small read,
+  // the same trip that already carries geminiReady).
+  const tabAgents = await agentsForClient();
   const [sessions, bugs, road, notes, futures, checks, weekly, live] = await Promise.all([
     q(
       // `authored` rides along for resumeSince(): which of these pushes actually
@@ -153,6 +157,8 @@ projects.get('/:slug', async (req, res) => {
       liveBranches: live.rows.map((r) => r.branch || 'main'),
       // #278 — the Quality page hides its Gemini surfaces entirely when keyless.
       geminiReady: geminiEnabled(),
+      // #361 — and which of its tab agents may act at all.
+      agents: tabAgents,
       // The resume card's provenance: pushes that landed after the checkpoint
       // that wrote it, so a stale card reads as stale.
       since: resumeSince(sessions.rows),

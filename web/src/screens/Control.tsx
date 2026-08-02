@@ -11,6 +11,7 @@ import {
 import { SessionPlanModal } from '../components/SessionPlanModal';
 import { NightsRoom, PlanRoom } from './ControlRooms';
 import { RolesRoom } from './ControlRoles';
+import { AgentsRoom } from './ControlAgents';
 import { ReviewRoom } from './ControlReview';
 import { NowRoom } from './ControlNow';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
@@ -708,7 +709,7 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
                   house, not zero; picking one narrows the badge with the room.
                   #282 — Review badges what is waiting on a verdict, reported up
                   by the room itself (it owns that fetch). */}
-              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['review', 'Review', reviewN], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => isDrift(a.drift)).length]] as const).map(([key, label, n]) => (
+              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['review', 'Review', reviewN], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => isDrift(a.drift)).length], ['agents', 'Agents', 0]] as const).map(([key, label, n]) => (
                 // #316 — anchors, not buttons: each room has a URL now, so the
                 // tab that opens it should be a real link (middle-click opens a
                 // new tab, and the address bar is honest either way). The
@@ -794,6 +795,11 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
                   <RolesRoom data={data} onReload={load}
                     onConfigure={() => { setRoom('now'); setCfgOpen(true); }} />
                 )}
+                {/* #361 — Agents: the three tab agents (Auditor · Curator ·
+                    Polaris), each bound to one project tab. It owns its own
+                    fetch — agent config is app-wide and near-static, so it has
+                    no business riding the fleet poll. */}
+                {room === 'agents' && <AgentsRoom />}
               </div>
 
               {/* ---- the rail: plan windows, usage, next up — stays put across rooms ---- */}

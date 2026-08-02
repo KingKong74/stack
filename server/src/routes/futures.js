@@ -3,8 +3,8 @@ import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { fingerprint } from '../util.js';
 import { futureShape } from '../shape.js';
-import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
+import { agentClient } from '../agents.js';
 
 // Mounted at /api/projects/:slug/futures. Futures are loose directional ideas
 // curated against the project's north star; promotion to the roadmap is a
@@ -18,6 +18,22 @@ futures.use(async (req, res, next) => {
   req.project = project;
   next();
 });
+
+// #361 — the ✧ surfaces here are POLARIS, the Futures tab's agent, bound once.
+// It owns judging, theming and converging the funnel and nothing else: an
+// attempt to run the Curator's board cleanup or the Auditor's audit through
+// this client throws rather than crossing tabs. `refused` renders its gate as
+// a response — `true` means the reply is already sent.
+const polaris = agentClient('polaris');
+const refused = async (op, res) => {
+  try {
+    await polaris.gate(op);
+    return false;
+  } catch (err) {
+    res.status(err.httpStatus || 503).json({ error: err.message });
+    return true;
+  }
+};
 
 // GET  /  -> list, newest first
 futures.get('/', async (req, res) => {
@@ -162,9 +178,7 @@ futures.patch('/:id', async (req, res) => {
 // and the human clicks the actual verdict (Gemini proposes, you dispose).
 // 503 when the server has no GEMINI_API_KEY.
 futures.post('/:id/judge', async (req, res) => {
-  if (!geminiEnabled()) {
-    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
-  }
+  if (await refused('judge', res)) return;
   const { rows } = await q(
     'SELECT * FROM futures WHERE project_id = $1 AND id = $2',
     [req.project.id, Number(req.params.id)]
@@ -183,7 +197,7 @@ futures.post('/:id/judge', async (req, res) => {
   });
 
   try {
-    const answer = await askGemini(prompt);
+    const answer = await polaris.ask('judge', prompt);
     const alignment = ['on-course', 'tangent', 'off-course'].includes(answer?.alignment)
       ? answer.alignment : null;
     if (!alignment) return res.status(502).json({ error: 'Gemini gave an unusable answer — try again.' });
@@ -198,9 +212,7 @@ futures.post('/:id/judge', async (req, res) => {
 // bearings). Suggestions only — the client shows them grouped and the human
 // applies through the normal PATCH. 503 keyless.
 futures.post('/cluster', async (req, res) => {
-  if (!geminiEnabled()) {
-    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
-  }
+  if (await refused('cluster', res)) return;
   const { rows } = await q(
     'SELECT id, area, title, note FROM futures WHERE project_id = $1 ORDER BY created_at DESC',
     [req.project.id]
@@ -225,7 +237,7 @@ futures.post('/cluster', async (req, res) => {
       : '',
   });
   try {
-    const answer = await askGemini(prompt, { timeoutMs: 30_000 });
+    const answer = await polaris.ask('cluster', prompt, { timeoutMs: 30_000 });
     const items = (Array.isArray(answer?.items) ? answer.items : [])
       .filter((s) => byId.has(Number(s?.id)))
       .map((s) => {
@@ -246,9 +258,7 @@ futures.post('/cluster', async (req, res) => {
 // keyless the client falls back to direct-mapped drafts, so this route is the
 // ✧ enrichment, not the flow. 503 keyless.
 futures.post('/converge', async (req, res) => {
-  if (!geminiEnabled()) {
-    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
-  }
+  if (await refused('converge', res)) return;
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : [])
     .map(Number).filter(Number.isFinite).slice(0, 20);
   if (!ids.length) return res.status(400).json({ error: 'Pick at least one idea.' });
@@ -270,7 +280,7 @@ futures.post('/converge', async (req, res) => {
       : '',
   });
   try {
-    const answer = await askGemini(prompt, { timeoutMs: 30_000 });
+    const answer = await polaris.ask('converge', prompt, { timeoutMs: 30_000 });
     const items = (Array.isArray(answer?.items) ? answer.items : [])
       .map((s) => ({
         title: String(s?.title || '').trim().slice(0, 300),

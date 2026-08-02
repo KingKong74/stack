@@ -924,6 +924,7 @@ export interface ProjectDetailData {
   keepResumeCard: boolean;
   staleItemDays: number;   // parked-item stale threshold in days (#247) — ages the Parked view
   geminiReady: boolean;    // #278 — a key is configured; keyless hides the Quality page's AI surfaces
+  agents: TabAgentState;   // #361 — which tab agent may act on this project's tabs, and which of its ops
   shareToken: string;
   liveBranches: string[];  // branches with a live session right now — backs the board's in-progress lock
 }
@@ -932,7 +933,7 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; futures?: Future[];
     checks?: Check[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
-    auditContext?: string; staleItemDays?: number; geminiReady?: boolean;
+    auditContext?: string; staleItemDays?: number; geminiReady?: boolean; agents?: TabAgentState;
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
     project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
@@ -946,6 +947,10 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     // Default TRUE: an older server that doesn't report it keeps the AI surfaces
     // visible (they 503 honestly), rather than hiding features that do work.
     geminiReady: d.geminiReady !== false,
+    // #361 — same default direction one level down: an older server sends no
+    // agent state, and `agentCan()` reads an absent agent as able to act, so a
+    // tab never hides a feature the server would happily have run.
+    agents: d.agents || {},
     shareToken: d.shareToken || '',
     liveBranches: d.liveBranches || [],
   };
@@ -1872,6 +1877,88 @@ export async function runAudit(slug: string): Promise<AuditResult> {
 export async function getAuditPrompt(slug: string): Promise<string> {
   const r = await request<{ prompt: string }>(`/projects/${encodeURIComponent(slug)}/audit/prompt`);
   return r.prompt;
+}
+
+// ---- the TAB AGENTS (#361) ----
+//
+// Three named specialists, each bound to one project tab: the Auditor
+// (Quality), the Curator (Roadmap) and Polaris (Futures). The binding is the
+// SERVER's — agents.js owns which agent may run which op — so nothing here
+// invents an agent or widens one; this is the read of that registry plus the
+// four things the owner may tune from Mission Control → Agents.
+export type TabAgentKey = 'auditor' | 'curator' | 'polaris';
+
+export interface TabAgentOp {
+  op: string;
+  label: string;
+  hint: string;
+  gemini: boolean;    // false = costs no key (the Auditor's Claude hand-off prompt)
+  enabled: boolean;
+}
+
+export interface TabAgent {
+  key: TabAgentKey;
+  name: string;
+  tab: string;        // the project tab it is bound to — quality | roadmap | futures
+  tabLabel: string;
+  blurb: string;
+  remit: string;      // what the model itself is told it may work on
+  enabled: boolean;
+  model: string;      // '' = the server's own Gemini model
+  guidance: string;   // the owner's standing steer, prefixed to every prompt
+  ops: TabAgentOp[];
+  // The ledger: an agent that keeps failing says so here rather than only in a
+  // toast the owner saw once.
+  runs: number;
+  lastRunAt: string | null;
+  lastOp: string;
+  lastOutcome: string; // 'ok' or the error message
+}
+
+export interface TabAgentsData {
+  geminiReady: boolean;   // no key = every agent is idle whatever its switch says
+  defaultModel: string;
+  models: { model: string; label: string }[];
+  agents: TabAgent[];
+}
+
+export async function getAgents(): Promise<TabAgentsData> {
+  return request<TabAgentsData>('/agents');
+}
+
+// PATCH a subset: {enabled} | {model} | {guidance} | {op, opEnabled}. The op
+// form is a single toggle rather than the whole set, so two switches flipped
+// in quick succession can't clobber each other.
+export async function patchAgent(
+  key: TabAgentKey,
+  patch: { enabled?: boolean; model?: string; guidance?: string; op?: string; opEnabled?: boolean }
+): Promise<TabAgent> {
+  return request<TabAgent>(`/agents/${encodeURIComponent(key)}`, { method: 'PATCH', body: patch });
+}
+
+// The compact per-project read that rides the detail payload: which agents may
+// act, and which of their ops. Keyed by agent.
+export type TabAgentState = Partial<Record<TabAgentKey, { name: string; tab: string; enabled: boolean; ops: string[] }>>;
+
+// May this tab's agent run this op right now? UNKNOWN MEANS YES — an older
+// server sends no agent state at all, and hiding a working feature because the
+// payload is quiet would be worse than offering one that answers honestly.
+// Only an agent the server has actually reported as off (or an op it has
+// reported as off) hides anything.
+export function agentCan(state: TabAgentState | undefined, key: TabAgentKey, op: string): boolean {
+  const a = state?.[key];
+  if (!a) return true;
+  return a.enabled && a.ops.includes(op);
+}
+
+// What to say instead. Reads the same state, so the reason is never invented:
+// '' when the agent can act.
+export function agentOffReason(state: TabAgentState | undefined, key: TabAgentKey, op: string): string {
+  const a = state?.[key];
+  if (!a || agentCan(state, key, op)) return '';
+  return a.enabled
+    ? `The ${a.name} can still work here, but this one is switched off.`
+    : `The ${a.name} is switched off.`;
 }
 
 // ---- inbox triage (#76 — Gemini's cross-project review assist) ----

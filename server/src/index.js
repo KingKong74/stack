@@ -29,6 +29,7 @@ import { terminal } from './routes/terminal.js';
 import { triage } from './routes/triage.js';
 import { tips } from './routes/tips.js';
 import { skills } from './routes/skills.js';
+import { agents } from './routes/agents.js';
 import { attachTerm } from './term.js';
 
 // Read once at module load: the health endpoint reports the deployed version.
@@ -87,6 +88,9 @@ app.use('/api/terminal', requireToken, terminal);
 app.use('/api/triage', requireToken, triage);
 app.use('/api/tips', requireToken, tips);
 app.use('/api/skills', requireToken, skills);
+// #361 — the tab agents (Auditor · Curator · Polaris). App-wide, no slug: one
+// registry governs every project's tabs.
+app.use('/api/agents', requireToken, agents);
 app.use('/api/projects', requireToken, projects);
 
 const port = process.env.PORT || 4000;

@@ -3,8 +3,8 @@ import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { fingerprint, oneOf, relativeTime, SEVERITIES } from '../util.js';
 import { bugShape } from '../shape.js';
-import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
+import { agentClient } from '../agents.js';
 
 // Mounted at /api/projects/:slug/audit — the Quality tab's automated bug
 // audit (#144; the ✧ Bug audit card on the Now segment). Two surfaces:
@@ -19,6 +19,13 @@ import { buildPrompt } from '../prompts.js';
 //                   web terminal's Claude mode, or any chat). No Gemini key
 //                   needed — Claude runs on the owner's own subscription.
 export const audit = Router({ mergeParams: true });
+
+// #361 — this surface IS the Auditor, and it is bound here once. Every model
+// call below goes through this client, which refuses an op the Auditor does
+// not own: the Quality tab cannot run the Curator's or Polaris's work even by
+// mistake. It also carries the agent's own switch, model and standing
+// guidance, so "switch the Auditor off" is a real thing to be able to do.
+const auditor = agentClient('auditor');
 
 const FETCH_TIMEOUT_MS = 8000;
 const BODY_CAP = 262144; // read at most 256KB of the live page
@@ -203,15 +210,19 @@ export async function landFindings(projectId, findings) {
 
 // POST /  -> run the Gemini audit and log findings to the review inbox
 audit.post('/', async (req, res) => {
-  if (!geminiEnabled()) {
-    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
-  }
   const p = req.project;
+  try {
+    // The gate first, then the expensive part: a switched-off Auditor must not
+    // cost a live-page fetch and four queries before it says so.
+    await auditor.gate('audit');
+  } catch (err) {
+    return res.status(err.httpStatus || 503).json({ error: err.message });
+  }
   const ctx = await gatherContext(p);
   const prompt = buildPrompt('audit', contextVars(p, ctx));
 
   try {
-    const answer = await askGemini(prompt, { timeoutMs: 30_000 });
+    const answer = await auditor.ask('audit', prompt, { timeoutMs: 30_000 });
     const raw = Array.isArray(answer?.findings) ? answer.findings.slice(0, MAX_FINDINGS) : [];
     const findings = await landFindings(p.id, raw);
     res.json({
@@ -232,6 +243,14 @@ audit.post('/', async (req, res) => {
 // Gemini involved; the client copies it to the clipboard).
 audit.get('/prompt', async (req, res) => {
   const p = req.project;
+  // Keyless, but still the Auditor's op: switching the agent off means it
+  // stops acting, not "it stops acting where it costs money". The refusal is a
+  // 409 the client can render, not a silent empty prompt.
+  try {
+    await auditor.gate('auditprompt');
+  } catch (err) {
+    return res.status(err.httpStatus || 503).json({ error: err.message });
+  }
   const ctx = await gatherContext(p);
   const v = contextVars(p, ctx);
 

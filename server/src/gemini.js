@@ -75,13 +75,17 @@ async function callModel(model, prompt, { timeoutMs, generation }) {
 // quota is exhausted, retries once on the fallback model (quotas are per
 // model). Both exhausted → a 503-tagged error with a message worth showing
 // (502 would be swallowed by Cloudflare in front of the deployment).
-export async function askGemini(prompt, { timeoutMs = 25_000, generation = {} } = {}) {
+// `model` (#361) pins this one call to a model other than the server's — the
+// tab agents use it, since free-tier quotas are per model and one agent should
+// not be able to eat another's. '' or absent = the server's GEMINI_MODEL.
+export async function askGemini(prompt, { timeoutMs = 25_000, generation = {}, model = '' } = {}) {
+  const primary = model || MODEL();
   try {
-    return await callModel(MODEL(), prompt, { timeoutMs, generation });
+    return await callModel(primary, prompt, { timeoutMs, generation });
   } catch (err) {
     if (!err.quota) throw err;
     const fallback = FALLBACK_MODEL();
-    if (!fallback || fallback === MODEL()) throw quotaError();
+    if (!fallback || fallback === primary) throw quotaError();
     try {
       return await callModel(fallback, prompt, { timeoutMs, generation });
     } catch (err2) {

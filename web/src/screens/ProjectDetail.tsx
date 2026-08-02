@@ -10,7 +10,7 @@ import {
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, convergeFutures,
   type ConvergeDraft, assistRoadmapItem,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
-  startAutopilot, takeReviewPrefill,
+  startAutopilot, takeReviewPrefill, agentCan,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
@@ -842,7 +842,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         )}
         {tab === 'quality' && (
           <Quality slug={slug} checks={data.checks} bugs={bugs} siteUrl={project.siteUrl}
-            geminiReady={data.geminiReady} highlightId={highlightId}
+            geminiReady={data.geminiReady} agents={data.agents} highlightId={highlightId}
             checksBusy={checksBusy} onRunChecks={runProjectChecks}
             onAddCheck={addCheck} onEditCheck={editCheck} onDeleteCheck={removeCheck}
             onFileBug={fileBug} onSetBugStatus={setBugStatus} onDeleteBug={(b) => setConfirmBugDelete(b)}
@@ -851,6 +851,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             auditBusy={auditBusy} auditResult={auditResult} auditError={auditError}
             onRunAudit={runProjectAudit} claudeCopy={claudeCopy} onCopyClaudePrompt={copyClaudePrompt} />
         )}
+        {/* #361 — the ✧ surfaces on the Roadmap and Polaris tabs belong to the
+            CURATOR and to POLARIS, and an absent callback is how each one goes
+            away when its agent (or that one op) is switched off: the button is
+            not rendered at all, rather than rendered to fail. Quality takes the
+            agent state itself, because its audit card has room to say who is
+            off and this position does not. */}
         {tab === 'roadmap' && (
           <Roadmap roadmap={roadmap} highlightId={highlightId} slug={slug} liveBranches={data.liveBranches}
             staleItemDays={data.staleItemDays}
@@ -862,7 +868,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
             onDelete={(it) => setConfirmRoadDelete(it)}
-            onToggleSkip={toggleSkipRoad} onReorder={reorderRoad} onCleanup={openCleanup}
+            onToggleSkip={toggleSkipRoad} onReorder={reorderRoad}
+            onCleanup={agentCan(data.agents, 'curator', 'cleanup') ? openCleanup : undefined}
             onDeleteArea={deleteArea} onRenameArea={renameArea}
             onSendToTerminal={(brief) => {
               // One-shot handoff — the terminal screen offers it as a paste.
@@ -875,9 +882,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId} slug={slug}
             onSaveNorthStar={saveNorthStar} onAdd={addFuture} onEdit={editFuture} onAlign={alignFuture}
-            onAskGemini={(id) => judgeFuture(slug, id)} onCluster={() => clusterFutures(slug)}
+            onAskGemini={agentCan(data.agents, 'polaris', 'judge') ? (id) => judgeFuture(slug, id) : undefined}
+            onCluster={agentCan(data.agents, 'polaris', 'cluster') ? () => clusterFutures(slug) : undefined}
             onSetAreas={applyFutureAreas}
-            onConvergeDraft={(ids, mode) => convergeFutures(slug, ids, mode)}
+            onConvergeDraft={agentCan(data.agents, 'polaris', 'converge')
+              ? (ids, mode) => convergeFutures(slug, ids, mode) : undefined}
             onConvergeCreate={convergeCreate}
             onShape={shapeFuture}
             onDelete={removeFuture} onPromote={promoteFuture} />
@@ -911,7 +920,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           mode={roadModal.editing ? 'edit' : 'add'}
           onClose={() => { setRoadModal(roadModalClosed); setPendingFuture(null); }}
           onDismiss={(d) => updateRoadDraft(d)}
-          onAssist={(note) => assistRoadmapItem(slug, note)}
+          onAssist={agentCan(data.agents, 'curator', 'assist') ? (note) => assistRoadmapItem(slug, note) : undefined}
           onSubmit={submitRoad} />
       )}
       {(cleanup !== null || cleanupErr) && (
