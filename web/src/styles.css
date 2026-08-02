@@ -3303,18 +3303,31 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 /* It left the tab strip for the bottom-left corner: a quiet launcher on every
    screen, and a sheet that rises from it over whatever you were doing. The
    right-hand corners are spoken for (the to-top button, the terminal dock). */
+/* Glass, not paint (BUG-8). A launcher fixed to the corner of a column that
+   runs full-bleed to 32px of the edge WILL sit on top of something: measured
+   at rest on the dashboard it covered the "Pick up where you left off" heading
+   at 1024 and "Currently in progress" at 1440. It stays fixed — it is meant to
+   be reachable from every screen, the way the presence pill is — but it stops
+   being opaque about it: a translucent, blurred background leaves the words
+   behind it readable, and below 1200px it drops the label for its glyph alone,
+   which is 34px of corner instead of 89px across a heading. */
 .tips-dock {
   position: fixed; bottom: 28px; left: 24px; z-index: 50;
   display: inline-flex; align-items: center; gap: 7px;
-  background: var(--surface); border: 1px solid var(--keyline); border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px);
+  border: 1px solid var(--keyline); border-radius: 999px;
   padding: 7px 14px; font-size: 12px; font-weight: 600; color: var(--muted);
   box-shadow: 0 3px 12px rgba(28, 26, 23, 0.10);
   opacity: 0.92; cursor: pointer; transition: opacity 0.15s, border-color 0.15s, color 0.15s;
 }
-.tips-dock:hover, .tips-dock.on { opacity: 1; border-color: var(--accent-soft); color: var(--ink); }
+/* Hovered or open, it is being USED — no longer chrome to see past. */
+.tips-dock:hover, .tips-dock.on { background: var(--surface); opacity: 1; border-color: var(--accent-soft); color: var(--ink); }
 .tips-dock .glyph { font-size: 13px; color: var(--accent); line-height: 1; }
 .tips-dock.on { background: var(--accent-tint); border-color: var(--accent-tint-border); }
-@media (max-width: 620px) { .tips-dock .label { display: none; } .tips-dock { padding: 9px 11px; } }
+/* 1200, not 620: the label is only affordable where the page has room to
+   spare beside it, and below --page-max it never has. */
+@media (max-width: 1200px) { .tips-dock .label { display: none; } .tips-dock { padding: 9px 11px; } }
 
 .tips-scrim { position: fixed; inset: 0; z-index: 55; background: rgba(28, 26, 23, 0.30); animation: fade 0.12s ease; }
 .tips-sheet {
