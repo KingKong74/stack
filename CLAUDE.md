@@ -173,7 +173,7 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   `term:<name>`. The claim is the don't-re-pick marker and stays until a human merges and ticks.
 - **`built_note`** — what actually landed, PATCHed by the completing session alongside `done:true`.
   The Review room verdicts against it. Always write one.
-- **A future's SHAPE in the Polaris galaxy (#312) is derived, never stored.** There is no `kind`
+- **A future's SHAPE in the Polaris galaxy is derived, never stored.** There is no `kind`
   column and there must not be one: `is_star` = ★ its own orbit; parent is a star = ● a planet;
   parent is a planet = ○ a moon; no parent + judged = ◦ one of the north star's three shells
   (`alignment` picks which, on-course innermost); no parent + unjudged = · the drift belt, which is
@@ -450,6 +450,7 @@ node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
 node server/test/cap-note.test.mjs         # a capped note says it was capped (pure, no DB)
 node scripts/context-budget.test.mjs       # THIS file and the agent manual are within budget
+node scripts/roadmap-refs.mjs              # every #id cited in the repo, against the real board
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
