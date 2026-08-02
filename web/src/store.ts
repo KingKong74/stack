@@ -531,11 +531,23 @@ export interface Ledger {
   // Completed merge jobs split by who queued them — the runner's own low-risk
   // auto-merges (#212) vs a human ⇥ Merge.
   merges: { now: { total: number; auto: number }; prev: { total: number; auto: number } };
-  reverts: { now: number; prev: number };
+  reverts: {
+    now: number; prev: number;
+    // Reverts as a share of that window's landed work. `number | null`, NOT
+    // optional and NOT 0: null means nothing landed in the window, so the
+    // rate has no denominator — an unknown, not a good one.
+    rateNow: number | null; ratePrev: number | null;
+  };
   // Of items a run landed and a human has since verdicted, how many were called
   // solid. Current state, so a refined-then-passed item counts — this is the
-  // CEILING of the true first-pass rate.
-  firstPass: { solid: number; verdicted: number };
+  // CEILING of the true first-pass rate. The 14-day totals are the headline;
+  // now/prev are the same 7-and-7 split as every other metric here, for the
+  // direction arrow.
+  firstPass: {
+    solid: number; verdicted: number;
+    now: { solid: number; verdicted: number };
+    prev: { solid: number; verdicted: number };
+  };
   // Executor vs advisor spend (#153), attributed by the SAME alias match the
   // lane split (#280) and the fleet table (#281) use. `assumed` is the slice
   // the fallback placed — models the current policy names for neither role,
