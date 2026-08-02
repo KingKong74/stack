@@ -174,7 +174,7 @@ const scheduleWhen = (s: { days: number[]; runDate: string | null; atTime: strin
 export function NightsRoom({ data, pickSlug, onPick, onOpenPlanner, onRunNow, onToggleSchedule, onRemoveSchedule, onMerge }: {
   data: ControlData;
   pickSlug: string; onPick: (slug: string) => void;
-  onOpenPlanner: (row: AutopilotSchedule | null) => void;
+  onOpenPlanner: (row: Partial<AutopilotSchedule> | null) => void;
   onRunNow: (slug: string) => void;
   onToggleSchedule: (id: string, enabled: boolean) => void;
   onRemoveSchedule: (id: string) => void;
