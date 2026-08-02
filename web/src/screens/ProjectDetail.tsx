@@ -10,7 +10,7 @@ import {
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, convergeFutures,
   type ConvergeDraft, assistRoadmapItem,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
-  startAutopilot, takeReviewPrefill, agentCan,
+  startAutopilot, takeReviewPrefill, agentCan, setLastViewedProject,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
@@ -60,7 +60,12 @@ export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
     let live = true;
     setLoading(true);
     getProjectDetail(id)
-      .then((d) => { if (live) { setData(d); setLoadError(''); } })
+      .then((d) => {
+        if (live) {
+          setData(d); setLoadError('');
+          setLastViewedProject(id); // the roadmap link's fallback when no app is selected — #297
+        }
+      })
       .catch((e) => { if (live) setLoadError(e?.message || 'Failed to load.'); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };

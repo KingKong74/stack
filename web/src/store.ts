@@ -1788,6 +1788,22 @@ export function setNorthStarOpen(slug: string, open: boolean) {
   catch { /* storage full or unavailable — the band is a nicety, never a blocker */ }
 }
 
+// #297 — the last project a detail page loaded successfully, device-local:
+// the BROWSER is what did the viewing, so a phone and the desktop may
+// legitimately answer differently (same reasoning as `stack.autoRefresh`).
+// It is the fallback the "Open Roadmap" link reaches for when no app is
+// selected — a nicety, never a blocker.
+const LAST_PROJECT_KEY = 'stack.lastProject';
+
+export function getLastViewedProject(): string {
+  return readStoredJSON(LAST_PROJECT_KEY, (p) => (typeof p === 'string' ? p : ''));
+}
+export function setLastViewedProject(slug: string) {
+  if (!slug) return; // never store an empty key
+  try { localStorage.setItem(LAST_PROJECT_KEY, JSON.stringify(slug)); }
+  catch { /* storage full or unavailable — a nicety, never a blocker */ }
+}
+
 // ---- tips (the app-wide recipe library — the bottom-left dock) ----
 
 // The recipe rail's collapsed state — device-local, like the theme. Collapsed
