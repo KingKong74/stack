@@ -449,8 +449,9 @@ if (job.itemId) args.push('--item', String(job.itemId));
 // ordered list (item ids → --items, bug keys → --bugs), area scopes the pick.
 const sessionKind = job.sessionKind || 'build';
 if (sessionKind === 'plan') args.push('--plan-only');
-else if (sessionKind === 'debug' || sessionKind === 'audit') args.push('--kind', sessionKind);
+else if (sessionKind === 'debug' || sessionKind === 'audit' || sessionKind === 'refine') args.push('--kind', sessionKind);
 const agenda = Array.isArray(job.agenda) ? job.agenda : [];
+// refine's agenda is roadmap item ids, same as build/plan — only debug's is bug keys.
 if (agenda.length) args.push(sessionKind === 'debug' ? '--bugs' : '--items', agenda.join(','));
 if (job.area) args.push('--area', String(job.area));
 // A manual press or a calendar row is explicit human config — it runs even

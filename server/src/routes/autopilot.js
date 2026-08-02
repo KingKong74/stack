@@ -72,7 +72,9 @@ const within = (startMin, nowMin) => startMin != null && nowMin >= startMin && n
 // Session planner (#228): a session's kind picks the runner mode; the agenda
 // is the ORDERED work list (roadmap item ids for build/plan, bug keys for
 // debug; [] = the board's own priority order); area scopes the general pick.
-const SESSION_KINDS = ['build', 'plan', 'debug', 'audit'];
+// A `refine` session (#274) is a follow-up round on an item that was sent
+// back with a delta note — its agenda is item ids, same as build.
+const SESSION_KINDS = ['build', 'plan', 'debug', 'audit', 'refine'];
 const cleanKind = (v) => (SESSION_KINDS.includes(v) ? v : 'build');
 const cleanAgenda = (v) => (Array.isArray(v) ? v : [])
   .map((x) => {

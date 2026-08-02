@@ -363,7 +363,7 @@ export interface ControlProject {
   lastAuto: { branch: string; summary: string; when: string } | null;
 }
 // #228 — the session planner: what a scheduled session IS, beyond a time slot.
-export type SessionKind = 'build' | 'plan' | 'debug' | 'audit';
+export type SessionKind = 'build' | 'plan' | 'debug' | 'audit' | 'refine';
 
 export interface AutopilotSchedule {
   id: string; slug: string; name: string; tint: string | null;
@@ -843,11 +843,12 @@ export async function labelTerminalSessions(): Promise<{ sessions: TermSession[]
 // The Run-now button: queue a manual job the host dispatcher picks up within
 // a minute. An already open job for the project comes back instead.
 // A session plan can ride along (#228/#255): `kind` picks the runner mode
-// (build | plan | debug | audit), `agenda` is the ORDERED list of roadmap ids
-// (or BUG-N keys for debug) it must work, `area` scopes an agenda-less pick.
+// (build | plan | debug | audit | refine), `agenda` is the ORDERED list of
+// roadmap ids (or BUG-N keys for debug) it must work, `area` scopes an
+// agenda-less pick.
 export interface SessionPlanInput {
   itemId?: string;
-  kind?: 'build' | 'plan' | 'debug' | 'audit';
+  kind?: SessionKind;
   agenda?: (string | number)[];
   area?: string;
 }

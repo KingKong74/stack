@@ -635,10 +635,14 @@ ALTER TABLE autopilot_jobs ADD COLUMN IF NOT EXISTS not_before TIMESTAMPTZ;
 
 -- Session planner (#228): a scheduled session is a first-class plan, not just
 -- a time slot. session_kind picks the runner mode (build | plan | debug |
--- audit), agenda is the ORDERED work list — roadmap item ids (build/plan) or
--- bug keys (debug); [] = the board's own priority order — and area scopes the
--- general pick to one product area. Jobs carry copies so the dispatcher gets
--- the whole plan from GET /next.
+-- audit | refine), agenda is the ORDERED work list — roadmap item ids
+-- (build/plan/refine) or bug keys (debug); [] = the board's own priority
+-- order — and area scopes the general pick to one product area. Jobs carry
+-- copies so the dispatcher gets the whole plan from GET /next. `refine`
+-- (#274) is a follow-up round on an item carrying a refine_note — sent back
+-- with a delta rather than picked fresh. Both session_kind columns are plain
+-- TEXT with no CHECK constraint (validated in server/src/routes/autopilot.js'
+-- SESSION_KINDS instead), so adding `refine` needed no DDL change here.
 ALTER TABLE autopilot_schedule ADD COLUMN IF NOT EXISTS session_kind TEXT  NOT NULL DEFAULT 'build';
 ALTER TABLE autopilot_schedule ADD COLUMN IF NOT EXISTS agenda       JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE autopilot_schedule ADD COLUMN IF NOT EXISTS area         TEXT  NOT NULL DEFAULT '';

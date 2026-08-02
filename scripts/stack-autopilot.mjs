@@ -41,12 +41,15 @@
 //                       (pair with --executor-model haiku), reviewable in minutes —
 //                       build nights then execute against agreed designs.
 //     [--kind K]        session kind (#228 — the session planner's modes):
-//                       build (default) | plan (= --plan-only) | debug | audit.
+//                       build (default) | plan (= --plan-only) | debug | audit | refine.
 //                       debug = fix bugs (each on branch fix/bug-N-<slug>, never
 //                       marked fixed — status moves to 'fixing', the human closes);
 //                       audit = one hardening session that runs the suites, hunts
 //                       verified defects, files them as bugs via the API and
-//                       commits test hardening on test/audit-<date>.
+//                       commits test hardening on test/audit-<date>;
+//                       refine = a follow-up round on an item that was sent back
+//                       with a refine note (#274); it builds the delta on the
+//                       item's existing branch.
 //     [--items a,b,c]   an ORDERED agenda of roadmap item ids — the session works
 //                       exactly these in order (done/claimed skipped), instead of
 //                       the board's own priority order
@@ -93,10 +96,17 @@ const arg = (name, fallback = null) => {
 };
 const DRY = process.argv.includes('--dry');
 const FORCE = process.argv.includes('--force');
-// #228 — session kinds: build (default) | plan | debug | audit.
+// #228 — session kinds: build (default) | plan | debug | audit | refine.
+// An unrecognised --kind falls back to 'build'. `refine` (#274) is a
+// recognised kind of its own so it rides jobs/resumes labelled correctly,
+// but at this unit it deliberately falls through to the SAME build/plan loop
+// below as 'build' — no debug/auditNight()-style branch for it yet.
 const KIND_RAW = String(arg('kind') || '').toLowerCase();
 const PLAN_ONLY = process.argv.includes('--plan-only') || KIND_RAW === 'plan';
-const KIND = KIND_RAW === 'debug' ? 'debug' : KIND_RAW === 'audit' ? 'audit' : PLAN_ONLY ? 'plan' : 'build';
+const KIND = KIND_RAW === 'debug' ? 'debug'
+  : KIND_RAW === 'audit' ? 'audit'
+  : KIND_RAW === 'refine' ? 'refine'
+  : PLAN_ONLY ? 'plan' : 'build';
 const SLUG = arg('project');
 const REPO = arg('repo');
 const MINUTES_ARG = arg('minutes');
