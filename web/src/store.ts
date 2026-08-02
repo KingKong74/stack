@@ -1905,7 +1905,9 @@ export async function getAuditPrompt(slug: string): Promise<string> {
 // SERVER's — agents.js owns which agent may run which op — so nothing here
 // invents an agent or widens one; this is the read of that registry plus the
 // four things the owner may tune from Mission Control → Agents.
-export type TabAgentKey = 'auditor' | 'curator' | 'polaris';
+// #364 — 'merger' joins them, bound to Mission Control's Merge room rather
+// than a project tab. The binding works the same way; only the surface differs.
+export type TabAgentKey = 'auditor' | 'curator' | 'merger' | 'polaris';
 
 export interface TabAgentOp {
   op: string;
@@ -1990,6 +1992,25 @@ export function agentOffReason(state: TabAgentState | undefined, key: TabAgentKe
     return `The ${a.name} runs Claude on the host, and the host daemon is not connected.`;
   }
   return `The ${a.name} can still work here, but this one is switched off.`;
+}
+
+// ---- the Merge agent's read of a proposed plan (#364) ----
+//
+// Advisory and stateless: it reads the real diffs on the host and annotates the
+// plan. `verdict: 'ok'` with no notes is a REAL answer — it read them and found
+// nothing — and the room must not render that the same way it renders "no read
+// has run", which is the NULL-verdict rule.
+export interface MergeReview {
+  verdict: 'ok' | 'concerns';
+  summary: string;
+  notes: { branches: string[]; severity: 'warn' | 'info'; text: string }[];
+  read: string[];   // what was actually put in front of the model
+}
+
+export async function reviewMergePlan(
+  waves: { slug: string; branch: string; area: string }[][],
+): Promise<MergeReview> {
+  return request<MergeReview>('/merge/review', { method: 'POST', body: { waves } });
 }
 
 // ---- inbox triage (#76 — Gemini's cross-project review assist) ----

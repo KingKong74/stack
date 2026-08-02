@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import type { ControlData, ControlProject, AutopilotJob, Preview, MergeAutonomy } from '../store';
+import { reviewMergePlan, AuthError, type ControlData, type ControlProject, type AutopilotJob,
+  type Preview, type MergeAutonomy, type MergeReview } from '../store';
 import { go } from '../lib/route';
 import {
   LANE_KINDS, KIND_HINT, KIND_TONE, MERGE_STATES, MERGE_STATE_META,
@@ -681,6 +682,13 @@ function RunPlanModal({ what, order, runRows, hold, queued, running, onClose, on
   onClose: () => void;
   onRun: (rows: Row[]) => void;
 }) {
+  // #364 — the Merge agent's read. The wave plan is arithmetic over file paths;
+  // this hands the same plan to Claude on the host, which reads the actual
+  // diffs and can see what the paths cannot: two branches in different areas
+  // changing the same contract. Advisory — it annotates, it never reorders.
+  const [review, setReview] = useState<MergeReview | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewErr, setReviewErr] = useState('');
   // The dialog re-plans over exactly the branches it is about, so a scoped run
   // (one project, or the ticked rows) shows its OWN waves rather than the
   // agent's house-wide ordering with most of it missing.
@@ -714,6 +722,47 @@ function RunPlanModal({ what, order, runRows, hold, queued, running, onClose, on
               ? <> {hold.length} more {hold.length === 1 ? 'is' : 'are'} in the plan for ordering but held back: their project is set to Plan.</>
               : null}
         </p>
+
+        <div className="mc-merge-read">
+          <button className="ask" disabled={reviewBusy || running}
+            title="Hand this plan to the Merge agent: it reads the real diffs of these branches on the host and flags pairings the file paths missed. Advisory — it never reorders anything."
+            onClick={() => {
+              setReviewBusy(true); setReviewErr(''); setReview(null);
+              void reviewMergePlan(waves.map((w) => w.map((r) => ({
+                slug: r.project.slug, branch: r.branch.branch, area: r.area,
+              }))))
+                .then(setReview)
+                .catch((e) => { if (!(e instanceof AuthError)) setReviewErr((e as Error)?.message || 'The Merge agent could not read the plan.'); })
+                .finally(() => setReviewBusy(false));
+            }}>
+            {reviewBusy ? '◴ reading the diffs…' : '✧ Have the agent read this plan'}
+          </button>
+          {reviewErr && <span className="err">{reviewErr}</span>}
+          {!review && !reviewBusy && !reviewErr && (
+            <span className="quiet">Nothing has read these diffs yet — the waves above are file paths, not content.</span>
+          )}
+          {review && (
+            <div className={`out ${review.verdict}`}>
+              <div className="hd">
+                {review.verdict === 'concerns' ? '⚠ Concerns' : '✓ Read, nothing found'}
+                <span className="n">read {review.read.length} diff{review.read.length === 1 ? '' : 's'}</span>
+              </div>
+              {review.summary && <p className="sum">{review.summary}</p>}
+              {review.notes.map((n, i) => (
+                <div key={i} className={`note ${n.severity}`}>
+                  {n.branches.length > 0 && <div className="br">{n.branches.join('  ·  ')}</div>}
+                  <div className="tx">{n.text}</div>
+                </div>
+              ))}
+              {/* An empty result is a REAL answer here and has to read as one:
+                  it looked at the diffs and found nothing, which is not the
+                  same as nobody having looked. */}
+              {review.verdict === 'ok' && review.notes.length === 0 && (
+                <p className="sum quiet">It read every diff in the plan and found no pairing worth holding back.</p>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="mc-merge-steps">
           {waves.map((w, i) => (

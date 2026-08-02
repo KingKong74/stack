@@ -5521,3 +5521,33 @@ button.mc-day-chip:hover { border-color: var(--accent); }
   .mc-merge-agentnote, .mc-merge-plan { max-width: 780px; }
   .mc-merge-agentgo { align-self: flex-start; padding: 0 20px; }
 }
+
+/* #364 — the Merge agent's read, inside the plan dialog. The waves above it
+   are arithmetic over file paths; this is the panel where a model that has
+   seen the actual diffs disagrees with them. "Read, nothing found" is styled
+   as a RESULT (green, with a count of what it read), never as an empty state:
+   it looked and found nothing, which is a different sentence from nobody
+   having looked, and the room is not allowed to blur the two. */
+.mc-merge-read { margin-bottom: 14px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.mc-merge-read .ask { height: 28px; padding: 0 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); }
+.mc-merge-read .ask:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); }
+.mc-merge-read .ask:disabled { opacity: .6; cursor: default; }
+.mc-merge-read .ask:disabled:hover { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent); }
+.mc-merge-read .quiet { font-size: 11.5px; line-height: 1.5; color: var(--paused); }
+.mc-merge-read .err { font-size: 11.5px; line-height: 1.5; color: var(--critical); }
+.mc-merge-read .out { width: 100%; border: 1px solid var(--line-2); background: var(--panel);
+  border-radius: 10px; padding: 11px 13px; }
+.mc-merge-read .out.concerns { border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.mc-merge-read .out .hd { display: flex; align-items: baseline; gap: 9px; font-family: var(--disp);
+  font-size: 12.5px; font-weight: 600; color: var(--ink); margin-bottom: 7px; }
+.mc-merge-read .out.ok .hd { color: var(--live); }
+.mc-merge-read .out.concerns .hd { color: var(--accent-deep); }
+.mc-merge-read .out .hd .n { margin-left: auto; font-family: var(--mono); font-size: 10px;
+  font-weight: 400; color: var(--faint); }
+.mc-merge-read .out .sum { font-size: 12px; line-height: 1.55; color: var(--body-2); margin: 0 0 8px; }
+.mc-merge-read .out .sum.quiet { color: var(--muted); margin-bottom: 0; }
+.mc-merge-read .note { border-left: 2px solid var(--line-3); padding: 2px 0 2px 9px; margin-top: 8px; }
+.mc-merge-read .note.warn { border-left-color: var(--critical); }
+.mc-merge-read .note .br { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-bottom: 3px; }
+.mc-merge-read .note .tx { font-size: 12px; line-height: 1.55; color: var(--body-2); }

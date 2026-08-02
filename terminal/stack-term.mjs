@@ -42,7 +42,7 @@
 //   DEEPSEEK_API_KEY, KIMI_API_KEY, GLM_API_KEY, QWEN_API_KEY, MINIMAX_API_KEY.
 //   The chosen provider is persisted to ~/.stack/term-model.json.
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
@@ -747,11 +747,67 @@ const AGENT_NO_TOOLS = [
   'WebFetch', 'WebSearch', 'Task', 'TodoWrite',
 ];
 
+// The Merge room's agent asks about branches, and the branches are HERE — the
+// server has the host's ~10-minute report, not the code. So a claudeAsk may
+// carry `diffs: [{ slug, branch }]` and the host appends the real
+// `git diff origin/main...<branch>` for each before it asks.
+//
+// Hard-capped, and the cap SPEAKS. A merge plan can hold forty branches and one
+// of them can be a 2,000-line rewrite; a silent truncation would let the model
+// answer confidently about a diff it only saw the first tenth of, which is
+// worse than not asking. Per branch and overall, and the prompt says which
+// branches were shortened and by how much (the #239 rule).
+const DIFF_BYTES_PER_BRANCH = 24_000;
+const DIFF_BYTES_TOTAL = 140_000;
+
+function gatherDiffs(list) {
+  const root = process.env.STACK_AUTOPILOT_ROOT || homedir();
+  const out = [];
+  let budget = DIFF_BYTES_TOTAL;
+  for (const entry of Array.isArray(list) ? list.slice(0, 40) : []) {
+    const slug = String(entry?.slug || '').replace(/[^A-Za-z0-9._-]/g, '');
+    const branch = String(entry?.branch || '');
+    if (!slug || !branch || !/^[\w./-]{1,120}$/.test(branch)) continue;
+    const dir = join(root, slug);
+    if (!existsSync(join(dir, '.git'))) {
+      out.push(`### ${slug}/${branch}\n(no checkout for "${slug}" on this host — not read)`);
+      continue;
+    }
+    const r = spawnSync('git', ['-C', dir, 'diff', `origin/main...${branch}`], {
+      encoding: 'utf8', timeout: 60_000, maxBuffer: 32 * 1024 * 1024,
+    });
+    if (r.status !== 0) {
+      out.push(`### ${slug}/${branch}\n(git could not read this branch on this host — not read)`);
+      continue;
+    }
+    const full = r.stdout || '';
+    const room = Math.max(0, Math.min(DIFF_BYTES_PER_BRANCH, budget));
+    const body = full.slice(0, room);
+    budget -= body.length;
+    const cut = full.length - body.length;
+    out.push(`### ${slug}/${branch}\n${body}${cut > 0
+      ? `\n… TRUNCATED: ${cut} of ${full.length} characters of this diff are NOT shown. Do not assume the unshown part is empty.`
+      : ''}`);
+    if (budget <= 0) {
+      out.push('(the overall diff budget is spent — any branches after this one were not read at all)');
+      break;
+    }
+  }
+  return out.join('\n\n');
+}
+
 function claudeAsk(m) {
   const id = m.id;
   const done = (ok, out) => sendUplink({ t: 'claudeAnswer', id, ok, ...out });
-  const prompt = String(m.prompt || '');
+  let prompt = String(m.prompt || '');
   if (!prompt.trim()) return done(false, { error: 'empty prompt' });
+  if (Array.isArray(m.diffs) && m.diffs.length) {
+    const body = gatherDiffs(m.diffs);
+    // BEFORE the instruction, never after: every op prompt ends on "Respond
+    // with ONLY this JSON: {…}", and material appended past that reads as part
+    // of the shape instruction. Same rule as the agent preamble.
+    prompt = `BRANCH DIFFS, read from git on the host just now:\n\n${body}\n\n---\n\n${prompt}`;
+  }
 
   const args = ['-p', prompt, '--output-format', 'json', '--permission-mode', 'plan',
     '--disallowed-tools', ...AGENT_NO_TOOLS];
