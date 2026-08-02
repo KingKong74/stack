@@ -319,6 +319,20 @@ export async function getSearch(query: string): Promise<SearchResponse> {
 // the merge confirm — they decide what one press covers, not what is checked.
 export type MergeAutonomy = 'auto' | 'plan' | 'off';
 
+// (#365) Git state sitting in a parallel checkout that no pushed ref would
+// ever reveal — uncommitted work, or commits ahead of a branch nobody has
+// opened as anything yet. One entry per worktree the host's scan found.
+export interface Worktree {
+  path: string; name: string; branch: string; head: string;
+  subject: string; committedAt: string | null; when: string;
+  dirty: number;            // uncommitted paths in this tree
+  ahead: number;            // commits origin/main does not have, pushed or not
+  unpushed: number | null;  // commits ahead of its OWN upstream; null = no upstream at all
+  main: boolean;            // the primary checkout
+  prunable: boolean;        // the tree's directory is gone
+  itemId: string; itemTitle: string;
+}
+
 export interface ControlProject {
   slug: string; name: string; tint: string | null; status: ProjectStatus;
   automode: boolean; progress: number; lastPush: string;
@@ -330,7 +344,15 @@ export interface ControlProject {
   autopilotArea: string;   // '' = whole board; else the nightly pick's area filter
   areas: string[];         // target options — areas on this project's open must/should items
   live: { count: number; branches: string[] } | null;
-  claims: { id: string; title: string; branch: string }[];
+  // #365 adds the per-feature plan progress and the item's own classification/
+  // judgement so far, so the Trees room needs no second round trip per claim.
+  claims: {
+    id: string; title: string; branch: string;
+    planTotal: number; planDone: number;
+    bucket: string; tier: string | null; risk: string; area: string;
+    builtNote: string; reviewTag: string; reviewedAt: string | null;
+    claimedWhen: string;
+  }[];
   // #154 — open branches with the item each one owns; powers the merge strip.
   // #207 — the host's git branch report enriches each chip where it exists:
   // ahead/behind vs main, the merge-tree conflict probe and the last subject.
@@ -352,6 +374,13 @@ export interface ControlProject {
   // #207 — fully-merged origin branches never deleted (prune hint) + report age.
   absorbedBranches?: number;
   branchesWhen?: string;
+  // #365 — git state sitting in a parallel checkout (uncommitted or unpushed
+  // work no ref would ever reveal). `null` is load-bearing and MUST stay in
+  // the type: it means the host has never reported worktrees at all (no pass
+  // ran ≠ nothing found), while `[]` means it reported and there are none.
+  // Never default this to `[]` — that would erase the distinction.
+  worktrees: Worktree[] | null;
+  worktreesWhen: string | null;
   reviewCount: number;
   // #255 — open must/should with no design, and plan jobs already standing by.
   planCoverage?: { unplanned: number; queued: number };
@@ -815,7 +844,15 @@ export async function getControl(): Promise<ControlData> {
     schedules: d.schedules ?? [],
     jobs: d.jobs ?? [],
     // #154 — default branches so a pre-deploy server can't break the strip.
-    projects: (d.projects ?? []).map((p) => ({ ...p, branches: p.branches ?? [] })),
+    // #365 — worktrees defaults to `null` (never `[]`) on a pre-deploy server:
+    // the key is genuinely absent, which means no report ever ran, not that
+    // the host looked and found nothing. worktreesWhen follows the same rule.
+    projects: (d.projects ?? []).map((p) => ({
+      ...p,
+      branches: p.branches ?? [],
+      worktrees: p.worktrees ?? null,
+      worktreesWhen: p.worktreesWhen ?? null,
+    })),
     // #194 — null when the server pre-dates this feature; the usage card hides.
     usage: d.usage ?? null,
     // #268 — a pre-deploy server sends no fleet; one idle slot is the honest
