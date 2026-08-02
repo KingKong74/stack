@@ -1123,6 +1123,21 @@ try {
       }
     } else {
       const targetArea = AREA_ARG != null ? String(AREA_ARG).toLowerCase() : (detail.autopilotArea || '');
+      // Area lanes (#267): a lane is held when an OPEN item in that area
+      // carries ANOTHER worker's branch claim. An untagged area ('') is
+      // never a lane. Items this session claimed itself (tracked in
+      // `attempted`, added the moment each is picked below) don't hold a
+      // lane against their own later picks — one worker, working
+      // sequentially, can keep building in an area it already occupies.
+      const heldLanes = new Map(); // normalised area -> the claimedBy holding it
+      for (const b of ['must', 'should', 'could', 'wont']) {
+        for (const it of detail.roadmap?.[b] || []) {
+          const area = (it.area || '').trim().toLowerCase();
+          if (it.done || !area || !it.claimedBy || attempted.has(it.id)) continue;
+          if (!heldLanes.has(area)) heldLanes.set(area, it.claimedBy);
+        }
+      }
+      const blockedAreas = new Set();
       item = [...(detail.roadmap?.must || []), ...(detail.roadmap?.should || [])]
         // The desire tier (#227) is the PRIMARY sort — what the owner actually
         // wants next beats MoSCoW sizing. Unranked items keep their old place
@@ -1133,8 +1148,20 @@ try {
         .filter((it) => !attempted.has(it.id))
         // A plan night wants the items still missing a design (#219).
         .filter((it) => !PLAN_ONLY || !(it.plan?.length))
-        .find(eligible(targetArea));
+        .find((it) => {
+          if (!eligible(targetArea)(it)) return false;
+          const area = (it.area || '').trim().toLowerCase();
+          const holder = area && heldLanes.get(area);
+          if (!holder) return true;
+          blockedAreas.add(area);
+          log(`item #${it.id} "${it.title}" skipped — the "${area}" lane is held by ${holder}`);
+          return false;
+        });
       if (!item && targetArea && n === 0) log(`(target area "${targetArea}" — items outside it are ignored)`);
+      if (!item && blockedAreas.size) {
+        log(`every remaining eligible item is waiting on an occupied area lane (${[...blockedAreas].join(', ')}) — nothing more to run tonight.`);
+        break;
+      }
     }
     if (!item) {
       log(n === 0

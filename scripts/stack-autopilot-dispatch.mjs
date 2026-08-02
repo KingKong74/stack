@@ -58,8 +58,9 @@ const now = new Date();
 const local = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}T${p2(now.getHours())}:${p2(now.getMinutes())}`;
 
 let job = null;
+let heldByArea = [];
 try {
-  ({ job } = await api('GET', `/api/autopilot/next?local=${local}&dow=${now.getDay()}`));
+  ({ job, heldByArea } = await api('GET', `/api/autopilot/next?local=${local}&dow=${now.getDay()}`));
 } catch {
   process.exit(0); // unreachable API = no run, silently (fail safe)
 }
@@ -181,6 +182,14 @@ if (skillsDue) {
 // unreachable API or a docker hiccup must never cost the dispatcher its job.
 try { mkdirSync(join(homedir(), '.stack'), { recursive: true }); } catch { /* exists */ }
 try { await sweepPreviews(); } catch { /* next tick retries */ }
+
+// #267 — area-disjoint picking: a job otherwise claimable but passed over
+// because another worker already holds its area's lane. Logged so a skipped
+// job leaves a reason in the log rather than vanishing.
+for (const h of Array.isArray(heldByArea) ? heldByArea : []) {
+  const holder = h.heldBy ? ` by ${h.heldBy}` : '';
+  log(`job #${h.jobId} (${h.slug}${h.itemId ? `, item #${h.itemId}` : ''}) held — the "${h.area}" lane is occupied${holder}.`);
+}
 
 if (!job) process.exit(0);
 
