@@ -159,10 +159,16 @@ autopilotGlobal.post('/schedule', async (req, res) => {
   const runDate = /^\d{4}-\d{2}-\d{2}$/.test(String(b.runDate || '')) ? b.runDate : null;
   if (!days.length && !runDate) return res.status(400).json({ error: 'Pick repeat days or a one-off date.' });
   const kind = cleanKind(b.kind);
+  // A schedule with no item pinned must store NULL, not 0: Number(null) is 0,
+  // and a stored 0 rides the job to the runner as `--item 0`, which finds no
+  // roadmap item (ids start at 1) and bails with "nothing run" — an
+  // agenda-less plan night silently doing nothing. Ids are positive, so
+  // anything not > 0 is "no item".
+  const itemId = Number(b.itemId) > 0 ? Number(b.itemId) : null;
   const { rows } = await q(
     `INSERT INTO autopilot_schedule (project_id, item_id, at_time, days, run_date, note, session_kind, agenda, area)
      VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8::jsonb,$9) RETURNING id`,
-    [project.id, Number.isFinite(Number(b.itemId)) ? Number(b.itemId) : null,
+    [project.id, itemId,
      cleanAutopilotTime(b.atTime), JSON.stringify(days), runDate, String(b.note || '').slice(0, 300),
      kind, JSON.stringify(cleanAgenda(b.agenda)), cleanArea(b.area)]
   );
@@ -185,7 +191,8 @@ autopilotGlobal.patch('/schedule/:id', async (req, res) => {
   }
   if ('itemId' in b) {
     fields.push(`item_id = $${i++}`);
-    values.push(Number.isFinite(Number(b.itemId)) && b.itemId !== '' && b.itemId !== null ? Number(b.itemId) : null);
+    // Same "no item" collapse as POST /schedule: 0 is never a real id.
+    values.push(Number(b.itemId) > 0 ? Number(b.itemId) : null);
   }
   if ('note' in b) { fields.push(`note = $${i++}`); values.push(String(b.note || '').slice(0, 300)); }
   // #228 — the session plan.
@@ -226,7 +233,8 @@ autopilotGlobal.post('/start', async (req, res) => {
     }
     return res.status(200).json(jobShape(row));
   }
-  const itemId = Number.isFinite(Number(b.itemId)) && b.itemId !== '' && b.itemId != null ? Number(b.itemId) : null;
+  // No item pinned must be NULL, not 0 — same "no item" collapse as the schedule (#272).
+  const itemId = Number(b.itemId) > 0 ? Number(b.itemId) : null;
   // #228 — Run now can carry a full session plan (kind / ordered agenda / area).
   const { rows } = await q(
     `INSERT INTO autopilot_jobs (project_id, kind, item_id, session_kind, agenda, area)
@@ -251,9 +259,9 @@ autopilotGlobal.post('/merge', async (req, res) => {
   if (!project) return res.status(404).json({ error: 'No such project.' });
   const branch = String(b.branch || '').trim();
   if (!branch) return res.status(400).json({ error: 'branch required.' });
-  // itemId is advisory — carried as metadata, not a hard FK check.
-  const itemId = Number.isFinite(Number(b.itemId)) && b.itemId !== '' && b.itemId != null
-    ? Number(b.itemId) : null;
+  // itemId is advisory — carried as metadata, not a hard FK check. No item
+  // pinned must be NULL, not 0 (#272).
+  const itemId = Number(b.itemId) > 0 ? Number(b.itemId) : null;
   const open = await q(
     `${JOB_SELECT} WHERE j.project_id = $1 AND j.status IN ('queued','claimed','running')
       ORDER BY j.created_at`, [project.id]);
@@ -323,7 +331,8 @@ autopilotGlobal.post('/resume', async (req, res) => {
   const project = await projectBySlug(String(b.slug || ''));
   if (!project) return res.status(404).json({ error: 'No such project.' });
   const minutes = Math.min(24 * 60, Math.max(1, Math.round(Number(b.minutes)) || 240));
-  const itemId = Number.isFinite(Number(b.itemId)) && b.itemId !== '' && b.itemId != null ? Number(b.itemId) : null;
+  // No item pinned must be NULL, not 0 (#272).
+  const itemId = Number(b.itemId) > 0 ? Number(b.itemId) : null;
   // #255 — a resume must come back as the SAME kind of session. A plan sweep
   // that hits the usage limit and resumes as a build night would start writing
   // code nobody asked it to write, so the runner passes its kind along and the
