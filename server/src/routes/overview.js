@@ -317,6 +317,8 @@ overview.get('/', async (_req, res) => {
     commits: r.commits,
     tokens: Number(r.tokens) || 0,
     summary: r.summary || '',
+    // #263 — '' means no auto-verdict was given, which is not the same as one refused.
+    autoVerdict: r.auto_verdict || '',
     when: relativeTime(r.finished_at) || 'just now',
   }));
 
