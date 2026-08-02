@@ -5551,3 +5551,78 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc-merge-read .note.warn { border-left-color: var(--critical); }
 .mc-merge-read .note .br { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-bottom: 3px; }
 .mc-merge-read .note .tx { font-size: 12px; line-height: 1.55; color: var(--body-2); }
+
+/* ---------------------------------------------------------------------
+   #365 — the TREES room. It reuses the Merge room's shell wholesale
+   (.mc14-room-head/.mc-merge-head for the header, .mc-merge-filters/
+   .mc-merge-chip/.mc-merge-sep for the chip rows, .mc-merge-list/
+   .mc-merge-group/.mc-merge-row-wrap for the grouped, expandable list, and
+   .mc-merge-detail/.mc-merge-verdict for the expansion) — the shapes are
+   genuinely identical. Only what has no equivalent gets a new class here:
+   the "can't see the host" banner, the stage group's two-line head (a round
+   dot + hint, where Merge's project head is one line with a square tint),
+   and the feature row itself, whose fields (project, plan progress, a
+   worktree cell, flags) don't map onto Merge's branch-shaped grid. --------- */
+.mc-trees { display: flex; flex-direction: column; gap: 12px; }
+
+/* The fail-silent banner (CLAUDE.md): a project the host has never scanned
+   for worktrees must be named, not rendered as if it simply had none.
+   Same visual family as .now-clash — a left-accented warning line, building
+   tone, not the harder .action-error red (nothing has failed, it just
+   hasn't been seen yet). */
+.mc-trees-unseen { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border-radius: 10px; border: 1px solid var(--building); border-left: 3px solid var(--building);
+  background: var(--building-tint); font-size: 12.5px; line-height: 1.5; color: var(--ink); }
+
+/* ---- stage group head — two lines: the pipeline stage, then why it means
+   what it means. Merge's grouphead is one line because a project square is
+   self-explanatory; a pipeline stage is not, so the hint is load-bearing. */
+.mc-trees-stagehead { display: flex; flex-direction: column; gap: 4px; padding: 10px 13px;
+  background: var(--surface); border-bottom: 1px solid var(--line-2); }
+.mc-trees-stagehead .top { display: flex; align-items: center; gap: 8px; }
+.mc-trees-stagehead .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.mc-trees-stagehead .nm { font-family: var(--disp); font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.mc-trees-stagehead .meta { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.mc-trees-stagehead .hint { margin: 0; font-size: 11px; line-height: 1.5; color: var(--muted); }
+
+/* ---- one feature, one row — a flex row (not Merge's fixed-column grid:
+   this row's cells are individually optional — no plan, no tree, no open
+   branch — where every one of Merge's columns is always present). */
+.mc-trees-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; min-height: 40px;
+  width: 100%; text-align: left; background: none; border: 0; border-left: 3px solid transparent;
+  cursor: pointer; }
+.mc-trees-row:hover { background: var(--panel); }
+.mc-trees-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mc-trees-row .proj { flex: none; width: 128px; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mc-trees-row .proj .sq { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.mc-trees-row .proj span { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-trees-row .slug { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; color: var(--body);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-trees-row .slug b { font-weight: 600; }
+.mc-trees-row .slug b.unlabelled { color: var(--fainter); font-weight: 400; cursor: help; }
+.mc-trees-row .slug .nm { color: var(--ink); }
+.mc-trees-row .id { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--accent);
+  background: none; border: 0; padding: 0; }
+.mc-trees-row .id:hover { color: var(--accent-deep); }
+.mc-trees-row .plan { flex: none; width: 92px; display: flex; align-items: center; gap: 6px; }
+.mc-trees-row .plan .bar { flex: 1; height: 5px; border-radius: 3px; overflow: hidden; background: var(--line-2); }
+.mc-trees-row .plan .bar i { display: block; height: 5px; background: var(--accent); }
+.mc-trees-row .plan .txt { font-family: var(--mono); font-size: 9.5px; color: var(--faint); white-space: nowrap; }
+.mc-trees-row .tree { flex: none; width: 180px; display: flex; flex-direction: column; gap: 1px;
+  min-width: 0; font-family: var(--mono); font-size: 11px; color: var(--body); }
+.mc-trees-row .tree b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-trees-row .tree.none { color: var(--fainter); font-style: italic; }
+.mc-trees-row .tree i { font-style: normal; font-size: 9.5px; color: var(--building); }
+.mc-trees-row .tree i.never { color: var(--paused); }
+.mc-trees-row .diff { flex: none; width: 108px; display: flex; flex-direction: column; gap: 1px;
+  text-align: right; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.mc-trees-row .diff .add { color: var(--live); }
+.mc-trees-row .diff .del { color: var(--critical); margin-left: 4px; }
+.mc-trees-row .flags { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 160px; }
+.mc-trees-row .flags .flag { font-family: var(--mono); font-size: 9.5px; padding: 1px 6px; border-radius: 5px;
+  border: 1px solid; background: none; cursor: help; }
+.mc-trees-row .age { flex: none; width: 58px; text-align: right; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+@media (max-width: 900px) {
+  .mc-trees-row { flex-wrap: wrap; row-gap: 6px; }
+  .mc-trees-row .proj { width: auto; }
+}
