@@ -62,6 +62,8 @@
 //                           executor exactly as it did before #153)
 //     [--dry]           print what tonight would pick and exit (no claim, no session)
 //     [--force]         run even while the Settings switch / automode is off
+//     [--allow-unapproved]  run an auto-found item that no human has approved (a human
+//                           at a terminal, never the dispatcher)
 //
 // Dual-model sessions (#153, inverted by #285): the strong ADVISOR model runs the session as the DIRECTOR
 // (claude --model) and delegates the building to a cheap EXECUTOR subagent with
@@ -84,6 +86,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadStackEnv, logStderr, git } from '../hook/stack-post.mjs';
 import { laneFor, branchSlug } from './lib/lane.mjs';
+import { isApproved, approvalHold } from './lib/approval.mjs';
 
 loadStackEnv();
 
@@ -93,6 +96,11 @@ const arg = (name, fallback = null) => {
 };
 const DRY = process.argv.includes('--dry');
 const FORCE = process.argv.includes('--force');
+// A backstop, not the gate: the server refuses unapproved work at enqueue
+// time, so a session only reaches here already approved unless this is on —
+// which is why the help text ties it to a human at a terminal, not the
+// dispatcher. See scripts/lib/approval.mjs.
+const ALLOW_UNAPPROVED = process.argv.includes('--allow-unapproved');
 // #228 — session kinds: build (default) | plan | debug | audit.
 const KIND_RAW = String(arg('kind') || '').toLowerCase();
 const PLAN_ONLY = process.argv.includes('--plan-only') || KIND_RAW === 'plan';
@@ -406,11 +414,13 @@ writeFileSync(lock, `${process.pid} ${stamp()}\n`);
 const unlock = () => { try { rmSync(lock); } catch { /* gone is fine */ } };
 process.on('exit', unlock);
 
-// Eligibility: open, unclaimed, not parked, human-approved — and inside the
-// project's target area when one is set (Mission Control's #122 picker).
-// --item pins bypass the area filter: an explicit human choice wins.
+// Eligibility: open, unclaimed, not parked, human-approved (scripts/lib/approval.mjs
+// is the rule — a manual item is never held; a hook-found one needs review-inbox
+// sign-off) — and inside the project's target area when one is set (Mission
+// Control's #122 picker). --item pins bypass the area filter: an explicit
+// human choice wins.
 const eligible = (targetArea) => (it) =>
-  !it.done && !it.skipped && !it.claimedBy && (it.source === 'manual' || it.reviewed)
+  !it.done && !it.skipped && !it.claimedBy && (ALLOW_UNAPPROVED || isApproved(it))
   && (!targetArea || (it.area || '') === targetArea);
 // The desire tier (#227): S/A/B/C is the owner's ranking of what they want
 // next, sorted ahead of the MoSCoW bucket. Unranked = 4, so it lands after
@@ -1078,8 +1088,11 @@ try {
       break;
     }
     // A pinned run (--item, from a scheduled or Run-now job) targets exactly
-    // that item in any bucket — a human chose it, so skipped/unreviewed pass;
-    // done or already-claimed still refuse.
+    // that item in any bucket — a human un-skipping it by pinning is a real
+    // choice, so skipped still passes; but unapproved no longer does, because
+    // a pinned id reaches this runner from an unattended job row just as
+    // often as from a human at a keyboard, and the runner cannot tell the two
+    // apart. Done or already-claimed still refuse.
     let item;
     if (ITEM_ID != null) {
       const all = ['must', 'should', 'could', 'wont'].flatMap((b) => detail.roadmap?.[b] || []);
@@ -1087,6 +1100,10 @@ try {
       if (!item) { log(`item #${ITEM_ID} not found on ${SLUG} — nothing run.`); break; }
       if (item.done || item.claimedBy) {
         log(`item #${ITEM_ID} is ${item.done ? 'already done' : `claimed by ${item.claimedBy}`} — nothing run.`);
+        break;
+      }
+      if (!ALLOW_UNAPPROVED && !isApproved(item)) {
+        log(`item #${ITEM_ID}: ${approvalHold(item)}, or pass --allow-unapproved — nothing run.`);
         break;
       }
       // A pinned replan may replace an untouched plan, but never one a session
@@ -1106,6 +1123,11 @@ try {
         if (!cand) { log(`agenda item #${id} not found on ${SLUG} — skipping.`); attempted.add(id); continue; }
         if (cand.done || cand.claimedBy) {
           log(`agenda item #${id} is ${cand.done ? 'already done' : `claimed by ${cand.claimedBy}`} — skipping.`);
+          attempted.add(id);
+          continue;
+        }
+        if (!ALLOW_UNAPPROVED && !isApproved(cand)) {
+          log(`agenda item #${id}: ${approvalHold(cand)} — skipping (pass --allow-unapproved to run it anyway).`);
           attempted.add(id);
           continue;
         }
