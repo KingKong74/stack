@@ -43,4 +43,24 @@ else
   (cd "$PW_DIR" && npx --yes playwright install chromium)
 fi
 
+# Chromium needs a handful of shared libraries this host may not have
+# system-wide, and playwright's own `install-deps` needs root, which an
+# unattended session does not have. Probe first — most hosts already have
+# them — and only provision the rootless private prefix (#291,
+# scripts/playwright/setup-browser-deps.sh) when something is actually
+# missing.
+CHROME_BIN="$CHROMIUM_DIR/chrome-linux64/chrome"
+if [ "$(uname -s)" != "Linux" ]; then
+  echo "[run-ui-smoke] not Linux — skipping the shared-library probe."
+elif [ ! -x "$CHROME_BIN" ]; then
+  echo "[run-ui-smoke] chromium binary not found at $CHROME_BIN — skipping the shared-library probe."
+elif ldd "$CHROME_BIN" 2>&1 | grep -q "not found"; then
+  echo "[run-ui-smoke] chromium is missing shared libraries — provisioning a rootless private prefix…"
+  "$SCRIPT_DIR/playwright/setup-browser-deps.sh"
+  eval "$("$SCRIPT_DIR/playwright/setup-browser-deps.sh" --print-env)"
+  echo "[run-ui-smoke] using the private library prefix at ${STACK_UI_SMOKE_DEPS:-$HOME/.stack/ui-smoke-deps}."
+else
+  echo "[run-ui-smoke] chromium can already resolve all its shared libraries — no provisioning needed."
+fi
+
 exec node "$REPO_ROOT/scripts/playwright/smoke.mjs" "$@"

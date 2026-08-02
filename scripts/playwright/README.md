@@ -81,6 +81,35 @@ see `--out`) holds the full machine-readable report;
 `<out>/<screen-id>@<viewport>.png` holds one screenshot per screen per
 viewport. Neither ever contains the bearer token.
 
+## Running it on a host without root
+
+Chromium needs a handful of shared libraries (nss, atk, cairo, pango, and a
+few more) that a minimal Debian/Ubuntu host may not have installed. The
+normal fix, `npx playwright install-deps`, shells out to `apt install` and
+needs root — which an unattended overnight session has no password to give.
+
+`scripts/run-ui-smoke.sh` probes for this first (via `ldd` on the cached
+chromium binary) and, only if something is actually missing, runs
+`scripts/playwright/setup-browser-deps.sh`. That script fetches the missing
+`.deb` files with `apt-get download` and extracts them with `dpkg-deb -x`
+— both rootless — into a private prefix at `~/.stack/ui-smoke-deps` (or
+`$STACK_UI_SMOKE_DEPS`), then points `LD_LIBRARY_PATH` and
+`FONTCONFIG_FILE` at it for the smoke run. **Nothing is installed
+system-wide** — the prefix is only ever read by this harness's own chromium
+process, and re-running the provisioner is a no-op once it has already run
+(pass `--force` to rebuild it).
+
+The two alternatives, if you'd rather not use the private prefix:
+- `sudo npx playwright install-deps` on this host (needs a password), or
+- run the harness inside `mcr.microsoft.com/playwright:v1.62.1-noble` with
+  `--network host`, which already has every library installed.
+
+**Caveat:** the private prefix supplies DejaVu Sans as its sans-serif
+fallback (there is no system font stack in the prefix), so glyph metrics can
+differ slightly from what the owner's own browser renders. Treat a
+borderline overflow finding as a prompt to check the screenshot, not as
+gospel on its own.
+
 ## Fail-safe direction
 
 This is a **test**, not a recorder (CLAUDE.md, "Fail-safe direction"): it

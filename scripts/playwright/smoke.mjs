@@ -348,9 +348,20 @@ export async function main(argv = process.argv.slice(2)) {
 
   let browser;
   try {
-    browser = await chromium.launch({ headless: !opts.headed });
+    // --no-sandbox: chromium's sandbox needs either root-owned setuid helpers
+    // or user namespaces, neither of which an unattended session on this
+    // host has. This is a local harness pointed at the owner's own app, not
+    // a browser opening untrusted pages, so the sandbox is not protecting
+    // against anything this run is exposed to.
+    // --disable-dev-shm-usage: a small /dev/shm otherwise crashes the
+    // renderer mid-run.
+    browser = await chromium.launch({ headless: !opts.headed, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   } catch (e) {
-    process.stderr.write(`chromium failed to launch: ${e.message}\n`);
+    process.stderr.write(
+      `chromium failed to launch: ${e.message}\n`
+      + 'if this is missing shared libraries, run scripts/run-ui-smoke.sh (it provisions them '
+      + 'via scripts/playwright/setup-browser-deps.sh) instead of invoking smoke.mjs directly.\n',
+    );
     return 1;
   }
 
