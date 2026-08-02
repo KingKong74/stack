@@ -102,6 +102,41 @@ see `--out`) holds the full machine-readable report;
 `<out>/<screen-id>@<viewport>.png` holds one screenshot per screen per
 viewport. Neither ever contains the bearer token.
 
+## `--report`: landing a run on the Quality page
+
+`--report` is **opt-in** — a plain local run stays side-effect-free. When
+passed, after the run completes it POSTs the outcome to
+`<url>/api/projects/<slug>/checks/report`, the external-check inlet
+(`server/src/routes/checks.js`), before `report.json` is written to disk —
+so the file on disk always reflects whether the report landed. `<url>` is
+the **same base URL this run just smoked** — never a separately configured
+API host — and it carries the same bearer token the run used.
+
+That lands the result on the project's **Quality page, Suite segment**, as a
+check named `UI Smoke Harness` and marked "reported" rather than "run by
+Stack". The row does not need seeding: `stack seed-checks` never creates it —
+the **first** `--report` POST plants the row itself, and every later one
+updates the same row by name.
+
+- `status` is `pass` when the run found zero findings of either severity,
+  otherwise `fail`.
+- `error` (fail only) is a compact one-line summary: the error/layout counts,
+  how many screens and viewports were covered, and the single worst finding
+  — e.g. `6 errors, 29 layout findings over 14 screens / 2 viewports — worst:
+  page-error on dashboard@desktop: Minified React error #418`.
+
+A failed report **warns loudly but never reddens a clean run**: the exit code
+answers "is the UI sound?", which is a question about the app, not about
+whether the recording of that answer reached the server. So a failed POST
+(unreachable API, non-2xx, a 409 name clash) prints a loud warning naming the
+status and body and records `reported: { ok: false, reason }` in
+`report.json` — but the process exit code still comes from the findings
+alone. It is never swallowed silently either: a report that did not land is a
+Quality page quietly showing yesterday's result as if it were today's, so
+this is always visible in both the terminal and the stored report. A
+successful report prints one confirmation line and records
+`reported: { ok: true, name, status }`.
+
 ## Running it on a host without root
 
 Chromium needs a handful of shared libraries (nss, atk, cairo, pango, and a

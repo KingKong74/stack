@@ -25,7 +25,7 @@
 //   scripts/run-ui-smoke.sh [options]     (installs deps first if missing)
 //
 // Options: --url --token --slug --out --screens --viewport --timeout
-//          --headed --json --help          (see --help for details)
+//          --headed --json --report --help          (see --help for details)
 
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -74,6 +74,18 @@ export const IGNORED_REQUEST_PATTERNS = [
 const CAP_PER_KIND = 25;
 const SETTLE_MS = 600;
 
+// The row's IDENTITY on the server (POST /api/projects/:slug/checks/report
+// matches by name — the first report PLANTS the row, every later one updates
+// it). A module-level constant, not an inline string, so it stays greppable
+// and the client and any future caller can never drift apart on the name.
+export const REPORT_CHECK_NAME = 'UI Smoke Harness';
+
+// The server caps `error` at 500 characters too, but this harness does not
+// rely on that: truncating silently server-side would still leave a caller
+// believing it sent the whole string, so this harness caps its own summary
+// itself and never depends on the server to finish the job.
+const REPORT_ERROR_CAP = 500;
+
 // ---- ~/.stack/env reader --------------------------------------------------
 // Same tiny parser scripts/stack-seed-checks.mjs already uses: `KEY=value`
 // per line, blanks and `#` comments ignored. Kept local rather than shared so
@@ -114,6 +126,7 @@ function parseArgs(argv) {
     timeout: Number(arg('timeout')) || 20000,
     headed: flag('headed'),
     json: flag('json'),
+    report: flag('report'),
     help: flag('help'),
   };
 }
@@ -131,6 +144,8 @@ function printHelp() {
   --timeout <ms>   per-navigation timeout (default: 20000)
   --headed         run headed instead of headless
   --json           print the report JSON to stdout instead of the table
+  --report         POST the outcome to the project's own checks (Quality page,
+                    Suite segment) as '${REPORT_CHECK_NAME}' — off by default
   --help           print this message
 
 Screens: ${SCREENS.map((s) => s.id).join(', ')}
@@ -375,6 +390,77 @@ async function preflight(url, token, timeoutMs) {
   return { ok: true, version: body.version };
 }
 
+// ---- external report -------------------------------------------------------
+// #291 — POST the outcome of THIS run to the project's own checks, so a smoke
+// run lands on the Quality page instead of only in a terminal nobody re-reads.
+// Picks the single worst finding for the one-line `error` summary: an error
+// finding outranks a layout one (a broken screen is worse than a clipped
+// pane), and within a severity the first one encountered stands in for the
+// rest — this is a compact pointer for a human to open the full report.json
+// or the screenshots, not a replacement for either.
+function summariseFailure(screenReports, viewportNames) {
+  const uniqueScreens = new Set(screenReports.map((r) => r.id)).size;
+  const allFindings = screenReports.flatMap((r) => r.findings);
+  const errors = allFindings.filter((f) => f.severity === 'error').length;
+  const layout = allFindings.filter((f) => f.severity === 'layout').length;
+  const worst = allFindings.find((f) => f.severity === 'error') || allFindings[0];
+  const worstStr = worst ? ` — worst: ${worst.kind} on ${worst.screen}@${worst.viewport}: ${worst.detail}` : '';
+  const summary = `${errors} errors, ${layout} layout findings over ${uniqueScreens} screen${uniqueScreens === 1 ? '' : 's'} `
+    + `/ ${viewportNames.length} viewport${viewportNames.length === 1 ? '' : 's'}${worstStr}`;
+  return summary.slice(0, REPORT_ERROR_CAP);
+}
+
+// Target is the SAME base URL this run just smoked (never a separately
+// configured API host, and never a flag of its own): the preflight has
+// already proved that base is Stack, and a run against a preview instance
+// must land on that preview's own Quality page, not on production's. One
+// less thing that can be pointed at the wrong place — which is exactly the
+// mistake the preflight exists to catch in the first place. Same reasoning
+// for the token: the same bearer this run used to smoke the app, never a
+// second credential.
+//
+// FAILURE HANDLING: a failed report warns loudly but never changes the exit
+// code. The exit code answers "is the UI sound?" — a flaky API is not a UI
+// finding, and letting a failed recording turn a clean run red would teach a
+// reader to distrust the one signal this harness exists to give. It is never
+// swallowed either: a report that silently did not land is a Quality page
+// quietly showing yesterday's result as if it were today's, so this always
+// prints and always records what happened in report.json's `reported` field.
+async function reportOutcome({ url, token, slug, totals, durationMs, screenReports, viewportNames, timeoutMs }) {
+  const pass = (totals.errors + totals.layout) === 0;
+  const body = {
+    name: REPORT_CHECK_NAME,
+    status: pass ? 'pass' : 'fail',
+    ms: durationMs,
+    url,
+    error: pass ? null : summariseFailure(screenReports, viewportNames),
+  };
+
+  let res;
+  try {
+    res = await fetch(`${url}/api/projects/${slug}/checks/report`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    const reason = `unreachable: ${e.message}`;
+    process.stderr.write(`\nWARNING: failed to report the smoke result to Stack — ${reason}\n`);
+    return { ok: false, reason };
+  }
+
+  if (res.status < 200 || res.status >= 300) {
+    const text = await res.text().catch(() => '');
+    const reason = `HTTP ${res.status} — ${text.slice(0, 300)}`;
+    process.stderr.write(`\nWARNING: failed to report the smoke result to Stack — ${reason}\n`);
+    return { ok: false, reason };
+  }
+
+  process.stdout.write(`\nreported to ${slug}'s Quality page: ${body.status.toUpperCase()} (${REPORT_CHECK_NAME})\n`);
+  return { ok: true, name: REPORT_CHECK_NAME, status: body.status };
+}
+
 // ---- main -------------------------------------------------------------------
 export async function main(argv = process.argv.slice(2)) {
   const opts = parseArgs(argv);
@@ -586,6 +672,12 @@ export async function main(argv = process.argv.slice(2)) {
     screens: screenReports,
     totals,
   };
+
+  if (opts.report) {
+    report.reported = await reportOutcome({
+      url, token, slug: opts.slug, totals, durationMs, screenReports, viewportNames, timeoutMs: opts.timeout,
+    });
+  }
 
   writeFileSync(join(opts.out, 'report.json'), JSON.stringify(report, null, 2));
 

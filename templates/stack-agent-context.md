@@ -175,3 +175,7 @@ Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
   or delay Claude Code starting or stopping.
 - **No secrets in the repo.** Secrets load at runtime from `.env` (server) and
   `~/.stack/env` (hooks).
+- **A strict build is not enough for UI work — you cannot see your own rendering.**
+  Before calling a UI change done, run `scripts/run-ui-smoke.sh` (or
+  `./stack ui-smoke`), a headless-browser pass over the app that catches layout
+  and console/network breakage a typecheck can't.
