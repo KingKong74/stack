@@ -1631,11 +1631,17 @@ control.get('/session/:jobId', async (req, res) => {
         WHERE project_id = $1 AND finished_at >= $2
         ORDER BY finished_at DESC LIMIT 20`,
       [job.project_id, since]),
-    q(`SELECT session_id, summary, current_phase, commit_hash, branch, created_at
-         FROM sessions
-        WHERE project_id = $1 AND branch = $2
-        ORDER BY created_at DESC LIMIT 10`,
-      [job.project_id, branch]),
+    // An empty branch (a general night that hasn't claimed an item yet) would
+    // match every session row with no branch — attributing strangers' pushes
+    // to this session. No claim means no branch means we genuinely do not
+    // know which pushes are this session's, so skip the query and say none.
+    branch
+      ? q(`SELECT session_id, summary, current_phase, commit_hash, branch, created_at
+             FROM sessions
+            WHERE project_id = $1 AND branch = $2
+            ORDER BY created_at DESC LIMIT 10`,
+          [job.project_id, branch])
+      : Promise.resolve({ rows: [] }),
     q(`SELECT session_id, branch, started_at, last_seen_at FROM presence
         WHERE project_id = $1 AND last_seen_at > now() - interval '${PRESENCE_TTL_MINUTES} minutes'
         ORDER BY last_seen_at DESC`,

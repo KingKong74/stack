@@ -51,8 +51,9 @@ import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, paneTail, reapDeadSessions, reapIdleSessions, sendKeys, setKeep } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, listAutoSessions, paneTail, reapDeadSessions, reapIdleSessions, sendKeys, setKeep } from './tmux-session.mjs';
 import { detectPrompt } from './prompt-scan.mjs';
+import { parseAutoName, readActivity } from './auto-scan.mjs';
 import { createEditWatch } from './edit-watch.mjs';
 import {
   availableProviders, providerEnv, getProvider,
@@ -272,6 +273,35 @@ function pushDetached() {
   sendUplink({ t: 'detached', sessions: sessionsList });
 }
 setInterval(pushDetached, 60_000);
+
+// ---- autopilot pane advertising (#366) --------------------------------------
+// Mission Control's fleet strip shows what a running autopilot job is DOING,
+// not just that a job claims it — and the only place that answer exists is
+// the pane itself. stack-auto-* sessions are never mirrored or killed from
+// the browser (listAutoSessions() is a read-only sibling of
+// listStackSessions()), so this push carries only what the pane says, plus
+// the parsed job identity and a lightweight "what is it doing" read.
+//
+// Same 60s cadence as pushDetached, on the same tick, and cheap by
+// construction: FLEET_CAPACITY is 1, so there is at most one autopilot
+// session at a time — one extra capture-pane fork a minute, no database
+// work. The alternative (the browser polling the host per render) is what
+// this periodic push is deliberately avoiding.
+function pushAuto() {
+  if (!tmuxAvailable()) return;
+  const now = Date.now();
+  const sessions = listAutoSessions().map((s) => {
+    const tail = paneTail(s.name);                 // one capture, two readers
+    const idleMs = s.activity ? Math.max(0, now - s.activity) : 0;
+    const parsed = parseAutoName(s.name);
+    const read = readActivity(tail, { idleMs });
+    return { name: s.name, jobId: parsed?.jobId ?? null, slug: parsed?.slug ?? '',
+             created: s.created, attached: s.attached, activityAt: s.activity,
+             idleMs, tail, doing: read.doing };
+  });
+  sendUplink({ t: 'auto', sessions });
+}
+setInterval(pushAuto, 60_000);
 
 // ---- the block watch --------------------------------------------------------
 // A session that has stopped to ask permission is the most time-sensitive thing
@@ -865,6 +895,50 @@ function claudeAsk(m) {
   });
 }
 
+// ---- on-demand read of one autopilot pane (#366) -----------------------------
+//
+// Mission Control's fleet detail wants a FRESH read of a stack-auto-* pane,
+// not the ~60s-stale cached report pushAuto() sends. This is that — and it is
+// the WHOLE reason a stack-auto-* session may be read at all outside the
+// periodic push: it captures the pane and nothing else. No sendKeys, no
+// send-keys, no kill-session. Autopilot sessions run with
+// --dangerously-skip-permissions; giving the browser a write path into one
+// here would put it in charge of a session that trusts every keystroke it
+// gets, which is exactly the hazard answerPrompt() below exists to avoid for
+// stack-term-* sessions in the first place.
+//
+// Wrapped so a throw here can never take down the message handler — on any
+// unexpected failure this replies ok:false with the error rather than going
+// silent.
+function autoView(m) {
+  // Always exactly one reply, every field present, whatever path gets there.
+  const done = (ok, out) => sendUplink({
+    t: 'autoViewed', id: m.id, ok,
+    error: '', name: typeof m.name === 'string' ? m.name : '',
+    tail: '', doing: '', idleMs: 0, activityAt: 0, alive: false,
+    ...out,
+  });
+  try {
+    if (!tmuxAvailable()) return done(false, { error: 'no tmux on this host' });
+    if (typeof m.name !== 'string' || !/^stack-auto-[A-Za-z0-9_-]{1,64}$/.test(m.name)) {
+      return done(false, { error: 'that is not an autopilot session name' });
+    }
+    const s = listAutoSessions().find((x) => x.name === m.name);
+    if (!s) {
+      // A run that just finished is the NORMAL case here, not an error — the
+      // job ended between the fleet strip's last render and this click.
+      return done(false, { error: 'that autopilot session is not on this host any more', alive: false });
+    }
+    const lines = Math.max(20, Math.min(400, Number(m.lines) || 160));
+    const tail = paneTail(m.name, lines, { chars: 20_000 });
+    const idleMs = s.activity ? Math.max(0, Date.now() - s.activity) : 0;
+    const read = readActivity(tail, { idleMs });
+    done(true, { tail, doing: read.doing, idleMs, activityAt: s.activity, alive: true });
+  } catch (e) {
+    done(false, { error: e?.message || 'the host could not read that pane' });
+  }
+}
+
 // ---- answering a permission prompt from Mission Control ---------------------
 //
 // The only path by which anything other than a human at the keyboard types
@@ -932,6 +1006,9 @@ function connect() {
     pushDetached(); // seed the relay's detached-session cache straight away
     pushPlan();     // …and its plan-usage snapshot (#220)
     pushEdits();    // …and who is mid-edit in which file right now
+    pushAuto();     // …and the autopilot pane report (#366) — without this the
+                     // relay's cache is empty for up to a minute after every
+                     // reconnect/redeploy, reading as an unseen fleet
 
     if (sessions.size > 0) {
       const liveSids = [...sessions.keys()];
@@ -1022,6 +1099,7 @@ function connect() {
     }
     else if (m.t === 'answerPrompt') answerPrompt(m);
     else if (m.t === 'claudeAsk') claudeAsk(m);
+    else if (m.t === 'autoView') autoView(m);
     else if (m.t === 'kill') {
       if (sess?.switchMode) {
         // Browser tab closed during the switch prompt — clean up gracefully.
