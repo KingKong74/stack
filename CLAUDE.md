@@ -512,6 +512,7 @@ node server/test/workbench.test.mjs        # the canvas is a placement layer (ne
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
 node server/test/agents.test.mjs           # each tab agent is bound to its own tab (pure, no DB)
+node server/test/agent-sandbox.test.mjs    # a tab agent runs with every tool off, in a scratch dir (pure)
 node scripts/lane.test.mjs                 # branch naming + BOTH spellings parse (pure, no git)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
