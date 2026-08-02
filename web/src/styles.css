@@ -2353,6 +2353,32 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tc-note { font-size: 10.5px; line-height: 1.5; color: var(--muted); }
 .tc-warn { font-size: 11px; color: var(--critical); font-weight: 600; }
 .tc-foot { font-size: 10.5px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--line-3); padding-top: 10px; }
+/* ---- the ↩ Debrief segment (#276): the terminal's own resume card, so
+   "Jump back in" arrives already briefed. Reuses .tc-body/.tc-block/.tc-cap
+   from the segments either side of it — only what is genuinely new here
+   (the status pill, the commit rows) gets its own rule. ---- */
+.tcd-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tcd-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.tcd-when { font-size: 10.5px; color: var(--muted); }
+.tcd-status { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 600; color: var(--live); flex: none; }
+.tcd-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--live); }
+.tcd-status.building { color: var(--building); }
+.tcd-status.building .dot { background: var(--building); }
+.tcd-status.paused { color: var(--paused); }
+.tcd-status.paused .dot { background: var(--paused); }
+.tcd-status.archived { color: var(--paused); }
+.tcd-status.archived .dot { background: var(--paused); }
+.tcd-summary { font-size: 11.5px; line-height: 1.5; color: var(--ink); }
+.tcd-line { font-size: 11.5px; line-height: 1.5; color: var(--ink); }
+.tcd-line.warn { color: var(--critical); }
+.tcd-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 11.5px; line-height: 1.5; }
+.tcd-row .t { color: var(--ink); min-width: 0; }
+.tcd-row .m { font-family: var(--mono); font-size: 10px; color: var(--muted); flex: none; display: flex; align-items: center; gap: 6px; }
+.tcd-commit { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; }
+.tcd-commit + .tcd-commit { border-top: 1px solid var(--line-3); }
+.tcd-commit-meta { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); }
+.tcd-commit-summary { font-size: 11.5px; line-height: 1.4; color: var(--ink);
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
 /* ---- the Session rail: head (never scrolls) · list · footer that acts ---- */
 .tc-session { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .tcs-lede { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 7px; }

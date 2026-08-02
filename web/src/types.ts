@@ -313,6 +313,29 @@ export interface Collections {
   notes: Note[];
 }
 
+// ---- terminal "Jump back in" debrief (GET /api/projects/:slug/debrief) ----
+export interface DebriefBugTop { key: string; title: string; severity: Severity }
+export interface DebriefRoadmapItem {
+  id: number; title: string; bucket: Priority; tier: Tier; claimedBy: string;
+}
+export interface ProjectDebrief {
+  slug: string;
+  name: string;
+  status: ProjectStatus;
+  phase: string;
+  summary: string;
+  when: string | null; // relative; null = never pushed
+  inProgress: string[];
+  nextUp: string[];
+  blockers: string[];
+  bugs: {
+    open: number; critical: number; high: number; medium: number; low: number;
+    top: DebriefBugTop[];
+  };
+  roadmap: DebriefRoadmapItem[];
+  commits: Activity[];
+}
+
 // ---- cross-project command deck (GET /api/overview) ----
 export interface OverviewResume {
   slug: string; name: string; tint: string | null;

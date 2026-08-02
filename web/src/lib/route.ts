@@ -19,7 +19,7 @@ export type Route =
   | { name: 'timeline' }
   | { name: 'control'; room?: ControlRoom }
   | { name: 'skills' }
-  | { name: 'terminal'; cwd?: string; attach?: string }
+  | { name: 'terminal'; cwd?: string; attach?: string; brief?: boolean }
   | { name: 'share'; slug: string; token: string }
   | { name: 'detail'; id: string; tab?: string; highlight?: string };
 
@@ -35,7 +35,12 @@ function parse(): Route {
   if (h === '/skills' || h.startsWith('/skills')) return { name: 'skills' };
   if (h.startsWith('/terminal')) {
     const params = new URLSearchParams(h.split('?')[1] || '');
-    return { name: 'terminal', cwd: params.get('cwd') || undefined, attach: params.get('attach') || undefined };
+    return {
+      name: 'terminal',
+      cwd: params.get('cwd') || undefined,
+      attach: params.get('attach') || undefined,
+      brief: params.get('brief') === '1' ? true : undefined,
+    };
   }
   // The public showcase — rendered without the token gate (read-only, its own key).
   const s = h.match(/^\/share\/([^/]+)\/([^/?]+)/);
@@ -69,10 +74,11 @@ export const hrefTo = {
   control: (room?: ControlRoom) => (room && room !== 'now' ? `#/control/${room}` : '#/control'),
   settings: '#/settings',
   skills: '#/skills',
-  terminal: (cwd?: string, attach?: string) => {
+  terminal: (cwd?: string, attach?: string, brief?: boolean) => {
     const q = [
       cwd ? `cwd=${encodeURIComponent(cwd)}` : '',
       attach ? `attach=${encodeURIComponent(attach)}` : '',
+      brief ? 'brief=1' : '',
     ].filter(Boolean).join('&');
     return `#/terminal${q ? `?${q}` : ''}`;
   },
@@ -90,8 +96,8 @@ export const go = {
   skills: () => { window.location.hash = '#/skills'; },
   // attach (a stack-term-* tmux name) jumps straight into that running claude
   // session — Mission Control's ▶ chips use it.
-  terminal: (cwd?: string, attach?: string) => {
-    window.location.hash = hrefTo.terminal(cwd, attach);
+  terminal: (cwd?: string, attach?: string, brief?: boolean) => {
+    window.location.hash = hrefTo.terminal(cwd, attach, brief);
   },
   // tab picks which collection opens; highlight (when given) flags the matching
   // item/commit on that tab via the existing highlight mechanism. The tab
