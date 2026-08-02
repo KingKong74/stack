@@ -4,6 +4,7 @@ import { projectBySlug } from '../resolve.js';
 import { relativeTime } from '../util.js';
 import { runCore } from '../shape.js';
 import { readSettings, cleanAutopilotTime } from '../settings.js';
+import { isApproved, APPROVED_SQL } from '../approval.js';
 
 // Mounted at /api/projects/:slug/autopilot — the overnight runner's history.
 // The runner POSTs one row per item attempt; the dashboard's morning digest
@@ -84,6 +85,48 @@ const cleanAgenda = (v) => (Array.isArray(v) ? v : [])
   .filter((x) => x != null)
   .slice(0, 20);
 const cleanArea = (v) => String(v || '').trim().toLowerCase().slice(0, 40);
+
+// #359 — a due calendar row can pin `item_id` and/or carry roadmap ids in its
+// `agenda` (mixed, for a debug row, with `BUG-N` strings — those are bug
+// tracker keys, not roadmap items, so they carry no approval gate and always
+// pass through). This is the fail-safe gate for GET /next's unattended
+// enqueue: nobody is watching this session start, so an unapproved item must
+// be DROPPED, never run. An id that doesn't even come back from the query
+// (wrong project, deleted since the row was scheduled) is held on the same
+// fail-safe principle as one that comes back explicitly unapproved.
+//
+// Returns null when the row carries no roadmap ids at all (nothing to gate —
+// enqueue as scheduled). Returns { held: true } when the pinned item_id is
+// held, or when the agenda held roadmap ids and every one of them is held —
+// either way the caller skips the INSERT but still stamps/retires the row, so
+// a held schedule doesn't spin the dispatcher every minute for the rest of
+// its window. Otherwise returns { agenda } — the agenda filtered down to its
+// approved roadmap ids, bug-ref strings kept in place and in order.
+async function checkScheduleApproval(projectId, itemId, agenda) {
+  const agendaList = Array.isArray(agenda) ? agenda : [];
+  const numericAgendaIds = agendaList.map(Number).filter((n) => Number.isFinite(n));
+  if (itemId == null && numericAgendaIds.length === 0) return null;
+
+  const idsToCheck = [...new Set([...(itemId != null ? [Number(itemId)] : []), ...numericAgendaIds])];
+  const { rows } = await q(
+    `SELECT id, source, reviewed_at FROM roadmap_items WHERE project_id = $1 AND id = ANY($2::int[])`,
+    [projectId, idsToCheck]);
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const idApproved = (id) => {
+    const r = byId.get(id);
+    return r ? isApproved(r) : false; // not found at all = held, fail safe
+  };
+
+  if (itemId != null && !idApproved(Number(itemId))) return { held: true };
+
+  const filteredAgenda = agendaList.filter((a) => {
+    const n = Number(a);
+    return !Number.isFinite(n) || idApproved(n); // BUG-N refs always pass
+  });
+  const survivingRoadmapIds = filteredAgenda.filter((a) => Number.isFinite(Number(a))).length;
+  if (numericAgendaIds.length > 0 && survivingRoadmapIds === 0) return { held: true };
+  return { agenda: filteredAgenda };
+}
 
 function scheduleShape(r) {
   return {
@@ -431,7 +474,13 @@ autopilotGlobal.get('/next', async (req, res) => {
                  AND NOT COALESCE(r.skipped, false)
                  AND COALESCE(r.claimed_by, '') = ''
                  AND r.bucket IN ('must', 'should')
-                 AND jsonb_array_length(COALESCE(r.plan, '[]'::jsonb)) = 0)
+                 AND jsonb_array_length(COALESCE(r.plan, '[]'::jsonb)) = 0
+                 -- Fail safe (unattended spend, no human watching): without this,
+                 -- an unapproved hook item alone stands a plan job up, and the
+                 -- runner re-derives its eligible list when it actually starts
+                 -- and filters that same item back out — a sweep that LOOKS like
+                 -- it worked and planned nothing.
+                 AND ${APPROVED_SQL('r')})
             AND NOT EXISTS (
               SELECT 1 FROM autopilot_runs ar
                WHERE ar.project_id = p.id
@@ -455,11 +504,17 @@ autopilotGlobal.get('/next', async (req, res) => {
       const recursToday = dayList.length > 0 && dayList.includes(dow)
         && (!s.last_enqueued_on || new Date(s.last_enqueued_on).toISOString().slice(0, 10) < localDate);
       if (!onceToday && !recursToday) continue;
-      await q(
-        `INSERT INTO autopilot_jobs (project_id, kind, item_id, schedule_id, session_kind, agenda, area)
-         VALUES ($1,'scheduled',$2,$3,$4,$5::jsonb,$6)`,
-        [s.project_id, s.item_id, s.id, cleanKind(s.session_kind),
-         JSON.stringify(Array.isArray(s.agenda) ? s.agenda : []), s.area || '']);
+      // #359 — fail safe: drop the enqueue rather than run an unapproved item;
+      // the row still gets its stamp/retire below either way (see
+      // checkScheduleApproval's doc comment for why).
+      const approval = await checkScheduleApproval(s.project_id, s.item_id, s.agenda);
+      if (!approval || !approval.held) {
+        await q(
+          `INSERT INTO autopilot_jobs (project_id, kind, item_id, schedule_id, session_kind, agenda, area)
+           VALUES ($1,'scheduled',$2,$3,$4,$5::jsonb,$6)`,
+          [s.project_id, s.item_id, s.id, cleanKind(s.session_kind),
+           JSON.stringify(approval ? approval.agenda : (Array.isArray(s.agenda) ? s.agenda : [])), s.area || '']);
+      }
       // One-offs retire themselves; recurring rows just stamp the local date.
       await q(
         onceToday
