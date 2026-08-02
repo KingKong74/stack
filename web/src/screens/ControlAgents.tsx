@@ -37,6 +37,15 @@ const relative = (iso: string | null): string => {
   return `${Math.round(h / 24)}d ago`;
 };
 
+// Real money, small numbers: two decimal places reads as blank ("$0.00") for
+// most single runs, so anything under a cent gets four. Zero is still $0.00,
+// never a blank — an agent that DID run and cost nothing (its one no-model op,
+// say) is a fact worth stating plainly, not omitting.
+const formatUsd = (n: number): string => {
+  if (!Number.isFinite(n) || n <= 0) return '$0.00';
+  return n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`;
+};
+
 export function AgentsRoom() {
   const [data, setData] = useState<TabAgentsData | null>(null);
   const [error, setError] = useState('');
@@ -68,13 +77,14 @@ export function AgentsRoom() {
   };
 
   const liveCount = (data?.agents ?? []).filter((a) => a.enabled).length;
+  const totalSpend = (data?.agents ?? []).reduce((sum, a) => sum + (a.costUsd || 0), 0);
 
   return (
     <div className="mc-agentsroom">
       <div className="mc14-room-head">
         <span className="title">Agents</span>
         <span className="meta">
-          {!data ? 'loading…' : `${liveCount} of ${data.agents.length} on · one per tab`}
+          {!data ? 'loading…' : `${liveCount} of ${data.agents.length} on · one per tab · ${formatUsd(totalSpend)} spent`}
         </span>
       </div>
 
@@ -170,6 +180,9 @@ function AgentCard({
       <div className="ledger">
         <span>{agent.runs === 0 ? 'never asked' : `${agent.runs} run${agent.runs === 1 ? '' : 's'}`}</span>
         {agent.runs > 0 && <span>· last {relative(agent.lastRunAt)}{agent.lastOp ? ` (${agent.lastOp})` : ''}</span>}
+        {/* No runs, no spend line: a never-asked agent reading "$0.00 spent"
+            would imply it tried and cost nothing, when it never tried at all. */}
+        {agent.runs > 0 && <span>· {formatUsd(agent.costUsd)} spent</span>}
         {/* An agent that keeps failing says so here. The last outcome is kept
             verbatim: "quota used up for now" and "timed out" are different
             problems with different answers, and a green tick would hide both. */}
