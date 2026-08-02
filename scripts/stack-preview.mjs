@@ -38,15 +38,15 @@
 // ---------------------------------------------------------------------------
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, copyFileSync, openSync, readFileSync, rmSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, copyFileSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import { loadStackEnv, logStderr } from '../hook/stack-post.mjs';
+import { pickWebService, buildOverride, verifyMerged } from './lib/compose-preview.mjs';
 
 loadStackEnv();
 const API = (process.env.STACK_API || '').replace(/\/$/, '');
 const TOKEN = process.env.STACK_TOKEN;
-if (!API || !TOKEN) process.exit(0); // unconfigured host = never acts
 
 const log = (msg) => logStderr(`preview ${new Date().toISOString()} · ${msg}`);
 
@@ -79,6 +79,21 @@ const PREVIEW_DIR = join(homedir(), '.stack', 'previews');
 // they still have to not collide with the host's real services.
 const PORT_LO = 8790;
 const PORT_HI = 8809;
+
+// Probe values only — never bound to anything. They are passed as WEB_PORT and
+// PORT when `docker compose config` is first resolved, purely so pickWebService
+// can see which services (if any) echo one of them back as a published port.
+// That is proof the service reads the env var for its port, which beats every
+// other heuristic — so the numbers must never collide with a real host port or
+// with each other, and the actual allocated port is chosen separately below.
+const WEB_PORT_SENTINEL = 61001;
+const PORT_SENTINEL = 61002;
+
+// Docker's own precedence order for the default compose file name.
+const COMPOSE_CANDIDATES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
+// A project with none of these but a bare Dockerfile is a later unit's problem
+// (dockerfileExpose exists for it already) — not attempted here.
+const findComposeFile = (dir) => COMPOSE_CANDIDATES.map((f) => join(dir, f)).find((p) => existsSync(p)) || null;
 
 // A branch name has to become a docker compose project name (lowercase,
 // [a-z0-9_-]) and a directory. Keep it recognisable but boring.
@@ -303,10 +318,10 @@ async function start(id) {
   const add = sh('git', ['-C', repo, 'worktree', 'add', '--detach', worktree, ref], { timeout: 180_000 });
   if (!ok(add)) return fail(`worktree add failed: ${(add.stderr || '').slice(0, 180)}`);
 
-  const compose = join(worktree, 'docker-compose.yml');
-  if (!existsSync(compose)) {
+  const compose = findComposeFile(worktree);
+  if (!compose) {
     await teardown({ composeProject, worktree, tunnelPid: null }, { quiet: true });
-    return fail('that branch has no docker-compose.yml — nothing to bring up');
+    return fail(`that branch has none of ${COMPOSE_CANDIDATES.join(', ')} — nothing to bring up`);
   }
 
   // The worktree has no .env (gitignored), and Stack's own compose *requires*
@@ -321,7 +336,39 @@ async function start(id) {
     return fail(`no free port in ${PORT_LO}-${PORT_HI} — stop another preview first`);
   }
 
-  await say(`building on port ${port} — this can take a few minutes`, {
+  // Resolve the compose model with WEB_PORT/PORT set to sentinel values that
+  // are never bound to anything real. A service whose published port comes
+  // back equal to one of them has PROVEN it reads that env var for its
+  // published port — see compose-preview.mjs for the full rule ladder.
+  const sentinelEnv = {
+    ...process.env, WEB_PORT: String(WEB_PORT_SENTINEL), PORT: String(PORT_SENTINEL),
+    COMPOSE_PROJECT_NAME: composeProject,
+  };
+  const resolved = sh('docker', ['compose', '-f', compose, 'config', '--format', 'json'],
+    { cwd: worktree, env: sentinelEnv, timeout: 60_000 });
+  if (!ok(resolved)) {
+    // A compose file that needs a variable the worktree's .env does not set is
+    // a real and likely cause here — show what docker actually said.
+    const why = (resolved.stderr || resolved.stdout || '').trim().split('\n').filter(Boolean).slice(-3).join(' · ');
+    await teardown({ composeProject, worktree, tunnelPid: null }, { quiet: true });
+    return fail(`docker compose config failed: ${why.slice(0, 220)}`);
+  }
+  let model;
+  try { model = JSON.parse(resolved.stdout); } catch (e) {
+    await teardown({ composeProject, worktree, tunnelPid: null }, { quiet: true });
+    return fail(`docker compose config produced unparsable JSON: ${e?.message || e}`);
+  }
+
+  const chosen = pickWebService(model, { webPortSentinel: WEB_PORT_SENTINEL, portSentinel: PORT_SENTINEL });
+  if (chosen.error) {
+    await teardown({ composeProject, worktree, tunnelPid: null }, { quiet: true });
+    return fail(chosen.error);
+  }
+
+  const overridePath = join(worktree, '.stack-preview.yml');
+  writeFileSync(overridePath, buildOverride(model, chosen, port));
+  log(`#${id} publishing ${chosen.service}:${chosen.target} on :${port} (${chosen.why})`);
+  await say(`building ${chosen.service} on port ${port} — this can take a few minutes`, {
     port, composeProject, worktree,
   });
 
@@ -329,9 +376,36 @@ async function start(id) {
   // containers AND the named volumes under it, so the preview gets its own
   // empty database rather than sharing (or worse, migrating) the real one.
   // WEB_PORT is Stack's own knob for the published port; PORT is passed too
-  // for projects that spell it that way.
+  // for projects that spell it that way — the override above is what actually
+  // decides the published port now, but these stay for an app that reads them
+  // for something of its own.
   const env = { ...process.env, WEB_PORT: String(port), PORT: String(port), COMPOSE_PROJECT_NAME: composeProject };
-  const up = sh('docker', ['compose', '-p', composeProject, 'up', '-d', '--build'],
+  const fileArgs = ['-f', compose, '-f', overridePath];
+
+  // Confirm the override actually WON before spending minutes on a build with
+  // it. `!override` / `!reset` need Compose v2.24+; an older Compose ignores
+  // those tags and APPENDS the override's ports instead, silently re-creating
+  // the exact collision this feature exists to remove. Checking costs about a
+  // second; a wasted build costs minutes.
+  const mergedResolved = sh('docker', ['compose', ...fileArgs, 'config', '--format', 'json'],
+    { cwd: worktree, env, timeout: 60_000 });
+  if (!ok(mergedResolved)) {
+    const why = (mergedResolved.stderr || mergedResolved.stdout || '').trim().split('\n').filter(Boolean).slice(-3).join(' · ');
+    await teardown({ composeProject, worktree, tunnelPid: null }, { quiet: true });
+    return fail(`docker compose config (with override) failed: ${why.slice(0, 220)}`);
+  }
+  let merged;
+  try { merged = JSON.parse(mergedResolved.stdout); } catch (e) {
+    await teardown({ composeProject, worktree, tunnelPid: null }, { quiet: true });
+    return fail(`docker compose config (with override) produced unparsable JSON: ${e?.message || e}`);
+  }
+  const verified = verifyMerged(merged, port);
+  if (!verified.ok) {
+    await teardown({ composeProject, worktree, tunnelPid: null }, { quiet: true });
+    return fail(`the override did not take: ${verified.problems.join('; ')}`);
+  }
+
+  const up = sh('docker', ['compose', ...fileArgs, '-p', composeProject, 'up', '-d', '--build'],
     { cwd: worktree, env, timeout: 900_000 });
   if (!ok(up)) {
     const why = (up.stderr || up.stdout || '').trim().split('\n').filter(Boolean).slice(-3).join(' · ');
@@ -460,12 +534,105 @@ async function stop(id) {
   log(`#${id} stopped`);
 }
 
+// ---------------------------------------------------------------------------
+// plan — a dry run over #2/#3/#5 above: resolve the compose model, choose the
+// service, print the override that WOULD be written, and confirm the merge
+// verifies. Writes nothing to the target directory and starts nothing, so it
+// makes no API call either — it has to work on a host with no Stack env at
+// all, which is why the API/TOKEN guard below is conditioned on this NOT
+// being the mode in play.
+// ---------------------------------------------------------------------------
+async function plan(dir, port) {
+  const target = resolve(dir);
+  const compose = findComposeFile(target);
+  if (!compose) {
+    log(`no compose file in ${target} — looked for ${COMPOSE_CANDIDATES.join(', ')}`);
+    return;
+  }
+  log(`compose file: ${compose}`);
+
+  // A synthetic project name — nothing is ever brought up under it, but
+  // `docker compose config` still wants one to name the default network.
+  const projectName = `stack-preview-plan-${safeName(basename(target))}`;
+  const sentinelEnv = {
+    ...process.env, WEB_PORT: String(WEB_PORT_SENTINEL), PORT: String(PORT_SENTINEL),
+    COMPOSE_PROJECT_NAME: projectName,
+  };
+  const resolved = sh('docker', ['compose', '-f', compose, 'config', '--format', 'json'],
+    { cwd: target, env: sentinelEnv, timeout: 60_000 });
+  if (!ok(resolved)) {
+    const why = (resolved.stderr || resolved.stdout || '').trim().split('\n').filter(Boolean).slice(-3).join(' · ');
+    log(`docker compose config failed: ${why.slice(0, 220)}`);
+    return;
+  }
+  let model;
+  try { model = JSON.parse(resolved.stdout); } catch (e) {
+    log(`docker compose config produced unparsable JSON: ${e?.message || e}`);
+    return;
+  }
+
+  const chosen = pickWebService(model, { webPortSentinel: WEB_PORT_SENTINEL, portSentinel: PORT_SENTINEL });
+  if (chosen.error) {
+    log(chosen.error);
+    return;
+  }
+  log(`chosen service: ${chosen.service} → :${chosen.target}, would publish on :${port} (${chosen.why})`);
+
+  const override = buildOverride(model, chosen, port);
+  log(`override that would be written to .stack-preview.yml:\n${override}`);
+
+  // Resolve the MERGED config without ever writing into the target directory.
+  // `-f -` hands compose the override document over stdin as a second file —
+  // straightforward on any Compose new enough to honour !override/!reset in
+  // the first place. Only a Compose too old for `-f -` falls back to a real
+  // file, and that file goes under os.tmpdir(), well outside the project the
+  // human pointed --plan at, and is removed in the finally below either way.
+  const realEnv = { ...process.env, WEB_PORT: String(port), PORT: String(port), COMPOSE_PROJECT_NAME: projectName };
+  let mergedResolved = sh('docker', ['compose', '-f', compose, '-f', '-', 'config', '--format', 'json'],
+    { cwd: target, env: realEnv, timeout: 60_000, input: override });
+  if (!ok(mergedResolved)) {
+    const tmpFile = join(tmpdir(), `stack-preview-plan-${process.pid}.yml`);
+    try {
+      writeFileSync(tmpFile, override);
+      mergedResolved = sh('docker', ['compose', '-f', compose, '-f', tmpFile, 'config', '--format', 'json'],
+        { cwd: target, env: realEnv, timeout: 60_000 });
+    } finally {
+      try { rmSync(tmpFile, { force: true }); } catch { /* best effort */ }
+    }
+  }
+  if (!ok(mergedResolved)) {
+    const why = (mergedResolved.stderr || mergedResolved.stdout || '').trim().split('\n').filter(Boolean).slice(-3).join(' · ');
+    log(`docker compose config (with override) failed: ${why.slice(0, 220)}`);
+    return;
+  }
+  let merged;
+  try { merged = JSON.parse(mergedResolved.stdout); } catch (e) {
+    log(`docker compose config (with override) produced unparsable JSON: ${e?.message || e}`);
+    return;
+  }
+  const verified = verifyMerged(merged, port);
+  log(verified.ok
+    ? 'verify: ok — the merged config publishes only the chosen port'
+    : `verify: FAILED — ${verified.problems.join('; ')}`);
+}
+
 const startId = arg('start');
 const stopId = arg('stop');
+const planDir = arg('plan');
+
+// Unconfigured host = never acts — but only for the modes that DO something
+// (--start brings up containers and spends minutes; --stop tears them down).
+// --plan starts and writes nothing and never calls the API, so it has to work
+// on a host that has no Stack env configured at all.
+if (!planDir && (!API || !TOKEN)) process.exit(0);
+
 try {
   if (startId) await start(Number(startId));
   else if (stopId) await stop(Number(stopId));
-  else log('nothing to do — pass --start <id> or --stop <id>');
+  else if (planDir) {
+    const portArg = arg('port');
+    await plan(planDir, portArg ? Number(portArg) : 8795);
+  } else log('nothing to do — pass --start <id>, --stop <id> or --plan <dir>');
 } catch (e) {
   log(`unhandled: ${e?.message || e}`);
 }
