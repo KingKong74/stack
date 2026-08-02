@@ -504,7 +504,8 @@ autopilotGlobal.get('/next', async (req, res) => {
     // nightly run is oldest (NULL = never run → goes first), breaking ties by
     // created_at. Non-nightly jobs (manual / scheduled / revert / resume) carry
     // their own created_at and slot into the queue normally in front of nightly
-    // batches when they arrive first, preserving the one-job-at-a-time guarantee.
+    // batches when they arrive first — pickClaimable and the slot rule then
+    // decide what may actually start.
     const { rows: queued } = await client.query(
       `SELECT j.id, j.project_id AS "projectId", j.item_id AS "itemId", j.kind
         FROM autopilot_jobs j

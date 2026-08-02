@@ -254,6 +254,17 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   passes were against a different test. Renaming keeps both.
 - **`0 = unlimited`** for `autopilotTokens` and `autopilotMaxItems` (#260); positive values are
   clamped. `termIdleHours` `0 = never`.
+- **The parallel-dispatch rule (#265) lives ONCE, in `server/src/slots.js`** — the SQL in `GET /next`
+  supplies the in-flight and queued rows in the right order and must never re-derive the rule itself.
+  Two jobs in one project may only run side by side when BOTH are pinned to items and those items
+  DIFFER: an unpinned job (a nightly, a plan sweep, an audit) picks its items dynamically from the
+  board and would race any other job in the same repo for claims and worktrees. Merge and revert wait
+  for an EMPTY deck and hold it, because they touch main. The claim itself is a transaction that takes
+  an advisory lock first, because counting what is in flight and claiming against that count have to
+  be one atomic decision — two polls landing together would otherwise both see room and both claim.
+  The host-side half is one lockfile per lane, spelled once in `lockFor()`
+  (`scripts/lib/lane.mjs`): the runner takes it and the dispatcher removes it on a hang-up, so the two
+  runtimes must agree on the name. Pinned by `server/test/autopilot-slots.test.mjs`.
 
 ## Fail-safe direction (get this right or you delete work)
 
@@ -349,6 +360,7 @@ summariser.**
 | `autopilotEnabled` | the ARM SWITCH. Nightly + scheduled jobs only enqueue while on; ▶ Run now stays manual-only |
 | `autopilotPlanSweep` | standing sweep — GET /next stands a `plan` job up for any automode project with unplanned must/should work, same gates as the nightly |
 | `autopilotExecutorModel` / `autopilotAdvisorModel` | #153, **inverted by #285**: the ADVISOR runs the session (holds the main loop, plans, delegates, verifies, commits) and the EXECUTOR is exposed to it as a subagent with the write tools. Advisor unset = single-model on the executor |
+| `autopilotWorkers` | #265 — how many autopilot lanes may run at once (1–4, default 1; 1 is the single global lane that predates it). Clamped, not `0 = unlimited` like `autopilotTokens`/`autopilotMaxItems` — those still have the wall clock as a governor and an unbounded worker count has nothing behind it |
 | `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set, and **tier S is offered, never assigned** |
 | `termIdleHours` | the idle-session reaper's threshold (0 = never); the host does the killing and fails SAFE |
 | `accessPinSet` | PIN sign-in available; PATCH takes write-only `accessPin` ('' disables). Any change signs out every PIN-connected device |
@@ -447,6 +459,8 @@ node server/test/fleet-roles.test.mjs      # role attribution + drift detection 
 node server/test/workbench.test.mjs        # the canvas is a placement layer (needs API + DATABASE_URL)
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
+node server/test/autopilot-slots.test.mjs  # the parallel-dispatch slot rule (pure, no DB)
+node scripts/lane.test.mjs                 # per-lane lockfile naming agrees dispatcher-to-runner
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)

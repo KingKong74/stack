@@ -54,6 +54,12 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Overview — resume-card flag', url: u('/api/overview'), auth: true, json_path: 'keepResumeCard' },
     { name: 'Overview — contribution graph', url: u('/api/overview'), auth: true, json_path: 'graph.0.date' },
     { name: 'Control — autopilot config', url: u('/api/control'), auth: true, json_path: 'autopilot.maxItems' },
+    // #265 — the parallel-dispatch worker count, on both halves of the
+    // contract: the setting PATCH/GET writes, and what GET /next reads via
+    // /api/control's echo. Asserting the PATH exists is the point — a lost
+    // field silently falls back to a single lane.
+    { name: 'Settings — autopilot worker count', url: u('/api/settings'), auth: true, json_path: 'autopilotWorkers' },
+    { name: 'Control — autopilot worker count', url: u('/api/control'), auth: true, json_path: 'autopilot.workers' },
     // #255 — the plan sweep's two halves of the contract: the switch the Now
     // room writes, and the coverage the Plan room reads. Asserting the PATH
     // exists (not a value) is the point — the numbers change every night.

@@ -20,9 +20,34 @@
 //   * * * * * /usr/bin/node /home/bailey/stack/scripts/stack-autopilot-dispatch.mjs \
 //     >> ~/.stack/autopilot.log 2>&1
 //
-// Overlap is safe three ways: the server hands out one job at a time, the
-// next minute's poll sees it "running" and gets nothing, and the runner's own
-// lockfile refuses a second night.
+// #265 — the server now hands out up to `autopilotWorkers` jobs at once, one
+// per poll. Concurrency is N dispatcher PROCESSES, not N jobs inside one: cron
+// still fires a single fresh process a minute, each such process claims at
+// most one job and then blocks on it (the tmux poll loop) for as long as it
+// takes, so at any moment there can be up to N processes each babysitting a
+// different job. slots.js is the one place that decides how many and which
+// combinations may share the deck — this script never re-derives that rule,
+// it only ever runs what it was handed. A poll that comes back with no job
+// while a lane sits free is normal, not a bug: the deck fills at one claim
+// per minute (cron's own cadence), which is nothing next to a night that runs
+// for hours. Merge and revert are still strictly serialised — they touch
+// main, so the slot rule only ever hands one out on an empty deck.
+//
+// Every piece of PER-JOB host state below is keyed by job.id (tmux session
+// name, the wrapper/exit tmpfiles, the merge/revert worktree's tmp dir), so N
+// concurrent job-processes never collide on a name. The runner's own lockfile
+// is per LANE now too (scripts/lib/lane.mjs's lockFor) — the host-side
+// backstop for the same rule slots.js enforces server-side.
+//
+// The periodic, NOT-per-job tasks (branch report, skill sync, the preview
+// sweep) stay safe for a different reason: cron starts exactly one new
+// process a minute, and a process only ever runs that leading section once,
+// before it either exits (no job) or commits to monitoring the job it
+// claimed — it never loops back. So there is only ever one dispatcher process
+// in that leading section at a time, no matter how many are mid-job below it,
+// and the report/skills stamps are written up front (not after the work) so
+// even a slow run can't make the next minute's process re-enter the same
+// block.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, rmSync, writeFileSync, readFileSync, unlinkSync, statSync, openSync, mkdirSync } from 'node:fs';
