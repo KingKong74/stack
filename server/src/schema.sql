@@ -915,3 +915,13 @@ CREATE TABLE IF NOT EXISTS agent_configs (
 -- only place the owner can see what the ✧ buttons cost. NUMERIC, so it comes
 -- back from pg as a STRING and needs Number() on the way out.
 ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS cost_usd NUMERIC NOT NULL DEFAULT 0;
+
+-- #272 — a schedule with no item pinned stored 0 rather than NULL (Number(null)
+-- is 0), which reached the runner as `--item 0` and made the night a no-op.
+-- Roadmap ids are positive, so 0 can only ever have meant "no item".
+UPDATE autopilot_schedule SET item_id = NULL WHERE item_id = 0;
+-- Same converge for jobs still open — a queued/claimed job with the same
+-- defect would ride to the dispatcher next poll and repeat the no-op. A
+-- finished job's item_id is history now (its detail/outcome already read
+-- against whatever it carried at the time), so it is left alone.
+UPDATE autopilot_jobs SET item_id = NULL WHERE item_id = 0 AND status IN ('queued', 'claimed');

@@ -78,7 +78,7 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
   const [data, setData] = useState<ControlData | null>(null);
   const [error, setError] = useState('');
   // #228 — the session planner: null = closed; row = editing; row: null = new.
-  const [planner, setPlanner] = useState<{ row: AutopilotSchedule | null } | null>(null);
+  const [planner, setPlanner] = useState<{ row: Partial<AutopilotSchedule> | null } | null>(null);
   const [labelBusy, setLabelBusy] = useState(false);
   // #154 — merge confirm: the branch the user has clicked ⇥ Merge on, or null.
   // mergeClean rides along from the branch report (#207) so the modal can warn

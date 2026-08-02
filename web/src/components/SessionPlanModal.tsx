@@ -29,7 +29,7 @@ export function SessionPlanModal({
   projects, initial, defaultSlug, onClose, onSaved,
 }: {
   projects: { slug: string; name: string }[];
-  initial: AutopilotSchedule | null;
+  initial: Partial<AutopilotSchedule> | null;
   defaultSlug?: string;
   onClose: () => void;
   onSaved: (row: AutopilotSchedule, isNew: boolean) => void;
@@ -38,7 +38,7 @@ export function SessionPlanModal({
   const [kind, setKind] = useState<SessionKind>(initial?.kind || 'build');
   const [atTime, setAtTime] = useState(initial?.atTime || '21:00');
   const [mode, setMode] = useState<Mode>(
-    initial ? (initial.runDate ? 'once' : initial.days.length === 7 ? 'daily' : 'custom') : 'once');
+    initial ? (initial.runDate ? 'once' : initial.days?.length === 7 ? 'daily' : 'custom') : 'once');
   const [runDate, setRunDate] = useState(initial?.runDate || fmtDate(new Date()));
   const [days, setDays] = useState<number[]>(initial?.days || []);
   const [area, setArea] = useState(initial?.area || '');
@@ -129,10 +129,11 @@ export function SessionPlanModal({
       itemId: null, note: note.trim(), kind, agenda, area: kind === 'audit' || !agenda.length ? area : '',
     };
     try {
-      const row = initial
-        ? await patchAutopilotSchedule(initial.id, payload)
+      const editId = initial?.id;
+      const row = editId
+        ? await patchAutopilotSchedule(editId, payload)
         : await createAutopilotSchedule({ slug, ...payload });
-      onSaved(row, !initial);
+      onSaved(row, !editId);
       onClose();
     } catch (e) {
       if (!(e instanceof AuthError)) setErr((e as Error)?.message || 'Could not save the session.');
@@ -148,13 +149,13 @@ export function SessionPlanModal({
     <Modal onClose={onClose} closeOnOverlay={false} wide>
       <div className="spm">
         <div className="spm-head">
-          <span className="name">{initial ? 'Session plan' : 'Plan a session'}</span>
-          <span className="sub">{initial ? `#${initial.id}` : ''}</span>
+          <span className="name">{initial?.id ? 'Session plan' : 'Plan a session'}</span>
+          <span className="sub">{initial?.id ? `#${initial.id}` : ''}</span>
           <button className="spm-close" onClick={onClose} aria-label="Close">×</button>
         </div>
 
         <div className="spm-row">
-          <select value={slug} disabled={!!initial} aria-label="Project"
+          <select value={slug} disabled={!!initial?.id} aria-label="Project"
             onChange={(e) => { setSlug(e.target.value); setAgenda([]); setArea(''); }}>
             <option value="">Project…</option>
             {projects.map((p) => <option key={p.slug} value={p.slug}>{p.name}</option>)}
@@ -288,7 +289,7 @@ export function SessionPlanModal({
         <div className="spm-foot">
           <button className="btn-cancel sm" onClick={onClose}>Cancel</button>
           <button className="btn-submit sm" disabled={!slug || busy} onClick={save}>
-            {busy ? 'Saving…' : initial ? 'Save plan' : 'Schedule it'}
+            {busy ? 'Saving…' : initial?.id ? 'Save plan' : 'Schedule it'}
           </button>
         </div>
       </div>

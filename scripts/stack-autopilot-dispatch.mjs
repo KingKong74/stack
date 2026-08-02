@@ -444,7 +444,10 @@ if (job.kind === 'revert') {
 await report('running');
 const runner = join(dirname(fileURLToPath(import.meta.url)), 'stack-autopilot.mjs');
 const args = ['--project', job.slug, '--repo', repo];
-if (job.itemId) args.push('--item', String(job.itemId));
+// job.itemId travels over JSON as a STRING, and "0" is truthy — a plain
+// truthiness guard let a legacy 0-for-"no item" row through as `--item 0`,
+// which the runner rejects (ids start at 1) with "nothing run" (#272).
+if (Number(job.itemId) > 0) args.push('--item', String(job.itemId));
 // #228 — the session plan: kind picks the runner mode, the agenda rides as an
 // ordered list (item ids → --items, bug keys → --bugs), area scopes the pick.
 const sessionKind = job.sessionKind || 'build';
