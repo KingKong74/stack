@@ -254,6 +254,12 @@ if (job.kind === 'merge') {
 
   const doMerge = async () => {
     let cleaned = '';
+    // Declared out here with `cleaned`, beside the success line that reads
+    // them: both are set inside the try, and that block does not enclose the
+    // return. Scoped to the try, this threw a ReferenceError AFTER the merge
+    // had been pushed and the branch deleted — so the work landed, the job
+    // never reported, and it sat 'running' forever holding the queue.
+    let aiNote = '';
     // Extract the branch name from the pre-stored detail string
     // ("merge origin/<branch> into main (item #N)") or fall back to itemTitle.
     // But the branch was stored in detail as "merge origin/<branch> into main…"
@@ -273,7 +279,6 @@ if (job.kind === 'merge') {
     try {
       const merge = git(wt, 'merge', '--no-ff', `origin/${branch}`,
         '-m', `Merge ${branch} into main #154`);
-      let aiNote = '';
       if (!merge.ok) {
         // AI-assisted resolution (#193): only when the human opted in on this
         // job ([ai-resolve] in the detail) and claude is on the host. The
