@@ -17,9 +17,15 @@ writes. The screens it visits are the live app's real trackers.
 ```bash
 scripts/run-ui-smoke.sh                              # against ~/.stack/env's STACK_API
 scripts/run-ui-smoke.sh --url http://localhost:5173   # against a local `npm run dev`
+scripts/run-ui-smoke.sh --url http://localhost:8787   # against a running `docker compose` stack
 scripts/run-ui-smoke.sh --slug myproject --json
 node scripts/playwright/smoke.mjs --help
 ```
+
+With no `--url`, the base URL resolves `--url` > `$STACK_UI_URL` >
+`http://localhost:${WEB_PORT:-8787}` — 8787 is `docker-compose.yml`'s own
+default web port (`"${WEB_PORT:-8787}:80"`), and `WEB_PORT` is honoured here
+for a host that remapped it.
 
 `run-ui-smoke.sh` installs `scripts/playwright`'s own dependencies on first
 run (this package is deliberately separate from the rest of the repo, which
@@ -29,6 +35,21 @@ present, then hands off to `smoke.mjs`. Every argument passes through.
 Exit code 0 means zero findings across every screen and viewport. Anything
 else is 1 — a broken screen, an unreachable app, or a browser that would not
 launch.
+
+## Preflight: is this actually Stack?
+
+Before any browser is launched, the harness fetches `<url>/api/health` and
+requires a 200 JSON body with `ok: true` and a `version` field — Stack's own
+shape. This exists because of a real incident: the harness's default base
+URL once pointed at a port that, on one host, belonged to an entirely
+unrelated app; the harness dutifully walked its screens anyway and reported
+154 layout findings that were all true and all worthless, with nothing in
+the output to say the wrong application had been smoked. A port answering is
+not the same as the right app answering, so a run refuses outright — exit 1,
+plain-language reason, no screens visited — rather than silently succeeding
+against the wrong application. The preflight result (`url`, `ok`, `version`)
+is recorded as a top-level `preflight` field in `report.json`, so a stored
+report always says what was actually smoked.
 
 ## Why playwright is pinned to 1.62.1
 

@@ -89,12 +89,23 @@ function readStackEnv() {
   }
 }
 
+// ---- base URL resolution ---------------------------------------------------
+// Order: --url > $STACK_UI_URL > http://localhost:${WEB_PORT:-8787}. 8787 is
+// docker-compose.yml's own default web port ("${WEB_PORT:-8787}:80"), and
+// WEB_PORT is honoured here for the same reason it's honoured there — a host
+// that remapped the compose port needs the fallback to follow it.
+function resolveUrl(argUrl) {
+  if (argUrl) return argUrl;
+  if (process.env.STACK_UI_URL) return process.env.STACK_UI_URL;
+  return `http://localhost:${process.env.WEB_PORT || 8787}`;
+}
+
 // ---- argv parsing (no dependency) -----------------------------------------
 function parseArgs(argv) {
   const flag = (n) => argv.includes(`--${n}`);
   const arg = (n) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 1] : null; };
   return {
-    url: arg('url') || process.env.STACK_UI_URL || 'http://localhost:8080',
+    url: resolveUrl(arg('url')),
     token: arg('token'),
     slug: arg('slug') || 'stack',
     out: arg('out') || join(HERE, 'screenshots'),
@@ -110,7 +121,8 @@ function parseArgs(argv) {
 function printHelp() {
   process.stdout.write(`usage: node scripts/playwright/smoke.mjs [options]
 
-  --url <base>     base URL of the running app (default: $STACK_UI_URL, else http://localhost:8080)
+  --url <base>     base URL of the running app
+                    (resolution order: --url > $STACK_UI_URL > http://localhost:\${WEB_PORT:-8787})
   --token <t>      bearer token (default: STACK_TOKEN from ~/.stack/env)
   --slug <s>       project slug for the per-project screens (default: stack)
   --out <dir>      screenshot directory (default: scripts/playwright/screenshots)
@@ -304,6 +316,65 @@ function describeLayoutFinding(kind, item) {
   }
 }
 
+// ---- preflight --------------------------------------------------------------
+// WHY THIS EXISTS: a port answering is not the same as the right app
+// answering. This harness's whole purpose is letting a session see its OWN
+// rendering — every other host process on the machine is noise it must never
+// mistake for Stack. The incident that forced this: the default base URL was
+// a port that, on one host, belonged to a completely unrelated app. The
+// harness happily walked its screens and reported 154 real, entirely
+// worthless layout findings about a stranger's UI, with nothing in the
+// output to say so. `GET /api/health` distinguishes them: Stack's own route
+// (server/src/index.js) answers `{ ok, version, uptime }`; checking `ok`
+// alone is exactly what let the impostor pass, because plenty of unrelated
+// services answer `{ ok: true, ... }` on their own health route too. This
+// runs once, before any browser is launched, and aborts the whole run on
+// anything but an unambiguous match.
+async function preflight(url, token, timeoutMs) {
+  let res;
+  try {
+    res = await fetch(`${url}/api/health`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      reason: `${url} is not reachable: ${e.message}. Bring the app up, or pass --url.`,
+    };
+  }
+
+  if (res.status !== 200) {
+    return {
+      ok: false,
+      reason: `${url} answered, but /api/health returned HTTP ${res.status}, not 200. `
+        + `Point --url at Stack (the compose default is http://localhost:8787).`,
+    };
+  }
+
+  let body;
+  const text = await res.text();
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return {
+      ok: false,
+      reason: `${url} answered, but /api/health did not return JSON. `
+        + `Point --url at Stack (the compose default is http://localhost:8787).`,
+    };
+  }
+
+  if (body.ok !== true || typeof body.version === 'undefined') {
+    return {
+      ok: false,
+      reason: `${url} answered, but it is not Stack: /api/health returned ${JSON.stringify(body)} `
+        + `with no \`version\` field. Point --url at Stack (the compose default is http://localhost:8787).`,
+    };
+  }
+
+  return { ok: true, version: body.version };
+}
+
 // ---- main -------------------------------------------------------------------
 export async function main(argv = process.argv.slice(2)) {
   const opts = parseArgs(argv);
@@ -329,6 +400,14 @@ export async function main(argv = process.argv.slice(2)) {
     return 1;
   }
 
+  const url = opts.url.replace(/\/$/, '');
+
+  const check = await preflight(url, token, opts.timeout);
+  if (!check.ok) {
+    process.stderr.write(`${check.reason}\n`);
+    return 1;
+  }
+
   let chromium;
   try {
     ({ chromium } = await import('playwright'));
@@ -341,7 +420,6 @@ export async function main(argv = process.argv.slice(2)) {
 
   mkdirSync(opts.out, { recursive: true });
 
-  const url = opts.url.replace(/\/$/, '');
   const startedAt = Date.now();
   const screenReports = [];
   let fatal = null;
@@ -503,6 +581,7 @@ export async function main(argv = process.argv.slice(2)) {
   const report = {
     generatedAt: new Date().toISOString(),
     url, slug: opts.slug, durationMs,
+    preflight: { url, ok: check.ok, version: check.version },
     viewports: viewportNames,
     screens: screenReports,
     totals,

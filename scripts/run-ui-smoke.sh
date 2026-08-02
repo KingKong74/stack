@@ -13,6 +13,9 @@
 #   scripts/run-ui-smoke.sh --screens dashboard --viewport desktop
 #   scripts/run-ui-smoke.sh --help
 #
+# With no --url, smoke.mjs resolves the base URL itself: --url > $STACK_UI_URL
+# > http://localhost:${WEB_PORT:-8787} — 8787 is docker-compose.yml's own
+# default web port, and WEB_PORT is honoured for a host that remapped it.
 # Every argument passes straight through to smoke.mjs; the exit code is
 # smoke.mjs's exit code (0 = clean pass, 1 = findings or a hard failure).
 set -euo pipefail
