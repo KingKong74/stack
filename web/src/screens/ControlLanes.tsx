@@ -407,7 +407,17 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
                 <span className={`state ${l.phaseTone}`}>{l.phase}</span>
 
                 <span className="lane-tail">
-                  <span className="what" title={l.tail}>{l.tail}</span>
+                  {/* #268's fleet strip already names the item a slot is building;
+                     naming it isn't enough on its own, so an occupied slot's item
+                     is also the deep-link to that roadmap row. A general night
+                     with no claim yet has no item to link to, so it stays text. */}
+                  <span className="what" title={s?.itemId ? `#${s.itemId} — open it on the roadmap` : l.tail}>
+                    {s?.itemId ? (
+                      <button className="link" onClick={(e) => { e.stopPropagation(); go.detail(s.slug, 'roadmap', s.itemId); }}>
+                        {l.tail}
+                      </button>
+                    ) : l.tail}
+                  </span>
                   {s ? (
                     <span className="split">
                       <span className="bar" aria-hidden>

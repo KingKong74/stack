@@ -3542,6 +3542,8 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc-lane .state.quiet { color: var(--paused); }
 .mc-lane .lane-tail { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .mc-lane .lane-tail .what { font-size: 11.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-lane .lane-tail .what .link { font: inherit; color: inherit; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-lane .lane-tail .what .link:hover { color: var(--accent-deep); }
 .mc-lane .split { display: flex; align-items: center; gap: 8px; }
 .mc-lane .split .bar { display: flex; width: 150px; height: 4px; border-radius: 2px; overflow: hidden; background: var(--bg); flex: none; }
 .mc-lane .split .bar i { height: 4px; }
