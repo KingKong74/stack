@@ -93,6 +93,7 @@ function useProjectDetails(slugs: string[]) {
 // have had their say.
 type HouseItem = {
   it: RoadmapItem; slug: string; name: string; tint: string | null; area: string; rank: number;
+  laneMap: Map<string, string>;
 };
 
 // Merge every project's schedulable work into ONE queue in the order the fleet
@@ -109,9 +110,10 @@ function houseQueue(
     if (!d) continue;
     const area = p.autopilotArea || '';
     const all = [...d.roadmap.must, ...d.roadmap.should, ...d.roadmap.could, ...d.roadmap.wont];
+    const laneMap = buildLaneMap(all);
     all.forEach((it, rank) => {
-      const row = { it, slug: p.slug, name: p.name, tint: p.tint, area, rank };
-      if (schedulable(it, area)) queue.push(row);
+      const row = { it, slug: p.slug, name: p.name, tint: p.tint, area, rank, laneMap };
+      if (schedulable(it, area, laneMap)) queue.push(row);
       else if (!it.done
         && !(it.source === 'hook' && !it.reviewed && (it.bucket === 'must' || it.bucket === 'should'))) {
         held.push(row);
@@ -416,19 +418,43 @@ export function NightsRoom({ data, pickSlug, onPick, onOpenPlanner, onRunNow, on
 
 const DAY_MS = 86400000;
 
+// A shared empty lane map for rows (e.g. the inbox) that never render heldWhy.
+const EMPTY_LANE_MAP = new Map<string, string>();
+
+// An "area lane" (#267) admits one worker: some OPEN item in that area
+// already carries a claim. Untagged ('') is never a lane — it neither
+// occupies one nor can be blocked by one, or every untagged item would
+// collapse into one giant lane. Scoped to whatever items array is passed in,
+// which is how this stays per-project without a new store call.
+const buildLaneMap = (items: RoadmapItem[]): Map<string, string> => {
+  const map = new Map<string, string>();
+  for (const it of items) {
+    if (it.done || !it.claimedBy) continue;
+    const norm = (it.area || '').trim().toLowerCase();
+    if (!norm) continue;
+    if (!map.has(norm)) map.set(norm, it.claimedBy);
+  }
+  return map;
+};
+
 // Mirrors the runner's pick rule (open, unclaimed, not parked, approved,
-// inside the target area) — the schedule holds exactly what it would work.
-const schedulable = (it: RoadmapItem, area: string) =>
+// inside the target area, area lane free) — the schedule holds exactly what
+// it would work. A claimed item never blocks itself: it is already excluded
+// above by `!it.claimedBy`.
+const schedulable = (it: RoadmapItem, area: string, laneMap: Map<string, string>) =>
   !it.done && !it.skipped && !it.claimedBy
   && (it.bucket === 'must' || it.bucket === 'should')
   && (it.source === 'manual' || it.reviewed)
-  && (!area || (it.area || '') === area);
+  && (!area || (it.area || '') === area)
+  && !laneMap.has((it.area || '').trim().toLowerCase());
 
-const heldWhy = (it: RoadmapItem, area: string): string => {
+const heldWhy = (it: RoadmapItem, area: string, laneMap: Map<string, string>): string => {
   if (it.claimedBy) return `⚑ ${it.claimedBy}`;
   if (it.skipped) return 'parked';
   if (it.source === 'hook' && !it.reviewed) return 'in the inbox →';
   if (area && (it.area || '') !== area) return `outside ${area}`;
+  const norm = (it.area || '').trim().toLowerCase();
+  if (norm && laneMap.has(norm)) return `waiting on the ${it.area} lane`;
   return 'below the line';
 };
 
@@ -480,7 +506,8 @@ function AllPlanQueue({ data, onPick, onSetMaxItems }: {
     if (!d) continue;
     [...d.roadmap.must, ...d.roadmap.should, ...d.roadmap.could, ...d.roadmap.wont].forEach((it, rank) => {
       if (it.source === 'hook' && !it.reviewed && !it.done && !settled.has(`${p.slug}#${it.id}`)) {
-        found.push({ it, slug: p.slug, name: p.name, tint: p.tint, area: p.autopilotArea || '', rank });
+        // Inbox rows never render heldWhy, so no lane map is needed here.
+        found.push({ it, slug: p.slug, name: p.name, tint: p.tint, area: p.autopilotArea || '', rank, laneMap: EMPTY_LANE_MAP });
       }
     });
   }
@@ -616,7 +643,7 @@ function AllPlanQueue({ data, onPick, onSetMaxItems }: {
                   <span className="tintdot" style={{ background: r.tint || 'var(--sand)' }} title={r.name} />
                   <span className="tag">#{r.it.id}</span>
                   <span className="t">{r.it.title}</span>
-                  <span className="why">{heldWhy(r.it, r.area)}</span>
+                  <span className="why">{heldWhy(r.it, r.area, r.laneMap)}</span>
                 </button>
               ))}
               {heldAllItems.length > HELD_FOLD && (
@@ -744,13 +771,14 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
   const byId = new Map(items.map((it) => [it.id, it]));
   const bucketOf = (it: RoadmapItem) => flips.get(it.id) ?? it.bucket;
   const tierOf = (it: RoadmapItem): Tier => tierFlips.get(it.id) ?? it.tier;
+  const laneMap = buildLaneMap(items);
   // The saved order: musts in board order, then shoulds — with the DESIRE TIER
   // leading (#227). Tier is the primary sort in the runner's pick too, and
   // unranked items rank last, so an unranked board is exactly must-then-should
   // as before. Stable sort, so board position survives inside a tier.
   const savedOrder = [
-    ...items.filter((it) => schedulable(it, area) && it.bucket === 'must'),
-    ...items.filter((it) => schedulable(it, area) && it.bucket === 'should'),
+    ...items.filter((it) => schedulable(it, area, laneMap) && it.bucket === 'must'),
+    ...items.filter((it) => schedulable(it, area, laneMap) && it.bucket === 'should'),
   ].sort((a, b) => tierRank(a.tier) - tierRank(b.tier)).map((it) => it.id);
   // The dirty overlay survives item churn: keep known ids, append newcomers.
   const cur = order
@@ -763,7 +791,7 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
   // remainder reads as "that's all of it" when it isn't — long lists collapse
   // behind a count you can open instead.
   const heldAllItems = items
-    .filter((it) => !it.done && !schedulable(it, area)
+    .filter((it) => !it.done && !schedulable(it, area, laneMap)
       && !(it.source === 'hook' && !it.reviewed && (it.bucket === 'must' || it.bucket === 'should')));
   const HELD_FOLD = 8;
   const held = heldAll ? heldAllItems : heldAllItems.slice(0, HELD_FOLD);
@@ -1217,7 +1245,7 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
                 <button className="mc16-heldrow" key={it.id} onClick={() => go.detail(pickSlug, 'roadmap', String(it.id))}>
                   <span className="tag">#{it.id}</span>
                   <span className="t">{it.title}</span>
-                  <span className="why">{heldWhy(it, area)}</span>
+                  <span className="why">{heldWhy(it, area, laneMap)}</span>
                 </button>
               ))}
               {heldAllItems.length > HELD_FOLD && (
