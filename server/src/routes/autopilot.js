@@ -370,10 +370,76 @@ autopilotGlobal.get('/jobs', async (req, res) => {
   res.json(rows.map(jobShape));
 });
 
+// Rotation ordering (#82): nightly jobs for all automode projects are enqueued
+// at the same instant, so a plain created_at ORDER BY would always hand the
+// same project out first. Instead we pick the project whose last COMPLETED
+// nightly run is oldest (NULL = never run → goes first), breaking ties by
+// created_at. Non-nightly jobs (manual / scheduled / revert / resume) carry
+// their own created_at and slot into the queue normally in front of nightly
+// batches when they arrive first.
+//
+// #335 — two gates replace what used to be a single fleet-wide "one job in
+// flight" lock. That lock was the reason a fanned overnight ran SERIAL: every
+// automode project's nightly is enqueued at the same instant, so N projects
+// finished in N x session-length no matter how idle the host was.
+//
+// The fleet cap (autopilotWorkers, $1; 0 = unlimited) is the tunable half —
+// it bounds how many claude sessions the HOST is asked to run at once, which
+// is a property of the machine, not of the work, so the owner dials it to
+// whatever the box can actually carry.
+//
+// Per-project serialisation is NOT tunable and must stay: every job for a
+// project runs against the one checkout at $STACK_AUTOPILOT_ROOT/<slug>, and
+// two runners fetching, adding worktrees and moving refs in the same repo
+// fight over git's ref locks. The project, not the fleet, is the resource
+// that can only take one job at a time.
+//
+// Honesty about the cap: it is a BOUND, not a mutex. Two polls landing in the
+// same instant can both read room under the count and both claim, so the
+// fleet can briefly overshoot by one. The dispatcher polls on a one-minute
+// cron, so this is theoretical — the gate that must not slip is the
+// per-project one, and it holds because a second job for the same project
+// cannot be claimed while the first row still reads claimed/running.
+//
+// Exported so server/test/autopilot-next.test.mjs can exercise this exact
+// statement against a real database rather than a copy of it — a copy is
+// exactly what would drift.
+export const CLAIM_NEXT_SQL = `
+    UPDATE autopilot_jobs SET status = 'claimed', claimed_at = now()
+      WHERE id = (
+        SELECT j.id FROM autopilot_jobs j
+        LEFT JOIN LATERAL (
+          SELECT finished_at FROM autopilot_jobs
+           WHERE project_id = j.project_id
+             AND kind = 'nightly'
+             AND status = 'done'
+           ORDER BY finished_at DESC LIMIT 1
+        ) last_run ON j.kind = 'nightly'
+         WHERE j.status = 'queued' AND (j.not_before IS NULL OR j.not_before <= now())
+           -- Per-PROJECT serialisation (not tunable, see the comment).
+           AND NOT EXISTS (
+             SELECT 1 FROM autopilot_jobs b
+              WHERE b.project_id = j.project_id
+                AND b.status IN ('claimed', 'running'))
+           -- The fleet cap; $1 = 0 means unlimited.
+           AND ($1 = 0 OR (SELECT count(*) FROM autopilot_jobs b2
+                            WHERE b2.status IN ('claimed', 'running')) < $1)
+         ORDER BY
+           -- Non-nightly jobs first (they have a specific creation time and
+           -- priority; nightly batch jobs rank behind them in the same tick).
+           (j.kind = 'nightly') ASC,
+           -- Rotate nightly projects: least recently run goes first (NULL = never run).
+           last_run.finished_at ASC NULLS FIRST,
+           -- Stable tie-break across everything else.
+           j.created_at ASC
+         LIMIT 1 FOR UPDATE OF j SKIP LOCKED
+      )
+      RETURNING id`;
+
 // GET /next?local=YYYY-MM-DDTHH:MM&dow=N — the host dispatcher's poll.
 // Recovers stale jobs, lazily enqueues due work, then claims one job under the
-// fleet cap and the per-project gate (#335 — see the comment on the claim
-// query below).
+// fleet cap and the per-project gate (#335 — see the comment on CLAIM_NEXT_SQL
+// above).
 autopilotGlobal.get('/next', async (req, res) => {
   const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(String(req.query.local || ''));
   if (!m) return res.status(400).json({ error: 'local=YYYY-MM-DDTHH:MM required.' });
@@ -473,70 +539,9 @@ autopilotGlobal.get('/next', async (req, res) => {
   }
 
   // A queued resume job stays held until its not_before passes (#142); a
-  // 'paused' (hung-up) job is never handed out at all.
-  //
-  // Rotation ordering (#82): nightly jobs for all automode projects are enqueued
-  // at the same instant, so a plain created_at ORDER BY would always hand the
-  // same project out first. Instead we pick the project whose last COMPLETED
-  // nightly run is oldest (NULL = never run → goes first), breaking ties by
-  // created_at. Non-nightly jobs (manual / scheduled / revert / resume) carry
-  // their own created_at and slot into the queue normally in front of nightly
-  // batches when they arrive first.
-  //
-  // #335 — two gates replace what used to be a single fleet-wide "one job in
-  // flight" lock. That lock was the reason a fanned overnight ran SERIAL: every
-  // automode project's nightly is enqueued at the same instant, so N projects
-  // finished in N x session-length no matter how idle the host was.
-  //
-  // The fleet cap (autopilotWorkers, $1; 0 = unlimited) is the tunable half —
-  // it bounds how many claude sessions the HOST is asked to run at once, which
-  // is a property of the machine, not of the work, so the owner dials it to
-  // whatever the box can actually carry.
-  //
-  // Per-project serialisation is NOT tunable and must stay: every job for a
-  // project runs against the one checkout at $STACK_AUTOPILOT_ROOT/<slug>, and
-  // two runners fetching, adding worktrees and moving refs in the same repo
-  // fight over git's ref locks. The project, not the fleet, is the resource
-  // that can only take one job at a time.
-  //
-  // Honesty about the cap: it is a BOUND, not a mutex. Two polls landing in the
-  // same instant can both read room under the count and both claim, so the
-  // fleet can briefly overshoot by one. The dispatcher polls on a one-minute
-  // cron, so this is theoretical — the gate that must not slip is the
-  // per-project one, and it holds because a second job for the same project
-  // cannot be claimed while the first row still reads claimed/running.
-  const claimed = await q(
-    `UPDATE autopilot_jobs SET status = 'claimed', claimed_at = now()
-      WHERE id = (
-        SELECT j.id FROM autopilot_jobs j
-        LEFT JOIN LATERAL (
-          SELECT finished_at FROM autopilot_jobs
-           WHERE project_id = j.project_id
-             AND kind = 'nightly'
-             AND status = 'done'
-           ORDER BY finished_at DESC LIMIT 1
-        ) last_run ON j.kind = 'nightly'
-         WHERE j.status = 'queued' AND (j.not_before IS NULL OR j.not_before <= now())
-           -- Per-PROJECT serialisation (not tunable, see the comment).
-           AND NOT EXISTS (
-             SELECT 1 FROM autopilot_jobs b
-              WHERE b.project_id = j.project_id
-                AND b.status IN ('claimed', 'running'))
-           -- The fleet cap; $1 = 0 means unlimited.
-           AND ($1 = 0 OR (SELECT count(*) FROM autopilot_jobs b2
-                            WHERE b2.status IN ('claimed', 'running')) < $1)
-         ORDER BY
-           -- Non-nightly jobs first (they have a specific creation time and
-           -- priority; nightly batch jobs rank behind them in the same tick).
-           (j.kind = 'nightly') ASC,
-           -- Rotate nightly projects: least recently run goes first (NULL = never run).
-           last_run.finished_at ASC NULLS FIRST,
-           -- Stable tie-break across everything else.
-           j.created_at ASC
-         LIMIT 1 FOR UPDATE OF j SKIP LOCKED
-      )
-      RETURNING id`,
-    [settings.autopilot_workers]);
+  // 'paused' (hung-up) job is never handed out at all — both enforced inside
+  // CLAIM_NEXT_SQL above, alongside the fleet cap and per-project gate (#335).
+  const claimed = await q(CLAIM_NEXT_SQL, [settings.autopilot_workers]);
   if (!claimed.rows.length) return res.json({ job: null });
   const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [claimed.rows[0].id]);
   res.json({ job: jobShape(full.rows[0]) });

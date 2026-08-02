@@ -173,6 +173,17 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   which parallel session owns an open item, shows as a ⚑ chip and is injected by the SessionStart
   hook as "Branch claims — respect these". Claim before starting; a terminal tab's claim is
   `term:<name>`. The claim is the don't-re-pick marker and stays until a human merges and ticks.
+- **Two gates decide who runs, and they answer different questions** (#335). `autopilotWorkers`
+  (0 = unlimited, default 3, clamped 1–8) is the FLEET-WIDE cap, checked inside the same claim
+  UPDATE as a FIXED, non-tunable per-project serialisation (`NOT EXISTS` a claimed/running job for
+  the same project) — a session widening concurrency widens the fleet cap and never the per-project
+  one. Per-project cannot become a knob: every job for a project runs against the one checkout at
+  `$STACK_AUTOPILOT_ROOT/<slug>`, and two runners fetching, adding worktrees and moving refs in the
+  same repo fight over git's ref locks — the project, not the fleet, is the resource that takes one
+  at a time. The host lockfile mirrors the split: per-project (`~/.stack/autopilot-<slug>.lock`, not
+  the old single global one), named by the same sanitiser in both `scripts/stack-autopilot.mjs` and
+  the dispatcher's hung-up (#150) kill path — let the two spellings diverge and the kill path clears
+  the wrong file, leaving a live lock blocking that project for hours.
 - **Branch names are `<kind>/<id>-<summary>`** (#363 — `feat/271-mission-control`,
   `fix/bug-12-terminal-hangs`, `test/audit-<date>`; kinds: feat · fix · ui · refactor · perf · test ·
   docs · chore). `scripts/lib/lane.mjs` is the canonical namer AND parser, `web/src/lib/branch.ts`
@@ -410,6 +421,7 @@ summariser.**
 | `sessionDefaults` | catalogue keys (lean/ship/checkpoint/confirm/verify) rendered server-side to lines and injected by SessionStart into EVERY project. `ship` = commits pre-authorised, granted once and never re-asked |
 | `autopilotEnabled` | the ARM SWITCH. Nightly + scheduled jobs only enqueue while on; ▶ Run now stays manual-only |
 | `autopilotPlanSweep` | standing sweep — GET /next stands a `plan` job up for any automode project with unplanned must/should work, same gates as the nightly |
+| `autopilotWorkers` | the FLEET-WIDE cap on concurrent autopilot jobs (0 = unlimited, default 3, clamped 1–8); per-project serialisation is separate and NOT tunable |
 | `autopilotExecutorModel` / `autopilotAdvisorModel` | #153, **inverted by #285**: the ADVISOR runs the session (holds the main loop, plans, delegates, verifies, commits) and the EXECUTOR is exposed to it as a subagent with the write tools. Advisor unset = single-model on the executor |
 | `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set, and **tier S is offered, never assigned** |
 | `termIdleHours` | the idle-session reaper's threshold (0 = never); the host does the killing and fails SAFE |
@@ -512,6 +524,7 @@ node server/test/workbench.test.mjs        # the canvas is a placement layer (ne
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
 node server/test/agents.test.mjs           # each tab agent is bound to its own tab (pure, no DB)
+DATABASE_URL=… node server/test/autopilot-next.test.mjs   # the fleet cap + the per-project gate (#335)
 node scripts/lane.test.mjs                 # branch naming + BOTH spellings parse (pure, no git)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
