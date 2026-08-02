@@ -4,7 +4,7 @@ import { projectBySlug } from '../resolve.js';
 import { relativeTime } from '../util.js';
 import { runCore } from '../shape.js';
 import { readSettings, cleanAutopilotTime } from '../settings.js';
-import { isApproved, APPROVED_SQL } from '../approval.js';
+import { isApproved, approvalHold, APPROVED_SQL } from '../approval.js';
 
 // Mounted at /api/projects/:slug/autopilot — the overnight runner's history.
 // The runner POSTs one row per item attempt; the dashboard's morning digest
@@ -86,14 +86,40 @@ const cleanAgenda = (v) => (Array.isArray(v) ? v : [])
   .slice(0, 20);
 const cleanArea = (v) => String(v || '').trim().toLowerCase().slice(0, 40);
 
-// #359 — a due calendar row can pin `item_id` and/or carry roadmap ids in its
-// `agenda` (mixed, for a debug row, with `BUG-N` strings — those are bug
-// tracker keys, not roadmap items, so they carry no approval gate and always
-// pass through). This is the fail-safe gate for GET /next's unattended
-// enqueue: nobody is watching this session start, so an unapproved item must
-// be DROPPED, never run. An id that doesn't even come back from the query
-// (wrong project, deleted since the row was scheduled) is held on the same
-// fail-safe principle as one that comes back explicitly unapproved.
+// #359 — a due calendar row (or a Run-now press) can pin `item_id` and/or
+// carry roadmap ids in its `agenda` (mixed, for a debug row, with `BUG-N`
+// strings — those are bug tracker keys, not roadmap items, so they carry no
+// approval gate and always pass through). Both gates below need the same
+// lookup — one query, by id, for source/reviewed_at/title — so it is pulled
+// out here rather than duplicated. Returns null when there is nothing to
+// resolve (no roadmap ids in play at all): the common case is a manual
+// Run-now with no itemId/agenda, which must not pay for this query, let
+// alone be held (a manual item is never held — see approval.js).
+async function resolveRoadmapApproval(projectId, itemId, agenda) {
+  const agendaList = Array.isArray(agenda) ? agenda : [];
+  const numericAgendaIds = agendaList.map(Number).filter((n) => Number.isFinite(n));
+  if (itemId == null && numericAgendaIds.length === 0) return null;
+
+  const idsToCheck = [...new Set([...(itemId != null ? [Number(itemId)] : []), ...numericAgendaIds])];
+  const { rows } = await q(
+    `SELECT id, source, reviewed_at, title FROM roadmap_items WHERE project_id = $1 AND id = ANY($2::int[])`,
+    [projectId, idsToCheck]);
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return { agendaList, numericAgendaIds, byId };
+}
+
+// The two callers below read the SAME rule off approval.js but must act on it
+// oppositely, because one runs unattended and the other has a human at the
+// button: GET /next's schedule enqueue has nobody watching a session start,
+// so an unapproved item is DROPPED, silently, and the row still stamps/
+// retires on schedule; POST /start below is a human pressing Run now, so the
+// same hold must REFUSE OUT LOUD — a silent drop there would look like the
+// press did nothing.
+
+// checkScheduleApproval — the fail-safe gate for GET /next's unattended
+// enqueue. An id that doesn't even come back from the query (wrong project,
+// deleted since the row was scheduled) is held on the same fail-safe
+// principle as one that comes back explicitly unapproved.
 //
 // Returns null when the row carries no roadmap ids at all (nothing to gate —
 // enqueue as scheduled). Returns { held: true } when the pinned item_id is
@@ -103,15 +129,9 @@ const cleanArea = (v) => String(v || '').trim().toLowerCase().slice(0, 40);
 // its window. Otherwise returns { agenda } — the agenda filtered down to its
 // approved roadmap ids, bug-ref strings kept in place and in order.
 async function checkScheduleApproval(projectId, itemId, agenda) {
-  const agendaList = Array.isArray(agenda) ? agenda : [];
-  const numericAgendaIds = agendaList.map(Number).filter((n) => Number.isFinite(n));
-  if (itemId == null && numericAgendaIds.length === 0) return null;
-
-  const idsToCheck = [...new Set([...(itemId != null ? [Number(itemId)] : []), ...numericAgendaIds])];
-  const { rows } = await q(
-    `SELECT id, source, reviewed_at FROM roadmap_items WHERE project_id = $1 AND id = ANY($2::int[])`,
-    [projectId, idsToCheck]);
-  const byId = new Map(rows.map((r) => [r.id, r]));
+  const resolved = await resolveRoadmapApproval(projectId, itemId, agenda);
+  if (!resolved) return null;
+  const { agendaList, numericAgendaIds, byId } = resolved;
   const idApproved = (id) => {
     const r = byId.get(id);
     return r ? isApproved(r) : false; // not found at all = held, fail safe
@@ -126,6 +146,50 @@ async function checkScheduleApproval(projectId, itemId, agenda) {
   const survivingRoadmapIds = filteredAgenda.filter((a) => Number.isFinite(Number(a))).length;
   if (numericAgendaIds.length > 0 && survivingRoadmapIds === 0) return { held: true };
   return { agenda: filteredAgenda };
+}
+
+// checkStartApproval — the refuse-out-loud gate for POST /start (a human
+// standing at the Run-now button, so a held item must be NAMED, not dropped).
+// Returns null when there is nothing to check (see resolveRoadmapApproval).
+// Otherwise returns { held, agenda }: `held` is an array of
+// { id, title, reason } describing every roadmap id that blocks the request
+// (empty when nothing does), and `agenda` is the agenda filtered down to its
+// approved roadmap ids (bug-ref strings kept in place and in order) — the
+// caller inserts with this even when `held` is non-empty for the pinned
+// itemId case, though in practice a non-empty `held` always means "refuse the
+// whole request", never "insert what's left".
+async function checkStartApproval(projectId, itemId, agenda) {
+  const resolved = await resolveRoadmapApproval(projectId, itemId, agenda);
+  if (!resolved) return null;
+  const { agendaList, numericAgendaIds, byId } = resolved;
+  const idApproved = (id) => {
+    const r = byId.get(id);
+    return r ? isApproved(r) : false; // not found at all = held, fail safe
+  };
+  const describe = (id) => {
+    const r = byId.get(id);
+    if (!r) return { id, title: '', reason: `#${id} is not an item on this project.` };
+    return { id, title: r.title || '', reason: `#${id} "${r.title || ''}" is ${approvalHold(r)}.` };
+  };
+
+  // A pinned itemId that is held blocks the whole request — the agenda never
+  // gets a look-in, same as checkScheduleApproval.
+  if (itemId != null && !idApproved(Number(itemId))) {
+    return { held: [describe(Number(itemId))], agenda: agendaList };
+  }
+
+  const filteredAgenda = agendaList.filter((a) => {
+    const n = Number(a);
+    return !Number.isFinite(n) || idApproved(n); // BUG-N refs always pass
+  });
+  const survivingRoadmapIds = filteredAgenda.filter((a) => Number.isFinite(Number(a))).length;
+  if (numericAgendaIds.length > 0 && survivingRoadmapIds === 0) {
+    // Every roadmap id in the agenda is held — name all of them.
+    return { held: numericAgendaIds.map(describe), agenda: filteredAgenda };
+  }
+  // Some survive (or none were held): run the approved part, no error — the
+  // human gets the runnable part of what they asked for.
+  return { held: [], agenda: filteredAgenda };
 }
 
 function scheduleShape(r) {
@@ -270,11 +334,24 @@ autopilotGlobal.post('/start', async (req, res) => {
     return res.status(200).json(jobShape(row));
   }
   const itemId = Number.isFinite(Number(b.itemId)) && b.itemId !== '' && b.itemId != null ? Number(b.itemId) : null;
+  const agenda = cleanAgenda(b.agenda);
+  // #359 — a human is standing right here, so an unapproved item must be
+  // refused OUT LOUD rather than silently dropped (contrast
+  // checkScheduleApproval, the unattended twin of this check). Skipped
+  // entirely when there's nothing to resolve — a plain manual Run-now with
+  // no itemId/agenda must behave exactly as it did before this landed.
+  const approval = await checkStartApproval(project.id, itemId, agenda);
+  if (approval && approval.held.length) {
+    return res.status(409).json({
+      error: approval.held.map((h) => h.reason).join(' '),
+      held: approval.held.map((h) => h.id),
+    });
+  }
   // #228 — Run now can carry a full session plan (kind / ordered agenda / area).
   const { rows } = await q(
     `INSERT INTO autopilot_jobs (project_id, kind, item_id, session_kind, agenda, area)
      VALUES ($1,'manual',$2,$3,$4::jsonb,$5) RETURNING id`,
-    [project.id, itemId, cleanKind(b.kind), JSON.stringify(cleanAgenda(b.agenda)), cleanArea(b.area)]);
+    [project.id, itemId, cleanKind(b.kind), JSON.stringify(approval ? approval.agenda : agenda), cleanArea(b.area)]);
   const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [rows[0].id]);
   res.status(201).json(jobShape(full.rows[0]));
 });
