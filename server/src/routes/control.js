@@ -6,6 +6,7 @@ import { runCore } from '../shape.js';
 import { termAgentConnected, termSessions, termDetached, termEdits, termPlanUsage } from '../term.js';
 import { geminiEnabled } from '../gemini.js';
 import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
+import { isApproved } from '../approval.js';
 
 // GET /api/control — Mission Control: every project's automation state in one
 // payload, computed in aggregate queries (never one request per project).
@@ -986,7 +987,7 @@ control.get('/', async (_req, res) => {
   const pickFor = (items, area) => {
     const eligible = items
       .filter((it) => !it.done && !it.skipped && !it.claimed_by
-        && (it.source === 'manual' || it.reviewed_at)
+        && isApproved(it)
         && (!area || (it.area || '') === area))
       .sort((a, b) => (a.bucket === b.bucket
         ? (a.position - b.position || ms(a.created_at) - ms(b.created_at))
