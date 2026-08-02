@@ -237,6 +237,13 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
 - **An empty second-model read means NO PASS RAN, not "nothing found".** `review_verdict` /
   `architect_verdict` NULL renders as NO REVIEW, deliberately not as green. Same rule anywhere else
   an agent's opinion is stored.
+- **A night's debrief arithmetic has exactly one definition, `server/src/debrief.js`** (pure,
+  DB-free, pinned by `server/test/debrief.test.mjs`) — the Review room's `nights` list stays the raw
+  fortnight index the client groups for the chooser strip, and `GET /api/review/debrief` is the
+  composed read of a single night, built from those same rows so the two can never drift apart
+  again. The five run outcomes partition across four stats buckets — `landed` / `failed` (failed +
+  limit) / `planned` / `noCommits` — so those four always sum to `stats.runs`, and `planned` is never
+  counted as landed or failed, the same plan-night rule as above.
 - **Un-ticking a roadmap item clears `review_tag` and `claimed_by`** (unless the same PATCH sets
   them), so a sent-back item re-enters play fresh. Ticking `done:true` clears `review_tags`,
   `refine_note` and `review_shelved` — each verify round starts unannotated.
@@ -360,7 +367,8 @@ All behind bearer auth except `GET /api/health`, `POST /api/auth/login` and
 reference. The index:
 
 - **Read layers** — `overview.js` (the dashboard deck), `control.js` (Mission Control, incl. the pure
-  exported `computeFleetRoles()`), `review.js` (the cross-project Review room), `search.js` (⌘K),
+  exported `computeFleetRoles()`), `review.js` (the cross-project Review room, plus `/debrief` — the
+  composed read of one night), `search.js` (⌘K),
   `timeline.js`, `public.js`. All computed in a handful of aggregate queries — **never one query per
   project**; keep it that way.
 - **Per-project collections** — `bugs.js`, `roadmap.js`, `notes.js`, `futures.js`, `checks.js`,
@@ -447,6 +455,7 @@ node server/test/fleet-roles.test.mjs      # role attribution + drift detection 
 node server/test/workbench.test.mjs        # the canvas is a placement layer (needs API + DATABASE_URL)
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
+node server/test/debrief.test.mjs          # one night's debrief, composed (pure, no DB)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
