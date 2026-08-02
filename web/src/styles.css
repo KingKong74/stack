@@ -5272,3 +5272,252 @@ button.mc-day-chip:hover { border-color: var(--accent); }
    failure — it is the assist's most useful answer and must not read as one. */
 .rv-draft-say.err { color: var(--critical); }
 .rv-draft-say.note { color: var(--muted); border-left: 2px solid var(--accent-tint-border); padding-left: 9px; }
+
+/* ==========================================================================
+   #363 (design 1a) — the MERGE room. Every open branch in the house as one
+   weighted ledger, plus the agent rail that orders them into waves.
+
+   The whole block is tokens only: no literal hex, so dark mode comes from the
+   one [data-theme='dark'] override at the top of this file rather than from a
+   second copy of these rules down here. Where a row needs a tone it takes it
+   inline from lib/branch.ts, which also only names tokens.
+
+   The row is a GRID, not a flex run of fixed widths: the slug column is
+   minmax(0, 1fr), so a narrow body squeezes the branch name to an ellipsis
+   instead of pushing the numbers off the right-hand edge. The media queries
+   below then drop whole columns, weakest signal first — age, then area, then
+   the size bar — so what survives at phone width is state and the action.
+   ========================================================================== */
+.mc-merge { display: flex; flex-direction: column; gap: 12px; }
+
+/* ---- header ---- */
+.mc-merge-head { flex-wrap: wrap; row-gap: 8px; }
+.mc-merge-live { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 20px;
+  background: var(--green-tint); font-size: 11px; font-weight: 600; color: var(--live); }
+.mc-merge-live i { width: 6px; height: 6px; border-radius: 50%; background: var(--live); animation: live-pulse 2.4s ease-in-out infinite; }
+.mc-merge-target { color: var(--accent) !important; cursor: help; }
+.mc-merge-naming { color: var(--faint) !important; cursor: help; }
+.mc-merge-warnmeta { color: var(--building) !important; cursor: help; }
+.mc-merge-q { height: 28px; width: 150px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line-2);
+  background: var(--card); color: var(--ink); font-family: var(--mono); font-size: 11.5px; }
+.mc-merge-q:focus { outline: none; border-color: var(--accent); }
+.mc-merge-q::placeholder { color: var(--placeholder); }
+.mc-merge-run { height: 28px; font-size: 12px; }
+
+/* ---- filter bar ---- */
+.mc-merge-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; row-gap: 8px;
+  padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 11px; background: var(--panel); }
+.mc-merge-sep { width: 1px; height: 18px; background: var(--line-3); margin: 0 3px; }
+.mc-merge-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px;
+  border-radius: 8px; border: 1px solid var(--line-2); background: var(--card);
+  font-size: 11.5px; font-weight: 500; color: var(--chip-ink); }
+.mc-merge-chip:hover { border-color: var(--accent); color: var(--ink); }
+.mc-merge-chip.on { border-color: var(--accent-tint-border); background: var(--accent-tint); color: var(--accent-deep); font-weight: 600; }
+.mc-merge-chip i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.mc-merge-chip i.sq { border-radius: 2px; width: 6px; height: 6px; }
+.mc-merge-chip .n { font-family: var(--mono); font-size: 10.5px; opacity: .72; }
+.mc-merge-kind { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 9px;
+  border-radius: 8px; border: 1px solid var(--line-2); background: transparent;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600; color: var(--chip-ink); }
+.mc-merge-kind:hover { border-color: var(--accent); }
+.mc-merge-kind.on { background: var(--card); }
+.mc-merge-kind .n { opacity: .6; }
+.mc-merge-bulks { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+.mc-merge-bulk { height: 26px; padding: 0 11px; border-radius: 8px; border: 1px dashed var(--line-3);
+  background: transparent; font-size: 11.5px; color: var(--muted); }
+.mc-merge-bulk:hover { border-style: solid; border-color: var(--accent); color: var(--ink); }
+.mc-merge-bulk.go { border-style: solid; font-weight: 600; }
+.mc-merge-bulk.go.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); }
+.mc-merge-bulk.go.on:hover { background: var(--accent-deep); border-color: var(--accent-deep); color: var(--on-accent, #fff); }
+.mc-merge-bulk:disabled { opacity: .5; cursor: default; }
+.mc-merge-bulk:disabled:hover { border-style: dashed; border-color: var(--line-3); color: var(--muted); }
+
+/* ---- the two columns ---- */
+.mc-merge-cols { display: grid; grid-template-columns: minmax(0, 1fr) 296px; gap: 14px; align-items: start; }
+@media (max-width: 1240px) { .mc-merge-cols { grid-template-columns: 1fr; } }
+/* A CONTAINER, so the row's columns drop on the width the LIST actually got.
+   A viewport media query is the wrong instrument here: this room stacks its
+   agent rail at 1240px, at which point the list gets WIDER, and a viewport
+   rule would go on hiding the area and the age of every row on a list with
+   room to spare. */
+.mc-merge-list { min-width: 0; display: flex; flex-direction: column; gap: 12px;
+  container-type: inline-size; container-name: mergelist; }
+
+/* ---- one project's group ---- */
+.mc-merge-group { border: 1px solid var(--line-2); border-radius: 12px; background: var(--card); overflow: hidden; }
+.mc-merge-grouphead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 6px;
+  padding: 10px 13px; background: var(--surface); border-bottom: 1px solid var(--line-2); }
+.mc-merge-grouphead .sq { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+.mc-merge-grouphead .nm { font-family: var(--disp); font-size: 13.5px; font-weight: 600; color: var(--ink); background: none; border: 0; padding: 0; }
+.mc-merge-grouphead .nm:hover { color: var(--accent-deep); }
+.mc-merge-grouphead .meta { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.mc-merge-grouphead .meta.diff { color: var(--muted); }
+.mc-merge-seg { display: flex; width: 150px; height: 5px; border-radius: 3px; overflow: hidden; background: var(--line-2); flex: none; }
+.mc-merge-groupgo { margin-left: auto; height: 24px; padding: 0 10px; border-radius: 7px; font-size: 11px; font-weight: 600;
+  color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); }
+.mc-merge-groupgo:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); }
+.mc-merge-groupgo:disabled { opacity: .55; cursor: default; }
+
+/* ---- one branch ---- */
+.mc-merge-row-wrap + .mc-merge-row-wrap { border-top: 1px solid var(--line); }
+.mc-merge-row { display: flex; align-items: center; gap: 10px; padding: 0 12px; min-height: 38px;
+  border-left: 3px solid transparent; }
+.mc-merge-row.s-conflict { background: var(--accent-tint); border-left-color: var(--accent); }
+.mc-merge-row.s-unprobed { border-left-color: var(--paused); }
+.mc-merge-row.done { opacity: .55; }
+.mc-merge-tick { flex: none; width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid var(--line-3);
+  background: transparent; font-size: 9px; line-height: 1; color: var(--on-accent, #fff);
+  display: flex; align-items: center; justify-content: center; }
+.mc-merge-tick.on { border-color: var(--accent); background: var(--accent); }
+.mc-merge-tick:disabled { opacity: .35; cursor: default; }
+
+.mc-merge-main { flex: 1; min-width: 0; display: grid; align-items: center; gap: 9px; text-align: left;
+  background: none; border: 0; padding: 6px 0;
+  grid-template-columns: 9px minmax(0, 1fr) 46px 60px 70px 50px 50px 34px 104px 50px; }
+.mc-merge-main > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-merge-main .dot { width: 7px; height: 7px; border-radius: 50%; }
+.mc-merge-main .slug { font-family: var(--mono); font-size: 12px; color: var(--body); }
+.mc-merge-main .slug b { font-weight: 600; }
+.mc-merge-main .slug b.unlabelled { color: var(--fainter); cursor: help; }
+.mc-merge-main:hover .slug .nm { color: var(--ink); }
+.mc-merge-main .id { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.mc-merge-main .state { font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.mc-merge-main .bar { display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: var(--line-2); }
+.mc-merge-main .bar i.a { background: var(--live); }
+.mc-merge-main .bar i.d { background: var(--critical); }
+.mc-merge-main .add { font-family: var(--mono); font-size: 10.5px; color: var(--live); text-align: right; }
+.mc-merge-main .del { font-family: var(--mono); font-size: 10.5px; color: var(--critical); }
+.mc-merge-main .files, .mc-merge-main .age { font-family: var(--mono); font-size: 10.5px; color: var(--faint); text-align: right; }
+.mc-merge-main .unsized { grid-column: span 4; font-family: var(--mono); font-size: 10.5px; color: var(--paused); cursor: help; }
+.mc-merge-main .area { justify-self: start; max-width: 100%; font-family: var(--mono); font-size: 10px;
+  color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2);
+  border-radius: 6px; padding: 2px 6px; }
+/* No area reported is not an area called "—": drop the chip, keep the column. */
+.mc-merge-main .area.none { background: none; border-color: transparent; color: var(--fainter); }
+
+.mc-merge-acts { flex: none; display: flex; align-items: center; gap: 6px; }
+.mc-merge-acts .ghost { height: 24px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--line-3);
+  background: transparent; font-size: 11px; color: var(--muted); }
+.mc-merge-acts .ghost:hover { border-color: var(--accent); color: var(--accent-deep); }
+.mc-merge-acts .go { height: 24px; padding: 0 10px; border-radius: 7px; font-size: 11px; font-weight: 600;
+  color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); }
+.mc-merge-acts .go:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); }
+.mc-merge-acts .go.warn { color: var(--critical); background: transparent; border-color: var(--line-3); }
+.mc-merge-acts .go.warn:hover { border-color: var(--critical); background: transparent; color: var(--critical); }
+.mc-merge-jobstate { font-family: var(--mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.mc-merge-jobstate.ok { color: var(--live); }
+.mc-merge-pv { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
+.mc-merge-pv a { color: var(--sage); }
+.mc-merge-pv .x { color: var(--faint); font-size: 13px; line-height: 1; padding: 0 3px; background: none; border: 0; }
+.mc-merge-pv .x:hover { color: var(--critical); }
+
+/* ---- the expansion ---- */
+.mc-merge-detail { display: flex; gap: 24px; flex-wrap: wrap; padding: 12px 14px 14px 40px;
+  background: var(--surface); border-top: 1px dashed var(--line-3); }
+.mc-merge-detail .col { flex: 1 1 260px; min-width: 0; }
+.mc-merge-detail .col.wide { flex: 1 1 380px; }
+.mc-merge-detail .cap { font-family: var(--disp); font-size: 10px; font-weight: 600; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--faint); margin-bottom: 7px; }
+.mc-merge-detail .frow { display: flex; align-items: baseline; gap: 10px; font-family: var(--mono); font-size: 11px; padding: 2px 0; }
+.mc-merge-detail .frow .p { flex: 1; min-width: 0; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-merge-detail .frow .s { color: var(--faint); flex: none; }
+.mc-merge-detail .frow .s.quiet { color: var(--paused); }
+.mc-merge-detail .frow.more { color: var(--paused); font-size: 10.5px; line-height: 1.5; white-space: normal; display: block; }
+.mc-merge-verdict { border: 1px solid var(--line-2); background: var(--panel); border-radius: 10px; padding: 11px 13px; }
+.mc-merge-verdict p { font-size: 12px; line-height: 1.55; color: var(--body-2); margin: 0 0 7px; }
+.mc-merge-verdict p:last-child { margin-bottom: 0; }
+.mc-merge-verdict .item button { font-size: 12px; font-weight: 600; color: var(--accent); background: none; border: 0; padding: 0; text-align: left; }
+.mc-merge-verdict .item button:hover { color: var(--accent-deep); }
+.mc-merge-verdict .subj { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.mc-merge-verdict .rev { border-left: 2px solid var(--accent-tint-border); padding-left: 9px; }
+.mc-merge-verdict .rev.quiet { color: var(--paused); border-left-color: var(--line-3); }
+
+/* ---- the agent rail ---- */
+.mc-merge-agent { border: 1px solid var(--line-2); border-radius: 12px; background: var(--card);
+  padding: 14px 15px; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 12px; }
+@media (max-width: 1240px) { .mc-merge-agent { position: static; } }
+.mc-merge-agenthead { display: flex; align-items: center; gap: 9px; }
+.mc-merge-agenthead .badge { width: 22px; height: 22px; border-radius: 7px; background: var(--accent);
+  color: var(--on-accent, #fff); display: flex; align-items: center; justify-content: center; font-size: 11px; flex: none; }
+.mc-merge-agenthead .nm { font-family: var(--disp); font-size: 14px; font-weight: 600; color: var(--ink); }
+.mc-merge-agenthead .st { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.mc-merge-agentnote { font-size: 11.5px; line-height: 1.55; color: var(--muted); margin: 0; }
+.mc-merge-cap { font-family: var(--disp); font-size: 10px; font-weight: 600; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--faint); margin-top: 4px; }
+.mc-merge-agent .seg-control.sm { width: 100%; }
+.mc-merge-agent .seg-control.sm .seg-opt { flex: 1; padding: 4px 5px; font-size: 10px; text-align: center; white-space: nowrap; }
+.mc-merge-autonomy { display: flex; flex-direction: column; gap: 6px; }
+.mc-merge-autonomy .row { display: flex; align-items: center; gap: 8px; }
+.mc-merge-autonomy .row .sq { width: 7px; height: 7px; border-radius: 2px; flex: none; }
+.mc-merge-autonomy .row .nm { flex: 1; min-width: 0; font-size: 11.5px; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-merge-autonomy .row .seg-control.sm { width: auto; flex: none; padding: 1px; border-radius: 7px; }
+.mc-merge-autonomy .row .seg-control.sm .seg-opt { flex: none; padding: 2px 7px; font-size: 10px; border-radius: 6px; }
+.mc-merge-plan { border: 1px solid var(--accent-tint-border); background: var(--accent-tint); border-radius: 11px; padding: 11px 12px; }
+.mc-merge-plan .hd { font-family: var(--disp); font-size: 12px; font-weight: 600; color: var(--accent-deep); margin-bottom: 6px; }
+.mc-merge-plan .txt { font-size: 11.5px; line-height: 1.55; color: var(--body-2); margin: 0; }
+.mc-merge-plan .txt.quiet { color: var(--muted); }
+.mc-merge-plan .waves { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.mc-merge-plan .waves .w { font-family: var(--mono); font-size: 10px; color: var(--body);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 7px; cursor: help; }
+.mc-merge-agentgo { justify-content: center; height: 32px; font-size: 12.5px; }
+
+/* ---- the run/plan dialog ---- */
+.mc-merge-modal { max-width: 760px; width: 100%; }
+.mc-merge-modalsub { font-size: 12.5px; line-height: 1.6; color: var(--muted); margin: 0 0 14px; }
+.mc-merge-steps { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
+.mc-merge-steps .wave { border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; }
+.mc-merge-steps .whead { display: flex; align-items: baseline; gap: 9px; padding: 7px 11px; background: var(--panel);
+  font-family: var(--disp); font-size: 11.5px; font-weight: 600; color: var(--ink); }
+.mc-merge-steps .whead span { font-family: var(--mono); font-size: 10px; font-weight: 400; color: var(--faint); }
+.mc-merge-steps .step { display: flex; align-items: center; gap: 9px; padding: 6px 11px; border-top: 1px solid var(--line); }
+.mc-merge-steps .step .ic { flex: none; width: 15px; text-align: center; font-size: 10px; color: var(--fainter); }
+.mc-merge-steps .step .sl { flex: 1; min-width: 0; font-family: var(--mono); font-size: 11px; color: var(--body);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-merge-steps .step .ar { flex: none; font-family: var(--mono); font-size: 10px; color: var(--chip-ink);
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 6px; }
+.mc-merge-steps .step .st { flex: none; width: 150px; text-align: right; font-size: 11px; color: var(--muted); }
+.mc-merge-steps .step.ok .ic, .mc-merge-steps .step.ok .st { color: var(--live); }
+.mc-merge-steps .step.bad .ic, .mc-merge-steps .step.bad .st { color: var(--critical); }
+.mc-merge-steps .step.held { opacity: .6; }
+.mc-merge-steps .step.held .st { color: var(--paused); }
+
+/* Columns drop weakest-signal-first as the LIST narrows. Age goes before the
+   area (where a branch sits decides the wave; when it was pushed does not),
+   the area before the size bar, and the numbers before the state — the state
+   and the action are the two things a row cannot be read without. Every
+   breakpoint keeps the cell count and the template in step: the row is a grid
+   placed by POSITION, so hiding a cell without shortening the template shifts
+   everything after it one column left. */
+@container mergelist (max-width: 840px) {
+  .mc-merge-main { grid-template-columns: 9px minmax(0, 1fr) 46px 60px 70px 50px 50px 34px; }
+  .mc-merge-main .area, .mc-merge-main .age { display: none; }
+}
+@container mergelist (max-width: 660px) {
+  .mc-merge-main { grid-template-columns: 9px minmax(0, 1fr) 46px 60px 50px 50px; }
+  .mc-merge-main .bar, .mc-merge-main .files { display: none; }
+  .mc-merge-main .unsized { grid-column: span 2; }
+  .mc-merge-seg { width: 90px; }
+}
+@container mergelist (max-width: 480px) {
+  .mc-merge-main { grid-template-columns: 9px minmax(0, 1fr) 60px; }
+  .mc-merge-main .id, .mc-merge-main .add, .mc-merge-main .del, .mc-merge-main .unsized { display: none; }
+  .mc-merge-detail { padding-left: 14px; }
+}
+@media (max-width: 720px) {
+  .mc-merge-steps .step .ar { display: none; }
+  .mc-merge-steps .step .st { width: auto; }
+}
+
+/* Stacked (the rail is under the list, not beside it): the agent card is now
+   as wide as the page, and a 296px column's controls stretched across it read
+   as a form, not a rail. Cap what should stay compact rather than letting the
+   seg-controls span a metre. */
+@media (max-width: 1240px) {
+  .mc-merge-agent .seg-control.sm { width: auto; align-self: flex-start; }
+  .mc-merge-agent .seg-control.sm .seg-opt { flex: none; padding: 4px 13px; font-size: 11.5px; }
+  .mc-merge-autonomy { max-width: 460px; }
+  .mc-merge-autonomy .row .seg-control.sm .seg-opt { font-size: 10.5px; padding: 3px 9px; }
+  .mc-merge-agentnote, .mc-merge-plan { max-width: 780px; }
+  .mc-merge-agentgo { align-self: flex-start; padding: 0 20px; }
+}

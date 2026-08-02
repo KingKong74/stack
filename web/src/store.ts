@@ -313,9 +313,20 @@ export async function getSearch(query: string): Promise<SearchResponse> {
 
 // ---- mission control ----
 
+// #363 — 'auto': ▶ Run queues this project's mergeable branches; 'plan': they
+// are named in the proposed plan but merge one press each; 'off': out of the
+// plan. None of the three relaxes the conflict probe, the #212 risk gate or
+// the merge confirm — they decide what one press covers, not what is checked.
+export type MergeAutonomy = 'auto' | 'plan' | 'off';
+
 export interface ControlProject {
   slug: string; name: string; tint: string | null; status: ProjectStatus;
   automode: boolean; progress: number; lastPush: string;
+  // #363 — how much of this project's merging the Merge room's agent may do on
+  // one ▶ Run press. Distinct from `automode`, which is about BUILDING it
+  // overnight: a house can want a project built unattended and still want every
+  // merge of it looked at. Absent on a pre-#363 server — read as 'plan'.
+  mergeAutonomy?: MergeAutonomy;
   autopilotArea: string;   // '' = whole board; else the nightly pick's area filter
   areas: string[];         // target options — areas on this project's open must/should items
   live: { count: number; branches: string[] } | null;
@@ -324,11 +335,19 @@ export interface ControlProject {
   // #207 — the host's git branch report enriches each chip where it exists:
   // ahead/behind vs main, the merge-tree conflict probe and the last subject.
   // Claim-only chips (no report yet) carry just the first three fields.
+  // #363 — and the DIFF: the host's `git diff --numstat origin/main...<ref>`,
+  // which is what the Merge room weighs a branch by. `files` 0 means the size
+  // is UNKNOWN (a report an older dispatcher wrote, or a claim-only chip), not
+  // that the branch is empty — the room draws no size bar rather than a zero.
+  // `topFiles` is capped server-side; `files` is the true total, so the panel
+  // can say what it is not showing.
   branches: {
     branch: string; itemId: string; itemTitle: string;
     ahead?: number; behind?: number;
     mergeClean?: boolean | null;  // false = conflicts with main; null/absent = not probed
-    subject?: string; when?: string;
+    subject?: string; when?: string; committedAt?: string | null;
+    adds?: number; dels?: number; files?: number; area?: string;
+    topFiles?: { path: string; adds: number; dels: number; binary?: boolean }[];
   }[];
   // #207 — fully-merged origin branches never deleted (prune hint) + report age.
   absorbedBranches?: number;
@@ -1434,7 +1453,7 @@ export async function patchProject(
   slug: string,
   patch: Partial<{
     subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean;
-    automode: boolean; autopilot_area: string;
+    automode: boolean; autopilot_area: string; merge_autonomy: MergeAutonomy;
     name: string; north_star: string; directives: string[]; deploy_platform: string; logs_url: string;
     tech_stack: string[]; audit_context: string;
   }>,

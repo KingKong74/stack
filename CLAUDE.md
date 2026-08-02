@@ -54,8 +54,10 @@ templates/ stack-agent-context.md — the canonical portable agent manual (singl
   modal state), Settings, Control (Mission Control — one room per question, behind a live strip and a
   persistent right rail; `Control.tsx` is the shell and each room has its own file: `ControlNow` /
   `ControlRooms` (Nights, Plan) / `ControlReview` / `ControlRoles` / `ControlAgents` (#361 — the
-  three tab agents), with the merged session list in `ControlLanes`). A sixth, BUILD, was removed with its tab: its two gates belong to other
-  rooms now — the verdict is Review's whole subject, the merge is the Now room's branch strip — and
+  three tab agents) / `ControlMerge` (#363 — the house-wide branch ledger and the merge agent),
+  with the merged session list in `ControlLanes`). A former room, BUILD, was removed with its
+  tab: its two gates belong to other rooms now — the verdict is Review's whole subject, the
+  merge is the Now room's branch strip and, house-wide, the Merge room — and
   `#/control/build` falls back to the default room. Then Terminal, Skills.
   `detail/` holds the project tabs: Overview, Quality (#278 — Bugs and Audit merged into
   one page), Roadmap (Board / Tiers / Parked), Futures (the Polaris galaxy — Sky / Board / List,
@@ -171,6 +173,17 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   which parallel session owns an open item, shows as a ⚑ chip and is injected by the SessionStart
   hook as "Branch claims — respect these". Claim before starting; a terminal tab's claim is
   `term:<name>`. The claim is the don't-re-pick marker and stays until a human merges and ticks.
+- **Branch names are `<kind>/<id>-<summary>`** (#363 — `feat/271-mission-control`,
+  `fix/bug-12-terminal-hangs`, `test/audit-<date>`; kinds: feat · fix · ui · refactor · perf · test ·
+  docs · chore). `scripts/lib/lane.mjs` is the canonical namer AND parser, `web/src/lib/branch.ts`
+  its client twin, and `scripts/lane.test.mjs` pins both. **The old flat `auto/item-N-<slug>` spelling
+  must keep parsing forever** — those branches are on origin and named in live `claimed_by` strings,
+  so a reader that only knows the new form reports a working fleet as empty. Two consequences a
+  session gets wrong: a legacy lane's kind is `''`, **never `feat`** (the name genuinely does not say,
+  and the Merge room shows it unlabelled rather than inventing a label); and any SQL that used to test
+  `branch LIKE 'auto/%'` now goes through `laneSql()` in `routes/control.js` — a predicate that still
+  only knew `auto/` would blank the last-auto chip and the reviewer's notes, which reads as "nothing
+  ran" on a fleet that ran all night.
 - **`built_note`** — what actually landed, PATCHed by the completing session alongside `done:true`.
   The Review room verdicts against it. Always write one.
 - **A future's SHAPE in the Polaris galaxy (#312) is derived, never stored.** There is no `kind`
@@ -267,6 +280,20 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   not to dead ✧ buttons. Switching an agent off stops it acting everywhere, including the Auditor's
   keyless Claude hand-off — off means off, not "off where it costs money". Pinned by
   `server/test/agents.test.mjs` (pure — `gateDecision` takes the config, so no DB is needed).
+- **`projects.merge_autonomy` is not `automode`** (#363 — auto | plan | off, default plan). `automode`
+  says whether a project is BUILT unattended; this says how much of its MERGING one press of the Merge
+  room's ▶ Run covers. `plan` still names its branches in the proposed plan (an ordering that hid them
+  would not be an honest ordering) but the press leaves them alone. None of the three relaxes the
+  conflict probe, the #212 risk gate or the merge confirm.
+- **A branch's merge state is FOUR-valued, and `unprobed` is not `clean`** (#363, `web/src/lib/branch.ts`).
+  `mergeClean` null means no probe RAN — an older report, git before 2.38, or a claim with no branch
+  behind it — so it gets its own state and stays out of the agent's plan. Same rule as a NULL
+  `review_verdict`. `behind` is the opposite case: the probe passed, so the merge succeeds; what is
+  missing is that nothing has built the branch against the main it would land on. That is worth
+  showing and is not worth refusing, so `behind` counts as mergeable.
+- **The branch report's `topFiles` is capped and `files` is the true total** (#363). The expanded row
+  prints the difference — the #239 rule, and the cap is on size, not on path order, so the biggest
+  files are the ones kept.
 
 ## Fail-safe direction (get this right or you delete work)
 
@@ -462,6 +489,7 @@ node server/test/workbench.test.mjs        # the canvas is a placement layer (ne
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
 node server/test/agents.test.mjs           # each tab agent is bound to its own tab (pure, no DB)
+node scripts/lane.test.mjs                 # branch naming + BOTH spellings parse (pure, no git)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)

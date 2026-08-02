@@ -7,6 +7,7 @@ import {
   startPreview, getPreviews, stopPreview, extendPreview, type Preview,
   getControlRailOpen, setControlRailOpen, getControlRailHeight, setControlRailHeight,
   type ControlData, type ControlProject, type AutopilotJob, type AutopilotSchedule,
+  type MergeAutonomy,
 } from '../store';
 import { SessionPlanModal } from '../components/SessionPlanModal';
 import { NightsRoom, PlanRoom } from './ControlRooms';
@@ -14,6 +15,8 @@ import { RolesRoom } from './ControlRoles';
 import { AgentsRoom } from './ControlAgents';
 import { ReviewRoom } from './ControlReview';
 import { NowRoom } from './ControlNow';
+import { MergeRoom } from './ControlMerge';
+import { mergeStateOf, isMergeable } from '../lib/branch';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
 import { go, hrefTo, type ControlRoom } from '../lib/route';
 import { useAutoRefresh } from '../lib/autoRefresh';
@@ -348,6 +351,43 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
       }
     }
   };
+
+  // #363 — the Merge room queues one merge at a time and decides for itself
+  // whether to keep going, so this is the raw write: queue the job, fold it
+  // into the strip, and let the error out so the caller can stop the run and
+  // say where it got to. Deliberately NOT the confirm path — the room's own
+  // dialog is the confirm for a planned run, and a single row still goes
+  // through setMergePending like everywhere else.
+  const queueOneMerge = async (slug: string, branch: string, itemId: string) => {
+    const job = await queueMerge(slug, branch, itemId || undefined);
+    setData((cur) => cur && { ...cur, jobs: [job, ...cur.jobs.filter((j) => j.id !== job.id)] });
+  };
+
+  // #363 — merge autonomy per project. Optimistic with rollback, same contract
+  // as automode above.
+  const setMergeAutonomy = async (p: ControlProject, v: MergeAutonomy) => {
+    const apply = (val: MergeAutonomy) => (cur: ControlData | null) => cur && {
+      ...cur,
+      projects: cur.projects.map((x) => (x.slug === p.slug ? { ...x, mergeAutonomy: val } : x)),
+    };
+    const prev = p.mergeAutonomy ?? 'plan';
+    setData(apply(v));
+    try {
+      await patchProject(p.slug, { merge_autonomy: v });
+    } catch (e) {
+      setData(apply(prev));
+      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not set the merge autonomy.');
+    }
+  };
+
+  // #363 — the Merge tab's badge: branches the host's probe says will merge,
+  // and that nothing is already merging. Not "open branches" — a badge should
+  // count what you can act on, and a conflict is not that.
+  const mergeableCount = (data?.projects ?? []).reduce((n, p) => n + p.branches.filter((b) =>
+    isMergeable(mergeStateOf(b))
+    && !(data?.jobs ?? []).some((j) => j.slug === p.slug && j.kind === 'merge'
+      && j.detail.includes(`origin/${b.branch} into`)
+      && ['queued', 'claimed', 'running', 'done'].includes(j.status))).length, 0);
 
   // #228 — the planner modal saves through the schedule API itself; this just
   // folds the returned row back into the list.
@@ -709,7 +749,11 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
                   house, not zero; picking one narrows the badge with the room.
                   #282 — Review badges what is waiting on a verdict, reported up
                   by the room itself (it owns that fetch). */}
-              {([['now', 'Now', liveCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['review', 'Review', reviewN], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => isDrift(a.drift)).length], ['agents', 'Agents', 0]] as const).map(([key, label, n]) => (
+              {/* #363 — Merge badges what the host's probe says will land: the
+                  branches that MERGE, not the ones that merely exist. A count
+                  of every open branch would badge the conflicts too, and the
+                  number a tab carries should be the number you can act on. */}
+              {([['now', 'Now', liveCount], ['merge', 'Merge', mergeableCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['review', 'Review', reviewN], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => isDrift(a.drift)).length], ['agents', 'Agents', 0]] as const).map(([key, label, n]) => (
                 // #316 — anchors, not buttons: each room has a URL now, so the
                 // tab that opens it should be a real link (middle-click opens a
                 // new tab, and the address bar is honest either way). The
@@ -790,6 +834,19 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
                     are the one place the policy is actually written. */}
                 {/* #282 — Review: the cross-project queue and the night
                     debrief, moved out of the Roadmap tab. */}
+                {/* #363 — Merge: every open branch in the house as one weighted
+                    ledger, plus the agent that orders them into area-disjoint
+                    waves. It reads the same control payload the shell already
+                    holds and writes through the same merge job the Now room's
+                    ⇥ Merge queues — including the same confirm. */}
+                {room === 'merge' && (
+                  <MergeRoom data={data} previews={previews} previewBusy={previewBusy}
+                    onMerge={(pr, b) => setMergePending({ slug: pr.slug, branch: b.branch, itemId: b.itemId, itemTitle: b.itemTitle, mergeClean: b.mergeClean })}
+                    onStartPreview={(slug, branch, itemId) => void openPreview(slug, branch, itemId)}
+                    onStopPreview={setStopPending}
+                    onSetAutonomy={setMergeAutonomy}
+                    onQueueMerge={queueOneMerge} />
+                )}
                 {room === 'review' && <ReviewRoom onCount={setReviewN} />}
                 {room === 'roles' && (
                   <RolesRoom data={data} onReload={load}

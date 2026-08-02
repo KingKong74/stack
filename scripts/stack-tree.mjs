@@ -2,7 +2,7 @@
 // Stack — the branch navigator (`stack tree`), phase 1: the textual tree.
 //
 // Renders a project's branch-and-idea structure as one navigable tree: the
-// trunk (main) as the root, autopilot lanes (auto/item-N) and idea branches
+// trunk (main) as the root, work lanes (<kind>/<id>-<slug>) and idea branches
 // (idea/*) hanging off it, and merged branches folded back into the trunk.
 // Every node carries a slot for its per-push Gemini take — a placeholder for
 // now (wiring the stored gemini_note in is a later phase; this phase is the
@@ -24,6 +24,7 @@
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { git, projectFromGit } from '../hook/stack-post.mjs';
+import { isLaneBranch } from './lib/lane.mjs';
 
 const GEMINI_TAKE_PLACEHOLDER = '[Gemini take: not yet wired]';
 
@@ -74,8 +75,12 @@ function trunkName(repo, refs) {
   return refs[0]?.name || null;
 }
 
+// #363 — a lane is `<kind>/<id>-<slug>` now (feat/271-…, fix/bug-12-…). The
+// old flat `auto/` and `lane/` spellings stay in the test: those branches are
+// still on origin, and a navigator that stopped grouping them would show a
+// working fleet's lanes as loose branches.
 function classify(name) {
-  if (/^auto\//.test(name)) return 'auto';
+  if (isLaneBranch(name)) return 'auto';
   if (/^idea(s)?\//.test(name)) return 'idea';
   return 'branch';
 }
@@ -112,7 +117,7 @@ export function buildTree(repoPath) {
     ({ auto: lanes, idea: ideas, branch: branches })[classify(r.name)].push(n);
   }
 
-  // Autopilot lanes read best in item order (auto/item-12 before auto/item-104).
+  // Work lanes read best in item order (feat/12-… before feat/104-…).
   const itemNo = (n) => { const m = n.name.match(/(\d+)/); return m ? Number(m[1]) : Infinity; };
   lanes.sort((a, b) => itemNo(a) - itemNo(b));
 
@@ -173,7 +178,7 @@ export function renderTree(model) {
 
   const groups = [
     ['⚑ autopilot lanes', model.lanes,
-      placeholderLines('auto/item-N', 'no open autopilot lanes tonight')],
+      placeholderLines('<kind>/<id>-<summary>', 'no open work lanes tonight')],
     ['✦ ideas', model.ideas,
       placeholderLines('idea/<feature-name>', 'branch as idea/<name> to grow one')],
   ];

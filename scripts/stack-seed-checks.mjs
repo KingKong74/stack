@@ -68,6 +68,12 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Previews — the sweep feed', url: u('/api/previews/work'), auth: true, json_path: 'start' },
     { name: 'Control — plan coverage', url: u('/api/control'), auth: true, json_path: 'projects.0.planCoverage.unplanned' },
     { name: 'Control — per-project rows', url: u('/api/control'), auth: true, json_path: 'projects' },
+    // #363 — the Merge room's whole contract. Both fields fail SILENTLY if
+    // they go: without `mergeAutonomy` every project reads as 'plan' and ▶ Run
+    // quietly queues nothing, and without the branch diff every row reads
+    // "size unknown" — a room that looks fine and has stopped saying anything.
+    { name: 'Control — merge autonomy', url: u('/api/control'), auth: true, json_path: 'projects.0.mergeAutonomy' },
+    { name: 'Control — branch diff for the merge ledger', url: u('/api/control'), auth: true, json_path: 'projects.0.branches' },
     { name: 'Control — model catalogue', url: u('/api/control'), auth: true, json_path: 'models' },
     // The Roles room's run-level counters. `plan` is the one that carries a
     // rule rather than a number: a plan night commits nothing by design, so it

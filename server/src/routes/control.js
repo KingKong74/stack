@@ -105,6 +105,16 @@ export const control = Router();
 const asList = (v) => (Array.isArray(v) ? v : []);
 const ms = (ts) => (ts ? new Date(ts).getTime() : -1);
 
+// (#342) What counts as a LANE branch in SQL. The runner used to cut every
+// branch under `auto/`, so `branch LIKE 'auto/%'` was the whole test; it now
+// cuts `<kind>/<id>-<slug>` (feat/271-…, fix/bug-12-…, test/audit-…), so a
+// predicate that still only knew `auto/` would quietly stop matching the
+// runner's own pushes — the last-auto chip and the reviewer's notes would go
+// blank on a working fleet, which reads as "nothing ran". Both spellings are
+// matched, permanently: the old branches are still on origin and still claimed.
+const laneSql = (col) => `(${col} LIKE 'auto/%' OR ${col} LIKE 'lane/%'
+                   OR ${col} ~ '^(feat|fix|ui|refactor|perf|test|docs|chore)/')`;
+
 // (#268) How many autopilot jobs the host may have in flight at once. The
 // dispatcher serialises today — GET /next refuses to hand out a second job
 // while one is claimed or running — so the fleet is one worker wide. #265
@@ -738,7 +748,8 @@ control.get('/', async (_req, res) => {
 
   const [projectsR, roadR, bugsR, reviewR, presenceR, autoR, schedR, jobsR, usageR, branchR, checksR, monthR, hbR,
          ledgerR, ledgerJobsR, reviewNotesR, verdictR, sessionUsageR] = await Promise.all([
-    q(`SELECT id, slug, name, tint, status, automode, autopilot_area, blockers, last_session_at, updated_at
+    q(`SELECT id, slug, name, tint, status, automode, autopilot_area, merge_autonomy,
+              blockers, last_session_at, updated_at
          FROM projects WHERE deleted_at IS NULL`),
     // claimed_by that starts with 'auto/' or 'lane/' is an open claim branch; we
     // also need must/should for progress + pick, so pull everything that's
@@ -764,9 +775,9 @@ control.get('/', async (_req, res) => {
     q(`SELECT project_id, branch, last_seen_at FROM presence
         WHERE last_seen_at > now() - interval '${PRESENCE_TTL_MINUTES} minutes'
         ORDER BY last_seen_at DESC`),
-    // The most recent autopilot push per project (auto/* is the runner's lane).
+    // The most recent autopilot push per project (a lane branch — see laneSql).
     q(`SELECT DISTINCT ON (project_id) project_id, branch, summary, created_at
-         FROM sessions WHERE branch LIKE 'auto/%'
+         FROM sessions WHERE ${laneSql('branch')}
         ORDER BY project_id, created_at DESC`),
     // The calendar + the job queue (recent jobs cover the "what happened" strip).
     q(`SELECT s.*, p.slug, p.name AS project_name, p.tint, ri.title AS item_title
@@ -844,7 +855,7 @@ control.get('/', async (_req, res) => {
     q(`SELECT p.slug, s.commit_hash, s.branch, s.summary, s.gemini_note, s.created_at
          FROM sessions s JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
         WHERE s.created_at > now() - interval '7 days'
-          AND s.branch LIKE 'auto/%' AND COALESCE(s.gemini_note, '') <> ''
+          AND ${laneSql('s.branch')} AND COALESCE(s.gemini_note, '') <> ''
         ORDER BY s.created_at DESC LIMIT 80`),
     // Verdicts on items the runner landed in the window — the first-pass rate.
     q(`SELECT DISTINCT ri.id, ri.review_tag
@@ -1026,6 +1037,19 @@ control.get('/', async (_req, res) => {
           mergeClean: b.mergeClean, // true | false (conflicts) | null (not probed)
           subject: b.subject || '',
           when: relativeTime(b.committedAt) || '',
+          // (#342) The stamp behind `when`. The room's "oldest first" ordering
+          // needs something sortable, and re-parsing "18h ago" back into a
+          // time is the kind of round trip that silently mis-sorts the day it
+          // gains a new phrasing.
+          committedAt: b.committedAt || null,
+          // (#342) The diff the Merge room weighs a branch by. Absent from a
+          // report an older dispatcher wrote, which is why `files` is what the
+          // room gates on: 0 files means the size is UNKNOWN, not empty.
+          adds: b.adds || 0,
+          dels: b.dels || 0,
+          files: b.files || 0,
+          area: b.area || '',
+          topFiles: Array.isArray(b.topFiles) ? b.topFiles : [],
         };
       });
     const seenBranches = new Set(gitBranches.map((b) => b.branch));
@@ -1043,6 +1067,11 @@ control.get('/', async (_req, res) => {
       tint: p.tint || null,
       status: p.status,
       automode: !!p.automode,
+      // (#342) How much of this project's merging the merge agent may do.
+      // 'auto' = a Run press queues its clean branches; 'plan' = they appear in
+      // the plan but the press leaves them alone; 'off' = out of the plan
+      // entirely. Nothing here relaxes the #212 risk gate or the confirm.
+      mergeAutonomy: p.merge_autonomy || 'plan',
       autopilotArea: p.autopilot_area || '',
       // Target options: areas carried by this project's open must/should items.
       areas: [...new Set(road.filter((r) => !r.done && r.area).map((r) => r.area))].sort(),

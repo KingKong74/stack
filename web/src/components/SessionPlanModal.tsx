@@ -275,7 +275,7 @@ export function SessionPlanModal({
                   <option value="">the whole project</option>
                   {areas.map((a) => <option key={a} value={a}>{a}</option>)}
                 </select>
-                {' '}— findings land in the bug tracker; test hardening pushes on <code>auto/audit-&lt;date&gt;</code>.
+                {' '}— findings land in the bug tracker; test hardening pushes on <code>test/audit-&lt;date&gt;</code>.
               </div>
             )}
           </>

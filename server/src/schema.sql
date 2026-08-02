@@ -480,6 +480,21 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS share_token TEXT;
 -- Mission Control's per-project target picker; --item pins ignore it.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS autopilot_area TEXT;
 
+-- Merge autonomy (#363): how much of this project's merging the Merge room's
+-- agent may do on one press. Deliberately NOT the same lever as `automode`,
+-- which governs whether the project is BUILT overnight — a house can be happy
+-- to have a project built unattended and still want every merge of it looked
+-- at, and the reverse.
+--   auto  the agent's ▶ Run queues a merge job for each of this project's
+--         probe-clean branches, in its planned order.
+--   plan  (default) those branches appear in the proposed plan so the ordering
+--         is honest about them, but the press leaves them alone — they merge
+--         from the row, one press each.
+--   off   left out of the plan entirely.
+-- None of the three relaxes anything else: the #212 risk gate, the conflict
+-- probe and the confirm all apply exactly as they do to a hand-pressed merge.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS merge_autonomy TEXT NOT NULL DEFAULT 'plan';
+
 -- Soft delete: deleting a project stamps deleted_at instead of dropping the
 -- rows — everything (sessions, bugs, roadmap, notes…) survives for restore.
 -- Deleted projects vanish from every live query; Settings lists them with
