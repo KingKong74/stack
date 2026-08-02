@@ -3,7 +3,7 @@ import { q } from '../db.js';
 import { relativeTime, computeProgress, PRESENCE_TTL_MINUTES } from '../util.js';
 import { readSettings, EXECUTOR_CATALOGUE, ADVISOR_CATALOGUE } from '../settings.js';
 import { runCore } from '../shape.js';
-import { termAgentConnected, termSessions, termDetached, termEdits, termPlanUsage } from '../term.js';
+import { termAgentConnected, termSessions, termDetached, termEdits, termPlanUsage, termAutoSessions } from '../term.js';
 import { geminiEnabled } from '../gemini.js';
 import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 
@@ -52,6 +52,9 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //     slots: [ { jobId, slug, name, tint, status, kind, sessionKind,
 //                itemId, itemTitle, branch, startedAt, since,
 //                tokens, costUsd, tmux,
+//                activity: { doing, idleMs, at, lines, attached } | null,
+//                                           // (#366) the host's pane report;
+//                                           // null = not reported, not idle
 //                exec, adv,                 // (#280) the two roles on this lane
 //                spend: [ { model, label, role, tokens, costUsd, share,
 //                           inferred } ],   // banked spend, split by role
@@ -127,6 +130,38 @@ const FLEET_CAPACITY = 1;
 // Kept in step with that file — it is the only other place this shape exists.
 const tmuxNameFor = (slug, jobId) =>
   `stack-auto-${String(slug).replace(/[^A-Za-z0-9_]/g, '_').slice(0, 30)}-j${jobId}`;
+
+// (#268/#366) The claim IS the branch a job is on. Lifted out of the fleet
+// slot builder so the slot strip and the session detail route can never
+// disagree about it — a second copy of this rule is exactly the kind of bug
+// #280's note above warns about. A general night that has not claimed its
+// first item yet has none: say so rather than guess at some other item's
+// branch. `item` is ONLY the job's own item (via item_id) — the fallback
+// claim is a different item entirely, so it must never stand in for the
+// job's itemTitle, only for its branch.
+const claimedBranch = (job, road) => {
+  const item = job.item_id != null
+    ? road.find((r) => String(r.id) === String(job.item_id)) : null;
+  const claim = item
+    ? item.claimed_by
+    : (road.find((r) => r.claimed_by && !r.done) || {}).claimed_by;
+  return { item, branch: claim || '' };
+};
+
+// (#366) The activity object a live fleet slot and the session detail route
+// both attach: what the host's pane report says this tmux session is doing.
+// `null` — not an empty object — means the host has not reported this session
+// at all, same rule as a NULL review_verdict: absence is not "nothing found".
+// The tail itself never rides here (a Mission Control payload is not the place
+// for a whole pane dump); `lines` is a cheap non-empty-line count instead, and
+// the real tail is a POST /api/terminal/auto-view away.
+const autoActivityFor = (tmux, report) => {
+  if (!tmux) return null;
+  const s = report.sessions.find((r) => r.name === tmux);
+  if (!s) return null;
+  const lines = s.tail ? s.tail.split('\n').filter((l) => l.trim().length > 0).length : 0;
+  return { doing: s.doing || '', idleMs: s.idleMs || 0, at: s.activityAt || 0, lines, attached: s.attached === true };
+};
 
 // ---- What is actually waiting on the human ------------------------------
 //
@@ -1134,18 +1169,15 @@ control.get('/', async (_req, res) => {
   const advAlias = appSettings.autopilot_advisor_model;
   const execLabel = catalogueLabel(EXECUTOR_CATALOGUE, execAlias, 'CLI default');
   const advLabel = catalogueLabel(ADVISOR_CATALOGUE, advAlias, 'Off');
+  // (#366) The host's autopilot pane report, read once for the whole strip.
+  const autoReport = termAutoSessions();
   const fleetSlots = jobsR.rows
     .filter((j) => j.status === 'claimed' || j.status === 'running')
     .map((j) => {
       const p = projById.get(j.project_id);
       const road = roadByP.get(j.project_id) || [];
-      const item = j.item_id != null
-        ? road.find((r) => String(r.id) === String(j.item_id)) : null;
-      // The claim IS the branch the runner is on. A general night that
-      // has not claimed its first item yet has none — say so rather than guess.
-      const claim = item
-        ? item.claimed_by
-        : (road.find((r) => r.claimed_by && !r.done) || {}).claimed_by;
+      const { item, branch: claim } = claimedBranch(j, road);
+      const tmux = p ? tmuxNameFor(p.slug, j.id) : '';
       const startedAt = j.started_at || j.claimed_at;
       // Tokens burned so far: the runs this job has already landed. A run row
       // lands per finished item, so the first in-flight item honestly reads 0
@@ -1225,7 +1257,10 @@ control.get('/', async (_req, res) => {
         // The host tmux session (#171). NOT browser-attachable — the terminal
         // daemon advertises stack-term-* only — so the client offers it as a
         // `tmux attach -t <name>` hint rather than a dead link.
-        tmux: p ? tmuxNameFor(p.slug, j.id) : '',
+        tmux,
+        // (#366) What the host's pane report says this session is doing right
+        // now. null = the host has not reported it — never render that as calm.
+        activity: autoActivityFor(tmux, autoReport),
         // (#280) The two roles on this lane. Both are the app-wide policy —
         // the runner takes its models from settings, so a session cannot be on
         // anything else — while everything below is this session's own spend.
@@ -1528,7 +1563,13 @@ control.get('/', async (_req, res) => {
     usage,
     // The host PTY daemon's agent socket + every open web-terminal session
     // (labels are the ✧ Gemini annotations, '' until asked for).
-    terminal: { connected: termAgentConnected(), sessions: termSessions(), detached: detachedNow },
+    // autoSeenAt (#366) — when the autopilot pane report last landed; 0 = never,
+    // which lets the client say "the daemon has reported and there's nothing
+    // running" apart from "nothing has reported at all".
+    terminal: {
+      connected: termAgentConnected(), sessions: termSessions(), detached: detachedNow,
+      autoSeenAt: termAutoSessions().at,
+    },
     // What is waiting on the human, worst first — a session stopped on a
     // permission prompt, a run the limit paused, work awaiting a verdict.
     attention,
@@ -1547,5 +1588,106 @@ control.get('/', async (_req, res) => {
       claims: projects.reduce((n, p) => n + p.claims.length, 0),
       review: projects.reduce((n, p) => n + p.reviewCount, 0),
     },
+  });
+});
+
+// GET /api/control/session/:jobId — the detail behind one running (or lately
+// running) autopilot session (#366): what it's on, what it has already
+// banked tonight, and the host's own read of the pane. A handful of queries,
+// the independent ones in parallel — never one query per row.
+control.get('/session/:jobId', async (req, res) => {
+  const jobId = Number(req.params.jobId);
+  if (!Number.isInteger(jobId) || jobId <= 0) return res.status(400).json({ error: 'Bad job id.' });
+
+  const jobR = await q(
+    `SELECT j.*, p.slug, p.name AS project_name, p.tint AS project_tint
+       FROM autopilot_jobs j
+       JOIN projects p ON p.id = j.project_id AND p.deleted_at IS NULL
+      WHERE j.id = $1`,
+    [jobId]
+  );
+  const job = jobR.rows[0];
+  if (!job) return res.status(404).json({ error: 'No such session.' });
+
+  // The claim/branch derivation needs the project's roadmap rows — the exact
+  // same shape claimedBranch() already reads off roadByP in the fleet strip.
+  const roadR = await q(
+    `SELECT id, claimed_by, done, title, plan FROM roadmap_items WHERE project_id = $1`,
+    [job.project_id]
+  );
+  const { item, branch } = claimedBranch(job, roadR.rows);
+  const tmux = tmuxNameFor(job.slug, job.id);
+  const plan = item && Array.isArray(item.plan) ? item.plan : [];
+
+  const since = job.claimed_at || job.created_at;
+  const [runsR, pushesR, presenceR] = await Promise.all([
+    // Units this night has already banked — finished since the job claimed
+    // (or was created, for a claim that hasn't landed a started_at yet).
+    q(`SELECT id, item_id, item_title, branch, outcome, commits, tokens, cost_usd,
+              checks_failing, summary, started_at, finished_at,
+              review_verdict, review_note, review_findings,
+              architect_verdict, architect_note, architect_obs
+         FROM autopilot_runs
+        WHERE project_id = $1 AND finished_at >= $2
+        ORDER BY finished_at DESC LIMIT 20`,
+      [job.project_id, since]),
+    q(`SELECT session_id, summary, current_phase, commit_hash, branch, created_at
+         FROM sessions
+        WHERE project_id = $1 AND branch = $2
+        ORDER BY created_at DESC LIMIT 10`,
+      [job.project_id, branch]),
+    q(`SELECT session_id, branch, started_at, last_seen_at FROM presence
+        WHERE project_id = $1 AND last_seen_at > now() - interval '${PRESENCE_TTL_MINUTES} minutes'
+        ORDER BY last_seen_at DESC`,
+      [job.project_id]),
+  ]);
+
+  res.json({
+    job: {
+      id: String(job.id),
+      slug: job.slug,
+      name: job.project_name,
+      tint: job.project_tint || null,
+      kind: job.kind,
+      sessionKind: job.session_kind || 'build',
+      status: job.status,
+      itemId: job.item_id != null ? String(job.item_id) : null,
+      itemTitle: item ? item.title : '',
+      branch,
+      detail: job.detail || '',
+      agenda: Array.isArray(job.agenda) ? job.agenda : [],
+      area: job.area || '',
+      createdAt: job.created_at ? new Date(job.created_at).toISOString() : null,
+      claimedAt: job.claimed_at ? new Date(job.claimed_at).toISOString() : null,
+      startedAt: job.started_at ? new Date(job.started_at).toISOString() : null,
+      finishedAt: job.finished_at ? new Date(job.finished_at).toISOString() : null,
+      tmux,
+    },
+    plan,
+    planDone: plan.filter((s) => s && s.done).length,
+    planTotal: plan.length,
+    runs: runsR.rows.map((r) => ({
+      id: String(r.id),
+      ...runCore(r),
+      itemId: r.item_id != null ? String(r.item_id) : null,
+      itemTitle: r.item_title || '',
+      startedAt: r.started_at ? new Date(r.started_at).toISOString() : null,
+      finishedAt: r.finished_at ? new Date(r.finished_at).toISOString() : null,
+    })),
+    pushes: pushesR.rows.map((r) => ({
+      sessionId: r.session_id || '',
+      summary: r.summary || '',
+      currentPhase: r.current_phase || '',
+      commitHash: r.commit_hash || '',
+      branch: r.branch || '',
+      createdAt: r.created_at ? new Date(r.created_at).toISOString() : null,
+    })),
+    presence: presenceR.rows.map((r) => ({
+      sessionId: r.session_id || '',
+      branch: r.branch || '',
+      startedAt: r.started_at ? new Date(r.started_at).toISOString() : null,
+      lastSeenAt: r.last_seen_at ? new Date(r.last_seen_at).toISOString() : null,
+    })),
+    activity: autoActivityFor(tmux, termAutoSessions()),
   });
 });

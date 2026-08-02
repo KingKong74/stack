@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { q } from '../db.js';
-import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux, keepTmuxSession, answerTmuxPrompt } from '../term.js';
+import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux, keepTmuxSession, answerTmuxPrompt, viewAutoPane } from '../term.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { readSettings } from '../settings.js';
 
@@ -88,6 +88,24 @@ terminal.post('/answer', async (req, res) => {
   const r = await answerTmuxPrompt(name, fingerprint, choice);
   if (!r.ok) return res.status(409).json({ error: r.error || 'The host would not answer that prompt.' });
   res.json({ ok: true, state: r.state, choice });
+});
+
+// POST /api/terminal/auto-view {name, lines?} — an on-demand FRESH read of one
+// stack-auto-* autopilot pane, for Mission Control's session detail (#366).
+// Unlike /answer this pattern is `stack-auto-` — a DIFFERENT prefix from the
+// web terminal's `stack-term-`, and neither should ever be widened to match
+// the other. READ-ONLY: see term.js's viewAutoPane header for why.
+terminal.post('/auto-view', async (req, res) => {
+  const name = String(req.body?.name || '');
+  if (!/^stack-auto-[A-Za-z0-9_-]{1,64}$/.test(name)) return res.status(400).json({ error: 'Bad session name.' });
+  const lines = Math.min(400, Math.max(20, Number(req.body?.lines) || 160));
+  const r = await viewAutoPane(name, { lines });
+  if (!r.ok) {
+    // The refusal is shown to the human beside the row — never swallow it.
+    const status = r.error === 'the host daemon is not connected' ? 503 : 409;
+    return res.status(status).json({ error: r.error || 'The host could not read that pane.' });
+  }
+  res.json({ ok: true, name, tail: r.tail, doing: r.doing, idleMs: r.idleMs, alive: r.alive });
 });
 
 // POST /api/terminal/assist {prompt, cwd} — ✧ command help for the terminal

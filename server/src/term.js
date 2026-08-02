@@ -107,6 +107,14 @@ const blockedShape = (b) => (b && typeof b.question === 'string' && typeof b.fin
 let liveEdits = [];
 let liveEditsAt = 0;
 export const termEdits = () => ({ sessions: liveEdits, at: liveEditsAt });
+// Autopilot pane report (#366): what each stack-auto-* tmux session is DOING,
+// not just that a job claims it is running. Same cache-with-a-clock shape as
+// liveEdits above, and the same invariant: `autoSessionsAt === 0` must mean
+// "no daemon has told us anything", not "the fleet is idle" — the client can
+// then say "Stack cannot see the host" instead of rendering silence as calm.
+let autoSessions = [];
+let autoSessionsAt = 0;
+export const termAutoSessions = () => ({ sessions: autoSessions, at: autoSessionsAt });
 export const termDetachedTails = () => detachedSessions;
 export const setDetachedLabel = (name, label) => { detachedLabels.set(name, label); };
 // Plan usage snapshot (#220): the account-level Plan windows (#195) the daemon
@@ -204,6 +212,43 @@ export function askClaudeOnHost(prompt, { timeoutMs = 180_000, model = '', diffs
     // them in front of the prompt. Only the host can: the server has the
     // ~10-minute branch report, not the code.
     agentSend({ t: 'claudeAsk', id, prompt, timeoutMs, model, ...(diffs ? { diffs } : {}) });
+  });
+}
+
+// #366 — an on-demand FRESH read of one stack-auto-* pane: what this session
+// is doing right now, not the ~stale cached report termAutoSessions() serves.
+// Same correlated request/reply shape as answerTmuxPrompt, and its own seq
+// counter and pending Map (never shared with answerTmuxPrompt's) for the same
+// reason that one has its own: two callers must not steal each other's replies.
+//
+// This path is READ-ONLY. It sends no keystrokes and must never grow a write.
+// POST /api/terminal/answer stays the only path by which anything but a human
+// types into a running session, and autopilot sessions are excluded from it by
+// construction — they run with --dangerously-skip-permissions, so they cannot
+// be blocked on a prompt this way in the first place.
+let autoViewSeq = 0;
+const pendingAutoView = new Map(); // id -> resolve
+export function viewAutoPane(name, { lines = 160, timeoutMs = 8_000 } = {}) {
+  if (!agentSend) return Promise.resolve({ ok: false, error: 'the host daemon is not connected' });
+  const id = `v${++autoViewSeq}`;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingAutoView.delete(id);
+      resolve({ ok: false, error: 'the host did not answer in time' });
+    }, timeoutMs);
+    pendingAutoView.set(id, (m) => {
+      clearTimeout(timer);
+      resolve({
+        ok: m.ok === true,
+        error: String(m.error || ''),
+        tail: String(m.tail || ''),
+        doing: String(m.doing || ''),
+        idleMs: Number(m.idleMs) || 0,
+        activityAt: Number(m.activityAt) || 0,
+        alive: m.alive === true,
+      });
+    });
+    agentSend({ t: 'autoView', id, name, lines });
   });
 }
 
@@ -329,6 +374,29 @@ export function attachTerm(httpServer) {
         return;
       }
 
+      // auto — the host's report of stack-auto-* tmux panes (#366): what each
+      // running autopilot session is DOING, read off the pane itself. Cache-only,
+      // like 'edits' above — Mission Control reads it through termAutoSessions().
+      if (m.t === 'auto' && Array.isArray(m.sessions)) {
+        autoSessions = m.sessions
+          .filter((s) => s && typeof s.name === 'string'
+            && /^stack-auto-[A-Za-z0-9_-]{1,64}$/.test(s.name))
+          .slice(0, 16)
+          .map((s) => ({
+            name: s.name,
+            jobId: Number.isFinite(Number(s.jobId)) ? Number(s.jobId) : null,
+            slug: typeof s.slug === 'string' ? s.slug : '',
+            created: Number(s.created) || 0,
+            attached: s.attached === true,
+            activityAt: Number(s.activityAt) || 0,
+            idleMs: Number(s.idleMs) || 0,
+            tail: typeof s.tail === 'string' ? s.tail.slice(-TAIL_CAP) : '',
+            doing: typeof s.doing === 'string' ? s.doing.slice(0, 200) : '',
+          }));
+        autoSessionsAt = Date.now();
+        return;
+      }
+
       // answered — the host's verdict on an answerPrompt it was asked to send.
       if (m.t === 'answered' && m.id) {
         const waiting = pendingAnswers.get(m.id);
@@ -341,6 +409,14 @@ export function attachTerm(httpServer) {
       if (m.t === 'claudeAnswer' && m.id) {
         const waiting = pendingClaude.get(m.id);
         if (waiting) { pendingClaude.delete(m.id); waiting(m); }
+        return;
+      }
+
+      // autoViewed — the host's fresh read of a stack-auto-* pane it was asked
+      // to look at (#366). Correlated exactly like `answered`/`claudeAnswer`.
+      if (m.t === 'autoViewed' && m.id) {
+        const waiting = pendingAutoView.get(m.id);
+        if (waiting) { pendingAutoView.delete(m.id); waiting(m); }
         return;
       }
 
@@ -387,6 +463,10 @@ export function attachTerm(httpServer) {
         // screen for a host nobody can see any more — worse than silence,
         // because it reads as current.
         liveEdits = []; liveEditsAt = 0;
+        // Same rule for the autopilot pane report: `autoSessionsAt === 0` must
+        // read as "the host has not told us anything", never as "nothing is
+        // running" — a dead daemon reporting silence is not an all-clear.
+        autoSessions = []; autoSessionsAt = 0;
       }
       console.log('[term] daemon disconnected');
       // Do NOT kill browser connections here — the daemon may reconnect and
