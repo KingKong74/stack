@@ -69,6 +69,12 @@ export function roadmapItemShape(row) {
     area: row.area || '',              // product-area tag ('' = untagged) — filters the board
     builtNote: row.built_note || '',   // what actually landed — shown on the Reviews view
     reviewTag: row.review_tag || '',   // archive verdict: solid | needs-work | rethink
+    // #263 — who gave the verdict above and on what evidence. '' evidence on
+    // an auto verdict would mean a row that predates the column, not a
+    // verdict given for no reason.
+    verdictSource: row.verdict_source || 'human',
+    verdictAt: row.verdict_at || null,
+    verdictEvidence: row.verdict_evidence || '',
     reviewTags: Array.isArray(row.review_tags) ? row.review_tags : [], // review annotations (#146)
     refineNote: row.refine_note || '', // the refine delta — what to change on top (#146)
     reviewShelved: !!row.review_shelved, // review set aside for later — off the To-verify list (#148)
@@ -362,6 +368,9 @@ export function runCore(r) {
     costUsd: Number(r.cost_usd) || 0,    // NUMERIC → string
     checksFailing: r.checks_failing ?? null,
     summary: r.summary || '',
+    // #263 — the run's own verdict evidence, when the risk-tiered gate fired.
+    // '' means no auto-verdict was given, which is not the same as one refused.
+    autoVerdict: r.auto_verdict || '',
     ...agentReads(r),
   };
 }

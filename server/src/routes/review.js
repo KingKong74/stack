@@ -8,7 +8,7 @@ import { geminiEnabled } from '../gemini.js';
 //
 // Review used to live inside ONE project's Roadmap tab, which is the wrong shape
 // for a fleet: the nights run across projects, so the morning's queue does too.
-// This is the cross-project read, computed in three aggregate queries — never
+// This is the cross-project read, computed in four aggregate queries — never
 // one per project:
 //
 //   queue    every completed item nobody has verdicted yet, newest first, with
@@ -17,9 +17,16 @@ import { geminiEnabled } from '../gemini.js';
 //   settled  the same rows after a verdict — the archive, capped.
 //   nights   runs grouped by the day they finished, for the debrief (24a).
 //
+//   autoVerdicted  the last 12 items the MACHINE verdicted (#263) — the audit
+//            strip for the risk-tiered gate. Not gated on done=true: the
+//            runner writes the verdict the night it builds, and the human
+//            ticks the item later, so a strip that only appeared after
+//            ticking would not be visible in the sense the policy requires.
+//
 // Everything here is a read. Verdicts, refinements, shelving and undo all go
-// through the existing per-project roadmap/autopilot routes, so this route can
-// never be the thing that mutates a tracker.
+// through the existing per-project roadmap/autopilot routes — the strip's own
+// ⎌ undo is the ordinary roadmap PATCH too — so this route can never be the
+// thing that mutates a tracker.
 
 export const review = Router();
 
@@ -28,6 +35,7 @@ export const review = Router();
 // night list are windows.
 const SETTLED_CAP = 40;
 const NIGHT_DAYS = 14;
+const AUTO_VERDICTED_CAP = 12; // #263 — the audit strip, deliberately short
 
 // Who built it — the same read the old Reviews view used, kept identical so the
 // origin chips mean what they always meant.
@@ -52,6 +60,11 @@ function itemShape(row) {
     refineNote: row.refine_note || '',
     reviewTags: Array.isArray(row.review_tags) ? row.review_tags : [],
     reviewTag: row.review_tag || '',
+    // #263 — who gave the verdict and on what evidence, same names/fallbacks
+    // as shape.js's roadmapItemShape so every list carries them alike.
+    verdictSource: row.verdict_source || 'human',
+    verdictAt: row.verdict_at || null,
+    verdictEvidence: row.verdict_evidence || '',
     shelved: !!row.review_shelved,
     branch: row.claimed_by || '',   // #277 — the claim IS a branch name
     origin: originOf(row),
@@ -70,6 +83,10 @@ function itemShape(row) {
       costUsd: Number(row.run_cost) || 0,
       checksFailing: row.run_checks,
       summary: row.run_summary || '',
+      // #263 — the run's own auto-verdict evidence. Not aliased with the
+      // item's columns (nothing else on the item is called auto_verdict), so
+      // it's selected straight off `r` and exposed here under the run object.
+      autoVerdict: row.auto_verdict || '',
       // Both second-model reads (#282/#284), shaped once in shape.js. The run's
       // own columns wear `run_` aliases here (it is LEFT JOINed beside the item,
       // so `branch` and `summary` would collide) — the agent columns are not
@@ -81,17 +98,22 @@ function itemShape(row) {
   };
 }
 
-// One SELECT for both the queue and the archive: completed items joined to the
-// newest run that mentions them. DISTINCT ON keeps a re-run item to one row.
+// One SELECT for the queue, the archive AND the auto-verdicted strip: items
+// joined to the newest run that mentions them. %WHERE% is the FULL clause
+// (its own WHERE keyword and all) and %ORDER% the full ORDER BY, so each
+// caller states its own gate rather than sharing one hard-coded to done=true
+// — the auto-verdicted strip deliberately isn't gated on it (see the header).
 const ITEM_SQL = `
   SELECT i.id, i.title, i.bucket, i.note, i.built_note, i.refine_note, i.review_tag,
          i.review_tags, i.review_shelved, i.claimed_by, i.updated_at, i.risk,
+         i.verdict_source, i.verdict_at, i.verdict_evidence,
          p.slug, p.name, p.tint,
          r.id AS run_id, r.branch AS run_branch, r.outcome AS run_outcome,
          r.commits AS run_commits, r.tokens AS run_tokens, r.cost_usd AS run_cost,
          r.checks_failing AS run_checks, r.summary AS run_summary,
          r.review_verdict, r.review_note, r.review_findings,
          r.architect_verdict, r.architect_note, r.architect_obs,
+         r.auto_verdict,
          r.finished_at AS run_finished
     FROM roadmap_items i
     JOIN projects p ON p.id = i.project_id AND p.deleted_at IS NULL
@@ -100,14 +122,18 @@ const ITEM_SQL = `
        WHERE ar.project_id = i.project_id AND ar.item_id = i.id
        ORDER BY ar.finished_at DESC LIMIT 1
     ) r ON true
-   WHERE i.done = true AND %WHERE%
-   ORDER BY i.updated_at DESC %LIMIT%`;
+   %WHERE%
+   %ORDER%`;
 
 review.get('/', async (req, res) => {
-  const [pending, settled, nights] = await Promise.all([
-    q(ITEM_SQL.replace('%WHERE%', 'i.review_tag IS NULL').replace('%LIMIT%', '')),
-    q(ITEM_SQL.replace('%WHERE%', "i.review_tag IS NOT NULL AND i.review_tag <> ''")
-      .replace('%LIMIT%', `LIMIT ${SETTLED_CAP}`)),
+  const [pending, settled, autoVerdicted, nights] = await Promise.all([
+    q(ITEM_SQL.replace('%WHERE%', 'WHERE i.done = true AND i.review_tag IS NULL')
+      .replace('%ORDER%', 'ORDER BY i.updated_at DESC')),
+    q(ITEM_SQL.replace('%WHERE%', "WHERE i.done = true AND i.review_tag IS NOT NULL AND i.review_tag <> ''")
+      .replace('%ORDER%', `ORDER BY i.updated_at DESC LIMIT ${SETTLED_CAP}`)),
+    // #263 — the audit strip. Not gated on done=true (see the header comment).
+    q(ITEM_SQL.replace('%WHERE%', "WHERE i.verdict_source = 'auto' AND i.review_tag IS NOT NULL AND i.review_tag <> ''")
+      .replace('%ORDER%', `ORDER BY i.verdict_at DESC NULLS LAST LIMIT ${AUTO_VERDICTED_CAP}`)),
     // The debrief's raw material: every run of the last fortnight with its
     // project, so the client can group by night without a second round trip.
     q(
@@ -129,6 +155,8 @@ review.get('/', async (req, res) => {
     geminiReady: geminiEnabled(),
     queue,
     settled: settled.rows.map(itemShape),
+    // #263 — the audit strip for the risk-tiered gate's machine verdicts.
+    autoVerdicted: autoVerdicted.rows.map(itemShape),
     nights: nights.rows.map((r) => ({
       slug: r.slug,
       name: r.name,
@@ -151,6 +179,7 @@ review.get('/', async (req, res) => {
       flagged: active.filter((it) => it.run?.reviewVerdict === 'blocked' || (it.run?.checksFailing ?? 0) > 0).length,
       projects: new Set(active.map((it) => it.slug)).size,
       settled: settled.rows.length,
+      autoVerdicted: autoVerdicted.rows.length,
     },
   });
 });

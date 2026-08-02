@@ -83,6 +83,23 @@ roadmap.patch('/:id', async (req, res) => {
     // A verdict archives the item — it can't also sit on the review shelf
     // (#148). An explicit value in the same PATCH wins.
     if (verdict && req.body.review_shelved === undefined) sets.push('review_shelved = false');
+    if (verdict) {
+      // #263 — a verdict is human unless the caller says otherwise. Only the
+      // autoverdict gate (scripts/lib/autoverdict.mjs) ever sends 'auto'; any
+      // ordinary client PATCH stays human without having to say so.
+      sets.push(`verdict_source = $${i++}`);
+      vals.push(req.body.verdict_source === 'auto' ? 'auto' : 'human');
+      sets.push('verdict_at = now()');
+      sets.push(`verdict_evidence = $${i++}`);
+      vals.push(String(req.body.verdict_evidence || '').trim().slice(0, 500) || null);
+    } else {
+      // Clearing the tag IS the ⎌ undo — the ordinary and only path back from
+      // an auto verdict. The reset has to be atomic with the clear or the row
+      // keeps claiming a machine verdict it no longer has.
+      sets.push(`verdict_source = 'human'`);
+      sets.push('verdict_at = NULL');
+      sets.push('verdict_evidence = NULL');
+    }
   }
   if (req.body?.review_shelved !== undefined) {
     // Shelve a review (#148): the completed row leaves the main To-verify list
@@ -128,7 +145,15 @@ roadmap.patch('/:id', async (req, res) => {
     // and can read as in-progress). An explicit value in the same PATCH wins —
     // these columns are already SET above and can't be assigned twice.
     else {
-      if (req.body.review_tag === undefined) sets.push('review_tag = NULL');
+      if (req.body.review_tag === undefined) {
+        sets.push('review_tag = NULL');
+        // #263 — un-ticking clears a verdict the same way the ⎌ undo does:
+        // atomically, so an un-ticked item never keeps claiming a machine
+        // verdict it no longer has.
+        sets.push(`verdict_source = 'human'`);
+        sets.push('verdict_at = NULL');
+        sets.push('verdict_evidence = NULL');
+      }
       if (req.body.claimed_by === undefined) sets.push('claimed_by = NULL');
     }
     // Either direction leaves the review shelf (#148): a fresh completion
