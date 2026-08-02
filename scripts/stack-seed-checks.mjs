@@ -108,6 +108,12 @@ function suiteFor(slug, ORIGIN) {
     // the path, not a count: the count is meant to be zero most of the time.
     { name: 'Control — what is waiting on you', url: u('/api/control'), auth: true, json_path: 'attention' },
     { name: 'Control — same-file collisions', url: u('/api/control'), auth: true, json_path: 'conflicts' },
+    // #366 — the autopilot pane report's clock. 0 is the honest idle value (no
+    // host has ever reported), so this asserts the KEY exists, never a value;
+    // losing it collapses "the daemon reported and nothing is running" into
+    // "nothing has reported at all", which is the same silent failure as a
+    // missing `attention`/`conflicts` above.
+    { name: 'Control — autopilot pane report clock', url: u('/api/control'), auth: true, json_path: 'terminal.autoSeenAt' },
     // The answer channel's front door. A bad fingerprint must be REFUSED with
     // a 400 rather than relayed — the host's re-read is the real guard, but a
     // server that forwarded anything shaped like a request would put the whole
