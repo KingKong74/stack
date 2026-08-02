@@ -5,3 +5,6 @@ dist/
 .DS_Store
 *.tsbuildinfo
 __pycache__/
+# scripts/playwright's own run artefacts (#291) — screenshots + report.json
+scripts/playwright/screenshots/
+scripts/playwright/report.json
