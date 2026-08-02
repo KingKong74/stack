@@ -22,11 +22,26 @@ import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 //   projects: [ {
 //     slug, name, tint, status, automode, progress, lastPush,
 //     live: { count, branches[] } | null,   // presence inside the TTL window
-//     claims: [ { id, title, branch } ],    // open branch-claimed items
+//     claims: [ { id, title, branch,                 // open branch-claimed items
+//                  planTotal, planDone,               // (#365) plan steps / ticked
+//                  bucket, tier, risk, area,          // the item's own classification
+//                  builtNote, reviewTag, reviewedAt,  // what landed + its verdict so far
+//                  claimedWhen } ],                   // how long the claim has sat
 //     branches: [ { branch, itemId, itemTitle,      // the merge strip (#154);
 //                   ahead?, behind?, mergeClean?,   // git state via the host's
 //                   subject?, when? } ],            // branch report (#207)
 //     absorbedBranches, branchesWhen,       // prune count + report freshness
+//     worktrees: [ { path, name, branch, head, subject, committedAt, when,
+//                    dirty, ahead, unpushed, main, prunable,
+//                    itemId, itemTitle } ] | null,   // (#365) git state sitting
+//                                           // in a parallel checkout — uncommitted
+//                                           // or unpushed work no ref would ever
+//                                           // reveal. `null` = the host has NEVER
+//                                           // reported worktrees (no pass ran ≠
+//                                           // nothing found); `[]` = it reported
+//                                           // and there are none.
+//     worktreesWhen,                        // (#365) worktree report freshness,
+//                                           // null with no report — mirrors branchesWhen
 //     reviewCount,                          // hook items awaiting review
 //     planCoverage: { unplanned, queued },  // (#255) open must/should with no
 //                                           // design, and plan jobs standing by
@@ -755,11 +770,19 @@ control.get('/', async (_req, res) => {
     // also need must/should for progress + pick, so pull everything that's
     // relevant in one query.
     q(`SELECT project_id, id, bucket, title, done, skipped, claimed_by, source,
-              reviewed_at, position, created_at, area,
+              reviewed_at, position, created_at, area, risk, tier, built_note,
+              review_tag, updated_at,
               -- #255 — does this item still have no design? The plan sweep's
               -- coverage line counts these, so it rides the pass that is
               -- already reading every must/should rather than a new query.
-              (jsonb_array_length(COALESCE(plan, '[]'::jsonb)) = 0) AS unplanned
+              (jsonb_array_length(COALESCE(plan, '[]'::jsonb)) = 0) AS unplanned,
+              -- (#365) Per-feature plan progress for the claims list — total
+              -- steps and how many are ticked, computed here so the worktree
+              -- view needs no second round trip per item. count(*) comes back
+              -- as a STRING (BIGINT); the mapper below Number()s both.
+              jsonb_array_length(COALESCE(plan, '[]'::jsonb)) AS plan_total,
+              (SELECT count(*) FROM jsonb_array_elements(COALESCE(plan, '[]'::jsonb)) e
+                WHERE (e->>'done')::boolean) AS plan_done
          FROM roadmap_items WHERE bucket IN ('must','should') OR claimed_by IS NOT NULL`),
     q(`SELECT project_id,
               count(*) FILTER (WHERE severity IN ('critical','high') AND status <> 'fixed')::int AS serious,
@@ -818,7 +841,11 @@ control.get('/', async (_req, res) => {
     // strip's real state (ahead/behind, conflict probe). Missing rows are fine:
     // the strip falls back to claim-derived chips until the first report lands.
     // ::int so the BIGINT key matches projects.id as a JS number in the Map.
-    q(`SELECT project_id::int AS project_id, report, reported_at FROM branch_reports`),
+    // (#365) worktrees/worktrees_at ride the same row — the host posts them on
+    // the same report, so no second query is needed to fold them into #365's
+    // per-project worktree strip below.
+    q(`SELECT project_id::int AS project_id, report, reported_at, worktrees, worktrees_at
+         FROM branch_reports`),
     // (#206) Audit pass rate per project — the checks' stored last results.
     // never-run rows don't count against the rate; zero run rows = no rate.
     q(`SELECT project_id,
@@ -1061,6 +1088,40 @@ control.get('/', async (_req, res) => {
     ];
     const absorbedBranches = repList
       .filter((b) => b.ahead === 0 && !claimByBranch.has(b.branch)).length;
+    // (#365) The worktree strip — git state sitting in a parallel checkout
+    // that no pushed ref would ever reveal: uncommitted work, or commits
+    // ahead of a branch nobody has opened as anything yet. `rep.worktrees` is
+    // SQL NULL when the host has never reported worktrees at all (an older
+    // dispatcher, or one that hasn't polled since #365 shipped) — that stays
+    // `null`, not `[]`, so the client can say "Stack cannot see the host's
+    // worktrees" rather than "there are none". Owner resolution mirrors the
+    // branch mapper above exactly: an exact claimed_by match first, then the
+    // itemId the host already parsed onto the entry (branches.js's cleanEntry
+    // does the same parse for a worktree as it does for a branch, so there is
+    // no branch-name regex here — resolving that is the host's job, not this
+    // route's).
+    const worktrees = Array.isArray(rep && rep.worktrees)
+      ? rep.worktrees.map((w) => {
+          const owner = claimByBranch.get(w.branch)
+            || (w.itemId != null ? itemById.get(String(w.itemId)) : null);
+          return {
+            path: w.path,
+            name: w.name,
+            branch: w.branch,
+            head: w.head,
+            subject: w.subject || '',
+            committedAt: w.committedAt || null,
+            when: relativeTime(w.committedAt) || '',
+            dirty: w.dirty,
+            ahead: w.ahead,
+            unpushed: w.unpushed,
+            main: !!w.main,
+            prunable: !!w.prunable,
+            itemId: owner ? String(owner.id) : (w.itemId != null ? String(w.itemId) : ''),
+            itemTitle: owner ? owner.title : '',
+          };
+        })
+      : null;
     return {
       slug: p.slug,
       name: p.name,
@@ -1080,6 +1141,11 @@ control.get('/', async (_req, res) => {
       // (#207) fully-merged origin branches never deleted, and report freshness.
       absorbedBranches,
       branchesWhen: rep ? relativeTime(rep.reported_at) || '' : '',
+      // (#365) Parallel-checkout git state — see the comment above. `null`
+      // means no worktree report has ever landed; `[]` means it landed and
+      // found none.
+      worktrees,
+      worktreesWhen: relativeTime(rep && rep.worktrees_at),
       // The roadmap query only carries must/should (all computeProgress counts);
       // the aggregated serious count stands in for row-level bugs for the cap.
       progress: computeProgress(
@@ -1090,7 +1156,28 @@ control.get('/', async (_req, res) => {
       live: liveByP.get(p.id) || null,
       claims: road
         .filter((r) => r.claimed_by && !r.done)
-        .map((r) => ({ id: String(r.id), title: r.title, branch: r.claimed_by })),
+        .map((r) => ({
+          id: String(r.id),
+          title: r.title,
+          branch: r.claimed_by,
+          // (#365) Per-feature progress for the worktree view. plan_done is a
+          // count(*) — pg hands it back as a STRING (BIGINT) — and
+          // plan_total is a jsonb_array_length; Number() both the same way
+          // runCore coerces tokens/cost, so a client summing them never
+          // concatenates strings.
+          planTotal: Number(r.plan_total) || 0,
+          planDone: Number(r.plan_done) || 0,
+          bucket: r.bucket,
+          tier: r.tier ?? null,
+          risk: r.risk,
+          area: r.area || '',
+          // What actually landed, in the claimant's own words — '' until a
+          // session writes one.
+          builtNote: r.built_note || '',
+          reviewTag: r.review_tag || '',
+          reviewedAt: r.reviewed_at ? new Date(r.reviewed_at).toISOString() : null,
+          claimedWhen: relativeTime(r.updated_at) || '',
+        })),
       reviewCount: reviewByP.get(p.id) || 0,
       // #255 — how much of this board still has no design, and whether a plan
       // session is already standing by to fix that. `unplanned` counts exactly
