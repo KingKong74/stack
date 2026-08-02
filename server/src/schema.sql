@@ -326,6 +326,17 @@ CREATE TABLE IF NOT EXISTS checks (
 );
 CREATE INDEX IF NOT EXISTS idx_checks_project ON checks (project_id, created_at);
 
+-- External checks (#291). Most checks are HTTP probes the SERVER runs from
+-- inside its own container; the #291 UI smoke harness drives a real browser
+-- on the HOST and takes ~90 seconds — it can never be an HTTP probe, but its
+-- result still belongs on the Quality page beside the rest of the suite, or
+-- nobody will ever look at it. external = true marks a row whose result is
+-- REPORTED by something that ran outside Stack (POST /report) rather than
+-- produced by Stack's own runner. The load-bearing consequence: POST /run
+-- MUST skip external rows — firing an HTTP GET at one would overwrite the
+-- reported result with the outcome of a request that tested nothing.
+ALTER TABLE checks ADD COLUMN IF NOT EXISTS external BOOLEAN NOT NULL DEFAULT false;
+
 -- #278 — the bug↔check link, the one data change the merged Quality page needed.
 -- Which check caught this bug: a red check wears the bug filed from it, and the
 -- bug wears the check that caught it, so the run→file→fix→re-run loop never

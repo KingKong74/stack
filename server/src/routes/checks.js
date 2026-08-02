@@ -117,7 +117,14 @@ checks.patch('/:id', async (req, res) => {
   if (!Object.keys(f).length) return res.json(checkShape(existing));
 
   const merged = { ...existing, ...f };
-  const definitionChanged = ['url', 'method', 'expect_status', 'req_body', 'contains', 'json_path', 'json_expect', 'semantic', 'auth']
+  // #291 — an EXTERNAL check's url is a label (who reported it, for a human
+  // reading the row), not the thing under test: what actually runs is the
+  // outside harness, and nothing PATCHable here touches that. Clearing its
+  // reported history because someone relabelled the url would wipe a real
+  // record for a reason that has nothing to do with what it tests, so
+  // external rows never trip the clear — only /report ever writes their
+  // result and history, and only /report is allowed to invalidate it.
+  const definitionChanged = !existing.external && ['url', 'method', 'expect_status', 'req_body', 'contains', 'json_path', 'json_expect', 'semantic', 'auth']
     .some((k) => (merged[k] ?? null) !== (existing[k] ?? null));
 
   const { rows: [saved] } = await q(
@@ -272,14 +279,51 @@ async function probe(row, project) {
   }
 }
 
+// #279/#291 — cap one check's history to CHECK_HISTORY_KEEP rows. Shared by
+// POST /run (prunes a whole batch in one statement) and POST /report (prunes
+// the single reported check) so the two write paths can never drift apart on
+// how the cap is applied.
+async function pruneCheckHistory(checkIds) {
+  if (!checkIds.length) return;
+  await q(
+    `DELETE FROM check_results WHERE id IN (
+       SELECT id FROM (
+         SELECT id, row_number() OVER (PARTITION BY check_id ORDER BY run_at DESC, id DESC) AS rn
+           FROM check_results WHERE check_id = ANY($1::int[])
+       ) ranked WHERE rn > $2
+     )`,
+    [checkIds, CHECK_HISTORY_KEEP]
+  );
+}
+
 // POST /run  -> run every check (or one, with body {id}); returns updated shapes.
 // Every run also lands a summary row in check_runs — the Quality tab's History.
 checks.post('/run', async (req, res) => {
   const one = Number(req.body?.id);
-  const { rows } = await q(
-    `SELECT * FROM checks WHERE project_id = $1 ${Number.isFinite(one) && one > 0 ? 'AND id = $2' : ''} ORDER BY created_at`,
-    Number.isFinite(one) && one > 0 ? [req.project.id, one] : [req.project.id]
-  );
+  const wantsOne = Number.isFinite(one) && one > 0;
+
+  let rows;
+  if (wantsOne) {
+    const { rows: found } = await q(
+      'SELECT * FROM checks WHERE project_id = $1 AND id = $2', [req.project.id, one]
+    );
+    if (!found.length) return res.status(404).json({ error: 'Nothing to run.' });
+    // #291 — an external row's result is REPORTED by something that ran
+    // outside Stack; probing it here would overwrite that report with the
+    // outcome of a request that tested nothing.
+    if (found[0].external) {
+      return res.status(400).json({ error: 'This check is reported by an external runner, not run by Stack.' });
+    }
+    rows = found;
+  } else {
+    // #291 — same reason, for the whole batch: external rows are excluded
+    // from a run-all rather than silently probed and overwritten.
+    const { rows: all } = await q(
+      'SELECT * FROM checks WHERE project_id = $1 AND NOT external ORDER BY created_at',
+      [req.project.id]
+    );
+    rows = all;
+  }
   if (!rows.length) return res.status(404).json({ error: 'Nothing to run.' });
 
   const started = Date.now();
@@ -314,19 +358,85 @@ checks.post('/run', async (req, res) => {
          FROM checks c WHERE c.id = ANY($3::int[])`,
       [req.project.id, run.id, rows.map((r) => r.id)]
     );
-    await q(
-      `DELETE FROM check_results WHERE id IN (
-         SELECT id FROM (
-           SELECT id, row_number() OVER (PARTITION BY check_id ORDER BY run_at DESC, id DESC) AS rn
-             FROM check_results WHERE check_id = ANY($1::int[])
-         ) ranked WHERE rn > $2
-       )`,
-      [rows.map((r) => r.id), CHECK_HISTORY_KEEP]
-    );
+    await pruneCheckHistory(rows.map((r) => r.id));
   } catch (e) {
     console.error('check history insert failed:', e.message);
   }
   res.json(updated);
+});
+
+// POST /report -> the external result inlet (#291). A check whose result comes
+// from OUTSIDE Stack (right now: the host-run UI smoke harness) reports itself
+// here instead of being probed. Body: { name, status, code?, ms?, error?, url? }.
+//
+//  • `name` is the IDENTITY, exactly as it is for the seeded suite
+//    (stack-seed-checks.mjs matches by name too) — trimmed and capped the same
+//    way parseFields does. The first report for a name PLANTS the row
+//    (external: true, url defaulted to the literal 'external' since the
+//    column is NOT NULL); every later report updates that same row.
+//  • A name already owned by a non-external check 409s rather than silently
+//    converting a real probe into a reported one — that would let anything
+//    posting here retire a check it never ran.
+//  • Deliberately does NOT insert a check_runs row. check_runs is the SUITE's
+//    ledger ("the suite ran, N of M passed") and is what "checks green" is
+//    read from — the gate #212 risk-tiered auto-merge and #263 auto-verdict
+//    spend against. A single reported result landing there would read as a
+//    whole suite run of 1/1 passed, and a green light nothing earned is
+//    exactly what must not be manufacturable from outside. The per-check
+//    history in check_results is the right home — it's what the Quality
+//    page's per-check sparkline reads — so that's all this writes.
+checks.post('/report', async (req, res) => {
+  const body = req.body || {};
+  const name = String(body.name || '').trim().slice(0, 120);
+  if (!name) return res.status(400).json({ error: 'Name is required.' });
+  const status = String(body.status || '').trim().toLowerCase();
+  if (status !== 'pass' && status !== 'fail') {
+    return res.status(400).json({ error: "status must be 'pass' or 'fail'." });
+  }
+  const code = Number.isFinite(Number(body.code)) ? Math.trunc(Number(body.code)) : null;
+  const ms = Number.isFinite(Number(body.ms)) ? Math.trunc(Number(body.ms)) : null;
+  const error = body.error ? String(body.error).trim().slice(0, 500) : null;
+  const url = body.url ? String(body.url).trim().slice(0, 500) : '';
+
+  const { rows: [existing] } = await q(
+    'SELECT * FROM checks WHERE project_id = $1 AND name = $2', [req.project.id, name]
+  );
+  if (existing && !existing.external) {
+    return res.status(409).json({
+      error: `A check named "${name}" already exists and is not external — rename one of them.`,
+    });
+  }
+
+  let row = existing;
+  if (!row) {
+    const { rows: [created] } = await q(
+      `INSERT INTO checks (project_id, name, url, expect_status, external)
+       VALUES ($1,$2,$3,200,true) RETURNING *`,
+      [req.project.id, name, url || 'external']
+    );
+    row = created;
+  }
+
+  const { rows: [saved] } = await q(
+    `UPDATE checks SET last_status = $2, last_code = $3, last_ms = $4,
+                       last_error = $5, last_run_at = now()
+      WHERE id = $1 RETURNING *`,
+    [row.id, status, code, ms, error]
+  );
+
+  // Same as POST /run: the history write never blocks the response.
+  try {
+    await q(
+      `INSERT INTO check_results (check_id, project_id, run_id, status, code, ms, error)
+       VALUES ($1,$2,NULL,$3,$4,$5,$6)`,
+      [row.id, req.project.id, status, code, ms, error]
+    );
+    await pruneCheckHistory([row.id]);
+  } catch (e) {
+    console.error('check history insert failed:', e.message);
+  }
+
+  res.json(checkShape(saved));
 });
 
 // GET /history?limit=  -> #279, each check's own last N results, newest first,

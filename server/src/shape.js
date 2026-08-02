@@ -124,6 +124,7 @@ export function checkShape(row) {
     jsonExpect: row.json_expect || '',   // expected value at that path ('' = just exist)
     semantic: row.semantic || '',        // plain-language expectation, judged by Gemini
     auth: !!row.auth,                    // #261 — run with the app's own bearer token (same-origin only)
+    external: !!row.external,            // #291 — result REPORTED from outside Stack; POST /run skips it
     lastStatus: row.last_status || '',   // '' = never run
     lastCode: row.last_code ?? null,
     lastMs: row.last_ms ?? null,

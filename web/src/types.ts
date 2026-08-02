@@ -242,6 +242,8 @@ export interface Check {
   jsonExpect: string;  // expected value at that path ('' = just exist)
   semantic: string;    // plain-language expectation, judged by Gemini on run
   auth: boolean;       // #261 — run with the app's own token (same-origin only)
+  external: boolean;   // #291 — result REPORTED by something outside Stack (POST
+                        // /report); Stack never probes it and offers no Run button
   lastStatus: '' | 'pass' | 'fail';
   lastCode: number | null;
   lastMs: number | null;

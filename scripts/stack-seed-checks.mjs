@@ -28,6 +28,11 @@
 //    own token, and only to this project's own origin (see routes/checks.js).
 //  • The probe runs INSIDE the server container, so the URL has to be reachable
 //    from there: the project's public site_url, or a compose-internal host.
+//  • The #291 UI smoke check is NOT here. Everything in this file is an HTTP
+//    probe the server itself runs; the smoke harness drives a real browser on
+//    the HOST and takes ~90 seconds, so it can never be one of these. Its row
+//    is planted by the harness's own first POST /report, not seeded — see
+//    checks.external in schema.sql and routes/checks.js.
 
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
