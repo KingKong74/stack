@@ -89,6 +89,13 @@ Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
 `auto/item-12-ui`). The SessionStart block lists current claims. The protocol:
 
 - **Never start an item claimed by another branch.**
+- **Never start an unapproved auto-found item.** An item with `source: "hook"`
+  was extracted from a push by the tooling, not written by the owner, and until
+  they sign it off in the Plan room inbox (`reviewed: true`) it is not work
+  anybody has agreed to. Every unattended path already refuses it, so if you
+  find one in front of you, leave it and take the next item. An item with
+  `source: "manual"` is approved the moment it exists — a human wrote it —
+  whatever `reviewed` says.
 - **Never start an item with `skipped: true`** — it's parked on purpose; the
   owner unparks it from the UI when it's back in play. (The Roadmap tab's Parked
   view ages every parked item and flags the stale ones, so nothing rots unseen.)
