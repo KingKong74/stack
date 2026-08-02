@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { geminiEnabled } from '../gemini.js';
+import { termAgentConnected } from '../term.js';
 import { AGENT_MODELS, agentByKey, agentShape, readAgents, readAgent, writeAgent } from '../agents.js';
 
 // The TAB AGENTS surface (#361) — app-wide, no slug, read by Mission Control's
@@ -19,11 +19,14 @@ export const agents = Router();
 agents.get('/', async (_req, res) => {
   const all = await readAgents();
   res.json({
-    // Whether Gemini is configured at all is the frame around every switch on
-    // this screen: an agent can be ON and still unable to act. Saying so here
-    // is what stops the room reading a keyless server as three healthy agents.
-    geminiReady: geminiEnabled(),
-    defaultModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    // #364 — whether the BACKEND is reachable is the frame around every switch
+    // on this screen: an agent can be ON and still unable to act. The agents
+    // run Claude on the host now, so the frame is the daemon, not a key.
+    // Saying so here is what stops the room reading a disconnected host as
+    // three healthy agents. (`geminiReady` is deliberately gone from this
+    // payload rather than left lying: it stopped being this room's question.)
+    hostReady: termAgentConnected(),
+    defaultModel: '',
     models: AGENT_MODELS,
     agents: all.map(agentShape),
   });

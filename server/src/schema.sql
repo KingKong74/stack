@@ -901,7 +901,7 @@ CREATE TABLE IF NOT EXISTS skill_reports (
 CREATE TABLE IF NOT EXISTS agent_configs (
   key          TEXT PRIMARY KEY,                 -- registry key: auditor | curator | polaris
   enabled      BOOLEAN NOT NULL DEFAULT true,    -- off = the agent refuses every op, 409
-  model        TEXT NOT NULL DEFAULT '',         -- Gemini model override; '' = the server's
+  model        TEXT NOT NULL DEFAULT '',         -- Claude alias override (#364); '' = the CLI's own
   guidance     TEXT NOT NULL DEFAULT '',         -- the owner's standing steer, prefixed to every prompt
   ops_off      JSONB NOT NULL DEFAULT '[]',      -- op names this agent may not run (subset of its own)
   runs         INTEGER NOT NULL DEFAULT 0,       -- how many times it has been asked
@@ -910,3 +910,8 @@ CREATE TABLE IF NOT EXISTS agent_configs (
   last_outcome TEXT NOT NULL DEFAULT '',         -- 'ok' or the error — an agent that keeps failing says so
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- #364 — what an agent has spent, accumulated. The agents run Claude on the
+-- host through the CLI, which reports the cost of every run, and this is the
+-- only place the owner can see what the ✧ buttons cost. NUMERIC, so it comes
+-- back from pg as a STRING and needs Number() on the way out.
+ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS cost_usd NUMERIC NOT NULL DEFAULT 0;

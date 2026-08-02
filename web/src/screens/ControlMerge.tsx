@@ -209,8 +209,13 @@ export function MergeRoom({
     return next;
   });
 
+  // Opens on ANYTHING in the plan, held rows included. The first cut guarded on
+  // `list.length` — the auto rows — and the default autonomy is 'plan', so on a
+  // fresh house ▶ Run had nothing in `list` and returned silently: a headline
+  // button that did nothing at all, with no way to find out why. Held rows are
+  // a state the dialog has to be able to SHOW, not a reason not to open it.
   const openRun = (what: string, list: Row[], hold: Row[]) => {
-    if (!list.length) return;
+    if (!list.length && !hold.length) return;
     setQueued({});
     setErr('');
     setRun({ what, rows: list, hold });
@@ -293,7 +298,11 @@ export function MergeRoom({
         <input className="mc-merge-q" value={q} onChange={(e) => setQ(e.target.value)}
           placeholder="filter branches" aria-label="Filter branches" />
         <button className="btn-accent mc-merge-run" disabled={!flatPlan.length}
-          title={flatPlan.length ? 'Open the agent’s plan — nothing is queued until you press again inside it' : 'Nothing mergeable to plan'}
+          title={!flatPlan.length
+            ? 'Nothing mergeable to plan — every open branch conflicts, is unprobed, or sits in a project set to Off.'
+            : agentRows.length
+              ? `Open the plan — ${agentRows.length} branch${agentRows.length === 1 ? '' : 'es'} would be queued, and nothing is queued until you press again inside it.`
+              : 'Open the plan — every project in it is set to Plan, so the dialog will ask before it queues anything.'}
           onClick={() => openRun('the merge agent’s plan', agentRows, agentHold)}>▶ Run merge agent</button>
       </div>
 
@@ -496,7 +505,7 @@ export function MergeRoom({
           runRows={run.rows} hold={run.hold}
           queued={queued} running={running}
           onClose={() => setRun(null)}
-          onRun={() => void queueAll(run.rows)} />
+          onRun={(rows) => void queueAll(rows)} />
       )}
     </div>
   );
@@ -670,15 +679,22 @@ function RunPlanModal({ what, order, runRows, hold, queued, running, onClose, on
   queued: Record<string, string>;
   running: boolean;
   onClose: () => void;
-  onRun: () => void;
+  onRun: (rows: Row[]) => void;
 }) {
   // The dialog re-plans over exactly the branches it is about, so a scoped run
   // (one project, or the ticked rows) shows its OWN waves rather than the
   // agent's house-wide ordering with most of it missing.
   const waves = planWaves([...runRows, ...hold], order);
-  const inRun = new Set(runRows.map((r) => r.key));
-  const done = runRows.filter((r) => queued[r.key] === '').length;
-  const failed = runRows.filter((r) => queued[r.key]).length;
+  // What THIS press queues. Normally the auto rows; when the plan is entirely
+  // held (every project set to Plan, which is the default) the held rows are
+  // what the press queues instead — because you are standing in front of the
+  // full list, which is the moment Plan exists to reach. The copy says which
+  // of the two is happening; the dialog is never a dead end.
+  const holdOnly = runRows.length === 0 && hold.length > 0;
+  const willQueue = holdOnly ? hold : runRows;
+  const inRun = new Set(willQueue.map((r) => r.key));
+  const done = willQueue.filter((r) => queued[r.key] === '').length;
+  const failed = willQueue.filter((r) => queued[r.key]).length;
   const started = done + failed > 0;
 
   return (
@@ -686,11 +702,17 @@ function RunPlanModal({ what, order, runRows, hold, queued, running, onClose, on
       <div className="modal mc-merge-modal" onClick={(e) => e.stopPropagation()}>
         <h3>Merge agent — {started ? 'queued' : 'the plan'}</h3>
         <p className="mc-merge-modalsub">
-          {runRows.length} branch{runRows.length === 1 ? '' : 'es'} from {what} into <code>main</code>, in {waves.length} area-disjoint
+          {willQueue.length} branch{willQueue.length === 1 ? '' : 'es'} from {what} into <code>main</code>, in {waves.length} area-disjoint
           wave{waves.length === 1 ? '' : 's'}. Each queues a merge job; the host runs them one at a
           time, merging into the main the last one produced, deleting the remote branch as it goes.
           The first failure stops the rest. Nothing is ticked — the verdict stays yours.
-          {hold.length > 0 && <> {hold.length} more {hold.length === 1 ? 'is' : 'are'} in the plan for ordering but held back: their project is set to Plan.</>}
+          {holdOnly
+            ? <> Every project in this plan is set to <b>Plan</b>, which is why nothing was queued on
+                the press: Plan means the agent shows you the list first. Queueing from here is that
+                confirmation. Set a project to <b>Auto</b> in the rail to skip this step for it.</>
+            : hold.length > 0
+              ? <> {hold.length} more {hold.length === 1 ? 'is' : 'are'} in the plan for ordering but held back: their project is set to Plan.</>
+              : null}
         </p>
 
         <div className="mc-merge-steps">
@@ -707,7 +729,7 @@ function RunPlanModal({ what, order, runRows, hold, queued, running, onClose, on
                     <span className="sl">{r.branch.branch}</span>
                     <span className="ar">{r.area || '—'}</span>
                     <span className="st">
-                      {q === '' ? 'merge queued' : q ? q : isIn ? (started ? 'not reached' : 'will queue') : 'held — project set to Plan'}
+                      {q === '' ? 'merge queued' : q ? q : isIn ? (started ? 'not reached' : 'will queue') : 'not in this press'}
                     </span>
                   </div>
                 );
@@ -720,8 +742,11 @@ function RunPlanModal({ what, order, runRows, hold, queued, running, onClose, on
           <button className="btn-cancel" disabled={running} onClick={onClose}>
             {started ? 'Close' : 'Cancel'}
           </button>
-          <button className="btn-submit" disabled={running || started || !runRows.length} onClick={onRun}>
-            {running ? 'Queueing…' : started ? `${done} queued${failed ? `, ${failed} failed` : ''}` : `Queue ${runRows.length} merge${runRows.length === 1 ? '' : 's'}`}
+          <button className="btn-submit" disabled={running || started || !willQueue.length}
+            onClick={() => onRun(willQueue)}>
+            {running ? 'Queueing…' : started ? `${done} queued${failed ? `, ${failed} failed` : ''}`
+              : holdOnly ? `Queue ${willQueue.length} held merge${willQueue.length === 1 ? '' : 's'}`
+              : `Queue ${willQueue.length} merge${willQueue.length === 1 ? '' : 's'}`}
           </button>
         </div>
       </div>

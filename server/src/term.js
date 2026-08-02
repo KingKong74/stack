@@ -160,6 +160,50 @@ export function answerTmuxPrompt(name, fingerprint, choice, timeoutMs = 8_000) {
   });
 }
 
+// #364 — run a tab agent's prompt through Claude on the HOST.
+//
+// Same correlated request/reply as answerTmuxPrompt above, and for the same
+// reason it exists at all: the server cannot execute anything on the host. It
+// runs in a container and the firewall drops container→host, so every host
+// capability Stack has is the daemon dialling OUT and being asked over the
+// socket it holds open. This is that, for the CLI.
+//
+// The timeout is generous where the prompt one is tight (8s there, minutes
+// here): answering a permission prompt is a keystroke, and a model reading a
+// project's whole quality page is not. It is still bounded — an unbounded wait
+// would hold the ✧ button's HTTP request open until the browser gave up, with
+// nothing on screen saying why.
+//
+// FAIL SILENT, not fail open: with no daemon on the line this REFUSES and says
+// so. There is no second backend to fall through to, and pretending an agent
+// ran while the host was unreachable would put an empty answer where a real
+// one belongs — the same rule as a NULL review verdict.
+let claudeSeq = 0;
+const pendingClaude = new Map(); // id -> resolve
+export function askClaudeOnHost(prompt, { timeoutMs = 180_000, model = '' } = {}) {
+  if (!agentSend) {
+    return Promise.resolve({ ok: false, error: 'the host daemon is not connected, so no agent can run' });
+  }
+  const id = `c${++claudeSeq}`;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingClaude.delete(id);
+      resolve({ ok: false, error: 'the host did not answer in time' });
+    }, timeoutMs + 5_000); // the host kills at timeoutMs; this only catches a dead socket
+    pendingClaude.set(id, (m) => {
+      clearTimeout(timer);
+      resolve({
+        ok: m.ok === true,
+        text: String(m.text || ''),
+        error: String(m.error || ''),
+        costUsd: Number(m.costUsd) || 0,
+        model: String(m.model || ''),
+      });
+    });
+    agentSend({ t: 'claudeAsk', id, prompt, timeoutMs, model });
+  });
+}
+
 export function attachTerm(httpServer) {
   const wss = new WebSocketServer({ noServer: true });
   let agent = null;
@@ -286,6 +330,14 @@ export function attachTerm(httpServer) {
       if (m.t === 'answered' && m.id) {
         const waiting = pendingAnswers.get(m.id);
         if (waiting) { pendingAnswers.delete(m.id); waiting(m); }
+        return;
+      }
+
+      // claudeAnswer — the host's reply to an agent prompt it ran through the
+      // CLI (#364). Correlated exactly like `answered`.
+      if (m.t === 'claudeAnswer' && m.id) {
+        const waiting = pendingClaude.get(m.id);
+        if (waiting) { pendingClaude.delete(m.id); waiting(m); }
         return;
       }
 

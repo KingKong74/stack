@@ -43,7 +43,7 @@
 //   The chosen provider is persisted to ~/.stack/term-model.json.
 
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -708,6 +708,107 @@ function startSession(msg) {
   if (tmuxSession) pushDetached(); // a re-attach just consumed a detached entry
 }
 
+// ---- running a tab agent's prompt through Claude on this host ---------------
+//
+// #364 — Stack's tab agents (Auditor · Curator · Polaris) and the Merge room's
+// agent run on CLAUDE now, not on the Gemini API, and this is where they run.
+// The server composes the prompt and cannot execute anything: it lives in a
+// container and the host firewall drops container→host, so it asks over the
+// uplink this daemon already holds open — the same correlated request/reply
+// shape as answerPrompt above, and the same shape the autopilot uses to reach
+// the CLI. No API key is involved anywhere: this is the owner's own Claude
+// subscription through `claude -p`, which is why it satisfies the project's
+// standing rule against paid external AI APIs.
+//
+// THREE THINGS ARE LOAD-BEARING, and all three are about what a prompt that
+// arrives over a socket must NOT be able to do:
+//
+//   • EVERY TOOL IS DISABLED. `--disallowed-tools` names the write and read
+//     tools explicitly and `--permission-mode plan` refuses the rest, so the
+//     session can only think and answer. An agent prompt is composed from
+//     tracker rows, and a tracker row is text somebody else wrote; if a
+//     crafted note could talk the model into a Bash call, the note author
+//     would have a shell on this host. It cannot, because there is no tool to
+//     call. This is deliberately NOT the autopilot's posture — that runs with
+//     --dangerously-skip-permissions because it is MEANT to write code, in a
+//     throwaway worktree, from a prompt the runner composed itself.
+//   • IT RUNS IN A SCRATCH DIRECTORY, never a repo. Combined with the above
+//     that is belt and braces, but it means the worst case of a tool slipping
+//     through a future CLI change is an empty directory rather than the source.
+//   • IT IS BOUNDED. A timeout the server sets, killed on expiry, and the
+//     reply says so. A hung `claude` must not silently hold a ✧ button open.
+//
+// The reply carries the model's text plus what the run COST, because the CLI
+// reports it and the agent ledger is the only place the owner can see what
+// these buttons spend.
+const AGENT_SCRATCH = join(homedir(), '.stack', 'agent-run');
+const AGENT_NO_TOOLS = [
+  'Bash', 'Edit', 'Write', 'NotebookEdit', 'Read', 'Glob', 'Grep',
+  'WebFetch', 'WebSearch', 'Task', 'TodoWrite',
+];
+
+function claudeAsk(m) {
+  const id = m.id;
+  const done = (ok, out) => sendUplink({ t: 'claudeAnswer', id, ok, ...out });
+  const prompt = String(m.prompt || '');
+  if (!prompt.trim()) return done(false, { error: 'empty prompt' });
+
+  const args = ['-p', prompt, '--output-format', 'json', '--permission-mode', 'plan',
+    '--disallowed-tools', ...AGENT_NO_TOOLS];
+  // The model is validated server-side against the same charset the settings
+  // aliases use; re-checked here because this process is the one that execs.
+  if (m.model && /^[a-z0-9][a-z0-9._-]{0,99}$/i.test(String(m.model))) {
+    args.push('--model', String(m.model));
+  }
+  try { mkdirSync(AGENT_SCRATCH, { recursive: true }); } catch { /* best effort */ }
+
+  const timeoutMs = Math.min(600_000, Math.max(10_000, Number(m.timeoutMs) || 120_000));
+  let out = '', err = '', finished = false;
+  const child = spawn('claude', args, {
+    cwd: existsSync(AGENT_SCRATCH) ? AGENT_SCRATCH : homedir(),
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const timer = setTimeout(() => {
+    if (finished) return;
+    finished = true;
+    try { child.kill('SIGTERM'); } catch { /* already gone */ }
+    log(`agent ask ${id}: timed out after ${Math.round(timeoutMs / 1000)}s`);
+    done(false, { error: `claude did not answer within ${Math.round(timeoutMs / 1000)}s on this host` });
+  }, timeoutMs);
+
+  child.stdout.on('data', (d) => { out += d; });
+  child.stderr.on('data', (d) => { err += d; });
+  child.on('error', (e) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    done(false, { error: `could not start claude on this host: ${e.message}` });
+  });
+  child.on('close', (code) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    let parsed = null;
+    try { parsed = JSON.parse(out); } catch { /* not JSON — reported below */ }
+    if (!parsed) {
+      return done(false, {
+        error: code === 0
+          ? 'claude returned something that was not JSON'
+          : `claude exited ${code}: ${(err || out).trim().slice(0, 200) || 'no output'}`,
+      });
+    }
+    if (parsed.is_error) {
+      return done(false, { error: String(parsed.result || 'claude reported an error').slice(0, 300) });
+    }
+    log(`agent ask ${id}: ${String(parsed.result || '').length} chars, $${Number(parsed.total_cost_usd || 0).toFixed(4)}`);
+    done(true, {
+      text: String(parsed.result ?? ''),
+      costUsd: Number(parsed.total_cost_usd) || 0,
+      model: Object.keys(parsed.modelUsage || {})[0] || '',
+    });
+  });
+}
+
 // ---- answering a permission prompt from Mission Control ---------------------
 //
 // The only path by which anything other than a human at the keyboard types
@@ -864,6 +965,7 @@ function connect() {
       pushDetached();
     }
     else if (m.t === 'answerPrompt') answerPrompt(m);
+    else if (m.t === 'claudeAsk') claudeAsk(m);
     else if (m.t === 'kill') {
       if (sess?.switchMode) {
         // Browser tab closed during the switch prompt — clean up gracefully.

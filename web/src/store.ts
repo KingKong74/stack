@@ -1911,7 +1911,7 @@ export interface TabAgentOp {
   op: string;
   label: string;
   hint: string;
-  gemini: boolean;    // false = costs no key (the Auditor's Claude hand-off prompt)
+  needsModel: boolean; // false = asks no model at all (the Auditor's hand-off prompt)
   enabled: boolean;
 }
 
@@ -1923,19 +1923,22 @@ export interface TabAgent {
   blurb: string;
   remit: string;      // what the model itself is told it may work on
   enabled: boolean;
-  model: string;      // '' = the server's own Gemini model
+  model: string;      // #364 — a Claude alias ('' = the CLI's own default)
   guidance: string;   // the owner's standing steer, prefixed to every prompt
   ops: TabAgentOp[];
   // The ledger: an agent that keeps failing says so here rather than only in a
   // toast the owner saw once.
   runs: number;
+  costUsd: number;    // #364 — what it has actually spent, from the CLI's own report
   lastRunAt: string | null;
   lastOp: string;
   lastOutcome: string; // 'ok' or the error message
 }
 
 export interface TabAgentsData {
-  geminiReady: boolean;   // no key = every agent is idle whatever its switch says
+  // #364 — the agents run Claude on the HOST, so the frame around every switch
+  // is the daemon, not an API key: an agent can be on and still unable to act.
+  hostReady: boolean;
   defaultModel: string;
   models: { model: string; label: string }[];
   agents: TabAgent[];
@@ -1957,7 +1960,7 @@ export async function patchAgent(
 
 // The compact per-project read that rides the detail payload: which agents may
 // act, and which of their ops. Keyed by agent.
-export type TabAgentState = Partial<Record<TabAgentKey, { name: string; tab: string; enabled: boolean; ops: string[] }>>;
+export type TabAgentState = Partial<Record<TabAgentKey, { name: string; tab: string; enabled: boolean; ready?: boolean; ops: string[] }>>;
 
 // May this tab's agent run this op right now? UNKNOWN MEANS YES — an older
 // server sends no agent state at all, and hiding a working feature because the
@@ -1967,7 +1970,11 @@ export type TabAgentState = Partial<Record<TabAgentKey, { name: string; tab: str
 export function agentCan(state: TabAgentState | undefined, key: TabAgentKey, op: string): boolean {
   const a = state?.[key];
   if (!a) return true;
-  return a.enabled && a.ops.includes(op);
+  // #364 — `ready` is the BACKEND (the host daemon that runs Claude), `enabled`
+  // is the owner's switch. Both are required to offer a ✧, and they are kept
+  // apart so the reason below can say which one is missing. `ready` is optional
+  // so a server that pre-dates the Claude backend still reads as usable.
+  return a.enabled && a.ready !== false && a.ops.includes(op);
 }
 
 // What to say instead. Reads the same state, so the reason is never invented:
@@ -1975,9 +1982,14 @@ export function agentCan(state: TabAgentState | undefined, key: TabAgentKey, op:
 export function agentOffReason(state: TabAgentState | undefined, key: TabAgentKey, op: string): string {
   const a = state?.[key];
   if (!a || agentCan(state, key, op)) return '';
-  return a.enabled
-    ? `The ${a.name} can still work here, but this one is switched off.`
-    : `The ${a.name} is switched off.`;
+  // Order matches the server's gate: the owner's switch is reported before the
+  // backend, so somebody who turned an agent off is not sent to investigate a
+  // host that is fine.
+  if (!a.enabled) return `The ${a.name} is switched off.`;
+  if (a.ready === false) {
+    return `The ${a.name} runs Claude on the host, and the host daemon is not connected.`;
+  }
+  return `The ${a.name} can still work here, but this one is switched off.`;
 }
 
 // ---- inbox triage (#76 — Gemini's cross-project review assist) ----
