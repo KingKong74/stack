@@ -171,6 +171,21 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   which parallel session owns an open item, shows as a ⚑ chip and is injected by the SessionStart
   hook as "Branch claims — respect these". Claim before starting; a terminal tab's claim is
   `term:<name>`. The claim is the don't-re-pick marker and stays until a human merges and ticks.
+- **An area lane is `(project, area)`, and untagged is never a lane** (#267). `roadmap_items.area` is
+  a plain product tag, but an area with an OPEN claimed item admits no second worker — two branches
+  in one area collide at merge time. The rule lives in `server/src/lanes.js` (pure, tested by
+  `server/test/area-lanes.test.mjs`) and is MIRRORED in four runtimes that cannot import each other:
+  the claim in `routes/autopilot.js` `GET /next`, `pickFor()` in `routes/control.js`, the host
+  runner's pick in `scripts/stack-autopilot.mjs`, and `schedulable()`/`heldWhy()` in
+  `web/src/screens/ControlRooms.tsx` — change the rule in one and change it in all four. Two
+  carve-outs are load-bearing: an untagged (`''`) area never occupies a lane and can never be blocked
+  by one (otherwise every untagged item collapses into one giant lane and the night silently does
+  nothing), and a lane is keyed on the project too (the same tag in two repos stalls an unrelated
+  project's whole night). A worker never blocks itself — the runner exempts claims it made this
+  session, and the dispatcher's claim exempts a job pinned to an item already claimed by its own
+  lane (that is a resume). A skipped job/item always logs why (`~/.stack/autopilot.log`, via
+  `GET /next`'s `heldByArea`) and shows as `waiting on the <area> lane` under OUT OF THE SCHEDULE —
+  a lane delay must never be a silence.
 - **`built_note`** — what actually landed, PATCHed by the completing session alongside `done:true`.
   The Review room verdicts against it. Always write one.
 - **A future's SHAPE in the Polaris galaxy (#312) is derived, never stored.** There is no `kind`
@@ -444,6 +459,7 @@ cp hook/*.mjs ~/.stack/                    # install the hooks — ~/.stack hold
 node server/test/ingest-identity.test.mjs  # one activity row per SESSION (needs a throwaway server)
 node server/test/run-shape.test.mjs        # the run ledger's shared shapes match the old copies
 node server/test/fleet-roles.test.mjs      # role attribution + drift detection (pure, no DB)
+node server/test/area-lanes.test.mjs       # an area lane admits one worker (pure, no DB)
 node server/test/workbench.test.mjs        # the canvas is a placement layer (needs API + DATABASE_URL)
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
