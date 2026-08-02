@@ -370,7 +370,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     if (initialCwd) {
       const i = saved.findIndex((t) => t.cwd === initialCwd);
       if (i >= 0) setActive(ids[i]);
-      else openSession(initialCwd, getTermSessionPrefs().autoStart);
+      // The device's autoStart is what a plain ⌨ press should respect, but a
+      // button labelled "Jump back in" that lands you in a bare shell has not
+      // done what it said — it always opens claude.
+      else openSession(initialCwd, initialBrief ? 'claude' : getTermSessionPrefs().autoStart);
       return;
     }
     if (ids.length) { setActive(ids[0]); return; }
@@ -426,7 +429,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     setCwd(initialCwd);
     const existing = sessions.find((s) => s.cwd === initialCwd && (s.status === 'live' || s.status === 'connecting'));
     if (existing) setActive(existing.id);
-    else openSession(initialCwd, getTermSessionPrefs().autoStart);
+    else openSession(initialCwd, initialBrief ? 'claude' : getTermSessionPrefs().autoStart);
   }, [visible, initialCwd, initialAttach]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Liveness, reported up to App: quiets the global presence pill while the
