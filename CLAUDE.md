@@ -268,6 +268,13 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   passes were against a different test. Renaming keeps both.
 - **`0 = unlimited`** for `autopilotTokens` and `autopilotMaxItems` (#260); positive values are
   clamped. `termIdleHours` `0 = never`.
+- **The MERGE AGENT is arithmetic plus a read, and the two must not be confused** (#364). The waves
+  are computed in the browser from file paths and are deterministic; `POST /api/merge/review` is the
+  optional second half, where Claude reads the REAL diffs on the host and annotates that plan. It
+  never reorders and never queues — the human still presses. `verdict: 'ok'` with no notes is a REAL
+  answer (it read them and found nothing) and the panel must not render it like "no read has run".
+  The host caps the diffs per branch and overall and **states what it cut inside the prompt**, because
+  a model that silently saw a tenth of a diff answers confidently about the other nine.
 - **THE TAB AGENTS RUN CLAUDE ON THE HOST (#364), not Gemini.** `agentClient().ask()` goes through
   `askClaudeOnHost()` → the terminal daemon's uplink → `claude -p --output-format json`, which is the
   same CLI the autopilot uses and the same dial-out shape as the permission-prompt answer. It is the
@@ -423,7 +430,8 @@ reference. The index:
   `/api/projects/:slug/…` with `mergeParams`.
 - **Automation** — `autopilot.js` (the schedule, the job queue and the host dispatcher's
   `GET /next`), `previews.js`, `branches.js`, `skills.js`, `terminal.js`.
-- **Plumbing** — `ingest.js`, `settings.js`, `agents.js` (#361 — the tab agents' config; the
+- **Plumbing** — `ingest.js`, `settings.js`, `merge.js` (#364 — the Merge agent's read of a proposed
+  plan; the only agent op that needs the CODE, so the diffs are gathered host-side), `agents.js` (#361 — the tab agents' config; the
   REGISTRY itself is `src/agents.js`, not a route), `projects.js`, `presence.js`, `auth.js`, `devices.js`,
   `tips.js` (app-wide, no slug).
 

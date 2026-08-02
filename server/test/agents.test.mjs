@@ -28,22 +28,27 @@ const rejects = async (label, fn, match) => {
 };
 
 console.log('--- the registry ---');
-check('three agents', AGENTS.map((a) => a.key), ['auditor', 'curator', 'polaris']);
-check('one tab each, no tab shared', new Set(AGENTS.map((a) => a.tab)).size, AGENTS.length);
+check('the agents', AGENTS.map((a) => a.key), ['auditor', 'curator', 'merger', 'polaris']);
+check('one surface each, no surface shared', new Set(AGENTS.map((a) => a.tab)).size, AGENTS.length);
 check('every agent owns at least one op', AGENTS.every((a) => a.ops.length > 0), true);
 // The op → agent map is built at import time and throws on a duplicate, so a
 // second owner for an op cannot even load. This asserts the resolved mapping.
 check('audit belongs to the Auditor', agentForOp('audit').key, 'auditor');
 check('cleanup belongs to the Curator', agentForOp('cleanup').key, 'curator');
 check('judge belongs to Polaris', agentForOp('judge').key, 'polaris');
+check('mergeplan belongs to the Merge agent', agentForOp('mergeplan').key, 'merger');
 check('an op nobody owns resolves to nothing', agentForOp('nonsense'), null);
-check('the tabs are the project tabs', AGENTS.map((a) => a.tab), ['quality', 'roadmap', 'futures']);
+// Three project tabs and one Mission Control room (#364). The Merge agent is
+// bound exactly like the others — the binding is what the item is about, and it
+// does not care whether the surface is a tab or a room.
+check('the surfaces', AGENTS.map((a) => a.tab), ['quality', 'roadmap', 'merge', 'futures']);
 // Every op the ROUTES call has to exist here, or the call throws at runtime.
 // This list is the routes' side of the contract, written out so a renamed op
 // fails here rather than the first time somebody presses the button.
 const WIRED = {
   auditor: ['audit', 'auditprompt'],
   curator: ['titler', 'assist', 'cleanup', 'reviewbrief', 'refinedraft'],
+  merger: ['mergeplan'],
   polaris: ['judge', 'cluster', 'converge'],
 };
 for (const [key, ops] of Object.entries(WIRED)) {
@@ -60,6 +65,11 @@ await rejects('the Auditor cannot run the Curator\'s cleanup', () => auditor.gat
 await rejects('the Auditor cannot run Polaris\'s judge', () => auditor.gate('judge'), 'Polaris');
 await rejects('the Curator cannot run the audit', () => curator.gate('audit'), 'Auditor');
 await rejects('Polaris cannot run the assist', () => polaris.gate('assist'), 'Curator');
+// The Merge agent reads diffs across every project; it must not be able to
+// reach a project tab's op just because its remit is the widest.
+await rejects('the Merge agent cannot run the audit', () => agentClient('merger').gate('audit'), 'Auditor');
+await rejects('...nor the Curator\'s cleanup', () => agentClient('merger').gate('cleanup'), 'Curator');
+await rejects('and nobody else can run its mergeplan', () => auditor.gate('mergeplan'), 'Merge agent');
 await rejects('nobody can run an op that does not exist', () => curator.ask('sudo', 'x'), 'not an op');
 // And the message names the tab, so the exception says where the op belongs.
 await rejects('the refusal names the owning tab', () => auditor.gate('titler'), 'Roadmap tab');

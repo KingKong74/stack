@@ -1,9 +1,15 @@
-// THE TAB AGENTS (#361) — Stack's three in-app specialists, each one bound to
-// a single project tab.
+// THE AGENTS (#361, #364) — Stack's in-app specialists, each one bound to a
+// single SURFACE and unable to act anywhere else.
 //
-//   Auditor  · Quality tab  — reads the app and reports suspected bugs
-//   Curator  · Roadmap tab  — shapes what is on the board and writes it up
-//   Polaris  · Futures tab  — judges, themes and converges the idea funnel
+//   Auditor     · Quality tab   — reads the app and reports suspected bugs
+//   Curator     · Roadmap tab   — shapes the board and writes it up
+//   Polaris     · Futures tab   — judges, themes and converges the idea funnel
+//   Merge agent · Merge room    — reads the diffs of the branches about to land
+//
+// Three of the four are PROJECT tabs; the Merge agent is bound to a Mission
+// Control room instead, which is why "surface" and not "tab". Nothing else
+// about the binding changes: it owns one op, and the client that binds to it
+// throws on anybody else's.
 //
 // Before this file the same three jobs existed as eight loose Gemini routes,
 // each one opening `if (!geminiEnabled()) 503` and calling askGemini directly.
@@ -147,6 +153,17 @@ export const AGENTS = [
       { op: 'cleanup', label: 'Tidy the board', hint: 'Suggests fixes across the open items.' },
       { op: 'reviewbrief', label: 'Reviewer\'s brief', hint: 'Writes up a completed item for the verdict.' },
       { op: 'refinedraft', label: 'Refine draft', hint: 'Drafts the delta when an item is sent back.' },
+    ],
+  },
+  {
+    key: 'merger',
+    name: 'Merge agent',
+    tab: 'merge',
+    tabLabel: 'Merge',
+    blurb: 'Reads the diffs of the branches about to be merged and says which pairings should not go in the same wave.',
+    remit: "Mission Control's Merge room: the open branches of every project and the diffs they carry",
+    ops: [
+      { op: 'mergeplan', label: 'Read the plan', hint: 'Reads the real diffs and flags pairings the file paths missed.' },
     ],
   },
   {
@@ -386,6 +403,9 @@ export function agentClient(key) {
       const r = await askClaudeOnHost(full, {
         model: config.model || opts.model || '',
         timeoutMs: opts.timeoutMs,
+        // Host-side material the SERVER cannot gather (the Merge agent's real
+        // branch diffs). The host reads it and puts it in front of the prompt.
+        diffs: opts.diffs || null,
       });
       if (!r.ok) {
         void recordRun(agent.key, op, r.error || 'failed', 0);

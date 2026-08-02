@@ -180,7 +180,7 @@ export function answerTmuxPrompt(name, fingerprint, choice, timeoutMs = 8_000) {
 // one belongs — the same rule as a NULL review verdict.
 let claudeSeq = 0;
 const pendingClaude = new Map(); // id -> resolve
-export function askClaudeOnHost(prompt, { timeoutMs = 180_000, model = '' } = {}) {
+export function askClaudeOnHost(prompt, { timeoutMs = 180_000, model = '', diffs = null } = {}) {
   if (!agentSend) {
     return Promise.resolve({ ok: false, error: 'the host daemon is not connected, so no agent can run' });
   }
@@ -200,7 +200,10 @@ export function askClaudeOnHost(prompt, { timeoutMs = 180_000, model = '' } = {}
         model: String(m.model || ''),
       });
     });
-    agentSend({ t: 'claudeAsk', id, prompt, timeoutMs, model });
+    // `diffs` asks the host to read real git diffs for these branches and put
+    // them in front of the prompt. Only the host can: the server has the
+    // ~10-minute branch report, not the code.
+    agentSend({ t: 'claudeAsk', id, prompt, timeoutMs, model, ...(diffs ? { diffs } : {}) });
   });
 }
 
