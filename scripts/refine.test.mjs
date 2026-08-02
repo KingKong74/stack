@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Tests for refine-round branch resolution (#274).
+// Tests for refine-round branch resolution and the "never machine-closed"
+// invariant (#274).
 // Run: node scripts/refine.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { refineTargetBranch } from './lib/refine.mjs';
+import { refineTargetBranch, isRefineRound, autoMergeAllowed } from './lib/refine.mjs';
 
 const item274 = { id: 274, title: 'Refine job kind so refine queues work' };
 
@@ -60,4 +61,65 @@ test('refineTargetBranch: two non-legacy candidates in either order sort lexicog
   const b = ['feat/274-a-slug', 'feat/274-b-slug'];
   assert.equal(refineTargetBranch(item274, a), refineTargetBranch(item274, b));
   assert.equal(refineTargetBranch(item274, a), 'feat/274-a-slug');
+});
+
+// ---- isRefineRound ----
+
+test('isRefineRound: a non-empty refineNote is a refine round', () => {
+  assert.equal(isRefineRound({ id: 1, refineNote: 'tighten the copy' }), true);
+});
+
+test('isRefineRound: an empty string is not a refine round', () => {
+  assert.equal(isRefineRound({ id: 1, refineNote: '' }), false);
+});
+
+test('isRefineRound: a whitespace-only string is not a refine round', () => {
+  assert.equal(isRefineRound({ id: 1, refineNote: '   ' }), false);
+});
+
+test('isRefineRound: null/undefined refineNote is not a refine round', () => {
+  assert.equal(isRefineRound({ id: 1, refineNote: null }), false);
+  assert.equal(isRefineRound({ id: 1, refineNote: undefined }), false);
+  assert.equal(isRefineRound({ id: 1 }), false);
+});
+
+test('isRefineRound: a missing item is not a refine round', () => {
+  assert.equal(isRefineRound(null), false);
+  assert.equal(isRefineRound(undefined), false);
+});
+
+// ---- autoMergeAllowed: the #212 gate's full truth table ----
+
+const greenBase = { risk: 'low', limitHit: false, checksRan: 3, checksFailing: 0, reviewClean: true };
+
+test('autoMergeAllowed: low risk + green checks + clean review → allowed', () => {
+  assert.equal(autoMergeAllowed({ ...greenBase, item: { id: 1 } }), true);
+});
+
+test('autoMergeAllowed: THE RULE — the same all-green run is refused when the item carries a refine note (#274)', () => {
+  // Every other gate passes exactly as in the row above; only the refine
+  // note differs. A machine closing this round would discard the very
+  // judgement the human's send-back asked for.
+  assert.equal(autoMergeAllowed({ ...greenBase, item: { id: 1, refineNote: 'not quite right yet' } }), false);
+});
+
+test('autoMergeAllowed: not low risk → refused', () => {
+  assert.equal(autoMergeAllowed({ ...greenBase, risk: 'normal', item: { id: 1 } }), false);
+  assert.equal(autoMergeAllowed({ ...greenBase, risk: 'high', item: { id: 1 } }), false);
+});
+
+test('autoMergeAllowed: limit hit → refused', () => {
+  assert.equal(autoMergeAllowed({ ...greenBase, limitHit: true, item: { id: 1 } }), false);
+});
+
+test('autoMergeAllowed: zero checks ran is NOT a green signal (#212) → refused', () => {
+  assert.equal(autoMergeAllowed({ ...greenBase, checksRan: 0, checksFailing: 0, item: { id: 1 } }), false);
+});
+
+test('autoMergeAllowed: a failing check → refused', () => {
+  assert.equal(autoMergeAllowed({ ...greenBase, checksFailing: 1, item: { id: 1 } }), false);
+});
+
+test('autoMergeAllowed: no review verdict (reviewClean falsy) → refused', () => {
+  assert.equal(autoMergeAllowed({ ...greenBase, reviewClean: false, item: { id: 1 } }), false);
 });

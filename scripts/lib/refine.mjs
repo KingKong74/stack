@@ -23,6 +23,36 @@ import { laneFor, parseBranch } from './lane.mjs';
 //
 // Returns the branch name, or null when nothing on origin belongs to this
 // item (merged-and-deleted — build fresh off main instead).
+// Is `item` mid a refine round right now?
+//
+// `refine_note` is only cleared when the item is ticked `done:true` (see
+// CLAUDE.md's data rules) — so "carries a refine note" is a durable marker,
+// not a snapshot of how this particular session got started. It means: a
+// human looked at what landed, was not satisfied, and sent it back; that
+// round is not closed until a human ticks it. It is deliberately independent
+// of the session KIND — an item with a pending refine note is a refine round
+// no matter which kind of session happened to build it this time, and any
+// guard built on this predicate must hold on all of them, not just sessions
+// launched with `--kind refine`.
+export function isRefineRound(item) {
+  return typeof item?.refineNote === 'string' && item.refineNote.trim().length > 0;
+}
+
+// The #212 risk-tiered auto-merge gate, as a pure predicate so its truth
+// table can be pinned directly rather than re-derived from log lines.
+// Every gate is POSITIVE evidence; anything absent (no checks, no review,
+// no verdict) means NO auto-merge. A refine round is excluded outright
+// (#274): it is by definition work a human already looked at and sent
+// back, so merging it unattended would discard the very judgement the
+// send-back asked for — no matter how green the run looks this time.
+export function autoMergeAllowed({ risk, limitHit, checksRan, checksFailing, reviewClean, item }) {
+  if ((risk || 'normal') !== 'low') return false;
+  if (limitHit) return false;
+  if (isRefineRound(item)) return false;
+  const checksGreen = checksRan > 0 && checksFailing === 0;
+  return checksGreen && !!reviewClean;
+}
+
 export function refineTargetBranch(item, remoteHeads) {
   const heads = Array.isArray(remoteHeads) ? remoteHeads : [];
   const id = Number(item?.id);

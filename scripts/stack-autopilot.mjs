@@ -87,7 +87,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadStackEnv, logStderr, git } from '../hook/stack-post.mjs';
 import { laneFor, bugLaneFor, auditLaneFor } from './lib/lane.mjs';
-import { refineTargetBranch } from './lib/refine.mjs';
+import { refineTargetBranch, autoMergeAllowed, isRefineRound } from './lib/refine.mjs';
 
 loadStackEnv();
 
@@ -1121,7 +1121,12 @@ Rules for this run:
   if ((item.risk || 'normal') === 'low' && !limitHit) {
     const checksGreen = checksRan > 0 && checksFailing === 0;
     const reviewClean = reviewVerdict != null && reviewVerdict.bugs === 0;
-    if (checksGreen && reviewClean) {
+    if (isRefineRound(item)) {
+      // #274 — a refine round is never machine-closed. The human who sent
+      // this item back is the one who closes it; the run being green this
+      // time doesn't change what the send-back was asking for.
+      log(`#${item.id} is a refine round — the human who sent it back closes it; not auto-merging.`);
+    } else if (autoMergeAllowed({ risk: item.risk, limitHit, checksRan, checksFailing, reviewClean, item })) {
       try {
         const job = await api('POST', '/api/autopilot/merge',
           { slug: SLUG, branch, itemId: item.id, auto: true });

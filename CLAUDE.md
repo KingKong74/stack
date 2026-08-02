@@ -254,6 +254,14 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
 - **Un-ticking a roadmap item clears `review_tag` and `claimed_by`** (unless the same PATCH sets
   them), so a sent-back item re-enters play fresh. Ticking `done:true` clears `review_tags`,
   `refine_note` and `review_shelved` — each verify round starts unannotated.
+- **A refine round is never machine-closed** (#274). A refine session (#274) continues the item's OWN
+  branch rather than cutting a fresh one — see `scripts/lib/refine.mjs` — and that round stays open
+  until a human ticks it: no auto-merge (#212), and no auto-verdict (#263) once that lands either. The
+  human explicitly sent this item back to look at it again, so a machine closing it on a green run
+  would discard the very judgement the send-back asked for. `refine_note` surviving until the item is
+  ticked `done:true` is what makes "is this an unclosed round" answerable at all — the predicate
+  (`isRefineRound`) lives in `scripts/lib/refine.mjs` and is deliberately independent of which kind of
+  session built the round.
 - **Deleting a `source='hook'` bug, roadmap item or future tombstones its fingerprint** so the next
   push won't re-create it. That is what Dismiss means, and why it has no undo.
 - **`DELETE /api/projects/:slug` is SOFT** — it stamps `deleted_at`, clears the share link and keeps
@@ -449,7 +457,9 @@ reference. The index:
   • **Gemini annotates, the human disposes.** Its output lands as suggestions (review-inbox items,
     alignment verdicts to accept, the per-push `gemini_note`) — it never mutates tracker state
     itself: no auto-closing bugs, ticking items or merging branches. (#263 carves out one sanctioned
-    exception: machine verdicts on low-risk, all-green runs.)
+    exception: machine verdicts on low-risk, all-green runs — and #274 carves out its own exception
+    to THAT: a refine round is excluded even when the run is green, because it is by definition work
+    a human already sent back and only that human's verdict closes it.)
   • **Absent key = silent degrade.** Every Gemini surface no-ops or 503s cleanly without
     `GEMINI_API_KEY`; nothing blocks, nothing errors user-visibly. The client renders those surfaces
     ABSENT rather than disabled, keyed off the detail payload's `geminiReady`.
