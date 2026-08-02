@@ -200,6 +200,18 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS tier TEXT;
 -- of the last edit. NULL on a parked row = parked before this column existed;
 -- the UI falls back to updated_at and says so.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS skipped_at TIMESTAMPTZ;
+-- Auto-verdict (#263) — the risk-tiered gate one step further than #212's
+-- auto-merge: a low-risk overnight run green on every signal may write its
+-- OWN review_tag. A machine verdict is only ever written on POSITIVE
+-- evidence (see scripts/lib/autoverdict.mjs), and it is always reversible —
+-- clearing review_tag resets all three of these columns together, exactly
+-- like sending an item back to the board today. verdict_evidence is the
+-- receipt the Review room's AUTO-VERDICTED strip shows beside the tag.
+-- Existing rows default to 'human', which is correct: every verdict written
+-- before this column existed was a human's.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS verdict_source TEXT NOT NULL DEFAULT 'human';  -- human | auto (#263)
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS verdict_at TIMESTAMPTZ;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS verdict_evidence TEXT;
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
 -- Per-project futures: loose directional ideas, curated against the north star
@@ -564,6 +576,12 @@ ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS review_findings INT;
 ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS architect_verdict TEXT;
 ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS architect_note    TEXT;
 ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS architect_obs     JSONB;
+
+-- #263 — the evidence line the run spent on its own verdict, when the #263
+-- auto-verdict gate fired (scripts/lib/autoverdict.mjs). NULL means no
+-- auto-verdict was given, which is NOT the same as one that was refused, and
+-- never means the run was bad — a normal/high-risk item never attempts one.
+ALTER TABLE autopilot_runs ADD COLUMN IF NOT EXISTS auto_verdict TEXT;
 
 -- Scheduled sessions — Mission Control's calendar. A row is "run the autopilot
 -- on this project at this time": one-off (run_date set, days empty) or
