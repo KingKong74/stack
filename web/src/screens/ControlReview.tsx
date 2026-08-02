@@ -275,10 +275,12 @@ export function ReviewRoom({ onCount }: {
   const remove = (it: ReviewItem) => act(() => deleteRoadmapItem(it.slug, Number(it.id)));
 
   // ✧ Brief (#134): Gemini's reviewer brief — what shipped, how to test it,
-  // likely risks. In-memory annotation; nothing is stored.
-  const toggleBrief = (it: ReviewItem) => {
+  // likely risks. #273 — the brief now arrives WITH the row, written at run
+  // end, so this button is the explicit RE-ASK: it always issues a fresh
+  // request and the fresh answer replaces what is shown until the room is
+  // reloaded (in-memory only; nothing here is stored).
+  const askBrief = (it: ReviewItem) => {
     const k = key(it);
-    if (briefs.has(k)) { setBriefs((m) => { const n = new Map(m); n.delete(k); return n; }); return; }
     setBriefs((m) => new Map(m).set(k, { loading: true }));
     getReviewBrief(it.slug, Number(it.id))
       .then((d) => setBriefs((m) => new Map(m).set(k, { data: d })))
@@ -467,7 +469,7 @@ export function ReviewRoom({ onCount }: {
             onShelve={() => shelve(sel)}
             onBoard={() => toBoard(sel)}
             onUndo={() => setUndoFor(sel)}
-            onBrief={() => toggleBrief(sel)}
+            onBrief={() => askBrief(sel)}
             onSession={() => openSession(sel)}
             onLogBug={() => logTicket(sel, 'bug')}
             onLogAudit={() => logTicket(sel, 'audit')}
@@ -589,6 +591,13 @@ function Detail({
   onToggleTag: (t: string) => void; onDelete: () => void;
 }) {
   const v = it.run?.reviewVerdict ?? '';
+  // #273 — the brief now arrives WITH the row (written at run end). The
+  // transient `brief` wins whenever it exists — a re-ask in flight, or just
+  // answered, is what the human is looking at — otherwise fall back to the
+  // stored one. `briefIsStored` tells the footer which it is.
+  const storedBrief = it.run?.reviewBrief ?? null;
+  const shownBrief = brief ?? (storedBrief ? { data: storedBrief } : undefined);
+  const briefIsStored = !brief && !!storedBrief;
   const facts: { k: string; v: string; tone?: string }[] = [
     { k: 'project', v: it.name },
     { k: 'item', v: `#${it.id} · ${it.bucket}` },
@@ -695,25 +704,29 @@ function Detail({
                 structural pass runs at the end of an autopilot run and needs a Gemini key.
               </div>
             )}
-            {brief && (
+            {shownBrief && (
               <div className="review-brief">
-                {brief.loading && <div className="rb-loading">✧ Reading the item, its run and the checks…</div>}
-                {brief.error && <div className="rb-err">{brief.error}</div>}
-                {brief.data && (<>
-                  <div className="rb-summary">{brief.data.summary}</div>
-                  {brief.data.test.length > 0 && (
+                {shownBrief.loading && <div className="rb-loading">✧ Reading the item, its run and the checks…</div>}
+                {shownBrief.error && <div className="rb-err">{shownBrief.error}</div>}
+                {shownBrief.data && (<>
+                  <div className="rb-summary">{shownBrief.data.summary}</div>
+                  {shownBrief.data.test.length > 0 && (
                     <div className="rb-block">
                       <div className="rb-lbl">Test it</div>
-                      <ol>{brief.data.test.map((s, i) => <li key={i}>{s}</li>)}</ol>
+                      <ol>{shownBrief.data.test.map((s, i) => <li key={i}>{s}</li>)}</ol>
                     </div>
                   )}
-                  {brief.data.risks.length > 0 && (
+                  {shownBrief.data.risks.length > 0 && (
                     <div className="rb-block">
                       <div className="rb-lbl">Likely risks</div>
-                      <ul>{brief.data.risks.map((s, i) => <li key={i}>{s}</li>)}</ul>
+                      <ul>{shownBrief.data.risks.map((s, i) => <li key={i}>{s}</li>)}</ul>
                     </div>
                   )}
-                  <div className="rb-foot">✧ Gemini's read — verify before trusting it.</div>
+                  <div className="rb-foot">
+                    {briefIsStored
+                      ? "✧ Gemini's read, written when the run landed — verify before trusting it."
+                      : "✧ Gemini's read — verify before trusting it."}
+                  </div>
                 </>)}
               </div>
             )}
@@ -770,7 +783,9 @@ function Detail({
             <div className="rv-more">
               <button disabled={busy} onClick={onBoard} title="Didn't hold up — send it back to the board unchanged">↩ Board</button>
               <button disabled={busy} onClick={onUndo} title="Revert this item's commits on main and send it back">⎌ Undo</button>
-              <button onClick={onBrief} title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">✧ Brief</button>
+              <button onClick={onBrief} title={storedBrief
+                ? "✧ Re-ask Gemini for the reviewer's brief — the automatic one was written when the run landed"
+                : "✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks"}>✧ Brief</button>
               <button onClick={onSession} title="Open a terminal in this project primed with this review">⌨ Session</button>
               <button onClick={onLogBug} title="Log a bug ticket against this item">＋ Bug</button>
               <button onClick={onLogAudit} title="Log an audit item to check what landed">＋ Audit</button>
