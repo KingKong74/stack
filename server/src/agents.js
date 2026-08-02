@@ -21,7 +21,7 @@
 // `server/test/agents.test.mjs` pins that: it is the whole point of the item.
 //
 // Two rules inherited from the rest of the codebase, and both matter here:
-//   • **Gemini annotates, the human disposes.** Nothing an agent returns writes
+//   • **The agent annotates, the human disposes.** Nothing an agent returns writes
 //     tracker state, with the one sanctioned exception the Auditor already had
 //     (findings land in the review INBOX as suggestions, source 'hook').
 //   • **A missing config row means ON.** Same direction as readSettings(): the
@@ -30,17 +30,39 @@
 //     dead ✧ button. Only an explicit switch-off turns one off.
 
 import { q } from './db.js';
-import { askGemini, geminiEnabled } from './gemini.js';
+import { askClaudeOnHost, termAgentConnected } from './term.js';
 
-// The Gemini model names an agent may be pinned to. Free-tier quotas are PER
-// MODEL, so pointing a heavy agent (the Auditor reads a whole page) at its own
-// model is how one agent stops eating another's quota. '' = whatever the
-// server's GEMINI_MODEL says, which is the default and the sane answer.
+// #364 — the agents run on CLAUDE, through the host, and no longer on Gemini.
+//
+// They were Gemini-backed because that was the only model the SERVER could
+// reach: it lives in a container and the host firewall drops container→host,
+// so an HTTP call to an external API was the only thing available to it. The
+// terminal daemon already dials out and holds a socket open, and it already
+// carries one correlated request/reply (the permission-prompt answer), so the
+// same socket carries a prompt to `claude -p` on the host. That is the same
+// route to the same CLI the autopilot uses — hence "like auto modes".
+//
+// Two consequences worth stating, because they are the reason this is allowed:
+//   • NO PAID EXTERNAL API. It is the owner's own Claude subscription via the
+//     CLI, so the standing rule holds — the rule is about spend leaving the
+//     house, not about which model thinks.
+//   • THE HOST IS NOW THE DEPENDENCY, not a key. With the daemon offline every
+//     ✧ surface refuses and says the daemon is offline. That is the price of
+//     one backend, and it is stated at the button rather than discovered.
+//
+// Gemini has NOT been removed from the app — the per-push review note, the
+// semantic check assertions, session labelling, triage and the Workbench ops
+// are still Gemini and still key-gated. Only the three tab agents moved.
+
+// The Claude aliases an agent may be pinned to. '' = whatever the CLI's own
+// default is, which is the right answer unless one agent's work has a shape
+// that wants a bigger or cheaper model: the Auditor reads a whole page and
+// earns Sonnet, the Curator's titler is a sentence and does not.
 export const AGENT_MODELS = [
-  { model: '', label: 'Server default' },
-  { model: 'gemini-2.5-flash', label: 'Flash 2.5' },
-  { model: 'gemini-2.5-pro', label: 'Pro 2.5' },
-  { model: 'gemini-flash-lite-latest', label: 'Flash Lite' },
+  { model: '', label: 'CLI default' },
+  { model: 'haiku', label: 'Haiku' },
+  { model: 'sonnet', label: 'Sonnet' },
+  { model: 'opus', label: 'Opus' },
 ];
 
 // Same shape of guard as settings.cleanModelAlias: a safe freeform charset
@@ -52,6 +74,37 @@ export const cleanAgentModel = (v) => {
   return s === '' || MODEL_RE.test(s) ? s : '';
 };
 
+// #364 — the answer, parsed. `ask()` returns an OBJECT, exactly as askGemini
+// did before it, because the routes' contract is "hand me the JSON the op
+// asked for" and changing that would have meant touching every ✧ call site.
+//
+// The extraction is a shade more forgiving than the Gemini one it replaces,
+// for a reason worth knowing: the CLI hands back what the model literally
+// wrote, and a model told to answer in JSON writes a ```json fence around it
+// far more often through a chat-shaped interface than through a structured
+// API. Fences first, then a bare parse, then the first balanced-looking block
+// — and if none of those work, the RAW TEXT rides on the error, because
+// "the agent said something I could not read" is a debuggable sentence and
+// "returned nothing usable" is not.
+export function parseAgentJson(raw) {
+  const text = String(raw ?? '').trim();
+  if (!text) throw new Error('the agent returned an empty answer');
+  const unfenced = text
+    .replace(/^```(?:json|jsonc)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+  for (const candidate of [unfenced, text]) {
+    try { return JSON.parse(candidate); } catch { /* try the next shape */ }
+  }
+  const m = unfenced.match(/[[{][\s\S]*[\]}]/);
+  if (m) {
+    try { return JSON.parse(m[0]); } catch { /* fall through to the throw */ }
+  }
+  const err = new Error(`the agent's answer was not JSON: ${text.slice(0, 160)}`);
+  err.rawAnswer = text;
+  throw err;
+}
+
 const GUIDANCE_CAP = 1200;
 export const cleanGuidance = (v) => String(v ?? '').replace(/\s+$/g, '').slice(0, GUIDANCE_CAP);
 
@@ -59,10 +112,13 @@ export const cleanGuidance = (v) => String(v ?? '').replace(/\s+$/g, '').slice(0
 // The registry. `ops` is CLOSED: it is the definition of what this agent may
 // do, and every op name here is the name a route passes to its client.
 //
-// `gemini: false` marks an op that costs no key — the Auditor's deep-audit
-// prompt is composed server-side and handed to a Claude session. It is still
-// the Auditor's op and still answers to the Auditor's switch: switching an
-// agent off means it stops acting, not "it stops acting where it costs money".
+// `model: false` marks an op that asks no model at all — the Auditor's
+// deep-audit prompt is composed server-side and handed to a Claude session the
+// human drives. It is still the Auditor's op and still answers to the Auditor's
+// switch: switching an agent off means it stops acting, not "it stops acting
+// where it costs something". (It was `gemini: false` before #364; the flag was
+// renamed with the backend, because "needs no key" and "needs no model" stopped
+// being the same statement once the backend became a local CLI.)
 // ---------------------------------------------------------------------------
 export const AGENTS = [
   {
@@ -75,7 +131,7 @@ export const AGENTS = [
     remit: 'the Quality tab: the project\'s checks, its tracked bugs and the live application',
     ops: [
       { op: 'audit', label: 'Bug audit', hint: 'Findings land in the review inbox as suggestions.' },
-      { op: 'auditprompt', label: 'Deep-audit prompt', gemini: false, hint: 'Composes the hand-off prompt for a Claude session.' },
+      { op: 'auditprompt', label: 'Deep-audit prompt', model: false, hint: 'Composes the hand-off prompt for a Claude session you drive yourself.' },
     ],
   },
   {
@@ -143,7 +199,7 @@ function refuse(message, status) {
 // never gets tested. `server/test/agents.test.mjs` runs it directly; gate()
 // below is the thin async wrapper that reads the row and applies it.
 // Returns null when the agent may act, or the refusal to throw.
-export function gateDecision(agent, spec, config, geminiReady) {
+export function gateDecision(agent, spec, config, backendReady) {
   if (!spec) return refuse(`"${agent.name}" was asked for an op it does not own.`, 500);
   if (!config.enabled) {
     return refuse(`The ${agent.name} is switched off (Mission Control → Agents).`, 409);
@@ -151,11 +207,13 @@ export function gateDecision(agent, spec, config, geminiReady) {
   if ((config.opsOff || []).includes(spec.op)) {
     return refuse(`The ${agent.name}'s "${spec.label}" is switched off (Mission Control → Agents).`, 409);
   }
-  // Order matters: the SWITCH is read before the key, so a switched-off agent
-  // says it is switched off rather than blaming a missing key the owner would
-  // then go and check.
-  if (spec.gemini !== false && !geminiReady) {
-    return refuse('Gemini is not configured on this server (set GEMINI_API_KEY).', 503);
+  // Order matters: the SWITCH is read before the backend, so a switched-off
+  // agent says it is switched off rather than blaming an offline daemon the
+  // owner would then go and investigate.
+  if (spec.model !== false && !backendReady) {
+    return refuse(
+      'The host daemon is not connected, so no agent can run (the agents run Claude on the host).',
+      503);
   }
   return null;
 }
@@ -177,6 +235,11 @@ export const agentConfigShape = (agent, row) => ({
   lastRunAt: row?.last_run_at ? new Date(row.last_run_at).toISOString() : null,
   lastOp: row?.last_op || '',
   lastOutcome: row?.last_outcome || '',
+  // #364 — what this agent has actually spent. NUMERIC comes back from pg as a
+  // STRING, so it needs Number() (the same coercion shape.js documents for the
+  // run ledger). Zero on a fresh row, which reads as "has not spent", not as
+  // "does not cost".
+  costUsd: Number(row?.cost_usd ?? 0) || 0,
 });
 
 // One row per agent, keyed by the registry (not by what is in the table), so an
@@ -233,15 +296,16 @@ export async function writeAgent(key, patch) {
 // Fire-and-forget run ledger: how many times this agent has been asked, when,
 // for what, and how it went. Never throws into the request path — a counter
 // that fails must not fail the answer the owner is waiting for.
-async function recordRun(key, op, outcome) {
+async function recordRun(key, op, outcome, costUsd = 0) {
   try {
     await q(
-      `INSERT INTO agent_configs (key, runs, last_run_at, last_op, last_outcome)
-       VALUES ($1, 1, now(), $2, $3)
+      `INSERT INTO agent_configs (key, runs, last_run_at, last_op, last_outcome, cost_usd)
+       VALUES ($1, 1, now(), $2, $3, $4)
        ON CONFLICT (key) DO UPDATE
          SET runs = agent_configs.runs + 1, last_run_at = now(),
-             last_op = EXCLUDED.last_op, last_outcome = EXCLUDED.last_outcome`,
-      [key, String(op).slice(0, 40), String(outcome || '').slice(0, 200)]
+             last_op = EXCLUDED.last_op, last_outcome = EXCLUDED.last_outcome,
+             cost_usd = agent_configs.cost_usd + EXCLUDED.cost_usd`,
+      [key, String(op).slice(0, 40), String(outcome || '').slice(0, 200), Number(costUsd) || 0]
     );
   } catch { /* the ledger is a nicety; the answer is not */ }
 }
@@ -298,7 +362,7 @@ export function agentClient(key) {
     const spec = own(op);
     const live = await readAgent(agent.key);
     const config = live?.config ?? { ...DEFAULT_CONFIG };
-    const no = gateDecision(agent, spec, config, geminiEnabled());
+    const no = gateDecision(agent, spec, config, termAgentConnected());
     if (no) throw no;
     return config;
   };
@@ -307,18 +371,35 @@ export function agentClient(key) {
     agent,
     ops: agent.ops,
     gate,
-    // The call every Gemini-backed op makes. The run is recorded only once
+    // The call every model-backed op makes. The run is recorded only once
     // something was actually asked of the model — a refusal is not a run, and
     // counting it as one would make a switched-off agent look busy.
+    //
+    // The host's refusals arrive as a resolved {ok:false}, not a rejection, so
+    // they are turned into the same typed throw the gate uses: a route already
+    // knows how to render one of those, and "the daemon went away mid-request"
+    // deserves the same sentence-beside-the-button treatment as "it was
+    // already offline when you pressed".
     async ask(op, prompt, opts = {}) {
       const config = await gate(op);
       const full = agentPreamble(agent, config.guidance) + prompt;
+      const r = await askClaudeOnHost(full, {
+        model: config.model || opts.model || '',
+        timeoutMs: opts.timeoutMs,
+      });
+      if (!r.ok) {
+        void recordRun(agent.key, op, r.error || 'failed', 0);
+        throw refuse(r.error || 'the host could not run the agent', 503);
+      }
       try {
-        const answer = await askGemini(full, { ...opts, model: config.model || opts.model });
-        void recordRun(agent.key, op, 'ok');
-        return answer;
+        const parsed = parseAgentJson(r.text);
+        void recordRun(agent.key, op, 'ok', r.costUsd);
+        return parsed;
       } catch (err) {
-        void recordRun(agent.key, op, err?.message || 'failed');
+        // The run HAPPENED and it cost money — record it as a run that failed
+        // to parse rather than not at all, or the ledger reports an agent as
+        // idle while it is quietly burning tokens on unreadable answers.
+        void recordRun(agent.key, op, err.message, r.costUsd);
         throw err;
       }
     },
@@ -330,12 +411,17 @@ export function agentClient(key) {
 // 409s. Same treatment `geminiReady` already gets (#278).
 export async function agentsForClient() {
   const all = await readAgents();
+  const ready = termAgentConnected();
   const out = {};
   for (const { agent, config } of all) {
     out[agent.key] = {
       name: agent.name,
       tab: agent.tab,
       enabled: config.enabled,
+      // #364 — can it run AT ALL right now? The switch is the owner's intent;
+      // this is whether the backend is there. A tab needs both to offer a ✧,
+      // and needs to tell them apart to say WHY one is missing.
+      ready,
       // Only the ops that may actually run — the client asks "is my op here".
       ops: agent.ops.filter((s) => !config.opsOff.includes(s.op)).map((s) => s.op),
     };
@@ -358,10 +444,11 @@ export const agentShape = ({ agent, config }) => ({
     op: s.op,
     label: s.label,
     hint: s.hint || '',
-    gemini: s.gemini !== false,
+    needsModel: s.model !== false,
     enabled: !config.opsOff.includes(s.op),
   })),
   runs: config.runs,
+  costUsd: config.costUsd,
   lastRunAt: config.lastRunAt,
   lastOp: config.lastOp,
   lastOutcome: config.lastOutcome,

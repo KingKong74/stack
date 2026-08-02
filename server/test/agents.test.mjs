@@ -68,7 +68,7 @@ console.log('\n--- the gate ---');
 const ON = { enabled: true, model: '', guidance: '', opsOff: [] };
 const A = agentByKey('auditor');
 const spec = (key, op) => agentByKey(key).ops.find((o) => o.op === op);
-check('on, with a key, may act', gateDecision(A, spec('auditor', 'audit'), ON, true), null);
+check('on, with the host up, may act', gateDecision(A, spec('auditor', 'audit'), ON, true), null);
 check('off refuses with 409',
   gateDecision(A, spec('auditor', 'audit'), { ...ON, enabled: false }, true)?.httpStatus, 409);
 check('off says which agent',
@@ -77,18 +77,25 @@ check('an op switched off refuses with 409',
   gateDecision(A, spec('auditor', 'audit'), { ...ON, opsOff: ['audit'] }, true)?.httpStatus, 409);
 check('...and only that op',
   gateDecision(A, spec('auditor', 'auditprompt'), { ...ON, opsOff: ['audit'] }, true), null);
-check('no key refuses a Gemini op with 503',
+// #364 — the backend is the HOST now, not a Gemini key: the agents run
+// `claude -p` through the terminal daemon's uplink. With the daemon down there
+// is no second backend to fall through to, so the op refuses and says which
+// thing is missing rather than answering emptily.
+check('no host refuses a model-backed op with 503',
   gateDecision(A, spec('auditor', 'audit'), ON, false)?.httpStatus, 503);
-// The Auditor's deep-audit prompt costs no key — it hands the work to a Claude
-// session — so a keyless server must not refuse it. It is the reason the whole
-// card is still worth rendering without GEMINI_API_KEY.
-check('no key still allows the keyless op',
+check('...and the refusal names the host, not a key',
+  gateDecision(A, spec('auditor', 'audit'), ON, false)?.message.includes('host daemon'), true);
+// The Auditor's deep-audit prompt asks no model at all — it composes the prompt
+// for a Claude session the human drives — so an offline host must not refuse
+// it. It is the reason the whole card is still worth rendering with the daemon
+// down, and it was the reason it was worth rendering without a key before.
+check('no host still allows the model-less op',
   gateDecision(A, spec('auditor', 'auditprompt'), ON, false), null);
-// Order matters: switched off AND keyless must read as switched off. The owner
-// who turned it off should not be sent to check an env var.
-check('off beats keyless in the message',
+// Order matters: switched off AND host-down must read as switched off. The
+// owner who turned it off should not be sent to investigate the daemon.
+check('off beats host-down in the message',
   gateDecision(A, spec('auditor', 'audit'), { ...ON, enabled: false }, false)?.httpStatus, 409);
-check('the keyless op still obeys the agent switch',
+check('the model-less op still obeys the agent switch',
   gateDecision(A, spec('auditor', 'auditprompt'), { ...ON, enabled: false }, false)?.httpStatus, 409);
 
 console.log('\n--- the config row ---');
@@ -102,10 +109,14 @@ check('an explicit false is honoured', agentConfigShape(A, { enabled: false }).e
 // disable something else — ops_off is filtered to the agent's own ops.
 check('a foreign op name in ops_off is ignored',
   agentConfigShape(A, { enabled: true, ops_off: ['cleanup', 'audit', 'gone'] }).opsOff, ['audit']);
-check('a model with a space is rejected', cleanAgentModel('gemini 2.5 pro'), '');
-check('a model with a shell metacharacter is rejected', cleanAgentModel('gemini;rm -rf /'), '');
+// The model alias is spliced into an argv on the HOST now (#364), which raises
+// the stakes on this guard from "a bad URL path" to "a bad exec argument".
+check('a model with a space is rejected', cleanAgentModel('sonnet 4'), '');
+check('a model with a shell metacharacter is rejected', cleanAgentModel('sonnet;rm -rf /'), '');
+check('a flag-looking model is rejected', cleanAgentModel('--dangerously-skip-permissions'), '');
 check('a path traversal is rejected', cleanAgentModel('../../secret'), '');
-check('a real model name passes', cleanAgentModel('gemini-2.5-pro'), 'gemini-2.5-pro');
+check('a real alias passes', cleanAgentModel('sonnet'), 'sonnet');
+check('a dated model id passes', cleanAgentModel('claude-haiku-4-5-20251001'), 'claude-haiku-4-5-20251001');
 check('guidance is capped', cleanGuidance('x'.repeat(5000)).length, 1200);
 
 console.log('\n--- the preamble ---');
@@ -124,7 +135,9 @@ check('the op prompt stays last', composed.endsWith('{ "a": 1 }'), true);
 console.log('\n--- the shape the room reads ---');
 const shaped = agentShape({ agent: A, config: agentConfigShape(A, { enabled: true, ops_off: ['audit'] }) });
 check('ops carry their own switch', shaped.ops.map((o) => [o.op, o.enabled]), [['audit', false], ['auditprompt', true]]);
-check('the keyless op is marked', opSpec('auditprompt').gemini, false);
+check('the model-less op is marked', opSpec('auditprompt').model, false);
+check('...and the shape reports it to the room', 
+  agentShape({ agent: A, config: agentConfigShape(A, undefined) }).ops.find((o) => o.op === 'auditprompt').needsModel, false);
 check('the tab rides along', shaped.tabLabel, 'Quality');
 // The room may not move an agent between tabs, so nothing writable is derived
 // from the tab: it is reported, never patched. (routes/agents.js accepts only

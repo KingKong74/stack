@@ -1233,19 +1233,23 @@ export function Quality({
                   chose, so the note below names the agent and where to undo it
                   — a vanished feature with no explanation is the worse half of
                   "render it absent". */}
-              {geminiReady && canAudit && (
+              {canAudit && (
                 <AuditCard context={auditContext} onSaveBrief={onSaveAuditContext}
                   busy={auditBusy} result={auditResult} error={auditError} onRun={onRunAudit}
                   canPrompt={canPrompt}
                   claudeCopy={claudeCopy} onCopyClaude={onCopyClaudePrompt} checkCount={checks.length} />
               )}
 
-              {geminiReady && !canAudit && (
+              {/* #364 — the Auditor runs Claude on the host now, so its own
+                  state is the whole gate: `canAudit` folds in the switch, the
+                  per-op switch AND whether the host daemon is up, and
+                  `auditorOff` is the sentence for whichever one is missing.
+                  The Gemini key stopped being this card's question. */}
+              {!canAudit && (
                 <div className="q-card span">
                   <div className="q-note dashed">
-                    {auditorOff} The bug audit and its Claude hand-off are hidden until it is switched
-                    back on in Mission Control → Agents. Everything else here — filing, linking,
-                    triage, the whole suite — never needed it.
+                    {auditorOff} The bug audit and its Claude hand-off are hidden until then.
+                    Everything else here — filing, linking, triage, the whole suite — never needed it.
                   </div>
                 </div>
               )}
@@ -1262,8 +1266,9 @@ export function Quality({
               {!geminiReady && (
                 <div className="q-card span">
                   <div className="q-note dashed">
-                    Plain-language checks and the bug audit need a Gemini key. Everything else on this
-                    page — filing, linking, triage, the whole suite — works without one.
+                    Plain-language check assertions need a Gemini key — the bug audit does not any
+                    more, it runs Claude on the host (#364). Everything else on this page — filing,
+                    linking, triage, the whole suite — works without either.
                   </div>
                 </div>
               )}

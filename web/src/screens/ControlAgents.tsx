@@ -83,12 +83,13 @@ export function AgentsRoom() {
       {/* The frame, before any card: a key-less server runs no agent at all,
           whatever its switch says. Stated once, at the top, rather than three
           times as a badge that would read as three separate faults. */}
-      {data && !data.geminiReady && (
+      {data && !data.hostReady && (
         <div className="mc-agnokey">
-          <b>No Gemini key on this server.</b> The switches below still save, but nothing runs until
-          <code> GEMINI_API_KEY</code> is set — an agent that is <em>on</em> here is on and idle. The
-          Auditor's deep-audit prompt is the one op that works regardless: it hands the work to a
-          Claude session instead.
+          <b>The host daemon is not connected.</b> These agents run Claude on the host — the same CLI
+          the overnight autopilot uses — so the switches below still save, but nothing runs until the
+          daemon is back: an agent that is <em>on</em> here is on and idle. The Auditor's deep-audit
+          prompt is the one op that works regardless, because it asks no model at all — it composes
+          the prompt for a Claude session you drive yourself.
         </div>
       )}
 
@@ -100,7 +101,7 @@ export function AgentsRoom() {
               agent={a}
               models={data.models}
               defaultModel={data.defaultModel}
-              geminiReady={data.geminiReady}
+              hostReady={data.hostReady}
               busy={busy}
               draft={draft[a.key]}
               onDraft={(v) => setDraft((d) => ({ ...d, [a.key]: v }))}
@@ -123,12 +124,12 @@ export function AgentsRoom() {
 }
 
 function AgentCard({
-  agent, models, defaultModel, geminiReady, busy, draft, onDraft, onWrite,
+  agent, models, defaultModel, hostReady, busy, draft, onDraft, onWrite,
 }: {
   agent: TabAgent;
   models: { model: string; label: string }[];
   defaultModel: string;
-  geminiReady: boolean;
+  hostReady: boolean;
   busy: string;
   draft: string | undefined;
   onDraft: (v: string) => void;
@@ -150,7 +151,7 @@ function AgentCard({
             destination would be a lie about which project it belongs to. */}
         <span className="tab">{agent.tabLabel} tab</span>
         <div style={{ flex: 1 }} />
-        {agent.enabled && !geminiReady && <span className="tag idle">IDLE</span>}
+        {agent.enabled && !hostReady && <span className="tag idle">IDLE</span>}
         {!agent.enabled && <span className="tag off">OFF</span>}
         <button
           role="switch"
@@ -234,9 +235,9 @@ function AgentCard({
               <div className="txt">
                 <div className="lb">
                   {o.label}
-                  {/* The one op that costs no key is worth marking: it is why
-                      the Auditor is still useful on a keyless server. */}
-                  {!o.gemini && <span className="free">no key needed</span>}
+                  {/* The one op that asks no model is worth marking: it is why
+                      the Auditor is still useful with the host offline. */}
+                  {!o.needsModel && <span className="free">no model needed</span>}
                 </div>
                 <div className="hint">{o.hint}</div>
               </div>

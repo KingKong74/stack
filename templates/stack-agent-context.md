@@ -66,7 +66,9 @@ The block is a snapshot. For the current state at any moment, read the API:
   Curator · Roadmap, Polaris · Futures). **These are not you**: they are the ✧
   buttons on the tabs, each restricted to its own tab, and any of them can be
   switched off in Mission Control → Agents. Worth reading only to explain why a
-  ✧ surface is missing, or why one of those routes answered 409.
+  ✧ surface is missing, or why one of those routes answered 409 (switched off)
+  or 503 (the host daemon is down — since #364 they run `claude -p` on the host
+  through that daemon, so the daemon is their backend, not an API key).
 
 The base URL and slug for the project you're in are stamped at the bottom of this
 file when it was exported (or are blank in the generic template).

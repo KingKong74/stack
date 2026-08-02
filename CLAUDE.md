@@ -268,6 +268,21 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   passes were against a different test. Renaming keeps both.
 - **`0 = unlimited`** for `autopilotTokens` and `autopilotMaxItems` (#260); positive values are
   clamped. `termIdleHours` `0 = never`.
+- **THE TAB AGENTS RUN CLAUDE ON THE HOST (#364), not Gemini.** `agentClient().ask()` goes through
+  `askClaudeOnHost()` → the terminal daemon's uplink → `claude -p --output-format json`, which is the
+  same CLI the autopilot uses and the same dial-out shape as the permission-prompt answer. It is the
+  owner's own subscription, so the no-paid-external-AI rule holds. Three consequences a session gets
+  wrong by guessing: **the readiness signal is the DAEMON, not a key** (`hostReady` / per-agent
+  `ready`; a switched-off agent is reported before an offline host, so nobody is sent to investigate
+  the wrong thing); **every tool is disabled on those runs and they execute in a scratch directory**,
+  because an agent prompt is assembled from tracker rows and a tracker row is text somebody else
+  wrote — this is deliberately NOT the autopilot's `--dangerously-skip-permissions` posture, which is
+  safe only because it runs code it wrote itself in a throwaway worktree; and **`ask()` returns
+  PARSED JSON** (`parseAgentJson`), because that was askGemini's contract and every ✧ call site
+  depends on it — the parser is fence-tolerant since a chat-shaped CLI fences JSON far more often
+  than a structured API did. **Gemini is not gone from the app**: the per-push review note, semantic
+  check assertions, session labelling, triage and the Workbench ops are still Gemini and still
+  key-gated. Only the three tab agents moved.
 - **A TAB AGENT'S BINDING IS CODE, NOT DATA (#361).** `src/agents.js` is the registry: the Auditor
   works the Quality tab, the Curator the Roadmap tab, Polaris the Futures tab, and each one's `ops`
   list is CLOSED. `agent_configs` holds only what the owner tunes (enabled, model, guidance,
