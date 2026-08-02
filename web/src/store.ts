@@ -968,6 +968,9 @@ export interface ReviewRun {
   architectVerdict: '' | 'aligned' | 'drifting' | 'concerning';
   architectNote: string;
   architectObs: string[];
+  // #263 — the run's own auto-verdict evidence, when the machine gave one.
+  // '' = no auto-verdict was given, which is NOT the same as one refused.
+  autoVerdict: string;
   when: string;
   finishedAt: string;
 }
@@ -979,6 +982,12 @@ export interface ReviewItem {
   reviewTags: string[]; reviewTag: string; shelved: boolean;
   branch: string; origin: 'auto' | 'branch' | 'manual';
   when: string; doneAt: string; risk: string;
+  // #263 — who gave the verdict and on what evidence. verdictSource defaults
+  // to 'human' server-side (also true of every row that predates the column);
+  // verdictEvidence '' means the evidence was not recorded, never "none found".
+  verdictSource: 'human' | 'auto';
+  verdictAt: string | null;
+  verdictEvidence: string;
   run: ReviewRun | null;
 }
 
@@ -991,8 +1000,15 @@ export interface ReviewNightRun extends ReviewRun {
 export interface ReviewData {
   queue: ReviewItem[];
   settled: ReviewItem[];
+  // #263 — the last 12 items the MACHINE verdicted, newest verdict first: the
+  // audit strip for the risk-tiered auto-verdict gate. Deliberately capped and
+  // deliberately says so — a silent slice reads as "that was all of them".
+  autoVerdicted: ReviewItem[];
   nights: ReviewNightRun[];
-  totals: { pending: number; shelved: number; flagged: number; projects: number; settled: number };
+  totals: {
+    pending: number; shelved: number; flagged: number; projects: number; settled: number;
+    autoVerdicted: number;
+  };
   // Turn 3 — a Gemini key exists on the server. The Refine dialog's ✦ draft
   // button is ABSENT without one, never a disabled button explaining itself.
   geminiReady?: boolean;

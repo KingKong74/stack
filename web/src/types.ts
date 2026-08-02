@@ -370,6 +370,9 @@ export interface OverviewRun {
   slug: string; name: string; itemId: number | null; itemTitle: string; branch: string;
   outcome: 'landed' | 'no-commits' | 'failed' | 'limit' | 'planned'; commits: number; tokens: number;
   summary: string; when: string;
+  // #263 — the run's own auto-verdict evidence. '' = no auto-verdict was given,
+  // which is NOT the same as one refused, so never render a negative from it.
+  autoVerdict: string;
 }
 
 
