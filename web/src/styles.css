@@ -3643,6 +3643,8 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc-lane-queuedhead .cap { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.1em; color: var(--paused); }
 .mc-lane-queuedhead .hair { flex: 1; height: 1px; background: var(--line-2); }
 .mc-lane .lane-tail .what.quiet { color: var(--muted); font-style: italic; }
+/* #366 — the autopilot lane's own doing-line, from the host's pane report */
+.mc-lane .lane-tail .doing { font-family: var(--mono); font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the expanded panel for a terminal lane — facts, since there is no ledger */
 .mc-lane .lane-facts { display: flex; flex-direction: column; gap: 4px; }
 .mc-lane .lane-facts > div { display: flex; align-items: baseline; gap: 8px; }
@@ -3660,6 +3662,58 @@ button.mc-day-chip:hover { border-color: var(--accent); }
   .mc-lane .lane-body { flex-direction: column; }
   .mc-lane .lane-side { width: auto; align-self: stretch; }
 }
+
+/* #366 — the Watch panel: a read-only window onto one running autopilot
+   session, opened over the Merge room's modal (`.overlay`/`.modal`). Section
+   caps and quiet/empty text are scoped under `.mc-watch` rather than reused
+   as bare classes — the same collision `.mc-rolesroom` already guards against
+   (styles.css:275). */
+.mc-watch { display: flex; flex-direction: column; gap: 16px; }
+.mc-watch-head { display: flex; align-items: center; gap: 11px; }
+.mc-watch-head .tintdot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--line-3); }
+.mc-watch-head .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.mc-watch-head .who b { font-family: var(--disp); font-size: 15.5px; font-weight: 600; color: var(--ink); }
+.mc-watch-head .who i { font-style: normal; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-watch-head .state { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.08em; color: var(--live); white-space: nowrap; flex: none; }
+.mc-watch-head .state.quiet { color: var(--paused); }
+.mc-watch-head .age { font-family: var(--mono); font-size: 10.5px; color: var(--paused); white-space: nowrap; flex: none; }
+.mc-watch-close { width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--card); color: var(--muted); font-size: 14px; line-height: 1; flex: none; display: grid; place-items: center; }
+.mc-watch-close:hover { border-color: var(--accent); color: var(--accent-deep); }
+
+.mc-watch-sec { display: flex; flex-direction: column; gap: 7px; }
+.mc-watch-sec .cap { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.1em; color: var(--faint); }
+.mc-watch-empty { font-size: 12px; line-height: 1.55; color: var(--muted); margin: 0; }
+
+.mc-watch-doing { padding: 11px 13px; border-radius: 9px; border: 1px solid var(--line-3); background: var(--card); display: flex; flex-direction: column; gap: 5px; }
+.mc-watch-doing p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--ink); }
+.mc-watch-doing .idle { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+/* activity null — "we cannot see", never rendered as calm (the NULL-verdict
+   rule): amber, not the neutral card the other two states get. */
+.mc-watch-doing.empty { border-color: var(--accent-tint-border); background: var(--accent-tint); font-size: 12.5px; line-height: 1.55; color: var(--accent-deep); }
+
+.mc-watch-plan { display: flex; flex-direction: column; gap: 6px; }
+.mc-watch-plan .n { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.mc-watch-plan ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; }
+.mc-watch-plan li { display: flex; align-items: baseline; gap: 8px; font-size: 12px; line-height: 1.5; color: var(--ink); }
+.mc-watch-plan li .tick { font-size: 11px; color: var(--paused); flex: none; }
+.mc-watch-plan li.done { color: var(--muted); }
+.mc-watch-plan li.done .tick { color: var(--live); }
+
+.mc-watch-runs { display: flex; flex-direction: column; gap: 1px; border-radius: 9px; overflow: hidden; border: 1px solid var(--line-2); }
+.mc-watch-runs .row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--card); }
+.mc-watch-runs .row .t { flex: 1; min-width: 0; font-size: 12px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-watch-runs .row .o { font-family: var(--mono); font-size: 10px; color: var(--muted); flex: none; }
+.mc-watch-runs .row .c { font-family: var(--mono); font-size: 10px; color: var(--paused); flex: none; width: 68px; }
+.mc-watch-runs .row .s { font-family: var(--mono); font-size: 10px; color: var(--ink); flex: none; text-align: right; width: 100px; }
+
+.mc-watch-panehead { display: flex; align-items: center; gap: 10px; }
+.mc-watch-panehead .when { font-family: var(--mono); font-size: 9.5px; color: var(--paused); flex: 1; }
+.mc-watch-paneerr { padding: 8px 11px; border-radius: 8px; background: var(--critical-tint); border: 1px solid var(--critical-line); font-size: 11.5px; color: var(--critical); }
+.mc-watch-pane { margin: 0; padding: 12px 13px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--panel); color: var(--ink); font-family: var(--mono); font-size: 11px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow-y: auto; }
+
+.mc-watch-note { margin: 0; font-size: 11.5px; line-height: 1.6; color: var(--muted); }
+.mc-watch-attach { display: flex; gap: 8px; align-items: center; }
+.mc-watch-attach .field-input { flex: 1; height: 36px; font-size: 12.5px; }
 
 /* Now — the settled autopilot line */
 .mc14-settle { border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); overflow: hidden; }

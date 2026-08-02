@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { go, hrefTo } from '../lib/route';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { WatchPanel } from './ControlWatch';
 import { killDetachedSession, type ControlData, type FleetSlot, type AutopilotJob } from '../store';
 
 // ---------------------------------------------------------------------------
@@ -247,12 +248,23 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
   const [sort, setSort] = useState<LaneSort>('needs');
   const [open, setOpen] = useState('');
   const [killing, setKilling] = useState<string | null>(null);
+  // Which autopilot lane's Watch panel is open, held as the jobId rather than
+  // the slot itself — the slot is looked up fresh from `lanes` every render,
+  // so a control-payload refresh while the panel is open updates what it
+  // reads instead of showing the snapshot from the moment it was opened.
+  const [watching, setWatching] = useState('');
   // Which project groups are folded away. Names, not indexes — a group that
   // finishes and disappears must not fold whichever one takes its place.
   const [shut, setShut] = useState<Set<string>>(() => new Set());
 
   const lanes = sortLanes(buildLanes(data), sort);
   const groups = groupLanes(lanes);
+  // Looked up fresh from this render's lanes, not stashed at open time — see
+  // the note on `watching` above. Gone once the job finishes or the lane
+  // otherwise drops out of the fleet, which quietly closes the panel.
+  const watchSlot = watching
+    ? lanes.find((l) => l.origin === 'autopilot' && l.slot?.jobId === watching)?.slot ?? null
+    : null;
   const capacity = data.fleet?.capacity ?? 1;
   const autoLanes = lanes.filter((l) => l.origin === 'autopilot').length;
   // #268's contract survives the merge: idle autopilot capacity is RENDERED,
@@ -276,6 +288,7 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
 
   return (
     <div className="mc-fleet" aria-label="Running sessions">
+      {watchSlot && <WatchPanel slot={watchSlot} onClose={() => setWatching('')} />}
       {killing && (
         <ConfirmModal
           title={`Kill ${killing}?`}
@@ -408,6 +421,14 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
 
                 <span className="lane-tail">
                   <span className="what" title={l.tail}>{l.tail}</span>
+                  {/* #366 — what the host's pane report says this lane is
+                      doing right now, so the list answers at a glance without
+                      opening the row. `activity` null (not reported) renders
+                      nothing here rather than a line that could read as calm —
+                      the panel is where that absence gets said explicitly. */}
+                  {s?.activity?.doing && (
+                    <span className="doing" title={s.activity.doing}>{s.activity.doing}</span>
+                  )}
                   {s ? (
                     <span className="split">
                       <span className="bar" aria-hidden>
@@ -433,6 +454,11 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
 
                 <span className="lane-go" onClick={(e) => e.stopPropagation()}>
                   {l.attachHref && <a className="btn-repo sm" href={l.attachHref}>{l.attachLabel}</a>}
+                  {/* #366 — autopilot lanes have no browser attach; Watch opens
+                      the read-only pane view in place of the dead attachHref. */}
+                  {l.origin === 'autopilot' && l.slot && (
+                    <button className="btn-repo sm" onClick={() => setWatching(l.slot?.jobId ?? '')}>Watch</button>
+                  )}
                   {l.detachedName && !l.flag?.text.includes('another') && (
                     <button className="mc-lane-kill" title={`Kill this session on the host (tmux ${l.detachedName})`}
                       onClick={() => setKilling(l.detachedName!)}>×</button>
@@ -514,6 +540,7 @@ export function SessionLanes({ data, labelBusy, onLabel, onConfigureRoles, onRel
                         {l.tmuxHint && <code className="tmux">tmux attach -t {l.tmuxHint}</code>}
                       </div>
                       <div className="lane-acts">
+                        <button className="btn-repo sm" onClick={() => setWatching(s.jobId)}>Watch this session</button>
                         <button className="btn-repo sm" onClick={onConfigureRoles}>Change the roles</button>
                         <button className="btn-repo sm" onClick={() => go.detail(l.slug)}>Open project</button>
                       </div>

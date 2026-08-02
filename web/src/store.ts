@@ -494,6 +494,11 @@ export interface FleetSlot {
   advShare?: number;        // advisor's % of the attributed total
   advisorSeen?: boolean;    // the advisor's model appears in the banked usage
   ledger?: RoleLedgerEntry[];
+  // (#366) The host's own read of this lane's tmux pane, refreshed on the
+  // control payload's cadence. null means the host has not reported this
+  // session — never render that as idle or calm; it is "we cannot see", the
+  // same reading as a NULL review verdict.
+  activity?: { doing: string; idleMs: number; at: number; lines: number; attached: boolean } | null;
 }
 
 // (#280) One of the two roles: the configured model, catalogue-labelled.
@@ -773,7 +778,12 @@ export interface ControlData {
   // source of truth. Undefined while loading; the frontend falls back to the
   // hardcoded lists in Control.tsx.
   models?: { executors: ModelEntry[]; advisors: ModelEntry[] };
-  terminal?: { connected: boolean; sessions?: TermSession[]; detached?: DetachedSession[] };  // host daemon + open web terminals + orphaned tmux survivors
+  terminal?: {
+    connected: boolean; sessions?: TermSession[]; detached?: DetachedSession[];
+    // (#366) When the host's autopilot pane report last landed; 0 = no report
+    // has ever landed — apart from "reported and nothing running".
+    autoSeenAt?: number;
+  };  // host daemon + open web terminals + orphaned tmux survivors
   schedules: AutopilotSchedule[];
   jobs: AutopilotJob[];                // recent first; queued/claimed/running lead the strip
   projects: ControlProject[];
@@ -830,6 +840,69 @@ export async function getControl(): Promise<ControlData> {
     attention: d.attention ?? [],
     conflicts: d.conflicts ?? [],
   };
+}
+
+// ---- Mission Control: watch a running autopilot session (#366) ----
+//
+// Two independent reads behind the fleet strip's Watch action:
+// `getAutoSession` is the session's OWN record (what it's on, its plan, what
+// it has already banked tonight) — cheap, from the database, refreshed on the
+// control payload's cadence. `viewAutoPane` is an on-demand FRESH read of the
+// tmux pane itself, taken host-side at the moment it is asked for. Both are
+// read-only: nothing here can type into a session.
+
+export interface AutoSessionDetail {
+  job: {
+    id: string; slug: string; name: string; tint: string | null;
+    kind: AutopilotJob['kind']; sessionKind: SessionKind;
+    status: AutopilotJob['status'];
+    itemId: string | null; itemTitle: string;
+    branch: string; detail: string;
+    agenda: (number | string)[]; area: string;
+    createdAt: string | null; claimedAt: string | null;
+    startedAt: string | null; finishedAt: string | null;
+    tmux: string;
+  };
+  plan: PlanStep[];
+  planDone: number;
+  planTotal: number;
+  // Units this night has already banked, since the job claimed — the shared
+  // run-ledger shape (`runCore`/`agentReads`, same fields the run ledger and
+  // the Review room use), plus the item identity and its own timestamps.
+  runs: {
+    id: string; itemId: string | null; itemTitle: string;
+    branch: string; outcome: string; commits: number; tokens: number; costUsd: number;
+    checksFailing: number | null; summary: string;
+    reviewVerdict: string; reviewNote: string; reviewFindings: number | null;
+    architectVerdict: string; architectNote: string; architectObs: string[];
+    startedAt: string | null; finishedAt: string | null;
+  }[];
+  // The session's own pushed accounts on this branch, newest first.
+  pushes: { sessionId: string; summary: string; currentPhase: string; commitHash: string; branch: string; createdAt: string | null }[];
+  presence: { sessionId: string; branch: string; startedAt: string | null; lastSeenAt: string | null }[];
+  // The same activity shape a fleet slot carries — null = not reported.
+  activity: { doing: string; idleMs: number; at: number; lines: number; attached: boolean } | null;
+}
+
+export async function getAutoSession(jobId: string): Promise<AutoSessionDetail> {
+  const d = await request<AutoSessionDetail>(`/control/session/${encodeURIComponent(jobId)}`);
+  return {
+    ...d,
+    plan: d.plan ?? [],
+    runs: d.runs ?? [],
+    pushes: d.pushes ?? [],
+    presence: d.presence ?? [],
+    activity: d.activity ?? null,
+  };
+}
+
+// An on-demand fresh read of one stack-auto-* pane. Throws with the host's
+// own sentence on failure ("the host daemon is not connected", "that
+// autopilot session is not on this host any more") — shown verbatim, never
+// swallowed, and never rendered as a blank pane that looks like a working one.
+export interface AutoPaneView { ok: true; name: string; tail: string; doing: string; idleMs: number; alive: boolean }
+export async function viewAutoPane(name: string, lines?: number): Promise<AutoPaneView> {
+  return request<AutoPaneView>('/terminal/auto-view', { method: 'POST', body: { name, ...(lines ? { lines } : {}) } });
 }
 
 // ✧ Label the terminal sessions — live ones AND the detached tmux survivors —
