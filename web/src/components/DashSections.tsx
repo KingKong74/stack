@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import type {
   Overview, OverviewRoadmapBucket, Priority, Project,
 } from '../types';
-import { go } from '../lib/route';
-import { getTimeline, type TimelineData, type TimelineEntry } from '../store';
+import { go, hrefTo } from '../lib/route';
+import { getLastViewedProject, getTimeline, type TimelineData, type TimelineEntry } from '../store';
 import { buildWeeks, contribLevel } from '../lib/contrib';
+import { roadmapTarget } from '../lib/roadmapLink';
 import { AutopilotDigest, LiveNowStrip } from './CommandDeck';
 
 // The sectioned dashboard's own pieces: the sticky section nav, the day-grouped
@@ -285,8 +286,17 @@ const BUCKET_DOT: Record<Priority, string> = {
 // Read-only on purpose: a tick here would close an item in another project
 // without its plan, claim or built_note in view, so the card opens the board
 // instead of changing it.
-export function RoadmapRollup({ roadmap }: { roadmap: Overview['roadmap'] }) {
+export function RoadmapRollup({ roadmap, projects, fallback }: {
+  roadmap: Overview['roadmap']; projects: Project[]; fallback?: string;
+}) {
   const open = roadmap.buckets.reduce((n, b) => n + b.open, 0);
+  // #297 — the Dashboard is the whole-house view: no app is "selected" here,
+  // so the link falls through to the last-viewed project and, failing that,
+  // the overview's own resume slug.
+  const lastViewed = useMemo(getLastViewedProject, []);
+  const target = roadmapTarget({ lastViewed, fallback, known: projects.map((p) => p.id) });
+  const href = target ? hrefTo.detail(target, 'roadmap') : null;
+  const hrefProject = target ? projects.find((p) => p.id === target) : null;
   return (
     <section id="roadmap" className="dash-section">
       <div className="section-bar">
@@ -296,6 +306,14 @@ export function RoadmapRollup({ roadmap }: { roadmap: Overview['roadmap'] }) {
             MoSCoW rollup · {open} open · {roadmap.closedThisWeek} closed this week
           </div>
         </div>
+        {href && (
+          <div className="bar-actions">
+            <a className="viewall" href={href}
+              title={hrefProject ? `Open the roadmap for ${hrefProject.name}` : 'Open the roadmap'}>
+              Open Roadmap →
+            </a>
+          </div>
+        )}
       </div>
       {open === 0 && !roadmap.buckets.some((b) => b.items.length) ? (
         <div className="empty-state">

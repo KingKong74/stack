@@ -195,7 +195,7 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
             <PushesSection overview={overview} projects={projects} />
 
             {/* ---- roadmap: the cross-project MoSCoW rollup ---- */}
-            <RoadmapRollup roadmap={overview.roadmap} />
+            <RoadmapRollup roadmap={overview.roadmap} projects={projects} fallback={overview.resume?.slug} />
 
             {/* ---- audit: what needs a human ---- */}
             <section id="audit" className="dash-section last">
