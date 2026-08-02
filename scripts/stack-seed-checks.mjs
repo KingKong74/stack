@@ -57,7 +57,29 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Overview — status totals', url: u('/api/overview'), auth: true, json_path: 'totals.byStatus' },
     { name: 'Overview — resume-card flag', url: u('/api/overview'), auth: true, json_path: 'keepResumeCard' },
     { name: 'Overview — contribution graph', url: u('/api/overview'), auth: true, json_path: 'graph.0.date' },
+    // BUG-2 — the deck's own five keys. Every one of them renders as EMPTY when
+    // it is absent, and empty is the good-news shape: no resume card, no
+    // parallel work, nothing to verify, no blockers. A key that stops being
+    // served takes a whole section of the dashboard away and looks calm doing
+    // it, which is the same fail-silent rule CLAUDE.md states for attention[]
+    // and for a NULL review verdict. `resume` is nullable and asserted anyway:
+    // a check fails on a MISSING path, never on a null one, so "no session
+    // yet" passes and "the key is gone" does not.
+    { name: 'Overview — the resume card', url: u('/api/overview'), auth: true, json_path: 'resume' },
+    { name: 'Overview — branch claims', url: u('/api/overview'), auth: true, json_path: 'claims' },
+    { name: 'Overview — the review queue', url: u('/api/overview'), auth: true, json_path: 'review.total' },
+    { name: 'Overview — blockers', url: u('/api/overview'), auth: true, json_path: 'blockers' },
+    { name: 'Overview — roadmap rollup buckets', url: u('/api/overview'), auth: true, json_path: 'roadmap.buckets' },
+    { name: 'Overview — bugs by project', url: u('/api/overview'), auth: true, json_path: 'bugs.byProject' },
     { name: 'Control — autopilot config', url: u('/api/control'), auth: true, json_path: 'autopilot.maxItems' },
+    // BUG-2, and the one flag on this payload that decides what a room is
+    // allowed to SAY. With no host daemon on the line, attention[] and
+    // conflicts[] are empty — so the Now room reads terminal.connected and says
+    // "Stack cannot see whether a session is stopped" instead of "nothing is
+    // waiting on you". Lose the flag and the room tells a calm lie all night.
+    { name: 'Control — is the host on the line', url: u('/api/control'), auth: true, json_path: 'terminal.connected' },
+    { name: 'Control — the arm switch', url: u('/api/control'), auth: true, json_path: 'autopilot.enabled' },
+    { name: 'Control — the job queue', url: u('/api/control'), auth: true, json_path: 'jobs' },
     // #255 — the plan sweep's two halves of the contract: the switch the Now
     // room writes, and the coverage the Plan room reads. Asserting the PATH
     // exists (not a value) is the point — the numbers change every night.
@@ -116,8 +138,21 @@ function suiteFor(slug, ORIGIN) {
       req_body: '{"name":"stack-term-nope","fingerprint":"not-a-fingerprint","choice":"approve"}' },
     { name: 'Search — grouped counts', url: u('/api/search?q=roadmap'), auth: true, json_path: 'counts.total' },
     { name: 'Search — empty query is empty', url: u('/api/search?q='), auth: true, json_path: 'counts.total', json_expect: '0' },
+    // BUG-2 — ⌘K's counts and its RESULTS are two different keys, and only the
+    // counts were pinned. A payload that kept `counts` and lost `groups` reads
+    // as "17 matches" over an empty palette.
+    { name: 'Search — the grouped results', url: u('/api/search?q=roadmap'), auth: true, json_path: 'groups' },
     { name: 'Timeline — daily graph', url: u('/api/timeline'), auth: true, json_path: 'graph.0.date' },
     { name: 'Settings — session defaults', url: u('/api/settings'), auth: true, json_path: 'sessionDefaults' },
+    // BUG-2 — the settings that CHANGE BEHAVIOUR (the table in CLAUDE.md).
+    // Each is read by something that fails open or closed on it, and a missing
+    // field is read as its default by every consumer: `autopilotEnabled` is the
+    // arm switch, `autoRecord` decides whether the SessionEnd hook records at
+    // all, and `accessPinSet` is whether PIN sign-in is even offered.
+    { name: 'Settings — the arm switch', url: u('/api/settings'), auth: true, json_path: 'autopilotEnabled' },
+    { name: 'Settings — hook auto-record', url: u('/api/settings'), auth: true, json_path: 'autoRecord' },
+    { name: 'Settings — assist fields', url: u('/api/settings'), auth: true, json_path: 'assistFields' },
+    { name: 'Settings — PIN sign-in available', url: u('/api/settings'), auth: true, json_path: 'accessPinSet' },
 
     // -- projects and their collections
     { name: 'Projects — list', url: u('/api/projects'), auth: true, json_path: '0.slug' },
