@@ -12,7 +12,7 @@ import {
 //
 // Shape (client camelCase):
 //   { autoRecord, keepResumeCard, checkpointDetail, includeChores, sessionDefaults,
-//     autopilotEnabled, autopilotMinutes, accessPinSet }
+//     autopilotEnabled, autopilotMinutes, autopilotWorkers, accessPinSet }
 // PATCH additionally accepts write-only `accessPin` ('' disables PIN sign-in);
 // any accessPin change also signs out every PIN-issued device.
 export const settings = Router();
@@ -48,6 +48,16 @@ settings.patch('/', async (req, res) => {
     const m = Math.trunc(Number(body.autopilotMinutes));
     fields.push(`autopilot_minutes = $${i++}`);
     values.push(Number.isFinite(m) ? Math.min(360, Math.max(15, m)) : 120);
+  }
+  if ('autopilotWorkers' in body) {
+    // #335 — the fleet-wide concurrency cap. 0 = UNLIMITED (same convention as
+    // autopilotTokens/autopilotMaxItems below); positive values clamp to 1-8,
+    // an arbitrary but sane ceiling on how many claude sessions one host runs
+    // at once. Per-project serialisation is the OTHER half of #335 and is
+    // deliberately not a setting — see routes/autopilot.js.
+    const w = Math.trunc(Number(body.autopilotWorkers));
+    fields.push(`autopilot_workers = $${i++}`);
+    values.push(!Number.isFinite(w) || w < 0 ? 3 : (w === 0 ? 0 : Math.min(8, Math.max(1, w))));
   }
   if ('autopilotTokens' in body) {
     // 0 = unlimited; any positive budget gets a sane floor so a typo can't

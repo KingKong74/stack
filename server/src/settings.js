@@ -89,6 +89,7 @@ const DEFAULTS = {
   session_defaults: ['ship'],
   autopilot_enabled: false, // the arm switch fails SAFE (off), unlike the record switches
   autopilot_minutes: 120,
+  autopilot_workers: 3, // #335 — fleet-wide concurrency cap; 0 = unlimited
   autopilot_tokens: 1_500_000, // per-run token budget; 0 = unlimited
   autopilot_time: '23:05',     // nightly start, host-local HH:MM
   autopilot_max_items: 3,
@@ -125,6 +126,10 @@ export async function readSettings(client) {
     session_defaults: cleanSessionDefaults(r.session_defaults),
     autopilot_enabled: Boolean(r.autopilot_enabled),
     autopilot_minutes: Number.isFinite(r.autopilot_minutes) ? r.autopilot_minutes : 120,
+    // #335 — a row predating the column reads as the default, same reasoning
+    // as term_idle_hours below: 0 has a real meaning (unlimited) so a missing
+    // value must not be conflated with it.
+    autopilot_workers: Number.isFinite(r.autopilot_workers) ? r.autopilot_workers : 3,
     autopilot_tokens: Number.isFinite(Number(r.autopilot_tokens)) ? Number(r.autopilot_tokens) : 1_500_000,
     autopilot_time: cleanAutopilotTime(r.autopilot_time),
     autopilot_max_items: Number.isFinite(r.autopilot_max_items) ? r.autopilot_max_items : 3,
@@ -157,6 +162,7 @@ export function settingsShape(s) {
     sessionDefaults: s.session_defaults,
     autopilotEnabled: s.autopilot_enabled,
     autopilotMinutes: s.autopilot_minutes,
+    autopilotWorkers: s.autopilot_workers,   // #335 — fleet-wide concurrency cap; 0 = unlimited
     autopilotTokens: s.autopilot_tokens,     // 0 = unlimited
     autopilotTime: s.autopilot_time,         // host-local HH:MM
     autopilotMaxItems: s.autopilot_max_items,
