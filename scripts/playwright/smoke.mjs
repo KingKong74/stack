@@ -151,9 +151,10 @@ function printHelp() {
 Screens: ${SCREENS.map((s) => s.id).join(', ')}
 Viewports: ${Object.keys(VIEWPORTS).join(', ')}
 
-Exits 0 only when zero findings were reported across every screen and
-viewport run. See scripts/playwright/README.md for what each finding kind
-means.
+Exits 0 only when zero error or layout findings were reported across every
+screen and viewport run. 'info' findings (third-party noise) are always
+recorded and printed but never fail the run. See scripts/playwright/README.md
+for what each finding kind means and what is deliberately not reported.
 `);
 }
 
@@ -166,6 +167,7 @@ function severityCounts(findings) {
   return {
     errors: findings.filter((f) => f.severity === 'error').length,
     layout: findings.filter((f) => f.severity === 'layout').length,
+    info: findings.filter((f) => f.severity === 'info').length,
   };
 }
 
@@ -174,15 +176,15 @@ function printTable(report, out) {
   const pad = Math.max(...rows.map((r) => `${r.id}@${r.viewport}`.length), 20);
   process.stdout.write('\nscreen@viewport'.padEnd(0) + '\n');
   for (const r of rows) {
-    const { errors, layout } = severityCounts(r.findings);
+    const { errors, layout, info } = severityCounts(r.findings);
     const ok = errors === 0 && layout === 0;
     process.stdout.write(
       `  ${ok ? '✓' : '✗'} ${`${r.id}@${r.viewport}`.padEnd(pad)}  `
-      + `errors:${String(errors).padStart(2)}  layout:${String(layout).padStart(2)}\n`,
+      + `errors:${String(errors).padStart(2)}  layout:${String(layout).padStart(2)}  info:${String(info).padStart(2)}\n`,
     );
   }
 
-  const withFindings = rows.filter((r) => r.findings.length);
+  const withFindings = rows.filter((r) => r.findings.some((f) => f.severity === 'error' || f.severity === 'layout'));
   if (withFindings.length) {
     process.stdout.write('\nfindings:\n');
     for (const r of withFindings) {
@@ -200,12 +202,38 @@ function printTable(report, out) {
     }
   }
 
+  // 'info' findings (third-party console/request noise, CLAUDE.md-style
+  // "annotate, never hide") are always shown, in a section of their own, so
+  // a reader can see exactly what was filtered out of the pass/fail count
+  // without it being reported as a defect in Stack's own UI.
+  const infoRows = rows.filter((r) => r.findings.some((f) => f.severity === 'info'));
+  if (infoRows.length) {
+    process.stdout.write('\ninfo — third-party, recorded but does not fail the run:\n');
+    for (const r of infoRows) {
+      const infoFindings = r.findings.filter((f) => f.severity === 'info');
+      process.stdout.write(`\n  ${r.id}@${r.viewport} (${r.path}):\n`);
+      for (const f of infoFindings) {
+        process.stdout.write(`    [info] ${f.kind}: ${f.detail}\n`);
+      }
+    }
+  }
+
   const totals = report.totals;
+  const s = totals.suppressed || { ellipsis: 0, lineClamp: 0, thirdParty: 0, clippedAncestor: 0 };
+  const suppressedTotal = s.ellipsis + s.lineClamp + s.thirdParty + s.clippedAncestor;
+  const suppressedParts = [];
+  if (s.ellipsis) suppressedParts.push(`${s.ellipsis} ellipsis`);
+  if (s.lineClamp) suppressedParts.push(`${s.lineClamp} line-clamp`);
+  if (s.thirdParty) suppressedParts.push(`${s.thirdParty} third-party`);
+  if (s.clippedAncestor) suppressedParts.push(`${s.clippedAncestor} clipped-ancestor`);
+  const suppressedStr = suppressedTotal ? ` (${suppressedTotal} suppressed: ${suppressedParts.join(', ')})` : '';
+
   process.stdout.write(
     `\n${totals.screens} screen${totals.screens === 1 ? '' : 's'} run, `
     + `${totals.errors} error finding${totals.errors === 1 ? '' : 's'}, `
     + `${totals.layout} layout finding${totals.layout === 1 ? '' : 's'}, `
-    + `${totals.screenshots} screenshot${totals.screenshots === 1 ? '' : 's'}.\n`,
+    + `${totals.info} info finding${totals.info === 1 ? '' : 's'}, `
+    + `${totals.screenshots} screenshot${totals.screenshots === 1 ? '' : 's'}${suppressedStr}.\n`,
   );
   process.stdout.write(`screenshots: ${out}\n`);
   process.stdout.write(`report:      ${join(out, 'report.json')}\n`);
@@ -241,7 +269,37 @@ function scanLayout() {
     return parts.join(' > ');
   }
 
-  const results = { pageOverflowX: null, elementOverflowX: [], elementOverflowY: [], elementPastViewport: [] };
+  // WHY THIS EXISTS (#291 follow-up): a first full run produced 149 layout
+  // findings, and the overwhelming majority were never bugs — they were the
+  // app disclosing that content is cut off, or a canvas doing exactly what
+  // it is designed to do. A harness that cries wolf that often teaches its
+  // reader to stop reading it, which defeats the whole point (CLAUDE.md,
+  // "a capped list must say it is capped" — the same rule applies to any
+  // filter: never slice silently, always say what and how much).
+  //
+  //   - element-overflow-x: `text-overflow: ellipsis` REQUIRES
+  //     `overflow: hidden`, so `scrollWidth > clientWidth` is the normal,
+  //     PERMANENT state of every deliberately-truncated label in the app —
+  //     the ellipsis IS the disclosure that something is cut off, which is
+  //     the opposite of the bug this finding exists to catch (content cut
+  //     off with no visual hint at all).
+  //   - element-overflow-y: `-webkit-line-clamp` is the vertical equivalent
+  //     of the same thing — a deliberate multi-line clamp, not a pane
+  //     silently too short for its content.
+  //   - element-past-viewport: an element only pushes the DOCUMENT wider
+  //     than the window (what `page-overflow-x` reports as a symptom) if
+  //     nothing between it and the page clips or scrolls it first. The
+  //     Workbench canvas is 2400px wide and deliberately pannable —
+  //     `div.wb-ground` clips it with `overflow: hidden`, so it never
+  //     causes the page itself to scroll and is not a bug.
+  //
+  // Every one of these is COUNTED, never dropped silently: `suppressed`
+  // below is folded into the screen's report and the run's printed summary,
+  // so a reader can always see how much was filtered and why.
+  const results = {
+    pageOverflowX: null, elementOverflowX: [], elementOverflowY: [], elementPastViewport: [],
+    suppressed: { ellipsis: 0, lineClamp: 0, clippedAncestor: 0 },
+  };
 
   const docWidth = document.documentElement.scrollWidth;
   const winWidth = window.innerWidth;
@@ -256,6 +314,16 @@ function scanLayout() {
 
   const hasReportedAncestor = (el, list) => list.some((r) => r !== el && r.contains(el));
 
+  const CLIPPING_OVERFLOW = ['hidden', 'clip', 'auto', 'scroll'];
+  const hasClippingAncestor = (el) => {
+    let node = el;
+    while (node && node !== document.documentElement) {
+      if (CLIPPING_OVERFLOW.includes(getComputedStyle(node).overflowX)) return true;
+      node = node.parentElement;
+    }
+    return false;
+  };
+
   for (const el of all) {
     if (el === document.documentElement || el === document.body) continue;
     if (!isRendered(el)) continue;
@@ -263,7 +331,9 @@ function scanLayout() {
     const rect = el.getBoundingClientRect();
 
     if ((cs.overflowX === 'hidden' || cs.overflowX === 'clip') && el.scrollWidth > el.clientWidth + 1) {
-      if (!hasReportedAncestor(el, reportedX)) {
+      if (cs.textOverflow === 'ellipsis') {
+        results.suppressed.ellipsis++;
+      } else if (!hasReportedAncestor(el, reportedX)) {
         reportedX.push(el);
         results.elementOverflowX.push({
           selector: selectorPath(el),
@@ -274,7 +344,11 @@ function scanLayout() {
     }
 
     if ((cs.overflowY === 'hidden' || cs.overflowY === 'clip') && el.scrollHeight > el.clientHeight + 1) {
-      if (!hasReportedAncestor(el, reportedY)) {
+      const clamp = cs.getPropertyValue('-webkit-line-clamp');
+      const clamped = clamp && clamp !== 'none' && !Number.isNaN(Number(clamp));
+      if (clamped) {
+        results.suppressed.lineClamp++;
+      } else if (!hasReportedAncestor(el, reportedY)) {
         reportedY.push(el);
         results.elementOverflowY.push({
           selector: selectorPath(el),
@@ -285,7 +359,9 @@ function scanLayout() {
     }
 
     if (rect.right > winWidth + 1) {
-      if (!hasReportedAncestor(el, reportedPast)) {
+      if (hasClippingAncestor(el)) {
+        results.suppressed.clippedAncestor++;
+      } else if (!hasReportedAncestor(el, reportedPast)) {
         reportedPast.push(el);
         results.elementPastViewport.push({
           selector: selectorPath(el),
@@ -329,6 +405,39 @@ function describeLayoutFinding(kind, item) {
     default:
       return kind;
   }
+}
+
+// ---- third-party attribution -----------------------------------------------
+// WHY THIS EXISTS: a first full run reported 18 error findings, and most of
+// them were about the Cloudflare RUM analytics beacon and about OTHER
+// projects' sites — the dashboard renders live previews of other projects'
+// cards, so a console error or failed request can originate from a page
+// this harness never navigated to on purpose. Attributing that to Stack is
+// the same mistake the preflight already guards the whole run against
+// (README "Preflight"): reporting a stranger's problem as this app's own.
+// `page-error` is deliberately NOT reclassified here — an uncaught exception
+// fires via `window.onerror` inside STACK'S OWN page even when a third-party
+// script threw it, so the dashboard's `Minified React error #418` correctly
+// stays a real, page-attributed finding: it is Stack's own hydration bug.
+// `auth-rejected` is untouched for the same reason: it is judged by path
+// (`/api/`), not by message content, so there is nothing to misattribute.
+function originOf(candidateUrl) {
+  try { return new URL(candidateUrl).origin; } catch { return null; }
+}
+
+// Conservative on purpose: only reclassifies when a URL can be extracted,
+// parsed, AND its origin differs from the base. Any ambiguity leaves the
+// finding as a normal error — CLAUDE.md's own rule for this feature: "a
+// false 'this is someone else's problem' is worse than a noisy true one,
+// because it hides a real defect".
+function foreignOriginIn(text, baseOrigin) {
+  const matches = text.match(/https?:\/\/[^\s'"()]+/g);
+  if (!matches) return null;
+  for (const raw of matches) {
+    const origin = originOf(raw.replace(/[.,;:]+$/, ''));
+    if (origin && origin !== baseOrigin) return origin;
+  }
+  return null;
 }
 
 // ---- preflight --------------------------------------------------------------
@@ -487,6 +596,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
 
   const url = opts.url.replace(/\/$/, '');
+  const baseOrigin = originOf(url);
 
   const check = await preflight(url, token, opts.timeout);
   if (!check.ok) {
@@ -546,13 +656,27 @@ export async function main(argv = process.argv.slice(2)) {
       for (const screen of wantScreens) {
         const path = screen.path.replace('<slug>', opts.slug);
         const findings = [];
+        // Per-screen tally folded into `suppressed.thirdParty` below — these
+        // findings are NOT dropped (they still land in `findings` as `info`),
+        // this just counts how many were kept out of the error tally.
+        let thirdPartyCount = 0;
 
         const onConsole = (msg) => {
           if (msg.type() === 'error') {
-            findings.push({
-              kind: 'console-error', severity: 'error', screen: screen.id, viewport: viewportName,
-              detail: msg.text().slice(0, 300),
-            });
+            const text = msg.text();
+            const foreign = foreignOriginIn(text, baseOrigin);
+            if (foreign) {
+              thirdPartyCount++;
+              findings.push({
+                kind: 'third-party-console', severity: 'info', screen: screen.id, viewport: viewportName,
+                detail: text.slice(0, 300), origin: foreign,
+              });
+            } else {
+              findings.push({
+                kind: 'console-error', severity: 'error', screen: screen.id, viewport: viewportName,
+                detail: text.slice(0, 300),
+              });
+            }
           }
         };
         const onPageError = (err) => {
@@ -564,20 +688,39 @@ export async function main(argv = process.argv.slice(2)) {
         const onRequestFailed = (req) => {
           const reqUrl = req.url();
           if (IGNORED_REQUEST_PATTERNS.some((p) => p.test ? p.test(reqUrl) : reqUrl.includes(p))) return;
-          findings.push({
-            kind: 'request-failed', severity: 'error', screen: screen.id, viewport: viewportName,
-            detail: `${reqUrl} — ${req.failure()?.errorText || 'unknown failure'}`,
-            url: reqUrl,
-          });
+          const origin = originOf(reqUrl);
+          if (origin && origin !== baseOrigin) {
+            thirdPartyCount++;
+            findings.push({
+              kind: 'third-party-request', severity: 'info', screen: screen.id, viewport: viewportName,
+              detail: `${reqUrl} — ${req.failure()?.errorText || 'unknown failure'}`,
+              url: reqUrl,
+            });
+          } else {
+            findings.push({
+              kind: 'request-failed', severity: 'error', screen: screen.id, viewport: viewportName,
+              detail: `${reqUrl} — ${req.failure()?.errorText || 'unknown failure'}`,
+              url: reqUrl,
+            });
+          }
         };
         const onResponse = (res) => {
           const resUrl = res.url();
           const status = res.status();
           if (status >= 500) {
-            findings.push({
-              kind: 'http-error', severity: 'error', screen: screen.id, viewport: viewportName,
-              detail: `${resUrl} → ${status}`, url: resUrl, status,
-            });
+            const origin = originOf(resUrl);
+            if (origin && origin !== baseOrigin) {
+              thirdPartyCount++;
+              findings.push({
+                kind: 'third-party-request', severity: 'info', screen: screen.id, viewport: viewportName,
+                detail: `${resUrl} → ${status}`, url: resUrl, status,
+              });
+            } else {
+              findings.push({
+                kind: 'http-error', severity: 'error', screen: screen.id, viewport: viewportName,
+                detail: `${resUrl} → ${status}`, url: resUrl, status,
+              });
+            }
           }
           if (resUrl.includes('/api/') && status === 401) {
             findings.push({
@@ -604,7 +747,10 @@ export async function main(argv = process.argv.slice(2)) {
           });
         }
 
-        let layout = { pageOverflowX: null, elementOverflowX: [], elementOverflowY: [], elementPastViewport: [] };
+        let layout = {
+          pageOverflowX: null, elementOverflowX: [], elementOverflowY: [], elementPastViewport: [],
+          suppressed: { ellipsis: 0, lineClamp: 0, clippedAncestor: 0 },
+        };
         try {
           layout = await page.evaluate(scanLayout);
         } catch (e) {
@@ -644,9 +790,19 @@ export async function main(argv = process.argv.slice(2)) {
         page.off('requestfailed', onRequestFailed);
         page.off('response', onResponse);
 
+        // "It is capped and says so" (CLAUDE.md) applied to suppression: a
+        // reader must be able to see that filtering happened and how much,
+        // for every screen, every run — never a silent slice.
+        const suppressed = {
+          ellipsis: layout.suppressed?.ellipsis || 0,
+          lineClamp: layout.suppressed?.lineClamp || 0,
+          thirdParty: thirdPartyCount,
+          clippedAncestor: layout.suppressed?.clippedAncestor || 0,
+        };
+
         screenReports.push({
           id: screen.id, label: screen.label, path, viewport: viewportName,
-          screenshot: screenshotPath, findings,
+          screenshot: screenshotPath, findings, suppressed,
         });
       }
 
@@ -661,6 +817,16 @@ export async function main(argv = process.argv.slice(2)) {
     screens: screenReports.length,
     errors: screenReports.reduce((n, r) => n + r.findings.filter((f) => f.severity === 'error').length, 0),
     layout: screenReports.reduce((n, r) => n + r.findings.filter((f) => f.severity === 'layout').length, 0),
+    // 'info' findings (third-party console/request noise) are recorded and
+    // printed but never drive the exit code — see the exit-code line below,
+    // which is deliberately errors+layout only.
+    info: screenReports.reduce((n, r) => n + r.findings.filter((f) => f.severity === 'info').length, 0),
+    suppressed: {
+      ellipsis: screenReports.reduce((n, r) => n + (r.suppressed?.ellipsis || 0), 0),
+      lineClamp: screenReports.reduce((n, r) => n + (r.suppressed?.lineClamp || 0), 0),
+      thirdParty: screenReports.reduce((n, r) => n + (r.suppressed?.thirdParty || 0), 0),
+      clippedAncestor: screenReports.reduce((n, r) => n + (r.suppressed?.clippedAncestor || 0), 0),
+    },
     screenshots: screenReports.length,
   };
 

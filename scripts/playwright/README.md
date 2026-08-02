@@ -69,12 +69,16 @@ as the harness shoots it.
 
 ## Findings
 
-Two severities, both fail the run (exit 1) — separated only so a reader can
-tell a broken script from a broken layout:
+Three severities. `error` and `layout` fail the run (exit 1); `info` never
+does — separated so a reader can tell a broken script from a broken layout
+from noise this harness chose not to hold Stack responsible for:
 
 **`error`** — something is actually broken:
 - `console-error` — the page logged a console error.
-- `page-error` — an uncaught exception in the page.
+- `page-error` — an uncaught exception in the page. Always kept, even when a
+  third-party script is what threw it, because it fires via `window.onerror`
+  inside Stack's OWN page — see "What the harness deliberately does not
+  report" below for why this is NOT the same as a third-party console error.
 - `request-failed` — a network request failed outright.
 - `http-error` — a response came back 5xx.
 - `auth-rejected` — a `/api/` response came back 401. This is worse than the
@@ -94,6 +98,62 @@ tell a broken script from a broken layout:
 - `element-past-viewport` — a visible element whose right edge exceeds the
   window width (the actual culprit that `page-overflow-x` only reports the
   symptom of).
+
+**`info`** — recorded and printed in their own section, never fail the run:
+- `third-party-console` — a console error whose message names a URL on a
+  different origin to the app under test.
+- `third-party-request` — a failed request, or a 5xx response, whose URL is
+  on a different origin to the app under test.
+
+## What the harness deliberately does not report
+
+A first full run produced 18 `error` and 149 `layout` findings, and almost
+none of them were about Stack. Reporting them anyway would have made the
+harness cry wolf loudly enough that nobody would read it — which defeats the
+whole point (CLAUDE.md: "a harness that cries wolf ... is a harness nobody
+reads"). None of this is a silent slice: every filtered item is **counted**,
+in a per-screen `suppressed: { ellipsis, lineClamp, thirdParty,
+clippedAncestor }` object in `report.json` and in the run's printed summary
+line (e.g. `... (47 suppressed: 41 ellipsis, 6 third-party)`), and `info`
+findings are shown in full, in their own section — filtered out of the
+pass/fail count, never out of the report.
+
+- **A truncated label is not a bug.** `text-overflow: ellipsis` REQUIRES
+  `overflow: hidden`, so `scrollWidth > clientWidth` is the ellipsis's
+  normal, permanent, intended state — the ellipsis IS the disclosure that
+  content is cut off. `element-overflow-x` skips any element whose computed
+  `text-overflow` is `ellipsis`; `element-overflow-y` skips the vertical
+  equivalent, an element whose computed `-webkit-line-clamp` is a number
+  (not `none`). The bug this finding exists to catch is content cut off with
+  **no** visual hint at all — that case still reports.
+- **A preview of another project's site is not Stack's problem.** The
+  dashboard renders live previews of other projects' cards, so a console
+  error or failed request can genuinely originate from a page this harness
+  never meant to smoke (the observed cases: the Cloudflare RUM analytics
+  beacon, and console/request noise from other projects' own sites).
+  Attributing that to Stack is the same mistake the preflight below already
+  guards the whole run against — reporting a stranger's problem as this
+  app's own. `request-failed` / `http-error` reclassify to
+  `third-party-request`, and `console-error` reclassifies to
+  `third-party-console` when a URL can be extracted from the message, when
+  that origin differs from the base URL's own origin. This is deliberately
+  conservative: an ambiguous message is left as a real `console-error`,
+  because a false "someone else's problem" hides a real defect, which is
+  worse than one noisy true finding. `page-error` and `auth-rejected` are
+  never reclassified this way — an uncaught exception fires inside Stack's
+  own page even when a third-party script threw it (the dashboard's
+  `Minified React error #418` hydration error stays a real, page-attributed
+  finding under this rule, correctly, because it is Stack's own bug), and
+  `auth-rejected` is judged by request path, not by message content.
+- **A pannable canvas clipped by its container is not a bug.** The Workbench
+  canvas (`svg.wb-wires` inside `div.wb-ground`) is a deliberately-oversized,
+  pannable 2400px surface that its container clips with `overflow: hidden` —
+  it never makes the document itself scroll. `element-past-viewport` walks
+  from the element up to `<body>` and, if any ancestor's computed
+  `overflow-x` is `hidden`, `clip`, `auto` or `scroll`, the element is
+  contained and is not reported — only an element that reaches the viewport
+  edge with nothing clipping or scrolling it actually causes the
+  document-level overflow that `page-overflow-x` names the symptom of.
 
 ## Output
 
