@@ -28,6 +28,10 @@
 //    own token, and only to this project's own origin (see routes/checks.js).
 //  • The probe runs INSIDE the server container, so the URL has to be reachable
 //    from there: the project's public site_url, or a compose-internal host.
+//  • Renaming a check ORPHANS the old row (name is the identity), and this file
+//    will never delete it. If a rename is because the thing it asserted moved
+//    or went away, delete the old row from the Quality page in the same change —
+//    otherwise it sits red forever asserting something that is gone (BUG-11).
 
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -247,10 +251,29 @@ export async function main(argv = process.argv.slice(2)) {
     updated++;
   }
 
+  // Checks the suite does not own. Nothing here is ever deleted — a check added
+  // by hand is the owner's, and this file has no way to tell one from a row the
+  // suite renamed away from. But a RED one has to be said loudly (BUG-11): when
+  // the Workbench payload's `tray` became `polaris`, the new check was added
+  // under a new name and the old row was left behind asserting a key that no
+  // longer exists. It failed every night for a fortnight, indistinguishable on
+  // the Quality page from a real regression, and "left alone" is what this line
+  // said about it each time. An unowned check that passes is somebody's extra
+  // cover; an unowned check that fails is a claim nobody is maintaining.
   const extra = existing.filter((c) => !SUITE.some((s) => s.name === c.name));
-  for (const c of extra) process.stdout.write(`· ${c.name} — not in the suite, left alone\n`);
+  const stale = extra.filter((c) => c.lastStatus === 'fail');
+  for (const c of extra) {
+    const why = c.lastStatus === 'fail' ? ` — FAILING: ${c.lastError || 'no reason recorded'}` : '';
+    process.stdout.write(`· ${c.name} — not in the suite, left alone${why}\n`);
+  }
   process.stdout.write(`\n${DRY ? '[dry] ' : ''}${created} created, ${updated} updated, `
     + `${same} unchanged, ${extra.length} left alone.\n`);
+  if (stale.length) {
+    process.stdout.write(`\n${stale.length} check${stale.length === 1 ? '' : 's'} outside the suite `
+      + `${stale.length === 1 ? 'is' : 'are'} RED. Nothing here will touch them: either fold the\n`
+      + 'assertion into this file under its own name, or delete the row from the Quality\n'
+      + 'page. A red check the suite does not own reads as a regression forever.\n');
+  }
 
   let code = 0;
   if (RUN && !DRY) {
