@@ -57,10 +57,16 @@ The block is a snapshot. For the current state at any moment, read the API:
 - `GET /api/projects` — all projects with computed progress.
 - `GET /api/projects/<slug>` — one project plus its activity, bugs, roadmap,
   notes and futures. This is the authoritative "how is this project doing right
-  now". If it carries a **north star** (`northStar`), treat it as the project's
+  now".
+  If it carries a **north star** (`northStar`), treat it as the project's
   direction and pull your work towards it. If it carries **directives**, they
   are standing instructions from the owner — honour them before anything else,
   and don't remove them yourself (they're cleared from the dashboard).
+- `GET /api/agents` — Stack's own three in-app tab agents (Auditor · Quality,
+  Curator · Roadmap, Polaris · Futures). **These are not you**: they are the ✧
+  buttons on the tabs, each restricted to its own tab, and any of them can be
+  switched off in Mission Control → Agents. Worth reading only to explain why a
+  ✧ surface is missing, or why one of those routes answered 409.
 
 The base URL and slug for the project you're in are stamped at the bottom of this
 file when it was exported (or are blank in the generic template).

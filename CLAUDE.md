@@ -51,10 +51,10 @@ templates/ stack-agent-context.md — the canonical portable agent manual (singl
   you looked at — and that write only ever re-spells a URL that is already `/control`. `#/control` is
   the one canonical spelling of the default room, and an unknown room lands there rather than 404ing.
 - `screens/` — Dashboard (five anchored sections behind a sticky SubNav), ProjectDetail (owns tab +
-  modal state), Settings, Control (Mission Control — five rooms behind a live strip and a persistent
-  right rail; `Control.tsx` is the shell and each room has its own file: `ControlNow` /
-  `ControlRooms` (Nights, Plan) / `ControlReview` / `ControlRoles`, with the merged session
-  list in `ControlLanes`). A sixth, BUILD, was removed with its tab: its two gates belong to other
+  modal state), Settings, Control (Mission Control — one room per question, behind a live strip and a
+  persistent right rail; `Control.tsx` is the shell and each room has its own file: `ControlNow` /
+  `ControlRooms` (Nights, Plan) / `ControlReview` / `ControlRoles` / `ControlAgents` (#361 — the
+  three tab agents), with the merged session list in `ControlLanes`). A sixth, BUILD, was removed with its tab: its two gates belong to other
   rooms now — the verdict is Review's whole subject, the merge is the Now room's branch strip — and
   `#/control/build` falls back to the default room. Then Terminal, Skills.
   `detail/` holds the project tabs: Overview, Quality (#278 — Bugs and Audit merged into
@@ -255,6 +255,18 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   passes were against a different test. Renaming keeps both.
 - **`0 = unlimited`** for `autopilotTokens` and `autopilotMaxItems` (#260); positive values are
   clamped. `termIdleHours` `0 = never`.
+- **A TAB AGENT'S BINDING IS CODE, NOT DATA (#361).** `src/agents.js` is the registry: the Auditor
+  works the Quality tab, the Curator the Roadmap tab, Polaris the Futures tab, and each one's `ops`
+  list is CLOSED. `agent_configs` holds only what the owner tunes (enabled, model, guidance,
+  `ops_off`) — never which tab or which ops, because those are the restriction itself. A route binds
+  once (`const auditor = agentClient('auditor')`) and every model call goes through that client,
+  which THROWS on an op belonging to another agent; that throw, not a comment, is what stops the
+  Quality route running the board cleanup. Adding a ✧ surface means adding its op to the owning
+  agent — an unregistered op cannot run at all. **A missing config row means ON**, same direction as
+  `readSettings()`: three tabs already work this way, so an unwritten row must degrade to working,
+  not to dead ✧ buttons. Switching an agent off stops it acting everywhere, including the Auditor's
+  keyless Claude hand-off — off means off, not "off where it costs money". Pinned by
+  `server/test/agents.test.mjs` (pure — `gateDecision` takes the config, so no DB is needed).
 
 ## Fail-safe direction (get this right or you delete work)
 
@@ -369,7 +381,8 @@ reference. The index:
   `/api/projects/:slug/…` with `mergeParams`.
 - **Automation** — `autopilot.js` (the schedule, the job queue and the host dispatcher's
   `GET /next`), `previews.js`, `branches.js`, `skills.js`, `terminal.js`.
-- **Plumbing** — `ingest.js`, `settings.js`, `projects.js`, `presence.js`, `auth.js`, `devices.js`,
+- **Plumbing** — `ingest.js`, `settings.js`, `agents.js` (#361 — the tab agents' config; the
+  REGISTRY itself is `src/agents.js`, not a route), `projects.js`, `presence.js`, `auth.js`, `devices.js`,
   `tips.js` (app-wide, no slug).
 
 `GET /api/projects/:slug` is the combined detail payload the SessionStart hook reads back.
@@ -448,6 +461,7 @@ node server/test/fleet-roles.test.mjs      # role attribution + drift detection 
 node server/test/workbench.test.mjs        # the canvas is a placement layer (needs API + DATABASE_URL)
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
+node server/test/agents.test.mjs           # each tab agent is bound to its own tab (pure, no DB)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)

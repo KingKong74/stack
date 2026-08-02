@@ -110,6 +110,23 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Terminal — a malformed prompt answer is refused', method: 'POST',
       url: u('/api/terminal/answer'), auth: true, expect_status: 400,
       req_body: '{"name":"stack-term-nope","fingerprint":"not-a-fingerprint","choice":"approve"}' },
+    // #361 — the tab agents. The registry is the SERVER's, and three tabs
+    // read it to decide whether to render their ✧ surfaces at all, so a
+    // payload that stops carrying it doesn't error — it quietly reads as
+    // "no switches", and every agent surface renders on regardless of what
+    // the owner set. Assert the shape, never a state: `enabled` is a switch
+    // the owner is meant to flip, so a check on its VALUE would go red the
+    // moment the feature was used as intended. The `tab` binding is the one
+    // thing that is not supposed to move.
+    { name: 'Agents — the registry is served', url: u('/api/agents'), auth: true, json_path: 'agents.0.key' },
+    { name: 'Agents — each one names its tab', url: u('/api/agents'), auth: true, json_path: 'agents.0.tab' },
+    { name: 'Agents — the ops list is served', url: u('/api/agents'), auth: true, json_path: 'agents.0.ops.0.op' },
+    { name: 'Agents — the key flag frames the room', url: u('/api/agents'), auth: true, json_path: 'geminiReady' },
+    { name: 'Agents — auth gate closed', url: u('/api/agents'), expect_status: 401 },
+    // The per-project read the tabs actually use — a different route with its
+    // own shape, and the one whose absence hides the switch rather than the
+    // feature.
+    { name: 'Project — tab agent state', url: u(`/api/projects/${slug}`), auth: true, json_path: 'agents.auditor.enabled' },
     { name: 'Search — grouped counts', url: u('/api/search?q=roadmap'), auth: true, json_path: 'counts.total' },
     { name: 'Search — empty query is empty', url: u('/api/search?q='), auth: true, json_path: 'counts.total', json_expect: '0' },
     { name: 'Timeline — daily graph', url: u('/api/timeline'), auth: true, json_path: 'graph.0.date' },
