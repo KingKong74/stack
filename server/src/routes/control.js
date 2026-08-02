@@ -112,6 +112,13 @@ const ms = (ts) => (ts ? new Date(ts).getTime() : -1);
 // strip below already renders N slots the moment N grows.
 const FLEET_CAPACITY = 1;
 
+// (#271) The Nights calendar's per-run feed is fleet-wide across a 7-day
+// window with no project filter — a busy house can return more rows than a
+// single-project one ever did. Cap the payload here, but `recentRunsTotal`
+// (below) carries the TRUE row count before the slice so the calendar can say
+// when a night was truncated rather than reading a truncated cell as quiet.
+const RECENT_RUNS_CAP = 60;
+
 // (#268) The dispatcher's tmux name for a job, mirroring the one
 // scripts/stack-autopilot-dispatch.mjs builds (`stack-auto-<safe>-j<id>`).
 // Kept in step with that file — it is the only other place this shape exists.
@@ -946,7 +953,10 @@ control.get('/', async (_req, res) => {
     // The cap covers a full week of nights so the Nights calendar (14a) can
     // place every run on its day; `day` is the UTC calendar date, the same
     // bucket convention as weekNights above.
-    recentRuns: usageR.rows.slice(0, 60).map((r) => ({
+    // (#271) The true count before the slice — the cap above is fleet-wide,
+    // so a truncated week must say so rather than reading as a quiet one.
+    recentRunsTotal: usageR.rows.length,
+    recentRuns: usageR.rows.slice(0, RECENT_RUNS_CAP).map((r) => ({
       slug: r.slug,
       name: r.project_name,
       tint: r.project_tint || null,

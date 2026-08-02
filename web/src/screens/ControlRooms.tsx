@@ -194,6 +194,11 @@ export function NightsRoom({ data, pickSlug, onPick, onOpenPlanner, onRunNow, on
   }), []);
   const todayStr = fmtDate(new Date());
   const runs = data.usage?.recentRuns ?? [];
+  // (#271) The feed is fleet-wide and capped server-side — a busy house can
+  // truncate the oldest nights out of the window. A truncated cell renders
+  // empty, indistinguishable from a quiet one, so say so when it happened.
+  const runsTotal = data.usage?.recentRunsTotal;
+  const runsTruncated = runsTotal != null && runsTotal > runs.length;
 
   // Rows: any project the week actually touches — automode, a schedule, or a run.
   // (#271) The picked project narrows the lanes to one; '' shows the house.
@@ -244,6 +249,11 @@ export function NightsRoom({ data, pickSlug, onPick, onOpenPlanner, onRunNow, on
         <span className="mc14-legend"><i className="booked" /> booked</span>
         <button className="btn-repo sm" onClick={() => onOpenPlanner(null)}>+ Plan a session</button>
       </div>
+      {runsTruncated && (
+        <span className="meta">
+          Showing the newest {runs.length} of {runsTotal} runs this week — older nights may read quieter than they were.
+        </span>
+      )}
 
       {rows.length === 0 ? (
         <div className="mc14-empty">

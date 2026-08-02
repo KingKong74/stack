@@ -3927,6 +3927,7 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc14-room-head { display: flex; align-items: center; gap: 12px; }
 .mc14-room-head .title { font-family: var(--disp); font-size: 15px; font-weight: 600; color: var(--ink); }
 .mc14-room-head .meta { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.mc14-nights > .meta { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 .mc14-empty { padding: 22px; border: 1px dashed var(--keyline); border-radius: 11px; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
 .mc14-picker { display: flex; flex-wrap: wrap; gap: 6px; }
 .mc14-pick-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--line-3); font-size: 11.5px; font-weight: 500; color: var(--muted); }

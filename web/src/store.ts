@@ -388,6 +388,10 @@ export interface UsageSummary {
   // #177 — the newest runs with their per-model (agent) split for the breakdown.
   // `day` (#14a) = the UTC calendar date, so the Nights room can place each run.
   recentRuns?: RunRow[];
+  // (#271) The true row count before the server's cap — recentRuns is
+  // fleet-wide and can be truncated in a busy house. Greater than
+  // recentRuns.length means the Nights calendar is missing older nights.
+  recentRunsTotal?: number;
 }
 
 // One row of the run ledger. #286 added what the run PRODUCED (branch, commits,
