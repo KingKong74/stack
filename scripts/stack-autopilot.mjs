@@ -87,6 +87,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadStackEnv, logStderr, git } from '../hook/stack-post.mjs';
 import { laneFor, bugLaneFor, auditLaneFor } from './lib/lane.mjs';
+import { refineTargetBranch } from './lib/refine.mjs';
 
 loadStackEnv();
 
@@ -97,10 +98,12 @@ const arg = (name, fallback = null) => {
 const DRY = process.argv.includes('--dry');
 const FORCE = process.argv.includes('--force');
 // #228 — session kinds: build (default) | plan | debug | audit | refine.
-// An unrecognised --kind falls back to 'build'. `refine` (#274) is a
-// recognised kind of its own so it rides jobs/resumes labelled correctly,
-// but at this unit it deliberately falls through to the SAME build/plan loop
-// below as 'build' — no debug/auditNight()-style branch for it yet.
+// An unrecognised --kind falls back to 'build'. `refine` (#274) rides the
+// SAME build loop below (runItem) rather than getting its own debug/audit-
+// style night — the only thing that changes is which items are eligible
+// (only ones carrying a refine note) and which branch runItem builds on
+// (the item's own branch, continued, when one still exists on origin —
+// see scripts/lib/refine.mjs).
 const KIND_RAW = String(arg('kind') || '').toLowerCase();
 const PLAN_ONLY = process.argv.includes('--plan-only') || KIND_RAW === 'plan';
 const KIND = KIND_RAW === 'debug' ? 'debug'
@@ -188,12 +191,12 @@ async function attachReview(runId, verdict, architect) {
 // going — duplication, boundaries, drift from what is already there. It files
 // nothing and gates nothing; it is a second opinion for the morning's review.
 // Keyless = skipped silently, like every other Gemini surface here.
-function runArchitect(wt, tag) {
+function runArchitect(wt, tag, range = 'main..HEAD') {
   if (!GEMINI_KEY) return null;
   const file = join(lockDir, 'autopilot', `${SLUG}-${tag}-architect.json`);
   try { rmSync(file); } catch { /* none from a previous attempt */ }
   const pass = spawnSync('node', [join(REPO, 'hook', 'stack-gemini-review.mjs'),
-    '--architect', '--range', 'main..HEAD', '--verdict-file', file], {
+    '--architect', '--range', range, '--verdict-file', file], {
     cwd: wt, stdio: ['ignore', 'inherit', 'inherit'], timeout: 120_000,
   });
   if (pass.status !== 0) { log('architect pass did not complete (see above).'); return null; }
@@ -419,9 +422,13 @@ process.on('exit', unlock);
 // Eligibility: open, unclaimed, not parked, human-approved — and inside the
 // project's target area when one is set (Mission Control's #122 picker).
 // --item pins bypass the area filter: an explicit human choice wins.
+// A refine session (#274) narrows further: it works a ROUND, so only items
+// the owner actually sent back with a delta are eligible — a refine-noteless
+// item has nothing for it to do.
 const eligible = (targetArea) => (it) =>
   !it.done && !it.skipped && !it.claimedBy && (it.source === 'manual' || it.reviewed)
-  && (!targetArea || (it.area || '') === targetArea);
+  && (!targetArea || (it.area || '') === targetArea)
+  && (KIND !== 'refine' || !!it.refineNote);
 // The desire tier (#227): S/A/B/C is the owner's ranking of what they want
 // next, sorted ahead of the MoSCoW bucket. Unranked = 4, so it lands after
 // every ranked item and a board nobody has tiered is untouched.
@@ -839,13 +846,43 @@ Read the relevant code first — real file paths, real tables, real routes. Then
 
 // ---- one item, one branch, one bounded session ----
 async function runItem(item, northStar, capMin) {
-  const lane = laneFor(item);
-  const branch = lane;
   const startedAt = new Date().toISOString();
   log(`picked #${item.id} [${item.bucket}] ${item.title} (cap ${Math.round(capMin)}m)`);
 
-  // Claim the lane (visible on the deck's lanes strip immediately).
-  await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, { claimed_by: lane });
+  // A refine round (#274) continues the item's OWN branch when one still
+  // exists on origin — the delta belongs on top of the work it corrects, not
+  // beside it (scripts/lib/refine.mjs). Every other kind cuts fresh, exactly
+  // as before.
+  let branch = laneFor(item);
+  let continuing = false;
+  if (KIND === 'refine') {
+    const heads = git(REPO, ['ls-remote', '--heads', 'origin']).split('\n')
+      .map((l) => l.split('\t')[1] || '')
+      .filter((ref) => ref.startsWith('refs/heads/'))
+      .map((ref) => ref.slice('refs/heads/'.length));
+    // `git()` catches and returns '' on any failure, so a network problem, a
+    // missing remote or a bad credential is indistinguishable from "origin
+    // has no branches for this item" — and an origin that answers at all
+    // always has at least one head. Reading that ambiguity the wrong way
+    // would cut a FRESH branch, abandoning the previous round's commits and
+    // dooming the eventual push to a non-fast-forward failure after the
+    // whole session is spent. Fail SAFE: an unreadable origin means do
+    // nothing, not build (CLAUDE.md's fail-safe direction).
+    if (heads.length === 0) {
+      log(`#${item.id}: could not read origin's branches — not cutting a fresh branch for a refine round, since that would abandon the previous round.`);
+      try { await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, { claimed_by: '' }); } catch { /* best effort */ }
+      await postRun({ item_id: item.id, item_title: item.title, branch, outcome: 'failed', commits: 0,
+        summary: 'refine round skipped: ls-remote returned no heads (origin unreachable, missing, or a credential problem).' });
+      return { landed: false, limitHit: false };
+    }
+    const target = refineTargetBranch(item, heads);
+    if (target) { branch = target; continuing = true; }
+  }
+
+  // Claim the RESOLVED branch (visible on the deck's lanes strip immediately) —
+  // not laneFor(item), so Mission Control's ledger points at the branch that
+  // actually moves.
+  await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, { claimed_by: branch });
 
   // The spec pre-pass — Gemini plans, the session builds, the human disposes.
   // A refined item (#146) skips it: the owner's refine_note IS the spec — a
@@ -855,11 +892,48 @@ async function runItem(item, northStar, capMin) {
 
   // A fresh worktree so the human's checkout is never disturbed.
   const wt = join(lockDir, 'autopilot', `${SLUG}-item-${item.id}`);
-  git(REPO, ['worktree', 'remove', '--force', wt]); // clear a previous attempt's tree
-  git(REPO, ['branch', '-D', branch]);              // (branch survives on origin if pushed)
   mkdirSync(join(lockDir, 'autopilot'), { recursive: true });
-  const added = git(REPO, ['worktree', 'add', wt, '-b', branch]);
-  if (!existsSync(join(wt, '.git'))) throw new Error(`worktree add failed (${added || 'no output'})`);
+  git(REPO, ['worktree', 'remove', '--force', wt]); // clear a previous attempt's tree
+  let added;
+  if (continuing) {
+    // Start from origin's tip so the previous round's commits are the base
+    // and this session's push is a fast-forward — never `branch -D` here,
+    // that is the line that would throw the previous round away.
+    log(`refine round: continuing ${branch} — its previous commits are the base for this round.`);
+    git(REPO, ['fetch', 'origin', branch]);
+    added = git(REPO, ['worktree', 'add', wt, '-B', branch, `origin/${branch}`]);
+    if (!existsSync(join(wt, '.git'))) {
+      // Most likely a parallel session already has this branch checked out
+      // elsewhere — never force it. Release the claim and move on; the
+      // branch on origin is untouched either way.
+      log(`#${item.id}: could not check out ${branch} for the refine round (${added || 'no output'}) — skipping rather than forcing it.`);
+      try { await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, { claimed_by: '' }); } catch { /* best effort */ }
+      await postRun({ item_id: item.id, item_title: item.title, branch, outcome: 'failed', commits: 0,
+        summary: `worktree add failed for the refine round on ${branch} (${added || 'no output'}).` });
+      return { landed: false, limitHit: false };
+    }
+  } else {
+    if (KIND === 'refine') log(`refine round: no branch found for #${item.id} on origin — the previous work already landed on main; building fresh on ${branch}.`);
+    git(REPO, ['branch', '-D', branch]); // (branch survives on origin if pushed)
+    added = git(REPO, ['worktree', 'add', wt, '-b', branch]);
+    if (!existsSync(join(wt, '.git'))) throw new Error(`worktree add failed (${added || 'no output'})`);
+  }
+
+  // A run row is this SESSION's own account of itself. The previous round
+  // already has its own row, its own commit count and its own second-model
+  // read, so for a continuing refine round the base for "what did THIS
+  // session do" is the commit the worktree was checked out at — not main —
+  // captured HERE, before the session commits anything. Counting the
+  // previous round's commits again would report work this session didn't
+  // do; re-reviewing them would spend a review on a diff a human has
+  // already seen. Every non-refine run, and a refine round with no branch
+  // to continue, bases off `main` and nothing changes.
+  let base = 'main';
+  if (continuing) {
+    const head = git(wt, ['rev-parse', 'HEAD']);
+    if (head) base = head;
+    else log(`#${item.id}: could not read HEAD on ${branch} to base the refine range on — falling back to main..HEAD.`);
+  }
 
   // The owner's implementation plan (#75), worked top-down — ticked steps are
   // already done from an earlier pass, so the session starts at the first open one.
@@ -881,8 +955,8 @@ This is a Must item with NO implementation plan yet. BEFORE you write any code:
 3. Then build against your own design, ticking steps off as they land (re-send the full plan list with "done":true).
 `;
 
-  // A refinement round (#146): the item landed before and came back with a
-  // delta — the session changes what the note asks for, not a rebuild.
+  // A refinement round (#146, #274): the item landed before and came back
+  // with a delta — the session changes what the note asks for, not a rebuild.
   const refineBlock = !item.refineNote ? '' : `
 This item was BUILT BEFORE and sent back for refinement.${item.builtNote ? `
 What landed last time (already merged or on its branch — do not redo it):
@@ -890,6 +964,9 @@ What landed last time (already merged or on its branch — do not redo it):
 The owner's refinement — change ONLY what this asks for, on top of what already landed:
   ${item.refineNote}
 Do NOT treat the title/note above as a fresh spec and rebuild from scratch — the previous work stands. Apply only the delta the refinement describes.
+${continuing
+  ? `This branch already carries the previous round's commits — commit your delta ON TOP of them. Never rebase, amend or force-push what is already on origin: a human is reviewing that history.`
+  : `The previous round's work is already on main (its branch was merged and deleted), so you are building on a fresh branch off main.`}
 `;
 
   // #285 — the build session's copy of the director contract. Same inversion:
@@ -976,14 +1053,14 @@ Rules for this run:
     ...(tmuxSession ? { tmux_session: tmuxSession } : {}), // monitoring session (#171)
   };
 
-  // What did it produce?
-  const nCommits = parseInt(git(wt, ['rev-list', '--count', 'main..HEAD']) || '0', 10) || 0;
+  // What did it produce? (base..HEAD, not main..HEAD — see `base` above.)
+  const nCommits = parseInt(git(wt, ['rev-list', '--count', `${base}..HEAD`]) || '0', 10) || 0;
   if (nCommits === 0) {
     // Nothing landed — release the claim so tomorrow (or the scheduled
     // resume) retries, tidy the tree.
     await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, { claimed_by: '' });
     git(REPO, ['worktree', 'remove', '--force', wt]);
-    git(REPO, ['branch', '-D', branch]);
+    git(REPO, ['branch', '-D', branch]); // local ref only — origin/${branch} (and a continuing round's prior commits on it) is untouched
     log(`#${item.id}: no commits — lane released, worktree removed. Check the checkpoint/blockers for why.`);
     await postRun({ ...runRecord, outcome: limitHit ? 'limit' : 'no-commits', commits: 0,
       summary: resultText.slice(0, 1800) });
@@ -1023,7 +1100,7 @@ Rules for this run:
     const verdictFile = join(lockDir, 'autopilot', `${SLUG}-item-${item.id}-verdict.json`);
     try { rmSync(verdictFile); } catch { /* none from a previous attempt */ }
     const review = spawnSync('node', [join(REPO, 'hook', 'stack-gemini-review.mjs'),
-      '--range', 'main..HEAD', '--verdict-file', verdictFile], {
+      '--range', `${base}..HEAD`, '--verdict-file', verdictFile], {
       cwd: wt, stdio: ['ignore', 'inherit', 'inherit'], timeout: 120_000,
     });
     log(review.status === 0 ? 'gemini review posted to the inbox.' : 'gemini review did not post (see above).');
@@ -1032,7 +1109,7 @@ Rules for this run:
       rmSync(verdictFile);
     } catch { /* no verdict — treated as not-clean below */ }
     // Keep both reads: the morning's review queue starts from them instead of blank.
-    await attachReview(runRow?.id, reviewVerdict, runArchitect(wt, `item-${item.id}`));
+    await attachReview(runRow?.id, reviewVerdict, runArchitect(wt, `item-${item.id}`, `${base}..HEAD`));
   }
 
   // Risk-tiered auto-merge (#212) — the graduated-trust lever. A LOW-risk item
@@ -1104,6 +1181,13 @@ try {
         log(`item #${ITEM_ID} has ticked plan steps — not replanning over work in progress.`);
         break;
       }
+      // A refine session (#274) works a ROUND on a refine note, never a fresh
+      // build — a pinned item with none is a mismatched request, not a silent
+      // fall-through to build-from-scratch.
+      if (KIND === 'refine' && !item.refineNote) {
+        log(`#${ITEM_ID} carries no refine note — nothing to refine; run a build session instead.`);
+        break;
+      }
     } else if (AGENDA.length) {
       // #228 — an ordered agenda from the session planner: work exactly these,
       // in this order. Unrunnable entries (missing / done / claimed) are
@@ -1120,6 +1204,11 @@ try {
         }
         if (PLAN_ONLY && cand.plan?.some((s) => s.done)) {
           log(`agenda item #${id} has ticked plan steps — not replanning over work in progress.`);
+          attempted.add(id);
+          continue;
+        }
+        if (KIND === 'refine' && !cand.refineNote) {
+          log(`agenda item #${id} carries no refine note — nothing to refine; skipping.`);
           attempted.add(id);
           continue;
         }
