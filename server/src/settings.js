@@ -92,6 +92,7 @@ const DEFAULTS = {
   autopilot_tokens: 1_500_000, // per-run token budget; 0 = unlimited
   autopilot_time: '23:05',     // nightly start, host-local HH:MM
   autopilot_max_items: 3,
+  autopilot_workers: 1,        // how many autopilot lanes may run at once (1–4)
   autopilot_plan_sweep: true,  // #255 — stand up a plan job for unplanned work
   stale_item_days: 21,         // a parked item reads as stale past this many days (#247)
   term_idle_hours: 6,          // #287 — terminate a silent terminal session after this long; 0 = never
@@ -128,6 +129,9 @@ export async function readSettings(client) {
     autopilot_tokens: Number.isFinite(Number(r.autopilot_tokens)) ? Number(r.autopilot_tokens) : 1_500_000,
     autopilot_time: cleanAutopilotTime(r.autopilot_time),
     autopilot_max_items: Number.isFinite(r.autopilot_max_items) ? r.autopilot_max_items : 3,
+    // How many autopilot lanes may run at once — never 0/undefined, since a row
+    // or column predating this setting must still read as the single lane it was.
+    autopilot_workers: Number.isFinite(r.autopilot_workers) ? r.autopilot_workers : 1,
     // #255 — default ON: a column added by the migration is true, and a row that
     // predates it reads as true too, so the sweep is the standing behaviour.
     autopilot_plan_sweep: r.autopilot_plan_sweep == null ? true : Boolean(r.autopilot_plan_sweep),
@@ -160,6 +164,7 @@ export function settingsShape(s) {
     autopilotTokens: s.autopilot_tokens,     // 0 = unlimited
     autopilotTime: s.autopilot_time,         // host-local HH:MM
     autopilotMaxItems: s.autopilot_max_items,
+    autopilotWorkers: s.autopilot_workers,   // how many autopilot lanes run at once (1–4)
     autopilotPlanSweep: s.autopilot_plan_sweep, // #255 — auto-plan unplanned must/should work
     staleItemDays: s.stale_item_days,        // parked-item stale threshold, days (#247)
     termIdleHours: s.term_idle_hours,        // #287 — reap a silent terminal session after this long; 0 = never

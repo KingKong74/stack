@@ -402,6 +402,8 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS access_pin_hash TEXT;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_tokens    BIGINT  NOT NULL DEFAULT 1500000;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_time      TEXT    NOT NULL DEFAULT '23:05';
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_max_items INTEGER NOT NULL DEFAULT 3;
+-- How many autopilot lanes may run at once (1 = the old single global lane). 1–4.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_workers INTEGER NOT NULL DEFAULT 1;
 -- The plan sweep (#255). The board's ✧ To planning agent already hands a PICKED
 -- list to a plan session; this is the standing half of the same idea — "the
 -- system must plan the implementation of all roadmap items", without anyone

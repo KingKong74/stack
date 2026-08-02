@@ -738,6 +738,7 @@ export interface ControlData {
   };
   autopilot: {
     enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number;
+    workers: number;        // autopilot lanes that may run at once (1–4)
     planSweep: boolean;     // #255 — auto-plan unplanned must/should work
     executorModel: string;  // '' = the claude CLI's default model (#153)
     advisorModel: string;   // '' = no advisor subagent
@@ -779,6 +780,9 @@ export async function getControl(): Promise<ControlData> {
       tokens: d.autopilot?.tokens ?? 1_500_000,
       time: d.autopilot?.time ?? '23:05',
       maxItems: d.autopilot?.maxItems ?? 3,
+      // An older server that does not send it reads as one lane — the single
+      // global lane that predates this setting.
+      workers: d.autopilot?.workers ?? 1,
       // An older server that does not send it reads as ON, matching the
       // server-side default — the switch then simply has nothing to gate.
       planSweep: d.autopilot?.planSweep ?? true,

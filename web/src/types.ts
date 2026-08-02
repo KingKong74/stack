@@ -435,6 +435,7 @@ export interface Settings {
   autopilotTokens: number;    // token budget per run; 0 = unlimited
   autopilotTime: string;      // nightly start, host-local HH:MM
   autopilotMaxItems: number;  // most items attempted per night
+  autopilotWorkers: number;   // lanes that may run at once (1–4)
   autopilotPlanSweep: boolean; // #255 — stand up a plan session for unplanned must/should work
   staleItemDays: number;      // a parked roadmap item reads as stale past this many days (#247)
   termIdleHours: number;      // #287 — terminate a silent terminal session after this long; 0 = never

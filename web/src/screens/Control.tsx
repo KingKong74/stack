@@ -29,6 +29,8 @@ const BUDGETS = [
 // budget are then the only governors, exactly like a 0 token budget.
 const NIGHT_ITEMS = [1, 2, 3, 5, 8, 0];
 export const nightItemsLabel = (n: number) => (n === 0 ? '∞' : String(n));
+// Autopilot lanes that may run at once. 1 = the old single global lane.
+const WORKER_COUNTS = [1, 2, 3, 4];
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const fmtDate = (d: Date) =>
@@ -206,6 +208,7 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
   const setAutopilot = async (patch: {
     autopilotEnabled?: boolean; autopilotMinutes?: number;
     autopilotTokens?: number; autopilotTime?: string; autopilotMaxItems?: number;
+    autopilotWorkers?: number;
     autopilotPlanSweep?: boolean;   // #255 — the standing plan sweep
     autopilotExecutorModel?: string; autopilotAdvisorModel?: string;
   }) => {
@@ -219,6 +222,7 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
         tokens: patch.autopilotTokens ?? prev.tokens,
         time: patch.autopilotTime ?? prev.time,
         maxItems: patch.autopilotMaxItems ?? prev.maxItems,
+        workers: patch.autopilotWorkers ?? prev.workers,
         planSweep: patch.autopilotPlanSweep ?? prev.planSweep,
         executorModel: patch.autopilotExecutorModel ?? prev.executorModel,
         advisorModel: patch.autopilotAdvisorModel ?? prev.advisorModel,
@@ -232,6 +236,7 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
           enabled: s.autopilotEnabled, minutes: s.autopilotMinutes,
           tokens: s.autopilotTokens ?? prev.tokens, time: s.autopilotTime ?? prev.time,
           maxItems: s.autopilotMaxItems ?? prev.maxItems,
+          workers: s.autopilotWorkers ?? prev.workers,
           planSweep: s.autopilotPlanSweep ?? prev.planSweep,
           executorModel: s.autopilotExecutorModel ?? prev.executorModel,
           advisorModel: s.autopilotAdvisorModel ?? prev.advisorModel,
@@ -548,6 +553,19 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
                     : `At most ${n} item${n === 1 ? '' : 's'} a night`}
                   onClick={() => setAutopilot({ autopilotMaxItems: n })}>
                   {nightItemsLabel(n)}
+                </button>
+              ))}
+            </span>
+          </label>
+          <label className="mc-knob">
+            <span className="mc-knob-label">Workers</span>
+            <span className="seg-control sm" role="tablist" aria-label="Autopilot lanes running at once">
+              {WORKER_COUNTS.map((n) => (
+                <button key={n} role="tab" aria-selected={data.autopilot.workers === n}
+                  className={`seg-opt ${data.autopilot.workers === n ? 'on' : ''}`}
+                  title={n === 1 ? 'One lane at a time' : `Up to ${n} lanes running at once`}
+                  onClick={() => setAutopilot({ autopilotWorkers: n })}>
+                  {n}
                 </button>
               ))}
             </span>

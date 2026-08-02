@@ -67,6 +67,16 @@ settings.patch('/', async (req, res) => {
     fields.push(`autopilot_max_items = $${i++}`);
     values.push(!Number.isFinite(n) || n < 0 ? 3 : (n === 0 ? 0 : Math.min(20, Math.max(1, n))));
   }
+  if ('autopilotWorkers' in body) {
+    // How many autopilot lanes may run at once. Unlike autopilotMaxItems, 0 is
+    // NOT unlimited here — a non-finite value is ignored (column keeps its
+    // current value) and anything else clamps to 1–4.
+    const w = Math.trunc(Number(body.autopilotWorkers));
+    if (Number.isFinite(w)) {
+      fields.push(`autopilot_workers = $${i++}`);
+      values.push(Math.min(4, Math.max(1, w)));
+    }
+  }
   if ('autopilotPlanSweep' in body) {
     // #255 — the standing plan sweep. A plain switch: it only decides whether
     // GET /next may stand a plan job up, and the arm switch + automode still
