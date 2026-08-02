@@ -1,4 +1,7 @@
 node_modules/
+# ...including a symlinked one: a worktree usually borrows the main checkout's
+# node_modules, and a symlink is a FILE to git, which the trailing slash misses.
+node_modules
 dist/
 .env
 *.log
