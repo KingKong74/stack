@@ -30,6 +30,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadStackEnv, logStderr } from '../hook/stack-post.mjs';
+import { parseBranch } from './lib/lane.mjs';
 
 loadStackEnv();
 const API = (process.env.STACK_API || '').replace(/\/$/, '');
@@ -77,6 +78,35 @@ const log = (msg) => logStderr(`dispatch ${new Date().toISOString()} · ${msg}`)
 // lane name. Mission Control's merge strip renders it. Quiet by design: the
 // stamp file is written up front so a wedged repo can't make every minute's
 // poll retry, and any failure just waits for the next cycle.
+//
+// #363 — the report also carries the DIFF now: insertions, deletions, the file
+// count, the area the change sits in and the heaviest handful of paths. The
+// Merge room weighs a branch by size and orders a wave so that no two branches
+// in it touch the same area, and neither is answerable from ahead/behind — a
+// one-commit branch can be a 2,000-line rewrite. The server still never runs
+// git; this is the same dial-out snapshot, with more in it.
+//
+// `topFiles` is CAPPED and `files` is the true total, so the panel that renders
+// it can say how many it is NOT showing (the #239 rule: a capped list states
+// its cap, and is capped on the axis that matters — here, biggest first).
+const TOP_FILES = 8;
+
+// The area a branch works in: the commonest two-segment directory prefix among
+// the paths it touches, weighted by how many files sit under it. '' when the
+// branch only touches root files, which reads as "no single area".
+function areaOf(paths) {
+  const tally = new Map();
+  for (const p of paths) {
+    const segs = p.split('/');
+    if (segs.length < 2) continue;
+    const key = segs.slice(0, Math.min(2, segs.length - 1)).join('/');
+    tally.set(key, (tally.get(key) || 0) + 1);
+  }
+  let best = '', n = 0;
+  for (const [key, count] of tally) if (count > n) { best = key; n = count; }
+  return best;
+}
+
 async function reportBranches() {
   const gitq = (dir, ...a) => {
     const r = spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', timeout: 60_000 });
@@ -100,14 +130,35 @@ async function reportBranches() {
       if (!counts.ok) continue;
       const [behind, ahead] = counts.out.split(/\s+/).map((n) => parseInt(n, 10) || 0);
       let mergeClean = null;
+      let adds = 0, dels = 0, files = 0, area = '', topFiles = [];
       if (ahead > 0) {
         const probe = gitq(dir, 'merge-tree', '--write-tree', 'origin/main', ref);
         if (probe.status === 0) mergeClean = true;
         else if (probe.status === 1) mergeClean = false;
+        // Three-dot: what this branch CHANGES since it left main, not what has
+        // happened on main since. A branch that is behind must not read as
+        // though it had rewritten everything the trunk moved on.
+        const stat = gitq(dir, 'diff', '--numstat', `origin/main...${ref}`);
+        if (stat.ok && stat.out) {
+          const rows = [];
+          for (const l of stat.out.split('\n')) {
+            const [a, d, ...path] = l.split('\t');
+            const p = path.join('\t');
+            if (!p) continue;
+            // '-' is git's marker for a binary file: counted as a file, but it
+            // contributes no lines rather than a made-up number.
+            const na = a === '-' ? 0 : parseInt(a, 10) || 0;
+            const nd = d === '-' ? 0 : parseInt(d, 10) || 0;
+            adds += na; dels += nd; files++;
+            rows.push({ path: p.slice(0, 160), adds: na, dels: nd, binary: a === '-' });
+          }
+          area = areaOf(rows.map((r) => r.path));
+          topFiles = rows.sort((x, y) => (y.adds + y.dels) - (x.adds + x.dels)).slice(0, TOP_FILES);
+        }
       }
-      const item = /(?:^|\/)item-(\d+)/.exec(branch);
+      const { itemId } = parseBranch(branch);
       list.push({ branch, ahead, behind, mergeClean, subject: rest.join('\t'),
-        committedAt, itemId: item ? Number(item[1]) : null });
+        committedAt, itemId, adds, dels, files, area, topFiles });
       if (list.length >= 50) break;
     }
     await api('POST', `/api/projects/${p.slug}/branches`, { branches: list });

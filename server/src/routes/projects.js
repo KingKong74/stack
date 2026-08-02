@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
 import { q } from '../db.js';
 import {
-  slugify, oneOf, relativeTime, computeProgress, TINTS, PROJECT_STATUSES,
+  slugify, oneOf, relativeTime, computeProgress, TINTS, PROJECT_STATUSES, MERGE_AUTONOMY,
   PRESENCE_TTL_MINUTES,
 } from '../util.js';
 import {
@@ -238,6 +238,7 @@ projects.get('/:slug/debrief', async (req, res) => {
 // Fields the client may PATCH directly on a project.
 const PATCHABLE = new Set([
   'name', 'repo', 'repo_url', 'subtitle', 'site_url', 'status', 'pinned', 'automode', 'autopilot_area',
+  'merge_autonomy',
   'current_phase', 'summary', 'next_steps', 'blockers',
   'in_progress', 'next_up', 'working_well', 'tint', 'north_star', 'directives',
   'deploy_platform', 'logs_url', 'tech_stack', 'audit_context',
@@ -260,6 +261,12 @@ projects.patch('/:slug', async (req, res) => {
     } else if (key === 'status') {
       fields.push(`status = $${i}`);
       values.push(oneOf(val, PROJECT_STATUSES, 'building'));
+    } else if (key === 'merge_autonomy') {
+      // (#363) A bad value must not become "the agent may merge this": the
+      // fallback is the middle setting, where the plan names the branches and
+      // the human still presses each one.
+      fields.push(`merge_autonomy = $${i}`);
+      values.push(oneOf(val, MERGE_AUTONOMY, 'plan'));
     } else {
       fields.push(`${key} = $${i}`);
       values.push(val === '' ? null : val);

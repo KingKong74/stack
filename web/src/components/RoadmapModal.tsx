@@ -214,7 +214,7 @@ export function RoadmapModal({
       ) : (
         <div className="branch-pick" style={{ marginBottom: 8 }}>
           <input className="field-input" value={branch}
-            placeholder="e.g. auto/item-12-ui, autopilot, or a name" onChange={(e) => setBranch(e.target.value)}
+            placeholder="e.g. ui/12-dark-mode, autopilot, or a name" onChange={(e) => setBranch(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
           {knownBranches.length > 0 && (
             <button type="button" className="btn-cancel sm" onClick={() => { setBranch(''); setNewBranch(false); }}>

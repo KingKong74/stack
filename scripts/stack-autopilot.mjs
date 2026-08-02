@@ -10,7 +10,7 @@
 // to a target instead of a title. No key = the pre-pass silently skips.
 //
 // The human keeps final say: the autopilot NEVER touches main, never ticks an
-// item done, never merges — each item leaves a pushed `auto/item-N-<slug>` branch, a
+// item done, never merges — each item leaves a pushed `<kind>/<id>-<slug>` branch, a
 // Gemini second-model review in the review inbox, a checks run, a checkpoint
 // on the activity feed, and a `built_note` stamped on the item (so the
 // Reviews view shows what landed when the human ticks it).
@@ -20,7 +20,7 @@
 // keep or release the claim. Then the next item, while budget remains.
 //
 // The claim doubles as the "don't re-pick" marker: a successful run leaves
-// `auto/item-N-<slug>` claimed until the human merges and ticks the item done; a
+// `<kind>/<id>-<slug>` claimed until the human merges and ticks the item done; a
 // run that produced no commits releases it so the next night retries.
 //
 // The ARM SWITCH lives in the app: Settings → Autopilot, and each project
@@ -42,11 +42,11 @@
 //                       build nights then execute against agreed designs.
 //     [--kind K]        session kind (#228 — the session planner's modes):
 //                       build (default) | plan (= --plan-only) | debug | audit.
-//                       debug = fix bugs (each on branch auto/bug-N-<slug>, never
+//                       debug = fix bugs (each on branch fix/bug-N-<slug>, never
 //                       marked fixed — status moves to 'fixing', the human closes);
 //                       audit = one hardening session that runs the suites, hunts
 //                       verified defects, files them as bugs via the API and
-//                       commits test hardening on auto/audit-<date>.
+//                       commits test hardening on test/audit-<date>.
 //     [--items a,b,c]   an ORDERED agenda of roadmap item ids — the session works
 //                       exactly these in order (done/claimed skipped), instead of
 //                       the board's own priority order
@@ -83,7 +83,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadStackEnv, logStderr, git } from '../hook/stack-post.mjs';
-import { laneFor, branchSlug } from './lib/lane.mjs';
+import { laneFor, bugLaneFor, auditLaneFor } from './lib/lane.mjs';
 
 loadStackEnv();
 
@@ -518,12 +518,11 @@ function execSession(prompt, cwd, capMin) {
 
 // ---- #228: one bug, one branch, one bounded DEBUG session ----
 // Mirrors runItem's shape without the roadmap machinery: no claim, no spec
-// pre-pass (the bug IS the spec), branch auto/bug-N-<slug>. The bug is never
+// pre-pass (the bug IS the spec), branch fix/bug-N-<slug>. The bug is never
 // marked fixed — a pushed fix moves its status to 'fixing'; the human closes.
 async function runBug(bug, capMin) {
   const key = String(bug.id); // client shape: id IS the bug key (BUG-N)
-  const slugPart = branchSlug(bug.title);
-  const branch = `auto/${key.toLowerCase()}${slugPart ? `-${slugPart}` : ''}`;
+  const branch = bugLaneFor(bug);
   const startedAt = new Date().toISOString();
   log(`picked ${key} [${bug.severity}] ${bug.title} (cap ${Math.round(capMin)}m)`);
 
@@ -671,7 +670,7 @@ async function auditNight() {
   log(`AUDIT session${scope ? ` (area "${scope}")` : ''}: budget ${MINUTES}m.`);
 
   const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const branch = `auto/audit-${day}`;
+  const branch = auditLaneFor(day);
   const startedAt = new Date().toISOString();
   const wt = join(lockDir, 'autopilot', `${SLUG}-audit`);
   git(REPO, ['worktree', 'remove', '--force', wt]);

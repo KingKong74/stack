@@ -8,7 +8,9 @@ import { useEffect, useState } from 'react';
 // should still land somewhere useful.
 // ('build' was a room until its tab was removed; `#/control/build` now falls
 // back to the default room, which is what the unknown-room rule is for.)
-export const CONTROL_ROOMS = ['now', 'nights', 'plan', 'review', 'roles'] as const;
+// #363 — 'merge' joins them: the house-wide branch ledger, so `#/control/merge`
+// is the link to "what is waiting to land".
+export const CONTROL_ROOMS = ['now', 'merge', 'nights', 'plan', 'review', 'roles'] as const;
 export type ControlRoom = (typeof CONTROL_ROOMS)[number];
 export const isControlRoom = (v: unknown): v is ControlRoom =>
   typeof v === 'string' && (CONTROL_ROOMS as readonly string[]).includes(v);

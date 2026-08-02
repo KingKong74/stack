@@ -83,10 +83,25 @@ fingerprint of their title. So:
 - Manual items are never touched by the extractor. Reach for a manual bug/roadmap
   item/note when you want something the session summary wouldn't capture.
 
+## Branch naming
+
+Cut branches as **`<kind>/<id>-<summary>`** — `feat/271-mission-control`,
+`fix/312-galaxy-drift-belt`, `ui/288-roles-room-by-job`. The kinds are
+`feat · fix · ui · refactor · perf · test · docs · chore`; a bug's branch is
+`fix/bug-<n>-<summary>` and an audit night's is `test/audit-<date>`. The
+autopilot names its own lanes this way, and Mission Control's Merge room
+filters and groups on the prefix — so the kind is read off the branch name
+before anything reads the diff. Get it wrong and the branch still merges; it
+just lands in the unlabelled bucket.
+
+Older `auto/item-N-<summary>` branches are still read everywhere (they are
+still on origin and still named in claims). Don't rename them — a claim is a
+live string on a roadmap row.
+
 ## Branch claims (parallel sessions)
 
-Open roadmap items can carry a claim (`claimedBy` — usually a branch name like
-`auto/item-12-ui`). The SessionStart block lists current claims. The protocol:
+Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
+`ui/12-dark-mode`). The SessionStart block lists current claims. The protocol:
 
 - **Never start an item claimed by another branch.**
 - **Never start an item with `skipped: true`** — it's parked on purpose; the

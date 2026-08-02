@@ -16,6 +16,11 @@ export const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 export const BUG_STATUSES = ['open', 'investigating', 'fixing', 'fixed'];
 export const BUCKETS = ['must', 'should', 'could', 'wont'];
 export const PROJECT_STATUSES = ['live', 'building', 'paused', 'archived'];
+// (#363) How much of a project's merging the Merge room's agent may do on one
+// press: auto = its clean branches are queued by ▶ Run; plan = they are in the
+// proposed plan but merge one press each; off = out of the plan. See the
+// projects.merge_autonomy comment in schema.sql for what each does NOT change.
+export const MERGE_AUTONOMY = ['auto', 'plan', 'off'];
 
 // Short MoSCoW labels, used by the search route's meta field.
 export const PRIORITY_SHORT = { must: 'Must', should: 'Should', could: 'Could', wont: "Won't" };
