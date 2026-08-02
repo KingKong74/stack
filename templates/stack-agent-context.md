@@ -142,16 +142,29 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   back into play fresh: the server clears its archive verdict and branch claim
   so it re-enters the To verify pipeline and is pickable again. Never print
   the token while doing this.
-- **When you finish an item, tell the reviewer what landed.** Include a
-  `built_note` alongside `done:true` — two or three plain sentences on what was
-  actually built, where it lives and how it was verified. It appears on the
-  Roadmap tab's Reviews view, and the human verdicts against it:
+- **When you finish an item, tell the reviewer what landed.** Write a
+  `built_note` — two or three plain sentences on what was actually built, where
+  it lives and how it was verified. The human verdicts against it in the Review
+  room.
+
+  **If your work is on a branch and you have not merged it, do NOT tick the
+  item.** `done` means shipped, and an unmerged branch has not shipped. Write
+  the `built_note`, leave `claimed_by` on the branch, and leave `done` alone:
 
   ```bash
   curl -s -X PATCH "$STACK_API/api/projects/<slug>/roadmap/<id>" \
     -H "authorization: Bearer $STACK_TOKEN" -H 'content-type: application/json' \
-    -d '{"done":true,"built_note":"<what landed, where, how verified>"}'
+    -d '{"built_note":"<what landed, where, how verified>"}'
   ```
+
+  That is not "leaving it unfinished" — a `built_note` plus a branch claim is
+  exactly what puts the change into the Review queue, and it lands there as
+  work still on a branch so the human reads it BEFORE it merges. Ticking it
+  instead would count unmerged work towards the project's progress and skip the
+  read entirely. Once the human approves it, merging is what ticks it off.
+
+  Tick it yourself (`{"done":true,"built_note":"…"}`) only when what you built
+  is already on the main branch.
 - **Manual execution sessions report usage like autopilot runs do.** When you
   complete a roadmap item outside the overnight runner, also land a run-ledger
   row so the Reviews view shows the same branch/commits/tokens chip for manual
