@@ -776,7 +776,7 @@ control.get('/', async (_req, res) => {
         ORDER BY s.enabled DESC, s.at_time, s.id`),
     // Open + paused rows lead so a long-parked hung-up resume (#142) can't be
     // pushed off the strip by newer finished jobs.
-    q(`SELECT j.*, p.slug, p.name AS project_name, ri.title AS item_title
+    q(`SELECT j.*, p.slug, p.name AS project_name, p.tint, ri.title AS item_title
          FROM autopilot_jobs j
          JOIN projects p ON p.id = j.project_id AND p.deleted_at IS NULL
          LEFT JOIN roadmap_items ri ON ri.id = j.item_id
@@ -797,7 +797,7 @@ control.get('/', async (_req, res) => {
               r.review_verdict, r.review_note, r.review_findings,
               r.architect_verdict, r.architect_note, r.architect_obs,
               ri.review_tag, ri.done AS item_done,
-              p.slug, p.name AS project_name
+              p.slug, p.name AS project_name, p.tint AS project_tint
          FROM autopilot_runs r
          JOIN projects p ON p.id = r.project_id
          LEFT JOIN roadmap_items ri ON ri.id = r.item_id
@@ -949,6 +949,7 @@ control.get('/', async (_req, res) => {
     recentRuns: usageR.rows.slice(0, 60).map((r) => ({
       slug: r.slug,
       name: r.project_name,
+      tint: r.project_tint || null,
       itemId: r.item_id != null ? String(r.item_id) : null,
       itemTitle: r.item_title || '',
       // (#286) What the run produced plus both second-model reads (#282/#284) —

@@ -110,6 +110,7 @@ function jobShape(r) {
     id: String(r.id),
     slug: r.slug,
     name: r.project_name || r.slug,
+    tint: r.tint || null,
     kind: r.kind,
     itemId: r.item_id != null ? String(r.item_id) : null,
     itemTitle: r.item_title || '',
@@ -137,7 +138,7 @@ const SCHEDULE_SELECT = `
     LEFT JOIN roadmap_items ri ON ri.id = s.item_id`;
 
 const JOB_SELECT = `
-  SELECT j.*, p.slug, p.name AS project_name, ri.title AS item_title
+  SELECT j.*, p.slug, p.name AS project_name, p.tint, ri.title AS item_title
     FROM autopilot_jobs j
     JOIN projects p ON p.id = j.project_id AND p.deleted_at IS NULL
     LEFT JOIN roadmap_items ri ON ri.id = j.item_id`;
