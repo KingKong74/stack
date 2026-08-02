@@ -120,6 +120,10 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Project — computed progress', url: u(`/api/projects/${slug}`), auth: true, json_path: 'progress' },
     { name: 'Project — roadmap buckets', url: u(`/api/projects/${slug}`), auth: true, json_path: 'roadmap.must' },
     { name: 'Project — unknown slug 404s', url: u('/api/projects/no-such-project-xyz'), auth: true, expect_status: 404 },
+    // The terminal's "Jump back in" debrief — a per-project resume view
+    // distinct from the autopilot's night debrief. `commits` is the field
+    // only this route owns.
+    { name: 'Project — resume debrief', url: u(`/api/projects/${slug}/debrief`), auth: true, json_path: 'commits' },
     { name: 'Bugs — collection', url: u(`/api/projects/${slug}/bugs`), auth: true, json_path: '0.id' },
     // #278 — the Quality page's two contract additions. `checkId` is the bug↔check
     // link the merged page renders both ways; the path only has to EXIST (it is

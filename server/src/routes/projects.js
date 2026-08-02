@@ -161,6 +161,81 @@ projects.get('/:slug', async (req, res) => {
   );
 });
 
+// GET /api/projects/:slug/debrief  -> the per-project RESUME debrief: current
+// status plus the last few commits, shown on the terminal screen when "Jump
+// back in" drops the owner into a Claude session, so they can resume without
+// reconstructing context. NOT the same thing as the autopilot's NIGHT debrief
+// (routes/review.js's GET /api/review/ — one night's runs across every
+// project); this one is a single project's live resume state. Don't collapse
+// the two.
+projects.get('/:slug/debrief', async (req, res) => {
+  const { rows } = await q('SELECT * FROM projects WHERE slug = $1 AND deleted_at IS NULL', [req.params.slug]);
+  if (!rows.length) return res.status(404).json({ error: 'No such project.' });
+  const p = rows[0];
+
+  const [bugCounts, bugTop, road, sessions] = await Promise.all([
+    q(
+      `SELECT count(*) FILTER (WHERE status <> 'fixed')::int AS open,
+              count(*) FILTER (WHERE status <> 'fixed' AND severity = 'critical')::int AS critical,
+              count(*) FILTER (WHERE status <> 'fixed' AND severity = 'high')::int AS high,
+              count(*) FILTER (WHERE status <> 'fixed' AND severity = 'medium')::int AS medium,
+              count(*) FILTER (WHERE status <> 'fixed' AND severity = 'low')::int AS low
+         FROM bugs WHERE project_id = $1`,
+      [p.id]
+    ),
+    q(
+      `SELECT bug_key, title, severity FROM bugs
+        WHERE project_id = $1 AND status <> 'fixed'
+        ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at
+        LIMIT 3`,
+      [p.id]
+    ),
+    q(
+      `SELECT id, title, bucket, tier, claimed_by FROM roadmap_items
+        WHERE project_id = $1 AND NOT done AND bucket IN ('must', 'should')
+        ORDER BY CASE tier WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END,
+                 CASE bucket WHEN 'must' THEN 0 WHEN 'should' THEN 1 ELSE 2 END,
+                 position
+        LIMIT 5`,
+      [p.id]
+    ),
+    q(
+      `SELECT commit_hash, branch, summary, tags, gemini_note, tokens_used, created_at
+         FROM sessions WHERE project_id = $1 ORDER BY created_at DESC LIMIT 5`,
+      [p.id]
+    ),
+  ]);
+  const bc = bugCounts.rows[0];
+
+  res.json({
+    slug: p.slug,
+    name: p.name,
+    status: p.status,
+    phase: p.current_phase || '',
+    summary: p.summary || '',
+    when: relativeTime(p.last_session_at),
+    inProgress: Array.isArray(p.in_progress) ? p.in_progress : [],
+    nextUp: Array.isArray(p.next_up) ? p.next_up : [],
+    blockers: Array.isArray(p.blockers) ? p.blockers : [],
+    bugs: {
+      open: bc.open,
+      critical: bc.critical,
+      high: bc.high,
+      medium: bc.medium,
+      low: bc.low,
+      top: bugTop.rows.map((b) => ({ key: b.bug_key, title: b.title, severity: b.severity })),
+    },
+    roadmap: road.rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      bucket: r.bucket,
+      tier: r.tier || '',
+      claimedBy: r.claimed_by || '',
+    })),
+    commits: sessions.rows.map(activityShape),
+  });
+});
+
 // Fields the client may PATCH directly on a project.
 const PATCHABLE = new Set([
   'name', 'repo', 'repo_url', 'subtitle', 'site_url', 'status', 'pinned', 'automode', 'autopilot_area',
