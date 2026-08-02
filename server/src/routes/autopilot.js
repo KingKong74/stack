@@ -4,6 +4,7 @@ import { projectBySlug } from '../resolve.js';
 import { relativeTime } from '../util.js';
 import { runCore } from '../shape.js';
 import { readSettings, cleanAutopilotTime } from '../settings.js';
+import { occupiedAreas, laneHolders, laneKey } from '../lanes.js';
 
 // Mounted at /api/projects/:slug/autopilot — the overnight runner's history.
 // The runner POSTs one row per item attempt; the dashboard's morning digest
@@ -471,7 +472,70 @@ autopilotGlobal.get('/next', async (req, res) => {
 
   // Serialise: one job in flight at a time (the runner's lockfile agrees).
   const busy = await q(`SELECT 1 FROM autopilot_jobs WHERE status IN ('claimed','running') LIMIT 1`);
-  if (busy.rows.length) return res.json({ job: null });
+  if (busy.rows.length) return res.json({ job: null, heldByArea: [] });
+
+  // #267 — area-disjoint picking. An "area lane" (roadmap_items.area,
+  // normalised) admits one worker: two workers in the same area fight over
+  // the same files at merge time. A lane is scoped to ONE PROJECT — the same
+  // area string in two different projects can never collide over files, so
+  // the key is always (project_id, area), never the bare area (lanes.js).
+  // A lane is OCCUPIED when either an open roadmap item in that area carries
+  // a live branch claim, or an in-flight job (claimed/running) targets that
+  // area — its own area filter, or the area of the item it is pinned to. An
+  // untagged area ('') is NEVER a lane — it neither occupies one nor can be
+  // blocked by one, or every untagged item collapses into one giant lane and
+  // the night deadlocks doing nothing. One round trip for the whole board,
+  // never one query per project.
+  const { rows: holderRows } = await q(`
+    SELECT project_id, lower(trim(area)) AS area, claimed_by AS by
+      FROM roadmap_items
+     WHERE NOT done AND COALESCE(claimed_by, '') <> '' AND COALESCE(area, '') <> ''
+    UNION ALL
+    SELECT j.project_id, lower(trim(j.area)) AS area, ('job #' || j.id) AS by
+      FROM autopilot_jobs j
+     WHERE j.status IN ('claimed', 'running') AND COALESCE(j.area, '') <> ''
+    UNION ALL
+    SELECT j.project_id, lower(trim(ri.area)) AS area, ('job #' || j.id) AS by
+      FROM autopilot_jobs j
+      JOIN roadmap_items ri ON ri.id = j.item_id
+     WHERE j.status IN ('claimed', 'running') AND COALESCE(ri.area, '') <> ''
+  `);
+  const occupied = [...occupiedAreas(holderRows.map((r) => ({ projectId: r.project_id, area: r.area, by: r.by })))];
+  const holderLabel = laneHolders(holderRows.map((r) => ({ projectId: r.project_id, area: r.area, by: r.by })));
+
+  // A holder never blocks itself: a job pinned to an item that is claimed by
+  // ITS OWN lane must still be claimable (that's a resume/re-run), so the
+  // pinned-item branch only blocks when some OTHER holder — another claimed
+  // item, or another in-flight job, in the SAME project — also occupies the
+  // area. That's why it's a correlated EXISTS against
+  // roadmap_items/autopilot_jobs rather than a second membership test
+  // against the (necessarily global) occupied array. Both arms compare the
+  // composite lane key ($1 is a list of "project_id::area" strings, matching
+  // lanes.laneKey) so a same-named area in a different project never matches.
+  const LANE_BLOCK_SQL = `
+    (j.area <> '' AND (j.project_id::text || '::' || lower(trim(j.area))) = ANY($1::text[]))
+    OR (
+      pinned.id IS NOT NULL AND COALESCE(pinned.area, '') <> ''
+      AND (pinned.project_id::text || '::' || lower(trim(pinned.area))) = ANY($1::text[])
+      AND EXISTS (
+        SELECT 1 FROM roadmap_items other
+         WHERE NOT other.done AND COALESCE(other.claimed_by, '') <> ''
+           AND other.id <> pinned.id
+           AND other.project_id = pinned.project_id
+           AND lower(trim(other.area)) = lower(trim(pinned.area))
+        UNION ALL
+        SELECT 1 FROM autopilot_jobs oj
+         LEFT JOIN roadmap_items ojr ON ojr.id = oj.item_id
+         WHERE oj.status IN ('claimed', 'running') AND oj.id <> j.id
+           AND oj.project_id = j.project_id
+           AND (lower(trim(oj.area)) = lower(trim(pinned.area))
+                OR lower(trim(COALESCE(ojr.area, ''))) = lower(trim(pinned.area)))
+      )
+    )`;
+  // A job with no item_id and no area (nightly, an unstarted plan sweep) is
+  // never lane-checkable here — it hasn't chosen an item yet, and the runner
+  // does the per-item lane check once it does.
+
   // A queued resume job stays held until its not_before passes (#142); a
   // 'paused' (hung-up) job is never handed out at all.
   //
@@ -482,6 +546,10 @@ autopilotGlobal.get('/next', async (req, res) => {
   // created_at. Non-nightly jobs (manual / scheduled / revert / resume) carry
   // their own created_at and slot into the queue normally in front of nightly
   // batches when they arrive first, preserving the one-job-at-a-time guarantee.
+  //
+  // The lane guard sits inside this same SELECT ... ORDER BY ... LIMIT 1: a
+  // blocked job is skipped and the next eligible job wins automatically —
+  // that IS the fallback, no second queue.
   const claimed = await q(
     `UPDATE autopilot_jobs SET status = 'claimed', claimed_at = now()
       WHERE id = (
@@ -493,7 +561,9 @@ autopilotGlobal.get('/next', async (req, res) => {
              AND status = 'done'
            ORDER BY finished_at DESC LIMIT 1
         ) last_run ON j.kind = 'nightly'
+        LEFT JOIN roadmap_items pinned ON pinned.id = j.item_id
          WHERE j.status = 'queued' AND (j.not_before IS NULL OR j.not_before <= now())
+           AND NOT (${LANE_BLOCK_SQL})
          ORDER BY
            -- Non-nightly jobs first (they have a specific creation time and
            -- priority; nightly batch jobs rank behind them in the same tick).
@@ -504,10 +574,39 @@ autopilotGlobal.get('/next', async (req, res) => {
            j.created_at ASC
          LIMIT 1 FOR UPDATE OF j SKIP LOCKED
       )
-      RETURNING id`);
-  if (!claimed.rows.length) return res.json({ job: null });
+      RETURNING id`,
+    [occupied]);
+
+  // #267 — the queued, otherwise-claimable jobs THIS tick passed over because
+  // their area lane was occupied, so the dispatcher can log why. Mirrors the
+  // claim's own lane predicate exactly (same $1 occupied list); the winning
+  // job (if any) is excluded for free since its status is no longer 'queued'.
+  const { rows: heldRows } = await q(
+    `SELECT j.id, j.project_id, p.slug, j.item_id,
+            COALESCE(NULLIF(j.area, ''), pinned.area) AS area
+       FROM autopilot_jobs j
+       JOIN projects p ON p.id = j.project_id AND p.deleted_at IS NULL
+       LEFT JOIN roadmap_items pinned ON pinned.id = j.item_id
+      WHERE j.status = 'queued' AND (j.not_before IS NULL OR j.not_before <= now())
+        AND (${LANE_BLOCK_SQL})`,
+    [occupied]);
+  const heldByArea = heldRows.map((r) => {
+    // `area` here is the bare, human-readable string for a log line — the
+    // lookup into holderLabel still keys on the composite (project, area)
+    // lane, same as everywhere else in this file.
+    const area = String(r.area || '').trim().toLowerCase();
+    return {
+      jobId: String(r.id),
+      slug: r.slug,
+      itemId: r.item_id != null ? String(r.item_id) : null,
+      area,
+      heldBy: holderLabel.get(laneKey(r.project_id, area)) || '',
+    };
+  });
+
+  if (!claimed.rows.length) return res.json({ job: null, heldByArea });
   const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [claimed.rows[0].id]);
-  res.json({ job: jobShape(full.rows[0]) });
+  res.json({ job: jobShape(full.rows[0]), heldByArea });
 });
 
 // PATCH /jobs/:id — the dispatcher reports { status: running|done|failed|queued, detail? }.
