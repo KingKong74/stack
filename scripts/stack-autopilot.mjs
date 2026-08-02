@@ -218,7 +218,8 @@ async function notify(title, body) {
 // night stops burning items and schedules its own resume — at the reset time
 // when the message names one ("resets 2:10am"), else a few hours out. The
 // resume is a plain re-run: released items get re-picked, the arm switch and
-// automode still gate it, and the lockfile keeps overlap impossible.
+// automode still gate it, and the per-project lockfile keeps this project's
+// own overlap impossible (a different project's resume runs alongside it).
 const LIMIT_RE = /(hit|reached).{0,40}(session|usage|token|rate).{0,20}limit|limit.{0,30}resets/i;
 function minutesUntilReset(text) {
   const m = /resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i.exec(text || '');
@@ -392,15 +393,23 @@ const nightStart = Date.now();
 const elapsedMin = () => (Date.now() - nightStart) / 60_000;
 const remainingMin = () => MINUTES - elapsedMin();
 
-// ---- 0b. One run at a time (a crashed run's stale lock is cleared by age) ----
+// ---- 0b. One run at a time PER PROJECT (#335 — a crashed run's stale lock is
+// cleared by age) ----
+// A project's runs share one checkout: worktrees, fetches and ref updates all
+// go through it, so two runs on the SAME project would race each other. Two
+// DIFFERENT projects share nothing, so a single global lock only ever cost
+// the fleet its parallelism. The server's GET /next enforces the identical
+// per-project rule; this lockfile is just the host-side backstop for the
+// paths that bypass the queue (a hand-run `node scripts/stack-autopilot.mjs`).
 const lockDir = join(homedir(), '.stack');
-const lock = join(lockDir, 'autopilot.lock');
+const lockSlug = String(SLUG).replace(/[^A-Za-z0-9_-]/g, '_');
+const lock = join(lockDir, `autopilot-${lockSlug}.lock`);
 mkdirSync(lockDir, { recursive: true });
 if (existsSync(lock)) {
   const { statSync } = await import('node:fs');
   const ageMin = (Date.now() - statSync(lock).mtimeMs) / 60_000;
-  if (ageMin < MINUTES + 30) die(`another run appears live (lock ${Math.round(ageMin)}m old) — bailing.`);
-  log(`clearing stale lock (${Math.round(ageMin)}m old)`);
+  if (ageMin < MINUTES + 30) die(`another run for ${SLUG} appears live (lock ${Math.round(ageMin)}m old) — bailing.`);
+  log(`clearing stale lock for ${SLUG} (${Math.round(ageMin)}m old)`);
 }
 writeFileSync(lock, `${process.pid} ${stamp()}\n`);
 const unlock = () => { try { rmSync(lock); } catch { /* gone is fine */ } };

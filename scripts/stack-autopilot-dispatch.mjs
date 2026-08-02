@@ -20,9 +20,13 @@
 //   * * * * * /usr/bin/node /home/bailey/stack/scripts/stack-autopilot-dispatch.mjs \
 //     >> ~/.stack/autopilot.log 2>&1
 //
-// Overlap is safe three ways: the server hands out one job at a time, the
-// next minute's poll sees it "running" and gets nothing, and the runner's own
-// lockfile refuses a second night.
+// Overlap is expected, not a bug (#335): the server now hands out up to its
+// configured number of concurrent jobs, never two for the same project, so
+// each cron minute can start another dispatcher process while earlier ones
+// are still running their job to completion — that IS the parallelism, there
+// is no worker pool, the every-minute cron line is the pool. The runner's own
+// per-project lockfile is the host-side backstop against two jobs landing on
+// the same project's checkout at once.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, rmSync, writeFileSync, readFileSync, unlinkSync, statSync, openSync, mkdirSync } from 'node:fs';
@@ -53,6 +57,12 @@ async function api(method, path, body) {
     clearTimeout(timer);
   }
 }
+
+// #335 — the runner's lock is now per PROJECT (a project's runs share one
+// checkout; different projects don't). This sanitiser must stay byte-for-byte
+// identical to the one in stack-autopilot.mjs, or the kill path below clears
+// the wrong file and leaves a live lock blocking that project for hours.
+const lockSlugFor = (slug) => String(slug).replace(/[^A-Za-z0-9_-]/g, '_');
 
 const p2 = (n) => String(n).padStart(2, '0');
 const now = new Date();
@@ -522,7 +532,7 @@ echo \${PIPESTATUS[0]} > ${shq(exitFile)}
           if (mine && mine.status === 'paused') {
             hungUp = true;
             spawnSync('tmux', ['kill-session', '-t', `=${tmuxName}`], { stdio: 'ignore' });
-            try { rmSync(join(homedir(), '.stack', 'autopilot.lock')); } catch { /* already gone */ }
+            try { rmSync(join(homedir(), '.stack', `autopilot-${lockSlugFor(job.slug)}.lock`)); } catch { /* already gone */ }
             log(`job #${job.id}: hung up from the app — session ${tmuxName} killed; partial work stays on the branch.`);
             break;
           }
