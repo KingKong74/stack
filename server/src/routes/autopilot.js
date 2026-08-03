@@ -4,6 +4,7 @@ import { projectBySlug } from '../resolve.js';
 import { relativeTime } from '../util.js';
 import { runCore } from '../shape.js';
 import { readSettings, cleanAutopilotTime } from '../settings.js';
+import { occupiedAreas, laneHolders, laneKey } from '../lanes.js';
 
 // Mounted at /api/projects/:slug/autopilot — the overnight runner's history.
 // The runner POSTs one row per item attempt; the dashboard's morning digest
@@ -412,9 +413,56 @@ autopilotGlobal.get('/jobs', async (req, res) => {
 // per-project one, and it holds because a second job for the same project
 // cannot be claimed while the first row still reads claimed/running.
 //
+// #267 adds a THIRD gate to the two above, and the three answer three
+// different questions — keep them distinct when editing:
+//   fleet cap ($1)      · how many sessions may this HOST run at once (tunable)
+//   per-project         · one job per checkout, because git ref locks (fixed)
+//   area lane ($2, #267)· one worker per (project, area), because two branches
+//                         in one area collide at MERGE time (fixed)
+// The area lane is the only one of the three that is not answerable in SQL
+// alone — the occupied set is computed in JS from lanes.js and passed in as a
+// list of "project_id::area" keys, so this statement stays a pure predicate.
+//
+// A job with no item_id and no area (a nightly, an unstarted plan sweep) is
+// not lane-checkable here — it has not chosen an item yet, and the runner does
+// the per-item lane check once it does.
+//
 // Exported so server/test/autopilot-next.test.mjs can exercise this exact
 // statement against a real database rather than a copy of it — a copy is
 // exactly what would drift.
+//
+// $1 = autopilotWorkers (0 = unlimited) · $2 = occupied lane keys (text[]).
+
+// The lane predicate, shared by the claim and by the held-jobs query that
+// explains what the claim passed over — the two must not drift, or the
+// dispatcher logs a reason for a job that was never actually blocked. It is a
+// FUNCTION of the placeholder because the two statements bind the occupied
+// list at different positions ($2 in the claim, which takes the fleet cap
+// first; $1 in the held query, which takes nothing else) — a shared constant
+// would have hard-coded one of them and silently mis-bound the other.
+// `pinned` is the LEFT JOIN on the job's item; both arms compare the composite
+// (project, area) key so a same-named area in another project never matches.
+export const laneBlockSql = (p) => `
+    (j.area <> '' AND (j.project_id::text || '::' || lower(trim(j.area))) = ANY(${p}::text[]))
+    OR (
+      pinned.id IS NOT NULL AND COALESCE(pinned.area, '') <> ''
+      AND (pinned.project_id::text || '::' || lower(trim(pinned.area))) = ANY(${p}::text[])
+      AND EXISTS (
+        SELECT 1 FROM roadmap_items other
+         WHERE NOT other.done AND COALESCE(other.claimed_by, '') <> ''
+           AND other.id <> pinned.id
+           AND other.project_id = pinned.project_id
+           AND lower(trim(other.area)) = lower(trim(pinned.area))
+        UNION ALL
+        SELECT 1 FROM autopilot_jobs oj
+         LEFT JOIN roadmap_items ojr ON ojr.id = oj.item_id
+         WHERE oj.status IN ('claimed', 'running') AND oj.id <> j.id
+           AND oj.project_id = j.project_id
+           AND (lower(trim(oj.area)) = lower(trim(pinned.area))
+                OR lower(trim(COALESCE(ojr.area, ''))) = lower(trim(pinned.area)))
+      )
+    )`;
+
 export const CLAIM_NEXT_SQL = `
     UPDATE autopilot_jobs SET status = 'claimed', claimed_at = now()
       WHERE id = (
@@ -426,6 +474,7 @@ export const CLAIM_NEXT_SQL = `
              AND status = 'done'
            ORDER BY finished_at DESC LIMIT 1
         ) last_run ON j.kind = 'nightly'
+        LEFT JOIN roadmap_items pinned ON pinned.id = j.item_id
          WHERE j.status = 'queued' AND (j.not_before IS NULL OR j.not_before <= now())
            -- Per-PROJECT serialisation (not tunable, see the comment).
            AND NOT EXISTS (
@@ -435,6 +484,10 @@ export const CLAIM_NEXT_SQL = `
            -- The fleet cap; $1 = 0 means unlimited.
            AND ($1 = 0 OR (SELECT count(*) FROM autopilot_jobs b2
                             WHERE b2.status IN ('claimed', 'running')) < $1)
+           -- The area lane (#267). A blocked job is SKIPPED and the next
+           -- eligible one wins inside this same ORDER BY ... LIMIT 1 — that is
+           -- the fallback, there is no second queue.
+           AND NOT (${laneBlockSql('$2')})
          ORDER BY
            -- Non-nightly jobs first (they have a specific creation time and
            -- priority; nightly batch jobs rank behind them in the same tick).
@@ -549,13 +602,78 @@ autopilotGlobal.get('/next', async (req, res) => {
     }
   }
 
+  // #267 — area-disjoint picking. An "area lane" (roadmap_items.area,
+  // normalised) admits one worker: two workers in the same area fight over
+  // the same files at merge time. A lane is scoped to ONE PROJECT — the same
+  // area string in two different projects can never collide over files, so
+  // the key is always (project_id, area), never the bare area (lanes.js).
+  // A lane is OCCUPIED when either an open roadmap item in that area carries
+  // a live branch claim, or an in-flight job (claimed/running) targets that
+  // area — its own area filter, or the area of the item it is pinned to. An
+  // untagged area ('') is NEVER a lane — it neither occupies one nor can be
+  // blocked by one, or every untagged item collapses into one giant lane and
+  // the night deadlocks doing nothing. One round trip for the whole board,
+  // never one query per project.
+  const { rows: holderRows } = await q(`
+    SELECT project_id, lower(trim(area)) AS area, claimed_by AS by
+      FROM roadmap_items
+     WHERE NOT done AND COALESCE(claimed_by, '') <> '' AND COALESCE(area, '') <> ''
+    UNION ALL
+    SELECT j.project_id, lower(trim(j.area)) AS area, ('job #' || j.id) AS by
+      FROM autopilot_jobs j
+     WHERE j.status IN ('claimed', 'running') AND COALESCE(j.area, '') <> ''
+    UNION ALL
+    SELECT j.project_id, lower(trim(ri.area)) AS area, ('job #' || j.id) AS by
+      FROM autopilot_jobs j
+      JOIN roadmap_items ri ON ri.id = j.item_id
+     WHERE j.status IN ('claimed', 'running') AND COALESCE(ri.area, '') <> ''
+  `);
+  const occupied = [...occupiedAreas(holderRows.map((r) => ({ projectId: r.project_id, area: r.area, by: r.by })))];
+  const holderLabel = laneHolders(holderRows.map((r) => ({ projectId: r.project_id, area: r.area, by: r.by })));
+
+  // A holder never blocks itself: a job pinned to an item that is claimed by
+  // ITS OWN lane must still be claimable (that's a resume/re-run) — see
+  // LANE_BLOCK_SQL, which both this claim and the held-jobs query below share.
+
   // A queued resume job stays held until its not_before passes (#142); a
   // 'paused' (hung-up) job is never handed out at all — both enforced inside
-  // CLAIM_NEXT_SQL above, alongside the fleet cap and per-project gate (#335).
-  const claimed = await q(CLAIM_NEXT_SQL, [settings.autopilot_workers]);
-  if (!claimed.rows.length) return res.json({ job: null });
+  // CLAIM_NEXT_SQL, alongside the fleet cap, the per-project gate (#335) and
+  // the area lane (#267). Rotation ordering (#82) lives there too.
+  const claimed = await q(CLAIM_NEXT_SQL, [settings.autopilot_workers, occupied]);
+
+  // #267 — the queued, otherwise-claimable jobs THIS tick passed over because
+  // their area lane was occupied, so the dispatcher can log why. Uses the
+  // claim's own lane predicate (same occupied list, bound at $1 here); the
+  // winning job (if any) is excluded for free since its status is no longer
+  // 'queued'. NOTE this deliberately does NOT re-test the fleet cap or the
+  // per-project gate: a job held by those is not held by a LANE, and saying so
+  // would blame the area for a queue depth the owner did not cause.
+  const { rows: heldRows } = await q(
+    `SELECT j.id, j.project_id, p.slug, j.item_id,
+            COALESCE(NULLIF(j.area, ''), pinned.area) AS area
+       FROM autopilot_jobs j
+       JOIN projects p ON p.id = j.project_id AND p.deleted_at IS NULL
+       LEFT JOIN roadmap_items pinned ON pinned.id = j.item_id
+      WHERE j.status = 'queued' AND (j.not_before IS NULL OR j.not_before <= now())
+        AND (${laneBlockSql('$1')})`,
+    [occupied]);
+  const heldByArea = heldRows.map((r) => {
+    // `area` here is the bare, human-readable string for a log line — the
+    // lookup into holderLabel still keys on the composite (project, area)
+    // lane, same as everywhere else in this file.
+    const area = String(r.area || '').trim().toLowerCase();
+    return {
+      jobId: String(r.id),
+      slug: r.slug,
+      itemId: r.item_id != null ? String(r.item_id) : null,
+      area,
+      heldBy: holderLabel.get(laneKey(r.project_id, area)) || '',
+    };
+  });
+
+  if (!claimed.rows.length) return res.json({ job: null, heldByArea });
   const full = await q(`${JOB_SELECT} WHERE j.id = $1`, [claimed.rows[0].id]);
-  res.json({ job: jobShape(full.rows[0]) });
+  res.json({ job: jobShape(full.rows[0]), heldByArea });
 });
 
 // PATCH /jobs/:id — the dispatcher reports { status: running|done|failed|queued, detail? }.

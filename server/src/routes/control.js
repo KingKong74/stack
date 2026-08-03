@@ -6,6 +6,7 @@ import { runCore } from '../shape.js';
 import { termAgentConnected, termSessions, termDetached, termEdits, termPlanUsage } from '../term.js';
 import { geminiEnabled } from '../gemini.js';
 import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
+import { occupiedAreas, areaHeld } from '../lanes.js';
 
 // GET /api/control — Mission Control: every project's automation state in one
 // payload, computed in aggregate queries (never one request per project).
@@ -1103,11 +1104,21 @@ control.get('/', async (_req, res) => {
   // Mirrors the autopilot's pick: open, unclaimed, not parked, human-approved
   // (manual, or hook-created + reviewed), inside the project's target area when
   // one is set (#122); must before should, then board order.
-  const pickFor = (items, area) => {
+  const pickFor = (projectId, items, area) => {
+    // #267 — area-disjoint picking: an item whose area is held by ANOTHER
+    // item's open branch claim (within THIS project — a lane is scoped to
+    // one project, so a same-named area in a different project never
+    // matters here) is not the next pick. Untagged never blocks — and every
+    // eligible item below is itself unclaimed, so this can only ever be
+    // someone else's claim, never the candidate's own.
+    const occupied = occupiedAreas(
+      items.filter((it) => !it.done && it.claimed_by)
+        .map((it) => ({ projectId, area: it.area, by: it.claimed_by })));
     const eligible = items
       .filter((it) => !it.done && !it.skipped && !it.claimed_by
         && (it.source === 'manual' || it.reviewed_at)
-        && (!area || (it.area || '') === area))
+        && (!area || (it.area || '') === area)
+        && !areaHeld(projectId, it.area, occupied))
       .sort((a, b) => (a.bucket === b.bucket
         ? (a.position - b.position || ms(a.created_at) - ms(b.created_at))
         : (a.bucket === 'must' ? -1 : 1)));
@@ -1117,7 +1128,7 @@ control.get('/', async (_req, res) => {
   const projects = sorted.map((p) => {
     const road = roadByP.get(p.id) || [];
     const bugRow = bugsByP.get(p.id);
-    const pick = pickFor(road, p.autopilot_area || '');
+    const pick = pickFor(p.id, road, p.autopilot_area || '');
     const lastAuto = autoByP.get(p.id);
     // The merge strip (#154, git-aware since #207). The host's branch report
     // is the truth where it exists: every unmerged origin branch (ahead > 0)

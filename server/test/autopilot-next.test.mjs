@@ -57,8 +57,11 @@ async function queueJob(projectId, { kind = 'nightly', status = 'queued', notBef
   return rows[0].id;
 }
 
-async function claim(cap) {
-  const { rows } = await q(CLAIM_NEXT_SQL, [cap]);
+// $2 is #267's occupied-lane list. These cases are all about the fleet cap and
+// the per-project gate, and queueJob() files jobs with no area and no item, so
+// no lane can apply — an empty list is the honest input, not a stub.
+async function claim(cap, occupied = []) {
+  const { rows } = await q(CLAIM_NEXT_SQL, [cap, occupied]);
   return rows[0]?.id ?? null;
 }
 
