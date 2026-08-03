@@ -10,7 +10,7 @@ import {
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, convergeFutures,
   type ConvergeDraft, assistRoadmapItem, proposeOrbits, restateFuture,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
-  startAutopilot, takeReviewPrefill, agentCan, setLastViewedProject,
+  takeReviewPrefill, agentCan, setLastViewedProject,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
 import { ExportBriefModal } from '../components/ExportBriefModal';
@@ -401,23 +401,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       const updated = await patchRoadmapItem(slug, item.id, { tier });
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
     });
-
-  // #255 — push picked items to the planning agent: one plan-kind session whose
-  // ordered agenda is exactly these ids. The runner designs each item and PATCHes
-  // the result back as plan steps — no branches, no builds, nothing ticked. An
-  // already-open job for the project comes back instead of stacking a second one,
-  // so the reply says which of the two happened.
-  const planItems = async (ids: number[]): Promise<string> => {
-    const job = await startAutopilot(slug, { kind: 'plan', agenda: ids });
-    // The route returns the EXISTING open job rather than stacking a second one,
-    // so "did mine land?" is "is this job exactly the one I asked for?" — compare
-    // the agenda itself, not just its length.
-    const planned = job.sessionKind === 'plan'
-      && (job.agenda ?? []).map(String).join(',') === ids.join(',');
-    return planned
-      ? `Planning session queued for ${ids.length} item${ids.length === 1 ? '' : 's'} — the host picks it up within a minute.`
-      : `This project already has an open ${job.kind} session (${job.status}); nothing new was queued. Let it finish, then push again.`;
-  };
 
   const toggleRoad = (item: RoadmapItem) =>
     guard(async () => {
@@ -934,7 +917,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
               try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the button just won't appear */ }
               go.terminal(slug);
             }}
-            onPlanItems={planItems} onSetTier={setTierRoad} onRefineNote={saveRefineNote}
+            onSetTier={setTierRoad} onRefineNote={saveRefineNote}
             onBranch={(it) => branchItem(it)} />
         )}
         {tab === 'futures' && (
