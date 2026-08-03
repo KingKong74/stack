@@ -382,7 +382,7 @@ export interface AutopilotSchedule {
 }
 export interface AutopilotJob {
   id: string; slug: string; name: string;
-  kind: 'manual' | 'nightly' | 'scheduled' | 'revert' | 'resume' | 'merge';
+  kind: 'manual' | 'nightly' | 'scheduled' | 'revert' | 'resume' | 'merge' | 'plan' | 'advise';
   itemId: string | null; itemTitle: string;
   // 'paused' = hung up (#142): held until a human resumes; never auto-fires.
   status: 'queued' | 'claimed' | 'running' | 'done' | 'failed' | 'paused';
@@ -391,9 +391,21 @@ export interface AutopilotJob {
   sessionKind?: SessionKind;           // #228 — the session plan the job carries
   agenda?: (number | string)[];
   area?: string;
+  // #243 — the merge advisor: the branch it ran against ('' when not
+  // applicable) and whether its report has landed. The report text itself
+  // does NOT ride here — it's kilobytes, and lives behind getMergeAdvice.
+  branch: string;
+  adviceReady: boolean;
   when: string;
   nightDate: string | null;   // (#266) the night this job's fan-out belongs to, or null
   tokenBudget: number | null; // (#266) this job's share of the night's token budget, or null
+}
+
+// #243 — a merge advisor pass. `advice: null` means no pass has run yet;
+// it does NOT mean "no conflicts" — don't coerce the two together.
+export interface MergeAdvice {
+  id: string; slug: string; branch: string; kind: string; status: string;
+  detail: string; advice: string | null; when: string;
 }
 export interface TermSession {
   sid: string; cwd: string; cmd: 'shell' | 'claude';
@@ -844,7 +856,10 @@ export async function getControl(): Promise<ControlData> {
       advisorModel: d.autopilot?.advisorModel ?? '',
     },
     schedules: d.schedules ?? [],
-    jobs: d.jobs ?? [],
+    // #243 — default branch/adviceReady so a pre-deploy server can't send a
+    // job that throws the UI; branch: '' reads as "not applicable", same as
+    // the merge strip's existing convention.
+    jobs: (d.jobs ?? []).map((j) => ({ ...j, branch: j.branch ?? '', adviceReady: j.adviceReady ?? false })),
     // #154 — default branches so a pre-deploy server can't break the strip.
     projects: (d.projects ?? []).map((p) => ({ ...p, branches: p.branches ?? [] })),
     // #194 — null when the server pre-dates this feature; the usage card hides.
@@ -1799,6 +1814,21 @@ export async function queueMerge(slug: string, branch: string, itemId?: string, 
     method: 'POST',
     body: { slug, branch, ...(itemId ? { itemId } : {}), ...(aiResolve ? { aiResolve: true } : {}) },
   });
+}
+// #243 — queues a merge advisor pass: the host dispatcher runs it against the
+// branch and stores a text report. itemId is advisory metadata only, same as
+// queueMerge. Returns 201 for a new job or 200 if an open advise job for that
+// project+branch already exists — either way, an AutopilotJob.
+export async function queueAdvice(slug: string, branch: string, itemId?: string): Promise<AutopilotJob> {
+  return request<AutopilotJob>('/autopilot/advise', {
+    method: 'POST',
+    body: { slug, branch, ...(itemId ? { itemId } : {}) },
+  });
+}
+// #243 — the advisor's stored report for one job. advice is string|null and
+// null must stay null: it means no pass ran, not "no conflicts found".
+export async function getMergeAdvice(id: string): Promise<MergeAdvice> {
+  return request<MergeAdvice>(`/autopilot/jobs/${id}/advice`);
 }
 // Gemini titles an item from its note (the modal's ✧ button) — suggestion only.
 export async function suggestRoadmapTitle(slug: string, note: string): Promise<string> {

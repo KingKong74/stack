@@ -254,9 +254,14 @@ for (const h of Array.isArray(heldByArea) ? heldByArea : []) {
 
 if (!job) process.exit(0);
 
-const report = (status, detail) =>
-  api('PATCH', `/api/autopilot/jobs/${job.id}`, detail === undefined ? { status } : { status, detail })
-    .catch((e) => log(`[report] job #${job.id} status=${status} — PATCH failed (${e.message})`));
+// #243 — advice is optional and only ever sent by the advise lane below; every
+// other caller keeps posting just { status } / { status, detail }.
+const report = (status, detail, advice) =>
+  api('PATCH', `/api/autopilot/jobs/${job.id}`, {
+    status,
+    ...(detail !== undefined ? { detail } : {}),
+    ...(advice !== undefined ? { advice } : {}),
+  }).catch((e) => log(`[report] job #${job.id} status=${status} — PATCH failed (${e.message})`));
 
 const repo = join(root, job.slug);
 // #255 — name the SESSION kind too: 'plan' and 'nightly' are different jobs
@@ -489,6 +494,65 @@ if (job.kind === 'revert') {
   await report('running');
   const out = await revert();
   await report(out.ok ? 'done' : 'failed', out.detail);
+  log(`job #${job.id}: ${out.ok ? 'done' : 'failed'} — ${out.detail}.`);
+  process.exit(0);
+}
+
+// An advise job (#243) is handed to us because the read-only pre-merge
+// conflict advisor (#223, scripts/run_merge_advisor.sh) needs git and the
+// real repo, which only the host has. It is handled right here, not by the
+// runner: fetch, then hand origin/<branch> and origin/main to the advisor
+// script and relay its report. Read-only end to end — the only git commands
+// this block runs itself are `fetch` and `rev-parse`, and the advisor script
+// itself never merges, checks out or writes to the index or refs.
+if (job.kind === 'advise') {
+  const git = (dir, ...a) => {
+    const r = spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+    return { ok: r.status === 0, out: (r.stdout || '').trim(), err: (r.stderr || '').trim() };
+  };
+  const advise = () => {
+    // `repo` is resolved the same way every job's repo is (root/<slug>,
+    // checked for a .git dir before any kind-specific block runs) — see the
+    // existsSync guard above, which already reports+exits when it's missing.
+    const branch = job.branch || '';
+    if (!branch) return { ok: false, detail: `[advise/job #${job.id}] no branch on advise job` };
+
+    // Unlike the merge block's fetch — where a stale ref would just make the
+    // next git command fail loudly — a stale fetch here is silently harmless
+    // to rev-parse and the advisor both, so the advisor would happily report
+    // against a remote-tracking ref that's hours or days old. Check it.
+    const fetch = git(repo, 'fetch', 'origin');
+    if (!fetch.ok) {
+      const reason = fetch.err.split('\n')[0].slice(0, 200) || 'unknown error';
+      return { ok: false, detail: `[advise/job #${job.id}] git fetch origin failed: ${reason}` };
+    }
+    const refCheck = git(repo, 'rev-parse', '--verify', `origin/${branch}`);
+    if (!refCheck.ok) return { ok: false, detail: `[advise/job #${job.id}] origin/${branch} not found — already merged or deleted?` };
+
+    const scriptPath = join(dirname(fileURLToPath(import.meta.url)), 'run_merge_advisor.sh');
+    const run = spawnSync(scriptPath, [`origin/${branch}`, 'origin/main', '--repo', repo], {
+      encoding: 'utf8',
+      timeout: 120_000,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    if (run.status !== 0) {
+      const reason = (run.stderr || '').trim().split('\n')[0].slice(0, 200)
+        || run.error?.message
+        || `advisor exited ${run.status}`;
+      return { ok: false, detail: `[advise/job #${job.id}] advisor failed on origin/${branch}: ${reason}` };
+    }
+    const out = (run.stdout || '').trim();
+    if (!out) return { ok: false, detail: `[advise/job #${job.id}] advisor produced no report for origin/${branch}` };
+
+    const conflictLine = /^Conflicts identified: (?:none|(\d+) file\(s\))/m.exec(out);
+    const summary = !conflictLine ? 'report attached'
+      : conflictLine[1] ? `${conflictLine[1]} file(s) conflict`
+      : 'merges cleanly';
+    return { ok: true, detail: `advise origin/${branch}: ${summary}`, advice: out };
+  };
+  await report('running');
+  const out = advise();
+  await report(out.ok ? 'done' : 'failed', out.detail, out.ok ? out.advice : undefined);
   log(`job #${job.id}: ${out.ok ? 'done' : 'failed'} — ${out.detail}.`);
   process.exit(0);
 }

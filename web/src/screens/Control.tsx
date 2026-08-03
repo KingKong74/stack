@@ -3,11 +3,11 @@ import {
   getControl, patchProject, patchSettings, startAutopilot,
   patchAutopilotSchedule, deleteAutopilotSchedule,
   resumeAutopilotJob, hangupAutopilotJob, dismissAutopilotJob,
-  labelTerminalSessions, queueMerge, AuthError, isDrift,
+  labelTerminalSessions, queueMerge, queueAdvice, getMergeAdvice, AuthError, isDrift,
   startPreview, getPreviews, stopPreview, extendPreview, type Preview,
   getControlRailOpen, setControlRailOpen, getControlRailHeight, setControlRailHeight,
   type ControlData, type ControlProject, type AutopilotJob, type AutopilotSchedule,
-  type MergeAutonomy,
+  type MergeAutonomy, type MergeAdvice,
 } from '../store';
 import { SessionPlanModal } from '../components/SessionPlanModal';
 import { NightsRoom, PlanRoom } from './ControlRooms';
@@ -163,6 +163,51 @@ export function ControlPanel({ initialRoom, full, onToggleFull }: {
   // #177 — the usage card's per-session agent breakdown, collapsed by default.
   const [agentBreakdown, setAgentBreakdown] = useState(false);
   const [mergeBusy, setMergeBusy] = useState(false);
+  // #243 — the merge advisor: a read-only conflict report, never an
+  // auto-resolve. adviseBusy is the queue-click guard (same `slug:branch`
+  // composite key previewBusy uses); the advice/adviceLoading/adviceErr trio
+  // is the viewer's own state, closed by clearing advice back to null.
+  const [adviseBusy, setAdviseBusy] = useState<string | null>(null);
+  const [advice, setAdvice] = useState<MergeAdvice | null>(null);
+  const [adviceLoading, setAdviceLoading] = useState(false);
+  const [adviceErr, setAdviceErr] = useState('');
+  const closeAdvice = () => { setAdvice(null); setAdviceErr(''); };
+  // Returns whether the queue actually succeeded — the modal's ↻ Re-run
+  // button needs that to decide whether to close (a failed re-run should
+  // leave the stale report up rather than silently dismiss it).
+  const startAdvise = async (slug: string, branch: string, itemId: string | null): Promise<boolean> => {
+    setAdviseBusy(`${slug}:${branch}`);
+    setError('');
+    try {
+      const job = await queueAdvice(slug, branch, itemId ?? undefined);
+      setData((cur) => cur && { ...cur, jobs: [job, ...cur.jobs.filter((j) => j.id !== job.id)] });
+      return true;
+    } catch (e) {
+      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not queue the advisor.');
+      return false;
+    } finally {
+      setAdviseBusy(null);
+    }
+  };
+  // #243 follow-up — re-run from inside the modal: the report a human is
+  // looking at is exactly the one they can judge as stale. itemId is only
+  // advisory job metadata and MergeAdvice does not carry it, so undefined.
+  const reRunAdvise = async () => {
+    if (!advice) return;
+    if (await startAdvise(advice.slug, advice.branch, null)) closeAdvice();
+  };
+  const openAdvice = async (jobId: string) => {
+    setAdviceLoading(true);
+    setAdviceErr('');
+    setAdvice(null);
+    try {
+      setAdvice(await getMergeAdvice(jobId));
+    } catch (e) {
+      if (!(e instanceof AuthError)) setAdviceErr((e as Error)?.message || 'Could not load the advisor report.');
+    } finally {
+      setAdviceLoading(false);
+    }
+  };
   // 14a — the shell: Now / Nights / Plan / Build are rooms behind one pinned
   // live strip and a persistent rail; the autopilot config folds away.
   // #316 — the room is now in the URL, so it comes IN from the route and goes
@@ -776,6 +821,53 @@ export function ControlPanel({ initialRoom, full, onToggleFull }: {
         </div>
       )}
 
+      {/* #243 — the merge advisor's report. Read-only: nothing here mutates
+          the branch or main. An empty `advice.advice` is NO PASS RAN, the same
+          rule as a NULL review_verdict — never rendered as clean. */}
+      {(adviceLoading || advice || adviceErr) && (
+        <div className="overlay" onClick={closeAdvice}>
+          <div className="modal advice" onClick={(e) => e.stopPropagation()}>
+            {adviceErr ? (
+              <>
+                <h3>Merge advice</h3>
+                <p className="mc-merge-warn">{adviceErr}</p>
+              </>
+            ) : advice ? (
+              <>
+                <h3>Merge advice — origin/{advice.branch} vs main</h3>
+                <p className="mc-advice-sub">{advice.status} · {advice.when}</p>
+                {advice.advice ? (
+                  <>
+                    <pre className="mc-advice-report">{advice.advice}</pre>
+                    <p className="mc-advice-caveat">
+                      The suggested winning side is a heuristic — you decide. Nothing here has been merged.
+                    </p>
+                  </>
+                ) : (
+                  <p className="mc-advice-none">
+                    No advisor pass has reported for this branch.
+                    <br />That is not a statement that it merges cleanly.
+                  </p>
+                )}
+              </>
+            ) : (
+              <h3>Loading advisor report…</h3>
+            )}
+            <div className="modal-actions">
+              <button className="btn-cancel" onClick={closeAdvice}>Close</button>
+              {/* Both the has-report and no-report cases are worth retrying —
+                  a no-report job is exactly the one you'd want to re-run. */}
+              {advice && (
+                <button className="btn-submit" disabled={adviseBusy === `${advice.slug}:${advice.branch}`}
+                  onClick={() => void reRunAdvise()}>
+                  {adviseBusy === `${advice.slug}:${advice.branch}` ? 'Queueing…' : '↻ Re-run advisor'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
         {!data ? (
           !error && <div className="empty-state"><div className="big">Loading…</div></div>
         ) : (
@@ -851,6 +943,9 @@ export function ControlPanel({ initialRoom, full, onToggleFull }: {
                     onRunNow={runNow} onSetTargetArea={setTargetArea}
                     onMerge={(pr, b) => setMergePending({ slug: pr.slug, branch: b.branch, itemId: b.itemId, itemTitle: b.itemTitle, mergeClean: b.mergeClean })}
                     onMergeTrain={mergeTrain}
+                    onAdvise={(slug, branch, itemId) => void startAdvise(slug, branch, itemId)}
+                    onOpenAdvice={(jobId) => void openAdvice(jobId)}
+                    adviseBusy={adviseBusy}
                     previews={previews} previewBusy={previewBusy} mirrorBusy={mirrorBusy}
                     onStartPreview={(slug, branch, itemId) => void openPreview(slug, branch, itemId)}
                     onStopPreview={setStopPending} onExtendPreview={(pv) => void extendMirror(pv)}

@@ -5,9 +5,13 @@ import { readSettings, EXECUTOR_CATALOGUE, ADVISOR_CATALOGUE } from '../settings
 import { runCore } from '../shape.js';
 import { termAgentConnected, termSessions, termDetached, termEdits, termPlanUsage, termAutoSessions } from '../term.js';
 import { geminiEnabled } from '../gemini.js';
+<<<<<<< HEAD
 import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 import { occupiedAreas, areaHeld } from '../lanes.js';
 import { isApproved } from '../approval.js';
+=======
+import { scheduleShapeRows, jobShapeRows, JOB_SELECT } from './autopilot.js';
+>>>>>>> origin/auto/item-243-surface-merge-advisor-output-i
 
 // GET /api/control — Mission Control: every project's automation state in one
 // payload, computed in aggregate queries (never one request per project).
@@ -1081,6 +1085,7 @@ control.get('/', async (_req, res) => {
          LEFT JOIN roadmap_items ri ON ri.id = s.item_id
         ORDER BY s.enabled DESC, s.at_time, s.id`),
     // Open + paused rows lead so a long-parked hung-up resume (#142) can't be
+<<<<<<< HEAD
     // pushed off the strip by newer finished jobs.
     // (#266) A fanned night is now N jobs for one project, not one — 12 rows
     // can no longer show even a single night's queue, so this is raised to 40.
@@ -1090,6 +1095,12 @@ control.get('/', async (_req, res) => {
          LEFT JOIN roadmap_items ri ON ri.id = j.item_id
         ORDER BY (j.status IN ('queued','claimed','running','paused')) DESC,
                  j.created_at DESC LIMIT 40`),
+=======
+    // pushed off the strip by newer finished jobs. #243 — shares JOB_SELECT
+    // with autopilot.js rather than its own `j.*` copy, so advice never rides
+    // this poll and advice_ready is computed once.
+    q(`${JOB_SELECT} ORDER BY (j.status IN ('queued','claimed','running','paused')) DESC, j.created_at DESC LIMIT 12`),
+>>>>>>> origin/auto/item-243-surface-merge-advisor-output-i
     // (#194) Usage aggregation — last 7 days of autopilot runs for the weekly
     // summary card. Aggregate in JS to avoid JSONB gymnastics. Rows are tiny.
     // BIGINT/NUMERIC come back as strings from node-postgres; use Number().
