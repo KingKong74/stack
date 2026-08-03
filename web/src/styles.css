@@ -2029,6 +2029,16 @@ a.tab { display: inline-block; }
 .mc-job.queued, .mc-job.claimed { color: var(--accent); border-color: var(--accent-tint-border); background: var(--accent-tint); }
 .mc-job.running { color: var(--green); border-color: var(--green-tint); }
 .mc-job.failed { color: var(--critical); }
+
+/* #323 — the per-project automode indicator, read-only: it is CHANGED on the
+   project's own page, not here, so unlike its neighbours it has no hover. It
+   sits in the facts row (a fact, not an action), which wraps safely. */
+.mc-mode {
+  display: inline-flex; align-items: center; gap: 4px; flex: none; white-space: nowrap;
+  font-size: 11px; font-weight: 600; color: var(--chip-ink);
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 20px; padding: 2px 8px;
+}
+.mc-mode.on { color: var(--green); background: var(--green-tint); border-color: transparent; }
 .mc-run {
   font-size: 11.5px; font-weight: 600; color: var(--accent);
   border: 1px solid var(--accent-tint-border); background: var(--accent-tint);

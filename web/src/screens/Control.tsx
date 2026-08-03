@@ -257,23 +257,6 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
     }
   };
 
-  const toggleAutomode = async (p: ControlProject) => {
-    if (!data) return;
-    const flip = (v: boolean) => (cur: ControlData | null) => cur && {
-      ...cur,
-      projects: cur.projects.map((x) => (x.slug === p.slug ? { ...x, automode: v } : x)),
-      totals: { ...cur.totals, automode: cur.totals.automode + (v ? 1 : -1) },
-    };
-    setData(flip(!p.automode));
-    try {
-      await patchProject(p.slug, { automode: !p.automode });
-    } catch (e) {
-      setData(flip(p.automode));
-      if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not update the project.');
-    }
-  };
-
-
   // #122 — the nightly pick's area filter, per project ('' = whole board).
   const setTargetArea = async (p: ControlProject, area: string) => {
     const apply = (v: string) => (cur: ControlData | null) => cur && {
@@ -843,7 +826,7 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
                     configPanel={configPanel}
                     onGoRoom={setRoom}
                     onResumeJob={resumeJob} onHangupJob={hangupJob} onDismissJob={dismissJob}
-                    onRunNow={runNow} onToggleAutomode={toggleAutomode} onSetTargetArea={setTargetArea}
+                    onRunNow={runNow} onSetTargetArea={setTargetArea}
                     onMerge={(pr, b) => setMergePending({ slug: pr.slug, branch: b.branch, itemId: b.itemId, itemTitle: b.itemTitle, mergeClean: b.mergeClean })}
                     onMergeTrain={mergeTrain}
                     previews={previews} previewBusy={previewBusy} mirrorBusy={mirrorBusy}
