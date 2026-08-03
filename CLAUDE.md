@@ -169,6 +169,21 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   **primary sort of the run queue** (the Plan room and the runner both apply it; bucket and
   `position` tiebreak; unranked sorts last, so an unranked board queues exactly as before). Tier is
   set only from the Tiers view — **agents must never change it.**
+- **`risk`** (low/normal/high, #212) is how much DAMAGE a wrong build does — not how hard the work
+  is, and not the desire `tier` above. It is the graduated-trust lever: a `low` item whose overnight
+  run lands green auto-queues its own merge. **`risk_source` is who decided** (#262): `human` = the
+  modal, `auto` = the plan-time pre-pass, NULL = the `normal` nobody ever chose — and NULL is the
+  only state an auto write may replace. The guard lives as CASE expressions inside the PATCH's own
+  UPDATE rather than a read-then-check, because every right-hand side in a Postgres UPDATE sees the
+  OLD row, so two nights writing one item can't race it. **Never write `risk` from SQL directly or
+  from any path that bypasses `PATCH /roadmap/:id`; the guard has no other home.** An absent
+  `risk_source` on a write means human (the modal sends none); a present-but-unrecognised one means
+  auto — the fallback leans to the branch a row can still refuse, because nothing can unclaim a row
+  once it reads as human-decided. The board edit modal only sends `risk` when the human actually
+  touched the control, or every save would silently reclaim the tier and the pre-pass could never
+  re-tier that item again. `scripts/stack-risk-backfill.mjs` tiers the existing board in one pass and
+  must run AFTER the schema migration, never before — a pre-migration server has no `risk_source`
+  column and would record its writes with no provenance at all.
 - **The board order IS the run queue.** `position` is PATCHable and drag-reorderable, and the Plan
   room's Save-order write is the same PATCH the board's drag makes.
 - **`claimed_by` is the branch claim** (#277 — called a "lane" until the rename; the `lane/` git ref
@@ -646,11 +661,13 @@ DATABASE_URL=… node server/test/autopilot-next.test.mjs   # the fleet cap + th
 DATABASE_URL=… node server/test/area-lane-claim.test.mjs  # the area lane as the CLAIM enforces it (#267)
 node web/test/sky-view.test.mts            # the sky's one "fit all" (pure, no DOM)
 node scripts/lane.test.mjs                 # branch naming + BOTH spellings parse (pure, no git)
+node scripts/risk.test.mjs                 # the shared risk-tier helpers: normalise, label (pure)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack models                             # which alt providers have a key (--json, --check)
 ./stack seed-checks --dry                  # what the regression suite would change (--run fires it)
 ./stack seed-galaxy                        # shape a flat idea funnel into stars/planets (DRY until --run)
+./stack risk-backfill [slug]               # what a plan-time risk tiering would write (dry by default, --run to apply)
 ./stack skills --dry                       # what the skill-tree sync would write/remove on this host
 ./stack start-session [slug] [--item N]    # queue an automation session (▶ Run now from the terminal)
 ./stack list-sessions                      # the automation job queue ([slug], --limit, --json)

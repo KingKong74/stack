@@ -1660,6 +1660,9 @@ export async function patchRoadmapItem(
     claimed_by: string; review_tag: string; review_tags: string[]; refine_note: string;
     review_shelved: boolean; skipped: boolean; area: string; position: number;
     built_note: string; plan: PlanStep[]; risk: RoadmapItem['risk'];
+    // #262 — omitting risk_source means the server records the write as human,
+    // which is exactly what an edit from the modal is.
+    risk_source: 'human' | 'auto'; risk_reason: string;
     tier: RoadmapItem['tier'];   // #227 — desire rank; '' unranks it
   }>,
 ): Promise<RoadmapItem> {

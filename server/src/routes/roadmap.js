@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags } from '../util.js';
+import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags, riskWriteSource } from '../util.js';
 
 // Risk tiers (#212) — graduated trust. 'low' lets a green overnight run
 // auto-queue its own merge; anything else keeps the human on the merge button.
@@ -68,6 +68,9 @@ roadmap.post('/', async (req, res) => {
   const area = String(req.body?.area || '').trim().toLowerCase().slice(0, 40) || null;
   const plan = cleanPlan(req.body?.plan);
   const risk = oneOf(req.body?.risk, RISKS, 'normal');
+  // #262 — an untouched default isn't a human decision; only a caller who
+  // actually sent a risk gets credited as its source.
+  const riskSource = req.body?.risk !== undefined ? 'human' : null;
   const tier = cleanTier(req.body?.tier);
 
   const { rows: pos } = await q(
@@ -75,9 +78,9 @@ roadmap.post('/', async (req, res) => {
     [req.project.id, bucket]
   );
   const { rows } = await q(
-    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, tier)
-     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7,$8,$9::jsonb,$10,$11) RETURNING *`,
-    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy, area, JSON.stringify(plan), risk, tier]
+    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, tier)
+     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7,$8,$9::jsonb,$10,$11,$12) RETURNING *`,
+    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy, area, JSON.stringify(plan), risk, riskSource, tier]
   );
   res.status(201).json(roadmapItemShape(rows[0]));
 });
@@ -169,7 +172,28 @@ roadmap.patch('/:id', async (req, res) => {
     vals.push(String(req.body.area || '').trim().toLowerCase().slice(0, 40) || null);
   }
   if (req.body?.risk !== undefined) {
-    sets.push(`risk = $${i++}`); vals.push(oneOf(req.body.risk, RISKS, 'normal'));
+    // #262 — where the tier comes from decides who may write it. A human
+    // decision overrides the machine outright, justification and all — its old
+    // reason no longer applies. An auto tier is only a SUGGESTION, so the guard
+    // against it clobbering a human's tier has to live IN the UPDATE: every RHS
+    // sees the OLD row, so the CASE is atomic and two nights writing the same
+    // item can't race it — a read-then-check first would leave exactly that gap.
+    // ABSENT means the modal: a bare {risk} PATCH is a person, and a person
+    // wins. Anything PRESENT but unrecognised takes the guarded path, not the
+    // winning one — a machine typo must not be able to claim a row as human-decided.
+    const source = riskWriteSource(req.body.risk_source);
+    const risk = oneOf(req.body.risk, RISKS, 'normal');
+    const reason = String(req.body.risk_reason || '').trim().slice(0, 300) || null;
+    if (source === 'human') {
+      sets.push(`risk = $${i++}`); vals.push(risk);
+      sets.push(`risk_source = 'human'`);
+      sets.push(`risk_reason = $${i++}`); vals.push(reason);
+    } else {
+      sets.push(`risk        = CASE WHEN risk_source = 'human' THEN risk        ELSE $${i++} END`);
+      sets.push(`risk_reason = CASE WHEN risk_source = 'human' THEN risk_reason ELSE $${i++} END`);
+      sets.push(`risk_source = CASE WHEN risk_source = 'human' THEN risk_source ELSE 'auto'  END`);
+      vals.push(risk, reason);
+    }
   }
   if (req.body?.tier !== undefined) {
     // #227 — the desire tier. '' (or anything outside S/A/B/C) unranks it.

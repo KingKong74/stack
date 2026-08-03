@@ -189,6 +189,17 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS review_shelved BOOLEAN NOT NU
 -- reaches main without a human click, but the item is still ticked (and the
 -- work verdicted) by the human in Reviews. normal/high never auto-merge.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS risk TEXT NOT NULL DEFAULT 'normal';
+-- #262 — where the risk tier CAME FROM, and why. 'human' is a tier someone
+-- chose in the modal; 'auto' is one the plan-time pre-pass derived; NULL is the
+-- 'normal' nobody ever chose, which auto is free to replace. The whole point of
+-- the column is that an auto tier must never overwrite a human one — the guard
+-- lives in PATCH /roadmap/:id and nowhere else, so never write risk from SQL.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS risk_source TEXT;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS risk_reason TEXT;
+-- Convergent backfill: a row already off the 'normal' default was moved there
+-- by a human (nothing else could have), so claim it as theirs before the first
+-- auto pass runs. Rows still on 'normal' stay NULL = unclaimed.
+UPDATE roadmap_items SET risk_source = 'human' WHERE risk_source IS NULL AND risk <> 'normal';
 -- The desire tier (#227): S | A | B | C, NULL = unranked. Deliberately distinct
 -- from the MoSCoW bucket — bucket is how big/necessary the work is, tier is how
 -- much the owner wants it NEXT. It is the PRIMARY sort of the run queue, with

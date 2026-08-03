@@ -25,19 +25,23 @@ import { PRIORITY_META } from '../lib/ui';
 export interface RoadmapFields {
   title: string; note: string; priority: Priority; branch: string; area: string;
   plan: PlanStep[]; risk: RoadmapItem['risk']; tier: Tier;
+  riskChanged: boolean; // #262 — did the human actually touch Risk this time?
 }
 
 export function RoadmapModal({
   initialPriority, onClose, onSubmit, onDismiss, onAssist,
   initialTitle = '', initialNote = '', initialBranch = '', initialArea = '', initialPlan = [],
-  initialRisk = 'normal', initialTier = '', branches = [], areas = [], mode = 'add',
+  initialRisk = 'normal', initialRiskSource = '', initialRiskReason = '',
+  initialTier = '', branches = [], areas = [], mode = 'add',
 }: {
   initialPriority: Priority; onClose: () => void;
   onSubmit: (v: RoadmapFields) => void;
   onDismiss?: (v: RoadmapFields) => void;
   onAssist?: (note: string) => Promise<RoadmapAssist>;
   initialTitle?: string; initialNote?: string; initialBranch?: string; initialArea?: string;
-  initialPlan?: PlanStep[]; initialRisk?: RoadmapItem['risk']; initialTier?: Tier;
+  initialPlan?: PlanStep[]; initialRisk?: RoadmapItem['risk'];
+  initialRiskSource?: RoadmapItem['riskSource']; initialRiskReason?: string;
+  initialTier?: Tier;
   branches?: string[]; areas?: string[]; mode?: 'add' | 'edit';
 }) {
   const [title, setTitle] = useState(initialTitle);
@@ -84,7 +88,8 @@ export function RoadmapModal({
   const areaMatches = knownAreas.filter(
     (a) => !area.trim() || a.includes(area.trim().toLowerCase()));
   const fields = (): RoadmapFields =>
-    ({ title, note, priority, branch: branch.trim(), area: area.trim().toLowerCase(), plan: fullPlan(), risk, tier });
+    ({ title, note, priority, branch: branch.trim(), area: area.trim().toLowerCase(), plan: fullPlan(),
+      risk, tier, riskChanged: risk !== initialRisk });
   const submit = () => { if (title.trim()) onSubmit(fields()); };
   const typed = Boolean(title.trim() || note.trim());
   const dismiss = () => {
@@ -272,14 +277,24 @@ export function RoadmapModal({
       <div className="lbl" style={{ marginBottom: 9 }}>
         Risk <span className="optional">low = a green overnight run merges itself; you still give the verdict</span>
       </div>
-      <div className="seg" style={{ marginBottom: 26 }} role="tablist" aria-label="Risk">
-        {(['low', 'normal', 'high'] as const).map((r) => (
-          <button key={r} type="button" role="tab" aria-selected={risk === r}
-            className={`opt risk-${r} ${risk === r ? 'on' : ''}`}
-            onClick={() => { setRisk(r); setRiskTouched(true); }}>
-            {r === 'low' ? 'Low' : r === 'normal' ? 'Normal' : 'High'}
-          </button>
-        ))}
+      <div style={{ marginBottom: 26 }}>
+        <div className="seg" role="tablist" aria-label="Risk">
+          {(['low', 'normal', 'high'] as const).map((r) => (
+            <button key={r} type="button" role="tab" aria-selected={risk === r}
+              className={`opt risk-${r} ${risk === r ? 'on' : ''}`}
+              onClick={() => { setRisk(r); setRiskTouched(true); }}>
+              {r === 'low' ? 'Low' : r === 'normal' ? 'Normal' : 'High'}
+            </button>
+          ))}
+        </div>
+        {initialRiskSource === 'auto' && (
+          <div className="risk-prov">
+            ✧ Derived at plan time{initialRiskReason ? ` — ${initialRiskReason}` : ''}. Change it and it becomes yours.
+          </div>
+        )}
+        {initialRiskSource === 'human' && (
+          <div className="risk-prov">Set by you — the overnight pre-pass will not change it.</div>
+        )}
       </div>
       <div className="modal-actions">
         <button className="btn-cancel" onClick={onClose}>Cancel</button>

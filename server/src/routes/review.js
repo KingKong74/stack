@@ -126,6 +126,11 @@ function itemShape(row, reports) {
     merge: stage === 'built' && branch
       ? mergeShape(reports.get(row.project_id)?.get(branch))
       : null,
+    // #262 — where the risk tier came from and why. An empty source means the
+    // tier was set by hand, which is not the same as a derivation that found
+    // nothing to say.
+    riskSource: row.risk_source || '',
+    riskReason: row.risk_reason || '',
     // The run that built it, when there was one. `reviewVerdict` is the stored
     // second-model read: '' means no review ran, which is deliberately NOT the
     // same as "nothing found".
@@ -160,6 +165,7 @@ const AWAITING = `(i.done = true
 const ITEM_SQL = `
   SELECT i.id, i.title, i.bucket, i.note, i.built_note, i.refine_note, i.review_tag,
          i.review_tags, i.review_shelved, i.claimed_by, i.updated_at, i.risk, i.done,
+         i.risk_source, i.risk_reason,
          i.project_id::int AS project_id,
          p.slug, p.name, p.tint,
          r.id AS run_id, r.branch AS run_branch, r.outcome AS run_outcome,
