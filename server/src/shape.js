@@ -243,6 +243,23 @@ export function tipShape(row) {
   };
 }
 
+// A worktree row (#229) — the register of git worktrees the host has checked
+// out for parallel interactive sessions. No numerics beyond `id`; the rest is
+// text and timestamps, so this stays a plain camelCase pass-through.
+export function worktreeShape(row) {
+  return {
+    id: row.id,
+    path: row.path,
+    repo: row.repo || '',
+    branch: row.branch || '',
+    sessionName: row.session_name || '',
+    kind: row.kind || 'term',
+    createdAt: row.created_at,
+    lastSeenAt: row.last_seen_at,
+    releasedAt: row.released_at,
+  };
+}
+
 // A session row mapped to the activity-feed shape: hash, branch, summary, tags,
 // relative time. The hash is the commit the push landed on, so a bug's linkRef
 // (also the commit) matches an activity row's hash and the chip resolves.

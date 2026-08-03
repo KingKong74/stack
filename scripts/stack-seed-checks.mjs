@@ -71,6 +71,10 @@ function suiteFor(slug, ORIGIN) {
     // minute; if its shape breaks, previews silently stop being torn down and
     // public URLs outlive their expiry, which is the failure that matters most.
     { name: 'Previews — the sweep feed', url: u('/api/previews/work'), auth: true, json_path: 'start' },
+    // #229 — the worktree register. Usually empty (most sessions are not
+    // running in a worktree), so this asserts the route answers rather than
+    // asserting a count.
+    { name: 'Worktrees — registry', url: u('/api/worktrees'), auth: true, expect_status: 200 },
     { name: 'Control — plan coverage', url: u('/api/control'), auth: true, json_path: 'projects.0.planCoverage.unplanned' },
     { name: 'Control — per-project rows', url: u('/api/control'), auth: true, json_path: 'projects' },
     // #363 — the Merge room's whole contract. Both fields fail SILENTLY if

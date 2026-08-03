@@ -386,6 +386,16 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   SUITE's ledger, what "checks green" is read from and what #212 auto-merge and #263 auto-verdict
   spend against, so one reported result landing there would read as a whole suite of 1/1 passed, a
   green light manufacturable from outside Stack.
+- **The `worktrees` table is a REGISTER, not a manager** (#229) — the server is in a container and
+  cannot see the host filesystem, so no route under `/api/worktrees` runs git or touches a file; the
+  host alone creates, removes and reports. Identity is the PATH (UNIQUE): re-registering an existing
+  path is an upsert that also clears `released_at`, because a path back in use is live again whatever
+  it was before. Release is a stamp, never a delete, same as a soft-deleted project. `session_name`
+  keeps the `stack-term-` prefix (`stack-term-wt-<key>`) because that prefix is what puts a session
+  on Mission Control's running-sessions strip and what the host reapers key off — rename it and the
+  session goes invisible to both. The trees themselves live at `~/.stack/worktrees/<key>`, deliberately
+  inside the $HOME cwd jail the web terminal daemon enforces, so a tree the laptop cut stays reachable
+  from the browser terminal; move the root outside $HOME and that breaks silently.
 - **`0 = unlimited`** for `autopilotTokens` and `autopilotMaxItems` (#260); positive values are
   clamped. `termIdleHours` `0 = never`.
 - **The MERGE AGENT is arithmetic plus a read, and the two must not be confused** (#364). The waves
@@ -481,7 +491,8 @@ direction is not uniform, and it is not a bug that it isn't:**
 
 - **Fail SAFE = do nothing** where the action destroys or spends: the terminal idle reaper (#287),
   the skills sync (#228 — it deletes files), the dispatcher, the autopilot arm switch (unreachable =
-  no run). An unknown threshold reaps NOTHING.
+  no run), `stack worktrees --prune` (#229 — with tmux unreachable it reaps nothing, the same trap
+  the idle reaper guards against). An unknown threshold reaps NOTHING.
 - **Fail OPEN = keep recording** where the action only records: `readSettings()` and both hooks
   default to "on", so a flaky API degrades to recording rather than to silent-off.
 
@@ -498,7 +509,13 @@ Related, and just as absolute: **Stack only ever writes or removes skills IT PLA
 directory carries a `.stack-managed` marker; a skill without one is REPORTED and never touched.
 Removal is driven by the server's KEEP list, never by a diff against the last report. And **a preview
 never writes to the real database** — its own is a copy, and that isolation is one-directional and
-absolute.
+absolute. And `scripts/lib/worktree.mjs` (#229) fails safe in both directions on a worktree:
+`removeWorktree` only ever deletes a path git itself vouches for as a worktree of that repo, and
+refuses a dirty tree unless forced, since the uncommitted work in it may be the only copy;
+`addWorktree` never force-removes a path that is already a worktree, because a live parallel session
+may be sitting in it (autopilot's own `remove --force` is safe only because its path is keyed by its
+own item id — a shared interactive root has no such guarantee). `orphanWorktrees` only reports;
+nothing in the module removes a tree the caller didn't name.
 
 ## Answering a permission prompt from the browser
 
@@ -672,6 +689,10 @@ reference. The index:
   `control.js` used to run its own `SELECT j.*`, which would ship the kilobyte `advice` text on every
   Mission Control poll AND leave `adviceReady` false forever, silently disabling the feature. The same
   drift-by-copy risk `shape.js`'s run-ledger shapes exist to guard against.
+- `stack-autopilot.mjs` still inlines its own copies of `git worktree add/remove` rather than calling
+  `scripts/lib/worktree.mjs` (#229) — deliberately NOT refactored onto the shared module yet. The
+  nightly is how this repo builds itself, so a subtle break there is expensive; pointing autopilot at
+  the module is a real behaviour change, not a no-op tidy-up, and belongs in its own item.
 
 ## Quick commands
 
@@ -706,6 +727,7 @@ DATABASE_URL=… node server/test/area-lane-claim.test.mjs  # the area lane as t
 node web/test/sky-view.test.mts            # the sky's one "fit all" (pure, no DOM)
 node scripts/lane.test.mjs                 # branch naming + BOTH spellings parse (pure, no git)
 node scripts/risk.test.mjs                 # the shared risk-tier helpers: normalise, label (pure)
+node server/test/worktree.test.mjs         # add/remove guards (real git in a throwaway repo, no DB)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack models                             # which alt providers have a key (--json, --check)
@@ -716,6 +738,7 @@ node scripts/risk.test.mjs                 # the shared risk-tier helpers: norma
 ./stack start-session [slug] [--item N]    # queue an automation session (▶ Run now from the terminal)
 ./stack list-sessions                      # the automation job queue ([slug], --limit, --json)
 ./stack term [dir]                         # claude in a stack-term tmux session (--shell, --safe)
+./stack worktrees --prune                  # reap CLEAN, fully-pushed orphan worktrees (--run, --json)
 
 scripts/run-ui-smoke.sh                    # headless browser pass over the UI (#291; --url, --screens, --report)
 scripts/run-ui-smoke.sh --screens dashboard --viewport desktop   # one screen, quickly

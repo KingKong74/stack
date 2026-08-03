@@ -992,3 +992,34 @@ UPDATE autopilot_schedule SET item_id = NULL WHERE item_id = 0;
 -- finished job's item_id is history now (its detail/outcome already read
 -- against whatever it carried at the time), so it is left alone.
 UPDATE autopilot_jobs SET item_id = NULL WHERE item_id = 0 AND status IN ('queued', 'claimed');
+-- ---------------------------------------------------------------------------
+-- WORKTREES (#229) — one row per git worktree the host has checked out for a
+-- parallel INTERACTIVE session (a terminal tab / `stack term`). The same
+-- throwaway-checkout pattern as `previews` above, but for a person's own
+-- session rather than a docker stack: the host does the `git worktree add`
+-- and `git worktree remove`, the server only holds the record of which path
+-- belongs to which tmux session, so a worktree whose session died can be
+-- FOUND rather than silently accumulating on disk. Nothing reads this table
+-- to decide anything automatically — it is a register, not a manager.
+--
+-- `path` is UNIQUE and is the whole idempotency story: the host re-registers
+-- the same path every time a session touches it (start, attach, heartbeat),
+-- and that is an upsert — never a duplicate row for the same checkout.
+--
+-- `released_at` is a STAMP, not a delete, same as a soft-deleted project or a
+-- stopped preview: the row is the record that the worktree existed. NULL
+-- means live; the host clears it again if the same path is re-registered,
+-- because a path coming back into use is live again whatever it was before.
+CREATE TABLE IF NOT EXISTS worktrees (
+  id           SERIAL PRIMARY KEY,
+  path         TEXT NOT NULL UNIQUE,   -- absolute host path; the identity of the row
+  repo         TEXT NOT NULL DEFAULT '',   -- the checkout it was branched from
+  branch       TEXT NOT NULL DEFAULT '',
+  session_name TEXT NOT NULL DEFAULT '',   -- the tmux session that owns it, e.g. stack-term-foo
+  kind         TEXT NOT NULL DEFAULT 'term',  -- 'term' (interactive) | 'autopilot'
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  released_at  TIMESTAMPTZ                 -- set when the host removed it; NULL = live
+);
+CREATE INDEX IF NOT EXISTS worktrees_released_idx ON worktrees (released_at);
+CREATE INDEX IF NOT EXISTS worktrees_session_idx ON worktrees (session_name);

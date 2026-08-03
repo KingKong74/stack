@@ -31,6 +31,7 @@ import { tips } from './routes/tips.js';
 import { skills } from './routes/skills.js';
 import { agents } from './routes/agents.js';
 import { merge } from './routes/merge.js';
+import { worktrees } from './routes/worktrees.js';
 import { attachTerm } from './term.js';
 
 // Read once at module load: the health endpoint reports the deployed version.
@@ -94,6 +95,7 @@ app.use('/api/skills', requireToken, skills);
 app.use('/api/agents', requireToken, agents);
 // #364 — the Merge agent's read of a proposed merge plan (Mission Control).
 app.use('/api/merge', requireToken, merge);
+app.use('/api/worktrees', requireToken, worktrees);
 app.use('/api/projects', requireToken, projects);
 
 const port = process.env.PORT || 4000;
