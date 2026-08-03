@@ -8,7 +8,7 @@ import {
   runAudit, getAuditPrompt, type AuditResult,
   patchProject, deleteProject, createShareLink, deleteShareLink,
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, convergeFutures,
-  type ConvergeDraft, assistRoadmapItem,
+  type ConvergeDraft, assistRoadmapItem, proposeOrbits, restateFuture,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
   startAutopilot, takeReviewPrefill, agentCan, setLastViewedProject,
 } from '../store';
@@ -523,6 +523,17 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, futures: futures.filter((f) => !removed.has(f.id)) });
     });
 
+  // The orbit rail's own adopt path — same two steps as shapeFuture, but NOT
+  // wrapped in guard: the server legitimately rejects some adoptions (a target
+  // that isn't a star or planet, self-orbit, a target that has since moved),
+  // and the rail's row needs that rejection to reach it so it can show the
+  // reason beside the row rather than lose it to the page banner and vanish
+  // the row as though the adoption had applied.
+  const adoptOrbit = async (fid: number, parentId: number) => {
+    await patchFuture(slug, fid, { parentId });
+    setData({ ...data, futures: await getFutures(slug) });
+  };
+
   // Applies a ✧ Cluster batch in one go — one state write, so N area patches
   // never clobber each other on the shared snapshot.
   const applyFutureAreas = (pairs: { id: number; area: string }[]) =>
@@ -935,8 +946,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onConvergeDraft={agentCan(data.agents, 'polaris', 'converge')
               ? (ids, mode) => convergeFutures(slug, ids, mode) : undefined}
             onConvergeCreate={convergeCreate}
-            onShape={shapeFuture}
-            onDelete={removeFuture} onPromote={promoteFuture} />
+            onShape={shapeFuture} onAdoptOrbit={adoptOrbit}
+            onDelete={removeFuture} onPromote={promoteFuture}
+            geminiReady={data.geminiReady}
+            onProposeOrbits={() => proposeOrbits(slug)}
+            onRestate={(id) => restateFuture(slug, id)} />
         )}
         {tab === 'workbench' && (
           <Workbench slug={slug} geminiReady={data.geminiReady} highlightId={highlightId}

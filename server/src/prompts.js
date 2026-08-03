@@ -535,9 +535,53 @@ Rules:
 
 Use en-AU spelling. Respond with ONLY this JSON:
 { "order": [ { "key": "slug#id", "why": "…" } ], "note": "…" }`;
+DEFAULTS.futureorbits = `You are curating a side project's Polaris galaxy — its idea funnel shaped
+into orbits. A star holds planets in its orbit; star → planet → moon is the whole depth.
+{{NORTH_STAR_LINE}}
+
+THE STARS (id | title | note) — the only legal orbits to propose:
+{{STARS}}
+
+THE LOOSE IDEAS (id | title | note | area) — currently in no orbit at all:
+{{LOOSE}}
+
+For each loose idea, decide whether it is PLAINLY a piece of one star's own work — not merely
+related in theme, but work that star's own definition would cover. Only propose an orbit when it
+is obviously true; never force a match, and never propose more than a handful. Return
+{"items":[]} if none of them clearly belong — that is the expected, normal answer for a healthy
+funnel, not a failure to try harder.
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "items": [ { "id": 123, "parentId": 456, "why": "one short sentence" } ] }`;
+
+DEFAULTS.futurerestate = `You are helping the owner of a side project sharpen how one idea in their
+Polaris galaxy is worded.
+{{NORTH_STAR_LINE}}
+
+THE IDEA{{STAR_LINE}}:
+Title: {{TITLE}}
+Note: {{NOTE_LINE}}
+Area: {{AREA_LINE}}
+{{MAGNITUDE_LINE}}
+{{ALIGNMENT_LINE}}
+{{CHILDREN_BLOCK}}
+
+A star's title is a short name for a whole body of work; its note is one or two sentences of what
+it covers. Judge whether the CURRENT wording already says that plainly.
+
+Leaving a field as an empty string means "the existing wording is already right", and that is the
+expected answer whenever the record does not evidence a better statement — you must not paraphrase
+for the sake of producing output. Only propose a field when you can genuinely say it more clearly
+or more accurately than what is there, grounded in the idea itself and (if any) its children.
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "title": "", "note": "", "area": "", "why": "" }
+where "why" is one short sentence on what you changed (or "" when all three are blank).`;
 
 const ENV_KEYS = {
   judge: 'GEMINI_JUDGE_PROMPT',
+  futureorbits: 'GEMINI_FUTUREORBITS_PROMPT',
+  futurerestate: 'GEMINI_FUTURERESTATE_PROMPT',
   wbcontext: 'GEMINI_WBCONTEXT_PROMPT',
   wbexpand: 'GEMINI_WBEXPAND_PROMPT',
   wbcluster: 'GEMINI_WBCLUSTER_PROMPT',

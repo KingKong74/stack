@@ -3120,6 +3120,42 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .psky-rail-head .name { font-family: var(--disp); font-size: 15px; font-weight: 600; color: var(--ink); }
 .psky-rail-head .sub { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 
+/* -- #330: ✧ Arrange orbits -- fixed, small, sits above the selected-idea
+   panel so a long result list (below, in the rail's one scroll region)
+   never pushes it out of view. */
+.psky-orbits { padding: 14px 20px; border-bottom: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 5px; }
+.psky-orbit-btn {
+  align-self: flex-start; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--accent);
+  background: var(--surface); font-size: 11.5px; font-weight: 500; color: var(--accent-deep);
+}
+.psky-orbit-btn:hover:not(:disabled) { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
+.psky-orbit-btn:disabled { opacity: 0.65; cursor: default; }
+.psky-orbit-sub { font-size: 11px; line-height: 1.4; color: var(--muted); text-wrap: pretty; }
+.psky-orbit-err { font-size: 11.5px; color: var(--critical); }
+.psky-orbit-empty { font-size: 11.5px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+
+.psky-orbit-list { padding: 14px 20px; border-bottom: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 12px; }
+.psky-orbit-list .head { display: flex; align-items: center; gap: 8px; }
+.psky-orbit-list .head .label { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.06em; color: var(--accent); white-space: nowrap; }
+.psky-orbit-list .head .n { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.psky-orbit-list .head .rule { flex: 1; height: 1px; background: var(--line); }
+.psky-orbit-list .head .clear { font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; }
+.psky-orbit-list .head .clear:hover { color: var(--ink); }
+.psky-orbit-row { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 8px; background: var(--sand); border: 1px solid var(--resume-border); }
+.psky-orbit-row .t { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.35; text-wrap: pretty; }
+.psky-orbit-row .into { font-family: var(--mono); font-size: 10.5px; color: var(--accent-deep); }
+.psky-orbit-row .why { font-size: 11.5px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+.psky-orbit-row .err { font-size: 11px; color: var(--critical); }
+.psky-orbit-row .ctl { display: flex; gap: 7px; margin-top: 4px; }
+.psky-orbit-row .ctl .adopt {
+  padding: 5px 11px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent);
+  font-size: 11px; font-weight: 500; color: #fff;
+}
+.psky-orbit-row .ctl .adopt:hover:not(:disabled) { background: var(--accent-deep); border-color: var(--accent-deep); }
+.psky-orbit-row .ctl .adopt:disabled { opacity: 0.65; cursor: default; }
+.psky-orbit-row .ctl .dismiss { padding: 5px 11px; border-radius: 6px; border: 1px solid var(--keyline); font-size: 11px; color: var(--muted); }
+.psky-orbit-row .ctl .dismiss:hover { color: var(--critical); border-color: var(--critical); }
+
 .psky-sel { padding: 18px 20px; border-bottom: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 10px; }
 .psky-sel-empty { font-size: 12.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
 .psky-sel-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -3138,6 +3174,14 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .psky-sel-actions .act.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
 .psky-sel-actions .act.quiet { border-color: transparent; color: var(--muted); }
 .psky-sel-actions .act.quiet:hover { color: var(--critical); border-color: var(--critical); }
+
+/* -- #330: ✧ Restate — a draft only, so its "why" rides above the edit
+   fields it pre-filled, and its "no clearer wording" answer is a plain line
+   beside the actions rather than an error. -- */
+.psky-restate-why { border-left: 2px solid var(--accent); padding-left: 10px; font-size: 11.5px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+.psky-restate-err { font-size: 11.5px; color: var(--critical); margin-top: -2px; }
+.psky-restate-flat { font-size: 12px; line-height: 1.55; color: var(--muted); text-wrap: pretty; margin-top: -2px; }
+.psky-restate-flat .why { color: var(--faint); margin-top: 3px; }
 
 /* -- the rail, galaxy additions (#312) -- */
 .psky-census { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--fainter); flex-wrap: wrap; }
