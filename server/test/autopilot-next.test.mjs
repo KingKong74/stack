@@ -69,9 +69,35 @@ async function setStatus(id, status) {
   await q(`UPDATE autopilot_jobs SET status = $1 WHERE id = $2`, [status, id]);
 }
 
+// The fleet cap counts EVERY claimed/running job in the database, not just
+// this test's — that is the whole point of a fleet-wide gate. So a job left
+// in flight by another test (or a real dispatcher pointed at the same
+// database) silently eats a slot, and these assertions then fail in a way
+// that reads like a regression in the claim rather than a dirty database.
+// `wipe()` cannot fix it: it is deliberately scoped to the t335-* slugs and
+// must never blanket-delete rows it does not own. So SAY SO instead.
+async function assertQuietFleet() {
+  const { rows } = await q(
+    `SELECT j.status, count(*)::int AS n
+       FROM autopilot_jobs j
+       LEFT JOIN projects p ON p.id = j.project_id
+      WHERE j.status IN ('claimed', 'running')
+        AND COALESCE(p.slug, '') <> ALL($1)
+      GROUP BY j.status`, [SLUGS]);
+  const foreign = rows.reduce((sum, r) => sum + r.n, 0);
+  if (foreign > 0) {
+    console.log(`SKIP — ${foreign} job(s) not belonging to this test are claimed/running.`);
+    console.log('  The fleet cap is global, so they occupy slots these assertions need.');
+    console.log('  Point DATABASE_URL at a quiet database, or clear the in-flight jobs first.');
+    await pool.end();
+    process.exit(0);
+  }
+}
+
 (async () => {
   await migrate();
   await wipe();
+  await assertQuietFleet();
 
   console.log('--- 1. the fleet cap holds ---');
   {
