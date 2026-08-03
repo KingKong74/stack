@@ -116,6 +116,7 @@ const sizeOf = (it: ReviewItem) =>
 // Nights are grouped on the run's UTC day (the same convention the week strip
 // uses); the label is relative so "last night" reads as last night.
 function nightLabel(day: string): string {
+  if (!day) return 'Undated';
   const today = new Date().toISOString().slice(0, 10);
   const yday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
   if (day === today) return 'Tonight';
@@ -148,6 +149,17 @@ export function ReviewRoom({
   const [view, setView] = useState<View>('queue');
   const [filter, setFilter] = useState<Filter>('todo');
   const [selId, setSelId] = useState<string>('');       // "slug#id"
+  // #264 unit 1 — the batch-verdict selection. Keys are `key(it)` strings, not
+  // row objects, so a row that has since gained/lost a verdict is compared by
+  // identity, not by a stale object reference. The action itself is unit 2.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  // #264 unit 2 — the optimistic overlay for a batch verdict. Keys of rows a
+  // batch has already PATCHed but whose reload has not landed yet: they must
+  // vanish from the list at once, before the server round-trip finishes, and
+  // this is read INSIDE `lists` below so the filter-chip counts, the rail and
+  // the header total all move together off the one source rather than each
+  // growing its own "minus the ones I just sent" arithmetic.
+  const [pendingTag, setPendingTag] = useState<Set<string>>(new Set());
   const [night, setNight] = useState<string>('');        // the debrief's chosen day
   const [busy, setBusy] = useState(false);
   const [settledNote, setSettledNote] = useState<{ key: string; text: string; undo?: () => void } | null>(null);
@@ -184,8 +196,10 @@ export function ReviewRoom({
   const [refineSay, setRefineSay] = useState<{ tone: 'note' | 'err'; text: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<ReviewItem | null>(null);
 
+  // Returns the fetch so a batch verdict can await the reload that actually
+  // settles it — nothing else about this changes.
   const load = () => {
-    getReview()
+    return getReview()
       .then((d) => { setData(d); setError(''); onCount?.(d.totals.pending); })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load the review queue.'));
   };
@@ -212,7 +226,14 @@ export function ReviewRoom({
 
   const lists = useMemo(() => {
     const q = data?.queue ?? [];
-    const active = q.filter((it) => !it.shelved);
+    // A row a batch has already verdicted is filtered out here, not just
+    // hidden in the render — that is the whole optimistic effect, and doing
+    // it at the one place every other list derives from is what keeps the
+    // chip counts, the rail and the header total from disagreeing with
+    // each other for the second or two before the reload lands.
+    const active = q.filter((it) => !it.shelved && !pendingTag.has(key(it)));
+    // #375 — the Foreman's triage order, applied after the filtering so a
+    // batch-hidden row cannot hold a rank nothing renders.
     const ordered = triageRank
       ? [...active].sort((a, b) =>
         (triageRank.get(`${a.slug}#${a.id}`) ?? Number.MAX_SAFE_INTEGER)
@@ -224,7 +245,7 @@ export function ReviewRoom({
       shelved: q.filter((it) => it.shelved),
       settled: data?.settled ?? [],
     } as Record<Filter, ReviewItem[]>;
-  }, [data, triageRank]);
+  }, [data, triageRank, pendingTag]);
 
   const list = lists[filter];
   const sel = list.find((it) => key(it) === selId) ?? list[0] ?? null;
@@ -234,6 +255,82 @@ export function ReviewRoom({
     if (!list.length) { setSelId(''); return; }
     if (!list.some((it) => key(it) === selId)) setSelId(key(list[0]));
   }, [list, selId]);
+
+  // #264 unit 1 — ten items from one night is one decision, not ten. Group
+  // `list` into clusters keyed on night + branch (the branch CLAIM, #277 — the
+  // rail says BRANCH, never "lane") so a select-all can offer one decision per
+  // cluster instead of one per row. `list` already arrives newest-first, and a
+  // Map keyed on insertion preserves that order for both the clusters and the
+  // rows inside each one — re-sorting here would put the newest cluster out of
+  // step with the newest row it was built to track.
+  const clusters = useMemo(() => {
+    const byKey = new Map<string, { id: string; day: string; branch: string; items: ReviewItem[] }>();
+    for (const it of list) {
+      const finished = it.run?.finishedAt || it.doneAt;
+      const day = finished ? new Date(finished).toISOString().slice(0, 10) : '';
+      const branch = it.branch || it.run?.branch || '';
+      const k = `${day} ${branch}`;
+      const existing = byKey.get(k);
+      if (existing) existing.items.push(it);
+      else byKey.set(k, { id: k, day, branch, items: [it] });
+    }
+    // unit 3 — the cluster's evidence summary, folded into this same pass
+    // rather than a second memo: `list` is the performance-sensitive path (a
+    // big night is a lot of rows), and every number below is a running total
+    // over the same `items` this memo already builds.
+    return [...byKey.values()].map((c) => {
+      let commits = 0, tokens = 0, checksRed = 0, checksUnrun = 0, checksGreen = 0, noRun = 0;
+      // Reviewer verdicts, counted apart from "clean" on purpose: `none` holds
+      // both an item with a run that carries no `reviewVerdict` AND an item
+      // with no run at all, because in both cases NO PASS RAN — the same rule
+      // this room applies to a single NULL review verdict, just totalled
+      // across a cluster instead of read off one row.
+      const verdicts = { clean: 0, concerns: 0, blocked: 0, none: 0 };
+      for (const it of c.items) {
+        const run = it.run;
+        if (!run) { noRun++; verdicts.none++; continue; }
+        commits += run.commits ?? 0;
+        tokens += run.tokens ?? 0;
+        // Checks-never-ran is counted apart from checks-green for the same
+        // reason: `checksFailing === null` means the checks never ran on that
+        // item, and folding it into green would let a cluster read as "all
+        // passing" when some of it was never tested at all.
+        if (run.checksFailing == null) checksUnrun++;
+        else if (run.checksFailing > 0) checksRed++;
+        else checksGreen++;
+        if (run.reviewVerdict === 'clean' || run.reviewVerdict === 'concerns' || run.reviewVerdict === 'blocked') {
+          verdicts[run.reviewVerdict]++;
+        } else {
+          verdicts.none++;
+        }
+      }
+      return { ...c, label: nightLabel(c.day), ev: { commits, tokens, checksRed, checksUnrun, checksGreen, verdicts, noRun } };
+    });
+  }, [list]);
+
+  // A picked row belongs to one filter's list; switching filters looks at an
+  // entirely different set of rows, so the selection can't survive the switch
+  // without "3 selected" surviving into a list where none of those three show.
+  useEffect(() => { setPicked(new Set()); }, [filter]);
+
+  // Never trust a stale key: a verdict removes its row from `list` without
+  // ever touching `picked`, so every count/render intersects the two rather
+  // than reading `picked` on its own.
+  const pickedInList = useMemo(() => list.filter((it) => picked.has(key(it))), [list, picked]);
+
+  const togglePick = (k: string) => setPicked((s) => {
+    const n = new Set(s);
+    if (n.has(k)) n.delete(k); else n.add(k);
+    return n;
+  });
+  // One click toggles the whole cluster: on if any row in it was still
+  // unpicked, off only once every row in it already was.
+  const toggleClusterPick = (items: ReviewItem[]) => setPicked((s) => {
+    const n = new Set(s);
+    const allOn = items.every((it) => n.has(key(it)));
+    for (const it of items) { if (allOn) n.delete(key(it)); else n.add(key(it)); }
+    return n;
+  });
 
   // ---- mutations. Each one PATCHes, then reloads: the queue is a server-side
   // read over two tables, and re-deriving it locally would be a second source
@@ -248,6 +345,90 @@ export function ReviewRoom({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not go through.');
     } finally {
+      setBusy(false);
+    }
+  };
+
+  // #264 unit 2 — the batch verdict. One PATCH per row, fired concurrently:
+  // `act()` reloads on every call and folds a partial failure into one error
+  // string, which is exactly wrong for a batch, so this does its own
+  // PATCH/settle/reload instead of reusing it.
+  const batchVerdict = async (items: ReviewItem[]) => {
+    if (!items.length || busy) return;
+    setBusy(true);
+    const keys = items.map(key);
+    // Snapshot the keys and clear the selection up front — the rows leave
+    // the list immediately, before a single PATCH has resolved.
+    setPendingTag((s) => { const n = new Set(s); for (const k of keys) n.add(k); return n; });
+    setPicked(new Set());
+    try {
+      const results = await Promise.allSettled(
+        items.map((it) => patchRoadmapItem(it.slug, Number(it.id), { review_tag: 'solid' })),
+      );
+      const succeeded = items.filter((_, i) => results[i].status === 'fulfilled');
+      const failed = items.filter((_, i) => results[i].status === 'rejected');
+      // A failed row must not stay hidden behind the optimistic overlay —
+      // it still needs a verdict, so it has to reappear right away rather
+      // than wait on the reload below.
+      if (failed.length) {
+        const failedKeys = new Set(failed.map(key));
+        setPendingTag((s) => { const n = new Set(s); for (const k of failedKeys) n.delete(k); return n; });
+        const firstFailure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+        setError(firstFailure && firstFailure.reason instanceof Error
+          ? firstFailure.reason.message : 'Some changes did not go through.');
+      } else {
+        setError('');
+      }
+      const n = items.length;
+      setSettledNote({
+        key: 'bulk',
+        text: failed.length
+          ? `${succeeded.length} change${succeeded.length === 1 ? '' : 's'} marked solid · ${failed.length} did not go through.`
+          : `${n} change${n === 1 ? '' : 's'} marked solid.`,
+        // One decision in, one decision out: the undo re-PATCHes only the
+        // rows that actually landed, in the same all-concurrent shape.
+        undo: succeeded.length ? () => undoBatch(succeeded) : undefined,
+      });
+    } finally {
+      // The reload is what actually settles the state — the server read is
+      // authoritative and the overlay only ever covers the gap until it
+      // lands. Clearing the WHOLE snapshot here, succeeded and failed alike,
+      // means a reload that fails outright can't leave a row hidden forever.
+      await load();
+      setPendingTag((s) => { const n = new Set(s); for (const k of keys) n.delete(k); return n; });
+      setBusy(false);
+    }
+  };
+
+  // The batch's undo, mirroring batchVerdict's shape rather than reusing
+  // `act()` — `Promise.allSettled` never rejects, so `act()`'s catch could
+  // never fire and a partly-failed revert would report as a clean one. A
+  // batch's error reporting has to be explicit in both directions. No
+  // optimistic overlay here: `pendingTag` HIDES rows, and an undo puts rows
+  // BACK — the honest reload already does that, so there is nothing to fake.
+  const undoBatch = async (items: ReviewItem[]) => {
+    setBusy(true);
+    try {
+      const results = await Promise.allSettled(
+        items.map((it) => patchRoadmapItem(it.slug, Number(it.id), { review_tag: '' })),
+      );
+      const failed = results.filter((r) => r.status === 'rejected');
+      const n = items.length;
+      if (failed.length) {
+        const firstFailure = failed.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+        setError(firstFailure && firstFailure.reason instanceof Error
+          ? firstFailure.reason.message : 'Some changes did not go through.');
+        setSettledNote({
+          key: 'bulk',
+          text: `${n - failed.length} change${n - failed.length === 1 ? '' : 's'} back on the list · ${failed.length} did not go through.`,
+        });
+      } else {
+        setError('');
+        // No further undo — undoing an undo is the Solid button, right there.
+        setSettledNote({ key: 'bulk', text: `${n} change${n === 1 ? '' : 's'} back on the list.` });
+      }
+    } finally {
+      await load();
       setBusy(false);
     }
   };
@@ -597,9 +778,7 @@ export function ReviewRoom({
         {view === 'queue' && filter === 'todo' && list.length > 1 && (
           <button className="rv-bulk" disabled={busy}
             title="Mark every change in this list solid — for the mornings where you have already seen them all. Changes still on a branch are approved, not ticked: merging is still yours to press."
-            onClick={() => act(async () => {
-              for (const it of list) await patchRoadmapItem(it.slug, Number(it.id), { review_tag: 'solid' });
-            }, { key: 'bulk', text: `${list.length} change${list.length === 1 ? '' : 's'} marked solid.` })}>
+            onClick={() => batchVerdict(list)}>
             ✓ All solid
           </button>
         )}
@@ -653,52 +832,158 @@ export function ReviewRoom({
               <div className="rv-spacer" />
               <span className="prog">{list.length ? `${list.findIndex((x) => sel && key(x) === key(sel)) + 1} of ${list.length}` : '—'}</span>
             </div>
+            {/* #264 unit 1 — the batch bar. Room level like the receipt above:
+                a row leaving the list on verdict must not take the count with
+                it silently, so it reads off `pickedInList`, never `picked`
+                raw. The Solid-N action itself is unit 2. */}
+            {pickedInList.length > 0 && (
+              <div className="rv-selbar">
+                <span>{pickedInList.length} selected</span>
+                <button onClick={() => setPicked(new Set())}>Clear</button>
+                <button className="go" disabled={busy} onClick={() => batchVerdict(pickedInList)}>
+                  ✓ Solid ({pickedInList.length})
+                </button>
+              </div>
+            )}
             <div className="rv-rail-list">
-              {list.map((it) => {
-                const v = it.run?.reviewVerdict ?? '';
-                const ms = mergeStateFor(it);
+              {clusters.map((c) => {
+                // A checkbox can't nest inside the existing `<button class="rv-card">`
+                // (two interactive elements, one control) — so each cluster's
+                // rows are siblings: a checkbox, then the untouched card.
+                const selectable = filter !== 'settled';
+                const allOn = c.items.length > 0 && c.items.every((it) => picked.has(key(it)));
+                const someOn = !allOn && c.items.some((it) => picked.has(key(it)));
                 return (
-                  <button key={key(it)} className={`rv-card ${sel && key(sel) === key(it) ? 'on' : ''}`}
-                    onClick={() => setSelId(key(it))}>
-                    <span className="row1">
-                      <span className={`rv-verdict ${v || 'none'}`}>{VERDICT_LABEL[v]}</span>
-                      {/* #374 — the stage, in the tone of the branch state where
-                          the host has probed it. A built change with no report
-                          gets the neutral chip, never the clean one. */}
-                      {isBuilt(it) && (
-                        <span className="rv-stage" style={ms ? { color: MERGE_STATE_META[ms].tone } : undefined}
-                          title={ms
-                            ? `Still on ${it.merge?.branch} — ${MERGE_STATE_META[ms].hint}`
-                            : 'Still on its branch. No branch report names it, so either the host has not reported since it was pushed, or it was merged without being ticked.'}>
-                          BRANCH{ms ? ` · ${MERGE_STATE_META[ms].label}` : ''}
-                        </span>
+                  <div className="rv-cluster" key={c.id}>
+                    <div className="rv-cluster-head">
+                      {selectable && (
+                        <input
+                          type="checkbox"
+                          checked={allOn}
+                          // React has no `indeterminate` attribute — it's a DOM
+                          // property only, so it has to be set imperatively.
+                          ref={(el) => { if (el) el.indeterminate = someOn; }}
+                          aria-label={`Select all ${c.items.length} change${c.items.length === 1 ? '' : 's'} in this cluster`}
+                          onChange={() => toggleClusterPick(c.items)}
+                        />
                       )}
-                      {(it.run?.checksFailing ?? 0) > 0 && (
-                        <span className="rv-flag" title="The run finished with checks red">CHECKS</span>
-                      )}
-                      {/* #284 — ARCH only when the architect had something to say;
-                          "aligned" is not news and would just add noise. */}
-                      {it.run?.architectVerdict && it.run.architectVerdict !== 'aligned' && (
-                        <span className="rv-arch" title={it.run.architectNote || 'The architect flagged structure'}>ARCH</span>
-                      )}
-                      {it.reviewTag && <span className="rv-settled-chip">{it.reviewTag}</span>}
-                      <span className="rv-spacer" />
-                      <span className="age">{it.when}</span>
-                    </span>
-                    <span className="t">{it.title}</span>
-                    <span className="row2">
-                      <span className="where">
-                        <span className="tintdot" style={{ background: it.tint || 'var(--sand)' }} />
-                        {it.name} · #{it.id}
+                      <span className="night">{c.label}</span>
+                      <span className="branch" title={c.branch || undefined}>{c.branch || 'no branch'}</span>
+                      <span className="count">{c.items.length} change{c.items.length === 1 ? '' : 's'}</span>
+                      {/* unit 3 — the evidence a select-all is asking you to trust
+                          in one glance. A quiet cluster shows nothing: a chip only
+                          appears when it has something to say, so silence reads as
+                          silence rather than as a row of confident zeroes. */}
+                      <span className="rv-ev">
+                        {c.ev.noRun === c.items.length ? (
+                          <span className="rv-ev-chip muted"
+                            title="None of these were built by an autopilot run — there is no run log, no checks and no reviewer read behind them to summarise.">
+                            no run behind it
+                          </span>
+                        ) : (<>
+                          {c.ev.checksGreen > 0 && (
+                            <span className="rv-ev-chip good" title={`The checks ran and came back green on ${c.ev.checksGreen} of these.`}>
+                              ✓ {c.ev.checksGreen}
+                            </span>
+                          )}
+                          {c.ev.checksRed > 0 && (
+                            <span className="rv-ev-chip bad" title={`The checks ran and failed on ${c.ev.checksRed} of these.`}>
+                              ✕ {c.ev.checksRed}
+                            </span>
+                          )}
+                          {c.ev.checksUnrun > 0 && (
+                            <span className="rv-ev-chip muted" title={`The checks never ran on ${c.ev.checksUnrun} of these — that is not the same as a pass.`}>
+                              — {c.ev.checksUnrun}
+                            </span>
+                          )}
+                          {c.ev.verdicts.clean > 0 && (
+                            <span className="rv-ev-chip good" title={`The reviewer called ${c.ev.verdicts.clean} of these clean.`}>
+                              {c.ev.verdicts.clean} clean
+                            </span>
+                          )}
+                          {c.ev.verdicts.concerns > 0 && (
+                            <span className="rv-ev-chip paused" title={`The reviewer raised concerns on ${c.ev.verdicts.concerns} of these.`}>
+                              {c.ev.verdicts.concerns} concerns
+                            </span>
+                          )}
+                          {c.ev.verdicts.blocked > 0 && (
+                            <span className="rv-ev-chip bad" title={`The reviewer blocked ${c.ev.verdicts.blocked} of these.`}>
+                              {c.ev.verdicts.blocked} blocked
+                            </span>
+                          )}
+                          {c.ev.verdicts.none > 0 && (
+                            <span className="rv-ev-chip muted" title={`No second-model review ran on ${c.ev.verdicts.none} of these — that is not the same as nothing being found.`}>
+                              {c.ev.verdicts.none} no review
+                            </span>
+                          )}
+                          {c.ev.commits > 0 && (
+                            <span className="rv-ev-num" title={`${c.ev.commits} commit${c.ev.commits === 1 ? '' : 's'} across this cluster.`}>
+                              {c.ev.commits} commit{c.ev.commits === 1 ? '' : 's'}
+                            </span>
+                          )}
+                          {c.ev.tokens > 0 && (
+                            <span className="rv-ev-num" title={`${fmtTok(c.ev.tokens)} spent building this cluster.`}>
+                              {fmtTok(c.ev.tokens)}
+                            </span>
+                          )}
+                        </>)}
                       </span>
-                      <span className="size">{sizeOf(it)}</span>
-                    </span>
-                    {/* #375 — why the Foreman put this one here. Only in the
-                        To-review list, which is the only one it ordered. */}
-                    {filter === 'todo' && triageWhy.get(key(it)) && (
-                      <span className="rv-why">✧ {triageWhy.get(key(it))}</span>
-                    )}
-                  </button>
+                    </div>
+                    {c.items.map((it) => {
+                      const v = it.run?.reviewVerdict ?? '';
+                      const ms = mergeStateFor(it);
+                      return (
+                        <div className="rv-row" key={key(it)}>
+                          {selectable && (
+                            <input type="checkbox" className="rv-pick"
+                              checked={picked.has(key(it))} aria-label={it.title}
+                              onChange={() => togglePick(key(it))} />
+                          )}
+                          <button className={`rv-card ${sel && key(sel) === key(it) ? 'on' : ''}`}
+                            onClick={() => setSelId(key(it))}>
+                            <span className="row1">
+                              <span className={`rv-verdict ${v || 'none'}`}>{VERDICT_LABEL[v]}</span>
+                              {/* #374 — the stage, in the tone of the branch state where
+                                  the host has probed it. A built change with no report
+                                  gets the neutral chip, never the clean one. */}
+                              {isBuilt(it) && (
+                                <span className="rv-stage" style={ms ? { color: MERGE_STATE_META[ms].tone } : undefined}
+                                  title={ms
+                                    ? `Still on ${it.merge?.branch} — ${MERGE_STATE_META[ms].hint}`
+                                    : 'Still on its branch. No branch report names it, so either the host has not reported since it was pushed, or it was merged without being ticked.'}>
+                                  BRANCH{ms ? ` · ${MERGE_STATE_META[ms].label}` : ''}
+                                </span>
+                              )}
+                              {(it.run?.checksFailing ?? 0) > 0 && (
+                                <span className="rv-flag" title="The run finished with checks red">CHECKS</span>
+                              )}
+                              {/* #284 — ARCH only when the architect had something to say;
+                                  "aligned" is not news and would just add noise. */}
+                              {it.run?.architectVerdict && it.run.architectVerdict !== 'aligned' && (
+                                <span className="rv-arch" title={it.run.architectNote || 'The architect flagged structure'}>ARCH</span>
+                              )}
+                              {it.reviewTag && <span className="rv-settled-chip">{it.reviewTag}</span>}
+                              <span className="rv-spacer" />
+                              <span className="age">{it.when}</span>
+                            </span>
+                            <span className="t">{it.title}</span>
+                            <span className="row2">
+                              <span className="where">
+                                <span className="tintdot" style={{ background: it.tint || 'var(--sand)' }} />
+                                {it.name} · #{it.id}
+                              </span>
+                              <span className="size">{sizeOf(it)}</span>
+                            </span>
+                            {/* #375 — why the Foreman put this one here. Only in the
+                                To-review list, which is the only one it ordered. */}
+                            {filter === 'todo' && triageWhy.get(key(it)) && (
+                              <span className="rv-why">✧ {triageWhy.get(key(it))}</span>
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 );
               })}
               {!list.length && (

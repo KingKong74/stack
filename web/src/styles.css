@@ -5072,6 +5072,55 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .rv-card .size { font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
 .rv-empty { padding: 16px 12px; font-size: 12px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
 
+/* #264 unit 1 — the rail groups into clusters (night + branch claim) so a
+   select-all can offer one decision for the whole cluster. The head is quiet
+   on purpose: it is a grouping label, not another row competing with the
+   cards for attention. */
+.rv-cluster { display: flex; flex-direction: column; gap: 4px; }
+.rv-cluster:not(:first-child) { margin-top: 6px; }
+.rv-cluster-head { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 2px;
+  border-bottom: 1px solid var(--keyline); flex-wrap: wrap; row-gap: 4px; }
+.rv-cluster-head input[type="checkbox"] { flex: none; }
+.rv-cluster-head .night { flex: none; font-family: var(--mono); font-size: 9px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.rv-cluster-head .branch { flex: 1; min-width: 0; font-family: var(--mono); font-size: 10px; color: var(--paused);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-cluster-head .count { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
+/* unit 3 — the evidence a select-all is trusting: checks, review verdicts,
+   commits and spend, totalled per cluster. `margin-left: auto` keeps it
+   pinned to the far end of the head on a wide rail; the head's own
+   `flex-wrap` (above) is the fallback on a narrow one — it drops to a second
+   line rather than ever pushing the checkbox or the night label out of view.
+   Quiet by design: a cluster with nothing to flag renders no chips at all,
+   never a row of confident zeroes. */
+.rv-ev { flex: none; margin-left: auto; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.rv-ev-chip { flex: none; font-family: var(--mono); font-size: 8.5px; font-weight: 500; letter-spacing: 0.02em;
+  padding: 1px 6px; border-radius: 4px; border: 1px solid var(--keyline); background: var(--sand);
+  color: var(--muted); white-space: nowrap; }
+.rv-ev-chip.good { color: var(--live); border-color: var(--live); }
+.rv-ev-chip.bad { color: var(--critical); border-color: var(--critical); }
+.rv-ev-chip.paused { color: var(--paused); border-color: var(--paused); }
+.rv-ev-chip.muted { color: var(--muted); }
+/* commits + spend are size, not judgement — plain mono text, no chip. */
+.rv-ev-num { flex: none; font-family: var(--mono); font-size: 9px; color: var(--muted); white-space: nowrap; }
+/* checkbox beside the card, not inside it — a checkbox can't nest inside the
+   existing `<button class="rv-card">` (two interactive elements, one
+   control), so the row is a flex pair and the card keeps its full width. */
+.rv-row { display: flex; align-items: flex-start; gap: 7px; }
+.rv-row .rv-pick { margin-top: 12px; flex: none; }
+.rv-row .rv-card { flex: 1; min-width: 0; }
+.rv-selbar { display: flex; align-items: center; gap: 10px; padding: 7px 14px; font-size: 11.5px;
+  color: var(--muted); background: var(--sand); border-bottom: 1px solid var(--line-2); }
+.rv-selbar button { font-family: var(--mono); font-size: 10.5px; font-weight: 600; color: var(--accent-deep); }
+.rv-selbar button:hover { color: var(--ink); }
+/* #264 unit 2 — the batch verdict is the primary action in this bar, so it
+   gets the same filled-terracotta treatment as every other primary action
+   in this room (.rv-act.primary), pinned to the far end past Clear. */
+.rv-selbar .go { margin-left: auto; padding: 4px 12px; border-radius: 7px;
+  background: var(--accent); color: #fff; }
+.rv-selbar .go:hover:not(:disabled) { background: var(--accent-deep); color: #fff; }
+.rv-selbar .go:disabled { opacity: 0.5; }
+
 /* the reviewer's verdict, as a chip. NO REVIEW is deliberately not green. */
 .rv-verdict { flex: none; padding: 1px 7px; border-radius: 4px; font-family: var(--mono); font-size: 8.5px; font-weight: 500; letter-spacing: 0.04em; }
 .rv-verdict.clean { background: var(--green-tint); color: var(--live); }
