@@ -282,7 +282,7 @@ const list = (v, cap, len = 300) => (Array.isArray(v) ? v : [])
 // validated hard and rejected silently: same-origin only (a leading `//` is a
 // host, not a path), no backslashes, no whitespace, nothing that is not already
 // legal in a URL path/query/fragment.
-const cleanPath = (v) => {
+export const cleanPath = (v) => {
   const p = String(v ?? '').trim();
   if (!p.startsWith('/') || p.startsWith('//') || p.length > 200) return '';
   return /^[A-Za-z0-9/#?&=._~:@!$'()*+,;%-]+$/.test(p) ? p : '';
