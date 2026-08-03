@@ -629,6 +629,7 @@ node server/test/agents.test.mjs           # each tab agent is bound to its own 
 node server/test/model-switch.test.mjs     # provider key resolution from both key files (pure)
 DATABASE_URL=… node server/test/autopilot-next.test.mjs   # the fleet cap + the per-project gate (#335)
 DATABASE_URL=… node server/test/area-lane-claim.test.mjs  # the area lane as the CLAIM enforces it (#267)
+node web/test/sky-view.test.mts            # the sky's one "fit all" (pure, no DOM)
 node scripts/lane.test.mjs                 # branch naming + BOTH spellings parse (pure, no git)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
