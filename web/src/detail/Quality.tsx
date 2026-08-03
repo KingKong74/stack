@@ -365,7 +365,10 @@ function NeedsYou({
             <Spark results={history[r.check.id]} width={54} />
             <div className="q-row-acts">
               {wantsBug(r.bug) && <button className="q-act red" onClick={() => onFileBug(r.check)}>→ Bug</button>}
-              <button className="q-act" disabled={busy} onClick={() => onRunOne(r.check.id)}>▸ re-run</button>
+              {/* #291 — an external check's result is reported, not run by Stack. */}
+              {!r.check.external && (
+                <button className="q-act" disabled={busy} onClick={() => onRunOne(r.check.id)}>▸ re-run</button>
+              )}
             </div>
           </div>
         ) : (
@@ -566,11 +569,18 @@ function ChecksCard({ checks, bugFor, busy, onRunOne, onAdd, onOpenSuite }: {
               {c.auth && (
                 <span className="check-authed" title="Runs with the app's own token — this project's origin only">🔒</span>
               )}
+              {c.external && (
+                <span className="check-external" title="Reported by an external runner, not run by Stack">reported</span>
+              )}
               <span className="q-crow-name">{c.name}</span>
               {bug && <span className="q-link flat" title="Filed from this check">↳ {bug.id}</span>}
               <span className={`q-assert${a.ai ? ' ai' : ''}`} title={a.text}>{a.text}</span>
               <span className={`q-crow-result ${c.lastStatus || 'never'}`}>{checkResult(c)}</span>
-              <button className="q-icon" disabled={busy} onClick={() => onRunOne(c.id)} title="Run this check">▸</button>
+              {/* #291 — an external check's result is reported, not run by Stack;
+                  the server 400s this call, so there is no Run button to offer. */}
+              {!c.external && (
+                <button className="q-icon" disabled={busy} onClick={() => onRunOne(c.id)} title="Run this check">▸</button>
+              )}
             </div>
           );
         })}
@@ -852,6 +862,9 @@ function SuitePanel({
                 {c.auth && (
                   <span className="check-authed" title="Runs with the app's own token — this project's origin only">🔒</span>
                 )}
+                {c.external && (
+                  <span className="check-external" title="Reported by an external runner, not run by Stack">reported</span>
+                )}
                 <div className="q-row-main">
                   <div className="q-row-title">
                     <span className="t">{c.name}</span>
@@ -883,7 +896,11 @@ function SuitePanel({
                   {c.lastStatus === 'fail' && wantsBug(bug) && (
                     <button className="q-act red" onClick={() => onFileBug(c)}>→ Bug</button>
                   )}
-                  <button className="q-icon" disabled={busy} onClick={() => onRun(c.id)} title="Run this check">▸</button>
+                  {/* #291 — an external check's result is reported, not run by
+                      Stack; the server 400s this call, so no Run button here. */}
+                  {!c.external && (
+                    <button className="q-icon" disabled={busy} onClick={() => onRun(c.id)} title="Run this check">▸</button>
+                  )}
                   <button className="q-icon" onClick={() => startEdit(c)} title="Edit">✎</button>
                   <button className="q-icon danger" onClick={() => onDelete(c.id)} title="Delete">×</button>
                 </div>

@@ -30,7 +30,8 @@ server/    Express + Postgres. Idempotent schema migrate on boot, retries first 
 hook/      Zero-dependency Node ESM Claude Code hooks + the /checkpoint poster.
 terminal/  The web terminal's host-side daemon (dials OUT to the server; the host firewall drops
            container→host traffic).
-scripts/   The host-side CLI + automation (autopilot, dispatcher, previews, skills, tree, checks).
+scripts/   The host-side CLI + automation (autopilot, dispatcher, previews, skills, tree, checks,
+           the Playwright UI smoke harness).
 templates/ stack-agent-context.md — the canonical portable agent manual (single source of truth).
 .claude/commands/checkpoint.md — the /checkpoint slash command (install to ~/.claude/commands/).
 ```
@@ -301,6 +302,13 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   leaking the token or lying about a 401.
 - **Editing what a check TESTS clears its stored result AND its `check_results` history** — past
   passes were against a different test. Renaming keeps both.
+- **`checks.external`** (#291) is a row Stack never probes itself — its result comes from outside,
+  posted by `POST /report`. `POST /run` must skip external rows and 400s a single-id run against one:
+  probing one would overwrite the reported result with the status of a request that tested nothing.
+  `/report` deliberately writes `check_results` but NOT a `check_runs` row — `check_runs` is the
+  SUITE's ledger, what "checks green" is read from and what #212 auto-merge and #263 auto-verdict
+  spend against, so one reported result landing there would read as a whole suite of 1/1 passed, a
+  green light manufacturable from outside Stack.
 - **`0 = unlimited`** for `autopilotTokens` and `autopilotMaxItems` (#260); positive values are
   clamped. `termIdleHours` `0 = never`.
 - **The MERGE AGENT is arithmetic plus a read, and the two must not be confused** (#364). The waves
@@ -392,6 +400,10 @@ direction is not uniform, and it is not a bug that it isn't:**
   `attention[]` and `conflicts[]` are empty with no host daemon on the line, so the Now room reads
   `terminal.connected` and says "Stack cannot see whether a session is stopped" rather than
   "nothing is waiting on you". Same rule as a NULL `review_verdict`: no pass ran ≠ nothing found.
+- **Fail LOUD = exit 1 with a reason** where the reader would otherwise mistake "could not look" for
+  "looked and found nothing". `scripts/playwright/smoke.mjs` (#291) exits 0 only on a clean pass; an
+  unreachable app or a browser that will not launch is the NULL-`review_verdict` lie again if it
+  reports zero findings instead of failing.
 
 Related, and just as absolute: **Stack only ever writes or removes skills IT PLANTED.** Each managed
 directory carries a `.stack-managed` marker; a skill without one is REPORTED and never touched.
@@ -528,8 +540,9 @@ reference. The index:
   (#212) and auto-verdict (#263) spend.
 - `templates/stack-agent-context.md` is the single source of truth for the portable agent manual — if
   the API or hook contract changes, update it (`scripts/stack-context.mjs` exports it verbatim).
-- **UI work ships on a strict build plus reasoning, never on a look** — a session cannot see its own
-  rendering. Two real layout bugs reached the owner that way (#291).
+- **A strict build is necessary and no longer sufficient for UI work.** Run
+  `scripts/run-ui-smoke.sh` (or `./stack ui-smoke`) before calling a UI change done — two real layout
+  bugs reached the owner because a session had no way to see its own rendering (#291), and now it does.
 - **A recurring re-fetch goes through `lib/autoRefresh.ts` (#312), never a bare `setInterval`.** One
   device-local setting (Settings → Auto refresh; 0 = off) governs every screen that watches the host —
   the terminal's sessions, previews, Mission Control, the skill tree — and the hook is also what stops
@@ -589,6 +602,10 @@ node scripts/lane.test.mjs                 # branch naming + BOTH spellings pars
 ./stack start-session [slug] [--item N]    # queue an automation session (▶ Run now from the terminal)
 ./stack list-sessions                      # the automation job queue ([slug], --limit, --json)
 ./stack term [dir]                         # claude in a stack-term tmux session (--shell, --safe)
+
+scripts/run-ui-smoke.sh                    # headless browser pass over the UI (#291; --url, --screens, --report)
+scripts/run-ui-smoke.sh --screens dashboard --viewport desktop   # one screen, quickly
+./stack ui-smoke --json                    # the same, as JSON
 
 node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack --dry  # tonight's pick?
 node scripts/stack-autopilot-dispatch.mjs  # one dispatcher poll by hand (normally the cron line)

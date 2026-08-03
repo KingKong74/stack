@@ -1,0 +1,936 @@
+#!/usr/bin/env node
+// smoke.mjs — a headless-browser smoke pass over Stack's own UI (#291).
+//
+// WHY THIS EXISTS: "build green" (tsc) says the TypeScript compiles; it says
+// nothing about what actually renders. Two real layout bugs reached the owner
+// invisibly to tsc — a terminal that did not reflow when a rail toggled, and a
+// 3-pane grid overflowing its own height (a bare `1fr` floors at the canvas
+// intrinsic height). Neither is a type error. This harness drives a real
+// Chromium against a running instance of the app, walks every top-level
+// screen at two viewports, and reports what actually painted: console errors,
+// failed requests, a rejected auth token, and layout overflow.
+//
+// FAIL-SAFE DIRECTION (CLAUDE.md, "Fail-safe direction"): this is a TEST, not
+// a recorder, so it fails LOUD. An unreachable app, a browser that will not
+// launch, a missing token — every one of those returns exit 1 with a plain
+// reason. It never degrades to "nothing found": a check that reports zero
+// findings because it could not look is the same lie as a NULL review verdict
+// rendering green, and CLAUDE.md is explicit that both are the same mistake.
+//
+// READ-ONLY: this harness navigates and observes only. It never clicks a
+// control that writes — the screens it visits are the live app's real
+// trackers, and a stray click here would land in a real project.
+//
+//   node scripts/playwright/smoke.mjs [options]
+//   scripts/run-ui-smoke.sh [options]     (installs deps first if missing)
+//
+// Options: --url --token --slug --out --screens --viewport --timeout
+//          --headed --json --report --help          (see --help for details)
+
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+// ---- the screens ---------------------------------------------------------
+// One entry per top-level route this harness walks. `<slug>` is substituted
+// for the --slug value at run time. Order matches the app's own nav order.
+export const SCREENS = [
+  { id: 'dashboard', label: 'Dashboard', path: '#/' },
+  { id: 'control-now', label: 'Control — Now', path: '#/control' },
+  { id: 'control-review', label: 'Control — Review', path: '#/control/review' },
+  { id: 'control-roles', label: 'Control — Roles', path: '#/control/roles' },
+  { id: 'terminal', label: 'Terminal', path: '#/terminal' },
+  { id: 'skills', label: 'Skills', path: '#/skills' },
+  { id: 'timeline', label: 'Timeline', path: '#/timeline' },
+  { id: 'settings', label: 'Settings', path: '#/settings' },
+  { id: 'project-overview', label: 'Project — Overview', path: '#/p/<slug>' },
+  { id: 'project-quality', label: 'Project — Quality', path: '#/p/<slug>/quality' },
+  { id: 'project-roadmap', label: 'Project — Roadmap', path: '#/p/<slug>/roadmap' },
+  { id: 'project-futures', label: 'Project — Futures', path: '#/p/<slug>/futures' },
+  { id: 'project-workbench', label: 'Project — Workbench', path: '#/p/<slug>/workbench' },
+  { id: 'project-activity', label: 'Project — Activity', path: '#/p/<slug>/activity' },
+];
+
+// desktop = the ordinary window this app is designed for; narrow = where a
+// rigid multi-pane grid breaks first — exactly the class of bug #291 exists
+// to catch (a 3-pane grid does not have room to be rigid at 1024).
+export const VIEWPORTS = {
+  desktop: { width: 1440, height: 900 },
+  narrow: { width: 1024, height: 768 },
+};
+
+// Requests to ignore for the request-failed finding. Empty on purpose: every
+// request this harness makes is one it should be able to explain, so nothing
+// is silently excluded. If a noisy, harmless request needs ignoring later,
+// name it here with a comment saying why — never filter silently in the
+// listener itself.
+export const IGNORED_REQUEST_PATTERNS = [
+  // (none yet)
+];
+
+const CAP_PER_KIND = 25;
+const SETTLE_MS = 600;
+
+// The row's IDENTITY on the server (POST /api/projects/:slug/checks/report
+// matches by name — the first report PLANTS the row, every later one updates
+// it). A module-level constant, not an inline string, so it stays greppable
+// and the client and any future caller can never drift apart on the name.
+export const REPORT_CHECK_NAME = 'UI Smoke Harness';
+
+// The server caps `error` at 500 characters too, but this harness does not
+// rely on that: truncating silently server-side would still leave a caller
+// believing it sent the whole string, so this harness caps its own summary
+// itself and never depends on the server to finish the job.
+const REPORT_ERROR_CAP = 500;
+
+// ---- ~/.stack/env reader --------------------------------------------------
+// Same tiny parser scripts/stack-seed-checks.mjs already uses: `KEY=value`
+// per line, blanks and `#` comments ignored. Kept local rather than shared so
+// this package stays a single self-contained file with its own dependency
+// footprint (scripts/playwright is intentionally its own package.json).
+function readStackEnv() {
+  try {
+    const text = readFileSync(join(homedir(), '.stack', 'env'), 'utf8');
+    const get = (k) => text.match(new RegExp(`^${k}=(.*)$`, 'm'))?.[1]?.trim();
+    return { STACK_API: get('STACK_API'), STACK_TOKEN: get('STACK_TOKEN') };
+  } catch {
+    return {};
+  }
+}
+
+// ---- base URL resolution ---------------------------------------------------
+// Order: --url > $STACK_UI_URL > http://localhost:${WEB_PORT:-8787}. 8787 is
+// docker-compose.yml's own default web port ("${WEB_PORT:-8787}:80"), and
+// WEB_PORT is honoured here for the same reason it's honoured there — a host
+// that remapped the compose port needs the fallback to follow it.
+function resolveUrl(argUrl) {
+  if (argUrl) return argUrl;
+  if (process.env.STACK_UI_URL) return process.env.STACK_UI_URL;
+  return `http://localhost:${process.env.WEB_PORT || 8787}`;
+}
+
+// ---- argv parsing (no dependency) -----------------------------------------
+function parseArgs(argv) {
+  const flag = (n) => argv.includes(`--${n}`);
+  const arg = (n) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 1] : null; };
+  return {
+    url: resolveUrl(arg('url')),
+    token: arg('token'),
+    slug: arg('slug') || 'stack',
+    out: arg('out') || join(HERE, 'screenshots'),
+    screens: arg('screens') ? arg('screens').split(',').map((s) => s.trim()).filter(Boolean) : null,
+    viewport: arg('viewport'),
+    timeout: Number(arg('timeout')) || 20000,
+    headed: flag('headed'),
+    json: flag('json'),
+    report: flag('report'),
+    help: flag('help'),
+  };
+}
+
+function printHelp() {
+  process.stdout.write(`usage: node scripts/playwright/smoke.mjs [options]
+
+  --url <base>     base URL of the running app
+                    (resolution order: --url > $STACK_UI_URL > http://localhost:\${WEB_PORT:-8787})
+  --token <t>      bearer token (default: STACK_TOKEN from ~/.stack/env)
+  --slug <s>       project slug for the per-project screens (default: stack)
+  --out <dir>      screenshot directory (default: scripts/playwright/screenshots)
+  --screens <csv>  run only these screen ids
+  --viewport <n>   run only this viewport (desktop|narrow)
+  --timeout <ms>   per-navigation timeout (default: 20000)
+  --headed         run headed instead of headless
+  --json           print the report JSON to stdout instead of the table
+  --report         POST the outcome to the project's own checks (Quality page,
+                    Suite segment) as '${REPORT_CHECK_NAME}' — off by default
+  --help           print this message
+
+Screens: ${SCREENS.map((s) => s.id).join(', ')}
+Viewports: ${Object.keys(VIEWPORTS).join(', ')}
+
+Exits 0 only when zero error or layout findings were reported across every
+screen and viewport run. 'info' findings (third-party noise) are always
+recorded and printed but never fail the run. See scripts/playwright/README.md
+for what each finding kind means and what is deliberately not reported.
+`);
+}
+
+// ---- element description ---------------------------------------------------
+// Rendered in the browser (page.evaluate), kept here only as documentation of
+// the contract: { selector, scrollWidth/clientWidth or scrollHeight/clientHeight, rect }.
+
+// ---- report / table rendering ----------------------------------------------
+function severityCounts(findings) {
+  return {
+    errors: findings.filter((f) => f.severity === 'error').length,
+    layout: findings.filter((f) => f.severity === 'layout').length,
+    info: findings.filter((f) => f.severity === 'info').length,
+  };
+}
+
+function printTable(report, out) {
+  const rows = report.screens;
+  const pad = Math.max(...rows.map((r) => `${r.id}@${r.viewport}`.length), 20);
+  process.stdout.write('\nscreen@viewport'.padEnd(0) + '\n');
+  for (const r of rows) {
+    const { errors, layout, info } = severityCounts(r.findings);
+    const ok = errors === 0 && layout === 0;
+    process.stdout.write(
+      `  ${ok ? '✓' : '✗'} ${`${r.id}@${r.viewport}`.padEnd(pad)}  `
+      + `errors:${String(errors).padStart(2)}  layout:${String(layout).padStart(2)}  info:${String(info).padStart(2)}\n`,
+    );
+  }
+
+  const withFindings = rows.filter((r) => r.findings.some((f) => f.severity === 'error' || f.severity === 'layout'));
+  if (withFindings.length) {
+    process.stdout.write('\nfindings:\n');
+    for (const r of withFindings) {
+      process.stdout.write(`\n  ${r.id}@${r.viewport} (${r.path}):\n`);
+      for (const sev of ['error', 'layout']) {
+        const findings = r.findings.filter((f) => f.severity === sev);
+        if (!findings.length) continue;
+        for (const f of findings) {
+          const extra = { ...f };
+          delete extra.kind; delete extra.severity; delete extra.screen; delete extra.viewport; delete extra.detail;
+          const extraStr = Object.keys(extra).length ? ` ${JSON.stringify(extra)}` : '';
+          process.stdout.write(`    [${sev}] ${f.kind}: ${f.detail}${extraStr}\n`);
+        }
+      }
+    }
+  }
+
+  // 'info' findings (third-party console/request noise, CLAUDE.md-style
+  // "annotate, never hide") are always shown, in a section of their own, so
+  // a reader can see exactly what was filtered out of the pass/fail count
+  // without it being reported as a defect in Stack's own UI.
+  const infoRows = rows.filter((r) => r.findings.some((f) => f.severity === 'info'));
+  if (infoRows.length) {
+    process.stdout.write('\ninfo — third-party, recorded but does not fail the run:\n');
+    for (const r of infoRows) {
+      const infoFindings = r.findings.filter((f) => f.severity === 'info');
+      process.stdout.write(`\n  ${r.id}@${r.viewport} (${r.path}):\n`);
+      for (const f of infoFindings) {
+        process.stdout.write(`    [info] ${f.kind}: ${f.detail}\n`);
+      }
+    }
+  }
+
+  const totals = report.totals;
+  const s = totals.suppressed || { ellipsis: 0, lineClamp: 0, thirdParty: 0, clippedAncestor: 0, foreignFrame: 0 };
+  const suppressedTotal = s.ellipsis + s.lineClamp + s.thirdParty + s.clippedAncestor + (s.foreignFrame || 0);
+  const suppressedParts = [];
+  if (s.ellipsis) suppressedParts.push(`${s.ellipsis} ellipsis`);
+  if (s.lineClamp) suppressedParts.push(`${s.lineClamp} line-clamp`);
+  if (s.thirdParty) suppressedParts.push(`${s.thirdParty} third-party`);
+  if (s.clippedAncestor) suppressedParts.push(`${s.clippedAncestor} clipped-ancestor`);
+  if (s.foreignFrame) suppressedParts.push(`${s.foreignFrame} foreign-frame`);
+  const suppressedStr = suppressedTotal ? ` (${suppressedTotal} suppressed: ${suppressedParts.join(', ')})` : '';
+
+  process.stdout.write(
+    `\n${totals.screens} screen${totals.screens === 1 ? '' : 's'} run, `
+    + `${totals.errors} error finding${totals.errors === 1 ? '' : 's'}, `
+    + `${totals.layout} layout finding${totals.layout === 1 ? '' : 's'}, `
+    + `${totals.info} info finding${totals.info === 1 ? '' : 's'}, `
+    + `${totals.screenshots} screenshot${totals.screenshots === 1 ? '' : 's'}${suppressedStr}.\n`,
+  );
+  process.stdout.write(`screenshots: ${out}\n`);
+  process.stdout.write(`report:      ${join(out, 'report.json')}\n`);
+}
+
+// ---- element / layout scan --------------------------------------------------
+// Runs once per screen inside the page. Returns raw finding fragments (kind +
+// detail fields); severity/screen/viewport are stamped on afterwards.
+/* eslint-disable no-undef */
+function scanLayout() {
+  function isRendered(el) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return false;
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+    if (Number(cs.opacity) === 0) return false;
+    return true;
+  }
+
+  function selectorPath(el) {
+    const parts = [];
+    let node = el;
+    let depth = 0;
+    while (node && node.nodeType === 1 && depth < 4) {
+      const tag = node.tagName.toLowerCase();
+      const id = node.id ? `#${node.id}` : '';
+      const classes = (node.classList ? Array.from(node.classList).slice(0, 2) : [])
+        .map((c) => `.${c}`).join('');
+      parts.unshift(`${tag}${id}${classes}`);
+      node = node.parentElement;
+      depth++;
+    }
+    return parts.join(' > ');
+  }
+
+  // WHY THIS EXISTS (#291 follow-up): a first full run produced 149 layout
+  // findings, and the overwhelming majority were never bugs — they were the
+  // app disclosing that content is cut off, or a canvas doing exactly what
+  // it is designed to do. A harness that cries wolf that often teaches its
+  // reader to stop reading it, which defeats the whole point (CLAUDE.md,
+  // "a capped list must say it is capped" — the same rule applies to any
+  // filter: never slice silently, always say what and how much).
+  //
+  //   - element-overflow-x: `text-overflow: ellipsis` REQUIRES
+  //     `overflow: hidden`, so `scrollWidth > clientWidth` is the normal,
+  //     PERMANENT state of every deliberately-truncated label in the app —
+  //     the ellipsis IS the disclosure that something is cut off, which is
+  //     the opposite of the bug this finding exists to catch (content cut
+  //     off with no visual hint at all).
+  //   - element-overflow-y: `-webkit-line-clamp` is the vertical equivalent
+  //     of the same thing — a deliberate multi-line clamp, not a pane
+  //     silently too short for its content.
+  //   - element-past-viewport: an element only pushes the DOCUMENT wider
+  //     than the window (what `page-overflow-x` reports as a symptom) if
+  //     nothing between it and the page clips or scrolls it first. The
+  //     Workbench canvas is 2400px wide and deliberately pannable —
+  //     `div.wb-ground` clips it with `overflow: hidden`, so it never
+  //     causes the page itself to scroll and is not a bug.
+  //
+  // Every one of these is COUNTED, never dropped silently: `suppressed`
+  // below is folded into the screen's report and the run's printed summary,
+  // so a reader can always see how much was filtered and why.
+  const results = {
+    pageOverflowX: null, elementOverflowX: [], elementOverflowY: [], elementPastViewport: [],
+    suppressed: { ellipsis: 0, lineClamp: 0, clippedAncestor: 0, foreignFrame: 0 },
+  };
+
+  const docWidth = document.documentElement.scrollWidth;
+  const winWidth = window.innerWidth;
+  if (docWidth > winWidth + 1) {
+    results.pageOverflowX = { scrollWidth: docWidth, innerWidth: winWidth };
+  }
+
+  const all = Array.from(document.querySelectorAll('*'));
+  const reportedX = []; // elements already reported for overflow-x (ancestor dedupe)
+  const reportedY = [];
+  const reportedPast = [];
+
+  const hasReportedAncestor = (el, list) => list.some((r) => r !== el && r.contains(el));
+
+  // An element that holds NOTHING but cross-origin iframes is measuring someone
+  // else's document, at that document's own intrinsic size. The dashboard's
+  // project cards are exactly this: `span.preview` clips a live iframe of each
+  // deployed site, à la Vercel, so scrollWidth 1043 > clientWidth 261 is the
+  // whole point of the card and cannot be "fixed" from inside this app. Same
+  // family as BUG-7 — a stranger's page reported as this one's defect — and
+  // deliberately the tightest form of the rule: one non-frame child, or one
+  // same-origin frame, and it is Stack's layout again and gets reported.
+  const onlyForeignFrames = (el) => {
+    const kids = Array.from(el.children);
+    if (!kids.length) return false;
+    return kids.every((k) => {
+      if (k.tagName !== 'IFRAME') return false;
+      try { return new URL(k.src, location.href).origin !== location.origin; } catch { return false; }
+    });
+  };
+
+  const CLIPPING_OVERFLOW = ['hidden', 'clip', 'auto', 'scroll'];
+  const hasClippingAncestor = (el) => {
+    let node = el;
+    while (node && node !== document.documentElement) {
+      if (CLIPPING_OVERFLOW.includes(getComputedStyle(node).overflowX)) return true;
+      node = node.parentElement;
+    }
+    return false;
+  };
+
+  for (const el of all) {
+    if (el === document.documentElement || el === document.body) continue;
+    if (!isRendered(el)) continue;
+    const cs = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+
+    if ((cs.overflowX === 'hidden' || cs.overflowX === 'clip') && el.scrollWidth > el.clientWidth + 1) {
+      if (cs.textOverflow === 'ellipsis') {
+        results.suppressed.ellipsis++;
+      } else if (onlyForeignFrames(el)) {
+        results.suppressed.foreignFrame++;
+      } else if (!hasReportedAncestor(el, reportedX)) {
+        reportedX.push(el);
+        results.elementOverflowX.push({
+          selector: selectorPath(el),
+          scrollWidth: el.scrollWidth, clientWidth: el.clientWidth,
+          rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+        });
+      }
+    }
+
+    if ((cs.overflowY === 'hidden' || cs.overflowY === 'clip') && el.scrollHeight > el.clientHeight + 1) {
+      const clamp = cs.getPropertyValue('-webkit-line-clamp');
+      const clamped = clamp && clamp !== 'none' && !Number.isNaN(Number(clamp));
+      if (clamped) {
+        results.suppressed.lineClamp++;
+      } else if (onlyForeignFrames(el)) {
+        results.suppressed.foreignFrame++;
+      } else if (!hasReportedAncestor(el, reportedY)) {
+        reportedY.push(el);
+        results.elementOverflowY.push({
+          selector: selectorPath(el),
+          scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
+          rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+        });
+      }
+    }
+
+    if (rect.right > winWidth + 1) {
+      if (hasClippingAncestor(el)) {
+        results.suppressed.clippedAncestor++;
+      } else if (!hasReportedAncestor(el, reportedPast)) {
+        reportedPast.push(el);
+        results.elementPastViewport.push({
+          selector: selectorPath(el),
+          right: Math.round(rect.right), innerWidth: winWidth,
+          rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+        });
+      }
+    }
+  }
+
+  return results;
+}
+/* eslint-enable no-undef */
+
+function capList(list, kind, screen, viewport) {
+  const total = list.length;
+  const shown = list.slice(0, CAP_PER_KIND);
+  const findings = shown.map((item) => ({
+    kind, severity: 'layout', screen, viewport,
+    detail: describeLayoutFinding(kind, item),
+    ...item,
+  }));
+  if (total > CAP_PER_KIND) {
+    findings.push({
+      kind, severity: 'layout', screen, viewport,
+      detail: `${kind} capped at ${CAP_PER_KIND} of ${total} total — the true count is higher than shown above.`,
+      capped: true, shown: CAP_PER_KIND, total,
+    });
+  }
+  return findings;
+}
+
+function describeLayoutFinding(kind, item) {
+  switch (kind) {
+    case 'element-overflow-x':
+      return `${item.selector} clips overflow-x but scrollWidth ${item.scrollWidth} > clientWidth ${item.clientWidth}`;
+    case 'element-overflow-y':
+      return `${item.selector} clips overflow-y but scrollHeight ${item.scrollHeight} > clientHeight ${item.clientHeight}`;
+    case 'element-past-viewport':
+      return `${item.selector} right edge ${item.right} exceeds viewport width ${item.innerWidth}`;
+    default:
+      return kind;
+  }
+}
+
+// ---- third-party attribution -----------------------------------------------
+// WHY THIS EXISTS: a first full run reported 18 error findings, and most of
+// them were about the Cloudflare RUM analytics beacon and about OTHER
+// projects' sites — the dashboard renders live previews of other projects'
+// cards, so a console error or failed request can originate from a page
+// this harness never navigated to on purpose. Attributing that to Stack is
+// the same mistake the preflight already guards the whole run against
+// (README "Preflight"): reporting a stranger's problem as this app's own.
+// `page-error` is reclassified too, but only ever by its stack — see
+// foreignStackOrigin below, and BUG-7, which is what that rule is for.
+// `auth-rejected` is untouched for a reason that does hold: it is judged by path
+// (`/api/`), not by message content, so there is nothing to misattribute.
+function originOf(candidateUrl) {
+  try { return new URL(candidateUrl).origin; } catch { return null; }
+}
+
+// Conservative on purpose: only reclassifies when a URL can be extracted,
+// parsed, AND its origin differs from the base. Any ambiguity leaves the
+// finding as a normal error — CLAUDE.md's own rule for this feature: "a
+// false 'this is someone else's problem' is worse than a noisy true one,
+// because it hides a real defect".
+function foreignOriginIn(text, baseOrigin) {
+  const matches = text.match(/https?:\/\/[^\s'"()]+/g);
+  if (!matches) return null;
+  for (const raw of matches) {
+    const origin = originOf(raw.replace(/[.,;:]+$/, ''));
+    if (origin && origin !== baseOrigin) return origin;
+  }
+  return null;
+}
+
+// A page error is attributed by its STACK, and by nothing else (BUG-7).
+//
+// The rule above this one used to exempt page-error entirely, reasoning that an
+// uncaught exception fires through window.onerror inside Stack's own page even
+// when a third party threw it. That is true of a third-party SCRIPT on the
+// page. It is not true of a cross-origin IFRAME, which is a separate document
+// with its own window — and the dashboard renders one per project card, a live
+// preview of each deployed site. Playwright reports an exception from any frame
+// of the page as the page's own, so a stranger's site crashing in a 261px-wide
+// card was filed against Stack at medium severity. Proved by running the
+// dashboard twice: with the preview iframes refused, the page throws nothing.
+//
+// The MESSAGE is not evidence and is never read here: "Minified React error
+// #418" carries a react.dev URL in its own text, so a genuine Stack error would
+// attribute itself to react.dev. Only frames — `at fn (https://host/file:1:2)`
+// — say where code was actually running. If any frame is same-origin the
+// finding stays Stack's; if none can be parsed it stays Stack's too, which is
+// the same conservative direction as everything else in this section.
+function foreignStackOrigin(stack, baseOrigin) {
+  const origins = [];
+  for (const m of String(stack || '').matchAll(/\bat\s[^\n]*?(https?:\/\/[^\s)]+)/g)) {
+    const origin = originOf(m[1].replace(/[.,;:]+$/, ''));
+    if (origin) origins.push(origin);
+  }
+  if (!origins.length || origins.includes(baseOrigin)) return null;
+  return origins[0];
+}
+
+// ---- preflight --------------------------------------------------------------
+// WHY THIS EXISTS: a port answering is not the same as the right app
+// answering. This harness's whole purpose is letting a session see its OWN
+// rendering — every other host process on the machine is noise it must never
+// mistake for Stack. The incident that forced this: the default base URL was
+// a port that, on one host, belonged to a completely unrelated app. The
+// harness happily walked its screens and reported 154 real, entirely
+// worthless layout findings about a stranger's UI, with nothing in the
+// output to say so. `GET /api/health` distinguishes them: Stack's own route
+// (server/src/index.js) answers `{ ok, version, uptime }`; checking `ok`
+// alone is exactly what let the impostor pass, because plenty of unrelated
+// services answer `{ ok: true, ... }` on their own health route too. This
+// runs once, before any browser is launched, and aborts the whole run on
+// anything but an unambiguous match.
+async function preflight(url, token, timeoutMs) {
+  let res;
+  try {
+    res = await fetch(`${url}/api/health`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      reason: `${url} is not reachable: ${e.message}. Bring the app up, or pass --url.`,
+    };
+  }
+
+  if (res.status !== 200) {
+    return {
+      ok: false,
+      reason: `${url} answered, but /api/health returned HTTP ${res.status}, not 200. `
+        + `Point --url at Stack (the compose default is http://localhost:8787).`,
+    };
+  }
+
+  let body;
+  const text = await res.text();
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return {
+      ok: false,
+      reason: `${url} answered, but /api/health did not return JSON. `
+        + `Point --url at Stack (the compose default is http://localhost:8787).`,
+    };
+  }
+
+  if (body.ok !== true || typeof body.version === 'undefined') {
+    return {
+      ok: false,
+      reason: `${url} answered, but it is not Stack: /api/health returned ${JSON.stringify(body)} `
+        + `with no \`version\` field. Point --url at Stack (the compose default is http://localhost:8787).`,
+    };
+  }
+
+  return { ok: true, version: body.version };
+}
+
+// ---- external report -------------------------------------------------------
+// #291 — POST the outcome of THIS run to the project's own checks, so a smoke
+// run lands on the Quality page instead of only in a terminal nobody re-reads.
+// Picks the single worst finding for the one-line `error` summary: an error
+// finding outranks a layout one (a broken screen is worse than a clipped
+// pane), and within a severity the first one encountered stands in for the
+// rest — this is a compact pointer for a human to open the full report.json
+// or the screenshots, not a replacement for either.
+function summariseFailure(screenReports, viewportNames) {
+  const uniqueScreens = new Set(screenReports.map((r) => r.id)).size;
+  const allFindings = screenReports.flatMap((r) => r.findings);
+  const errors = allFindings.filter((f) => f.severity === 'error').length;
+  const layout = allFindings.filter((f) => f.severity === 'layout').length;
+  const worst = allFindings.find((f) => f.severity === 'error') || allFindings[0];
+  const worstStr = worst ? ` — worst: ${worst.kind} on ${worst.screen}@${worst.viewport}: ${worst.detail}` : '';
+  const summary = `${errors} errors, ${layout} layout findings over ${uniqueScreens} screen${uniqueScreens === 1 ? '' : 's'} `
+    + `/ ${viewportNames.length} viewport${viewportNames.length === 1 ? '' : 's'}${worstStr}`;
+  return summary.slice(0, REPORT_ERROR_CAP);
+}
+
+// Target is the SAME base URL this run just smoked (never a separately
+// configured API host, and never a flag of its own): the preflight has
+// already proved that base is Stack, and a run against a preview instance
+// must land on that preview's own Quality page, not on production's. One
+// less thing that can be pointed at the wrong place — which is exactly the
+// mistake the preflight exists to catch in the first place. Same reasoning
+// for the token: the same bearer this run used to smoke the app, never a
+// second credential.
+//
+// FAILURE HANDLING: a failed report warns loudly but never changes the exit
+// code. The exit code answers "is the UI sound?" — a flaky API is not a UI
+// finding, and letting a failed recording turn a clean run red would teach a
+// reader to distrust the one signal this harness exists to give. It is never
+// swallowed either: a report that silently did not land is a Quality page
+// quietly showing yesterday's result as if it were today's, so this always
+// prints and always records what happened in report.json's `reported` field.
+async function reportOutcome({ url, token, slug, totals, durationMs, screenReports, viewportNames, timeoutMs }) {
+  const pass = (totals.errors + totals.layout) === 0;
+  const body = {
+    name: REPORT_CHECK_NAME,
+    status: pass ? 'pass' : 'fail',
+    ms: durationMs,
+    url,
+    error: pass ? null : summariseFailure(screenReports, viewportNames),
+  };
+
+  let res;
+  try {
+    res = await fetch(`${url}/api/projects/${slug}/checks/report`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    const reason = `unreachable: ${e.message}`;
+    process.stderr.write(`\nWARNING: failed to report the smoke result to Stack — ${reason}\n`);
+    return { ok: false, reason };
+  }
+
+  if (res.status < 200 || res.status >= 300) {
+    const text = await res.text().catch(() => '');
+    const reason = `HTTP ${res.status} — ${text.slice(0, 300)}`;
+    process.stderr.write(`\nWARNING: failed to report the smoke result to Stack — ${reason}\n`);
+    return { ok: false, reason };
+  }
+
+  process.stdout.write(`\nreported to ${slug}'s Quality page: ${body.status.toUpperCase()} (${REPORT_CHECK_NAME})\n`);
+  return { ok: true, name: REPORT_CHECK_NAME, status: body.status };
+}
+
+// ---- main -------------------------------------------------------------------
+export async function main(argv = process.argv.slice(2)) {
+  const opts = parseArgs(argv);
+  if (opts.help) { printHelp(); return 0; }
+
+  if (opts.viewport && !VIEWPORTS[opts.viewport]) {
+    process.stderr.write(`unknown viewport "${opts.viewport}" — choose one of: ${Object.keys(VIEWPORTS).join(', ')}\n`);
+    return 1;
+  }
+  const viewportNames = opts.viewport ? [opts.viewport] : Object.keys(VIEWPORTS);
+
+  const wantScreens = opts.screens
+    ? SCREENS.filter((s) => opts.screens.includes(s.id))
+    : SCREENS;
+  if (opts.screens && !wantScreens.length) {
+    process.stderr.write(`none of the requested screens matched: ${opts.screens.join(', ')}\n`);
+    return 1;
+  }
+
+  const token = opts.token || readStackEnv().STACK_TOKEN;
+  if (!token) {
+    process.stderr.write('no bearer token — pass --token or set STACK_TOKEN in ~/.stack/env.\n');
+    return 1;
+  }
+
+  const url = opts.url.replace(/\/$/, '');
+  const baseOrigin = originOf(url);
+
+  const check = await preflight(url, token, opts.timeout);
+  if (!check.ok) {
+    process.stderr.write(`${check.reason}\n`);
+    return 1;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = await import('playwright'));
+  } catch {
+    process.stderr.write(
+      'playwright dependencies not installed — run scripts/run-ui-smoke.sh, which installs them.\n',
+    );
+    return 1;
+  }
+
+  mkdirSync(opts.out, { recursive: true });
+
+  const startedAt = Date.now();
+  const screenReports = [];
+  let fatal = null;
+
+  let browser;
+  try {
+    // --no-sandbox: chromium's sandbox needs either root-owned setuid helpers
+    // or user namespaces, neither of which an unattended session on this
+    // host has. This is a local harness pointed at the owner's own app, not
+    // a browser opening untrusted pages, so the sandbox is not protecting
+    // against anything this run is exposed to.
+    // --disable-dev-shm-usage: a small /dev/shm otherwise crashes the
+    // renderer mid-run.
+    browser = await chromium.launch({ headless: !opts.headed, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+  } catch (e) {
+    process.stderr.write(
+      `chromium failed to launch: ${e.message}\n`
+      + 'if this is missing shared libraries, run scripts/run-ui-smoke.sh (it provisions them '
+      + 'via scripts/playwright/setup-browser-deps.sh) instead of invoking smoke.mjs directly.\n',
+    );
+    return 1;
+  }
+
+  try {
+    for (const viewportName of viewportNames) {
+      const viewport = VIEWPORTS[viewportName];
+      let ctx;
+      let page;
+      try {
+        ctx = await browser.newContext({ viewport, deviceScaleFactor: 1 });
+        await ctx.addInitScript(([k, v]) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } }, ['stack.token', token]);
+        page = await ctx.newPage();
+      } catch (e) {
+        fatal = `could not open a browser context for viewport ${viewportName}: ${e.message}`;
+        break;
+      }
+
+      for (const screen of wantScreens) {
+        const path = screen.path.replace('<slug>', opts.slug);
+        const findings = [];
+        // Per-screen tally folded into `suppressed.thirdParty` below — these
+        // findings are NOT dropped (they still land in `findings` as `info`),
+        // this just counts how many were kept out of the error tally.
+        let thirdPartyCount = 0;
+
+        const onConsole = (msg) => {
+          if (msg.type() === 'error') {
+            const text = msg.text();
+            // The text first, then where the console message was RAISED. The
+            // browser's own "Failed to load resource: … 404" carries no URL in
+            // its text at all, so text alone attributed a framed site's missing
+            // avatar.jpg to Stack — the same misattribution as BUG-7, reaching
+            // the finding by a different road. location() names it exactly.
+            const at = msg.location()?.url;
+            const foreign = foreignOriginIn(text, baseOrigin)
+              || (at && originOf(at) && originOf(at) !== baseOrigin ? originOf(at) : null);
+            if (foreign) {
+              thirdPartyCount++;
+              findings.push({
+                kind: 'third-party-console', severity: 'info', screen: screen.id, viewport: viewportName,
+                detail: text.slice(0, 300), origin: foreign,
+              });
+            } else {
+              findings.push({
+                kind: 'console-error', severity: 'error', screen: screen.id, viewport: viewportName,
+                detail: text.slice(0, 300),
+              });
+            }
+          }
+        };
+        const onPageError = (err) => {
+          const detail = String(err && err.message ? err.message : err).slice(0, 300);
+          const foreign = foreignStackOrigin(err && err.stack, baseOrigin);
+          if (foreign) {
+            thirdPartyCount++;
+            findings.push({
+              kind: 'third-party-page-error', severity: 'info', screen: screen.id, viewport: viewportName,
+              detail, origin: foreign,
+            });
+          } else {
+            findings.push({
+              kind: 'page-error', severity: 'error', screen: screen.id, viewport: viewportName, detail,
+            });
+          }
+        };
+        const onRequestFailed = (req) => {
+          const reqUrl = req.url();
+          if (IGNORED_REQUEST_PATTERNS.some((p) => p.test ? p.test(reqUrl) : reqUrl.includes(p))) return;
+          const origin = originOf(reqUrl);
+          if (origin && origin !== baseOrigin) {
+            thirdPartyCount++;
+            findings.push({
+              kind: 'third-party-request', severity: 'info', screen: screen.id, viewport: viewportName,
+              detail: `${reqUrl} — ${req.failure()?.errorText || 'unknown failure'}`,
+              url: reqUrl,
+            });
+          } else {
+            findings.push({
+              kind: 'request-failed', severity: 'error', screen: screen.id, viewport: viewportName,
+              detail: `${reqUrl} — ${req.failure()?.errorText || 'unknown failure'}`,
+              url: reqUrl,
+            });
+          }
+        };
+        const onResponse = (res) => {
+          const resUrl = res.url();
+          const status = res.status();
+          if (status >= 500) {
+            const origin = originOf(resUrl);
+            if (origin && origin !== baseOrigin) {
+              thirdPartyCount++;
+              findings.push({
+                kind: 'third-party-request', severity: 'info', screen: screen.id, viewport: viewportName,
+                detail: `${resUrl} → ${status}`, url: resUrl, status,
+              });
+            } else {
+              findings.push({
+                kind: 'http-error', severity: 'error', screen: screen.id, viewport: viewportName,
+                detail: `${resUrl} → ${status}`, url: resUrl, status,
+              });
+            }
+          }
+          if (resUrl.includes('/api/') && status === 401) {
+            findings.push({
+              kind: 'auth-rejected', severity: 'error', screen: screen.id, viewport: viewportName,
+              detail: `${resUrl} → 401 — the app was tested SIGNED OUT; every layout result for this screen is worthless.`,
+              url: resUrl,
+            });
+          }
+        };
+
+        page.on('console', onConsole);
+        page.on('pageerror', onPageError);
+        page.on('requestfailed', onRequestFailed);
+        page.on('response', onResponse);
+
+        try {
+          await page.goto(`${url}/${path}`, { waitUntil: 'load', timeout: opts.timeout });
+          await page.waitForLoadState('networkidle', { timeout: opts.timeout }).catch(() => {});
+          await page.waitForTimeout(SETTLE_MS);
+        } catch (e) {
+          findings.push({
+            kind: 'navigation-failed', severity: 'error', screen: screen.id, viewport: viewportName,
+            detail: e.message.slice(0, 300),
+          });
+        }
+
+        let layout = {
+          pageOverflowX: null, elementOverflowX: [], elementOverflowY: [], elementPastViewport: [],
+          suppressed: { ellipsis: 0, lineClamp: 0, clippedAncestor: 0, foreignFrame: 0 },
+        };
+        try {
+          layout = await page.evaluate(scanLayout);
+        } catch (e) {
+          findings.push({
+            kind: 'page-error', severity: 'error', screen: screen.id, viewport: viewportName,
+            detail: `layout scan failed: ${e.message}`.slice(0, 300),
+          });
+        }
+
+        if (layout.pageOverflowX) {
+          findings.push({
+            kind: 'page-overflow-x', severity: 'layout', screen: screen.id, viewport: viewportName,
+            detail: `document scrollWidth ${layout.pageOverflowX.scrollWidth} > window innerWidth ${layout.pageOverflowX.innerWidth}`,
+            ...layout.pageOverflowX,
+          });
+        }
+        findings.push(...capList(layout.elementOverflowX, 'element-overflow-x', screen.id, viewportName));
+        findings.push(...capList(layout.elementOverflowY, 'element-overflow-y', screen.id, viewportName));
+        findings.push(...capList(layout.elementPastViewport, 'element-past-viewport', screen.id, viewportName));
+
+        const screenshotPath = join(opts.out, `${screen.id}@${viewportName}.png`);
+        try {
+          // VIEWPORT-CLIPPED, never fullPage: a full-page shot grows the
+          // viewport to fit the content, which hides the exact overflow bug
+          // this harness exists to catch. A human never scrolls to see the
+          // problem — they see the clipped viewport, so that's what this shoots.
+          await page.screenshot({ path: screenshotPath, fullPage: false });
+        } catch (e) {
+          findings.push({
+            kind: 'page-error', severity: 'error', screen: screen.id, viewport: viewportName,
+            detail: `screenshot failed: ${e.message}`.slice(0, 300),
+          });
+        }
+
+        page.off('console', onConsole);
+        page.off('pageerror', onPageError);
+        page.off('requestfailed', onRequestFailed);
+        page.off('response', onResponse);
+
+        // "It is capped and says so" (CLAUDE.md) applied to suppression: a
+        // reader must be able to see that filtering happened and how much,
+        // for every screen, every run — never a silent slice.
+        const suppressed = {
+          ellipsis: layout.suppressed?.ellipsis || 0,
+          lineClamp: layout.suppressed?.lineClamp || 0,
+          thirdParty: thirdPartyCount,
+          clippedAncestor: layout.suppressed?.clippedAncestor || 0,
+          foreignFrame: layout.suppressed?.foreignFrame || 0,
+        };
+
+        screenReports.push({
+          id: screen.id, label: screen.label, path, viewport: viewportName,
+          screenshot: screenshotPath, findings, suppressed,
+        });
+      }
+
+      await ctx.close();
+    }
+  } finally {
+    await browser.close();
+  }
+
+  const durationMs = Date.now() - startedAt;
+  const totals = {
+    screens: screenReports.length,
+    errors: screenReports.reduce((n, r) => n + r.findings.filter((f) => f.severity === 'error').length, 0),
+    layout: screenReports.reduce((n, r) => n + r.findings.filter((f) => f.severity === 'layout').length, 0),
+    // 'info' findings (third-party console/request noise) are recorded and
+    // printed but never drive the exit code — see the exit-code line below,
+    // which is deliberately errors+layout only.
+    info: screenReports.reduce((n, r) => n + r.findings.filter((f) => f.severity === 'info').length, 0),
+    suppressed: {
+      ellipsis: screenReports.reduce((n, r) => n + (r.suppressed?.ellipsis || 0), 0),
+      lineClamp: screenReports.reduce((n, r) => n + (r.suppressed?.lineClamp || 0), 0),
+      thirdParty: screenReports.reduce((n, r) => n + (r.suppressed?.thirdParty || 0), 0),
+      clippedAncestor: screenReports.reduce((n, r) => n + (r.suppressed?.clippedAncestor || 0), 0),
+      foreignFrame: screenReports.reduce((n, r) => n + (r.suppressed?.foreignFrame || 0), 0),
+    },
+    screenshots: screenReports.length,
+  };
+
+  const report = {
+    generatedAt: new Date().toISOString(),
+    url, slug: opts.slug, durationMs,
+    preflight: { url, ok: check.ok, version: check.version },
+    viewports: viewportNames,
+    screens: screenReports,
+    totals,
+  };
+
+  if (opts.report) {
+    report.reported = await reportOutcome({
+      url, token, slug: opts.slug, totals, durationMs, screenReports, viewportNames, timeoutMs: opts.timeout,
+    });
+  }
+
+  writeFileSync(join(opts.out, 'report.json'), JSON.stringify(report, null, 2));
+
+  if (fatal) {
+    process.stderr.write(`${fatal}\n`);
+    return 1;
+  }
+
+  if (opts.json) {
+    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+  } else {
+    printTable(report, opts.out);
+  }
+
+  return (totals.errors + totals.layout) > 0 ? 1 : 0;
+}
+
+// Direct run (node scripts/playwright/smoke.mjs) as well as via run-ui-smoke.sh.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main(process.argv.slice(2)).then((code) => process.exit(code ?? 0)).catch((e) => {
+    process.stderr.write(`ui-smoke failed: ${e.message}\n`);
+    process.exit(1);
+  });
+}

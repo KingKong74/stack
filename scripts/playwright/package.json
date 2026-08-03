@@ -1,0 +1,8 @@
+{
+  "name": "stack-ui-smoke",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Stack's headless browser smoke harness (#291) — its own package so the rest of the repo stays dependency-free.",
+  "dependencies": { "playwright": "1.62.1" }
+}

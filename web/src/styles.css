@@ -1515,6 +1515,11 @@ a.tab { display: inline-block; }
 .check-auth input { accent-color: var(--accent); cursor: pointer; }
 .check-auth-hint { font-size: 11px; color: var(--muted); }
 .check-authed { flex: none; font-size: 10px; line-height: 1; opacity: .75; }
+/* #291 — an external check's result is REPORTED (the host UI smoke harness),
+   never probed by Stack. Reads as its own quiet chip, not a warning — it's a
+   provenance label, same idiom as .check-method. */
+.check-external { flex: none; font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: .04em;
+  color: var(--paused); background: var(--paused-tint); border-radius: 5px; padding: 1px 6px; text-transform: uppercase; }
 .check-rows { display: flex; flex-direction: column; margin-top: 8px; }
 .check-row { display: flex; align-items: center; gap: 11px; padding: 8px 0; flex-wrap: wrap; }
 .check-row + .check-row { border-top: 1px solid var(--line-2); }
