@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  getReview, getReviewBrief, getRefineDraft, patchRoadmapItem, deleteRoadmapItem, queueUndo,
-  startAutopilot, setReviewPrefill,
+  getReview, getReviewBrief, getRefineDraft, getForemanRead, getQueueTriage,
+  patchRoadmapItem, deleteRoadmapItem, queueUndo,
+  startAutopilot, setReviewPrefill, agentCan, agentOffReason,
+  type ForemanRead, type Preview, type QueueTriage,
   type ReviewBrief, type ReviewData, type ReviewItem, type ReviewNightRun,
 } from '../store';
 import { go } from '../lib/route';
@@ -38,6 +40,14 @@ import { Modal } from '../components/Modal';
 // Approving a built change therefore does NOT tick it: `done` means shipped and
 // an unmerged branch has not shipped. It records the verdict and hands the
 // change to the Merge room, which ticks it once the merge lands (#374).
+//
+// #375 — the room has an AGENT now, the Foreman, and a MIRROR SITE beside the
+// change under review. The two are one feature: a verdict on work you have only
+// read about is a guess, so the room brings the branch up as a running copy of
+// the app and the Foreman says where in it to look. Everything it returns is an
+// annotation — the verdict, the refinement and the merge are still presses —
+// and every panel of it says what it could not see, because the one failure
+// that matters here is a confident pre-verdict getting agreed with.
 
 type View = 'queue' | 'debrief';
 type Filter = 'todo' | 'flagged' | 'shelved' | 'settled';
@@ -71,6 +81,28 @@ const NOTE_TAGS: { key: string; label: string }[] = [
 ];
 const noteTagLabel = (t: string) => NOTE_TAGS.find((x) => x.key === t)?.label || t;
 
+// #375 — the Foreman's call, as three words that say what to DO. "look" is the
+// expected answer (the prompt says so twice) and it deliberately wears the
+// neutral tone: it is not a warning, it is the honest state of a change nobody
+// has verified yet.
+const CALL_META: Record<ForemanRead['call'], { label: string; hint: string }> = {
+  approve: { label: 'READS AS SOLID', hint: 'The record positively evidences what the item asked for. It is still a record, not the code.' },
+  look: { label: 'LOOK AT IT', hint: 'Nothing contradicts it, but nothing outside the builder\'s own account evidences it either.' },
+  'send-back': { label: 'SEND IT BACK', hint: 'Something in the record itself — a finding, a red check, an unanswered claim — evidences a gap.' },
+};
+
+// How long a mirror has left. Rounded down and never negative: a mirror with
+// four minutes on it says 4m, and one that is past its expiry says "expiring"
+// rather than a negative number, because the host tears it down on its own
+// sweep and the row is briefly still live.
+function mirrorLeft(expiresAt: string | null): string {
+  if (!expiresAt) return '';
+  const mins = Math.floor((new Date(expiresAt).getTime() - Date.now()) / 60000);
+  if (!Number.isFinite(mins)) return '';
+  if (mins <= 0) return 'expiring';
+  return mins < 60 ? `${mins}m left` : `${Math.floor(mins / 60)}h ${mins % 60}m left`;
+}
+
 const fmtTok = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(1)}M tok` : n >= 1000 ? `${Math.round(n / 1000)}k tok` : `${n} tok`;
 
@@ -91,11 +123,24 @@ function nightLabel(day: string): string {
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' });
 }
 
-export function ReviewRoom({ onCount }: {
+export function ReviewRoom({
+  onCount, previews, previewBusy, mirrorBusy, onStartPreview, onStopPreview, onExtendPreview,
+}: {
   onCount?: (n: number) => void;
   // There was a `focus` prop here — "slug#id", a specific change another room
   // wanted judged. Its only caller was the Build room's verdict gate, and it
   // went out with that room; the queue's own selection is the whole story now.
+  //
+  // #375 — the mirror sites come in as props rather than being fetched here.
+  // Control.tsx already owns that poll for the Now and Merge rooms (a preview
+  // moves on the HOST's clock, so it has its own auto-refresh), and a second
+  // poller for the same rows would show two different answers on two rooms.
+  previews: Preview[];
+  previewBusy: string | null;      // '<slug>:<branch>' while a start is in flight
+  mirrorBusy: string | null;       // preview id while an extend is in flight
+  onStartPreview: (slug: string, branch: string, itemId: string | null) => void;
+  onStopPreview: (pv: Preview) => void;
+  onExtendPreview: (pv: Preview) => void;
 }) {
   const [data, setData] = useState<ReviewData | null>(null);
   const [error, setError] = useState('');
@@ -106,8 +151,16 @@ export function ReviewRoom({ onCount }: {
   const [busy, setBusy] = useState(false);
   const [settledNote, setSettledNote] = useState<{ key: string; text: string; undo?: () => void } | null>(null);
 
-  // Per-row transient state, all in-memory: Gemini's brief, an undo receipt.
+  // Per-row transient state, all in-memory: the brief, an undo receipt.
   const [briefs, setBriefs] = useState<Map<string, { loading?: boolean; error?: string; data?: ReviewBrief }>>(new Map());
+  // #375 — the Foreman's read of a change, and its read of the whole queue.
+  // Both are in-memory and per-visit on purpose: they are opinions about a
+  // record that changes under them, and a stored one would be shown days later
+  // as though it had just been given.
+  const [reads, setReads] = useState<Map<string, { loading?: boolean; error?: string; data?: ForemanRead }>>(new Map());
+  const [triage, setTriage] = useState<QueueTriage | null>(null);
+  const [triageBusy, setTriageBusy] = useState(false);
+  const [triageErr, setTriageErr] = useState('');
   const [undoNotes, setUndoNotes] = useState<Map<string, string>>(new Map());
   const [undoFor, setUndoFor] = useState<ReviewItem | null>(null);
   const [refineFor, setRefineFor] = useState<ReviewItem | null>(null);
@@ -121,8 +174,8 @@ export function ReviewRoom({ onCount }: {
   const [refineDraft, setRefineDraft] = useState<{ basis: string; read: string[]; secs: number; before: string } | null>(null);
   const [refineBusy, setRefineBusy] = useState(false);
   // Two different things get said under the box and they must not look alike:
-  // a Gemini failure is an error, and "the record evidences nothing to change"
-  // is a finding — arguably the most useful answer the assist gives.
+  // a failed call is an error, and "the record evidences nothing to change" is
+  // a finding — arguably the most useful answer the assist gives.
   const [refineSay, setRefineSay] = useState<{ tone: 'note' | 'err'; text: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<ReviewItem | null>(null);
 
@@ -137,16 +190,36 @@ export function ReviewRoom({ onCount }: {
 
   // The four lists behind the filter chips. "Flagged" is evidence, not opinion:
   // the reviewer said blocked, or the run finished with checks red.
+  // #375 — the Foreman's order, when one has been asked for. It reorders the
+  // To-review list and NOTHING else: a triage is an order of reading, so it has
+  // no business touching Flagged (which is evidence, not opinion) or Settled.
+  // A change the Foreman did not place keeps its own position at the end rather
+  // than vanishing — the room is the list the owner works from.
+  const triageRank = useMemo(() => {
+    if (!triage) return null;
+    const m = new Map<string, number>();
+    triage.order.forEach((o, i) => m.set(o.key, o.placed ? i : Number.MAX_SAFE_INTEGER - triage.order.length + i));
+    return m;
+  }, [triage]);
+  const triageWhy = useMemo(
+    () => new Map((triage?.order ?? []).map((o) => [o.key, o.why])),
+    [triage]);
+
   const lists = useMemo(() => {
     const q = data?.queue ?? [];
     const active = q.filter((it) => !it.shelved);
+    const ordered = triageRank
+      ? [...active].sort((a, b) =>
+        (triageRank.get(`${a.slug}#${a.id}`) ?? Number.MAX_SAFE_INTEGER)
+        - (triageRank.get(`${b.slug}#${b.id}`) ?? Number.MAX_SAFE_INTEGER))
+      : active;
     return {
-      todo: active,
+      todo: ordered,
       flagged: active.filter((it) => it.run?.reviewVerdict === 'blocked' || (it.run?.checksFailing ?? 0) > 0),
       shelved: q.filter((it) => it.shelved),
       settled: data?.settled ?? [],
     } as Record<Filter, ReviewItem[]>;
-  }, [data]);
+  }, [data, triageRank]);
 
   const list = lists[filter];
   const sel = list.find((it) => key(it) === selId) ?? list[0] ?? null;
@@ -242,8 +315,10 @@ export function ReviewRoom({ onCount }: {
     setRefineSay(null);
   };
 
-  // Turn 3 — ✦ Draft it with Gemini. Offered from the empty box (3a) and again
-  // as ↻ redraft once there is one (3b).
+  // Turn 3 — ✦ the draft. Offered from the empty box (3a) and again as
+  // ↻ redraft once there is one (3b). #375 — it is the FOREMAN's op now, and
+  // the copy names the agent rather than the model: a button that says Gemini
+  // sends somebody to check a key when the host daemon is what is down.
   //
   // What it deliberately does NOT do: tick "Queue a session on it now". The
   // design shows that box checked in the drafted state, and it stays the
@@ -265,14 +340,14 @@ export function ReviewRoom({ onCount }: {
         // alone, rather than dressing up silence as a draft.
         if (!d.draft) {
           setRefineSay({ tone: 'note', text: d.read.length
-            ? `Nothing in the record calls for a refinement — Gemini read ${d.read.join(', ')} and found no evidenced change to ask for. Say what you saw yourself.`
+            ? `Nothing in the record calls for a refinement — the Foreman read ${d.read.join(', ')} and found no evidenced change to ask for. Say what you saw yourself.`
             : 'There is almost no record behind this item — no run log and no reviewer read — so there was nothing to draft from. Say what you saw yourself.' });
           return;
         }
         setRefineText(d.draft);
         setRefineDraft({ basis: d.basis, read: d.read, secs: Math.max(1, Math.round((Date.now() - t0) / 1000)), before });
       })
-      .catch((e) => setRefineSay({ tone: 'err', text: e instanceof Error ? e.message : 'Gemini call failed.' }))
+      .catch((e) => setRefineSay({ tone: 'err', text: e instanceof Error ? e.message : 'The Foreman could not draft it.' }))
       .finally(() => setRefineBusy(false));
   };
   // ✕ — drop the draft and put back what the human had typed before it. A
@@ -306,15 +381,52 @@ export function ReviewRoom({ onCount }: {
 
   const remove = (it: ReviewItem) => act(() => deleteRoadmapItem(it.slug, Number(it.id)));
 
-  // ✧ Brief (#134): Gemini's reviewer brief — what shipped, how to test it,
-  // likely risks. In-memory annotation; nothing is stored.
+  // ✧ Brief (#134): the reviewer's brief — what shipped, how to test it, likely
+  // risks. In-memory annotation; nothing is stored. The Foreman's since #375.
   const toggleBrief = (it: ReviewItem) => {
     const k = key(it);
     if (briefs.has(k)) { setBriefs((m) => { const n = new Map(m); n.delete(k); return n; }); return; }
     setBriefs((m) => new Map(m).set(k, { loading: true }));
     getReviewBrief(it.slug, Number(it.id))
       .then((d) => setBriefs((m) => new Map(m).set(k, { data: d })))
-      .catch((e) => setBriefs((m) => new Map(m).set(k, { error: e instanceof Error ? e.message : 'Gemini call failed.' })));
+      .catch((e) => setBriefs((m) => new Map(m).set(k, { error: e instanceof Error ? e.message : 'The Foreman could not write the brief.' })));
+  };
+
+  // ✧ Read this change (#375): the Foreman's pre-verdict. Toggles, like the
+  // brief — pressing it again puts the panel away rather than asking twice.
+  const toggleRead = (it: ReviewItem) => {
+    const k = key(it);
+    if (reads.has(k)) { setReads((m) => { const n = new Map(m); n.delete(k); return n; }); return; }
+    setReads((m) => new Map(m).set(k, { loading: true }));
+    getForemanRead(it.slug, Number(it.id))
+      .then((d) => setReads((m) => new Map(m).set(k, { data: d })))
+      .catch((e) => setReads((m) => new Map(m).set(k, {
+        error: e instanceof Error ? e.message : 'The Foreman could not read this change.',
+      })));
+  };
+
+  // ✧ Triage the queue (#375). Re-pressing re-asks; ✕ on the strip drops the
+  // order and puts the queue back the way the server sent it.
+  const runTriage = () => {
+    if (triageBusy) return;
+    setTriageBusy(true);
+    setTriageErr('');
+    getQueueTriage()
+      .then((d) => { setTriage(d); setFilter('todo'); })
+      .catch((e) => setTriageErr(e instanceof Error ? e.message : 'The Foreman could not triage the queue.'))
+      .finally(() => setTriageBusy(false));
+  };
+
+  // The mirror site for a change, if one is up. Keyed on the CLAIM branch (the
+  // branch the work is on), falling back to the run's — the same fallback the
+  // server's itemShape uses, so the room and the payload agree on which branch
+  // a change lives on.
+  const branchOf = (it: ReviewItem) => it.branch || it.run?.branch || '';
+  const mirrorFor = (it: ReviewItem): Preview | null => {
+    const branch = branchOf(it);
+    if (!branch) return null;
+    return previews.find((v) => v.slug === it.slug && v.branch === branch
+      && (v.status === 'live' || v.status === 'starting' || v.status === 'queued')) ?? null;
   };
 
   // ⌨ Session: a terminal in that project, primed with the review context.
@@ -388,6 +500,14 @@ export function ReviewRoom({ onCount }: {
     { key: 'settled', label: 'Settled' },
   ];
 
+  // #375 — every ✧ in this room is the Foreman's. An op it cannot run is
+  // ABSENT, not disabled, and the reason is said where the button would have
+  // been: a greyed button that explains itself is still a button that looks
+  // broken. `agentCan` reads an absent payload as YES, so an older server keeps
+  // offering what it can serve.
+  const canForeman = (op: string) => agentCan(data.agents, 'foreman', op);
+  const foremanOff = (op: string) => agentOffReason(data.agents, 'foreman', op);
+
   return (
     <div className="rv">
       <div className="rv-bar">
@@ -420,6 +540,14 @@ export function ReviewRoom({ onCount }: {
             ))}
           </div>
         )}
+        {/* #375 — ✧ Triage. Only worth offering on a queue with something to
+            order: on one change the answer is "read that one". */}
+        {view === 'queue' && canForeman('triagequeue') && lists.todo.length > 1 && (
+          <button className="rv-triage-btn" disabled={triageBusy} onClick={runTriage}
+            title="The Foreman orders everything waiting on you — what to open first, and why. It gives no verdicts; it has read none of them.">
+            {triageBusy ? '◴ Triaging…' : triage ? '↻ Re-triage' : '✧ Triage the queue'}
+          </button>
+        )}
         {view === 'queue' && filter === 'todo' && list.length > 1 && (
           <button className="rv-bulk" disabled={busy}
             title="Mark every change in this list solid — for the mornings where you have already seen them all. Changes still on a branch are approved, not ticked: merging is still yours to press."
@@ -443,6 +571,30 @@ export function ReviewRoom({ onCount }: {
             <button onClick={() => { settledNote.undo!(); setSettledNote(null); }}>undo</button>
           )}
           <button className="x" onClick={() => setSettledNote(null)} aria-label="Dismiss">×</button>
+        </div>
+      )}
+
+      {triageErr && <div className="mc-error">{triageErr}</div>}
+
+      {/* #375 — the triage strip. It says what the order IS and what it is not:
+          an order of reading from an agent that has read none of these changes.
+          The capped case is stated out loud (#239 applied to an answer) rather
+          than presenting a partial order as the whole morning. */}
+      {triage && view === 'queue' && (
+        <div className="rv-triage">
+          <span className="who">✧ Foreman's order</span>
+          <span className="t">
+            {triage.note || 'Ordered by what most needs a decision only you can make.'}
+            {triage.considered < triage.total
+              && ` Only the ${triage.considered} longest-waiting of ${triage.total} were ordered — the rest keep their own places.`}
+            {triage.order.some((o) => !o.placed)
+              && ` ${triage.order.filter((o) => !o.placed).length} it did not place sit at the end.`}
+          </span>
+          <span className="rv-spacer" />
+          <span className="caveat" title="The Foreman has not read any of these changes — it ordered them from the queue's own facts: stage, age, verdicts, checks and merge state.">
+            an order, not verdicts
+          </span>
+          <button className="x" onClick={() => setTriage(null)} aria-label="Drop the order">×</button>
         </div>
       )}
 
@@ -491,6 +643,11 @@ export function ReviewRoom({ onCount }: {
                       <span className="where">{it.name} · #{it.id}</span>
                       <span className="size">{sizeOf(it)}</span>
                     </span>
+                    {/* #375 — why the Foreman put this one here. Only in the
+                        To-review list, which is the only one it ordered. */}
+                    {filter === 'todo' && triageWhy.get(key(it)) && (
+                      <span className="rv-why">✧ {triageWhy.get(key(it))}</span>
+                    )}
                   </button>
                 );
               })}
@@ -509,6 +666,13 @@ export function ReviewRoom({ onCount }: {
             it={sel}
             busy={busy}
             brief={briefs.get(key(sel))}
+            read={reads.get(key(sel))}
+            mirror={mirrorFor(sel)}
+            mirrorStarting={previewBusy === `${sel.slug}:${branchOf(sel)}`}
+            mirrorBusy={mirrorBusy}
+            canBrief={canForeman('reviewbrief')}
+            canRead={canForeman('readchange')}
+            offReason={foremanOff('readchange')}
             undoNote={undoNotes.get(key(sel))}
             onVerdict={() => giveVerdict(sel)}
             onRefine={() => { openRefine(sel); }}
@@ -516,6 +680,10 @@ export function ReviewRoom({ onCount }: {
             onBoard={() => toBoard(sel)}
             onUndo={() => setUndoFor(sel)}
             onBrief={() => toggleBrief(sel)}
+            onRead={() => toggleRead(sel)}
+            onMirror={() => onStartPreview(sel.slug, branchOf(sel), sel.id)}
+            onStopMirror={onStopPreview}
+            onExtendMirror={onExtendPreview}
             onSession={() => openSession(sel)}
             onLogBug={() => logTicket(sel, 'bug')}
             onLogAudit={() => logTicket(sel, 'audit')}
@@ -551,9 +719,9 @@ export function ReviewRoom({ onCount }: {
           {refineDraft ? (
             <div className="rv-draft">
               <div className="rv-draft-head">
-                <span className="who">✦ Gemini draft</span>
+                <span className="who">✦ Foreman's draft</span>
                 <span className="from" title={refineDraft.read.length
-                  ? `Written from ${refineDraft.read.join(', ')}. Gemini cannot read the repository — there is no diff here, only the project's record of the work.`
+                  ? `Written from ${refineDraft.read.join(', ')}. The Foreman cannot read the repository — there is no diff here, only the project's record of the work.`
                   : 'This item had almost no record behind it — read the draft twice.'}>
                   {refineDraft.read.length ? `from ${refineDraft.read.join(' · ')}` : 'from a thin record'}
                   {refineDraft.basis && ` · leaned on ${refineDraft.basis}`}
@@ -575,18 +743,23 @@ export function ReviewRoom({ onCount }: {
               placeholder="e.g. the totals are right but the empty state still says “no items”"
               onChange={(e) => setRefineText(e.target.value)}
               onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') doRefine(); }} />
-            {/* Absent, not disabled, on a keyless server — the same rule every
-                other Gemini surface follows. */}
-            {data?.geminiReady && (
+            {/* Absent, not disabled, when the agent cannot act — the same rule
+                every other ✧ surface follows. The reason takes its place, so
+                nobody goes hunting for a button that was never broken. */}
+            {canForeman('refinedraft') ? (
               <div className="rv-draft-offer">
                 <button className="btn-repo sm" disabled={refineBusy} onClick={draftRefine}>
-                  {refineBusy ? '◴ Drafting…' : '✦ Draft it with Gemini'}
+                  {refineBusy ? '◴ Drafting…' : '✦ Draft it with the Foreman'}
                 </button>
-                <span className="note" title="Gemini cannot read the repository. It reads the project's RECORD of the work: the session's own account, the second model's stored read of the branch diff, the architect's structural read, and the files the sessions on that branch touched.">
+                <span className="note" title="The Foreman cannot read the repository. It reads the project's RECORD of the work: the session's own account, the second model's stored read of the branch diff, the architect's structural read, and the files the sessions on that branch touched.">
                   reads the run log and the reviewer's notes
                 </span>
               </div>
-            )}
+            ) : foremanOff('refinedraft') ? (
+              <div className="rv-draft-offer off">
+                <span className="note">{foremanOff('refinedraft')}</span>
+              </div>
+            ) : null}
           </>)}
           {refineSay && <div className={`rv-draft-say ${refineSay.tone}`}>{refineSay.text}</div>}
           <label className="rv-queue-toggle">
@@ -624,21 +797,33 @@ export function ReviewRoom({ onCount }: {
 // ---- the change under review (24b's right-hand pane) --------------------
 
 function Detail({
-  it, busy, brief, undoNote,
-  onVerdict, onRefine, onShelve, onBoard, onUndo, onBrief, onSession, onLogBug, onLogAudit,
+  it, busy, brief, read, mirror, mirrorStarting, mirrorBusy, canBrief, canRead, offReason, undoNote,
+  onVerdict, onRefine, onShelve, onBoard, onUndo, onBrief, onRead,
+  onMirror, onStopMirror, onExtendMirror, onSession, onLogBug, onLogAudit,
   onToggleTag, onDelete,
 }: {
   it: ReviewItem; busy: boolean;
   brief?: { loading?: boolean; error?: string; data?: ReviewBrief };
+  // #375 — the Foreman's read of this change, and the mirror site it points at.
+  read?: { loading?: boolean; error?: string; data?: ForemanRead };
+  mirror: Preview | null;
+  mirrorStarting: boolean;
+  mirrorBusy: string | null;
+  canBrief: boolean; canRead: boolean; offReason: string;
   undoNote?: string;
   onVerdict: () => void; onRefine: () => void; onShelve: () => void; onBoard: () => void;
-  onUndo: () => void; onBrief: () => void; onSession: () => void;
+  onUndo: () => void; onBrief: () => void; onRead: () => void;
+  onMirror: () => void; onStopMirror: (pv: Preview) => void; onExtendMirror: (pv: Preview) => void;
+  onSession: () => void;
   onLogBug: () => void; onLogAudit: () => void;
   onToggleTag: (t: string) => void; onDelete: () => void;
 }) {
   const v = it.run?.reviewVerdict ?? '';
   const built = isBuilt(it);
   const ms = mergeStateFor(it);
+  // The branch this change lives on — the claim, or the run's if the claim was
+  // cleared. Same fallback the server's itemShape uses.
+  const branch = it.branch || it.run?.branch || '';
   const facts: { k: string; v: string; tone?: string }[] = [
     { k: 'project', v: it.name },
     { k: 'item', v: `#${it.id} · ${it.bucket}` },
@@ -727,6 +912,55 @@ function Detail({
 
           <section>
             <div className="rv-lbl">WHAT THE AGENTS SAID</div>
+            {/* #375 — the Foreman first, because it is the only one of the
+                three that read this change at the moment you are deciding it.
+                Its call is a recommendation and is drawn as one: the verdict
+                buttons are in the rail on the right and none of them move. */}
+            {/* Not yet asked: the offer, where the answer will appear. The
+                caveat rides with the button rather than the result, because
+                the moment to know an agent has not read the code is BEFORE
+                you have read something that sounds like it has. */}
+            {!read && canRead && (
+              <button className="rv-foreman offer" onClick={onRead}>
+                <span className="ask">✧ Have the Foreman read this change</span>
+                <span className="cav">
+                  A call, what to test first, where it shows in the mirror site — from the record,
+                  not the code. It says what it could not see.
+                </span>
+              </button>
+            )}
+            {read && (
+              <div className="rv-foreman">
+                {read.loading && <div className="rb-loading">✧ Reading the item, the run, the reviews and the branch…</div>}
+                {read.error && <div className="rb-err">{read.error}</div>}
+                {read.data && (<>
+                  <div className="fm-head">
+                    <span className={`fm-call ${read.data.call}`}>{CALL_META[read.data.call].label}</span>
+                    <span className="fm-why" title={CALL_META[read.data.call].hint}>{read.data.why}</span>
+                  </div>
+                  {read.data.test.length > 0 && (
+                    <div className="fm-block">
+                      <div className="fm-lbl">Test it, hardest first</div>
+                      <ol>{read.data.test.map((t, i) => <li key={i}>{t}</li>)}</ol>
+                    </div>
+                  )}
+                  {/* The honest half. Rendered even when the call is "approve"
+                      — especially then: what it could not see is exactly what
+                      an approval is being given on top of. */}
+                  {read.data.blind.length > 0 && (
+                    <div className="fm-block blind">
+                      <div className="fm-lbl">What it could not see</div>
+                      <ul>{read.data.blind.map((b, i) => <li key={i}>{b}</li>)}</ul>
+                    </div>
+                  )}
+                  <div className="fm-foot">
+                    {read.data.read.length
+                      ? `✧ Read ${read.data.read.join(' · ')} — no diff: the server has no checkout.`
+                      : '✧ There was almost nothing on record behind this change — read the call twice.'}
+                  </div>
+                </>)}
+              </div>
+            )}
             {v ? (
               <div className={`rv-opinion ${v}`}>
                 <span className="agent">REVIEWER</span>
@@ -785,7 +1019,7 @@ function Detail({
                       <ul>{brief.data.risks.map((s, i) => <li key={i}>{s}</li>)}</ul>
                     </div>
                   )}
-                  <div className="rb-foot">✧ Gemini's read — verify before trusting it.</div>
+                  <div className="rb-foot">✧ The Foreman's brief — written from the record, not the code. Verify before trusting it.</div>
                 </>)}
               </div>
             )}
@@ -819,6 +1053,87 @@ function Detail({
               </div>
             ))}
           </div>
+
+          {/* ---- #375 · the mirror site ------------------------------------
+              The branch, running, at its own URL — and the Foreman's list of
+              where in it this change shows, as links into that URL. This is
+              the whole answer to "how do I actually look at this before I
+              approve it": the room can bring the copy up and then point at the
+              screen. Offered on BUILT changes only, because a ticked change is
+              on main and the thing to look at is the app itself.
+
+              The URL is public and unauthenticated while the mirror lives —
+              that is why the expiry is shown beside it and not buried. */}
+          {built && (
+            <div className="rv-panel mirror">
+              <div className="rv-lbl">MIRROR SITE</div>
+              {!branch ? (
+                <div className="rv-quiet">
+                  No branch is named on this change, so there is nothing to bring up.
+                </div>
+              ) : mirror && mirror.status === 'live' && mirror.url ? (<>
+                <a className="rv-mirror-url" href={mirror.url} target="_blank" rel="noreferrer noopener"
+                  title="Opens the running branch in a new tab. Public link, no sign-in in front of it.">
+                  {mirror.url.replace(/^https?:\/\//, '')} ↗
+                </a>
+                <div className="rv-mirror-meta">
+                  <span className="mono">{mirror.branch}</span>
+                  <span className="rv-spacer" />
+                  <span>{mirrorLeft(mirror.expiresAt)}</span>
+                </div>
+                {/* Where to look, from the Foreman. Each row opens the mirror
+                    AT that screen — a URL you have to go hunting through is a
+                    URL nobody opens. The paths are validated server-side as
+                    same-origin, so this can only ever land inside the mirror. */}
+                {read?.data && read.data.where.length > 0 && (
+                  <div className="rv-mirror-where">
+                    <div className="k">Where the change shows</div>
+                    {read.data.where.map((w, i) => (
+                      <a key={i} href={`${mirror.url.replace(/\/$/, '')}${w.path}`}
+                        target="_blank" rel="noreferrer noopener">
+                        <span className="p">{w.path}</span>
+                        <span className="w">{w.what}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+                <div className="rv-mirror-acts">
+                  <button className="btn-repo sm" disabled={mirrorBusy === mirror.id}
+                    title="Give this mirror another hour before it expires"
+                    onClick={() => onExtendMirror(mirror)}>
+                    {mirrorBusy === mirror.id ? '◴' : '＋1h'}
+                  </button>
+                  <button className="btn-repo sm" onClick={() => onStopMirror(mirror)}
+                    title="Stop this mirror and free the host">× Stop</button>
+                </div>
+              </>) : mirror ? (
+                <div className="rv-quiet">
+                  ◱ {mirror.status === 'queued' ? 'Queued — the host picks it up within a minute.'
+                    : mirror.status === 'starting' ? (mirror.detail || 'Building on the host — a minute or two for a warm build.')
+                      : 'Stopping.'}
+                </div>
+              ) : (<>
+                <button className="rv-mirror-start" disabled={mirrorStarting} onClick={onMirror}>
+                  {mirrorStarting ? '◴ Queueing…' : '◱ Bring this branch up'}
+                </button>
+                <span className="rv-note">
+                  Runs <b>{branch}</b> as its own copy of the app on its own URL, so you can use the
+                  change before it lands. A minute or two, and it expires by itself.
+                </span>
+              </>)}
+              {/* The Foreman's paths are worth showing even with no mirror up:
+                  they say which screens the change touches, which is half the
+                  reason to bring one up at all. */}
+              {!mirror && read?.data && read.data.where.length > 0 && (
+                <div className="rv-mirror-where dim">
+                  <div className="k">Where it shows, once it is up</div>
+                  {read.data.where.map((w, i) => (
+                    <span key={i}><span className="p">{w.path}</span><span className="w">{w.what}</span></span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="rv-panel">
             <div className="rv-lbl">DECIDE</div>
@@ -860,12 +1175,26 @@ function Detail({
               {!built && (
                 <button disabled={busy} onClick={onUndo} title="Revert this item's commits on main and send it back">⎌ Undo</button>
               )}
-              <button onClick={onBrief} title="✧ Gemini writes the reviewer's brief — what shipped, how to test it, likely risks">✧ Brief</button>
+              {/* #375 — the Foreman's two per-change ops. Read is the headline
+                  one and sits first: a pre-verdict, what to test, where it
+                  shows in the mirror, and what it could not see. */}
+              {canRead && (
+                <button onClick={onRead}
+                  title="✧ The Foreman reads this change with you — a call, what to test first, where it shows in the mirror site, and what it could not see">
+                  {read ? '✧ Hide the read' : '✧ Read it'}
+                </button>
+              )}
+              {canBrief && (
+                <button onClick={onBrief} title="✧ The Foreman writes the reviewer's brief — what shipped, how to test it, likely risks">✧ Brief</button>
+              )}
               <button onClick={onSession} title="Open a terminal in this project primed with this review">⌨ Session</button>
               <button onClick={onLogBug} title="Log a bug ticket against this item">＋ Bug</button>
               <button onClick={onLogAudit} title="Log an audit item to check what landed">＋ Audit</button>
               <button className="danger" onClick={onDelete} title="Delete the item">× Delete</button>
             </div>
+            {/* Absent, not disabled — and the reason takes the buttons' place,
+                so nobody hunts for a ✧ that was never broken. */}
+            {!canRead && offReason && <span className="rv-note">{offReason}</span>}
           </div>
 
           {undoNote && <div className="rv-panel note">⎌ {undoNote}</div>}

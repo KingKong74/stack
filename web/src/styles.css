@@ -4911,6 +4911,80 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .rv-revline .mark.drifting, .rv-revline .mark.concerning { color: var(--building); }
 .rv-revline .mark.aligned { color: var(--live); }
 
+/* ---- #375 · the Foreman, and the mirror site beside the change ----------
+   The room's own agent. Its panels wear the accent (they are suggestions the
+   owner keeps or drops, like every other ✧ surface) and never the semantic
+   tones a VERDICT wears — the three verdict buttons are the only green in this
+   room, and an agent's opinion must not be able to look like one. */
+.rv-triage-btn { padding: 5px 12px; border-radius: 7px; border: 1px solid var(--accent-tint-border);
+  background: var(--accent-tint); font-size: 11px; font-weight: 500; color: var(--accent-deep); }
+.rv-triage-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-deep); background: var(--sand); }
+.rv-triage-btn:disabled { opacity: 0.55; }
+.rv-triage { display: flex; align-items: center; gap: 11px; padding: 9px 14px; border-radius: 10px;
+  border: 1px dashed var(--accent-tint-border); background: var(--sand); font-size: 11.5px; color: var(--muted); }
+.rv-triage .who { flex: none; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.06em; color: var(--accent-deep); }
+.rv-triage .t { min-width: 0; line-height: 1.55; text-wrap: pretty; }
+.rv-triage .caveat { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--paused); border-bottom: 1px dotted var(--line-3); }
+.rv-triage .x { flex: none; font-size: 14px; color: var(--paused); }
+.rv-triage .x:hover { color: var(--ink); }
+/* why the Foreman put this row where it is — on the rail card, under the
+   facts, so the queue's own truth is still what you read first. */
+.rv-card .rv-why { font-size: 10.5px; line-height: 1.5; color: var(--accent-deep); text-wrap: pretty; }
+.rv-card:not(.on) .rv-why { color: var(--muted); }
+
+/* not yet asked — the offer sits exactly where the answer will land, so the
+   panel does not jump the page when it arrives. */
+.rv-foreman.offer { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left;
+  padding: 11px 14px; border-radius: 10px; border: 1px dashed var(--accent-tint-border); background: var(--panel); width: 100%; }
+.rv-foreman.offer:hover { border-color: var(--accent); background: var(--sand); }
+.rv-foreman.offer .ask { font-size: 12.5px; font-weight: 500; color: var(--accent-deep); }
+.rv-foreman.offer .cav { font-size: 11px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+.rv-foreman { display: flex; flex-direction: column; gap: 9px; padding: 12px 14px; border-radius: 10px;
+  border: 1px solid var(--accent-tint-border); background: var(--panel); }
+.rv-foreman .fm-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+/* The call. "look" is the expected answer and is deliberately the quietest —
+   it is the honest state of unverified work, not a warning. */
+.fm-call { flex: none; padding: 2px 8px; border-radius: 5px; font-family: var(--mono); font-size: 9px;
+  font-weight: 600; letter-spacing: 0.05em; }
+.fm-call.approve { background: var(--green-tint); color: var(--live); }
+.fm-call.look { background: var(--panel); border: 1px solid var(--line-3); color: var(--muted); }
+.fm-call.send-back { background: var(--building-tint); color: var(--building); }
+.rv-foreman .fm-why { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.6; color: var(--ink); text-wrap: pretty; }
+.rv-foreman .fm-block { display: flex; flex-direction: column; gap: 3px; }
+.rv-foreman .fm-lbl { font-family: var(--disp); font-size: 11.5px; font-weight: 600; color: var(--accent); }
+.rv-foreman ol, .rv-foreman ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.rv-foreman li { font-size: 11.5px; line-height: 1.55; color: var(--chip-ink); text-wrap: pretty; }
+/* what it could not see — dashed, because it is an absence and should not read
+   as another list of findings. */
+.rv-foreman .fm-block.blind { padding: 8px 11px; border: 1px dashed var(--line-3); border-radius: 8px; }
+.rv-foreman .fm-block.blind li { color: var(--muted); }
+.rv-foreman .fm-foot { font-size: 10.5px; line-height: 1.5; color: var(--faint); text-wrap: pretty; }
+
+/* the mirror site, on the change under review */
+.rv-panel.mirror { border-color: var(--accent-tint-border); }
+.rv-mirror-start { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--accent-tint-border);
+  background: var(--accent-tint); font-size: 11.5px; font-weight: 500; color: var(--accent-deep); }
+.rv-mirror-start:hover:not(:disabled) { background: var(--sand); border-color: var(--accent); }
+.rv-mirror-start:disabled { opacity: 0.55; }
+.rv-mirror-url { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--accent-deep);
+  overflow-wrap: anywhere; }
+.rv-mirror-url:hover { color: var(--ink); }
+.rv-mirror-meta { display: flex; align-items: baseline; gap: 8px; font-family: var(--mono); font-size: 9.5px; color: var(--paused); }
+.rv-mirror-meta .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-mirror-where { display: flex; flex-direction: column; gap: 5px; padding-top: 3px; }
+.rv-mirror-where .k { font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em; color: var(--paused); }
+.rv-mirror-where a, .rv-mirror-where span:not(.k) { display: flex; flex-direction: column; gap: 1px; }
+.rv-mirror-where .p { font-family: var(--mono); font-size: 10.5px; color: var(--accent-deep); overflow-wrap: anywhere; }
+.rv-mirror-where a:hover .p { color: var(--ink); }
+.rv-mirror-where .w { font-size: 10.5px; line-height: 1.45; color: var(--muted); text-wrap: pretty; }
+/* no mirror up yet: the same paths, drawn as what they are — a list of screens
+   this change touches, not links that go anywhere. */
+.rv-mirror-where.dim .p { color: var(--paused); }
+.rv-mirror-acts { display: flex; gap: 7px; }
+/* the ✦ draft's offer, when the agent cannot act: the reason stands where the
+   button was rather than a disabled button explaining itself. */
+.rv-draft-offer.off { font-size: 11px; color: var(--paused); }
+
 /* ============================================================
    Dashboard sections (the Stack Dashboard design handoff).
    The front page is one scroll through five anchored sections —

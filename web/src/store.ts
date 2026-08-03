@@ -1052,9 +1052,12 @@ export interface ReviewData {
   // `unmerged` (#374) is a subset of `pending`, not a sibling of `flagged`:
   // how many of the changes waiting on you are still on a branch.
   totals: { pending: number; shelved: number; flagged: number; projects: number; settled: number; unmerged?: number };
-  // Turn 3 — a Gemini key exists on the server. The Refine dialog's ✦ draft
-  // button is ABSENT without one, never a disabled button explaining itself.
-  geminiReady?: boolean;
+  // #375 — which agents may act, and which of their ops. Every ✧ in this room
+  // is the Foreman's, and each one is ABSENT rather than disabled when it
+  // cannot run — with the reason said beside it. This replaced `geminiReady`:
+  // the room's ops moved onto Claude on the host with the agent, so a key says
+  // nothing about whether they work.
+  agents?: TabAgentState;
 }
 
 export async function getReview(): Promise<ReviewData> {
@@ -1072,7 +1075,51 @@ export async function getReview(): Promise<ReviewData> {
 // varies per item. The dialog prints this list rather than the fixed caption.
 export interface RefineDraft { draft: string; basis: string; read: string[] }
 export async function getRefineDraft(slug: string, id: number): Promise<RefineDraft> {
-  return request<RefineDraft>(`${roadmapBase(slug)}/${id}/refine-draft`, { method: 'POST' });
+  return request<RefineDraft>(`${reviewBase(slug, id)}/refine-draft`, { method: 'POST' });
+}
+
+// #375 — the Foreman's ops all hang off the ROOM's route rather than the
+// project's, because the room is the agent's surface. (The two older ones lived
+// under /projects/:slug/roadmap while they were the Curator's; they moved with
+// the op.)
+const reviewBase = (slug: string, id: number) =>
+  `/review/${encodeURIComponent(slug)}/${encodeURIComponent(String(id))}`;
+
+// ✧ Read this change — the pre-verdict. What makes it worth reading is the
+// last two fields, not the first: `blind` is what the Foreman could NOT see
+// (it has no diff — the server has no checkout), and `read` is what the server
+// actually put in front of it. A change with no run behind it says so instead
+// of wearing a caption that claims more.
+//
+// `where` is the mirror-site half: paths INTO the running copy of the branch,
+// which the room turns into links against the preview's URL. Server-validated
+// as same-origin paths; an empty list is a real answer (the change isn't
+// user-visible, or the record doesn't say which screen moved).
+export interface ForemanRead {
+  call: 'approve' | 'look' | 'send-back';
+  why: string;
+  test: string[];
+  where: { path: string; what: string }[];
+  blind: string[];
+  read: string[];
+}
+export async function getForemanRead(slug: string, id: number): Promise<ForemanRead> {
+  return request<ForemanRead>(`${reviewBase(slug, id)}/read`, { method: 'POST' });
+}
+
+// ✧ Triage the queue — an ORDER over everything waiting, and nothing else: no
+// verdicts, because the Foreman has read none of them. `placed: false` marks a
+// change the Foreman left out of its own order; the room shows those at the
+// end, said out loud, rather than dropping them from the list the owner is
+// now working from. `considered` < `total` when the queue was capped.
+export interface QueueTriage {
+  order: { key: string; why: string; placed: boolean }[];
+  note: string;
+  considered: number;
+  total: number;
+}
+export async function getQueueTriage(): Promise<QueueTriage> {
+  return request<QueueTriage>('/review/triage', { method: 'POST' });
 }
 
 // The one-shot hand-off behind the Review room's ＋ Bug / ＋ Audit: the room has
@@ -1546,7 +1593,7 @@ export async function getAutopilotRuns(slug: string): Promise<AutopilotRun[]> {
 // shipped, hands-on test steps and likely risks. Annotation only, never stored.
 export interface ReviewBrief { summary: string; test: string[]; risks: string[] }
 export async function getReviewBrief(slug: string, id: number): Promise<ReviewBrief> {
-  return request<ReviewBrief>(`${roadmapBase(slug)}/${id}/review-brief`, { method: 'POST' });
+  return request<ReviewBrief>(`${reviewBase(slug, id)}/brief`, { method: 'POST' });
 }
 // ⎌ Undo a completed item (#128): queues a revert job — the host dispatcher
 // reverts the item's #N-tagged commits on main in a throwaway worktree, pushes,
@@ -1943,7 +1990,10 @@ export async function getAuditPrompt(slug: string): Promise<string> {
 // four things the owner may tune from Mission Control → Agents.
 // #364 — 'merger' joins them, bound to Mission Control's Merge room rather
 // than a project tab. The binding works the same way; only the surface differs.
-export type TabAgentKey = 'auditor' | 'curator' | 'merger' | 'polaris';
+// #375 — and 'foreman', bound to the Review room. It also took `reviewbrief`
+// and `refinedraft` off the Curator: their only surface was ever that room, and
+// a room whose ✧ buttons answer to two agents' switches cannot be switched off.
+export type TabAgentKey = 'auditor' | 'curator' | 'foreman' | 'merger' | 'polaris';
 
 export interface TabAgentOp {
   op: string;
@@ -1956,8 +2006,11 @@ export interface TabAgentOp {
 export interface TabAgent {
   key: TabAgentKey;
   name: string;
-  tab: string;        // the project tab it is bound to — quality | roadmap | futures
+  tab: string;        // the surface it is bound to — quality | roadmap | review | merge | futures
   tabLabel: string;
+  // #375 — which KIND of surface that is. The Merge agent's card read "Merge
+  // tab" before this existed, and there is no such screen.
+  surface?: 'tab' | 'room';
   blurb: string;
   remit: string;      // what the model itself is told it may work on
   enabled: boolean;

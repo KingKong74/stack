@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { getAgents, patchAgent, type TabAgent, type TabAgentKey, type TabAgentsData } from '../store';
 
 // ---------------------------------------------------------------------------
-// #361 — the AGENTS room: the three tab agents, and the one place they are
-// controlled from.
+// #361 — the AGENTS room: every agent, and the one place they are controlled
+// from.
 //
-// Each agent is bound to exactly ONE project tab — the Auditor to Quality, the
-// Curator to Roadmap, Polaris to Futures — and that binding is the server's
+// Each is bound to exactly ONE surface — the Auditor to the Quality tab, the
+// Curator to Roadmap, Polaris to Futures, and (#364, #375) the Merge agent and
+// the Foreman to their Mission Control rooms — and that binding is the server's
 // registry, not a setting. So this room deliberately does NOT offer to move an
-// agent to another tab or to hand it another agent's ops: those are the
+// agent to another surface or to hand it another agent's ops: those are the
 // restriction the feature is about, and a control that could edit them would
 // be a control that could dissolve it. What the owner tunes is what an agent
 // is LIKE — off or on, which model it thinks with, what standing steer it
@@ -20,8 +21,8 @@ import { getAgents, patchAgent, type TabAgent, type TabAgentKey, type TabAgentsD
 // refresh for a row that almost never moves.
 //
 // One thing this screen must never do is imply an agent is working when it
-// cannot: with no GEMINI_API_KEY every switch here is honest but inert, and
-// the header says so before any card claims otherwise. Same rule as a NULL
+// cannot: with the host daemon offline every switch here is honest but inert,
+// and the header says so before any card claims otherwise. Same rule as a NULL
 // review verdict — no pass ran is not "nothing found".
 // ---------------------------------------------------------------------------
 
@@ -74,7 +75,7 @@ export function AgentsRoom() {
       <div className="mc14-room-head">
         <span className="title">Agents</span>
         <span className="meta">
-          {!data ? 'loading…' : `${liveCount} of ${data.agents.length} on · one per tab`}
+          {!data ? 'loading…' : `${liveCount} of ${data.agents.length} on · one per surface`}
         </span>
       </div>
 
@@ -113,10 +114,11 @@ export function AgentsRoom() {
 
       {data && (
         <p className="mc-agfoot">
-          An agent works in its own tab and nowhere else — the binding is in the server's registry,
-          not on this screen, so nothing here can hand one another tab's work. All three annotate
-          only: what they return arrives as a suggestion the human keeps or drops, and the Auditor's
-          findings land in the review inbox rather than on the bug list.
+          An agent works on its own surface and nowhere else — the binding is in the server's
+          registry, not on this screen, so nothing here can hand one another's work. They all
+          annotate only: what they return arrives as a suggestion the human keeps or drops. The
+          Auditor's findings land in the review inbox rather than on the bug list, and the
+          Foreman's call on a change is a recommendation — the verdict is still a press.
         </p>
       )}
     </div>
@@ -145,11 +147,13 @@ function AgentCard({
     <div className={`mc-agcard ${agent.enabled ? '' : 'off'}`}>
       <div className="cap">
         <span className="nm">{agent.name}</span>
-        {/* The tab is the agent's identity, not a setting — so it reads as a
-            fact on the card, and there is no control beside it. It is also not
-            a link: an agent works on EVERY project's Quality tab, so a single
-            destination would be a lie about which project it belongs to. */}
-        <span className="tab">{agent.tabLabel} tab</span>
+        {/* The surface is the agent's identity, not a setting — so it reads as
+            a fact on the card, and there is no control beside it. It is also
+            not a link: a tab agent works on EVERY project's Quality tab, so a
+            single destination would be a lie about which project it belongs to.
+            #375 — and it says tab or ROOM, because two of these are bound to
+            Mission Control rooms and "Merge tab" is not a screen. */}
+        <span className="tab">{agent.tabLabel} {agent.surface ?? 'tab'}</span>
         <div style={{ flex: 1 }} />
         {agent.enabled && !hostReady && <span className="tag idle">IDLE</span>}
         {!agent.enabled && <span className="tag off">OFF</span>}
