@@ -28,7 +28,7 @@ const rejects = async (label, fn, match) => {
 };
 
 console.log('--- the registry ---');
-check('the agents', AGENTS.map((a) => a.key), ['auditor', 'curator', 'merger', 'polaris']);
+check('the agents', AGENTS.map((a) => a.key), ['auditor', 'curator', 'foreman', 'merger', 'polaris']);
 check('one surface each, no surface shared', new Set(AGENTS.map((a) => a.tab)).size, AGENTS.length);
 check('every agent owns at least one op', AGENTS.every((a) => a.ops.length > 0), true);
 // The op → agent map is built at import time and throws on a duplicate, so a
@@ -37,17 +37,24 @@ check('audit belongs to the Auditor', agentForOp('audit').key, 'auditor');
 check('cleanup belongs to the Curator', agentForOp('cleanup').key, 'curator');
 check('judge belongs to Polaris', agentForOp('judge').key, 'polaris');
 check('mergeplan belongs to the Merge agent', agentForOp('mergeplan').key, 'merger');
+check('readchange belongs to the Foreman', agentForOp('readchange').key, 'foreman');
+// #375 — these two were the CURATOR's until the Foreman existed. The move is
+// the assertion: their only surface is the Review room, so the Review room's
+// switch is what must govern them.
+check('the reviewer\'s brief moved to the Foreman', agentForOp('reviewbrief').key, 'foreman');
+check('...and so did the refine draft', agentForOp('refinedraft').key, 'foreman');
 check('an op nobody owns resolves to nothing', agentForOp('nonsense'), null);
-// Three project tabs and one Mission Control room (#364). The Merge agent is
-// bound exactly like the others — the binding is what the item is about, and it
-// does not care whether the surface is a tab or a room.
-check('the surfaces', AGENTS.map((a) => a.tab), ['quality', 'roadmap', 'merge', 'futures']);
+// Three project tabs and two Mission Control rooms (#364, #375). A room-bound
+// agent is bound exactly like a tab-bound one — the binding is what the item is
+// about, and it does not care which kind of surface it names.
+check('the surfaces', AGENTS.map((a) => a.tab), ['quality', 'roadmap', 'review', 'merge', 'futures']);
 // Every op the ROUTES call has to exist here, or the call throws at runtime.
 // This list is the routes' side of the contract, written out so a renamed op
 // fails here rather than the first time somebody presses the button.
 const WIRED = {
   auditor: ['audit', 'auditprompt'],
-  curator: ['titler', 'assist', 'cleanup', 'reviewbrief', 'refinedraft'],
+  curator: ['titler', 'assist', 'cleanup'],
+  foreman: ['readchange', 'triagequeue', 'reviewbrief', 'refinedraft'],
   merger: ['mergeplan'],
   polaris: ['judge', 'cluster', 'converge'],
 };
@@ -70,9 +77,21 @@ await rejects('Polaris cannot run the assist', () => polaris.gate('assist'), 'Cu
 await rejects('the Merge agent cannot run the audit', () => agentClient('merger').gate('audit'), 'Auditor');
 await rejects('...nor the Curator\'s cleanup', () => agentClient('merger').gate('cleanup'), 'Curator');
 await rejects('and nobody else can run its mergeplan', () => auditor.gate('mergeplan'), 'Merge agent');
+// #375 — the Foreman reads changes across every project, so the same rule that
+// bounds the Merge agent has to bound it: the widest remit is still a remit.
+const foreman = agentClient('foreman');
+await rejects('the Foreman cannot run the audit', () => foreman.gate('audit'), 'Auditor');
+await rejects('...nor tidy the board', () => foreman.gate('cleanup'), 'Curator');
+await rejects('...nor read a merge plan', () => foreman.gate('mergeplan'), 'Merge agent');
+// And the Curator can no longer reach what it used to own — the move is real,
+// not a relabelling. A stale call site fails here rather than at the button.
+await rejects('the Curator can no longer write the brief', () => curator.gate('reviewbrief'), 'Foreman');
+await rejects('...nor draft the refinement', () => curator.gate('refinedraft'), 'Foreman');
+await rejects('the refusal names the Review room', () => curator.gate('readchange'), 'the Review room');
 await rejects('nobody can run an op that does not exist', () => curator.ask('sudo', 'x'), 'not an op');
-// And the message names the tab, so the exception says where the op belongs.
-await rejects('the refusal names the owning tab', () => auditor.gate('titler'), 'Roadmap tab');
+// And the message names the surface, so the exception says where the op
+// belongs — in the word that surface actually goes by (#375).
+await rejects('the refusal names the owning tab', () => auditor.gate('titler'), 'the Roadmap tab');
 
 console.log('\n--- the gate ---');
 const ON = { enabled: true, model: '', guidance: '', opsOff: [] };
@@ -149,11 +168,14 @@ check('the model-less op is marked', opSpec('auditprompt').model, false);
 check('...and the shape reports it to the room', 
   agentShape({ agent: A, config: agentConfigShape(A, undefined) }).ops.find((o) => o.op === 'auditprompt').needsModel, false);
 check('the tab rides along', shaped.tabLabel, 'Quality');
+// #375 — and what KIND of surface it is, so no card says "Merge tab".
+check('a tab agent knows it is a tab', shaped.surface, 'tab');
+check('a room agent knows it is a room', agentByKey('foreman').surface, 'room');
 // The room may not move an agent between tabs, so nothing writable is derived
 // from the tab: it is reported, never patched. (routes/agents.js accepts only
 // enabled / model / guidance / opsOff.)
 check('every registry field the room shows is present',
-  ['key', 'name', 'tab', 'tabLabel', 'blurb', 'remit'].every((k) => k in shaped), true);
+  ['key', 'name', 'tab', 'tabLabel', 'surface', 'blurb', 'remit'].every((k) => k in shaped), true);
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);

@@ -3,13 +3,14 @@
 //
 //   Auditor     · Quality tab   — reads the app and reports suspected bugs
 //   Curator     · Roadmap tab   — shapes the board and writes it up
+//   Foreman     · Review room   — walks a built change before it lands
 //   Polaris     · Futures tab   — judges, themes and converges the idea funnel
 //   Merge agent · Merge room    — reads the diffs of the branches about to land
 //
-// Three of the four are PROJECT tabs; the Merge agent is bound to a Mission
-// Control room instead, which is why "surface" and not "tab". Nothing else
-// about the binding changes: it owns one op, and the client that binds to it
-// throws on anybody else's.
+// Three of the five are PROJECT tabs; the Foreman and the Merge agent are bound
+// to Mission Control ROOMS instead, which is why "surface" and not "tab".
+// Nothing else about the binding changes: an agent owns its ops, and the client
+// that binds to it throws on anybody else's.
 //
 // Before this file the same three jobs existed as eight loose Gemini routes,
 // each one opening `if (!geminiEnabled()) 503` and calling askGemini directly.
@@ -132,6 +133,12 @@ export const AGENTS = [
     name: 'Auditor',
     tab: 'quality',
     tabLabel: 'Quality',
+    // #375 — tab or room. Three of these are project tabs and two are Mission
+    // Control rooms, and until now everything that printed the binding said
+    // "tab": the Merge agent's card read "Merge tab", which is a screen that
+    // does not exist. The binding is the agent's identity, so the word for it
+    // has to be right.
+    surface: 'tab',
     blurb: 'Reads the live app, the checks and the tracked bugs, and reports what looks broken.',
     // What the model itself is told it may and may not touch (see preamble()).
     remit: 'the Quality tab: the project\'s checks, its tracked bugs and the live application',
@@ -145,14 +152,46 @@ export const AGENTS = [
     name: 'Curator',
     tab: 'roadmap',
     tabLabel: 'Roadmap',
+    surface: 'tab',
     blurb: 'Shapes what is on the board: titles, areas, honest buckets, and the write-ups a reviewer reads.',
     remit: 'the Roadmap tab: the project\'s roadmap items, their fields and what was built against them',
     ops: [
       { op: 'titler', label: 'Suggest a title', hint: 'Titles an item from its note.' },
       { op: 'assist', label: 'Fill from note', hint: 'Fills an item\'s fields; never overwrites one you set.' },
       { op: 'cleanup', label: 'Tidy the board', hint: 'Suggests fixes across the open items.' },
-      { op: 'reviewbrief', label: 'Reviewer\'s brief', hint: 'Writes up a completed item for the verdict.' },
-      { op: 'refinedraft', label: 'Refine draft', hint: 'Drafts the delta when an item is sent back.' },
+    ],
+  },
+  // #375 — THE FOREMAN, the Review room's own agent.
+  //
+  // It is not called the Reviewer, and that is deliberate: the room already
+  // shows something labelled REVIEWER — the second model's read of the branch
+  // diff, taken at push time and stored on the run (`review_verdict`). Two
+  // things called the reviewer on one screen would make "what did the reviewer
+  // say" unanswerable. The Foreman walks the site: it reads a change with you
+  // when you are the one about to give the verdict, where the push reviewer
+  // read the diff hours ago without you.
+  //
+  // `reviewbrief` and `refinedraft` MOVED HERE from the Curator. Their only
+  // surface has always been this room, and an agent switch that silences half a
+  // room's ✧ buttons while another agent's switch silences the rest is the
+  // restriction working against the owner. One room, one switch. (The Curator
+  // keeps everything whose surface is the board itself.) An `ops_off` row that
+  // still names them under the Curator is ignored on read — agentConfigShape
+  // filters to the agent's own ops — so a moved op degrades to ON, the same
+  // direction as a missing row.
+  {
+    key: 'foreman',
+    name: 'Foreman',
+    tab: 'review',
+    tabLabel: 'Review',
+    surface: 'room',
+    blurb: 'Walks each built change before it lands: what it really is, where to look at it running, and what would send it back.',
+    remit: "Mission Control's Review room: the changes waiting on a verdict, what built them, and what the other agents already said about them",
+    ops: [
+      { op: 'readchange', label: 'Read this change', hint: 'A pre-verdict on one change — what to test, and where it shows in the mirror site.' },
+      { op: 'triagequeue', label: 'Triage the queue', hint: 'Says what to read first across every waiting change, and why.' },
+      { op: 'reviewbrief', label: 'Reviewer\'s brief', hint: 'Writes up a change for the verdict.' },
+      { op: 'refinedraft', label: 'Refine draft', hint: 'Drafts the delta when a change is sent back.' },
     ],
   },
   {
@@ -160,6 +199,7 @@ export const AGENTS = [
     name: 'Merge agent',
     tab: 'merge',
     tabLabel: 'Merge',
+    surface: 'room',
     blurb: 'Reads the diffs of the branches about to be merged and says which pairings should not go in the same wave.',
     remit: "Mission Control's Merge room: the open branches of every project and the diffs they carry",
     ops: [
@@ -171,6 +211,7 @@ export const AGENTS = [
     name: 'Polaris',
     tab: 'futures',
     tabLabel: 'Futures',
+    surface: 'tab',
     blurb: 'Keeps the idea funnel pointed at the north star: verdicts, themes, and tickets when an idea is ready.',
     remit: 'the Futures tab: the project\'s idea funnel and its north star',
     ops: [
@@ -366,7 +407,7 @@ export function agentClient(key) {
       const other = agentForOp(op);
       throw new Error(
         other
-          ? `"${op}" is the ${other.name}'s op (${other.tabLabel} tab) — the ${agent.name} cannot run it.`
+          ? `"${op}" is the ${other.name}'s op (the ${other.tabLabel} ${other.surface}) — the ${agent.name} cannot run it.`
           : `"${op}" is not an op of any tab agent.`
       );
     }
@@ -455,6 +496,7 @@ export const agentShape = ({ agent, config }) => ({
   name: agent.name,
   tab: agent.tab,
   tabLabel: agent.tabLabel,
+  surface: agent.surface,
   blurb: agent.blurb,
   remit: agent.remit,
   enabled: config.enabled,
