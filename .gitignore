@@ -1,6 +1,10 @@
 node_modules/
 dist/
 .env
+# In case a local copy of the host-side key file is ever dropped in-repo for
+# testing (its real home is ~/.stack/env or ~/.ccm_config, never here).
+/env
+/.ccm_config
 *.log
 .DS_Store
 *.tsbuildinfo

@@ -5,17 +5,28 @@
 // so Claude Code switches transparently. Provider catalogue derived from
 // https://github.com/foreveryh/claude-code-switch (MIT).
 //
-// API keys are read from process.env (loaded from ~/.stack/env by the daemon's
-// env loader at startup) and from ~/.ccm_config (the claude-code-switch config
-// file). Keys are never logged or included in any user-visible output.
+// API keys resolve process.env -> ~/.stack/env -> ~/.ccm_config (the
+// claude-code-switch config file), in that order. process.env is checked
+// first because the daemon's own env loader has already pre-loaded
+// ~/.stack/env into it by startup, but any OTHER host-side helper (a
+// standalone script, a CLI command) has not — so this module reads
+// ~/.stack/env itself rather than assuming it. Keys are never logged or
+// included in any user-visible output.
 //
 // Persistence: the user's chosen provider is saved to ~/.stack/term-model.json
 // as { preferred: "deepseek" }. The server's settings table is out of scope for
 // host-side terminal code.
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+
+// HOME resolution, factored out so it can be overridden for tests and so
+// every path in this file agrees on one home directory. USERPROFILE covers
+// Windows-ish hosts where HOME may be unset.
+function stackHome() {
+  return process.env.HOME || process.env.USERPROFILE || homedir();
+}
 
 // Provider catalogue — baseUrl must expose the Anthropic messages API surface.
 // Derived from https://github.com/foreveryh/claude-code-switch ccm.sh.
@@ -57,30 +68,78 @@ export const PROVIDERS = [
   },
 ];
 
-// Parse ~/.ccm_config — same key=value format as ~/.stack/env.
-function loadCcmConfig() {
-  const path = join(homedir(), '.ccm_config');
-  if (!existsSync(path)) return {};
+// Parse a key file — either the key=value format ~/.stack/env and
+// ~/.ccm_config both use, or JSON (some builds of the ccm tool write JSON
+// instead). Never throws: a missing file, an unreadable one or a path that
+// is actually a directory (an EISDIR on read, which existsSync alone would
+// not catch) all resolve to "no keys found" rather than an error.
+export function loadKeyFile(path) {
+  let raw;
   try {
-    const result = {};
-    for (const line of readFileSync(path, 'utf8').split('\n')) {
-      const s = line.trim();
-      if (!s || s.startsWith('#')) continue;
-      const eq = s.indexOf('=');
-      if (eq < 0) continue;
-      const k = s.slice(0, eq).trim();
-      const v = s.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
-      if (k) result[k] = v;
+    raw = readFileSync(path, 'utf8');
+  } catch {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const result = {};
+      // One level of nesting: a top-level object's own string values are
+      // pulled in too, so a `{"env":{"KIMI_API_KEY":"..."}}` shape is found.
+      // Top-level keys win — a nested key never overwrites one already set.
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === 'string') result[k] = v;
+      }
+      for (const v of Object.values(parsed)) {
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          for (const [ck, cv] of Object.entries(v)) {
+            if (typeof cv === 'string' && !(ck in result)) result[ck] = cv;
+          }
+        }
+      }
+      return result;
     }
-    return result;
-  } catch { return {}; }
+  } catch { /* not JSON — fall through to key=value */ }
+
+  const result = {};
+  for (const line of raw.split('\n')) {
+    const s = line.trim();
+    if (!s || s.startsWith('#')) continue;
+    const eq = s.indexOf('=');
+    if (eq < 0) continue;
+    const k = s.slice(0, eq).trim();
+    const v = s.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
+    if (k) result[k] = v;
+  }
+  return result;
+}
+
+// The ordered list of files consulted for a provider key, after process.env.
+export function keySources() {
+  return [
+    { label: '~/.stack/env', path: join(stackHome(), '.stack', 'env') },
+    { label: '~/.ccm_config', path: join(stackHome(), '.ccm_config') },
+  ];
+}
+
+// Resolve one provider's API key, honouring the process.env -> ~/.stack/env
+// -> ~/.ccm_config precedence described at the top of this file. Whitespace-
+// only values count as absent.
+export function resolveProviderKey(envKey) {
+  const fromEnv = (process.env[envKey] || '').trim();
+  if (fromEnv) return { key: fromEnv, source: 'process env' };
+  for (const { label, path } of keySources()) {
+    const cfg = loadKeyFile(path);
+    const v = (cfg[envKey] || '').trim();
+    if (v) return { key: v, source: label };
+  }
+  return { key: '', source: '' };
 }
 
 // Providers that have a configured API key.
-// process.env takes priority (already loaded from ~/.stack/env); ~/.ccm_config fallback.
 export function availableProviders() {
-  const cfg = loadCcmConfig();
-  return PROVIDERS.filter((p) => (process.env[p.envKey] || cfg[p.envKey] || '').length > 0);
+  return PROVIDERS.filter((p) => resolveProviderKey(p.envKey).key.length > 0);
 }
 
 // Environment overrides to inject when spawning claude with this provider.
@@ -88,8 +147,7 @@ export function availableProviders() {
 export function providerEnv(providerKey) {
   const p = PROVIDERS.find((x) => x.key === providerKey);
   if (!p) return null;
-  const cfg = loadCcmConfig();
-  const apiKey = process.env[p.envKey] || cfg[p.envKey] || '';
+  const apiKey = resolveProviderKey(p.envKey).key;
   if (!apiKey) return null;
   return {
     ANTHROPIC_BASE_URL: p.baseUrl,
@@ -109,7 +167,7 @@ export function getProvider(key) {
 }
 
 // Persist and recall the user's preferred alternative provider across sessions.
-const PREF_FILE = join(homedir(), '.stack', 'term-model.json');
+const PREF_FILE = join(stackHome(), '.stack', 'term-model.json');
 
 export function loadPreferredProvider() {
   try {
