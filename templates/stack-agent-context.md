@@ -158,6 +158,12 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   **If your work is on a branch and you have not merged it, do NOT tick the
   item.** `done` means shipped, and an unmerged branch has not shipped. Write
   the `built_note`, leave `claimed_by` on the branch, and leave `done` alone:
+- **When you finish an item, tell the reviewer what landed.** Include a
+  `built_note` alongside `done:true` — two or three plain sentences on what was
+  actually built, where it lives and how it was verified. It appears on the
+  Roadmap tab's Reviews view, and the human verdicts against it. Anything past
+  2000 characters is kept to 2000 with a line saying how long the note really
+  was — so a long note loses its tail, and everyone reading it can see that:
 
   ```bash
   curl -s -X PATCH "$STACK_API/api/projects/<slug>/roadmap/<id>" \

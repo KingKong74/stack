@@ -304,10 +304,16 @@ export function computeConflicts({ edits, projects = [], now = Date.now() }) {
   const live = edits.sessions.filter((s) => s && s.lastAt > now - CONFLICT_LIVE_MS && s.cwd);
   if (live.length < 2) return [];
 
-  const byFile = new Map(); // `${cwd} ${path}` -> { cwd, path, branch, sessions[] }
+  // `${cwd}\u0000${path}` -> { cwd, path, branch, sessions[] }. That separator
+  // is written as an ESCAPE and has to stay one: a literal NUL byte in the
+  // source makes this file `data` rather than text, and grep, ripgrep and ugrep
+  // all skip a binary file in SILENCE. This is the server's biggest read layer
+  // and for two NUL bytes it was invisible to every code search in the repo —
+  // a session grepping it got an empty result, not an error.
+  const byFile = new Map();
   for (const s of live) {
     for (const f of s.files || []) {
-      const key = `${s.cwd} ${f.path}`;
+      const key = `${s.cwd}\u0000${f.path}`;
       if (!byFile.has(key)) byFile.set(key, { cwd: s.cwd, path: f.path, branch: s.branch || '', sessions: [] });
       const e = byFile.get(key);
       if (!e.branch && s.branch) e.branch = s.branch;

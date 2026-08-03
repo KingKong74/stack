@@ -93,6 +93,23 @@ export function cleanPlan(v, max = 30, len = 300) {
     .slice(0, max);
 }
 
+// A capped free-text field, capped OUT LOUD (BUG-12). #239's rule — "a capped
+// list inside a prompt must say it is capped" — is not really about lists: a
+// reader that cannot see a cap treats what it got as the whole thing, and the
+// tail is where an account of what landed keeps its caveats. built_note is
+// written once, by the session that finishes the item, and read by the human on
+// the Review room and by both second-model passes; a silent slice at 2000 took
+// the last paragraph off 7 of the 212 notes on this host without one of those
+// readers ever being told. The marker is stored with the text so every reader
+// gets it without re-deriving anything, and it names the true length, which is
+// what says how much is missing.
+export const NOTE_MAX = 2000;
+export function capNote(value, max = NOTE_MAX) {
+  const text = String(value ?? '').trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}\n[truncated — the note was ${text.length} characters and the first ${max} are kept]`;
+}
+
 // Coerce review-annotation tags (#146): short lowercase labels, deduped.
 // Anything malformed is dropped rather than erroring.
 export function cleanReviewTags(v, max = 8, len = 40) {

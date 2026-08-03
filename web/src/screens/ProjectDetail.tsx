@@ -493,10 +493,17 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, futures: await getFutures(slug) });
     });
 
+  // Deleting an idea changes rows the response never mentions: `futures.parent_id`
+  // is ON DELETE SET NULL, so dismissing a star cuts its planets loose in the same
+  // statement (schema.sql — "returns its moons to the shells rather than deleting
+  // work you kept"). Filtering the one row out of the snapshot leaves every child
+  // still naming a parent that is gone, and the panel reads parentId raw: it goes
+  // on offering "— cut it loose —" on an idea that is already loose. Refetch, like
+  // shapeFuture — only the server knows what its own foreign key did.
   const removeFuture = (fid: number) =>
     guard(async () => {
       await deleteFuture(slug, fid);
-      setData({ ...data, futures: futures.filter((f) => f.id !== fid) });
+      setData({ ...data, futures: await getFutures(slug) });
     });
 
   // #314 — keep-or-delete after a promotion has to cover the whole set that
@@ -545,10 +552,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         }));
       }
       for (const id of retireIds) await deleteFuture(slug, id);
-      const retired = new Set(retireIds);
       const nextRoadmap = { ...roadmap };
       for (const it of created) nextRoadmap[it.bucket] = [...nextRoadmap[it.bucket], it];
-      setData({ ...data, roadmap: nextRoadmap, futures: futures.filter((f) => !retired.has(f.id)) });
+      // Retiring converged ideas is a delete, so the same rule as removeFuture:
+      // read back rather than filter, or the survivors keep orbiting a retired one.
+      setData({
+        ...data,
+        roadmap: nextRoadmap,
+        futures: retireIds.length ? await getFutures(slug) : futures,
+      });
     });
 
   const saveNorthStar = (text: string) =>
@@ -587,9 +599,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         await deleteRoadmapItem(slug, id);
         setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].filter((i) => i.id !== id) } });
       } else {
-        const id = Number(e.key);
-        await deleteFuture(slug, id);
-        setData({ ...data, futures: futures.filter((f) => f.id !== id) });
+        // Same as removeFuture: the delete may have cut children loose, and only
+        // a read back says so.
+        await deleteFuture(slug, Number(e.key));
+        setData({ ...data, futures: await getFutures(slug) });
       }
     });
 

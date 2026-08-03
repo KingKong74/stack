@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags, riskWriteSource } from '../util.js';
+import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags, riskWriteSource, capNote } from '../util.js';
 
 // Risk tiers (#212) — graduated trust. 'low' lets a green overnight run
 // auto-queue its own merge; anything else keeps the human on the merge button.
@@ -200,8 +200,11 @@ roadmap.patch('/:id', async (req, res) => {
     sets.push(`tier = $${i++}`); vals.push(cleanTier(req.body.tier));
   }
   if (req.body?.built_note !== undefined) {
+    // Capped out loud — see capNote. This is the ONLY writer of the column, so
+    // everything downstream can read it whole rather than re-capping (which
+    // would cut the marker off the end and hide the cap again).
     sets.push(`built_note = $${i++}`);
-    vals.push(String(req.body.built_note || '').trim().slice(0, 2000) || null);
+    vals.push(capNote(req.body.built_note) || null);
   }
   if (req.body?.position !== undefined && Number.isFinite(req.body.position)) {
     sets.push(`position = $${i++}`); vals.push(Math.trunc(req.body.position));

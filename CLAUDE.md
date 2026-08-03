@@ -291,9 +291,7 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   night. A worktree entry's `itemId` (#365) is parsed host-side by this same `parseBranch`, so the
   server never grows a third copy of the naming rule — and the legacy spelling therefore keeps
   working for trees exactly as it does for branches.
-- **`built_note`** — what actually landed, PATCHed by the completing session alongside `done:true`.
-  The Review room verdicts against it. Always write one.
-- **A future's SHAPE in the Polaris galaxy (#312) is derived, never stored.** There is no `kind`
+- **A future's SHAPE in the Polaris galaxy is derived, never stored.** There is no `kind`
   column and there must not be one: `is_star` = ★ its own orbit; parent is a star = ● a planet;
   parent is a planet = ○ a moon; no parent + judged = ◦ one of the north star's three shells
   (`alignment` picks which, on-course innermost); no parent + unjudged = · the drift belt, which is
@@ -771,6 +769,9 @@ node scripts/lane.test.mjs                 # branch naming + BOTH spellings pars
 node scripts/risk.test.mjs                 # the shared risk-tier helpers: normalise, label (pure)
 node server/test/worktree.test.mjs         # add/remove guards (real git in a throwaway repo, no DB)
 node --experimental-strip-types scripts/feature.test.mjs   # feature stages across branch + worktree (pure, no DB)
+node server/test/cap-note.test.mjs         # a capped note says it was capped (pure, no DB)
+node scripts/context-budget.test.mjs       # THIS file and the agent manual are within budget
+node scripts/roadmap-refs.mjs              # every #id cited in the repo, against the real board
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack models                             # which alt providers have a key (--json, --check)

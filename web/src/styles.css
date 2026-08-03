@@ -610,8 +610,16 @@ a.tab { display: inline-block; }
 .status-pill { min-width: 82px; text-align: center; padding: 4px 11px; }
 
 /* ---------- roadmap ---------- */
-.road-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
-.road-col { background: var(--panel); border: 1px solid var(--line-panel); border-radius: 14px; padding: 13px; }
+/* minmax(0, 1fr), never a bare 1fr: `1fr` is minmax(AUTO, 1fr) and floors at the
+   track's min-content, so one unbreakable line inside a column widens the whole
+   grid past the page. That is what happened here — .rollup-note is white-space:
+   nowrap, so its min-content is the entire "stack · #359 ⚑ auto/item-359-…"
+   line, and two columns of 431px min-content pushed the 1024px board to 1185
+   and gave the page a horizontal scrollbar (BUG-9). The nowrap is right: that
+   line is meant to ellipsise. It just needs a track that is allowed to be
+   narrower than it, and a column that is allowed to shrink inside the track. */
+.road-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.road-col { background: var(--panel); border: 1px solid var(--line-panel); border-radius: 14px; padding: 13px; min-width: 0; }
 .road-col-head { display: flex; align-items: center; gap: 8px; margin-bottom: 13px; padding: 0 3px; }
 .road-col-head .dot { width: 9px; height: 9px; border-radius: 50%; }
 .road-col-head .name { font-family: var(--disp); font-size: 14px; font-weight: 600; text-align: left; color: var(--ink); }
@@ -634,7 +642,7 @@ a.tab { display: inline-block; }
 .road-col-head .count + .road-col-btn { margin-left: 2px; }
 .road-col.folded { padding-bottom: 11px; }
 .road-col.folded .road-col-head { margin-bottom: 0; }
-.road-grid.focused { grid-template-columns: 1fr; }
+.road-grid.focused { grid-template-columns: minmax(0, 1fr); }
 .road-grid.focused .road-item { padding: 13px 15px; }
 .road-grid.focused .road-item .t { font-size: 14px; }
 .road-grid.focused .road-item .note { font-size: 12.5px; margin-top: 7px; }
@@ -2403,11 +2411,20 @@ a.tab { display: inline-block; }
 .term-status { font-size: 12.5px; color: var(--muted); }
 .term-status.live { color: var(--green); font-weight: 600; }
 .term-status.error { color: var(--critical); }
+/* The 12px inset sits on the TERMINAL, not on the holder (BUG-6). FitAddon
+   sizes the grid from `getComputedStyle(parent).height` minus the terminal
+   element's own padding — and with the global `* { box-sizing: border-box }`
+   that parent height is the BORDER box, so padding on the holder is space the
+   addon believes it has and does not. 12px each side meant it fitted 24 rows
+   into a box with room for 22, and drew the last one 11px past the bottom
+   where .term-pane's overflow: hidden quietly ate it. Moved onto .xterm, the
+   same 12px is subtracted by the addon itself, so the arithmetic closes. The
+   holder keeps the background and the radius: nothing about this is visible. */
 .term-holder {
-  background: #211d19; border-radius: 14px; padding: 12px;
+  background: #211d19; border-radius: 14px; padding: 0;
   height: calc(100vh - 210px); min-height: 320px;
 }
-.term-holder .xterm { height: 100%; }
+.term-holder .xterm { height: 100%; padding: 12px; }
 /* #121 — the global terminal presence pill (App-level, floats on every screen) */
 .term-presence {
   position: fixed; right: 18px; bottom: 18px; z-index: 40;
@@ -3495,18 +3512,31 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 /* It left the tab strip for the bottom-left corner: a quiet launcher on every
    screen, and a sheet that rises from it over whatever you were doing. The
    right-hand corners are spoken for (the to-top button, the terminal dock). */
+/* Glass, not paint (BUG-8). A launcher fixed to the corner of a column that
+   runs full-bleed to 32px of the edge WILL sit on top of something: measured
+   at rest on the dashboard it covered the "Pick up where you left off" heading
+   at 1024 and "Currently in progress" at 1440. It stays fixed — it is meant to
+   be reachable from every screen, the way the presence pill is — but it stops
+   being opaque about it: a translucent, blurred background leaves the words
+   behind it readable, and below 1200px it drops the label for its glyph alone,
+   which is 34px of corner instead of 89px across a heading. */
 .tips-dock {
   position: fixed; bottom: 28px; left: 24px; z-index: 50;
   display: inline-flex; align-items: center; gap: 7px;
-  background: var(--surface); border: 1px solid var(--keyline); border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px);
+  border: 1px solid var(--keyline); border-radius: 999px;
   padding: 7px 14px; font-size: 12px; font-weight: 600; color: var(--muted);
   box-shadow: 0 3px 12px rgba(28, 26, 23, 0.10);
   opacity: 0.92; cursor: pointer; transition: opacity 0.15s, border-color 0.15s, color 0.15s;
 }
-.tips-dock:hover, .tips-dock.on { opacity: 1; border-color: var(--accent-soft); color: var(--ink); }
+/* Hovered or open, it is being USED — no longer chrome to see past. */
+.tips-dock:hover, .tips-dock.on { background: var(--surface); opacity: 1; border-color: var(--accent-soft); color: var(--ink); }
 .tips-dock .glyph { font-size: 13px; color: var(--accent); line-height: 1; }
 .tips-dock.on { background: var(--accent-tint); border-color: var(--accent-tint-border); }
-@media (max-width: 620px) { .tips-dock .label { display: none; } .tips-dock { padding: 9px 11px; } }
+/* 1200, not 620: the label is only affordable where the page has room to
+   spare beside it, and below --page-max it never has. */
+@media (max-width: 1200px) { .tips-dock .label { display: none; } .tips-dock { padding: 9px 11px; } }
 
 .tips-scrim { position: fixed; inset: 0; z-index: 55; background: rgba(28, 26, 23, 0.30); animation: fade 0.12s ease; }
 .tips-sheet {
@@ -3901,7 +3931,27 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .mc-lane-note { padding: 11px 13px; border-radius: 10px; border: 1px dashed var(--line-3); font-size: 11px; line-height: 1.6; color: var(--muted); }
 
 /* narrow: the role column and the burn drop under the name, and the expanded
-   panel stacks the read card below the ledger rather than beside it. */
+   panel stacks the read card below the ledger rather than beside it.
+   Keyed to the LANE, not the window (BUG-10). The lane head is a rigid row —
+   who 172 + roles 196 + burn 96 + state + Jump in + caret + gaps = 745px that
+   nothing was allowed to shrink — and Mission Control's rail means the card is
+   646px wide at a 1024px viewport. So the window was never narrow enough to
+   fire this rule while the card was far too narrow to hold the row, and
+   .mc-lane's overflow: hidden clipped ~130px off the right: the Jump in button
+   and the expand caret, gone, with no scrollbar and no ellipsis to say so. A
+   container query asks the question that was always meant: does the CARD have
+   room. 760px is above the row's own 745px so it reflows just before it would
+   have to clip. */
+.mc-lane { container-type: inline-size; }
+@container (max-width: 760px) {
+  .mc-lane .lane-head { flex-wrap: wrap; }
+  .mc-lane .who, .mc-lane .lane-roles { width: auto; flex: 1 1 160px; }
+  .mc-lane .lane-tail { flex: 1 1 100%; }
+  .mc-lane .lane-body { flex-direction: column; }
+  .mc-lane .lane-side { width: auto; align-self: stretch; }
+}
+/* The window rule stays for the case the container query cannot see: a phone,
+   where the whole page — rail included — is narrow. Same declarations. */
 @media (max-width: 900px) {
   .mc-lane .lane-head { flex-wrap: wrap; }
   .mc-lane .who, .mc-lane .lane-roles { width: auto; flex: 1 1 160px; }
@@ -5519,9 +5569,18 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
    one thing; 2a folds them into one, in the tone the reason deserves.
    `bad` is the red bar — an unarmed autopilot is not a neutral fact. */
 .now-arm { border: 1px solid var(--line-2); border-left: 3px solid var(--line-3); border-radius: 10px; background: var(--card); }
-.now-arm .row { display: flex; align-items: center; gap: 12px; padding: 11px 14px; }
-.now-arm .lbl { font-family: var(--mono); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink); white-space: nowrap; }
-.now-arm .sum { flex: 1; min-width: 0; font-size: 13.5px; color: var(--body); }
+.now-arm .row { display: flex; align-items: center; gap: 12px; padding: 11px 14px; flex-wrap: wrap; }
+/* No nowrap. This label was a status WORD ("AUTOPILOT IS ARMED") when the row
+   was designed; #270's fleet status made it a whole sentence, and an
+   unwrappable sentence takes ~800px, starving the hint beside it into a 90px
+   column that wraps over ten lines and stands the row up 200px tall. At 1024
+   it simply runs off the end. It wraps now, and shrinks with the row. */
+.now-arm .lbl { font-family: var(--mono); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink); min-width: 0; }
+/* A real basis, not 0: with `flex: 1` the hint had no width of its own to
+   claim, so once the label filled the row the hint was left a ~90px gutter and
+   set one word per line. 240px is the width it needs to read as a sentence; if
+   the row cannot spare that beside the label, it takes the next line instead. */
+.now-arm .sum { flex: 1 1 240px; min-width: 0; font-size: 13.5px; color: var(--body); }
 .now-arm .cfg { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 5px 9px; border-radius: 7px; white-space: nowrap; }
 .now-arm .cfg:hover { color: var(--ink); background: var(--panel); }
 .now-arm.good { border-left-color: var(--live); }
