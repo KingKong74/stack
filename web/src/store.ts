@@ -1245,6 +1245,44 @@ export async function getReview(): Promise<ReviewData> {
   return request<ReviewData>('/review');
 }
 
+// GET /api/review/debrief — one night, composed server-side (#286/#24a). The
+// arithmetic (landed/failed/planned/noCommits, the reviewer/architect rollup,
+// where they disagree, the decisions the night is waiting on) is the SERVER's
+// now — debrief.js is the one definition, shared with Mission Control's
+// NightDebrief panel — so this client no longer re-derives it from `nights`.
+export interface ReviewDebriefRun extends ReviewNightRun { pushNote: string }
+export interface ReviewDebriefDecision {
+  kind: 'blocked' | 'checks' | 'paused' | 'failed';
+  tag: string;
+  slug: string | null;
+  itemId: string | null;
+  itemTitle: string;
+  branch: string;
+  sentence: string;
+}
+export interface ReviewDebrief {
+  geminiReady: boolean;
+  day: string;
+  scope: string | null;
+  ran: boolean;
+  stats: {
+    runs: number; landed: number; failed: number; planned: number; noCommits: number;
+    projects: number; tokens: number; costUsd: number; costPerLanded: number | null;
+  };
+  runs: ReviewDebriefRun[];
+  reviewer: { ran: number; clean: number; flagged: number; blocked: number; findings: number };
+  architect: { ran: number; aligned: number; drifted: number };
+  disagree: {
+    slug: string | null; itemId: string | null; itemTitle: string; branch: string;
+    reviewVerdict: string; architectVerdict: string;
+  }[];
+  decisions: ReviewDebriefDecision[];
+}
+export async function getReviewDebrief(night: string, slug?: string): Promise<ReviewDebrief> {
+  const qs = `night=${encodeURIComponent(night)}${slug ? `&slug=${encodeURIComponent(slug)}` : ''}`;
+  return request<ReviewDebrief>(`/review/debrief?${qs}`);
+}
+
 // Turn 3 — ✦ the Refine draft: Gemini's first pass at the delta that sends a
 // completed item back to the board. Offered, never forced; it returns text for
 // a box the human edits and sends, and writes nothing itself.

@@ -395,6 +395,13 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   deliberately left alone rather than touched to match. The `advise` lane matches on the column
   instead. And its `advice` NULL means **NO PASS RAN**, never "no conflicts" — the same rule as the
   NULL `review_verdict` bullet above.
+- **A night's debrief arithmetic has exactly one definition, `server/src/debrief.js`** (pure,
+  DB-free, pinned by `server/test/debrief.test.mjs`) — the Review room's `nights` list stays the raw
+  fortnight index the client groups for the chooser strip, and `GET /api/review/debrief` is the
+  composed read of a single night, built from those same rows so the two can never drift apart
+  again. The five run outcomes partition across four stats buckets — `landed` / `failed` (failed +
+  limit) / `planned` / `noCommits` — so those four always sum to `stats.runs`, and `planned` is never
+  counted as landed or failed, the same plan-night rule as above.
 - **Un-ticking a roadmap item clears `review_tag` and `claimed_by`** (unless the same PATCH sets
   them), so a sent-back item re-enters play fresh. Ticking `done:true` clears `review_tags`,
   `refine_note` and `review_shelved` — each verify round starts unannotated.
@@ -681,6 +688,8 @@ reference. The index:
 - **Read layers** — `overview.js` (the dashboard deck), `control.js` (Mission Control, incl. the pure
   exported `computeFleetRoles()`), `review.js` (the cross-project Review room AND the Foreman's four
   ops — #375; two of them arrived from `roadmap.js` with the agent), `search.js` (⌘K),
+  exported `computeFleetRoles()`), `review.js` (the cross-project Review room, plus `/debrief` — the
+  composed read of one night), `search.js` (⌘K),
   `timeline.js`, `public.js`. All computed in a handful of aggregate queries — **never one query per
   project**; keep it that way.
 - **Per-project collections** — `bugs.js`, `roadmap.js`, `notes.js`, `futures.js`, `checks.js`,
@@ -810,6 +819,7 @@ node --experimental-strip-types scripts/feature.test.mjs   # feature stages acro
 node server/test/cap-note.test.mjs         # a capped note says it was capped (pure, no DB)
 node scripts/context-budget.test.mjs       # THIS file and the agent manual are within budget
 node scripts/roadmap-refs.mjs              # every #id cited in the repo, against the real board
+node server/test/debrief.test.mjs          # one night's debrief, composed (pure, no DB)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack models                             # which alt providers have a key (--json, --check)

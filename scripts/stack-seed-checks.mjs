@@ -177,6 +177,18 @@ function suiteFor(slug, ORIGIN) {
     // present) even with nothing on it, so losing the key entirely — the
     // route forgetting the field — is what this catches, not an empty strip.
     { name: 'Review — auto-verdicted strip', url: u('/api/review'), auth: true, json_path: 'totals.autoVerdicted' },
+    // #286/#24a — the composed single-night debrief. Two code invariants that
+    // can be equality-asserted safely, the auth gate, and one presence check
+    // on `day`, which composeDebrief echoes on every answer including a
+    // `ran:false` quiet night. The debrief's OWN numbers (stats.landed,
+    // reviewer.ran, stats.planned, …) are deliberately not asserted here:
+    // they read 0 on a night nothing ran — that is the design, not a gap —
+    // so a check on any of them would go red on good news, exactly what the
+    // design rules above forbid.
+    { name: 'Auth gate closed — review debrief', url: u('/api/review/debrief'), expect_status: 401 },
+    { name: 'Review debrief — a bad night is refused', url: u('/api/review/debrief?night=not-a-date'), auth: true, expect_status: 400 },
+    { name: 'Review debrief — unknown project 404s', url: u('/api/review/debrief?slug=no-such-project-x'), auth: true, expect_status: 404 },
+    { name: 'Review debrief — composed payload has a day', url: u('/api/review/debrief'), auth: true, json_path: 'day' },
     // The Now room's two host-fed signals. Both are ARRAYS that are usually
     // EMPTY — nothing is normally stopped and nobody is normally colliding —
     // which is exactly why they need a check: if the key stops being served,
