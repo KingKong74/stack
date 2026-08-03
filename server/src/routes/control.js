@@ -101,8 +101,13 @@ import { isApproved } from '../approval.js';
 //   ledger: {                               // (#269) the throughput trend
 //     days: [ { day, landed, runs, tokens, costUsd } ],   // 14, oldest first
 //     now, prev,                            // 7-day windows → direction
-//     merges: { now: { total, auto }, prev }, reverts: { now, prev },
-//     firstPass: { solid, verdicted },
+//     merges: { now: { total, auto }, prev },
+//     reverts: { now, prev,                  // raw counts, unchanged
+//                rateNow, ratePrev },         // share of that window's landed
+//                                             // work; null (not 0) with no
+//                                             // landed denominator
+//     firstPass: { solid, verdicted,          // 14-day totals, unchanged
+//                  now: { solid, verdicted }, prev: { solid, verdicted } },
 //     roles: { executor, advisor, assumed } // spend split via splitRunRoles();
 //                                           // `assumed` = the fallback's share
 //   }
@@ -902,6 +907,137 @@ export function computeFleetStatus({
   return { status, heartbeat: { ageSec, silent, hostLocal: (heartbeat && heartbeat.host_local) || '' } };
 }
 
+// (#269) The throughput ledger — is the automation getting better? Every
+// number is current-value-plus-direction (last 7 days against the 7 before),
+// never a table: the question is the trend, not the row. It is a pure
+// exported function for the same reason computeFleetRoles is one — the trend
+// maths is what can silently go wrong, and a pure function is the only part
+// of this route a test can reach without a database.
+export function computeLedger({ runRows = [], jobRows = [], verdictRows = [], execAlias, advAlias, now = Date.now() }) {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const dayKey = (ts) => new Date(ts).toISOString().slice(0, 10); // UTC, as everywhere
+  // Plan nights (#219) never commit by design — counting them as no-commit
+  // runs would slander the build throughput. They are excluded throughout.
+  const runs = runRows.filter((r) => r.outcome !== 'planned');
+  const half = (rows, recent) => rows.filter((r) => {
+    const age = now - new Date(r.finished_at || r.created_at).getTime();
+    return recent ? age <= 7 * DAY_MS : age > 7 * DAY_MS;
+  });
+
+  // 14 daily buckets, oldest first — the sparkline's spine. Days with no
+  // runs are present as zeroes so the shape reads as time, not as samples.
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const key = dayKey(now - i * DAY_MS);
+    const onDay = runs.filter((r) => dayKey(r.finished_at) === key);
+    days.push({
+      day: key,
+      landed: onDay.filter((r) => r.outcome === 'landed').length,
+      runs: onDay.length,
+      tokens: onDay.reduce((n, r) => n + Number(r.tokens || 0), 0),
+      costUsd: onDay.reduce((n, r) => n + Number(r.cost_usd || 0), 0),
+    });
+  }
+
+  // A metric is {now, prev} — the client renders the delta as direction.
+  const window = (rows) => {
+    const landed = rows.filter((r) => r.outcome === 'landed');
+    const nights = new Set(rows.map((r) => dayKey(r.finished_at))).size;
+    const tokens = landed.reduce((n, r) => n + Number(r.tokens || 0), 0);
+    const cost = landed.reduce((n, r) => n + Number(r.cost_usd || 0), 0);
+    return {
+      landed: landed.length,
+      // Items landed per ACTIVE night — nights the fleet did not run at all
+      // would otherwise drag the average toward zero and hide real gains.
+      perNight: nights ? landed.length / nights : 0,
+      tokensPerItem: landed.length ? tokens / landed.length : 0,
+      costPerItem: landed.length ? cost / landed.length : 0,
+      noCommitRate: rows.length
+        ? rows.filter((r) => r.outcome === 'no-commits').length / rows.length : 0,
+    };
+  };
+
+  // Auto-merge share. The runner's own low-risk merges (#212) are recorded
+  // by the 'auto-merge …' detail prefix that POST /merge writes; a human
+  // ⇥ Merge writes plain 'merge …'. That string IS the only distinguishing
+  // record, so it is what we read.
+  const merges = jobRows.filter((j) => j.kind === 'merge');
+  const reverts = jobRows.filter((j) => j.kind === 'revert');
+  const mergeSplit = (rows) => {
+    const done = rows.filter((j) => j.status === 'done');
+    return {
+      total: done.length,
+      auto: done.filter((j) => String(j.detail || '').startsWith('auto-merge')).length,
+    };
+  };
+
+  // First pass: of the items a run landed and a human has since verdicted,
+  // how many were called solid. Verdicts are current state, so an item
+  // refined and later passed counts as solid — this is the ceiling of the
+  // true first-pass rate, and the client says so.
+  const verdicted = verdictRows;
+  const solid = verdicted.filter((r) => r.review_tag === 'solid').length;
+  // Split the same rows on the 7-day boundary so the rate can show direction
+  // too. This only means something when the PREVIOUS half has verdicted
+  // items of its own to compare against — with none, "now" has nothing to be
+  // better OR worse than, and it's the client's job to decline the arrow
+  // rather than Stack inventing a trend out of a lopsided sample.
+  const verdictedNow = half(verdicted, true);
+  const verdictedPrev = half(verdicted, false);
+  const solidIn = (rows) => rows.filter((r) => r.review_tag === 'solid').length;
+
+  // Executor vs advisor spend (#153's "cheap hands, strong minds" claim,
+  // finally measurable). Attribution is `splitRunRoles` — the SAME alias
+  // match the lane split (#280) and the fleet table (#281) use, so the three
+  // views can no longer disagree about who a model was. The old highest-token
+  // heuristic remains only as the fallback for models the current policy
+  // names for neither role; `assumed` reports how much of the split rests on
+  // it, so the client can qualify the claim instead of overstating it.
+  const roles = {
+    executor: { tokens: 0, costUsd: 0 },
+    advisor: { tokens: 0, costUsd: 0 },
+    assumed: { tokens: 0, costUsd: 0 },
+  };
+  for (const r of runRows) {
+    for (const e of splitRunRoles(r.model_usage, execAlias, advAlias)) {
+      const bucket = e.role === 'exec' ? roles.executor : roles.advisor;
+      bucket.tokens += e.tokens;
+      bucket.costUsd += e.costUsd;
+      if (e.assumed) {
+        roles.assumed.tokens += e.tokens;
+        roles.assumed.costUsd += e.costUsd;
+      }
+    }
+  }
+
+  const nowW = window(half(runs, true));
+  const prevW = window(half(runs, false));
+  const nowReverts = half(reverts, true).length;
+  const prevReverts = half(reverts, false).length;
+
+  return {
+    days,
+    now: nowW,
+    prev: prevW,
+    merges: { now: mergeSplit(half(merges, true)), prev: mergeSplit(half(merges, false)) },
+    reverts: {
+      now: nowReverts,
+      prev: prevReverts,
+      // Undone work as a share of the window's landed work — a bare count
+      // says nothing next to a night that landed twice as much. NULL, never
+      // 0, when nothing landed in the window: a rate over no denominator is
+      // unknown, and Stack does not render an absence as good news.
+      rateNow: nowW.landed ? nowReverts / nowW.landed : null,
+      ratePrev: prevW.landed ? prevReverts / prevW.landed : null,
+    },
+    firstPass: {
+      solid, verdicted: verdicted.length,
+      now: { solid: solidIn(verdictedNow), verdicted: verdictedNow.length },
+      prev: { solid: solidIn(verdictedPrev), verdicted: verdictedPrev.length },
+    },
+    roles,
+  };
+}
 control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
@@ -1020,11 +1156,15 @@ control.get('/', async (_req, res) => {
           AND ${laneSql('s.branch')} AND COALESCE(s.gemini_note, '') <> ''
         ORDER BY s.created_at DESC LIMIT 80`),
     // Verdicts on items the runner landed in the window — the first-pass rate.
-    q(`SELECT DISTINCT ri.id, ri.review_tag
+    // GROUP BY (not the old SELECT DISTINCT) collapses an item with several
+    // runs the same way, but also gives us MAX(finished_at) — the item's most
+    // recent landing — so the row can be split into a now/prev window below.
+    q(`SELECT ri.id, ri.review_tag, MAX(r.finished_at) AS finished_at
          FROM roadmap_items ri
          JOIN autopilot_runs r ON r.item_id = ri.id
         WHERE r.finished_at > now() - interval '14 days' AND r.outcome = 'landed'
-          AND COALESCE(ri.review_tag, '') <> ''`),
+          AND COALESCE(ri.review_tag, '') <> ''
+        GROUP BY ri.id, ri.review_tag`),
     // The INTERACTIVE half of the Roles room: what the human's own sessions ran
     // on, recorded by the SessionEnd hook from the transcript. Same 7-day
     // window as the run ledger above so the two halves describe one week.
@@ -1470,109 +1610,9 @@ control.get('/', async (_req, res) => {
     nightlyTime: appSettings.autopilot_time,
   });
 
-  // (#269) The throughput ledger — is the automation getting better? Every
-  // number is current-value-plus-direction (last 7 days against the 7 before),
-  // never a table: the question is the trend, not the row.
-  const ledger = (() => {
-    const DAY_MS = 24 * 60 * 60 * 1000;
-    const now = Date.now();
-    const dayKey = (ts) => new Date(ts).toISOString().slice(0, 10); // UTC, as everywhere
-    // Plan nights (#219) never commit by design — counting them as no-commit
-    // runs would slander the build throughput. They are excluded throughout.
-    const runs = ledgerR.rows.filter((r) => r.outcome !== 'planned');
-    const half = (rows, recent) => rows.filter((r) => {
-      const age = now - new Date(r.finished_at || r.created_at).getTime();
-      return recent ? age <= 7 * DAY_MS : age > 7 * DAY_MS;
-    });
-
-    // 14 daily buckets, oldest first — the sparkline's spine. Days with no
-    // runs are present as zeroes so the shape reads as time, not as samples.
-    const days = [];
-    for (let i = 13; i >= 0; i--) {
-      const key = dayKey(now - i * DAY_MS);
-      const onDay = runs.filter((r) => dayKey(r.finished_at) === key);
-      days.push({
-        day: key,
-        landed: onDay.filter((r) => r.outcome === 'landed').length,
-        runs: onDay.length,
-        tokens: onDay.reduce((n, r) => n + Number(r.tokens || 0), 0),
-        costUsd: onDay.reduce((n, r) => n + Number(r.cost_usd || 0), 0),
-      });
-    }
-
-    // A metric is {now, prev} — the client renders the delta as direction.
-    const window = (rows) => {
-      const landed = rows.filter((r) => r.outcome === 'landed');
-      const nights = new Set(rows.map((r) => dayKey(r.finished_at))).size;
-      const tokens = landed.reduce((n, r) => n + Number(r.tokens || 0), 0);
-      const cost = landed.reduce((n, r) => n + Number(r.cost_usd || 0), 0);
-      return {
-        landed: landed.length,
-        // Items landed per ACTIVE night — nights the fleet did not run at all
-        // would otherwise drag the average toward zero and hide real gains.
-        perNight: nights ? landed.length / nights : 0,
-        tokensPerItem: landed.length ? tokens / landed.length : 0,
-        costPerItem: landed.length ? cost / landed.length : 0,
-        noCommitRate: rows.length
-          ? rows.filter((r) => r.outcome === 'no-commits').length / rows.length : 0,
-      };
-    };
-
-    // Auto-merge share. The runner's own low-risk merges (#212) are recorded
-    // by the 'auto-merge …' detail prefix that POST /merge writes; a human
-    // ⇥ Merge writes plain 'merge …'. That string IS the only distinguishing
-    // record, so it is what we read.
-    const merges = ledgerJobsR.rows.filter((j) => j.kind === 'merge');
-    const reverts = ledgerJobsR.rows.filter((j) => j.kind === 'revert');
-    const mergeSplit = (rows) => {
-      const done = rows.filter((j) => j.status === 'done');
-      return {
-        total: done.length,
-        auto: done.filter((j) => String(j.detail || '').startsWith('auto-merge')).length,
-      };
-    };
-
-    // First pass: of the items a run landed and a human has since verdicted,
-    // how many were called solid. Verdicts are current state, so an item
-    // refined and later passed counts as solid — this is the ceiling of the
-    // true first-pass rate, and the client says so.
-    const verdicted = verdictR.rows;
-    const solid = verdicted.filter((r) => r.review_tag === 'solid').length;
-
-    // Executor vs advisor spend (#153's "cheap hands, strong minds" claim,
-    // finally measurable). Attribution is `splitRunRoles` — the SAME alias
-    // match the lane split (#280) and the fleet table (#281) use, so the three
-    // views can no longer disagree about who a model was. The old highest-token
-    // heuristic remains only as the fallback for models the current policy
-    // names for neither role; `assumed` reports how much of the split rests on
-    // it, so the client can qualify the claim instead of overstating it.
-    const roles = {
-      executor: { tokens: 0, costUsd: 0 },
-      advisor: { tokens: 0, costUsd: 0 },
-      assumed: { tokens: 0, costUsd: 0 },
-    };
-    for (const r of ledgerR.rows) {
-      for (const e of splitRunRoles(r.model_usage, execAlias, advAlias)) {
-        const bucket = e.role === 'exec' ? roles.executor : roles.advisor;
-        bucket.tokens += e.tokens;
-        bucket.costUsd += e.costUsd;
-        if (e.assumed) {
-          roles.assumed.tokens += e.tokens;
-          roles.assumed.costUsd += e.costUsd;
-        }
-      }
-    }
-
-    return {
-      days,
-      now: window(half(runs, true)),
-      prev: window(half(runs, false)),
-      merges: { now: mergeSplit(half(merges, true)), prev: mergeSplit(half(merges, false)) },
-      reverts: { now: half(reverts, true).length, prev: half(reverts, false).length },
-      firstPass: { solid, verdicted: verdicted.length },
-      roles,
-    };
-  })();
+  const ledger = computeLedger({
+    runRows: ledgerR.rows, jobRows: ledgerJobsR.rows, verdictRows: verdictR.rows, execAlias, advAlias,
+  });
 
   // ---- (#281 / design 23b) Roles across the fleet ------------------------
   // Which model is doing what, what the advisors are costing, and where the

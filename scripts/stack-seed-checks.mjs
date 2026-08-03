@@ -128,6 +128,21 @@ function suiteFor(slug, ORIGIN) {
     // you" all over again — the exact failure #374 exists to fix, and one that
     // looks completely correct from the screen.
     { name: 'Review — changes still on a branch', url: u('/api/review'), auth: true, json_path: 'totals.unmerged' },
+    // #269 — the throughput ledger. Mission Control's only record of whether
+    // the machine is getting BETTER, not just what it did tonight. Paths only,
+    // never values — the numbers move every night by design. `reverts.rateNow`
+    // is deliberately NOT covered here: it reads null whenever nothing landed
+    // in the window, and a null is not a fault this suite should raise on.
+    { name: 'Control — throughput spine', url: u('/api/control'), auth: true, json_path: 'ledger.days' },
+    { name: 'Control — throughput per night', url: u('/api/control'), auth: true, json_path: 'ledger.now.perNight' },
+    { name: 'Control — auto-merge share', url: u('/api/control'), auth: true, json_path: 'ledger.merges.now.auto' },
+    { name: 'Control — first-pass verdicts', url: u('/api/control'), auth: true, json_path: 'ledger.firstPass.now.verdicted' },
+    { name: 'Control — executor vs advisor spend', url: u('/api/control'), auth: true, json_path: 'ledger.roles.executor.costUsd' },
+    // Turn 3 — whether the Refine dialog offers its ✦ draft at all. The button
+    // is ABSENT without a key, so losing this field silently removes an
+    // affordance rather than breaking one: the dialog still works and nobody
+    // finds out the assist stopped being offered.
+    { name: 'Review — the Gemini-ready flag', url: u('/api/review'), auth: true, json_path: 'geminiReady' },
     // The Now room's two host-fed signals. Both are ARRAYS that are usually
     // EMPTY — nothing is normally stopped and nobody is normally colliding —
     // which is exactly why they need a check: if the key stops being served,

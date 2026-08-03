@@ -78,6 +78,16 @@ function trend(now: number, prev: number, higherIsBetter: boolean) {
   };
 }
 
+// First pass's own arrow needs both halves to hold a verdict before it means
+// anything: no verdicts in the PREVIOUS 7 days leaves nothing for "now" to be
+// better than, and no verdicts in the last 7 days leaves no rate to point a
+// direction for. Either way this returns null and the caller keeps the flat
+// marker rather than implying movement it never saw.
+function firstPassTrend(fp: { now: { solid: number; verdicted: number }; prev: { solid: number; verdicted: number } }) {
+  if (fp.prev.verdicted === 0 || fp.now.verdicted === 0) return null;
+  return trend(fp.now.solid / fp.now.verdicted, fp.prev.solid / fp.prev.verdicted, true);
+}
+
 const pct1 = (n: number) => `${Math.round(n * 100)}%`;
 
 
@@ -176,8 +186,9 @@ export function ControlPanel({ initialRoom, full, onToggleFull }: {
   const [reviewN, setReviewN] = useState(0);
   const [cfgOpen, setCfgOpen] = useState(false);
   // The rail collapses to the 76px slim rail (design 1b). What survives the
-  // collapse is budget pressure, spend and connection; the model breakdown,
-  // the throughput table and NEXT UP are expand-only. Device-local.
+  // collapse is budget pressure, spend and connection; the model breakdown
+  // and NEXT UP are expand-only, but the throughput ledger (#269) now has a
+  // condensed FLOW block of its own in the slim rail too. Device-local.
   const [railOpen, setRailOpen] = useState(getControlRailOpen);
   const toggleRail = () => setRailOpen((v) => { setControlRailOpen(!v); return !v; });
   // #306 — the collapse must not change the rail's LENGTH. The slim rail was
@@ -1042,11 +1053,6 @@ export function ControlPanel({ initialRoom, full, onToggleFull }: {
                       t: trend(mergeShare(L.merges.now), mergeShare(L.merges.prev), true),
                       title: `${L.merges.now.auto} of ${L.merges.now.total} completed merges over the last 7 days were the runner's own low-risk auto-merges rather than a hand-pressed ⇥ Merge.`,
                     },
-                    {
-                      key: 'reverts', label: 'reverts', value: String(L.reverts.now),
-                      t: trend(L.reverts.now, L.reverts.prev, false),
-                      title: 'Undo jobs queued in the last 7 days — work that landed and had to be taken back out.',
-                    },
                   ];
                   return (
                     <div className="mc14-rail-sec">
@@ -1067,14 +1073,43 @@ export function ControlPanel({ initialRoom, full, onToggleFull }: {
                           <span className={`d ${s.t.cls}`}>{s.t.mark}</span>
                         </div>
                       ))}
-                      {L.firstPass.verdicted > 0 && (
-                        <div className="mc-led-stat"
-                          title={`${L.firstPass.solid} of ${L.firstPass.verdicted} landed items you have verdicted came back solid. Verdicts are read as they stand now, so an item that was refined and later passed still counts — treat this as the ceiling of the true first-pass rate.`}>
-                          <span className="l">verdicted solid</span>
-                          <span className="v">{pct1(L.firstPass.solid / L.firstPass.verdicted)}</span>
-                          <span className="d flat">of {L.firstPass.verdicted}</span>
-                        </div>
-                      )}
+                      {(() => {
+                        // The count is the honest headline at these volumes;
+                        // rateNow rides beside it, same treatment as the
+                        // auto-merge share, and is left off entirely when
+                        // null rather than shown as a misleading 0%. Prefer
+                        // the rate for direction when both halves have one —
+                        // fewer reverts per landed item is the real signal —
+                        // and fall back to the raw counts when either is
+                        // null. Down is better either way.
+                        const { now: revNow, prev: revPrev, rateNow, ratePrev } = L.reverts;
+                        const t = rateNow !== null && ratePrev !== null
+                          ? trend(rateNow, ratePrev, false)
+                          : trend(revNow, revPrev, false);
+                        return (
+                          <div className="mc-led-stat"
+                            title={`Undo jobs queued in the last 7 days — work that landed and had to be taken back out.${
+                              rateNow !== null
+                                ? ` ${pct1(rateNow)} of the window's landed items.`
+                                : ' Nothing landed in the window, so there is no rate to measure it against.'
+                            }\n\n${t.delta}`}>
+                            <span className="l">reverts</span>
+                            <span className="v">{revNow}{rateNow !== null ? ` · ${pct1(rateNow)}` : ''}</span>
+                            <span className={`d ${t.cls}`}>{t.mark}</span>
+                          </div>
+                        );
+                      })()}
+                      {L.firstPass.verdicted > 0 && (() => {
+                        const t = firstPassTrend(L.firstPass);
+                        return (
+                          <div className="mc-led-stat"
+                            title={`${L.firstPass.solid} of ${L.firstPass.verdicted} landed items you have verdicted came back solid over 14 days. Verdicts are read as they stand now, so an item that was refined and later passed still counts — treat this as the ceiling of the true first-pass rate. Arrow compares the last 7 days' verdicts against the 7 before.${t ? `\n\n${t.delta}` : ''}`}>
+                            <span className="l">verdicted solid</span>
+                            <span className="v">{pct1(L.firstPass.solid / L.firstPass.verdicted)}</span>
+                            <span className={`d ${t ? t.cls : 'flat'}`}>{t ? t.mark : `of ${L.firstPass.verdicted}`}</span>
+                          </div>
+                        );
+                      })()}
                       {/* #153's claim — cheap hands, strong minds — made measurable.
                           Attribution is the same alias match the Roles room and the
                           lanes use; `assumed` is the share the fallback placed, and
@@ -1134,12 +1169,13 @@ export function ControlPanel({ initialRoom, full, onToggleFull }: {
               ) : (
               /* ---- the slim rail (design 1b) — 76px, numeric. The rule is
                  that budget pressure, spend and connection survive the
-                 collapse and everything else is expand-only: the model
-                 breakdown, the throughput table, month-to-date and NEXT UP
-                 are all reading, not watching. Every value stays legible
-                 without hover, and each block is gated on the same data as
-                 its full-width counterpart, so the slim rail never draws a
-                 frame around nothing. ---- */
+                 collapse; the model breakdown, month-to-date and NEXT UP are
+                 expand-only, while the throughput ledger gets its own
+                 condensed FLOW block (#269) rather than dropping out
+                 entirely. Every value stays legible without hover, and each
+                 block is gated on the same data as its full-width
+                 counterpart, so the slim rail never draws a frame around
+                 nothing. ---- */
               <div className="mc14-rail mc14-railslim"
                 style={railH > 0 ? ({ '--rail-h': `${railH}px` } as React.CSSProperties) : undefined}>
                 <div className="mc14-railbar">
@@ -1200,12 +1236,15 @@ export function ControlPanel({ initialRoom, full, onToggleFull }: {
                         <span className="v">${L.now.costPerItem.toFixed(2)}<i className={costItem.cls}>{costItem.mark}</i></span>
                         <span className="l">cost/item</span>
                       </div>
-                      {L.firstPass.verdicted > 0 && (
-                        <div className="mini-stat" title={`${L.firstPass.solid} of ${L.firstPass.verdicted} verdicted items came back solid — read as the ceiling of the true first-pass rate.`}>
-                          <span className="v">{pct1(L.firstPass.solid / L.firstPass.verdicted)}</span>
-                          <span className="l">solid · {L.firstPass.verdicted}</span>
-                        </div>
-                      )}
+                      {L.firstPass.verdicted > 0 && (() => {
+                        const t = firstPassTrend(L.firstPass);
+                        return (
+                          <div className="mini-stat" title={`${L.firstPass.solid} of ${L.firstPass.verdicted} verdicted items came back solid over 14 days — read as the ceiling of the true first-pass rate.${t ? ` Arrow compares the last 7 days' verdicts against the 7 before: ${t.delta}.` : ''}`}>
+                            <span className="v">{pct1(L.firstPass.solid / L.firstPass.verdicted)}{t && <i className={t.cls}>{t.mark}</i>}</span>
+                            <span className="l">solid · {L.firstPass.verdicted}</span>
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })()}
