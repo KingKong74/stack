@@ -623,6 +623,7 @@ node server/test/workbench.test.mjs        # the canvas is a placement layer (ne
 node server/test/plan-night.test.mjs       # a booked plan night carries no item id (needs API + DATABASE_URL)
 node server/test/review-queue.test.mjs     # a change is in Review once BUILT (needs API + DATABASE_URL)
 node server/test/foreman.test.mjs          # the Review room's agent + its ops' gate (needs API + DATABASE_URL)
+node server/test/timeline-window.test.mjs  # days clamp, Extend widens the window, the 30-day default (needs API + DATABASE_URL)
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
 node server/test/agents.test.mjs           # each tab agent is bound to its own tab (pure, no DB)
