@@ -214,6 +214,18 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   predicate** — the Foreman's ops opened with `if (!item.done) 400` until #375, which meant every ✧
   in the room refused on exactly the changes the room was showing. Pinned by
   `server/test/review-queue.test.mjs` and `server/test/foreman.test.mjs`.
+- **Three gates decide who runs, and merging any two of them is where they get confused** (#267 +
+  #335). `CLAIM_NEXT_SQL` in `routes/autopilot.js` carries all three in one WHERE: the fleet cap
+  (`$1`, tunable), the per-project serialisation (fixed, git ref locks) and the area lane (`$2`,
+  fixed, merge-time collisions). They answer three different questions and none substitutes for
+  another. #267 was built against the PRE-#335 claim and carried its own fleet-wide
+  `one job in flight` lock, so taking that branch's side of the merge would have restored the
+  serialisation #335 exists to remove — silently, since nothing fails when a night runs serial.
+  The lane predicate is `laneBlockSql(placeholder)`, a FUNCTION and not a constant, because the
+  claim binds the occupied list at `$2` and the held-jobs query at `$1`. `heldByArea` deliberately
+  reports only LANE holds — a job waiting on the cap or the per-project gate is not held by an area,
+  and saying so blames the wrong thing. `area-lane-claim.test.mjs` is the only place the composed
+  three-gate statement runs against a database; `area-lanes.test.mjs` is pure and knows no SQL.
 - **An area lane is `(project, area)`, and untagged is never a lane** (#267). `roadmap_items.area` is
   a plain product tag, but an area with an OPEN claimed item admits no second worker — two branches
   in one area collide at merge time. The rule lives in `server/src/lanes.js` (pure, tested by
@@ -616,6 +628,7 @@ node server/test/attention.test.mjs        # what is waiting on you + same-file 
 node server/test/agents.test.mjs           # each tab agent is bound to its own tab (pure, no DB)
 node server/test/model-switch.test.mjs     # provider key resolution from both key files (pure)
 DATABASE_URL=… node server/test/autopilot-next.test.mjs   # the fleet cap + the per-project gate (#335)
+DATABASE_URL=… node server/test/area-lane-claim.test.mjs  # the area lane as the CLAIM enforces it (#267)
 node scripts/lane.test.mjs                 # branch naming + BOTH spellings parse (pure, no git)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
