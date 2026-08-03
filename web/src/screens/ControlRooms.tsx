@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getProjectDetail, patchRoadmapItem, deleteRoadmapItem, cleanupRoadmap,
   getPlanLanes, setPlanLanes, startAutopilot, PLAN_LANE_CHOICES, getLastViewedProject,
@@ -9,6 +9,7 @@ import { NightDebrief } from './ControlDebrief';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel, PRIORITY_META } from '../lib/ui';
 import { roadmapTarget } from '../lib/roadmapLink';
 import { isApproved, isHeld } from '../lib/approval';
+import { applyRoadmapItem, removeRoadmapItem } from '../lib/roadmapPatch';
 import type { RoadmapItem, Priority, Tier } from '../types';
 import { tierRank } from '../types';
 
@@ -93,7 +94,44 @@ function useProjectDetails(slugs: string[]) {
     }
     return () => { alive = false; };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { details, err };
+
+  // Fold one PATCHed roadmap item back into the loaded detail, so a decision
+  // made here shows up in every list derived from it WITHOUT a reload.
+  //
+  // Accepting from the inbox is the case that needs it: the row leaves the
+  // inbox optimistically (`settled`), but "Tonight" is projected from these
+  // details, and until the item's own `reviewed` flips there it is still
+  // unapproved and still absent from the queue. The item therefore vanished
+  // on accept and only reappeared on the next page load — which read as the
+  // accept not having worked.
+  //
+  // The server's response is the source: this writes the row it returned, not
+  // a locally-guessed one, so the projection can never drift from what
+  // actually landed. `detailCache` is updated alongside `details` because the
+  // per-project rooms seed from it.
+  // Both writers update the cache AND the state: the per-project rooms seed
+  // from `detailCache`, so leaving it stale would put the old row back the
+  // moment one of them mounted.
+  const write = useCallback((slug: string, fn: (d: ProjectDetailData) => ProjectDetailData) => {
+    const hit = detailCache.get(slug);
+    if (hit) detailCache.set(slug, { data: fn(hit.data), at: hit.at });
+    setDetails((m) => {
+      const cur = m.get(slug);
+      return cur ? new Map(m).set(slug, fn(cur)) : m;
+    });
+  }, []);
+
+  // Dismiss deletes the row server-side; this drops it locally for the same
+  // reason applyItem exists — the projections read `details`, not the server.
+  const removeItem = useCallback((slug: string, id: number) => {
+    write(slug, (d) => ({ ...d, roadmap: removeRoadmapItem(d.roadmap, id) }));
+  }, []);
+
+  const applyItem = useCallback((slug: string, updated: RoadmapItem) => {
+    write(slug, (d) => ({ ...d, roadmap: applyRoadmapItem(d.roadmap, updated) }));
+  }, []);
+
+  return { details, err, applyItem, removeItem };
 }
 
 // (#271) A cross-project row: the item plus which project it belongs to. The
@@ -543,7 +581,7 @@ function AllPlanQueue({ data, onPick, onSetMaxItems }: {
   data: ControlData; onPick: (slug: string) => void; onSetMaxItems: (n: number) => void;
 }) {
   const slugs = useMemo(() => data.projects.map((p) => p.slug), [data.projects]);
-  const { details, err } = useProjectDetails(slugs);
+  const { details, err, applyItem, removeItem } = useProjectDetails(slugs);
   const [lanes, setLanes] = useState<number>(() => getPlanLanes());
   const [heldAll, setHeldAll] = useState(false);
   const [settled, setSettled] = useState<Map<string, string>>(new Map());
@@ -576,16 +614,20 @@ function AllPlanQueue({ data, onPick, onSetMaxItems }: {
     const chosen = bucketPick.get(`${r.slug}#${r.it.id}`) ?? r.it.bucket;
     settle(r.slug, r.it.id, 'kept');
     try {
-      await patchRoadmapItem(r.slug, r.it.id,
+      // The response is folded straight back in, so the item appears under
+      // Tonight on this render rather than on the next page load.
+      const updated = await patchRoadmapItem(r.slug, r.it.id,
         chosen !== r.it.bucket ? { reviewed: true, bucket: chosen } : { reviewed: true });
-      detailCache.delete(r.slug);
+      applyItem(r.slug, updated);
     } catch (e) { setRoomErr((e as Error)?.message || 'Could not accept the item.'); }
   };
   const dismiss = async (r: HouseItem) => {
     settle(r.slug, r.it.id, 'dismissed');
     try {
       await deleteRoadmapItem(r.slug, r.it.id);
-      detailCache.delete(r.slug);
+      // Same reason as accept: drop it from the loaded detail so nothing
+      // derived from it still counts a row the server no longer has.
+      removeItem(r.slug, r.it.id);
     } catch (e) { setRoomErr((e as Error)?.message || 'Could not dismiss the item.'); }
   };
 

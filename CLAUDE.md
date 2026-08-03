@@ -825,6 +825,7 @@ node server/test/model-switch.test.mjs     # provider key resolution from both k
 DATABASE_URL=… node server/test/autopilot-next.test.mjs   # the fleet cap + the per-project gate (#335)
 DATABASE_URL=… node server/test/area-lane-claim.test.mjs  # the area lane as the CLAIM enforces it (#267)
 node web/test/sky-view.test.mts            # the sky's one "fit all" (pure, no DOM)
+node web/test/roadmap-patch.test.mts       # a PATCHed item folds back into the board (pure, no DOM)
 node server/test/agent-sandbox.test.mjs    # a tab agent runs with every tool off, in a scratch dir (pure)
 node scripts/lane.test.mjs                 # branch naming + BOTH spellings parse (pure, no git)
 node scripts/risk.test.mjs                 # the shared risk-tier helpers: normalise, label (pure)

@@ -12,9 +12,10 @@ import { useEffect, useState } from 'react';
 // own room, so `#/control/agents` is the link to "why is the Auditor quiet".
 // #363 — and 'merge': the house-wide branch ledger, so `#/control/merge` is
 // the link to "what is waiting to land".
-// #365 — and 'trees': one place surfacing the current status of every
-// in-progress feature, across claims, branches and worktrees.
-export const CONTROL_ROOMS = ['now', 'merge', 'trees', 'nights', 'plan', 'review', 'roles', 'agents'] as const;
+// #365's 'trees' room was removed at the owner's request. It is NOT in this
+// list, so `#/control/trees` falls back to the default room the same way any
+// other unknown room does — an old bookmark still lands somewhere sensible.
+export const CONTROL_ROOMS = ['now', 'merge', 'nights', 'plan', 'review', 'roles', 'agents'] as const;
 export type ControlRoom = (typeof CONTROL_ROOMS)[number];
 export const isControlRoom = (v: unknown): v is ControlRoom =>
   typeof v === 'string' && (CONTROL_ROOMS as readonly string[]).includes(v);

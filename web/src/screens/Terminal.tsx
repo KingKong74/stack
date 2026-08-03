@@ -18,14 +18,13 @@ import {
   getProjectDetail, type ProjectDetailData,
   patchRoadmapItem,
   getOverview,
-  getProjectDebrief, HttpError,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { tierRank, TIERS, type RoadmapItem, type Tier, type ProjectDebrief, type ProjectStatus } from '../types';
+import { tierRank, TIERS, type RoadmapItem, type Tier } from '../types';
 
 // The web terminal (#/terminal[?cwd=…]) — xterm.js over websocket to the host
 // PTY daemon (via the server relay at /term). Parallel sessions live in tabs
@@ -81,17 +80,6 @@ const fmtReset = (ms: number | null | undefined, withDay = false): string => {
 const fmtTok = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(n >= 9.95e6 ? 0 : 1)}M`
   : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
-
-// #276 — the ↩ Debrief segment's bug-counts line, e.g. "4 open · 1 critical ·
-// 2 high" — zero severities are omitted rather than padding the line.
-function debriefBugLine(bugs: ProjectDebrief['bugs']): string {
-  const parts = [`${bugs.open} open`];
-  if (bugs.critical) parts.push(`${bugs.critical} critical`);
-  if (bugs.high) parts.push(`${bugs.high} high`);
-  if (bugs.medium) parts.push(`${bugs.medium} medium`);
-  if (bugs.low) parts.push(`${bugs.low} low`);
-  return parts.join(' · ');
-}
 
 // "10M", "1.5m", "800k" or a plain count → tokens (0 = unparseable).
 const parseTok = (s: string): number => {
@@ -169,11 +157,6 @@ const BUCKET_RANK: Record<string, number> = { must: 0, should: 1, could: 2, wont
 // collide with a real area (areas are trimmed + lowercased), the same trick
 // the board's Uncategorised tab uses.
 const RAIL_UNTAGGED = ' untagged';
-// The ↩ Debrief segment's status pill, same labels as the project detail
-// screen and the dashboard use for the same four statuses.
-const DEBRIEF_STATUS_LABEL: Record<ProjectStatus, string> = {
-  live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived',
-};
 function nextUpItems(roadmap: ProjectDetailData['roadmap']): RoadmapItem[] {
   const all = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
   return all
@@ -314,7 +297,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // rail opens on the ↩ Debrief segment rather than landing collapsed or on
   // whichever segment was last open.
   useEffect(() => {
-    if (initialBrief) saveViewPrefs({ railOpen: true, railSeg: 'debrief' });
+    if (initialBrief) saveViewPrefs({ railOpen: true, railSeg: 'runbook' });
   }, [initialBrief]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // #138 — bare-slug cwd resolution: a slug with no path separators (e.g.
@@ -873,51 +856,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   }, [visible, projectSlug]);
   const board = detailSlug === projectSlug ? detail : null;
 
-  // #276 — the rail's ↩ Debrief segment: "Jump back in" opens the terminal
-  // already briefed on current status and the last few commits. Same shape
-  // as the Session segment's board fetch just above (one fetch per slug,
-  // discard a response that lands after the slug moved on).
-  //
-  // The four states are read off these three pieces of state, deliberately
-  // WITHOUT a separate `loading` boolean: `debriefSlug` only ever names the
-  // slug an answer has actually landed for, so "no answer yet for THIS slug"
-  // (which is true for a frame before the effect below even runs, as well as
-  // for the length of the fetch) reads as loading rather than as a stray
-  // one-frame "not tracked" claim about a project nobody has checked yet.
-  const [debrief, setDebrief] = useState<ProjectDebrief | null>(null);
-  const [debriefSlug, setDebriefSlug] = useState('');
-  // '' while nothing has gone wrong; a 404 (not a tracked project) does NOT
-  // set this — that is a normal outcome, not a failure to retry.
-  const [debriefErr, setDebriefErr] = useState('');
-  const [debriefTick, setDebriefTick] = useState(0); // bumped by the Retry button
-  useEffect(() => {
-    if (!projectSlug) { setDebrief(null); setDebriefSlug(''); setDebriefErr(''); return; }
-    let gone = false;
-    setDebriefErr('');
-    getProjectDebrief(projectSlug)
-      .then((d) => {
-        if (gone) return;
-        setDebrief(d); setDebriefErr(''); setDebriefSlug(projectSlug);
-      })
-      .catch((e) => {
-        if (gone) return;
-        // A 404 means the cwd just isn't a tracked project — that is read off
-        // the STATUS, never off message text (which is the server's prose and
-        // free to change). Everything else is a real failure: leave
-        // `debriefSlug` unset for this slug so the render stays on the error
-        // branch (never a stray "not tracked") until Retry lands an answer.
-        if (e instanceof HttpError && e.status === 404) {
-          setDebrief(null); setDebriefErr(''); setDebriefSlug(projectSlug);
-        } else {
-          setDebrief(null);
-          setDebriefErr(e instanceof Error ? e.message : 'Could not load the debrief.');
-        }
-      });
-    return () => { gone = true; };
-  }, [projectSlug, debriefTick]);
-  // Stale-drop: a response for a slug that isn't the current one is ignored —
-  // matches `board` above.
-  const debriefFor = debriefSlug === projectSlug ? debrief : null;
 
   const openItems = useMemo(() => {
     const r = board?.roadmap;
@@ -1709,7 +1647,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     narrows the list — a scope in 1a, tick-mode in 1b. */}
                 <div className="tc-head">
                   <div className="tc-segs seg-control sm" role="tablist" aria-label="Cockpit rail">
-                    {([['session', 'Session'], ['runbook', 'Runbook'], ['debrief', '↩ Debrief']] as const).map(([k, label]) => (
+                    {([['session', 'Session'], ['runbook', 'Runbook']] as const).map(([k, label]) => (
                       <button key={k} role="tab" aria-selected={viewPrefs.railSeg === k}
                         className={`seg-opt ${viewPrefs.railSeg === k ? 'on' : ''}`}
                         onClick={() => saveViewPrefs({ railSeg: k })}>
@@ -2093,7 +2031,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       </>
                     )}
                   </div>
-                ) : viewPrefs.railSeg === 'runbook' ? (
+                ) : (
                   <div className="tc-body">
                     {brief && (
                       <div className="tc-block">
@@ -2183,130 +2121,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     <div className="tc-foot">
                       Ask in plain words at the prompt instead — the runbook is only for the ones you type every day.
                     </div>
-                  </div>
-                ) : (
-                  // ↩ Debrief (#276) — the terminal's own "pick up where you
-                  // left off" card, so a session opened from the "Jump back
-                  // in" button arrives already briefed. Absence never reads
-                  // as good news: loading, a failed fetch (Retry, never
-                  // swallowed) and "not a tracked project" are each said
-                  // plainly rather than falling through to an empty list.
-                  <div className="tc-body">
-                    {!projectSlug ? (
-                      <div className="tc-block">
-                        <div className="tc-cap">↩ DEBRIEF</div>
-                        <div className="tcs-none">Open a session in a project directory for a debrief.</div>
-                      </div>
-                    ) : debriefErr ? (
-                      <div className="tc-block">
-                        <div className="tc-cap">↩ DEBRIEF</div>
-                        <div className="tc-warn">{debriefErr}</div>
-                        <button className="tc-link" onClick={() => setDebriefTick((n) => n + 1)}>Retry</button>
-                      </div>
-                    ) : debriefSlug !== projectSlug ? (
-                      <div className="tc-block">
-                        <div className="tc-cap">↩ DEBRIEF</div>
-                        <div className="tcs-none">Loading the debrief…</div>
-                      </div>
-                    ) : !debriefFor ? (
-                      <div className="tc-block">
-                        <div className="tc-cap">↩ DEBRIEF</div>
-                        <div className="tcs-none">~/{projectSlug} is not a tracked project.</div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="tc-block">
-                          <div className="tcd-head">
-                            <span className="tcd-name">{debriefFor.name}</span>
-                            <span className={`tcd-status ${debriefFor.status}`}>
-                              <span className="dot" />{DEBRIEF_STATUS_LABEL[debriefFor.status]}
-                            </span>
-                          </div>
-                          <div className="tcd-when">
-                            {debriefFor.when ? `last push ${debriefFor.when}` : 'no pushes yet'}
-                          </div>
-                        </div>
-
-                        {(debriefFor.phase || debriefFor.summary) && (
-                          <div className="tc-block">
-                            {debriefFor.phase && <div className="tc-cap">{debriefFor.phase}</div>}
-                            {debriefFor.summary && <div className="tcd-summary">{debriefFor.summary}</div>}
-                          </div>
-                        )}
-
-                        {debriefFor.inProgress.length > 0 && (
-                          <div className="tc-block">
-                            <div className="tc-cap">CURRENTLY IN PROGRESS</div>
-                            {debriefFor.inProgress.map((t, i) => <div className="tcd-line" key={i}>{t}</div>)}
-                          </div>
-                        )}
-
-                        {debriefFor.nextUp.length > 0 && (
-                          <div className="tc-block">
-                            <div className="tc-cap">SUGGESTED NEXT</div>
-                            {debriefFor.nextUp.map((t, i) => <div className="tcd-line" key={i}>{t}</div>)}
-                          </div>
-                        )}
-
-                        {debriefFor.blockers.length > 0 && (
-                          <div className="tc-block">
-                            <div className="tc-cap">BLOCKERS</div>
-                            {debriefFor.blockers.map((t, i) => <div className="tcd-line warn" key={i}>{t}</div>)}
-                          </div>
-                        )}
-
-                        <div className="tc-block">
-                          <div className="tc-cap">BUGS</div>
-                          {debriefFor.bugs.open === 0 ? (
-                            <div className="tcs-none">no open bugs</div>
-                          ) : (
-                            <>
-                              <div className="tcd-line">{debriefBugLine(debriefFor.bugs)}</div>
-                              {debriefFor.bugs.top.map((b) => (
-                                <div className="tcd-row" key={b.key}>
-                                  <span className="t">{b.title}</span>
-                                  <span className={`sev-pill ${b.severity}`}>{b.severity}</span>
-                                </div>
-                              ))}
-                            </>
-                          )}
-                        </div>
-
-                        <div className="tc-block">
-                          <div className="tc-cap row">
-                            <span>NEXT IN THE QUEUE</span>
-                            <button className="tc-link" onClick={() => go.detail(projectSlug, 'roadmap')}>roadmap ↗</button>
-                          </div>
-                          {debriefFor.roadmap.length === 0 ? (
-                            <div className="tcs-none">Nothing queued.</div>
-                          ) : debriefFor.roadmap.map((it) => (
-                            <div className="tcd-row" key={it.id}>
-                              <span className="t">{it.title}</span>
-                              <span className="m">
-                                {it.bucket}{it.tier ? ` · tier ${it.tier}` : ''}
-                                {it.claimedBy && <span className="claim-chip inline">⚑ {it.claimedBy}</span>}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="tc-block">
-                          <div className="tc-cap">LAST COMMITS</div>
-                          {debriefFor.commits.length === 0 ? (
-                            <div className="tcs-none">no commits recorded yet</div>
-                          ) : debriefFor.commits.map((c, i) => (
-                            <div className="tcd-commit" key={`${c.hash}-${i}`}>
-                              <div className="tcd-commit-meta">
-                                <span className="mono">{c.hash}</span>
-                                <span className="mono">{c.branch}</span>
-                                <span>{c.when}</span>
-                              </div>
-                              {c.summary && <div className="tcd-commit-summary">{c.summary}</div>}
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
                   </div>
                 )}
               </>

@@ -3736,7 +3736,12 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 
 .mc14-cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; transition: grid-template-columns 0.18s ease; }
 /* Collapsed (design 1b): the rooms take the 224px the rail gives back. */
-.mc14-cols.rail-slim { grid-template-columns: minmax(0, 1fr) 76px; }
+/* 96px, not the original 76: at 76 the collapsed rail's own labels ("cost/item",
+   a four-figure spend with its trend arrow) were wider than the column and
+   spilled out of the card. The fix is BOTH halves — a little more room, and
+   every text node inside it told to stay in (see .mc14-railmini below). Widening
+   alone would only move the overflow to the next longest label. */
+.mc14-cols.rail-slim { grid-template-columns: minmax(0, 1fr) 96px; }
 @media (max-width: 1000px) { .mc14-cols, .mc14-cols.rail-slim { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .mc14-cols { transition: none; } }
 .mc14-body { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
@@ -4109,12 +4114,32 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .mc14-railslim { min-height: var(--rail-h, 0px); }
 .mc14-railslim .mc14-railmini { flex: 1; }
 
-/* 76px, numeric: every value still readable without hover. */
+/* 96px, numeric: every value still readable without hover.
+
+   NOTHING in here may draw outside the card. These are the narrowest boxes in
+   the app and their content is generated (a spend, a rate, a trend arrow), so
+   the widest case is not knowable from the markup — the container has to be the
+   thing that holds the line. `min-width: 0` on every flex level is what lets
+   the ellipsis rules below actually take effect: a flex item defaults to
+   min-width:auto, which refuses to shrink below its content and pushes the
+   overflow out of the parent instead. The full title= text is on every one of
+   these already, so a truncated label still has somewhere to be read in full. */
 .mc14-railmini { width: 100%; box-sizing: border-box; align-items: center; gap: 14px;
-  display: flex; flex-direction: column;
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden;
   padding: 12px 8px; border-radius: 11px; border: 1px solid var(--line-2); background: var(--card); }
-.mc14-railmini .mini-sec { width: 100%; display: flex; flex-direction: column; gap: 8px;
+.mc14-railmini .mini-sec { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 8px;
   padding-top: 12px; border-top: 1px solid var(--line-2); }
+.mc14-railmini .mini-cap,
+.mc14-railmini .mini-big,
+.mc14-railmini .mini-sub,
+.mc14-railmini .mini-stat .l {
+  max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The value row is a flex pair (number + trend arrow); the arrow must never be
+   the thing that gets clipped, so the NUMBER shrinks and the arrow holds. */
+.mc14-railmini .mini-stat { max-width: 100%; min-width: 0; }
+.mc14-railmini .mini-stat .v { max-width: 100%; min-width: 0; }
+.mc14-railmini .mini-stat .v i { flex: none; }
 .mc14-railmini .mini-sec:first-of-type { padding-top: 0; border-top: none; }
 .mc14-railmini .mini-cap { font-family: var(--mono); font-size: 8.5px; font-weight: 500; letter-spacing: 0.1em;
   color: var(--faint); text-align: center; }
@@ -4145,7 +4170,7 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .mc14-railmini .mini-daemon .ddot { width: 6px; height: 6px; border-radius: 50%; background: var(--paused); flex: none; }
 .mc14-railmini .mini-daemon .ddot.on { background: var(--live); }
 /* Stacked under the rooms there is no column to be slim in, so the blocks run
-   across instead of leaving a 76px stub below the page. */
+   across instead of leaving a 96px stub below the page. */
 @media (max-width: 1000px) {
   /* No column to be slim in means no column to match the LENGTH of either:
      the measured height would stretch a horizontal strip down the page. */

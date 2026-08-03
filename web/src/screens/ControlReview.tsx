@@ -150,10 +150,6 @@ export function ReviewRoom({
   const [view, setView] = useState<View>('queue');
   const [filter, setFilter] = useState<Filter>('todo');
   const [selId, setSelId] = useState<string>('');       // "slug#id"
-  // #264 unit 1 — the batch-verdict selection. Keys are `key(it)` strings, not
-  // row objects, so a row that has since gained/lost a verdict is compared by
-  // identity, not by a stale object reference. The action itself is unit 2.
-  const [picked, setPicked] = useState<Set<string>>(new Set());
   // #264 unit 2 — the optimistic overlay for a batch verdict. Keys of rows a
   // batch has already PATCHed but whose reload has not landed yet: they must
   // vanish from the list at once, before the server round-trip finishes, and
@@ -309,30 +305,6 @@ export function ReviewRoom({
     });
   }, [list]);
 
-  // A picked row belongs to one filter's list; switching filters looks at an
-  // entirely different set of rows, so the selection can't survive the switch
-  // without "3 selected" surviving into a list where none of those three show.
-  useEffect(() => { setPicked(new Set()); }, [filter]);
-
-  // Never trust a stale key: a verdict removes its row from `list` without
-  // ever touching `picked`, so every count/render intersects the two rather
-  // than reading `picked` on its own.
-  const pickedInList = useMemo(() => list.filter((it) => picked.has(key(it))), [list, picked]);
-
-  const togglePick = (k: string) => setPicked((s) => {
-    const n = new Set(s);
-    if (n.has(k)) n.delete(k); else n.add(k);
-    return n;
-  });
-  // One click toggles the whole cluster: on if any row in it was still
-  // unpicked, off only once every row in it already was.
-  const toggleClusterPick = (items: ReviewItem[]) => setPicked((s) => {
-    const n = new Set(s);
-    const allOn = items.every((it) => n.has(key(it)));
-    for (const it of items) { if (allOn) n.delete(key(it)); else n.add(key(it)); }
-    return n;
-  });
-
   // ---- mutations. Each one PATCHes, then reloads: the queue is a server-side
   // read over two tables, and re-deriving it locally would be a second source
   // of truth for what is still waiting on you. ----
@@ -358,10 +330,9 @@ export function ReviewRoom({
     if (!items.length || busy) return;
     setBusy(true);
     const keys = items.map(key);
-    // Snapshot the keys and clear the selection up front — the rows leave
-    // the list immediately, before a single PATCH has resolved.
+    // Snapshot the keys up front — the rows leave the list immediately,
+    // before a single PATCH has resolved.
     setPendingTag((s) => { const n = new Set(s); for (const k of keys) n.add(k); return n; });
-    setPicked(new Set());
     try {
       const results = await Promise.allSettled(
         items.map((it) => patchRoadmapItem(it.slug, Number(it.id), { review_tag: 'solid' })),
@@ -839,41 +810,17 @@ export function ReviewRoom({
               <div className="rv-spacer" />
               <span className="prog">{list.length ? `${list.findIndex((x) => sel && key(x) === key(sel)) + 1} of ${list.length}` : '—'}</span>
             </div>
-            {/* #264 unit 1 — the batch bar. Room level like the receipt above:
-                a row leaving the list on verdict must not take the count with
-                it silently, so it reads off `pickedInList`, never `picked`
-                raw. The Solid-N action itself is unit 2. */}
-            {pickedInList.length > 0 && (
-              <div className="rv-selbar">
-                <span>{pickedInList.length} selected</span>
-                <button onClick={() => setPicked(new Set())}>Clear</button>
-                <button className="go" disabled={busy} onClick={() => batchVerdict(pickedInList)}>
-                  ✓ Solid ({pickedInList.length})
-                </button>
-              </div>
-            )}
             <div className="rv-rail-list">
               {clusters.map((c) => {
-                // A checkbox can't nest inside the existing `<button class="rv-card">`
-                // (two interactive elements, one control) — so each cluster's
-                // rows are siblings: a checkbox, then the untouched card.
-                const selectable = filter !== 'settled';
-                const allOn = c.items.length > 0 && c.items.every((it) => picked.has(key(it)));
-                const someOn = !allOn && c.items.some((it) => picked.has(key(it)));
+                // The night/branch grouping #264 introduced stays — it is what
+                // makes a morning readable. Its per-row and per-cluster
+                // CHECKBOXES do not: a row is selected by clicking it, and the
+                // list-wide "✓ All solid" covers the batch case without asking
+                // for a second selection model on top of the one that opens a
+                // change.
                 return (
                   <div className="rv-cluster" key={c.id}>
                     <div className="rv-cluster-head">
-                      {selectable && (
-                        <input
-                          type="checkbox"
-                          checked={allOn}
-                          // React has no `indeterminate` attribute — it's a DOM
-                          // property only, so it has to be set imperatively.
-                          ref={(el) => { if (el) el.indeterminate = someOn; }}
-                          aria-label={`Select all ${c.items.length} change${c.items.length === 1 ? '' : 's'} in this cluster`}
-                          onChange={() => toggleClusterPick(c.items)}
-                        />
-                      )}
                       <span className="night">{c.label}</span>
                       <span className="branch" title={c.branch || undefined}>{c.branch || 'no branch'}</span>
                       <span className="count">{c.items.length} change{c.items.length === 1 ? '' : 's'}</span>
@@ -941,11 +888,6 @@ export function ReviewRoom({
                       const ms = mergeStateFor(it);
                       return (
                         <div className="rv-row" key={key(it)}>
-                          {selectable && (
-                            <input type="checkbox" className="rv-pick"
-                              checked={picked.has(key(it))} aria-label={it.title}
-                              onChange={() => togglePick(key(it))} />
-                          )}
                           <button className={`rv-card ${sel && key(sel) === key(it) ? 'on' : ''}`}
                             onClick={() => setSelId(key(it))}>
                             <span className="row1">
