@@ -134,7 +134,12 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Agents — the registry is served', url: u('/api/agents'), auth: true, json_path: 'agents.0.key' },
     { name: 'Agents — each one names its tab', url: u('/api/agents'), auth: true, json_path: 'agents.0.tab' },
     { name: 'Agents — the ops list is served', url: u('/api/agents'), auth: true, json_path: 'agents.0.ops.0.op' },
-    { name: 'Agents — the key flag frames the room', url: u('/api/agents'), auth: true, json_path: 'geminiReady' },
+    // #364 moved the tab agents onto Claude on the host, so what frames this
+    // room is whether the DAEMON is on the line — not whether a key exists.
+    // `geminiReady` went out of the payload deliberately; this check kept
+    // asserting it and only failed once the suite was actually seeded, which
+    // is the argument for seeding a check in the same commit that adds it.
+    { name: 'Agents — the host flag frames the room', url: u('/api/agents'), auth: true, json_path: 'hostReady' },
     { name: 'Agents — auth gate closed', url: u('/api/agents'), expect_status: 401 },
     // The per-project read the tabs actually use — a different route with its
     // own shape, and the one whose absence hides the switch rather than the
