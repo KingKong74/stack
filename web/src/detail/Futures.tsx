@@ -556,6 +556,17 @@ export function Futures({
           )}
           {/* ---- the sky ---- */}
           <div className="psky-main">
+            {/* the way in sits at the top of the column, above whichever view is showing */}
+            <div className="psky-composer">
+              <span className="plus">+</span>
+              <input value={draft}
+                placeholder="Add an idea — it lands unjudged in the belt, and the queue files it onto a shell"
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); add(); }
+                  else if (e.key === 'Escape') { e.preventDefault(); setDraft(''); }
+                }} />
+            </div>
             {view === 'sky' && (
               <>
               <div className="psky-chips">
@@ -672,16 +683,6 @@ export function Futures({
                 <button className="psky-tray-go" onClick={openConverge}>Converge → tickets</button>
               </div>
             )}
-            <div className="psky-composer">
-              <span className="plus">+</span>
-              <input value={draft}
-                placeholder="Add an idea — it lands unjudged in the belt, and the queue files it onto a shell"
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); add(); }
-                  else if (e.key === 'Escape') { e.preventDefault(); setDraft(''); }
-                }} />
-            </div>
           </div>
 
           {/* ---- the rail: Polaris ---- */}

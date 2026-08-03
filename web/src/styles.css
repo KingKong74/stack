@@ -3037,7 +3037,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .pgx-card .mag { white-space: nowrap; }
 
 /* -- sky composer -- */
-.psky-composer { flex: none; display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: var(--card); border-top: 1px solid var(--line-2); }
+.psky-composer { flex: none; display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: var(--card); border-bottom: 1px solid var(--line-2); }
 .psky-composer .plus { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--accent); flex: none; }
 .psky-composer input { flex: 1; background: transparent; border: none; outline: none; font-size: 13px; color: var(--ink); }
 .psky-composer input::placeholder { color: var(--placeholder); }
