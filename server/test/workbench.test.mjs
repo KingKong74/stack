@@ -146,9 +146,118 @@ const board = () => call(`/projects/${SLUG}/workbench`);
   check('removing a note card deletes the note', (await call(`/projects/${SLUG}/notes`)).length, 1);
   check('and its card goes with it', (await board()).cards.length, 1);
 
+  // 6. THE #326 CASCADE — pulling a STAR also pulls its direct children, and
+  //    only its direct children: star -> planet -> moon is the whole depth.
+  const star1 = await call(`/projects/${SLUG}/futures`, { method: 'POST', body: { title: 'a star to cascade' } });
+  await call(`/projects/${SLUG}/futures/${star1.id}`, { method: 'PATCH', body: { isStar: true } });
+  const planet1a = await mkOrbiting(star1.id, 'planet one');
+  const planet1b = await mkOrbiting(star1.id, 'planet two');
+  const planet1c = await mkOrbiting(star1.id, 'planet three');
+  // A moon on one of those planets, wired BEFORE the star is ever pulled — the
+  // cascade must not reach past its own planet to find it.
+  const moon1 = await mkOrbiting(planet1a.id, 'a moon of planet one');
+
+  const starCard1 = await call(`/projects/${SLUG}/workbench/cards`, {
+    method: 'POST', body: { kind: 'polaris', futureId: star1.id, x: 800, y: 40 },
+  });
+  check('the star reports its whole orbit as the total', starCard1.cascaded.total, 3);
+  check('and places all of it (under the cap)', starCard1.cascaded.placed, 3);
+  check('one new card per planet, no more', starCard1.cascaded.cards.length, 3);
+  check('every cascaded card is a polaris card',
+    starCard1.cascaded.cards.every((c) => c.kind === 'polaris'), true);
+  check('the cascaded cards are exactly the three planets, no moon among them',
+    starCard1.cascaded.cards.map((c) => c.futureId).sort((a, b) => a - b).join(','),
+    [planet1a.id, planet1b.id, planet1c.id].sort((a, b) => a - b).join(','));
+  check('one edge per planet', starCard1.cascaded.edges.length, 3);
+  check('every edge starts at the star\'s own card',
+    starCard1.cascaded.edges.every((e) => e.a === starCard1.id), true);
+  check('every edge lands on one of the new planet cards',
+    starCard1.cascaded.edges.map((e) => e.b).sort((a, b) => a - b).join(','),
+    starCard1.cascaded.cards.map((c) => c.id).sort((a, b) => a - b).join(','));
+  check('every cascaded edge is hand-drawn, not an op line',
+    starCard1.cascaded.edges.every((e) => e.ai === false), true);
+  const boardAfterCascade = await board();
+  check('the moon gets NO card of its own',
+    boardAfterCascade.cards.some((c) => c.futureId === moon1.id), false);
+
+  // 7. A non-star pull is unchanged, even when the idea itself has children —
+  //    only a star cascades. planet2 here is a plain future carrying a moon.
+  const star2 = await call(`/projects/${SLUG}/futures`, { method: 'POST', body: { title: 'a second star, never pulled' } });
+  await call(`/projects/${SLUG}/futures/${star2.id}`, { method: 'PATCH', body: { isStar: true } });
+  const planet2 = await mkOrbiting(star2.id, 'a planet pulled on its own');
+  await mkOrbiting(planet2.id, 'a moon under that planet');
+  const pulledPlanet2 = await call(`/projects/${SLUG}/workbench/cards`, {
+    method: 'POST', body: { kind: 'polaris', futureId: planet2.id, x: 40, y: 900 },
+  });
+  check('pulling a non-star carries no cascaded key at all', 'cascaded' in pulledPlanet2, false);
+
+  // 8. A planet already on the canvas is wired, not duplicated, when its star
+  //    is pulled afterwards.
+  const star3 = await call(`/projects/${SLUG}/futures`, { method: 'POST', body: { title: 'a third star' } });
+  await call(`/projects/${SLUG}/futures/${star3.id}`, { method: 'PATCH', body: { isStar: true } });
+  const planet3a = await mkOrbiting(star3.id, 'already on the canvas');
+  const planet3b = await mkOrbiting(star3.id, 'not yet on the canvas');
+  const preplaced = await call(`/projects/${SLUG}/workbench/cards`, {
+    method: 'POST', body: { kind: 'polaris', futureId: planet3a.id, x: 40, y: 1200 },
+  });
+  const starCard3 = await call(`/projects/${SLUG}/workbench/cards`, {
+    method: 'POST', body: { kind: 'polaris', futureId: star3.id, x: 400, y: 1200 },
+  });
+  check('the pre-placed planet is NOT among the newly created cards',
+    starCard3.cascaded.cards.some((c) => c.futureId === planet3a.id), false);
+  check('only the not-yet-placed planet is newly created',
+    starCard3.cascaded.cards.map((c) => c.futureId).join(','), String(planet3b.id));
+  check('but the star still gets a full two edges, one per planet',
+    starCard3.cascaded.edges.length, 2);
+  check('one of them wires to the pre-existing card, not a new one',
+    starCard3.cascaded.edges.some((e) => e.b === preplaced.id), true);
+  const boardAfter8 = await board();
+  check('the pre-placed planet still has exactly one card',
+    boardAfter8.cards.filter((c) => c.futureId === planet3a.id).length, 1);
+
+  // 9. The cascade does not duplicate on a re-pull, even after the star's own
+  //    card is removed and put back. Deleting a polaris card only unplaces the
+  //    idea (case 3 above already covers that for a plain idea); the star is
+  //    no different, and workbench_edges cascades away with the deleted card.
+  await call(`/projects/${SLUG}/workbench/cards/${starCard3.id}`, { method: 'DELETE' });
+  const boardAfterUnplace = await board();
+  check('unplacing the star leaves its planets exactly as they were',
+    boardAfterUnplace.cards.filter((c) => c.futureId === planet3a.id || c.futureId === planet3b.id).length, 2);
+  const starCard3Again = await call(`/projects/${SLUG}/workbench/cards`, {
+    method: 'POST', body: { kind: 'polaris', futureId: star3.id, x: 400, y: 1200 },
+  });
+  check('a re-pull creates no new planet cards — both already exist',
+    starCard3Again.cascaded.cards.length, 0);
+  check('but still wires both edges off the new star card',
+    starCard3Again.cascaded.edges.length, 2);
+  check('every rewired edge starts at the NEW star card, not the deleted one',
+    starCard3Again.cascaded.edges.every((e) => e.a === starCard3Again.id), true);
+  const boardAfterRepull = await board();
+  const starFutureIds = [star3.id, planet3a.id, planet3b.id];
+  for (const fid of starFutureIds) {
+    check(`future ${fid} has exactly one card after the re-pull`,
+      boardAfterRepull.cards.filter((c) => c.futureId === fid).length, 1);
+  }
+
+  // 10. The tray marks stars, and still counts direct children as `links`.
+  const boardFinal = await board();
+  const star1Idea = boardFinal.polaris.find((p) => p.id === star1.id);
+  const plainIdea = boardFinal.polaris.find((p) => p.id === idea.id);
+  check('a star reads isStar: true in the picker', star1Idea.isStar, true);
+  check('a plain idea reads isStar: false', plainIdea.isStar, false);
+  check('links still counts the star\'s direct children', star1Idea.links, 3);
+
   console.log(failed ? `\n${failed} check(s) failed.` : '\nall checks passed.');
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });
+
+// Create a future and set it to orbit `parentId` — a planet under a star, or a
+// moon under a planet, exactly as the galaxy's own PATCH /:id would do it by
+// hand from the Sky view.
+async function mkOrbiting(parentId, title) {
+  const f = await call(`/projects/${SLUG}/futures`, { method: 'POST', body: { title } });
+  return call(`/projects/${SLUG}/futures/${f.id}`, { method: 'PATCH', body: { parentId } });
+}
 
 // Ops are the only way to make an 'ai' card through the API, and they need a
 // key. The chain is stood up directly in the DB instead — the thing under test

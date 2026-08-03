@@ -1140,6 +1140,7 @@ a.tab { display: inline-block; }
 .wb-idea .age { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-left: auto; }
 .wb-idea .b > .t { display: block; font-size: 12.5px; font-weight: 500; line-height: 1.35; margin-top: 3px; text-wrap: pretty; }
 .wb-idea .sub { display: block; font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+.wb-idea .sub .star { color: var(--accent); }
 
 /* The rail's "attached" list — the thread the selected card sits in. */
 .wb-lineage { padding: 13px 17px; border-bottom: 1px solid var(--line-2); }

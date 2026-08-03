@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
-  WorkbenchCard, WorkbenchData, WorkbenchOp, WorkbenchPhase,
+  WorkbenchCard, WorkbenchCascade, WorkbenchData, WorkbenchEdge, WorkbenchOp, WorkbenchPhase,
 } from '../types';
 import {
   getWorkbench, addWorkbenchCard, patchWorkbenchCard, deleteWorkbenchCard,
@@ -328,21 +328,66 @@ export function Workbench({
     const ids = [...picked];
     if (!ids.length) return;
     const at = centreOfView();
-    const made = await Promise.all(ids.map((futureId, i) => addWorkbenchCard(slug, {
+    const settled = await Promise.allSettled(ids.map((futureId, i) => addWorkbenchCard(slug, {
       kind: 'polaris', futureId,
       x: at.x + Math.floor(i / 4) * 268,
       y: at.y + (i % 4) * 128,
     })));
+    const made = settled
+      .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof addWorkbenchCard>>> => r.status === 'fulfilled')
+      .map((r) => r.value);
+    const failed = settled.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (!made.length) throw (failed[0]?.reason ?? new Error('Something went wrong.'));
     const pulled = new Set(ids);
-    setData((d) => (d ? {
-      ...d,
-      cards: [...d.cards, ...made],
-      polaris: d.polaris.map((p) => (pulled.has(p.id) ? { ...p, onCanvas: true } : p)),
-    } : d));
+    // A star's pull cascades its planets in alongside it (#326). Dedupe by id
+    // when merging — two picked stars can't share a planet (an idea has one
+    // parent) but a planet could in principle arrive both picked directly and
+    // cascaded in by its star in the same batch.
+    const cascadedCards = made.flatMap((c) => c.cascaded?.cards ?? []);
+    const cascadedEdges = made.flatMap((c) => c.cascaded?.edges ?? []);
+    const cascadedFutureIds = new Set(cascadedCards.map((c) => c.futureId));
+    const capped = made
+      .filter((c) => c.cascaded && c.cascaded.total > c.cascaded.placed)
+      .map((c) => c.cascaded as WorkbenchCascade);
+    setData((d) => {
+      if (!d) return d;
+      const cardIds = new Set(d.cards.map((c) => c.id));
+      const edgeIds = new Set(d.edges.map((e) => e.id));
+      const newCards: WorkbenchCard[] = [];
+      for (const c of [...made, ...cascadedCards]) {
+        if (cardIds.has(c.id)) continue;
+        cardIds.add(c.id);
+        newCards.push(c);
+      }
+      const newEdges: WorkbenchEdge[] = [];
+      for (const e of cascadedEdges) {
+        if (edgeIds.has(e.id)) continue;
+        edgeIds.add(e.id);
+        newEdges.push(e);
+      }
+      return {
+        ...d,
+        cards: [...d.cards, ...newCards],
+        edges: [...d.edges, ...newEdges],
+        polaris: d.polaris.map((p) => (
+          pulled.has(p.id) || cascadedFutureIds.has(p.id) ? { ...p, onCanvas: true } : p)),
+      };
+    });
     setPicked(new Set());
     setPickerOpen(false);
     setSel(made[0].id);
     say(`Pulled ${made.map((c) => c.meta).join(', ')} in from Polaris.`);
+    if (capped.length) {
+      const placed = capped.reduce((n, c) => n + c.placed, 0);
+      const total = capped.reduce((n, c) => n + c.total, 0);
+      say(`Placed ${placed} of ${total} planets — the rest are still in the tray.`);
+    }
+    if (failed.length) {
+      const reasons = failed
+        .map((r) => (r.reason as Error)?.message || 'Something went wrong.')
+        .join('; ');
+      say(`${failed.length} of ${ids.length} did not land: ${reasons}`);
+    }
   });
 
   const saveTitle = (card: WorkbenchCard, title: string) => {
@@ -692,8 +737,12 @@ export function Workbench({
                       </span>
                       <span className="t">{p.title}</span>
                       <span className="sub">
-                        {p.onCanvas ? 'already on the canvas'
-                          : [p.area || 'untagged', `${p.links} linked`].join(' · ')}
+                        {p.onCanvas
+                          ? 'already on the canvas'
+                          : p.isStar && p.links > 0
+                            ? <>{p.area || 'untagged'} ·{' '}
+                              <span className="star">★ {p.links} planet{p.links === 1 ? '' : 's'}</span></>
+                            : [p.area || 'untagged', `${p.links} linked`].join(' · ')}
                       </span>
                     </span>
                   </button>

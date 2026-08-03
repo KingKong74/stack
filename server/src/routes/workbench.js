@@ -135,7 +135,7 @@ workbench.get('/', async (req, res) => {
     cardsOf(req.project.id),
     q('SELECT * FROM workbench_edges WHERE project_id = $1 ORDER BY id', [req.project.id]),
     q(
-      `SELECT f.id, f.title, f.area, f.created_at,
+      `SELECT f.id, f.title, f.area, f.created_at, f.is_star,
               (SELECT count(*) FROM futures ch WHERE ch.parent_id = f.id)::int AS links,
               EXISTS (SELECT 1 FROM workbench_cards c WHERE c.future_id = f.id) AS on_canvas
          FROM futures f
@@ -158,9 +158,86 @@ workbench.get('/', async (req, res) => {
   });
 });
 
+// A canvas full of one star's orbit is not a canvas — cap the fan-out.
+const CASCADE_PLANETS = 24;
+
+// Pulling a STAR onto the canvas also pulls its direct children (planets) —
+// not moons, because star -> planet -> moon is the whole depth this galaxy
+// goes to and a moon cascading in behind its planet would bury the canvas two
+// levels deep in one click. Three rules that aren't obvious from the SQL:
+//   - a planet already on the canvas is NOT duplicated: the INSERT's
+//     ON CONFLICT on the future_id partial index just no-ops for it, and we
+//     still wire an edge to whatever card it already has.
+//   - the UNIQUE (a_id, b_id) index on workbench_edges is what makes a
+//     re-pull of the same star idempotent rather than laying a second line
+//     over the first.
+//   - only DIRECT children cascade (parent_id = the star's id) — a grandchild
+//     (a moon) is left in the tray for its own planet to bring in, if ever.
+// Returns null when the star has no planets (nothing to report), otherwise
+// { cards, edges, placed, total } — `cards` holds only the NEWLY created
+// planet cards, `edges` only the edges actually created this call.
+async function cascadePlanets(client, projectId, starId, starCardId, starX, starY) {
+  const { rows: children } = await client.query(
+    `SELECT id, count(*) OVER ()::int AS total
+       FROM futures
+      WHERE project_id = $1 AND parent_id = $2
+      ORDER BY created_at ASC
+      LIMIT $3`,
+    [projectId, starId, CASCADE_PLANETS]
+  );
+  if (!children.length) return null;
+  const total = children[0].total;
+  const planetIds = children.map((c) => c.id);
+
+  const placements = children.map((c, i) => ({
+    future_id: c.id,
+    x: clampInt(starX + 268, -20000, 20000, starX + 268),
+    y: clampInt(starY + i * 128, -20000, 20000, starY + i * 128),
+  }));
+
+  // Single multi-row insert — no per-planet query. Planets already on the
+  // canvas are silently skipped by the partial unique index.
+  const { rows: insertedIds } = await client.query(
+    `INSERT INTO workbench_cards (project_id, kind, future_id, x, y, w)
+     SELECT $1, 'polaris', v.future_id, v.x, v.y, 244
+       FROM jsonb_to_recordset($2::jsonb) AS v(future_id int, x int, y int)
+     ON CONFLICT (future_id) WHERE future_id IS NOT NULL DO NOTHING
+     RETURNING id`,
+    [projectId, JSON.stringify(placements)]
+  );
+  const newCardShapes = insertedIds.length
+    ? (await client.query(
+        `${CARD_SELECT} WHERE c.project_id = $1 AND c.id = ANY($2::int[]) ORDER BY c.id`,
+        [projectId, insertedIds.map((r) => r.id)]
+      )).rows.map(workbenchCardShape)
+    : [];
+
+  // Wire the star to every planet's card, new or pre-existing, in one
+  // statement. ON CONFLICT (a_id, b_id) is what makes a re-pull non-
+  // duplicating; c.id <> starCardId guards defensively even though a planet
+  // can never be its own star.
+  const { rows: edgeRows } = await client.query(
+    `INSERT INTO workbench_edges (project_id, a_id, b_id, ai)
+     SELECT $1, $2, c.id, false
+       FROM workbench_cards c
+      WHERE c.project_id = $1 AND c.future_id = ANY($3::int[]) AND c.id <> $2
+     ON CONFLICT (a_id, b_id) DO NOTHING
+     RETURNING *`,
+    [projectId, starCardId, planetIds]
+  );
+
+  return {
+    cards: newCardShapes,
+    edges: edgeRows.map(workbenchEdgeShape),
+    placed: planetIds.length,
+    total,
+  };
+}
+
 // POST /cards -> put something on the canvas.
 //   { kind:'note', text, x, y }        writes a real note, then wraps it
-//   { kind:'polaris', futureId, x, y } pulls an idea out of the tray
+//   { kind:'polaris', futureId, x, y } pulls an idea out of the tray — and,
+//                                      if it is a star, cascades its planets
 workbench.post('/cards', async (req, res) => {
   const x = clampInt(req.body?.x, -20000, 20000, 40);
   const y = clampInt(req.body?.y, -20000, 20000, 40);
@@ -170,16 +247,28 @@ workbench.post('/cards', async (req, res) => {
     const futureId = Number(req.body?.futureId);
     if (!Number.isFinite(futureId)) return res.status(400).json({ error: 'futureId is required.' });
     const { rows: f } = await q(
-      'SELECT id FROM futures WHERE project_id = $1 AND id = $2', [req.project.id, futureId]);
+      'SELECT id, is_star FROM futures WHERE project_id = $1 AND id = $2', [req.project.id, futureId]);
     if (!f.length) return res.status(404).json({ error: 'No such idea.' });
-    const { rows } = await q(
-      `INSERT INTO workbench_cards (project_id, kind, future_id, x, y, w)
-       VALUES ($1,'polaris',$2,$3,$4,244)
-       ON CONFLICT (future_id) WHERE future_id IS NOT NULL DO NOTHING RETURNING id`,
-      [req.project.id, futureId, x, y]
-    );
-    if (!rows.length) return res.status(409).json({ error: 'That idea is already on the canvas.' });
-    return res.status(201).json(await oneCard(req.project.id, rows[0].id));
+
+    const result = await tx(async (c) => {
+      const { rows } = await c.query(
+        `INSERT INTO workbench_cards (project_id, kind, future_id, x, y, w)
+         VALUES ($1,'polaris',$2,$3,$4,244)
+         ON CONFLICT (future_id) WHERE future_id IS NOT NULL DO NOTHING RETURNING id`,
+        [req.project.id, futureId, x, y]
+      );
+      if (!rows.length) return { conflict: true };
+      const starCardId = rows[0].id;
+      const cascaded = f[0].is_star
+        ? await cascadePlanets(c, req.project.id, futureId, starCardId, x, y)
+        : null;
+      return { starCardId, cascaded };
+    });
+
+    if (result.conflict) return res.status(409).json({ error: 'That idea is already on the canvas.' });
+    const card = await oneCard(req.project.id, result.starCardId);
+    if (result.cascaded) card.cascaded = result.cascaded;
+    return res.status(201).json(card);
   }
 
   const text = String(req.body?.text || '').trim().slice(0, 4000);
