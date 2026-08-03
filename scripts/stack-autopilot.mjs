@@ -3,8 +3,11 @@
 //
 // Multiple eligible roadmap items per night, each on its own reviewable
 // branch, inside a shared night budget: a wall-clock cap (Settings'
-// autopilotMinutes) AND a token budget metered from each session's real
-// usage (`claude -p --output-format json`). Before each session a Gemini
+// autopilotMinutes), a token budget metered from each session's real
+// usage (`claude -p --output-format json`), AND a plan-step budget — the
+// governor paces by STEPS REMAINING on each item's plan, not item count, so
+// a night spends roughly the same effort whether it lands one big item or
+// five small ones. Before each session a Gemini
 // spec pre-pass (free tier) expands the item's title/note into a small spec —
 // goal, acceptance criteria, out-of-scope — so the unattended session builds
 // to a target instead of a title. No key = the pre-pass silently skips.
@@ -33,6 +36,9 @@
 //     [--tokens N]      the night's token budget; 0 = unlimited
 //                       (default: env STACK_AUTOPILOT_TOKENS, else Settings' autopilotTokens)
 //     [--max-items N]   most items attempted per night (default: Settings' autopilotMaxItems)
+//     [--max-steps N]   the night's budget in PLAN STEPS REMAINING (0 = unlimited; default:
+//                       max-items × the nominal size of an item that carries no plan yet, so a
+//                       board with no plans paces exactly as item-count pacing did before)
 //     [--item N]        work exactly this roadmap item and stop (scheduled/manual runs)
 //     [--plan-only]     a PLAN night (#219): no branches, no builds — each picked item
 //                       (must/should with no plan steps yet; --item pins one) gets a
@@ -104,6 +110,7 @@ const MINUTES_ARG = arg('minutes');
 const intArg = (v) => { const n = parseInt(v ?? '', 10); return Number.isFinite(n) ? n : null; };
 const TOKENS_OVERRIDE = intArg(arg('tokens')) ?? intArg(process.env.STACK_AUTOPILOT_TOKENS);
 const MAX_ITEMS_ARG = intArg(arg('max-items'));
+const STEP_BUDGET_ARG = intArg(arg('max-steps'));
 const ITEM_ID = intArg(arg('item'));
 // #228 — ordered agendas from the session planner.
 const AGENDA = String(arg('items') || '').split(',')
@@ -377,6 +384,22 @@ const MAX_ITEMS = KIND === 'audit' ? 1
   : KIND === 'debug' ? (BUG_AGENDA.length || capItems(MAX_ITEMS_ARG ?? settingsMaxItems))
   : AGENDA.length ? AGENDA.length
   : capItems(MAX_ITEMS_ARG ?? (PLAN_ONLY ? 5 : settingsMaxItems));
+// The build/plan night's real governor (#325): plan STEPS REMAINING, not item
+// count, because a plan is unevenly sized — one item can be a one-liner and
+// another a ten-step rebuild, and item count can't tell them apart. An item
+// with no plan yet (or one worked all the way to ticked) is priced at this
+// nominal stand-in size so it still costs something.
+const NOMINAL_STEPS_PER_ITEM = 4;
+const stepsLeft = (item) => (Array.isArray(item?.plan) ? item.plan.filter((s) => !s.done).length : 0);
+const stepCost = (item) => stepsLeft(item) || NOMINAL_STEPS_PER_ITEM;
+// 0 = UNLIMITED, exactly like TOKEN_BUDGET and capItems above — `??` not `||`
+// so a stored/explicit 0 survives as a real value rather than falling through
+// to the default. INVARIANT: the default budget is MAX_ITEMS × NOMINAL, and an
+// unplanned item costs exactly NOMINAL — so a board with no plan steps yet
+// paces EXACTLY as item-count pacing did before this change. Steps only start
+// to change the pacing once items actually carry plans.
+const rawStepBudget = STEP_BUDGET_ARG ?? (MAX_ITEMS === Infinity ? Infinity : MAX_ITEMS * NOMINAL_STEPS_PER_ITEM);
+const STEP_BUDGET = rawStepBudget === 0 ? Infinity : Math.max(1, rawStepBudget);
 // Dual-model config (#153/#168): CLI override beats Settings; anything that
 // isn't a safe model alias coerces to '' (default / off) so shell
 // metacharacters never reach the claude CLI. Allowed charset: alphanumerics
@@ -1067,16 +1090,33 @@ try {
   const attempted = new Set();
   const nightLines = [];
   let landed = 0;
+  let stepsSpent = 0;
+  // #325 — the night's progress report, distinct from stepsSpent (the START
+  // charge that paces the loop): stepsTicked is what BUILD sessions landed,
+  // stepsDesigned is what PLAN sessions authored (a plan night's items start
+  // plan-less, so its whole product lives here, not in stepsTicked), and
+  // stepsRemaining is what's still open on the items this night touched.
+  let stepsTicked = 0;
+  let stepsDesigned = 0;
+  let stepsRemaining = 0;
+  let anyPlanned = false; // did any attempted item actually carry (or gain) a plan?
   let nightLimited = false;
+  // #325 — a pinned item, an agenda or an audit keep their exact structural
+  // cap (there's nothing else TO pick); otherwise the item cap is only a
+  // runaway backstop — never fewer items than the step budget could ever
+  // need — because the step budget is what actually governs the general pick.
+  const ITEM_BACKSTOP = (ITEM_ID != null || AGENDA.length || KIND === 'audit') ? MAX_ITEMS : Math.max(MAX_ITEMS, STEP_BUDGET);
   log(`${PLAN_ONLY ? 'PLAN night (#219 — designs only, no builds): ' : ''}night budget: ${MINUTES}m wall clock, `
     + `${TOKEN_BUDGET === Infinity ? 'UNLIMITED tokens' : `${Math.round(TOKEN_BUDGET / 1000)}k tokens`}, `
-    + `${MAX_ITEMS === Infinity ? 'UNLIMITED items (the clock and the token budget govern)' : `up to ${MAX_ITEMS} item(s)`}${ITEM_ID != null ? ` (pinned to #${ITEM_ID})`
+    + `${STEP_BUDGET === Infinity ? 'UNLIMITED steps' : `up to ${STEP_BUDGET} plan step(s)`} `
+    + `(item cap: ${MAX_ITEMS === Infinity ? 'none — the clock, tokens and steps govern' : `${MAX_ITEMS} as a backstop`})${ITEM_ID != null ? ` (pinned to #${ITEM_ID})`
       : AGENDA.length ? ` (agenda: ${AGENDA.map((i) => `#${i}`).join(' → ')})` : ''}.`);
   log(`models: executor ${EXECUTOR_MODEL || 'CLI default'}, advisor ${ADVISOR_MODEL || 'off'}.`);
 
-  for (let n = 0; n < MAX_ITEMS; n++) {
+  for (let n = 0; n < ITEM_BACKSTOP; n++) {
     if (remainingMin() < MIN_SESSION_MIN) { log(`wall clock nearly spent (${Math.round(remainingMin())}m left) — stopping.`); break; }
     if (tokensSpent >= TOKEN_BUDGET) { log(`token budget spent (~${Math.round(tokensSpent / 1000)}k) — stopping.`); break; }
+    if (stepsSpent >= STEP_BUDGET) { log(`step budget spent (~${stepsSpent} of ${STEP_BUDGET} steps) — stopping.`); break; }
 
     // Re-fetch each round: claims from earlier items (and any human activity)
     // change what's eligible.
@@ -1159,6 +1199,17 @@ try {
     }
 
     attempted.add(item.id);
+    // Charge the step budget on START, not on landing: like the token budget,
+    // a night starts an item while any budget remains and charges after, so a
+    // big item is never starved mid-run — but that also means a crash loop
+    // cannot run free, since the cost is spent before the try/catch below
+    // knows whether the item lands.
+    stepsSpent += stepCost(item);
+    // #325 — the plan size BEFORE the session touches it, so a re-read after
+    // can say how many steps it actually ticked rather than just that it ran.
+    const planTotalBefore = item.plan?.length ?? 0;
+    const stepsLeftBefore = stepsLeft(item);
+    if (planTotalBefore > 0) anyPlanned = true;
     try {
       // Designs are quick — cap each plan session well under the night so one
       // rambler can't eat the batch.
@@ -1166,7 +1217,34 @@ try {
         ? await runPlanItem(item, detail.northStar || '', Math.min(remainingMin(), 20))
         : await runItem(item, detail.northStar || '', remainingMin());
       if (r.landed) landed++;
-      nightLines.push(`#${item.id} ${item.title}: ${r.landed ? (PLAN_ONLY ? 'design saved' : `${laneFor(item)} pushed`) : (PLAN_ONLY ? 'no design' : 'no commits')}${r.limitHit ? ' (hit the usage limit)' : ''}`);
+      // Best-effort re-read (same reason as postRun): the item's plan after
+      // the session is the ONLY place "steps actually ticked" lives, but a
+      // failed read must not sink a run that already landed — fall back to
+      // "nothing ticked" and keep going.
+      let stepsLeftAfter = stepsLeftBefore;
+      try {
+        const roadmap = await api('GET', `/api/projects/${SLUG}/roadmap`);
+        const all = ['must', 'should', 'could', 'wont'].flatMap((b) => roadmap?.[b] || []);
+        const after = all.find((it) => Number(it.id) === item.id);
+        if (after) stepsLeftAfter = stepsLeft(after);
+      } catch { /* best effort — count it as unticked rather than sink the run */ }
+      // Clamp at 0 both ways: a build session that ticks steps must never
+      // read as having DESIGNED negative ones, and — the mirror image — a
+      // plan session that authors a fresh plan must never read as having
+      // TICKED negative ones. A plan night's whole output lives on this
+      // second number, since the item it picked started with no plan at all.
+      const ticked = Math.max(0, stepsLeftBefore - stepsLeftAfter);
+      const designed = Math.max(0, stepsLeftAfter - stepsLeftBefore);
+      stepsTicked += ticked;
+      stepsDesigned += designed;
+      stepsRemaining += stepsLeftAfter;
+      // An item that started plan-less but ended with steps counts as
+      // "planned" for reporting purposes, same as one that already had a plan.
+      if (stepsLeftAfter > 0) anyPlanned = true;
+      const stepNote = PLAN_ONLY
+        ? (designed > 0 ? ` — ${designed} step(s) designed` : '')
+        : (planTotalBefore > 0 ? ` — ${ticked} of ${planTotalBefore} step(s) ticked, ${stepsLeftAfter} left` : '');
+      nightLines.push(`#${item.id} ${item.title}: ${r.landed ? (PLAN_ONLY ? 'design saved' : `${laneFor(item)} pushed`) : (PLAN_ONLY ? 'no design' : 'no commits')}${stepNote}${r.limitHit ? ' (hit the usage limit)' : ''}`);
       if (r.limitHit) {
         // Graceful close: stop starting work, tell the human, and come back
         // when the allocation does. Partial branches are already pushed.
@@ -1186,8 +1264,22 @@ try {
     }
   }
 
+  // #325 — steps ticked (or, on a PLAN night, steps designed) is the real
+  // measure of progress an item count can't give (a one-liner and a
+  // ten-step rebuild both count as "1 item"); say "no plan steps" rather
+  // than a bare 0 of 0 when nothing attempted had — or gained — one.
+  const stepBudgetSpent = STEP_BUDGET === Infinity
+    ? `${stepsSpent} step(s) charged (unlimited budget)`
+    : `${stepsSpent} of ${STEP_BUDGET} step budget spent`;
+  const stepsReport = PLAN_ONLY
+    ? (stepsDesigned > 0
+        ? `${stepsDesigned} step(s) designed, ${stepBudgetSpent}, `
+        : `no plan steps on tonight's items, `)
+    : (anyPlanned
+        ? `${stepsTicked} step(s) ticked (${stepsRemaining} still open), ${stepBudgetSpent}, `
+        : `no plan steps on tonight's items, `);
   const closing = `${landed} ${PLAN_ONLY ? 'design(s) awaiting review' : 'branch(es) awaiting the morning verdict'}, ${attempted.size} item(s) attempted, `
-    + `~${Math.round(tokensSpent / 1000)}k tokens${costSpent ? ` ($${costSpent.toFixed(2)})` : ''}, ${Math.round(elapsedMin())}m elapsed.`;
+    + `${stepsReport}~${Math.round(tokensSpent / 1000)}k tokens${costSpent ? ` ($${costSpent.toFixed(2)})` : ''}, ${Math.round(elapsedMin())}m elapsed.`;
   log(`night over: ${closing}`);
   if (attempted.size > 0) {
     await notify(
