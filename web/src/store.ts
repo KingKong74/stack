@@ -36,6 +36,9 @@ export class AuthError extends Error {
 // needs to tell "not found" apart from any other failure (#276 — the
 // terminal's debrief panel) can check `.status` instead of pattern-matching
 // message text, which is exactly the fragility that broke it the first time.
+// #321 arrived with an identical class named ApiError, for the same reason on
+// a different caller (a 409 meaning "already there" is an outcome, not a
+// failure). One class, one name: this is it.
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); this.name = 'HttpError'; }
 }

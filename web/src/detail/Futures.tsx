@@ -46,8 +46,8 @@ function ago(ms: number): string {
 
 export function Futures({
   northStar, futures, highlightId, onSaveNorthStar, onAdd, onEdit, onAlign, onDelete, onPromote,
-  onAskGemini, onCluster, onSetAreas, onConvergeDraft, onConvergeCreate, onShape, onAdoptOrbit, slug,
-  geminiReady, onProposeOrbits, onRestate,
+  onAskGemini, onCluster, onSetAreas, onConvergeDraft, onConvergeCreate, onShape, onAdoptOrbit,
+  onOpenInWorkbench, slug, geminiReady, onProposeOrbits, onRestate,
 }: {
   northStar: string;
   futures: Future[];
@@ -82,6 +82,9 @@ export function Futures({
   geminiReady: boolean;
   onProposeOrbits: () => Promise<OrbitProposal[]>;
   onRestate: (id: number) => Promise<RestateDraft>;
+  // #321 — send the idea to the Workbench canvas (creating its card if it
+  // doesn't have one yet) and open it there.
+  onOpenInWorkbench: (futureId: number) => Promise<void> | void;
 }) {
   // ---- north star strip (collapsible band, always on top) ----
   // #307 — collapsed is the DEFAULT arrival state: the band is a paragraph you
@@ -867,7 +870,7 @@ export function Futures({
               onToggleTray={selected ? () => toggleTray(selected.id) : undefined}
               onSelect={setSelId} onShape={onShape}
               onPromote={promoteWithOrbit} onEdit={onEdit} onAlign={onAlign} onDelete={onDelete}
-              geminiReady={geminiReady} onRestate={onRestate} />
+              geminiReady={geminiReady} onRestate={onRestate} onOpenInWorkbench={onOpenInWorkbench} />
 
             <div className="psky-rail-scroll">
               {/* The ✧ Arrange orbits result — a review list, not a write: each
@@ -1204,7 +1207,7 @@ function QueueCard({
 // queue is just the other door in.
 function SelectedPanel({
   selected, themeLabel, galaxy, kind, inTray, orbitExtra, onToggleTray, onSelect, onShape,
-  onPromote, onEdit, onAlign, onDelete, geminiReady, onRestate,
+  onPromote, onEdit, onAlign, onDelete, geminiReady, onRestate, onOpenInWorkbench,
 }: {
   selected: Future | null;
   themeLabel: string;
@@ -1224,6 +1227,7 @@ function SelectedPanel({
   // #330 — keyless, absent rather than disabled.
   geminiReady: boolean;
   onRestate: (id: number) => Promise<RestateDraft>;
+  onOpenInWorkbench: (futureId: number) => Promise<void> | void;
 }) {
   const [editing, setEditing] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -1239,8 +1243,13 @@ function SelectedPanel({
   const [restateErr, setRestateErr] = useState('');
   const [restateWhy, setRestateWhy] = useState('');
   const [restateFlat, setRestateFlat] = useState<string | null>(null);
+  // #321 — guards against two fast clicks racing two POSTs for the same idea
+  // (the second one would 409).
+  const [wbBusy, setWbBusy] = useState(false);
+  // Everything above resets together on a change of selection: any of it left
+  // standing would belong to the idea that is no longer on screen.
   useEffect(() => {
-    setEditing(false); setPicking(false); setAdopting(false);
+    setEditing(false); setPicking(false); setAdopting(false); setWbBusy(false);
     setRestateBusy(false); setRestateErr(''); setRestateWhy(''); setRestateFlat(null);
   }, [selected?.id]);
 
@@ -1419,6 +1428,14 @@ function SelectedPanel({
             title="Put it in orbit around a star or a planet">⊙ Orbit…</button>
         )}
         <button className="act primary" onClick={() => onPromote(f)}>→ Roadmap</button>
+        <button className="act" disabled={wbBusy}
+          onClick={() => {
+            setWbBusy(true);
+            Promise.resolve(onOpenInWorkbench(f.id)).finally(() => setWbBusy(false));
+          }}
+          title="Put it on the planning canvas (or find its card if it's already there) and open it.">
+          Open in Workbench
+        </button>
         {onToggleTray && (
           <button className={`act ${inTray ? 'in-tray' : ''}`} onClick={onToggleTray}
             title={inTray
