@@ -223,6 +223,8 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS skipped_at TIMESTAMPTZ;
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS verdict_source TEXT NOT NULL DEFAULT 'human';  -- human | auto (#263)
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS verdict_at TIMESTAMPTZ;
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS verdict_evidence TEXT;
+-- '' = the default executor; otherwise the agent_profiles key that should build this item
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS agent_profile TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
 -- Per-project futures: loose directional ideas, curated against the north star
@@ -1059,3 +1061,23 @@ CREATE TABLE IF NOT EXISTS worktrees (
 );
 CREATE INDEX IF NOT EXISTS worktrees_released_idx ON worktrees (released_at);
 CREATE INDEX IF NOT EXISTS worktrees_session_idx ON worktrees (session_name);
+-- ---------------------------------------------------------------------------
+-- AGENT PROFILES — customisations over the agent spawn-and-customisation
+-- engine (server/src/agents.js). This table holds ONLY overrides: the two
+-- built-in profiles ('executor', 'reviewer') live in code and are NOT seeded
+-- into this table, so a fresh database and an untouched install spawn
+-- identically, and a builtin only gets a row here once someone actually
+-- overrides it. `mergeProfiles()` in agents.js is what layers a stored row
+-- over its builtin's fields at read time.
+CREATE TABLE IF NOT EXISTS agent_profiles (
+  id          BIGSERIAL PRIMARY KEY,
+  key         TEXT NOT NULL UNIQUE,          -- the spawn name, e.g. 'executor'
+  name        TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  prompt      TEXT NOT NULL DEFAULT '',
+  model       TEXT NOT NULL DEFAULT '',      -- '' = inherit the spawn's executor model
+  tools       JSONB NOT NULL DEFAULT '[]',
+  enabled     BOOLEAN NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

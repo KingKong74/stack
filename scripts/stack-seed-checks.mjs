@@ -304,6 +304,11 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Workbench — the debrief', url: u(`/api/projects/${slug}/workbench/debrief`), auth: true, json_path: 'nights' },
     { name: 'Checks — collection', url: u(`/api/projects/${slug}/checks`), auth: true, json_path: '0.name' },
     { name: 'Tips — app-wide library', url: u('/api/tips'), auth: true, json_path: '0.name' },
+    // The agent spawn-and-customisation engine's read surface. The built-in
+    // profiles merge in from code and can't all be deleted, so a non-empty
+    // keyed `profiles` list is the real invariant — not which one sorts
+    // first, which shifts the moment a custom profile's key sorts earlier.
+    { name: 'Agents — profile catalogue', url: u('/api/agents'), auth: true, json_path: 'profiles.0.key' },
 
     // -- the automation spine: the payloads the fleet itself depends on
     { name: 'Autopilot — run ledger', url: u(`/api/projects/${slug}/autopilot/runs`), auth: true, json_path: '0.outcome' },

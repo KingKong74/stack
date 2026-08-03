@@ -9,6 +9,7 @@
 //   stack start-session [<slug>] [--item N]    start an automation session
 //   stack list-sessions [<slug>] [--limit N]   list recent automation sessions
 //   stack ui-smoke [--url] [--slug] [--json]   headless browser smoke pass over the UI (#291)
+//   stack agent-profiles [list|show|set|reset|assign]  the spawn profile catalogue
 //   stack help
 const { join } = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -28,6 +29,9 @@ const COMMANDS = {
   'risk-backfill': { script: 'stack-risk-backfill.mjs', blurb: 'tier the open board\'s risk at plan time (dry unless --run)' },
   skills: { script: 'stack-skills.mjs', blurb: 'sync the managed skill tree onto this host (--dry)' },
   'ui-smoke': { script: 'playwright/smoke.mjs', blurb: 'headless browser smoke pass over the UI (#291; --url, --slug, --json)' },
+  // Named for what it lists. `stack agents` would read as the five tab/room
+  // agents (#361), which this has nothing to do with.
+  'agent-profiles': { script: 'stack-agent-profiles.mjs', blurb: 'list and customise the agent SPAWN profiles (list, show, set, reset, assign)' },
 };
 
 const [cmd, ...rest] = process.argv.slice(2);

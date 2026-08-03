@@ -73,15 +73,22 @@ roadmap.post('/', async (req, res) => {
   // actually sent a risk gets credited as its source.
   const riskSource = req.body?.risk !== undefined ? 'human' : null;
   const tier = cleanTier(req.body?.tier);
+  // The Polaris hook: which agent_profiles key should build this item ('' =
+  // the default executor). A plain string, same handling as any other.
+  const agentProfile = String(req.body?.agentProfile || '').trim().slice(0, 60);
 
   const { rows: pos } = await q(
     'SELECT COALESCE(MAX(position), -1) + 1 AS p FROM roadmap_items WHERE project_id = $1 AND bucket = $2',
     [req.project.id, bucket]
   );
   const { rows } = await q(
-    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, tier)
-     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7,$8,$9::jsonb,$10,$11,$12) RETURNING *`,
-    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy, area, JSON.stringify(plan), risk, riskSource, tier]
+    // #262 brought risk_source, #334 brought agent_profile, on separate
+    // branches that each rewrote this one statement. Both columns are real;
+    // the merge left two whole INSERTs stacked, which JS read as a tagged
+    // template call rather than a syntax error.
+    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, tier, agent_profile)
+     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7,$8,$9::jsonb,$10,$11,$12,$13) RETURNING *`,
+    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy, area, JSON.stringify(plan), risk, riskSource, tier, agentProfile]
   );
   res.status(201).json(roadmapItemShape(rows[0]));
 });
@@ -234,6 +241,14 @@ roadmap.patch('/:id', async (req, res) => {
   }
   if (req.body?.position !== undefined && Number.isFinite(req.body.position)) {
     sets.push(`position = $${i++}`); vals.push(Math.trunc(req.body.position));
+  }
+  if (req.body?.agentProfile !== undefined) {
+    // The Polaris hook: which agent_profiles key should build this item. A
+    // plain string set, '' to clear — not folded into the done/un-done
+    // clearing lists above, because which agent should build an item is a
+    // planning decision that survives a verify round-trip.
+    sets.push(`agent_profile = $${i++}`);
+    vals.push(String(req.body.agentProfile || '').trim().slice(0, 60));
   }
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
 

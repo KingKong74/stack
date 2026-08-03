@@ -32,6 +32,7 @@ import { skills } from './routes/skills.js';
 import { agents } from './routes/agents.js';
 import { merge } from './routes/merge.js';
 import { worktrees } from './routes/worktrees.js';
+import { agentProfiles } from './routes/agent-profiles.js';
 import { attachTerm } from './term.js';
 
 // Read once at module load: the health endpoint reports the deployed version.
@@ -90,9 +91,16 @@ app.use('/api/terminal', requireToken, terminal);
 app.use('/api/triage', requireToken, triage);
 app.use('/api/tips', requireToken, tips);
 app.use('/api/skills', requireToken, skills);
-// #361 — the tab agents (Auditor · Curator · Polaris). App-wide, no slug: one
-// registry governs every project's tabs.
+// #361 — the tab agents (Auditor · Curator · Polaris · Foreman · Merge). The
+// REGISTRY of who may act on which surface. App-wide, no slug.
 app.use('/api/agents', requireToken, agents);
+// #334 — a different thing that arrived under the same name: the catalogue of
+// SPAWN PROFILES the autopilot hands to `claude --agents`. Nothing to do with
+// the surface registry above — it customises the subagents a RUN spawns — so
+// it keeps its own module (agent-profiles.js) and its own mount rather than
+// colliding on /api/agents and server/src/agents.js, which is what the two
+// branches did to each other.
+app.use('/api/agent-profiles', requireToken, agentProfiles);
 // #364 — the Merge agent's read of a proposed merge plan (Mission Control).
 app.use('/api/merge', requireToken, merge);
 app.use('/api/worktrees', requireToken, worktrees);

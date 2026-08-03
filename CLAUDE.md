@@ -311,6 +311,20 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   receipt, shown per row in the Review room's AUTO-VERDICTED strip and stated in the night log and
   the morning digest (`autopilot_runs.auto_verdict`) — a verdict nobody can see isn't reversible in
   practice.
+- **`agent_profiles` holds only OVERRIDES.** The built-in profiles (`executor`, `reviewer`) live in
+  `server/src/agents.js` and are never seeded, so a fresh database spawns identically to a
+  customised one and a row exists only where someone actually changed something; `mergeProfiles()`
+  layers the row over its builtin at read time. Consequence a session gets wrong by guessing: DELETE
+  on a builtin RESETS it to factory rather than removing it, because the spawn path needs `executor`
+  to exist. `roadmap_items.agent_profile` ('' = the default executor) is the Polaris hook — a planned
+  item naming which profile should build it. It's a free string the server does not validate
+  (`stack agents assign` validates it client-side instead), and it's deliberately absent from the
+  tick/un-tick clearing lists, because which agent builds an item is a planning decision that
+  survives a verify round-trip. The invariant with teeth: **a spawn always gets at least one building
+  agent** — no profiles, all disabled, or a requested key that doesn't exist all fall back to the
+  built-in executor, exactly what the autopilot hardcoded before the engine existed, so an
+  unreachable API spawns what it always did. The failure this prevents is the silent one: no
+  `--agents` at all leaves the expensive director model doing all the building itself.
 - **A future's SHAPE in the Polaris galaxy (#312) is derived, never stored.** There is no `kind`
   column and there must not be one: `is_star` = ★ its own orbit; parent is a star = ● a planet;
   parent is a planet = ○ a moon; no parent + judged = ◦ one of the north star's three shells
@@ -820,6 +834,8 @@ node server/test/cap-note.test.mjs         # a capped note says it was capped (p
 node scripts/context-budget.test.mjs       # THIS file and the agent manual are within budget
 node scripts/roadmap-refs.mjs              # every #id cited in the repo, against the real board
 node server/test/debrief.test.mjs          # one night's debrief, composed (pure, no DB)
+node server/test/agent-profiles.test.mjs   # the spawn engine: profiles, validation, the executor fallback (pure, no DB)
+node server/test/agents-api.test.mjs       # the profile API + the Polaris hook (needs API + a throwaway Postgres)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack models                             # which alt providers have a key (--json, --check)
@@ -827,6 +843,7 @@ node server/test/debrief.test.mjs          # one night's debrief, composed (pure
 ./stack seed-galaxy                        # shape a flat idea funnel into stars/planets (DRY until --run)
 ./stack risk-backfill [slug]               # what a plan-time risk tiering would write (dry by default, --run to apply)
 ./stack skills --dry                       # what the skill-tree sync would write/remove on this host
+./stack agents                             # list/customise the spawn profiles (list|show|set|reset|assign)
 ./stack start-session [slug] [--item N]    # queue an automation session (▶ Run now from the terminal)
 ./stack list-sessions                      # the automation job queue ([slug], --limit, --json)
 ./stack term [dir]                         # claude in a stack-term tmux session (--shell, --safe)

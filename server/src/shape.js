@@ -85,6 +85,7 @@ export function roadmapItemShape(row) {
     riskReason: row.risk_reason || '', // one line: why the auto tier is what it is
     tier: row.tier || '',              // desire tier S|A|B|C ('' = unranked, sorts last) — #227
     plan: cleanPlan(row.plan),         // implementation steps [{text, done}] (#75)
+    agentProfile: row.agent_profile || '', // '' = default executor; else the agent_profiles key to build this
     updatedAt: row.updated_at || null, // ISO — the archive sorts latest-touched first
   };
 }
