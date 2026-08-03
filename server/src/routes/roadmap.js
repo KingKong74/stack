@@ -17,6 +17,7 @@ import { roadmapItemShape, groupRoadmap } from '../shape.js';
 import { buildPrompt } from '../prompts.js';
 import { agentClient } from '../agents.js';
 import { readSettings } from '../settings.js';
+import { composeReviewBrief, storeReviewBrief } from '../reviewbrief.js';
 
 // Mounted at /api/projects/:slug/roadmap.
 export const roadmap = Router({ mergeParams: true });

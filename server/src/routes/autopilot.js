@@ -6,6 +6,7 @@ import { runCore } from '../shape.js';
 import { readSettings, cleanAutopilotTime } from '../settings.js';
 import { occupiedAreas, laneHolders, laneKey } from '../lanes.js';
 import { APPROVED_SQL, roadmapIdsIn, scheduleGate, startGate } from '../approval.js';
+import { autoReviewBrief } from '../reviewbrief.js';
 
 // Mounted at /api/projects/:slug/autopilot — the overnight runner's history.
 // The runner POSTs one row per item attempt; the dashboard's morning digest
@@ -1060,6 +1061,17 @@ autopilot.post('/runs', async (req, res) => {
     ]
   );
   res.status(201).json(runShape(rows[0]));
+
+  // #273 — the reviewer's brief, generated the moment a run lands instead of
+  // only on demand behind ✧ Brief. Fired AFTER the response and deliberately
+  // UNAWAITED: a Gemini call can take up to 25s and rate limits/timeouts are
+  // normal, so the run record must never wait on it — a failed brief is a
+  // missing brief, never a failed run. The .catch belt is a second guard on
+  // top of autoReviewBrief's own try/catch, so a rejection can never surface
+  // as an unhandled rejection.
+  if (outcome === 'landed' && rows[0].item_id != null) {
+    autoReviewBrief(req.project, rows[0].item_id, rows[0].id).catch(() => {});
+  }
 });
 
 // PATCH /runs/:id -> attach the reviewer's read to a run already recorded (#282).

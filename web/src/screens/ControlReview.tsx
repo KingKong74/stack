@@ -384,11 +384,14 @@ export function ReviewRoom({
 
   const remove = (it: ReviewItem) => act(() => deleteRoadmapItem(it.slug, Number(it.id)));
 
-  // ✧ Brief (#134): the reviewer's brief — what shipped, how to test it, likely
-  // risks. In-memory annotation; nothing is stored. The Foreman's since #375.
-  const toggleBrief = (it: ReviewItem) => {
+  // ✧ Brief (#134): the reviewer's brief — what shipped, how to test it,
+  // likely risks. The Foreman's since #375. #273 — one is written at RUN END
+  // and stored, so it arrives with the row; this button is the explicit
+  // RE-ASK, and its answer is in-memory only (nothing here is stored).
+  // Named ask, not toggle: it always issues a fresh request, unlike its
+  // sibling toggleRead below, which genuinely puts its panel away.
+  const askBrief = (it: ReviewItem) => {
     const k = key(it);
-    if (briefs.has(k)) { setBriefs((m) => { const n = new Map(m); n.delete(k); return n; }); return; }
     setBriefs((m) => new Map(m).set(k, { loading: true }));
     getReviewBrief(it.slug, Number(it.id))
       .then((d) => setBriefs((m) => new Map(m).set(k, { data: d })))
@@ -685,7 +688,7 @@ export function ReviewRoom({
             onShelve={() => shelve(sel)}
             onBoard={() => toBoard(sel)}
             onUndo={() => setUndoFor(sel)}
-            onBrief={() => toggleBrief(sel)}
+            onBrief={() => askBrief(sel)}
             onRead={() => toggleRead(sel)}
             onMirror={() => onStartPreview(sel.slug, branchOf(sel), sel.id)}
             onStopMirror={onStopPreview}
@@ -830,6 +833,13 @@ function Detail({
   // The branch this change lives on — the claim, or the run's if the claim was
   // cleared. Same fallback the server's itemShape uses.
   const branch = it.branch || it.run?.branch || '';
+  // #273 — the brief now arrives WITH the row (written at run end). The
+  // transient `brief` wins whenever it exists — a re-ask in flight, or just
+  // answered, is what the human is looking at — otherwise fall back to the
+  // stored one. `briefIsStored` tells the footer which it is.
+  const storedBrief = it.run?.reviewBrief ?? null;
+  const shownBrief = brief ?? (storedBrief ? { data: storedBrief } : undefined);
+  const briefIsStored = !brief && !!storedBrief;
   const facts: { k: string; v: string; tone?: string }[] = [
     { k: 'project', v: it.name },
     { k: 'item', v: `#${it.id} · ${it.bucket}` },
@@ -1014,25 +1024,34 @@ function Detail({
                 structural pass runs at the end of an autopilot run and needs a Gemini key.
               </div>
             )}
-            {brief && (
+            {shownBrief && (
               <div className="review-brief">
-                {brief.loading && <div className="rb-loading">✧ Reading the item, its run and the checks…</div>}
-                {brief.error && <div className="rb-err">{brief.error}</div>}
-                {brief.data && (<>
-                  <div className="rb-summary">{brief.data.summary}</div>
-                  {brief.data.test.length > 0 && (
+                {shownBrief.loading && <div className="rb-loading">✧ Reading the item, its run and the checks…</div>}
+                {shownBrief.error && <div className="rb-err">{shownBrief.error}</div>}
+                {shownBrief.data && (<>
+                  <div className="rb-summary">{shownBrief.data.summary}</div>
+                  {shownBrief.data.test.length > 0 && (
                     <div className="rb-block">
                       <div className="rb-lbl">Test it</div>
-                      <ol>{brief.data.test.map((s, i) => <li key={i}>{s}</li>)}</ol>
+                      <ol>{shownBrief.data.test.map((s, i) => <li key={i}>{s}</li>)}</ol>
                     </div>
                   )}
-                  {brief.data.risks.length > 0 && (
+                  {shownBrief.data.risks.length > 0 && (
                     <div className="rb-block">
                       <div className="rb-lbl">Likely risks</div>
-                      <ul>{brief.data.risks.map((s, i) => <li key={i}>{s}</li>)}</ul>
+                      <ul>{shownBrief.data.risks.map((s, i) => <li key={i}>{s}</li>)}</ul>
                     </div>
                   )}
-                  <div className="rb-foot">✧ The Foreman's brief — written from the record, not the code. Verify before trusting it.</div>
+                  {/* Which brief this is matters: one written unattended when
+                      the run landed is older than the change may now be. Both
+                      say the same thing about trust — it is written from the
+                      RECORD, not the code. "Foreman", not "Gemini": #364 moved
+                      these ops onto Claude on the host. */}
+                  <div className="rb-foot">
+                    {briefIsStored
+                      ? "✧ The Foreman's brief, written when the run landed — from the record, not the code. Verify before trusting it."
+                      : "✧ The Foreman's brief — written from the record, not the code. Verify before trusting it."}
+                  </div>
                 </>)}
               </div>
             )}
@@ -1198,7 +1217,9 @@ function Detail({
                 </button>
               )}
               {canBrief && (
-                <button onClick={onBrief} title="✧ The Foreman writes the reviewer's brief — what shipped, how to test it, likely risks">✧ Brief</button>
+                <button onClick={onBrief} title={storedBrief
+                  ? "✧ Re-ask the Foreman for the reviewer's brief — the automatic one was written when the run landed"
+                  : "✧ The Foreman writes the reviewer's brief — what shipped, how to test it, likely risks"}>✧ Brief</button>
               )}
               <button onClick={onSession} title="Open a terminal in this project primed with this review">⌨ Session</button>
               <button onClick={onLogBug} title="Log a bug ticket against this item">＋ Bug</button>

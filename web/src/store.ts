@@ -1160,6 +1160,13 @@ export interface ReviewRun {
   architectObs: string[];
   when: string;
   finishedAt: string;
+  // #273 — the reviewer's brief is written automatically at run end and stored
+  // on the run itself. `null` means no brief was written (keyless, a failed
+  // call, or a run predating the column) — deliberately not an empty brief.
+  // The ✧ Brief button is now an explicit RE-ASK; `getReviewBrief()` below
+  // both refreshes this and returns the fresh copy.
+  reviewBrief: ReviewBrief | null;
+  reviewBriefAt: string | null;
 }
 
 // #374 — the host's probe on the branch a change is still sitting on. Only a
@@ -1785,7 +1792,9 @@ export async function getAutopilotRuns(slug: string): Promise<AutopilotRun[]> {
 }
 // ✧ Reviewer's brief for a completed item (#134): Gemini reads the item, its
 // built_note, the run that built it and the project's checks — returns what
-// shipped, hands-on test steps and likely risks. Annotation only, never stored.
+// shipped, hands-on test steps and likely risks. #273 — the route now
+// persists this onto the run at the same time, so a call here is a RE-ASK:
+// it refreshes the stored brief and returns the fresh copy.
 export interface ReviewBrief { summary: string; test: string[]; risks: string[] }
 export async function getReviewBrief(slug: string, id: number): Promise<ReviewBrief> {
   return request<ReviewBrief>(`${reviewBase(slug, id)}/brief`, { method: 'POST' });
