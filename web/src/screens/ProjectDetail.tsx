@@ -413,6 +413,17 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: bucket } });
     });
 
+  // #319 — the refinement is editable on the card itself, not just from the
+  // Review room's ✎ Refine. Same PATCH either way; the row the server hands back
+  // replaces the local one, so a cleared note simply drops the block.
+  // Deliberately NOT wrapped in guard(...) like setTierRoad — the card shows the
+  // failure itself, so swallowing the rejection into the page-level banner would
+  // leave the editor looking as if it saved.
+  const saveRefineNote = async (item: RoadmapItem, text: string) => {
+    const updated = await patchRoadmapItem(slug, item.id, { refine_note: text });
+    setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
+  };
+
   // #169 — area management: clear or reassign the area tag across all affected
   // items via the normal PATCH route. A client-side loop is fine at board scale.
   const deleteArea = async (_area: string, itemIds: number[]) => {
@@ -881,7 +892,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
               try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the button just won't appear */ }
               go.terminal(slug);
             }}
-            onPlanItems={planItems} onSetTier={setTierRoad}
+            onPlanItems={planItems} onSetTier={setTierRoad} onRefineNote={saveRefineNote}
             onBranch={(it) => branchItem(it)} />
         )}
         {tab === 'futures' && (
