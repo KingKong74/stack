@@ -53,8 +53,9 @@ templates/ stack-agent-context.md — the canonical portable agent manual (singl
 - `screens/` — Dashboard (five anchored sections behind a sticky SubNav), ProjectDetail (owns tab +
   modal state), Settings, Control (Mission Control — one room per question, behind a live strip and a
   persistent right rail; `Control.tsx` is the shell and each room has its own file: `ControlNow` /
-  `ControlRooms` (Nights, Plan) / `ControlReview` / `ControlRoles` / `ControlAgents` (#361 — the
-  three tab agents) / `ControlMerge` (#363 — the house-wide branch ledger and the merge agent),
+  `ControlRooms` (Nights, Plan) / `ControlReview` (#375 — the queue, its agent the Foreman, and a
+  mirror site on the change under review) / `ControlRoles` / `ControlAgents` (#361 — all five
+  agents) / `ControlMerge` (#363 — the house-wide branch ledger and the merge agent),
   with the merged session list in `ControlLanes`). A former room, BUILD, was removed with its
   tab: its two gates belong to other rooms now — the verdict is Review's whole subject, the
   merge is the Now room's branch strip and, house-wide, the Merge room — and
@@ -197,7 +198,10 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   a branch. Consequently `settled` tests the verdict and **nothing about `done`** — approving a change
   before it merges must move it to the archive, not out of both lists. Approving does NOT tick:
   `done` is what `computeProgress` weighs, and the merge job does the tick, but only when a human
-  verdict is already stored on the item. Pinned by `server/test/review-queue.test.mjs`.
+  verdict is already stored on the item. **Anything that acts on a change in that room shares the
+  predicate** — the Foreman's ops opened with `if (!item.done) 400` until #375, which meant every ✧
+  in the room refused on exactly the changes the room was showing. Pinned by
+  `server/test/review-queue.test.mjs` and `server/test/foreman.test.mjs`.
 - **A future's SHAPE in the Polaris galaxy (#312) is derived, never stored.** There is no `kind`
   column and there must not be one: `is_star` = ★ its own orbit; parent is a star = ● a planet;
   parent is a planet = ○ a moon; no parent + judged = ◦ one of the north star's three shells
@@ -302,18 +306,43 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   than a structured API did. **Gemini is not gone from the app**: the per-push review note, semantic
   check assertions, session labelling, triage and the Workbench ops are still Gemini and still
   key-gated. Only the three tab agents moved.
-- **A TAB AGENT'S BINDING IS CODE, NOT DATA (#361).** `src/agents.js` is the registry: the Auditor
-  works the Quality tab, the Curator the Roadmap tab, Polaris the Futures tab, and each one's `ops`
+- **AN AGENT'S BINDING IS CODE, NOT DATA (#361, #375).** `src/agents.js` is the registry: the Auditor
+  works the Quality tab, the Curator the Roadmap tab, Polaris the Futures tab, the Foreman Mission
+  Control's Review room and the Merge agent its Merge room — `surface: 'tab' | 'room'` says which
+  kind, so nothing renders "Merge tab" at a screen that does not exist. Each one's `ops`
   list is CLOSED. `agent_configs` holds only what the owner tunes (enabled, model, guidance,
-  `ops_off`) — never which tab or which ops, because those are the restriction itself. A route binds
+  `ops_off`) — never which surface or which ops, because those are the restriction itself. A route binds
   once (`const auditor = agentClient('auditor')`) and every model call goes through that client,
   which THROWS on an op belonging to another agent; that throw, not a comment, is what stops the
   Quality route running the board cleanup. Adding a ✧ surface means adding its op to the owning
-  agent — an unregistered op cannot run at all. **A missing config row means ON**, same direction as
-  `readSettings()`: three tabs already work this way, so an unwritten row must degrade to working,
-  not to dead ✧ buttons. Switching an agent off stops it acting everywhere, including the Auditor's
+  agent — an unregistered op cannot run at all. An op MOVES with its surface, and #375 is the
+  precedent: `reviewbrief`/`refinedraft` were the Curator's and served from the roadmap routes, but
+  the Review room was their only surface, so they moved to the Foreman and to `routes/review.js`
+  with it. **One surface, one switch** — a room whose ✧ buttons answer to two agents cannot be
+  switched off. (A moved op left in an old `ops_off` row is ignored, since `agentConfigShape`
+  filters to the agent's own ops, so it degrades to ON.) **A missing config row means ON**, same
+  direction as `readSettings()`: several surfaces already work this way, so an unwritten row must
+  degrade to working, not to dead ✧ buttons. Switching an agent off stops it acting everywhere, including the Auditor's
   keyless Claude hand-off — off means off, not "off where it costs money". Pinned by
   `server/test/agents.test.mjs` (pure — `gateDecision` takes the config, so no DB is needed).
+- **THE FOREMAN ANNOTATES A VERDICT; IT NEVER GIVES ONE (#375).** The Review room's agent. Its
+  `readchange` returns a CALL (approve / look / send-back) and the room draws it in the accent, never
+  a verdict tone — the three verdict buttons are the only green in that room, and one keypress agrees
+  with whatever is on screen. Three things a session gets wrong by guessing: it is **not called the
+  Reviewer**, because the room already labels the per-push Gemini read of the diff REVIEWER and two
+  of those makes "what did the reviewer say" unanswerable; every answer carries **`blind[]`** (what it
+  could not see) and **`read[]`** (what the server actually assembled), and the blind list is rendered
+  hardest under an `approve`, since that is what the approval is being given on top of; and `where[]`
+  is the one agent field that becomes **a link the owner clicks** — paths into the running mirror
+  site — so `cleanPath()` rejects anything that is not a same-origin path (`//host` is a host, not a
+  path) and drops it rather than rendering dead text. `triagequeue` returns an ORDER and no
+  judgements; a change it fails to place is appended as unplaced rather than dropped from the only
+  list the owner is then working from.
+- **A MIRROR SITE ON THE CHANGE UNDER REVIEW IS THE POINT OF THE ROOM (#375).** Previews (#208) are
+  reachable from the Review room's built changes, and the Foreman's `where[]` turns the URL into
+  links at the screens that moved. The previews come in as PROPS from `Control.tsx`, which already
+  polls them for the Now and Merge rooms — a second poller would show two answers for one row. Built
+  changes only: a ticked one is on main, where the thing to look at is the app itself.
 - **`projects.merge_autonomy` is not `automode`** (#363 — auto | plan | off, default plan). `automode`
   says whether a project is BUILT unattended; this says how much of its MERGING one press of the Merge
   room's ▶ Run covers. `plan` still names its branches in the proposed plan (an ordering that hid them
@@ -434,7 +463,8 @@ All behind bearer auth except `GET /api/health`, `POST /api/auth/login` and
 reference. The index:
 
 - **Read layers** — `overview.js` (the dashboard deck), `control.js` (Mission Control, incl. the pure
-  exported `computeFleetRoles()`), `review.js` (the cross-project Review room), `search.js` (⌘K),
+  exported `computeFleetRoles()`), `review.js` (the cross-project Review room AND the Foreman's four
+  ops — #375; two of them arrived from `roadmap.js` with the agent), `search.js` (⌘K),
   `timeline.js`, `public.js`. All computed in a handful of aggregate queries — **never one query per
   project**; keep it that way.
 - **Per-project collections** — `bugs.js`, `roadmap.js`, `notes.js`, `futures.js`, `checks.js`,
@@ -523,6 +553,7 @@ node server/test/fleet-roles.test.mjs      # role attribution + drift detection 
 node server/test/workbench.test.mjs        # the canvas is a placement layer (needs API + DATABASE_URL)
 node server/test/plan-night.test.mjs       # a booked plan night carries no item id (needs API + DATABASE_URL)
 node server/test/review-queue.test.mjs     # a change is in Review once BUILT (needs API + DATABASE_URL)
+node server/test/foreman.test.mjs          # the Review room's agent + its ops' gate (needs API + DATABASE_URL)
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
 node server/test/agents.test.mjs           # each tab agent is bound to its own tab (pure, no DB)

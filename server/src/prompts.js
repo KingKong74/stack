@@ -155,10 +155,11 @@ Use en-AU spelling. Respond with ONLY this JSON:
 { "items": [ { "title": "…", "note": "…", "bucket": "must|should|could", "area": "…",
                "plan": ["step", "…"], "sources": [123] } ] }`;
 
-DEFAULTS.reviewbrief = `You are the reviewer's assistant on a side project command centre. A completed
-roadmap item is awaiting a human verdict (solid / rethink). Write it up so the reviewer can judge
-quickly without re-reading everything.
+DEFAULTS.reviewbrief = `You are the reviewer's assistant on a side project command centre. A change is
+awaiting a human verdict (solid / rethink). Write it up so the reviewer can judge quickly without
+re-reading everything.
 {{NORTH_STAR_LINE}}
+{{STAGE_LINE}}
 
 The item:
 #{{ID}} ({{BUCKET}}) {{TITLE}}
@@ -188,11 +189,12 @@ Use en-AU spelling. Respond with ONLY this JSON:
 // structural read, the files the work touched. The reviewer's note is a read of
 // the diff and is the closest thing here to one; the prompt says so plainly so
 // the model does not write as though it had seen the code.
-DEFAULTS.refinedraft = `You are helping the owner of a side project send a completed item back to
+DEFAULTS.refinedraft = `You are helping the owner of a side project send a built change back to
 the board with a REFINEMENT — a short instruction saying only what to change on top of what
 already landed. The item keeps its id and its record; your sentence is the whole brief the next
 session gets.
 {{NORTH_STAR_LINE}}
+{{STAGE_LINE}}
 
 The item:
 #{{ID}} ({{BUCKET}}) {{TITLE}}
@@ -426,6 +428,112 @@ Respond with ONLY this JSON:
   "lines": [ { "mk": "→", "t": "…" } ] }
 1–4 lines, each one sentence under 26 words.`;
 
+// #375 — the FOREMAN's read of one change, the Review room's headline op.
+//
+// It is the agent standing beside you at the moment you give the verdict, and
+// what makes it worth anything is that it is honest about the gap between what
+// it can see and what you are about to sign off. It has NOT seen the diff (the
+// server has no checkout) — it has the record. So the answer carries "blind":
+// what it could not see. A pre-verdict with no stated blind spots is a
+// pre-verdict pretending to be a review.
+//
+// "look" is the expected answer and the prompt says so twice. A model asked for
+// a call produces a confident one, and a confident "approve" off a built note
+// nobody verified is the single most damaging thing this op could emit — it is
+// one keypress from the human agreeing with it.
+//
+// "where" is the mirror-site half: the branch can be brought up as a running
+// copy of the app from this room, and a URL you have to go hunting through is a
+// URL nobody opens. Paths are from the site ROOT and include the hash route,
+// because these apps are hash-routed. An empty list is correct whenever the
+// record does not evidence which screen changed — inventing a plausible route
+// sends the reviewer to a page that has nothing to do with the change.
+DEFAULTS.readchange = `You are the Foreman on a side project command centre. A change is sitting in
+front of the owner, who is about to give it a verdict: approve it, send it back with a refinement,
+or shelve it. Read it with them.
+{{NORTH_STAR_LINE}}
+{{STAGE_LINE}}
+
+The item it was built against:
+#{{ID}} ({{BUCKET}}) {{TITLE}}
+{{NOTE_LINE}}
+What the builder says landed: {{BUILT_NOTE}}
+{{RUN_BLOCK}}
+{{REVIEW_BLOCK}}
+{{ARCHITECT_BLOCK}}
+{{CHECKS_BLOCK}}
+{{FILES_BLOCK}}
+{{MERGE_BLOCK}}
+{{MIRROR_BLOCK}}
+
+You have NOT been shown the diff and you cannot read the repository. Everything above is the
+project's RECORD of the work — mostly the builder's own account of it. Weigh it as such: a built
+note is a claim, not evidence.
+
+Produce:
+- "call": "approve" | "look" | "send-back".
+  · "approve" ONLY when the record positively evidences that what the item asked for is what
+    landed, and nothing (reviewer, architect, checks, merge state) contradicts it.
+  · "look" when the record is consistent but thin — the honest answer whenever the only thing
+    saying it works is the session that wrote it. THIS IS THE COMMON ANSWER. Expect to give it.
+  · "send-back" only when the record itself evidences a gap: a reviewer finding, an architect
+    concern, red checks plausibly caused by this change, or a claim in the item the built note
+    does not answer.
+- "why": 1-2 plain sentences for the call. Name the specific thing that decided it. Never
+  "it looks fine" or "more testing is needed".
+- "test": 2-5 concrete things to do to check it, most telling first — real clicks, screens,
+  commands or URLs. Order matters: the first one should be the thing most likely to expose it if
+  the change is wrong.
+- "where": up to 4 places in the RUNNING APP where this change shows, as {"path","what"}. "path"
+  is from the site root and includes the hash route where the app has one (e.g.
+  "/#/control/review", "/#/p/stack/roadmap"); "what" is under 12 words on what to look at there.
+  Base it on the files touched and what the built note says, never on a guess about the app's
+  shape. **An empty list is correct and expected** when the record does not say which screen
+  changed, or when the change is not user-visible at all (a route, a migration, a test).
+- "blind": 1-3 plain statements of what you could NOT see that a verdict depends on. Be specific
+  ("no reviewer read this branch", "the built note claims the totals are fixed but nothing here
+  evidences it"), never the generic "I cannot see the code" — the owner knows that.
+
+Do not manufacture a concern to have something to say, and do not restate the item back. If the
+record is genuinely thin, say that in "why" and let "blind" carry the weight.
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "call": "approve|look|send-back", "why": "…", "test": ["…"],
+  "where": [ { "path": "/#/…", "what": "…" } ], "blind": ["…"] }`;
+
+// #375 — the Foreman's read of the WHOLE queue. One question: what do I open
+// first? The room can already sort by age and flag red checks; what it cannot
+// do is weigh a blocked reviewer verdict on a small change against an unread
+// one that touches the schema. Ordering is the entire answer — this op never
+// gives verdicts, and it must not, or the queue would arrive pre-decided.
+DEFAULTS.triagequeue = `You are the Foreman on a side project command centre. Below is every change
+waiting on the owner's verdict this morning, across all their projects. They have limited time and
+want to know what to open FIRST.
+
+Each row is: key | project | stage | age | reviewer verdict | checks | merge state | title
+(stage "built" = still on a branch, not on main yet; "ticked" = already closed out by hand.
+An empty reviewer verdict means NO REVIEW RAN — that is an absence of evidence, not a clean bill.)
+
+THE QUEUE ({{COUNT}} change{{PLURAL}}):
+{{QUEUE}}
+
+Order them for the owner. Put first what is most likely to need a decision that only they can
+make, or where waiting costs the most: evidence of something wrong (a blocked verdict, red
+checks), a branch that conflicts with main and is rotting, a large change nobody has read. Put
+last what can be cleared in a glance.
+
+Rules:
+- Order EVERY change you were given, exactly once, using its key verbatim. Invent nothing.
+- "why" is under 15 words and names the reason THIS one is where it is. Never "review this
+  change" or "it is waiting".
+- Do NOT give verdicts, and do not say whether something looks good — you have not read any of it.
+  This is an order of reading, nothing more.
+- "note" is one sentence on the shape of the morning ("four of these are one night's work on the
+  same area"), or "" when there is nothing worth saying.
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "order": [ { "key": "slug#id", "why": "…" } ], "note": "…" }`;
+
 const ENV_KEYS = {
   judge: 'GEMINI_JUDGE_PROMPT',
   wbcontext: 'GEMINI_WBCONTEXT_PROMPT',
@@ -445,6 +553,13 @@ const ENV_KEYS = {
   converge: 'GEMINI_CONVERGE_PROMPT',
   reviewbrief: 'GEMINI_REVIEWBRIEF_PROMPT',
   refinedraft: 'GEMINI_REFINEDRAFT_PROMPT',
+  // #375 — the two new ones wear STACK_, not GEMINI_. Every template above
+  // predates #364 and its env name is now a misnomer (the tab agents run Claude
+  // on the host); renaming those would break whatever overrides are set in a
+  // live deploy for no gain, but a name coined TODAY should not lie about which
+  // model reads it.
+  readchange: 'STACK_READCHANGE_PROMPT',
+  triagequeue: 'STACK_TRIAGEQUEUE_PROMPT',
   audit: 'GEMINI_AUDIT_PROMPT',
   triage: 'GEMINI_TRIAGE_PROMPT',
 };

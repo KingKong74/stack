@@ -2,7 +2,9 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { relativeTime } from '../util.js';
 import { agentReads, runCore } from '../shape.js';
-import { geminiEnabled } from '../gemini.js';
+import { projectBySlug } from '../resolve.js';
+import { buildPrompt } from '../prompts.js';
+import { agentClient, agentsForClient } from '../agents.js';
 
 // GET /api/review — the Review room's payload (#282, design 24b + 24a).
 //
@@ -48,6 +50,13 @@ import { geminiEnabled } from '../gemini.js';
 // it and re-claims a branch.
 
 export const review = Router();
+
+// #375 — every ✧ surface in this room is the FOREMAN's, and it is bound once
+// here. Two of its four ops (`reviewbrief`, `refinedraft`) used to be the
+// Curator's and lived on the roadmap routes; they moved with the agent, because
+// this room was always their only surface and a room whose buttons answer to
+// two different switches cannot be switched off.
+const foreman = agentClient('foreman');
 
 // How much history the room carries. The queue is unbounded on purpose (a
 // backlog you cannot see is a backlog you will not clear); the archive and the
@@ -206,10 +215,12 @@ review.get('/', async (req, res) => {
   const active = queue.filter((it) => !it.shelved);
 
   res.json({
-    // Turn 3 — is a key configured at all. The Refine dialog's ✦ draft button
-    // is ABSENT without one rather than disabled, the same absent-not-broken
-    // rule the Quality page follows (#278).
-    geminiReady: geminiEnabled(),
+    // #375 — which agents may act, and which of their ops, so every ✧ in the
+    // room renders ABSENT with a reason rather than as a button that 409s. This
+    // replaced `geminiReady`: the room's ops are the Foreman's now and the
+    // Foreman runs Claude on the host, so a Gemini key says nothing about
+    // whether they can run. Same shape the project detail payload carries.
+    agents: await agentsForClient(),
     queue,
     settled: settled.rows.map((r) => itemShape(r, reports)),
     nights: nights.rows.map((r) => ({
@@ -240,4 +251,341 @@ review.get('/', async (req, res) => {
       settled: settled.rows.length,
     },
   });
+});
+
+// ===========================================================================
+// THE FOREMAN'S OPS (#375)
+//
+// Four ops, one agent, one room. Everything below annotates and NOTHING below
+// writes: the verdict, the refinement and the merge are all still the human's
+// presses through the routes they always went through. That is the same line
+// every other agent holds, and it matters most here — this is the room where
+// one keypress signs work off.
+//
+// What the Foreman is given is the RECORD, never the diff: the server runs in a
+// container with no checkout (the repos are on the host behind the firewall).
+// Every prompt says so, and `read[]` comes back on the answer so the room can
+// print what was actually assembled rather than a caption claiming more.
+// ===========================================================================
+
+// Truncation that admits it, same as the Merge agent's.
+const clip = (v, max) => {
+  const t = String(v ?? '').trim();
+  return t.length > max ? `${t.slice(0, max).trimEnd()}… (truncated)` : t;
+};
+const list = (v, cap, len = 300) => (Array.isArray(v) ? v : [])
+  .map((s) => clip(s, len)).filter(Boolean).slice(0, cap);
+
+// A path INTO the running mirror site. The Foreman proposes these and the room
+// turns them into links against the preview's URL, so this is the one field of
+// an agent answer that becomes something the owner clicks. It is therefore
+// validated hard and rejected silently: same-origin only (a leading `//` is a
+// host, not a path), no backslashes, no whitespace, nothing that is not already
+// legal in a URL path/query/fragment.
+export const cleanPath = (v) => {
+  const p = String(v ?? '').trim();
+  if (!p.startsWith('/') || p.startsWith('//') || p.length > 200) return '';
+  return /^[A-Za-z0-9/#?&=._~:@!$'()*+,;%-]+$/.test(p) ? p : '';
+};
+
+const FILE_CAP = 30;
+
+// Everything the record holds about ONE change, gathered once and shared by
+// three of the four ops. Returns { error, status } instead of throwing so each
+// route can answer with its own words.
+async function loadChange(slug, id) {
+  const project = await projectBySlug(slug);
+  if (!project) return { error: 'No such project.', status: 404 };
+  const { rows } = await q(
+    'SELECT * FROM roadmap_items WHERE project_id = $1 AND id = $2', [project.id, Number(id)]);
+  const item = rows[0];
+  if (!item) return { error: 'No such roadmap item.', status: 404 };
+
+  // #374 — BUILT or ticked, the same predicate the queue above uses. This used
+  // to be `if (!item.done) 400`, which was correct only while the queue held
+  // ticked work exclusively: after #374 the room's whole point is reading a
+  // change ON ITS BRANCH, and every ✧ in it answered "Only completed items get
+  // a review brief" on exactly the changes it was showing.
+  const built = String(item.built_note || '') !== '' && String(item.claimed_by || '') !== '';
+  if (!item.done && !built) {
+    return {
+      error: 'That change is not waiting on a verdict — nothing has built it on a branch and nobody has ticked it.',
+      status: 400,
+    };
+  }
+
+  const branch = item.claimed_by || '';
+  const [{ rows: runRows }, { rows: checkRows }, { rows: reportRows }, { rows: mirrorRows }] =
+    await Promise.all([
+      q(`SELECT branch, commits, outcome, checks_failing, summary,
+                review_verdict, review_note, review_findings,
+                architect_verdict, architect_note, architect_obs
+           FROM autopilot_runs
+          WHERE project_id = $1 AND item_id = $2
+          ORDER BY finished_at DESC LIMIT 1`, [project.id, item.id]),
+      q('SELECT name, last_status FROM checks WHERE project_id = $1 ORDER BY id LIMIT 12', [project.id]),
+      q('SELECT report FROM branch_reports WHERE project_id = $1', [project.id]),
+      q(`SELECT id, status, url FROM previews
+          WHERE project_id = $1 AND branch = $2 AND status IN ('queued','starting','live')
+          ORDER BY created_at DESC LIMIT 1`, [project.id, branch || '']),
+    ]);
+  const run = runRows[0] || null;
+
+  // The files the work touched, from the sessions recorded against its branch.
+  // A list of what was OPENED, not a diff — and every prompt is told which.
+  let files = [];
+  const runBranch = run?.branch || branch;
+  if (runBranch) {
+    const { rows: fileRows } = await q(
+      `SELECT files_touched FROM sessions
+        WHERE project_id = $1 AND branch = $2 AND jsonb_array_length(files_touched) > 0
+        ORDER BY created_at DESC LIMIT 8`, [project.id, runBranch]);
+    const seen = new Set();
+    for (const r of fileRows) {
+      for (const f of (Array.isArray(r.files_touched) ? r.files_touched : [])) {
+        if (typeof f === 'string' && f) {
+          seen.add(f.replace(/^.*?\/(?=(server|web|hook|scripts|terminal|templates)\/)/, ''));
+        }
+      }
+    }
+    files = [...seen];
+  }
+
+  const report = (Array.isArray(reportRows[0]?.report) ? reportRows[0].report : [])
+    .find((b) => b && b.branch === runBranch) || null;
+
+  return { project, item, run, checks: checkRows, files, report, mirror: mirrorRows[0] || null, branch: runBranch };
+}
+
+// The prompt blocks the three per-change ops share. Each one states what it is
+// — a claim, a stored read, a list of files opened — because the difference
+// between those is the whole of what the Foreman is allowed to conclude.
+function changeBlocks(c) {
+  const shownFiles = c.files.slice(0, FILE_CAP);
+  const failing = c.checks.filter((x) => x.last_status === 'fail');
+  return {
+    ID: String(c.item.id),
+    BUCKET: c.item.bucket,
+    TITLE: c.item.title,
+    NOTE_LINE: c.item.note ? `The item's note: ${clip(c.item.note, 1000)}` : '',
+    BUILT_NOTE: clip(c.item.built_note || '(none recorded — the builder left no account)', 2000),
+    // #374 — where the change IS. It changes what a verdict means, so it is
+    // stated before anything else about quality.
+    STAGE_LINE: c.item.done
+      ? 'This change has already been ticked off — it is on main.'
+      : `This change is STILL ON ITS BRANCH (${c.branch || 'unnamed'}) and has not landed on main. Approving it is approving a merge, not closing it out.`,
+    RUN_BLOCK: c.run
+      ? `The run: branch ${c.run.branch}, ${c.run.commits} commit${c.run.commits === 1 ? '' : 's'}, outcome ${c.run.outcome}`
+        + `${c.run.checks_failing == null ? ', checks never run' : `, ${c.run.checks_failing} check${c.run.checks_failing === 1 ? '' : 's'} failing`}.`
+        + `\nThe session's own account:\n${clip(c.run.summary || '(none)', 3000)}`
+      : 'No autopilot run recorded — built by hand or by an interactive session, so there is no run log.',
+    // An empty verdict means NO PASS RAN, said in those words (the rule the
+    // whole app holds): "no reviewer read" is not "the reviewer found nothing".
+    REVIEW_BLOCK: c.run?.review_verdict
+      ? `The second model reviewed the branch DIFF at push time and returned "${c.run.review_verdict}"`
+        + `${c.run.review_findings != null ? ` with ${c.run.review_findings} finding${c.run.review_findings === 1 ? '' : 's'}` : ''}:`
+        + `\n${clip(c.run.review_note || '(no note)', 2000)}`
+      : 'No second-model review ran on this branch — that is an absence of evidence, not a clean bill.',
+    ARCHITECT_BLOCK: c.run?.architect_verdict
+      ? `The architect's structural read returned "${c.run.architect_verdict}": ${clip(c.run.architect_note || '', 1500)}`
+      : 'No architect read this change either.',
+    CHECKS_BLOCK: c.checks.length
+      ? `The project's checks: ${c.checks.map((x) => `${x.name} (${x.last_status || 'never run'})`).join(', ')}.`
+        + (failing.length
+          ? ` The failing ones are project-wide and may long predate this change — only weigh one if this change's own subject plausibly caused it.`
+          : '')
+      : '',
+    FILES_BLOCK: shownFiles.length
+      ? `The sessions on that branch touched ${c.files.length} file${c.files.length === 1 ? '' : 's'}`
+        + `${c.files.length > FILE_CAP ? ` (the ${FILE_CAP} below are a sample of them)` : ''}: ${shownFiles.join(', ')}`
+      : 'No record of which files the work touched.',
+    // The host's probe, which is the only thing that knows whether the branch
+    // can actually land. Unprobed is its own answer, never a green one (#363).
+    MERGE_BLOCK: c.item.done ? '' : c.report
+      ? `The host probed the branch: ${c.report.ahead ?? 0} commit${(c.report.ahead ?? 0) === 1 ? '' : 's'} ahead of main, ${c.report.behind ?? 0} behind`
+        + `${typeof c.report.mergeClean === 'boolean'
+          ? c.report.mergeClean ? ', and it merges into main cleanly.' : ', and it CONFLICTS with main.'
+          : ', and whether it merges cleanly was not probed.'}`
+      : 'No branch report names this branch, so nothing here says whether it still merges cleanly.',
+    MIRROR_BLOCK: `A MIRROR SITE can be brought up from this room: the branch running as its own copy of the`
+      + ` application, at its own URL${c.mirror ? ` (one is up for this branch right now)` : ''}. The owner opens it from the`
+      + ` change they are reading, so any path you give in "where" is turned into a link they click. The app is`
+      + ` hash-routed, so paths look like "/#/p/<project>/<tab>" or "/#/control/<room>".`,
+    NORTH_STAR_LINE: c.project.north_star
+      ? `For context, the project's north star: "${clip(c.project.north_star, 400)}"`
+      : '',
+  };
+}
+
+// What the server actually put in front of the model. Printed by the room, so
+// a change with no run behind it says so rather than wearing a fixed caption.
+const readList = (c) => [
+  c.run ? 'the run log' : '',
+  c.run?.review_verdict ? "the push reviewer's read of the diff" : '',
+  c.run?.architect_verdict ? 'the architect' : '',
+  c.files.length ? `${c.files.length} file${c.files.length === 1 ? '' : 's'} touched` : '',
+  c.report ? 'the branch probe' : '',
+  c.checks.length ? `${c.checks.length} check${c.checks.length === 1 ? '' : 's'}` : '',
+].filter(Boolean);
+
+// POST /api/review/:slug/:id/read — ✧ Read this change.
+//   -> { call, why, test[], where[{path,what}], blind[], read[] }
+review.post('/:slug/:id/read', async (req, res) => {
+  const c = await loadChange(req.params.slug, req.params.id);
+  if (c.error) return res.status(c.status).json({ error: c.error });
+
+  const prompt = buildPrompt('readchange', changeBlocks(c));
+  try {
+    const answer = await foreman.ask('readchange', prompt, { timeoutMs: 45_000 });
+    const call = ['approve', 'look', 'send-back'].includes(answer?.call) ? answer.call : 'look';
+    res.json({
+      call,
+      why: clip(answer?.why, 600),
+      test: list(answer?.test, 5),
+      // A path that does not validate is dropped rather than rendered as dead
+      // text: the whole promise of this list is that every row opens.
+      where: (Array.isArray(answer?.where) ? answer.where : [])
+        .map((w) => ({ path: cleanPath(w?.path), what: clip(w?.what, 120) }))
+        .filter((w) => w.path && w.what)
+        .slice(0, 4),
+      blind: list(answer?.blind, 3),
+      read: readList(c),
+    });
+  } catch (err) {
+    res.status(err.httpStatus || 502).json({ error: err.message || 'The Foreman could not read this change.' });
+  }
+});
+
+// POST /api/review/:slug/:id/brief — ✧ the reviewer's brief (#134, moved here
+// from the roadmap routes with the op). What shipped, how to test it, likely
+// risks. Annotation only, nothing stored.
+review.post('/:slug/:id/brief', async (req, res) => {
+  const c = await loadChange(req.params.slug, req.params.id);
+  if (c.error) return res.status(c.status).json({ error: c.error });
+
+  const b = changeBlocks(c);
+  const prompt = buildPrompt('reviewbrief', b);
+  try {
+    const answer = await foreman.ask('reviewbrief', prompt, { timeoutMs: 30_000 });
+    const summary = clip(answer?.summary, 1200);
+    if (!summary) return res.status(502).json({ error: 'The Foreman returned nothing usable.' });
+    res.json({ summary, test: list(answer?.test, 6), risks: list(answer?.risks, 3) });
+  } catch (err) {
+    res.status(err.httpStatus || 502).json({ error: err.message || 'The Foreman could not write the brief.' });
+  }
+});
+
+// POST /api/review/:slug/:id/refine-draft — ✎ the delta that sends a change
+// back (Turn 3, moved here with the op).
+//
+// An EMPTY draft is a valid answer and often the right one: the prompt asks for
+// one whenever the record does not evidence something to change. That escape
+// hatch is the difference between an assistant and a complaint generator.
+review.post('/:slug/:id/refine-draft', async (req, res) => {
+  const c = await loadChange(req.params.slug, req.params.id);
+  if (c.error) return res.status(c.status).json({ error: c.error });
+
+  const b = changeBlocks(c);
+  const failing = c.checks.filter((x) => x.last_status === 'fail');
+  const prompt = buildPrompt('refinedraft', {
+    ...b,
+    OWNER_BLOCK: failing.length
+      ? `Checks currently FAILING on this project: ${failing.map((x) => x.name).join(', ')}.`
+      : '',
+  });
+  try {
+    const answer = await foreman.ask('refinedraft', prompt, { timeoutMs: 30_000 });
+    res.json({
+      draft: clip(answer?.draft, 2000),
+      basis: clip(answer?.basis, 60),
+      read: readList(c),
+    });
+  } catch (err) {
+    res.status(err.httpStatus || 502).json({ error: err.message || 'The Foreman could not draft the refinement.' });
+  }
+});
+
+// POST /api/review/triage — ✧ Triage the queue.
+//
+// The one op that reads the whole room. It returns an ORDER and nothing else:
+// no verdicts, because it has read none of these changes, and a queue that
+// arrived pre-decided would be worse than one that arrived unsorted.
+const TRIAGE_CAP = 40;
+
+review.post('/triage', async (_req, res) => {
+  const { rows } = await q(
+    ITEM_SQL.replace('%WHERE%', 'i.review_tag IS NULL AND i.review_shelved IS NOT TRUE').replace('%LIMIT%', ''));
+  if (!rows.length) return res.status(400).json({ error: 'Nothing is waiting on a verdict.' });
+
+  const { rows: reportRows } = await q('SELECT project_id::int AS project_id, report FROM branch_reports');
+  const reports = new Map();
+  for (const r of reportRows) {
+    const byBranch = new Map();
+    for (const b of (Array.isArray(r.report) ? r.report : [])) if (b?.branch) byBranch.set(b.branch, b);
+    reports.set(r.project_id, byBranch);
+  }
+
+  const items = rows.map((r) => itemShape(r, reports));
+  // A capped list inside a prompt must SAY it is capped, and be capped on the
+  // right axis (#239). The rows are already newest-first and the question is
+  // "what do I open first", so the OLDEST are the ones a cap must not drop —
+  // they are the ones that have been waiting longest. Hence the tail, not the
+  // head, and the count says what was left out.
+  const shown = items.length > TRIAGE_CAP ? items.slice(-TRIAGE_CAP) : items;
+  const line = (it) => [
+    `${it.slug}#${it.id}`,
+    it.name,
+    it.stage,
+    it.when,
+    it.run?.reviewVerdict || 'no review ran',
+    it.run?.checksFailing == null ? 'checks not run' : it.run.checksFailing === 0 ? 'checks green' : `${it.run.checksFailing} checks red`,
+    it.stage === 'built'
+      ? (it.merge
+        ? (it.merge.mergeClean === false ? 'CONFLICTS with main'
+          : it.merge.mergeClean === true ? `merges cleanly${it.merge.behind ? `, ${it.merge.behind} behind` : ''}`
+            : 'merge not probed')
+        : 'no branch report')
+      : 'on main',
+    clip(it.title, 120),
+  ].join(' | ');
+
+  const prompt = buildPrompt('triagequeue', {
+    COUNT: String(shown.length),
+    PLURAL: shown.length === 1 ? '' : 's',
+    QUEUE: shown.map(line).join('\n')
+      + (items.length > shown.length
+        ? `\n(${items.length} changes are waiting in total; the ${shown.length} above are the longest-waiting of them.)`
+        : ''),
+  });
+
+  try {
+    const answer = await foreman.ask('triagequeue', prompt, { timeoutMs: 60_000 });
+    const known = new Map(shown.map((it) => [`${it.slug}#${it.id}`, it]));
+    const seen = new Set();
+    const order = [];
+    for (const o of (Array.isArray(answer?.order) ? answer.order : [])) {
+      const key = String(o?.key || '').trim();
+      if (!known.has(key) || seen.has(key)) continue;   // invented or repeated — drop it
+      seen.add(key);
+      order.push({ key, why: clip(o?.why, 160), placed: true });
+    }
+    // Anything the Foreman did not place goes on the end, marked as unplaced.
+    // Silently dropping it would leave a change out of the only list the owner
+    // is now working from — the #239 rule applied to an ANSWER rather than a
+    // prompt: a list that omits something must say it omitted it.
+    for (const it of shown) {
+      const key = `${it.slug}#${it.id}`;
+      if (!seen.has(key)) order.push({ key, why: '', placed: false });
+    }
+    res.json({
+      order,
+      note: clip(answer?.note, 300),
+      // What it was given, so the room can say "the oldest 40 of 57" rather
+      // than presenting a partial order as the whole morning.
+      considered: shown.length,
+      total: items.length,
+    });
+  } catch (err) {
+    res.status(err.httpStatus || 502).json({ error: err.message || 'The Foreman could not triage the queue.' });
+  }
 });

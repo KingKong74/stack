@@ -847,15 +847,29 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
                     onSetAutonomy={setMergeAutonomy}
                     onQueueMerge={queueOneMerge} />
                 )}
-                {room === 'review' && <ReviewRoom onCount={setReviewN} />}
+                {/* #375 — the Review room gets the mirror sites too. They are
+                    the same poll the Now and Merge rooms read (a preview moves
+                    on the HOST's clock, so it lives up here with its own auto
+                    refresh); a second poller would show two answers for one
+                    row. The room brings a branch up ON the change under
+                    review, which is how a verdict stops being given on a
+                    description of the work. */}
+                {room === 'review' && (
+                  <ReviewRoom onCount={setReviewN}
+                    previews={previews} previewBusy={previewBusy} mirrorBusy={mirrorBusy}
+                    onStartPreview={(slug, branch, itemId) => void openPreview(slug, branch, itemId)}
+                    onStopPreview={setStopPending}
+                    onExtendPreview={(pv) => void extendMirror(pv)} />
+                )}
                 {room === 'roles' && (
                   <RolesRoom data={data} onReload={load}
                     onConfigure={() => { setRoom('now'); setCfgOpen(true); }} />
                 )}
-                {/* #361 — Agents: the three tab agents (Auditor · Curator ·
-                    Polaris), each bound to one project tab. It owns its own
-                    fetch — agent config is app-wide and near-static, so it has
-                    no business riding the fleet poll. */}
+                {/* #361 — Agents: the tab agents, each bound to one surface —
+                    three project tabs (Auditor · Curator · Polaris) and two
+                    Mission Control rooms (the Foreman, the Merge agent). It
+                    owns its own fetch — agent config is app-wide and
+                    near-static, so it has no business riding the fleet poll. */}
                 {room === 'agents' && <AgentsRoom />}
               </div>
 

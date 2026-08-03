@@ -95,11 +95,15 @@ function suiteFor(slug, ORIGIN) {
     // session goes unreported.
     { name: 'Control — roles subagent spend', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentTokens' },
     { name: 'Control — roles priced delegations', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentsRecorded' },
-    // Turn 3 — whether the Refine dialog offers its ✦ draft at all. The button
-    // is ABSENT without a key, so losing this field silently removes an
-    // affordance rather than breaking one: the dialog still works and nobody
-    // finds out the assist stopped being offered.
-    { name: 'Review — the Gemini-ready flag', url: u('/api/review'), auth: true, json_path: 'geminiReady' },
+    // #375 — whether the room's ✧ surfaces are offered at all. Every one of
+    // them is the FOREMAN's now, and they are ABSENT rather than disabled when
+    // it cannot act, so losing this field silently removes affordances instead
+    // of breaking one: the room still works and nobody finds out the agent
+    // stopped being offered. (This asserted `geminiReady` until the ops moved
+    // off Gemini and onto Claude on the host — the same correction #364 made
+    // one route over, and the same reason the check moves in the same commit.)
+    { name: 'Review — the room agent is served', url: u('/api/review'), auth: true, json_path: 'agents.foreman.enabled' },
+    { name: 'Review — the agent readiness flag', url: u('/api/review'), auth: true, json_path: 'agents.foreman.ready' },
     // #374 — how much of the queue is still on a branch. Like `attention`, this
     // is a count that is MEANT to be zero much of the time, so the check asserts
     // the path rather than a value: losing the key would take every unmerged
