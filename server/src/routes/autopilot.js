@@ -206,6 +206,7 @@ function jobShape(r) {
     id: String(r.id),
     slug: r.slug,
     name: r.project_name || r.slug,
+    tint: r.tint || null,
     kind: r.kind,
     itemId: r.item_id != null ? String(r.item_id) : null,
     itemTitle: r.item_title || '',
@@ -249,12 +250,14 @@ const SCHEDULE_SELECT = `
 // query reads off this same SELECT rather than growing its own `j.*` copy —
 // a job row shaped by jobShape() must come from here, or advice_ready drifts
 // silently false and the report text rides a list payload it was built to avoid.
+// `p.tint` is #271's: the queue is cross-project now, so a row has to be able
+// to say which app it belongs to without a second lookup.
 export const JOB_SELECT = `
   SELECT j.id, j.project_id, j.kind, j.item_id, j.schedule_id, j.night_date, j.status, j.detail,
          j.created_at, j.claimed_at, j.started_at, j.finished_at, j.not_before,
          j.session_kind, j.agenda, j.area, j.branch,
          (j.advice IS NOT NULL AND j.advice <> '') AS advice_ready,
-         p.slug, p.name AS project_name, ri.title AS item_title
+         p.slug, p.name AS project_name, p.tint, ri.title AS item_title
     FROM autopilot_jobs j
     JOIN projects p ON p.id = j.project_id AND p.deleted_at IS NULL
     LEFT JOIN roadmap_items ri ON ri.id = j.item_id`;

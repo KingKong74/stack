@@ -643,7 +643,10 @@ export function ReviewRoom({
                     </span>
                     <span className="t">{it.title}</span>
                     <span className="row2">
-                      <span className="where">{it.name} · #{it.id}</span>
+                      <span className="where">
+                        <span className="tintdot" style={{ background: it.tint || 'var(--sand)' }} />
+                        {it.name} · #{it.id}
+                      </span>
                       <span className="size">{sizeOf(it)}</span>
                     </span>
                     {/* #375 — why the Foreman put this one here. Only in the
@@ -860,7 +863,14 @@ function Detail({
       <div className="rv-detail-head">
         <div className="row">
           <span className={`rv-verdict ${v || 'none'}`}>{VERDICT_LABEL[v]}</span>
-          <span className="meta">{it.name} · #{it.id} · {sizeOf(it)} · {built ? 'built' : 'completed'} {it.when}</span>
+          <span className="meta">
+            {/* #271's project tint, #374's built-vs-ticked wording: the row is
+                cross-project now, so which app it belongs to has to be readable
+                at a glance, and "completed" is wrong for a change still on a
+                branch. */}
+            <span className="tintdot" style={{ background: it.tint || 'var(--sand)' }} />
+            {it.name} · #{it.id} · {sizeOf(it)} · {built ? 'built' : 'completed'} {it.when}
+          </span>
         </div>
         <h3>{it.title}</h3>
         {/* #374 — where the work IS, before anything about whether it is good.
@@ -1322,7 +1332,10 @@ function Debrief({ nights, shown, onPickNight, onOpenItem, onReview }: {
                 <span className={`dot ${r.outcome === 'landed' ? 'good' : r.outcome === 'planned' ? 'plan' : 'bad'}`} />
                 <div className="body">
                   <span className="t">{r.itemTitle || `#${r.itemId}` || r.branch}</span>
-                  <span className="where">{r.name} · {r.branch || 'no branch'} · {r.when}</span>
+                  <span className="where">
+                    <span className="tintdot" style={{ background: r.tint || 'var(--sand)' }} />
+                    {r.name} · {r.branch || 'no branch'} · {r.when}
+                  </span>
                 </div>
                 <span className="size">{r.commits} commit{r.commits === 1 ? '' : 's'}</span>
                 <span className={`rv-verdict ${r.reviewVerdict || 'none'}`}>{VERDICT_LABEL[r.reviewVerdict || '']}</span>

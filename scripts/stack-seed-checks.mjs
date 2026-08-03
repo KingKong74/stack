@@ -187,6 +187,9 @@ function suiteFor(slug, ORIGIN) {
     // "nothing has reported at all", which is the same silent failure as a
     // missing `attention`/`conflicts` above.
     { name: 'Control — autopilot pane report clock', url: u('/api/control'), auth: true, json_path: 'terminal.autoSeenAt' },
+    // The Nights calendar's entire data source. Losing it is silent: the
+    // calendar just renders empty and looks like a quiet week.
+    { name: 'Control — nights calendar source', url: u('/api/control'), auth: true, json_path: 'usage.recentRuns' },
     // The answer channel's front door. A bad fingerprint must be REFUSED with
     // a 400 rather than relayed — the host's re-read is the real guard, but a
     // server that forwarded anything shaped like a request would put the whole

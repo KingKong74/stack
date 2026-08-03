@@ -150,6 +150,13 @@ const laneSql = (col) => `(${col} LIKE 'auto/%' OR ${col} LIKE 'lane/%'
 // strip below already renders N slots the moment N grows.
 const FLEET_CAPACITY = 1;
 
+// (#271) The Nights calendar's per-run feed is fleet-wide across a 7-day
+// window with no project filter — a busy house can return more rows than a
+// single-project one ever did. Cap the payload here, but `recentRunsTotal`
+// (below) carries the TRUE row count before the slice so the calendar can say
+// when a night was truncated rather than reading a truncated cell as quiet.
+const RECENT_RUNS_CAP = 60;
+
 // (#268) The dispatcher's tmux name for a job, mirroring the one
 // scripts/stack-autopilot-dispatch.mjs builds (`stack-auto-<safe>-j<id>`).
 // Kept in step with that file — it is the only other place this shape exists.
@@ -1114,7 +1121,7 @@ control.get('/', async (_req, res) => {
     // pushed off the strip by newer finished jobs.
     // (#266) A fanned night is now N jobs for one project, not one — 12 rows
     // can no longer show even a single night's queue, so this is raised to 40.
-    q(`SELECT j.*, p.slug, p.name AS project_name, ri.title AS item_title
+    q(`SELECT j.*, p.slug, p.name AS project_name, p.tint, ri.title AS item_title
          FROM autopilot_jobs j
          JOIN projects p ON p.id = j.project_id AND p.deleted_at IS NULL
          LEFT JOIN roadmap_items ri ON ri.id = j.item_id
@@ -1139,7 +1146,7 @@ control.get('/', async (_req, res) => {
               r.review_verdict, r.review_note, r.review_findings,
               r.architect_verdict, r.architect_note, r.architect_obs,
               ri.review_tag, ri.done AS item_done,
-              p.slug, p.name AS project_name,
+              p.slug, p.name AS project_name, p.tint AS project_tint,
               to_char(COALESCE(r.night_date, (r.finished_at AT TIME ZONE 'UTC')::date), 'YYYY-MM-DD') AS night_key
          FROM autopilot_runs r
          JOIN projects p ON p.id = r.project_id
@@ -1299,9 +1306,13 @@ control.get('/', async (_req, res) => {
     // The cap covers a full week of nights so the Nights calendar (14a) can
     // place every run on its day; `day` is night_key (#266) — the same
     // bucket convention as weekNights above.
-    recentRuns: usageR.rows.slice(0, 60).map((r) => ({
+    // (#271) The true count before the slice — the cap above is fleet-wide,
+    // so a truncated week must say so rather than reading as a quiet one.
+    recentRunsTotal: usageR.rows.length,
+    recentRuns: usageR.rows.slice(0, RECENT_RUNS_CAP).map((r) => ({
       slug: r.slug,
       name: r.project_name,
+      tint: r.project_tint || null,
       itemId: r.item_id != null ? String(r.item_id) : null,
       itemTitle: r.item_title || '',
       // (#286) What the run produced plus both second-model reads (#282/#284) —

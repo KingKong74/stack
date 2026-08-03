@@ -410,7 +410,7 @@ export interface AutopilotSchedule {
   area: string;                  // scope the general pick ('' = whole board)
 }
 export interface AutopilotJob {
-  id: string; slug: string; name: string;
+  id: string; slug: string; name: string; tint: string | null;
   kind: 'manual' | 'nightly' | 'scheduled' | 'revert' | 'resume' | 'merge' | 'plan' | 'advise';
   itemId: string | null; itemTitle: string;
   // 'paused' = hung up (#142): held until a human resumes; never auto-fires.
@@ -462,6 +462,10 @@ export interface UsageSummary {
   // #177 — the newest runs with their per-model (agent) split for the breakdown.
   // `day` (#14a) = the UTC calendar date, so the Nights room can place each run.
   recentRuns?: RunRow[];
+  // (#271) The true row count before the server's cap — recentRuns is
+  // fleet-wide and can be truncated in a busy house. Greater than
+  // recentRuns.length means the Nights calendar is missing older nights.
+  recentRunsTotal?: number;
 }
 
 // One row of the run ledger. #286 added what the run PRODUCED (branch, commits,
@@ -469,7 +473,7 @@ export interface UsageSummary {
 // '' meaning nobody has dispositioned it, which is what the night debrief asks
 // you to do. All optional: an older server sends the #177 shape alone.
 export interface RunRow {
-  slug: string; name: string; itemId: string | null; itemTitle: string;
+  slug: string; name: string; tint: string | null; itemId: string | null; itemTitle: string;
   outcome: string; day?: string; when: string; tokens: number; costUsd: number;
   models: { model: string; tokens: number; costUsd: number }[];
   branch?: string;
