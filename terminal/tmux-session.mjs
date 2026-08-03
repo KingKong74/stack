@@ -84,7 +84,12 @@ export function killSession(name) {
 // Last visible lines of a session's active pane — plain text (capture-pane
 // without -e emits no escape sequences). Feeds the Gemini labeller so even a
 // detached session can be named by what it's doing. Empty string on any miss.
-export function paneTail(name, lines = 30) {
+//
+// `chars` defaults to 1500 — right for the 60s push, which rides in every
+// periodic frame — but an on-demand read (#366's autoView) wants far more, so
+// it's a third optional parameter rather than a second hard cap. Existing
+// callers that pass only `name`/`lines` are byte-for-byte unchanged.
+export function paneTail(name, lines = 30, { chars = 1500 } = {}) {
   // `=name:` — exact-match session (same reason as sessionExists), trailing
   // colon so tmux parses it as a pane target (bare `=name` doesn't).
   const r = spawnSync(
@@ -93,7 +98,7 @@ export function paneTail(name, lines = 30) {
     { encoding: 'utf8' },
   );
   if (r.status !== 0) return '';
-  return (r.stdout || '').replace(/\s+$/, '').slice(-1500);
+  return (r.stdout || '').replace(/\s+$/, '').slice(-chars);
 }
 
 // Type into a session's pane. The ONLY writer into a running session that is
@@ -177,6 +182,41 @@ export function listStackSessions() {
 // only names the browser's kill request may touch.
 export function listDetached() {
   return listStackSessions().filter((s) => !s.attached);
+}
+
+// List every stack-auto-* tmux session on the host (#366) — the autopilot
+// runner's own sessions, spawned by scripts/stack-autopilot-dispatch.mjs.
+// An exact sibling of listStackSessions() above: same single tmux
+// list-sessions call, same format string, same shape — only the name pattern
+// differs.
+//
+// THIS LIST IS FOR READING A PANE, NEVER FOR MIRRORING, KILLING OR REAPING.
+// listStackSessions() stays stack-term-* only on purpose — the web
+// terminal's mirror/kill/reap paths all read it, and an autopilot session run
+// with --dangerously-skip-permissions is not the browser's to touch that way.
+// This sibling exists solely so the daemon can capture-pane a stack-auto-*
+// session for Mission Control's fleet view.
+export function listAutoSessions() {
+  const r = spawnSync(
+    'tmux',
+    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}\t#{session_activity}\t#{@stack-keep}'],
+    { encoding: 'utf8' },
+  );
+  if (r.status !== 0) return []; // no server running = no sessions
+  const out = [];
+  for (const line of r.stdout.split('\n')) {
+    const [name, attached, created, path, activity, keep] = line.split('\t');
+    if (typeof name !== 'string' || !/^stack-auto-[A-Za-z0-9_-]{1,64}$/.test(name)) continue;
+    out.push({
+      name,
+      attached: attached !== '0',
+      created: (parseInt(created, 10) || 0) * 1000,
+      path: path || '',
+      activity: (parseInt(activity, 10) || 0) * 1000,
+      keep: keep === '1',
+    });
+  }
+  return out;
 }
 
 // Garbage-collect truly dead sessions (#197): a detached stack-term-* session

@@ -57,7 +57,8 @@ templates/ stack-agent-context.md — the canonical portable agent manual (singl
   `ControlRooms` (Nights, Plan) / `ControlReview` (#375 — the queue, its agent the Foreman, and a
   mirror site on the change under review) / `ControlRoles` / `ControlAgents` (#361 — all five
   agents) / `ControlMerge` (#363 — the house-wide branch ledger and the merge agent),
-  with the merged session list in `ControlLanes`). A former room, BUILD, was removed with its
+  with the merged session list in `ControlLanes`, whose autopilot lanes open a read-only Watch
+  panel, `ControlWatch.tsx` (#366)). A former room, BUILD, was removed with its
   tab: its two gates belong to other rooms now — the verdict is Review's whole subject, the
   merge is the Now room's branch strip and, house-wide, the Merge room — and
   `#/control/build` falls back to the default room. Then Terminal, Skills.
@@ -411,6 +412,18 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
 - **The branch report's `topFiles` is capped and `files` is the true total** (#363). The expanded row
   prints the difference — the #239 rule, and the cap is on size, not on path order, so the biggest
   files are the ones kept.
+- **An autopilot `stack-auto-*` session is now READABLE from the browser and still not mirrorable,
+  killable or typeable-into** (#366). `listAutoSessions()` is a SIBLING of `listStackSessions()`, and
+  the web terminal's mirror/kill/reap paths still read the `stack-term-*` list only — widening
+  `listStackSessions` to cover both is the obvious tidy-up, and it hands the browser a kill button
+  for a session running with `--dangerously-skip-permissions`. `POST /api/terminal/auto-view` and the
+  daemon's `autoView` handler call `capture-pane` and nothing else; `POST /api/terminal/answer` stays
+  the only path by which anything but a human types into a running session (see **Answering a
+  permission prompt from the browser**). `termAutoSessions().at === 0` means the host has never
+  reported, NOT that the fleet is idle, and a slot's `activity` is `null` for the same reason — same
+  Fail SILENT rule as a NULL `review_verdict` (see **Fail-safe direction**). Banked spend on a live
+  slot is per FINISHED unit, so a running session honestly shows zero and that is not a stall — the
+  Watch panel says so rather than rendering an empty list.
 
 ## Fail-safe direction (get this right or you delete work)
 
@@ -625,6 +638,7 @@ node server/test/review-queue.test.mjs     # a change is in Review once BUILT (n
 node server/test/foreman.test.mjs          # the Review room's agent + its ops' gate (needs API + DATABASE_URL)
 node server/test/timeline-window.test.mjs  # days clamp, Extend widens the window, the 30-day default (needs API + DATABASE_URL)
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
+node server/test/auto-scan.test.mjs        # an autopilot pane's activity is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)
 node server/test/agents.test.mjs           # each tab agent is bound to its own tab (pure, no DB)
 node server/test/model-switch.test.mjs     # provider key resolution from both key files (pure)
