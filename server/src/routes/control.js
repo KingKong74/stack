@@ -1517,6 +1517,7 @@ control.get('/', async (_req, res) => {
       tokens: appSettings.autopilot_tokens,     // 0 = unlimited
       time: appSettings.autopilot_time,         // host-local HH:MM
       maxItems: appSettings.autopilot_max_items,
+      workers: appSettings.autopilot_workers,   // #335 — fleet-wide concurrency cap; 0 = unlimited
       planSweep: appSettings.autopilot_plan_sweep, // #255 — the standing plan sweep
       executorModel: appSettings.autopilot_executor_model, // '' = CLI default (#153)
       advisorModel: appSettings.autopilot_advisor_model,   // '' = no advisor

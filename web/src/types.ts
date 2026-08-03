@@ -455,6 +455,7 @@ export interface Settings {
   sessionDefaults: string[];  // DIRECTIVES keys — standing preferences injected into every session
   autopilotEnabled: boolean;  // the overnight runner's arm switch (the dispatcher no-ops while off)
   autopilotMinutes: number;   // wall-clock cap per unattended session
+  autopilotWorkers: number;   // #335 — fleet-wide concurrency cap; 0 = unlimited
   autopilotTokens: number;    // token budget per run; 0 = unlimited
   autopilotTime: string;      // nightly start, host-local HH:MM
   autopilotMaxItems: number;  // most items attempted per night

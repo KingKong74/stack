@@ -33,6 +33,13 @@ const BUDGETS = [
 // budget are then the only governors, exactly like a 0 token budget.
 const NIGHT_ITEMS = [1, 2, 3, 5, 8, 0];
 export const nightItemsLabel = (n: number) => (n === 0 ? '∞' : String(n));
+// #335 — fleet-wide concurrency cap. 0 = UNLIMITED, matching the same-shaped
+// caps above; a project can still only ever run one job at a time (that
+// serialisation is fixed, not tunable — see the hint beside the knob).
+const WORKERS = [
+  { n: 1, label: '1' }, { n: 2, label: '2' }, { n: 3, label: '3' },
+  { n: 4, label: '4' }, { n: 6, label: '6' }, { n: 0, label: 'No cap' },
+];
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const fmtDate = (d: Date) =>
@@ -210,6 +217,7 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
   const setAutopilot = async (patch: {
     autopilotEnabled?: boolean; autopilotMinutes?: number;
     autopilotTokens?: number; autopilotTime?: string; autopilotMaxItems?: number;
+    autopilotWorkers?: number;      // #335 — fleet-wide concurrency cap
     autopilotPlanSweep?: boolean;   // #255 — the standing plan sweep
     autopilotExecutorModel?: string; autopilotAdvisorModel?: string;
   }) => {
@@ -223,6 +231,7 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
         tokens: patch.autopilotTokens ?? prev.tokens,
         time: patch.autopilotTime ?? prev.time,
         maxItems: patch.autopilotMaxItems ?? prev.maxItems,
+        workers: patch.autopilotWorkers ?? prev.workers,
         planSweep: patch.autopilotPlanSweep ?? prev.planSweep,
         executorModel: patch.autopilotExecutorModel ?? prev.executorModel,
         advisorModel: patch.autopilotAdvisorModel ?? prev.advisorModel,
@@ -236,6 +245,7 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
           enabled: s.autopilotEnabled, minutes: s.autopilotMinutes,
           tokens: s.autopilotTokens ?? prev.tokens, time: s.autopilotTime ?? prev.time,
           maxItems: s.autopilotMaxItems ?? prev.maxItems,
+          workers: s.autopilotWorkers ?? prev.workers,
           planSweep: s.autopilotPlanSweep ?? prev.planSweep,
           executorModel: s.autopilotExecutorModel ?? prev.executorModel,
           advisorModel: s.autopilotAdvisorModel ?? prev.advisorModel,
@@ -606,6 +616,37 @@ export function ControlPanel({ initialRoom }: { initialRoom?: ControlRoom }) {
                 : 'Off — items are only designed when you press ✧ To planning agent or book a plan night.'}
               onClick={() => setAutopilot({ autopilotPlanSweep: !data.autopilot.planSweep })} />
           </label>
+        </div>
+      </div>
+
+      {/* #335 — the fleet's own cluster: how many projects the host may build
+          at once. Separate from Night budget above, which governs one
+          session's shape (its wall-clock, its token spend, how many a
+          single night attempts) — this governs how many sessions run
+          side by side across the whole fleet. */}
+      <div className="mc-cluster">
+        <div className="mc-cluster-label">Fleet</div>
+        <div className="mc-knobs">
+          <label className="mc-knob">
+            <span className="mc-knob-label">Parallel runs</span>
+            <span className="seg-control sm" role="tablist" aria-label="Parallel runs across the fleet">
+              {WORKERS.map((w) => (
+                <button key={w.n} role="tab" aria-selected={data.autopilot.workers === w.n}
+                  className={`seg-opt ${data.autopilot.workers === w.n ? 'on' : ''}`}
+                  title={w.n === 0
+                    ? 'No fleet ceiling — the host runs every queued project at once'
+                    : w.n === 1
+                      ? 'One run at a time across the whole fleet (how it behaved before)'
+                      : `Up to ${w.n} projects building at once`}
+                  onClick={() => setAutopilot({ autopilotWorkers: w.n })}>
+                  {w.label}
+                </button>
+              ))}
+            </span>
+          </label>
+        </div>
+        <div className="mc-arm-hint">
+          Two projects build side by side; one project never builds twice at once — its runs share a checkout.
         </div>
       </div>
 

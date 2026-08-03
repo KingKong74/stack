@@ -393,6 +393,10 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS session_defaults JSONB NOT NULL DE
 -- enabled) and the per-run wall-clock cap for the unattended session.
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_enabled BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_minutes INTEGER NOT NULL DEFAULT 120;
+-- The fleet-wide concurrency cap (#335): how many claude sessions the host may
+-- run at once. 0 = unlimited. Per-project serialisation is NOT a setting — see
+-- the comment above GET /next's claim query in routes/autopilot.js.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_workers INTEGER NOT NULL DEFAULT 3;
 -- Access PIN: scrypt hash ("scrypt$<salt>$<hash>"); NULL = PIN sign-in disabled.
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS access_pin_hash TEXT;
 -- Autopilot night controls (Mission Control): the token budget per run

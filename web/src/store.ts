@@ -765,6 +765,7 @@ export interface ControlData {
   };
   autopilot: {
     enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number;
+    workers: number;        // #335 — fleet-wide concurrency cap; 0 = unlimited
     planSweep: boolean;     // #255 — auto-plan unplanned must/should work
     executorModel: string;  // '' = the claude CLI's default model (#153)
     advisorModel: string;   // '' = no advisor subagent
@@ -806,6 +807,8 @@ export async function getControl(): Promise<ControlData> {
       tokens: d.autopilot?.tokens ?? 1_500_000,
       time: d.autopilot?.time ?? '23:05',
       maxItems: d.autopilot?.maxItems ?? 3,
+      // A pre-#335 server sends none — 3 matches the server-side default.
+      workers: d.autopilot?.workers ?? 3,
       // An older server that does not send it reads as ON, matching the
       // server-side default — the switch then simply has nothing to gate.
       planSweep: d.autopilot?.planSweep ?? true,
