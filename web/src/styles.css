@@ -3434,6 +3434,36 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .psky-scrub-caption button { font-family: var(--mono); font-size: 10px; color: var(--accent-deep); padding: 0; white-space: nowrap; }
 .psky-scrub-caption button:hover { color: var(--accent); }
 
+/* #329 — FULL SCREEN. Settings owns the chrome around every tab it renders,
+   so it owns this mode too: the topbar, the dash-head and the Settings/
+   Mission Control/Terminal strip all go, because none of them is Mission
+   Control itself. What survives is the room strip below (`.mc14-tabs`) — it
+   is Mission Control's OWN navigation, not page chrome, and the way out has
+   to stay where the way in was. The corner docks (tips, to-top, terminal
+   presence) are siblings outside this tree entirely, so they fold via a
+   `data-mc-full` flag on <body> instead of a descendant selector.
+   z-index 40 matches `.term-fullscreen` and is deliberate: it clears the
+   page and stays UNDER `.overlay` (50), so a modal opened from Mission
+   Control still lands on top of it.
+   The room strip is pinned in this mode: full screen has no other chrome, so
+   `.mc14-tabs` is the ONLY navigation left on screen and it carries the ⤢
+   that leaves full screen — a long room (Review, say) must never be able to
+   scroll it away and strand the reader with nothing but Esc. It goes
+   full-bleed rather than staying the floating pill it is elsewhere, because a
+   pill welded mid-viewport with the page's edge padding still either shows
+   content sliding under its rounded corners or leaves dead margins either
+   side; edge-to-edge with a hard bottom edge reads as a bar that belongs at
+   the top of the screen, not a chrome mistake. The base strip is a
+   shrink-to-fit pill (`width: fit-content`), so the negative margins below
+   have to be paired with `width: auto` or they just shift the pill left
+   instead of widening it. */
+.mc-fullscreen { position: fixed; inset: 0; z-index: 40; overflow-y: auto; background: var(--bg); }
+.mc-fullscreen .topbar, .mc-fullscreen .dash-head { display: none; }
+.mc-fullscreen .page.detail > .tabs { display: none; }
+.mc-fullscreen .page.detail { max-width: none; margin: 0; padding: 0 20px 28px; }
+.mc-fullscreen .mc14-tabs { position: sticky; top: 0; width: auto; z-index: 3; border-radius: 0; margin: 0 -20px 10px; padding: 8px 20px; border-bottom: 1px solid var(--line-2); }
+body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .term-presence { display: none; }
+
 /* ---- Mission Control 14a: rooms behind one live strip + a persistent rail ---- */
 .mc14-tabs { display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 9px; background: var(--panel); width: fit-content; min-width: 100%; margin-bottom: 10px; }
 .mc14-tab { display: flex; align-items: baseline; gap: 7px; padding: 6px 16px; border-radius: 6px; font-size: 12.5px; font-weight: 500; color: var(--muted); }
@@ -3442,6 +3472,9 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc14-tab .n { font-family: var(--mono); font-size: 9.5px; color: var(--accent-deep); }
 .mc14-headlink { font-family: var(--mono); font-size: 11px; color: var(--muted); text-decoration: none; padding: 0 10px; }
 .mc14-headlink:hover { color: var(--accent-deep); }
+.mc14-headbtn { font-family: var(--mono); font-size: 11px; color: var(--muted); background: transparent; border: none; padding: 0 10px; cursor: pointer; }
+.mc14-headbtn:hover { color: var(--accent-deep); }
+.mc14-headbtn.on { color: var(--accent); }
 
 .mc14-livebar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--sand); margin-bottom: 12px; }
 .mc14-livebar .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--live); flex: none; }

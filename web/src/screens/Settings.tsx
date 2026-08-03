@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Settings as SettingsData, CheckpointDetail, AuthDevice } from '../types';
 import {
   getSettings, patchSettings, getToken, clearToken, verifyToken, AuthError,
@@ -42,6 +42,48 @@ export function Settings({ initialTab = 'settings', initialRoom }: {
   // `#/control/review` link pressed while the Settings tab is showing changed
   // the URL and nothing else. The route is the authority.
   useEffect(() => { setScreenTab(initialTab); }, [initialTab]);
+  // #329 — full screen belongs to Mission Control, not the screen: Settings
+  // owns the chrome (topbar, tab strip) that full screen hides, so it has to
+  // be the one holding the flag. Same shape as Futures' galaxy full screen —
+  // a CSS mode first, the Fullscreen API second, so a refused or unavailable
+  // request still gives you the whole viewport.
+  const [full, setFull] = useState(false);
+  const toggleFull = () => {
+    const next = !full;
+    setFull(next);
+    if (next) void document.documentElement.requestFullscreen?.().catch(() => {});
+    else if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+  };
+  useEffect(() => {
+    const onChange = () => { if (!document.fullscreenElement) setFull(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.fullscreenElement) setFull(false); };
+    document.addEventListener('fullscreenchange', onChange);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, []);
+  // Leaving the Mission Control tab drops full screen — it's a Mission
+  // Control mode, not a Settings-screen one.
+  useEffect(() => { if (screenTab !== 'control') setFull(false); }, [screenTab]);
+  // Navigating away from #/control unmounts this component entirely, and the
+  // browser would otherwise stay fullscreen with nothing left to show for it.
+  // The ref (rather than closing over `full`) is what stops this cleanup
+  // cancelling a fullscreen some OTHER screen — the persistent terminal dock
+  // — asked for in the meantime.
+  const fullRef = useRef(full);
+  useEffect(() => { fullRef.current = full; }, [full]);
+  useEffect(() => () => {
+    if (fullRef.current && document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+  }, []);
+  // The corner docks (TipsDock, ToTop, the terminal presence pill) are
+  // siblings of this screen, rendered by App.tsx — a dataset flag on <body>
+  // is how they fold away without this component reaching outside its tree.
+  useEffect(() => {
+    if (full) document.body.dataset.mcFull = '1';
+    return () => { delete document.body.dataset.mcFull; };
+  }, [full]);
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -160,7 +202,7 @@ export function Settings({ initialTab = 'settings', initialRoom }: {
   };
 
   return (
-    <div>
+    <div className={full ? 'mc-fullscreen' : undefined}>
       <div className="topbar">
         <div className="crumb">
           <span className="chev" onClick={go.dashboard}>‹</span>
@@ -202,7 +244,7 @@ export function Settings({ initialTab = 'settings', initialRoom }: {
           </a>
         </div>
 
-        {screenTab === 'control' && <ControlPanel initialRoom={initialRoom} />}
+        {screenTab === 'control' && <ControlPanel initialRoom={initialRoom} full={full} onToggleFull={toggleFull} />}
 
         {screenTab === 'settings' && (error ? <div className="action-error">{error}</div> : null)}
 
