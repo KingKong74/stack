@@ -671,7 +671,10 @@ autopilotGlobal.get('/next', async (req, res) => {
            AND NOT r.done AND NOT COALESCE(r.skipped, false)
            AND COALESCE(r.claimed_by, '') = ''
            AND r.bucket IN ('must', 'should')
-           AND (r.source = 'manual' OR r.reviewed_at IS NOT NULL)
+           -- #359's rule, not a copy of it. #266's fan-out query is newer than
+           -- #359's branch, so it arrived spelling this out inline and became
+           -- the fourth hand-rolled copy the moment the two merged.
+           AND ${APPROVED_SQL('r')}
            AND (COALESCE(p.autopilot_area, '') = '' OR lower(COALESCE(r.area, '')) = lower(p.autopilot_area))
            -- The fan-out is decided ONCE, at the moment the night opens — not
            -- re-decided on every poll. Without this guard, the moment the
