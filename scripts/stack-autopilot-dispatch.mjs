@@ -118,6 +118,77 @@ function areaOf(paths) {
   return best;
 }
 
+// #365 — the host's git WORKTREES: uncommitted or unpushed work sitting in a
+// parallel autopilot checkout, which no pushed ref will ever surface. Returns
+// `null` (never `[]`) when the tree can't be read at all — absence must not
+// read as "no worktrees", the same fail-SILENT rule as the merge probe going
+// unprobed rather than clean.
+function worktreesOf(dir) {
+  const gitq = (d, ...a) => {
+    const r = spawnSync('git', ['-C', d, ...a], { encoding: 'utf8', timeout: 60_000 });
+    return { ok: r.status === 0, status: r.status, out: (r.stdout || '').trim() };
+  };
+  let listing;
+  try {
+    listing = gitq(dir, 'worktree', 'list', '--porcelain');
+  } catch {
+    return null;
+  }
+  if (!listing.ok) return null;
+
+  // Parse the porcelain records: blank-line separated, each starting with
+  // `worktree <path>`.
+  const records = [];
+  let rec = null;
+  for (const line of listing.out.split('\n')) {
+    if (line === '') { if (rec) records.push(rec); rec = null; continue; }
+    if (line.startsWith('worktree ')) { if (rec) records.push(rec); rec = { path: line.slice(9).trim() }; continue; }
+    if (!rec) continue;
+    if (line.startsWith('HEAD ')) rec.head = line.slice(5).trim();
+    else if (line.startsWith('branch ')) rec.branch = line.slice(7).trim().replace(/^refs\/heads\//, '');
+    else if (line === 'bare') rec.bare = true;
+    else if (line === 'detached') rec.detached = true;
+    else if (line === 'locked' || line.startsWith('locked ')) rec.locked = true;
+    else if (line === 'prunable' || line.startsWith('prunable ')) rec.prunable = true;
+  }
+  if (rec) records.push(rec);
+
+  const trees = [];
+  records.forEach((r, i) => {
+    if (r.bare) return;
+    const path = r.path;
+    const gs = (...a) => {
+      try { return gitq(path, ...a); } catch { return { ok: false, out: '' }; }
+    };
+    const subjectRes = gs('log', '-1', '--pretty=%s');
+    const subject = subjectRes.ok ? subjectRes.out.slice(0, 200) : '';
+    const committedAtRes = gs('log', '-1', '--pretty=%cI');
+    const committedAt = committedAtRes.ok && committedAtRes.out ? committedAtRes.out : null;
+    const statusRes = gs('status', '--porcelain');
+    const dirty = statusRes.ok ? statusRes.out.split('\n').filter(Boolean).length : 0;
+    const aheadRes = gs('rev-list', '--count', 'origin/main..HEAD');
+    const ahead = aheadRes.ok ? (parseInt(aheadRes.out, 10) || 0) : 0;
+    const unpushedRes = gs('rev-list', '--count', '@{upstream}..HEAD');
+    const unpushed = unpushedRes.ok ? (parseInt(unpushedRes.out, 10) || 0) : null;
+    const { itemId } = parseBranch(r.branch || '');
+    trees.push({
+      path: path.slice(0, 200),
+      name: path.split(sep).filter(Boolean).pop()?.slice(0, 80) || '',
+      branch: (r.branch || '').slice(0, 120),
+      head: (r.head || '').slice(0, 8),
+      subject,
+      committedAt,
+      dirty,
+      ahead,
+      unpushed,
+      itemId,
+      main: i === 0,
+      prunable: !!r.prunable,
+    });
+  });
+  return trees.slice(0, 40);
+}
+
 async function reportBranches() {
   const gitq = (dir, ...a) => {
     const r = spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', timeout: 60_000 });
@@ -172,7 +243,13 @@ async function reportBranches() {
         committedAt, itemId, adds, dels, files, area, topFiles });
       if (list.length >= 50) break;
     }
-    await api('POST', `/api/projects/${p.slug}/branches`, { branches: list });
+    const body = { branches: list };
+    // #365 — omit the key entirely on failure (null), rather than sending an
+    // empty array: that is what lets the server leave the last known
+    // worktree list alone instead of blanking it.
+    const trees = worktreesOf(dir);
+    if (trees !== null) body.worktrees = trees;
+    await api('POST', `/api/projects/${p.slug}/branches`, body);
   }
 }
 

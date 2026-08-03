@@ -8,6 +8,9 @@ import { projectBySlug } from '../resolve.js';
 // origin branch with ahead/behind counts vs origin/main, a merge-tree conflict
 // probe and the item id parsed from the lane name. Write side only — Mission
 // Control reads the report folded into the control payload's merge strip.
+// #365 — the same post can carry the host's git WORKTREES, surfacing work
+// sitting uncommitted or unpushed in a parallel autopilot checkout that no
+// pushed ref would ever reveal.
 export const branches = Router({ mergeParams: true });
 
 const nat = (v) => Math.max(0, Math.trunc(Number(v)) || 0);
@@ -49,16 +52,55 @@ const cleanEntry = (b) => {
   };
 };
 
+// #365 — a git WORKTREE on the host: work sitting uncommitted or unpushed in a
+// parallel autopilot checkout, which no pushed ref can ever surface. Mirrors
+// cleanEntry's style; `unpushed` deliberately preserves null (never pushed
+// anywhere / no upstream) rather than nat()-ing it to 0.
+const cleanTree = (w) => {
+  if (!w || typeof w !== 'object') return null;
+  const path = String(w.path || '').trim().slice(0, 200);
+  if (!path) return null;
+  return {
+    path,
+    name: String(w.name || '').slice(0, 80),
+    branch: String(w.branch || '').slice(0, 120),
+    head: String(w.head || '').slice(0, 12),
+    subject: String(w.subject || '').slice(0, 200),
+    committedAt: w.committedAt && !Number.isNaN(Date.parse(w.committedAt))
+      ? new Date(w.committedAt).toISOString() : null,
+    dirty: nat(w.dirty),
+    ahead: nat(w.ahead),
+    // null = no upstream (never pushed) — a real, distinct fact from 0 ahead
+    // of an upstream that exists. Do not nat() this away.
+    unpushed: w.unpushed === null || w.unpushed === undefined ? null : nat(w.unpushed),
+    itemId: Number.isInteger(Number(w.itemId)) && Number(w.itemId) > 0 ? Number(w.itemId) : null,
+    main: !!w.main,
+    prunable: !!w.prunable,
+  };
+};
+
 // POST / — replace the project's report whole (the dispatcher's snapshot).
 branches.post('/', async (req, res) => {
   const project = await projectBySlug(req.params.slug);
   if (!project) return res.status(404).json({ error: 'No such project.' });
   const list = (Array.isArray(req.body?.branches) ? req.body.branches : [])
     .map(cleanEntry).filter(Boolean).slice(0, 50);
+  // #365 — worktrees are reported only when the key is an array; an old
+  // dispatcher that only sends branches (or a host git failure — see
+  // worktreesOf() in stack-autopilot-dispatch.mjs) omits the key entirely, and
+  // that omission must leave the previously-reported worktree list untouched
+  // rather than blanking it. $3 carries either the JSON array or NULL, and the
+  // COALESCE below reads the OLD row on conflict, not EXCLUDED.
+  const hasTrees = Array.isArray(req.body?.worktrees);
+  const trees = hasTrees ? req.body.worktrees.map(cleanTree).filter(Boolean).slice(0, 40) : null;
   await q(
-    `INSERT INTO branch_reports (project_id, report, reported_at)
-     VALUES ($1, $2::jsonb, now())
-     ON CONFLICT (project_id) DO UPDATE SET report = EXCLUDED.report, reported_at = now()`,
-    [project.id, JSON.stringify(list)]);
-  res.json({ ok: true, count: list.length });
+    `INSERT INTO branch_reports (project_id, report, reported_at, worktrees, worktrees_at)
+     VALUES ($1, $2::jsonb, now(), $3::jsonb, CASE WHEN $3::jsonb IS NULL THEN NULL ELSE now() END)
+     ON CONFLICT (project_id) DO UPDATE SET
+       report = $2::jsonb,
+       reported_at = now(),
+       worktrees = COALESCE($3::jsonb, branch_reports.worktrees),
+       worktrees_at = CASE WHEN $3::jsonb IS NULL THEN branch_reports.worktrees_at ELSE now() END`,
+    [project.id, JSON.stringify(list), trees === null ? null : JSON.stringify(trees)]);
+  res.json({ ok: true, count: list.length, worktrees: trees === null ? null : trees.length });
 });

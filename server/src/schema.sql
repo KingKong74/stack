@@ -783,6 +783,15 @@ CREATE TABLE IF NOT EXISTS branch_reports (
   report      JSONB NOT NULL DEFAULT '[]',
   reported_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- #365 — the host's git WORKTREES (a parallel autopilot checkout can hold
+-- uncommitted or unpushed work that no pushed ref will ever surface). No
+-- DEFAULT and nullable on purpose: NULL means the host has never reported its
+-- worktrees, which is a different fact from '[]'::jsonb (reported, and there
+-- are none) — the same absent-vs-empty rule as `report`'s own reload. Kept
+-- alongside `reported_at`'s own stamp because the two halves of a report can
+-- go stale at different rates.
+ALTER TABLE branch_reports ADD COLUMN IF NOT EXISTS worktrees    JSONB;
+ALTER TABLE branch_reports ADD COLUMN IF NOT EXISTS worktrees_at TIMESTAMPTZ;
 
 -- The Tips library (the Stack Planning design's Tips tab): Claude recipes —
 -- prompts that worked, kept with the context of WHEN to reach for them.

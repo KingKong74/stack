@@ -16,6 +16,8 @@ import { AgentsRoom } from './ControlAgents';
 import { ReviewRoom } from './ControlReview';
 import { NowRoom } from './ControlNow';
 import { MergeRoom } from './ControlMerge';
+import { TreesRoom } from './ControlTrees';
+import { buildFeatures } from '../lib/feature';
 import { mergeStateOf, isMergeable } from '../lib/branch';
 import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
 import { go, hrefTo, type ControlRoom } from '../lib/route';
@@ -439,6 +441,12 @@ export function ControlPanel({ initialRoom, full, onToggleFull }: {
     && !(data?.jobs ?? []).some((j) => j.slug === p.slug && j.kind === 'merge'
       && j.detail.includes(`origin/${b.branch} into`)
       && ['queued', 'claimed', 'running', 'done'].includes(j.status))).length, 0);
+
+  // #365 — the Trees tab's badge: features actually in flight, i.e. not yet
+  // landed. Landed features are the ones the room has nothing left to say
+  // about, so they shouldn't inflate the number that draws you into it.
+  const treesCount = buildFeatures(data?.projects ?? [], data?.fleet?.slots ?? [])
+    .filter((f) => f.stage !== 'landed').length;
 
   // #228 — the planner modal saves through the schedule API itself; this just
   // folds the returned row back into the list.
@@ -882,7 +890,7 @@ export function ControlPanel({ initialRoom, full, onToggleFull }: {
                   branches that MERGE, not the ones that merely exist. A count
                   of every open branch would badge the conflicts too, and the
                   number a tab carries should be the number you can act on. */}
-              {([['now', 'Now', liveCount], ['merge', 'Merge', mergeableCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['review', 'Review', reviewN], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => isDrift(a.drift)).length], ['agents', 'Agents', 0]] as const).map(([key, label, n]) => (
+              {([['now', 'Now', liveCount], ['merge', 'Merge', mergeableCount], ['trees', 'Trees', treesCount], ['nights', 'Nights', data.schedules.filter((s) => s.enabled).length], ['plan', 'Plan', pickSlug ? (data.projects.find((p) => p.slug === pickSlug)?.reviewCount ?? 0) : data.totals.review], ['review', 'Review', reviewN], ['roles', 'Roles', (data.roles?.assignments ?? []).filter((a) => isDrift(a.drift)).length], ['agents', 'Agents', 0]] as const).map(([key, label, n]) => (
                 // #316 — anchors, not buttons: each room has a URL now, so the
                 // tab that opens it should be a real link (middle-click opens a
                 // new tab, and the address bar is honest either way). The
@@ -988,6 +996,11 @@ export function ControlPanel({ initialRoom, full, onToggleFull }: {
                     onSetAutonomy={setMergeAutonomy}
                     onQueueMerge={queueOneMerge} />
                 )}
+                {/* #365 — Trees: one place surfacing the current status of
+                    every in-progress feature, across claims, branches and
+                    worktrees. Read-only — it takes the same control payload
+                    the shell already holds and mutates nothing. */}
+                {room === 'trees' && <TreesRoom data={data} />}
                 {/* #375 — the Review room gets the mirror sites too. They are
                     the same poll the Now and Merge rooms read (a preview moves
                     on the HOST's clock, so it lives up here with its own auto

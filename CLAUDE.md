@@ -59,6 +59,12 @@ templates/ stack-agent-context.md — the canonical portable agent manual (singl
   agents) / `ControlMerge` (#363 — the house-wide branch ledger and the merge agent),
   with the merged session list in `ControlLanes`, whose autopilot lanes open a read-only Watch
   panel, `ControlWatch.tsx` (#366)). A former room, BUILD, was removed with its
+  `ControlRooms` (Nights, Plan) / `ControlReview` / `ControlRoles` / `ControlAgents` (#361 — the
+  three tab agents) / `ControlMerge` (#363 — the house-wide branch ledger and the merge agent) /
+  `ControlTrees` (#365 — read-only: it takes `data` and wires no mutation handlers, because Merge
+  stays where things are pressed; it groups by STAGE rather than by project because its question is
+  "how far has this got", not "what can I land"), with the merged session list in `ControlLanes`).
+  A former room, BUILD, was removed with its
   tab: its two gates belong to other rooms now — the verdict is Review's whole subject, the
   merge is the Now room's branch strip and, house-wide, the Merge room — and
   `#/control/build` falls back to the default room. Then Terminal, Skills.
@@ -272,6 +278,21 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   confuse this population with the post-build **verdict** queue in `review.js`: same word, different
   rooms, and different predicates — this one gates what may RUN, that one queues what has already
   been BUILT (#374's `done = true` OR built-and-claimed, never `done = true` alone).
+  docs · chore). `scripts/lib/lane.mjs` is the canonical namer AND parser; `web/src/lib/branch.ts` is
+  its client twin, kept in step by discipline, not by a shared test — `scripts/lane.test.mjs` pins
+  only the host-side `lane.mjs`, and `branch.ts` has no behavioural coverage of its own. **The old
+  flat `auto/item-N-<slug>` spelling must keep parsing forever** — those branches are on origin and
+  named in live `claimed_by` strings, so a reader that only knows the new form reports a working
+  fleet as empty. Two consequences a session gets wrong: a legacy lane's kind is `''`, **never
+  `feat`** (the name genuinely does not say, and the Merge room shows it unlabelled rather than
+  inventing a label); and any SQL that used to test `branch LIKE 'auto/%'` now goes through
+  `laneSql()` in `routes/control.js` — a predicate that still only knew `auto/` would blank the
+  last-auto chip and the reviewer's notes, which reads as "nothing ran" on a fleet that ran all
+  night. A worktree entry's `itemId` (#365) is parsed host-side by this same `parseBranch`, so the
+  server never grows a third copy of the naming rule — and the legacy spelling therefore keeps
+  working for trees exactly as it does for branches.
+- **`built_note`** — what actually landed, PATCHed by the completing session alongside `done:true`.
+  The Review room verdicts against it. Always write one.
 - **A future's SHAPE in the Polaris galaxy (#312) is derived, never stored.** There is no `kind`
   column and there must not be one: `is_star` = ★ its own orbit; parent is a star = ● a planet;
   parent is a planet = ○ a moon; no parent + judged = ◦ one of the north star's three shells
@@ -483,6 +504,22 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   Fail SILENT rule as a NULL `review_verdict` (see **Fail-safe direction**). Banked spend on a live
   slot is per FINISHED unit, so a running session honestly shows zero and that is not a stall — the
   Watch panel says so rather than rendering an empty list.
+- **A worktree report's NULL is not `[]`** (#365) — the same NULL-verdict rule this file already
+  states for `review_verdict` and `mergeClean`. No report ran ≠ nothing to report: a reader that
+  defaults it to `[]` reports every feature as tree-less, i.e. reports uncommitted work as absent.
+  The client type carries `Worktree[] | null` for exactly that reason and `getControl` must never
+  default it to `[]`.
+- **A feature's STAGE (#365, `web/src/lib/feature.ts`) is derived, never stored**, and two guesses
+  cost the first cut its correctness — exactly the guesses a session makes here. A tree at zero
+  commits has not landed, it has not started: only a branch that EXISTS on origin can be `landed`,
+  and a tree holding commits origin has not seen outranks a merged branch, so reading `ahead === 0`
+  on either side as landed marks every freshly created worktree as finished. And absence from
+  `claims[]` is NOT evidence an item is done — that list holds items with a non-empty `claimed_by`,
+  so an item drops out when the claim is RELEASED too, which `scripts/stack-autopilot.mjs` does
+  routinely on runs that committed real work; inferring done-ness from it hides a released-but-open
+  item with commits waiting behind a green "landed". Git is the only evidence. Flags are independent
+  of stage: a feature can be `pushed` and still hold uncommitted files, and collapsing that into one
+  "uncommitted" stage misreports both halves.
 
 ## Fail-safe direction (get this right or you delete work)
 
@@ -693,6 +730,10 @@ reference. The index:
   `scripts/lib/worktree.mjs` (#229) — deliberately NOT refactored onto the shared module yet. The
   nightly is how this repo builds itself, so a subtle break there is expensive; pointing autopilot at
   the module is a real behaviour change, not a no-op tidy-up, and belongs in its own item.
+- `scripts/feature.test.mjs` (#365) is the first test in the repo to run `web/src` TypeScript
+  directly under Node's type-stripping loader, with a small `module.registerHooks` shim to resolve
+  the extensionless sibling import. A session adding client-side test coverage should follow that
+  pattern rather than reinventing one.
 
 ## Quick commands
 
@@ -729,6 +770,7 @@ node server/test/agent-sandbox.test.mjs    # a tab agent runs with every tool of
 node scripts/lane.test.mjs                 # branch naming + BOTH spellings parse (pure, no git)
 node scripts/risk.test.mjs                 # the shared risk-tier helpers: normalise, label (pure)
 node server/test/worktree.test.mjs         # add/remove guards (real git in a throwaway repo, no DB)
+node --experimental-strip-types scripts/feature.test.mjs   # feature stages across branch + worktree (pure, no DB)
 
 ./stack tree                               # the branch navigator (--repo <path>, --json)
 ./stack models                             # which alt providers have a key (--json, --check)
