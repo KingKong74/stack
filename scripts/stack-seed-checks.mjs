@@ -220,6 +220,11 @@ function suiteFor(slug, ORIGIN) {
     // what's actually stored.
     { name: 'Workbench — model catalogue', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'models' },
     { name: 'Workbench — current model pick', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'model' },
+    // The debrief — the second pull source, over autopilot nights rather than
+    // Polaris. Asserting only `nights` (an array, empty is a pass): indexing
+    // into a specific night's insight shape would go red on a healthy server
+    // that simply has no autopilot night yet, which is worse than no check.
+    { name: 'Workbench — the debrief', url: u(`/api/projects/${slug}/workbench/debrief`), auth: true, json_path: 'nights' },
     { name: 'Checks — collection', url: u(`/api/projects/${slug}/checks`), auth: true, json_path: '0.name' },
     { name: 'Tips — app-wide library', url: u('/api/tips'), auth: true, json_path: '0.name' },
 

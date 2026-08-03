@@ -301,6 +301,20 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   too — greyed, unpickable — and that flag is the only thing stopping the same idea being pulled
   twice. Filtering the pulled ones out server-side is the obvious "tidy-up" that breaks it. Both
   pinned by `server/test/workbench.test.mjs`.
+- **The Workbench's second pull source is the autopilot debrief** (`GET|POST
+  /workbench/debrief`, extraction in `server/src/debrief.js`), not another Polaris. The structured
+  halves — the session's own `next_steps`/`blockers`, the advisor's stored `review_note`/
+  `architect_note`/`architect_obs` — are trustworthy and sort first; the parse of the run's free-
+  prose `summary` is a salvage pass and lands last as kind `note`. **A pick travels as a fingerprint,
+  never as text** — the server re-runs its own extraction and reads the words out of that, so the
+  canvas cannot hold a copy that drifted from the record and `debrief` cannot become a source anyone
+  can write arbitrary text under. An import lands as a real `note` (source `debrief`) or a real
+  `future` (source `debrief`), both keyed on `fingerprint`, which is what makes re-import a no-op; a
+  fingerprint in `dismissed_items` is never offered again. The whole list comes down including what
+  is already imported — same rule as the `polaris` payload above — and `imported` greying a row is
+  the only thing stopping the same insight landing twice. Every skip comes back with its reason and
+  is shown; nothing here writes tracker state (no bug, no roadmap item, no tick). It is deliberately
+  keyless: no Gemini anywhere in the path, because this reads only what Stack already recorded.
 - **The Workbench's ops are the propose half, and nothing else.** Every ✧ op writes a card and stops
   there. `Promote N phases → Roadmap` is the dispose half and it goes through the ordinary roadmap
   POST. Two op hints are deliberately narrower than the design handoff's copy — Gemini cannot read
@@ -668,6 +682,7 @@ node server/test/plan-night.test.mjs       # a booked plan night carries no item
 node server/test/review-queue.test.mjs     # a change is in Review once BUILT (needs API + DATABASE_URL)
 node server/test/foreman.test.mjs          # the Review room's agent + its ops' gate (needs API + DATABASE_URL)
 node server/test/timeline-window.test.mjs  # days clamp, Extend widens the window, the 30-day default (needs API + DATABASE_URL)
+node server/test/debrief-extract.test.mjs  # the debrief's insight extraction (pure, no DB)
 node server/test/prompt-scan.test.mjs      # a blocked permission prompt is read (pure, no tmux)
 node server/test/auto-scan.test.mjs        # an autopilot pane's activity is read (pure, no tmux)
 node server/test/attention.test.mjs        # what is waiting on you + same-file clashes (pure, no DB)

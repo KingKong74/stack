@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { pool, q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { NOTE_PALETTE } from '../util.js';
+import { NOTE_PALETTE, relativeTime } from '../util.js';
 import { workbenchCardShape, workbenchEdgeShape, workbenchIdeaShape } from '../shape.js';
 import { askGemini, geminiEnabled, GEMINI_MODELS } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
 import { readSettings, cleanModelAlias } from '../settings.js';
+import { extractInsights } from '../debrief.js';
 
 // Mounted at /api/projects/:slug/workbench — the planning canvas that replaced
 // the notes wall.
@@ -413,6 +414,217 @@ workbench.delete('/edges/:id', async (req, res) => {
   const dropped = target.length && target[0].kind === 'ai'
     ? await dropAiBranch(req.project.id, edge.b_id) : [];
   res.json({ ok: true, dropped });
+});
+
+// ---- the debrief import ----
+
+// How many recent autopilot nights the debrief looks at. Fixed, not a query
+// param — it is what keeps the picker's list readable, and the +1 in the SQL
+// below is what lets the payload say honestly whether it was hit.
+const DEBRIEF_CAP = 12;
+// How many picks land in one POST. Past this the request still succeeds —
+// the caller can just submit again — but nothing past the cap is silently
+// dropped, it comes back in `skipped` with a reason.
+const DEBRIEF_PICK_CAP = 20;
+
+// The runs-plus-sessions read that turns a project's recent autopilot nights
+// into insights. GET /debrief shapes this for browsing; POST /debrief calls
+// it again to check picks against — the same extraction both times, so a key
+// the picker showed is a key this route can always find, and a key it never
+// showed can never be typed in from the client.
+async function debriefNights(projectId, days) {
+  const { rows: runs } = await q(
+    `SELECT id, item_id, item_title, branch, outcome, summary, review_note, architect_note, architect_obs, finished_at
+       FROM autopilot_runs
+      WHERE project_id = $1 AND finished_at > now() - make_interval(days => $2)
+      ORDER BY finished_at DESC LIMIT $3`,
+    [projectId, days, DEBRIEF_CAP + 1]
+  );
+  const shown = runs.slice(0, DEBRIEF_CAP);
+  // Sessions are read only for the branches actually in play, and skipped
+  // outright when there are none — most windows with no runs have no branches.
+  const branches = [...new Set(shown.map((r) => r.branch).filter(Boolean))];
+  const { rows: sessions } = branches.length
+    ? await q(
+        `SELECT branch, summary, current_phase, next_steps, blockers, authored, created_at
+           FROM sessions WHERE project_id = $1 AND branch = ANY($2::text[])
+          ORDER BY created_at DESC`,
+        [projectId, branches]
+      )
+    : { rows: [] };
+
+  return shown.map((run) => {
+    const branchSessions = sessions.filter((s) => s.branch === run.branch);
+    const { insights, truncated } = extractInsights(run, branchSessions);
+    return {
+      // BIGINT comes back from pg as a string; item_id may legitimately be
+      // null (a plan night, or a run predating the roadmap link) and that
+      // null has to survive, not become 0.
+      runId: Number(run.id),
+      branch: run.branch,
+      day: run.finished_at.toISOString().slice(0, 10),
+      when: relativeTime(run.finished_at),
+      itemId: run.item_id === null ? null : Number(run.item_id),
+      itemTitle: run.item_title,
+      outcome: run.outcome,
+      insights,
+      truncated,
+    };
+  });
+}
+
+// GET /debrief -> what the last few autopilot nights turned up, mined for
+// things worth picking up.
+//
+// Sent down WHOLE, already-imported insights included, exactly like the
+// polaris list at the top of GET / carries every idea with an `onCanvas`
+// flag: the picker's All filter has to be able to show one that is already a
+// note or an idea, greyed, and `imported` is the only thing stopping it being
+// pulled twice. A night that produced nothing to act on is still returned
+// with an empty `insights` list — dropping it would read as "that night
+// never happened", which isn't true.
+workbench.get('/debrief', async (req, res) => {
+  const days = clampInt(req.query?.days, 1, 90, 21);
+  const [nights, totalRes, noteFps, futureFps, deadFps] = await Promise.all([
+    debriefNights(req.project.id, days),
+    q(
+      `SELECT count(*)::int AS n FROM autopilot_runs
+        WHERE project_id = $1 AND finished_at > now() - make_interval(days => $2)`,
+      [req.project.id, days]
+    ),
+    q(`SELECT fingerprint FROM notes WHERE project_id = $1 AND fingerprint <> ''`, [req.project.id]),
+    q(`SELECT fingerprint FROM futures WHERE project_id = $1`, [req.project.id]),
+    q(`SELECT fingerprint FROM dismissed_items WHERE project_id = $1`, [req.project.id]),
+  ]);
+
+  const noteSet = new Set(noteFps.rows.map((r) => r.fingerprint));
+  const futureSet = new Set(futureFps.rows.map((r) => r.fingerprint));
+  const deadSet = new Set(deadFps.rows.map((r) => r.fingerprint));
+  const importedAs = (key) =>
+    noteSet.has(key) ? 'note' : futureSet.has(key) ? 'idea' : deadSet.has(key) ? 'dismissed' : '';
+
+  let total = 0;
+  const shaped = nights.map((night) => {
+    const insights = night.insights.map((ins) => {
+      const as = importedAs(ins.key);
+      return { ...ins, imported: as !== '', importedAs: as };
+    });
+    total += insights.length;
+    return { ...night, insights };
+  });
+
+  res.json({
+    nights: shaped,
+    days,
+    runsShown: nights.length,
+    runsTotal: totalRes.rows[0].n,
+    total,
+  });
+});
+
+// POST /debrief -> land picked insights on the canvas as notes or ideas.
+//
+// The body carries only keys and positions. The server re-runs the same
+// extraction GET /debrief just ran and reads the landing text OUT OF THAT —
+// never out of anything the client sent — so this route can never become a
+// way to write arbitrary text under a 'debrief' source. The re-extraction
+// uses the widest window a GET could have shown (90 days, the clamp's own
+// ceiling) rather than a client-supplied `days`, so a key picked off any GET
+// call is still found here regardless of what window that call used.
+workbench.post('/debrief', async (req, res) => {
+  const as = req.body?.as === 'idea' ? 'idea' : req.body?.as === 'note' ? 'note' : null;
+  if (!as) return res.status(400).json({ error: "as must be 'note' or 'idea'." });
+
+  const rawPicks = Array.isArray(req.body?.picks) ? req.body.picks : [];
+  const picks = rawPicks.slice(0, DEBRIEF_PICK_CAP);
+  const skipped = rawPicks.slice(DEBRIEF_PICK_CAP).map((p) => ({
+    key: String(p?.key || ''),
+    why: `only the first ${DEBRIEF_PICK_CAP} picks in one import are landed — resubmit the rest separately`,
+  }));
+
+  const [nights, noteFps, futureFps, deadFps] = await Promise.all([
+    debriefNights(req.project.id, 90),
+    q(`SELECT fingerprint FROM notes WHERE project_id = $1 AND fingerprint <> ''`, [req.project.id]),
+    q(`SELECT fingerprint FROM futures WHERE project_id = $1`, [req.project.id]),
+    q(`SELECT fingerprint FROM dismissed_items WHERE project_id = $1`, [req.project.id]),
+  ]);
+  const byKey = new Map();
+  for (const night of nights) {
+    for (const ins of night.insights) byKey.set(ins.key, { insight: ins, night });
+  }
+  const noteSet = new Set(noteFps.rows.map((r) => r.fingerprint));
+  const futureSet = new Set(futureFps.rows.map((r) => r.fingerprint));
+  const deadSet = new Set(deadFps.rows.map((r) => r.fingerprint));
+
+  const toLand = [];
+  const claimed = new Set(); // two picks in one request sharing a key is the same hazard, caught before the tx
+  for (const p of picks) {
+    const key = String(p?.key || '');
+    const found = byKey.get(key);
+    if (!found) { skipped.push({ key, why: 'that insight is no longer in the debrief' }); continue; }
+    if (deadSet.has(key)) { skipped.push({ key, why: 'dismissed' }); continue; }
+    if (noteSet.has(key) || futureSet.has(key) || claimed.has(key)) {
+      skipped.push({ key, why: 'already imported' });
+      continue;
+    }
+    claimed.add(key);
+    toLand.push({
+      key,
+      text: found.insight.text,
+      night: found.night,
+      x: clampInt(p?.x, -20000, 20000, 40),
+      y: clampInt(p?.y, -20000, 20000, 40),
+    });
+  }
+
+  const cardIds = await tx(async (c) => {
+    const ids = [];
+    for (const pick of toLand) {
+      if (as === 'note') {
+        // Same palette cycle POST /cards uses, so a debrief note looks like
+        // any other note filed on the wall.
+        const { rows: cnt } = await c.query(
+          'SELECT count(*)::int AS n FROM notes WHERE project_id = $1', [req.project.id]);
+        const colour = NOTE_PALETTE[cnt[0].n % NOTE_PALETTE.length];
+        const { rows: n } = await c.query(
+          `INSERT INTO notes (project_id, text, colour, source, fingerprint)
+           VALUES ($1,$2,$3,'debrief',$4) RETURNING id`,
+          [req.project.id, pick.text.slice(0, 4000), colour, pick.key]
+        );
+        const { rows: card } = await c.query(
+          `INSERT INTO workbench_cards (project_id, kind, note_id, x, y, w)
+           VALUES ($1,'note',$2,$3,$4,244) RETURNING id`,
+          [req.project.id, n[0].id, pick.x, pick.y]
+        );
+        ids.push(card[0].id);
+      } else {
+        // An idea landed this way is a real idea in the funnel — that is the
+        // whole point of "import into ideas" — so it gets the same provenance
+        // note a human would type by hand, naming the night it came from.
+        const itemPart = pick.night.itemId != null
+          ? `#${pick.night.itemId} ${pick.night.itemTitle}`
+          : (pick.night.itemTitle || 'no roadmap item');
+        const provenance = `From the ${pick.night.day} autopilot debrief — ${itemPart} (${pick.night.branch}).`;
+        const { rows: f } = await c.query(
+          `INSERT INTO futures (project_id, title, note, source, fingerprint)
+           VALUES ($1,$2,$3,'debrief',$4) RETURNING id`,
+          [req.project.id, pick.text.slice(0, 300), provenance, pick.key]
+        );
+        const { rows: card } = await c.query(
+          `INSERT INTO workbench_cards (project_id, kind, future_id, x, y, w)
+           VALUES ($1,'polaris',$2,$3,$4,244) RETURNING id`,
+          [req.project.id, f[0].id, pick.x, pick.y]
+        );
+        ids.push(card[0].id);
+      }
+    }
+    return ids;
+  });
+
+  res.json({
+    cards: await Promise.all(cardIds.map((id) => oneCard(req.project.id, id))),
+    skipped,
+  });
 });
 
 // ---- the ops ----
