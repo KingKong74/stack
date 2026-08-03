@@ -436,7 +436,13 @@ review.post('/:slug/:id/read', async (req, res) => {
 
   const prompt = buildPrompt('readchange', changeBlocks(c));
   try {
-    const answer = await foreman.ask('readchange', prompt, { timeoutMs: 45_000 });
+    // 45s was the first cut and it was wrong: these numbers were inherited from
+    // the Gemini era, when the backend was an HTTP API answering in seconds.
+    // Since #364 the backend is `claude -p` on the host, which spawns a CLI and
+    // reads a page of record before it writes a word — the FIRST real press of
+    // this button timed out at 45s. `askClaudeOnHost` defaults to 180s for that
+    // reason; an op that reads a whole change has no business asking for less.
+    const answer = await foreman.ask('readchange', prompt, { timeoutMs: 180_000 });
     const call = ['approve', 'look', 'send-back'].includes(answer?.call) ? answer.call : 'look';
     res.json({
       call,
@@ -466,7 +472,7 @@ review.post('/:slug/:id/brief', async (req, res) => {
   const b = changeBlocks(c);
   const prompt = buildPrompt('reviewbrief', b);
   try {
-    const answer = await foreman.ask('reviewbrief', prompt, { timeoutMs: 30_000 });
+    const answer = await foreman.ask('reviewbrief', prompt, { timeoutMs: 120_000 });
     const summary = clip(answer?.summary, 1200);
     if (!summary) return res.status(502).json({ error: 'The Foreman returned nothing usable.' });
     res.json({ summary, test: list(answer?.test, 6), risks: list(answer?.risks, 3) });
@@ -494,7 +500,7 @@ review.post('/:slug/:id/refine-draft', async (req, res) => {
       : '',
   });
   try {
-    const answer = await foreman.ask('refinedraft', prompt, { timeoutMs: 30_000 });
+    const answer = await foreman.ask('refinedraft', prompt, { timeoutMs: 120_000 });
     res.json({
       draft: clip(answer?.draft, 2000),
       basis: clip(answer?.basis, 60),
@@ -559,7 +565,8 @@ review.post('/triage', async (_req, res) => {
   });
 
   try {
-    const answer = await foreman.ask('triagequeue', prompt, { timeoutMs: 60_000 });
+    // The whole queue, up to forty rows of it — the longest read of the four.
+    const answer = await foreman.ask('triagequeue', prompt, { timeoutMs: 180_000 });
     const known = new Map(shown.map((it) => [`${it.slug}#${it.id}`, it]));
     const seen = new Set();
     const order = [];
