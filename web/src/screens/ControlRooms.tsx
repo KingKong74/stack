@@ -6,8 +6,9 @@ import {
 } from '../store';
 import { go, hrefTo } from '../lib/route';
 import { NightDebrief } from './ControlDebrief';
-import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel } from '../lib/ui';
+import { FALLBACK_ADVISORS, FALLBACK_EXECUTORS, modelLabel, PRIORITY_META } from '../lib/ui';
 import { roadmapTarget } from '../lib/roadmapLink';
+import { isApproved, isHeld } from '../lib/approval';
 import type { RoadmapItem, Priority, Tier } from '../types';
 import { tierRank } from '../types';
 
@@ -125,7 +126,7 @@ function houseQueue(
       const row = { it, slug: p.slug, name: p.name, tint: p.tint, area, rank, laneMap };
       if (schedulable(it, area, laneMap)) queue.push(row);
       else if (!it.done
-        && !(it.source === 'hook' && !it.reviewed && (it.bucket === 'must' || it.bucket === 'should'))) {
+        && !(isHeld(it) && (it.bucket === 'must' || it.bucket === 'should'))) {
         held.push(row);
       }
     });
@@ -486,14 +487,16 @@ const buildLaneMap = (items: RoadmapItem[]): Map<string, string> => {
 const schedulable = (it: RoadmapItem, area: string, laneMap: Map<string, string>) =>
   !it.done && !it.skipped && !it.claimedBy
   && (it.bucket === 'must' || it.bucket === 'should')
-  && (it.source === 'manual' || it.reviewed)
+  // #359's approval rule and #267's area lane are two separate gates; this
+  // client mirror has to ask both, same as routes/control.js's pickFor().
+  && isApproved(it)
   && (!area || (it.area || '') === area)
   && !laneMap.has((it.area || '').trim().toLowerCase());
 
 const heldWhy = (it: RoadmapItem, area: string, laneMap: Map<string, string>): string => {
   if (it.claimedBy) return `⚑ ${it.claimedBy}`;
   if (it.skipped) return 'parked';
-  if (it.source === 'hook' && !it.reviewed) return 'in the inbox →';
+  if (isHeld(it)) return 'in the inbox →';
   if (area && (it.area || '') !== area) return `outside ${area}`;
   const norm = (it.area || '').trim().toLowerCase();
   if (norm && laneMap.has(norm)) return `waiting on the ${it.area} lane`;
@@ -535,6 +538,9 @@ function AllPlanQueue({ data, onPick, onSetMaxItems }: {
   const [heldAll, setHeldAll] = useState(false);
   const [settled, setSettled] = useState<Map<string, string>>(new Map());
   const [roomErr, setRoomErr] = useState('');
+  // The inbox's own bucket choice, per found item, keyed the same way as
+  // `settled` (`${slug}#${id}`) since the house view spans several projects.
+  const [bucketPick, setBucketPick] = useState<Map<string, Priority>>(new Map());
 
   const { queue, held: heldAllItems } = houseQueue(data, details);
   const cap = data.autopilot.maxItems === 0 ? Infinity : Math.max(1, data.autopilot.maxItems);
@@ -547,7 +553,7 @@ function AllPlanQueue({ data, onPick, onSetMaxItems }: {
     const d = details.get(p.slug);
     if (!d) continue;
     [...d.roadmap.must, ...d.roadmap.should, ...d.roadmap.could, ...d.roadmap.wont].forEach((it, rank) => {
-      if (it.source === 'hook' && !it.reviewed && !it.done && !settled.has(`${p.slug}#${it.id}`)) {
+      if (isHeld(it) && !it.done && !settled.has(`${p.slug}#${it.id}`)) {
         // Inbox rows never render heldWhy, so no lane map is needed here.
         found.push({ it, slug: p.slug, name: p.name, tint: p.tint, area: p.autopilotArea || '', rank, laneMap: EMPTY_LANE_MAP });
       }
@@ -557,9 +563,11 @@ function AllPlanQueue({ data, onPick, onSetMaxItems }: {
   const settle = (slug: string, id: number, note: string) =>
     setSettled((m) => new Map(m).set(`${slug}#${id}`, note));
   const accept = async (r: HouseItem) => {
+    const chosen = bucketPick.get(`${r.slug}#${r.it.id}`) ?? r.it.bucket;
     settle(r.slug, r.it.id, 'kept');
     try {
-      await patchRoadmapItem(r.slug, r.it.id, { reviewed: true });
+      await patchRoadmapItem(r.slug, r.it.id,
+        chosen !== r.it.bucket ? { reviewed: true, bucket: chosen } : { reviewed: true });
       detailCache.delete(r.slug);
     } catch (e) { setRoomErr((e as Error)?.message || 'Could not accept the item.'); }
   };
@@ -715,6 +723,20 @@ function AllPlanQueue({ data, onPick, onSetMaxItems }: {
               <button className="t" onClick={() => go.detail(r.slug, 'roadmap', String(r.it.id))}>
                 {r.it.title}
               </button>
+              <div className="mc16-caps" role="tablist" aria-label="Bucket — how necessary this is">
+                {PRIORITY_META.map((b) => {
+                  const key = `${r.slug}#${r.it.id}`;
+                  const chosen = bucketPick.get(key) ?? r.it.bucket;
+                  return (
+                    <button key={b.key} type="button" role="tab" aria-selected={chosen === b.key}
+                      className={`mc16-cap ${chosen === b.key ? 'on' : ''}`}
+                      title={`File as ${b.label}`}
+                      onClick={() => setBucketPick((m) => new Map(m).set(key, b.key))}>
+                      {b.short}
+                    </button>
+                  );
+                })}
+              </div>
               <div className="acts">
                 <button className="ok" onClick={() => void accept(r)}
                   title="Keep it — the item stays on the board and becomes eligible for the nights">Accept</button>
@@ -784,6 +806,10 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
   const [heldAll, setHeldAll] = useState(false);   // OUT OF THE SCHEDULE: show every held item
   const [planBusy, setPlanBusy] = useState(false);
   const [planNote, setPlanNote] = useState('');
+  // The inbox's own bucket choice, per found item — reviewed AND categorised
+  // in one motion rather than accepted into whatever bucket ingest guessed.
+  // Preselects the item's own bucket, so leaving it alone changes nothing.
+  const [bucketPick, setBucketPick] = useState<Map<number, Priority>>(new Map());
 
   // Local working copy of the roadmap — mutations land here AND via PATCH;
   // switching projects resets everything, including the one-step undo.
@@ -791,7 +817,7 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
     if (detail) {
       setItems([...detail.roadmap.must, ...detail.roadmap.should, ...detail.roadmap.could, ...detail.roadmap.wont]);
       setOrder(null); setFlips(new Map()); setTierFlips(new Map()); setBanner(null); setSettled(new Map()); setDropped(new Set());
-      setCleanups(null); setRoomErr('');
+      setCleanups(null); setRoomErr(''); setBucketPick(new Map());
     }
   }, [detail]);
 
@@ -834,7 +860,7 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
   // behind a count you can open instead.
   const heldAllItems = items
     .filter((it) => !it.done && !schedulable(it, area, laneMap)
-      && !(it.source === 'hook' && !it.reviewed && (it.bucket === 'must' || it.bucket === 'should')));
+      && !(isHeld(it) && (it.bucket === 'must' || it.bucket === 'should')));
   const HELD_FOLD = 8;
   const held = heldAll ? heldAllItems : heldAllItems.slice(0, HELD_FOLD);
 
@@ -934,7 +960,7 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
   };
 
   // ---- the inbox ----
-  const found = items.filter((it) => it.source === 'hook' && !it.reviewed && !it.done);
+  const found = items.filter((it) => isHeld(it) && !it.done);
   const proposals: PlanProposal[] = [
     ...found.map((it) => ({ key: `f${it.id}`, kind: 'found' as const, it })),
     ...(cleanups ?? [])
@@ -943,7 +969,11 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
   ].filter((p) => !dropped.has(p.key));
   const pendingCount = proposals.filter((p) => !settled.has(p.key)).length;
 
-  const apply = async (key: string, patch: Parameters<typeof patchRoadmapItem>[2], id: number, note: string, undoPatch?: Parameters<typeof patchRoadmapItem>[2]) => {
+  // `afterUndo` is for state the PATCH cannot restore — the row's own
+  // unsent choices. Undo has to put the row back exactly as it was found,
+  // and a bucket pick left highlighted over a restored item would have the
+  // row promising a bucket the item is no longer in.
+  const apply = async (key: string, patch: Parameters<typeof patchRoadmapItem>[2], id: number, note: string, undoPatch?: Parameters<typeof patchRoadmapItem>[2], afterUndo?: () => void) => {
     setRoomErr('');
     try {
       const upd = await patchRoadmapItem(pickSlug, id, patch);
@@ -955,6 +985,7 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
           setSettled((m) => { const n = new Map(m); n.delete(key); return n; });
           setBanner(null);
           detailCache.delete(pickSlug);
+          afterUndo?.();
         }).catch((e) => setRoomErr((e as Error)?.message || 'Could not undo.'));
       } : undefined;
       setSettled((m) => new Map(m).set(key, { note, undo }));
@@ -967,9 +998,16 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
   const acceptFound = (p: Extract<PlanProposal, { kind: 'found' }>) => {
     // The milestone header re-projects the moment items updates — that IS the
     // "watch the dates move" moment, so the banner just names the change.
-    void apply(p.key, { reviewed: true }, p.it.id,
-      `Accepted #${p.it.id} into the schedule as a ${p.it.bucket}.`,
-      { reviewed: false });
+    // Reviewed and categorised in the same PATCH when the inbox's own bucket
+    // pick differs from the one ingest guessed; the undo restores both.
+    const chosen = bucketPick.get(p.it.id) ?? p.it.bucket;
+    const recategorised = chosen !== p.it.bucket;
+    void apply(p.key,
+      recategorised ? { reviewed: true, bucket: chosen } : { reviewed: true },
+      p.it.id,
+      `Accepted #${p.it.id} into the schedule as a ${chosen}.`,
+      recategorised ? { reviewed: false, bucket: p.it.bucket } : { reviewed: false },
+      () => setBucketPick((m) => { const n = new Map(m); n.delete(p.it.id); return n; }));
   };
   const dismissFound = async (p: Extract<PlanProposal, { kind: 'found' }>) => {
     setRoomErr('');
@@ -1316,13 +1354,17 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
             </span>
             {proposals.map((p) => {
               const done = settled.get(p.key);
+              // The found item's own bucket choice — preselected to what
+              // ingest guessed, changeable before Accept reviews AND
+              // categorises it in one PATCH.
+              const chosen = p.kind === 'found' ? (bucketPick.get(p.it.id) ?? p.it.bucket) : null;
               return (
                 <div key={p.key} className={`mc16-prop ${done ? 'settled' : ''}`}>
                   <div className="toprow">
                     <span className={`kind ${p.kind === 'found' ? 'found' : 'clean'}`}>{kindChip(p)}</span>
                     <div style={{ flex: 1 }} />
                     <span className="impact">
-                      {p.kind === 'found' ? (p.it.bucket === 'must' ? 'moves the must line' : `lands as ${p.it.bucket}`) : `#${p.s.id}`}
+                      {p.kind === 'found' ? (chosen === 'must' ? 'moves the must line' : `lands as ${chosen}`) : `#${p.s.id}`}
                     </span>
                   </div>
                   <span className="t">{p.kind === 'found' ? p.it.title : (p.s.title ? `“${p.s.title}”` : p.s.bucket ? `${p.s.currentTitle} → ${p.s.bucket}` : `${p.s.currentTitle} → ${p.s.area}`)}</span>
@@ -1332,6 +1374,18 @@ function OnePlanRoom({ data, pickSlug, onPick, onSetMaxItems, onSetModel }: {
                       : p.s.why}
                   </span>
                   <span className="src">{p.kind === 'found' ? 'auto-extracted from a push' : '✧ the board’s cleanup pass'}</span>
+                  {p.kind === 'found' && !done && (
+                    <div className="mc16-caps" role="tablist" aria-label="Bucket — how necessary this is">
+                      {PRIORITY_META.map((b) => (
+                        <button key={b.key} type="button" role="tab" aria-selected={chosen === b.key}
+                          className={`mc16-cap ${chosen === b.key ? 'on' : ''}`}
+                          title={`File as ${b.label}`}
+                          onClick={() => setBucketPick((m) => new Map(m).set(p.it.id, b.key))}>
+                          {b.short}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {!done ? (
                     <div className="acts">
                       <button className="ok" onClick={() => (p.kind === 'found' ? acceptFound(p) : acceptCleanup(p))}>

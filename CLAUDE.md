@@ -257,6 +257,21 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   lane (that is a resume). A skipped job/item always logs why (`~/.stack/autopilot.log`, via
   `GET /next`'s `heldByArea`) and shows as `waiting on the <area> lane` under OUT OF THE SCHEDULE —
   a lane delay must never be a silence.
+- **"Approved for the auto runner" is `source <> 'hook' OR reviewed_at IS NOT NULL`** (#359), and it
+  has no column of its own — adding an `approved` flag would be a second, drifting truth for a fact
+  `source` + `reviewed_at` already state. A hook-extracted item needs a human's sign-off in the Plan
+  room inbox before any unattended path may run it; **a manual item is NEVER held**, because blocking
+  hand-written work is the failure mode this must not have. The rule is written out THREE times —
+  `server/src/approval.js`, `scripts/lib/approval.mjs`, `web/src/lib/approval.ts` — because none of
+  the three packages can import another; change one, change all three. Every other gate reads one of
+  them, and `server/test/approval.test.mjs` fails on a fourth hand-rolled copy appearing in an
+  execution queue. Two directions to keep straight: an unattended enqueue (the schedule sweep,
+  GET /next) **drops a held item silently**, while Run now / `POST /start` **refuses out loud and
+  names it** — a silent drop under a button looks like the press did nothing. The runner's
+  `--allow-unapproved` is the human-at-a-terminal escape hatch and nothing else may pass it. Do not
+  confuse this population with the post-build **verdict** queue in `review.js`: same word, different
+  rooms, and different predicates — this one gates what may RUN, that one queues what has already
+  been BUILT (#374's `done = true` OR built-and-claimed, never `done = true` alone).
 - **A future's SHAPE in the Polaris galaxy (#312) is derived, never stored.** There is no `kind`
   column and there must not be one: `is_star` = ★ its own orbit; parent is a star = ● a planet;
   parent is a planet = ○ a moon; no parent + judged = ◦ one of the north star's three shells

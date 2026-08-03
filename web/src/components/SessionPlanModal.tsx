@@ -5,6 +5,7 @@ import {
   type AutopilotSchedule, type SessionKind,
 } from '../store';
 import type { Bug, RoadmapItem } from '../types';
+import { isApproved, isHeld } from '../lib/approval';
 
 // The session planner (#228) — a scheduled session opened into its own thing.
 // Kind picks what the runner does; the agenda is the ordered work list chosen
@@ -77,7 +78,7 @@ export function SessionPlanModal({
     if (!items || kind === 'debug' || kind === 'audit') return [];
     return items
       .filter((it) => ['must', 'should'].includes(it.bucket) && !it.claimedBy && !it.skipped
-        && (it.source === 'manual' || it.reviewed)
+        && isApproved(it)
         && (!area || (it.area || '') === area)
         && (kind !== 'plan' || !(it.plan?.length)))
       .slice(0, 4);
@@ -228,10 +229,14 @@ export function SessionPlanModal({
                       (available as RoadmapItem[])
                         .filter((it) => !area || (it.area || '') === area)
                         .map((it) => (
-                          <button key={it.id} className="spm-pick" disabled={Boolean(it.claimedBy)}
+                          // An unapproved auto-found item is unpickable for the same
+                          // reason a claimed one is: the server drops it out of the
+                          // agenda at enqueue time (#359), so offering it here would
+                          // be offering a choice that silently does nothing.
+                          <button key={it.id} className="spm-pick" disabled={Boolean(it.claimedBy) || isHeld(it)}
                             onClick={() => setAgenda((a) => [...a, it.id])}>
                             <span className={`bkt ${it.bucket}`}>{it.bucket}</span>
-                            <span className="t">#{it.id} {it.title}{it.claimedBy ? ' — claimed' : ''}</span>
+                            <span className="t">#{it.id} {it.title}{it.claimedBy ? ' — claimed' : isHeld(it) ? ' — in the review inbox' : ''}</span>
                             {it.area && <span className="ar">{it.area}</span>}
                             <span className="plus">＋</span>
                           </button>

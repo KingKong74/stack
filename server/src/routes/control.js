@@ -7,6 +7,7 @@ import { termAgentConnected, termSessions, termDetached, termEdits, termPlanUsag
 import { geminiEnabled } from '../gemini.js';
 import { scheduleShapeRows, jobShapeRows } from './autopilot.js';
 import { occupiedAreas, areaHeld } from '../lanes.js';
+import { isApproved } from '../approval.js';
 
 // GET /api/control — Mission Control: every project's automation state in one
 // payload, computed in aggregate queries (never one request per project).
@@ -28,7 +29,9 @@ import { occupiedAreas, areaHeld } from '../lanes.js';
 //                   ahead?, behind?, mergeClean?,   // git state via the host's
 //                   subject?, when? } ],            // branch report (#207)
 //     absorbedBranches, branchesWhen,       // prune count + report freshness
-//     reviewCount,                          // hook items awaiting review
+//     reviewCount,                          // hook items awaiting approval (the
+//                                           // Plan room inbox — NOT the post-build
+//                                           // verdict queue, a different population)
 //     planCoverage: { unplanned, queued },  // (#255) open must/should with no
 //                                           // design, and plan jobs standing by
 //     bugs: { serious, open },
@@ -228,13 +231,24 @@ export function computeAttention({ detached = [], jobs = [], projects = [], now 
 
   for (const p of projects) {
     if (!p.reviewCount) continue;
+    // p.reviewCount is the hook review-inbox count (source='hook' AND
+    // reviewed_at IS NULL) — auto-extracted bugs/roadmap items/futures that a
+    // human has not yet approved. That is a different population from the
+    // post-build verdict queue in review.js (WHERE done = true), and this row
+    // used to borrow that room's "built and waiting on a verdict" wording,
+    // which sent the human to the wrong room looking for the wrong thing. The
+    // number that matters here is that the runner holds these out until
+    // they're approved, so say that. `detail` stays '' here: the client
+    // renders it in a <code> element (monospace), which every other producer
+    // fills with something code-shaped (a prompt title, a job detail string)
+    // — a prose sentence does not belong in it.
     rows.push({
       key: `review:${p.slug}`,
       kind: 'review',
       slug: p.slug,
       name: p.name,
       count: p.reviewCount,
-      text: `${p.reviewCount} item${p.reviewCount === 1 ? '' : 's'} built and waiting on a verdict`,
+      text: `${p.reviewCount} auto-found item${p.reviewCount === 1 ? '' : 's'} awaiting approval — held out of the runner`,
       detail: '',
       at: now,
       when: '',
@@ -1156,7 +1170,9 @@ control.get('/', async (_req, res) => {
         .map((it) => ({ projectId, area: it.area, by: it.claimed_by })));
     const eligible = items
       .filter((it) => !it.done && !it.skipped && !it.claimed_by
-        && (it.source === 'manual' || it.reviewed_at)
+        // #359 — the approval rule, from approval.js rather than spelled
+        // inline here; #267's area lane is a separate question and still asked.
+        && isApproved(it)
         && (!area || (it.area || '') === area)
         && !areaHeld(projectId, it.area, occupied))
       .sort((a, b) => (a.bucket === b.bucket

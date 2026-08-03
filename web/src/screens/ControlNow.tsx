@@ -260,7 +260,10 @@ export function NowRoom(p: NowRoomProps) {
                   </>);
                 })()}
                 {a.kind === 'review' && (
-                  <button className="btn-repo sm" onClick={() => p.onGoRoom('review')}>Review</button>
+                  // This row counts the hook review-inbox (auto-found, unapproved
+                  // items), not the post-build verdict queue — the button has to
+                  // land in the Plan room, where that inbox actually lives.
+                  <button className="btn-repo sm" onClick={() => p.onGoRoom('plan')}>Inbox →</button>
                 )}
               </span>
             </div>
@@ -426,7 +429,10 @@ export function NowRoom(p: NowRoomProps) {
                   </button>
                 )}
                 {x.reviewCount > 0 && (
-                  <button onClick={() => p.onGoRoom('review')}>{x.reviewCount} to review</button>
+                  // Same population as the attention row above: hook-extracted
+                  // items awaiting approval, held in the Plan room inbox — not
+                  // the post-build verdict queue.
+                  <button onClick={() => p.onGoRoom('plan')}>{x.reviewCount} to approve</button>
                 )}
                 {/* Read-only here — Automode is CHANGED on the project's own
                     page (the ⚙ badge there), not flipped from the fleet view. */}
