@@ -3577,6 +3577,8 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc-lane .state.quiet { color: var(--paused); }
 .mc-lane .lane-tail { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .mc-lane .lane-tail .what { font-size: 11.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-lane .lane-tail .what .link { font: inherit; color: inherit; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-lane .lane-tail .what .link:hover { color: var(--accent-deep); }
 .mc-lane .split { display: flex; align-items: center; gap: 8px; }
 .mc-lane .split .bar { display: flex; width: 150px; height: 4px; border-radius: 2px; overflow: hidden; background: var(--bg); flex: none; }
 .mc-lane .split .bar i { height: 4px; }
@@ -3629,7 +3631,10 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc-lane .lane-read .txt { font-size: 11px; line-height: 1.6; color: var(--ink); }
 .mc-lane .lane-acts { display: flex; gap: 6px; }
 .mc-lane .lane-acts .btn-repo { flex: 1; }
-.mc-lane .tmux { font-family: var(--mono); font-size: 9.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
+.mc-lane .tmux { font-family: var(--mono); font-size: 9.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; text-align: left; }
+.mc-lane .tmux:hover { color: var(--accent-deep); }
+.mc-lane .tmux.ok { color: var(--sage); }
+.mc-lane .tmux.fail { color: var(--critical); }
 
 /* #283 (design 22a) — the merged lane list: terminal sessions alongside the
    autopilot's workers, plus the queued rows behind them. */
