@@ -1,3 +1,6 @@
+// tmux 3.x gotcha: set-option's -t is a target-PANE, so a SESSION user option
+// needs the `=name:` target form — a bare `=name` fails on a session that
+// plainly exists.
 // Stack terminal — tmux session lifecycle helpers.
 //
 // Used by stack-term.mjs to run claude sessions inside named tmux sessions so

@@ -32,6 +32,13 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 // The async Clipboard API is unavailable on an insecure origin — Stack over
 // plain http on the LAN is exactly that — so the old execCommand path stays as
 // the fallback rather than leaving a whole class of device unable to copy.
+// A browser is not a terminal emulator, which is why these three rules look odd:
+// Ctrl-C copies ONLY while a selection exists (so the next press is still a real
+// SIGINT); Ctrl-V returns false WITHOUT preventDefault, so the browser's own
+// paste event reaches xterm's bracketed-paste handler — reading the clipboard
+// ourselves would need a permission Firefox never grants; and an OSC 52 '?'
+// payload, the host asking to READ the clipboard, is never answered.
+
 export async function copyText(text: string): Promise<boolean> {
   if (!text) return false;
   try {

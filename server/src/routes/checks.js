@@ -15,6 +15,18 @@ import { buildPrompt } from '../prompts.js';
 // button), bounded, and store their result on the row. This is a single-user
 // self-hosted app behind bearer auth, so probing user-supplied URLs from the
 // server is by design.
+// Three invariants on the columns. `auth` (#261) attaches the server's OWN
+// API_TOKEN, and only when the check's origin is the project's site_url or a
+// loopback/compose-internal host; the token is never stored on the row nor sent
+// to the client, and such requests use redirect: 'manual' so a redirect cannot
+// replay the Authorization header off-origin. A check pointed elsewhere fails
+// with a stated reason rather than leaking the token or lying about a 401.
+// Editing what a check TESTS clears its stored result AND its check_results
+// history — past passes were against a different test; renaming keeps both.
+// `external` (#291) is a row Stack never probes itself: its result arrives via
+// POST /report, so POST /run skips external rows and 400s a single-id run
+// against one, since probing would overwrite the reported result with the status
+// of a request that tested nothing.
 export const checks = Router({ mergeParams: true });
 
 const RUN_TIMEOUT_MS = 8000;

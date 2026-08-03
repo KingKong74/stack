@@ -19,6 +19,15 @@ import { agentClient } from '../agents.js';
 //                   investigation prompt to paste into a Claude session (the
 //                   web terminal's Claude mode, or any chat) — a separate,
 //                   human-driven session, not a call to the Auditor.
+// A capped list inside a prompt must SAY it is capped, and must be capped on the
+// right axis (#239). The auditor reads KNOWN_BUGS as "what is already tracked"
+// and reasons from ABSENCE, so a silent slice makes it re-report tracked bugs.
+// Order by severity — a cap on created_at DESC drops the long-standing criticals
+// — and state the true total beside the shown count. Same for any list a prompt
+// carries. And in landFindings, a finding matching a FIXED bug is a REGRESSION:
+// it reopens that bug and reports `reopened`, because swallowing it as "already
+// tracked" is how a bug that came back goes unmentioned.
+
 export const audit = Router({ mergeParams: true });
 
 // #361 — this surface IS the Auditor, and it is bound here once. Every model

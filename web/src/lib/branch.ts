@@ -4,6 +4,17 @@
 // which is what NAMES the branches; this is its reader. Keep the two in step —
 // lane.mjs carries the reasoning, and `scripts/lane.test.mjs` pins it.
 //
+// A branch's merge state is FOUR-valued, and `unprobed` is not `clean`:
+// mergeClean null means no probe RAN (an older report, git before 2.38, or a
+// claim with no branch behind it), so it gets its own state and stays out of the
+// merge agent's plan — the same rule as a NULL review_verdict. `behind` is the
+// opposite case: the probe passed, so the merge succeeds; what is missing is
+// that nothing has built the branch against the main it would land on. Worth
+// showing, not worth refusing, so `behind` counts as mergeable. And the branch
+// report's `topFiles` is CAPPED while `files` is the true total — the expanded
+// row prints the difference, and the cap is on size, not path order, so the
+// biggest files are the ones kept.
+//
 // Two spellings exist and both must keep working forever. The current one is
 // `<kind>/<id>-<slug>` (feat/271-mission-control, fix/bug-12-terminal-hangs,
 // test/audit-2026-08-02). The old one was flat — `auto/item-271-…` — and those

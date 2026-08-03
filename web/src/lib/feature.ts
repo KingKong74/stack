@@ -8,6 +8,17 @@
 // and merge-state read — rather than re-deriving anything about branch names
 // or merge probes here.
 
+// Two guesses cost the first cut its correctness, so state them. A tree at zero
+// commits has not landed, it has not STARTED: only a branch that exists on
+// origin can be `landed`, and a tree holding commits origin has not seen
+// outranks a merged branch — reading `ahead === 0` on either side as landed
+// marks every freshly created worktree as finished. And absence from `claims[]`
+// is NOT evidence an item is done: that list holds items with a non-empty
+// claimed_by, so an item drops out when the claim is RELEASED too, which the
+// host runner does routinely on runs that committed real work. Git is the only
+// evidence. Flags are independent of stage — a feature can be `pushed` and still
+// hold uncommitted files, and collapsing that into one stage misreports both.
+
 import type { ControlProject, FleetSlot, Worktree } from '../store';
 import { parseBranch, mergeStateOf, type MergeState, type LaneKind } from './branch';
 

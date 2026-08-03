@@ -1,3 +1,25 @@
+// Mission Control's Review room (#375) — the cross-project verdict queue.
+//
+// The rail's CLUSTERS are derived, never stored: the night is the UTC day of the
+// run that built the item (falling back to when it was ticked) and the lane is
+// the branch claim (#277). There is no cluster column and there must not be one.
+//
+// The batch's optimistic overlay has exactly one home. `pendingTag` is applied
+// INSIDE the `lists` memo that every count derives from, so the chip counts, the
+// rail and the header total move together — applying it at render instead is
+// what lets a rail disagree with its own chips for the second before the reload
+// lands. The reload SETTLES a batch, never the overlay: the server read is
+// authoritative and the overlay only bridges the gap, but a row whose PATCH was
+// REJECTED is un-hidden immediately rather than waiting on it, since it still
+// needs a verdict. And because Promise.allSettled never rejects, the forward
+// path and the undo each count their own rejections to report a partly-applied
+// batch — a catch block here would never fire.
+//
+// A cluster's evidence summary counts unrun checks and absent verdicts APART
+// from green and clean: checksFailing === null means the checks never ran, and
+// an item with no reviewVerdict means no pass ran. Folding either into the good
+// column turns a select-all into a blind mass-approve.
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   getReview, getReviewBrief, getReviewDebrief, getRefineDraft, getForemanRead, getQueueTriage,

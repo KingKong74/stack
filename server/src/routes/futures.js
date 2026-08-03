@@ -10,6 +10,19 @@ import { agentClient } from '../agents.js';
 // curated against the project's north star; promotion to the roadmap is a
 // client flow (create the roadmap item, then delete the idea — the delete
 // below tombstones a hook idea so the next push won't re-extract it).
+// A future's SHAPE in the Polaris galaxy (#312) is DERIVED, never stored. There
+// is no `kind` column and there must not be one: is_star = a star in its own
+// orbit; parent is a star = a planet; parent is a planet = a moon; no parent and
+// judged = one of the north star's three shells (`alignment` picks which,
+// on-course innermost); no parent and unjudged = the drift belt, which is also
+// the judge queue. PATCH /:id owns the invariants the client reads back — star →
+// planet → moon is the whole depth, adopting an idea demotes a star (that IS
+// what adopting one is), and un-starring returns its planets to the shells in
+// the same statement, because nothing loose can hold planets. Never write these
+// columns from SQL directly; the derivation has no other guard. `magnitude`
+// (1-5) is nullable ON PURPOSE: an unsized idea draws at its smallest and the
+// panel says "not sized yet" rather than the sky inventing an estimate nobody
+// gave. `area` survives as a plain tag and no longer decides where anything sits.
 export const futures = Router({ mergeParams: true });
 
 futures.use(async (req, res, next) => {

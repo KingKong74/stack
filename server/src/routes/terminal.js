@@ -28,6 +28,15 @@ terminal.get('/usage', async (_req, res) => {
   });
 });
 
+// (#366) An autopilot `stack-auto-*` session is READABLE from here and still not
+// mirrorable, killable or typeable-into. listAutoSessions() is a SIBLING of
+// listStackSessions(), and the mirror/kill/reap paths read the `stack-term-*`
+// list ONLY — widening listStackSessions to cover both is the obvious tidy-up,
+// and it hands the browser a kill button for a session running with
+// --dangerously-skip-permissions. auto-view calls capture-pane and nothing else.
+// A zero `at` means the host has never reported, NOT that the fleet is idle
+// (same for a slot's null activity), and banked spend is per FINISHED unit, so a
+// running session honestly shows zero and that is not a stall.
 // GET /api/terminal/agent — is the host daemon's uplink live right now? The
 // watchdog cron (#221) polls this: an unambiguous connected flag, unlike
 // /detached whose empty list also just means "no orphans".
@@ -75,6 +84,18 @@ terminal.post('/keep', (req, res) => {
 // the fingerprint the human was looking at. That check cannot move up here —
 // only the host can see the pane, and a check against the relay's up-to-20s-old
 // cache would be a check against the very staleness it is meant to catch.
+//
+// The FINGERPRINT covers the prompt's BODY, not just its question. "Do you want
+// to proceed?" is the question for every bash command there has ever been, so a
+// question-only hash would let a yes aimed at `rm -rf build` land on whatever
+// replaced it in the twenty seconds since the pane was read.
+//
+// Approve sends the plain Yes, NEVER "and don't ask again": widening a
+// permission for the rest of a session is a decision for the keyboard, where the
+// human can see what they are widening. Deny sends Escape, the one keystroke
+// that cannot mean anything else if the pane moved. And autopilot sessions never
+// appear here by construction — the runner passes --dangerously-skip-permissions
+// so it cannot be blocked this way; only stack-term-* can.
 //
 // The reply is awaited rather than fire-and-forget, because "we asked" is not
 // "it happened": the honest outcomes include "already answered at the keyboard"

@@ -27,6 +27,39 @@ import { extractInsights } from '../debrief.js';
 // card the owner keeps, edits or cuts. Nothing here writes tracker state; the
 // plan card's "promote to Roadmap" is a separate thing the human clicks, and it
 // goes through the ordinary roadmap POST.
+// Three more consequences of that rule. Removing a note card DOES delete the
+// note (it has no other home) while removing a polaris card returns the idea to
+// the picker; cutting an edge drops the 'ai' branch below it, and only ever 'ai'
+// cards, which is what makes an op undoable without an undo stack; and a READ
+// backfills a card for any note lacking one, which is how pre-canvas notes and
+// notes filed through the plain notes route reach the canvas at all.
+//
+// The `polaris` payload is the WHOLE funnel, not what is left of it: every idea
+// comes down carrying `onCanvas`, because the picker's All filter shows an idea
+// already placed — greyed, unpickable — and that flag is the only thing stopping
+// the same idea being pulled twice. Filtering the placed ones out server-side is
+// the obvious tidy-up that breaks it.
+//
+// The second pull source is the autopilot DEBRIEF (extraction in ../debrief.js).
+// Its structured halves — the session's next_steps/blockers, the advisor's
+// stored review_note/architect_note/architect_obs — sort first; the parse of the
+// run's free-prose summary is a salvage pass and lands last as kind 'note'. A
+// pick travels as a FINGERPRINT, never as text: the server re-runs its own
+// extraction and reads the words out of that, so the canvas cannot hold a copy
+// that drifted from the record and `debrief` cannot become a source anyone can
+// write arbitrary text under. Imports land as a real note/future keyed on
+// fingerprint (re-import is a no-op), dismissed fingerprints are never
+// re-offered, and the list comes down including what is already imported, greyed
+// — same rule as `onCanvas`. Every skip states its reason. Keyless by design: no
+// Gemini in that path, because it reads only what Stack already recorded.
+//
+// Two op hints are deliberately NARROWER than the design handoff's copy: Gemini
+// cannot read the repository, so `Ask` and `Touches` answer from the project
+// RECORD (roadmap, bugs, the files recent sessions touched) and say so. Don't
+// "fix" that copy back. Same correction on the refine draft: it reads neither
+// the run log nor the diff directly, only the session's own account, the second
+// model's STORED read and the files that branch touched — so the dialog prints
+// the list the server actually assembled (`read[]`), not a fixed caption.
 export const workbench = Router({ mergeParams: true });
 
 workbench.use(async (req, res, next) => {
