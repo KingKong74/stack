@@ -395,6 +395,7 @@ export interface OverviewRun {
   slug: string; name: string; itemId: number | null; itemTitle: string; branch: string;
   outcome: 'landed' | 'no-commits' | 'failed' | 'limit' | 'planned'; commits: number; tokens: number;
   summary: string; when: string;
+  day: string; // (#266) the night this run belongs to — night_key, YYYY-MM-DD
 }
 
 

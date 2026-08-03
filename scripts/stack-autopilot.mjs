@@ -71,6 +71,9 @@
 //                           executor exactly as it did before #153)
 //     [--dry]           print what tonight would pick and exit (no claim, no session)
 //     [--force]         run even while the Settings switch / automode is off
+//     [--night YYYY-MM-DD]  the night this run belongs to (#266), passed by the
+//                       dispatcher for a fanned nightly job; absent on a manual
+//                       or scheduled run, which belongs to no night
 //
 // Dual-model sessions (#153, inverted by #285): the strong ADVISOR model runs the session as the DIRECTOR
 // (claude --model) and delegates the building to a cheap EXECUTOR subagent with
@@ -131,6 +134,10 @@ const AGENDA = String(arg('items') || '').split(',')
 const BUG_AGENDA = String(arg('bugs') || '').split(',')
   .map((s) => s.trim().toUpperCase()).filter((s) => /^BUG-\d+$/.test(s)).slice(0, 20);
 const AREA_ARG = arg('area'); // null = no override; '' = whole board
+// #266 — the night this run belongs to, passed by the dispatcher for a fanned
+// nightly job; reject anything that isn't a plain ISO date rather than passing
+// junk to the API.
+const NIGHT_DATE = /^\d{4}-\d{2}-\d{2}$/.test(String(arg('night') || '')) ? arg('night') : null;
 const MIN_SESSION_MIN = 15; // not worth starting a session with less than this
 
 const API = process.env.STACK_API;
@@ -166,7 +173,8 @@ async function api(method, path, body) {
 // morning digest + Mission Control read it). Best effort — a failed POST only
 // costs the record, never the night.
 async function postRun(payload) {
-  try { return await api('POST', `/api/projects/${SLUG}/autopilot/runs`, payload); }
+  // #266 — every outcome carries which night (if any) produced it.
+  try { return await api('POST', `/api/projects/${SLUG}/autopilot/runs`, { ...payload, night_date: NIGHT_DATE }); }
   catch (e) { log(`run record skipped (${e.message})`); return null; }
 }
 

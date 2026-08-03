@@ -388,6 +388,8 @@ export interface AutopilotJob {
   agenda?: (number | string)[];
   area?: string;
   when: string;
+  nightDate: string | null;   // (#266) the night this job's fan-out belongs to, or null
+  tokenBudget: number | null; // (#266) this job's share of the night's token budget, or null
 }
 export interface TermSession {
   sid: string; cwd: string; cmd: 'shell' | 'claude';

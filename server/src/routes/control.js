@@ -932,12 +932,14 @@ control.get('/', async (_req, res) => {
         ORDER BY s.enabled DESC, s.at_time, s.id`),
     // Open + paused rows lead so a long-parked hung-up resume (#142) can't be
     // pushed off the strip by newer finished jobs.
+    // (#266) A fanned night is now N jobs for one project, not one — 12 rows
+    // can no longer show even a single night's queue, so this is raised to 40.
     q(`SELECT j.*, p.slug, p.name AS project_name, ri.title AS item_title
          FROM autopilot_jobs j
          JOIN projects p ON p.id = j.project_id AND p.deleted_at IS NULL
          LEFT JOIN roadmap_items ri ON ri.id = j.item_id
         ORDER BY (j.status IN ('queued','claimed','running','paused')) DESC,
-                 j.created_at DESC LIMIT 12`),
+                 j.created_at DESC LIMIT 40`),
     // (#194) Usage aggregation — last 7 days of autopilot runs for the weekly
     // summary card. Aggregate in JS to avoid JSONB gymnastics. Rows are tiny.
     // BIGINT/NUMERIC come back as strings from node-postgres; use Number().
@@ -953,7 +955,8 @@ control.get('/', async (_req, res) => {
               r.review_verdict, r.review_note, r.review_findings,
               r.architect_verdict, r.architect_note, r.architect_obs,
               ri.review_tag, ri.done AS item_done,
-              p.slug, p.name AS project_name
+              p.slug, p.name AS project_name,
+              to_char(COALESCE(r.night_date, (r.finished_at AT TIME ZONE 'UTC')::date), 'YYYY-MM-DD') AS night_key
          FROM autopilot_runs r
          JOIN projects p ON p.id = r.project_id
          LEFT JOIN roadmap_items ri ON ri.id = r.item_id
@@ -1054,11 +1057,13 @@ control.get('/', async (_req, res) => {
     weekTokens += tok;
     weekCost += cost;
     if (new Date(r.finished_at) > todayCutoff) { todayTokens += tok; todayCost += cost; }
-    // Count distinct nights by the UTC calendar date of the finish time
+    // Count distinct nights by night_key (#266): the run's own night_date when
+    // the fan-out gave it one, else the UTC calendar date of the finish time
     // (#218: #201 — deliberate: every server-side date bucket uses UTC, so the
-    // denominator can't drift with the server's timezone; an AEST night run
-    // finishes mid-UTC-day, so nights never split across the UTC midnight).
-    nightSet.add(new Date(r.finished_at).toISOString().slice(0, 10));
+    // denominator can't drift with the server's timezone). Using night_key
+    // rather than finished_at keeps a night that crossed midnight as ONE
+    // night, not two.
+    nightSet.add(r.night_key);
     if (r.model_usage && typeof r.model_usage === 'object') {
       for (const [model, entry] of Object.entries(r.model_usage)) {
         const t = (Number(entry.inputTokens) || 0) + (Number(entry.outputTokens) || 0)
@@ -1100,7 +1105,7 @@ control.get('/', async (_req, res) => {
     // (#177) Agent breakdown — the newest runs with their per-model split
     // (executor vs advisor when dual-model; one entry for single-model runs).
     // The cap covers a full week of nights so the Nights calendar (14a) can
-    // place every run on its day; `day` is the UTC calendar date, the same
+    // place every run on its day; `day` is night_key (#266) — the same
     // bucket convention as weekNights above.
     recentRuns: usageR.rows.slice(0, 60).map((r) => ({
       slug: r.slug,
@@ -1115,7 +1120,7 @@ control.get('/', async (_req, res) => {
       // exactly what the debrief asks you to do.
       verdict: r.review_tag || '',
       itemDone: !!r.item_done,
-      day: new Date(r.finished_at).toISOString().slice(0, 10),
+      day: r.night_key,
       when: relativeTime(r.finished_at) || 'just now',
       models: r.model_usage && typeof r.model_usage === 'object'
         ? Object.entries(r.model_usage).map(([model, u]) => ({

@@ -44,6 +44,8 @@ export function runShape(r) {
     // Named tmux session (#171): set when the run was started inside a tmux session
     // so the web terminal can re-attach for live monitoring while the run is active.
     tmuxSession: r.tmux_session || null,
+    // #266 — which night (if any) produced this run.
+    nightDate: dateKey(r.night_date),
     when: relativeTime(r.finished_at) || 'just now',
     finishedAt: r.finished_at,
   };
@@ -90,6 +92,46 @@ const cleanAgenda = (v) => (Array.isArray(v) ? v : [])
   .slice(0, 20);
 const cleanArea = (v) => String(v || '').trim().toLowerCase().slice(0, 40);
 
+// A pg DATE parses to LOCAL midnight, so toISOString() shifts the day
+// whenever the server TZ is ahead of UTC. Read the local components.
+const dateKey = (v) => { if (!v) return null; const d = new Date(v);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+// #266 — the runner's own token-budget floor: below this, a job's share gets
+// rounded back UP to it (scripts/stack-autopilot.mjs), so funding a job under
+// the floor doesn't shrink spend, it just hides it from the split.
+export const MIN_JOB_TOKENS = 50_000;
+
+// #266 — split a night's token budget across n fanned-out jobs so the total
+// stays EXACT: no job is silently overfunded (or the night underspent) by
+// rounding. total <= 0 means unlimited, so every job gets 0 (unlimited) too.
+export function splitNightBudget(total, n) {
+  if (n <= 0) return [];
+  if (total <= 0) return Array(n).fill(0);
+  const base = Math.floor(total / n);
+  const remainder = total - base * n;
+  return Array.from({ length: n }, (_, i) => base + (i < remainder ? 1 : 0));
+}
+
+// #266 — how many jobs a night stands up for one project. maxItems 0 is
+// "unlimited" per Settings, but still capped at 20 (cleanAgenda's own ceiling)
+// so a huge board can't enqueue a huge queue; never more than the items that
+// are actually eligible tonight. When the night has a real token budget, also
+// cap so each job's share is at least MIN_JOB_TOKENS: below that floor the
+// runner rounds every share back UP to it, so the night would quietly spend
+// more than the budget it was given — fewer, properly funded jobs beats N
+// underfunded ones.
+export function nightFanOut(maxItems, eligibleCount, totalTokens) {
+  if (eligibleCount <= 0) return 0;
+  let n = maxItems === 0 ? 20 : Math.max(0, Math.min(maxItems, 20));
+  n = Math.min(n, eligibleCount);
+  if (totalTokens > 0) {
+    const byBudget = Math.max(1, Math.floor(totalTokens / MIN_JOB_TOKENS));
+    n = Math.min(n, byBudget);
+  }
+  return n;
+}
+
 function scheduleShape(r) {
   return {
     id: String(r.id),
@@ -100,7 +142,7 @@ function scheduleShape(r) {
     itemTitle: r.item_title || '',
     atTime: r.at_time,
     days: DAY_LIST(r.days),
-    runDate: r.run_date ? new Date(r.run_date).toISOString().slice(0, 10) : null,
+    runDate: dateKey(r.run_date),
     note: r.note || '',
     enabled: !!r.enabled,
     // #228 — the session plan
@@ -127,6 +169,11 @@ function jobShape(r) {
     sessionKind: cleanKind(r.session_kind),
     agenda: Array.isArray(r.agenda) ? r.agenda : [],
     area: r.area || '',
+    // #266 — the fan-out's own bookkeeping: which night this job belongs to,
+    // and its slice of that night's token budget.
+    nightDate: dateKey(r.night_date),
+    // BIGINT comes back from pg as a STRING — Number() it, unlike an INT column.
+    tokenBudget: r.token_budget != null ? Number(r.token_budget) : null,
     when: relativeTime(r.finished_at || r.started_at || r.created_at) || 'just now',
   };
 }
@@ -526,15 +573,83 @@ autopilotGlobal.get('/next', async (req, res) => {
   await q(`UPDATE autopilot_jobs SET status = 'failed', detail = 'stale — no completion report', finished_at = now()
             WHERE status = 'running' AND started_at < now() - interval '12 hours'`);
 
-  // The armed nightly: one job per automode project per local date, once the
-  // clock passes the configured start. The unique partial index carries the
-  // dedup, so re-polls are free.
+  // The armed nightly (#266 — fanned out): one job PER ELIGIBLE ITEM, up to
+  // Settings' max-items, once the clock passes the configured start — not one
+  // multi-item job that picked its own items after the fact. Each job is
+  // pinned to its item (so the runner's own --item refusal-on-claim/-done
+  // logic already applies with no runner change) and carries its own slice of
+  // the night's token budget. The candidate pick is ONE aggregate query across
+  // every automode project (never one query per project), windowed to the top
+  // 20 per project by the run queue's own order — tier first (S/A/B/C, then
+  // unranked last), then bucket (must before should), then position/id — and
+  // filtered exactly like the runner's own `eligible()`: open, unclaimed, not
+  // parked, human-approved (or manual), inside the project's target area. The
+  // fan-out and the split are pure helpers (nightFanOut/splitNightBudget)
+  // above; the unique partial index (now keyed on the item too) carries the
+  // dedup, so re-polls stay free. A project with zero eligible items gets NO
+  // nightly job at all tonight — the old single job would have started a
+  // session, found nothing eligible and exited; standing one up for nothing
+  // is worse than standing up none.
   if (settings.autopilot_enabled && within(timeToMin(settings.autopilot_time), nowMin)) {
-    await q(
-      `INSERT INTO autopilot_jobs (project_id, kind, night_date)
-        SELECT id, 'nightly', $1::date FROM projects WHERE automode AND deleted_at IS NULL
-        ON CONFLICT (project_id, night_date) WHERE kind = 'nightly' DO NOTHING`,
-      [localDate]);
+    const { rows: candidates } = await q(`
+      SELECT project_id, item_id FROM (
+        SELECT p.id AS project_id, r.id AS item_id,
+               row_number() OVER (
+                 PARTITION BY p.id
+                 ORDER BY
+                   CASE upper(COALESCE(r.tier, ''))
+                     WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END,
+                   CASE r.bucket WHEN 'must' THEN 0 WHEN 'should' THEN 1 ELSE 2 END,
+                   r.position, r.id
+               ) AS rn
+          FROM projects p
+          JOIN roadmap_items r ON r.project_id = p.id
+         WHERE p.automode AND p.deleted_at IS NULL
+           AND NOT r.done AND NOT COALESCE(r.skipped, false)
+           AND COALESCE(r.claimed_by, '') = ''
+           AND r.bucket IN ('must', 'should')
+           AND (r.source = 'manual' OR r.reviewed_at IS NOT NULL)
+           AND (COALESCE(p.autopilot_area, '') = '' OR lower(COALESCE(r.area, '')) = lower(p.autopilot_area))
+           -- The fan-out is decided ONCE, at the moment the night opens — not
+           -- re-decided on every poll. Without this guard, the moment the
+           -- runner starts a fanned job it claims that item, the item drops
+           -- out of the candidate list above, the top-20 window slides down,
+           -- and items N+1, N+2 … look like fresh candidates on the very next
+           -- poll (this block runs once a minute for the whole grace window).
+           -- Each "fresh" batch would be handed another full splitNightBudget
+           -- share, so the night's token budget would be issued several times
+           -- over. One decision per project per night is also what makes the
+           -- split exact.
+           AND NOT EXISTS (
+             SELECT 1 FROM autopilot_jobs j
+              WHERE j.project_id = p.id AND j.kind = 'nightly' AND j.night_date = $1::date)
+      ) ranked
+      WHERE rn <= 20
+      ORDER BY project_id, rn`, [localDate]);
+    const byProject = new Map();
+    for (const row of candidates) {
+      const list = byProject.get(row.project_id) || [];
+      list.push(row.item_id);
+      byProject.set(row.project_id, list);
+    }
+    const values = [];
+    const params = [];
+    let i = 1;
+    for (const [projectId, items] of byProject) {
+      const n = nightFanOut(settings.autopilot_max_items, items.length, settings.autopilot_tokens);
+      const shares = splitNightBudget(settings.autopilot_tokens, n);
+      for (let k = 0; k < n; k++) {
+        values.push(`($${i++}, 'nightly', $${i++}::date, $${i++}, $${i++})`);
+        params.push(projectId, localDate, items[k], shares[k]);
+      }
+    }
+    if (values.length) {
+      await q(
+        `INSERT INTO autopilot_jobs (project_id, kind, night_date, item_id, token_budget)
+          VALUES ${values.join(', ')}
+          ON CONFLICT (project_id, night_date, COALESCE(item_id, 0)) WHERE kind = 'nightly' DO NOTHING`,
+        params);
+    }
   }
 
   // The plan sweep (#255). The board's ✧ To planning agent is the pressed
@@ -751,10 +866,13 @@ autopilot.post('/runs', async (req, res) => {
   const reviewNote = b.review_note ? String(b.review_note).slice(0, 1200) : null;
   const reviewFindings = Number.isFinite(Number(b.review_findings))
     ? Math.max(0, Math.trunc(Number(b.review_findings))) : null;
+  // #266 — which night (if any) produced this run. Only a plain ISO date is
+  // stored — an unrecognised value becomes NULL rather than inventing one.
+  const nightDate = /^\d{4}-\d{2}-\d{2}$/.test(String(b.night_date || '')) ? b.night_date : null;
   const { rows } = await q(
     `INSERT INTO autopilot_runs
-       (project_id, item_id, item_title, branch, outcome, commits, tokens, cost_usd, checks_failing, summary, model_usage, tmux_session, review_verdict, review_note, review_findings, started_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15, COALESCE($16, now())) RETURNING *`,
+       (project_id, item_id, item_title, branch, outcome, commits, tokens, cost_usd, checks_failing, summary, model_usage, tmux_session, review_verdict, review_note, review_findings, night_date, started_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16, COALESCE($17, now())) RETURNING *`,
     [
       req.project.id,
       Number.isFinite(Number(b.item_id)) ? Number(b.item_id) : null,
@@ -769,6 +887,7 @@ autopilot.post('/runs', async (req, res) => {
       modelUsage ? JSON.stringify(modelUsage) : null,
       tmuxSession,
       reviewVerdict, reviewNote, reviewFindings,
+      nightDate,
       b.started_at ? new Date(b.started_at) : null,
     ]
   );
