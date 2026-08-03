@@ -265,6 +265,24 @@ export function ReviewRoom({
     },
   );
 
+  // #313 — clear the item's note (or its pending refinement note) without
+  // touching anything else. Undo restores the exact text, so no confirmation.
+  const clearNote = (it: ReviewItem, field: 'note' | 'refineNote') => {
+    const original = field === 'note' ? it.note : it.refineNote;
+    const patch = field === 'note' ? { note: '' } : { refine_note: '' };
+    const undoPatch = field === 'note' ? { note: original } : { refine_note: original };
+    act(
+      () => patchRoadmapItem(it.slug, Number(it.id), patch),
+      {
+        key: key(it),
+        text: field === 'note'
+          ? `#${it.id} ${it.title} — note removed.`
+          : `#${it.id} ${it.title} — pending refinement removed.`,
+        undo: () => act(() => patchRoadmapItem(it.slug, Number(it.id), undoPatch)),
+      },
+    );
+  };
+
   const shelve = (it: ReviewItem) => act(
     () => patchRoadmapItem(it.slug, Number(it.id), { review_shelved: !it.shelved }),
     {
@@ -698,6 +716,7 @@ export function ReviewRoom({
             onLogAudit={() => logTicket(sel, 'audit')}
             onToggleTag={(t) => toggleTag(sel, t)}
             onDelete={() => setConfirmDelete(sel)}
+            onClearNote={(field) => clearNote(sel, field)}
           /> : (
             <div className="rv-detail empty">
               <div className="empty-state">
@@ -809,7 +828,7 @@ function Detail({
   it, busy, brief, read, mirror, mirrorStarting, mirrorBusy, canBrief, canRead, offReason, undoNote,
   onVerdict, onRefine, onShelve, onBoard, onUndo, onBrief, onRead,
   onMirror, onStopMirror, onExtendMirror, onSession, onLogBug, onLogAudit,
-  onToggleTag, onDelete,
+  onToggleTag, onDelete, onClearNote,
 }: {
   it: ReviewItem; busy: boolean;
   brief?: { loading?: boolean; error?: string; data?: ReviewBrief };
@@ -826,6 +845,7 @@ function Detail({
   onSession: () => void;
   onLogBug: () => void; onLogAudit: () => void;
   onToggleTag: (t: string) => void; onDelete: () => void;
+  onClearNote: (field: 'note' | 'refineNote') => void;
 }) {
   const v = it.run?.reviewVerdict ?? '';
   const built = isBuilt(it);
@@ -896,9 +916,19 @@ function Detail({
               : 'No branch report names it: either the host has not reported since it was pushed, or it was merged without being ticked. Check the Merge room before assuming either.'}
           </p>
         )}
-        {it.note && <p className="what">{it.note}</p>}
+        {it.note && (
+          <div className="note-row">
+            <p className="what">{it.note}</p>
+            <button className="note-clear" disabled={busy} onClick={() => onClearNote('note')}
+              aria-label="Remove note" title="Remove this note">×</button>
+          </div>
+        )}
         {it.refineNote && (
-          <p className="what refine">↻ Pending refinement: {it.refineNote}</p>
+          <div className="note-row">
+            <p className="what refine">↻ Pending refinement: {it.refineNote}</p>
+            <button className="note-clear" disabled={busy} onClick={() => onClearNote('refineNote')}
+              aria-label="Remove pending refinement" title="Remove this pending refinement">×</button>
+          </div>
         )}
       </div>
 

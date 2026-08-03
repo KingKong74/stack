@@ -361,6 +361,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
     });
 
+  // #313 — an in-place "remove this note" affordance on the board/parked
+  // cards: clears just the one field (never built_note) without opening the
+  // edit modal or touching the rest of the item.
+  const clearRoadNote = (item: RoadmapItem, field: 'note' | 'refineNote') =>
+    guard(async () => {
+      const updated = await patchRoadmapItem(slug, item.id, field === 'note' ? { note: '' } : { refine_note: '' });
+      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
+    });
+
   // Board clean-up: the Curator proposes area/title/bucket fixes over the
   // open board; the human unticks what they don't want and each applied fix
   // lands through the normal PATCH path. The Curator proposes, the human
@@ -947,6 +956,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onToggle={toggleRoad}
             onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
             onDelete={(it) => setConfirmRoadDelete(it)}
+            onClearNote={clearRoadNote}
             onToggleSkip={toggleSkipRoad} onReorder={reorderRoad}
             onCleanup={agentCan(data.agents, 'curator', 'cleanup') ? openCleanup : undefined}
             onDeleteArea={deleteArea} onRenameArea={renameArea}

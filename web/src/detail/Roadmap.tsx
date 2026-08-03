@@ -30,7 +30,7 @@ export const REVIEW_NOTE_TAGS: { key: string; label: string }[] = [
 // Archive below — still counted by the progress model, reviewable with a
 // verdict tag, refinable by delta (#146), restorable by un-ticking.
 export function Roadmap({
-  roadmap, onAdd, onToggle, onEdit, onDelete, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onSetTier, onBranch, onDeleteArea, onRenameArea, onRefineNote, slug, highlightId,
+  roadmap, onAdd, onToggle, onEdit, onDelete, onClearNote, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onSetTier, onBranch, onDeleteArea, onRenameArea, onRefineNote, slug, highlightId,
   draft, onResumeDraft, onDiscardDraft, liveBranches, staleItemDays,
 }: {
   roadmap: RoadmapData;
@@ -41,6 +41,9 @@ export function Roadmap({
   onToggle: (item: RoadmapItem) => void;
   onEdit: (item: RoadmapItem) => void;
   onDelete: (item: RoadmapItem) => void;
+  // #313 — clear just the item's note (or its pending refinement note) in
+  // place, without opening the edit modal or deleting the whole item.
+  onClearNote: (item: RoadmapItem, field: 'note' | 'refineNote') => void;
   onToggleSkip: (item: RoadmapItem) => void;
   onReorder?: (item: RoadmapItem, toBucket: Priority, beforeId: number | null) => void;
   onCleanup?: () => void;
@@ -707,7 +710,18 @@ export function Roadmap({
                           </span>
                         )}
                       </div>
-                      {it.note && <div className="note">{it.note}</div>}
+                      {/* #313 — the × clears just this one field. It sits on
+                          the note and on a DISPLAYED refinement, never on the
+                          one #319 has open for editing: that panel has its own
+                          Save/Cancel, and a third control that silently
+                          discards the draft belongs nowhere near them. */}
+                      {it.note && (
+                        <div className="note-row">
+                          <div className="note">{it.note}</div>
+                          <button className="note-clear" onClick={(e) => { e.stopPropagation(); onClearNote?.(it, 'note'); }}
+                            aria-label="Remove note" title="Remove this note">×</button>
+                        </div>
+                      )}
                       {refineEdit?.id === it.id ? (
                         <div className="refine-note refine-note-edit">
                           <textarea
@@ -755,12 +769,18 @@ export function Roadmap({
                               onClick={(e) => { e.stopPropagation(); openRefineEdit(it); }}>
                               ✎
                             </button>
+                            <button type="button" className="note-clear"
+                              onClick={(e) => { e.stopPropagation(); onClearNote?.(it, 'refineNote'); }}
+                              aria-label="Remove pending refinement" title="Remove this pending refinement">×</button>
                           </div>
                         ) : (
                           <div className="refine-note refine-note-rich"
                             title="Sent back for refinement — the next session changes only this, on top of what landed">
                             <span className="refine-note-icon">↻</span>
                             <span className="refine-note-body">{renderMarkdownLite(it.refineNote)}</span>
+                            <button type="button" className="note-clear"
+                              onClick={(e) => { e.stopPropagation(); onClearNote?.(it, 'refineNote'); }}
+                              aria-label="Remove pending refinement" title="Remove this pending refinement">×</button>
                           </div>
                         )
                       )}
@@ -938,7 +958,13 @@ export function Roadmap({
                         {it.area && <span className="area-chip">{it.area}</span>}
                         {it.claimedBy && <span className="claim-chip inline">⚑ {it.claimedBy}</span>}
                       </div>
-                      {it.note && <div className="note">{it.note}</div>}
+                      {it.note && (
+                        <div className="note-row">
+                          <div className="note">{it.note}</div>
+                          <button className="note-clear" onClick={() => onClearNote(it, 'note')}
+                            aria-label="Remove note" title="Remove this note">×</button>
+                        </div>
+                      )}
                     </div>
                     <span className={`parked-age ${stale ? 'stale' : ''}`}
                       title={age?.exact === false
