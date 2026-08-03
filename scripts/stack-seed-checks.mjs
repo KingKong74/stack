@@ -75,6 +75,18 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Control — merge autonomy', url: u('/api/control'), auth: true, json_path: 'projects.0.mergeAutonomy' },
     { name: 'Control — branch diff for the merge ledger', url: u('/api/control'), auth: true, json_path: 'projects.0.branches' },
     { name: 'Control — model catalogue', url: u('/api/control'), auth: true, json_path: 'models' },
+    // #270 — the loud-idle status: the honest reason nothing is starting, and
+    // its own copy. `code` and `text` are non-empty strings in EVERY state
+    // (working, disarmed, waiting, …), so the path is stable regardless of
+    // what the fleet is doing right now — losing either would let the Now
+    // room fall silent about why nothing is running while looking unchanged.
+    { name: 'Control — fleet idle reason', url: u('/api/control'), auth: true, json_path: 'fleet.status.code' },
+    { name: 'Control — the idle reason\'s remedy', url: u('/api/control'), auth: true, json_path: 'fleet.status.text' },
+    // The dispatcher's own pulse. Asserting the whole object rather than a
+    // leaf: `silent` is `false` and `ageSec` can legitimately be `null` in the
+    // healthy case, and either still counts as PRESENT — but the object is
+    // what proves the heartbeat is being served at all.
+    { name: 'Control — dispatcher pulse', url: u('/api/control'), auth: true, json_path: 'fleet.heartbeat' },
     // The Roles room's run-level counters. `plan` is the one that carries a
     // rule rather than a number: a plan night commits nothing by design, so it
     // is counted apart from the advised/unadvised land rate. Losing the field

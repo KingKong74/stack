@@ -743,6 +743,115 @@ export function computeFleetRoles({ usageRows, sessionRows = [], projects, execA
     },
   };
 }
+
+// (#270) Loud idle — the honest reason nothing is starting, as a PURE
+// function of the state the route already gathered (same shape as
+// computeFleetRoles above: no `q()`, nothing but what is passed in, so the
+// precedence can be pinned without a database). The most important fact
+// about an automation system is whether it is actually running, and a screen
+// of calm green is a lie when the loop is dead — resolved
+// most-fundamental-first: if nobody is polling, nothing else about the
+// configuration matters, so the heartbeat outranks every other reason.
+//
+// Precedence, exactly: dispatcher-silent > working > disarmed > no-automode
+// > paused > nothing-eligible > waiting.
+export function computeFleetStatus({
+  heartbeat, busySlots, capacity, queuedCount, armed, automodeCount,
+  eligibleCount, heldResume, nightlyTime, now = Date.now(),
+}) {
+  const ageSec = heartbeat
+    ? Math.max(0, Math.round((now - new Date(heartbeat.last_poll_at).getTime()) / 1000))
+    : null;
+  // The dispatcher runs on a one-minute cron, so five minutes of silence is
+  // four missed ticks — an outage, not jitter. No heartbeat row at all (a
+  // server that pre-dates the table) reads as UNKNOWN, never as silent.
+  const DISPATCH_SILENT_SEC = 5 * 60;
+  const silent = ageSec !== null && ageSec > DISPATCH_SILENT_SEC;
+
+  // A whole number of seconds as a plain DURATION — "3h 20m", never a
+  // relative timestamp. relativeTime() answers "how long ago", which reads
+  // as nonsense stitched into "has not polled for 3h ago." (and, past five
+  // weeks, an ISO date). This is the one line the whole item exists to make
+  // loud, so it gets its own terser formatter rather than reusing that one.
+  const duration = (sec) => {
+    if (sec == null || !Number.isFinite(sec)) return 'a while';
+    const s = Math.max(0, Math.round(sec));
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ${m % 60}m`;
+    const d = Math.floor(h / 24);
+    return `${d}d ${h % 24}h`;
+  };
+
+  // Absence must never read as good news (CLAUDE.md's "Fail SILENT" rule): a
+  // null heartbeat means this server has no idea whether the dispatcher is
+  // polling at all, so even a calm status has to own that rather than let
+  // "ready" quietly stand in for "confirmed running".
+  const pulseUnknownHint = 'This server has no dispatcher heartbeat recorded — this reads as calm only because nothing says otherwise, not because polling is confirmed.';
+  const withUnknownPulse = (status) => (ageSec === null
+    ? { ...status, hint: status.hint ? `${status.hint} ${pulseUnknownHint}` : pulseUnknownHint }
+    : status);
+
+  let status;
+  if (silent) {
+    status = {
+      code: 'dispatcher-silent', tone: 'bad',
+      text: `The host dispatcher has not polled for ${duration(ageSec)}. Nothing runs — armed or not — until it comes back.`,
+      hint: 'On the host: `crontab -l` should carry the every-minute stack-autopilot-dispatch.mjs line, and `tail ~/.stack/autopilot.log` says why it stopped.',
+      fix: null,
+    };
+  } else if (busySlots > 0) {
+    // (#270 follow-up) "Every slot claimed" is its own reason nothing new is
+    // starting — say how deep the queue is rather than just that one exists.
+    status = withUnknownPulse({
+      code: 'working', tone: 'good',
+      text: busySlots >= capacity
+        ? (queuedCount > 0
+            ? `Every slot is working — ${queuedCount === 1 ? '1 job waits' : `${queuedCount} jobs wait`} for one to free up.`
+            : `Every slot is working — new work waits for one to free up.`)
+        : `${busySlots} of ${capacity} slots working.`,
+      hint: '', fix: null,
+    });
+  } else if (!armed) {
+    status = {
+      code: 'disarmed', tone: 'bad',
+      text: 'Autopilot is off — the nightly and every scheduled session are paused. ▶ Run now still works.',
+      hint: '', fix: { kind: 'arm', label: 'Arm the autopilot' },
+    };
+  } else if (automodeCount === 0) {
+    status = {
+      code: 'no-automode', tone: 'warn',
+      text: 'Armed, but no project is in automode — the runner has nothing it is allowed to touch.',
+      hint: 'Flip a project switch in the list below.', fix: null,
+    };
+  } else if (heldResume) {
+    status = {
+      code: 'paused', tone: 'warn',
+      text: heldResume.status === 'paused'
+        ? 'A session is hung up — it only resumes when you say so, and it holds the queue.'
+        : 'A session is paused on the usage limit and holds the queue until its reset.',
+      hint: '', fix: { kind: 'resume', label: '▶ Resume it' },
+    };
+  } else if (eligibleCount === 0) {
+    status = {
+      code: 'nothing-eligible', tone: 'warn',
+      text: 'Armed with automode on, but nothing is eligible — every open item is parked, claimed, outside the target area, or still awaiting review.',
+      hint: 'Approving a found item in the Plan room inbox is usually what unblocks this.',
+      fix: { kind: 'plan', label: 'Open the Plan room' },
+    };
+  } else {
+    status = withUnknownPulse({
+      code: 'waiting', tone: 'good',
+      text: `Armed and ready — ${eligibleCount} project${eligibleCount === 1 ? '' : 's'} with work queued. The next window is the nightly at ${nightlyTime}.`,
+      hint: '', fix: null,
+    });
+  }
+
+  return { status, heartbeat: { ageSec, silent, hostLocal: (heartbeat && heartbeat.host_local) || '' } };
+}
+
 control.get('/', async (_req, res) => {
   const appSettings = await readSettings();
 
@@ -1270,79 +1379,29 @@ control.get('/', async (_req, res) => {
   // leaves more in flight than the fleet is meant to hold, the strip must
   // show it. The client pads with idle slots up to capacity instead.
 
-  // (#270) Loud idle — the honest reason nothing is starting. The most
-  // important fact about an automation system is whether it is actually
-  // running, and a screen of calm green is a lie when the loop is dead.
-  // Resolved most-fundamental-first: if nobody is polling, nothing else about
-  // the configuration matters, so the heartbeat outranks every other reason.
+  // (#270) Loud idle — the honest reason nothing is starting. The route only
+  // gathers the inputs; computeFleetStatus above holds the precedence, the
+  // freshness threshold and the wording.
   const hb = hbR.rows[0];
-  const hbAgeSec = hb
-    ? Math.max(0, Math.round((Date.now() - new Date(hb.last_poll_at).getTime()) / 1000))
-    : null;
-  // The dispatcher runs on a one-minute cron, so five minutes of silence is
-  // four missed ticks — an outage, not jitter. No heartbeat row at all (a
-  // server that pre-dates the table) reads as UNKNOWN, never as silent.
-  const DISPATCH_SILENT_SEC = 5 * 60;
-  const dispatcherSilent = hbAgeSec !== null && hbAgeSec > DISPATCH_SILENT_SEC;
   const automodeProjects = projects.filter((p) => p.automode);
   const eligibleProjects = automodeProjects.filter((p) => p.nextPick);
   const heldResume = jobsR.rows.find((j) => j.kind === 'resume'
     && (j.status === 'paused' || (j.status === 'queued' && j.not_before)));
-  const fleetStatus = (() => {
-    if (dispatcherSilent) {
-      return {
-        code: 'dispatcher-silent', tone: 'bad',
-        text: `The host dispatcher has not polled for ${relativeTime(hb.last_poll_at) || 'a while'}. Nothing runs — armed or not — until it comes back.`,
-        hint: 'On the host: `crontab -l` should carry the every-minute stack-autopilot-dispatch.mjs line, and `tail ~/.stack/autopilot.log` says why it stopped.',
-        fix: null,
-      };
-    }
-    if (fleetSlots.length > 0) {
-      return {
-        code: 'working', tone: 'good',
-        text: fleetSlots.length >= FLEET_CAPACITY
-          ? `Every slot is working — new work waits for one to free up.`
-          : `${fleetSlots.length} of ${FLEET_CAPACITY} slots working.`,
-        hint: '', fix: null,
-      };
-    }
-    if (!appSettings.autopilot_enabled) {
-      return {
-        code: 'disarmed', tone: 'bad',
-        text: 'Autopilot is off — the nightly and every scheduled session are paused. ▶ Run now still works.',
-        hint: '', fix: { kind: 'arm', label: 'Arm the autopilot' },
-      };
-    }
-    if (automodeProjects.length === 0) {
-      return {
-        code: 'no-automode', tone: 'warn',
-        text: 'Armed, but no project is in automode — the runner has nothing it is allowed to touch.',
-        hint: 'Flip a project switch in the list below.', fix: null,
-      };
-    }
-    if (heldResume) {
-      return {
-        code: 'paused', tone: 'warn',
-        text: heldResume.status === 'paused'
-          ? 'A session is hung up — it only resumes when you say so, and it holds the queue.'
-          : 'A session is paused on the usage limit and holds the queue until its reset.',
-        hint: '', fix: { kind: 'resume', label: '▶ Resume it' },
-      };
-    }
-    if (eligibleProjects.length === 0) {
-      return {
-        code: 'nothing-eligible', tone: 'warn',
-        text: 'Armed with automode on, but nothing is eligible — every open item is parked, claimed, outside the target area, or still awaiting review.',
-        hint: 'Approving a found item in the Plan room inbox is usually what unblocks this.',
-        fix: { kind: 'plan', label: 'Open the Plan room' },
-      };
-    }
-    return {
-      code: 'waiting', tone: 'good',
-      text: `Armed and ready — ${eligibleProjects.length} project${eligibleProjects.length === 1 ? '' : 's'} with work queued. The next window is the nightly at ${appSettings.autopilot_time}.`,
-      hint: '', fix: null,
-    };
-  })();
+  // Queued work behind the one busy slot (#270 follow-up) — excludes the
+  // held-resume row itself, which is not queued so much as parked.
+  const queuedCount = jobsR.rows.filter((j) => j.status === 'queued'
+    && (!heldResume || String(j.id) !== String(heldResume.id))).length;
+  const { status: fleetStatus, heartbeat: fleetHeartbeat } = computeFleetStatus({
+    heartbeat: hb || null,
+    busySlots: fleetSlots.length,
+    capacity: FLEET_CAPACITY,
+    queuedCount,
+    armed: appSettings.autopilot_enabled,
+    automodeCount: automodeProjects.length,
+    eligibleCount: eligibleProjects.length,
+    heldResume,
+    nightlyTime: appSettings.autopilot_time,
+  });
 
   // (#269) The throughput ledger — is the automation getting better? Every
   // number is current-value-plus-direction (last 7 days against the 7 before),
@@ -1509,7 +1568,7 @@ control.get('/', async (_req, res) => {
           : 'Single-model sessions — no advisor is configured, so nothing is being consulted.',
       },
       status: fleetStatus,
-      heartbeat: { ageSec: hbAgeSec, silent: dispatcherSilent, hostLocal: (hb && hb.host_local) || '' },
+      heartbeat: fleetHeartbeat,
     },
     autopilot: {
       enabled: appSettings.autopilot_enabled,
