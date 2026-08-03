@@ -252,26 +252,99 @@ futures.post('/cluster', async (req, res) => {
   }
 });
 
+// (#314) The funnel's orbit shape (#312) — star -> planet -> moon — has to
+// reach the prompt, not just the flat id/area/verdict/title/note line: in
+// `mode: 'epic'` the whole picked set is merged into ONE ticket, and a star
+// with its planets is exactly the structure that merge needs to see. Pure
+// (no db/req/Gemini) so it is unit-tested directly against rows, not a route.
+export const CONVERGE_ITEMS_CAP = 20;
+
+export function renderConvergeItems(rows, cap = CONVERGE_ITEMS_CAP) {
+  if (!rows || !rows.length) return { text: '(none)', shown: 0, total: 0, ids: [] };
+
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const childrenOf = new Map();
+  const roots = [];
+  for (const r of rows) {
+    const parentInSet = r.parent_id != null && byId.has(r.parent_id);
+    if (parentInSet) {
+      if (!childrenOf.has(r.parent_id)) childrenOf.set(r.parent_id, []);
+      childrenOf.get(r.parent_id).push(r);
+    } else {
+      // No parent in the picked set — a genuine root, or an orphaned child
+      // whose parent wasn't picked. Either way it falls back to given order.
+      roots.push(r);
+    }
+  }
+
+  // One family per root, walked depth-first (star -> its planets -> each
+  // planet's moons) so a parent is immediately followed by its own orbit —
+  // that ordering IS the structure epic mode needs. Families stay contiguous,
+  // which is what makes the cap below family-aware for free.
+  const families = roots.map((root) => {
+    const fam = [];
+    const walk = (r) => { fam.push(r); for (const c of childrenOf.get(r.id) || []) walk(c); };
+    walk(root);
+    return fam;
+  });
+
+  // Cap on the right axis (the #239 capped-list rule): never split a parent
+  // from its own orbit, so whole FAMILIES are dropped rather than orphaning a
+  // child whose parent made the cut but whose sibling didn't. A family bigger
+  // than the cap on its own is still kept whole — truncating inside it would
+  // be the exact split this exists to avoid.
+  const total = rows.length;
+  const kept = [];
+  for (const fam of families) {
+    if (kept.length && kept.length + fam.length > cap) break;
+    kept.push(...fam);
+  }
+
+  const shown = kept.length;
+  const lines = kept.map((r) => {
+    const orbit = r.is_star ? 'star' : (r.parent_id != null ? `orbits ${r.parent_id}` : '-');
+    return `${r.id} | ${r.area || '-'} | ${r.alignment || 'unjudged'} | ${orbit} | ${r.title} | ${(r.note || '-').slice(0, 300)}`;
+  });
+  const text = lines.join('\n')
+    + (shown < total
+      ? `\n(showing ${shown} of ${total} picked ideas — whole star/planet/moon families were kept together, others dropped)`
+      : '');
+
+  return { text, shown, total, ids: kept.map((r) => r.id) };
+}
+
 // POST /converge  -> Gemini drafts roadmap tickets from a picked set of ideas
 // (the sky's converge tray): body {ids, mode: 'tickets'|'epic'}. Drafts only —
 // the client shows them editable and creates through the normal roadmap POST;
 // keyless the client falls back to direct-mapped drafts, so this route is the
 // ✧ enrichment, not the flow. 503 keyless.
+// A bound on the REQUEST, not on the prompt — well above CONVERGE_ITEMS_CAP so
+// it never pre-empts the family-aware cap (that one decides what actually
+// gets dropped; this one just stops a client posting ten thousand ids at SQL).
+const CONVERGE_IDS_MAX = 200;
+
 futures.post('/converge', async (req, res) => {
   if (await refused('converge', res)) return;
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : [])
-    .map(Number).filter(Number.isFinite).slice(0, 20);
+    .map(Number).filter(Number.isFinite).slice(0, CONVERGE_IDS_MAX);
   if (!ids.length) return res.status(400).json({ error: 'Pick at least one idea.' });
   const mode = req.body?.mode === 'epic' ? 'epic' : 'tickets';
   const { rows } = await q(
-    'SELECT id, area, alignment, title, note FROM futures WHERE project_id = $1 AND id = ANY($2::int[])',
+    'SELECT id, area, alignment, title, note, parent_id, is_star FROM futures WHERE project_id = $1 AND id = ANY($2::int[])',
     [req.project.id, ids]
   );
   if (!rows.length) return res.status(404).json({ error: 'No such ideas.' });
-  const okIds = new Set(rows.map((r) => r.id));
+  // No ORDER BY on the query above, so Postgres hands rows back in whatever
+  // order it likes — but the client sends the tray in the sky's own
+  // depth-first order (a parent immediately followed by its orbit), and
+  // renderConvergeItems takes root order as given. Put the rows back in the
+  // order they were picked before it decides what "given order" means.
+  const pickOrder = new Map(ids.map((id, i) => [id, i]));
+  rows.sort((a, b) => (pickOrder.get(a.id) ?? 0) - (pickOrder.get(b.id) ?? 0));
+  const { text: itemsText, ids: shownIds } = renderConvergeItems(rows);
+  const okIds = new Set(shownIds);
   const prompt = buildPrompt('converge', {
-    ITEMS: rows.map((r) =>
-      `${r.id} | ${r.area || '-'} | ${r.alignment || 'unjudged'} | ${r.title} | ${(r.note || '-').slice(0, 300)}`).join('\n'),
+    ITEMS: itemsText,
     MODE_LINE: mode === 'epic'
       ? 'MODE: merge ALL the ideas into ONE epic — a single ticket whose plan steps cover the set.'
       : 'MODE: one ticket per idea, each standing alone.',

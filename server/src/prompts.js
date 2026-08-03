@@ -146,9 +146,11 @@ imperatives naming the surface they touch; notes say what "done" looks like in o
 sentences; "plan" is 2-6 short build steps (omit it when the ticket is trivial). Buckets:
 "must" only when the north star clearly demands it now, otherwise "should" (or "could" for
 nice-to-haves). Keep each idea's theme as its "area" unless it is plainly wrong. "sources"
-lists the id(s) of the idea(s) each ticket came from.
+lists the id(s) of the idea(s) each ticket came from. Ideas are listed with their orbit — a
+"star" idea and its "orbits <id>" planets/moons are grouped together on purpose: when merging
+into one epic, treat a star and its own orbit as one thread of work, not unrelated ideas.
 
-THE IDEAS (id | theme | verdict | title | note):
+THE IDEAS (id | theme | verdict | orbit | title | note):
 {{ITEMS}}
 
 Use en-AU spelling. Respond with ONLY this JSON:

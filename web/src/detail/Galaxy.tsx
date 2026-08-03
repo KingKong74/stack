@@ -149,6 +149,29 @@ export function buildGalaxy(list: Future[]): GxModel {
   };
 }
 
+// #314 — an idea's ORBIT: itself plus everything it holds, depth-first (a
+// star's planets and each planet's moons; a planet's moons; a plain idea just
+// itself). Selecting an idea for the converge tray has to bring the whole
+// orbit with it, so this is the one place that walk happens — over an
+// ALREADY-BUILT model, never a raw list: `buildGalaxy` is O(n) on its own and
+// this is called from render-time paths, so building it again per call is the
+// exact hazard the item warned about. `seen` guards a malformed parent chain
+// (a cycle) so a bad row can never spin this forever.
+export function orbitIds(model: GxModel, id: number): number[] {
+  const start = model.all.find((f) => f.id === id);
+  if (!start) return [id];
+  const seen = new Set<number>();
+  const out: number[] = [];
+  const walk = (f: Future) => {
+    if (seen.has(f.id)) return;
+    seen.add(f.id);
+    out.push(f.id);
+    model.childrenOf(f).forEach(walk);
+  };
+  walk(start);
+  return out;
+}
+
 export const GX_GLYPH: Record<GxKind, string> = {
   star: '★', planet: '●', moon: '○', shell: '◦', belt: '·',
 };
