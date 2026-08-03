@@ -117,3 +117,30 @@ export const isLaneBranch = (name) => {
   const p = parseBranch(name);
   return !!(p.kind || p.itemId || p.bugKey);
 };
+
+// Resolves a collision on a proposed branch name WITHOUT ever deleting an
+// existing branch to make room (#235). `isTaken` is a pure predicate the
+// caller supplies (the runner backs it with a check against git refs); this
+// function makes no git calls and does no I/O.
+//
+// Every run kind used to open by force-deleting whatever branch already held
+// its name. That is exactly wrong when the branch holds an EARLIER run's
+// pushed, unmerged work: the second run starts again from HEAD, and its
+// closing `git push -u origin <branch>` then either fails as a non-fast-forward
+// or, worse, takes the name from work nobody has reviewed yet. A run must
+// never destroy another run's branch just because they picked the same name.
+//
+// Instead: try `name`, then `name-2`, `name-3`, … up to `name-<max>`, and
+// throw rather than silently colliding or looping forever. The suffix is
+// deliberately appended AFTER the summary, where every id parser in
+// `parseBranch` already stops reading — `feat/271-mission-control-2` still
+// parses as item 271, so a collision stays invisible to the Merge room, the
+// branch report and `claimed_by`.
+export function freeBranchName(name, isTaken, max = 20) {
+  if (!isTaken(name)) return name;
+  for (let n = 2; n <= max; n++) {
+    const candidate = `${name}-${n}`;
+    if (!isTaken(candidate)) return candidate;
+  }
+  throw new Error(`freeBranchName: no free name for "${name}" after ${max} suffixes`);
+}

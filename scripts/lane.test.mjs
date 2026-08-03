@@ -3,7 +3,7 @@
 // Run: node scripts/lane.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { branchSlug, branchKind, laneFor, bugLaneFor, auditLaneFor, parseBranch, isLaneBranch } from './lib/lane.mjs';
+import { branchSlug, branchKind, laneFor, bugLaneFor, auditLaneFor, parseBranch, isLaneBranch, freeBranchName } from './lib/lane.mjs';
 
 // --- branchSlug ---
 
@@ -150,4 +150,63 @@ test('tree sorter: extracts the item number from both spellings', () => {
   assert.equal(itemNo('feat/12-some-feature'), 12);
   assert.equal(itemNo('auto/item-104-another-feature'), 104);
   assert.ok(itemNo('feat/12-some-feature') < itemNo('auto/item-104-another-feature'));
+});
+
+// --- freeBranchName (#235) ---
+
+test('freeBranchName: returns the name as-is when free', () => {
+  assert.equal(freeBranchName('test/audit-20260802', () => false), 'test/audit-20260802');
+});
+
+test('freeBranchName: first collision resolves to -2', () => {
+  const taken = new Set(['test/audit-20260802']);
+  assert.equal(freeBranchName('test/audit-20260802', (n) => taken.has(n)), 'test/audit-20260802-2');
+});
+
+test('freeBranchName: -2 also taken resolves to -3', () => {
+  const taken = new Set(['test/audit-20260802', 'test/audit-20260802-2']);
+  assert.equal(freeBranchName('test/audit-20260802', (n) => taken.has(n)), 'test/audit-20260802-3');
+});
+
+test('freeBranchName: every slot taken up to the cap throws rather than looping', () => {
+  assert.throws(() => freeBranchName('test/audit-20260802', () => true, 3), /test\/audit-20260802/);
+});
+
+// The point of appending the suffix rather than rewriting the name: a resolved
+// collision must stay INVISIBLE to every reader that pulls an id out of a
+// branch. #235 checked this against the dispatcher's regex on the old `auto/`
+// spelling; #363's parseBranch is the reader that matters now, and it had not
+// been written when #235 was built — so these are the cases that actually
+// decide whether a `-2` branch still reaches the right roadmap row.
+test('a collision suffix does not change what parseBranch reads', () => {
+  const base = parseBranch('feat/271-mission-control');
+  const bumped = parseBranch('feat/271-mission-control-2');
+  assert.equal(bumped.itemId, 271);
+  assert.equal(bumped.kind, base.kind);
+  assert.equal(bumped.legacy, false);
+});
+
+test('a collision suffix on a slugless lane still reads its id', () => {
+  assert.equal(parseBranch('feat/271-2').itemId, 271);
+});
+
+test('a collision suffix on a bug lane still reads its key', () => {
+  assert.equal(parseBranch('fix/bug-12-terminal-hangs-2').bugKey, 'BUG-12');
+});
+
+test('a collision suffix on a legacy lane still reads its id', () => {
+  assert.equal(parseBranch('auto/item-42-add-dark-mode-2').itemId, 42);
+});
+
+test('a bumped lane is still recognised as a lane', () => {
+  assert.equal(isLaneBranch('feat/271-mission-control-2'), true);
+  assert.equal(isLaneBranch('test/audit-20260802-2'), true);
+});
+
+test('freeBranchName composes with the real namers', () => {
+  const taken = new Set([laneFor({ id: 271, title: 'Mission Control', kind: 'feat' })]);
+  const resolved = freeBranchName(laneFor({ id: 271, title: 'Mission Control', kind: 'feat' }), (n) => taken.has(n));
+  assert.equal(parseBranch(resolved).itemId, 271);
+  assert.equal(parseBranch(bugLaneFor({ id: 'BUG-12', title: 'Terminal hangs' })).bugKey, 'BUG-12');
+  assert.ok(auditLaneFor('20260802').startsWith('test/audit-'));
 });
