@@ -6,6 +6,7 @@ import {
   getWorkbench, addWorkbenchCard, patchWorkbenchCard, deleteWorkbenchCard,
   linkWorkbenchCards, cutWorkbenchEdge, runWorkbenchOp,
 } from '../store';
+import { WorkbenchDesign } from './WorkbenchDesign';
 
 // The Workbench — the planning canvas that replaced the notes wall.
 //
@@ -282,6 +283,24 @@ export function Workbench({
     setData((d) => (d ? { ...d, cards: [...d.cards, card] } : d));
     setSel(card.id);
     say('Added a note. Click its text to write it.');
+  });
+
+  // A design pasted back from a Claude session. It stacks where an ✧ op's
+  // output stacks — it IS output on the same thread — and it comes back as a
+  // real note, because that is the only kind of card the canvas lets the client
+  // make and the only one whose words are the human's own.
+  const pasteDesign = (into: WorkbenchCard, text: string) => guard(async () => {
+    const prev = lastGen != null ? data?.cards.find((c) => c.id === lastGen) : null;
+    let at = prev
+      ? { x: prev.x, y: prev.y + hOf(prev) + 22 }
+      : { x: into.x + into.w + 60, y: into.y };
+    if (prev && at.y > prev.y + 620) at = { x: prev.x + 348, y: into.y };
+    const card = await addWorkbenchCard(slug, { kind: 'note', text, x: at.x, y: at.y });
+    const edge = await linkWorkbenchCards(slug, into.id, card.id);
+    setData((d) => (d ? { ...d, cards: [...d.cards, card], edges: [...d.edges, edge] } : d));
+    setSel(card.id);
+    setLastGen(card.id);
+    say(`Design pasted back as a note, wired to “${into.title.slice(0, 34)}${into.title.length > 34 ? '…' : ''}”.`);
   });
 
   // Pull the whole selection in one go, laid out in a column of four that steps
@@ -773,6 +792,9 @@ export function Workbench({
                 )}
               </div>
             )}
+
+            <WorkbenchDesign card={selCard} slug={slug} lineage={lineage} onSay={say}
+              onPasteBack={(text) => pasteDesign(selCard as WorkbenchCard, text)} />
 
             <div className="wb-log">
               <div className="k">log</div>
