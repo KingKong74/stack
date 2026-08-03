@@ -573,8 +573,14 @@ review.post('/:slug/:id/refine-draft', async (req, res) => {
 const TRIAGE_CAP = 40;
 
 review.post('/triage', async (_req, res) => {
+  // Same queue the room shows: built OR ticked (#374), unverdicted, unshelved.
+  // %WHERE% carries its own WHERE keyword and %ORDER% its own ORDER BY — the
+  // contract changed when #263's audit strip needed a gate that is not the
+  // queue's, and this call site is the one that has to keep step with it.
   const { rows } = await q(
-    ITEM_SQL.replace('%WHERE%', 'i.review_tag IS NULL AND i.review_shelved IS NOT TRUE').replace('%LIMIT%', ''));
+    ITEM_SQL
+      .replace('%WHERE%', `WHERE ${AWAITING} AND i.review_tag IS NULL AND i.review_shelved IS NOT TRUE`)
+      .replace('%ORDER%', 'ORDER BY i.updated_at DESC'));
   if (!rows.length) return res.status(400).json({ error: 'Nothing is waiting on a verdict.' });
 
   const { rows: reportRows } = await q('SELECT project_id::int AS project_id, report FROM branch_reports');
