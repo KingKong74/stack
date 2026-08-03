@@ -173,10 +173,10 @@ futures.patch('/:id', async (req, res) => {
   res.json(futureShape(rows[0]));
 });
 
-// POST /:id/judge  -> ask Gemini for a SUGGESTED alignment verdict against the
+// POST /:id/judge  -> ask Polaris for a SUGGESTED alignment verdict against the
 // project's north star. Nothing is written — the client shows the suggestion
-// and the human clicks the actual verdict (Gemini proposes, you dispose).
-// 503 when the server has no GEMINI_API_KEY.
+// and the human clicks the actual verdict (Polaris proposes, you dispose).
+// 503 when the host daemon is unreachable.
 futures.post('/:id/judge', async (req, res) => {
   if (await refused('judge', res)) return;
   const { rows } = await q(
@@ -200,17 +200,17 @@ futures.post('/:id/judge', async (req, res) => {
     const answer = await polaris.ask('judge', prompt);
     const alignment = ['on-course', 'tangent', 'off-course'].includes(answer?.alignment)
       ? answer.alignment : null;
-    if (!alignment) return res.status(502).json({ error: 'Gemini gave an unusable answer — try again.' });
+    if (!alignment) return res.status(502).json({ error: 'Polaris gave an unusable answer — try again.' });
     res.json({ alignment, why: String(answer.why || '').slice(0, 300) });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || "Polaris's call failed." });
   }
 });
 
-// POST /cluster  -> Gemini groups the funnel into themes: a suggested `area`
+// POST /cluster  -> Polaris groups the funnel into themes: a suggested `area`
 // for every idea whose theme is missing or clearly wrong (the Polaris sky's
 // bearings). Suggestions only — the client shows them grouped and the human
-// applies through the normal PATCH. 503 keyless.
+// applies through the normal PATCH. 503 if the host is unreachable.
 futures.post('/cluster', async (req, res) => {
   if (await refused('cluster', res)) return;
   const { rows } = await q(
@@ -248,7 +248,7 @@ futures.post('/cluster', async (req, res) => {
       .filter((s) => s.area && s.area !== (byId.get(s.id).area || ''));
     res.json({ items });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || "Polaris's call failed." });
   }
 });
 
@@ -323,6 +323,11 @@ export function renderConvergeItems(rows, cap = CONVERGE_ITEMS_CAP) {
 // gets dropped; this one just stops a client posting ten thousand ids at SQL).
 const CONVERGE_IDS_MAX = 200;
 
+// POST /converge  -> Polaris drafts roadmap tickets from a picked set of ideas
+// (the sky's converge tray): body {ids, mode: 'tickets'|'epic'}. Drafts only —
+// the client shows them editable and creates through the normal roadmap POST;
+// when it can't run the client falls back to direct-mapped drafts, so this
+// route is the ✧ enrichment, not the flow. 503 if the host is unreachable.
 futures.post('/converge', async (req, res) => {
   if (await refused('converge', res)) return;
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : [])
@@ -367,10 +372,10 @@ futures.post('/converge', async (req, res) => {
       }))
       .filter((s) => s.title)
       .slice(0, mode === 'epic' ? 1 : 20);
-    if (!items.length) return res.status(502).json({ error: 'Gemini gave an unusable answer — try again.' });
+    if (!items.length) return res.status(502).json({ error: 'Polaris gave an unusable answer — try again.' });
     res.json({ items });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || "Polaris's call failed." });
   }
 });
 

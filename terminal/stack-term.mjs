@@ -54,6 +54,7 @@ import { createPlanUsage } from './plan-usage.mjs';
 import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, listAutoSessions, paneTail, reapDeadSessions, reapIdleSessions, sendKeys, setKeep } from './tmux-session.mjs';
 import { detectPrompt } from './prompt-scan.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
+import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
 import { createEditWatch } from './edit-watch.mjs';
 import {
   availableProviders, providerEnv, getProvider,
@@ -771,11 +772,8 @@ function startSession(msg) {
 // The reply carries the model's text plus what the run COST, because the CLI
 // reports it and the agent ledger is the only place the owner can see what
 // these buttons spend.
-const AGENT_SCRATCH = join(homedir(), '.stack', 'agent-run');
-const AGENT_NO_TOOLS = [
-  'Bash', 'Edit', 'Write', 'NotebookEdit', 'Read', 'Glob', 'Grep',
-  'WebFetch', 'WebSearch', 'Task', 'TodoWrite',
-];
+// AGENT_NO_TOOLS and the scratch cwd are pinned in ./agent-run.mjs, not here —
+// see that file's header for why.
 
 // The Merge room's agent asks about branches, and the branches are HERE — the
 // server has the host's ~10-minute report, not the code. So a claudeAsk may
@@ -839,19 +837,14 @@ function claudeAsk(m) {
     prompt = `BRANCH DIFFS, read from git on the host just now:\n\n${body}\n\n---\n\n${prompt}`;
   }
 
-  const args = ['-p', prompt, '--output-format', 'json', '--permission-mode', 'plan',
-    '--disallowed-tools', ...AGENT_NO_TOOLS];
-  // The model is validated server-side against the same charset the settings
-  // aliases use; re-checked here because this process is the one that execs.
-  if (m.model && /^[a-z0-9][a-z0-9._-]{0,99}$/i.test(String(m.model))) {
-    args.push('--model', String(m.model));
-  }
-  try { mkdirSync(AGENT_SCRATCH, { recursive: true }); } catch { /* best effort */ }
+  const args = agentClaudeArgs(prompt, m.model);
+  const scratch = agentScratchDir();
+  try { mkdirSync(scratch, { recursive: true }); } catch { /* best effort */ }
 
   const timeoutMs = Math.min(600_000, Math.max(10_000, Number(m.timeoutMs) || 120_000));
   let out = '', err = '', finished = false;
   const child = spawn('claude', args, {
-    cwd: existsSync(AGENT_SCRATCH) ? AGENT_SCRATCH : homedir(),
+    cwd: existsSync(scratch) ? scratch : homedir(),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const timer = setTimeout(() => {

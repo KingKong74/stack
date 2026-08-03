@@ -424,7 +424,7 @@ function OneCause({ signature, count, busy, onRunAll, onFileHost }: {
   );
 }
 
-// ---- the Gemini bug audit ------------------------------------------------
+// ---- the Auditor's bug audit ----------------------------------------------
 
 function AuditCard({
   context, onSaveBrief, busy, result, error, onRun, canPrompt, claudeCopy, onCopyClaude, checkCount,
@@ -432,8 +432,9 @@ function AuditCard({
   context: string; onSaveBrief: (t: string) => void;
   busy: boolean; result: AuditResult | null; error: string; onRun: () => void;
   // #361 — the deep-audit hand-off is the Auditor's SECOND op and switches
-  // separately: it needs no key, so it is the half that still works on a
-  // keyless server and the half worth being able to keep when the other goes.
+  // separately: it needs no model call at all, so it is the half that still
+  // works with the host offline and the half worth being able to keep when
+  // the other goes.
   canPrompt: boolean;
   claudeCopy: 'idle' | 'busy' | 'copied' | 'failed'; onCopyClaude: () => void; checkCount: number;
 }) {
@@ -453,7 +454,7 @@ function AuditCard({
         </button>
         {canPrompt && (
           <button className="q-card-act" disabled={claudeCopy === 'busy'} onClick={onCopyClaude}
-            title="Copy a deep-audit prompt for a Claude session — the investigation Gemini can't do from outside">
+            title="Copy a deep-audit prompt for a Claude session — the investigation the Auditor can't do from outside">
             {claudeLabel}
           </button>
         )}
@@ -517,7 +518,7 @@ function AuditCard({
           </>
         ) : (
           <span className="q-card-sub">
-            Gemini reads the brief, the check results and the live page — suspected bugs land in the
+            The Auditor reads the brief, the check results and the live page — suspected bugs land in the
             review inbox, never straight into the tracker.
           </span>
         )}

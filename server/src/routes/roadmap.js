@@ -218,8 +218,9 @@ roadmap.patch('/:id', async (req, res) => {
   res.json(roadmapItemShape(rows[0]));
 });
 
-// POST /suggest-title  -> Gemini titles an item from its note (the ✧ button in
-// the modal). Suggestion only — the human applies or ignores it. 503 keyless.
+// POST /suggest-title  -> the Curator titles an item from its note (the ✧
+// button in the modal). Suggestion only — the human applies or ignores it.
+// 503 if the host is unreachable.
 roadmap.post('/suggest-title', async (req, res) => {
   if (await refused('titler', res)) return;
   const note = String(req.body?.note || '').trim().slice(0, 2000);
@@ -233,18 +234,19 @@ roadmap.post('/suggest-title', async (req, res) => {
   try {
     const answer = await curator.ask('titler', prompt, { timeoutMs: 20_000 });
     const title = String(answer?.title || '').trim().slice(0, 300);
-    if (!title) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
+    if (!title) return res.status(502).json({ error: 'The Curator returned nothing usable.' });
     res.json({ title });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
   }
 });
 
-// POST /assist  -> Gemini fills the whole item from its note (the modal's ✧
-// button): title, tidied note, area, branch claim, priority and tier (#277).
-// Suggestion only — it prefills the fields and the human saves (or doesn't),
-// and the modal only takes a tier into an EMPTY tier, so a rank you set by
-// hand is never re-decided by the model. 503 keyless.
+// POST /assist  -> the Curator fills the whole item from its note (the
+// modal's ✧ button): title, tidied note, area, branch claim, priority and
+// tier (#277). Suggestion only — it prefills the fields and the human saves
+// (or doesn't), and the modal only takes a tier into an EMPTY tier, so a rank
+// you set by hand is never re-decided by the model. 503 if the host is
+// unreachable.
 roadmap.post('/assist', async (req, res) => {
   if (await refused('assist', res)) return;
   const note = String(req.body?.note || '').trim().slice(0, 4000);
@@ -280,7 +282,7 @@ roadmap.post('/assist', async (req, res) => {
   try {
     const answer = await curator.ask('assist', prompt, { timeoutMs: 25_000 });
     const title = String(answer?.title || '').trim().slice(0, 300);
-    if (!title) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
+    if (!title) return res.status(502).json({ error: 'The Curator returned nothing usable.' });
     const rawTier = String(answer?.tier || '').trim().toUpperCase();
     const fillTier = allowed.has('tier') && TIERS.includes(rawTier) ? rawTier : '';
     // A switched-off field comes back empty — the modal leaves it untouched.
@@ -304,13 +306,14 @@ roadmap.post('/assist', async (req, res) => {
         ? String(answer.risk).trim().toLowerCase() : '',
     });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
   }
 });
 
-// POST /cleanup  -> Gemini reviews the OPEN board and suggests fixes: areas
-// for untagged items, cleaned titles, honest buckets. Suggestions only — the
-// client shows them for the human to apply through the normal PATCH. 503 keyless.
+// POST /cleanup  -> the Curator reviews the OPEN board and suggests fixes:
+// areas for untagged items, cleaned titles, honest buckets. Suggestions only —
+// the client shows them for the human to apply through the normal PATCH.
+// 503 if the host is unreachable.
 roadmap.post('/cleanup', async (req, res) => {
   if (await refused('cleanup', res)) return;
   const { rows } = await q(
@@ -350,7 +353,7 @@ roadmap.post('/cleanup', async (req, res) => {
       .filter((s) => s.area || s.title || s.bucket);
     res.json({ items });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
   }
 });
 
