@@ -4,7 +4,7 @@ import type {
 } from '../types';
 import {
   getWorkbench, addWorkbenchCard, patchWorkbenchCard, deleteWorkbenchCard,
-  linkWorkbenchCards, cutWorkbenchEdge, runWorkbenchOp,
+  linkWorkbenchCards, cutWorkbenchEdge, runWorkbenchOp, patchSettings,
 } from '../store';
 import { WorkbenchDesign } from './WorkbenchDesign';
 
@@ -78,6 +78,10 @@ export function Workbench({
   const [hotEdge, setHotEdge] = useState<number | null>(null);
   const [linking, setLinking] = useState<number | null>(null);
   const [busyOp, setBusyOp] = useState<WorkbenchOp | null>(null);
+  // ✧ ops model choice — app-wide (workbenchModel in Settings), not per-project.
+  // Seeded from the payload each load; changed optimistically and persisted
+  // by a settings PATCH, reverted if that PATCH fails.
+  const [model, setModel] = useState('');
   const [asking, setAsking] = useState(false);
   const [question, setQuestion] = useState('');
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -120,7 +124,7 @@ export function Workbench({
   const load = useCallback(() => {
     setLoading(true);
     return getWorkbench(slug)
-      .then((d) => { setData(d); setError(''); })
+      .then((d) => { setData(d); setModel(d.model); setError(''); })
       .catch((e) => setError((e as Error)?.message || 'Failed to load the workbench.'))
       .finally(() => setLoading(false));
   }, [slug]);
@@ -276,6 +280,19 @@ export function Workbench({
     catch (e) { setError((e as Error)?.message || 'Something went wrong.'); }
   };
 
+  // Sets the choice immediately (an in-flight op sees it disabled, never a
+  // stale value slipping through) and persists it as the app-wide default;
+  // a failed save reports through the same banner as every other mutation and
+  // rolls the picker back to what actually stuck.
+  const changeModel = (next: string) => {
+    const prev = model;
+    setModel(next);
+    void guard(async () => {
+      try { await patchSettings({ workbenchModel: next }); }
+      catch (e) { setModel(prev); throw e; }
+    });
+  };
+
   const addNote = () => guard(async () => {
     const at = centreOfView();
     const text = 'New note';
@@ -400,7 +417,9 @@ export function Workbench({
         : { x: card.x + card.w + 60, y: card.y };
       if (prev && at.y > prev.y + 620) at = { x: prev.x + 348, y: card.y };
       try {
-        const { card: made, edge } = await runWorkbenchOp(slug, { op, cardId: card.id, ...at, question: q || undefined });
+        const { card: made, edge } = await runWorkbenchOp(slug, {
+          op, cardId: card.id, ...at, question: q || undefined, model: model || undefined,
+        });
         setData((d) => (d ? { ...d, cards: [...d.cards, made], edges: [...d.edges, edge] } : d));
         setSel(made.id);
         setLastGen(made.id);
@@ -539,6 +558,8 @@ export function Workbench({
   const cards = data?.cards ?? [];
   const selCard = cards.find((c) => c.id === sel) || null;
   const ops = data?.ops ?? [];
+  const models = data?.models ?? [];
+  const selectedModel = models.find((m) => m.model === model);
 
   // ---- the Polaris picker's derived view ----
   const ideas = data?.polaris ?? [];
@@ -762,6 +783,21 @@ export function Workbench({
                 every other ✧ surface follows. */}
             {geminiReady && (
               <div className="wb-ops">
+                {models.length > 0 && (
+                  <div className="wb-model">
+                    <label className="k" htmlFor="wb-model-select">model</label>
+                    <select id="wb-model-select" value={model} disabled={busyOp !== null}
+                      onChange={(e) => changeModel(e.target.value)}>
+                      {models.map((m) => (
+                        <option key={m.model} value={m.model}>{m.label}</option>
+                      ))}
+                    </select>
+                    <span className="hint">
+                      {selectedModel?.note ? `${selectedModel.note} — ` : ''}
+                      applies to every ✧ op, on every project — this is a Stack-wide setting, not just this Workbench.
+                    </span>
+                  </div>
+                )}
                 <div className="row">
                   <span className="k">ops</span>
                   <span className="note">nothing runs unprompted</span>

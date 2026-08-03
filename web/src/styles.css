@@ -1200,6 +1200,15 @@ a.tab { display: inline-block; }
 .wb-op .s { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--accent); }
 .wb-op.busy { border-color: var(--accent); background: var(--accent-tint); }
 
+.wb-model { margin-bottom: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line-2); }
+.wb-model .k { display: block; margin-bottom: 5px; }
+.wb-model select { display: block; width: 100%; max-width: 100%; box-sizing: border-box; height: 32px;
+  padding: 0 8px; border-radius: 9px; border: 1px solid var(--line-3); background: var(--surface);
+  color: var(--ink); font: inherit; font-size: 12px; }
+.wb-model select:hover:not(:disabled) { border-color: var(--accent); }
+.wb-model select:disabled { opacity: .5; cursor: default; }
+.wb-model .hint { display: block; margin-top: 6px; font-size: 10.5px; color: var(--faint); line-height: 1.4; }
+
 .wb-ask { margin-top: 4px; display: flex; flex-direction: column; gap: 5px; }
 .wb-ask input { width: 100%; height: 32px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--accent);
   background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; outline: none; }

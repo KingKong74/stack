@@ -111,6 +111,12 @@ settings.patch('/', async (req, res) => {
     fields.push(`autopilot_advisor_model = $${i++}`);
     values.push(cleanModelAlias(body.autopilotAdvisorModel));
   }
+  // Workbench model picker (#327) — same freeform alias validation as the
+  // autopilot pickers, so a hand-set id beyond GEMINI_MODELS stays valid.
+  if ('workbenchModel' in body) {
+    fields.push(`workbench_model = $${i++}`);
+    values.push(cleanModelAlias(body.workbenchModel));
+  }
   if ('assistGuidance' in body) {
     fields.push(`assist_guidance = $${i++}`);
     values.push(String(body.assistGuidance || '').trim().slice(0, 500));

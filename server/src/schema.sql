@@ -486,6 +486,10 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS gcal_client_secret TEXT NOT NULL D
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS gcal_refresh_token TEXT NOT NULL DEFAULT '';
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS gcal_calendar_id   TEXT NOT NULL DEFAULT '';
 
+-- Workbench model picker (#327): which Gemini model the ✧ ops run against.
+-- '' = the server's own GEMINI_MODEL (see gemini.js MODEL()).
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS workbench_model TEXT NOT NULL DEFAULT '';
+
 -- Device tokens issued by POST /api/auth/login (PIN sign-in). Only the sha256
 -- of each token is stored; the bearer gate accepts API_TOKEN or a live row
 -- here. Changing or clearing the PIN deletes every row (signs devices out).

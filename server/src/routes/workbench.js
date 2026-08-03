@@ -3,8 +3,9 @@ import { pool, q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { NOTE_PALETTE } from '../util.js';
 import { workbenchCardShape, workbenchEdgeShape, workbenchIdeaShape } from '../shape.js';
-import { askGemini, geminiEnabled } from '../gemini.js';
+import { askGemini, geminiEnabled, GEMINI_MODELS } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
+import { readSettings, cleanModelAlias } from '../settings.js';
 
 // Mounted at /api/projects/:slug/workbench — the planning canvas that replaced
 // the notes wall.
@@ -130,7 +131,7 @@ async function backfillNoteCards(projectId) {
 // full, and a silent slice here would read as "that's all the ideas you have".
 workbench.get('/', async (req, res) => {
   await backfillNoteCards(req.project.id);
-  const [cards, edges, ideas] = await Promise.all([
+  const [cards, edges, ideas, settings] = await Promise.all([
     cardsOf(req.project.id),
     q('SELECT * FROM workbench_edges WHERE project_id = $1 ORDER BY id', [req.project.id]),
     q(
@@ -142,12 +143,18 @@ workbench.get('/', async (req, res) => {
         ORDER BY f.created_at DESC`,
       [req.project.id]
     ),
+    readSettings(),
   ]);
   res.json({
     cards,
     edges: edges.rows.map(workbenchEdgeShape),
     polaris: ideas.rows.map(workbenchIdeaShape),
     ops: Object.entries(OPS).map(([key, o]) => ({ key, glyph: o.glyph, label: o.label })),
+    // #327 — the model picker's catalogue and current pick. Served
+    // unconditionally: the client hides the whole ops rail when there's no
+    // key, so there's nothing to gate here.
+    models: GEMINI_MODELS,
+    model: settings.workbench_model,
   });
 });
 
@@ -419,9 +426,12 @@ workbench.post('/ops', async (req, res) => {
   });
   const prompt = buildPrompt(`wb${op}`, { CONTEXT: context, QUESTION: question });
 
+  // #327 — the request's model choice wins over the stored setting (what runs
+  // is what the picker shows); the stored setting is the fallback.
+  const model = cleanModelAlias(req.body?.model) || (await readSettings()).workbench_model;
   let answer;
   try {
-    answer = await askGemini(prompt, { timeoutMs: 30_000 });
+    answer = await askGemini(prompt, { timeoutMs: 30_000, model });
   } catch (err) {
     return res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
   }

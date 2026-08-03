@@ -29,6 +29,17 @@ const defaultTemperature = () => {
 
 export const geminiEnabled = () => Boolean(process.env.GEMINI_API_KEY);
 
+// The UI catalogue served to the Workbench's model picker — the SINGLE source
+// of truth for what it offers, the same role EXECUTOR_CATALOGUE plays for
+// Mission Control's model pickers in settings.js. '' = the server default.
+export const GEMINI_MODELS = [
+  { model: '', label: 'Server default', note: 'whatever the server is configured with' },
+  { model: 'gemini-2.5-pro', label: 'Pro', note: 'deepest read, smallest free quota' },
+  { model: 'gemini-2.5-flash', label: 'Flash', note: 'balanced — the usual default' },
+  { model: 'gemini-flash-latest', label: 'Flash (latest)', note: 'tracks the current flash release' },
+  { model: 'gemini-flash-lite-latest', label: 'Lite', note: 'fastest, biggest free quota' },
+];
+
 // One bounded generateContent call against one model, JSON-mode. Throws with
 // a short, key-free message; a 429 gets `quota = true` so the caller can try
 // another model.
@@ -75,9 +86,11 @@ async function callModel(model, prompt, { timeoutMs, generation }) {
 // quota is exhausted, retries once on the fallback model (quotas are per
 // model). Both exhausted → a 503-tagged error with a message worth showing
 // (502 would be swallowed by Cloudflare in front of the deployment).
-// `model` (#361) pins this one call to a model other than the server's — the
-// tab agents use it, since free-tier quotas are per model and one agent should
-// not be able to eat another's. '' or absent = the server's GEMINI_MODEL.
+// `model` pins this one call to a model other than the server's. Two callers
+// arrived at it independently: the tab agents (#361), since free-tier quotas
+// are per model and one agent should not be able to eat another's, and the
+// Workbench's own picker (#327). '' or absent = the server's GEMINI_MODEL.
+// Everything else about the fallback dance below is unchanged either way.
 export async function askGemini(prompt, { timeoutMs = 25_000, generation = {}, model = '' } = {}) {
   const primary = model || MODEL();
   try {
@@ -85,6 +98,9 @@ export async function askGemini(prompt, { timeoutMs = 25_000, generation = {}, m
   } catch (err) {
     if (!err.quota) throw err;
     const fallback = FALLBACK_MODEL();
+    // Compare against the PRIMARY actually used, not MODEL() — otherwise an
+    // override that picked the lite model (or the lite model itself as the
+    // fallback) would retry itself and never actually fall back.
     if (!fallback || fallback === primary) throw quotaError();
     try {
       return await callModel(fallback, prompt, { timeoutMs, generation });

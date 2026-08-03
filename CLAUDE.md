@@ -563,6 +563,7 @@ summariser.**
 | `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set, and **tier S is offered, never assigned** |
 | `termIdleHours` | the idle-session reaper's threshold (0 = never); the host does the killing and fails SAFE |
 | `accessPinSet` | PIN sign-in available; PATCH takes write-only `accessPin` ('' disables). Any change signs out every PIN-connected device |
+| `workbenchModel` | which Gemini model the Workbench's ✧ ops run against ('' = the server's own GEMINI_MODEL). App-wide, not per-project — the SERVER makes the call, same reasoning as `termIdleHours` rather than the device-local auto-refresh |
 
 ## Routes
 

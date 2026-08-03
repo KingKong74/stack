@@ -196,11 +196,21 @@ export interface WorkbenchIdea {
   onCanvas: boolean;
 }
 
+// One choice in the model picker above the ops rail — an app-wide server
+// setting (workbenchModel), not a per-project one.
+export interface WorkbenchModel {
+  model: string;
+  label: string;
+  note: string;
+}
+
 export interface WorkbenchData {
   cards: WorkbenchCard[];
   edges: WorkbenchEdge[];
   polaris: WorkbenchIdea[];
   ops: { key: WorkbenchOp; glyph: string; label: string }[];
+  models: WorkbenchModel[];
+  model: string;  // the currently-selected model id, '' = the server's default
 }
 
 // A future: a loose directional idea, curated against the project's north star
@@ -472,6 +482,7 @@ export interface Settings {
   assistGuidance: string;     // ✧ Fill from note — standing steer folded into the prompt
   assistFields: string[];     // which fields the assist may fill (title always)
   accessPinSet: boolean;      // PIN sign-in available (the PIN itself never leaves the server)
+  workbenchModel: string;     // ✧ ops model choice, app-wide; '' = server default
 }
 
 // ---- device manager (GET /api/auth/devices) ----
