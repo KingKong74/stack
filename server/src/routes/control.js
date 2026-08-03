@@ -1119,18 +1119,11 @@ control.get('/', async (_req, res) => {
         ORDER BY s.enabled DESC, s.at_time, s.id`),
     // Open + paused rows lead so a long-parked hung-up resume (#142) can't be
     // pushed off the strip by newer finished jobs.
-    // (#266) A fanned night is now N jobs for one project, not one — 12 rows
-    // can no longer show even a single night's queue, so this is raised to 40.
-    q(`SELECT j.*, p.slug, p.name AS project_name, p.tint, ri.title AS item_title
-         FROM autopilot_jobs j
-         JOIN projects p ON p.id = j.project_id AND p.deleted_at IS NULL
-         LEFT JOIN roadmap_items ri ON ri.id = j.item_id
-        ORDER BY (j.status IN ('queued','claimed','running','paused')) DESC,
-                 j.created_at DESC LIMIT 40`),
-    // pushed off the strip by newer finished jobs. #243 — shares JOB_SELECT
-    // with autopilot.js rather than its own `j.*` copy, so advice never rides
-    // this poll and advice_ready is computed once.
-    q(`${JOB_SELECT} ORDER BY (j.status IN ('queued','claimed','running','paused')) DESC, j.created_at DESC LIMIT 12`),
+    // #243 — shares JOB_SELECT with autopilot.js rather than its own `j.*`
+    // copy, so the advice text never rides this poll and advice_ready is
+    // computed once. (#266) A fanned night is N jobs for one project, not one,
+    // so 12 rows could no longer show even a single night's queue: 40.
+    q(`${JOB_SELECT} ORDER BY (j.status IN ('queued','claimed','running','paused')) DESC, j.created_at DESC LIMIT 40`),
     // (#194) Usage aggregation — last 7 days of autopilot runs for the weekly
     // summary card. Aggregate in JS to avoid JSONB gymnastics. Rows are tiny.
     // BIGINT/NUMERIC come back as strings from node-postgres; use Number().

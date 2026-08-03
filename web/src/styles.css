@@ -346,15 +346,20 @@ a { color: inherit; }
 .autobadge:hover { border-color: var(--muted); }
 .autobadge.on { color: var(--green); background: var(--green-tint); border-color: transparent; }
 .head-actions { display: flex; gap: 9px; flex: none; }
+/* #328 recoloured this from the neutral card to the terracotta tint, and the
+   owner asked for the old colour back — it is the repo/visit button, which sits
+   beside content rather than acting as a call to action, and a page of tinted
+   buttons made everything read as the primary one. The PRESSED state that item
+   added is behaviour, not colour, so it stays; it just dips in the neutral
+   palette now instead of the accent one. */
 .btn-repo {
-  height: 38px; padding: 0 15px; border-radius: 10px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border);
-  color: var(--accent); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 15px; border-radius: 10px; background: var(--card); border: 1px solid var(--line-3);
+  color: var(--ink); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
-.btn-repo .blk { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
-.btn-repo:hover { background: var(--accent-tint-deep); border-color: var(--accent); color: var(--accent-deep); }
-.btn-repo:hover .blk { background: var(--accent-deep); }
-.btn-repo:active { background: var(--accent-tint-deep); border-color: var(--accent-deep); color: var(--accent-deep); transform: translateY(1px); }
+.btn-repo .blk { width: 14px; height: 14px; border-radius: 50%; background: var(--ink); }
+.btn-repo:hover { border-color: var(--muted); }
+.btn-repo:active { border-color: var(--muted); transform: translateY(1px); }
 .btn-visit { height: 38px; padding: 0 17px; }
 
 /* ---------- tabs ---------- */
@@ -1578,9 +1583,9 @@ a.tab { display: inline-block; }
 .pcard .meta > * + * { margin-top: 0; }
 
 /* ---------- detail head: muted (unset) site/repo + inline URL editor ---------- */
-.btn-muted { color: var(--muted); background: var(--panel); border: 1px dashed var(--line-3); font-weight: 500; }
-.btn-muted:hover { background: var(--panel); border-color: var(--muted); color: var(--ink); }
-.btn-muted:active { background: var(--panel); border-color: var(--muted); color: var(--ink); transform: translateY(1px); }
+.btn-muted { color: var(--muted); background: var(--card); border: 1px dashed var(--line-3); font-weight: 500; }
+.btn-muted:hover { border-color: var(--muted); color: var(--ink); }
+.btn-muted:active { border-color: var(--muted); color: var(--ink); transform: translateY(1px); }
 .btn-repo.btn-muted .blk { background: var(--line-3); }
 .url-edit { display: flex; align-items: center; gap: 8px; }
 .url-edit .field-input.sm { height: 38px; width: 260px; margin: 0; font-size: 13px; }
