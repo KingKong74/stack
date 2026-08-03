@@ -1038,10 +1038,15 @@ autopilot.post('/runs', async (req, res) => {
   // #266 — which night (if any) produced this run. Only a plain ISO date is
   // stored — an unrecognised value becomes NULL rather than inventing one.
   const nightDate = /^\d{4}-\d{2}-\d{2}$/.test(String(b.night_date || '')) ? b.night_date : null;
+  // #263 — the evidence line for the run's own verdict, when the risk-tiered
+  // gate fired. Rare on this route: the runner usually only knows whether it
+  // qualified after the run row already exists, so this is here for the odd
+  // case where it knows up front; PATCH /runs/:id below is the usual path.
+  const autoVerdict = b.auto_verdict ? String(b.auto_verdict).trim().slice(0, 500) || null : null;
   const { rows } = await q(
     `INSERT INTO autopilot_runs
-       (project_id, item_id, item_title, branch, outcome, commits, tokens, cost_usd, checks_failing, summary, model_usage, tmux_session, review_verdict, review_note, review_findings, night_date, started_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16, COALESCE($17, now())) RETURNING *`,
+       (project_id, item_id, item_title, branch, outcome, commits, tokens, cost_usd, checks_failing, summary, model_usage, tmux_session, review_verdict, review_note, review_findings, night_date, auto_verdict, started_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16,$17, COALESCE($18, now())) RETURNING *`,
     [
       req.project.id,
       Number.isFinite(Number(b.item_id)) ? Number(b.item_id) : null,
@@ -1056,7 +1061,7 @@ autopilot.post('/runs', async (req, res) => {
       modelUsage ? JSON.stringify(modelUsage) : null,
       tmuxSession,
       reviewVerdict, reviewNote, reviewFindings,
-      nightDate,
+      nightDate, autoVerdict,
       b.started_at ? new Date(b.started_at) : null,
     ]
   );
@@ -1074,11 +1079,13 @@ autopilot.post('/runs', async (req, res) => {
   }
 });
 
-// PATCH /runs/:id -> attach the reviewer's read to a run already recorded (#282).
+// PATCH /runs/:id -> attach the reviewer's read to a run already recorded (#282),
+// and the run's own auto-verdict evidence (#263) for the same reason: the
+// runner only knows whether it qualified for one after the row already exists.
 // The run row is posted BEFORE the Gemini diff review so a crash mid-review
 // still costs only the review, never the record — which means the verdict has
-// to arrive as a second, narrow write. Review fields only: nothing else about a
-// finished run is editable after the fact.
+// to arrive as a second, narrow write. Review/verdict fields only: nothing else
+// about a finished run is editable after the fact.
 autopilot.patch('/runs/:id', async (req, res) => {
   const b = req.body || {};
   const sets = [];
@@ -1109,6 +1116,12 @@ autopilot.patch('/runs/:id', async (req, res) => {
       ? b.architect_obs.map((o) => String(o).slice(0, 200)).filter(Boolean).slice(0, 4) : null;
     sets.push(`architect_obs = $${i++}::jsonb`);
     vals.push(obs && obs.length ? JSON.stringify(obs) : null);
+  }
+  if (b.auto_verdict !== undefined) {
+    // #263 — the runner usually only knows whether it qualified for its own
+    // verdict after this row already exists, so this is the usual path in.
+    sets.push(`auto_verdict = $${i++}`);
+    vals.push(b.auto_verdict ? String(b.auto_verdict).trim().slice(0, 500) || null : null);
   }
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
   vals.push(req.project.id, Number(req.params.id));

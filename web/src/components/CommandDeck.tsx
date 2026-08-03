@@ -179,6 +179,9 @@ export function AutopilotDigest({ runs }: { runs: OverviewRun[] }) {
             </span>
           </span>
           <span className="run-when">{r.when}</span>
+          {/* #263 — '' means no auto-verdict was given, not one refused, so
+              this only ever shows the positive case. */}
+          {r.autoVerdict && <span className="run-auto">⎌ auto-verdicted — {r.autoVerdict}</span>}
         </button>
       ))}
     </div>

@@ -101,6 +101,7 @@ import { laneFor, bugLaneFor, auditLaneFor, freeBranchName } from './lib/lane.mj
 import { refineTargetBranch, autoMergeAllowed, isRefineRound } from './lib/refine.mjs';
 import { cleanRiskTier, cleanRiskReason, riskLabel } from './lib/risk.mjs';
 import { isApproved, approvalHold } from './lib/approval.mjs';
+import { autoVerdict, declaredFiles } from './lib/autoverdict.mjs';
 
 loadStackEnv();
 
@@ -1319,6 +1320,53 @@ Rules for this run:
     }
   }
   return { landed: true, limitHit, resultText, branch };
+
+  // Auto-verdict (#263) — one step further than #212: a low-risk night that is
+  // green on every signal AND stayed inside the files the item itself declared
+  // may write its own review_tag, so the human's morning click becomes a
+  // check rather than the only path to "solid". Like every gate in this file,
+  // it is positive-evidence-only — an absent signal (no checks, no reviewer
+  // verdict, no declared files) is never read as a green one, so a project
+  // that never writes an "Interfaces: …" line simply never auto-verdicts.
+  // This writes the VERDICT only, never `done` — ticking an item complete
+  // stays the human's call, exactly like the auto-merge above never ticks it.
+  const changedFiles = git(wt, ['diff', '--name-only', 'main...HEAD'])
+    .split('\n').map((s) => s.trim()).filter(Boolean);
+  const declared = declaredFiles([item.note || '', (item.plan || []).map((s) => s.text).join(' ')].join(' '));
+  const verdict = autoVerdict({
+    risk: item.risk || 'normal',
+    limitHit,
+    refineRound: Boolean(item.refineNote),
+    checksRan,
+    checksFailing,
+    reviewBugs: reviewVerdict ? reviewVerdict.bugs : null,
+    changed: changedFiles,
+    declared,
+  });
+  let autoVerdicted = '';
+  if (verdict.ok) {
+    let roadmapPatched = false;
+    try {
+      await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`,
+        { review_tag: 'solid', verdict_source: 'auto', verdict_evidence: verdict.evidence });
+      roadmapPatched = true;
+    } catch (e) { log(`auto-verdict not written to the item (${e.message}).`); }
+    // The run row only carries the evidence once the item itself is verdicted —
+    // an evidence line on the run with no verdict on the item is a receipt for
+    // something that didn't happen.
+    if (roadmapPatched && runRow?.id) {
+      try { await api('PATCH', `/api/projects/${SLUG}/autopilot/runs/${runRow.id}`, { auto_verdict: verdict.evidence }); }
+      catch (e) { log(`auto-verdict not attached to the run (${e.message}).`); }
+    }
+    if (roadmapPatched) {
+      autoVerdicted = verdict.evidence;
+      log(`#${item.id} auto-verdicted SOLID — ${verdict.evidence}. ⎌ Undo from the Review room returns it to To verify.`);
+    }
+  } else if ((item.risk || 'normal') === 'low') {
+    log(`#${item.id} is low risk but NOT auto-verdicted: ${verdict.missing.join('; ')}.`);
+  }
+
+  return { landed: true, limitHit, resultText, autoVerdicted };
 }
 
 // ---- the night loop: items until a budget runs dry ----
@@ -1340,6 +1388,7 @@ try {
   let stepsDesigned = 0;
   let stepsRemaining = 0;
   let anyPlanned = false; // did any attempted item actually carry (or gain) a plan?
+  let autoVerdictCount = 0; // #263 — how many items skipped the human's verdict click tonight
   let nightLimited = false;
   // #325 — a pinned item, an agenda or an audit keep their exact structural
   // cap (there's nothing else TO pick); otherwise the item cap is only a
@@ -1539,6 +1588,13 @@ try {
       // branch and a collision resolves to a `-2` suffix, so the name the night
       // REPORTS has to be the one the run actually pushed.
       nightLines.push(`#${item.id} ${item.title}: ${r.landed ? (PLAN_ONLY ? 'design saved' : `${r.branch || laneFor(item)} pushed`) : (PLAN_ONLY ? 'no design' : 'no commits')}${stepNote}${r.limitHit ? ' (hit the usage limit)' : ''}`);
+      nightLines.push(`#${item.id} ${item.title}: ${r.landed ? (PLAN_ONLY ? 'design saved' : `${laneFor(item)} pushed`) : (PLAN_ONLY ? 'no design' : 'no commits')}${r.limitHit ? ' (hit the usage limit)' : ''}`);
+      // #263 — an auto-verdict is reversible from the Review room, but only if
+      // the morning report shows it happened; give it its own line + evidence.
+      if (r.autoVerdicted) {
+        autoVerdictCount++;
+        nightLines.push(`  ⎌ #${item.id} auto-verdicted SOLID — ${r.autoVerdicted}`);
+      }
       if (r.limitHit) {
         // Graceful close: stop starting work, tell the human, and come back
         // when the allocation does. Partial branches are already pushed.
@@ -1576,6 +1632,8 @@ try {
         : `no plan steps on tonight's items, `);
   const closing = `${landed} ${PLAN_ONLY ? 'design(s) awaiting review' : 'branch(es) awaiting the morning verdict'}, ${attempted.size} item(s) attempted, `
     + `${stepsReport}~${Math.round(tokensSpent / 1000)}k tokens${costSpent ? ` ($${costSpent.toFixed(2)})` : ''}, ${Math.round(elapsedMin())}m elapsed.`;
+    + `~${Math.round(tokensSpent / 1000)}k tokens${costSpent ? ` ($${costSpent.toFixed(2)})` : ''}, ${Math.round(elapsedMin())}m elapsed`
+    + `${autoVerdictCount > 0 ? `, ${autoVerdictCount} auto-verdicted` : ''}.`;
   log(`night over: ${closing}`);
   if (attempted.size > 0) {
     await notify(

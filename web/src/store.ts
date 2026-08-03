@@ -1158,6 +1158,9 @@ export interface ReviewRun {
   architectVerdict: '' | 'aligned' | 'drifting' | 'concerning';
   architectNote: string;
   architectObs: string[];
+  // #263 — the run's own auto-verdict evidence, when the machine gave one.
+  // '' = no auto-verdict was given, which is NOT the same as one refused.
+  autoVerdict: string;
   when: string;
   finishedAt: string;
   // #273 — the reviewer's brief is written automatically at run end and stored
@@ -1194,6 +1197,12 @@ export interface ReviewItem {
   // pre-#374 server, where everything in the queue was ticked by definition.
   stage?: 'built' | 'ticked';
   merge?: ReviewMerge | null;
+  // #263 — who gave the verdict and on what evidence. verdictSource defaults
+  // to 'human' server-side (also true of every row that predates the column);
+  // verdictEvidence '' means the evidence was not recorded, never "none found".
+  verdictSource: 'human' | 'auto';
+  verdictAt: string | null;
+  verdictEvidence: string;
   run: ReviewRun | null;
 }
 
@@ -1206,16 +1215,30 @@ export interface ReviewNightRun extends ReviewRun {
 export interface ReviewData {
   queue: ReviewItem[];
   settled: ReviewItem[];
+  // #263 — the last 12 items the MACHINE verdicted, newest verdict first: the
+  // audit strip for the risk-tiered auto-verdict gate. Deliberately capped and
+  // deliberately says so — a silent slice reads as "that was all of them".
+  autoVerdicted: ReviewItem[];
   nights: ReviewNightRun[];
   // `unmerged` (#374) is a subset of `pending`, not a sibling of `flagged`:
   // how many of the changes waiting on you are still on a branch.
-  totals: { pending: number; shelved: number; flagged: number; projects: number; settled: number; unmerged?: number };
+  totals: {
+    pending: number; shelved: number; flagged: number; projects: number; settled: number;
+    // `unmerged` (#374) is a subset of `pending`, not a sibling of `flagged`:
+    // how many of the changes waiting on you are still on a branch.
+    unmerged?: number;
+    // #263 — how many verdicts in the archive the machine gave itself.
+    autoVerdicted: number;
+  };
   // #375 — which agents may act, and which of their ops. Every ✧ in this room
   // is the Foreman's, and each one is ABSENT rather than disabled when it
   // cannot run — with the reason said beside it. This replaced `geminiReady`:
   // the room's ops moved onto Claude on the host with the agent, so a key says
   // nothing about whether they work.
   agents?: TabAgentState;
+  // Turn 3 — a Gemini key exists on the server. The Refine dialog's ✦ draft
+  // button is ABSENT without one, never a disabled button explaining itself.
+  geminiReady?: boolean;
 }
 
 export async function getReview(): Promise<ReviewData> {

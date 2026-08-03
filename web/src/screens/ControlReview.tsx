@@ -8,6 +8,7 @@ import {
 } from '../store';
 import { go } from '../lib/route';
 import { mergeStateOf, MERGE_STATE_META, type MergeState } from '../lib/branch';
+import { timeAgo } from '../lib/ui';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { Modal } from '../components/Modal';
 
@@ -162,6 +163,10 @@ export function ReviewRoom({
   const [triageBusy, setTriageBusy] = useState(false);
   const [triageErr, setTriageErr] = useState('');
   const [undoNotes, setUndoNotes] = useState<Map<string, string>>(new Map());
+  // #263 — the auto-verdicted strip's own ⎌ Undo: per row, not room-wide, so
+  // clearing one machine verdict never disables the rest of the strip.
+  const [autoBusy, setAutoBusy] = useState<Set<string>>(new Set());
+  const [autoErr, setAutoErr] = useState<Map<string, string>>(new Map());
   const [undoFor, setUndoFor] = useState<ReviewItem | null>(null);
   const [refineFor, setRefineFor] = useState<ReviewItem | null>(null);
   const [refineText, setRefineText] = useState('');
@@ -291,6 +296,23 @@ export function ReviewRoom({
       undo: () => act(() => patchRoadmapItem(it.slug, Number(it.id), { review_shelved: it.shelved })),
     },
   );
+
+  // #263 — the auto-verdicted strip's ⎌ Undo: the ordinary verdict-clearing
+  // PATCH, same one `giveVerdict`'s own undo makes. Clearing `review_tag`
+  // resets `verdict_source` to 'human' and wipes the evidence server-side in
+  // the same statement — there is no second route for this. Per-row busy and
+  // error state (not the room-wide `act`) so one row's failure never disables
+  // the rest of the strip and reads beside the row that failed, not lost in
+  // the room's shared error banner.
+  const clearAutoVerdict = (it: ReviewItem) => {
+    const k = key(it);
+    setAutoBusy((s) => new Set(s).add(k));
+    setAutoErr((m) => { const n = new Map(m); n.delete(k); return n; });
+    patchRoadmapItem(it.slug, Number(it.id), { review_tag: '' })
+      .then(() => load())
+      .catch((e) => setAutoErr((m) => new Map(m).set(k, e instanceof Error ? e.message : 'That did not go through.')))
+      .finally(() => setAutoBusy((s) => { const n = new Set(s); n.delete(k); return n; }));
+  };
 
   // ↩ Board: it didn't hold up. Un-ticking clears the verdict and the branch
   // claim server-side, so the item re-enters play fresh.
@@ -623,6 +645,7 @@ export function ReviewRoom({
       )}
 
       {view === 'queue' ? (
+        <>
         <div className="rv-split">
           <div className="rv-rail">
             <div className="rv-rail-head">
@@ -726,6 +749,15 @@ export function ReviewRoom({
             </div>
           )}
         </div>
+
+        {/* #263 — the audit strip for the risk-tiered auto-verdict gate: the
+            machine's own verdicts, sitting after the to-verify queue and
+            before you would go looking through Settled for what it decided.
+            Nothing rendered when empty — a machine verdict is the exception,
+            not the norm, and an always-present empty strip would be noise. */}
+        <AutoVerdicted items={data.autoVerdicted} cap={12}
+          busy={autoBusy} errors={autoErr} onUndo={clearAutoVerdict} />
+        </>
       ) : (
         <Debrief nights={nights} shown={shownNight} onPickNight={setNight}
           onOpenItem={(slug, id) => go.detail(slug, 'roadmap', id)}
@@ -818,6 +850,56 @@ export function ReviewRoom({
           onConfirm={() => { const it = confirmDelete; setConfirmDelete(null); remove(it); }}
           onCancel={() => setConfirmDelete(null)} />
       )}
+    </div>
+  );
+}
+
+// #263 — AUTO-VERDICTED: the strip that makes a machine verdict visible and
+// reversible, the other two-thirds of the risk-tiered gate's licence (the
+// third, positive evidence, lives in the run itself). Every row here already
+// carries `review_tag = 'solid'` — nothing is waiting on a human — this is the
+// audit trail, not a queue, so it renders nothing when it is empty rather than
+// sitting there as a permanent, noisy "nothing to see" box.
+function AutoVerdicted({ items, cap, busy, errors, onUndo }: {
+  items: ReviewItem[]; cap: number;
+  busy: Set<string>; errors: Map<string, string>;
+  onUndo: (it: ReviewItem) => void;
+}) {
+  if (!items.length) return null;
+  const k = (it: ReviewItem) => `${it.slug}#${it.id}`;
+  return (
+    <div className="rv-auto">
+      <div className="rv-auto-head">
+        <span className="rv-lbl">AUTO-VERDICTED {items.length}</span>
+        <span className="rv-quiet inline">
+          Verdicted by the machine on positive evidence — low risk, checks green, a clean
+          reviewer read, a diff inside the declared files — the last {cap}. Any of these can be
+          sent back.
+        </span>
+      </div>
+      <div className="rv-auto-list">
+        {items.map((it) => {
+          const key = k(it);
+          const isBusy = busy.has(key);
+          const err = errors.get(key);
+          return (
+            <div className="rv-auto-row" key={key}>
+              <span className="tintdot" style={{ background: it.tint || 'var(--sand)' }} title={it.name} />
+              <span className="proj">{it.name}</span>
+              <span className="t">#{it.id} {it.title}</span>
+              <span className="branch mono">{it.branch || '—'}</span>
+              <span className="when">{timeAgo(it.verdictAt) || it.when}</span>
+              <span className="evidence">
+                {it.verdictEvidence || 'no evidence recorded'}
+              </span>
+              {err && <span className="err">{err}</span>}
+              <button className="undo" disabled={isBusy} onClick={() => onUndo(it)}>
+                {isBusy ? '◴' : '⎌ Undo'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -338,6 +338,8 @@ overview.get('/', async (_req, res) => {
     tokens: Number(r.tokens) || 0,
     summary: r.summary || '',
     day: r.night_key,
+    // #263 — '' means no auto-verdict was given, which is not the same as one refused.
+    autoVerdict: r.auto_verdict || '',
     when: relativeTime(r.finished_at) || 'just now',
   }));
 

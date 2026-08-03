@@ -292,6 +292,26 @@ These are the ones a session gets wrong by guessing. Everything else, read off `
   server never grows a third copy of the naming rule — and the legacy spelling therefore keeps
   working for trees exactly as it does for branches.
 - **A future's SHAPE in the Polaris galaxy is derived, never stored.** There is no `kind`
+- **`built_note`** — what actually landed, PATCHed by the completing session alongside `done:true`.
+  The Review room verdicts against it. Always write one.
+- **`verdict_source` / `verdict_at` / `verdict_evidence` on `roadmap_items` (#263, owner-sanctioned)**
+  — the one place a machine may verdict instead of the human, and only on **positive evidence**,
+  only while it stays **reversible**, and only while it is **visible**; drop any one of the three and
+  it is not sanctioned. Positive evidence means every gate answered yes — low risk, checks actually
+  RAN and none failed, a reviewer verdict that found no bugs, a diff confined to the files the item
+  declared — and **an absent signal is never a green one**: no checks, no reviewer verdict or no
+  declared files each mean the human still verdicts, same rule as a NULL `review_verdict`. The gate
+  is one pure function, `scripts/lib/autoverdict.mjs`, tested by `server/test/auto-verdict.test.mjs`
+  — never a second spelling of it. Two exclusions are not negotiable: a refine round (the human
+  already sent this back once; a machine may not close that loop) and a limit-hit run (it stopped
+  mid-thought, so what's on the branch isn't what it meant to build). Reversible because clearing
+  `review_tag` resets `verdict_source` to 'human' and wipes `verdict_at`/`verdict_evidence` in the
+  same statement — the roadmap PATCH owns that, so ⎌ undo is the ordinary verdict-clearing path and
+  needs no second route. Visible because the verdict is never silent: `verdict_evidence` is the
+  receipt, shown per row in the Review room's AUTO-VERDICTED strip and stated in the night log and
+  the morning digest (`autopilot_runs.auto_verdict`) — a verdict nobody can see isn't reversible in
+  practice.
+- **A future's SHAPE in the Polaris galaxy (#312) is derived, never stored.** There is no `kind`
   column and there must not be one: `is_star` = ★ its own orbit; parent is a star = ● a planet;
   parent is a planet = ○ a moon; no parent + judged = ◦ one of the north star's three shells
   (`alignment` picks which, on-course innermost); no parent + unjudged = · the drift belt, which is
@@ -678,6 +698,8 @@ reference. The index:
     exception: machine verdicts on low-risk, all-green runs — and #274 carves out its own exception
     to THAT: a refine round is excluded even when the run is green, because it is by definition work
     a human already sent back and only that human's verdict closes it.)
+    itself: no auto-closing bugs, ticking items or merging branches — except the one sanctioned
+    exception, `verdict_source` on `roadmap_items` under **Data rules** below (#263).
   • **Absent key = silent degrade.** Every Gemini surface no-ops or 503s cleanly without
     `GEMINI_API_KEY`; nothing blocks, nothing errors user-visibly. The client renders those surfaces
     ABSENT rather than disabled, keyed off the detail payload's `geminiReady`.

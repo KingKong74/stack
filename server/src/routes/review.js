@@ -10,7 +10,7 @@ import { agentClient, agentsForClient } from '../agents.js';
 //
 // Review used to live inside ONE project's Roadmap tab, which is the wrong shape
 // for a fleet: the nights run across projects, so the morning's queue does too.
-// This is the cross-project read, computed in three aggregate queries — never
+// This is the cross-project read, computed in four aggregate queries — never
 // one per project:
 //
 //   queue    every change nobody has verdicted yet, newest first, with the run
@@ -19,9 +19,16 @@ import { agentClient, agentsForClient } from '../agents.js';
 //   settled  the same rows after a verdict — the archive, capped.
 //   nights   runs grouped by the day they finished, for the debrief (24a).
 //
+//   autoVerdicted  the last 12 items the MACHINE verdicted (#263) — the audit
+//            strip for the risk-tiered gate. Not gated on done=true: the
+//            runner writes the verdict the night it builds, and the human
+//            ticks the item later, so a strip that only appeared after
+//            ticking would not be visible in the sense the policy requires.
+//
 // Everything here is a read. Verdicts, refinements, shelving and undo all go
-// through the existing per-project roadmap/autopilot routes, so this route can
-// never be the thing that mutates a tracker.
+// through the existing per-project roadmap/autopilot routes — the auto-verdict
+// strip's own ⎌ undo is the ordinary roadmap PATCH too (#263) — so this route
+// can never be the thing that mutates a tracker.
 //
 // #374 — A CHANGE IS WAITING FROM THE MOMENT IT IS BUILT, NOT FROM THE MOMENT
 // IT IS TICKED. The queue used to be `done = true`, and nothing ticks: the
@@ -63,6 +70,7 @@ const foreman = agentClient('foreman');
 // night list are windows.
 const SETTLED_CAP = 40;
 const NIGHT_DAYS = 14;
+const AUTO_VERDICTED_CAP = 12; // #263 — the audit strip, deliberately short
 
 // Who built it — the same read the old Reviews view used, kept identical so the
 // origin chips mean what they always meant.
@@ -114,6 +122,11 @@ function itemShape(row, reports) {
     refineNote: row.refine_note || '',
     reviewTags: Array.isArray(row.review_tags) ? row.review_tags : [],
     reviewTag: row.review_tag || '',
+    // #263 — who gave the verdict and on what evidence, same names/fallbacks
+    // as shape.js's roadmapItemShape so every list carries them alike.
+    verdictSource: row.verdict_source || 'human',
+    verdictAt: row.verdict_at || null,
+    verdictEvidence: row.verdict_evidence || '',
     shelved: !!row.review_shelved,
     branch: row.claimed_by || '',   // #277 — the claim IS a branch name
     origin: originOf(row),
@@ -143,6 +156,10 @@ function itemShape(row, reports) {
       costUsd: Number(row.run_cost) || 0,
       checksFailing: row.run_checks,
       summary: row.run_summary || '',
+      // #263 — the run's own auto-verdict evidence. Not aliased with the
+      // item's columns (nothing else on the item is called auto_verdict), so
+      // it's selected straight off `r` and exposed here under the run object.
+      autoVerdict: row.auto_verdict || '',
       // Both second-model reads (#282/#284), shaped once in shape.js. The run's
       // own columns wear `run_` aliases here (it is LEFT JOINed beside the item,
       // so `branch` and `summary` would collide) — the agent columns are not
@@ -172,12 +189,17 @@ function itemShape(row, reports) {
 const AWAITING = `(i.done = true
     OR (COALESCE(i.built_note, '') <> '' AND COALESCE(i.claimed_by, '') <> ''))`;
 
-// One SELECT for both the queue and the archive: changes joined to the newest
-// run that mentions them. DISTINCT ON keeps a re-run item to one row.
+// One SELECT for the queue, the archive AND the auto-verdicted strip: changes
+// joined to the newest run that mentions them. DISTINCT ON keeps a re-run item
+// to one row. %WHERE% is the FULL clause (its own WHERE keyword and all) and
+// %ORDER% the full ORDER BY, so each caller states its own gate rather than
+// sharing one — the three gates genuinely differ, and #263's strip is the
+// reason: it is not gated on the queue predicate at all.
 const ITEM_SQL = `
   SELECT i.id, i.title, i.bucket, i.note, i.built_note, i.refine_note, i.review_tag,
          i.review_tags, i.review_shelved, i.claimed_by, i.updated_at, i.risk, i.done,
          i.risk_source, i.risk_reason,
+         i.verdict_source, i.verdict_at, i.verdict_evidence,
          i.project_id::int AS project_id,
          p.slug, p.name, p.tint,
          r.id AS run_id, r.branch AS run_branch, r.outcome AS run_outcome,
@@ -185,7 +207,7 @@ const ITEM_SQL = `
          r.checks_failing AS run_checks, r.summary AS run_summary,
          r.review_verdict, r.review_note, r.review_findings,
          r.architect_verdict, r.architect_note, r.architect_obs,
-         r.review_brief, r.review_brief_at,
+         r.review_brief, r.review_brief_at, r.auto_verdict,
          r.finished_at AS run_finished
     FROM roadmap_items i
     JOIN projects p ON p.id = i.project_id AND p.deleted_at IS NULL
@@ -194,17 +216,23 @@ const ITEM_SQL = `
        WHERE ar.project_id = i.project_id AND ar.item_id = i.id
        ORDER BY ar.finished_at DESC LIMIT 1
     ) r ON true
-   WHERE ${AWAITING} AND %WHERE%
-   ORDER BY i.updated_at DESC %LIMIT%`;
+   %WHERE%
+   %ORDER%`;
 
 review.get('/', async (req, res) => {
-  const [pending, settled, nights, reportRows] = await Promise.all([
-    q(ITEM_SQL.replace('%WHERE%', 'i.review_tag IS NULL').replace('%LIMIT%', '')),
+  const [pending, settled, autoVerdicted, nights, reportRows] = await Promise.all([
+    // The queue: built OR ticked (#374), not yet verdicted.
+    q(ITEM_SQL.replace('%WHERE%', `WHERE ${AWAITING} AND i.review_tag IS NULL`)
+      .replace('%ORDER%', 'ORDER BY i.updated_at DESC')),
     // The archive tests the verdict and NOTHING about `done` — a change you
     // approved before it merged must not fall out of both lists on its way
     // through. It leaves the queue and lands here, exactly like a ticked one.
-    q(ITEM_SQL.replace('%WHERE%', "i.review_tag IS NOT NULL AND i.review_tag <> ''")
-      .replace('%LIMIT%', `LIMIT ${SETTLED_CAP}`)),
+    q(ITEM_SQL.replace('%WHERE%', "WHERE i.review_tag IS NOT NULL AND i.review_tag <> ''")
+      .replace('%ORDER%', `ORDER BY i.updated_at DESC LIMIT ${SETTLED_CAP}`)),
+    // #263 — the audit strip. Gated on neither `done` nor the queue predicate:
+    // its subject is what the MACHINE decided, wherever that change now sits.
+    q(ITEM_SQL.replace('%WHERE%', "WHERE i.verdict_source = 'auto' AND i.review_tag IS NOT NULL AND i.review_tag <> ''")
+      .replace('%ORDER%', `ORDER BY i.verdict_at DESC NULLS LAST LIMIT ${AUTO_VERDICTED_CAP}`)),
     // The debrief's raw material: every run of the last fortnight with its
     // project, so the client can group by night without a second round trip.
     q(
@@ -243,6 +271,8 @@ review.get('/', async (req, res) => {
     agents: await agentsForClient(),
     queue,
     settled: settled.rows.map((r) => itemShape(r, reports)),
+    // #263 — the audit strip for the risk-tiered gate's machine verdicts.
+    autoVerdicted: autoVerdicted.rows.map((r) => itemShape(r, reports)),
     nights: nights.rows.map((r) => ({
       slug: r.slug,
       name: r.name,
@@ -272,6 +302,7 @@ review.get('/', async (req, res) => {
       unmerged: active.filter((it) => it.stage === 'built').length,
       projects: new Set(active.map((it) => it.slug)).size,
       settled: settled.rows.length,
+      autoVerdicted: autoVerdicted.rows.length,
     },
   });
 });

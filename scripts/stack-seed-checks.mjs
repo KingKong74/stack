@@ -173,6 +173,10 @@ function suiteFor(slug, ORIGIN) {
     // affordance rather than breaking one: the dialog still works and nobody
     // finds out the assist stopped being offered.
     { name: 'Review — the Gemini-ready flag', url: u('/api/review'), auth: true, json_path: 'geminiReady' },
+    // #263 — the auto-verdicted strip's count. It stays present (0 counts as
+    // present) even with nothing on it, so losing the key entirely — the
+    // route forgetting the field — is what this catches, not an empty strip.
+    { name: 'Review — auto-verdicted strip', url: u('/api/review'), auth: true, json_path: 'totals.autoVerdicted' },
     // The Now room's two host-fed signals. Both are ARRAYS that are usually
     // EMPTY — nothing is normally stopped and nobody is normally colliding —
     // which is exactly why they need a check: if the key stops being served,
