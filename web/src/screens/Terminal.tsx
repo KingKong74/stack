@@ -23,6 +23,9 @@ import { go, hrefTo } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
+// The wire codec and the palette are shared with the tab agents' consoles
+// (#376) — see lib/termWire.ts for why those three and nothing else.
+import { b64encode, b64decode, GIT_BASH_THEME } from '../lib/termWire';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { tierRank, TIERS, type RoadmapItem, type Tier } from '../types';
 
@@ -88,32 +91,6 @@ const parseTok = (s: string): number => {
   const n = parseFloat(m[1]);
   if (!Number.isFinite(n) || n <= 0) return 0;
   return Math.round(n * (m[2].toLowerCase() === 'm' ? 1e6 : m[2].toLowerCase() === 'k' ? 1e3 : 1));
-};
-
-const b64encode = (s: string) => {
-  const bytes = new TextEncoder().encode(s);
-  let bin = '';
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin);
-};
-const b64decode = (s: string) => {
-  const bin = atob(s);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-};
-
-// mintty's default palette — the git-bash look.
-const GIT_BASH_THEME = {
-  background: '#000000',
-  foreground: '#bfbfbf',
-  cursor: '#bfbfbf',
-  selectionBackground: '#264f78',
-  black: '#000000', red: '#bf0000', green: '#00bf00', yellow: '#bfbf00',
-  blue: '#4040bf', magenta: '#bf00bf', cyan: '#00bfbf', white: '#bfbfbf',
-  brightBlack: '#404040', brightRed: '#ff4040', brightGreen: '#40ff40',
-  brightYellow: '#ffff40', brightBlue: '#6060ff', brightMagenta: '#ff40ff',
-  brightCyan: '#40ffff', brightWhite: '#ffffff',
 };
 
 // The essentials only. Claude is NOT a quick command any more — typing claude

@@ -2442,7 +2442,11 @@ export async function getAuditPrompt(slug: string): Promise<string> {
 // #375 — and 'foreman', bound to the Review room. It also took `reviewbrief`
 // and `refinedraft` off the Curator: their only surface was ever that room, and
 // a room whose ✧ buttons answer to two agents' switches cannot be switched off.
-export type TabAgentKey = 'auditor' | 'curator' | 'foreman' | 'merger' | 'polaris';
+// #376 — 'drafter' joins them on the Workbench tab, whose seven ✧ canvas ops
+// had answered to no switch at all. 'scribe' (Instructions) was in the server's
+// registry already and missing from this union, which made it the one agent no
+// client code could name.
+export type TabAgentKey = 'auditor' | 'curator' | 'foreman' | 'merger' | 'polaris' | 'scribe' | 'drafter';
 
 export interface TabAgentOp {
   op: string;
@@ -2466,6 +2470,12 @@ export interface TabAgent {
   model: string;      // #364 — a Claude alias ('' = the CLI's own default)
   guidance: string;   // the owner's standing steer, prefixed to every prompt
   ops: TabAgentOp[];
+  // #376 — the agent's LIVE SESSION on its own tab, and its own switch. NULL
+  // for an agent that has none (the two room-bound agents, the Scribe): the
+  // room must draw nothing there rather than a switch for a session that does
+  // not exist. Not an op, and deliberately not in `ops` — nothing asks it for
+  // JSON; the owner types into it.
+  console?: { label: string; hint: string; enabled: boolean } | null;
   // The ledger: an agent that keeps failing says so here rather than only in a
   // toast the owner saw once.
   runs: number;
@@ -2493,14 +2503,22 @@ export async function getAgents(): Promise<TabAgentsData> {
 // in quick succession can't clobber each other.
 export async function patchAgent(
   key: TabAgentKey,
-  patch: { enabled?: boolean; model?: string; guidance?: string; op?: string; opEnabled?: boolean }
+  patch: {
+    enabled?: boolean; model?: string; guidance?: string; op?: string; opEnabled?: boolean;
+    consoleEnabled?: boolean;
+  }
 ): Promise<TabAgent> {
   return request<TabAgent>(`/agents/${encodeURIComponent(key)}`, { method: 'PATCH', body: patch });
 }
 
 // The compact per-project read that rides the detail payload: which agents may
 // act, and which of their ops. Keyed by agent.
-export type TabAgentState = Partial<Record<TabAgentKey, { name: string; tab: string; enabled: boolean; ready?: boolean; ops: string[] }>>;
+export type TabAgentState = Partial<Record<TabAgentKey, {
+  name: string; tab: string; enabled: boolean; ready?: boolean; ops: string[];
+  // #376 — three states, not two: null/absent = this agent has no live session,
+  // false = it has one and the owner switched it off, true = it may open.
+  console?: boolean | null;
+}>>;
 
 // May this tab's agent run this op right now? UNKNOWN MEANS YES — an older
 // server sends no agent state at all, and hiding a working feature because the
@@ -2530,6 +2548,57 @@ export function agentOffReason(state: TabAgentState | undefined, key: TabAgentKe
     return `The ${a.name} runs Claude on the host, and the host daemon is not connected.`;
   }
   return `The ${a.name} can still work here, but this one is switched off.`;
+}
+
+// ---- the tab agents' CONSOLES (#376) ----
+//
+// The same two-function shape as agentCan/agentOffReason, and for the same
+// reason: what may be drawn and what to say instead are read off ONE state, so
+// a tab can never print a reason it has not checked.
+//
+// The unknown-means-yes rule holds for an agent the server has not reported at
+// all — an older server hiding a working feature is the worse failure. But an
+// agent it HAS reported, with no `console` field, is the server saying this
+// agent has no live session, and that is not a refusal to explain: there is
+// nothing to draw and nothing to say.
+export function agentConsoleCan(state: TabAgentState | undefined, key: TabAgentKey): boolean {
+  const a = state?.[key];
+  if (!a) return true;
+  return a.console === true && a.enabled && a.ready !== false;
+}
+
+// '' both when the console may open AND when this agent has none — a tab asks
+// for the sentence only after `agentConsoleCan` said no, and an empty answer
+// means there is nothing here to explain.
+export function agentConsoleOffReason(state: TabAgentState | undefined, key: TabAgentKey): string {
+  const a = state?.[key];
+  if (!a || a.console == null || agentConsoleCan(state, key)) return '';
+  if (!a.enabled) return `The ${a.name} is switched off.`;
+  if (a.ready === false) {
+    return `The ${a.name}'s session runs on the host, and the host daemon is not connected.`;
+  }
+  return `The ${a.name} can still work here, but its live session is switched off.`;
+}
+
+// How each tab agent's console is left on this DEVICE: open or shut, and how
+// tall. Device-local for the same reason the terminal's own view prefs are —
+// it is a way of looking at a screen, not a property of the project — and
+// keyed by agent so opening the Roadmap's session does not open four.
+export interface TabTermPrefs { open: boolean; tall: boolean }
+const TAB_TERM_KEY = 'stack.tabTerm';
+type TabTermStore = Partial<Record<string, TabTermPrefs>>;
+const readTabTerms = (): TabTermStore => readStoredJSON(TAB_TERM_KEY, (p) => (p && typeof p === 'object' ? p : {}));
+
+export function getTabTermPrefs(key: TabAgentKey): TabTermPrefs {
+  // SHUT by default. A console that opened itself on four tabs would spawn four
+  // Claude sessions on the host the first time somebody clicked through a
+  // project — the session is real work and real spend, so it waits to be asked.
+  const p = readTabTerms()[key];
+  return { open: p?.open === true, tall: p?.tall === true };
+}
+
+export function setTabTermPrefs(key: TabAgentKey, prefs: TabTermPrefs) {
+  localStorage.setItem(TAB_TERM_KEY, JSON.stringify({ ...readTabTerms(), [key]: prefs }));
 }
 
 // ---- the Merge agent's read of a proposed plan (#364) ----

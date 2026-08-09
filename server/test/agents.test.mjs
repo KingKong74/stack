@@ -28,7 +28,8 @@ const rejects = async (label, fn, match) => {
 };
 
 console.log('--- the registry ---');
-check('the agents', AGENTS.map((a) => a.key), ['auditor', 'curator', 'foreman', 'merger', 'scribe', 'polaris']);
+check('the agents', AGENTS.map((a) => a.key),
+  ['auditor', 'curator', 'foreman', 'merger', 'scribe', 'polaris', 'drafter']);
 check('one surface each, no surface shared', new Set(AGENTS.map((a) => a.tab)).size, AGENTS.length);
 check('every agent owns at least one op', AGENTS.every((a) => a.ops.length > 0), true);
 // The op → agent map is built at import time and throws on a duplicate, so a
@@ -47,7 +48,8 @@ check('an op nobody owns resolves to nothing', agentForOp('nonsense'), null);
 // Three project tabs and two Mission Control rooms (#364, #375). A room-bound
 // agent is bound exactly like a tab-bound one — the binding is what the item is
 // about, and it does not care which kind of surface it names.
-check('the surfaces', AGENTS.map((a) => a.tab), ['quality', 'roadmap', 'review', 'merge', 'instructions', 'futures']);
+check('the surfaces', AGENTS.map((a) => a.tab),
+  ['quality', 'roadmap', 'review', 'merge', 'instructions', 'futures', 'workbench']);
 // Every op the ROUTES call has to exist here, or the call throws at runtime.
 // This list is the routes' side of the contract, written out so a renamed op
 // fails here rather than the first time somebody presses the button.
@@ -59,6 +61,13 @@ const WIRED = {
   foreman: ['readchange', 'triagequeue', 'reviewbrief', 'refinedraft'],
   merger: ['mergeplan'],
   polaris: ['judge', 'cluster', 'converge'],
+  // #376 — ONE op for the canvas's seven ✧ buttons. Routes: POST
+  // /projects/:slug/workbench/ops, which gates on it and then makes its own
+  // Gemini call (it wants the answer field by field and honours the canvas's
+  // model picker). Two of the button names would collide with other agents'
+  // ops if they were registered separately — which is the registry saying
+  // correctly that they are one surface, not seven capabilities.
+  drafter: ['canvas'],
 };
 for (const [key, ops] of Object.entries(WIRED)) {
   check(`${key}'s ops are exactly what its routes call`, agentByKey(key).ops.map((o) => o.op), ops);
@@ -199,6 +208,36 @@ check('a room agent knows it is a room', agentByKey('foreman').surface, 'room');
 // enabled / model / guidance / opsOff.)
 check('every registry field the room shows is present',
   ['key', 'name', 'tab', 'tabLabel', 'surface', 'blurb', 'remit'].every((k) => k in shaped), true);
+
+console.log('\n--- the console (#376): an agent\'s live session ---');
+// A console is NOT an op. Nothing routes to it, nothing asks it for JSON, and
+// putting it in `ops` would have made `ask()` able to reach it.
+check('no agent lists a console among its ops',
+  AGENTS.some((a) => a.ops.some((o) => /console|session|terminal/i.test(o.op))), false);
+// Only the four PROJECT tabs whose agents work on something you can point at.
+// A room-bound agent spans every project and has no one checkout to open in.
+check('which agents have one', AGENTS.filter((a) => a.console).map((a) => a.key),
+  ['auditor', 'curator', 'polaris', 'drafter']);
+check('none of the room-bound agents does',
+  AGENTS.filter((a) => a.surface === 'room').every((a) => !a.console), true);
+// Same direction as everything else here: a missing row — and a row written
+// before the column existed — reads as ON.
+check('missing row = the console is on', agentConfigShape(A, undefined).consoleOff, false);
+check('a row from before the column = on', agentConfigShape(A, { enabled: true }).consoleOff, false);
+check('an explicit switch-off is honoured', agentConfigShape(A, { console_off: true }).consoleOff, true);
+// The room reads the POSITIVE, and null for an agent that has none — a switch
+// drawn for a session that does not exist is worse than no row at all.
+check('the shape reports it on',
+  agentShape({ agent: A, config: agentConfigShape(A, undefined) }).console.enabled, true);
+check('...and off when the owner said so',
+  agentShape({ agent: A, config: agentConfigShape(A, { enabled: true, console_off: true }) }).console.enabled, false);
+check('a console-less agent reports null',
+  agentShape({ agent: agentByKey('merger'), config: agentConfigShape(agentByKey('merger'), undefined) }).console, null);
+// Switching the console off must not touch the ✧ ops, and switching the AGENT
+// off is a separate statement — that is why the console has a switch at all.
+check('the console switch leaves the ops alone',
+  agentShape({ agent: A, config: agentConfigShape(A, { enabled: true, console_off: true }) })
+    .ops.every((o) => o.enabled), true);
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);

@@ -3,7 +3,8 @@ import { pool, q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { NOTE_PALETTE, relativeTime } from '../util.js';
 import { workbenchCardShape, workbenchEdgeShape, workbenchIdeaShape } from '../shape.js';
-import { askGemini, geminiEnabled, GEMINI_MODELS } from '../gemini.js';
+import { askGemini, GEMINI_MODELS } from '../gemini.js';
+import { agentClient } from '../agents.js';
 import { buildPrompt } from '../prompts.js';
 import { readSettings, cleanModelAlias } from '../settings.js';
 import { extractInsights } from '../debrief.js';
@@ -721,12 +722,26 @@ async function projectRecord(project) {
   ].join('\n\n');
 }
 
-// POST /ops -> run one op against one card. 503 keyless, like every ✧ surface.
+// POST /ops -> run one op against one card.
+//
+// The gate is the DRAFTER's, not a bare key check. Every one of the seven
+// buttons is that agent's single `canvas` op, so the Workbench answers to a
+// switch in Mission Control → Agents like every other surface — and the refusal
+// still names the missing backend, because the op is Gemini-backed and the gate
+// knows it. The call itself stays here rather than going through
+// `drafter.ask()`: this route wants the model's answer field by field (it drops
+// anything the op is not allowed to produce) and it honours the canvas's own
+// model picker, neither of which the shared ask() path has any business
+// knowing.
+const drafter = agentClient('drafter');
+
 workbench.post('/ops', async (req, res) => {
   const op = String(req.body?.op || '');
   if (!OPS[op]) return res.status(400).json({ error: 'Unknown op.' });
-  if (!geminiEnabled()) {
-    return res.status(503).json({ error: 'Gemini is not configured on this server (set GEMINI_API_KEY).' });
+  try {
+    await drafter.gate('canvas');
+  } catch (err) {
+    return res.status(err.httpStatus || 503).json({ error: err.message });
   }
   const cardId = Number(req.body?.cardId);
   const question = String(req.body?.question || '').trim().slice(0, 400);

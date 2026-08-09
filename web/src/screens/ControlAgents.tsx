@@ -244,6 +244,36 @@ function AgentCard({
         </div>
       </div>
 
+      {/* #376 — THE LIVE SESSION, and it is drawn apart from the ops on purpose.
+          An op is this agent asked one question; the console is a Claude
+          session running in the project's checkout on its own tab, which the
+          owner types into. Folding it into the op list would put a switch for
+          a conversation among the switches for prompts and imply a ✧ button
+          that does not exist. Only agents that have one draw it — `console` is
+          null for the two room-bound agents and the Scribe, which have no one
+          project to open a session in. */}
+      {agent.console && (
+        <div className={`mc-agcon ${agent.console.enabled ? '' : 'off'}`}>
+          <div className="txt">
+            <div className="lb">
+              {agent.console.label}
+              <span className="live">tmux on the host</span>
+            </div>
+            <div className="hint">{agent.console.hint}</div>
+          </div>
+          <button
+            role="switch"
+            aria-checked={agent.console.enabled}
+            aria-label={`${agent.name}'s live session on or off`}
+            className={`switch sm ${agent.console.enabled ? 'on' : ''}`}
+            disabled={busy === `${agent.key}:console`}
+            onClick={() => onWrite(agent.key, 'console', { consoleEnabled: !agent.console!.enabled })}
+          >
+            <span className="switch-knob" />
+          </button>
+        </div>
+      )}
+
       <button className="mc-agops-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         {open ? '▾' : '▸'} what it may do ({agent.ops.length} op{agent.ops.length === 1 ? '' : 's'}
         {offOps > 0 ? `, ${offOps} off` : ''})

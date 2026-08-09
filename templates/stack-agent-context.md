@@ -63,10 +63,14 @@ The block is a snapshot. For the current state at any moment, read the API:
   are standing instructions from the owner — honour them before anything else,
   and don't remove them yourself (they're cleared from the dashboard).
 - `GET /api/agents` — Stack's own in-app agents (Auditor · Quality tab,
-  Curator · Roadmap tab, Polaris · Futures tab, Foreman · Review room, Merge
-  agent · Merge room, Scribe · Instructions tab). **These are not you**: they
-  are the ✧ buttons on those surfaces, each restricted to its own, and any of
-  them can be switched off in Mission Control → Agents. Worth reading only to
+  Curator · Roadmap tab, Polaris · Futures tab, Drafter · Workbench tab,
+  Foreman · Review room, Merge agent · Merge room, Scribe · Instructions tab).
+  **These are not you**: they are the ✧ buttons on those surfaces, each
+  restricted to its own, and any of them can be switched off in Mission
+  Control → Agents. The four project-tab agents also carry a `console` — a live
+  Claude session in the project's checkout, opened from a strip on their own
+  tab and running in tmux on the host. It has its own switch (`consoleEnabled`
+  on the PATCH), is not an op, and never appears in `ops`. Worth reading only to
   explain why a ✧ surface is missing, or why one of those routes answered 409
   (switched off) or 503 (the backend is down — since #364 they run `claude -p`
   on the host through the terminal daemon, so that daemon is their backend

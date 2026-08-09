@@ -51,7 +51,7 @@ import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, killSession, listDetached, listStackSessions, listAutoSessions, paneTail, reapDeadSessions, reapIdleSessions, sendKeys, setKeep } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, listDetached, listStackSessions, listAutoSessions, paneTail, reapDeadSessions, reapIdleSessions, sendKeys, setKeep } from './tmux-session.mjs';
 import { detectPrompt } from './prompt-scan.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
 import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
@@ -686,6 +686,7 @@ function startSession(msg) {
   // When tmux is not installed on the host, falls back to direct claude spawn.
   let argv;
   let tmuxSession = null; // set when tmux is in use
+  let reattached = false; // true when the named tmux session was already running
 
   if (msg.cmd === 'claude') {
     // The browser may ask for permission prompts to be skipped — a boolean
@@ -695,8 +696,16 @@ function startSession(msg) {
     if (tmuxAvailable()) {
       // Use a validated name from the browser if provided, otherwise generate one.
       tmuxSession = validName(msg.tmuxSession) ? msg.tmuxSession : generateName('term');
+      // Did this session already exist? `new-session -A` deliberately does not
+      // say — it creates or attaches with one command precisely so there is no
+      // race between the two — so the answer has to be taken BEFORE the spawn.
+      // The browser needs it: a tab agent's console (#376) opens the same
+      // deterministic name every time, and "you are looking at a session that
+      // was already running" is a different thing to be told than "this one
+      // just started". Asking after the spawn would always answer yes.
+      reattached = sessionExists(tmuxSession);
       argv = sessionArgv(tmuxSession, cwd, `/bin/bash -lc "${claudeCmd}"`);
-      log(`session ${sid}: tmux session ${tmuxSession} (${validName(msg.tmuxSession) ? 're-attach' : 'new'})`);
+      log(`session ${sid}: tmux session ${tmuxSession} (${reattached ? 're-attach' : 'new'})`);
     } else {
       // Degrade gracefully when tmux is absent — direct spawn, no persistence.
       argv = ['/bin/bash', '-lc', claudeCmd];
@@ -733,7 +742,10 @@ function startSession(msg) {
 
   const cwdLabel = cwd === ROOT ? '~' : '~/' + cwd.slice(ROOT.length + 1);
   const readyFrame = { t: 'ready', sid, cwd: cwdLabel };
-  if (tmuxSession) readyFrame.tmuxSession = tmuxSession;
+  if (tmuxSession) {
+    readyFrame.tmuxSession = tmuxSession;
+    readyFrame.reattached = reattached;
+  }
   sendUplink(readyFrame);
   sendUplink(usageFrame(sid)); // usage snapshot lands with the prompt
   if (tmuxSession) pushDetached(); // a re-attach just consumed a detached entry

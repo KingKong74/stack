@@ -1,16 +1,24 @@
 // THE AGENTS (#361, #364) — Stack's in-app specialists, each one bound to a
 // single SURFACE and unable to act anywhere else.
 //
-//   Auditor     · Quality tab   — reads the app and reports suspected bugs
-//   Curator     · Roadmap tab   — shapes the board and writes it up
-//   Foreman     · Review room   — walks a built change before it lands
-//   Polaris     · Futures tab   — judges, themes and converges the idea funnel
-//   Merge agent · Merge room    — reads the diffs of the branches about to land
+//   Auditor     · Quality tab      — reads the app and reports suspected bugs
+//   Curator     · Roadmap tab      — shapes the board and writes it up
+//   Foreman     · Review room      — walks a built change before it lands
+//   Polaris     · Futures tab      — judges, themes and converges the idea funnel
+//   Drafter     · Workbench tab    — thinks on the canvas: expands, plans, critiques
+//   Scribe      · Instructions tab — keeps the CLAUDE.md tree honest
+//   Merge agent · Merge room       — reads the diffs of the branches about to land
 //
-// Three of the five are PROJECT tabs; the Foreman and the Merge agent are bound
-// to Mission Control ROOMS instead, which is why "surface" and not "tab".
+// Most are PROJECT tabs; the Foreman and the Merge agent are bound to Mission
+// Control ROOMS instead, which is why "surface" and not "tab".
 // Nothing else about the binding changes: an agent owns its ops, and the client
 // that binds to it throws on anybody else's.
+//
+// AN AGENT HAS TWO HALVES, AND ONLY ONE OF THEM IS AN OP LIST. `ops` is what
+// the agent can be ASKED — one prompt in, one JSON answer out, through ask().
+// `console` is a LIVE SESSION: a real Claude running in the project's checkout,
+// inside tmux on the host, that the owner types into on the agent's own tab.
+// They are deliberately not the same mechanism — see the `console` note below.
 //
 // Before this file the same three jobs existed as eight loose Gemini routes,
 // each one opening `if (!geminiEnabled()) 503` and calling askGemini directly.
@@ -143,7 +151,47 @@ export const cleanGuidance = (v) => String(v ?? '').replace(/\s+$/g, '').slice(0
 // end. What changes per backend is only READINESS: a Claude op needs the host
 // daemon, a Gemini op needs the key, and the refusal has to name the right one
 // or the owner goes and investigates the wrong thing.
+//
 // ---------------------------------------------------------------------------
+// `console` — THE AGENT'S OWN TERMINAL, on the tab it is bound to.
+//
+// An op is a question: the server composes a prompt, `claude -p` answers once,
+// the answer is parsed and the run is over. That is the whole of what the ✧
+// buttons can do, and it is not what somebody wants when the board is wrong in
+// a way no template anticipated. So the four PROJECT tabs whose agents work on
+// something you can point at get a session instead: `cmd: 'claude'` in the
+// project's own checkout, inside a tmux session on the host — the same thing
+// the Terminal screen opens, in the tab where the work is.
+//
+// Four rules, and each one is why this is a field of its own rather than an op:
+//
+//  • **It is never routed.** Nothing calls `ask('console')`; there is no prompt
+//    and no JSON. Putting it in `ops` would put a name in the op→agent map that
+//    no route can call and would make `ask()` able to reach it.
+//  • **It has its own switch** (`console_off`), because "I want the ✧ buttons
+//    but not a session open on four tabs" is a real position, and `enabled`
+//    cannot express it. Off means off; a missing column reads as ON, the same
+//    direction as everything else here.
+//  • **Its backend is the host daemon** — the same dependency the Claude ops
+//    have, reported the same way, so a disconnected host refuses the console
+//    and the ✧ buttons with one sentence rather than two stories.
+//  • **The session NAME is the client's**, composed as
+//    `stack-term-<agent key>-<project slug>`. It is deterministic on purpose:
+//    the same tab on any device re-attaches to the one session rather than
+//    spawning a second. `web/src/components/TabTerminal.tsx` owns that rule and
+//    its header carries the consequences (the `stack-term-` prefix puts it on
+//    the running-sessions strip and under the idle reaper, both intended).
+//
+// `label` names it in Mission Control → Agents; `hint` is the sentence under
+// the switch. The registry says WHICH agents have one and nothing more — how it
+// is drawn belongs to the tab.
+// ---------------------------------------------------------------------------
+const projectConsole = (what) => ({
+  label: 'Live session',
+  hint: `A Claude session in the project's checkout, on this agent's own tab — ${what}. `
+    + 'It runs in tmux on the host, so it survives the tab being closed.',
+});
+
 export const AGENTS = [
   {
     key: 'auditor',
@@ -159,6 +207,7 @@ export const AGENTS = [
     blurb: 'Reads the live app, the checks and the tracked bugs, and reports what looks broken.',
     // What the model itself is told it may and may not touch (see preamble()).
     remit: 'the Quality tab: the project\'s checks, its tracked bugs and the live application',
+    console: projectConsole('for the investigation an audit can only point at'),
     ops: [
       { op: 'audit', label: 'Bug audit', hint: 'Findings land in the review inbox as suggestions.' },
       { op: 'auditprompt', label: 'Deep-audit prompt', model: false, hint: 'Composes the hand-off prompt for a Claude session you drive yourself.' },
@@ -172,6 +221,7 @@ export const AGENTS = [
     surface: 'tab',
     blurb: 'Shapes what is on the board: titles, areas, honest buckets, and the write-ups a reviewer reads.',
     remit: 'the Roadmap tab: the project\'s roadmap items, their fields and what was built against them',
+    console: projectConsole('for the reshuffle no template anticipated'),
     ops: [
       { op: 'titler', label: 'Suggest a title', hint: 'Titles an item from its note.' },
       { op: 'assist', label: 'Fill from note', hint: 'Fills an item\'s fields; never overwrites one you set.' },
@@ -264,10 +314,39 @@ export const AGENTS = [
     surface: 'tab',
     blurb: 'Keeps the idea funnel pointed at the north star: verdicts, themes, and tickets when an idea is ready.',
     remit: 'the Futures tab: the project\'s idea funnel and its north star',
+    console: projectConsole('for thinking an idea through before it is worth a verdict'),
     ops: [
       { op: 'judge', label: 'Judge alignment', hint: 'Suggests a verdict against the north star.' },
       { op: 'cluster', label: 'Cluster themes', hint: 'Suggests a theme for unthemed ideas.' },
       { op: 'converge', label: 'Converge to tickets', hint: 'Drafts roadmap tickets from picked ideas.' },
+    ],
+  },
+  // THE DRAFTER — the Workbench tab's agent.
+  //
+  // The canvas has had ✧ ops since it landed (expand, cluster, draft a plan,
+  // blast radius, touches, critique, ask) and they answered to NO switch: they
+  // were loose `askGemini` calls behind a bare `if (!geminiEnabled())`, which is
+  // precisely the arrangement this registry exists to end. Naming the agent is
+  // what lets the Workbench be switched off, steered and given a console like
+  // every other tab.
+  //
+  // ONE op for seven buttons, the same shape as the Scribe's `rulescan`. The
+  // switch the owner wants here is "the canvas ops on or off", not seven
+  // switches for seven prompts of one shape — and two of those button names
+  // (`cluster`, `ask`) are already other agents' ops or would collide with
+  // them, which is the registry telling the truth: they are not seven separate
+  // capabilities, they are one surface with seven phrasings.
+  {
+    key: 'drafter',
+    name: 'Drafter',
+    tab: 'workbench',
+    tabLabel: 'Workbench',
+    surface: 'tab',
+    blurb: 'Thinks on the canvas: expands a scrap, finds the theme in a pile, drafts the plan and says what it would break.',
+    remit: "the Workbench tab: the cards on this project's canvas, what is wired to what, and the record behind them",
+    console: projectConsole('for the thinking a card cannot hold'),
+    ops: [
+      { op: 'canvas', label: 'Canvas ops', backend: 'gemini', hint: 'Every ✧ op on a card: expand, cluster, plan, blast radius, touches, critique, ask.' },
     ],
   },
 ];
@@ -341,10 +420,14 @@ export const backendReadyFor = (spec) =>
 // ---------------------------------------------------------------------------
 // The config row. Missing row = the registry defaults, which are all ON.
 // ---------------------------------------------------------------------------
-const DEFAULT_CONFIG = { enabled: true, model: '', guidance: '', opsOff: [] };
+const DEFAULT_CONFIG = { enabled: true, model: '', guidance: '', opsOff: [], consoleOff: false };
 
 export const agentConfigShape = (agent, row) => ({
   enabled: row ? Boolean(row.enabled) : DEFAULT_CONFIG.enabled,
+  // The console's own switch, stored as the negative. A row written before the
+  // column existed has it NULL/absent, and that has to read as ON — the same
+  // direction as the missing row itself.
+  consoleOff: Boolean(row?.console_off),
   model: cleanAgentModel(row?.model),
   guidance: cleanGuidance(row?.guidance),
   // Only ops this agent actually owns — a stale name left in the row after an
@@ -393,6 +476,13 @@ export async function writeAgent(key, patch) {
   if ('enabled' in patch) { fields.push(`enabled = $${i++}`); values.push(Boolean(patch.enabled)); }
   if ('model' in patch) { fields.push(`model = $${i++}`); values.push(cleanAgentModel(patch.model)); }
   if ('guidance' in patch) { fields.push(`guidance = $${i++}`); values.push(cleanGuidance(patch.guidance)); }
+  // Only an agent that HAS a console can have one switched off. A write against
+  // one that does not would leave a flag nothing reads — and would make the
+  // Agents room's "no console" state indistinguishable from "console off".
+  if ('consoleOff' in patch && agent.console) {
+    fields.push(`console_off = $${i++}`);
+    values.push(Boolean(patch.consoleOff));
+  }
   if ('opsOff' in patch) {
     const off = (Array.isArray(patch.opsOff) ? patch.opsOff : [])
       .map(String).filter((op) => agent.ops.some((s) => s.op === op));
@@ -581,6 +671,12 @@ export async function agentsForClient() {
       // runnable ones are here, which is what lets a button say "the daemon is
       // offline" beside one ✧ and stay live beside the other.
       opsReady: live.filter((s) => s.model === false || backendReadyFor(s)).map((s) => s.op),
+      // The console, as three states rather than two: null = this agent has no
+      // live session at all (the two room-bound agents, the Scribe), false =
+      // it has one and the owner switched it off, true = it has one and may
+      // open it. A tab that cannot tell "no console" from "console off" would
+      // print a reason for a feature that was never there.
+      console: agent.console ? !config.consoleOff : null,
     };
   }
   return out;
@@ -608,6 +704,11 @@ export const agentShape = ({ agent, config }) => ({
     backend: s.model === false ? 'none' : (s.backend || 'claude'),
     enabled: !config.opsOff.includes(s.op),
   })),
+  // Null for an agent with no live session, so the room draws nothing rather
+  // than a switch for something that does not exist.
+  console: agent.console
+    ? { label: agent.console.label, hint: agent.console.hint, enabled: !config.consoleOff }
+    : null,
   runs: config.runs,
   costUsd: config.costUsd,
   lastRunAt: config.lastRunAt,

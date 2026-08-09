@@ -4782,6 +4782,18 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .mc-agops .op .hint { font-size: 10.5px; line-height: 1.5; color: var(--muted); }
 .mc-agops .scope { margin: 2px 0 0; font-size: 10.5px; line-height: 1.55; color: var(--paused); }
 
+/* #376 — the live-session row. Same anatomy as an op row so the switch reads
+   the same way, on the console ground rather than the panel so it is visibly
+   not one of the ops above it. */
+.mc-agcon { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 9px;
+  background: var(--console); border: 1px solid var(--console-line); }
+.mc-agcon.off .txt { opacity: 0.55; }
+.mc-agcon .txt { flex: 1; min-width: 0; }
+.mc-agcon .lb { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--console-ink); }
+.mc-agcon .live { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.06em; color: var(--console-faint);
+  border: 1px solid var(--console-line); border-radius: 4px; padding: 1px 6px; }
+.mc-agcon .hint { font-size: 10.5px; line-height: 1.5; color: var(--console-dim); }
+
 /* Rooms — shared */
 .mc14-room-head { display: flex; align-items: center; gap: 12px; }
 .mc14-room-head .title { font-family: var(--disp); font-size: 15px; font-weight: 600; color: var(--ink); }
@@ -5521,6 +5533,47 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .q-con.popped .q-con-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .q-con.popped .q-con-log { flex: 1; max-height: none; }
 .q-con.popped .q-con-line, .q-con.popped .q-con-find .t { font-size: 13px; }
+
+/* ---- #376 THE TAB AGENT'S CONSOLE -----------------------------------------
+   The strip under the tab bar on Quality, Roadmap, Polaris and Workbench: one
+   position, one anatomy, four agents. It borrows the console palette the
+   Auditor's card already established — this is the same dark ground, and a
+   second dark surface with its own tones would read as a different kind of
+   thing. Shut it is one line; open it is a real terminal, and the holder gets
+   an explicit height because xterm's fit addon measures its parent and a
+   flex-sized box gives it nothing to measure. */
+.tabterm { border-radius: 12px; border: 1px solid var(--console-line); background: var(--console);
+  overflow: hidden; margin-bottom: 16px; }
+.tabterm.off { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 10px 15px;
+  border-style: dashed; }
+.tabterm-head { display: flex; align-items: center; gap: 9px; padding: 9px 13px; flex-wrap: wrap; }
+.tabterm-chev { flex: none; font-size: 10px; color: var(--console-faint); padding: 2px 3px; }
+.tabterm-chev:hover { color: var(--console-dim); }
+.tabterm-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--console-faint); }
+.tabterm-dot.live { background: var(--live); }
+.tabterm-dot.connecting { background: var(--building); animation: q-con-pulse 1.1s ease-in-out infinite; }
+.tabterm-dot.error, .tabterm-dot.closed { background: var(--console-bad); }
+.tabterm-name { font-size: 12px; letter-spacing: 0.04em; color: var(--console-ink); }
+.tabterm-tag { flex: none; font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em;
+  color: var(--console-faint); border: 1px solid var(--console-line); border-radius: 4px; padding: 1px 6px; }
+.tabterm-sess { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--console-faint); }
+.tabterm-status { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--console-dim); }
+.tabterm-why { flex: 1; min-width: 0; font-size: 11.5px; line-height: 1.55; color: var(--console-dim); }
+.tabterm-acts { margin-left: auto; display: flex; align-items: center; gap: 5px; }
+.tabterm-act { font-family: var(--mono); font-size: 10.5px; line-height: 1; color: var(--console-dim);
+  border: 1px solid var(--console-line); border-radius: 6px; padding: 4px 7px; }
+.tabterm-act:hover { color: var(--accent); border-color: var(--accent); }
+.tabterm-shut { padding: 0 15px 11px; font-size: 11.5px; line-height: 1.6; color: var(--console-faint); text-wrap: pretty; }
+.tabterm-shut .mono { font-family: var(--mono); color: var(--console-dim); }
+/* Same trap .term-holder documents: padding on the holder is space the fit
+   addon believes it has and does not, so it lives on .xterm instead. */
+.tabterm-holder { background: #000; height: 300px; }
+.tabterm.tall .tabterm-holder { height: 560px; }
+.tabterm-holder .xterm { height: 100%; padding: 10px 12px; }
+@media (max-width: 700px) {
+  .tabterm-sess, .tabterm-tag { display: none; }
+  .tabterm-holder { height: 260px; }
+}
 
 /* ---- Quality by feature ---- */
 .q-feat-head { display: grid; grid-template-columns: var(--q-feat-cols); gap: 12px; padding: 0 15px 8px;

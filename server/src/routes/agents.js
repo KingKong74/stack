@@ -9,7 +9,8 @@ import { AGENT_MODELS, agentByKey, agentShape, readAgents, readAgent, writeAgent
 //                          bound to, which ops they own, how they are tuned and
 //                          when each last ran.
 //   PATCH /api/agents/:key what the owner may change. Deliberately a SHORT list:
-//                          enabled, model, guidance, opsOff. Which tab an agent
+//                          enabled, model, guidance, opsOff, consoleEnabled.
+//                          Which tab an agent
 //                          works in and which ops it owns are registry facts in
 //                          agents.js — they are the restriction the item is
 //                          about, and a route that could edit them would be a
@@ -41,6 +42,10 @@ agents.patch('/:key', async (req, res) => {
   if ('model' in b) patch.model = b.model;
   if ('guidance' in b) patch.guidance = b.guidance;
   if ('opsOff' in b) patch.opsOff = b.opsOff;
+  // The console's switch, sent as the POSITIVE the room draws. It is stored as
+  // the negative (a missing column reads as on), and writeAgent ignores it for
+  // an agent that has no console.
+  if ('consoleEnabled' in b) patch.consoleOff = !b.consoleEnabled;
   // A single op toggle, so the client doesn't have to send the whole set back
   // (and can't clobber a concurrent change to a different op).
   if ('op' in b && 'opEnabled' in b) {

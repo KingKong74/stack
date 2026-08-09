@@ -482,3 +482,5 @@ node terminal/stack-term.mjs               # the web-terminal daemon (normally t
 crontab -l                                 # the dispatcher line — remove it to disable all runs
 tail -f ~/.stack/{term,autopilot,preview}.log
 ```
+
+<!-- stack-managed -->

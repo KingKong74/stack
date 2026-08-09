@@ -11,6 +11,7 @@ import {
   type ConvergeDraft, assistRoadmapItem, proposeOrbits, restateFuture,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
   takeReviewPrefill, agentCan, setLastViewedProject,
+  agentConsoleCan, agentConsoleOffReason, type TabAgentKey,
   HttpError, getWorkbench, addWorkbenchCard,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
@@ -25,6 +26,7 @@ import { Modal } from '../components/Modal';
 import { BugModal } from '../components/BugModal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { TabTerminal } from '../components/TabTerminal';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
 // (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
@@ -35,6 +37,18 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'workbench', label: 'Workbench' }, { key: 'activity', label: 'Activity' },
 ];
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
+
+// #376 — which agent owns each tab, for the console strip under the tab bar.
+// The BINDING is the server's (agents.js); this is only the name to draw before
+// the payload has arrived, and the four tabs that have one. Overview and
+// Activity are readings of what already happened — there is nobody working
+// there to give a session to.
+const TAB_AGENT: Partial<Record<Tab, { key: TabAgentKey; name: string }>> = {
+  quality: { key: 'auditor', name: 'Auditor' },
+  roadmap: { key: 'curator', name: 'Curator' },
+  futures: { key: 'polaris', name: 'Polaris' },
+  workbench: { key: 'drafter', name: 'Drafter' },
+};
 
 const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'futures', 'workbench', 'activity']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
@@ -833,6 +847,15 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
     } catch { /* clipboard blocked — the field is selectable */ }
   };
 
+  // #376 — this tab's agent and whether its live session may open. Three
+  // outcomes, and the strip is drawn for two of them: it may open, or it may
+  // not and there is a reason worth printing. An agent the server reports with
+  // NO console at all yields neither, and nothing is drawn — a sentence
+  // explaining the absence of a feature that was never offered is noise.
+  const tabAgent = TAB_AGENT[tab];
+  const consoleCan = !!tabAgent && agentConsoleCan(data.agents, tabAgent.key);
+  const consoleOff = tabAgent ? agentConsoleOffReason(data.agents, tabAgent.key) : '';
+
   const openBugLink = (hash: string) => { setHighlightRef(hash); setTab('activity'); };
   const viewAll = () => { setHighlightRef(null); setTab('activity'); };
   const open = (url: string) => { if (url) window.open(url, '_blank', 'noopener'); };
@@ -918,6 +941,21 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             );
           })}
         </div>
+
+        {/* #376 — THE TAB AGENT'S CONSOLE, and it is here rather than inside
+            each tab on purpose: "the same position on every tab" is the whole
+            proposition. A console the Roadmap drew above its board and Quality
+            drew below its health band would be four consoles that happen to
+            look alike, and the muscle memory — the strip under the tab bar is
+            where this tab's agent lives — would never form.
+
+            Four of the six tabs have one. Overview and Activity are readings of
+            what happened, not surfaces with an agent working on them; the
+            registry says which agents own a console and this only asks. */}
+        {tabAgent && (consoleCan || consoleOff) && (
+          <TabTerminal agentKey={tabAgent.key} agentName={tabAgent.name} slug={slug}
+            off={consoleCan ? '' : consoleOff} />
+        )}
 
         {tab === 'overview' && (
           <Overview project={project} phase={data.currentPhase} activity={activity} directives={data.directives}
