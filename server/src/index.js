@@ -10,6 +10,7 @@ import { settings } from './routes/settings.js';
 import { projects } from './routes/projects.js';
 import { bugs } from './routes/bugs.js';
 import { roadmap } from './routes/roadmap.js';
+import { board } from './routes/board.js';
 import { notes } from './routes/notes.js';
 import { workbench } from './routes/workbench.js';
 import { futures } from './routes/futures.js';
@@ -77,6 +78,10 @@ app.use('/api/settings', requireToken, settings);
 app.use('/api/presence', requireToken, presence);
 app.use('/api/projects/:slug/bugs', requireToken, bugs);
 app.use('/api/projects/:slug/roadmap', requireToken, roadmap);
+// The Roadmap tab's furniture: per-project areas (the timeline's lanes) and
+// the Plan view's lists. Separate from /roadmap because it is the BOARD's
+// shape rather than its contents.
+app.use('/api/projects/:slug/board', requireToken, board);
 app.use('/api/projects/:slug/notes', requireToken, notes);
 app.use('/api/projects/:slug/workbench', requireToken, workbench);
 app.use('/api/projects/:slug/futures', requireToken, futures);

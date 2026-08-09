@@ -1081,3 +1081,83 @@ CREATE TABLE IF NOT EXISTS agent_profiles (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------------------
+-- THE ROADMAP TAB v2 — scheduling, hierarchy, labels and lists.
+--
+-- Everything below exists because the redesigned Roadmap tab asks the board
+-- three questions the old columns could not answer: WHEN is a thing happening,
+-- WHAT is it part of, and HOW is it classified beyond its MoSCoW bucket.
+--
+-- Read this before touching any of it:
+--
+--  • THE SCHEDULE IS A WEEK INDEX, NOT A DATE. `sched_start` counts weeks from
+--    the project's own week zero, `sched_len` is a duration in weeks. Deliberately
+--    not timestamps: the timeline is a planning instrument, not a calendar, and
+--    a project that slips by a fortnight should move its bars, not have every
+--    stored date rewritten. NULL sched_start = UNSCHEDULED, which is a real
+--    state (the tray), never "week 0".
+--  • `plan_start`/`plan_len` ARE THE BASELINE, written ONCE when a bar is first
+--    scheduled and never again by a drag. That is the whole point: the ghost
+--    the timeline draws behind a bar is the difference between what was planned
+--    and what is now happening, and a baseline that follows the bar around can
+--    never show a slip. Only an explicit "re-baseline" may overwrite it.
+--  • `parent_id` IS ONE LEVEL DEEP. A ticket may hang off a feature; a feature
+--    may not hang off a ticket. The guard lives in PATCH /roadmap/:id, the same
+--    place the risk guard lives, because it is the only writer.
+--  • `labels` IS A FIXED REGISTRY, held in code (web/src/lib/labels.ts and
+--    server/src/labels.js), NOT a table — same reasoning as agents.js: the set
+--    is the classification itself, so an owner-editable list would be a second
+--    truth that the filters and the colours both drift from. AREAS are the
+--    opposite and DO get a table, because an area names a part of THIS project
+--    and only the owner can know them.
+--  • `archived` IS NOT `skipped` AND NOT DELETED. Parked (`skipped`) means
+--    planned but not yet; archived means off the board but recoverable; deleted
+--    means gone, and for a hook-created row it also tombstones the fingerprint.
+--    Three states, three meanings — collapsing any two loses the owner's intent.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS parent_id  INTEGER REFERENCES roadmap_items(id) ON DELETE SET NULL;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS sched_start INTEGER;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS sched_len   INTEGER;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS plan_start  INTEGER;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS plan_len    INTEGER;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS labels      JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- Which Plan list this card sits in. NULL = DERIVED from the row's own state
+-- (see listFor() in server/src/lists.js) rather than defaulted to the first
+-- list: every pre-existing row would otherwise pile into "Ideas", and a board
+-- that reports finished work as an unstarted idea is worse than no board.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS list_key    TEXT;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS archived    BOOLEAN NOT NULL DEFAULT false;
+-- Size in weeks, used by the scope drawer's cycle arithmetic and to give a bar
+-- its default length. NULL = unsized, which the drawer states rather than
+-- treating as zero — an unsized ticket is not a free one.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS estimate    NUMERIC(4,1);
+CREATE INDEX IF NOT EXISTS roadmap_items_parent_idx ON roadmap_items (parent_id);
+
+-- The project's own product areas: the timeline's lanes, and the chips that
+-- filter every view. `area` on an item stays the free STRING it has always been
+-- (futures.area mirrors it, and neither is worth a foreign key), so this table
+-- names and colours the areas rather than owning them — a rename rewrites the
+-- string on every row in the same transaction.
+CREATE TABLE IF NOT EXISTS project_areas (
+  id         SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  dot        TEXT NOT NULL DEFAULT '',       -- '' = assign from the palette on read
+  position   INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS project_areas_name_idx ON project_areas (project_id, name);
+
+-- The Plan view's lists. Owner-editable (add, rename, reorder), because what
+-- the columns of a personal board are called is not something code can know.
+-- The four seeded on first read mirror the states Stack already tracks; a row
+-- here is only ever a NAME and an ORDER, never behaviour.
+CREATE TABLE IF NOT EXISTS project_lists (
+  id         SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  key        TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  position   INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS project_lists_key_idx ON project_lists (project_id, key);

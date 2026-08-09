@@ -87,6 +87,25 @@ export function roadmapItemShape(row) {
     plan: cleanPlan(row.plan),         // implementation steps [{text, done}] (#75)
     agentProfile: row.agent_profile || '', // '' = default executor; else the agent_profiles key to build this
     updatedAt: row.updated_at || null, // ISO — the archive sorts latest-touched first
+
+    // ---- the Roadmap tab v2 ----
+    parentId: row.parent_id ?? null,   // the feature this ticket belongs to (null = a feature itself)
+    // The scheduled bar, in WEEKS from the project's week zero. null = UNSCHEDULED,
+    // which is a state (the tray), never week 0 — see schema.sql's header.
+    sched: row.sched_start === null || row.sched_start === undefined ? null
+      : { start: Number(row.sched_start), len: Math.max(1, Number(row.sched_len) || 1) },
+    // The BASELINE, written once when a bar is first scheduled. The timeline
+    // draws the difference as a ghost, so this must never follow a drag.
+    baseline: row.plan_start === null || row.plan_start === undefined ? null
+      : { start: Number(row.plan_start), len: Math.max(1, Number(row.plan_len) || 1) },
+    labels: Array.isArray(row.labels) ? row.labels : [],
+    // '' = derived from the row's own state (server/src/lists.js listFor), NOT
+    // "the first list" — an untouched board must open already sorted.
+    listKey: row.list_key || '',
+    archived: !!row.archived,          // off the board but recoverable — not parked, not deleted
+    // NUMERIC comes back from pg as a STRING, and null must survive as null:
+    // an unsized ticket is not a zero-week one, and the drawer says so.
+    estimate: row.estimate === null || row.estimate === undefined ? null : Number(row.estimate),
   };
 }
 

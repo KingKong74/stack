@@ -2,6 +2,12 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags, riskWriteSource, capNote } from '../util.js';
+import { cleanLabels } from '../labels.js';
+
+// How many weeks the timeline spans. A bar is a week INDEX from the project's
+// own week zero, never a date — see schema.sql's Roadmap-v2 header for why.
+// The client twin is SCHED_WEEKS in web/src/lib/plan.ts; change both together.
+const SCHED_WEEKS = 24;
 
 // Risk tiers (#212) — graduated trust. 'low' lets a green overnight run
 // auto-queue its own merge; anything else keeps the human on the merge button.
@@ -250,6 +256,76 @@ roadmap.patch('/:id', async (req, res) => {
     sets.push(`agent_profile = $${i++}`);
     vals.push(String(req.body.agentProfile || '').trim().slice(0, 60));
   }
+  // ---- the Roadmap tab v2 ----------------------------------------------
+  if (req.body?.sched !== undefined) {
+    // null = back to the tray. The BASELINE is written only when there isn't
+    // one (COALESCE), which is the whole slip mechanism: a drag moves the bar
+    // and leaves the ghost where the plan put it. A baseline that followed the
+    // bar could never show a slip, so this is the one place it may be set and
+    // it may only ever set it ONCE. Re-baselining is an explicit, separate act.
+    const s = req.body.sched;
+    if (s === null) {
+      sets.push('sched_start = NULL', 'sched_len = NULL');
+    } else if (Number.isFinite(s?.start) && Number.isFinite(s?.len)) {
+      const start = Math.max(0, Math.min(SCHED_WEEKS - 1, Math.trunc(s.start)));
+      const len = Math.max(1, Math.min(SCHED_WEEKS - start, Math.trunc(s.len)));
+      sets.push(`sched_start = $${i++}`); vals.push(start);
+      sets.push(`sched_len = $${i++}`); vals.push(len);
+      sets.push(`plan_start = COALESCE(plan_start, $${i++})`); vals.push(start);
+      sets.push(`plan_len = COALESCE(plan_len, $${i++})`); vals.push(len);
+    }
+  }
+  if (req.body?.rebaseline === true) {
+    // "This is the plan now." The only path that overwrites the ghost, and it
+    // is deliberately its own flag rather than a side effect of a drag.
+    sets.push('plan_start = sched_start', 'plan_len = sched_len');
+  }
+  if (req.body?.parentId !== undefined) {
+    // ONE LEVEL DEEP. A ticket hangs off a feature; a feature may not hang off
+    // a ticket, and nothing may hang off itself. The check is a subquery inside
+    // this UPDATE's own right-hand side so it sees the OLD rows and two writers
+    // cannot race a cycle into existence — the same reasoning as the risk guard.
+    const pid = Number(req.body.parentId);
+    if (!Number.isFinite(pid) || pid <= 0) {
+      sets.push('parent_id = NULL');
+    } else {
+      // COALESCE back to the CURRENT parent, not to NULL: a rejected target
+      // (another project's row, a ticket, itself) must leave the row where it
+      // was. Resolving to NULL would let a bad id silently orphan a ticket,
+      // which reads on the board as the scope line simply vanishing.
+      // Detaching is the explicit `parentId: null` branch above.
+      sets.push(`parent_id = COALESCE((
+        SELECT p.id FROM roadmap_items p
+         WHERE p.id = $${i} AND p.project_id = $${i + 1}
+           AND p.id <> $${i + 2} AND p.parent_id IS NULL), parent_id)`);
+      vals.push(pid, req.project.id, Number(req.params.id));
+      i += 3;
+    }
+  }
+  if (req.body?.labels !== undefined) {
+    sets.push(`labels = $${i++}::jsonb`);
+    vals.push(JSON.stringify(cleanLabels(req.body.labels)));
+  }
+  if (req.body?.listKey !== undefined) {
+    // '' clears back to DERIVED. Moving a card never ticks it: `done` is a
+    // verdict the Review room owns and a board column is not a verdict, so
+    // dropping something in "Shipped" moves the card and nothing else.
+    sets.push(`list_key = $${i++}`);
+    vals.push(String(req.body.listKey || '').trim().slice(0, 40) || null);
+  }
+  if (req.body?.archived !== undefined) {
+    sets.push(`archived = $${i++}`); vals.push(!!req.body.archived);
+  }
+  if (req.body?.estimate !== undefined) {
+    // null = unsized, which the scope drawer states rather than counting as 0.
+    const e = req.body.estimate;
+    if (e === null || e === '') { sets.push('estimate = NULL'); }
+    else if (Number.isFinite(Number(e))) {
+      sets.push(`estimate = $${i++}`);
+      vals.push(Math.max(0, Math.min(99, Math.round(Number(e) * 10) / 10)));
+    }
+  }
+
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
 
   vals.push(req.project.id, Number(req.params.id));
