@@ -53,7 +53,9 @@ check('the surfaces', AGENTS.map((a) => a.tab), ['quality', 'roadmap', 'review',
 // fails here rather than the first time somebody presses the button.
 const WIRED = {
   auditor: ['audit', 'auditprompt'],
-  curator: ['titler', 'assist', 'cleanup'],
+  // 'arrange' reads the timeline and proposes an ORDER — the one thing the
+  // Arrange panel's arithmetic structurally cannot do. Routes: POST /roadmap/arrange.
+  curator: ['titler', 'assist', 'cleanup', 'arrange'],
   foreman: ['readchange', 'triagequeue', 'reviewbrief', 'refinedraft'],
   merger: ['mergeplan'],
   polaris: ['judge', 'cluster', 'converge'],

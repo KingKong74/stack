@@ -1885,6 +1885,19 @@ export async function addArea(slug: string, name: string): Promise<BoardArea[]> 
   const r = await request<{ areas: BoardArea[] }>(`${boardBase(slug)}/areas`, { method: 'POST', body: { name } });
   return r.areas;
 }
+/** Set an area's dot. Only a colour the server's palette knows is stored. */
+export async function setAreaColour(slug: string, name: string, dot: string): Promise<BoardArea[]> {
+  const r = await request<{ areas: BoardArea[] }>(
+    `${boardBase(slug)}/areas/${encodeURIComponent(name)}`, { method: 'PATCH', body: { dot } });
+  return r.areas;
+}
+// The Curator's read of the timeline: what must come BEFORE what. Proposes only
+// — the caller ghosts the moves and applies them itself.
+export interface ArrangeMove { id: number; title: string; sched: SchedSpan; why: string }
+export async function arrangeRoadmap(slug: string): Promise<{ moves: ArrangeMove[]; note?: string }> {
+  return request<{ moves: ArrangeMove[]; note?: string }>(
+    `${roadmapBase(slug)}/arrange`, { method: 'POST', body: {} });
+}
 export async function renameArea(slug: string, from: string, name: string): Promise<BoardArea[]> {
   const r = await request<{ areas: BoardArea[] }>(
     `${boardBase(slug)}/areas/${encodeURIComponent(from)}`, { method: 'PATCH', body: { name } });

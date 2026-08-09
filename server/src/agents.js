@@ -176,6 +176,9 @@ export const AGENTS = [
       { op: 'titler', label: 'Suggest a title', hint: 'Titles an item from its note.' },
       { op: 'assist', label: 'Fill from note', hint: 'Fills an item\'s fields; never overwrites one you set.' },
       { op: 'cleanup', label: 'Tidy the board', hint: 'Suggests fixes across the open items.' },
+      // #364's rule holds: this READS the board and proposes an order. It never
+      // writes — the timeline ghosts the proposal and the owner applies it.
+      { op: 'arrange', label: 'Order by dependency', hint: 'Reads what the items are and says what must come first.' },
     ],
   },
   // #375 — THE FOREMAN, the Review room's own agent.

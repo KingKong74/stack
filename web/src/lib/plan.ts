@@ -22,6 +22,7 @@
 //     a list of {id, sched} — and the caller decides. Nothing here mutates.
 
 import type { RoadmapItem } from '../types';
+import { tierRank } from '../types';
 
 /** The timeline's span, in weeks. Twin of SCHED_WEEKS in server/src/routes/roadmap.js. */
 export const SCHED_WEEKS = 24;
@@ -434,5 +435,102 @@ export function proposeTrim(children: RoadmapItem[], cycle = CYCLE_WEEKS): TrimP
     summary: defer.length
       ? `Defers ${defer.length} line${defer.length === 1 ? '' : 's'} to bring the feature inside ${cycle} weeks. Musts are never cut — that is a decision about what the feature is.`
       : `Over the ${cycle}-week cycle by ${Math.round(over * 10) / 10} weeks, but only Musts remain. Cutting one is a decision about what the feature is, so nothing is proposed.`,
+  };
+}
+
+/**
+ * Push every bar that has fallen behind its baseline so it starts at NOW.
+ *
+ * The one the timeline makes obvious and nothing acts on: a bar whose ghost is
+ * behind it has already slipped, and leaving it starting in the past is how a
+ * plan quietly becomes fiction. Only bars that START before now are touched —
+ * a bar already running is not late, it is running.
+ */
+export function proposeCatchUp(items: RoadmapItem[], now = NOW_WEEK, weeks = SCHED_WEEKS): Proposal {
+  const moves: Move[] = [];
+  for (const i of items) {
+    if (i.archived || i.done || !i.sched) continue;
+    if (i.sched.start + i.sched.len > now && i.sched.start < now) continue; // running, not late
+    if (i.sched.start + i.sched.len > now) continue;                        // still ahead
+    const len = i.sched.len;
+    moves.push({ id: i.id, sched: { start: Math.min(now, weeks - len), len } });
+  }
+  return {
+    kind: 'catchup',
+    moves,
+    summary: moves.length
+      ? `Moves ${moves.length} bar${moves.length === 1 ? '' : 's'} that finished in the past up to now — they were still drawn as if they had not slipped.`
+      : 'Nothing is scheduled entirely in the past. Every bar either ran, is running, or is still ahead.',
+  };
+}
+
+/**
+ * Level the load: give the busiest area's overflow to the emptiest one.
+ *
+ * It only moves UNCLAIMED, unstarted work, and only between areas — a claimed
+ * item belongs to whoever claimed it, and a running bar is not a spare part.
+ * Deliberately conservative: one pass, and it stops as soon as the spread is
+ * within a week, because "balanced" is not worth reorganising a board over.
+ */
+export function proposeBalance(items: RoadmapItem[], now = NOW_WEEK): Proposal {
+  const live = items.filter((i) => !i.archived && !i.done && i.sched && i.sched.start >= now);
+  const load = new Map<string, number>();
+  for (const i of live) load.set(i.area, (load.get(i.area) ?? 0) + i.sched!.len);
+  if (load.size < 2) {
+    return { kind: 'balance', moves: [], summary: 'Only one area has upcoming work, so there is nothing to level against.' };
+  }
+  const sorted = [...load.entries()].sort((a, b) => b[1] - a[1]);
+  const [heavy, heavyW] = sorted[0];
+  const [lightArea, lightW] = sorted[sorted.length - 1];
+  if (heavyW - lightW <= 1) {
+    return { kind: 'balance', moves: [], summary: `The areas are within a week of each other (${heavy} ${heavyW}w, ${lightArea} ${lightW}w). Nothing worth moving.` };
+  }
+  // The heavy lane's LAST unclaimed bar — the one whose move costs least.
+  const movable = live
+    .filter((i) => i.area === heavy && !i.claimedBy)
+    .sort((a, b) => b.sched!.start - a.sched!.start)[0];
+  if (!movable) {
+    return { kind: 'balance', moves: [], summary: `${heavy} carries the most (${heavyW}w) but every bar in it is claimed, so none can be handed over.` };
+  }
+  const lightEnd = live
+    .filter((i) => i.area === lightArea)
+    .reduce((n, i) => Math.max(n, i.sched!.start + i.sched!.len), now);
+  return {
+    kind: 'balance',
+    moves: [{ id: movable.id, sched: { start: lightEnd, len: movable.sched!.len } }],
+    summary: `Hands "${movable.title}" from ${heavy} (${heavyW}w) to ${lightArea} (${lightW}w). One bar — levelling is not worth reorganising a board over.`,
+  };
+}
+
+/**
+ * Reorder the unstarted bars in each lane so the desire tier leads.
+ *
+ * `tier` is the run queue's primary sort (#227), and a timeline that schedules
+ * a C before an S is quietly disagreeing with the queue about what matters.
+ * Lengths and lane are untouched; only the ORDER within a lane changes.
+ */
+export function proposeByTier(items: RoadmapItem[], now = NOW_WEEK): Proposal {
+  const moves: Move[] = [];
+  const byArea = new Map<string, RoadmapItem[]>();
+  for (const i of items) {
+    if (i.archived || i.done || !i.sched || i.sched.start < now) continue;
+    byArea.set(i.area, [...(byArea.get(i.area) || []), i]);
+  }
+  byArea.forEach((lane) => {
+    const slots = lane.map((i) => i.sched!.start).sort((a, b) => a - b);
+    const wanted = lane.slice().sort((a, b) =>
+      tierRank(a.tier) - tierRank(b.tier) || a.sched!.start - b.sched!.start);
+    let cursor = slots[0];
+    wanted.forEach((i) => {
+      if (i.sched!.start !== cursor) moves.push({ id: i.id, sched: { start: cursor, len: i.sched!.len } });
+      cursor += i.sched!.len;
+    });
+  });
+  return {
+    kind: 'tier',
+    moves,
+    summary: moves.length
+      ? `Reorders ${moves.length} bar${moves.length === 1 ? '' : 's'} so each lane runs S, A, B, C — the same sort the run queue uses.`
+      : 'Every lane already runs in tier order.',
   };
 }

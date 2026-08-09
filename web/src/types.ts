@@ -129,7 +129,13 @@ export interface BoardArea {
   registered: boolean;
 }
 export interface BoardList { id: number; key: string; name: string; position: number }
-export interface BoardShape { areas: BoardArea[]; lists: BoardList[] }
+export interface BoardShape {
+  areas: BoardArea[];
+  lists: BoardList[];
+  // The colours an area may wear. Served rather than duplicated client-side so
+  // the picker can only offer what the server will actually store.
+  palette?: string[];
+}
 export interface Roadmap { must: RoadmapItem[]; should: RoadmapItem[]; could: RoadmapItem[]; wont: RoadmapItem[] }
 
 // Per-model token/cost breakdown for dual-model sessions (#167).

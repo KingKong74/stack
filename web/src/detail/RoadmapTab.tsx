@@ -35,9 +35,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   BoardArea, BoardList, Priority, Roadmap as RoadmapData, RoadmapItem, Tier,
 } from '../types';
+import type { TabAgentState } from '../store';
 import {
   getBoardShape, patchRoadmapItem, createRoadmapItem,
   addArea, renameArea as renameAreaApi, deleteArea as deleteAreaApi, addList as addListApi,
+  setAreaColour, arrangeRoadmap, agentCan, agentOffReason,
 } from '../store';
 import { inCycle } from '../lib/plan';
 import { RoadmapTimeline } from './RoadmapTimeline';
@@ -45,6 +47,8 @@ import { RoadmapScope } from './RoadmapScope';
 import { RoadmapPlan } from './RoadmapPlan';
 import { RoadmapTiers, RoadmapParked } from './RoadmapBoards';
 import { RoadmapArrange, proposedSpans, arrangementCount, type Arrangement } from './RoadmapArrange';
+import { NOW_WEEK, whatsNext } from '../lib/plan';
+import { go } from '../lib/route';
 
 type View = 'timeline' | 'scope' | 'plan';
 type PlanBoard = 'lists' | 'tiers' | 'parked';
@@ -96,6 +100,8 @@ export interface RoadmapLegacy {
 
 export interface RoadmapTabProps {
   slug: string;
+  /** #361 — which of the Curator's ops may run at all on this project. */
+  agents: TabAgentState;
   roadmap: RoadmapData;
   /** The Monday the timeline counts weeks from; null = no dates, no calendar. */
   weekZero: string | null;
@@ -109,7 +115,7 @@ export interface RoadmapTabProps {
 }
 
 export function RoadmapTab({
-  slug, roadmap, weekZero, onItemChanged, onItemsChanged, onItemAdded, legacy, onOpenItem,
+  slug, roadmap, weekZero, agents, onItemChanged, onItemsChanged, onItemAdded, legacy, onOpenItem,
 }: RoadmapTabProps) {
   // A deep link to an item lands on SCOPE, because that is where an item now
   // lives — the Board used to reveal it and the Board is gone. Without this a
@@ -123,6 +129,12 @@ export function RoadmapTab({
   const [showHiddenAreas, setShowHiddenAreas] = useState(false);
   const [areas, setAreas] = useState<BoardArea[]>([]);
   const [lists, setLists] = useState<BoardList[]>([]);
+  // The colours an area may wear, served by the board read so the picker can
+  // only offer what the server will store.
+  const [palette, setPalette] = useState<string[]>([]);
+  // Which area's swatch popover is open (one at a time).
+  const [colourFor, setColourFor] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
   const [areaFilter, setAreaFilter] = useState('');
   const [labelFilter, setLabelFilter] = useState('');
   const [editAreas, setEditAreas] = useState(false);
@@ -137,7 +149,7 @@ export function RoadmapTab({
   useEffect(() => {
     let alive = true;
     getBoardShape(slug)
-      .then((b) => { if (alive) { setAreas(b.areas); setLists(b.lists); } })
+      .then((b) => { if (alive) { setAreas(b.areas); setLists(b.lists); setPalette(b.palette || []); } })
       .catch((e) => { if (alive) setErr(e?.message || 'Could not read the board’s areas.'); });
     return () => { alive = false; };
   }, [slug]);
@@ -224,6 +236,70 @@ export function RoadmapTab({
     }
   };
 
+  // The Curator's read of the timeline. It PROPOSES; the moves land in the same
+  // proposal slot the arithmetic uses, so Apply and Discard work identically and
+  // the timeline ghosts them the same way.
+  const readTheBoard = () => {
+    setReading(true);
+    arrangeRoadmap(slug)
+      .then((r) => {
+        const why: Record<number, string> = {};
+        r.moves.forEach((m) => { if (m.why) why[m.id] = m.why; });
+        setProposal({
+          kind: 'order',
+          read: true,
+          why,
+          moves: r.moves.map((m) => ({ id: m.id, sched: m.sched })),
+          summary: r.moves.length
+            ? `Read ${items.filter((i) => !i.archived && !i.done).length} items and found ${r.moves.length} that sit before something they depend on.`
+            : r.note || 'Read the board and found nothing out of order — every item is scheduled after what it needs.',
+        });
+      })
+      .catch((e) => setErr((e as Error)?.message || 'The Curator could not read the board.'))
+      .finally(() => setReading(false));
+  };
+
+  // A Claude session primed with THIS tab's state.
+  //
+  // The same one-shot hand-off every other surface uses (sessionStorage +
+  // the terminal screen picks it up once). What makes it worth having here
+  // rather than a bare "open a terminal" is the brief: a session that opens
+  // knowing what is scheduled, what is late and what is still in the tray does
+  // not spend its first four turns asking.
+  const openSession = () => {
+    const live = items.filter((i) => !i.archived && !i.done);
+    const line = (i: RoadmapItem) =>
+      `- #${i.id} ${i.title}${i.area ? ` [${i.area}]` : ''}${i.tier ? ` · tier ${i.tier}` : ''}`
+      + `${i.sched ? ` · wk ${i.sched.start + 1}–${i.sched.start + i.sched.len}` : ''}`
+      + `${i.estimate === null ? '' : ` · ${i.estimate}w`}`;
+    const running = live.filter((i) => i.sched && i.sched.start <= NOW_WEEK && i.sched.start + i.sched.len > NOW_WEEK);
+    const soon = whatsNext(live, 5).filter((n) => !n.running).map((n) => n.item);
+    const late = live.filter((i) => i.sched && i.sched.start + i.sched.len <= NOW_WEEK);
+    const tray = live.filter((i) => !i.sched);
+
+    const brief = [
+      `Roadmap — ${slug}${areaFilter ? ` · area: ${areaFilter}` : ''}`,
+      '',
+      'Weeks below are indexes from this project\'s week zero, not dates.',
+      '',
+      running.length ? `RUNNING NOW (week ${NOW_WEEK + 1}):\n${running.map(line).join('\n')}` : 'RUNNING NOW: nothing.',
+      '',
+      soon.length ? `NEXT UP:\n${soon.map(line).join('\n')}` : 'NEXT UP: nothing scheduled ahead.',
+      '',
+      // Named separately because it is the one state the chart shows and
+      // nobody acts on: a bar whose whole span is behind the now-line.
+      late.length ? `SCHEDULED ENTIRELY IN THE PAST (slipped, not moved):\n${late.map(line).join('\n')}` : '',
+      late.length ? '' : null,
+      tray.length ? `UNSCHEDULED (${tray.length}):\n${tray.slice(0, 12).map(line).join('\n')}`
+        + (tray.length > 12 ? `\n…and ${tray.length - 12} more` : '') : 'UNSCHEDULED: nothing.',
+      '',
+      'I am looking at the Roadmap tab. Ask me what I want before changing anything.',
+    ].filter((x) => x !== null && x !== '').join('\n');
+
+    try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — it just opens unprimed */ }
+    go.terminal(slug);
+  };
+
   // --- areas ----------------------------------------------------------------
 
   // The chips count what is IN THE CYCLE (lib/plan.ts's `inCycle`), so the
@@ -265,6 +341,13 @@ export function RoadmapTab({
             </button>
           ))}
         </div>
+        {/* A Claude session on this project, primed with what the tab is
+            showing. Sits with the view switch because it is about the whole
+            tab, not one board. */}
+        <button className="rtab-session" onClick={openSession}
+          title="Open a Claude session primed with this roadmap — what is running, what is next, what has slipped and what is still unscheduled">
+          ✳ Claude session
+        </button>
         <span className="rtab-hint">
           {view === 'timeline' ? 'Weeks from this project’s week zero — a plan, not a calendar'
             : view === 'scope' ? 'What is in the cycle, and what is first to cut'
@@ -283,6 +366,23 @@ export function RoadmapTab({
           {areaChips.map((a) => (
             editAreas ? (
               <span className="rtab-areaedit" key={a.name}>
+                {/* The swatch IS the picker. A colour a lane wears has to be
+                    changeable from where you can see the lanes. */}
+                <button className="rtab-swatch" style={{ background: a.dot }}
+                  title={`Colour for ${a.name}`}
+                  onClick={() => setColourFor(colourFor === a.name ? null : a.name)} />
+                {colourFor === a.name && (
+                  <span className="rtab-palette" role="menu">
+                    {palette.map((c) => (
+                      <button key={c} role="menuitem" style={{ background: c }}
+                        className={c === a.dot ? 'on' : ''} title={c}
+                        onClick={() => {
+                          setColourFor(null);
+                          guard(setAreaColour(slug, a.name, c).then(setAreas), 'change that colour');
+                        }} />
+                    ))}
+                  </span>
+                )}
                 <input defaultValue={a.name} onKeyDown={(e) => {
                   if (e.key !== 'Enter') return;
                   const to = (e.target as HTMLInputElement).value.trim();
@@ -338,7 +438,10 @@ export function RoadmapTab({
       <RoadmapArrange
         view={view} items={items} selected={selected} proposal={proposal} busy={busy}
         open={arrangeOpen} onToggle={() => setArrangeOpen(!arrangeOpen)}
-        onPropose={setProposal} onApply={applyProposal} onDiscard={() => setProposal(null)} />
+        onPropose={setProposal} onApply={applyProposal} onDiscard={() => setProposal(null)}
+        onRead={readTheBoard} reading={reading}
+        canRead={agentCan(agents, 'curator', 'arrange')}
+        readOffReason={agentOffReason(agents, 'curator', 'arrange')} />
 
       {view === 'timeline' && (
         <>

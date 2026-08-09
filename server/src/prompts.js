@@ -120,6 +120,31 @@ Use en-AU spelling. Respond with ONLY this JSON:
 { "items": [ { "id": 123, "area": "…", "title": "…", "bucket": "…",
                "why": "one plain sentence, under 15 words" } ] }`;
 
+DEFAULTS.arrange = `You are sequencing a side project's timeline. Below are its scheduled and
+unscheduled items (id | area | bucket | weeks | start | title | note). "start" is a WEEK INDEX from
+the project's own week zero, or "-" when the item is not scheduled. Week {{NOW_WEEK}} is now.
+{{NORTH_STAR_LINE}}
+
+Arithmetic already handles the packing — closing gaps, stacking a lane, fitting a budget. Your job
+is the ONE thing arithmetic cannot do: read what these items actually are and say what must come
+BEFORE what. A pipeline before the dashboard that reads it. A data model before the feature built
+on it. A migration before the code that assumes it.
+
+Propose a start week for an item ONLY when its ORDER is wrong — an item scheduled before something
+it depends on, or a dependency left unscheduled while its dependant is booked. Say nothing about
+items whose order is already fine. AN EMPTY LIST IS THE RIGHT ANSWER for a board that is already
+correctly ordered, and is much better than shuffling things to look busy.
+
+Rules: never move an item earlier than week {{NOW_WEEK}}; never change how long something takes;
+keep every item in its own area; and never propose more than eight moves.
+
+THE ITEMS:
+{{ITEMS}}
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "moves": [ { "id": 123, "start": 12,
+               "why": "one plain sentence naming what it depends on, under 20 words" } ] }`;
+
 DEFAULTS.cluster = `You are clustering a side project's idea funnel into themes. Below are the
 project's loose ideas (id | current theme | title | note). Known themes on the project: {{AREAS}}
 {{NORTH_STAR_LINE}}
@@ -606,6 +631,10 @@ const ENV_KEYS = {
   // model reads it.
   readchange: 'STACK_READCHANGE_PROMPT',
   triagequeue: 'STACK_TRIAGEQUEUE_PROMPT',
+  // Same reasoning: the Curator is a TAB AGENT, so this runs `claude -p` on the
+  // host through the daemon (#364). GEMINI_ would be a lie about which model
+  // reads it, whatever the older keys above are called.
+  arrange: 'STACK_ARRANGE_PROMPT',
   audit: 'GEMINI_AUDIT_PROMPT',
   triage: 'GEMINI_TRIAGE_PROMPT',
 };

@@ -4,10 +4,12 @@ import { projectBySlug } from '../resolve.js';
 import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags, riskWriteSource, capNote } from '../util.js';
 import { cleanLabels } from '../labels.js';
 
-// How many weeks the timeline spans. A bar is a week INDEX from the project's
-// own week zero, never a date — see schema.sql's Roadmap-v2 header for why.
-// The client twin is SCHED_WEEKS in web/src/lib/plan.ts; change both together.
+// How many weeks the timeline spans, and which week is "now". A bar is a week
+// INDEX from the project's own week zero, never a date — see schema.sql's
+// Roadmap-v2 header for why. The client twins are SCHED_WEEKS and NOW_WEEK in
+// web/src/lib/plan.ts; change them together.
 const SCHED_WEEKS = 24;
+const SCHED_NOW_WEEK = 8;
 
 // Risk tiers (#212) — graduated trust. 'low' lets a green overnight run
 // auto-queue its own merge; anything else keeps the human on the merge button.
@@ -434,6 +436,69 @@ roadmap.post('/assist', async (req, res) => {
 // areas for untagged items, cleaned titles, honest buckets. Suggestions only —
 // the client shows them for the human to apply through the normal PATCH.
 // 503 if the host is unreachable.
+// POST /arrange -> the Curator reads the timeline and proposes an ORDER.
+//
+// The Arrange panel's other actions are arithmetic (lib/plan.ts): they pack,
+// compact and trim without reading a word. This one exists for the thing the
+// arithmetic structurally cannot do — notice that "usage dashboard" cannot
+// precede "metering ingest" — and it is the only part of Arrange that costs a
+// model call.
+//
+// PROPOSES ONLY. It returns {moves:[{id,start,why}]} and writes nothing: the
+// timeline ghosts each move in the accent and the owner applies or discards.
+// That is what keeps "Gemini annotates, the human disposes" true of a button
+// whose whole job is rearranging a plan.
+roadmap.post('/arrange', async (req, res) => {
+  if (await refused('arrange', res)) return;
+  const { rows } = await q(
+    `SELECT id, bucket, area, title, note, sched_start, sched_len, estimate
+       FROM roadmap_items
+      WHERE project_id = $1 AND NOT done AND NOT archived
+      ORDER BY sched_start NULLS LAST, bucket, position`,
+    [req.project.id]
+  );
+  // Two bars cannot be ordered against each other, and one cannot be ordered at
+  // all. Say so rather than spending a call to be told the same.
+  if (rows.length < 2) return res.json({ moves: [], note: 'Not enough on the board to order.' });
+
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const prompt = buildPrompt('arrange', {
+    NOW_WEEK: SCHED_NOW_WEEK,
+    ITEMS: rows.map((r) => [
+      r.id, r.area || '-', r.bucket,
+      r.sched_len ?? (r.estimate === null ? '-' : Math.max(1, Math.round(Number(r.estimate)))),
+      r.sched_start === null ? '-' : r.sched_start,
+      r.title, (r.note || '-').slice(0, 200),
+    ].join(' | ')).join('\n'),
+    NORTH_STAR_LINE: req.project.north_star
+      ? `For context, the project's north star: "${String(req.project.north_star).slice(0, 400)}"`
+      : '',
+  });
+
+  try {
+    const answer = await curator.ask('arrange', prompt, { timeoutMs: 45_000 });
+    const moves = (Array.isArray(answer?.moves) ? answer.moves : [])
+      .map((m) => {
+        const cur = byId.get(Number(m?.id));
+        if (!cur) return null;
+        const len = Math.max(1, Number(cur.sched_len)
+          || (cur.estimate === null ? 2 : Math.round(Number(cur.estimate))) || 2);
+        // Clamped the same way a drag is, and never earlier than now: a model
+        // is allowed to be wrong about the week, not to schedule the past.
+        const start = Math.max(SCHED_NOW_WEEK,
+          Math.min(SCHED_WEEKS - len, Math.trunc(Number(m.start))));
+        if (!Number.isFinite(start)) return null;
+        if (cur.sched_start === start && cur.sched_len === len) return null; // a no-op is not a move
+        return { id: cur.id, title: cur.title, sched: { start, len }, why: String(m.why || '').trim().slice(0, 200) };
+      })
+      .filter(Boolean)
+      .slice(0, 8);
+    res.json({ moves });
+  } catch (err) {
+    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
+  }
+});
+
 roadmap.post('/cleanup', async (req, res) => {
   if (await refused('cleanup', res)) return;
   const { rows } = await q(

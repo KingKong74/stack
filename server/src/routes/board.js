@@ -36,10 +36,24 @@ board.use(async (req, res, next) => {
   next();
 });
 
-// The lane palette. Areas that arrived from a push (or predate the table) have
-// no stored colour, so one is assigned by position on read — stable for a given
-// ordering, and overwritten the moment the owner picks one.
-const PALETTE = ['#8a847a', '#6f9a72', '#c4623d', '#b08a2e', '#b23b3b', '#7a6f9a', '#4f7f8a', '#9a6f8a'];
+// The lane palette — sixteen, and the ONLY colours an area may wear.
+//
+// A closed set rather than a free colour input, for the same reason the label
+// registry is code: these dots are read side by side down a Gantt's left edge,
+// and a free picker produces two areas a fortnight apart that nobody can tell
+// apart at 8px. Every entry is muted to the same degree so no lane shouts, and
+// they are ordered so that ADJACENT areas get contrasting hues — the assignment
+// below walks this list in order, so neighbours never come out as neighbours.
+//
+// PALETTE[0] is the fallback for an area with no stored colour, which is a real
+// state: an area that arrived from a push has never been given one.
+const PALETTE = [
+  '#8a847a', '#6f9a72', '#c4623d', '#4f7f8a',
+  '#b08a2e', '#7a6f9a', '#b23b3b', '#5f8f6a',
+  '#9a6f8a', '#7f8a4f', '#a8734a', '#5b7f9a',
+  '#8a6f5a', '#6a8a8a', '#a05f7a', '#6f7a9a',
+];
+export const AREA_PALETTE = PALETTE;
 
 const clean = (v) => String(v || '').trim().toLowerCase().slice(0, 40);
 
@@ -69,7 +83,7 @@ board.get('/', async (req, res) => {
     readAreas(req.project.id),
     ensureLists(q, req.project.id),
   ]);
-  res.json({ areas, lists });
+  res.json({ areas, lists, palette: PALETTE });
 });
 
 // POST /areas  { name }
@@ -80,7 +94,9 @@ board.post('/areas', async (req, res) => {
     'SELECT COALESCE(MAX(position), -1) + 1 AS p FROM project_areas WHERE project_id = $1',
     [req.project.id]
   );
-  const dot = String(req.body?.dot || '').trim().slice(0, 20);
+  // Only a colour from the palette. Anything else is dropped rather than
+  // stored: a dot the picker cannot show is one the owner cannot change back.
+  const dot = PALETTE.includes(String(req.body?.dot || '').trim()) ? String(req.body.dot).trim() : '';
   await q(
     `INSERT INTO project_areas (project_id, name, dot, position) VALUES ($1, $2, $3, $4)
        ON CONFLICT (project_id, name) DO NOTHING`,
@@ -95,7 +111,11 @@ board.patch('/areas/:name', async (req, res) => {
   const from = clean(req.params.name);
   const to = req.body?.name === undefined ? from : clean(req.body.name);
   if (!to) return res.status(400).json({ error: 'An area needs a name.' });
-  const dot = req.body?.dot === undefined ? null : String(req.body.dot || '').trim().slice(0, 20);
+  // An unknown colour is IGNORED, not stored as ''. Storing '' would silently
+  // reset the area to its positional default — the same trap as resolving a bad
+  // parentId to NULL: a rejected write must leave the row as it was.
+  const raw = req.body?.dot === undefined ? null : String(req.body.dot || '').trim();
+  const dot = raw !== null && PALETTE.includes(raw) ? raw : null;
 
   const client = await pool.connect();
   try {
