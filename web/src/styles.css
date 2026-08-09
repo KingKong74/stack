@@ -6258,6 +6258,12 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
   .btn-repo:active, .btn-accent:active, .btn-submit:active, .btn-cancel:active,
   .btn-export:active, .btn-danger:active, .btn-dark:active, .btn-muted:active { transform: none; }
   .btn-repo, .btn-accent, .btn-submit, .btn-cancel, .btn-export, .btn-danger, .btn-dark { transition: none; }
+}
+/* ^ That closing brace was missing, and had been for a long time. Everything
+   below this point was therefore INSIDE the reduced-motion query — the whole
+   Trees room's styles applied only to visitors whose OS asks for less motion,
+   and to nobody else. Left as a marker rather than silently tidied: a stylesheet
+   this long has no other way to notice a rule that never fires. */
 
 /* ---------------------------------------------------------------------
    #365 — the TREES room. It reuses the Merge room's shell wholesale
@@ -6332,4 +6338,242 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 @media (max-width: 900px) {
   .mc-trees-row { flex-wrap: wrap; row-gap: 6px; }
   .mc-trees-row .proj { width: auto; }
+}
+
+/* ==========================================================================
+   THE ROADMAP TAB v2 — Timeline, Scope and Plan.
+   Atlas tokens only; dark mode follows through the same names. Nothing here
+   sets a colour that is not already in the palette at the top of this file.
+   ========================================================================== */
+
+.rtab-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.rtab-hint { font-size: 12.5px; color: var(--faint); }
+.rtab-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.rtab-chips .chip-sm { display: inline-flex; align-items: center; gap: 7px; }
+.rtab-chips .chip-sm .n { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.rtab-chips .chip-sm.on .n { color: inherit; opacity: .8; }
+.rtab-chips .chip-sm.dashed { border-style: dashed; color: var(--accent); border-color: var(--accent-tint-border); }
+.rtab-chips .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.rtab-editareas { margin-left: auto; font-size: 12px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; white-space: nowrap; }
+.rtab-editareas:hover { border-color: var(--accent); color: var(--accent); }
+.rtab-areaedit { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 6px 4px 10px; }
+.rtab-areaedit input { width: 96px; font-size: 12.5px; border: none; background: transparent; color: var(--ink); padding: 0; font-family: var(--sans); }
+.rtab-areaedit input:focus { outline: none; }
+.rtab-areaedit button { font-size: 13px; color: var(--faint); padding: 0 4px; }
+.rtab-areaedit button:hover { color: var(--critical); }
+
+/* ---- the label chips: one class per Atlas tone, so a label is the same
+       colour in both themes without either registry holding a hex ---- */
+.rl { font-size: 10.5px; font-weight: 600; border-radius: 5px; padding: 2px 7px; border: 1px solid transparent; white-space: nowrap; }
+.rl-accent   { color: var(--accent);   background: var(--accent-tint);   border-color: var(--accent-tint-border); }
+.rl-muted    { color: var(--muted);    background: var(--panel);         border-color: var(--line-2); }
+.rl-live     { color: var(--live);     background: var(--live-tint);     border-color: var(--live-tint); }
+.rl-building { color: var(--building); background: var(--building-tint); border-color: var(--building-tint); }
+.rl-critical { color: var(--critical); background: var(--critical-tint); border-color: var(--critical-line); }
+.rl.on { color: var(--on-accent); }
+.rl-accent.on   { background: var(--accent); border-color: var(--accent); }
+.rl-muted.on    { background: var(--muted); border-color: var(--muted); }
+.rl-live.on     { background: var(--live); border-color: var(--live); }
+.rl-building.on { background: var(--building); border-color: var(--building); }
+.rl-critical.on { background: var(--critical); border-color: var(--critical); }
+
+/* ---- arrange: propose, then apply ---- */
+.ra { background: var(--card); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; }
+.ra-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 11px; }
+.ra-head .nm { font-family: var(--disp); font-size: 15px; font-weight: 600; color: var(--accent); }
+.ra-hint { font-size: 12.5px; color: var(--muted); }
+.ra-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.ra-action { display: flex; flex-direction: column; gap: 5px; text-align: left; background: var(--paper); border: 1px solid var(--line); border-radius: 11px; padding: 11px 13px; }
+.ra-action:hover:not(:disabled) { border-color: var(--accent); }
+.ra-action:disabled { opacity: .55; }
+.ra-action .nm { font-size: 13px; font-weight: 600; color: var(--ink); }
+/* `desc`, not `note` — `.note` is the Workbench sticky and paints anything
+   wearing it on yellow paper. It has now caught two new surfaces in this
+   file; treat the bare class name as taken. */
+.ra-action .desc { font-size: 12px; line-height: 1.5; color: var(--body-2); }
+.ra-result { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.ra-result .txt { flex: 1; min-width: 220px; font-size: 13px; line-height: 1.5; color: var(--body); }
+.ra-result .acts { display: flex; gap: 8px; }
+
+/* ---- the timeline ---- */
+.rt { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.rt.with-drawer { grid-template-columns: minmax(0, 1fr) 320px; }
+.rt-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+/* align-items: center on a wrapping flex row gives the row the height of its
+   SHORTEST line, so the seg-control's 29px sat inside a 22px box and clipped.
+   `flex-start` plus the control's own alignment lets the row take its tallest
+   child's height, which is what the smoke was reporting. */
+.rt-bar { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; min-height: 30px; }
+.rt-bar .rt-hint { align-self: center; }
+.rt-hint { font-size: 12px; color: var(--faint); }
+.rt-chart { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.rt-head { display: grid; grid-template-columns: 132px 1fr; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line-2); }
+.rt-track { display: flex; }
+.rt-col { font-family: var(--mono); font-size: 10.5px; color: var(--faint); min-width: 0; }
+.rt-col.now { color: var(--accent); }
+.rt-empty { padding: 24px 16px; font-size: 13px; color: var(--faint); }
+
+.rt-lane { display: grid; grid-template-columns: 132px 1fr; align-items: stretch; border-bottom: 1px solid var(--line-2); }
+.rt-lane:last-child { border-bottom: none; }
+.rt-lane-name { display: flex; align-items: center; gap: 9px; padding: 12px 14px; min-width: 0; }
+.rt-lane-name .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--line-3); }
+.rt-lane-name .dot.ghost { background: transparent; border: 1px dashed var(--accent-soft); }
+.rt-lane-name .nm { font-family: var(--disp); font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt-lane-body { position: relative; padding: 0 14px 0 0; }
+.rt-grid { position: absolute; inset: 0; display: flex; pointer-events: none; }
+.rt-grid .rt-col { border-left: 1px solid var(--line-2); }
+.rt-grid .rt-col.now { background: var(--accent-tint); opacity: .35; }
+.rt-lane-empty { position: relative; display: inline-flex; align-items: center; height: 100%; padding-left: 12px; font-size: 12px; color: var(--fainter); }
+
+/* A bar is positioned in PERCENT of the lane, so the chart reflows with the
+   drawer without recomputing anything. */
+.rt-bar { position: absolute; height: 22px; border-radius: 7px; display: flex; align-items: center; padding: 0 9px; cursor: grab; touch-action: none; user-select: none; overflow: hidden; }
+.rt-bar .t { font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.rt-bar.plan { background: var(--panel); border: 1px solid var(--line-3); color: var(--body); }
+.rt-bar.now { background: var(--accent-tint); border: 1px solid var(--accent); color: var(--accent-deep); }
+.rt-bar.done { background: var(--live-tint); border: 1px solid var(--live); color: var(--live); }
+.rt-bar.sel { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
+.rt-bar:active { cursor: grabbing; }
+.rt-ghost { position: absolute; height: 22px; border-radius: 7px; border: 1px dashed var(--line-3); pointer-events: none; }
+.rt-proposed { position: absolute; height: 22px; border-radius: 7px; border: 1px dashed var(--accent); background: var(--accent-tint); opacity: .5; pointer-events: none; }
+.rt-handle { position: absolute; width: 10px; height: 22px; cursor: ew-resize; touch-action: none; border-radius: 0 7px 7px 0; }
+.rt-handle:hover { background: var(--accent-tint); }
+.rt-outlabel { position: absolute; height: 22px; display: flex; align-items: center; padding: 0 7px; font-size: 11.5px; font-weight: 500; white-space: nowrap; color: var(--muted); }
+.rt-outlabel.now { color: var(--accent); }
+.rt-outlabel.done { color: var(--body); }
+.rt-x { position: absolute; height: 22px; width: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px solid var(--line); background: var(--paper); font-size: 12px; color: var(--muted); }
+.rt-x:hover { border-color: var(--critical); color: var(--critical); }
+.rt-lane.horizon .rt-lane-body { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px 10px 0; }
+.rt-horizon-chip { font-size: 11.5px; color: var(--muted); border: 1px dashed var(--line-3); border-radius: 7px; padding: 5px 10px; background: transparent; }
+.rt-horizon-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+.rt-tray { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 13px 15px 15px; }
+.rt-tray-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 11px; flex-wrap: wrap; }
+.rt-tray-items { display: flex; gap: 8px; flex-wrap: wrap; }
+.rt-chip { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--paper); border-radius: 9px; padding: 8px 11px; cursor: grab; font-size: 12.5px; }
+.rt-chip:hover { border-color: var(--accent); }
+.rt-chip .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.rt-chip .est { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+
+/* ---- the scope drawer ---- */
+.rt-drawer { background: var(--card); border: 1px solid var(--keyline); border-radius: 14px; overflow: hidden; }
+.rt-drawer-head { display: flex; align-items: center; gap: 9px; padding: 14px 15px 12px; border-bottom: 1px solid var(--line-2); }
+.rt-drawer-head .nm { flex: 1; min-width: 0; font-family: var(--disp); font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt-drawer-toggle { font-size: 13px; color: var(--faint); }
+.rt-drawer-toggle:hover { color: var(--accent); }
+.rt-drawer-act { flex: none; font-size: 11.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; background: var(--card); }
+.rt-drawer-act:hover { border-color: var(--accent); color: var(--accent); }
+.rt-drawer-rail { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; width: 34px; }
+.rt-drawer-rail:hover { border-color: var(--accent); }
+.rt-drawer-rail .w { font-family: var(--mono); font-size: 11px; color: var(--muted); writing-mode: vertical-rl; letter-spacing: .08em; text-transform: uppercase; }
+.rt-slip { padding: 11px 15px; font-size: 12.5px; line-height: 1.5; border-bottom: 1px solid var(--line-2); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rt-slip .rt-drawer-act { margin-left: auto; }
+.rt-slip.ok { color: var(--live); }
+.rt-slip.off { color: var(--accent-deep); background: var(--accent-tint); }
+.rt-slip.none { color: var(--faint); }
+.rt-scope-sum { padding: 13px 15px; border-bottom: 1px solid var(--line-2); }
+.rt-scope-bar { height: 6px; border-radius: 999px; background: var(--panel); overflow: hidden; }
+.rt-scope-bar .fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.rt-scope-bar .fill.over { background: var(--building); }
+.rt-scope-line { font-size: 12px; color: var(--muted); margin-top: 7px; }
+.rt-scope-warn { font-size: 12px; line-height: 1.5; color: var(--building); margin-top: 6px; }
+.rt-scope { padding: 4px 15px 14px; }
+.rt-scope-group { padding-top: 11px; }
+.rt-scope-head { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 6px; }
+.rt-scope-head.must { color: var(--accent); }
+.rt-scope-head.should { color: var(--building); }
+.rt-scope-head.could { color: var(--muted); }
+.rt-scope-head.wont { color: var(--faint); }
+.rt-scope-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+.rt-scope-row .mk { flex: none; width: 15px; height: 15px; border-radius: 4px; border: 1px solid var(--line-2); font-size: 9px; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; }
+.rt-scope-row .mk:hover { border-color: var(--accent); color: var(--accent); }
+.rt-scope-row .t { flex: 1; min-width: 0; text-align: left; font-size: 12.5px; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt-scope-row .w { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.rt-scope-row.cut .t { text-decoration: line-through; color: var(--faint); }
+
+/* ---- the scope board ---- */
+.rs { display: flex; flex-direction: column; gap: 10px; }
+.rs-lane { display: grid; grid-template-columns: 168px 1fr; gap: 14px; align-items: stretch; }
+.rs-head { display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); }
+.rs-lane.must .rs-head { background: var(--accent-tint); border-color: var(--accent-tint-border); }
+.rs-lane.should .rs-head { background: var(--building-tint); border-color: var(--building-tint); }
+.rs-lane.could .rs-head { background: var(--panel); }
+.rs-head .nm { font-family: var(--disp); font-size: 16px; font-weight: 600; }
+.rs-head .meta { font-size: 11.5px; color: var(--muted); }
+.rs-head .tot { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.rs-add { align-self: flex-start; font-size: 11.5px; color: var(--accent); padding: 0; margin-top: 2px; }
+.rs-body { display: flex; flex-direction: column; gap: 1px; padding: 10px 12px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); min-height: 62px; }
+.rs-lane.over .rs-body { border-color: var(--accent); background: var(--accent-tint); }
+.rs-item { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 8px; border-radius: 8px; cursor: grab; }
+.rs-item:hover { background: var(--panel); }
+.rs-item .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.rs-item .t { font-size: 13px; font-weight: 500; color: var(--ink); }
+.rs-item .w { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.rs-item.cut .t { text-decoration: line-through; color: var(--faint); }
+.rs-claim, .rs-sched { font-family: var(--mono); font-size: 10px; color: var(--muted); background: var(--panel); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 6px; }
+.rs-empty { font-size: 12px; color: var(--fainter); padding: 6px 8px; }
+.rs-detail { width: 100%; padding: 9px 8px 4px; margin-top: 6px; border-top: 1px solid var(--line-2); }
+.rs-note { font-size: 12.5px; line-height: 1.55; color: var(--body-2); margin-bottom: 9px; }
+.rs-acts { display: flex; gap: 7px; flex-wrap: wrap; }
+.rs-move { font-size: 11px; color: var(--body); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; background: var(--paper); }
+.rs-move:hover { border-color: var(--accent); color: var(--accent); }
+.rs-move.accent { color: var(--accent); background: var(--accent-tint); border-color: var(--accent-tint-border); }
+
+/* ---- the plan board ---- */
+.rp-bar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
+.rp-bar .lbl { margin-right: 4px; }
+.rp-archive-toggle { margin-left: auto; font-size: 12px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px; }
+.rp-archive-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.rp-archive { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 13px 15px; margin-bottom: 14px; }
+.rp-archive-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); padding: 5px 0; }
+.rp-archive-row .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.rp-archive-row .t { flex: 1; min-width: 0; text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-cols { display: flex; gap: 14px; align-items: start; overflow-x: auto; padding-bottom: 6px; }
+.rp-col { flex: none; width: 262px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 9px; }
+.rp-col.newlist { background: transparent; border: none; padding: 0; }
+.rp-col-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px 4px; }
+.rp-col-head .nm { font-family: var(--disp); font-size: 14px; font-weight: 600; }
+.rp-col-head .n { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.rp-card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; cursor: grab; }
+.rp-card:hover { border-color: var(--accent-tint-border); }
+.rp-stripes { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+.rp-stripe { height: 6px; width: 32px; border-radius: 999px; }
+.rp-stripe.rl-accent { background: var(--accent); }
+.rp-stripe.rl-muted { background: var(--muted); }
+.rp-stripe.rl-live { background: var(--live); }
+.rp-stripe.rl-building { background: var(--building); }
+.rp-stripe.rl-critical { background: var(--critical); }
+.rp-title { font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--ink); }
+.rp-meta { display: flex; align-items: center; gap: 8px; margin-top: 9px; flex-wrap: wrap; }
+.rp-meta .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.rp-meta .area { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); }
+.rp-meta .est { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.rp-mos { font-size: 10.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; border-radius: 5px; padding: 2px 7px; border: 1px solid var(--line-2); background: var(--panel); color: var(--muted); }
+.rp-mos.must { color: var(--accent); background: var(--accent-tint); border-color: var(--accent-tint-border); }
+.rp-mos.should { color: var(--building); background: var(--building-tint); border-color: var(--building-tint); }
+.rp-mos.wont { color: var(--faint); background: transparent; }
+.rp-mos.on { outline: 1px solid var(--accent-soft); outline-offset: 1px; }
+.rp-detail { margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--line-2); }
+.rp-note { font-size: 12.5px; line-height: 1.55; color: var(--body-2); }
+.rp-detail .lbl { margin: 11px 0 6px; }
+.rp-toggles { display: flex; gap: 5px; flex-wrap: wrap; }
+.rp-acts { display: flex; gap: 10px; margin-top: 12px; }
+.rp-add { font-size: 12px; color: var(--faint); padding: 6px 4px; text-align: left; }
+.rp-add:hover { color: var(--accent); }
+.rp-add-list { width: 100%; font-size: 13px; color: var(--muted); border: 1px dashed var(--line-3); border-radius: 12px; padding: 13px 14px; background: transparent; }
+.rp-add-list:hover { border-color: var(--accent); color: var(--accent); }
+
+@media (max-width: 920px) {
+  /* The drawer drops under the chart rather than squeezing it — a 320px
+     drawer beside a Gantt leaves neither readable. */
+  .rt.with-drawer { grid-template-columns: minmax(0, 1fr); }
+  .ra-actions { grid-template-columns: 1fr; }
+  .rs-lane { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  /* Below this the lane label plus 24 weeks stops being legible at all, so the
+     chart scrolls sideways with its lanes intact rather than reflowing into
+     something that is no longer a timeline. */
+  .rt-chart { overflow-x: auto; }
+  .rt-head, .rt-lane { min-width: 620px; }
 }

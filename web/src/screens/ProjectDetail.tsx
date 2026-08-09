@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { RoadmapItem, Future, Severity, Priority, Bug, BugStatus, WorkbenchPhase } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Future, Severity, Priority, Bug, BugStatus, WorkbenchPhase } from '../types';
 import {
   getProjectDetail, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
@@ -18,7 +18,7 @@ import { planWorkbenchOpen } from '../lib/workbenchOpen';
 import { ExportBriefModal } from '../components/ExportBriefModal';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Quality } from '../detail/Quality';
-import { Roadmap } from '../detail/Roadmap';
+import { RoadmapTab } from '../detail/RoadmapTab';
 import { Futures, type Alignment } from '../detail/Futures';
 import { Workbench } from '../detail/Workbench';
 import { Activity } from '../detail/Activity';
@@ -408,6 +408,23 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       const updated = await patchRoadmapItem(slug, item.id, { tier });
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
     });
+
+  // The v2 Roadmap views write through store.ts themselves and hand back the
+  // row the server returned. These two put it into the local copy — including
+  // the case a plain replace would get wrong: a PATCH that changed the item's
+  // BUCKET has to move it between the grouped arrays, not just overwrite it in
+  // the one it used to be in, or the card renders in its old lane until reload.
+  const replaceRoadItem = (updated: RoadmapItem) => {
+    const next: RoadmapData = { must: [], should: [], could: [], wont: [] };
+    (['must', 'should', 'could', 'wont'] as Priority[]).forEach((b) => {
+      next[b] = roadmap[b].filter((it) => it.id !== updated.id);
+    });
+    next[updated.bucket] = [...next[updated.bucket], updated];
+    setData({ ...data, roadmap: next });
+  };
+  const addRoadItem = (created: RoadmapItem) => {
+    setData({ ...data, roadmap: { ...roadmap, [created.bucket]: [...roadmap[created.bucket], created] } });
+  };
 
   const toggleRoad = (item: RoadmapItem) =>
     guard(async () => {
@@ -942,27 +959,38 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             agent state itself, because its audit card has room to say who is
             off and this position does not. */}
         {tab === 'roadmap' && (
-          <Roadmap roadmap={roadmap} highlightId={highlightId} slug={slug} liveBranches={data.liveBranches}
-            staleItemDays={data.staleItemDays}
-            onAdd={(p, area) => roadDraft
-              ? openRoadDraft(roadDraft)
-              : setRoadModal({ open: true, priority: p, title: '', note: '', area, fromNote: null, editing: null })}
-            draft={roadDraft} onResumeDraft={() => roadDraft && openRoadDraft(roadDraft)}
-            onDiscardDraft={() => updateRoadDraft(null)}
-            onToggle={toggleRoad}
-            onEdit={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
-            onDelete={(it) => setConfirmRoadDelete(it)}
-            onClearNote={clearRoadNote}
-            onToggleSkip={toggleSkipRoad} onReorder={reorderRoad}
-            onCleanup={agentCan(data.agents, 'curator', 'cleanup') ? openCleanup : undefined}
-            onDeleteArea={deleteArea} onRenameArea={renameArea}
-            onSendToTerminal={(brief) => {
-              // One-shot handoff — the terminal screen offers it as a paste.
-              try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the button just won't appear */ }
-              go.terminal(slug);
-            }}
-            onSetTier={setTierRoad} onRefineNote={saveRefineNote}
-            onBranch={(it) => branchItem(it)} />
+          // RoadmapTab owns the six-way view switch; the Board/Tiers/Parked half
+          // is the existing component, handed through unchanged as `legacy`.
+          <RoadmapTab slug={slug} roadmap={roadmap}
+            onItemChanged={replaceRoadItem} onItemAdded={addRoadItem}
+            onOpenItem={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
+            legacy={{
+              highlightId, liveBranches: data.liveBranches,
+              staleItemDays: data.staleItemDays,
+              onAdd: (p, area) => roadDraft
+                ? openRoadDraft(roadDraft)
+                : setRoadModal({ open: true, priority: p, title: '', note: '', area, fromNote: null, editing: null }),
+              draft: roadDraft,
+              onResumeDraft: () => roadDraft && openRoadDraft(roadDraft),
+              onDiscardDraft: () => updateRoadDraft(null),
+              onToggle: toggleRoad,
+              onEdit: (it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it }),
+              onDelete: (it) => setConfirmRoadDelete(it),
+              onClearNote: clearRoadNote,
+              onToggleSkip: toggleSkipRoad,
+              onReorder: reorderRoad,
+              onCleanup: agentCan(data.agents, 'curator', 'cleanup') ? openCleanup : undefined,
+              onDeleteArea: deleteArea,
+              onRenameArea: renameArea,
+              onSendToTerminal: (brief: string) => {
+                // One-shot handoff — the terminal screen offers it as a paste.
+                try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the button just won't appear */ }
+                go.terminal(slug);
+              },
+              onSetTier: setTierRoad,
+              onRefineNote: saveRefineNote,
+              onBranch: (it: RoadmapItem) => branchItem(it),
+            }} />
         )}
         {tab === 'futures' && (
           <Futures northStar={data.northStar} futures={futures} highlightId={highlightId} slug={slug}

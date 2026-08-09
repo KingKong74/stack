@@ -3,7 +3,7 @@ import type {
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Tip, Tier, ResumeSince, ProjectDebrief,
   WorkbenchData, WorkbenchCard, WorkbenchEdge, WorkbenchBody, WorkbenchOp, WorkbenchCascade,
-  WorkbenchDebrief,
+  WorkbenchDebrief, SchedSpan, BoardShape, BoardArea, BoardList,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1847,9 +1847,54 @@ export async function patchRoadmapItem(
     // which is exactly what an edit from the modal is.
     risk_source: 'human' | 'auto'; risk_reason: string;
     tier: RoadmapItem['tier'];   // #227 — desire rank; '' unranks it
+    // ---- the Roadmap tab v2 ----
+    // null returns the bar to the tray. The server writes the BASELINE only if
+    // there isn't one, so a drag can never erase the slip it is showing.
+    sched: SchedSpan | null;
+    rebaseline: boolean;         // "this is the plan now" — the one way to move the ghost
+    parentId: number | null;     // one level deep; an invalid target leaves the row alone
+    labels: string[];            // unknown ids are dropped server-side
+    listKey: string;             // '' returns the card to the derived column
+    archived: boolean;
+    estimate: number | null;     // null = unsized, which is not zero
   }>,
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });
+}
+
+// ---- the Roadmap tab's furniture: areas (the timeline's lanes) and Plan lists.
+// Every writer returns the fresh collection, so the caller never has to guess
+// what a rename did to the rows that carried the old name.
+const boardBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/board`;
+
+export async function getBoardShape(slug: string): Promise<BoardShape> {
+  return request<BoardShape>(boardBase(slug));
+}
+export async function addArea(slug: string, name: string): Promise<BoardArea[]> {
+  const r = await request<{ areas: BoardArea[] }>(`${boardBase(slug)}/areas`, { method: 'POST', body: { name } });
+  return r.areas;
+}
+export async function renameArea(slug: string, from: string, name: string): Promise<BoardArea[]> {
+  const r = await request<{ areas: BoardArea[] }>(
+    `${boardBase(slug)}/areas/${encodeURIComponent(from)}`, { method: 'PATCH', body: { name } });
+  return r.areas;
+}
+export async function deleteArea(slug: string, name: string): Promise<BoardArea[]> {
+  const r = await request<{ areas: BoardArea[] }>(
+    `${boardBase(slug)}/areas/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  return r.areas;
+}
+export async function addList(slug: string, name: string): Promise<BoardList> {
+  const r = await request<{ list: BoardList }>(`${boardBase(slug)}/lists`, { method: 'POST', body: { name } });
+  return r.list;
+}
+export async function renameList(slug: string, key: string, name: string): Promise<BoardList> {
+  const r = await request<{ list: BoardList }>(
+    `${boardBase(slug)}/lists/${encodeURIComponent(key)}`, { method: 'PATCH', body: { name } });
+  return r.list;
+}
+export async function deleteList(slug: string, key: string): Promise<void> {
+  await request<void>(`${boardBase(slug)}/lists/${encodeURIComponent(key)}`, { method: 'DELETE' });
 }
 export async function deleteRoadmapItem(slug: string, id: number): Promise<void> {
   await request<void>(`${roadmapBase(slug)}/${id}`, { method: 'DELETE' });

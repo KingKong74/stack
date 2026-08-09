@@ -100,7 +100,32 @@ export interface RoadmapItem {
   plan: PlanStep[];    // the implementation plan ([] = none)
   updatedAt: string | null; // ISO — latest-first ordering in the archive
   agentProfile: string; // '' = the default executor; else the agent profile that should build it
+
+  // ---- the Roadmap tab v2 ----
+  parentId: number | null;  // the feature this ticket belongs to (null = it IS a feature)
+  // The scheduled bar, in WEEKS from the project's week zero. null = UNSCHEDULED,
+  // a real state (the tray) and never week 0.
+  sched: SchedSpan | null;
+  // What was committed to, written once when the bar was first scheduled. null =
+  // never committed to, which is NOT "on plan" — see lib/plan.ts slipOf().
+  baseline: SchedSpan | null;
+  labels: string[];         // ids from the fixed registry in lib/labels.ts
+  listKey: string;          // '' = derived from the row's own state (lib/plan.ts listKeyOf)
+  archived: boolean;        // off the board but recoverable — not parked, not deleted
+  estimate: number | null;  // size in weeks; null = UNSIZED, which is not zero
 }
+
+export interface SchedSpan { start: number; len: number }
+
+// The Roadmap tab's furniture (GET /api/projects/:slug/board).
+export interface BoardArea {
+  id: number | null;   // null = mentioned by an item but never registered
+  name: string;
+  dot: string;
+  registered: boolean;
+}
+export interface BoardList { id: number; key: string; name: string; position: number }
+export interface BoardShape { areas: BoardArea[]; lists: BoardList[] }
 export interface Roadmap { must: RoadmapItem[]; should: RoadmapItem[]; could: RoadmapItem[]; wont: RoadmapItem[] }
 
 // Per-model token/cost breakdown for dual-model sessions (#167).

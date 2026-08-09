@@ -31,7 +31,7 @@ export const REVIEW_NOTE_TAGS: { key: string; label: string }[] = [
 // verdict tag, refinable by delta (#146), restorable by un-ticking.
 export function Roadmap({
   roadmap, onAdd, onToggle, onEdit, onDelete, onClearNote, onToggleSkip, onReorder, onCleanup, onSendToTerminal, onSetTier, onBranch, onDeleteArea, onRenameArea, onRefineNote, slug, highlightId,
-  draft, onResumeDraft, onDiscardDraft, liveBranches, staleItemDays,
+  draft, onResumeDraft, onDiscardDraft, liveBranches, staleItemDays, controlledView,
 }: {
   roadmap: RoadmapData;
   liveBranches?: string[];
@@ -64,6 +64,10 @@ export function Roadmap({
   draft?: { title: string } | null;
   onResumeDraft?: () => void;
   onDiscardDraft?: () => void;
+  // Set by RoadmapTab when the v2 segmented control is driving which view is
+  // shown. Present = this component's own switch is hidden and it renders
+  // whichever of its three it is told to.
+  controlledView?: 'board' | 'tiers' | 'parked';
 }) {
   // Drag-reorder: which item is in flight, and what it's hovering over
   // (an item id = drop before it; `col-<bucket>` = drop at the bucket's end).
@@ -334,8 +338,14 @@ export function Roadmap({
   // deep link that lands on something already finished.
   const doneItems = PRIORITY_META.flatMap((col) => roadmap[col.key].filter((it) => it.done));
 
-  // The tab's three views: Board, Tiers (#227) and Parked (#247).
-  const [view, setView] = useState<'board' | 'tiers' | 'parked'>('board');
+  // The tab's three RUN-QUEUE views: Board, Tiers (#227) and Parked (#247).
+  // The v2 tab's Timeline / Scope / Plan views live in their own files and are
+  // switched by RoadmapTab, which owns the whole segmented control — this one
+  // only renders its three when it is the visible half. `view` stays local
+  // state (a deep link still lands on the Board) but the parent can override
+  // it, which is what makes one control drive six views.
+  const [view, setView] = useState<'board' | 'tiers' | 'parked'>(controlledView || 'board');
+  useEffect(() => { if (controlledView) setView(controlledView); }, [controlledView]);
 
   // #247 — the parked shelf. Every open item somebody pressed ⏸ on, oldest park
   // first, aged from the park stamp (falling back to the last edit for rows
@@ -454,7 +464,7 @@ export function Roadmap({
       </div>
       {/* The view switch sits above the content, on the left (#129) — the first
           thing the eye lands on, at full seg-control size. */}
-      <div className="road-view-switch">
+      <div className="road-view-switch" style={controlledView ? { display: 'none' } : undefined}>
         <div className="seg-control" role="tablist" aria-label="Roadmap view">
           <button role="tab" aria-selected={view === 'board'}
             className={`seg-opt ${view === 'board' ? 'on' : ''}`} onClick={() => setView('board')}>Board</button>
