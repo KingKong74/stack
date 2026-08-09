@@ -699,16 +699,20 @@ a.tab { display: inline-block; }
 .usage-axis { display: flex; justify-content: space-between; gap: 10px; font-family: var(--mono); font-size: 10px; color: var(--faint); margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--line-2); }
 .usage-axis .mid { text-align: center; }
 .usage-axis .now { color: var(--accent); }
-.usage-models { min-width: 0; }
+.usage-models { min-width: 0; overflow: hidden; }
 .usage-models > .lbl { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin-bottom: 11px; }
 .model-list { display: flex; flex-direction: column; gap: 3px; }
-.model-row { display: flex; flex-direction: column; gap: 5px; width: 100%; text-align: left; padding: 7px 9px; margin: 0 -9px; border-radius: 9px; }
+/* No negative margin. It was `margin: 0 -9px` to let the hover background bleed
+   to the card's edge, but a row is inside a grid cell inside the band's padding,
+   so it bled PAST the band and the model names and token counts sat outside the
+   container. The hover tint is one row-width narrower now; the writing stays in. */
+.model-row { display: flex; flex-direction: column; gap: 5px; width: 100%; max-width: 100%; box-sizing: border-box; text-align: left; padding: 7px 9px; border-radius: 9px; overflow: hidden; }
 .model-row:hover { background: var(--panel); }
 .model-row.on { background: var(--accent-tint); }
 .model-row .line { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
 .model-row .chev { flex: none; font-size: 10px; color: var(--faint); }
 .model-row .name { flex: 1; min-width: 0; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.model-row .n { flex: none; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.model-row .n { flex: none; font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; }
 .model-row .track { display: block; height: 5px; border-radius: 999px; background: var(--panel); overflow: hidden; }
 .model-row.on .track { background: var(--card); }
 .model-row .fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
@@ -3295,8 +3299,10 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 }
 
 /* ---------- #165 to-top button ---------- */
+/* Sits ABOVE the running-sessions pill (.term-presence, bottom: 18px), not on
+   top of it — both are fixed to the same corner. */
 .totop {
-  position: fixed; bottom: 28px; right: 24px; z-index: 50;
+  position: fixed; bottom: 70px; right: 18px; z-index: 50;
   display: inline-flex; align-items: center; gap: 5px;
   background: var(--surface); border: 1px solid var(--keyline); border-radius: 999px;
   padding: 7px 14px; font-size: 12px; font-weight: 600; color: var(--muted);
@@ -6876,4 +6882,37 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 @media (max-width: 700px) {
   .rt-lanes { max-height: 420px; }
   .rt-cal { grid-template-columns: 1fr; }
+}
+
+/* ---- the Overview hero: one full-width band, collapsible ------------------
+   It replaced a two-column card whose left column was the summary and whose
+   right column was two buttons. The summary is the headline of this page and
+   was reading in a gutter; the buttons are one button now (Export brief moved
+   out, and Jump back in goes to the Roadmap). */
+.ov-hero {
+  background: var(--resume); border: 1px solid var(--resume-border);
+  border-radius: 18px; margin-bottom: 16px; overflow: hidden;
+}
+.ov-hero .hero-bar {
+  display: flex; align-items: baseline; gap: 12px; width: 100%; text-align: left;
+  padding: 16px 24px; flex-wrap: wrap;
+}
+.ov-hero.shut .hero-bar { padding-bottom: 4px; }
+.ov-hero .hero-bar:hover .hero-name { color: var(--accent-deep); }
+.ov-hero .hero-bar .chev { flex: none; font-size: 11px; color: var(--resume-when); align-self: center; }
+.ov-hero .hero-name { font-family: var(--disp); font-size: 22px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+.ov-hero .hero-when { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--resume-when); white-space: nowrap; }
+.ov-hero .hero-body { padding: 2px 24px 20px; }
+.ov-hero .hero-summary { max-width: 86ch; margin-top: 12px; }
+.ov-hero .hero-acts { margin-top: 16px; }
+/* Collapsed is a one-line taste of the summary, not a blank bar: a fold you
+   have to open to find out whether it was worth opening is not a fold. */
+.ov-hero .hero-shut {
+  padding: 0 24px 16px 46px; font-size: 13.5px; line-height: 1.5; color: var(--body-2);
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+}
+@media (max-width: 700px) {
+  .ov-hero .hero-bar, .ov-hero .hero-body { padding-left: 16px; padding-right: 16px; }
+  .ov-hero .hero-when { margin-left: 0; width: 100%; }
+  .ov-hero .hero-shut { padding-left: 16px; }
 }

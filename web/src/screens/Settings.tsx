@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Settings as SettingsData, CheckpointDetail, AuthDevice } from '../types';
+import type { Settings as SettingsData, CheckpointDetail, AuthDevice, Project } from '../types';
 import {
   getSettings, patchSettings, getToken, clearToken, verifyToken, AuthError,
   getThemePref, setThemePref, type ThemePref,
   getDeletedProjects, restoreProject, purgeProject, type DeletedProject,
+  getProjects, deleteProject,
   getAuthDevices, revokeAuthDevice,
   getTermSessionPrefs, setTermSessionPrefs, type TermSessionPrefs,
   getAutoRefreshSeconds, setAutoRefreshSeconds, AUTO_REFRESH_CHOICES, type AutoRefreshSeconds,
@@ -98,6 +99,23 @@ export function Settings({ initialTab = 'settings', initialRoom }: {
   const saveRefresh = (s: AutoRefreshSeconds) => { setRefreshSecs(s); setAutoRefreshSeconds(s); };
   const [deleted, setDeleted] = useState<DeletedProject[]>([]);
   const [purgeArmed, setPurgeArmed] = useState<string | null>(null);
+  // Deleting a project moved OFF the project page and to here. A destructive,
+  // once-a-year action does not belong at the foot of a screen you scroll past
+  // every day — it was one mis-click under the thing you read most.
+  const [live, setLive] = useState<Project[]>([]);
+  const [deleteArmed, setDeleteArmed] = useState<string | null>(null);
+  const loadProjects = () => {
+    getProjects()
+      .then(setLive)
+      .catch((e) => { if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not read the projects.'); });
+  };
+  useEffect(loadProjects, []);
+  const remove = (slug: string) => {
+    setDeleteArmed(null);
+    deleteProject(slug)
+      .then(() => { loadProjects(); return getDeletedProjects().then(setDeleted); })
+      .catch((e) => { if (!(e instanceof AuthError)) setError((e as Error)?.message || 'Could not delete.'); });
+  };
   const [pin, setPin] = useState('');
   const [pinMsg, setPinMsg] = useState('');
   const [devices, setDevices] = useState<AuthDevice[]>([]);
@@ -551,6 +569,37 @@ export function Settings({ initialTab = 'settings', initialRoom }: {
                 </div>
               </div>
             </section>
+
+            {/* ---- Projects: the only place a project can be deleted ---- */}
+            {live.length > 0 && (
+              <section className="set-card">
+                <div className="set-card-head">
+                  <div className="set-card-title">Projects</div>
+                  <div className="set-card-sub">
+                    Deleting is SOFT — everything is kept and the project moves to the bin below,
+                    where it can be restored or removed for good.
+                  </div>
+                </div>
+                {live.map((p) => (
+                  <div className="set-row" key={p.id}>
+                    <div className="set-row-text">
+                      <div className="set-row-label">{p.name}</div>
+                      <div className="set-row-hint">{p.metaLine}</div>
+                    </div>
+                    <div className="set-row-actions">
+                      {deleteArmed === p.id ? (
+                        <>
+                          <button className="btn-cancel" onClick={() => setDeleteArmed(null)}>Cancel</button>
+                          <button className="btn-danger" onClick={() => remove(p.id)}>Really delete?</button>
+                        </>
+                      ) : (
+                        <button className="btn-cancel" onClick={() => setDeleteArmed(p.id)}>Delete</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </section>
+            )}
 
             {/* ---- Deleted projects (the soft-delete bin) ---- */}
             {deleted.length > 0 && (

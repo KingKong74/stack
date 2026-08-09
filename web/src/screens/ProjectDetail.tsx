@@ -6,7 +6,7 @@ import {
   deleteNote, createFuture, patchFuture, deleteFuture, getFutures,
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
   runAudit, getAuditPrompt, type AuditResult,
-  patchProject, deleteProject, createShareLink, deleteShareLink,
+  patchProject, createShareLink, deleteShareLink,
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, convergeFutures,
   type ConvergeDraft, assistRoadmapItem, proposeOrbits, restateFuture,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
@@ -15,7 +15,6 @@ import {
 } from '../store';
 import { go, hrefTo } from '../lib/route';
 import { planWorkbenchOpen } from '../lib/workbenchOpen';
-import { ExportBriefModal } from '../components/ExportBriefModal';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Quality } from '../detail/Quality';
 import { RoadmapTab } from '../detail/RoadmapTab';
@@ -199,8 +198,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   // star is UN-starred, not when it's deleted).
   const [promotedFuture, setPromotedFuture] = useState<number[] | null>(null);
   const [pendingFuture, setPendingFuture] = useState<number[] | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
   const [checksBusy, setChecksBusy] = useState(false);
   const [auditBusy, setAuditBusy] = useState(false);
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
@@ -841,9 +838,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       setData({ ...data, project: { ...project, automode: updated.automode } });
     });
 
-  const removeProject = () =>
-    guard(async () => { await deleteProject(slug); go.dashboard(); });
-
   // ---- public showcase link ----
   const shareUrl = data.shareToken
     ? `${window.location.origin}/#/share/${encodeURIComponent(slug)}/${encodeURIComponent(data.shareToken)}`
@@ -956,7 +950,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             roadmap={roadmap} futures={futures} bugs={bugs}
             cadence={data.cadence} lastPushAt={data.lastPushAt}
             pulse={pulse} pulseError={pulseError}
-            onViewAll={viewAll} onExport={() => setExportOpen(true)} onJumpBack={() => go.terminal(slug, undefined, true)}
+            onViewAll={viewAll} onJumpBack={() => setTab('roadmap')}
             onChangeDirectives={changeDirectives}
             onReviewKeep={reviewKeep} onReviewDismiss={reviewDismiss} onSaveDeploy={saveDeploy}
             onSaveStack={saveStack} />
@@ -1037,9 +1031,9 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           <Activity activity={activity} highlightRef={highlightRef} linkedBugId={linkedBugId} onClear={() => setHighlightRef(null)} />
         )}
 
-        <div className="danger-zone">
-          <button className="delete-project" onClick={() => setConfirmDelete(true)}>Delete this project</button>
-        </div>
+        {/* Deleting a project lives in Settings → Projects now. A destructive,
+            once-a-year action does not belong at the foot of the screen you
+            scroll past every day. */}
       </div>
 
       {bugModal.open && (
@@ -1165,27 +1159,12 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             onCancel={() => setPromotedFuture(null)} />
         );
       })()}
-      {exportOpen && (
-        <ExportBriefModal projectName={project.name} onClose={() => setExportOpen(false)}
-          loadInput={async () => ({
-            project, currentPhase: data.currentPhase, blockers: data.blockers,
-            directives: data.directives, activity, bugs, roadmap,
-          })} />
-      )}
       {promotedNote && (
         <ConfirmModal
           title={promotedNote.kind === 'bug' ? 'Promoted to a bug' : 'Promoted to a roadmap item'}
           body="Keep the original note, or delete it now that it's tracked elsewhere?"
           confirmLabel="Delete note" cancelLabel="Keep note" danger
           onConfirm={deletePromotedNote} onCancel={keepPromotedNote} />
-      )}
-      {confirmDelete && (
-        <ConfirmModal
-          title="Delete project?"
-          body={<>Delete <b>{project.name}</b> from Stack. Everything is kept — you can
-            restore it (or delete it forever) from Settings → Deleted projects.</>}
-          confirmLabel="Delete project" cancelLabel="Cancel" danger
-          onConfirm={removeProject} onCancel={() => setConfirmDelete(false)} />
       )}
     </div>
   );

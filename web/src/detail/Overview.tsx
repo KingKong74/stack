@@ -978,22 +978,15 @@ function LandedRow({ a }: { a: Activity }) {
   );
 }
 
-function BackToTop() {
-  const toTop = () => {
-    const doc = document.scrollingElement || document.documentElement;
-    doc.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-  return (
-    <button className="to-top" onClick={toTop} title="Back to top" aria-label="Back to top">↑</button>
-  );
-}
+// There is no BackToTop here: App.tsx already renders one app-wide (<ToTop/>),
+// and a second copy on this tab put two of them in the same corner.
 
 // ---------------------------------------------------------------------------
 
 export function Overview({
   project, phase, activity, directives, reviewQueue, roadmap, futures, bugs, cadence, lastPushAt,
   pulse, pulseError,
-  onViewAll, onExport, onChangeDirectives, onReviewKeep, onReviewDismiss, onSaveDeploy, onSaveStack,
+  onViewAll, onChangeDirectives, onReviewKeep, onReviewDismiss, onSaveDeploy, onSaveStack,
   keepResumeCard = true, onJumpBack,
 }: {
   project: Project; phase: string;
@@ -1002,12 +995,16 @@ export function Overview({
   cadence: { day: string; n: number }[]; lastPushAt: string | null;
   /** null = the second trip has not answered yet; see `pulseError` for a failure. */
   pulse: ProjectPulse | null; pulseError: string;
-  onViewAll: () => void; onExport: () => void; onChangeDirectives: (next: string[]) => void;
+  onViewAll: () => void; onChangeDirectives: (next: string[]) => void;
   onReviewKeep: (e: ReviewEntry) => void; onReviewDismiss: (e: ReviewEntry) => void;
   onSaveDeploy: (patch: DeployPatch) => void; onSaveStack: (next: string[]) => void;
   keepResumeCard?: boolean;
   onJumpBack?: () => void;
 }) {
+  // The checkpoint opens expanded and remembers nothing across mounts: it is the
+  // page's headline, and a project you have not looked at in a fortnight is
+  // exactly the one whose fold you would not remember collapsing.
+  const [heroOpen, setHeroOpen] = useState(true);
   const r = project.resume;
   const slug = project.id;
   const stages = buildSpine(roadmap, futures, slug);
@@ -1030,10 +1027,17 @@ export function Overview({
     <div className="ov">
       {/* ---- the hero: where this project stands, in its own words ---- */}
       {keepResumeCard && (
-        <div className="deck-hero ov-hero">
-          <div className="hero-main">
-            <div className="hero-eyebrow">
-              <span className="resume-ico">↩</span>
+        <div className={`ov-hero${heroOpen ? '' : ' shut'}`}>
+          {/* One full-width block, not a two-column card: the checkpoint IS the
+              headline of this page, and boxing it beside a button column left
+              the summary reading in a narrow gutter. */}
+          <button className="hero-bar" onClick={() => setHeroOpen(!heroOpen)}
+            aria-expanded={heroOpen}
+            title={heroOpen ? 'Collapse the checkpoint' : 'Expand the checkpoint'}>
+            <span className="chev">{heroOpen ? '▾' : '▸'}</span>
+            <span className="hero-name">Where you left off</span>
+            {phase && <span className="hero-phase">{phase}</span>}
+            <span className="hero-when">
               {/* `when` is the LAST PUSH, which is only when this card was
                   updated if that push authored a checkpoint. When it didn't,
                   say when the content was actually written. */}
@@ -1041,37 +1045,41 @@ export function Overview({
                 ? `checkpoint ${r.since.authoredWhen} · ${r.since.count} push${r.since.count === 1 ? '' : 'es'} since`
                 : `updated ${r.when} · after push ${r.ref}`)
                 : 'nothing captured yet'}
-            </div>
-            <div className="hero-row">
-              <div className="hero-name">Where you left off</div>
-              {phase && <div className="hero-phase">{phase}</div>}
-            </div>
-            {/* What has landed SINCE the checkpoint that wrote the summary
-                below — a stale card has to read as stale, or you act on an
-                account of the project that three pushes have already overtaken. */}
-            {r && <ResumeSinceStrip since={r.since} slug={slug} />}
-            <div className="hero-summary">
-              {r ? r.summary
-                : `Nothing captured yet. After your first push, a summary of where you left off lands here through the ${PRODUCT_NAME} API.`}
-            </div>
-            {r && r.nextUp.length > 0 && (
-              <div className="hero-next">
-                {r.nextUp.slice(0, 3).map((t, i) => (
-                  <div className="hero-step" key={i}><span className="mk arrow">→</span><span>{t}</span></div>
-                ))}
+            </span>
+          </button>
+
+          {heroOpen ? (
+            <div className="hero-body">
+              {/* What has landed SINCE the checkpoint that wrote the summary
+                  below — a stale card has to read as stale, or you act on an
+                  account of the project that three pushes have already overtaken. */}
+              {r && <ResumeSinceStrip since={r.since} slug={slug} />}
+              <div className="hero-summary">
+                {r ? r.summary
+                  : `Nothing captured yet. After your first push, a summary of where you left off lands here through the ${PRODUCT_NAME} API.`}
               </div>
-            )}
-          </div>
-          <div className="hero-side">
-            {onJumpBack && (
-              <button className="btn-accent hero-continue" onClick={onJumpBack}
-                title="Open a Claude session in this project with a debrief of where things stand">
-                Jump back in ↗
-              </button>
-            )}
-            <button className="hero-export" onClick={onExport}
-              title="Download a markdown brief for starting back into this project">Export brief ↓</button>
-          </div>
+              {r && r.nextUp.length > 0 && (
+                <div className="hero-next">
+                  {r.nextUp.slice(0, 3).map((t, i) => (
+                    <div className="hero-step" key={i}><span className="mk arrow">→</span><span>{t}</span></div>
+                  ))}
+                </div>
+              )}
+              {onJumpBack && (
+                <div className="hero-acts">
+                  <button className="btn-accent" onClick={onJumpBack}
+                    title="Open the Roadmap — what is planned, scheduled and next">
+                    Jump back in ↗
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            // Collapsed still says something: a one-line clamp of the summary,
+            // so the fold is a fold and not a blank bar you have to open to
+            // learn whether it was worth opening.
+            <div className="hero-shut">{r ? r.summary : 'Nothing captured yet.'}</div>
+          )}
         </div>
       )}
 
@@ -1340,7 +1348,6 @@ export function Overview({
       </div>
 
       <ConfigStrip project={project} onSaveDeploy={onSaveDeploy} onSaveStack={onSaveStack} />
-      <BackToTop />
     </div>
   );
 }
