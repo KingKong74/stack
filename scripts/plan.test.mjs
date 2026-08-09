@@ -25,7 +25,7 @@ module.registerHooks({
 const planUrl = new URL('../web/src/lib/plan.ts', import.meta.url);
 const {
   SCHED_WEEKS, CYCLE_WEEKS, NOW_WEEK, scaleCols, slipOf, layoutLane, weekAt, scopeTotals,
-  listKeyOf, proposeSchedule, proposeCompact, proposeTrim,
+  listKeyOf, proposeSchedule, proposeCompact, proposeTrim, inCycle,
   nowLeft, whatsNext, calendarMonths, weekDate, fmtDate,
 } = await import(planUrl.href);
 
@@ -331,4 +331,47 @@ test('the calendar marks the now week exactly once', () => {
   const nows = months.flatMap((m) => m.weeks).filter((w) => w.now);
   assert.equal(nows.length, 1);
   assert.equal(nows[0].week, NOW_WEEK);
+});
+
+// --- in the cycle ------------------------------------------------------------
+// `inCycle` is what the Roadmap tab's area chips count, what decides whether an
+// area chip is hidden, and what the Tiers board ranks. Three surfaces, one
+// predicate — these pin the three exclusions and, just as importantly, the two
+// states that are NOT exclusions.
+
+test('the three exclusions: archived, parked and a Won\'t', () => {
+  assert.equal(inCycle(item()), true);
+  assert.equal(inCycle(item({ archived: true })), false, 'off the board, but recoverable');
+  assert.equal(inCycle(item({ skipped: true })), false, 'cut from this cycle');
+  assert.equal(inCycle(item({ bucket: 'wont' })), false, 'out of the feature entirely');
+});
+
+test('a DONE row is still in the cycle — it is the cycle’s work, finished', () => {
+  // Excluding it would empty an area's chip the moment its work shipped, and
+  // take the Timeline lane that still draws its bars with it.
+  assert.equal(inCycle(item({ done: true })), true);
+  assert.equal(inCycle(item({ done: true, bucket: 'must' })), true);
+});
+
+test('a CLAIMED row is in the cycle — being worked on is not being excluded', () => {
+  assert.equal(inCycle(item({ claimedBy: 'feat/1-x' })), true);
+});
+
+test('the exclusions compose — any one of them is enough', () => {
+  assert.equal(inCycle(item({ bucket: 'must', archived: true })), false);
+  assert.equal(inCycle(item({ bucket: 'could', skipped: true })), false);
+  assert.equal(inCycle(item({ bucket: 'wont', done: true })), false);
+});
+
+test('inCycle agrees with scopeTotals about what is committed', () => {
+  // The chips and the scope drawer must never describe different populations.
+  const kids = [
+    item({ bucket: 'must', estimate: 2 }),
+    item({ bucket: 'could', estimate: 1 }),
+    item({ bucket: 'could', estimate: 1, skipped: true }),   // deferred
+    item({ bucket: 'wont', estimate: 3 }),                   // out
+  ];
+  const totals = scopeTotals(kids);
+  const summed = kids.filter(inCycle).reduce((n, k) => n + (k.estimate ?? 0), 0);
+  assert.equal(summed, totals.committed);
 });

@@ -113,6 +113,15 @@ export function RoadmapTimeline({
 
   // --- dragging a bar ------------------------------------------------------
 
+  // A bar's press is DOUBLE-DETECTED HERE rather than with onDoubleClick,
+  // because startDrag calls preventDefault() on pointerdown — which is what
+  // stops a drag selecting text, and also suppresses the synthesised click and
+  // dblclick the browser would otherwise fire. An onDoubleClick on the bar
+  // silently never runs. Two presses on the same bar inside this window, with
+  // no drag between them, open the item.
+  const DOUBLE_MS = 400;
+  const lastPress = useRef<{ id: number; at: number } | null>(null);
+
   const startDrag = (it: RoadmapItem, mode: 'move' | 'resize') => (e: React.PointerEvent) => {
     if (!it.sched || trackW <= 0) return;
     e.preventDefault();
@@ -134,7 +143,19 @@ export function RoadmapTimeline({
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      if (!moved) { setLive(null); onSelect(it.id); return; }
+      if (!moved) {
+        setLive(null);
+        const now = Date.now();
+        const prev = lastPress.current;
+        if (prev && prev.id === it.id && now - prev.at < DOUBLE_MS) {
+          lastPress.current = null;
+          onOpen(it);
+        } else {
+          lastPress.current = { id: it.id, at: now };
+          onSelect(it.id);
+        }
+        return;
+      }
       // Optimistic until the server says otherwise. On a rejection the bar
       // returns to where it was — a bar left at the pointer would be showing a
       // schedule nobody has.
@@ -232,7 +253,7 @@ export function RoadmapTimeline({
             return (
               <Lane key={a.name} name={a.name} dot={a.dot} lane={lane} cols={cols}
                 selectedId={selectedId} proposed={proposed}
-                onDrop={dropOnLane(a.name)} onSelect={onSelect}
+                onDrop={dropOnLane(a.name)} onSelect={onSelect} onOpen={onOpen}
                 onDown={startDrag} onUnschedule={(it) => {
                   onSchedule(it, null).catch((e2) => setErr(e2?.message || 'Could not unschedule.'));
                 }} />
@@ -242,7 +263,7 @@ export function RoadmapTimeline({
           {orphans.length > 0 && (
             <Lane name="Unassigned" dot="" lane={layoutLane('', orphans.map(withLive), trackW)}
               cols={cols} selectedId={selectedId} proposed={proposed}
-              onDrop={dropOnLane('')} onSelect={onSelect} onDown={startDrag}
+              onDrop={dropOnLane('')} onSelect={onSelect} onOpen={onOpen} onDown={startDrag}
               onUnschedule={(it) => {
                 onSchedule(it, null).catch((e2) => setErr(e2?.message || 'Could not unschedule.'));
               }} />
@@ -377,7 +398,7 @@ export function RoadmapTimeline({
 
 // One area lane. Split out so a lane re-renders on its own during a drag.
 function Lane({
-  name, dot, lane, cols, selectedId, proposed, onDrop, onSelect, onDown, onUnschedule,
+  name, dot, lane, cols, selectedId, proposed, onDrop, onSelect, onOpen, onDown, onUnschedule,
 }: {
   name: string; dot: string;
   lane: ReturnType<typeof layoutLane>;
@@ -386,6 +407,7 @@ function Lane({
   proposed?: Map<number, SchedSpan>;
   onDrop: (e: React.DragEvent) => void;
   onSelect: (id: number) => void;
+  onOpen: (it: RoadmapItem) => void;
   onDown: (it: RoadmapItem, mode: 'move' | 'resize') => (e: React.PointerEvent) => void;
   onUnschedule: (it: RoadmapItem) => void;
 }) {
@@ -425,8 +447,11 @@ function Lane({
               <div className={`rt-bar ${state}${sel ? ' sel' : ''}`}
                 style={{ top: 10 + bar.row * 28, left: `${bar.left}%`, width: `${bar.width}%` }}
                 onPointerDown={onDown(it, 'move')}
-                onClick={() => onSelect(it.id)}
-                title={`${it.title} — drag to reschedule, click to open its scope`}>
+                // No onClick/onDoubleClick: preventDefault in onDown suppresses
+                // both. Selecting and opening are decided in the pointer flow
+                // above, which is the only place that can tell a press from a
+                // drag anyway.
+                title={`${it.title} — drag to reschedule, click for its scope, double-click to open`}>
                 {bar.inside && <span className="t">{it.title}</span>}
               </div>
               <div className="rt-handle" title="Drag to change duration"
@@ -437,7 +462,8 @@ function Lane({
                   style={bar.before
                     ? { top: 10 + bar.row * 28, right: `${100 - bar.left}%` }
                     : { top: 10 + bar.row * 28, left: `${bar.left + bar.width}%` }}
-                  onClick={() => onSelect(it.id)}>{it.title}</button>
+                  onClick={() => onSelect(it.id)}
+                  onDoubleClick={() => onOpen(it)}>{it.title}</button>
               )}
               {sel && (
                 <button className="rt-x" title="Send back to Unscheduled"

@@ -14,6 +14,8 @@
 //    and in-progress states, the branch claim — plus the v2 labels and schedule.
 //    A tag that vanished in the move would be a property the owner could no
 //    longer see, on rows they are deciding about.
+//  • DOUBLE-CLICK A ROW TO OPEN IT — see the handler; the ✎ button stays, since
+//    a shortcut nobody can see is not a control.
 //  • A LIVE CLAIM IS READ-ONLY. Same rule the Board had (BUG-2): while a real
 //    session is on that branch the row dims and its edit controls go, because
 //    an edit would race the worker. A STALE claim keeps the ⚑ chip — it is
@@ -118,6 +120,11 @@ export function RoadmapScope({
                     + `${dragId === it.id ? ' drag' : ''}${over === String(it.id) ? ' drop-before' : ''}`
                     + `${highlightId === String(it.id) ? ' hl' : ''}`}
                     key={it.id} data-hl={it.id}
+                    // Double-click opens the item, the same gesture as the
+                    // Timeline's bars and every card on the Plan boards. The ✎
+                    // button stays: a discoverable control and a shortcut are
+                    // not the same thing, and only one of them is findable.
+                    onDoubleClick={() => onEdit(it)}
                     draggable={!working}
                     onDragStart={(e) => {
                       if (working) return;

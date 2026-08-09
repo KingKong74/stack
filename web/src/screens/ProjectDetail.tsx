@@ -449,43 +449,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: bucket } });
     });
 
-  // #319 — the refinement is editable on the card itself, not just from the
-  // Review room's ✎ Refine. Same PATCH either way; the row the server hands back
-  // replaces the local one, so a cleared note simply drops the block.
-  // Deliberately NOT wrapped in guard(...) like setTierRoad — the card shows the
-  // failure itself, so swallowing the rejection into the page-level banner would
-  // leave the editor looking as if it saved.
-  const saveRefineNote = async (item: RoadmapItem, text: string) => {
-    const updated = await patchRoadmapItem(slug, item.id, { refine_note: text });
-    setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
-  };
-
-  // #169 — area management: clear or reassign the area tag across all affected
-  // items via the normal PATCH route. A client-side loop is fine at board scale.
-  const deleteArea = async (_area: string, itemIds: number[]) => {
-    const allItems = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
-    const road = { ...roadmap };
-    for (const id of itemIds) {
-      const item = allItems.find((it) => it.id === id);
-      if (!item) continue;
-      const updated = await patchRoadmapItem(slug, id, { area: '' });
-      road[item.bucket] = road[item.bucket].map((it) => (it.id === id ? updated : it));
-    }
-    setData({ ...data, roadmap: road });
-  };
-
-  const renameArea = async (_from: string, to: string, itemIds: number[]) => {
-    const allItems = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
-    const road = { ...roadmap };
-    for (const id of itemIds) {
-      const item = allItems.find((it) => it.id === id);
-      if (!item) continue;
-      const updated = await patchRoadmapItem(slug, id, { area: to });
-      road[item.bucket] = road[item.bucket].map((it) => (it.id === id ? updated : it));
-    }
-    setData({ ...data, roadmap: road });
-  };
-
   // Notes are created and edited on the Workbench now, through its own route
   // (which writes the note AND places its card in one transaction). What is
   // left here is the one path that still deletes a note from OUTSIDE the
@@ -973,9 +936,9 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             agent state itself, because its audit card has room to say who is
             off and this position does not. */}
         {tab === 'roadmap' && (
-          // RoadmapTab owns the view switch. The Tiers/Parked half is still the
-          // original component, handed through as `legacy` — which also carries
-          // the callbacks the Scope view inherited when the Board was retired.
+          // RoadmapTab owns the view switch and every board under it. `legacy`
+          // is the bag of callbacks that have to live up here because they open
+          // modals, navigate, or write through a path this screen owns.
           <RoadmapTab slug={slug} roadmap={roadmap} weekZero={project.weekZero}
             onItemChanged={replaceRoadItem} onItemAdded={addRoadItem}
             onOpenItem={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
@@ -995,15 +958,12 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
               onToggleSkip: toggleSkipRoad,
               onReorder: reorderRoad,
               onCleanup: agentCan(data.agents, 'curator', 'cleanup') ? openCleanup : undefined,
-              onDeleteArea: deleteArea,
-              onRenameArea: renameArea,
               onSendToTerminal: (brief: string) => {
                 // One-shot handoff — the terminal screen offers it as a paste.
                 try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the button just won't appear */ }
                 go.terminal(slug);
               },
               onSetTier: setTierRoad,
-              onRefineNote: saveRefineNote,
               onBranch: (it: RoadmapItem) => branchItem(it),
             }} />
         )}

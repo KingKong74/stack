@@ -16,6 +16,17 @@
 //
 // A proposal that would change nothing says so and offers no Apply. An empty
 // answer is a real answer here, exactly as it is for the ✎ Refine draft.
+//
+// THE PANEL FOLLOWS THE VIEW. Each action is arithmetic over ONE thing —
+// scheduling and gap-closing are about bars, trimming is about scope — and
+// offering "close the gaps on the timeline" while you are cutting a feature is
+// a button answering a question you did not ask. `ARRANGE_VIEWS` on each action
+// is what it applies to, and a view with none gets no panel at all rather than
+// an empty one. The Plan boards have no arithmetic to offer: a list, a tier and
+// a park are all decisions, and there is nothing to compute about them.
+//
+// It is COLLAPSED by default. This is a tool, not information, and three tall
+// buttons above the board is chrome in front of the thing you came to read.
 
 import type { RoadmapItem, SchedSpan } from '../types';
 import { proposeCompact, proposeSchedule, proposeTrim, type Proposal, type TrimProposal } from '../lib/plan';
@@ -34,9 +45,13 @@ export function proposedSpans(a: Arrangement | null): Map<number, SchedSpan> {
   return m;
 }
 
+/** Which view an action belongs to. */
+export type ArrangeView = 'timeline' | 'scope' | 'plan';
+
 export function RoadmapArrange({
-  items, selected, proposal, onPropose, onApply, onDiscard, busy,
+  view, items, selected, proposal, onPropose, onApply, onDiscard, busy, open, onToggle,
 }: {
+  view: ArrangeView;
   items: RoadmapItem[];
   selected: RoadmapItem | null;
   proposal: Arrangement | null;
@@ -44,14 +59,20 @@ export function RoadmapArrange({
   onApply: () => void;
   onDiscard: () => void;
   busy: boolean;
+  open: boolean;
+  onToggle: () => void;
 }) {
   const children = selected ? items.filter((i) => i.parentId === selected.id && !i.archived) : [];
 
-  const actions = [
+  const actions: {
+    key: string; name: string; note: string; views: ArrangeView[];
+    disabled?: boolean; run: () => void;
+  }[] = [
     {
       key: 'schedule',
       name: 'Schedule what is committed',
       note: 'Every unscheduled Must and Should onto its own area lane, after the last bar there.',
+      views: ['timeline'],
       run: () => {
         const p: Proposal = proposeSchedule(items);
         onPropose({ kind: 'schedule', summary: p.summary, moves: p.moves });
@@ -61,6 +82,7 @@ export function RoadmapArrange({
       key: 'compact',
       name: 'Close the gaps',
       note: 'Pull planned bars earlier so no lane sits idle. Finished work never moves.',
+      views: ['timeline'],
       run: () => {
         const p: Proposal = proposeCompact(items);
         onPropose({ kind: 'compact', summary: p.summary, moves: p.moves });
@@ -69,6 +91,9 @@ export function RoadmapArrange({
     {
       key: 'trim',
       name: 'Fit the cycle',
+      // Trim belongs to BOTH: it is a scope decision you take while looking at
+      // scope, and while looking at the bar whose length that scope sets.
+      views: ['timeline', 'scope'],
       note: selected
         ? `Defer Coulds, then Shoulds, until ${selected.title} fits. Musts are never cut.`
         : 'Select a bar on the timeline first — this one trims that feature’s scope.',
@@ -82,26 +107,39 @@ export function RoadmapArrange({
   ];
 
   const n = proposal ? arrangementCount(proposal) : 0;
+  const mine = actions.filter((a) => a.views.includes(view));
+
+  // Nothing to arrange here. Not an empty panel — a panel with no buttons reads
+  // as one that failed to load.
+  if (mine.length === 0) return null;
 
   return (
-    <div className="ra">
-      <div className="ra-head">
+    <div className={`ra${open ? ' open' : ''}`}>
+      <button className="ra-head" onClick={onToggle} aria-expanded={open}>
+        <span className="chev">{open ? '▾' : '▸'}</span>
         <span className="nm">Arrange</span>
         <span className="ra-hint">
-          Arithmetic over what is on the board — no model reads this, and nothing is saved until you apply it.
+          {open
+            ? 'Arithmetic over what is on the board — no model reads this, and nothing is saved until you apply it.'
+            : `${mine.length} action${mine.length === 1 ? '' : 's'} for this view`}
         </span>
-      </div>
+        {/* A proposal outlives a collapse, so the count comes with it — folding
+            the panel away must not look like discarding the diff. */}
+        {!open && n > 0 && <span className="ra-pending">{n} proposed</span>}
+      </button>
 
-      <div className="ra-actions">
-        {actions.map((a) => (
-          <button key={a.key} className="ra-action" disabled={!!a.disabled || busy} onClick={a.run}>
-            <span className="nm">{a.name}</span>
-            <span className="desc">{a.note}</span>
-          </button>
-        ))}
-      </div>
+      {open && (
+        <div className="ra-actions">
+          {mine.map((a) => (
+            <button key={a.key} className="ra-action" disabled={!!a.disabled || busy} onClick={a.run}>
+              <span className="nm">{a.name}</span>
+              <span className="desc">{a.note}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
-      {proposal && (
+      {open && proposal && (
         <div className={`ra-result${n ? ' actionable' : ''}`}>
           <span className="txt">{proposal.summary}</span>
           {n > 0 && (

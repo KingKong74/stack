@@ -287,6 +287,22 @@ export interface ScopeTotals {
 // reports weeks it did not save is worse than one that refuses.
 const IN_CYCLE = new Set(['must', 'should', 'could']);
 
+/**
+ * Is this row part of the cycle at all? The predicate behind `scopeTotals`'s
+ * committed/deferred split, exported because the area chips count with it too —
+ * and a chip counting a different population from the drawer beside it is two
+ * answers to one question.
+ *
+ * The three exclusions each mean something different and none of them is
+ * "deleted": ARCHIVED is off the board but recoverable, PARKED is cut from this
+ * cycle but still part of the feature, and a WON'T is out of the feature's
+ * scope entirely. A `done` row IS still in the cycle — it is the cycle's work,
+ * finished — and excluding it would empty an area's chip the moment its work
+ * shipped, taking the Timeline lane that still draws its bars with it.
+ */
+export const inCycle = (it: RoadmapItem): boolean =>
+  !it.archived && !it.skipped && IN_CYCLE.has(it.bucket);
+
 export function scopeTotals(children: RoadmapItem[], cycle = CYCLE_WEEKS): ScopeTotals {
   let committed = 0; let deferred = 0; let out = 0; let unsized = 0;
   for (const c of children) {

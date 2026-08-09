@@ -17,6 +17,14 @@
 //  • ARCHIVING IS NOT DELETING AND NOT PARKING. Three states, three meanings —
 //    see schema.sql. The archive strip is where the third one lives, and every
 //    row in it is one press from coming back.
+//  • A CLICK OPENS THE CARD, A DOUBLE-CLICK OPENS THE ITEM. The inline detail is
+//    for the two things you change constantly (labels and scope); everything
+//    else lives in the modal. A double-click toggles the detail twice on its way
+//    through, which lands it back where it started — harmless, and cheaper than
+//    a click-delay timer that would make every single click feel slow.
+//
+// Lists is one of THREE boards here; Tiers and Parked are in RoadmapBoards.tsx,
+// and the switcher between them is this view's own, not the tab's.
 
 import { useState } from 'react';
 import type { BoardArea, BoardList, Priority, RoadmapItem } from '../types';
@@ -115,7 +123,9 @@ export function RoadmapPlan({
               {cards.map((c) => (
                 <div className="rp-card" key={c.id} draggable
                   onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(c.id)); e.dataTransfer.effectAllowed = 'move'; }}
-                  onClick={() => setOpenCard(openCard === c.id ? null : c.id)}>
+                  onClick={() => setOpenCard(openCard === c.id ? null : c.id)}
+                  onDoubleClick={() => onOpen(c)}
+                  title="Click for labels and scope · double-click to open">
                   {c.labels.length > 0 && (
                     <div className="rp-stripes">
                       {labelsOf(c.labels).map((l) => (
