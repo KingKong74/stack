@@ -2,8 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
 import { q } from '../db.js';
 import {
-  slugify, oneOf, relativeTime, computeProgress, TINTS, PROJECT_STATUSES, MERGE_AUTONOMY,
-  PRESENCE_TTL_MINUTES,
+  slugify, oneOf, relativeTime, computeProgress, pushCadence, TINTS, PROJECT_STATUSES,
+  MERGE_AUTONOMY, PRESENCE_TTL_MINUTES,
 } from '../util.js';
 import {
   bugShape, groupRoadmap, noteShape, futureShape, checkShape, activityShape,
@@ -110,7 +110,7 @@ projects.get('/:slug', async (req, res) => {
   // #361 — the tab agents' live state rides the detail payload (one small read,
   // the same trip that already carries geminiReady).
   const tabAgents = await agentsForClient();
-  const [sessions, bugs, road, notes, futures, checks, weekly, live] = await Promise.all([
+  const [sessions, bugs, road, notes, futures, checks, weekly, cadence, live] = await Promise.all([
     q(
       // `authored` rides along for resumeSince(): which of these pushes actually
       // wrote the resume card, and what has landed since.
@@ -129,6 +129,17 @@ projects.get('/:slug', async (req, res) => {
         WHERE project_id = $1 AND created_at > now() - interval '7 days'`,
       [p.id]
     ),
+    // The Overview spine's cadence strip — pushes per UTC day for 28 days.
+    // An aggregate rather than a slice of the activity list above: that list is
+    // capped at 50 rows, and a busy fortnight fills 50 rows in three days, so
+    // counting it would draw an empty month for the projects that pushed most.
+    q(
+      `SELECT to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS d, count(*)::int AS n
+         FROM sessions
+        WHERE project_id = $1 AND created_at > now() - interval '28 days'
+        GROUP BY 1`,
+      [p.id]
+    ),
     // Live branches back the board's in-progress lock: a claim only dims/locks
     // its item while a session on that lane is actually alive (BUG-2).
     q(
@@ -143,6 +154,7 @@ projects.get('/:slug', async (req, res) => {
       progress: computeProgress(road.rows, bugs.rows),
       metaLine: metaLineFor(p.last_session_at),
       pushesThisWeek: weekly.rows[0].n,
+      cadence: pushCadence(cadence.rows),
       activity: sessions.rows.map(activityShape),
       bugs: bugs.rows.map(bugShape),
       roadmap: groupRoadmap(road.rows),

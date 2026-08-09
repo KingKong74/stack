@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Future, Severity, Priority, Bug, BugStatus, WorkbenchPhase } from '../types';
+import type { RoadmapItem, Future, Severity, Priority, Bug, BugStatus, WorkbenchPhase } from '../types';
 import {
   getProjectDetail, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
@@ -36,8 +36,6 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'workbench', label: 'Workbench' }, { key: 'activity', label: 'Activity' },
 ];
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
-
-const roadmapTotal = (r: RoadmapData) => r.must.length + r.should.length + r.could.length + r.wont.length;
 
 const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'futures', 'workbench', 'activity']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
@@ -227,15 +225,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       .map((f) => ({ kind: 'future' as const, key: String(f.id), title: f.title, meta: 'idea' })),
   ];
 
-  const openBugCount = bugs.filter((b) => b.status !== 'fixed').length;
   const openRoadCount = allRoadmap.filter((r) => !r.done).length;
   const unsortedFutures = futures.filter((f) => !f.alignment).length;
-  const fixingCount = bugs.filter((b) => b.status === 'fixing').length;
   const failingChecks = data.checks.filter((c) => c.lastStatus === 'fail').length;
   // The Quality tab's single badge (#278): red checks plus serious open bugs.
   const needsAttention = failingChecks
     + bugs.filter((b) => b.status !== 'fixed' && (b.severity === 'critical' || b.severity === 'high')).length;
-  const roadmapCount = roadmapTotal(roadmap);
   const linkedBugId = bugs.find((b) => b.linkRef === highlightRef)?.id ?? null;
 
   const guard = async (fn: () => Promise<void>) => {
@@ -922,7 +917,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {tab === 'overview' && (
           <Overview project={project} activity={activity} directives={data.directives}
             reviewQueue={reviewQueue} keepResumeCard={data.keepResumeCard}
-            openBugCount={openBugCount} fixingCount={fixingCount} roadmapCount={roadmapCount}
+            roadmap={roadmap} futures={futures} bugs={bugs}
+            cadence={data.cadence} lastPushAt={data.lastPushAt}
             onViewAll={viewAll} onExport={() => setExportOpen(true)} onJumpBack={() => go.terminal(slug, undefined, true)}
             onChangeDirectives={changeDirectives}
             onReviewKeep={reviewKeep} onReviewDismiss={reviewDismiss} onSaveDeploy={saveDeploy}

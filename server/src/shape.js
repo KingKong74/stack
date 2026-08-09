@@ -303,7 +303,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, agents, since }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, agents, since }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
@@ -340,6 +340,13 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, acti
     // What has pushed since the checkpoint that wrote the resume fields above
     // (null = the card is current). See resumeSince().
     resumeSince: since || null,
+    // The Overview spine's cadence strip: 28 UTC days, oldest first, zero-filled
+    // (util.pushCadence). Absent on an older server, which the client reads as
+    // "not measured" and renders as an absent strip — never as 28 quiet days.
+    cadence: cadence || [],
+    // When the last push actually landed, raw. The strip's "quiet for N days"
+    // needs a real stamp: `when` above is already a rendered phrase.
+    lastPushAt: p.last_session_at ? new Date(p.last_session_at).toISOString() : null,
     activity,
     bugs,
     roadmap,

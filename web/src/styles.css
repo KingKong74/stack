@@ -514,23 +514,159 @@ a.tab { display: inline-block; }
 .item .mk.tick { color: var(--green); margin-top: 1px; }
 .empty-soft { font-size: 13px; color: var(--faint); }
 
-/* ---------- project-scoped review queue (detail Overview) ---------- */
-.proj-review { background: var(--card); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 13px 17px; margin-bottom: 24px; }
-.proj-review-head { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
-.proj-review-head .title { font-family: var(--disp); font-size: 14.5px; font-weight: 600; color: var(--ink); }
-.proj-review-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
-.proj-review-row + .proj-review-row { border-top: 1px solid var(--line-2); }
-.proj-review-row .txt { flex: 1; font-size: 13.5px; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ==========================================================================
+   The Overview tab — design 4a, "queue depth, not a funnel".
+   The spine across the top, then a two-column body: the arithmetic on the
+   left, the things the spine sends you into on the right.
+   ========================================================================== */
 
-/* ---------- directives (the steer list) ---------- */
-.directives { background: var(--card); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 15px 17px; margin-bottom: 24px; }
-.directives-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.directives-head .left { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
-.directives-ico { color: var(--accent); font-size: 13px; }
-.directives-title { font-family: var(--disp); font-size: 14.5px; font-weight: 600; color: var(--ink); }
-.directives-sub { font-size: 11.5px; color: var(--muted); }
-.directives-add { font-size: 12.5px; font-weight: 600; color: var(--accent); white-space: nowrap; }
-.directives-add:hover { color: var(--accent-deep); }
+/* ---- the spine: five stages, each a doorway ---- */
+.spine { background: var(--card); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 20px; overflow: hidden; }
+.spine-head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 16px 20px 2px; }
+.spine-head .left { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.spine .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.spine .hint { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.spine-row { display: flex; align-items: stretch; padding: 6px 14px 16px; }
+.spine-cell { flex: 1; display: flex; align-items: stretch; min-width: 0; }
+.spine-link { flex: none; align-self: flex-start; padding-top: 92px; width: 26px; text-align: center; color: var(--fainter); font-size: 15px; }
+
+.spine-stage { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 11px; border-radius: 10px; border: 1px solid transparent; background: transparent; text-align: left; }
+.spine-stage:hover { background: var(--panel); }
+.spine-stage.blocked { background: var(--accent-tint); border-color: var(--accent-tint-border); }
+.spine-stage.blocked:hover { background: var(--accent-tint-deep); }
+.spine-plot { height: 112px; display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; }
+.spine-n { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.spine-n .n { font-family: var(--disp); font-size: 26px; line-height: 1; color: var(--ink); }
+.spine-n .flag { font-family: var(--mono); font-size: 10.5px; color: var(--accent-deep); }
+.spine-stage.blocked .spine-n .n { color: var(--accent-deep); }
+.spine-stage.landed .spine-n .n { color: var(--live); }
+.spine-bar { border-radius: 6px; background: var(--panel); border: 1px solid var(--line-2); }
+.spine-stage.blocked .spine-bar { background: var(--card); border-color: var(--accent-tint-border); border-top: 3px solid var(--accent); }
+.spine-stage.landed .spine-bar { background: var(--green-tint); border-color: var(--green-tint); border-bottom: 3px solid var(--live); }
+.spine-legend { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.spine-legend .label { font-size: 14px; font-weight: 600; color: var(--ink); }
+.spine-legend .sub,
+.spine-legend .to { font-family: var(--mono); font-size: 10.5px; }
+.spine-legend .sub { color: var(--muted); }
+.spine-stage.blocked .spine-legend .sub { color: var(--accent-deep); }
+.spine-legend .to { color: var(--accent); }
+
+.spine-foot { display: flex; align-items: center; gap: 14px; padding: 13px 20px; border-top: 1px solid var(--line); }
+.spine-foot.blocked { background: var(--accent-tint); border-top-color: var(--accent-tint-border); }
+.spine-foot .txt { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.5; color: var(--body-2); }
+.spine-foot button { flex: none; }
+
+/* ---- the two-column body ---- */
+.ov-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; margin-bottom: 24px; }
+.ov-main { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.ov-rail { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+/* ---- the progress ledger: the number, and the arithmetic under it ---- */
+.ledger { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 13px; }
+.ledger-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ledger-head .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.ledger-head .hint { font-family: var(--mono); font-size: 10.5px; color: var(--faint); text-align: right; }
+.ledger-figure { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.ledger-figure .pct { font-family: var(--disp); font-size: 42px; line-height: 1; letter-spacing: -0.01em; color: var(--ink); }
+.ledger-figure .says { flex: 1; min-width: 190px; font-size: 13.5px; line-height: 1.5; color: var(--body); }
+.ledger-bars { display: flex; flex-direction: column; gap: 9px; }
+.ledger-bar { display: flex; align-items: center; gap: 11px; }
+.ledger-bar .mk { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.ledger-bar .mk.must { background: var(--accent); }
+.ledger-bar .mk.should { background: var(--building); }
+.ledger-bar .name { flex: none; width: 92px; font-size: 13px; color: var(--body); }
+.ledger-bar .track { flex: 1; min-width: 0; height: 6px; border-radius: 3px; background: var(--panel); overflow: hidden; }
+.ledger-bar .fill { display: block; height: 100%; border-radius: 3px; }
+.ledger-bar .fill.must { background: var(--accent); }
+.ledger-bar .fill.should { background: var(--building); }
+.ledger-bar .count { flex: none; width: 66px; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.ledger-cap { display: flex; align-items: flex-start; gap: 9px; padding-top: 11px; border-top: 1px solid var(--line); font-size: 13px; line-height: 1.5; color: var(--body); }
+.ledger-cap .mk { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--critical); margin-top: 5px; }
+
+/* ---- cadence: 28 days of pushes. A zero day is a 2px rule, not nothing:
+       absent bars would read as a gap in the data rather than a quiet day. ---- */
+.cadence { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.cadence-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.cadence-head .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.cadence-head .hint { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.cadence-head .hint.warn { color: var(--accent-deep); }
+.cadence-bars { display: flex; align-items: flex-end; gap: 4px; height: 52px; }
+/* --keyline, not --panel: --panel sits a hair off the card in BOTH themes, and
+   on the dark ground the bars all but vanished. */
+.cadence-bars .cbar { flex: 1; min-width: 0; border-radius: 2px; background: var(--keyline); }
+.cadence-bars .cbar.none { background: var(--line-2); }
+.cadence-axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+
+/* ---- what landed lately: a river of pushes, one row each ---- */
+.landed { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.landed-head { display: flex; align-items: baseline; gap: 10px; padding: 15px 18px 12px; }
+.landed-head .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.landed-head .hint { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.landed-head .rail-link { margin-left: auto; }
+.landed-row { display: flex; gap: 12px; padding: 10px 18px; border-top: 1px solid var(--line); }
+.landed-row .hash { flex: none; width: 62px; font-family: var(--mono); font-size: 11px; color: var(--accent); padding-top: 2px; }
+.landed-row .when { flex: none; width: 50px; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--faint); padding-top: 2px; }
+/* Clamped, not truncated: the whole summary stays in the DOM for ⌘F and for a
+   screen reader, and the Activity tab is one click away for the full read. */
+.landed-row .txt {
+  flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; color: var(--body);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.landed-row .txt.none { color: var(--faint); font-style: italic; }
+
+/* ---- the rail ---- */
+.rail-panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.rail-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.rail-head .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.rail-count { font-family: var(--mono); font-size: 11px; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 20px; padding: 1px 8px; }
+.rail-link { font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
+.rail-link:hover { color: var(--accent-deep); }
+.rail-note { font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-top: 4px; }
+.rail-empty { font-size: 12.5px; line-height: 1.5; color: var(--faint); margin-top: 8px; }
+.rail-more { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); }
+.rail-list { display: flex; flex-direction: column; margin-top: 8px; }
+
+.rail-row { display: flex; align-items: flex-start; gap: 9px; padding: 7px 0; text-align: left; width: 100%; }
+.rail-row + .rail-row { border-top: 1px solid var(--line-2); }
+.rail-row:hover .txt { color: var(--accent-deep); }
+.rail-row .mk { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; }
+.rail-row .mk.must { background: var(--accent); }
+.rail-row .mk.should { background: var(--building); }
+.rail-row .txt { flex: 1; min-width: 0; font-size: 13px; line-height: 1.45; color: var(--body); }
+.rail-row .tier { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 6px; }
+
+.rail-review { display: flex; flex-direction: column; gap: 7px; padding: 9px 0; }
+.rail-review + .rail-review { border-top: 1px solid var(--line-2); }
+.rail-review .line { display: flex; align-items: baseline; gap: 8px; }
+.rail-review .txt { flex: 1; min-width: 0; font-size: 13px; line-height: 1.45; color: var(--body); }
+.rail-review .acts { display: flex; gap: 8px; }
+
+.rail-sev { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+.rail-sev .mk { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.rail-sev .mk.sev-critical { background: var(--critical); }
+.rail-sev .mk.sev-high { background: var(--accent); }
+.rail-sev .mk.sev-medium { background: var(--building); }
+.rail-sev .mk.sev-low { background: var(--paused); }
+.rail-sev .name { flex: 1; font-size: 13px; color: var(--body); text-transform: capitalize; }
+.rail-sev .n { font-family: var(--mono); font-size: 11px; color: var(--ink); }
+
+/* ---- config: twice-a-year settings, demoted to one quiet strip ---- */
+.config-strip { border: 1px solid var(--line); border-radius: 14px; padding: 12px 15px; display: flex; flex-direction: column; gap: 6px; }
+.config-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.config-head .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); }
+.config-edits { display: flex; gap: 10px; }
+.config-edits button { font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
+.config-edits button:hover { color: var(--accent-deep); }
+.config-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.config-line.dim { color: var(--faint); }
+.config-line .sep { color: var(--fainter); }
+.config-line .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.config-line .dot.building { background: var(--building); }
+.config-line .dot.paused,
+.config-line .dot.archived { background: var(--paused); }
+.config-link { font-family: var(--mono); font-size: 10.5px; color: var(--accent); text-align: left; padding: 0; }
+
+/* ---------- directives (the steer list — now a rail panel, 4a) ---------- */
 .directives-list { display: flex; flex-direction: column; margin-top: 10px; }
 .directive { display: flex; align-items: flex-start; gap: 9px; padding: 7px 0; }
 .directive + .directive { border-top: 1px solid var(--line-2); }
@@ -540,28 +676,16 @@ a.tab { display: inline-block; }
 .directive .x:hover { color: var(--critical); }
 .directive-composer { display: flex; gap: 8px; margin-top: 10px; }
 .directive-composer .field-input { flex: 1; }
-.directives-empty { font-size: 12.5px; color: var(--faint); margin-top: 8px; }
 
-/* ---------- stat panels ---------- */
+/* ---------- stat panels (the Dashboard + Mission Control still use these;
+     the Overview's own copies became the 4a rail) ---------- */
 .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 24px; }
 .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 17px; }
 .panel .lbl { margin-bottom: 12px; }
-.deploy-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.deploy-row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
-.deploy-row .dot.building { background: var(--building); }
-.deploy-row .dot.paused { background: var(--paused); }
-.deploy-row .dot.archived { background: var(--paused); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; }
 .panel-head .lbl { margin-bottom: 12px; }
-.panel-edit { color: var(--faint); font-size: 12px; margin-top: -6px; }
-.panel-edit:hover { color: var(--accent); }
 .deploy-edit { display: flex; flex-direction: column; gap: 8px; }
 .deploy-edit .row { display: flex; justify-content: flex-end; gap: 8px; }
-.deploy-link { padding: 0; text-align: left; }
-.deploy-row b { font-weight: 600; }
-.deploy-row .mono { color: var(--muted); font-size: 12px; }
-.deploy-meta { font-size: 12px; color: var(--muted); margin-top: 9px; }
-.deploy-link { font-size: 12px; color: var(--accent); margin-top: 12px; }
 .techchips { display: flex; flex-wrap: wrap; gap: 7px; }
 .techchip { font-family: var(--mono); font-size: 12px; background: var(--panel); border: 1px solid var(--line-2); padding: 4px 10px; border-radius: 7px; }
 .techchip.editable { display: inline-flex; align-items: center; gap: 6px; }
@@ -1391,6 +1515,20 @@ a.tab { display: inline-block; }
   .resume-cols { grid-template-columns: 1fr; gap: 18px; }
   .stats { grid-template-columns: 1fr; }
   .road-grid { grid-template-columns: 1fr 1fr; }
+  /* 4a's rail drops under the main column rather than squeezing: at this width
+     a 320px rail leaves the ledger's arithmetic too narrow to read. */
+  .ov-grid { grid-template-columns: minmax(0, 1fr); }
+}
+/* The spine is the one band that cannot simply reflow — five stages side by
+   side stop being comparable below ~700px. It becomes a scrollable strip with
+   the stages at a fixed width, so the shape survives; the phone layout (4b) is
+   a separate design and is not this. */
+@media (max-width: 700px) {
+  .spine-row { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .spine-row::-webkit-scrollbar { display: none; }
+  .spine-cell { flex: 0 0 auto; }
+  .spine-stage { width: 150px; }
+  .spine-foot { flex-direction: column; align-items: flex-start; }
 }
 @media (max-width: 640px) {
   .page, .page.detail { padding: 22px 16px 56px; }

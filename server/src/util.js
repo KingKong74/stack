@@ -177,3 +177,26 @@ export function computeProgress(roadmapItems, bugs) {
 
   return pct;
 }
+
+// The Overview spine's cadence strip: one bucket per day for the last `days`,
+// oldest first, zero-filled. Pure — takes the rows of a GROUP BY of pushes.
+//
+// Zero-filled HERE rather than in the browser because the buckets are UTC days
+// and the client's own idea of "today" is its local one: a device in Sydney
+// building its own 28 slots would land every push in the wrong bucket for the
+// first ten hours of each day. `today` is injected so this stays testable.
+//
+// A zero day and a day before the project existed look identical in the output
+// and must NOT read the same in the UI — the strip's job is to make a quiet
+// stretch visible, so the caller draws "no pushes yet" from the project's own
+// age, never from a run of zeroes here.
+export function pushCadence(rows, days = 28, today = new Date()) {
+  const byDay = new Map(rows.map((r) => [String(r.d), Number(r.n) || 0]));
+  const out = [];
+  const cursor = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const day = new Date(cursor - i * 86400000).toISOString().slice(0, 10);
+    out.push({ day, n: byDay.get(day) || 0 });
+  }
+  return out;
+}

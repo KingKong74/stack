@@ -1097,6 +1097,11 @@ export interface ProjectDetailData {
   agents: TabAgentState;   // #361 — which tab agent may act on this project's tabs, and which of its ops
   shareToken: string;
   liveBranches: string[];  // branches with a live session right now — backs the board's in-progress lock
+  // The Overview spine's cadence strip: 28 UTC days, oldest first, zero-filled
+  // server-side. EMPTY means an older server did not measure it — the strip is
+  // then absent, never drawn as 28 quiet days.
+  cadence: { day: string; n: number }[];
+  lastPushAt: string | null; // raw stamp behind "quiet for N days"; null = never pushed
 }
 
 export async function getProjectDetail(slug: string): Promise<ProjectDetailData> {
@@ -1104,6 +1109,7 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; futures?: Future[];
     checks?: Check[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
     auditContext?: string; staleItemDays?: number; geminiReady?: boolean; agents?: TabAgentState;
+    cadence?: { day: string; n: number }[]; lastPushAt?: string | null;
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
     project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
@@ -1123,6 +1129,8 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     agents: d.agents || {},
     shareToken: d.shareToken || '',
     liveBranches: d.liveBranches || [],
+    cadence: d.cadence || [],
+    lastPushAt: d.lastPushAt || null,
   };
 }
 
