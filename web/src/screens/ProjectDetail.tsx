@@ -430,14 +430,23 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   // the case a plain replace would get wrong: a PATCH that changed the item's
   // BUCKET has to move it between the grouped arrays, not just overwrite it in
   // the one it used to be in, or the card renders in its old lane until reload.
-  const replaceRoadItem = (updated: RoadmapItem) => {
+  // Replace a BATCH in one pass. This is a list rather than a single row
+  // because `roadmap` here is closed over from this render: calling the
+  // one-row version N times in a loop rebuilds from the same base every time
+  // and only the LAST write survives — a lane swept into the archive would put
+  // one card away and silently leave the rest. Callers that write several rows
+  // collect them and land them together.
+  const replaceRoadItems = (updated: RoadmapItem[]) => {
+    if (!updated.length) return;
+    const byId = new Map(updated.map((u) => [u.id, u]));
     const next: RoadmapData = { must: [], should: [], could: [], wont: [] };
     (['must', 'should', 'could', 'wont'] as Priority[]).forEach((b) => {
-      next[b] = roadmap[b].filter((it) => it.id !== updated.id);
+      next[b] = roadmap[b].filter((it) => !byId.has(it.id));
     });
-    next[updated.bucket] = [...next[updated.bucket], updated];
+    for (const u of updated) next[u.bucket] = [...next[u.bucket], u];
     setData({ ...data, roadmap: next });
   };
+  const replaceRoadItem = (updated: RoadmapItem) => replaceRoadItems([updated]);
   const addRoadItem = (created: RoadmapItem) => {
     setData({ ...data, roadmap: { ...roadmap, [created.bucket]: [...roadmap[created.bucket], created] } });
   };
@@ -940,7 +949,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           // is the bag of callbacks that have to live up here because they open
           // modals, navigate, or write through a path this screen owns.
           <RoadmapTab slug={slug} roadmap={roadmap} weekZero={project.weekZero}
-            onItemChanged={replaceRoadItem} onItemAdded={addRoadItem}
+            onItemChanged={replaceRoadItem} onItemsChanged={replaceRoadItems} onItemAdded={addRoadItem}
             onOpenItem={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
             legacy={{
               highlightId, liveBranches: data.liveBranches,

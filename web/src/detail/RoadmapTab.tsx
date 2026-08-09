@@ -101,13 +101,15 @@ export interface RoadmapTabProps {
   weekZero: string | null;
   /** Replace one item in the parent's copy after a write. */
   onItemChanged: (item: RoadmapItem) => void;
+  /** Replace SEVERAL at once. Not a convenience — see the note on `writeOnly`. */
+  onItemsChanged: (items: RoadmapItem[]) => void;
   onItemAdded: (item: RoadmapItem) => void;
   legacy: RoadmapLegacy;
   onOpenItem: (item: RoadmapItem) => void;
 }
 
 export function RoadmapTab({
-  slug, roadmap, weekZero, onItemChanged, onItemAdded, legacy, onOpenItem,
+  slug, roadmap, weekZero, onItemChanged, onItemsChanged, onItemAdded, legacy, onOpenItem,
 }: RoadmapTabProps) {
   // A deep link to an item lands on SCOPE, because that is where an item now
   // lives — the Board used to reveal it and the Board is gone. Without this a
@@ -151,6 +153,17 @@ export function RoadmapTab({
       return next;
     }, [slug, onItemChanged]);
 
+  // The same PATCH WITHOUT the push back. A MULTI-ROW write must collect its
+  // rows and hand them over together: the parent's replace closes over the
+  // board from its own render, so N pushes in a loop each rebuild from the same
+  // base and only the last one survives. That bug archived one card of four and
+  // moved one bar of six, and looked exactly like a server that had refused the
+  // rest.
+  const writeOnly = useCallback(
+    (item: RoadmapItem, patch: Parameters<typeof patchRoadmapItem>[2]) =>
+      patchRoadmapItem(slug, item.id, patch),
+    [slug]);
+
   const guard = (p: Promise<unknown>, what: string) =>
     p.catch((e) => { setErr((e as Error)?.message || `Could not ${what}.`); });
 
@@ -161,16 +174,17 @@ export function RoadmapTab({
   const applyProposal = async () => {
     if (!proposal) return;
     setBusy(true);
+    const landed: RoadmapItem[] = [];
     try {
       if (proposal.kind === 'trim') {
         for (const id of proposal.defer) {
           const it = items.find((x) => x.id === id);
-          if (it) await write(it, { skipped: true });
+          if (it) landed.push(await writeOnly(it, { skipped: true }));
         }
       } else {
         for (const mv of proposal.moves) {
           const it = items.find((x) => x.id === mv.id);
-          if (it) await write(it, { sched: mv.sched });
+          if (it) landed.push(await writeOnly(it, { sched: mv.sched }));
         }
       }
       setProposal(null);
@@ -180,6 +194,32 @@ export function RoadmapTab({
       // which ones landed.
       setErr(`${(e as Error)?.message || 'A change was rejected'} — the changes before it were applied.`);
     } finally {
+      // Whatever landed goes back in ONE pass, on the failure path too — the
+      // rows that were accepted are on the server either way, and a board that
+      // did not show them would be behind the truth.
+      onItemsChanged(landed);
+      setBusy(false);
+    }
+  };
+
+  // Sweep a lane into the archive. Sequential rather than parallel: these are
+  // ordinary PATCHes and a lane can hold thirty, and firing thirty at once at a
+  // single-container API to save a second is not a trade worth making.
+  //
+  // A PARTIAL failure is reported as one, exactly as applyProposal does — some
+  // cards moved, the board already shows which, and calling that "failed" would
+  // suggest none did.
+  const archiveMany = async (cards: RoadmapItem[]) => {
+    setBusy(true);
+    const landed: RoadmapItem[] = [];
+    try {
+      for (const it of cards) landed.push(await writeOnly(it, { archived: true }));
+    } catch (e) {
+      setErr(landed.length === 0
+        ? `${(e as Error)?.message || 'That was rejected'} — nothing was archived.`
+        : `${(e as Error)?.message || 'A change was rejected'} — ${landed.length} of ${cards.length} were archived.`);
+    } finally {
+      onItemsChanged(landed);
       setBusy(false);
     }
   };
@@ -378,6 +418,7 @@ export function RoadmapTab({
             guard(write(it, { labels: next }), 'change that card’s labels');
           }}
           onArchive={(it, archived) => { guard(write(it, { archived }), 'archive that card'); }}
+          onArchiveMany={(cards) => { void archiveMany(cards); }}
           onAddCard={(listKey, title) => {
             guard(
               createRoadmapItem(slug, { title, note: '', bucket: 'should', area: areaFilter || undefined })

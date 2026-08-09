@@ -16,7 +16,14 @@
 //    nothing can render.
 //  • ARCHIVING IS NOT DELETING AND NOT PARKING. Three states, three meanings —
 //    see schema.sql. The archive strip is where the third one lives, and every
-//    row in it is one press from coming back.
+//    row in it is one press from coming back — which is why "Archive all" on
+//    the Shipped lane is a two-press confirm and not a modal: reversible, but
+//    not so reversible that a misclick should be able to empty a lane.
+//  • AN ARCHIVED ROW REMEMBERS ITS LANE, and nothing had to be stored for that.
+//    Archiving changes `archived` and nothing else, so `listKeyOf` still
+//    resolves the column the card was sitting in. The strip names it, because
+//    "Threading" tells you nothing about whether it shipped or was abandoned in
+//    Planned — and Restore puts it back in exactly that column.
 //  • A CLICK OPENS THE CARD, A DOUBLE-CLICK OPENS THE ITEM. The inline detail is
 //    for the two things you change constantly (labels and scope); everything
 //    else lives in the modal. A double-click toggles the detail twice on its way
@@ -47,6 +54,8 @@ export interface PlanProps {
   onSetBucket: (item: RoadmapItem, bucket: Priority) => void;
   onToggleLabel: (item: RoadmapItem, labelId: string) => void;
   onArchive: (item: RoadmapItem, archived: boolean) => void;
+  /** Bulk archive, applied by the parent so a partial failure is reported once. */
+  onArchiveMany: (items: RoadmapItem[]) => void;
   onAddCard: (listKey: string, title: string) => void;
   onAddList: (name: string) => void;
   onOpen: (item: RoadmapItem) => void;
@@ -54,13 +63,14 @@ export interface PlanProps {
 
 export function RoadmapPlan({
   items, lists, areas, areaFilter, labelFilter, onSetLabelFilter,
-  onMoveToList, onSetBucket, onToggleLabel, onArchive, onAddCard, onAddList, onOpen,
+  onMoveToList, onSetBucket, onToggleLabel, onArchive, onArchiveMany, onAddCard, onAddList, onOpen,
 }: PlanProps) {
   const [openCard, setOpenCard] = useState<number | null>(null);
   const [composer, setComposer] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [listDraft, setListDraft] = useState<string | null>(null);
   const [showArchive, setShowArchive] = useState(false);
+  const [confirmSweep, setConfirmSweep] = useState('');
 
   const dotOf = (area: string) => areas.find((a) => a.name === area)?.dot || 'var(--line-3)';
 
@@ -69,6 +79,14 @@ export function RoadmapPlan({
     && (areaFilter === '' || i.area === areaFilter)
     && (labelFilter === '' || i.labels.includes(labelFilter)));
   const archived = items.filter((i) => i.archived);
+  // The column an archived card was sitting in. `listKeyOf` still answers,
+  // because archiving does not touch `listKey`, `done` or `claimedBy`. A key
+  // with no list left (its column was deleted) says so rather than rendering a
+  // blank — the row went somewhere, and "somewhere" is not nowhere.
+  const laneOf = (it: RoadmapItem) => {
+    const key = listKeyOf(it);
+    return lists.find((l) => l.key === key)?.name || 'a list since removed';
+  };
 
   const submit = (fn: (v: string) => void) => (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -98,6 +116,9 @@ export function RoadmapPlan({
             <div className="rp-archive-row" key={a.id}>
               <span className="dot" style={{ background: dotOf(a.area) }} />
               <span className="t">{a.title}</span>
+              <span className="lane" title="The list it was archived from — Restore puts it back there">
+                {laneOf(a)}
+              </span>
               <button className="rail-link" onClick={() => onArchive(a, false)}>Restore</button>
             </div>
           )) : <div className="rail-empty">Nothing archived yet.</div>}
@@ -118,6 +139,27 @@ export function RoadmapPlan({
               <div className="rp-col-head">
                 <span className="nm">{list.name}</span>
                 <span className="n">{cards.length}</span>
+                {/* Shipped is the one lane work PILES UP in — every other column
+                    is somewhere a card is passing through. The sweep archives
+                    exactly the cards ON SCREEN, so it can never touch rows the
+                    area or label filter is hiding: a bulk action whose reach is
+                    wider than its view is how you lose work you never saw. */}
+                {list.key === 'shipped' && cards.length > 0 && (
+                  confirmSweep === list.key ? (
+                    <span className="rp-sweep-confirm">
+                      <button className="go" onClick={() => { onArchiveMany(cards); setConfirmSweep(''); }}>
+                        Archive {cards.length}?
+                      </button>
+                      <button className="no" onClick={() => setConfirmSweep('')}>Cancel</button>
+                    </span>
+                  ) : (
+                    <button className="rp-sweep" onClick={() => setConfirmSweep(list.key)}
+                      title={`Archive the ${cards.length} card${cards.length === 1 ? '' : 's'} shown here${
+                        areaFilter || labelFilter ? ' — the filter is on, so only these' : ''}`}>
+                      Archive all
+                    </button>
+                  )
+                )}
               </div>
 
               {cards.map((c) => (
