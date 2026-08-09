@@ -490,17 +490,21 @@ a.tab { display: inline-block; }
 .modal-actions.split { justify-content: space-between; }
 .resume-summary { font-size: 15px; line-height: 1.65; color: var(--body-2); margin-bottom: 20px; }
 /* the "since that checkpoint" band — sits above the checkpoint content, because
-   the pushes that landed after it are the fresher fact (see ResumeSinceStrip) */
-.resume-since { border: 1px dashed var(--accent-tint-border); border-radius: 12px;
-  background: var(--accent-tint); padding: 12px 14px; margin-bottom: 18px; }
-.resume-since .rs-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+   the pushes that landed after it are the fresher fact (see ResumeSinceStrip).
+   Kept SMALL on purpose: it is a caveat on the thing below it, and it was
+   taking more height than the checkpoint it qualifies. */
+.resume-since { border: 1px dashed var(--accent-tint-border); border-radius: 10px;
+  background: var(--accent-tint); padding: 8px 12px; margin-bottom: 12px; }
+.resume-since .rs-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
 .resume-since .rs-lbl { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-deep); }
 .resume-since .rs-n { font-family: var(--mono); font-size: 11px; color: #a9947f; }
 .resume-since .rs-open { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--accent);
   border: 1px solid var(--accent-tint-border); border-radius: 7px; padding: 3px 8px; background: transparent; }
 .resume-since .rs-open:hover { background: var(--paper); color: var(--accent-deep); }
-.resume-since .rs-sum { font-size: 13.5px; line-height: 1.6; color: var(--body); margin-bottom: 7px; }
-.resume-since .rs-note { font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+/* Two lines of the session's own sign-off. The whole thing is one click away in
+   the activity feed, and this is a caveat, not the content. */
+.resume-since .rs-sum { font-size: 12.5px; line-height: 1.5; color: var(--body-2); margin-top: 6px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .resume-cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 22px; }
 .resume-col .lbl { margin-bottom: 10px; }
 .col-progress .lbl { color: #b39a82; }
@@ -558,7 +562,6 @@ a.tab { display: inline-block; }
 
 /* ---- the page's own rhythm ---- */
 .ov { display: flex; flex-direction: column; gap: 18px; padding-bottom: 8px; }
-.ov-hero { margin-bottom: 0; }
 /* The resume card is 1.45fr because it carries sentences and the other three
    carry a number and a line; equal columns wrap the prose into a ribbon. */
 .ov-cards { display: grid; grid-template-columns: 1.45fr 1fr 1fr 1fr; gap: 14px; align-items: stretch; }
@@ -6729,32 +6732,35 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .rt-scope-row.cut .t { text-decoration: line-through; color: var(--faint); }
 
 /* ---- the scope board ---- */
-.rs { display: flex; flex-direction: column; gap: 10px; }
-.rs-lane { display: grid; grid-template-columns: 168px 1fr; gap: 14px; align-items: stretch; }
-.rs-head { display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); }
-.rs-lane.must .rs-head { background: var(--accent-tint); border-color: var(--accent-tint-border); }
-.rs-lane.should .rs-head { background: var(--building-tint); border-color: var(--building-tint); }
-.rs-lane.could .rs-head { background: var(--panel); }
-.rs-head .nm { font-family: var(--disp); font-size: 16px; font-weight: 600; }
-.rs-head .meta { font-size: 11.5px; color: var(--muted); }
-.rs-head .tot { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-.rs-add { align-self: flex-start; font-size: 11.5px; color: var(--accent); padding: 0; margin-top: 2px; }
-.rs-body { display: flex; flex-direction: column; gap: 1px; padding: 10px 12px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); min-height: 62px; }
-.rs-lane.over .rs-body { border-color: var(--accent); background: var(--accent-tint); }
-.rs-item { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 8px; border-radius: 8px; cursor: grab; }
-.rs-item:hover { background: var(--panel); }
-.rs-item .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-.rs-item .t { font-size: 13px; font-weight: 500; color: var(--ink); }
-.rs-item .w { margin-left: auto; margin-top: 3px; font-family: var(--mono); font-size: 10.5px; color: var(--faint); flex: none; }
-.rs-item.cut .t { text-decoration: line-through; color: var(--faint); }
-.rs-claim, .rs-sched { font-family: var(--mono); font-size: 10px; color: var(--muted); background: var(--panel); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 6px; }
-.rs-empty { font-size: 12px; color: var(--fainter); padding: 6px 8px; }
-.rs-detail { width: 100%; padding: 9px 8px 4px; margin-top: 6px; border-top: 1px solid var(--line-2); }
-.rs-note { font-size: 12.5px; line-height: 1.55; color: var(--body-2); margin-bottom: 9px; }
-.rs-acts { display: flex; gap: 7px; flex-wrap: wrap; }
-.rs-move { font-size: 11px; color: var(--body); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; background: var(--paper); }
-.rs-move:hover { border-color: var(--accent); color: var(--accent); }
-.rs-move.accent { color: var(--accent); background: var(--accent-tint); border-color: var(--accent-tint-border); }
+/* `rsc-`, not `rs-`: ResumeSinceStrip already owned the `rs-` prefix, and its
+   `.rs-head` was being flattened into a column by the Scope lane head. Third
+   collision in this file — check a prefix is free before taking it. */
+.rsc { display: flex; flex-direction: column; gap: 10px; }
+.rsc-lane { display: grid; grid-template-columns: 168px 1fr; gap: 14px; align-items: stretch; }
+.rsc-head { display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); }
+.rsc-lane.must .rsc-head { background: var(--accent-tint); border-color: var(--accent-tint-border); }
+.rsc-lane.should .rsc-head { background: var(--building-tint); border-color: var(--building-tint); }
+.rsc-lane.could .rsc-head { background: var(--panel); }
+.rsc-head .nm { font-family: var(--disp); font-size: 16px; font-weight: 600; }
+.rsc-head .meta { font-size: 11.5px; color: var(--muted); }
+.rsc-head .tot { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.rsc-add { align-self: flex-start; font-size: 11.5px; color: var(--accent); padding: 0; margin-top: 2px; }
+.rsc-body { display: flex; flex-direction: column; gap: 1px; padding: 10px 12px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); min-height: 62px; }
+.rsc-lane.over .rsc-body { border-color: var(--accent); background: var(--accent-tint); }
+.rsc-item { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 8px; border-radius: 8px; cursor: grab; }
+.rsc-item:hover { background: var(--panel); }
+.rsc-item .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.rsc-item .t { font-size: 13px; font-weight: 500; color: var(--ink); }
+.rsc-item .w { margin-left: auto; margin-top: 3px; font-family: var(--mono); font-size: 10.5px; color: var(--faint); flex: none; }
+.rsc-item.cut .t { text-decoration: line-through; color: var(--faint); }
+.rsc-claim, .rsc-sched { font-family: var(--mono); font-size: 10px; color: var(--muted); background: var(--panel); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 6px; }
+.rsc-empty { font-size: 12px; color: var(--fainter); padding: 6px 8px; }
+.rsc-detail { width: 100%; padding: 9px 8px 4px; margin-top: 6px; border-top: 1px solid var(--line-2); }
+.rsc-note { font-size: 12.5px; line-height: 1.55; color: var(--body-2); margin-bottom: 9px; }
+.rsc-acts { display: flex; gap: 7px; flex-wrap: wrap; }
+.rsc-move { font-size: 11px; color: var(--body); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; background: var(--paper); }
+.rsc-move:hover { border-color: var(--accent); color: var(--accent); }
+.rsc-move.accent { color: var(--accent); background: var(--accent-tint); border-color: var(--accent-tint-border); }
 
 /* ---- the plan board ---- */
 .rp-bar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -6805,7 +6811,7 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
      drawer beside a Gantt leaves neither readable. */
   .rt.with-drawer { grid-template-columns: minmax(0, 1fr); }
   .ra-actions { grid-template-columns: 1fr; }
-  .rs-lane { grid-template-columns: 1fr; }
+  .rsc-lane { grid-template-columns: 1fr; }
 }
 @media (max-width: 700px) {
   /* Below this the lane label plus 24 weeks stops being legible at all, so the
@@ -6862,22 +6868,22 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .rt-cal-quiet { font-family: var(--mono); font-size: 11px; color: var(--fainter); }
 
 /* Scope's inherited row: the Board's check, tags and hover tools. */
-.rs-item { position: relative; align-items: flex-start; }
-.rs-item.working { opacity: .62; }
-.rs-item.drag { opacity: .4; }
-.rs-item.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
-.rs-item.hl { outline: 2px solid var(--accent); outline-offset: 2px; }
-.rs-check { flex: none; width: 15px; height: 15px; margin-top: 2px; border-radius: 5px; border: 1.5px solid var(--line-3); background: var(--card); }
-.rs-check:hover { border-color: var(--live); background: var(--live-tint); }
-.rs-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
-.rs-main .num { font-family: var(--mono); font-size: 10.5px; color: var(--fainter); }
-.rs-tools { display: flex; gap: 2px; opacity: 0; flex: none; }
-.rs-item:hover .rs-tools, .rs-item:focus-within .rs-tools { opacity: 1; }
-.rs-tools button { font-size: 12px; color: var(--faint); padding: 2px 5px; border-radius: 6px; }
-.rs-tools button:hover { color: var(--accent); background: var(--panel); }
-.rs-note-row { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 8px; }
-.rs-note-row .rs-note { flex: 1; min-width: 0; margin-bottom: 0; }
-.rs-note.refine { color: var(--accent-deep); }
+.rsc-item { position: relative; align-items: flex-start; }
+.rsc-item.working { opacity: .62; }
+.rsc-item.drag { opacity: .4; }
+.rsc-item.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.rsc-item.hl { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rsc-check { flex: none; width: 15px; height: 15px; margin-top: 2px; border-radius: 5px; border: 1.5px solid var(--line-3); background: var(--card); }
+.rsc-check:hover { border-color: var(--live); background: var(--live-tint); }
+.rsc-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.rsc-main .num { font-family: var(--mono); font-size: 10.5px; color: var(--fainter); }
+.rsc-tools { display: flex; gap: 2px; opacity: 0; flex: none; }
+.rsc-item:hover .rsc-tools, .rsc-item:focus-within .rsc-tools { opacity: 1; }
+.rsc-tools button { font-size: 12px; color: var(--faint); padding: 2px 5px; border-radius: 6px; }
+.rsc-tools button:hover { color: var(--accent); background: var(--panel); }
+.rsc-note-row { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 8px; }
+.rsc-note-row .rsc-note { flex: 1; min-width: 0; margin-bottom: 0; }
+.rsc-note.refine { color: var(--accent-deep); }
 
 @media (max-width: 700px) {
   .rt-lanes { max-height: 420px; }
@@ -6891,7 +6897,7 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
    out, and Jump back in goes to the Roadmap). */
 .ov-hero {
   background: var(--resume); border: 1px solid var(--resume-border);
-  border-radius: 18px; margin-bottom: 16px; overflow: hidden;
+  border-radius: 18px; overflow: hidden;   /* .ov supplies the gap below */
 }
 .ov-hero .hero-bar {
   display: flex; align-items: baseline; gap: 12px; width: 100%; text-align: left;
@@ -6900,10 +6906,14 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .ov-hero.shut .hero-bar { padding-bottom: 4px; }
 .ov-hero .hero-bar:hover .hero-name { color: var(--accent-deep); }
 .ov-hero .hero-bar .chev { flex: none; font-size: 11px; color: var(--resume-when); align-self: center; }
+.ov-hero .hero-bar .resume-ico { flex: none; width: 24px; height: 24px; border-radius: 7px; font-size: 12px; align-self: center; }
 .ov-hero .hero-name { font-family: var(--disp); font-size: 22px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
 .ov-hero .hero-when { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--resume-when); white-space: nowrap; }
 .ov-hero .hero-body { padding: 2px 24px 20px; }
-.ov-hero .hero-summary { max-width: 86ch; margin-top: 12px; }
+/* No measure cap here. `.hero-summary` carries max-width: 70ch for the deck's
+   narrow card; this band is the full page width and the cap was the reason the
+   text still looked boxed after the layout went full-width. */
+.ov-hero .hero-summary { max-width: none; margin-top: 12px; }
 .ov-hero .hero-acts { margin-top: 16px; }
 /* Collapsed is a one-line taste of the summary, not a blank bar: a fold you
    have to open to find out whether it was worth opening is not a fold. */

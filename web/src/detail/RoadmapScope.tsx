@@ -84,17 +84,17 @@ export function RoadmapScope({
   };
 
   return (
-    <div className="rs">
+    <div className="rsc">
       {LANES.map((lane) => {
         const rows = visible.filter((i) => i.bucket === lane.key);
         const sized = rows.filter((r) => r.estimate !== null);
         const weeks = Math.round(sized.reduce((n, r) => n + (r.estimate ?? 0), 0) * 10) / 10;
         return (
-          <div className={`rs-lane ${lane.key}${over === `lane-${lane.key}` ? ' over' : ''}`} key={lane.key}
+          <div className={`rsc-lane ${lane.key}${over === `lane-${lane.key}` ? ' over' : ''}`} key={lane.key}
             onDragOver={(e) => { if (dragId != null) { e.preventDefault(); setOver(`lane-${lane.key}`); } }}
             onDragLeave={() => setOver((k) => (k === `lane-${lane.key}` ? null : k))}
             onDrop={(e) => { e.preventDefault(); drop(lane.key, null); }}>
-            <div className="rs-head">
+            <div className="rsc-head">
               <div className="nm">{lane.name}</div>
               <div className="meta">{lane.meta}</div>
               <div className="tot">
@@ -105,16 +105,16 @@ export function RoadmapScope({
                 {sized.length > 0 && ` · ${weeks}w`}
                 {sized.length < rows.length && ` (${rows.length - sized.length} unsized)`}
               </div>
-              <button className="rs-add" onClick={() => onAdd(lane.key)}>+ Add</button>
+              <button className="rsc-add" onClick={() => onAdd(lane.key)}>+ Add</button>
             </div>
 
-            <div className="rs-body">
+            <div className="rsc-body">
               {rows.map((it) => {
                 // BUG-2: only a LIVE session makes a claim read-only. A stale
                 // claim keeps its chip but the row stays fully editable.
                 const working = !!it.claimedBy && liveBranches.includes(it.claimedBy);
                 return (
-                  <div className={`rs-item${it.skipped ? ' cut' : ''}${working ? ' working' : ''}`
+                  <div className={`rsc-item${it.skipped ? ' cut' : ''}${working ? ' working' : ''}`
                     + `${dragId === it.id ? ' drag' : ''}${over === String(it.id) ? ' drop-before' : ''}`
                     + `${highlightId === String(it.id) ? ' hl' : ''}`}
                     key={it.id} data-hl={it.id}
@@ -135,11 +135,11 @@ export function RoadmapScope({
                     onDrop={(e) => { e.preventDefault(); e.stopPropagation(); drop(lane.key, it.id); }}
                     onClick={() => setOpenId(openId === it.id ? null : it.id)}>
 
-                    <button className="rs-check" title="Mark done — moves to the Review room"
+                    <button className="rsc-check" title="Mark done — moves to the Review room"
                       aria-label="Mark done"
                       onClick={(e) => { e.stopPropagation(); onToggleDone(it); }} />
 
-                    <span className="rs-main">
+                    <span className="rsc-main">
                       <span className="num">#{it.id}</span>
                       <span className="dot" style={{ background: dotOf(it.area) }} />
                       <span className="t">{it.title}</span>
@@ -171,15 +171,15 @@ export function RoadmapScope({
                         </span>
                       )}
                       {working && <span className="work-chip" title={`Claimed by ${it.claimedBy} — read-only while the work is in flight`}>● in progress</span>}
-                      {!working && it.claimedBy && <span className="rs-claim" title={`Claimed by ${it.claimedBy} — no live session on it`}>⚑ {it.claimedBy}</span>}
+                      {!working && it.claimedBy && <span className="rsc-claim" title={`Claimed by ${it.claimedBy} — no live session on it`}>⚑ {it.claimedBy}</span>}
                       {it.skipped && <span className="skip-chip" title="Parked — not to be picked up yet">⏸ parked</span>}
-                      {it.sched && <span className="rs-sched" title="Scheduled on the timeline">wk {it.sched.start + 1}</span>}
+                      {it.sched && <span className="rsc-sched" title="Scheduled on the timeline">wk {it.sched.start + 1}</span>}
                     </span>
 
                     <span className="w">{it.estimate === null ? '—' : `${it.estimate}w`}</span>
 
                     {!working && (
-                      <span className="rs-tools" onClick={(e) => e.stopPropagation()}>
+                      <span className="rsc-tools" onClick={(e) => e.stopPropagation()}>
                         {onBranch && !it.claimedBy && !it.skipped && (
                           <button onClick={() => onBranch(it)} aria-label="Branch for focused work"
                             title="Branch for focused work (#205) — claims the branch and opens a primed session">⎇</button>
@@ -192,10 +192,10 @@ export function RoadmapScope({
                     )}
 
                     {openId === it.id && (
-                      <div className="rs-detail" onClick={(e) => e.stopPropagation()}>
+                      <div className="rsc-detail" onClick={(e) => e.stopPropagation()}>
                         {it.note && (
-                          <div className="rs-note-row">
-                            <div className="rs-note">{it.note}</div>
+                          <div className="rsc-note-row">
+                            <div className="rsc-note">{it.note}</div>
                             {onClearNote && (
                               <button className="note-clear" title="Remove this note"
                                 onClick={() => onClearNote(it, 'note')}>×</button>
@@ -203,31 +203,31 @@ export function RoadmapScope({
                           </div>
                         )}
                         {it.refineNote && (
-                          <div className="rs-note-row">
-                            <div className="rs-note refine">✎ {it.refineNote}</div>
+                          <div className="rsc-note-row">
+                            <div className="rsc-note refine">✎ {it.refineNote}</div>
                             {onClearNote && (
                               <button className="note-clear" title="Remove this pending refinement"
                                 onClick={() => onClearNote(it, 'refineNote')}>×</button>
                             )}
                           </div>
                         )}
-                        <div className="rs-acts">
+                        <div className="rsc-acts">
                           {LANES.filter((l) => l.key !== it.bucket).map((l) => (
-                            <button key={l.key} className="rs-move" onClick={() => onSetBucket(it, l.key)}>
+                            <button key={l.key} className="rsc-move" onClick={() => onSetBucket(it, l.key)}>
                               → {l.name}
                             </button>
                           ))}
-                          <button className="rs-move accent" onClick={() => onSchedule(it)}>
+                          <button className="rsc-move accent" onClick={() => onSchedule(it)}>
                             {it.sched ? 'On the timeline' : 'Schedule'}
                           </button>
-                          <button className="rs-move" onClick={() => onArchive(it, true)}>Archive</button>
+                          <button className="rsc-move" onClick={() => onArchive(it, true)}>Archive</button>
                         </div>
                       </div>
                     )}
                   </div>
                 );
               })}
-              {rows.length === 0 && <div className="rs-empty">Drop a ticket here</div>}
+              {rows.length === 0 && <div className="rsc-empty">Drop a ticket here</div>}
             </div>
           </div>
         );

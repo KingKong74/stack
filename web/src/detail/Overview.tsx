@@ -1035,6 +1035,7 @@ export function Overview({
             aria-expanded={heroOpen}
             title={heroOpen ? 'Collapse the checkpoint' : 'Expand the checkpoint'}>
             <span className="chev">{heroOpen ? '▾' : '▸'}</span>
+            <span className="resume-ico">↩</span>
             <span className="hero-name">Where you left off</span>
             {phase && <span className="hero-phase">{phase}</span>}
             <span className="hero-when">
