@@ -96,30 +96,96 @@ const fileFor = (scope, slug, dir) => {
   return join(repo, ...safe, FILENAME);
 };
 
-const isManaged = (text) => String(text || '').includes(MARKER);
+// IS THIS FILE ONE STACK PLANTED? The marker must be the file's own LAST
+// non-empty line — exactly where `instructionFile()` writes it — and nowhere
+// else counts.
+//
+// This was `text.includes(MARKER)` and that is not a small difference: it made
+// any file that MENTIONS the marker read as Stack's own. The file it deleted
+// first was this repo's CLAUDE.md, which documents the marker in a sentence
+// about how the marker works. A trust rule that a document can opt itself into
+// by describing it is not a trust rule.
+//
+// So: last non-empty line, exact match after trimming, and nothing else. A file
+// quoting the marker in prose, in a code fence, or in a rule about Stack itself
+// is UNMANAGED, which is the direction this has to fail in — a leftover file
+// somebody deletes by hand costs a minute, and a deleted file can cost a day.
+export const isManaged = (text) => {
+  const lines = String(text || '').split('\n');
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return lines.length > 0 && lines[lines.length - 1].trim() === MARKER;
+};
+
 // What the app edits: the file without Stack's bookkeeping line. Stripping it
 // on the way IN is what keeps the marker out of the raw editor, so nobody can
-// delete it by accident and orphan their own file.
-const stripMarker = (text) => String(text || '')
-  .split('\n').filter((l) => l.trim() !== MARKER).join('\n').replace(/\s+$/, '');
+// delete it by accident and orphan their own file. Only the TRAILING marker
+// goes — a line inside the document that happens to be the marker is the
+// owner's writing, by the same reasoning as above.
+export const stripMarker = (text) => {
+  const lines = String(text || '').split('\n');
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  if (lines.length && lines[lines.length - 1].trim() === MARKER) lines.pop();
+  return lines.join('\n').replace(/\s+$/, '');
+};
 
-// How many tracked files this directory reaches — the map's "reaches N files",
-// counted by git rather than guessed. -1 when it could not be counted (not a
-// repo, git absent, a timeout): the server renders that as unknown and never as
-// zero, the same rule as a NULL review verdict.
-function reachOf(repo, dir) {
-  if (!repo) return -1;
+// ONE `git ls-files` per repo, and everything the tree needs comes out of it:
+// how many tracked files each directory reaches, and which directories exist at
+// all. It used to be one git call per CLAUDE.md found, which is the same answer
+// for more work — and it could not answer the question the app actually needed,
+// which is "where COULD a nested file go", about directories that have no
+// CLAUDE.md in them yet and so were never visited.
+//
+// `null` when git could not be asked (not a repo, git absent, a timeout). Every
+// reader must treat that as UNKNOWN and never as zero: a repo reported as
+// reaching no files reads as an empty repo, which is the NULL-verdict lie again.
+function treeOf(repo) {
+  let out = '';
   try {
-    const out = execFileSync('git', ['-C', repo, 'ls-files', '--', dir || '.'],
-      { encoding: 'utf8', timeout: 10_000, maxBuffer: 8 * 1024 * 1024 });
-    return out.split('\n').filter(Boolean).length;
-  } catch { return -1; }
+    out = execFileSync('git', ['-C', repo, 'ls-files', '-z'],
+      { encoding: 'utf8', timeout: 15_000, maxBuffer: 32 * 1024 * 1024 });
+  } catch { return null; }
+
+  const reach = new Map();  // dir ('' = root) -> tracked files at or under it
+  const paths = out.split('\0').filter(Boolean);
+  for (const p of paths) {
+    const segs = p.split('/');
+    segs.pop();                                   // the filename
+    reach.set('', (reach.get('') || 0) + 1);
+    // Every ancestor directory counts it, so a dir's reach is what a CLAUDE.md
+    // placed there would actually govern — the whole subtree, not one level.
+    let prefix = '';
+    for (let i = 0; i < Math.min(segs.length, MAX_DEPTH); i++) {
+      if (SKIP.has(segs[i])) break;
+      prefix = prefix ? `${prefix}/${segs[i]}` : segs[i];
+      reach.set(prefix, (reach.get(prefix) || 0) + 1);
+    }
+  }
+  return reach;
+}
+
+// The directories a nested CLAUDE.md could sensibly go in: real, tracked, and
+// deep enough to be worth scoping. Capped at DIR_CAP and ordered by reach, so
+// what the picker offers first is what governs the most code.
+//
+// Depth is capped at 2 rather than MAX_DEPTH on purpose. A file five levels
+// down governs almost nothing and is somewhere nobody looks; offering hundreds
+// of them turns a destination picker into a filesystem browser, which is the
+// thing it exists to replace.
+const DIR_CAP = 40;
+const OFFER_DEPTH = 2;
+function candidateDirs(reach) {
+  if (!reach) return [];
+  return [...reach.entries()]
+    .filter(([dir]) => dir && dir.split('/').length <= OFFER_DEPTH)
+    .map(([dir, files]) => ({ dir, files }))
+    .sort((a, b) => b.files - a.files || a.dir.localeCompare(b.dir))
+    .slice(0, DIR_CAP);
 }
 
 // Every CLAUDE.md under one repo, managed or not. Bounded by MAX_DEPTH,
 // MAX_PER_REPO and the SKIP set; returns `{ files, truncated }` so the caller
 // can say out loud that it stopped early.
-function scanRepo(repo, slug) {
+function scanRepo(repo, slug, reach) {
   const files = [];
   let truncated = false;
   const walk = (dir, depth) => {
@@ -141,7 +207,7 @@ function scanRepo(repo, slug) {
           scope: 'project', slug, dir: rel, path,
           managed: isManaged(text),
           body: stripMarker(text).slice(0, BODY_CAP),
-          reach: reachOf(repo, rel),
+          reach: reach ? (reach.get(rel) ?? 0) : -1,
           bytes,
         });
       }
@@ -226,12 +292,19 @@ export async function syncInstructions({ dry = false } = {}) {
   for (const p of previous) if (p?.scope === 'project' && p.slug) slugs.add(p.slug);
 
   const report = [...scanGlobal()];
+  const repos = [];
   const cuts = [];
   for (const slug of [...slugs].sort()) {
     const repo = repoFor(slug);
     if (!repo) continue;
-    const { files, truncated } = scanRepo(repo, slug);
+    const reach = treeOf(repo);
+    const { files, truncated } = scanRepo(repo, slug, reach);
     report.push(...files);
+    // Where a nested file COULD go, so the app can offer real destinations
+    // instead of a text box. `dirs: []` with `known: false` says the host could
+    // not ask git — the app then falls back to a free-text path rather than
+    // showing an empty list, which would read as "this repo has no directories".
+    repos.push({ slug, known: reach !== null, root: reach ? (reach.get('') ?? 0) : -1, dirs: candidateDirs(reach) });
     if (truncated) cuts.push(slug);
   }
 
@@ -266,7 +339,7 @@ export async function syncInstructions({ dry = false } = {}) {
     ? `dry run — ${wrote} to write, ${removed} to remove${cut}`
     : `${wrote} written, ${removed} removed, ${onDisk.length} on disk${cut}`;
   if (!dry) {
-    try { await api('POST', '/api/instructions/report', { files: onDisk, installed, detail }); }
+    try { await api('POST', '/api/instructions/report', { files: onDisk, repos, installed, detail }); }
     catch (e) { log(`report failed (${e.message})`); }
   }
   log(detail);

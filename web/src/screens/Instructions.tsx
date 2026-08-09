@@ -126,7 +126,7 @@ function buildTree(
 
 export function InstructionsPanel({ initialSlug }: { initialSlug?: string }) {
   const [files, setFiles] = useState<InstructionFile[]>([]);
-  const [report, setReport] = useState<InstructionReport>({ files: [], detail: '', when: null });
+  const [report, setReport] = useState<InstructionReport>({ files: [], repos: [], detail: '', when: null });
   const [agent, setAgent] = useState<ScribeState>({ enabled: true, ops: [], opsReady: [] });
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -156,6 +156,8 @@ export function InstructionsPanel({ initialSlug }: { initialSlug?: string }) {
   const [scan, setScan] = useState<{ title: string; meta: string; items: ScanFinding[] } | null>(null);
   const [scanning, setScanning] = useState(false);
 
+  const [picking, setPicking] = useState(false);
+  const [pickedPath, setPickedPath] = useState('');
   const [librarySearch, setLibrarySearch] = useState('');
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [newRule, setNewRule] = useState('');
@@ -249,16 +251,27 @@ export function InstructionsPanel({ initialSlug }: { initialSlug?: string }) {
 
   const addFile = async (dir: string) => {
     if (!slug) return;
+    setPicking(false);
     try {
       const seed = dir
         ? `# ${dir}\n\nRules for everything under \`${dir}/\`. The closest file to an edit wins.\n`
         : `# ${projects.find((p) => p.id === slug)?.name || slug}\n\n## Project\n\n`;
       const file = await createInstructionFile({ scope: 'project', slug, dir, body: seed });
       setFiles((fs) => [...fs, file]);
-      setActiveKey(file.id ? `project:${slug}:${dir}` : '');
+      setActiveKey(`project:${slug}:${dir}`);
+      setView('structured');
       setError('');
     } catch (e) { fail(e, 'Could not add that file.'); }
   };
+
+  // The DESTINATIONS a new file can go in, from what the host actually found in
+  // the repo — not a text box the owner has to remember a path for. Directories
+  // that already hold a CLAUDE.md are excluded (there is nothing to add there),
+  // and the root is offered only when it is free.
+  const repoDirs = report.repos.find((r) => r.slug === slug) || null;
+  const taken = new Set(tree.filter((p) => p.scope === 'project').map((p) => p.dir));
+  const destinations = (repoDirs?.dirs || []).filter((d) => !taken.has(d.dir));
+  const rootFree = !taken.has('');
 
   const removeFile = async (p: Place) => {
     if (!p.file) return;
@@ -575,10 +588,9 @@ export function InstructionsPanel({ initialSlug }: { initialSlug?: string }) {
               </div>
               <div className="ins-files-foot">
                 {slug && (
-                  <button className="ins-add" onClick={() => {
-                    const dir = window.prompt('Directory for the new CLAUDE.md, relative to the repo root (blank for the root):', '');
-                    if (dir !== null) void addFile(dir);
-                  }}>+ New nested CLAUDE.md</button>
+                  <button className="ins-add" onClick={() => { setPickedPath(''); setPicking(true); }}>
+                    + New CLAUDE.md
+                  </button>
                 )}
               </div>
             </div>
@@ -917,6 +929,92 @@ export function InstructionsPanel({ initialSlug }: { initialSlug?: string }) {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ---- where does a new CLAUDE.md go ----
+          A picker over REAL directories, not a text box. The host already walks
+          the repo, so it reports which directories exist and how many tracked
+          files each one governs; asking the owner to recall a path from memory
+          was asking them to do work the host had already done — and a typo went
+          in silently as a file for a directory that is not there.
+          The typed row stays for the two cases the list cannot cover: a
+          directory deeper than the offer depth, and a host that could not ask
+          git at all. */}
+      {picking && (
+        <div className="overlay" onClick={() => setPicking(false)}>
+          <div className="modal wide ins-dest" onClick={(e) => e.stopPropagation()}>
+            <h3>Where does this CLAUDE.md go?</h3>
+            <div className="ins-dest-sub">
+              Claude reads the file closest to the edit, so a nested file governs its own
+              directory and everything under it. These are the directories the host found in
+              <span className="mono"> {projectName}</span>
+              {repoDirs?.known && repoDirs.root >= 0
+                ? <> — {repoDirs.root.toLocaleString()} tracked files in all.</>
+                : '.'}
+            </div>
+
+            <div className="ins-dest-list">
+              {rootFree && (
+                <button className="ins-dest-row root" onClick={() => addFile('')}>
+                  <span className="main">
+                    <span className="mono p">CLAUDE.md</span>
+                    <span className="d">The repo root — the baseline every edit reads.</span>
+                  </span>
+                  <span className="mono n">
+                    {repoDirs?.known && repoDirs.root >= 0 ? `${repoDirs.root} files` : 'whole repo'}
+                  </span>
+                </button>
+              )}
+
+              {destinations.map((d) => (
+                <button key={d.dir} className="ins-dest-row" onClick={() => addFile(d.dir)}>
+                  <span className="main">
+                    <span className="mono p">{d.dir}/CLAUDE.md</span>
+                    <span className="d">Governs everything under <span className="mono">{d.dir}/</span></span>
+                  </span>
+                  <span className="mono n">{d.files} file{d.files === 1 ? '' : 's'}</span>
+                </button>
+              ))}
+
+              {/* Absent is not empty. A host that could not read the repo has to
+                  say so, or "no directories" reads as a fact about the repo. */}
+              {!repoDirs && (
+                <div className="ins-absent sm">
+                  The host has not reported this repo yet, so Stack cannot say which directories
+                  it has. The sync runs every five minutes — or type a path below.
+                </div>
+              )}
+              {repoDirs && !repoDirs.known && (
+                <div className="ins-absent sm">
+                  The host could not read this repo with git (is it cloned at
+                  <span className="mono"> $STACK_AUTOPILOT_ROOT/{slug}</span>?), so there are no
+                  directories to offer. Type a path below.
+                </div>
+              )}
+              {repoDirs?.known && !destinations.length && !rootFree && (
+                <div className="ins-absent sm">
+                  Every directory the host offers already has a CLAUDE.md. Type a path below for
+                  somewhere deeper.
+                </div>
+              )}
+            </div>
+
+            <div className="ins-dest-other">
+              <span className="lbl">Somewhere else</span>
+              <div className="row">
+                <input value={pickedPath} onChange={(e) => setPickedPath(e.target.value)}
+                  placeholder="a path relative to the repo root, e.g. packages/ui"
+                  onKeyDown={(e) => { if (e.key === 'Enter' && pickedPath.trim()) void addFile(pickedPath.trim()); }} />
+                <button className="btn-accent" disabled={!pickedPath.trim()}
+                  onClick={() => addFile(pickedPath.trim())}>Create</button>
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn-cancel" onClick={() => setPicking(false)}>Cancel</button>
+            </div>
           </div>
         </div>
       )}

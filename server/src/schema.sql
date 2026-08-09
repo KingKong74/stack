@@ -1240,3 +1240,11 @@ CREATE TABLE IF NOT EXISTS instruction_reports (
   detail      TEXT NOT NULL DEFAULT '',          -- what the last sync did, for the UI
   reported_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Where a nested CLAUDE.md COULD go: per repo, the tracked directories and how
+-- many files each would govern. Its own column rather than part of `report`,
+-- because it answers the opposite question — `report` is every file that EXISTS,
+-- this is every place one does not yet. Only the host can know either.
+-- `known: false` means git could not be asked; the app must offer a free-text
+-- path then, never an empty list, which would read as "this repo has no
+-- directories" rather than "nobody looked".
+ALTER TABLE instruction_reports ADD COLUMN IF NOT EXISTS repos JSONB NOT NULL DEFAULT '[]';

@@ -211,6 +211,56 @@ test('fileStats counts on, overrides and the estimate', () => {
   assert.equal(estimateTokens(''), 0);
 });
 
+// --- the host's trust marker --------------------------------------------
+//
+// These live in scripts/stack-instructions.mjs because that is the only place
+// that deletes anything, and they are tested here because the version that
+// shipped first DELETED THIS REPO'S OWN CLAUDE.md. It used
+// `text.includes(MARKER)`, and CLAUDE.md contains a sentence explaining what
+// the marker is — so the document opted itself into being Stack's property and
+// the sweep removed it. Every case below is that bug, from a different angle.
+const { isManaged, stripMarker } = await import(
+  new URL('./stack-instructions.mjs', import.meta.url).href);
+
+const MARKER = '<!-- stack-managed -->';
+
+test('a planted file is the marker on its own last line', () => {
+  assert.equal(isManaged(`# Rules\n\n- One.\n\n${MARKER}\n`), true);
+  assert.equal(isManaged(`# Rules\n\n- One.\n\n${MARKER}`), true);
+  assert.equal(isManaged(`# Rules\n\n- One.\n\n${MARKER}\n\n\n`), true, 'trailing blank lines do not hide it');
+});
+
+test('a file that MERELY MENTIONS the marker is NOT managed', () => {
+  // The exact shape of the file that was deleted.
+  const doc = `# CLAUDE.md\n\n- The \`${MARKER}\` marker is what says Stack planted a file.\n`;
+  assert.equal(isManaged(doc), false);
+});
+
+test('...including in a code fence, and including as a non-final line', () => {
+  assert.equal(isManaged(`# Doc\n\n\`\`\`\n${MARKER}\n\`\`\`\n\n- A rule.\n`), false);
+  assert.equal(isManaged(`${MARKER}\n\n# Doc\n\n- A rule.\n`), false, 'first line is not last line');
+});
+
+test('an empty or plain file is not managed', () => {
+  assert.equal(isManaged(''), false);
+  assert.equal(isManaged('# Just a file\n\n- A rule.\n'), false);
+});
+
+test('stripping takes the trailing marker and nothing else', () => {
+  assert.equal(stripMarker(`# Rules\n\n- One.\n\n${MARKER}\n`), '# Rules\n\n- One.');
+  const doc = `# Doc\n\n- The \`${MARKER}\` marker matters.`;
+  assert.equal(stripMarker(doc), doc, 'a mention inside the document survives');
+});
+
+test('write-then-read round-trips: strip(file(body)) === body', () => {
+  // `instructionFile()` in routes/instructions.js appends the marker after a
+  // blank line; this is the host's half of that contract.
+  const body = '# Rules\n\n## Commands\n\n- Run the tests.';
+  const onDisk = `${body}\n\n${MARKER}\n`;
+  assert.equal(isManaged(onDisk), true);
+  assert.equal(stripMarker(onDisk), body);
+});
+
 test('precedence puts the personal file weakest and the deepest file strongest', () => {
   assert.ok(precedenceRank('global', '') < precedenceRank('project', ''));
   assert.ok(precedenceRank('project', '') < precedenceRank('project', 'web'));

@@ -101,9 +101,10 @@ const libraryRows = async () => {
 
 const readReport = async () => {
   const { rows } = await q('SELECT * FROM instruction_reports WHERE only_row');
-  if (!rows.length) return { files: [], detail: '', when: null };
+  if (!rows.length) return { files: [], repos: [], detail: '', when: null };
   return {
     files: Array.isArray(rows[0].report) ? rows[0].report : [],
+    repos: Array.isArray(rows[0].repos) ? rows[0].repos : [],
     detail: rows[0].detail || '',
     when: rows[0].reported_at ? new Date(rows[0].reported_at).toISOString() : null,
   };
@@ -296,6 +297,23 @@ instructions.post('/report', async (req, res) => {
     .filter((f) => f)
     .slice(0, REPORT_MAX);
 
+  // Where a nested file could go, per repo. Capped on both axes like the file
+  // list — this is a snapshot of somebody's disk, and a repo with a generator
+  // loose in it must not be able to put ten thousand directories in a payload.
+  const repos = (Array.isArray(req.body?.repos) ? req.body.repos : [])
+    .map((r) => (r && typeof r === 'object' && r.slug ? {
+      slug: String(r.slug).slice(0, 80),
+      // Absent on an older host, which reads as "could not ask" — the truthful
+      // answer for a host that does not know about this field at all.
+      known: r.known === true,
+      root: Number.isFinite(Number(r.root)) ? Math.trunc(Number(r.root)) : -1,
+      dirs: (Array.isArray(r.dirs) ? r.dirs : []).slice(0, 60)
+        .map((d) => ({ dir: cleanDir(d?.dir), files: Number(d?.files) || 0 }))
+        .filter((d) => d.dir),
+    } : null))
+    .filter(Boolean)
+    .slice(0, 60);
+
   const installed = (Array.isArray(req.body?.installed) ? req.body.installed : [])
     .map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0).slice(0, 400);
   if (installed.length) {
@@ -323,12 +341,13 @@ instructions.post('/report', async (req, res) => {
     [present]);
 
   await q(
-    `INSERT INTO instruction_reports (only_row, report, detail, reported_at)
-     VALUES (TRUE, $1::jsonb, $2, now())
+    `INSERT INTO instruction_reports (only_row, report, repos, detail, reported_at)
+     VALUES (TRUE, $1::jsonb, $2::jsonb, $3, now())
      ON CONFLICT (only_row) DO UPDATE
-       SET report = EXCLUDED.report, detail = EXCLUDED.detail, reported_at = now()`,
-    [JSON.stringify(list), String(req.body?.detail || '').slice(0, 400)]);
-  res.json({ ok: true, count: list.length });
+       SET report = EXCLUDED.report, repos = EXCLUDED.repos,
+           detail = EXCLUDED.detail, reported_at = now()`,
+    [JSON.stringify(list), JSON.stringify(repos), String(req.body?.detail || '').slice(0, 400)]);
+  res.json({ ok: true, count: list.length, repos: repos.length });
 });
 
 // ---- the Scribe ------------------------------------------------------------

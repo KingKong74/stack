@@ -2324,8 +2324,19 @@ export interface InstructionOnDisk {
   scope: 'global' | 'project'; slug: string; dir: string;
   path: string; managed: boolean; body: string; reach: number; bytes: number;
 }
+// Where a nested CLAUDE.md COULD go, as the host found it — the opposite
+// question from `files`, which is where one already is. **`known: false` means
+// the host could not ask git**, not that the repo has no directories: an empty
+// list rendered as "nowhere to put one" would be the NULL-verdict lie again, so
+// the picker falls back to a typed path instead.
+export interface RepoDirs {
+  slug: string;
+  known: boolean;
+  root: number;                        // tracked files in the repo, -1 = unknown
+  dirs: { dir: string; files: number }[];
+}
 export interface InstructionReport {
-  files: InstructionOnDisk[]; detail: string; when: string | null;
+  files: InstructionOnDisk[]; repos: RepoDirs[]; detail: string; when: string | null;
 }
 // The Scribe's live state. Its two ops sit on two backends (Claude via the
 // host, Gemini for the read-only passes), so there is no single "is it ready" —
