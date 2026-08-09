@@ -101,6 +101,20 @@ function suiteFor(slug, ORIGIN) {
     // running in a worktree), so this asserts the route answers rather than
     // asserting a count.
     { name: 'Worktrees — registry', url: u('/api/worktrees'), auth: true, expect_status: 200 },
+    // The instructions tree. `/work` is the one the host polls, and its shape
+    // breaking is the failure that matters most: the sync fails safe and does
+    // NOTHING, so the CLAUDE.md files quietly stop tracking the library and
+    // there is no error anywhere to notice. `scan` is asserted because it is
+    // the field the host cannot do without — with no list of repos it reports
+    // an empty tree, which reads exactly like a host with no files on it.
+    { name: 'Instructions — the host\'s work feed', url: u('/api/instructions/work'), auth: true, json_path: 'scan' },
+    { name: 'Instructions — the keep list', url: u('/api/instructions/work'), auth: true, json_path: 'keep' },
+    // The tab's own payload. `agent.opsReady` is per-op because the Scribe's
+    // two ops sit on two backends; a payload without it leaves the dock unable
+    // to say which half is unavailable and why.
+    { name: 'Instructions — the library', url: u('/api/instructions'), auth: true, json_path: 'files' },
+    { name: 'Instructions — the Scribe\'s per-op readiness', url: u('/api/instructions'), auth: true, json_path: 'agent.opsReady' },
+    { name: 'Auth gate closed — instructions', url: u('/api/instructions'), expect_status: 401 },
     { name: 'Control — plan coverage', url: u('/api/control'), auth: true, json_path: 'projects.0.planCoverage.unplanned' },
     { name: 'Control — per-project rows', url: u('/api/control'), auth: true, json_path: 'projects' },
     // #363 — the Merge room's whole contract. Both fields fail SILENTLY if

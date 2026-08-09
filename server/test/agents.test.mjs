@@ -28,7 +28,7 @@ const rejects = async (label, fn, match) => {
 };
 
 console.log('--- the registry ---');
-check('the agents', AGENTS.map((a) => a.key), ['auditor', 'curator', 'foreman', 'merger', 'polaris']);
+check('the agents', AGENTS.map((a) => a.key), ['auditor', 'curator', 'foreman', 'merger', 'scribe', 'polaris']);
 check('one surface each, no surface shared', new Set(AGENTS.map((a) => a.tab)).size, AGENTS.length);
 check('every agent owns at least one op', AGENTS.every((a) => a.ops.length > 0), true);
 // The op → agent map is built at import time and throws on a duplicate, so a
@@ -47,7 +47,7 @@ check('an op nobody owns resolves to nothing', agentForOp('nonsense'), null);
 // Three project tabs and two Mission Control rooms (#364, #375). A room-bound
 // agent is bound exactly like a tab-bound one — the binding is what the item is
 // about, and it does not care which kind of surface it names.
-check('the surfaces', AGENTS.map((a) => a.tab), ['quality', 'roadmap', 'review', 'merge', 'futures']);
+check('the surfaces', AGENTS.map((a) => a.tab), ['quality', 'roadmap', 'review', 'merge', 'instructions', 'futures']);
 // Every op the ROUTES call has to exist here, or the call throws at runtime.
 // This list is the routes' side of the contract, written out so a renamed op
 // fails here rather than the first time somebody presses the button.
@@ -126,6 +126,27 @@ check('off beats host-down in the message',
   gateDecision(A, spec('auditor', 'audit'), { ...ON, enabled: false }, false)?.httpStatus, 409);
 check('the model-less op still obeys the agent switch',
   gateDecision(A, spec('auditor', 'auditprompt'), { ...ON, enabled: false }, false)?.httpStatus, 409);
+
+// A GEMINI-BACKED OP ON A CLAUDE-BACKED AGENT (the Scribe's quick passes).
+// The point of the flag is that one surface keeps one switch even when its two
+// halves run on different backends — so the switch still governs both, and only
+// the REFUSAL differs. It has to name the right backend: sending the owner to
+// restart a daemon that was never involved is the whole failure this prevents.
+const S = agentByKey('scribe');
+check('a gemini op is gated by the same agent switch',
+  gateDecision(S, spec('scribe', 'rulescan'), { ...ON, enabled: false }, true)?.httpStatus, 409);
+check('an unavailable gemini names the key, not the daemon',
+  gateDecision(S, spec('scribe', 'rulescan'), ON, false)?.message.includes('GEMINI_API_KEY'), true);
+check('...and never blames the host daemon',
+  gateDecision(S, spec('scribe', 'rulescan'), ON, false)?.message.includes('host daemon'), false);
+check('the Scribe\'s claude op still names the host',
+  gateDecision(S, spec('scribe', 'ruledraft'), ON, false)?.message.includes('host daemon'), true);
+check('backend defaults to claude when unstated',
+  agentShape({ agent: S, config: agentConfigShape(S, undefined) })
+    .ops.find((o) => o.op === 'ruledraft').backend, 'claude');
+check('and is reported for the gemini op',
+  agentShape({ agent: S, config: agentConfigShape(S, undefined) })
+    .ops.find((o) => o.op === 'rulescan').backend, 'gemini');
 
 console.log('\n--- the config row ---');
 // A MISSING ROW MEANS ON. Same direction as readSettings(): these agents are

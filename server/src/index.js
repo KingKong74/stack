@@ -30,6 +30,7 @@ import { terminal } from './routes/terminal.js';
 import { triage } from './routes/triage.js';
 import { tips } from './routes/tips.js';
 import { skills } from './routes/skills.js';
+import { instructions } from './routes/instructions.js';
 import { agents } from './routes/agents.js';
 import { merge } from './routes/merge.js';
 import { worktrees } from './routes/worktrees.js';
@@ -96,6 +97,10 @@ app.use('/api/terminal', requireToken, terminal);
 app.use('/api/triage', requireToken, triage);
 app.use('/api/tips', requireToken, tips);
 app.use('/api/skills', requireToken, skills);
+// The instructions tree — the managed CLAUDE.md library. App-wide, no slug:
+// the personal file and every project's files are one tree, and the whole point
+// is seeing which of them wins.
+app.use('/api/instructions', requireToken, instructions);
 // #361 — the tab agents (Auditor · Curator · Polaris · Foreman · Merge). The
 // REGISTRY of who may act on which surface. App-wide, no slug.
 app.use('/api/agents', requireToken, agents);

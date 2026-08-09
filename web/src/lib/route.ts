@@ -25,6 +25,11 @@ export type Route =
   | { name: 'settings' }
   | { name: 'timeline' }
   | { name: 'control'; room?: ControlRoom }
+  // The instructions tree — the third tab on the Settings screen, and a real
+  // route so a link can land on it. `slug` picks whose tree you are reading;
+  // absent means the first project, which is what a bare '#/instructions'
+  // should do rather than showing an empty picker.
+  | { name: 'instructions'; slug?: string }
   | { name: 'skills' }
   | { name: 'terminal'; cwd?: string; attach?: string; brief?: boolean }
   | { name: 'share'; slug: string; token: string }
@@ -37,6 +42,10 @@ function parse(): Route {
   if (h === '/control' || h.startsWith('/control')) {
     const room = h.split('?')[0].split('/')[2];
     return { name: 'control', room: isControlRoom(room) ? room : undefined };
+  }
+  if (h === '/instructions' || h.startsWith('/instructions')) {
+    const slug = h.split('?')[0].split('/')[2];
+    return { name: 'instructions', slug: slug ? decodeURIComponent(slug) : undefined };
   }
   // The skill tree (#228) — the managed Claude skill library.
   if (h === '/skills' || h.startsWith('/skills')) return { name: 'skills' };
@@ -80,6 +89,7 @@ export const hrefTo = {
   // the bare '#/control' as its one canonical URL, so nothing has two spellings.
   control: (room?: ControlRoom) => (room && room !== 'now' ? `#/control/${room}` : '#/control'),
   settings: '#/settings',
+  instructions: (slug?: string) => (slug ? `#/instructions/${encodeURIComponent(slug)}` : '#/instructions'),
   skills: '#/skills',
   terminal: (cwd?: string, attach?: string, brief?: boolean) => {
     const q = [
@@ -107,6 +117,7 @@ export const go = {
   control: (room?: unknown) => {
     window.location.hash = hrefTo.control(isControlRoom(room) ? room : undefined);
   },
+  instructions: (slug?: string) => { window.location.hash = hrefTo.instructions(slug); },
   skills: () => { window.location.hash = '#/skills'; },
   // attach (a stack-term-* tmux name) jumps straight into that running claude
   // session — Mission Control's ▶ chips use it.

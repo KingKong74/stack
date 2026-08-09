@@ -1,24 +1,23 @@
 # CLAUDE.md — working notes for Stack
 
 **What this file is for:** the rules and invariants you cannot read off the code — why something is
-the way it is, and what breaks if you change it. Deliberately NOT a feature list or an API reference;
-the code is the reference, and a doc that restates it only drifts. Rationale for a shipped feature
-lives in its commit message and the item's `built_note`, which Stack stores and shows on the Review
-room. Add here only when a session would get something WRONG without it, and keep it under the 40 KB
-budget (`node scripts/context-budget.test.mjs`). **Where a rule governs one file, it lives in that file's
-header comment and this file keeps only the pointer and the cross-cutting half** — `ingest.js`,
-`audit.js`, `checks.js`, `workbench.js`, `futures.js`, `worktrees.js`, `lib/feature.ts`,
-`lib/branch.ts` and `ControlReview.tsx` all carry theirs.
+the way it is, and what breaks if you change it. NOT a feature list or an API reference: the code is
+the reference, and a doc restating it drifts. A shipped feature's rationale lives in its commit
+message and its `built_note`, which the Review room shows. Add here only when a session would get
+something WRONG without it, and keep under the 40 KB budget
+(`node scripts/context-budget.test.mjs`). **Where a rule governs one file it lives in that file's
+header, and this file keeps only the pointer and the cross-cutting half** — `ingest.js`,
+`audit.js`, `checks.js`, `workbench.js`, `futures.js`, `worktrees.js`, `instructions.js`,
+`lib/feature.ts`, `lib/branch.ts` and `ControlReview.tsx` all carry theirs.
 
 ## What Stack is
 
 A self-hosted side-project command centre. The point is **frictionless resume**: open a project and
 the "pick up where you left off" card tells you where you were. A push auto-extracts bugs and
-next-steps into the trackers, and dashboard progress is computed, not hand-set. Built from the Atlas
-design handoff (colours, type, spacing, copy and interactions are meant to match).
+next-steps into the trackers, and dashboard progress is computed, not hand-set. Colours, type,
+spacing, copy and interactions are meant to match the Atlas design handoff.
 
-North star: an autonomous software house run from the director's chair (the SessionStart block states
-it in full each session).
+North star: an autonomous software house run from the director's chair — SessionStart states it in full.
 
 ## Layout
 
@@ -29,7 +28,7 @@ server/    Express + Postgres. Idempotent schema migrate on boot, retries the fi
            auth on every route except GET /api/health; fails closed if API_TOKEN is unset.
 hook/      Zero-dependency Node ESM hooks + the /checkpoint poster.
 terminal/  The web terminal's host-side daemon (dials OUT; the firewall drops container→host).
-scripts/   Host-side CLI + automation. templates/ the portable agent manual (single source of truth).
+scripts/   Host-side CLI + automation. templates/ the portable agent manual.
 ```
 
 ### web/src
@@ -43,11 +42,10 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual (sin
   **Mission Control's room is part of the URL** (#316) and `Control.tsx` writes it back with
   `history.replaceState`, never a push, so Back leaves Mission Control rather than walking the rooms
   you looked at. `#/control` is the one canonical spelling of the default room; an unknown room lands
-  there rather than 404ing (`#/control/build`, since removed, is the live case).
+  there rather than 404ing — `#/control/build` and `/trees`, both removed, are the live cases.
 - `screens/` — `ls` is the index. What it doesn't say: Mission Control is a shell (`Control.tsx`) plus
   one file per room, and the removed BUILD room's gates live elsewhere now (the verdict is Review's
-  subject; the merge is the Now room's branch strip and, house-wide, the Merge room). `ControlTrees`
-  (#365) is read-only — Merge stays where things are pressed — and groups by STAGE, not project.
+  subject; the merge is the Now room's branch strip and, house-wide, the Merge room).
   `detail/Tips.tsx` is NOT a tab: the recipe library is app-wide, opened from `components/TipsDock`.
 - `lib/brief.ts` — the resume brief + the `DIRECTIVES` catalogue (keys mirror `SESSION_DEFAULTS`).
 - `lib/termClipboard.ts` — copy/paste for both xterms; its header says why ⌃C, ⌃V and OSC 52 each
@@ -243,6 +241,11 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `~/.stack/worktrees/<key>`, inside the $HOME cwd jail the terminal daemon enforces — move the root
   outside $HOME and browser access breaks silently.
 - **`0 = unlimited`** for `autopilotTokens`/`autopilotMaxItems` (#260); `termIdleHours` `0 = never`.
+- **A managed CLAUDE.md is written by the HOST from Stack's copy**, so editing one in a repo by hand is
+  a change the next sync overwrites — go through `PATCH /api/instructions/:id`. `body` IS the file:
+  rules, scopes, off switches, precedence and the merge preview are derived in `lib/instructions.ts`,
+  never stored, since a rules table is wrong the moment somebody edits the file on disk. The
+  `<!-- stack-managed -->` marker and the ONE-TIME Adopt licence are in `routes/instructions.js`.
 - **A worktree report's NULL is not `[]`** (#365) — same rule as a NULL `review_verdict`: defaulting it
   to `[]` reports every feature as tree-less, i.e. uncommitted work as absent. The client type is
   `Worktree[] | null` and `getControl` must never default it.
@@ -279,11 +282,11 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   stops the Quality route running the board cleanup, and an unregistered op cannot run at all. An op
   MOVES with its surface (#375 moved `reviewbrief`/`refinedraft` off the Curator), because **one
   surface, one switch**. **A missing config row means ON**, as with `readSettings()`; off means off
-  everywhere.
+  everywhere. An op's `backend` may be `'gemini'`, so a surface with two backends still has ONE switch;
+  only readiness and the refusal differ, and the refusal must NAME the missing backend.
 - **THE FOREMAN ANNOTATES A VERDICT; IT NEVER GIVES ONE (#375).** `readchange` returns a CALL (approve /
   look / send-back) drawn in the accent, never a verdict tone — the three verdict buttons are the only
-  green in that room. It is **not called the Reviewer**, because the room already labels the per-push
-  Gemini read of the diff REVIEWER. Every answer carries **`blind[]`** (what it could not see) and
+  green in that room. Every answer carries **`blind[]`** (what it could not see) and
   **`read[]`** (what the server assembled), the blind list rendered hardest under an `approve`.
   `where[]` is the one agent field that becomes **a link the owner clicks**, so `cleanPath()` drops
   anything that is not a same-origin path. `triagequeue` returns an ORDER and no judgements; a change
@@ -396,11 +399,9 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
 
 - **Read layers** (`overview`, `control`, `review`, `search`, `timeline`, `public`) are computed in a
   handful of aggregate queries — **never one query per project**; keep it that way. `control.js` also
-  exports the pure `computeFleetRoles()`; `review.js` serves the room, `/debrief` and the Foreman's
-  four ops (#375 — two arrived from `roadmap.js` with the agent).
-- `merge.js` (#364) is the Merge agent's read of a proposed plan — the only agent op needing the CODE,
-  so diffs are gathered host-side. `routes/agents.js` is the agents' CONFIG; the REGISTRY is
-  `src/agents.js`. Per-project collections mount under `/api/projects/:slug/…` with `mergeParams`, and
+  exports the pure `computeFleetRoles()`; `review.js` serves the room, `/debrief` and the Foreman's four ops.
+- `merge.js` (#364) — the Merge agent's read; the only agent op needing the CODE, so diffs are gathered
+  host-side. `routes/agents.js` is the agents' CONFIG; the REGISTRY is `src/agents.js`. Per-project collections mount under `/api/projects/:slug/…` with `mergeParams`, and
   `GET /api/projects/:slug` is the combined detail payload the SessionStart hook reads back.
 
 ## Conventions
@@ -469,8 +470,9 @@ node hook/stack-session-{end,start}.mjs --demo   # fire the backstop / print the
 node hook/stack-checkpoint.mjs --settings  # print current settings (what /checkpoint reads)
 cp hook/*.mjs ~/.stack/                    # install the hooks — ~/.stack holds COPIES
 ./stack                                    # tree · models · agents · term · start-session ·
-                                           # list-sessions · ui-smoke · skills · seed-checks ·
-                                           # seed-galaxy · risk-backfill · worktrees (--help each;
+                                           # list-sessions · ui-smoke · skills · instructions ·
+                                           # seed-checks · seed-galaxy · risk-backfill · worktrees
+                                           # (--help each;
                                            # the writing ones are DRY until --run)
 node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack --dry  # tonight's pick?
 node scripts/stack-autopilot-dispatch.mjs  # one dispatcher poll by hand (normally the cron line)

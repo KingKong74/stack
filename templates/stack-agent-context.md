@@ -64,12 +64,23 @@ The block is a snapshot. For the current state at any moment, read the API:
   and don't remove them yourself (they're cleared from the dashboard).
 - `GET /api/agents` — Stack's own in-app agents (Auditor · Quality tab,
   Curator · Roadmap tab, Polaris · Futures tab, Foreman · Review room, Merge
-  agent · Merge room). **These are not you**: they are the ✧ buttons on those
-  surfaces, each restricted to its own, and any of them can be switched off in
-  Mission Control → Agents. Worth reading only to explain why a ✧ surface is
-  missing, or why one of those routes answered 409 (switched off) or 503 (the
-  host daemon is down — since #364 they run `claude -p` on the host through
-  that daemon, so the daemon is their backend, not an API key).
+  agent · Merge room, Scribe · Instructions tab). **These are not you**: they
+  are the ✧ buttons on those surfaces, each restricted to its own, and any of
+  them can be switched off in Mission Control → Agents. Worth reading only to
+  explain why a ✧ surface is missing, or why one of those routes answered 409
+  (switched off) or 503 (the backend is down — since #364 they run `claude -p`
+  on the host through the terminal daemon, so that daemon is their backend
+  rather than an API key; the Scribe's read-only quick passes are the one
+  exception and still run on Gemini, so a 503 there means the key, not the
+  daemon — each op reports which in `backend`).
+- `GET /api/instructions` — the CLAUDE.md tree Stack manages: the personal
+  `~/.claude/CLAUDE.md` and each project's root and nested files, plus what the
+  host last found on disk. **Worth reading when you are about to change a
+  CLAUDE.md**: a file listed here with `enabled` is written by the host from
+  Stack's copy on its next sync, so editing it in the repo by hand is a change
+  that gets overwritten. Edit it through `PATCH /api/instructions/<id>` instead,
+  or leave it alone. A file the report lists as `managed: false` is nobody's but
+  the repo's — edit that one normally.
 
 The base URL and slug for the project you're in are stamped at the bottom of this
 file when it was exported (or are blank in the generic template).

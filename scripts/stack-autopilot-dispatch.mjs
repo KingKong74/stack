@@ -313,6 +313,14 @@ if (skillsDue) {
     const { syncSkills } = await import('./stack-skills.mjs');
     await syncSkills();
   } catch { /* next cycle retries */ }
+  // The instructions tree rides the SAME stamp, not one of its own: it is the
+  // other half of "make the host's Claude config match the library", it costs
+  // about as much, and two independent five-minute timers walking the same
+  // repos would interleave a scan with a write for no benefit.
+  try {
+    const { syncInstructions } = await import('./stack-instructions.mjs');
+    await syncInstructions();
+  } catch { /* next cycle retries */ }
 }
 
 // (#208) The preview sweep runs regardless of whether a job came back — it is

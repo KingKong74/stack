@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { Settings as SettingsData, CheckpointDetail, AuthDevice, Project } from '../types';
 import {
   getSettings, patchSettings, getToken, clearToken, verifyToken, AuthError,
@@ -13,6 +13,17 @@ import { go, type ControlRoom } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { DIRECTIVES } from '../lib/brief';
 import { ControlPanel } from './Control';
+
+// The three house-wide surfaces this screen holds. `instructions` arrived last
+// and is lazy — see below.
+type ScreenTab = 'settings' | 'control' | 'instructions';
+const TAB_TITLE: Record<ScreenTab, string> = {
+  settings: 'Settings',
+  control: 'Mission Control',
+  instructions: 'Instructions',
+};
+const InstructionsPanel = lazy(() =>
+  import('./Instructions').then((m) => ({ default: m.InstructionsPanel })));
 
 const THEMES: { key: ThemePref; label: string }[] = [
   { key: 'system', label: 'System' }, { key: 'light', label: 'Light' }, { key: 'dark', label: 'Dark' },
@@ -31,13 +42,19 @@ function maskToken(t: string | null): string {
   return `${'•'.repeat(Math.min(t.length - 4, 16))}${t.slice(-4)}`;
 }
 
-export function Settings({ initialTab = 'settings', initialRoom }: {
-  initialTab?: 'settings' | 'control'; initialRoom?: ControlRoom;
+export function Settings({ initialTab = 'settings', initialRoom, initialSlug }: {
+  initialTab?: ScreenTab; initialRoom?: ControlRoom; initialSlug?: string;
 }) {
-  // One screen, two tabs: the app's settings, and Mission Control (#/control
+  // One screen, three tabs: the app's settings, Mission Control (#/control
   // deep-links straight onto the control tab, and #/control/<room> onto a room
-  // — #316).
-  const [screenTab, setScreenTab] = useState<'settings' | 'control'>(initialTab);
+  // — #316), and the instructions tree (#/instructions[/<slug>]).
+  //
+  // The three belong together because they are the house-wide surfaces: what
+  // the fleet is doing, how sessions are recorded, and what every session is
+  // told before it starts. Instructions is not a project tab for the same
+  // reason — the personal file and the repo files are ONE tree, and "which of
+  // these wins" cannot be asked from inside one project.
+  const [screenTab, setScreenTab] = useState<ScreenTab>(initialTab);
   // App renders this same component for both routes, so React keeps the
   // instance and the tab would otherwise be whatever it was left on: a
   // `#/control/review` link pressed while the Settings tab is showing changed
@@ -226,7 +243,7 @@ export function Settings({ initialTab = 'settings', initialRoom }: {
           <span className="chev" onClick={go.dashboard}>‹</span>
           <span className="back" onClick={go.dashboard}>Projects</span>
           <span className="sep">/</span>
-          <span className="here">{screenTab === 'control' ? 'Mission Control' : 'Settings'}</span>
+          <span className="here">{TAB_TITLE[screenTab]}</span>
         </div>
         <div className="right">
           <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
@@ -236,11 +253,13 @@ export function Settings({ initialTab = 'settings', initialRoom }: {
       <div className="page detail">
         <div className="dash-head" style={{ marginBottom: 16 }}>
           <div>
-            <div className="dash-title">{screenTab === 'control' ? 'Mission Control' : 'Settings'}</div>
+            <div className="dash-title">{TAB_TITLE[screenTab]}</div>
             <div className="dash-count">
               {screenTab === 'control'
                 ? 'Every project and its automation, from one point.'
-                : `How ${PRODUCT_NAME} records your work, and the access it uses.`}
+                : screenTab === 'instructions'
+                  ? 'What Claude reads before it touches a repo. Rules cascade down the tree — the closest file wins.'
+                  : `How ${PRODUCT_NAME} records your work, and the access it uses.`}
             </div>
           </div>
         </div>
@@ -253,6 +272,8 @@ export function Settings({ initialTab = 'settings', initialRoom }: {
             onClick={() => setScreenTab('settings')}>Settings</a>
           <a className={`tab ${screenTab === 'control' ? 'on' : ''}`} href="#/control"
             onClick={() => setScreenTab('control')}>Mission Control</a>
+          <a className={`tab ${screenTab === 'instructions' ? 'on' : ''}`} href="#/instructions"
+            onClick={() => setScreenTab('instructions')}>Instructions</a>
           {/* Not a tab — the jump to the host terminal, up here beside them.
               Opens in the most recently touched project (the Terminal screen
               resolves the cwd itself when none is given). */}
@@ -263,6 +284,15 @@ export function Settings({ initialTab = 'settings', initialRoom }: {
         </div>
 
         {screenTab === 'control' && <ControlPanel initialRoom={initialRoom} full={full} onToggleFull={toggleFull} />}
+
+        {/* Lazy, and for the same reason the Terminal and the skill tree are:
+            the tab carries its own parser and map, and most visits to this
+            screen are not to it. */}
+        {screenTab === 'instructions' && (
+          <Suspense fallback={<div className="empty-state"><div className="big">Loading…</div></div>}>
+            <InstructionsPanel initialSlug={initialSlug} />
+          </Suspense>
+        )}
 
         {screenTab === 'settings' && (error ? <div className="action-error">{error}</div> : null)}
 
@@ -362,6 +392,26 @@ export function Settings({ initialTab = 'settings', initialRoom }: {
                   </div>
                 </div>
                 <a className="btn-accent" href="#/skills">Open the skill tree →</a>
+              </div>
+            </section>
+
+            {/* ---- Instructions — the other half of "what shapes a session".
+                    The switches above are five fixed lines Stack injects; this
+                    is the CLAUDE.md tree in the repos themselves, which Claude
+                    reads whether or not Stack knows about it. A pointer, not a
+                    section: the tab has a map and an editor in it. */}
+            <section className="set-card set-mc-pointer">
+              <div className="set-mc-pointer-body">
+                <div className="set-mc-pointer-text">
+                  <div className="set-card-title">Instructions</div>
+                  <div className="set-card-sub">
+                    Every <span className="mono">CLAUDE.md</span> in the tree — your personal one and each
+                    project's — with what the merged context actually says, what it costs, and which
+                    file wins where they disagree.
+                  </div>
+                </div>
+                <a className="btn-accent" href="#/instructions"
+                  onClick={() => setScreenTab('instructions')}>Open the instructions tree →</a>
               </div>
             </section>
 

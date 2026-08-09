@@ -38,6 +38,7 @@
 
 import { q } from './db.js';
 import { askClaudeOnHost, termAgentConnected } from './term.js';
+import { askGemini, geminiEnabled } from './gemini.js';
 
 // #364 — the agents run on CLAUDE, through the host, and no longer on Gemini.
 //
@@ -126,6 +127,22 @@ export const cleanGuidance = (v) => String(v ?? '').replace(/\s+$/g, '').slice(0
 // where it costs something". (It was `gemini: false` before #364; the flag was
 // renamed with the backend, because "needs no key" and "needs no model" stopped
 // being the same statement once the backend became a local CLI.)
+//
+// `backend: 'gemini'` marks an op that runs on GEMINI rather than on Claude via
+// the host. #364 moved the tab agents off Gemini because the CLI was the only
+// way to reach a model without spending, and that stands — but it never made
+// Gemini wrong, and Stack still runs it, key-gated, wherever the job is a
+// READ-ONLY second opinion (the per-push review note, triage, the Workbench
+// ops). The Scribe's quick passes are exactly that job, and the design they
+// come from names the two backends apart on screen for exactly that reason.
+//
+// The flag buys one thing that matters: it keeps **one surface, one switch**
+// (#375) true for a surface with two backends. Before it, an agent could only
+// own Claude ops, so anything Gemini-backed on the same screen would have
+// answered to no switch at all — the arrangement the whole registry exists to
+// end. What changes per backend is only READINESS: a Claude op needs the host
+// daemon, a Gemini op needs the key, and the refusal has to name the right one
+// or the owner goes and investigates the wrong thing.
 // ---------------------------------------------------------------------------
 export const AGENTS = [
   {
@@ -206,6 +223,36 @@ export const AGENTS = [
       { op: 'mergeplan', label: 'Read the plan', hint: 'Reads the real diffs and flags pairings the file paths missed.' },
     ],
   },
+  // THE SCRIBE — the Instructions tab's agent, and the only one bound to a
+  // screen beside Settings and Mission Control rather than to a project tab or
+  // a Mission Control room.
+  //
+  // Its subject is the CLAUDE.md tree: the files that decide how every OTHER
+  // agent and every session behaves. That makes the "annotates, never disposes"
+  // rule sharper here than anywhere else, not softer — a rule the Scribe wrote
+  // itself would be a model editing its own instructions, unread. So
+  // `ruledraft` returns a DIFF against one named file and nothing else; the
+  // route never applies it, the owner presses Apply, and the ordinary PATCH
+  // does the writing.
+  //
+  // `rulescan` is the read-only half and runs on Gemini: four passes over the
+  // tree (contradictions, missing conventions, wording, token budget) that
+  // return findings and never a change. One op with a `pass` argument rather
+  // than four ops, because the switch the owner wants is "quick passes on or
+  // off", not four switches for four prompts of the same shape.
+  {
+    key: 'scribe',
+    name: 'Scribe',
+    tab: 'instructions',
+    tabLabel: 'Instructions',
+    surface: 'tab',
+    blurb: 'Keeps the CLAUDE.md tree honest: drafts rule changes as diffs you accept, and reads the tree for contradictions it cannot see itself.',
+    remit: "the Instructions tab: the CLAUDE.md files Stack manages, the rules in them and what the merged context costs",
+    ops: [
+      { op: 'ruledraft', label: 'Draft a rule change', hint: 'Answers as a diff against one file — nothing is written until you apply it.' },
+      { op: 'rulescan', label: 'Quick passes', backend: 'gemini', hint: 'Read-only passes over the tree: contradictions, gaps, wording, token budget.' },
+    ],
+  },
   {
     key: 'polaris',
     name: 'Polaris',
@@ -268,13 +315,25 @@ export function gateDecision(agent, spec, config, backendReady) {
   // Order matters: the SWITCH is read before the backend, so a switched-off
   // agent says it is switched off rather than blaming an offline daemon the
   // owner would then go and investigate.
+  //
+  // Which backend is missing has to be NAMED. "This agent cannot run" sends the
+  // owner to restart a daemon that was never involved; a Gemini op needs a key
+  // on the server and a Claude op needs the host on the line, and the two are
+  // fixed in completely different places.
   if (spec.model !== false && !backendReady) {
     return refuse(
-      'The host daemon is not connected, so no agent can run (the agents run Claude on the host).',
+      spec.backend === 'gemini'
+        ? 'Gemini is not configured on this server, so this pass cannot run (it is the read-only backend; GEMINI_API_KEY is unset).'
+        : 'The host daemon is not connected, so no agent can run (the agents run Claude on the host).',
       503);
   }
   return null;
 }
+
+// Is the backend an op needs actually up? The gate takes this as an argument so
+// it stays pure and testable; this is the live read.
+export const backendReadyFor = (spec) =>
+  (spec?.backend === 'gemini' ? geminiEnabled() : termAgentConnected());
 
 // ---------------------------------------------------------------------------
 // The config row. Missing row = the registry defaults, which are all ON.
@@ -420,7 +479,7 @@ export function agentClient(key) {
     const spec = own(op);
     const live = await readAgent(agent.key);
     const config = live?.config ?? { ...DEFAULT_CONFIG };
-    const no = gateDecision(agent, spec, config, termAgentConnected());
+    const no = gateDecision(agent, spec, config, backendReadyFor(spec));
     if (no) throw no;
     return config;
   };
@@ -440,7 +499,34 @@ export function agentClient(key) {
     // already offline when you pressed".
     async ask(op, prompt, opts = {}) {
       const config = await gate(op);
+      const spec = own(op);
       const full = agentPreamble(agent, config.guidance) + prompt;
+
+      // The Gemini branch. It returns PARSED JSON already (the client asks for
+      // JSON mode and parses), so there is no parseAgentJson step and no cost:
+      // the free tier reports none, and recording a fabricated number would put
+      // spend in the ledger that never left the house. A quota refusal carries
+      // its own httpStatus, so it is re-thrown rather than wrapped — the
+      // sentence about the daily reset is the useful part.
+      //
+      // `config.model` is deliberately NOT forwarded: the Agents room's picker
+      // offers Claude aliases (haiku/sonnet/opus), and handing one of those to
+      // Gemini 404s the call. An agent pinned to Sonnet means "its Claude work
+      // runs on Sonnet"; the read-only pass keeps the server's Gemini default.
+      if (spec.backend === 'gemini') {
+        try {
+          const parsed = await askGemini(full, {
+            timeoutMs: opts.timeoutMs ?? 25_000,
+            model: opts.model || '',
+          });
+          void recordRun(agent.key, op, 'ok', 0);
+          return parsed;
+        } catch (err) {
+          void recordRun(agent.key, op, err.message, 0);
+          throw err;
+        }
+      }
+
       const r = await askClaudeOnHost(full, {
         model: config.model || opts.model || '',
         timeoutMs: opts.timeoutMs,
@@ -475,6 +561,7 @@ export async function agentsForClient() {
   const ready = termAgentConnected();
   const out = {};
   for (const { agent, config } of all) {
+    const live = agent.ops.filter((s) => !config.opsOff.includes(s.op));
     out[agent.key] = {
       name: agent.name,
       tab: agent.tab,
@@ -484,7 +571,13 @@ export async function agentsForClient() {
       // and needs to tell them apart to say WHY one is missing.
       ready,
       // Only the ops that may actually run — the client asks "is my op here".
-      ops: agent.ops.filter((s) => !config.opsOff.includes(s.op)).map((s) => s.op),
+      ops: live.map((s) => s.op),
+      // …and of those, the ones whose BACKEND is up. An agent with ops on two
+      // backends has no single answer to "is it ready", so a tab that offers
+      // both reads this instead of `ready`. Every op is in `ops`; only the
+      // runnable ones are here, which is what lets a button say "the daemon is
+      // offline" beside one ✧ and stay live beside the other.
+      opsReady: live.filter((s) => s.model === false || backendReadyFor(s)).map((s) => s.op),
     };
   }
   return out;
@@ -507,6 +600,9 @@ export const agentShape = ({ agent, config }) => ({
     label: s.label,
     hint: s.hint || '',
     needsModel: s.model !== false,
+    // Which backend this op runs on, so the Agents room can say which of the
+    // two an op depends on rather than implying every op needs the host.
+    backend: s.model === false ? 'none' : (s.backend || 'claude'),
     enabled: !config.opsOff.includes(s.op),
   })),
   runs: config.runs,

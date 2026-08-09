@@ -46,6 +46,11 @@ export const SCREENS = [
   { id: 'skills', label: 'Skills', path: '#/skills' },
   { id: 'timeline', label: 'Timeline', path: '#/timeline' },
   { id: 'settings', label: 'Settings', path: '#/settings' },
+  // The instructions tree — a three-column grid with a sticky rail on each
+  // side, which is exactly the shape #291 exists to catch at `narrow`.
+  // …and the slug rides in the path, so the run also exercises the deep link
+  // rather than whichever project the picker happened to default to.
+  { id: 'instructions', label: 'Instructions', path: '#/instructions/<slug>' },
   { id: 'project-overview', label: 'Project — Overview', path: '#/p/<slug>' },
   { id: 'project-quality', label: 'Project — Quality', path: '#/p/<slug>/quality' },
   { id: 'project-roadmap', label: 'Project — Roadmap', path: '#/p/<slug>/roadmap' },

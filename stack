@@ -28,6 +28,7 @@ const COMMANDS = {
   'seed-galaxy': { script: 'stack-seed-galaxy.mjs', blurb: 'shape a flat idea funnel into stars and planets (dry unless --run)' },
   'risk-backfill': { script: 'stack-risk-backfill.mjs', blurb: 'tier the open board\'s risk at plan time (dry unless --run)' },
   skills: { script: 'stack-skills.mjs', blurb: 'sync the managed skill tree onto this host (--dry)' },
+  instructions: { script: 'stack-instructions.mjs', blurb: 'sync the managed CLAUDE.md tree onto this host (--dry)' },
   'ui-smoke': { script: 'playwright/smoke.mjs', blurb: 'headless browser smoke pass over the UI (#291; --url, --slug, --json)' },
   // Named for what it lists. `stack agents` would read as the five tab/room
   // agents (#361), which this has nothing to do with.

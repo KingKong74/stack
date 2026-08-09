@@ -2295,6 +2295,85 @@ export async function deleteSkill(id: number): Promise<void> {
   await request<{ ok: boolean }>(`/skills/${id}`, { method: 'DELETE' });
 }
 
+// ---- the instructions tree ----
+//
+// The managed CLAUDE.md library — the same arrangement as the skill tree above,
+// for the same reason (the server cannot see a repo; the host can). `body` is
+// the FILE, verbatim: every rule, scope, off switch, the precedence order and
+// the merge preview are derived from it in lib/instructions.ts and none of them
+// is stored. `installedAt` is a fact the host reported, never something a save
+// sets, so a file can be saved here and not be on disk for another five minutes.
+
+export interface InstructionFile {
+  id: number;
+  scope: 'global' | 'project';  // ~/.claude/CLAUDE.md, or <repo>/<dir>/CLAUDE.md
+  slug: string;                 // the project, '' for global
+  dir: string;                  // '' = repo root; 'web' = web/CLAUDE.md
+  path: string;                 // how the owner reads it
+  body: string;
+  enabled: boolean;             // off = the host removes the file IT planted
+  adopted: boolean;             // taken over from a file somebody else wrote
+  installedAt: string | null;   // null = not on disk (yet, or any more)
+  updatedAt: string | null;
+}
+// One CLAUDE.md the host found. An UNMANAGED one is reported and never touched
+// — it is somebody else's file, and the tree shows it so it can be adopted
+// rather than silently overwritten. `reach` is how many tracked files its
+// directory covers, and **-1 means the host could not count**, never zero.
+export interface InstructionOnDisk {
+  scope: 'global' | 'project'; slug: string; dir: string;
+  path: string; managed: boolean; body: string; reach: number; bytes: number;
+}
+export interface InstructionReport {
+  files: InstructionOnDisk[]; detail: string; when: string | null;
+}
+// The Scribe's live state. Its two ops sit on two backends (Claude via the
+// host, Gemini for the read-only passes), so there is no single "is it ready" —
+// `opsReady` is per-op, and a dock that offers both reads it rather than
+// greying out a pass because the terminal daemon happens to be down.
+export interface ScribeState { enabled: boolean; ops: string[]; opsReady: string[] }
+export interface InstructionsData {
+  files: InstructionFile[]; report: InstructionReport; agent: ScribeState;
+}
+export type InstructionInput =
+  Partial<Pick<InstructionFile, 'scope' | 'slug' | 'dir' | 'body' | 'enabled'>>;
+
+/** One rule change the Scribe proposes. Never applied server-side. */
+export interface RuleDiff { path: string; section: string; remove: string[]; add: string[] }
+export interface RuleDraft { reply: string; diff: RuleDiff | null }
+export interface ScanFinding { text: string; where: string; action: string }
+export interface ScanResult {
+  pass: string; title: string; meta: string; items: ScanFinding[];
+}
+
+export async function getInstructions(): Promise<InstructionsData> {
+  return request<InstructionsData>('/instructions');
+}
+export async function createInstructionFile(input: InstructionInput): Promise<InstructionFile> {
+  return request<InstructionFile>('/instructions', { method: 'POST', body: input });
+}
+export async function patchInstructionFile(id: number, input: InstructionInput): Promise<InstructionFile> {
+  return request<InstructionFile>(`/instructions/${id}`, { method: 'PATCH', body: input });
+}
+export async function deleteInstructionFile(id: number): Promise<void> {
+  await request<{ ok: boolean }>(`/instructions/${id}`, { method: 'DELETE' });
+}
+/** Take over a file on disk that nobody manages. The body comes from the host's
+ *  report, not from here — the owner is adopting what is actually there. */
+export async function adoptInstructionFile(
+  place: { scope: 'global' | 'project'; slug: string; dir: string },
+): Promise<InstructionFile> {
+  return request<InstructionFile>('/instructions/adopt', { method: 'POST', body: place });
+}
+export async function draftRuleChange(
+  slug: string, ask: string, history: { role: string; text: string }[],
+): Promise<RuleDraft> {
+  return request<RuleDraft>('/instructions/draft', { method: 'POST', body: { slug, ask, history } });
+}
+export async function scanInstructions(slug: string, pass: string): Promise<ScanResult> {
+  return request<ScanResult>('/instructions/scan', { method: 'POST', body: { slug, pass } });
+}
+
 // ---- automated bug audit (#144) ----
 
 // One audit finding and what happened to it: 'logged' = a new review-inbox bug

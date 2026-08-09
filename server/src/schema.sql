@@ -1202,10 +1202,25 @@ CREATE TABLE IF NOT EXISTS instruction_files (
   body         TEXT NOT NULL DEFAULT '',
   enabled      BOOLEAN NOT NULL DEFAULT true,    -- off = the host removes the file IT planted
   adopted      BOOLEAN NOT NULL DEFAULT false,   -- taken over from a file somebody else wrote
+  claimed_at   TIMESTAMPTZ,                      -- when the takeover actually happened (see below)
   installed_at TIMESTAMPTZ,                      -- when the host last wrote this exact content
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE instruction_files ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;
+-- `claimed_at` is what makes ADOPTION a one-time act rather than a standing
+-- licence, and it exists because the obvious two-state version is wrong.
+--
+-- The host refuses to write over a CLAUDE.md that carries no marker. An adopted
+-- file carries no marker YET — that is the whole point of adopting it — so the
+-- first write has to be allowed past the refusal, which means the server has to
+-- say "this one is a sanctioned takeover". `installed_at` cannot carry that: any
+-- edit clears it, so the licence would come back every time the owner saved,
+-- and a human who had meanwhile stripped the marker to take their file BACK
+-- would silently lose it again. `claimed_at` is stamped once, by the host's
+-- report of the first successful write, and never cleared. After it, the
+-- ordinary marker rule applies for good — and a stripped marker reads as
+-- unmanaged, which is the direction a mistake should fall.
 -- One file per PLACE, as two partial indexes rather than one UNIQUE over a
 -- nullable column — in Postgres NULLs are distinct, so a plain constraint would
 -- let the global file be created twice.
