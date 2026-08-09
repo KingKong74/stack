@@ -626,6 +626,55 @@ a.tab { display: inline-block; }
 .band.band-failed { border-color: var(--critical); }
 .band.band-failed .band-empty { color: var(--critical); }
 
+/* ---- the plan: area lanes in WEEKS, read-only ---- */
+.strip { display: flex; flex-direction: column; gap: 9px; }
+.strip-lane { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 14px; align-items: start; }
+.strip-lane .name { font-size: 12.5px; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Untagged is a STATE, not a missing value, so it is legible rather than hidden. */
+.strip-lane .name.untagged { color: var(--faint); font-style: italic; }
+/* The track is the LANE, not a bar: its height comes from the rows the lane
+   needed, so a busy area grows rather than stacking bars on top of each other. */
+.strip-lane .track { position: relative; display: block; border-radius: 8px; background: var(--panel); }
+.strip-lane .bar { position: absolute; height: 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--line-3); }
+/* A planned bar is dashed but must still READ as a bar — at --line-3 it
+   disappeared into its own track, which draws a scheduled feature as nothing. */
+.strip-lane .bar.planned { background: transparent; border-style: dashed; border-color: var(--muted); }
+.strip-lane .bar.inflight { background: var(--accent); border-color: var(--accent); }
+.strip-lane .bar.built { background: var(--accent-tint); border-color: var(--accent); }
+.strip-lane .bar.landed { background: var(--green-tint); border-color: var(--live); }
+/* The baseline the bar was committed to, drawn only where the bar has moved off
+   it — a ghost sitting under its own bar reads as a slip on every single row. */
+.strip-lane .ghost { position: absolute; height: 14px; border-radius: 999px; border: 1px dashed var(--fainter); }
+.strip-axis { display: flex; justify-content: space-between; gap: 10px; font-family: var(--mono); font-size: 10px; color: var(--faint); margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line-2); }
+.strip-axis .mid { text-align: center; }
+
+/* ---- in flight: a feature drawn as the scope committed to it ---- */
+.flights { display: flex; flex-direction: column; gap: 16px; }
+.flight-top { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; margin-bottom: 8px; }
+.flight-top .title { font-size: 13.5px; font-weight: 600; color: var(--ink); text-align: left; padding: 0; }
+.flight-top .title:hover { color: var(--accent-deep); }
+.flight-top .state { font-size: 11.5px; color: var(--accent); }
+.flight-top .state.waiting { color: var(--building); }
+.flight-top .area { font-family: var(--mono); font-size: 10.5px; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 6px; }
+.flight-top .wks { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.flight-bar { display: flex; height: 20px; border-radius: 6px; overflow: hidden; background: var(--panel); }
+.flight-bar .seg { display: flex; align-items: center; padding: 0 8px; font-size: 10.5px; font-weight: 600; white-space: nowrap; overflow: hidden; border-right: 1px solid var(--card); }
+.flight-bar .seg:last-child { border-right: 0; }
+.flight-bar .seg.must { background: var(--accent); color: var(--on-accent); }
+.flight-bar .seg.should { background: var(--accent-tint); color: var(--accent-deep); }
+.flight-bar .seg.could { background: var(--panel); color: var(--muted); }
+.flight-bar .seg.wont { background: transparent; color: var(--faint); }
+.flight-read,
+.flight-none { font-size: 12px; line-height: 1.5; color: var(--muted); margin-top: 7px; }
+
+/* ---- plan vs reality ---- */
+.slips { display: flex; flex-direction: column; gap: 10px; }
+.slip { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+.slip .title { flex: 1; min-width: 0; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slip .delta { flex: none; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.slip .delta.late { color: var(--building); }
+.slip .delta.early { color: var(--live); }
+
 /* ---- the usage band ---- */
 .usage-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
 .ustat { display: flex; flex-direction: column; gap: 4px; border-left: 2px solid var(--line-3); padding-left: 13px; min-width: 0; }

@@ -45,7 +45,8 @@ import { ResumeSinceStrip } from '../components/ResumeSinceStrip';
 import {
   buildSpine, progressLedger, nextUp, bugSpread, readCadence, PROGRESS_CAP,
   verdictQueue, shippedRecently, overviewStats, compactTokens, usageBars, recentForModel,
-  type Stage, type VerdictRow,
+  scheduleStrip, inFlightScope, planVsReality,
+  type Stage, type VerdictRow, type ScheduleStrip, type InFlightFeature, type PlanVsReality,
 } from '../lib/spine';
 import { KIND_TONE, type LaneKind } from '../lib/branch';
 import { go } from '../lib/route';
@@ -264,6 +265,176 @@ function CadenceCard({ cadence, lastPushAt }: {
       <div className="cadence-axis">
         <span>{dayLabel(c.days[0].day)}</span>
         <span>{dayLabel(c.days[c.days.length - 1].day)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// the plan: its shape, what is in flight, and what it cost against the baseline
+// ---------------------------------------------------------------------------
+
+/** One stacked row inside a lane, in px — bar, ghost and the gap under them. */
+const ROW_H = 16;
+
+// A WEEK INDEX IS NOT A DATE (lib/plan.ts's first rule). The axis is therefore
+// labelled in weeks and carries no month names and no "now" marker: a project
+// stores no week zero, so any calendar drawn here would be invented.
+function ScheduleBand({ strip, slug }: { strip: ScheduleStrip; slug: string }) {
+  return (
+    <div className="band">
+      <div className="band-head">
+        <span className="h">The plan</span>
+        <span className="sub">
+          {strip.scheduled} scheduled{strip.unscheduled > 0 && ` · ${strip.unscheduled} still in the tray`}
+        </span>
+        <button className="band-link" onClick={() => go.detail(slug, 'roadmap')}>Open Timeline →</button>
+      </div>
+      {strip.scheduled === 0 ? (
+        <div className="band-empty">
+          Nothing on the board is scheduled yet. That is an unplanned project, not a late one —
+          the Timeline is where a bar gets placed.
+        </div>
+      ) : (
+        <>
+          <div className="strip">
+            {strip.lanes.map((lane) => (
+              <div className="strip-lane" key={lane.area}>
+                <span className={`name${lane.area === 'Untagged' ? ' untagged' : ''}`}>{lane.area}</span>
+                {/* The lane grows with the rows it needs. Two bars sharing a row
+                    read as one longer bar — see scheduleStrip(). */}
+                <span className="track" style={{ height: lane.rows * ROW_H }}>
+                  {lane.bars.map((b) => (
+                    <span key={b.id}>
+                      {/* The baseline, drawn only where the bar has actually
+                          moved off it. */}
+                      {b.ghost && (
+                        <span className="ghost"
+                          style={{ left: `${b.ghost.left}%`, width: `${b.ghost.width}%`, top: b.row * ROW_H + 1 }} />
+                      )}
+                      <span className={`bar ${b.state}`}
+                        style={{ left: `${b.left}%`, width: `${b.width}%`, top: b.row * ROW_H + 3 }}
+                        title={`${b.title}${b.ghost ? ' — moved off its baseline' : ''}`} />
+                    </span>
+                  ))}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="strip-axis">
+            <span>week 1</span>
+            <span className="mid">week index, not a date — a slipping project moves its bars</span>
+            <span>week {strip.weeks}</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function InFlightBand({ features, plan, slug }: {
+  features: InFlightFeature[]; plan: PlanVsReality; slug: string;
+}) {
+  return (
+    <div className="ov-split">
+      <div className="band">
+        <div className="band-head">
+          <span className="h">In flight</span>
+          <span className="sub">what each of these is actually made of</span>
+        </div>
+        {features.length === 0 ? (
+          <div className="band-empty">
+            Nothing is claimed or built right now. The board is queued, not busy.
+          </div>
+        ) : (
+          <div className="flights">
+            {features.map((f) => (
+              <div className="flight" key={f.id}>
+                <div className="flight-top">
+                  <button className="title" onClick={() => go.detail(slug, 'roadmap', String(f.id))}>
+                    {f.title}
+                  </button>
+                  {/* `waiting`, not `built` — `.built` is the Review room's
+                      built-note block and would draw this chip as a panel. The
+                      third time a bare class name has collided on this tab. */}
+                  <span className={`state ${f.state === 'built' ? 'waiting' : 'working'}`}>
+                    {f.state === 'built' ? 'awaiting your verdict' : 'in progress'}
+                  </span>
+                  {f.area && <span className="area">{f.area}</span>}
+                  <span className="wks">
+                    {f.unscoped ? 'not broken down' : `${f.totals.committed} wks committed`}
+                  </span>
+                </div>
+                {f.unscoped ? (
+                  <div className="flight-none">
+                    No scope lines under this one, so there is nothing to say about what it contains.
+                  </div>
+                ) : (
+                  <>
+                    <div className="flight-bar">
+                      {f.segs.map((s) => (
+                        <span className={`seg ${s.bucket}`} key={s.bucket} style={{ width: `${s.width}%` }}
+                          title={`${s.label} — ${s.weeks} wks`}>{s.label}</span>
+                      ))}
+                    </div>
+                    <div className="flight-read">
+                      {/* An UNSIZED line is not a free one — plan.ts's third
+                          rule, and the only honest way to read a bar built
+                          from the sized lines alone. */}
+                      {f.totals.unsized > 0 && (
+                        <>{f.totals.unsized} line{f.totals.unsized === 1 ? ' is' : 's are'} unsized and
+                          not in that bar. </>
+                      )}
+                      {f.totals.deferred > 0 && <>{f.totals.deferred} wks parked. </>}
+                      {f.totals.fits
+                        ? 'Fits the cycle.'
+                        : `${f.totals.over} wks past the cycle.`}
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="band">
+        <div className="band-head">
+          <span className="h">Plan vs. reality</span>
+          <span className="sub">against the baseline, not against today</span>
+        </div>
+        {plan.measured === 0 ? (
+          <div className="band-empty">
+            No scheduled feature carries a baseline, so there is nothing to measure a slip against.
+            That is not a project on plan — it is one that never committed to a plan.
+          </div>
+        ) : plan.rows.length === 0 ? (
+          <div className="band-empty">
+            Every one of the {plan.measured} baselined features is sitting exactly where it was
+            committed to. Nothing has slipped.
+          </div>
+        ) : (
+          <div className="slips">
+            {plan.rows.map((r) => (
+              <div className="slip" key={r.id}>
+                <span className="title">{r.title}</span>
+                <span className={`delta${r.weeks > 0 || r.longer > 0 ? ' late' : ' early'}`}>
+                  {r.weeks !== 0 && `${r.weeks > 0 ? '+' : ''}${r.weeks} wk${Math.abs(r.weeks) === 1 ? '' : 's'} later`}
+                  {r.weeks !== 0 && r.longer !== 0 && ' · '}
+                  {r.longer !== 0 && `${r.longer > 0 ? '+' : ''}${r.longer} wk${Math.abs(r.longer) === 1 ? '' : 's'} longer`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="eg-read">
+          {plan.totalSlip > 0 && <>{plan.totalSlip} weeks of slip across the board. </>}
+          {/* NOT counted as "on plan" — the same NULL-verdict rule. */}
+          {plan.unmeasured > 0
+            ? <>{plan.unmeasured} scheduled feature{plan.unmeasured === 1 ? '' : 's'} carr{plan.unmeasured === 1 ? 'ies' : 'y'} no
+              baseline and {plan.unmeasured === 1 ? 'is' : 'are'} not measured here — which is not the same as being on plan.</>
+            : <>Every scheduled feature carries a baseline, so this is the whole picture.</>}
+        </div>
       </div>
     </div>
   );
@@ -848,6 +1019,9 @@ export function Overview({
     .reduce((n, s) => n + s.n, 0);
   const tiles = overviewStats(roadmap, stages, project.progress, cadence);
   const verdicts = verdictQueue(roadmap, 5);
+  const strip = scheduleStrip(roadmap);
+  const flights = inFlightScope(roadmap);
+  const plan = planVsReality(roadmap);
   const shipped = shippedRecently(roadmap, 5);
   const latest = activity.slice(0, 6);
   const horizon = futures.slice(0, 8);
@@ -1032,6 +1206,9 @@ export function Overview({
         <ProgressLedgerCard project={project} roadmap={roadmap} bugs={bugs} />
         <CadenceCard cadence={cadence} lastPushAt={lastPushAt} />
       </div>
+
+      <ScheduleBand strip={strip} slug={slug} />
+      <InFlightBand features={flights} plan={plan} slug={slug} />
 
       {/* ---- the measured bands. Absent, never empty. ---- */}
       {pulseError ? (

@@ -42,6 +42,10 @@ import type { Bug, Future, PulseUsage, Roadmap, RoadmapItem, Severity } from '..
 import { hrefTo } from './route';
 import { tierRank } from '../types';
 import { parseBranch, type LaneKind } from './branch';
+// The Roadmap tab owns the schedule, so its arithmetic is imported and never
+// re-spelt here: one definition of a week index, of slip, and of what "in this
+// cycle" means, or the Overview and the Timeline disagree about the same plan.
+import { SCHED_WEEKS, slipOf, scopeTotals, type ScopeTotals } from './plan';
 
 export type StageKey = 'idea' | 'planned' | 'inflight' | 'built' | 'landed';
 
@@ -402,4 +406,229 @@ export function usageBars(usage: PulseUsage): UsageBar[] {
 /** The rows the by-model drill-down shows for one model, newest first. */
 export function recentForModel(usage: PulseUsage, model: string, limit = 4) {
   return usage.recent.filter((r) => r.models.includes(model)).slice(0, limit);
+}
+
+// --- the schedule: the shape of the plan, read-only -------------------------
+//
+// The Roadmap tab's Timeline is where a bar is DRAGGED; this is the same plan
+// at a glance, on the tab that asks "which way is this project moving". Both
+// read `sched`/`baseline` through `lib/plan.ts` — one definition of a week
+// index and one of slip, or the two surfaces quietly disagree about the plan.
+//
+// ONLY TOP-LEVEL ITEMS GET A BAR. A child is a scope line inside a feature, and
+// drawing it as its own bar turns one feature into five and makes the strip
+// report a project with five times the work in flight.
+
+/** A scheduled feature, as percentages of the track so the lane scales. */
+export interface StripBar {
+  id: number;
+  title: string;
+  left: number;
+  width: number;
+  state: StageKey;
+  /** Which stacked row inside the lane this bar sits on (0 = top). */
+  row: number;
+  /** The baseline it was committed to, when there is one AND it differs. */
+  ghost: { left: number; width: number } | null;
+}
+export interface StripLane { area: string; bars: StripBar[]; rows: number }
+export interface ScheduleStrip {
+  lanes: StripLane[];
+  weeks: number;
+  scheduled: number;
+  /** Committed to but never placed on the timeline — the Roadmap tab's tray. */
+  unscheduled: number;
+}
+
+const stateOf = (it: RoadmapItem): StageKey =>
+  (isLanded(it) ? 'landed' : isBuilt(it) ? 'built' : isInFlight(it) ? 'inflight' : 'planned');
+
+/**
+ * The area lanes, in board order, holding only the features that are actually
+ * scheduled. An UNTAGGED area is its own lane and is labelled as such rather
+ * than being folded into the first real one — untagged is a state, and the same
+ * carve-out `lanes.js` makes for the claim lanes (#267).
+ */
+export function scheduleStrip(roadmap: Roadmap, weeks = SCHED_WEEKS): ScheduleStrip {
+  const features = flat(roadmap).filter((it) => it.parentId === null && !it.archived);
+  const byArea = new Map<string, RoadmapItem[]>();
+  let scheduled = 0;
+
+  for (const it of features) {
+    if (!it.sched) continue;
+    scheduled += 1;
+    const area = it.area.trim() || 'Untagged';
+    if (!byArea.has(area)) byArea.set(area, []);
+    byArea.get(area)!.push(it);
+  }
+
+  const pc = (n: number) => (n / weeks) * 100;
+  const lanes: StripLane[] = [];
+
+  for (const [area, items] of byArea) {
+    // First-fit row stacking, in start order — the same idea as layoutLane()'s,
+    // minus its label geometry, which needs a pixel width this strip does not
+    // have. TWO BARS ON ONE ROW READ AS ONE LONGER BAR, which is the whole
+    // claim of a Gantt and the one thing it must not get wrong; a lane that
+    // needs two rows gets two.
+    const ends: number[] = [];
+    const bars: StripBar[] = [];
+    for (const it of [...items].sort((a, b) => a.sched!.start - b.sched!.start)) {
+      const start = it.sched!.start;
+      const len = Math.max(1, it.sched!.len);
+      // The ghost occupies the row too, or a bar can land on top of another
+      // bar's baseline and the two become unreadable.
+      const from = it.baseline ? Math.min(start, it.baseline.start) : start;
+      const to = it.baseline
+        ? Math.max(start + len, it.baseline.start + Math.max(1, it.baseline.len))
+        : start + len;
+
+      let row = ends.findIndex((end) => end <= from);
+      if (row === -1) { row = ends.length; ends.push(to); } else { ends[row] = to; }
+
+      // The ghost is drawn only when the bar has actually MOVED. A ghost sitting
+      // exactly under its bar is visual noise that reads as a slip on every row.
+      const moved = it.baseline
+        && (it.baseline.start !== start || Math.max(1, it.baseline.len) !== len);
+      bars.push({
+        id: it.id,
+        title: it.title,
+        left: pc(start),
+        width: pc(len),
+        state: stateOf(it),
+        row,
+        ghost: moved && it.baseline
+          ? { left: pc(it.baseline.start), width: pc(Math.max(1, it.baseline.len)) }
+          : null,
+      });
+    }
+    lanes.push({ area, bars, rows: Math.max(1, ends.length) });
+  }
+
+  return {
+    lanes,
+    weeks,
+    scheduled,
+    unscheduled: features.length - scheduled,
+  };
+}
+
+// --- in flight: what a feature's scope is made of --------------------------
+
+export interface ScopeSeg { bucket: string; label: string; width: number; weeks: number }
+export interface InFlightFeature {
+  id: number;
+  title: string;
+  area: string;
+  state: StageKey;
+  segs: ScopeSeg[];
+  totals: ScopeTotals;
+  /** No children at all — the feature was never broken down. */
+  unscoped: boolean;
+}
+
+const SCOPE_ORDER = ['must', 'should', 'could', 'wont'];
+const SCOPE_LABEL: Record<string, string> = {
+  must: 'Must', should: 'Should', could: 'Could', wont: "Won't",
+};
+
+/**
+ * The features being worked on right now, each drawn as the scope committed to
+ * it. `scopeTotals` is `lib/plan.ts`'s, so the weeks here and the Scope view's
+ * drawer are the same arithmetic — including the rule that an UNSIZED line is
+ * counted apart rather than as a free one.
+ */
+export function inFlightScope(roadmap: Roadmap, limit = 4): InFlightFeature[] {
+  const all = flat(roadmap);
+  const kids = new Map<number, RoadmapItem[]>();
+  for (const it of all) {
+    if (it.parentId === null) continue;
+    if (!kids.has(it.parentId)) kids.set(it.parentId, []);
+    kids.get(it.parentId)!.push(it);
+  }
+
+  return all
+    .filter((it) => it.parentId === null && !it.archived && (isInFlight(it) || isBuilt(it)))
+    .slice(0, limit)
+    .map((it) => {
+      const children = kids.get(it.id) || [];
+      const totals = scopeTotals(children);
+      // THE BAR IS THE COMMITTED SCOPE, and nothing else — the same set
+      // `scopeTotals.committed` sums, or the bar and the "N wks committed"
+      // beside it describe different things. A Won't is out of the feature
+      // entirely and a PARKED line has been cut from this cycle; drawing
+      // either makes a feature that fits look like one that does not.
+      //
+      // Widths come off the SIZED lines only: an unsized line has no width to
+      // give, and is reported in words beside the bar rather than drawn as
+      // though it were zero weeks of work.
+      const inBar = children.filter(
+        (c) => c.bucket !== 'wont' && !c.skipped && c.estimate !== null);
+      const byBucket = SCOPE_ORDER.map((bucket) => ({
+        bucket,
+        label: SCOPE_LABEL[bucket],
+        weeks: inBar
+          .filter((c) => c.bucket === bucket)
+          .reduce((n, c) => n + (c.estimate ?? 0), 0),
+      })).filter((s) => s.weeks > 0);
+      const sized = byBucket.reduce((n, s) => n + s.weeks, 0);
+      return {
+        id: it.id,
+        title: it.title,
+        area: it.area,
+        state: stateOf(it),
+        segs: byBucket.map((s) => ({ ...s, width: sized > 0 ? (s.weeks / sized) * 100 : 0 })),
+        totals,
+        unscoped: children.length === 0,
+      };
+    });
+}
+
+// --- plan vs reality -------------------------------------------------------
+
+export interface SlipRow {
+  id: number;
+  title: string;
+  /** Weeks later than the baseline start; negative = earlier. */
+  weeks: number;
+  /** Weeks longer than the baseline length. */
+  longer: number;
+}
+export interface PlanVsReality {
+  rows: SlipRow[];
+  /** Scheduled features carrying NO baseline — not measured, and not on plan. */
+  unmeasured: number;
+  /** Total weeks of slip across everything that IS measured. */
+  totalSlip: number;
+  measured: number;
+}
+
+/**
+ * Every scheduled feature whose bar has moved off the baseline it was committed
+ * to, worst first. `slipOf` is `lib/plan.ts`'s, and its third state is the one
+ * that matters here: `measured: false` means nothing was EVER committed to,
+ * which is not "on plan" and is counted separately rather than shown as a zero.
+ * Same rule as a NULL review_verdict.
+ */
+export function planVsReality(roadmap: Roadmap, limit = 6): PlanVsReality {
+  const features = flat(roadmap).filter((it) => it.parentId === null && !it.archived && it.sched);
+  const rows: SlipRow[] = [];
+  let unmeasured = 0;
+  let totalSlip = 0;
+  let measured = 0;
+
+  for (const it of features) {
+    const s = slipOf(it);
+    if (!s.measured) { unmeasured += 1; continue; }
+    measured += 1;
+    const weeks = s.weeks ?? 0;
+    const longer = s.longer ?? 0;
+    if (weeks !== 0 || longer !== 0) {
+      rows.push({ id: it.id, title: it.title, weeks, longer });
+      if (weeks > 0) totalSlip += weeks;
+    }
+  }
+
+  rows.sort((a, b) => (b.weeks + b.longer) - (a.weeks + a.longer));
+  return { rows: rows.slice(0, limit), unmeasured, totalSlip, measured };
 }
