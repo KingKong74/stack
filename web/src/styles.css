@@ -556,10 +556,186 @@ a.tab { display: inline-block; }
 .spine-foot .txt { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.5; color: var(--body-2); }
 .spine-foot button { flex: none; }
 
-/* ---- the two-column body ---- */
-.ov-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; margin-bottom: 24px; }
-.ov-main { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
-.ov-rail { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+/* ---- the page's own rhythm ---- */
+.ov { display: flex; flex-direction: column; gap: 18px; padding-bottom: 8px; }
+.ov-hero { margin-bottom: 0; }
+/* The resume card is 1.45fr because it carries sentences and the other three
+   carry a number and a line; equal columns wrap the prose into a ribbon. */
+.ov-cards { display: grid; grid-template-columns: 1.45fr 1fr 1fr 1fr; gap: 14px; align-items: stretch; }
+.ov-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.ov-split { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; align-items: start; }
+.ov-trio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; align-items: start; }
+
+/* ---- the queue cards: what stands between you and progress ---- */
+.ovc { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 15px 17px 16px; min-width: 0; }
+.ovc.flag { border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.ovc.resume-card { background: var(--resume); border-color: var(--resume-border); }
+.ovc > .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin-bottom: 9px; }
+.ovc-figure { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ovc-figure .v { font-family: var(--disp); font-size: 26px; line-height: 1; letter-spacing: -0.01em; color: var(--ink); }
+.ovc-figure .v.accent { color: var(--accent-deep); }
+.ovc-figure .v.bad { color: var(--critical); }
+.ovc-figure .v.live { color: var(--live); }
+.ovc-figure .v.muted { color: var(--muted); }
+.ovc-figure .tag { font-family: var(--mono); font-size: 10.5px; color: var(--accent-deep); }
+.ovc-figure .tag.bad { color: var(--critical); }
+.ovc-note { font-size: 12.5px; line-height: 1.55; color: var(--body-2); margin-top: 7px; }
+.ovc-list { display: flex; flex-direction: column; gap: 7px; }
+.ovc-keep { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; line-height: 1.5; color: var(--body-2); margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--resume-border); }
+.ovc-keep .mk.tick { flex: none; color: var(--green); }
+.ovc-acts { margin-top: auto; padding-top: 12px; }
+.ovc-go { font-family: var(--mono); font-size: 11px; color: var(--accent); margin-top: auto; padding: 12px 0 0; text-align: left; }
+.ovc-acts .ovc-go { margin-top: 0; padding-top: 0; }
+.ovc-go:hover { color: var(--accent-deep); }
+
+/* ---- the headline tiles ---- */
+.tile { display: flex; flex-direction: column; gap: 5px; background: var(--card); border: 1px solid var(--line); border-radius: 13px; padding: 14px 16px 15px; min-width: 0; }
+.tile .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.tile .v { font-family: var(--disp); font-size: 24px; line-height: 1.1; letter-spacing: -0.01em; color: var(--ink); }
+.tile .v.live { color: var(--live); }
+.tile .v.accent { color: var(--accent-deep); }
+.tile .v.building { color: var(--building); }
+/* `.sub`, NOT `.note` — `.note` is the Workbench's sticky and would paint
+   every one of these lines on yellow paper. The same trap the spine's `.hint`
+   sidesteps; it has now caught this file twice. */
+.tile .sub { font-size: 12px; line-height: 1.45; color: var(--muted); }
+
+/* ---- the auto-extract inbox: on screen only when a push left something ---- */
+.ov-inbox { background: var(--card); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 14px 17px 15px; }
+.inbox-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.inbox-head .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.inbox-head .hint { font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-left: auto; }
+.inbox-rows { display: flex; flex-direction: column; margin-top: 6px; }
+.inbox-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; }
+.inbox-row + .inbox-row { border-top: 1px solid var(--line-2); }
+.inbox-row .txt { flex: 1; min-width: 0; font-size: 13px; line-height: 1.45; color: var(--body); }
+.inbox-tail { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line-2); }
+
+/* ---- a measured band ---- */
+.band { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px 18px; }
+.band-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 15px; }
+.band-head .h { font-family: var(--disp); font-size: 15px; font-weight: 600; color: var(--ink); }
+.band-head .sub { font-size: 12.5px; color: var(--muted); }
+.band-head .band-link,
+.band-head .btn-accent { margin-left: auto; }
+.band-link { font-family: var(--mono); font-size: 11px; color: var(--accent); text-align: left; padding: 0; }
+.band-link:hover { color: var(--accent-deep); }
+/* The words that stand in for a number nobody measured. Never styled as an
+   error: "no suite run in this window" is a normal, informative answer. */
+.band-empty { font-size: 12.5px; line-height: 1.6; color: var(--body-2); }
+.band.band-failed { border-color: var(--critical); }
+.band.band-failed .band-empty { color: var(--critical); }
+
+/* ---- the usage band ---- */
+.usage-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+.ustat { display: flex; flex-direction: column; gap: 4px; border-left: 2px solid var(--line-3); padding-left: 13px; min-width: 0; }
+.ustat.accent { border-left-color: var(--accent); }
+.ustat.live { border-left-color: var(--live); }
+.ustat .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.ustat .v { font-family: var(--disp); font-size: 22px; line-height: 1.1; letter-spacing: -0.01em; color: var(--ink); }
+.ustat .sub { font-size: 12px; line-height: 1.45; color: var(--muted); }
+.usage-body { display: grid; grid-template-columns: 1.5fr 1fr; gap: 22px; align-items: end; }
+.usage-chart { min-width: 0; }
+.usage-bars { display: flex; align-items: flex-end; gap: 6px; height: 96px; }
+/* One column per week, the two populations stacked: unattended on top of
+   by-hand. A zero week is genuinely empty — see usageBars() on why a stub
+   would lie. */
+.ubar { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; height: 100%; }
+/* Two steps of the SAME ramp rather than two hues: these are two populations of
+   one thing (tokens), not two unrelated measures, and a second hue would read
+   as a second unit. Pale is unattended, mid is by hand — far enough apart to
+   tell at a glance, which the tint/keyline pair was not. */
+.ubar .auto { display: block; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 4px 4px 0 0; }
+.ubar .inter { display: block; background: var(--accent-soft); border-radius: 0 0 4px 4px; }
+.usage-axis { display: flex; justify-content: space-between; gap: 10px; font-family: var(--mono); font-size: 10px; color: var(--faint); margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--line-2); }
+.usage-axis .mid { text-align: center; }
+.usage-axis .now { color: var(--accent); }
+.usage-models { min-width: 0; }
+.usage-models > .lbl { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin-bottom: 11px; }
+.model-list { display: flex; flex-direction: column; gap: 3px; }
+.model-row { display: flex; flex-direction: column; gap: 5px; width: 100%; text-align: left; padding: 7px 9px; margin: 0 -9px; border-radius: 9px; }
+.model-row:hover { background: var(--panel); }
+.model-row.on { background: var(--accent-tint); }
+.model-row .line { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
+.model-row .chev { flex: none; font-size: 10px; color: var(--faint); }
+.model-row .name { flex: 1; min-width: 0; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-row .n { flex: none; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.model-row .track { display: block; height: 5px; border-radius: 999px; background: var(--panel); overflow: hidden; }
+.model-row.on .track { background: var(--card); }
+.model-row .fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+
+.usage-detail { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line-2); }
+.ud-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.ud-head .name { font-family: var(--disp); font-size: 14px; font-weight: 600; }
+.ud-head .where { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.ud-close { margin-left: auto; font-size: 12px; color: var(--muted); }
+.ud-close:hover { color: var(--ink); }
+.ud-body { display: grid; grid-template-columns: 1fr 1.4fr; gap: 22px; align-items: start; }
+.ud-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ud-stat { display: flex; flex-direction: column; gap: 5px; border: 1px solid var(--line-2); border-radius: 10px; padding: 11px 12px; background: var(--paper); }
+.ud-stat .lbl { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.ud-stat .v { font-family: var(--disp); font-size: 17px; font-weight: 600; }
+.ud-recent > .lbl { display: block; font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin-bottom: 10px; }
+.ud-row { display: flex; align-items: baseline; gap: 11px; font-size: 12.5px; padding: 4px 0; }
+.ud-row .when { flex: none; width: 40px; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.ud-row .txt { flex: 1; min-width: 0; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ud-row .n { flex: none; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+
+/* ---- the engineering band: suite, verdicts, runs ---- */
+.eng-groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; align-items: stretch; }
+.eng-group { display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--line-2); border-radius: 12px; padding: 14px 15px 15px; background: var(--paper); min-width: 0; }
+.eg-head { display: flex; align-items: baseline; gap: 8px; }
+.eg-head .name { font-family: var(--disp); font-size: 13.5px; font-weight: 600; }
+.eg-head .state { margin-left: auto; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+.eg-head .state.good { color: var(--live); background: var(--green-tint); border: 1px solid var(--live); }
+.eg-head .state.warn { color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); }
+.eg-head .state.bad { color: var(--critical); background: var(--card); border: 1px solid var(--critical); }
+.eg-head .state.muted { color: var(--muted); background: var(--panel); border: 1px solid var(--line-2); }
+.eg-read { font-size: 12px; line-height: 1.55; color: var(--muted); padding-top: 11px; border-top: 1px solid var(--line-2); }
+.eng-group .band-link { margin-top: auto; }
+.metrics { display: flex; flex-direction: column; gap: 10px; }
+.metric { display: flex; flex-direction: column; gap: 5px; }
+.metric .line { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
+.metric .name { flex: 1; min-width: 0; color: var(--body-2); }
+.metric .v { flex: none; font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink); }
+.metric .v.good { color: var(--live); }
+.metric .v.warn { color: var(--building); }
+.metric .v.bad { color: var(--critical); }
+.metric .v.muted { color: var(--muted); }
+.metric .track { display: block; height: 5px; border-radius: 999px; background: var(--panel); overflow: hidden; }
+.metric .fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.metric .fill.good { background: var(--live); }
+.metric .fill.warn { background: var(--building); }
+.metric .fill.bad { background: var(--critical); }
+
+/* ---- awaiting your verdict ---- */
+.band.verdicts { border-color: var(--accent-tint-border); padding: 16px 0 0; }
+.band.verdicts .band-head { padding: 0 18px; }
+.vrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 13px 18px; border-top: 1px solid var(--line-2); }
+.vrow.hot { background: var(--accent-tint); }
+.vmain { min-width: 0; }
+.vtop { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.vtop .title { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.vtop .ticked { font-family: var(--mono); font-size: 10px; color: var(--muted); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 6px; }
+.kindtag { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; border: 1px solid currentColor; border-radius: 5px; padding: 1px 6px; }
+.kindtag.none { color: var(--faint); }
+.vsummary { font-size: 12.5px; line-height: 1.55; color: var(--body-2); margin-top: 5px; }
+.vorigin { font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-top: 6px; }
+.vacts { display: flex; align-items: center; gap: 10px; }
+.vage { font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; }
+.vage.hot { color: var(--accent-deep); }
+.vgo { font-size: 12px; color: var(--accent); border: 1px solid var(--accent-tint-border); background: var(--card); border-radius: 7px; padding: 6px 11px; white-space: nowrap; }
+.vgo:hover { background: var(--accent-tint); color: var(--accent-deep); }
+.vtail { font-size: 12.5px; color: var(--muted); padding: 12px 18px 14px; border-top: 1px solid var(--line-2); }
+
+/* ---- the horizon: ideas with no dates, drawn as such ---- */
+.horizon-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.hchip { font-size: 12.5px; line-height: 1.35; color: var(--body-2); border: 1px dashed var(--line-3); border-radius: 9px; padding: 7px 11px; text-align: left; background: transparent; }
+.hchip:hover { border-color: var(--accent); color: var(--accent-deep); }
+
+/* ---- back to top ---- */
+.to-top { position: fixed; right: 26px; bottom: 26px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--card); border: 1px solid var(--keyline); box-shadow: 0 6px 18px rgba(40, 30, 20, .14); font-size: 14px; color: var(--body); z-index: 20; }
+.to-top:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ---- the progress ledger: the number, and the arithmetic under it ---- */
 .ledger { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 13px; }
@@ -635,20 +811,10 @@ a.tab { display: inline-block; }
 .rail-row .txt { flex: 1; min-width: 0; font-size: 13px; line-height: 1.45; color: var(--body); }
 .rail-row .tier { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 6px; }
 
-.rail-review { display: flex; flex-direction: column; gap: 7px; padding: 9px 0; }
-.rail-review + .rail-review { border-top: 1px solid var(--line-2); }
-.rail-review .line { display: flex; align-items: baseline; gap: 8px; }
-.rail-review .txt { flex: 1; min-width: 0; font-size: 13px; line-height: 1.45; color: var(--body); }
-.rail-review .acts { display: flex; gap: 8px; }
-
-.rail-sev { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
-.rail-sev .mk { flex: none; width: 8px; height: 8px; border-radius: 50%; }
-.rail-sev .mk.sev-critical { background: var(--critical); }
-.rail-sev .mk.sev-high { background: var(--accent); }
-.rail-sev .mk.sev-medium { background: var(--building); }
-.rail-sev .mk.sev-low { background: var(--paused); }
-.rail-sev .name { flex: 1; font-size: 13px; color: var(--body); text-transform: capitalize; }
-.rail-sev .n { font-family: var(--mono); font-size: 11px; color: var(--ink); }
+/* The queue cards carry the review inbox and the bug spread now, so the rail's
+   own copies went with the redesign. */
+.rail-row .mk.done { color: var(--green); font-size: 11px; width: auto; height: auto; margin-top: 1px; border-radius: 0; background: none; }
+.rail-row .tier.when { color: var(--faint); background: transparent; border-color: transparent; padding-right: 0; }
 
 /* ---- config: twice-a-year settings, demoted to one quiet strip ---- */
 .config-strip { border: 1px solid var(--line); border-radius: 14px; padding: 12px 15px; display: flex; flex-direction: column; gap: 6px; }
@@ -1515,9 +1681,17 @@ a.tab { display: inline-block; }
   .resume-cols { grid-template-columns: 1fr; gap: 18px; }
   .stats { grid-template-columns: 1fr; }
   .road-grid { grid-template-columns: 1fr 1fr; }
-  /* 4a's rail drops under the main column rather than squeezing: at this width
-     a 320px rail leaves the ledger's arithmetic too narrow to read. */
-  .ov-grid { grid-template-columns: minmax(0, 1fr); }
+  /* The Overview's bands fold to one column rather than squeezing: at this
+     width a side-by-side ledger leaves its arithmetic too narrow to read, and
+     four queue cards become four ribbons of wrapped prose. The 2x2 for the
+     cards and tiles keeps the COMPARISON those rows exist to make. */
+  .ov-cards, .ov-tiles { grid-template-columns: 1fr 1fr; }
+  .ov-split, .ov-trio, .usage-body, .ud-body { grid-template-columns: minmax(0, 1fr); }
+  .usage-body, .ud-body { gap: 20px; align-items: start; }
+  .usage-stats { grid-template-columns: 1fr 1fr; }
+  /* Three engineering groups side by side stop being readable well before the
+     numbers in them stop being comparable, so they stack rather than shrink. */
+  .eng-groups { grid-template-columns: minmax(0, 1fr); }
 }
 /* The spine is the one band that cannot simply reflow — five stages side by
    side stop being comparable below ~700px. It becomes a scrollable strip with
@@ -1542,6 +1716,12 @@ a.tab { display: inline-block; }
   .road-grid.focused .road-item .note { max-width: none; }
   .tier-card { flex-basis: 100%; max-width: none; }
   .dash-title { font-size: 26px; }
+  .ov-cards, .ov-tiles, .usage-stats, .ud-stats { grid-template-columns: minmax(0, 1fr); }
+  /* The verdict row's age and Review button drop under the change rather than
+     squeezing it to a column of single words. */
+  .vrow { grid-template-columns: minmax(0, 1fr); }
+  .vacts { justify-content: flex-start; }
+  .to-top { right: 14px; bottom: 14px; }
 
   /* phone pass: tighter chrome, scrollable tabs, roomier modals */
   .topbar .right { gap: 8px; }

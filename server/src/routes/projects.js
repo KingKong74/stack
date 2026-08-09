@@ -9,6 +9,7 @@ import {
   bugShape, groupRoadmap, noteShape, futureShape, checkShape, activityShape,
   projectListShape, projectDetailShape, resumeSince,
 } from '../shape.js';
+import { readUsage, readTests, readRuns, PULSE_DAYS } from '../pulse.js';
 import { readSettings, sessionDefaultLines } from '../settings.js';
 import { geminiEnabled } from '../gemini.js';
 import { agentsForClient } from '../agents.js';
@@ -176,6 +177,72 @@ projects.get('/:slug', async (req, res) => {
       since: resumeSince(sessions.rows),
     })
   );
+});
+
+// GET /api/projects/:slug/pulse  -> the Overview tab's three MEASURED bands:
+// what the models spent on this project, what its test suite is doing, and how
+// the autopilot's runs came out. All three are twelve-week windows.
+//
+// A separate trip from GET /:slug on purpose. The detail payload is what every
+// tab needs to render at all; this is one tab's analytics, it is the heaviest
+// read on the project, and none of it is worth delaying the Roadmap or Quality
+// tabs for. The arithmetic is in `server/src/pulse.js` (pure, DB-free) — this
+// handler only fetches, so `server/test/pulse.test.mjs` can pin every rule
+// without a database.
+//
+// Five aggregate queries, run together. NOT one query per check, per week or
+// per model — this is a read layer and stays one.
+projects.get('/:slug/pulse', async (req, res) => {
+  const { rows } = await q(
+    'SELECT id FROM projects WHERE slug = $1 AND deleted_at IS NULL', [req.params.slug]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'No such project.' });
+  const id = rows[0].id;
+  const since = `now() - interval '${PULSE_DAYS} days'`;
+
+  const [sessions, runs, checkRows, suiteRuns, results] = await Promise.all([
+    // Usage, not the activity feed: `summary` rides along only to label a row in
+    // the by-model drill-down. No LIMIT — a twelve-week window is the cap, and
+    // a 50-row slice would silently under-report the projects that push most.
+    q(
+      `SELECT created_at, tokens_used, model_usage, agent_usage, agent_calls,
+              agents_recorded, summary
+         FROM sessions WHERE project_id = $1 AND created_at > ${since}`,
+      [id]
+    ),
+    q(
+      `SELECT finished_at, tokens, cost_usd, model_usage, item_title, outcome,
+              commits, review_verdict, auto_verdict
+         FROM autopilot_runs WHERE project_id = $1 AND finished_at > ${since}`,
+      [id]
+    ),
+    q('SELECT id, name, last_status, external FROM checks WHERE project_id = $1', [id]),
+    // scope='all' only. A run-one is a probe of a single check and counting it
+    // as a suite result would let one green check report a 100% suite.
+    q(
+      `SELECT total, passed, failed, duration_ms, run_at FROM check_runs
+        WHERE project_id = $1 AND scope = 'all' AND run_at > ${since}`,
+      [id]
+    ),
+    // Newest first so readTests() sees each check's history in order — the
+    // flake count is a walk over consecutive results and reversing it would
+    // still count the flips, but the cap below must keep the RECENT ones.
+    q(
+      `SELECT check_id, status FROM check_results
+        WHERE project_id = $1 AND run_at > ${since}
+        ORDER BY run_at DESC LIMIT 2000`,
+      [id]
+    ),
+  ]);
+
+  res.json({
+    windowDays: PULSE_DAYS,
+    usage: readUsage({ sessions: sessions.rows, runs: runs.rows }),
+    tests: readTests({
+      checks: checkRows.rows, suiteRuns: suiteRuns.rows, results: results.rows,
+    }),
+    runs: readRuns({ runs: runs.rows }),
+  });
 });
 
 // GET /api/projects/:slug/debrief  -> the per-project RESUME debrief: current

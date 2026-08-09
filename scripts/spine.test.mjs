@@ -22,6 +22,8 @@ module.registerHooks({
 const spineUrl = new URL('../web/src/lib/spine.ts', import.meta.url);
 const {
   buildSpine, progressLedger, nextUp, bugSpread, readCadence, isBuilt, isLanded, isInFlight,
+  verdictQueue, shippedRecently, overviewStats, compactTokens, usageBars, recentForModel,
+  USAGE_BAR_MAX,
 } = await import(spineUrl.href);
 
 // --- fixtures ---------------------------------------------------------
@@ -218,4 +220,137 @@ test('never pushed is null, not a very long silence', () => {
   assert.equal(c.quietFor, null);
   assert.equal(c.quiet, false);
   assert.equal(c.peak, 0);
+});
+
+// --- the verdict queue ------------------------------------------------
+
+test('the verdict queue is the Built stage, row for row', () => {
+  const items = [
+    item({ builtNote: 'shipped it', claimedBy: 'ui/12-thing' }),
+    item({ done: true, reviewTag: 'solid' }),               // landed, not waiting
+    item({ claimedBy: 'feat/13-other' }),                   // claimed, not built
+  ];
+  const b = board(items);
+  const rows = verdictQueue(b, 5, NOW);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].kind, 'ui');
+  assert.equal(stage(buildSpine(b, [], 'p', NOW), 'built').count, rows.length,
+    'the list and the stage number must never disagree');
+});
+
+test('the queue is OLDEST first — the row blocking everything behind it leads', () => {
+  const rows = verdictQueue(board([
+    item({ title: 'fresh', builtNote: 'x', claimedBy: 'fix/1-a', updatedAt: ago(1) }),
+    item({ title: 'stale', builtNote: 'x', claimedBy: 'fix/2-b', updatedAt: ago(9) }),
+  ]), 5, NOW);
+  assert.deepEqual(rows.map((r) => r.title), ['stale', 'fresh']);
+  assert.equal(rows[0].ageDays, 9);
+});
+
+test('an unstamped row sorts LAST — unknown age is not fresh', () => {
+  const rows = verdictQueue(board([
+    item({ title: 'none', builtNote: 'x', claimedBy: 'fix/1-a', updatedAt: null }),
+    item({ title: 'day', builtNote: 'x', claimedBy: 'fix/2-b', updatedAt: ago(1) }),
+  ]), 5, NOW);
+  assert.deepEqual(rows.map((r) => r.title), ['day', 'none']);
+  assert.equal(rows[1].ageDays, null);
+});
+
+test("a legacy lane's kind is '' and never 'feat' (#363)", () => {
+  const rows = verdictQueue(board([
+    item({ builtNote: 'x', claimedBy: 'auto/item-271-descriptive-branch-names' }),
+  ]), 5, NOW);
+  assert.equal(rows[0].kind, '', 'the branch records no kind, so the row claims none');
+});
+
+test('shipped recently is FRESHEST first — the opposite order, on purpose', () => {
+  const rows = shippedRecently(board([
+    item({ title: 'old', done: true, reviewTag: 'solid', updatedAt: ago(9) }),
+    item({ title: 'new', done: true, reviewTag: 'solid', updatedAt: ago(1) }),
+    item({ title: 'waiting', builtNote: 'x', claimedBy: 'fix/1-a' }),
+  ]), 5, NOW);
+  assert.deepEqual(rows.map((r) => r.title), ['new', 'old']);
+});
+
+// --- the headline tiles -----------------------------------------------
+
+test('the tiles NAME what is in flight rather than just counting it', () => {
+  const b = board([
+    item({ title: 'Inline comments', claimedBy: 'feat/9-inline' }),
+    item({ done: true, reviewTag: 'solid' }),
+  ]);
+  const tiles = overviewStats(b, buildSpine(b, [], 'p', NOW), 62, []);
+  assert.equal(tiles[0].value, '1 of 2');
+  assert.equal(tiles[1].value, '1');
+  assert.match(tiles[1].note, /Inline comments/);
+  assert.equal(tiles[3].value, '62%');
+});
+
+test('an absent cadence strip does not report zero pushes', () => {
+  const b = board([item()]);
+  const stages = buildSpine(b, [], 'p', NOW);
+  assert.match(overviewStats(b, stages, 10, []).at(-1).note, /weighted/);
+  assert.match(overviewStats(b, stages, 10, [{ day: '2026-08-01', n: 2 }]).at(-1).note, /2 pushes/);
+});
+
+test('an empty board says so instead of reading 0 of 0', () => {
+  const b = board([]);
+  const tiles = overviewStats(b, buildSpine(b, [], 'p', NOW), 0, []);
+  assert.equal(tiles[0].value, '0 of 0');
+  assert.match(tiles[0].note, /nothing on the board/);
+});
+
+// --- the usage band ---------------------------------------------------
+
+test('compactTokens reads the way a human says the number', () => {
+  assert.equal(compactTokens(48_200_000), '48.2M');
+  assert.equal(compactTokens(212_000), '212K');
+  assert.equal(compactTokens(900), '900');
+  assert.equal(compactTokens(0), '0');
+  assert.equal(compactTokens(-5), '0');
+});
+
+const usage = (weeks) => ({
+  measured: true, weeks, sessions: 0, runs: 0, tokens: 0,
+  interactiveTokens: 0, autoTokens: 0, medianSessionTokens: null,
+  costUsd: 0, pricedRuns: 0, delegations: { calls: 0, recorded: 0 },
+  models: [], recent: [],
+});
+
+test('the usage strip is LINEAR — four times the spend is four times the bar', () => {
+  const bars = usageBars(usage([
+    { week: '2026-06-01', interactive: 100, auto: 0 },
+    { week: '2026-06-08', interactive: 400, auto: 0 },
+  ]));
+  assert.equal(bars[1].interactiveH, USAGE_BAR_MAX);
+  assert.equal(bars[0].interactiveH, Math.round(USAGE_BAR_MAX / 4));
+  assert.equal(bars[1].last, true);
+});
+
+test('a zero week draws NOTHING — a stub would read as a little spend', () => {
+  const bars = usageBars(usage([
+    { week: '2026-06-01', interactive: 0, auto: 0 },
+    { week: '2026-06-08', interactive: 50, auto: 50 },
+  ]));
+  assert.equal(bars[0].interactiveH, 0);
+  assert.equal(bars[0].autoH, 0);
+  assert.equal(bars[0].total, 0);
+  assert.ok(bars[1].interactiveH > 0 && bars[1].autoH > 0, 'both populations keep their own tone');
+});
+
+test('a strip with no spend at all divides by nothing rather than by zero', () => {
+  const bars = usageBars(usage([{ week: '2026-06-01', interactive: 0, auto: 0 }]));
+  assert.equal(bars[0].interactiveH, 0);
+});
+
+test('the drill-down shows only the rows that named that model', () => {
+  const u = usage([]);
+  u.recent = [
+    { kind: 'session', at: '2026-08-08T00:00:00Z', models: ['opus'], text: 'a', tokens: 1 },
+    { kind: 'run', at: '2026-08-07T00:00:00Z', models: ['haiku'], text: 'b', tokens: 2 },
+    { kind: 'session', at: '2026-08-06T00:00:00Z', models: ['opus', 'haiku'], text: 'c', tokens: 3 },
+  ];
+  assert.deepEqual(recentForModel(u, 'opus').map((r) => r.text), ['a', 'c']);
+  assert.deepEqual(recentForModel(u, 'haiku').map((r) => r.text), ['b', 'c']);
+  assert.deepEqual(recentForModel(u, 'sonnet'), []);
 });

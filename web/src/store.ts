@@ -3,7 +3,7 @@ import type {
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Tip, Tier, ResumeSince, ProjectDebrief,
   WorkbenchData, WorkbenchCard, WorkbenchEdge, WorkbenchBody, WorkbenchOp, WorkbenchCascade,
-  WorkbenchDebrief, SchedSpan, BoardShape, BoardArea, BoardList,
+  WorkbenchDebrief, SchedSpan, BoardShape, BoardArea, BoardList, ProjectPulse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1139,6 +1139,15 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
 // arrives already briefed. NOT the autopilot's night debrief (GET /api/review).
 export async function getProjectDebrief(slug: string): Promise<ProjectDebrief> {
   return request<ProjectDebrief>(`/projects/${encodeURIComponent(slug)}/debrief`);
+}
+
+// The Overview tab's three measured bands — model spend, the test suite, and
+// how the autopilot's runs came out, over twelve weeks. A SECOND trip on
+// purpose: it is the heaviest read on a project and no other tab needs it, so
+// it must not sit in front of the detail payload every tab renders from.
+// The Overview draws each band absent when its `measured` is false.
+export async function getProjectPulse(slug: string): Promise<ProjectPulse> {
+  return request<ProjectPulse>(`/projects/${encodeURIComponent(slug)}/pulse`);
 }
 
 // ---- the Review room (#282, GET /api/review) ----

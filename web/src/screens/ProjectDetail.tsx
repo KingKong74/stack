@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Future, Severity, Priority, Bug, BugStatus, WorkbenchPhase } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Future, Severity, Priority, Bug, BugStatus, WorkbenchPhase, ProjectPulse } from '../types';
 import {
-  getProjectDetail, type ProjectDetailData,
+  getProjectDetail, getProjectPulse, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   deleteNote, createFuture, patchFuture, deleteFuture, getFutures,
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
@@ -55,6 +55,13 @@ export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
   const [data, setData] = useState<ProjectDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  // The Overview's three measured bands, on their own trip: the heaviest read
+  // on a project and the only tab that wants it, so it must not sit in front of
+  // the payload every other tab renders from. Its failure is carried, not
+  // swallowed — a band that could not be READ says so rather than drawing a
+  // project that spent, tested and ran nothing.
+  const [pulse, setPulse] = useState<ProjectPulse | null>(null);
+  const [pulseError, setPulseError] = useState('');
 
   useEffect(() => {
     let live = true;
@@ -71,6 +78,16 @@ export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
     return () => { live = false; };
   }, [id]);
 
+  useEffect(() => {
+    let live = true;
+    setPulse(null);
+    setPulseError('');
+    getProjectPulse(id)
+      .then((p) => { if (live) setPulse(p); })
+      .catch((e) => { if (live) setPulseError(e?.message || 'Could not read this project’s pulse'); });
+    return () => { live = false; };
+  }, [id]);
+
   if (loading) return <Shell><div className="empty-state"><div className="big">Loading…</div></div></Shell>;
   if (loadError || !data) {
     return (
@@ -83,7 +100,8 @@ export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
       </Shell>
     );
   }
-  return <Detail data={data} setData={setData} routeTab={tab} routeHighlight={highlight} onOpenSearch={onOpenSearch} />;
+  return <Detail data={data} setData={setData} pulse={pulse} pulseError={pulseError}
+    routeTab={tab} routeHighlight={highlight} onOpenSearch={onOpenSearch} />;
 }
 
 function Shell({ children }: { children: ReactNode }) {
@@ -100,8 +118,9 @@ function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
+function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, onOpenSearch }: {
   data: ProjectDetailData; setData: (d: ProjectDetailData) => void;
+  pulse: ProjectPulse | null; pulseError: string;
   routeTab?: string; routeHighlight?: string; onOpenSearch: () => void;
 }) {
   const { project, activity } = data;
@@ -932,10 +951,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         </div>
 
         {tab === 'overview' && (
-          <Overview project={project} activity={activity} directives={data.directives}
+          <Overview project={project} phase={data.currentPhase} activity={activity} directives={data.directives}
             reviewQueue={reviewQueue} keepResumeCard={data.keepResumeCard}
             roadmap={roadmap} futures={futures} bugs={bugs}
             cadence={data.cadence} lastPushAt={data.lastPushAt}
+            pulse={pulse} pulseError={pulseError}
             onViewAll={viewAll} onExport={() => setExportOpen(true)} onJumpBack={() => go.terminal(slug, undefined, true)}
             onChangeDirectives={changeDirectives}
             onReviewKeep={reviewKeep} onReviewDismiss={reviewDismiss} onSaveDeploy={saveDeploy}

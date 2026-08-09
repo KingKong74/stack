@@ -575,3 +575,85 @@ export interface AuthDevice {
   createdAt: string | null;  // ISO timestamp
   current: boolean;          // true = this is the session's own device token
 }
+
+// ---- a project's PULSE (GET /api/projects/:slug/pulse) ----
+// The Overview tab's three MEASURED bands, over a twelve-week window. The
+// arithmetic is server-side and pure (server/src/pulse.js); everything here is
+// read-only. The rule that governs every field: `measured: false` means NOTHING
+// IN THE WINDOW CARRIED THIS, and the band is drawn ABSENT — never as a row of
+// zeroes. A suite that never ran is not a suite at 0% passing, and a nullable
+// number here is always that distinction rather than a missing value.
+export interface PulseWeek {
+  week: string;        // ISO date of the Monday (UTC) that starts the week
+  interactive: number; // tokens from human-driven sessions
+  auto: number;        // tokens from autopilot runs
+}
+export interface PulseModel {
+  model: string;
+  label: string;       // the id, shortened for display
+  tokens: number;
+  costUsd: number | null; // null = UNPRICED — a transcript carries no cost
+  sessions: number;    // interactive sessions this model appeared in
+  runs: number;        // autopilot runs this model appeared in
+  share: number;       // 0-100, TOKEN-based (only half the population has a price)
+  lastAt: string;      // ISO
+}
+export interface PulseRecent {
+  kind: 'session' | 'run';
+  at: string;          // ISO
+  models: string[];    // which models this row attributed tokens to
+  text: string;        // the session's summary, or the run's item title
+  tokens: number;
+}
+export interface PulseUsage {
+  measured: boolean;
+  weeks: PulseWeek[];
+  sessions: number;
+  runs: number;
+  tokens: number;
+  interactiveTokens: number;
+  autoTokens: number;
+  medianSessionTokens: number | null;
+  costUsd: number;     // priced runs ONLY — read it beside pricedRuns
+  pricedRuns: number;
+  // A delegation whose transcript was lost is UNPRICED, not free, which is why
+  // both numbers are reported rather than one.
+  delegations: { calls: number; recorded: number };
+  models: PulseModel[];
+  recent: PulseRecent[];
+}
+export interface PulseTests {
+  measured: boolean;   // false = this project has no checks, so it has no suite
+  checks: number;
+  failing: number;
+  never: number;       // never run — its own state, not a pass
+  external: number;
+  suite: {
+    runs: number;
+    passRate: number | null;   // null = NO RUN in the window, never 0%
+    medianMs: number | null;
+    lastAt: string | null;
+    lastPassed: number | null;
+    lastTotal: number | null;
+  };
+  flaky: { name: string; flips: number; of: number }[];
+}
+export interface PulseRuns {
+  measured: boolean;
+  total: number;
+  landed: number;
+  failed: number;      // failed + limit
+  planned: number;     // a plan night commits nothing BY DESIGN
+  noCommits: number;
+  commits: number;
+  landRate: number | null;  // over the runs that COULD land; plan nights excluded
+  // `none` is NO PASS RAN and is never folded into `clean`.
+  verdicts: { clean: number; concerns: number; blocked: number; none: number };
+  autoVerdictRuns: number;  // #263 fired; NULL there is not a refusal
+}
+export interface ProjectPulse {
+  windowDays: number;
+  usage: PulseUsage;
+  tests: PulseTests;
+  runs: PulseRuns;
+}

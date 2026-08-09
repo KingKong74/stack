@@ -1,39 +1,53 @@
-// The Overview tab — design 4a, "queue depth, not a funnel".
+// The Overview tab — the project's progression spine, and the three measured
+// bands under it.
 //
-// The tab used to be five point-in-time bands with no direction of travel, and
-// it hid the one number the Dashboard shows about a project. It is now built
-// around the SPINE: the five stages a change passes through, each drawn as the
-// queue standing in it, each a doorway into the tab or room that owns that
-// stage. Everything below the spine either explains the headline number or is
-// something the spine sends you into.
+// The tab answers one question in one screen: which way is this project moving,
+// and what is standing in the way. It opens with the SPINE — the five stages a
+// change passes through, each drawn as the queue standing in it, each a doorway
+// into the tab or room that owns that stage — and everything below either
+// explains a headline number or is somewhere the spine sends you.
 //
-// Three rules this file exists to hold:
+// FIVE RULES THIS FILE EXISTS TO HOLD:
 //
-//  1. NO STAGE IS COMPUTED HERE. Every predicate lives in `lib/spine.ts`, pure
-//     and tested (`scripts/spine.test.mjs`), because the Built stage's
-//     predicate must stay identical to the Review room's own (#374) — a copy
-//     in a component is how the two silently stop agreeing.
-//  2. NO INVENTED THROUGHPUT. The design draws a flow rate between each pair of
-//     stages; Stack has no stage-transition stamp to compute one from (rows
-//     carry `updatedAt`, which is MOVEMENT, not a ledger), so the connectors
-//     carry no number. What IS honest — how long a queue has sat still — is
-//     shown on the stage itself. Absent is not zero.
-//  3. THE CADENCE STRIP IS ABSENT, NEVER EMPTY, when the server didn't measure
-//     it. A month of zero-height bars reads as "this project died", which is a
-//     different claim from "this server is older than the strip".
+//  1. NO STAGE, QUEUE OR TILE IS COMPUTED HERE. Every predicate lives in
+//     `lib/spine.ts`, pure and tested (`scripts/spine.test.mjs`), because the
+//     Built stage's predicate must stay identical to the Review room's own
+//     (#374) — a copy in a component is how the two silently stop agreeing.
+//     The verdict queue below is that same predicate, rendered as rows.
+//  2. NO INVENTED THROUGHPUT, AND NO FORECAST. The design draws a flow rate
+//     between stages and a "1.0 forecast" date; Stack has no stage-transition
+//     stamp to compute either from (rows carry `updatedAt`, which is MOVEMENT,
+//     not a ledger). What IS honest — how long a queue has sat still — is shown
+//     on the stage itself. Absent is not zero.
+//  3. A MEASURED BAND IS ABSENT, NEVER EMPTY, when nothing measured it. The
+//     usage, suite and runs bands each read their own `measured` flag and say
+//     WHICH of "nothing ran" and "this was never measured" they mean. Twelve
+//     empty columns read as a dead project; that is a different claim.
+//  4. SPEND IS COST WHERE THERE IS COST AND TOKENS EVERYWHERE ELSE. An
+//     interactive session's transcript carries no price, so the by-model band
+//     shares on TOKENS and prints a cost only beside how many runs priced
+//     themselves. A dollar figure that looks like the whole bill is worse than
+//     no dollar figure.
+//  5. THE PULSE IS A SECOND TRIP, AND ITS FAILURE IS LOUD. If the fetch fails
+//     the bands say so; they never render as a project that spent nothing, ran
+//     nothing and tested nothing.
 //
-// Deployment and Tech stack are twice-a-year config and now sit collapsed in
-// the rail; their editors are unchanged, just no longer at the same visual
-// weight as live state.
+// Deployment and Tech stack are twice-a-year config and sit collapsed at the
+// foot; their editors are unchanged, just no longer at the weight of live state.
 
 import { useState } from 'react';
-import type { Activity, Bug, Future, Project, ProjectStatus, Roadmap as RoadmapData } from '../types';
+import type {
+  Activity, Bug, Future, Project, ProjectPulse, ProjectStatus, PulseUsage,
+  Roadmap as RoadmapData,
+} from '../types';
 import { PRODUCT_NAME } from '../lib/ui';
 import { ResumeSinceStrip } from '../components/ResumeSinceStrip';
 import {
   buildSpine, progressLedger, nextUp, bugSpread, readCadence, PROGRESS_CAP,
-  type Stage,
+  verdictQueue, shippedRecently, overviewStats, compactTokens, usageBars, recentForModel,
+  type Stage, type VerdictRow,
 } from '../lib/spine';
+import { KIND_TONE, type LaneKind } from '../lib/branch';
 import { go } from '../lib/route';
 
 // One row of the project-scoped review queue (hook-created, not yet reviewed).
@@ -54,6 +68,13 @@ const STATUS_TEXT: Record<ProjectStatus, string> = {
   live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived',
 };
 
+const pct1 = (n: number) => `${Math.round(n * 10) / 10}%`;
+const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : Math.round(n)}`;
+const duration = (ms: number) => (ms >= 60000
+  ? `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`
+  : `${Math.round(ms / 1000)}s`);
+const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+
 // ---------------------------------------------------------------------------
 // the spine
 // ---------------------------------------------------------------------------
@@ -63,6 +84,7 @@ const STATUS_TEXT: Record<ProjectStatus, string> = {
 // hairline under a linear scale, and the comparison the band exists to make —
 // which queue is deepest — disappears. Landed is excluded from the scale and
 // drawn as a fixed plinth, because it is where work is meant to pile up.
+// (The usage strip below is linear, and its header says why the rule flips.)
 const BAR_MIN = 8;
 const BAR_MAX = 74;
 function barHeight(count: number, peak: number): number {
@@ -102,9 +124,9 @@ function Spine({ stages, slug }: { stages: Stage[]; slug: string }) {
     <div className="spine">
       <div className="spine-head">
         <div className="left">
-          <span className="lbl">Progression</span>
           {/* `hint`, not `note` — `.note` is the Workbench sticky and would
               paint this line on yellow paper. */}
+          <span className="lbl">Progression</span>
           <span className="hint">bar height is the queue standing in a stage</span>
         </div>
       </div>
@@ -125,7 +147,7 @@ function Spine({ stages, slug }: { stages: Stage[]; slug: string }) {
               blocked.key === 'built' ? 'changes are waiting on a verdict'
                 : blocked.key === 'inflight' ? 'items are claimed and running'
                   : 'items are planned and unclaimed'
-            }{still !== null && `, and none has moved in ${still} day${still === 1 ? '' : 's'}`} — clearing
+            }{still !== null && `, and none has moved in ${days(still)}`} — clearing
             them is what unblocks everything behind.
           </span>
           <button className="btn-accent sm" onClick={() => { window.location.hash = blocked.href; }}>
@@ -225,7 +247,7 @@ function CadenceCard({ cadence, lastPushAt }: {
         {c.quietFor === null
           ? <span className="hint">no pushes yet</span>
           : <span className={`hint${c.quiet ? ' warn' : ''}`}>
-            {c.quietFor === 0 ? 'pushed today' : `quiet for ${c.quietFor} day${c.quietFor === 1 ? '' : 's'}`}
+            {c.quietFor === 0 ? 'pushed today' : `quiet for ${days(c.quietFor)}`}
           </span>}
       </div>
       <div className="cadence-bars">
@@ -243,6 +265,353 @@ function CadenceCard({ cadence, lastPushAt }: {
         <span>{dayLabel(c.days[0].day)}</span>
         <span>{dayLabel(c.days[c.days.length - 1].day)}</span>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// the usage band — what the models spent here
+// ---------------------------------------------------------------------------
+
+function UsageBand({ usage, windowDays }: { usage: PulseUsage; windowDays: number }) {
+  const [open, setOpen] = useState('');
+  const bars = usageBars(usage);
+  const detail = usage.models.find((m) => m.model === open) || null;
+  const del = usage.delegations;
+
+  return (
+    <div className="band">
+      <div className="band-head">
+        <span className="h">Model usage</span>
+        <span className="sub">this project · last {Math.round(windowDays / 7)} weeks</span>
+        <button className="band-link" onClick={go.control}>Roles room →</button>
+      </div>
+
+      <div className="usage-stats">
+        <div className="ustat accent">
+          <span className="lbl">Sessions</span>
+          <span className="v">{usage.sessions}</span>
+          {/* The two populations are named, never blended: they answer to
+              different policies (CLAUDE.md, the Roles room). */}
+          <span className="sub">{usage.runs} autopilot run{usage.runs === 1 ? '' : 's'} beside them</span>
+        </div>
+        <div className="ustat">
+          <span className="lbl">Tokens</span>
+          <span className="v">{compactTokens(usage.tokens)}</span>
+          <span className="sub">
+            {compactTokens(usage.interactiveTokens)} by hand · {compactTokens(usage.autoTokens)} unattended
+          </span>
+        </div>
+        <div className="ustat">
+          <span className="lbl">Median session</span>
+          <span className="v">
+            {usage.medianSessionTokens === null ? '—' : compactTokens(usage.medianSessionTokens)}
+          </span>
+          <span className="sub">
+            {/* A delegation whose transcript was lost is UNPRICED, not free. */}
+            {del.calls === 0 ? 'no subagents delegated'
+              : `${del.calls} delegation${del.calls === 1 ? '' : 's'}, ${del.recorded} recorded`}
+          </span>
+        </div>
+        <div className="ustat live">
+          <span className="lbl">Spend</span>
+          <span className="v">{usage.pricedRuns === 0 ? '—' : usd(usage.costUsd)}</span>
+          {/* Never let a partial figure read as the whole bill. */}
+          <span className="sub">
+            {usage.pricedRuns === 0
+              ? 'nothing here priced itself — sessions bill to the subscription'
+              : `${usage.pricedRuns} of ${usage.runs} runs priced · sessions carry no cost`}
+          </span>
+        </div>
+      </div>
+
+      <div className="usage-body">
+        <div className="usage-chart">
+          <div className="usage-bars">
+            {bars.map((b) => (
+              <div className="ubar" key={b.week}
+                title={`${b.last ? 'This week' : `Week of ${b.week}`} — ${compactTokens(b.total)} tokens`}>
+                <span className="auto" style={{ height: b.autoH }} />
+                <span className="inter" style={{ height: b.interactiveH }} />
+              </div>
+            ))}
+          </div>
+          <div className="usage-axis">
+            <span>{Math.round(windowDays / 7)} weeks ago</span>
+            <span className="mid">tokens per week · unattended above, by hand below</span>
+            <span className="now">this week</span>
+          </div>
+        </div>
+
+        <div className="usage-models">
+          <div className="lbl">By model · open one</div>
+          {usage.models.length === 0 ? (
+            // Tokens with no model named: pre-#167 rows carry a flat total only.
+            <div className="band-empty">
+              No per-model breakdown recorded. The rows in this window report a total and
+              not which model spent it.
+            </div>
+          ) : (
+            <div className="model-list">
+              {usage.models.map((m) => (
+                <button className={`model-row${open === m.model ? ' on' : ''}`} key={m.model}
+                  onClick={() => setOpen(open === m.model ? '' : m.model)}
+                  title={`${m.tokens.toLocaleString('en-AU')} tokens — ${m.model}`}>
+                  <span className="line">
+                    <span className="chev">{open === m.model ? '▾' : '▸'}</span>
+                    <span className="name">{m.label}</span>
+                    <span className="n">{compactTokens(m.tokens)}</span>
+                  </span>
+                  <span className="track"><span className="fill" style={{ width: `${m.share}%` }} /></span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {detail && (
+        <div className="usage-detail">
+          <div className="ud-head">
+            <span className="name">{detail.label}</span>
+            <span className="where">
+              {detail.sessions} session{detail.sessions === 1 ? '' : 's'} · {detail.runs} run{detail.runs === 1 ? '' : 's'}
+            </span>
+            <button className="ud-close" onClick={() => setOpen('')}>Close</button>
+          </div>
+          <div className="ud-body">
+            <div className="ud-stats">
+              <div className="ud-stat"><span className="lbl">Tokens</span><span className="v">{compactTokens(detail.tokens)}</span></div>
+              <div className="ud-stat"><span className="lbl">Share</span><span className="v">{pct1(detail.share)}</span></div>
+              <div className="ud-stat">
+                <span className="lbl">Cost</span>
+                {/* null is UNPRICED, and must not render as $0. */}
+                <span className="v">{detail.costUsd === null ? 'unpriced' : usd(detail.costUsd)}</span>
+              </div>
+              <div className="ud-stat"><span className="lbl">Last seen</span><span className="v">{detail.lastAt.slice(0, 10)}</span></div>
+            </div>
+            <div className="ud-recent">
+              <div className="lbl">Where it ran</div>
+              {recentForModel(usage, detail.model).map((r, i) => (
+                <div className="ud-row" key={`${r.at}:${i}`}>
+                  <span className="when">{r.at.slice(5, 10)}</span>
+                  <span className="txt">
+                    {r.text || (r.kind === 'run' ? 'an unnamed run' : 'a session that wrote no summary')}
+                  </span>
+                  <span className="n">{compactTokens(r.tokens)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// the engineering band — the suite, the verdicts, the runs
+// ---------------------------------------------------------------------------
+
+function Metric({ label, value, tone = '', width = null }: {
+  label: string; value: string; tone?: string; width?: number | null;
+}) {
+  return (
+    <div className="metric">
+      <div className="line">
+        <span className="name">{label}</span>
+        <span className={`v ${tone}`}>{value}</span>
+      </div>
+      {width !== null && (
+        <span className="track"><span className={`fill ${tone}`} style={{ width: `${width}%` }} /></span>
+      )}
+    </div>
+  );
+}
+
+function EngBand({ pulse, slug, built }: {
+  pulse: ProjectPulse; slug: string; built: Stage | undefined;
+}) {
+  const t = pulse.tests;
+  const r = pulse.runs;
+  const v = r.verdicts;
+  const suite = t.suite;
+
+  // The suite's state as a word. NEVER RUN is its own answer — the same rule as
+  // a NULL review_verdict — because "0 failing" out of a suite nobody ran is
+  // the most confident wrong thing this band could say.
+  const suiteState = !t.measured ? { txt: 'no suite', tone: 'muted' }
+    : t.failing > 0 ? { txt: `${t.failing} failing`, tone: 'bad' }
+      : suite.passRate === null ? { txt: 'never run', tone: 'muted' }
+        : { txt: 'holding', tone: 'good' };
+
+  const oldest = built?.lastMovedDays ?? null;
+  const reviewState = (built?.count ?? 0) === 0 ? { txt: 'clear', tone: 'good' }
+    : built?.blocked ? { txt: 'backed up', tone: 'warn' } : { txt: 'moving', tone: 'muted' };
+
+  return (
+    <div className="band">
+      <div className="band-head">
+        <span className="h">Tests, verdicts and runs</span>
+        <span className="sub">last {Math.round(pulse.windowDays / 7)} weeks</span>
+      </div>
+      <div className="eng-groups">
+        {/* --- the suite --- */}
+        <div className="eng-group">
+          <div className="eg-head">
+            <span className="name">Tests</span>
+            <span className={`state ${suiteState.tone}`}>{suiteState.txt}</span>
+          </div>
+          {!t.measured ? (
+            <div className="band-empty">
+              This project has no checks, so it has no suite — which is not the same as a green
+              one. Checks are {PRODUCT_NAME}'s only automated regression net, and the evidence
+              auto-merge and auto-verdict spend.
+            </div>
+          ) : (
+            <>
+              <div className="metrics">
+                <Metric label="Suite pass rate"
+                  value={suite.passRate === null ? 'no run' : pct1(suite.passRate)}
+                  tone={suite.passRate === null ? 'muted' : suite.passRate >= 99 ? 'good' : 'warn'}
+                  width={suite.passRate} />
+                <Metric label="Checks failing now" value={String(t.failing)}
+                  tone={t.failing > 0 ? 'bad' : 'good'} />
+                {/* Never-run is reported apart from passing, always. */}
+                {t.never > 0 && <Metric label="Never run" value={String(t.never)} tone="muted" />}
+                <Metric label="Median suite run"
+                  value={suite.medianMs === null ? 'no run' : duration(suite.medianMs)} />
+                <Metric label="Flaky" value={t.flaky.length ? String(t.flaky.length) : 'none seen'}
+                  tone={t.flaky.length ? 'warn' : ''} />
+              </div>
+              <div className="eg-read">
+                {suite.lastAt
+                  ? <>Last suite: {suite.lastPassed} of {suite.lastTotal} passed, {suite.runs} run{suite.runs === 1 ? '' : 's'} in the window.</>
+                  : <>No whole-suite run in the window — the per-check results above are the last thing measured.</>}
+                {t.flaky.length > 0 && <> {t.flaky[0].name} has flipped {t.flaky[0].flips} times in its last {t.flaky[0].of}.</>}
+                {t.external > 0 && <> {t.external} check{t.external === 1 ? ' is' : 's are'} reported from outside {PRODUCT_NAME}.</>}
+              </div>
+              <button className="band-link" onClick={() => go.detail(slug, 'quality')}>Open Quality →</button>
+            </>
+          )}
+        </div>
+
+        {/* --- the verdict queue's shape --- */}
+        <div className="eng-group">
+          <div className="eg-head">
+            <span className="name">Verdicts</span>
+            <span className={`state ${reviewState.tone}`}>{reviewState.txt}</span>
+          </div>
+          <div className="metrics">
+            <Metric label="Awaiting your verdict" value={String(built?.count ?? 0)}
+              tone={(built?.count ?? 0) > 0 ? 'warn' : 'good'} />
+            <Metric label="Oldest moved" value={oldest === null ? 'unstamped' : days(oldest)}
+              tone={oldest !== null && oldest >= 3 ? 'warn' : ''} />
+            {/* The second model's read on each run. `none` is NO PASS RAN and is
+                deliberately not green — same rule as a NULL review_verdict. */}
+            <Metric label="Reviewed clean" value={String(v.clean)} tone={v.clean ? 'good' : ''} />
+            <Metric label="Concerns / blocked" value={String(v.concerns + v.blocked)}
+              tone={v.concerns + v.blocked > 0 ? 'bad' : ''} />
+            <Metric label="No review ran" value={String(v.none)} tone="muted" />
+          </div>
+          <div className="eg-read">
+            {r.autoVerdictRuns > 0
+              ? <>{r.autoVerdictRuns} run{r.autoVerdictRuns === 1 ? '' : 's'} verdicted themselves under the low-risk gate, with the evidence kept and an undo.</>
+              : <>Every verdict here was given by a human. A NULL review is a pass that never ran, not a clean one.</>}
+          </div>
+          <button className="band-link" onClick={go.control}>Open Review →</button>
+        </div>
+
+        {/* --- the autopilot's runs --- */}
+        <div className="eng-group">
+          <div className="eg-head">
+            <span className="name">Runs</span>
+            <span className={`state ${r.measured ? (r.landRate !== null && r.landRate >= 60 ? 'good' : 'muted') : 'muted'}`}>
+              {r.measured ? `${r.total} run${r.total === 1 ? '' : 's'}` : 'none'}
+            </span>
+          </div>
+          {!r.measured ? (
+            <div className="band-empty">
+              The autopilot has not run on this project in the window. That is a project nobody
+              queued, not a project that failed.
+            </div>
+          ) : (
+            <>
+              <div className="metrics">
+                <Metric label="Landed" value={String(r.landed)} tone="good"
+                  width={r.total ? (r.landed / r.total) * 100 : 0} />
+                <Metric label="Failed or hit a limit" value={String(r.failed)}
+                  tone={r.failed > 0 ? 'bad' : ''} />
+                <Metric label="Ran, committed nothing" value={String(r.noCommits)} tone="muted" />
+                {/* A plan night commits nothing BY DESIGN and can never land, so
+                    it is counted apart and sits out the rate below. */}
+                <Metric label="Plan nights" value={String(r.planned)} tone="muted" />
+                <Metric label="Land rate"
+                  value={r.landRate === null ? 'nothing landable' : pct1(r.landRate)}
+                  tone={r.landRate !== null && r.landRate >= 60 ? 'good' : 'warn'} />
+              </div>
+              <div className="eg-read">
+                {r.commits} commit{r.commits === 1 ? '' : 's'} came out of those runs.
+                {r.planned > 0 && ' Plan nights are excluded from the rate — they commit nothing by design, so counting them would score the advisor as having failed to land work nobody asked it to land.'}
+              </div>
+              <button className="band-link" onClick={go.control}>Mission Control →</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// awaiting your verdict
+// ---------------------------------------------------------------------------
+
+function KindTag({ kind }: { kind: LaneKind | '' }) {
+  // '' is a legacy `auto/item-N` lane, which records no kind (#363). It shows
+  // as unlabelled rather than guessing 'feat'.
+  if (!kind) return <span className="kindtag none" title="the branch name records no kind">lane</span>;
+  return <span className="kindtag" style={{ color: KIND_TONE[kind], borderColor: KIND_TONE[kind] }}>{kind}</span>;
+}
+
+function VerdictBand({ rows, total }: { rows: VerdictRow[]; total: number }) {
+  return (
+    <div className="band verdicts">
+      <div className="band-head">
+        <span className="h">Awaiting your verdict</span>
+        <span className="sub">
+          {total} change{total === 1 ? '' : 's'} built and waiting · oldest first
+        </span>
+        <button className="btn-accent sm" onClick={go.control}>Open Review →</button>
+      </div>
+      {rows.map((r) => (
+        <div className={`vrow${r.ageDays !== null && r.ageDays >= 3 ? ' hot' : ''}`} key={r.id}>
+          <div className="vmain">
+            <div className="vtop">
+              <span className="title">{r.title}</span>
+              <KindTag kind={r.kind} />
+              {/* Un-ticking clears claimed_by and keeps built_note, so a ticked
+                  row here is one waiting on a verdict rather than on a build. */}
+              {r.ticked && <span className="ticked" title="ticked, but no verdict stored yet">ticked</span>}
+            </div>
+            <div className="vsummary">
+              {r.built || 'No built note. The session that finished this never wrote what landed — the verdict has nothing to be made against.'}
+            </div>
+            {r.branch && <div className="vorigin">{r.branch}</div>}
+          </div>
+          <div className="vacts">
+            <span className={`vage${r.ageDays !== null && r.ageDays >= 3 ? ' hot' : ''}`}>
+              {r.ageDays === null ? 'no stamp' : r.ageDays === 0 ? 'today' : days(r.ageDays)}
+            </span>
+            <button className="vgo" onClick={go.control}>Review</button>
+          </div>
+        </div>
+      ))}
+      {total > rows.length && (
+        <div className="vtail">
+          {total - rows.length} more waiting. Clearing the oldest is what unblocks everything behind it.
+        </div>
+      )}
     </div>
   );
 }
@@ -363,7 +732,7 @@ function ConfigStrip({ project, onSaveDeploy, onSaveStack }: {
 }
 
 // ---------------------------------------------------------------------------
-// the rail panels
+// the panels
 // ---------------------------------------------------------------------------
 
 // Standing instructions for the next session(s): edited here, injected
@@ -418,11 +787,11 @@ function DirectivesPanel({ directives, onChange }: {
   );
 }
 
-// 4a's river: one line per push, not a stack of full cards. The tab's job here
-// is "what has this project been doing", which needs REACH — a dozen pushes at
-// a glance — where the Activity tab's job is the detail. Summaries are clamped
-// rather than truncated server-side, so the full text is still in the DOM for
-// ⌘F and a screen reader.
+// One line per push, not a stack of full cards. The tab's job here is "what has
+// this project been doing", which needs REACH — a dozen pushes at a glance —
+// where the Activity tab's job is the detail. Summaries are clamped rather than
+// truncated server-side, so the full text is still in the DOM for ⌘F and a
+// screen reader.
 function LandedRow({ a }: { a: Activity }) {
   return (
     <div className="landed-row">
@@ -438,16 +807,30 @@ function LandedRow({ a }: { a: Activity }) {
   );
 }
 
+function BackToTop() {
+  const toTop = () => {
+    const doc = document.scrollingElement || document.documentElement;
+    doc.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  return (
+    <button className="to-top" onClick={toTop} title="Back to top" aria-label="Back to top">↑</button>
+  );
+}
+
 // ---------------------------------------------------------------------------
 
 export function Overview({
-  project, activity, directives, reviewQueue, roadmap, futures, bugs, cadence, lastPushAt,
+  project, phase, activity, directives, reviewQueue, roadmap, futures, bugs, cadence, lastPushAt,
+  pulse, pulseError,
   onViewAll, onExport, onChangeDirectives, onReviewKeep, onReviewDismiss, onSaveDeploy, onSaveStack,
   keepResumeCard = true, onJumpBack,
 }: {
-  project: Project; activity: Activity[]; directives: string[]; reviewQueue: ReviewEntry[];
+  project: Project; phase: string;
+  activity: Activity[]; directives: string[]; reviewQueue: ReviewEntry[];
   roadmap: RoadmapData; futures: Future[]; bugs: Bug[];
   cadence: { day: string; n: number }[]; lastPushAt: string | null;
+  /** null = the second trip has not answered yet; see `pulseError` for a failure. */
+  pulse: ProjectPulse | null; pulseError: string;
   onViewAll: () => void; onExport: () => void; onChangeDirectives: (next: string[]) => void;
   onReviewKeep: (e: ReviewEntry) => void; onReviewDismiss: (e: ReviewEntry) => void;
   onSaveDeploy: (patch: DeployPatch) => void; onSaveStack: (next: string[]) => void;
@@ -457,188 +840,330 @@ export function Overview({
   const r = project.resume;
   const slug = project.id;
   const stages = buildSpine(roadmap, futures, slug);
-  const queue = nextUp(roadmap);
+  const built = stages.find((s) => s.key === 'built');
+  const queue = nextUp(roadmap, 5);
   const spread = bugSpread(bugs);
   const openBugs = spread.reduce((n, s) => n + s.n, 0);
-  const latest = activity.slice(0, 8);
+  const serious = spread.filter((s) => s.severity === 'critical' || s.severity === 'high')
+    .reduce((n, s) => n + s.n, 0);
+  const tiles = overviewStats(roadmap, stages, project.progress, cadence);
+  const verdicts = verdictQueue(roadmap, 5);
+  const shipped = shippedRecently(roadmap, 5);
+  const latest = activity.slice(0, 6);
+  const horizon = futures.slice(0, 8);
 
   return (
-    <div>
-      {/* resume card — hidden when the resume card is switched off in Settings */}
+    <div className="ov">
+      {/* ---- the hero: where this project stands, in its own words ---- */}
       {keepResumeCard && (
-      <div className="resume">
-        <div className="resume-head">
-          <div className="left">
-            <div className="resume-ico">↩</div>
-            <div className="resume-title">Pick up where you left off</div>
-          </div>
-          {r && (
-            <div className="resume-meta">
+        <div className="deck-hero ov-hero">
+          <div className="hero-main">
+            <div className="hero-eyebrow">
+              <span className="resume-ico">↩</span>
               {/* `when` is the LAST PUSH, which is only when this card was
                   updated if that push authored a checkpoint. When it didn't,
                   say when the content was actually written. */}
-              <div className="resume-when">
-                {r.since?.authoredWhen
-                  ? `checkpoint ${r.since.authoredWhen} · ${r.since.count} push${r.since.count === 1 ? '' : 'es'} since`
-                  : `updated ${r.when} · after push ${r.ref}`}
+              {r ? (r.since?.authoredWhen
+                ? `checkpoint ${r.since.authoredWhen} · ${r.since.count} push${r.since.count === 1 ? '' : 'es'} since`
+                : `updated ${r.when} · after push ${r.ref}`)
+                : 'nothing captured yet'}
+            </div>
+            <div className="hero-row">
+              <div className="hero-name">Where you left off</div>
+              {phase && <div className="hero-phase">{phase}</div>}
+            </div>
+            {/* What has landed SINCE the checkpoint that wrote the summary
+                below — a stale card has to read as stale, or you act on an
+                account of the project that three pushes have already overtaken. */}
+            {r && <ResumeSinceStrip since={r.since} slug={slug} />}
+            <div className="hero-summary">
+              {r ? r.summary
+                : `Nothing captured yet. After your first push, a summary of where you left off lands here through the ${PRODUCT_NAME} API.`}
+            </div>
+            {r && r.nextUp.length > 0 && (
+              <div className="hero-next">
+                {r.nextUp.slice(0, 3).map((t, i) => (
+                  <div className="hero-step" key={i}><span className="mk arrow">→</span><span>{t}</span></div>
+                ))}
               </div>
-              {onJumpBack && (
-                <button className="btn-export" onClick={onJumpBack}
-                  title="Open a Claude session in this project with a debrief of where things stand">
-                  Jump back in <span className="arr">↗</span>
-                </button>
-              )}
-              <button className="btn-export" onClick={onExport} title="Download a markdown brief for starting back into this project">
-                Export brief <span className="arr">↓</span>
+            )}
+          </div>
+          <div className="hero-side">
+            {onJumpBack && (
+              <button className="btn-accent hero-continue" onClick={onJumpBack}
+                title="Open a Claude session in this project with a debrief of where things stand">
+                Jump back in ↗
               </button>
-            </div>
-          )}
+            )}
+            <button className="hero-export" onClick={onExport}
+              title="Download a markdown brief for starting back into this project">Export brief ↓</button>
+          </div>
         </div>
+      )}
 
-        {r ? (
-          <>
-            <ResumeSinceStrip since={r.since} slug={project.id} />
-            <div className="resume-summary">{r.summary}</div>
-            <div className="resume-cols">
-              <div className="resume-col col-progress">
-                <div className="lbl">Currently in progress</div>
-                <div className="itemlist">
-                  {r.inProgress.length ? r.inProgress.map((t, i) => (
-                    <div className="item" key={i}><span className="mk dot" /><span>{t}</span></div>
-                  )) : <div className="empty-soft">Nothing mid-flight.</div>}
-                </div>
+      {/* ---- the queue cards: what is standing between you and progress ---- */}
+      <div className="ov-cards">
+        {keepResumeCard && r && (
+          <div className="ovc resume-card">
+            <div className="lbl">Currently in progress</div>
+            {r.inProgress.length ? (
+              <div className="ovc-list">
+                {r.inProgress.slice(0, 3).map((t, i) => (
+                  <div className="item" key={i}><span className="mk dot" /><span>{t}</span></div>
+                ))}
               </div>
-              <div className="resume-col col-next">
-                <div className="lbl">Suggested next</div>
-                <div className="itemlist">
-                  {r.nextUp.length ? r.nextUp.map((t, i) => (
-                    <div className="item" key={i}><span className="mk arrow">→</span><span>{t}</span></div>
-                  )) : <div className="empty-soft">Open road.</div>}
-                </div>
+            ) : <div className="ovc-note">Nothing mid-flight — the last session finished what it started.</div>}
+            {r.liked.length > 0 && (
+              <div className="ovc-keep">
+                <span className="mk tick">✓</span>
+                <span>{r.liked[0]}</span>
               </div>
-              <div className="resume-col col-keep">
-                <div className="lbl">Working well — keep</div>
-                <div className="itemlist">
-                  {r.liked.length ? r.liked.map((t, i) => (
-                    <div className="item" key={i}><span className="mk tick">✓</span><span>{t}</span></div>
-                  )) : <div className="empty-soft">—</div>}
-                </div>
-              </div>
+            )}
+            <div className="ovc-acts">
+              <button className="ovc-go" onClick={() => go.detail(slug, 'roadmap')}>Open roadmap</button>
             </div>
-          </>
-        ) : (
-          <div className="resume-summary" style={{ marginBottom: 0 }}>
-            Nothing captured yet. After your first push, a summary of where you left off lands here.
           </div>
         )}
+
+        <div className={`ovc${(built?.count ?? 0) > 0 ? ' flag' : ''}`}>
+          <div className="lbl">Awaiting verdict</div>
+          <div className="ovc-figure">
+            <span className={`v${(built?.count ?? 0) > 0 ? ' accent' : ''}`}>{built?.count ?? 0}</span>
+            {built?.blocked && <span className="tag">backed up</span>}
+          </div>
+          <div className="ovc-note">
+            {(built?.count ?? 0) === 0
+              ? 'Nothing built is waiting on you.'
+              : built?.lastMovedDays !== null && built?.lastMovedDays !== undefined
+                ? `Oldest moved ${days(built.lastMovedDays)} ago. Nothing behind it can land.`
+                : 'None of these rows carries a stamp, so how long they have waited is unknown.'}
+          </div>
+          <button className="ovc-go" onClick={go.control}>Open Review →</button>
+        </div>
+
+        <div className={`ovc${serious > 0 ? ' flag' : ''}`}>
+          <div className="lbl">Bugs</div>
+          <div className="ovc-figure">
+            <span className={`v${serious > 0 ? ' bad' : ''}`}>{openBugs}</span>
+            {serious > 0 && <span className="tag bad">{serious} serious</span>}
+          </div>
+          <div className="ovc-note">
+            {openBugs === 0 ? 'No open bugs.'
+              : serious > 0
+                ? `${serious} critical or high, which is what caps progress at ${PROGRESS_CAP}%.`
+                : 'None critical or high, so none is holding the progress figure down.'}
+          </div>
+          <button className="ovc-go" onClick={() => go.detail(slug, 'quality')}>Open Quality →</button>
+        </div>
+
+        <div className={`ovc${pulse && pulse.tests.failing > 0 ? ' flag' : ''}`}>
+          <div className="lbl">Checks</div>
+          {!pulse ? (
+            <div className="ovc-note">{pulseError || 'Measuring…'}</div>
+          ) : !pulse.tests.measured ? (
+            <>
+              <div className="ovc-figure"><span className="v muted">none</span></div>
+              <div className="ovc-note">
+                No checks on this project. That is no regression net, not a green one.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="ovc-figure">
+                <span className={`v${pulse.tests.failing > 0 ? ' bad' : ' live'}`}>
+                  {pulse.tests.failing > 0 ? pulse.tests.failing : pulse.tests.checks}
+                </span>
+                <span className={`tag${pulse.tests.failing > 0 ? ' bad' : ''}`}>
+                  {pulse.tests.failing > 0 ? 'failing' : 'green'}
+                </span>
+              </div>
+              <div className="ovc-note">
+                {pulse.tests.never > 0
+                  ? `${pulse.tests.never} of ${pulse.tests.checks} have never been run — unprobed, not passing.`
+                  : `${pulse.tests.checks} checks, ${pulse.tests.suite.runs} suite run${pulse.tests.suite.runs === 1 ? '' : 's'} in the window.`}
+              </div>
+            </>
+          )}
+          <button className="ovc-go" onClick={() => go.detail(slug, 'quality')}>Open Quality →</button>
+        </div>
       </div>
+
+      {/* ---- the auto-extract inbox: only when a push actually left something ---- */}
+      {reviewQueue.length > 0 && (
+        <div className="ov-inbox">
+          <div className="inbox-head">
+            <span className="lbl">✦ Auto-extracted from your pushes</span>
+            <span className="rail-count">{reviewQueue.length}</span>
+            <span className="hint">
+              a hook-extracted roadmap item is held from the auto runner until you keep it
+            </span>
+          </div>
+          <div className="inbox-rows">
+            {reviewQueue.slice(0, 4).map((e) => (
+              <div className="inbox-row" key={`${e.kind}:${e.key}`}>
+                <span className={`review-kind ${e.kind}`}>
+                  {e.kind === 'bug' ? e.key : e.kind === 'roadmap' ? 'roadmap' : 'idea'}
+                </span>
+                <span className="txt">{e.title}</span>
+                <button className="review-keep" onClick={() => onReviewKeep(e)} title="Keep — mark reviewed">✓ Keep</button>
+                <button className="review-dismiss" onClick={() => onReviewDismiss(e)}
+                  title="Dismiss — delete and don't re-extract">✕ Dismiss</button>
+              </div>
+            ))}
+          </div>
+          {reviewQueue.length > 4 && <div className="inbox-tail">{reviewQueue.length - 4} more waiting</div>}
+        </div>
       )}
 
       <Spine stages={stages} slug={slug} />
 
-      <div className="ov-grid">
-        <div className="ov-main">
-          <ProgressLedgerCard project={project} roadmap={roadmap} bugs={bugs} />
-          <CadenceCard cadence={cadence} lastPushAt={lastPushAt} />
+      {/* ---- the headline tiles ---- */}
+      <div className="ov-tiles">
+        {tiles.map((t) => (
+          <div className="tile" key={t.label}>
+            <span className="lbl">{t.label}</span>
+            <span className={`v ${t.tone}`}>{t.value}</span>
+            <span className="sub">{t.note}</span>
+          </div>
+        ))}
+      </div>
 
-          <div className="landed">
-            <div className="landed-head">
-              <span className="lbl">What landed lately</span>
-              <span className="hint">✦ auto-generated per push</span>
-              {/* NOT "all {activity.length}" — this feed is server-capped at 50
-                  rows, so a count here would name the cap and call it the
-                  total. The Activity tab is where "all" actually lives. */}
-              {activity.length > 0 && <button className="rail-link" onClick={onViewAll}>View all →</button>}
-            </div>
-            {latest.length ? (
-              // Keyed by hash AND index: two sessions in one checkout end at the
-              // same HEAD, so commit hashes repeat in this feed and a bare hash
-              // key makes React drop one of the two rows.
-              latest.map((a, i) => <LandedRow key={`${a.hash}:${i}`} a={a} />)
-            ) : (
-              <div className="rail-empty">
-                No pushes yet. Every push posts a summary here through the {PRODUCT_NAME} API.
-              </div>
-            )}
+      <div className="ov-split">
+        <ProgressLedgerCard project={project} roadmap={roadmap} bugs={bugs} />
+        <CadenceCard cadence={cadence} lastPushAt={lastPushAt} />
+      </div>
+
+      {/* ---- the measured bands. Absent, never empty. ---- */}
+      {pulseError ? (
+        <div className="band band-failed">
+          <div className="band-head"><span className="h">Model usage, tests and runs</span></div>
+          <div className="band-empty">
+            {pulseError} — so this project's spend, suite and runs could not be READ, which is a
+            different thing from a project that spent, tested and ran nothing.
           </div>
         </div>
-
-        <div className="ov-rail">
-          <div className="rail-panel">
-            <div className="rail-head">
-              <span className="lbl">Next up</span>
-              <button className="rail-link" onClick={() => go.detail(slug, 'roadmap')}>the board</button>
-            </div>
-            {queue.length ? (
-              <div className="rail-list">
-                {queue.map((it) => (
-                  <button className="rail-row" key={it.id}
-                    onClick={() => go.detail(slug, 'roadmap', String(it.id))}>
-                    <span className={`mk ${it.bucket === 'must' ? 'must' : 'should'}`} />
-                    <span className="txt">{it.title}</span>
-                    {it.tier && <span className="tier">{it.tier}</span>}
-                  </button>
-                ))}
+      ) : !pulse ? (
+        <div className="band"><div className="band-empty">Measuring the last twelve weeks…</div></div>
+      ) : (
+        <>
+          {pulse.usage.measured ? (
+            <UsageBand usage={pulse.usage} windowDays={pulse.windowDays} />
+          ) : (
+            <div className="band">
+              <div className="band-head"><span className="h">Model usage</span></div>
+              <div className="band-empty">
+                No sessions and no runs on this project in the last {Math.round(pulse.windowDays / 7)} weeks.
               </div>
-            ) : (
-              <div className="rail-empty">Nothing planned and unclaimed. The queue is empty, not stalled.</div>
-            )}
-          </div>
-
-          {reviewQueue.length > 0 && (
-            <div className="rail-panel">
-              <div className="rail-head">
-                <span className="lbl">Needs review</span>
-                <span className="rail-count">{reviewQueue.length}</span>
-              </div>
-              <div className="rail-note">✦ auto-extracted from your pushes</div>
-              <div className="rail-list">
-                {reviewQueue.slice(0, 3).map((e) => (
-                  <div className="rail-review" key={`${e.kind}:${e.key}`}>
-                    <div className="line">
-                      <span className={`review-kind ${e.kind}`}>
-                        {e.kind === 'bug' ? e.key : e.kind === 'roadmap' ? 'roadmap' : 'idea'}
-                      </span>
-                      <span className="txt">{e.title}</span>
-                    </div>
-                    <div className="acts">
-                      <button className="review-keep" onClick={() => onReviewKeep(e)} title="Keep — mark reviewed">✓ Keep</button>
-                      <button className="review-dismiss" onClick={() => onReviewDismiss(e)} title="Dismiss — delete and don't re-extract">✕ Dismiss</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {reviewQueue.length > 3 && (
-                <div className="rail-more">{reviewQueue.length - 3} more waiting</div>
-              )}
             </div>
           )}
+          <EngBand pulse={pulse} slug={slug} built={built} />
+        </>
+      )}
 
-          <div className="rail-panel">
-            <div className="rail-head">
-              <span className="lbl">Bugs</span>
-              <button className="rail-link" onClick={() => go.detail(slug, 'quality')}>Quality</button>
-            </div>
-            {openBugs === 0 ? (
-              <div className="rail-empty">No open bugs.</div>
-            ) : (
-              <div className="rail-list">
-                {spread.map((s) => (
-                  <div className="rail-sev" key={s.severity}>
-                    <span className={`mk sev-${s.severity}`} />
-                    <span className="name">{s.severity}</span>
-                    <span className="n">{s.n}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+      {(built?.count ?? 0) > 0 && <VerdictBand rows={verdicts} total={built?.count ?? 0} />}
+
+      {/* ---- the river, and what is queued behind it ---- */}
+      <div className="ov-split">
+        <div className="landed">
+          <div className="landed-head">
+            <span className="lbl">Pushes</span>
+            <span className="hint">✦ auto-generated per push</span>
+            {/* NOT "all {activity.length}" — this feed is server-capped at 50
+                rows, so a count here would name the cap and call it the
+                total. The Activity tab is where "all" actually lives. */}
+            {activity.length > 0 && <button className="rail-link" onClick={onViewAll}>View all →</button>}
           </div>
+          {latest.length ? (
+            // Keyed by hash AND index: two sessions in one checkout end at the
+            // same HEAD, so commit hashes repeat in this feed and a bare hash
+            // key makes React drop one of the two rows.
+            latest.map((a, i) => <LandedRow key={`${a.hash}:${i}`} a={a} />)
+          ) : (
+            <div className="rail-empty">
+              No pushes yet. Every push posts a summary here through the {PRODUCT_NAME} API.
+            </div>
+          )}
+        </div>
 
-          <DirectivesPanel directives={directives} onChange={onChangeDirectives} />
-
-          <ConfigStrip project={project} onSaveDeploy={onSaveDeploy} onSaveStack={onSaveStack} />
+        <div className="rail-panel">
+          <div className="rail-head">
+            <span className="lbl">Next up</span>
+            <button className="rail-link" onClick={() => go.detail(slug, 'roadmap')}>the board</button>
+          </div>
+          <div className="rail-note">tier first, then bucket — the run queue's own sort</div>
+          {queue.length ? (
+            <div className="rail-list">
+              {queue.map((it) => (
+                <button className="rail-row" key={it.id}
+                  onClick={() => go.detail(slug, 'roadmap', String(it.id))}>
+                  <span className={`mk ${it.bucket === 'must' ? 'must' : 'should'}`} />
+                  <span className="txt">{it.title}</span>
+                  {it.tier && <span className="tier">{it.tier}</span>}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rail-empty">Nothing planned and unclaimed. The queue is empty, not stalled.</div>
+          )}
         </div>
       </div>
+
+      {/* ---- what shipped, what is only an idea, and what you have told sessions ---- */}
+      <div className="ov-trio">
+        <div className="rail-panel">
+          <div className="rail-head">
+            <span className="lbl">Shipped</span>
+            <button className="rail-link" onClick={() => go.detail(slug, 'roadmap')}>the archive</button>
+          </div>
+          <div className="rail-note">verdicted and merged, freshest first</div>
+          {shipped.length ? (
+            <div className="rail-list">
+              {shipped.map((s) => (
+                <button className="rail-row" key={s.id}
+                  onClick={() => go.detail(slug, 'roadmap', String(s.id))}>
+                  <span className="mk done">✓</span>
+                  <span className="txt">{s.title}</span>
+                  <span className="tier when">
+                    {s.ageDays === null ? '—' : s.ageDays === 0 ? 'today' : `${s.ageDays}d`}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rail-empty">
+              Nothing has been verdicted and merged yet. Ticking is not a verdict — the Review room
+              stores one.
+            </div>
+          )}
+        </div>
+
+        <div className="rail-panel horizon">
+          <div className="rail-head">
+            <span className="lbl">✧ Horizon</span>
+            <button className="rail-link" onClick={() => go.detail(slug, 'futures')}>Polaris</button>
+          </div>
+          <div className="rail-note">directional, uncommitted — no dates</div>
+          {horizon.length ? (
+            <div className="horizon-chips">
+              {horizon.map((f) => (
+                <button className="hchip" key={f.id} onClick={() => go.detail(slug, 'futures')}>
+                  {f.title}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rail-empty">No ideas parked. Polaris is where a thought goes before it is a plan.</div>
+          )}
+          {futures.length > horizon.length && (
+            <div className="rail-more">{futures.length - horizon.length} more in Polaris</div>
+          )}
+        </div>
+
+        <DirectivesPanel directives={directives} onChange={onChangeDirectives} />
+      </div>
+
+      <ConfigStrip project={project} onSaveDeploy={onSaveDeploy} onSaveStack={onSaveStack} />
+      <BackToTop />
     </div>
   );
 }

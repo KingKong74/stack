@@ -38,9 +38,10 @@
 // data does support: how long the queue in a stage has sat untouched. Absent is
 // not zero — the same rule as a NULL `review_verdict`.
 
-import type { Bug, Future, Roadmap, RoadmapItem, Severity } from '../types';
+import type { Bug, Future, PulseUsage, Roadmap, RoadmapItem, Severity } from '../types';
 import { hrefTo } from './route';
 import { tierRank } from '../types';
+import { parseBranch, type LaneKind } from './branch';
 
 export type StageKey = 'idea' | 'planned' | 'inflight' | 'built' | 'landed';
 
@@ -237,4 +238,168 @@ export function readCadence(days: CadenceDay[], lastPushAt: string | null, now =
     quietFor,
     quiet: quietFor !== null && quietFor >= QUIET_DAYS,
   };
+}
+
+// --- awaiting your verdict -------------------------------------------------
+
+export interface VerdictRow {
+  id: number;
+  title: string;
+  /** What actually landed. '' = the session never wrote one. */
+  built: string;
+  /** The lane's kind, from the BRANCH NAME. '' = the name doesn't say, which is
+   *  not 'feat' — a legacy `auto/item-N` lane records no kind at all (#363). */
+  kind: LaneKind | '';
+  branch: string;
+  /** Whole days since the row last moved; null = it carries no stamp. */
+  ageDays: number | null;
+  /** Ticked already, so it is waiting on a verdict rather than on a build. */
+  ticked: boolean;
+}
+
+/**
+ * The Review room's queue, for THIS project — the same `isBuilt` predicate the
+ * spine's Built stage counts, so the list and the number can never disagree.
+ *
+ * OLDEST FIRST. The design orders by age because that is the actionable order:
+ * the row that has waited longest is the one blocking everything behind it, and
+ * a newest-first queue hides exactly the change the band exists to surface. A
+ * row with no stamp sorts LAST rather than as age zero — unknown is not fresh.
+ */
+export function verdictQueue(roadmap: Roadmap, limit = 5, now = Date.now()): VerdictRow[] {
+  return flat(roadmap)
+    .filter(isBuilt)
+    .map((it) => ({
+      id: it.id,
+      title: it.title,
+      built: it.builtNote.trim(),
+      kind: parseBranch(it.claimedBy).kind,
+      branch: it.claimedBy,
+      ageDays: daysSince(it.updatedAt, now),
+      ticked: it.done,
+    }))
+    .sort((a, b) => (b.ageDays ?? -1) - (a.ageDays ?? -1))
+    .slice(0, limit);
+}
+
+/** Verdicted and merged, freshest first — the river the verdict queue feeds. */
+export function shippedRecently(roadmap: Roadmap, limit = 5, now = Date.now()): VerdictRow[] {
+  return flat(roadmap)
+    .filter(isLanded)
+    .map((it) => ({
+      id: it.id,
+      title: it.title,
+      built: it.builtNote.trim(),
+      kind: parseBranch(it.claimedBy).kind,
+      branch: it.claimedBy,
+      ageDays: daysSince(it.updatedAt, now),
+      ticked: true,
+    }))
+    .sort((a, b) => (a.ageDays ?? Infinity) - (b.ageDays ?? Infinity))
+    .slice(0, limit);
+}
+
+// --- the headline tiles ----------------------------------------------------
+
+export interface StatTile {
+  label: string;
+  value: string;
+  note: string;
+  /** '' = the ordinary ink. Anything else is a semantic token, never a hex. */
+  tone: '' | 'live' | 'accent' | 'building';
+}
+
+/**
+ * The four numbers above the fold. Every one is read off data this page already
+ * holds — there is no forecast tile, because forecasting a finish date needs a
+ * completion RATE and roadmap rows carry `updatedAt` (movement) and no
+ * stage-transition stamp at all. A date computed from "2.4 items a week" would
+ * be a number with no source, which is the one thing this tab must not print.
+ */
+export function overviewStats(
+  roadmap: Roadmap, stages: Stage[], pct: number, cadence: CadenceDay[]
+): StatTile[] {
+  const items = flat(roadmap);
+  const landed = items.filter(isLanded);
+  const inflight = items.filter(isInFlight);
+  const built = stages.find((s) => s.key === 'built');
+  const pushes = cadence.reduce((n, d) => n + d.n, 0);
+
+  return [
+    {
+      label: 'Landed', value: `${landed.length} of ${items.length}`,
+      note: items.length ? 'verdicted and merged' : 'nothing on the board yet',
+      tone: landed.length > 0 ? 'live' : '',
+    },
+    {
+      label: 'In flight', value: String(inflight.length),
+      // Naming them is the point: a bare "2" sends you to Mission Control to
+      // find out what it was.
+      note: inflight.length
+        ? inflight.slice(0, 2).map((i) => i.title).join(' · ')
+        : 'nothing claimed right now',
+      tone: inflight.length > 0 ? 'accent' : '',
+    },
+    {
+      label: 'Awaiting verdict', value: String(built?.count ?? 0),
+      note: built?.lastMovedDays !== null && built?.lastMovedDays !== undefined
+        ? `oldest moved ${built.lastMovedDays} day${built.lastMovedDays === 1 ? '' : 's'} ago`
+        : 'nothing waiting on you',
+      tone: (built?.count ?? 0) > 0 ? 'accent' : '',
+    },
+    {
+      label: 'Progress', value: `${pct}%`,
+      // The cadence strip is absent on an older server, and an absent strip
+      // must not report zero pushes — say the window instead of a wrong count.
+      note: cadence.length ? `${pushes} push${pushes === 1 ? '' : 'es'} in 28 days` : 'weighted Musts and Shoulds',
+      tone: '',
+    },
+  ];
+}
+
+// --- the usage band --------------------------------------------------------
+
+/** Tokens as a human reads them: 48.2M, 212K, 900. */
+export function compactTokens(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${Math.round(n / 1e3)}K`;
+  return String(Math.round(n));
+}
+
+export interface UsageBar {
+  week: string;
+  /** Pixel heights, interactive stacked under auto — the design's two tones. */
+  interactiveH: number;
+  autoH: number;
+  total: number;
+  last: boolean;
+}
+
+export const USAGE_BAR_MAX = 82;
+
+/**
+ * The twelve-week strip. LINEAR, deliberately — unlike the spine's bars and the
+ * cadence strip, which are square-rooted so an ordinary day stays visible. Here
+ * the comparison IS the magnitude: a week that cost four times another must
+ * look four times taller, or the strip stops answering the only question it is
+ * asked. A zero week draws nothing at all rather than a stub, because a stub
+ * reads as a small amount of spend.
+ */
+export function usageBars(usage: PulseUsage): UsageBar[] {
+  const peak = usage.weeks.reduce((m, w) => Math.max(m, w.interactive + w.auto), 0);
+  const h = (n: number) => (peak > 0 && n > 0 ? Math.max(2, Math.round((n / peak) * USAGE_BAR_MAX)) : 0);
+  return usage.weeks.map((w, i) => ({
+    week: w.week,
+    interactiveH: h(w.interactive),
+    autoH: h(w.auto),
+    total: w.interactive + w.auto,
+    last: i === usage.weeks.length - 1,
+  }));
+}
+
+/** The rows the by-model drill-down shows for one model, newest first. */
+export function recentForModel(usage: PulseUsage, model: string, limit = 4) {
+  return usage.recent.filter((r) => r.models.includes(model)).slice(0, limit);
 }
