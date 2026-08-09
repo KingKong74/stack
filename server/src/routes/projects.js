@@ -82,8 +82,12 @@ projects.post('/', async (req, res) => {
   const tint = TINTS[cnt[0].n % TINTS.length];
 
   const { rows } = await q(
-    `INSERT INTO projects (slug, name, subtitle, status, tint)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    // week_zero is stamped at creation, not left for the backfill: that UPDATE
+    // runs at migration time and can only reach projects that already existed,
+    // so without this every NEW project would open with no start date and no
+    // calendar view. Monday of the current week — the timeline counts weeks.
+    `INSERT INTO projects (slug, name, subtitle, status, tint, week_zero)
+     VALUES ($1, $2, $3, $4, $5, (date_trunc('week', now()))::date) RETURNING *`,
     [slug, name, subtitle, status, tint]
   );
   const p = rows[0];

@@ -28,32 +28,136 @@ export const SCHED_WEEKS = 24;
 /** The scope drawer's cycle length, in weeks — what "does this fit" is measured against. */
 export const CYCLE_WEEKS = 6;
 
+/**
+ * Which week is "now". A THIRD of the way in, not at the right-hand edge.
+ *
+ * The edge is where a timeline naturally puts today if nobody thinks about it,
+ * and it is the wrong place: it leaves the whole chart showing what already
+ * happened and nowhere to draw what is coming. Eight weeks of context behind,
+ * sixteen ahead — a planning instrument should be mostly future.
+ */
+export const NOW_WEEK = 8;
+
 export type Scale = 'week' | 'month' | 'quarter';
-export interface ScaleCol { label: string; now: boolean; weeks: number }
+export interface ScaleCol { label: string; now: boolean; weeks: number; startWeek: number }
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * The real date a week index lands on. `weekZero` is the project's own start
+ * (projects.week_zero); without one the timeline still works — it just has no
+ * dates, which the calendar view says rather than inventing a start.
+ */
+export function weekDate(week: number, weekZero: string | null): Date | null {
+  if (!weekZero) return null;
+  const t = Date.parse(`${weekZero}T00:00:00Z`);
+  if (!Number.isFinite(t)) return null;
+  return new Date(t + week * 7 * 86400000);
+}
+
+export const fmtDate = (d: Date): string =>
+  `${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()]}`;
 
 /**
  * The columns under the timeline's ruler. Widths are proportional to `weeks`,
  * so a quarter column really is three months wide — a scale whose columns were
  * all equal would misdraw every bar that crossed one.
+ *
+ * Labels become REAL months once the project has a week zero; without one they
+ * fall back to M1…M6, which is honest about not knowing when this is.
  */
-export function scaleCols(scale: Scale, weeks = SCHED_WEEKS): ScaleCol[] {
+export function scaleCols(scale: Scale, weeks = SCHED_WEEKS, weekZero: string | null = null): ScaleCol[] {
+  const mark = (startWeek: number, span: number) => startWeek <= NOW_WEEK && NOW_WEEK < startWeek + span;
   if (scale === 'week') {
-    return Array.from({ length: weeks }, (_, i) => ({
-      // Every other week is labelled; all 24 would collide at any real width.
-      label: i % 2 === 0 ? `W${i + 1}` : '', now: i === weeks - 4, weeks: 1,
-    }));
+    return Array.from({ length: weeks }, (_, i) => {
+      const d = weekDate(i, weekZero);
+      return {
+        // Every other week is labelled; all 24 would collide at any real width.
+        label: i % 2 === 0 ? (d ? fmtDate(d) : `W${i + 1}`) : '',
+        now: mark(i, 1), weeks: 1, startWeek: i,
+      };
+    });
   }
   if (scale === 'quarter') {
     const half = Math.round(weeks / 2);
     return [
-      { label: 'Q1', now: false, weeks: half },
-      { label: 'Q2', now: true, weeks: weeks - half },
+      { label: 'Q1', now: mark(0, half), weeks: half, startWeek: 0 },
+      { label: 'Q2', now: mark(half, weeks - half), weeks: weeks - half, startWeek: half },
     ];
   }
   const months = Math.max(1, Math.round(weeks / 4));
-  return Array.from({ length: months }, (_, i) => ({
-    label: `M${i + 1}`, now: i === months - 1, weeks: weeks / months,
-  }));
+  const span = weeks / months;
+  return Array.from({ length: months }, (_, i) => {
+    const startWeek = Math.round(i * span);
+    const d = weekDate(startWeek, weekZero);
+    return {
+      label: d ? MONTH_NAMES[d.getUTCMonth()] : `M${i + 1}`,
+      now: mark(startWeek, span), weeks: span, startWeek,
+    };
+  });
+}
+
+/** Where the now-line sits, as a percentage across the track. */
+export const nowLeft = (weeks = SCHED_WEEKS): number => (NOW_WEEK / weeks) * 100;
+
+// --- what's next -----------------------------------------------------------
+
+export interface NextUpBar {
+  item: RoadmapItem;
+  /** Weeks until it starts. 0 = this week, negative = already running. */
+  inWeeks: number;
+  running: boolean;
+}
+
+/**
+ * The bars around and after now, soonest first — what the timeline is actually
+ * asking you to look at. Anything already finished is excluded: a Gantt's job
+ * to the right of the now-line is to show what has not happened yet.
+ */
+export function whatsNext(items: RoadmapItem[], limit = 5, now = NOW_WEEK): NextUpBar[] {
+  return items
+    .filter((i) => !i.archived && !i.done && i.sched && i.sched.start + i.sched.len > now)
+    .map((i) => ({
+      item: i,
+      inWeeks: i.sched!.start - now,
+      running: i.sched!.start <= now,
+    }))
+    .sort((a, b) => a.inWeeks - b.inWeeks || a.item.title.localeCompare(b.item.title))
+    .slice(0, limit);
+}
+
+// --- the calendar ----------------------------------------------------------
+
+export interface CalMonth {
+  label: string;
+  /** One entry per week that starts inside this month. */
+  weeks: { week: number; from: Date; to: Date; now: boolean; items: RoadmapItem[] }[];
+}
+
+/**
+ * The same schedule as months of weeks. Needs a week zero — a week index has no
+ * place on a calendar — and returns [] without one so the caller can say why
+ * rather than drawing an invented year.
+ */
+export function calendarMonths(
+  items: RoadmapItem[], weekZero: string | null, weeks = SCHED_WEEKS,
+): CalMonth[] {
+  if (!weekZero) return [];
+  const live = items.filter((i) => !i.archived && i.sched);
+  const out: CalMonth[] = [];
+  for (let w = 0; w < weeks; w += 1) {
+    const from = weekDate(w, weekZero)!;
+    const to = new Date(from.getTime() + 6 * 86400000);
+    const label = `${MONTH_NAMES[from.getUTCMonth()]} ${from.getUTCFullYear()}`;
+    if (!out.length || out[out.length - 1].label !== label) out.push({ label, weeks: [] });
+    out[out.length - 1].weeks.push({
+      week: w, from, to, now: w === NOW_WEEK,
+      // Active in this week — a bar spans weeks, so it appears on each one it
+      // covers rather than only on the week it starts.
+      items: live.filter((i) => i.sched!.start <= w && w < i.sched!.start + i.sched!.len),
+    });
+  }
+  return out;
 }
 
 // --- slip ------------------------------------------------------------------

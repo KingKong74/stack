@@ -24,6 +24,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { BoardArea, RoadmapItem, SchedSpan } from '../types';
 import {
   SCHED_WEEKS, CYCLE_WEEKS, layoutLane, scaleCols, scopeTotals, slipOf, weekAt,
+  nowLeft, whatsNext, calendarMonths, weekDate, fmtDate,
   type Scale,
 } from '../lib/plan';
 import { labelsOf } from '../lib/labels';
@@ -36,9 +37,16 @@ const BUCKET_LABEL: Record<string, string> = {
   must: 'Must', should: 'Should', could: 'Could', wont: "Won't",
 };
 
+// How many lanes the chart shows before it starts scrolling. Ten is about a
+// screen; beyond that the tray and the drawer get pushed out of sight, and the
+// tray is half of how work gets onto the chart at all.
+const LANES_SHOWN = 10;
+
 export interface TimelineProps {
   items: RoadmapItem[];
   areas: BoardArea[];
+  /** The Monday weeks are counted from. null = no dates, so no calendar. */
+  weekZero: string | null;
   areaFilter: string;
   selectedId: number | null;
   onSelect: (id: number | null) => void;
@@ -52,10 +60,15 @@ export interface TimelineProps {
 }
 
 export function RoadmapTimeline({
-  items, areas, areaFilter, selectedId, onSelect,
+  items, areas, weekZero, areaFilter, selectedId, onSelect,
   onSchedule, onRebaseline, onOpen, onToggleSkip, proposed,
 }: TimelineProps) {
   const [scale, setScale] = useState<Scale>('month');
+  const [mode, setMode] = useState<'chart' | 'calendar'>('chart');
+  // The chart shows LANES_SHOWN lanes and scrolls for the rest. A project with
+  // thirty areas would otherwise push the tray and the drawer off the screen,
+  // and the tray is half of how work gets onto the chart in the first place.
+  const [expanded, setExpanded] = useState(false);
   const [drawer, setDrawer] = useState(true);
   const [err, setErr] = useState('');
   // The bar being dragged, held locally so the lane re-renders at pointer rate
@@ -83,7 +96,7 @@ export function RoadmapTimeline({
 
   useEffect(() => { if (!err) return; const t = setTimeout(() => setErr(''), 6000); return () => clearTimeout(t); }, [err]);
 
-  const cols = scaleCols(scale);
+  const cols = scaleCols(scale, SCHED_WEEKS, weekZero);
   const shown = areas.filter((a) => areaFilter === '' || a.name === areaFilter);
   const visible = items.filter((i) => !i.archived);
   // A scheduled item whose area is not a lane would otherwise vanish silently.
@@ -155,22 +168,41 @@ export function RoadmapTimeline({
   return (
     <div className={`rt${drawer && selected ? ' with-drawer' : ''}`}>
       <div className="rt-main">
-        <div className="rt-bar">
-          <div className="seg-control sm" role="tablist" aria-label="Timeline scale">
-            {SCALES.map((s) => (
-              <button key={s.key} role="tab" aria-selected={scale === s.key}
-                className={`seg-opt ${scale === s.key ? 'on' : ''}`} onClick={() => setScale(s.key)}>
-                {s.label}
-              </button>
-            ))}
+        <div className="rt-toolbar">
+          <div className="seg-control sm" role="tablist" aria-label="Timeline shape">
+            <button role="tab" aria-selected={mode === 'chart'}
+              className={`seg-opt ${mode === 'chart' ? 'on' : ''}`} onClick={() => setMode('chart')}>Chart</button>
+            <button role="tab" aria-selected={mode === 'calendar'}
+              className={`seg-opt ${mode === 'calendar' ? 'on' : ''}`} onClick={() => setMode('calendar')}
+              title={weekZero ? 'The same schedule, by month' : 'Needs a start date on this project'}>
+              Calendar
+            </button>
           </div>
+          {mode === 'chart' && (
+            <div className="seg-control sm" role="tablist" aria-label="Timeline scale">
+              {SCALES.map((s) => (
+                <button key={s.key} role="tab" aria-selected={scale === s.key}
+                  className={`seg-opt ${scale === s.key ? 'on' : ''}`} onClick={() => setScale(s.key)}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
           <span className="rt-hint">
-            Drag a bar to reschedule · drag its right edge to change duration · select it to unschedule
+            {mode === 'chart'
+              ? 'Drag a bar to reschedule · drag its right edge to change duration · select it to unschedule'
+              : 'Each week lists what is running in it'}
           </span>
         </div>
 
+        <WhatsNext items={visible} areas={areas} weekZero={weekZero} onSelect={onSelect} />
+
         {err && <div className="action-error">{err}</div>}
 
+        {mode === 'calendar' ? (
+          <Calendar items={visible} areas={areas} weekZero={weekZero}
+            selectedId={selectedId} onSelect={onSelect} />
+        ) : (
         <div className="rt-chart">
           <div className="rt-head">
             <span className="rt-lane-name lbl">Area</span>
@@ -180,9 +212,14 @@ export function RoadmapTimeline({
                   <span>{c.label}</span>
                 </div>
               ))}
+              {/* The now-line runs the full height of the chart from here; the
+                  lanes draw their own segment so it survives their scrolling. */}
+              <span className="rt-nowline head" style={{ left: `${nowLeft()}%` }} aria-hidden="true" />
+              <span className="rt-nowtag" style={{ left: `${nowLeft()}%` }}>now</span>
             </div>
           </div>
 
+          <div className={`rt-lanes${expanded ? ' expanded' : ''}`}>
           {shown.length === 0 && (
             <div className="rt-empty">
               No areas yet. Tag an item with an area — or add one above — and it becomes a lane here.
@@ -229,7 +266,17 @@ export function RoadmapTimeline({
               )}
             </div>
           </div>
+          </div>
+
+          {shown.length + (orphans.length ? 1 : 0) > LANES_SHOWN && (
+            <button className="rt-expand" onClick={() => setExpanded(!expanded)}>
+              {expanded
+                ? `Collapse to ${LANES_SHOWN} lanes`
+                : `Show all ${shown.length + (orphans.length ? 1 : 0)} lanes`}
+            </button>
+          )}
         </div>
+        )}
 
         <div className="rt-tray">
           <div className="rt-tray-head">
@@ -352,6 +399,7 @@ function Lane({
         <div className="rt-grid" aria-hidden="true">
           {cols.map((c, k) => <div key={k} className={`rt-col${c.now ? ' now' : ''}`} style={{ flex: c.weeks }} />)}
         </div>
+        <span className="rt-nowline" style={{ left: `${nowLeft()}%` }} aria-hidden="true" />
 
         {lane.bars.map((bar) => {
           const it = bar.item;
@@ -424,6 +472,98 @@ function SlipLine({ item, onRebaseline }: { item: RoadmapItem; onRebaseline: () 
     <div className="rt-slip off">
       Off plan — {bits.join(', ')}.
       <button className="rt-drawer-act" onClick={onRebaseline} title="Accept this as the plan from now on">Re-baseline</button>
+    </div>
+  );
+}
+
+// --- what's next -----------------------------------------------------------
+
+// The bars at and after the now-line, soonest first. The chart shows the whole
+// window; this says which end of it to look at, which is the question a Gantt
+// is worst at answering by itself.
+function WhatsNext({ items, areas, weekZero, onSelect }: {
+  items: RoadmapItem[]; areas: BoardArea[]; weekZero: string | null;
+  onSelect: (id: number) => void;
+}) {
+  const next = whatsNext(items);
+  if (!next.length) {
+    return (
+      <div className="rt-next empty">
+        <span className="lbl">What&rsquo;s next</span>
+        <span className="rt-hint">
+          Nothing is scheduled from here on. Drag something out of the tray, or press Arrange.
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="rt-next">
+      <span className="lbl">What&rsquo;s next</span>
+      {next.map(({ item, inWeeks, running }) => {
+        const d = weekDate(item.sched!.start, weekZero);
+        return (
+          <button key={item.id} className={`rt-next-chip${running ? ' running' : ''}`}
+            onClick={() => onSelect(item.id)}
+            title={`${item.area || 'untagged'} · ${item.sched!.len} wk${item.sched!.len === 1 ? '' : 's'}`}>
+            <span className="dot" style={{ background: areas.find((a) => a.name === item.area)?.dot || 'var(--line-3)' }} />
+            <span className="t">{item.title}</span>
+            <span className="when">
+              {running ? 'running' : inWeeks === 1 ? 'next week' : `in ${inWeeks} wks`}
+              {d && ` · ${fmtDate(d)}`}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// --- the calendar ----------------------------------------------------------
+
+// The same schedule read as months of weeks. It needs real dates, and without a
+// week zero it says so rather than drawing an invented year — a calendar whose
+// dates are made up is worse than no calendar.
+function Calendar({ items, areas, weekZero, selectedId, onSelect }: {
+  items: RoadmapItem[]; areas: BoardArea[]; weekZero: string | null;
+  selectedId: number | null; onSelect: (id: number) => void;
+}) {
+  const months = calendarMonths(items, weekZero);
+  if (!months.length) {
+    return (
+      <div className="rt-chart">
+        <div className="rt-empty">
+          This project has no start date, so a week has no date to sit on and the calendar cannot be
+          drawn. The chart above works without one. Set a start date on the project to turn weeks
+          into dates.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="rt-cal">
+      {months.map((m) => (
+        <div className="rt-cal-month" key={m.label}>
+          <div className="rt-cal-head">{m.label}</div>
+          {m.weeks.map((w) => (
+            <div className={`rt-cal-week${w.now ? ' now' : ''}`} key={w.week}>
+              <div className="rt-cal-dates">
+                <span className="d">{fmtDate(w.from)} – {fmtDate(w.to)}</span>
+                {w.now && <span className="nowtag">now</span>}
+              </div>
+              <div className="rt-cal-items">
+                {w.items.map((i) => (
+                  <button key={i.id} className={`rt-cal-chip${selectedId === i.id ? ' sel' : ''}${i.done ? ' done' : ''}`}
+                    onClick={() => onSelect(i.id)} title={i.area || 'untagged'}>
+                    <span className="dot" style={{ background: areas.find((a) => a.name === i.area)?.dot || 'var(--line-3)' }} />
+                    {i.title}
+                  </button>
+                ))}
+                {w.items.length === 0 && <span className="rt-cal-quiet">—</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

@@ -50,6 +50,10 @@ export interface Project {
   logsUrl: string;         // where "View logs" points
   meta: ProjectMeta;
   resume: Resume | null;
+  // The Monday the Roadmap timeline counts weeks from (YYYY-MM-DD). null = this
+  // project has no start date: the Gantt still works on week indices, and the
+  // calendar view says why it cannot draw rather than inventing a year.
+  weekZero: string | null;
 }
 
 export interface Bug {

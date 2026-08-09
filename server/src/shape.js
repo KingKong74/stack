@@ -341,6 +341,9 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cade
     // the missing-row default means server-side too.
     agents: agents || {},
     liveBranches: liveBranches || [],         // branches with a live session now (board lock, BUG-2)
+    // The Monday the Roadmap timeline counts weeks from. null = no start date,
+    // which the calendar view states rather than inventing one.
+    weekZero: p.week_zero ? new Date(p.week_zero).toISOString().slice(0, 10) : null,
     shareToken: p.share_token || '',          // non-empty = the public showcase link is live
     summary: p.summary || '',
     currentPhase: p.current_phase || '',

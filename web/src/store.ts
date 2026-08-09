@@ -239,6 +239,7 @@ const repoUrl = (repo: string): string =>
 interface ProjectPayload {
   slug: string; name: string; subtitle: string; tint: string | null; status: ProjectStatus;
   progress: number; metaLine: string; pinned: boolean; automode?: boolean;
+  weekZero?: string | null;   // the Roadmap timeline's week zero; absent on an older server
   siteUrl: string; repo: string; repoUrl: string;
   pushesThisWeek: number;
   // detail-only:
@@ -285,6 +286,7 @@ function toProject(d: ProjectPayload): Project {
       pushesThisWeek: d.pushesThisWeek ?? 0,
     },
     resume: isDetail ? toResume(d) : null,
+    weekZero: d.weekZero ?? null,
   };
 }
 

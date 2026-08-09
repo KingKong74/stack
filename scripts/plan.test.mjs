@@ -24,8 +24,9 @@ module.registerHooks({
 
 const planUrl = new URL('../web/src/lib/plan.ts', import.meta.url);
 const {
-  SCHED_WEEKS, CYCLE_WEEKS, scaleCols, slipOf, layoutLane, weekAt, scopeTotals,
+  SCHED_WEEKS, CYCLE_WEEKS, NOW_WEEK, scaleCols, slipOf, layoutLane, weekAt, scopeTotals,
   listKeyOf, proposeSchedule, proposeCompact, proposeTrim,
+  nowLeft, whatsNext, calendarMonths, weekDate, fmtDate,
 } = await import(planUrl.href);
 
 let seq = 0;
@@ -260,4 +261,74 @@ test('an untouched card derives its column from the state it already carries', (
 
 test('an explicit column always wins over the derivation', () => {
   assert.equal(listKeyOf(item({ done: true, listKey: 'planned' })), 'planned');
+});
+
+// --- now, what's next, and the calendar --------------------------------------
+
+test('now sits inside the window, not at its edge', () => {
+  // A timeline whose "today" is the right-hand edge shows only the past and has
+  // nowhere to draw what is coming — which is most of what a plan is.
+  assert.ok(NOW_WEEK > 0 && NOW_WEEK < SCHED_WEEKS - 1);
+  assert.ok(nowLeft() > 20 && nowLeft() < 50, `now-line at ${nowLeft()}% should be roughly a third in`);
+});
+
+test('exactly one column is marked now, at every scale', () => {
+  for (const scale of ['week', 'month', 'quarter']) {
+    const marked = scaleCols(scale).filter((c) => c.now);
+    assert.equal(marked.length, 1, `${scale} must mark one column`);
+    const c = marked[0];
+    assert.ok(c.startWeek <= NOW_WEEK && NOW_WEEK < c.startWeek + c.weeks,
+      `${scale}'s now column must actually contain week ${NOW_WEEK}`);
+  }
+});
+
+test("what's next is soonest-first and excludes what is already finished", () => {
+  const items = [
+    item({ title: 'done', sched: { start: 10, len: 2 }, done: true }),
+    item({ title: 'past', sched: { start: 0, len: 3 } }),          // ends before now
+    item({ title: 'running', sched: { start: NOW_WEEK - 1, len: 4 } }),
+    item({ title: 'soon', sched: { start: NOW_WEEK + 2, len: 2 } }),
+    item({ title: 'later', sched: { start: NOW_WEEK + 9, len: 2 } }),
+    item({ title: 'tray', sched: null }),
+  ];
+  const next = whatsNext(items);
+  assert.deepEqual(next.map((n) => n.item.title), ['running', 'soon', 'later']);
+  assert.equal(next[0].running, true, 'a bar spanning now is running, not upcoming');
+  assert.equal(next[1].inWeeks, 2);
+});
+
+test("what's next is empty rather than wrong when nothing is scheduled ahead", () => {
+  assert.deepEqual(whatsNext([item({ sched: { start: 0, len: 2 } })]), []);
+});
+
+test('a week index becomes a real date only when the project has a week zero', () => {
+  assert.equal(weekDate(3, null), null, 'no start date means no date, not epoch');
+  const d = weekDate(3, '2026-06-01');
+  assert.equal(d.toISOString().slice(0, 10), '2026-06-22');
+  assert.equal(fmtDate(d), '22 Jun');
+});
+
+test('the ruler shows real months once there is a week zero, and M1..Mn without one', () => {
+  assert.equal(scaleCols('month', SCHED_WEEKS, null)[0].label, 'M1');
+  assert.equal(scaleCols('month', SCHED_WEEKS, '2026-06-01')[0].label, 'Jun');
+});
+
+test('the calendar refuses to draw without a start date rather than inventing one', () => {
+  assert.deepEqual(calendarMonths([item({ sched: { start: 1, len: 2 } })], null), []);
+});
+
+test('a calendar week lists every bar RUNNING in it, not only those that start in it', () => {
+  const long = item({ title: 'long', sched: { start: 0, len: 4 } });
+  const months = calendarMonths([long], '2026-06-01');
+  const weeks = months.flatMap((m) => m.weeks).slice(0, 5);
+  assert.deepEqual(weeks.map((w) => w.items.length), [1, 1, 1, 1, 0],
+    'the bar spans four weeks, so it appears on four');
+  assert.equal(weeks[0].from.toISOString().slice(0, 10), '2026-06-01');
+});
+
+test('the calendar marks the now week exactly once', () => {
+  const months = calendarMonths([item({ sched: { start: 0, len: 1 } })], '2026-06-01');
+  const nows = months.flatMap((m) => m.weeks).filter((w) => w.now);
+  assert.equal(nows.length, 1);
+  assert.equal(nows[0].week, NOW_WEEK);
 });

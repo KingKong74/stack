@@ -1,11 +1,15 @@
 // The Roadmap tab's SHELL — one segmented control over six views.
 //
-// Three of them are the redesign (Timeline, Scope, Plan) and three are the
-// existing run-queue surfaces (Board, Tiers, Parked), which are NOT replaced:
-// `position` is the run queue and `tier` is its primary sort (CLAUDE.md), so
-// the two screens where those are set have to stay reachable. The redesign
-// answers "what is the plan"; those three answer "what does the fleet build
-// next", and folding either into the other loses one of the questions.
+// Three of them are the redesign (Timeline, Scope, Plan) and two are the
+// surviving run-queue surfaces (Tiers, Parked).
+//
+// THE OLD BOARD IS GONE — Scope replaced it, and replacing means ABSORBING:
+// Scope carries the Board's edit/delete/park/branch tools, every tag it showed,
+// and its drag-reorder, because the order within a lane IS the run queue's
+// tiebreak once `tier` has sorted it (CLAUDE.md). Tiers stays because it is
+// where that primary sort is set, and Parked because a parked item has to be
+// findable. Dropping the Board without moving all three of those would have
+// quietly removed controls the fleet depends on.
 //
 // This file owns everything the three new views share: the area chips and their
 // editor, the label filter, the board's furniture (areas + lists, fetched once
@@ -32,14 +36,13 @@ import { RoadmapScope } from './RoadmapScope';
 import { RoadmapPlan } from './RoadmapPlan';
 import { RoadmapArrange, proposedSpans, arrangementCount, type Arrangement } from './RoadmapArrange';
 
-type View = 'timeline' | 'scope' | 'plan' | 'board' | 'tiers' | 'parked';
+type View = 'timeline' | 'scope' | 'plan' | 'tiers' | 'parked';
 const PLAN_VIEWS = new Set<View>(['timeline', 'scope', 'plan']);
 
 const VIEWS: { key: View; label: string; title: string }[] = [
   { key: 'timeline', label: 'Timeline', title: 'When each area is working on what' },
   { key: 'scope', label: 'Scope', title: 'What is in this cycle and what is first to cut' },
   { key: 'plan', label: 'Plan', title: 'The lists board' },
-  { key: 'board', label: 'Board', title: 'The MoSCoW board — its order IS the run queue' },
   { key: 'tiers', label: 'Tiers', title: 'What you want built next — the run queue’s primary sort' },
   { key: 'parked', label: 'Parked', title: 'Everything parked, oldest first' },
 ];
@@ -49,6 +52,8 @@ const flat = (r: RoadmapData): RoadmapItem[] => [...r.must, ...r.should, ...r.co
 export interface RoadmapTabProps {
   slug: string;
   roadmap: RoadmapData;
+  /** The Monday the timeline counts weeks from; null = no dates, no calendar. */
+  weekZero: string | null;
   /** Replace one item in the parent's copy after a write. */
   onItemChanged: (item: RoadmapItem) => void;
   onItemAdded: (item: RoadmapItem) => void;
@@ -59,9 +64,13 @@ export interface RoadmapTabProps {
 }
 
 export function RoadmapTab({
-  slug, roadmap, onItemChanged, onItemAdded, legacy, onOpenItem,
+  slug, roadmap, weekZero, onItemChanged, onItemAdded, legacy, onOpenItem,
 }: RoadmapTabProps) {
-  const [view, setView] = useState<View>('timeline');
+  // A deep link to an item lands on SCOPE, because that is where an item now
+  // lives — the Board used to reveal it and the Board is gone. Without this a
+  // search result would open the Timeline, which shows bars, not rows.
+  const [view, setView] = useState<View>(legacy.highlightId ? 'scope' : 'timeline');
+  useEffect(() => { if (legacy.highlightId) setView('scope'); }, [legacy.highlightId]);
   const [areas, setAreas] = useState<BoardArea[]>([]);
   const [lists, setLists] = useState<BoardList[]>([]);
   const [areaFilter, setAreaFilter] = useState('');
@@ -208,7 +217,7 @@ export function RoadmapTab({
             items={items} selected={selected} proposal={proposal} busy={busy}
             onPropose={setProposal} onApply={applyProposal} onDiscard={() => setProposal(null)} />
           <RoadmapTimeline
-            items={items} areas={areas} areaFilter={areaFilter}
+            items={items} areas={areas} weekZero={weekZero} areaFilter={areaFilter}
             selectedId={selectedId} onSelect={setSelectedId}
             proposed={proposedSpans(proposal)}
             onSchedule={(it, sched) => write(it, { sched }).then(() => undefined)}
@@ -221,6 +230,10 @@ export function RoadmapTab({
       {view === 'scope' && (
         <RoadmapScope
           items={items} areas={areas} areaFilter={areaFilter} labelFilter={labelFilter}
+          liveBranches={legacy.liveBranches || []} highlightId={legacy.highlightId}
+          onEdit={legacy.onEdit} onDelete={legacy.onDelete} onBranch={legacy.onBranch}
+          onClearNote={legacy.onClearNote} onToggleDone={legacy.onToggle}
+          onReorder={(it, bucket, beforeId) => legacy.onReorder?.(it, bucket, beforeId)}
           onSetBucket={(it, bucket) => { guard(write(it, { bucket }), 'move that ticket'); }}
           onToggleSkip={(it) => { guard(write(it, { skipped: !it.skipped }), 'defer that line'); }}
           onArchive={(it, archived) => { guard(write(it, { archived }), 'archive that ticket'); }}
@@ -235,7 +248,6 @@ export function RoadmapTab({
               guard(write(it, { sched: { start: end, len } }), 'schedule that ticket');
             }
           }}
-          onOpen={onOpenItem}
           onAdd={(bucket: Priority) => legacy.onAdd(bucket, areaFilter || undefined)} />
       )}
 
@@ -264,7 +276,7 @@ export function RoadmapTab({
       )}
 
       {!PLAN_VIEWS.has(view) && (
-        <Roadmap {...legacy} roadmap={roadmap} slug={slug} controlledView={view as 'board' | 'tiers' | 'parked'} />
+        <Roadmap {...legacy} roadmap={roadmap} slug={slug} controlledView={view as 'tiers' | 'parked'} />
       )}
     </div>
   );

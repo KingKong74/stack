@@ -979,9 +979,10 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             agent state itself, because its audit card has room to say who is
             off and this position does not. */}
         {tab === 'roadmap' && (
-          // RoadmapTab owns the six-way view switch; the Board/Tiers/Parked half
-          // is the existing component, handed through unchanged as `legacy`.
-          <RoadmapTab slug={slug} roadmap={roadmap}
+          // RoadmapTab owns the view switch. The Tiers/Parked half is still the
+          // original component, handed through as `legacy` — which also carries
+          // the callbacks the Scope view inherited when the Board was retired.
+          <RoadmapTab slug={slug} roadmap={roadmap} weekZero={project.weekZero}
             onItemChanged={replaceRoadItem} onItemAdded={addRoadItem}
             onOpenItem={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
             legacy={{

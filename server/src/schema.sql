@@ -1161,3 +1161,67 @@ CREATE TABLE IF NOT EXISTS project_lists (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS project_lists_key_idx ON project_lists (project_id, key);
+
+-- The project's WEEK ZERO: the Monday the timeline counts weeks from, and the
+-- only thing that turns a week index into a date.
+--
+-- Nullable, and read as "this project has no start date" rather than defaulted
+-- silently to today: the Gantt works perfectly well on week indices alone (it
+-- labels W1…W24 and says nothing about dates), but the CALENDAR view cannot
+-- exist without one and says so instead of inventing a year. Backfilled once,
+-- convergently, from each project's own creation week — the closest thing to a
+-- start date the data already holds, and a better guess than now().
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS week_zero DATE;
+UPDATE projects SET week_zero = (date_trunc('week', created_at))::date WHERE week_zero IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- THE INSTRUCTIONS TREE — the CLAUDE.md files Stack manages, one per place.
+--
+-- Same arrangement as the skill tree above, and for the same reason: these
+-- files live in the repos on the HOST, behind the firewall the server cannot
+-- cross. So the server holds the library and the intent, the host does the
+-- writing, and `installed_at` is a fact the host REPORTS, never something a
+-- save sets.
+--
+-- `body` is the file, verbatim — the whole markdown, including the HTML-comment
+-- annotations that carry a rule's scope and its off switch. The structured
+-- view, the precedence map and the merge preview are all DERIVED from it
+-- (web/src/lib/instructions.ts) and none of them is stored: rules in their own
+-- table would be a second truth that drifts the moment anybody edits the file
+-- on disk, and the file on disk is the thing Claude actually reads.
+--
+-- `adopted` is consent, and it is why this table can be trusted with somebody
+-- else's file. Stack writes a file only where it planted the `<!-- stack-managed -->`
+-- marker; adopting an unmanaged file is the owner asking for that marker to be
+-- added, in one press, with the sentence saying so.
+CREATE TABLE IF NOT EXISTS instruction_files (
+  id           SERIAL PRIMARY KEY,
+  scope        TEXT NOT NULL DEFAULT 'project',  -- global (~/.claude/CLAUDE.md) | project (<repo>/<dir>/CLAUDE.md)
+  project_id   BIGINT REFERENCES projects(id) ON DELETE CASCADE,  -- NULL for global
+  dir          TEXT NOT NULL DEFAULT '',         -- '' = repo root; 'web' = web/CLAUDE.md
+  body         TEXT NOT NULL DEFAULT '',
+  enabled      BOOLEAN NOT NULL DEFAULT true,    -- off = the host removes the file IT planted
+  adopted      BOOLEAN NOT NULL DEFAULT false,   -- taken over from a file somebody else wrote
+  installed_at TIMESTAMPTZ,                      -- when the host last wrote this exact content
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- One file per PLACE, as two partial indexes rather than one UNIQUE over a
+-- nullable column — in Postgres NULLs are distinct, so a plain constraint would
+-- let the global file be created twice.
+CREATE UNIQUE INDEX IF NOT EXISTS instruction_global_idx
+  ON instruction_files (dir) WHERE scope = 'global';
+CREATE UNIQUE INDEX IF NOT EXISTS instruction_project_idx
+  ON instruction_files (project_id, dir) WHERE scope = 'project';
+
+-- What the host actually found on disk, replaced whole on each sync — the same
+-- single-row shape as skill_reports, and the same rule: this describes ONE
+-- host, the one the dispatcher runs on. A file in here that no row above claims
+-- is an UNMANAGED file: reported so the tree is honest about what Claude reads,
+-- and never touched.
+CREATE TABLE IF NOT EXISTS instruction_reports (
+  only_row    BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (only_row),
+  report      JSONB NOT NULL DEFAULT '[]',       -- [{scope, slug, dir, path, managed, body, reach, bytes}]
+  detail      TEXT NOT NULL DEFAULT '',          -- what the last sync did, for the UI
+  reported_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
