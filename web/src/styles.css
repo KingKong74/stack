@@ -6900,30 +6900,39 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
   border-radius: 18px; overflow: hidden;   /* .ov supplies the gap below */
 }
 .ov-hero .hero-bar {
-  display: flex; align-items: baseline; gap: 12px; width: 100%; text-align: left;
-  padding: 16px 24px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 12px; padding: 14px 20px 14px 24px; flex-wrap: wrap;
 }
+/* The fold's hit area is the title and its chip — not the whole row, which now
+   ends in a button of its own. */
+.ov-hero .hero-toggle { display: flex; align-items: baseline; gap: 12px; text-align: left; flex-wrap: wrap; }
+.ov-hero .hero-jump { flex: none; height: 36px; padding: 0 16px; font-size: 13px; white-space: nowrap; }
 .ov-hero.shut .hero-bar { padding-bottom: 4px; }
 .ov-hero .hero-bar:hover .hero-name { color: var(--accent-deep); }
 .ov-hero .hero-bar .chev { flex: none; font-size: 11px; color: var(--resume-when); align-self: center; }
 .ov-hero .hero-bar .resume-ico { flex: none; width: 24px; height: 24px; border-radius: 7px; font-size: 12px; align-self: center; }
 .ov-hero .hero-name { font-family: var(--disp); font-size: 22px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
 .ov-hero .hero-when { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--resume-when); white-space: nowrap; }
+.ov-hero .hero-body { padding-top: 0; }
 .ov-hero .hero-body { padding: 2px 24px 20px; }
 /* No measure cap here. `.hero-summary` carries max-width: 70ch for the deck's
    narrow card; this band is the full page width and the cap was the reason the
    text still looked boxed after the layout went full-width. */
 .ov-hero .hero-summary { max-width: none; margin-top: 12px; }
-.ov-hero .hero-acts { margin-top: 16px; }
 /* Collapsed is a one-line taste of the summary, not a blank bar: a fold you
-   have to open to find out whether it was worth opening is not a fold. */
+   have to open to find out whether it was worth opening is not a fold.
+   A plain nowrap ellipsis rather than -webkit-line-clamp: the clamp computed to
+   `flow-root` here and rendered its ellipsis on line one while still painting
+   line two under the band's edge. One line is what this wants anyway, and this
+   spelling cannot half-work. */
 .ov-hero .hero-shut {
   padding: 0 24px 16px 46px; font-size: 13.5px; line-height: 1.5; color: var(--body-2);
-  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 @media (max-width: 700px) {
   .ov-hero .hero-bar, .ov-hero .hero-body { padding-left: 16px; padding-right: 16px; }
-  .ov-hero .hero-when { margin-left: 0; width: 100%; }
+  /* Narrow: the button wraps to its own line rather than squeezing the title. */
+  .ov-hero .hero-when { margin-left: 0; }
+  .ov-hero .hero-jump { margin-left: auto; }
   .ov-hero .hero-shut { padding-left: 16px; }
 }
 

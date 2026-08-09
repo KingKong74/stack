@@ -1031,23 +1031,39 @@ export function Overview({
           {/* One full-width block, not a two-column card: the checkpoint IS the
               headline of this page, and boxing it beside a button column left
               the summary reading in a narrow gutter. */}
-          <button className="hero-bar" onClick={() => setHeroOpen(!heroOpen)}
-            aria-expanded={heroOpen}
-            title={heroOpen ? 'Collapse the checkpoint' : 'Expand the checkpoint'}>
-            <span className="chev">{heroOpen ? '▾' : '▸'}</span>
-            <span className="resume-ico">↩</span>
-            <span className="hero-name">Where you left off</span>
-            {phase && <span className="hero-phase">{phase}</span>}
+          {/* A row, not a button: Jump back in sits at the top right and a
+              button cannot be nested inside another. The fold's hit area is the
+              toggle below, which spans the title and its chip. */}
+          <div className="hero-bar">
+            <button className="hero-toggle" onClick={() => setHeroOpen(!heroOpen)}
+              aria-expanded={heroOpen}
+              title={heroOpen ? 'Collapse the checkpoint' : 'Expand the checkpoint'}>
+              <span className="chev">{heroOpen ? '▾' : '▸'}</span>
+              <span className="resume-ico">↩</span>
+              <span className="hero-name">Where you left off</span>
+              {phase && <span className="hero-phase">{phase}</span>}
+            </button>
             <span className="hero-when">
               {/* `when` is the LAST PUSH, which is only when this card was
                   updated if that push authored a checkpoint. When it didn't,
                   say when the content was actually written. */}
-              {r ? (r.since?.authoredWhen
-                ? `checkpoint ${r.since.authoredWhen} · ${r.since.count} push${r.since.count === 1 ? '' : 'es'} since`
-                : `updated ${r.when} · after push ${r.ref}`)
-                : 'nothing captured yet'}
+              {/* A resume with no push behind it renders `when` and `ref` as
+                  empty strings, and the plain template then reads
+                  "updated  · after push " — a sentence with its facts missing.
+                  Say which of the three states it actually is. */}
+              {!r ? 'nothing captured yet'
+                : r.since?.authoredWhen
+                  ? `checkpoint ${r.since.authoredWhen} · ${r.since.count} push${r.since.count === 1 ? '' : 'es'} since`
+                  : r.ref ? `updated ${r.when} · after push ${r.ref}`
+                    : 'no push recorded against this yet'}
             </span>
-          </button>
+            {onJumpBack && (
+              <button className="btn-accent hero-jump" onClick={onJumpBack}
+                title="Open the Roadmap — what is planned, scheduled and next">
+                Jump back in ↗
+              </button>
+            )}
+          </div>
 
           {heroOpen ? (
             <div className="hero-body">
@@ -1064,14 +1080,6 @@ export function Overview({
                   {r.nextUp.slice(0, 3).map((t, i) => (
                     <div className="hero-step" key={i}><span className="mk arrow">→</span><span>{t}</span></div>
                   ))}
-                </div>
-              )}
-              {onJumpBack && (
-                <div className="hero-acts">
-                  <button className="btn-accent" onClick={onJumpBack}
-                    title="Open the Roadmap — what is planned, scheduled and next">
-                    Jump back in ↗
-                  </button>
                 </div>
               )}
             </div>
