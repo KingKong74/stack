@@ -66,6 +66,22 @@
 
   --panel: #f1efe9;
 
+  /* The Auditor console's ground. A console reads as a console — it is the one
+     surface that does NOT invert with the theme (the terminal holder already
+     works this way), so these five sit in :root and dark leaves them alone.
+     Named here rather than inlined, because the palette is the only place a
+     tone may be defined. */
+  --console: #1c1814;
+  --console-line: #2e2822;
+  --console-ink: #e8e0d6;
+  --console-dim: #b8ab9c;
+  --console-faint: #7d7469;
+  --console-bad: #d99a9a;
+
+  /* the feature table's column track, shared by its header and every row so
+     the two can never drift apart */
+  --q-feat-cols: 1.6fr 84px 1fr 68px 76px 62px;
+
   --sans: 'Hanken Grotesk', system-ui, sans-serif;
   --disp: 'Bricolage Grotesque', 'Hanken Grotesk', sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -5256,10 +5272,8 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 @keyframes q-slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
 @media (prefers-reduced-motion: reduce) { .q-running-bar span { animation: none; margin-left: 0; } }
 
-/* the card grid: Needs you + audit above, checks + bugs below */
-.q-grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; align-items: start; }
+/* the Now segment's cards — stacked full width now, see .q-stack below */
 .q-card { border-radius: 12px; border: 1px solid var(--line); background: var(--card); overflow: hidden; }
-.q-card.span { grid-column: 1 / -1; }
 .q-card.wrong { border-color: var(--critical-line); background: var(--critical-tint); }
 .q-card.calm { border-style: dashed; background: transparent; }
 .q-card-head { display: flex; align-items: baseline; gap: 9px; padding: 12px 15px; border-bottom: 1px solid var(--line-2); flex-wrap: wrap; }
@@ -5323,21 +5337,10 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .q-onecause p { margin: 0; font-size: 11.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
 .q-onecause code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
 
-/* the audit card */
-.q-audit-run { font-size: 11.5px; color: var(--accent-deep); }
+/* the audit run's placeholder lines, drawn inside the Auditor console */
 .q-skel { height: 11px; border-radius: 4px; background: var(--panel); }
-.q-finding { display: flex; align-items: baseline; gap: 9px; }
-.q-finding .t { flex: 1; min-width: 0; font-size: 11.5px; line-height: 1.5; color: var(--ink); text-wrap: pretty; }
-.q-finding .t em { font-style: normal; color: var(--muted); }
-.q-finding .q-out { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--muted); white-space: nowrap; }
-/* #239 — a regression: something the tracker calls fixed, found live again. */
-.q-finding.regressed .q-out { color: var(--critical); }
 
-/* the compact checks card (Now) */
-.q-crow { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 8px; }
-.q-crow:hover { background: var(--panel); }
-.q-crow.fail { background: var(--critical-tint); }
-.q-crow-name { flex: 1; min-width: 0; font-size: 12px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the assertion chip and the result stamp, worn by the Suite's rows */
 .q-assert { flex: none; max-width: 150px; font-family: var(--mono); font-size: 9px; font-weight: 500; color: var(--chip-ink);
   background: var(--panel); border-radius: 4px; padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .q-assert.ai { color: var(--accent-deep); background: var(--accent-tint); }
@@ -5345,12 +5348,6 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .q-crow-result.pass { color: var(--live); }
 .q-crow-result.fail { color: var(--critical); }
 .q-crow-result.never { color: var(--paused); }
-.q-fold { display: flex; align-items: center; gap: 9px; margin-top: 6px; padding: 9px 11px; border-radius: 9px;
-  border: 1px dashed var(--line-3); width: 100%; text-align: left; }
-.q-fold:hover { border-color: var(--accent-tint-border); }
-.q-fold-caret { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
-.q-fold-t { flex: 1; font-size: 11.5px; color: var(--muted); }
-.q-fold-m { font-family: var(--mono); font-size: 10px; color: var(--paused); }
 
 /* the bugs card (Now) */
 .q-brow { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; border-left: 3px solid var(--paused); }
@@ -5395,11 +5392,10 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 /* narrow: KPIs go 2×2, the grid stacks in priority order, rows fold to two
    lines with their chips underneath. Nothing is removed. */
 @media (max-width: 900px) {
-  .q-grid { grid-template-columns: 1fr; }
   .q-health { width: 100%; }
   .q-kpis { grid-template-columns: 1fr 1fr; min-width: 0; }
   .q-segs { order: 3; width: 100%; overflow-x: auto; }
-  .q-row, .q-crow, .q-brow, .q-srow, .q-hrow { flex-wrap: wrap; }
+  .q-row, .q-brow, .q-srow, .q-hrow { flex-wrap: wrap; }
   .q-crow-result { width: auto; text-align: left; }
   .q-hrow-note { flex-basis: 100%; }
   .q-assert { max-width: 100%; }
@@ -5439,6 +5435,160 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
   .q-hist-err { flex-basis: 100%; }
   .q-spark { width: 52px; }
   .q-spark-none { display: none; }
+}
+
+/* ============================================================
+   The Quality tab's design pass: the header's state line, the
+   health read as ONE row of five, the Auditor's console band and
+   the Quality-by-feature table.
+   ============================================================ */
+
+/* the bar's second line — the page's state, before its numbers */
+.q-bar-titles { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.q-bar-sub { font-size: 12.5px; color: var(--muted); text-wrap: pretty; }
+
+/* Health + the four numbers as one band. `display: contents` is what puts the
+   KPI cards in the SAME grid as the health card rather than in a nested one —
+   the alternative is two rows that never quite line up. */
+.q-top { display: grid; grid-template-columns: 1.35fr repeat(4, 1fr); gap: 12px; align-items: stretch; }
+.q-top.teaching { grid-template-columns: 1.35fr 3fr; }
+.q-top .q-health { width: auto; flex: initial; }
+.q-top .q-kpis { display: contents; }
+.q-trend-cap { font-family: var(--mono); font-size: 9.5px; color: var(--paused); margin-top: 5px; }
+
+/* the Now segment's bands, stacked full width — the feature table wants the
+   room and the bug list reads better wide than boxed */
+.q-stack { display: flex; flex-direction: column; gap: 14px; }
+.q-hint.flat { margin-right: 0; }
+
+/* ---- the Auditor's console ---- */
+.q-con { border-radius: 13px; border: 1px solid var(--console-line); background: var(--console);
+  font-family: var(--mono); overflow: hidden; }
+.q-con.running { border-color: color-mix(in srgb, var(--accent) 45%, var(--console-line)); }
+.q-con-head { display: flex; align-items: center; gap: 9px; padding: 11px 15px; flex-wrap: wrap; }
+.q-con-chev { flex: none; font-size: 10px; color: var(--console-faint); padding: 2px 3px; }
+.q-con-chev:hover { color: var(--console-dim); }
+.q-con-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.q-con-dot.busy { background: var(--building); animation: q-con-pulse 1.1s ease-in-out infinite; }
+@keyframes q-con-pulse { 50% { opacity: 0.3; } }
+.q-con-name { font-size: 12px; letter-spacing: 0.04em; color: var(--console-ink); }
+.q-con-name.big { font-family: var(--disp); font-size: 15px; font-weight: 600; letter-spacing: 0; }
+.q-con-backend { flex: none; font-size: 9.5px; font-weight: 600; letter-spacing: 0.03em; color: var(--console-faint);
+  border: 1px solid var(--console-line); border-radius: 6px; padding: 2px 8px; }
+.q-con-backend.on { color: var(--console-ink); border-color: color-mix(in srgb, var(--accent) 40%, var(--console-line)); }
+.q-con-status { flex: none; font-size: 10.5px; color: var(--console-faint); }
+.q-con-pop { flex: none; font-size: 11px; color: var(--console-dim); border: 1px solid var(--console-line);
+  border-radius: 6px; padding: 2px 7px; }
+.q-con-pop:hover { color: var(--accent); border-color: var(--accent); }
+.q-con-body { padding: 0 15px 14px; }
+.q-con-log { display: flex; flex-direction: column; gap: 8px; max-height: 210px; overflow-y: auto; padding: 4px 2px 2px 0; }
+.q-con-line { display: flex; gap: 9px; font-size: 12px; line-height: 1.6; color: var(--console-dim); text-wrap: pretty; }
+.q-con-line.muted { color: var(--console-faint); }
+.q-con-line.bad { color: var(--console-bad); }
+.q-con-line.working { color: var(--console-ink); }
+.q-con-mark { flex: none; color: var(--accent); }
+.q-con-line.muted .q-con-mark, .q-con-line.bad .q-con-mark { color: inherit; }
+.q-con .q-skel { background: #262019; }
+.q-con-find { display: flex; align-items: baseline; gap: 9px; padding-left: 21px; }
+.q-con-find .t { flex: 1; min-width: 0; font-size: 12px; line-height: 1.55; color: var(--console-ink); text-wrap: pretty; }
+.q-con-find .t em { font-style: normal; color: var(--console-faint); }
+.q-con-find .q-out { flex: none; font-size: 9.5px; color: var(--console-faint); white-space: nowrap; }
+/* #239 — a regression: something the tracker calls fixed, found live again. */
+.q-con-find.regressed .q-out { color: var(--console-bad); }
+.q-con-prompt { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px;
+  border-top: 1px solid var(--console-line); padding-top: 12px; }
+.q-con-caret { flex: none; color: var(--accent); font-size: 13px; line-height: 1.6; }
+.q-con-input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; line-height: 1.6;
+  background: transparent; border: none; color: var(--console-ink); resize: none; padding: 0; }
+.q-con-input:focus { outline: none; }
+.q-con-input::placeholder { color: var(--console-faint); }
+.q-con-save { flex: none; font-size: 11px; font-weight: 600; color: var(--console); background: var(--accent);
+  border-radius: 7px; padding: 5px 11px; }
+.q-con-save:hover { background: var(--accent-deep); }
+.q-con-acts { display: flex; align-items: center; gap: 7px; margin-top: 11px; flex-wrap: wrap; }
+.q-con-op { font-size: 11px; color: var(--console-dim); border: 1px solid var(--console-line);
+  border-radius: 7px; padding: 5px 11px; white-space: nowrap; }
+.q-con-op:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.q-con-op:disabled { opacity: 0.5; }
+.q-con-op.run { font-weight: 600; color: var(--console); background: var(--accent); border-color: var(--accent); }
+.q-con-op.run:hover:not(:disabled) { color: var(--console); background: var(--accent-deep); border-color: var(--accent-deep); }
+.q-con-hint { margin-left: auto; font-size: 10px; color: var(--console-faint); }
+
+/* popped out: the same console, given the screen */
+.q-con-scrim { padding: 42px 60px; align-items: stretch; }
+.q-con.popped { flex: 1; min-width: 0; display: flex; flex-direction: column; border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(20, 14, 10, 0.45); }
+.q-con.popped .q-con-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.q-con.popped .q-con-log { flex: 1; max-height: none; }
+.q-con.popped .q-con-line, .q-con.popped .q-con-find .t { font-size: 13px; }
+
+/* ---- Quality by feature ---- */
+.q-feat-head { display: grid; grid-template-columns: var(--q-feat-cols); gap: 12px; padding: 0 15px 8px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--paused); border-bottom: 1px solid var(--line-2); }
+.q-feats { display: flex; flex-direction: column; }
+.q-feat + .q-feat { border-top: 1px solid var(--line-2); }
+.q-feat-row { display: grid; grid-template-columns: var(--q-feat-cols); gap: 12px; align-items: center;
+  width: 100%; text-align: left; padding: 11px 15px; }
+.q-feat-row:hover { background: var(--panel); }
+.q-feat.open .q-feat-row { background: var(--accent-tint); }
+.q-feat-name { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.q-feat-chev { flex: none; font-family: var(--mono); font-size: 9px; color: var(--paused); }
+.q-feat-name .t { font-size: 13px; font-weight: 600; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-feat-checks { font-family: var(--mono); font-size: 11.5px; color: var(--live); }
+.q-feat-checks.bad { color: var(--critical); }
+.q-feat-rate { display: flex; align-items: center; gap: 9px; min-width: 0; }
+/* capped, not fluid: past about this width the bar stops reading as a
+   proportion and starts reading as a progress meter for something */
+.q-feat-bar { flex: 1; min-width: 26px; max-width: 168px; height: 5px; border-radius: 999px;
+  background: var(--panel); overflow: hidden; }
+.q-feat-bar span { display: block; height: 100%; border-radius: 999px; background: var(--live); }
+.q-feat-bar span.warn { background: var(--building); }
+.q-feat-bar span.bad { background: var(--critical); }
+.q-feat-pct, .q-feat-unrun { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--paused); }
+.q-feat-flakes, .q-feat-avg, .q-feat-bugs { font-family: var(--mono); font-size: 11.5px; color: var(--paused); }
+.q-feat-avg { color: var(--muted); }
+.q-feat-flakes.on { color: var(--building); }
+.q-feat-bugs.on { color: var(--critical); }
+
+.q-feat-open { display: grid; grid-template-columns: 1fr 280px; gap: 20px; align-items: start;
+  padding: 6px 15px 16px 34px; background: var(--panel); }
+.q-feat-checklist { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.q-feat-check { display: flex; align-items: center; gap: 10px; padding: 6px 9px; border-radius: 7px; }
+.q-feat-check:hover { background: var(--card); }
+.q-feat-mark { flex: none; font-size: 10px; color: var(--live); }
+.q-feat-check.fail .q-feat-mark { color: var(--critical); }
+.q-feat-check.never .q-feat-mark { color: var(--keyline); }
+.q-feat-cname { min-width: 0; font-size: 12.5px; color: var(--body);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-feat-ms { flex: none; font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.q-feat-ms.fail { color: var(--critical); }
+.q-feat-ms.never { color: var(--keyline); }
+.q-feat-acts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.q-act.accent { color: var(--accent-deep); border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.q-act.accent:hover:not(:disabled) { border-color: var(--accent); }
+.q-feat-read { display: flex; flex-direction: column; gap: 7px;
+  border-left: 1px solid var(--line-2); padding-left: 16px; }
+.q-feat-read p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--body-2); text-wrap: pretty; }
+.q-feat-when { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+/* the same label on a Suite row, so the grouping is visible where it is edited */
+.q-feat-chip { flex: none; max-width: 130px; font-family: var(--mono); font-size: 9px; font-weight: 500;
+  color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px;
+  padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .q-top, .q-top.teaching { grid-template-columns: 1fr; }
+  .q-top .q-kpis { display: grid; grid-template-columns: 1fr 1fr; }
+  /* Flakes, avg and bugs fold away rather than crushing the name — every one of
+     them is still on the unfolded row's checks, which is one tap down. */
+  .quality { --q-feat-cols: 1fr 62px 88px; }
+  .q-feat-flakes, .q-feat-avg, .q-feat-bugs,
+  .q-feat-head span:nth-child(n+4) { display: none; }
+  .q-feat-open { grid-template-columns: 1fr; padding-left: 15px; }
+  .q-feat-read { border-left: none; border-top: 1px solid var(--line-2); padding: 12px 0 0; }
+  .q-con-scrim { padding: 14px; }
+  .q-con-hint { margin-left: 0; flex-basis: 100%; }
 }
 
 /* ============================================================

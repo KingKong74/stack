@@ -15,6 +15,32 @@ import { STATUS_LABEL } from '../lib/ui';
 // Three segments, one page: Now (the dashboard), Suite (every check, with the
 // composer), History (the run ledger). Everything either tab could do before is
 // still here; nothing needed a second screen.
+//
+// ---- the design pass ------------------------------------------------------
+//
+// Three things changed shape, and each one is a claim about what this page is
+// FOR rather than a restyle:
+//
+//  1. **The suite groups by feature.** A flat list of forty checks answers "is
+//     anything red" and nothing else; grouped, the same rows answer "which part
+//     of this app is thin", which is the question that makes you write another
+//     check. The grouping is one free-text column (`checks.feature`) and NOT
+//     a features table — see schema.sql for why. What the table does NOT show
+//     is coverage: Stack runs HTTP probes against a live app and has no idea
+//     what fraction of it they touch, so the bar is the PASS RATE and says so.
+//     A coverage bar here would be a number nobody could source.
+//
+//  2. **The Auditor gets a console** rather than a card. It is this tab's agent
+//     and the tab is where its state belongs: what backend it is on, whether
+//     that backend is up, what it last found, and the standing brief. The brief
+//     IS the console's prompt line — the one piece of free text the Auditor
+//     actually reads — so the line does what it looks like it does. There is no
+//     chat here because there is no ask op: the Auditor's ops are `audit` and
+//     `auditprompt` and the registry is closed (server/src/agents.js).
+//
+//  3. **The health read leads the page** as one band of five: the verdict, its
+//     trend, and the four numbers. Same numbers as before, one row instead of
+//     two blocks.
 
 type Seg = 'now' | 'suite' | 'history';
 
@@ -178,6 +204,94 @@ function readHealth(checks: Check[], bugs: Bug[], linkedRed: boolean): Health {
   };
 }
 
+// ---- the feature grouping ------------------------------------------------
+//
+// One free-text label per check (`checks.feature`), read here into the groups
+// the Quality-by-feature table draws. Three rules the rest of the file leans on:
+//
+//   • '' is a REAL group, not a missing one. A project that has never grouped
+//     anything gets one row called Ungrouped holding its whole suite, which is
+//     the flat list it had before — never an empty table.
+//   • The bar is the PASS RATE over checks that have RUN, and a group where
+//     nothing has run reads "never run" rather than 0%. Same rule as a NULL
+//     verdict: no pass is not a failed pass.
+//   • Order is by what needs you — red groups first, then flaky, then the rest
+//     by name, with Ungrouped always last. Sorting alphabetically would bury
+//     the one red group under whatever happens to start with an A.
+
+const UNGROUPED = 'Ungrouped';
+
+type FeatureGroup = {
+  key: string;              // '' = ungrouped
+  label: string;
+  checks: Check[];
+  passing: number; failing: number; never: number; run: number;
+  flakes: number;
+  rate: number | null;      // 0–100 over the checks that have run; null = none have
+  avgMs: number | null;
+  bugs: number;             // open bugs filed from checks in this group
+  read: string;             // the one sentence this group's history can answer
+  lastRun: string;          // when the freshest result in the group landed
+};
+
+// The group's own read, on the same ladder the health card uses: what is red
+// beats what is flaky beats what has never run. '' when there is nothing worth
+// saying — the caller renders nothing rather than a filler sentence.
+function readGroup(checks: Check[], history: CheckHistory): string {
+  const stats = checks.map((c) => ({ c, s: readHistory(history[c.id]) }));
+  const red = stats.filter((x) => x.c.lastStatus === 'fail').sort((a, b) => b.s.fails - a.s.fails);
+  if (red.length) {
+    const worst = red[0];
+    const lead = red.length > 1 ? `${red.length} red. ` : '';
+    const tail = worst.s.diagnosis || `is failing — ${failSignature(worst.c)}`;
+    return `${lead}“${worst.c.name}” ${tail}.`;
+  }
+  const flaky = stats.filter((x) => x.s.flaky && x.s.n >= 3).sort((a, b) => b.s.fails - a.s.fails)[0];
+  if (flaky) return `Green now, but “${flaky.c.name}” ${flaky.s.diagnosis}.`;
+  const never = checks.filter((c) => !c.lastStatus).length;
+  if (never === checks.length) return `${plural(checks.length, 'check')} waiting on a first run.`;
+  if (never) return `Everything that has run is green. ${plural(never, 'check')} never run.`;
+  return `All ${plural(checks.length, 'check')} green.`;
+}
+
+function groupByFeature(checks: Check[], bugs: Bug[], history: CheckHistory): FeatureGroup[] {
+  const openByCheck = new Set(bugs.filter(isOpen).flatMap((b) => (b.checkId != null ? [b.checkId] : [])));
+  const buckets = new Map<string, Check[]>();
+  for (const c of checks) {
+    const key = c.feature || '';
+    const list = buckets.get(key);
+    if (list) list.push(c); else buckets.set(key, [c]);
+  }
+
+  const groups: FeatureGroup[] = [...buckets].map(([key, list]) => {
+    const passing = list.filter((c) => c.lastStatus === 'pass').length;
+    const failing = list.filter((c) => c.lastStatus === 'fail').length;
+    const run = passing + failing;
+    const ms = list.flatMap((c) => (c.lastStatus === 'pass' && c.lastMs != null ? [c.lastMs] : []));
+    return {
+      key, label: key || UNGROUPED, checks: list,
+      passing, failing, run, never: list.length - run,
+      flakes: list.filter((c) => readHistory(history[c.id]).flaky).length,
+      rate: run ? Math.round((passing / run) * 100) : null,
+      avgMs: ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null,
+      bugs: list.filter((c) => openByCheck.has(c.id)).length,
+      read: readGroup(list, history),
+      // The relative times are rendered server-side, so they cannot be compared
+      // here — but a Run all stamps every check in the group at once, so the
+      // first non-empty one is the group's own last run in every case but a
+      // hand-run single check, where it is still one of them.
+      lastRun: list.find((c) => c.when)?.when || '',
+    };
+  });
+
+  const rank = (g: FeatureGroup) => (g.failing ? 0 : g.flakes ? 1 : g.never === g.checks.length ? 2 : 3);
+  return groups.sort((a, b) =>
+    (a.key === '' ? 1 : 0) - (b.key === '' ? 1 : 0)
+    || rank(a) - rank(b)
+    || b.failing - a.failing
+    || a.label.localeCompare(b.label));
+}
+
 // ---- health band + KPI cards --------------------------------------------
 
 function HealthBand({ health, runs, detail }: { health: Health; runs: CheckRun[]; detail: string }) {
@@ -191,13 +305,18 @@ function HealthBand({ health, runs, detail }: { health: Health; runs: CheckRun[]
       {/* #279 — what the checks REMEMBER, not just what they say right now. */}
       {detail && <span className="q-why-more">{detail}</span>}
       {trend.length > 1 && (
-        <div className="q-trend" title="Pass rate — one bar per Run all, oldest to newest">
-          {trend.map((r) => (
-            <div key={r.id} className={`q-trend-bar ${r.failed ? 'bad' : 'good'}`}
-              style={{ height: `${r.total ? Math.max(10, Math.round((r.passed / r.total) * 100)) : 10}%` }}
-              title={`${r.passed}/${r.total} passed · ${r.when} · ${fmtMs(r.durationMs)}`} />
-          ))}
-        </div>
+        <>
+          <div className="q-trend" title="Pass rate — one bar per Run all, oldest to newest">
+            {trend.map((r) => (
+              <div key={r.id} className={`q-trend-bar ${r.failed ? 'bad' : 'good'}`}
+                style={{ height: `${r.total ? Math.max(10, Math.round((r.passed / r.total) * 100)) : 10}%` }}
+                title={`${r.passed}/${r.total} passed · ${r.when} · ${fmtMs(r.durationMs)}`} />
+            ))}
+          </div>
+          {/* The bars are only ever full runs, so the caption counts what is
+              drawn rather than saying "last 30" over however many exist. */}
+          <span className="q-trend-cap">last {trend.length} full runs</span>
+        </>
       )}
     </div>
   );
@@ -424,10 +543,98 @@ function OneCause({ signature, count, busy, onRunAll, onFileHost }: {
   );
 }
 
-// ---- the Auditor's bug audit ----------------------------------------------
+// ---- the Auditor's console -------------------------------------------------
+//
+// The Quality tab's agent, given the tab's own band rather than a card in the
+// grid: what it is, what backend it stands on, what it last found, and the
+// standing brief, in one place that reads the same whether it is working, idle
+// or switched off.
+//
+// The prompt line is the BRIEF and nothing else. A console with a text input
+// implies a conversation, and there isn't one — the Auditor's ops are `audit`
+// and `auditprompt` (server/src/agents.js, and the list is closed), so a chat
+// box here would be a control that quietly did something other than what it
+// looked like. The brief is the one piece of free text the Auditor actually
+// reads, it is sent with every run, and it is worth typing — so it gets the
+// line, with the hint saying exactly where the words go.
 
-function AuditCard({
-  context, onSaveBrief, busy, result, error, onRun, canPrompt, claudeCopy, onCopyClaude, checkCount,
+// What the run produced, as console lines. Shared verbatim by the band and the
+// popped-out overlay, because two renderings of one log is how they drift.
+function AuditorLog({ busy, result, error, checkCount }: {
+  busy: boolean; result: AuditResult | null; error: string; checkCount: number;
+}) {
+  if (busy) {
+    return (
+      <div className="q-con-log">
+        <div className="q-con-line working">
+          <span className="q-con-mark">✧</span>
+          <span>reading the brief, {plural(checkCount, 'check result')} and the tracked bugs…</span>
+        </div>
+        <div className="q-skel" style={{ width: '78%' }} />
+        <div className="q-skel" style={{ width: '64%' }} />
+        <div className="q-skel" style={{ width: '71%' }} />
+        <div className="q-con-line muted">
+          <span className="q-con-mark">·</span>
+          <span>Findings land in the review inbox for you to keep or dismiss. The tracker doesn&rsquo;t change until you say so.</span>
+        </div>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="q-con-log">
+        <div className="q-con-line bad"><span className="q-con-mark">✕</span><span>{error}</span></div>
+      </div>
+    );
+  }
+  if (!result) {
+    return (
+      <div className="q-con-log">
+        <div className="q-con-line muted">
+          <span className="q-con-mark">·</span>
+          <span>
+            Nothing audited this session. The Auditor reads the brief, the check results and the live
+            page — suspected bugs land in the review inbox, never straight into the tracker.
+          </span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="q-con-log">
+      {/* #239 — a REOPENED regression is called out first and separately. It is
+          the only outcome here that changed the tracker without a human asking,
+          and folding it into "already known" is how a bug that came back after
+          being fixed used to go unmentioned. */}
+      <div className="q-con-line">
+        <span className="q-con-mark">✧</span>
+        <span>
+          {(result.reopened ?? 0) > 0
+            ? `${result.reopened} fixed bug${result.reopened === 1 ? '' : 's'} found live again and reopened`
+              + (result.logged ? ` · ${result.logged} new to the review inbox` : '')
+            : result.logged
+              ? `${result.logged} logged to the review inbox${result.skipped ? ` · ${result.skipped} already known` : ''}`
+              : 'Audit came back clean — nothing worth logging.'}
+        </span>
+      </div>
+      {result.findings.map((f, i) => (
+        <div className={`q-con-find${f.outcome === 'reopened' ? ' regressed' : ''}`} key={i}>
+          <span className={`sev-pill ${f.severity}`}>{f.severity}</span>
+          <span className="t">{f.title}{f.evidence ? <em> — {f.evidence}</em> : null}</span>
+          <span className="q-out">
+            {f.outcome === 'logged' ? `→ ${f.bug?.id} · review inbox`
+              : f.outcome === 'reopened' ? `↩ ${f.bug?.id ?? 'a fixed bug'} · regression, reopened`
+              : f.outcome === 'duplicate' ? 'already tracked' : 'previously dismissed'}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AuditorConsole({
+  context, onSaveBrief, busy, result, error, onRun, canPrompt, claudeCopy, onCopyClaude,
+  checkCount, geminiReady,
 }: {
   context: string; onSaveBrief: (t: string) => void;
   busy: boolean; result: AuditResult | null; error: string; onRun: () => void;
@@ -436,163 +643,234 @@ function AuditCard({
   // works with the host offline and the half worth being able to keep when
   // the other goes.
   canPrompt: boolean;
-  claudeCopy: 'idle' | 'busy' | 'copied' | 'failed'; onCopyClaude: () => void; checkCount: number;
+  claudeCopy: 'idle' | 'busy' | 'copied' | 'failed'; onCopyClaude: () => void;
+  checkCount: number; geminiReady: boolean;
 }) {
-  const [briefOpen, setBriefOpen] = useState(false);
+  const [open, setOpen] = useState(true);
+  const [popped, setPopped] = useState(false);
   const [draft, setDraft] = useState(context);
+  const [wide, setWide] = useState(false);
 
+  // A brief saved elsewhere (or arriving with the payload) wins over an
+  // untouched draft; a draft the human is mid-way through does not get stamped
+  // on by a re-render.
+  useEffect(() => { setDraft(context); }, [context]);
+
+  const dirty = draft.trim() !== context;
+  const save = () => { if (dirty) onSaveBrief(draft.trim()); setWide(false); };
+
+  // No ⧉ on this label any more: the console is set in the mono face and
+  // JetBrains Mono has no glyph for it, so it drew as a tofu box. An icon that
+  // renders as a missing character is worse than no icon.
   const claudeLabel = claudeCopy === 'busy' ? 'Composing…'
-    : claudeCopy === 'copied' ? '✓ Copied' : claudeCopy === 'failed' ? 'Copy failed' : '⧉ prompt';
+    : claudeCopy === 'copied' ? '✓ Copied' : claudeCopy === 'failed' ? 'Copy failed' : 'Copy the deep-audit prompt';
 
-  return (
-    <div className={`q-card audit${busy ? ' running' : ''}`}>
-      <div className="q-card-head">
-        <span className="q-card-title">✧ Bug audit</span>
-        <div className="q-spacer" />
-        <button className="q-card-act" onClick={() => { setDraft(context); setBriefOpen(!briefOpen); }}>
-          {briefOpen ? 'close brief' : context ? '✎ brief' : '+ brief'}
+  const status = busy ? 'auditing…' : error ? 'last run failed' : result ? 'idle · last run read' : 'idle';
+
+  const body = (
+    <>
+      <AuditorLog busy={busy} result={result} error={error} checkCount={checkCount} />
+      <div className="q-con-prompt">
+        <span className="q-con-caret">›</span>
+        <textarea className="q-con-input" rows={wide ? 3 : 1} value={draft}
+          placeholder="The standing brief — what should the Auditor look for? Flows that matter, known trouble spots, what to ignore."
+          onFocus={() => setWide(true)}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
+            else if (e.key === 'Escape') { e.preventDefault(); setDraft(context); setWide(false); }
+          }} />
+        {dirty && <button className="q-con-save" onClick={save}>Save brief</button>}
+      </div>
+      <div className="q-con-acts">
+        <button className="q-con-op run" disabled={busy} onClick={onRun}>
+          {busy ? '✧ Auditing…' : '✧ Run the audit'}
         </button>
         {canPrompt && (
-          <button className="q-card-act" disabled={claudeCopy === 'busy'} onClick={onCopyClaude}
-            title="Copy a deep-audit prompt for a Claude session — the investigation the Auditor can't do from outside">
+          <button className="q-con-op" disabled={claudeCopy === 'busy'} onClick={onCopyClaude}
+            title="Copy a deep-audit prompt for a Claude session you drive yourself — the investigation the Auditor can't do from outside">
             {claudeLabel}
           </button>
         )}
-        <button className="btn-submit sm" disabled={busy} onClick={onRun}>{busy ? 'Auditing…' : '✧ Run'}</button>
+        <span className="q-con-hint">
+          {dirty ? '⌘↵ saves the brief · esc reverts' : 'the brief is sent with every run'}
+        </span>
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      <div className={`q-con${open ? '' : ' shut'}${busy ? ' running' : ''}`}>
+        <div className="q-con-head">
+          <button className="q-con-chev" onClick={() => setOpen(!open)}
+            title={open ? 'Collapse the Auditor' : 'Open the Auditor'}>{open ? '▾' : '▸'}</button>
+          <span className={`q-con-dot${busy ? ' busy' : ''}`} />
+          <button className="q-con-name" onClick={() => setOpen(!open)}>Auditor</button>
+          {/* #364 — which backend, and is it up. Two chips rather than a picker:
+              the model an agent is pinned to is set in Mission Control → Agents,
+              and a control here that looked like a choice would be one. What
+              this tab CAN say is which backend each half stands on, so a
+              refusal is investigated in the right place. */}
+          <span className="q-con-backend on" title="The audit runs Claude on the host, through the terminal daemon">
+            Claude · host
+          </span>
+          <span className={`q-con-backend${geminiReady ? ' on' : ''}`}
+            title={geminiReady
+              ? 'Plain-language check assertions are judged by Gemini'
+              : 'No Gemini key — plain-language check assertions are unavailable'}>
+            Gemini · assertions
+          </span>
+          <div className="q-spacer" />
+          <span className="q-con-status">{status}</span>
+          <button className="q-con-pop" title="Pop out to full screen" onClick={() => setPopped(true)}>⤢</button>
+        </div>
+        {open && <div className="q-con-body">{body}</div>}
       </div>
 
-      {briefOpen && (
-        <div className="audit-brief">
-          <textarea className="field-input sm audit-brief-text" rows={3} autoFocus
-            placeholder="What should the auditor look for? The flows that matter, known trouble spots, what to ignore…"
-            value={draft} onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); onSaveBrief(draft.trim()); setBriefOpen(false); }
-              else if (e.key === 'Escape') { e.preventDefault(); setBriefOpen(false); }
-            }} />
-          <div className="audit-brief-actions">
-            <span className="q-hint">⌘↵ saves · sent with every audit run</span>
-            <button className="btn-submit sm" disabled={draft.trim() === context}
-              onClick={() => { onSaveBrief(draft.trim()); setBriefOpen(false); }}>Save brief</button>
-            <button className="btn-cancel sm" onClick={() => setBriefOpen(false)}>Cancel</button>
+      {popped && (
+        <div className="overlay q-con-scrim" onClick={(e) => { if (e.target === e.currentTarget) setPopped(false); }}>
+          <div className="q-con popped">
+            <div className="q-con-head">
+              <span className={`q-con-dot${busy ? ' busy' : ''}`} />
+              <span className="q-con-name big">Auditor</span>
+              <span className="q-con-backend on">Claude · host</span>
+              <span className={`q-con-backend${geminiReady ? ' on' : ''}`}>Gemini · assertions</span>
+              <div className="q-spacer" />
+              <span className="q-con-status">{status}</span>
+              <button className="q-con-pop" title="Close" onClick={() => setPopped(false)}>×</button>
+            </div>
+            <div className="q-con-body">{body}</div>
           </div>
         </div>
       )}
+    </>
+  );
+}
 
-      <div className="q-card-body">
-        {busy ? (
-          <>
-            <div className="q-audit-run">reading the brief, {plural(checkCount, 'check result')} and the tracked bugs…</div>
-            <div className="q-skel" style={{ width: '78%' }} />
-            <div className="q-skel" style={{ width: '64%' }} />
-            <div className="q-skel" style={{ width: '71%' }} />
-            <span className="q-note">Findings land in the review inbox for you to keep or dismiss. The tracker doesn't change until you say so.</span>
-          </>
-        ) : error ? (
-          <span className="q-note bad">{error}</span>
-        ) : result ? (
-          <>
-            {/* #239 — a REOPENED regression is called out first and separately.
-                It is the only outcome here that changed the tracker without a
-                human asking, and folding it into "already known" is how a bug
-                that came back after being fixed used to go unmentioned. */}
-            <span className="q-card-sub">
-              {(result.reopened ?? 0) > 0
-                ? `${result.reopened} fixed bug${result.reopened === 1 ? '' : 's'} found live again and reopened`
-                  + (result.logged ? ` · ${result.logged} new to the review inbox` : '')
-                : result.logged
-                  ? `${result.logged} logged to the review inbox${result.skipped ? ` · ${result.skipped} already known` : ''}`
-                  : 'Audit came back clean — nothing worth logging.'}
-            </span>
-            {result.findings.map((f, i) => (
-              <div className={`q-finding${f.outcome === 'reopened' ? ' regressed' : ''}`} key={i}>
-                <span className={`sev-pill ${f.severity}`}>{f.severity}</span>
-                <span className="t">{f.title}{f.evidence ? <em> — {f.evidence}</em> : null}</span>
-                <span className="q-out">
-                  {f.outcome === 'logged' ? `→ ${f.bug?.id} · review inbox`
-                    : f.outcome === 'reopened' ? `↩ ${f.bug?.id ?? 'a fixed bug'} · regression, reopened`
-                    : f.outcome === 'duplicate' ? 'already tracked' : 'previously dismissed'}
-                </span>
-              </div>
-            ))}
-          </>
-        ) : (
-          <span className="q-card-sub">
-            The Auditor reads the brief, the check results and the live page — suspected bugs land in the
-            review inbox, never straight into the tracker.
-          </span>
-        )}
-      </div>
+// ---- Quality by feature: the suite, grouped by what it tests --------------
+//
+// The Now segment's centre. A flat list of checks answers "is anything red";
+// grouped, the same rows answer "which part of this app is thin" — which is the
+// question that gets another check written.
+//
+// The bar is the PASS RATE, not coverage. Stack fires HTTP probes at a live
+// application and has no idea what share of it they touch, so a coverage number
+// here would be unsourceable. A group where nothing has run says so rather than
+// drawing an empty bar: no pass is not a failed pass.
+
+function FeatureRow({ g, bugFor, busy, open, onToggle, onRunOne, onRunGroup, onOpenSuite }: {
+  g: FeatureGroup; bugFor: (c: Check) => Bug | null; busy: boolean;
+  open: boolean; onToggle: () => void;
+  onRunOne: (id: number) => void; onRunGroup: () => void; onOpenSuite: () => void;
+}) {
+  const tone = g.failing ? 'fail' : g.never === g.checks.length ? 'never' : g.flakes ? 'flaky' : 'pass';
+  const runnable = g.checks.some((c) => !c.external);
+  return (
+    <div className={`q-feat ${tone}${open ? ' open' : ''}`}>
+      <button className="q-feat-row" onClick={onToggle}>
+        <span className="q-feat-name">
+          <span className="q-feat-chev">{open ? '▾' : '▸'}</span>
+          <span className={`check-dot ${tone === 'flaky' ? 'never' : tone}`} />
+          <span className="t">{g.label}</span>
+        </span>
+        <span className={`q-feat-checks ${g.failing ? 'bad' : ''}`}>{g.passing}/{g.checks.length}</span>
+        <span className="q-feat-rate">
+          {g.rate == null ? (
+            <span className="q-feat-unrun">never run</span>
+          ) : (
+            <>
+              <span className="q-feat-bar">
+                <span className={g.rate === 100 ? 'good' : g.rate >= 60 ? 'warn' : 'bad'}
+                  style={{ width: `${g.rate}%` }} />
+              </span>
+              <span className="q-feat-pct">{g.rate}%</span>
+            </>
+          )}
+        </span>
+        <span className={`q-feat-flakes${g.flakes ? ' on' : ''}`}>{g.flakes || '—'}</span>
+        <span className="q-feat-avg">{g.avgMs == null ? '—' : fmtMs(g.avgMs)}</span>
+        <span className={`q-feat-bugs${g.bugs ? ' on' : ''}`}>{g.bugs || '—'}</span>
+      </button>
+
+      {open && (
+        <div className="q-feat-open">
+          <div className="q-feat-checklist">
+            {g.checks.map((c) => {
+              const bug = bugFor(c);
+              const state = c.lastStatus || 'never';
+              return (
+                <div className={`q-feat-check ${state}`} key={c.id}>
+                  <span className="q-feat-mark">{state === 'pass' ? '●' : state === 'fail' ? '✕' : '◌'}</span>
+                  <span className="q-feat-cname">{c.name}</span>
+                  {c.external && (
+                    <span className="check-external" title="Reported by an external runner, not run by Stack">reported</span>
+                  )}
+                  {bug && <span className="q-link flat" title="Filed from this check">↳ {bug.id}</span>}
+                  <div className="q-spacer" />
+                  <span className={`q-feat-ms ${state}`}>{c.lastStatus ? fmtMs(c.lastMs) : 'never run'}</span>
+                  {/* #291 — an external check's result is reported, not run by
+                      Stack; the server 400s this call, so no Run button here. */}
+                  {!c.external && (
+                    <button className="q-icon" disabled={busy} onClick={() => onRunOne(c.id)} title="Run this check">▸</button>
+                  )}
+                </div>
+              );
+            })}
+            <div className="q-feat-acts">
+              {runnable && (
+                <button className="q-act accent" disabled={busy} onClick={onRunGroup}>▸ Run these checks</button>
+              )}
+              <button className="q-act" onClick={onOpenSuite}>Edit them in Suite →</button>
+            </div>
+          </div>
+          <div className="q-feat-read">
+            <span className="q-eyebrow">READ</span>
+            <p>{g.read}</p>
+            {g.lastRun && <span className="q-feat-when">last run {g.lastRun}</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ---- the Now segment's two list cards -----------------------------------
-
-function ChecksCard({ checks, bugFor, busy, onRunOne, onAdd, onOpenSuite }: {
-  checks: Check[]; bugFor: (c: Check) => Bug | null; busy: boolean;
-  onRunOne: (id: number) => void; onAdd: () => void; onOpenSuite: () => void;
+function FeaturesCard({ groups, bugFor, busy, openKey, onToggle, onRunOne, onRunGroup, onAdd, onOpenSuite }: {
+  groups: FeatureGroup[]; bugFor: (c: Check) => Bug | null; busy: boolean;
+  openKey: string | null; onToggle: (key: string) => void;
+  onRunOne: (id: number) => void; onRunGroup: (key: string) => void;
+  onAdd: () => void; onOpenSuite: () => void;
 }) {
-  const failing = checks.filter((c) => c.lastStatus === 'fail');
-  const rest = checks.filter((c) => c.lastStatus !== 'fail');
-  // Under nine checks the card is the suite. Past that it shows what's wrong and
-  // counts the rest — the Suite segment is where you read all of them.
-  const folded = checks.length > 8;
-  const shown = folded ? failing : [...failing, ...rest];
-  const passingRest = rest.filter((c) => c.lastStatus === 'pass');
-  const restAvg = (() => {
-    const ms = passingRest.flatMap((c) => (c.lastMs != null ? [c.lastMs] : []));
-    return ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null;
-  })();
-
+  const total = groups.reduce((n, g) => n + g.checks.length, 0);
+  const named = groups.filter((g) => g.key).length;
   return (
     <div className="q-card">
       <div className="q-card-head">
-        <span className="q-card-title">Checks</span>
+        <span className="q-card-title">Quality by feature</span>
         <span className="q-card-sub">
-          {checks.length
-            ? [`${checks.filter((c) => c.lastStatus === 'pass').length} passing`,
-              failing.length ? `${failing.length} failing` : '',
-              checks.length - checks.filter((c) => c.lastStatus).length ? `${checks.length - checks.filter((c) => c.lastStatus).length} never run` : '',
-            ].filter(Boolean).join(' · ')
+          {total
+            ? named
+              ? `${plural(total, 'check')} across ${plural(named, 'feature')}${groups.some((g) => !g.key) ? ' and the ungrouped' : ''}`
+              : `${plural(total, 'check')}, none grouped yet — name a feature on a check to split this up`
             : 'nothing checked yet'}
         </span>
         <div className="q-spacer" />
+        <span className="q-hint flat">click a row to open its checks</span>
         <button className="q-card-act" onClick={onAdd}>+ add</button>
       </div>
-      <div className="q-rows tight">
-        {shown.map((c) => {
-          const a = assertLabel(c);
-          const bug = bugFor(c);
-          return (
-            <div className={`q-crow ${c.lastStatus || 'never'}`} key={c.id}>
-              <span className={`check-dot ${c.lastStatus || 'never'}`} />
-              {c.auth && (
-                <span className="check-authed" title="Runs with the app's own token — this project's origin only">🔒</span>
-              )}
-              {c.external && (
-                <span className="check-external" title="Reported by an external runner, not run by Stack">reported</span>
-              )}
-              <span className="q-crow-name">{c.name}</span>
-              {bug && <span className="q-link flat" title="Filed from this check">↳ {bug.id}</span>}
-              <span className={`q-assert${a.ai ? ' ai' : ''}`} title={a.text}>{a.text}</span>
-              <span className={`q-crow-result ${c.lastStatus || 'never'}`}>{checkResult(c)}</span>
-              {/* #291 — an external check's result is reported, not run by Stack;
-                  the server 400s this call, so there is no Run button to offer. */}
-              {!c.external && (
-                <button className="q-icon" disabled={busy} onClick={() => onRunOne(c.id)} title="Run this check">▸</button>
-              )}
-            </div>
-          );
-        })}
-        {folded && (
-          <button className="q-fold" onClick={onOpenSuite}>
-            <span className="q-fold-caret">▸</span>
-            <span className="q-fold-t">{plural(rest.length, 'more check')}</span>
-            <span className="q-fold-m">{restAvg != null ? `avg ${fmtMs(restAvg)}` : 'not all run'} · read them in Suite</span>
-          </button>
-        )}
-        {!checks.length && <div className="q-note">No checks yet — the Suite segment is where you add the first.</div>}
+      {total > 0 && (
+        <div className="q-feat-head">
+          <span>Feature</span><span>Checks</span><span>Pass rate</span>
+          <span>Flaky</span><span>Avg</span><span>Bugs</span>
+        </div>
+      )}
+      <div className="q-feats">
+        {groups.map((g) => (
+          <FeatureRow key={g.key || 'ungrouped-bucket'} g={g} bugFor={bugFor} busy={busy}
+            open={openKey === g.key} onToggle={() => onToggle(g.key)}
+            onRunOne={onRunOne} onRunGroup={() => onRunGroup(g.key)} onOpenSuite={onOpenSuite} />
+        ))}
+        {!total && <div className="q-note">No checks yet — the Suite segment is where you add the first.</div>}
       </div>
     </div>
   );
@@ -675,16 +953,16 @@ function BugsCard({ bugs, checkFor, showFixed, setShowFixed, onSetStatus, onDele
 type Draft = {
   method: CheckMethod; name: string; url: string; expect: string;
   reqBody: string; contains: string; jsonPath: string; jsonExpect: string; semantic: string;
-  auth: boolean;
+  feature: string; auth: boolean;
 };
 const EMPTY_DRAFT: Draft = {
   method: 'GET', name: '', url: '', expect: '200',
-  reqBody: '', contains: '', jsonPath: '', jsonExpect: '', semantic: '', auth: false,
+  reqBody: '', contains: '', jsonPath: '', jsonExpect: '', semantic: '', feature: '', auth: false,
 };
 const toDraft = (c: Check): Draft => ({
   method: c.method, name: c.name, url: c.url, expect: String(c.expectStatus),
   reqBody: c.reqBody, contains: c.contains, jsonPath: c.jsonPath, jsonExpect: c.jsonExpect, semantic: c.semantic,
-  auth: c.auth,
+  feature: c.feature, auth: c.auth,
 });
 
 type AssertionTab = 'none' | 'contains' | 'json' | 'semantic';
@@ -697,7 +975,7 @@ function SuitePanel({
 }: {
   checks: Check[]; bugFor: (c: Check) => Bug | null; siteUrl: string; busy: boolean;
   geminiReady: boolean; openAdd: boolean; onAddConsumed: () => void; history: CheckHistory;
-  onRun: (id?: number) => void;
+  onRun: (id: number) => void;
   onAdd: (input: CheckInput) => void;
   onEdit: (id: number, patch: Partial<CheckInput>) => void;
   onDelete: (id: number) => void;
@@ -737,13 +1015,16 @@ function SuitePanel({
       expect_status: Number(d.expect) || 200,
       req_body: d.reqBody.trim(), contains: d.contains.trim(),
       json_path: d.jsonPath.trim(), json_expect: d.jsonExpect.trim(),
-      semantic: d.semantic.trim(), auth: d.auth,
+      semantic: d.semantic.trim(), feature: d.feature.trim(), auth: d.auth,
     };
     if (editingId !== null) onEdit(editingId, input); else onAdd(input);
     close();
   };
   const keys = (e: React.KeyboardEvent) => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') close(); };
   const hasBody = d.method !== 'GET' && d.method !== 'HEAD';
+  // The features already in use, so the composer suggests them rather than
+  // inviting a second spelling of one that exists.
+  const featureNames = [...new Set(checks.flatMap((c) => (c.feature ? [c.feature] : [])))].sort();
 
   // ✧ Semantic is a Gemini surface: absent without a key, not a dead tab.
   const ASSERT_TABS: { key: AssertionTab; label: string }[] = [
@@ -782,6 +1063,19 @@ function SuitePanel({
               value={d.url} onChange={(e) => set({ url: e.target.value })} onKeyDown={keys} />
             <input className="field-input sm code" placeholder="200" value={d.expect}
               onChange={(e) => set({ expect: e.target.value })} title="Expected HTTP status" onKeyDown={keys} />
+          </div>
+
+          <div className="check-composer-row">
+            {/* The grouping, offered as free text with what's already in use as
+                a datalist. A picker would need a features table; the point of
+                keeping it a string is that naming a new feature costs nothing
+                and misspelling one is visible on the very next row. */}
+            <input className="field-input sm grow" list="q-feature-names" placeholder="Feature (optional) — what this tests, e.g. Auth"
+              value={d.feature} onChange={(e) => set({ feature: e.target.value })} onKeyDown={keys}
+              title="Groups this check under a feature on the Quality page. Leave empty for Ungrouped." />
+            <datalist id="q-feature-names">
+              {featureNames.map((f) => <option key={f} value={f} />)}
+            </datalist>
           </div>
 
           {hasBody && (
@@ -869,6 +1163,9 @@ function SuitePanel({
                 <div className="q-row-main">
                   <div className="q-row-title">
                     <span className="t">{c.name}</span>
+                    {c.feature && (
+                      <span className="q-feat-chip" title="The feature this check is grouped under">{c.feature}</span>
+                    )}
                     <span className={`q-assert${a.ai ? ' ai' : ''}`} title={a.text}>{a.text}</span>
                     {/* #279 — flaky is its own signal: neither green nor honestly red. */}
                     {stats.flaky && c.lastStatus === 'pass' && (
@@ -983,7 +1280,12 @@ function HistoryPanel({ runs }: { runs: CheckRun[] }) {
           <div className="q-hrow" key={r.id}>
             <span className={`check-dot ${r.failed ? 'fail' : 'pass'}`} />
             <span className="q-hrow-when">{r.when}</span>
-            <span className="q-hrow-scope">{r.scope === 'all' ? 'run all' : 'one'}</span>
+            {/* The scope is what makes a row readable: 3/3 from a feature run
+                is not the same claim as 3/3 from the whole suite, and the
+                pass-rate trend above only ever draws the full ones. */}
+            <span className="q-hrow-scope">
+              {r.scope === 'all' ? 'run all' : r.scope === 'feature' ? 'feature' : 'one'}
+            </span>
             <span className="q-hrow-bar">
               <span className={r.failed ? 'bad' : 'good'}
                 style={{ width: `${r.total ? Math.round((r.passed / r.total) * 100) : 0}%` }} />
@@ -1029,7 +1331,10 @@ export function Quality({
   agents: TabAgentState;
   highlightId?: string | null;
   checksBusy: boolean;
-  onRunChecks: (id?: number) => void;
+  // undefined = the whole suite, {id} = one check, {feature} = one feature's
+  // worth. '' is a real feature (Ungrouped), so this can never be a plain
+  // optional string.
+  onRunChecks: (scope?: { id: number } | { feature: string }) => void;
   onAddCheck: (input: CheckInput) => void;
   onEditCheck: (id: number, patch: Partial<CheckInput>) => void;
   onDeleteCheck: (id: number) => void;
@@ -1056,6 +1361,10 @@ export function Quality({
   const [showFixed, setShowFixed] = useState(false);
   const [openAdd, setOpenAdd] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  // Which feature row is unfolded, one at a time. null = all shut; '' is a real
+  // key (the ungrouped bucket), so this is a string | null and never a falsy
+  // test.
+  const [openFeature, setOpenFeature] = useState<string | null>(null);
 
   // The run ledger and each check's own history (#279) are this page's own
   // fetches (the detail payload stays lean); both refresh whenever a run — or
@@ -1156,10 +1465,29 @@ export function Quality({
     { key: 'history', label: 'History', count: runs.length },
   ];
 
+  const groups = useMemo(() => groupByFeature(checks, bugs, history), [checks, bugs, history]);
+
+  // The header's second line: the state of the page in one sentence, so the
+  // verdict is readable before the numbers are. It only ever claims what the
+  // data holds — "never run in full" rather than an invented time.
+  const lastFull = runs.find((r) => r.scope === 'all');
+  const namedFeatures = groups.filter((g) => g.key).length;
+  const subtitle = virgin
+    ? 'Nothing checked yet — no numbers until there is something to put in them'
+    : [
+      failing.length ? plural(failing.length, 'failing check') : checks.length ? 'nothing red' : 'no checks yet',
+      namedFeatures > 1 ? `across ${plural(namedFeatures, 'feature')}` : '',
+      lastFull ? `last full run ${lastFull.when}` : checks.length ? 'never run in full' : '',
+    ].filter(Boolean).join(' · ');
+
   return (
     <div className="quality">
       <div className="q-bar">
-        <div className="q-bar-title">Quality</div>
+        <div className="q-bar-titles">
+          <div className="q-bar-title">Quality</div>
+          <div className="q-bar-sub">{subtitle}</div>
+        </div>
+        <div className="q-spacer" />
         <div className="seg-control sm q-segs">
           {SEGS.map((s) => (
             <button key={s.key} className={`seg-opt${seg === s.key ? ' on' : ''}`} onClick={() => setSeg(s.key)}>
@@ -1167,13 +1495,12 @@ export function Quality({
             </button>
           ))}
         </div>
-        <div className="q-spacer" />
         {checks.length > 0 && (
-          <button className="btn-repo" disabled={checksBusy} onClick={() => onRunChecks()}>
+          <button className="btn-accent sm" disabled={checksBusy} onClick={() => onRunChecks()}>
             {checksBusy ? 'Running…' : '▸ Run all'}
           </button>
         )}
-        <button className="btn-dark" onClick={() => (report.open ? setReport({ open: false, title: '', check: null }) : openReport(null))}>
+        <button className="btn-repo" onClick={() => (report.open ? setReport({ open: false, title: '', check: null }) : openReport(null))}>
           + Report
         </button>
       </div>
@@ -1183,7 +1510,7 @@ export function Quality({
           onFile={fileFromReport} onClose={() => setReport({ open: false, title: '', check: null })} />
       )}
 
-      <div className="q-top">
+      <div className={`q-top${virgin ? ' teaching' : ''}`}>
         <HealthBand health={health} runs={runs} detail={healthDetail} />
         {virgin ? (
           <div className="q-teach">
@@ -1214,10 +1541,31 @@ export function Quality({
         </div>
       )}
 
+      {/* #361 — the Auditor can be switched off in Mission Control → Agents.
+          Off, the console is ABSENT rather than dead (the same treatment a
+          missing key gets), but unlike a missing key this is a state somebody
+          chose, so the note names the agent and where to undo it — a vanished
+          feature with no explanation is the worse half of "render it absent".
+          #364 — `canAudit` is the whole gate now: it folds in the agent switch,
+          the per-op switch AND whether the host daemon is up, and `auditorOff`
+          is the sentence for whichever one is missing. The console sits above
+          the segments because it belongs to the TAB, not to one view of it. */}
+      {canAudit ? (
+        <AuditorConsole context={auditContext} onSaveBrief={onSaveAuditContext}
+          busy={auditBusy} result={auditResult} error={auditError} onRun={onRunAudit}
+          canPrompt={canPrompt} claudeCopy={claudeCopy} onCopyClaude={onCopyClaudePrompt}
+          checkCount={checks.length} geminiReady={geminiReady} />
+      ) : (
+        <div className="q-note dashed">
+          {auditorOff} The bug audit and its Claude hand-off are hidden until then.
+          Everything else here — filing, linking, triage, the whole suite — never needed it.
+        </div>
+      )}
+
       {seg === 'now' && (
-        <div className="q-grid">
+        <div className="q-stack">
           {virgin ? (
-            <div className="q-card span">
+            <div className="q-card">
               <div className="q-note dashed">
                 A clean slate. Report one when something breaks — or add a check so you hear about it
                 first. No numbers until there's something to put in them.
@@ -1230,7 +1578,7 @@ export function Quality({
                   onRunAll={() => onRunChecks()} onFileHost={() => openReport(null)} />
               ) : needs.length ? (
                 <NeedsYou rows={needs} busy={checksBusy} history={history} onRunFailing={() => onRunChecks()}
-                  onRunOne={(id) => onRunChecks(id)} onFileBug={openReport}
+                  onRunOne={(id) => onRunChecks({ id })} onFileBug={openReport}
                   onSetStatus={onSetBugStatus} onJump={jump} highlightId={highlightId} />
               ) : (
                 <div className="q-card calm">
@@ -1244,36 +1592,9 @@ export function Quality({
                 </div>
               )}
 
-              {/* #361 — the ✧ Bug audit is the AUDITOR's, and the Auditor can be
-                  switched off in Mission Control → Agents. Off, the card is
-                  absent rather than dead (the same treatment a missing key
-                  gets), but unlike a missing key this is a state somebody
-                  chose, so the note below names the agent and where to undo it
-                  — a vanished feature with no explanation is the worse half of
-                  "render it absent". */}
-              {canAudit && (
-                <AuditCard context={auditContext} onSaveBrief={onSaveAuditContext}
-                  busy={auditBusy} result={auditResult} error={auditError} onRun={onRunAudit}
-                  canPrompt={canPrompt}
-                  claudeCopy={claudeCopy} onCopyClaude={onCopyClaudePrompt} checkCount={checks.length} />
-              )}
-
-              {/* #364 — the Auditor runs Claude on the host now, so its own
-                  state is the whole gate: `canAudit` folds in the switch, the
-                  per-op switch AND whether the host daemon is up, and
-                  `auditorOff` is the sentence for whichever one is missing.
-                  The Gemini key stopped being this card's question. */}
-              {!canAudit && (
-                <div className="q-card span">
-                  <div className="q-note dashed">
-                    {auditorOff} The bug audit and its Claude hand-off are hidden until then.
-                    Everything else here — filing, linking, triage, the whole suite — never needed it.
-                  </div>
-                </div>
-              )}
-
-              <ChecksCard checks={checks} bugFor={bugFor} busy={checksBusy}
-                onRunOne={(id) => onRunChecks(id)}
+              <FeaturesCard groups={groups} bugFor={bugFor} busy={checksBusy}
+                openKey={openFeature} onToggle={(k) => setOpenFeature(openFeature === k ? null : k)}
+                onRunOne={(id) => onRunChecks({ id })} onRunGroup={(feature) => onRunChecks({ feature })}
                 onAdd={() => { setSeg('suite'); setOpenAdd(true); }}
                 onOpenSuite={() => setSeg('suite')} />
 
@@ -1282,12 +1603,10 @@ export function Quality({
                 onOpenCommit={onOpenCommit} highlightId={highlightId} />
 
               {!geminiReady && (
-                <div className="q-card span">
-                  <div className="q-note dashed">
-                    Plain-language check assertions need a Gemini key — the bug audit does not any
-                    more, it runs Claude on the host (#364). Everything else on this page — filing,
-                    linking, triage, the whole suite — works without either.
-                  </div>
+                <div className="q-note dashed">
+                  Plain-language check assertions need a Gemini key — the bug audit does not any
+                  more, it runs Claude on the host (#364). Everything else on this page — filing,
+                  linking, triage, the whole suite — works without either.
                 </div>
               )}
             </>
@@ -1299,7 +1618,7 @@ export function Quality({
         <SuitePanel checks={checks} bugFor={bugFor} siteUrl={siteUrl} busy={checksBusy}
           geminiReady={geminiReady} openAdd={openAdd} onAddConsumed={() => setOpenAdd(false)}
           history={history}
-          onRun={onRunChecks} onAdd={onAddCheck} onEdit={onEditCheck} onDelete={onDeleteCheck}
+          onRun={(id) => onRunChecks({ id })} onAdd={onAddCheck} onEdit={onEditCheck} onDelete={onDeleteCheck}
           onFileBug={openReport} highlightId={highlightId} />
       )}
 

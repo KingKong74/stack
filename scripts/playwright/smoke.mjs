@@ -85,6 +85,13 @@ const SETTLE_MS = 600;
 // and the client and any future caller can never drift apart on the name.
 export const REPORT_CHECK_NAME = 'UI Smoke Harness';
 
+// The feature it is grouped under on the Quality page. Sent only on the FIRST
+// report — the one that plants the row — because the server refuses to regroup
+// a check somebody has since filed elsewhere. This harness is not an HTTP probe
+// of one route: it drives a real browser over every screen, so it belongs to
+// the app's surface rather than to any of the API groups the seeded suite uses.
+export const REPORT_CHECK_FEATURE = 'The rendered app';
+
 // The server caps `error` at 500 characters too, but this harness does not
 // rely on that: truncating silently server-side would still leave a caller
 // believing it sent the whole string, so this harness caps its own summary
@@ -592,6 +599,7 @@ async function reportOutcome({ url, token, slug, totals, durationMs, screenRepor
   const pass = (totals.errors + totals.layout) === 0;
   const body = {
     name: REPORT_CHECK_NAME,
+    feature: REPORT_CHECK_FEATURE,
     status: pass ? 'pass' : 'fail',
     ms: durationMs,
     url,

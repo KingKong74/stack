@@ -33,6 +33,11 @@
 //    the HOST and takes ~90 seconds, so it can never be one of these. Its row
 //    is planted by the harness's own first POST /report, not seeded — see
 //    checks.external in schema.sql and routes/checks.js.
+//  • The FEATURE is derived from the name's `<Area> — ` prefix (FEATURE_BY_PREFIX
+//    below), so a new check is grouped by being named the way the rest are. Pass
+//    `feature:` explicitly only when the prefix is not the right group. The
+//    label is not part of what a check tests, so re-grouping one never clears
+//    its result or its history.
 //  • Renaming a check ORPHANS the old row (name is the identity), and this file
 //    will never delete it. If a rename is because the thing it asserted moved
 //    or went away, delete the old row from the Quality page in the same change —
@@ -343,27 +348,74 @@ function suiteFor(slug, ORIGIN) {
     //    Degrades silently when Gemini has no key.
     {
       name: '✧ Overview reads like a healthy deck',
-      url: u('/api/overview'), auth: true,
+      url: u('/api/overview'), auth: true, feature: 'The read layer',
       semantic: 'this JSON describes at least one software project with activity, and contains no error or exception message',
     },
   ];
 }
 
+// ---- what each check is testing -----------------------------------------
+//
+// The Quality page groups the suite by `checks.feature`, and this is where the
+// grouping is decided for Stack's own suite. It is derived rather than typed on
+// every row, because every check here is already named `<Area> — <assertion>`
+// and a second hand-maintained label would be one more thing to forget.
+//
+// Several prefixes deliberately share a feature: "which part of Stack is thin"
+// is a coarser question than "which route is this", and a table of twenty
+// one-check rows answers neither. A prefix that is not in the map lands in
+// Ungrouped, which is a real answer and shows up as one row — never hidden.
+const FEATURE_BY_PREFIX = {
+  // the parts anyone can reach, and the gate that stops them
+  'Site up': 'The front door',
+  Health: 'The front door',
+  'Auth gate closed': 'The front door',
+  'Public showcase rejects a bad token': 'The front door',
+  // the cross-project reads the dashboard and ⌘K are drawn from
+  Overview: 'The read layer',
+  Search: 'The read layer',
+  Timeline: 'The read layer',
+  // the fleet's own screens
+  Control: 'Mission Control',
+  Review: 'Mission Control',
+  'Review debrief': 'Mission Control',
+  // what actually runs the nights
+  Autopilot: 'The automation spine',
+  Terminal: 'The automation spine',
+  Previews: 'The automation spine',
+  Worktrees: 'The automation spine',
+  // one project and everything hanging off it
+  Projects: 'A project and its collections',
+  Project: 'A project and its collections',
+  Bugs: 'A project and its collections',
+  Checks: 'A project and its collections',
+  Roadmap: 'A project and its collections',
+  Futures: 'A project and its collections',
+  Notes: 'A project and its collections',
+  Workbench: 'A project and its collections',
+  Tips: 'A project and its collections',
+  // the switches and the specialists they switch
+  Settings: 'Settings',
+  Agents: 'The agents',
+  Instructions: 'Instructions',
+};
+const featureFor = (name) => FEATURE_BY_PREFIX[String(name).split(' — ')[0]] || '';
+
 // Every field the API accepts, so an omitted key CLEARS rather than lingering
 // from an older definition of the same check.
-const FIELDS = ['url', 'method', 'expect_status', 'req_body', 'contains', 'json_path', 'json_expect', 'semantic', 'auth'];
+const FIELDS = ['url', 'method', 'expect_status', 'req_body', 'contains', 'json_path', 'json_expect', 'semantic', 'feature', 'auth'];
 const full = (c) => ({
   url: c.url, method: c.method || 'GET', expect_status: c.expect_status ?? 200,
   req_body: c.req_body || '', contains: c.contains || '',
   json_path: c.json_path || '', json_expect: c.json_expect || '',
-  semantic: c.semantic || '', auth: !!c.auth,
+  semantic: c.semantic || '', feature: c.feature ?? featureFor(c.name), auth: !!c.auth,
 });
 // The API answers in camelCase; compare like-for-like before claiming a change.
 const current = (row) => ({
   url: row.url, method: row.method, expect_status: row.expectStatus,
   req_body: row.reqBody, contains: row.contains,
   json_path: row.jsonPath, json_expect: row.jsonExpect,
-  semantic: row.semantic, auth: !!row.auth,
+  semantic: row.semantic, feature: row.feature || '', auth: !!row.auth,
 });
 
 export async function main(argv = process.argv.slice(2)) {

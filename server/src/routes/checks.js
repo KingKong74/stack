@@ -27,6 +27,12 @@ import { buildPrompt } from '../prompts.js';
 // POST /report, so POST /run skips external rows and 400s a single-id run
 // against one, since probing would overwrite the reported result with the status
 // of a request that tested nothing.
+// `feature` is a free-text LABEL — what this check is testing — and the Quality
+// page's "Quality by feature" grouping reads it. It is not part of the check's
+// definition: like the name, changing it keeps the stored result and the whole
+// history, because nothing about what the check asserts has moved. '' is a real
+// value (the ungrouped bucket), which is why POST /run takes a feature run off
+// the PRESENCE of the key rather than off a truthy string.
 export const checks = Router({ mergeParams: true });
 
 const RUN_TIMEOUT_MS = 8000;
@@ -73,6 +79,7 @@ function parseFields(body) {
   if ('json_path' in body) out.json_path = String(body.json_path || '').trim().slice(0, 200) || null;
   if ('json_expect' in body) out.json_expect = String(body.json_expect || '').trim().slice(0, 300) || null;
   if ('semantic' in body) out.semantic = String(body.semantic || '').trim().slice(0, 300) || null;
+  if ('feature' in body) out.feature = String(body.feature || '').trim().slice(0, 80) || null;
   if ('auth' in body) out.auth = !!body.auth;
   return out;
 }
@@ -103,11 +110,11 @@ checks.post('/', async (req, res) => {
   if (f.method === null) return res.status(400).json({ error: `Method must be one of ${METHODS.join(', ')}.` });
 
   const { rows } = await q(
-    `INSERT INTO checks (project_id, name, url, method, expect_status, req_body, contains, json_path, json_expect, semantic, auth)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+    `INSERT INTO checks (project_id, name, url, method, expect_status, req_body, contains, json_path, json_expect, semantic, feature, auth)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
     [req.project.id, f.name, f.url, f.method || 'GET', f.expect_status ?? 200,
      f.req_body ?? null, f.contains ?? null, f.json_path ?? null, f.json_expect ?? null, f.semantic ?? null,
-     f.auth ?? false]
+     f.feature ?? null, f.auth ?? false]
   );
   res.status(201).json(checkShape(rows[0]));
 });
@@ -136,16 +143,21 @@ checks.patch('/:id', async (req, res) => {
   // record for a reason that has nothing to do with what it tests, so
   // external rows never trip the clear — only /report ever writes their
   // result and history, and only /report is allowed to invalidate it.
+  // `name` and `feature` are LABELS, not part of what the check tests — both are
+  // absent from this list on purpose, so re-titling a check or moving it under a
+  // different feature keeps every result and every history row it has earned.
   const definitionChanged = !existing.external && ['url', 'method', 'expect_status', 'req_body', 'contains', 'json_path', 'json_expect', 'semantic', 'auth']
     .some((k) => (merged[k] ?? null) !== (existing[k] ?? null));
 
   const { rows: [saved] } = await q(
     `UPDATE checks SET name = $2, url = $3, method = $4, expect_status = $5, req_body = $6,
-                       contains = $7, json_path = $8, json_expect = $9, semantic = $10, auth = $11
+                       contains = $7, json_path = $8, json_expect = $9, semantic = $10, auth = $11,
+                       feature = $12
                        ${definitionChanged ? ', last_status = NULL, last_code = NULL, last_ms = NULL, last_error = NULL, last_run_at = NULL' : ''}
       WHERE id = $1 RETURNING *`,
     [id, merged.name, merged.url, merged.method, merged.expect_status, merged.req_body,
-     merged.contains, merged.json_path, merged.json_expect, merged.semantic, merged.auth]
+     merged.contains, merged.json_path, merged.json_expect, merged.semantic, merged.auth,
+     merged.feature ?? null]
   );
   // #279 — the same reasoning that clears the stored result clears the history:
   // past passes were against a different test, so charting them under the new
@@ -308,14 +320,33 @@ async function pruneCheckHistory(checkIds) {
   );
 }
 
-// POST /run  -> run every check (or one, with body {id}); returns updated shapes.
-// Every run also lands a summary row in check_runs — the Quality tab's History.
+// POST /run  -> run every check, or one (body {id}), or one feature's worth
+// (body {feature}). Every run also lands a summary row in check_runs — the
+// Quality tab's History.
+//
+// The three scopes are NOT interchangeable and the summary row says which it
+// was, because the health card's pass-rate trend is drawn from full runs ONLY:
+// a partial run charted beside them would read as a dip that never happened.
+// Recording a feature run as 'one' would have been the same lie in the ledger,
+// where "one" against a total of nine is nonsense — hence a third scope rather
+// than reusing a near-enough one.
 checks.post('/run', async (req, res) => {
   const one = Number(req.body?.id);
   const wantsOne = Number.isFinite(one) && one > 0;
+  const feature = String(req.body?.feature ?? '').trim().slice(0, 80);
+  // '' is a real feature — the ungrouped bucket — so presence of the KEY is what
+  // asks for a feature run, never a truthy value.
+  const wantsFeature = !wantsOne && 'feature' in (req.body || {});
 
   let rows;
-  if (wantsOne) {
+  if (wantsFeature) {
+    const { rows: found } = await q(
+      `SELECT * FROM checks WHERE project_id = $1 AND NOT external
+          AND coalesce(feature, '') = $2 ORDER BY created_at`,
+      [req.project.id, feature]
+    );
+    rows = found;
+  } else if (wantsOne) {
     const { rows: found } = await q(
       'SELECT * FROM checks WHERE project_id = $1 AND id = $2', [req.project.id, one]
     );
@@ -357,7 +388,7 @@ checks.post('/run', async (req, res) => {
     const { rows: [run] } = await q(
       `INSERT INTO check_runs (project_id, scope, total, passed, failed, duration_ms)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-      [req.project.id, Number.isFinite(one) && one > 0 ? 'one' : 'all',
+      [req.project.id, wantsFeature ? 'feature' : wantsOne ? 'one' : 'all',
        updated.length, passed, updated.length - passed, Date.now() - started]
     );
     // #279 — the per-check grain, in one statement for the whole batch. This is
@@ -419,12 +450,18 @@ checks.post('/report', async (req, res) => {
     });
   }
 
+  // The reporter may name the feature it belongs under, so an external row
+  // lands in the right group on the Quality page rather than in Ungrouped. Only
+  // on CREATE: a later report must not silently regroup a check somebody has
+  // since filed under a feature of their own.
+  const feature = body.feature ? String(body.feature).trim().slice(0, 80) : null;
+
   let row = existing;
   if (!row) {
     const { rows: [created] } = await q(
-      `INSERT INTO checks (project_id, name, url, expect_status, external)
-       VALUES ($1,$2,$3,200,true) RETURNING *`,
-      [req.project.id, name, url || 'external']
+      `INSERT INTO checks (project_id, name, url, expect_status, external, feature)
+       VALUES ($1,$2,$3,200,true,$4) RETURNING *`,
+      [req.project.id, name, url || 'external', feature]
     );
     row = created;
   }

@@ -336,6 +336,10 @@ export interface Check {
   jsonPath: string;    // dot-path assertion into a JSON response ('' = none)
   jsonExpect: string;  // expected value at that path ('' = just exist)
   semantic: string;    // plain-language expectation, judged by Gemini on run
+  // What this check is testing, as a label — the Quality page groups the suite
+  // by it. '' = ungrouped, which is a real answer and sorts last. It is not part
+  // of the definition: regrouping keeps the result and the history.
+  feature: string;
   auth: boolean;       // #261 — run with the app's own token (same-origin only)
   external: boolean;   // #291 — result REPORTED by something outside Stack (POST
                         // /report); Stack never probes it and offers no Run button
@@ -372,7 +376,10 @@ export interface Tip {
 // newest first from the API. Feeds the dashboard's trend strip.
 export interface CheckRun {
   id: number;
-  scope: 'all' | 'one';
+  // all = the whole suite, one = a single check, feature = one feature's worth.
+  // Only 'all' may be charted as the pass-rate trend — a partial run beside the
+  // full ones reads as a dip that never happened.
+  scope: 'all' | 'one' | 'feature';
   total: number;
   passed: number;
   failed: number;

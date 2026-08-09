@@ -625,11 +625,14 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
     });
 
   // ---- checks (the Quality tab's test suite) ----
-  const runProjectChecks = (id?: number) =>
+  // The scope travels as the same object the store sends: undefined = the whole
+  // suite, {id} = one row, {feature} = one feature's worth. '' is a real feature
+  // (ungrouped), so this can never collapse into a truthiness test.
+  const runProjectChecks = (scope?: { id: number } | { feature: string }) =>
     guard(async () => {
       setChecksBusy(true);
       try {
-        const updated = await runChecks(slug, id);
+        const updated = await runChecks(slug, scope);
         const byId = new Map(updated.map((c) => [c.id, c]));
         setData({ ...data, checks: data.checks.map((c) => byId.get(c.id) ?? c) });
       } finally {

@@ -2076,6 +2076,7 @@ const checksBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/chec
 export interface CheckInput {
   name: string; url: string; method?: string; expect_status?: number;
   req_body?: string; contains?: string; json_path?: string; json_expect?: string; semantic?: string;
+  feature?: string;    // what it tests — the Quality page's grouping ('' = ungrouped)
   auth?: boolean;      // #261 — the server attaches its own bearer token (same-origin URLs only)
 }
 
@@ -2092,9 +2093,10 @@ export async function patchCheck(slug: string, id: number, patch: Partial<CheckI
 export async function deleteCheck(slug: string, id: number): Promise<void> {
   await request<void>(`${checksBase(slug)}/${id}`, { method: 'DELETE' });
 }
-// Run all checks (or one, by id); returns the updated rows.
-export async function runChecks(slug: string, id?: number): Promise<Check[]> {
-  return request<Check[]>(`${checksBase(slug)}/run`, { method: 'POST', body: id ? { id } : {} });
+// Run all checks, or one by id, or one feature's worth. `feature` is passed as a
+// KEY rather than a value because '' is a real feature (the ungrouped bucket).
+export async function runChecks(slug: string, scope?: { id: number } | { feature: string }): Promise<Check[]> {
+  return request<Check[]>(`${checksBase(slug)}/run`, { method: 'POST', body: scope ?? {} });
 }
 // The run history, newest first — the Quality page's pass-rate trend + ledger.
 export async function getCheckRuns(slug: string, limit = 40): Promise<CheckRun[]> {

@@ -759,13 +759,25 @@ ALTER TABLE checks ADD COLUMN IF NOT EXISTS json_expect TEXT;
 -- runs unauthenticated rather than leaking the token to a third-party URL.
 ALTER TABLE checks ADD COLUMN IF NOT EXISTS auth BOOLEAN NOT NULL DEFAULT false;
 
+-- What this check is testing, as a free-text label — the Quality page's
+-- "Quality by feature" grouping. NULL/'' = ungrouped, which is a real answer
+-- and sorts last rather than being hidden.
+--
+-- Two things it deliberately is NOT. It is not a table: a features table would
+-- be a second place to rename a thing the suite already names, and an empty
+-- one would make the page look broken on a project that has simply never
+-- grouped anything. And it is not part of what a check TESTS — regrouping a
+-- check must never clear its result or its history, the same way renaming one
+-- doesn't, so `feature` stays out of routes/checks.js's definitionChanged list.
+ALTER TABLE checks ADD COLUMN IF NOT EXISTS feature TEXT;
+
 -- Quality tab run history: one row per Run-all (or run-one) of a project's
 -- checks — the health card's pass-rate trend and the History ledger read from
 -- it. Summary only; the per-check grain lives in check_results below.
 CREATE TABLE IF NOT EXISTS check_runs (
   id          SERIAL PRIMARY KEY,
   project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  scope       TEXT NOT NULL DEFAULT 'all',              -- all | one
+  scope       TEXT NOT NULL DEFAULT 'all',              -- all | one | feature
   total       INTEGER NOT NULL,
   passed      INTEGER NOT NULL,
   failed      INTEGER NOT NULL,
