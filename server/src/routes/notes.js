@@ -3,9 +3,14 @@ import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { NOTE_PALETTE } from '../util.js';
 import { noteShape } from '../shape.js';
+import { numericId } from '../params.js';
 
 // Mounted at /api/projects/:slug/notes.
 export const notes = Router({ mergeParams: true });
+
+// Refuse a non-numeric :id before any handler sees it — a NaN reaching
+// Postgres used to kill the whole process (see ../params.js).
+notes.param('id', numericId);
 
 notes.use(async (req, res, next) => {
   const project = await projectBySlug(req.params.slug);

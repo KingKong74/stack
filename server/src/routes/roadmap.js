@@ -26,9 +26,14 @@ import { buildPrompt } from '../prompts.js';
 import { agentClient } from '../agents.js';
 import { readSettings } from '../settings.js';
 import { composeReviewBrief, storeReviewBrief } from '../reviewbrief.js';
+import { numericId } from '../params.js';
 
 // Mounted at /api/projects/:slug/roadmap.
 export const roadmap = Router({ mergeParams: true });
+
+// Refuse a non-numeric :id before any handler sees it — a NaN reaching
+// Postgres used to kill the whole process (see ../params.js).
+roadmap.param('id', numericId);
 
 roadmap.use(async (req, res, next) => {
   const project = await projectBySlug(req.params.slug);

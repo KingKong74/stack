@@ -128,10 +128,9 @@ export function AgentsRoom() {
         <p className="mc-agfoot">
           An agent works on its own surface and nowhere else — the binding is in the server's
           registry, not on this screen, so nothing here can hand one another's work. They all
-          annotate only: what they return arrives as a suggestion the human keeps or drops — the
-          Foreman's call on a change is a recommendation, and the verdict is still a press. A live
-          session is the exception by design: it is a real Claude in the checkout, and it does
-          whatever the person typing into it asks for.
+          annotate only: what they return arrives as a suggestion the human keeps or drops. The
+          Auditor's findings land in the review inbox rather than on the bug list, and the
+          Foreman's call on a change is a recommendation — the verdict is still a press.
         </p>
       )}
     </div>
@@ -274,22 +273,10 @@ function AgentCard({
         </div>
       )}
 
-      {/* An agent with NO ops is a real shape, not a broken one: the Auditor's
-          whole surface is its live session. The toggle is absent rather than
-          reading "0 ops" — an empty drawer implies a list that failed to load —
-          and the sentence says where its work happens, since the card above it
-          has just offered a model and a steer for something. */}
-      {agent.ops.length === 0 ? (
-        <p className="mc-agnoops">
-          No ✧ ops — {agent.remit} is worked in the live session above, not through prompt
-          templates. The model and standing guidance here are what that session is spawned with.
-        </p>
-      ) : (
       <button className="mc-agops-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         {open ? '▾' : '▸'} what it may do ({agent.ops.length} op{agent.ops.length === 1 ? '' : 's'}
         {offOps > 0 ? `, ${offOps} off` : ''})
       </button>
-      )}
       {open && (
         <div className="mc-agops">
           {agent.ops.map((o) => (

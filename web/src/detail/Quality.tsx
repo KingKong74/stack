@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Bug, BugStatus, Check, CheckHistory, CheckMethod, CheckResult, CheckRun, Severity } from '../types';
-import { getCheckHistory, getCheckRuns, type CheckInput } from '../store';
+import { getCheckHistory, getCheckRuns, agentCan, agentOffReason, type CheckInput, type AuditResult, type TabAgentState } from '../store';
 import { STATUS_LABEL } from '../lib/ui';
 
 // The Quality page (#278, design 20b) — Bugs and Audit merged into one card grid.
@@ -30,17 +30,15 @@ import { STATUS_LABEL } from '../lib/ui';
 //     what fraction of it they touch, so the bar is the PASS RATE and says so.
 //     A coverage bar here would be a number nobody could source.
 //
-//  2. **The Auditor is the tab's live session and nothing else.** This page
-//     carried a second one for a while: a console band under the health read,
-//     with a standing brief and a ✧ Run the audit that fetched the site,
-//     composed a prompt and filed suspected bugs into the review inbox. The tab
-//     consoles (#379) put a real Claude session in this project's checkout,
-//     under the tab bar, and it does that job without a template — it can open
-//     the code the page text only hints at, and it takes the steer as a
-//     sentence rather than as a saved field. Two auditors on one tab is one
-//     more than the page can explain, so the templated one went, along with its
-//     op, its route and its brief column. The Auditor's whole surface is the
-//     session now (server/src/agents.js says so: no ops, one console).
+//  2. **The Auditor gets a console** rather than a card. It is this tab's agent
+//     and the tab is where its state belongs: what backend it is on, whether
+//     that backend is up, what it last found, and the standing brief. The brief
+//     IS the console's prompt line — the one piece of free text the Auditor
+//     actually reads — so the line does what it looks like it does. There is no
+//     chat here because there is no ask op: the Auditor's one op is `audit` and
+//     the registry is closed (server/src/agents.js). For anything a template
+//     doesn't cover there is the tab's live session (#379), the strip under the
+//     tab bar — a real Claude in this project's checkout.
 //
 //  3. **The health read leads the page** as one band of five: the verdict, its
 //     trend, and the four numbers. Same numbers as before, one row instead of
@@ -544,6 +542,198 @@ function OneCause({ signature, count, busy, onRunAll, onFileHost }: {
         </div>
       </div>
     </div>
+  );
+}
+
+// ---- the Auditor's console -------------------------------------------------
+//
+// The Quality tab's agent, given the tab's own band rather than a card in the
+// grid: what it is, what backend it stands on, what it last found, and the
+// standing brief, in one place that reads the same whether it is working, idle
+// or switched off.
+//
+// The prompt line is the BRIEF and nothing else. A console with a text input
+// implies a conversation, and there isn't one — the Auditor's one op is `audit`
+// (server/src/agents.js, and the list is closed), so a chat box here would be a
+// control that quietly did something other than what it looked like. The brief
+// is the one piece of free text the Auditor actually reads, it is sent with
+// every run, and it is worth typing — so it gets the line, with the hint saying
+// exactly where the words go.
+//
+// The conversation is a floor up: the tab's live session (#379), the strip
+// directly under the tab bar. This band used to carry a second button that
+// composed a deep-audit prompt to paste into a Claude session you opened
+// yourself; a real session already sitting in the checkout is that hand-off
+// without the copying, so the button and its op went with it.
+
+// What the run produced, as console lines. Shared verbatim by the band and the
+// popped-out overlay, because two renderings of one log is how they drift.
+function AuditorLog({ busy, result, error, checkCount }: {
+  busy: boolean; result: AuditResult | null; error: string; checkCount: number;
+}) {
+  if (busy) {
+    return (
+      <div className="q-con-log">
+        <div className="q-con-line working">
+          <span className="q-con-mark">✧</span>
+          <span>reading the brief, {plural(checkCount, 'check result')} and the tracked bugs…</span>
+        </div>
+        <div className="q-skel" style={{ width: '78%' }} />
+        <div className="q-skel" style={{ width: '64%' }} />
+        <div className="q-skel" style={{ width: '71%' }} />
+        <div className="q-con-line muted">
+          <span className="q-con-mark">·</span>
+          <span>Findings land in the review inbox for you to keep or dismiss. The tracker doesn&rsquo;t change until you say so.</span>
+        </div>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="q-con-log">
+        <div className="q-con-line bad"><span className="q-con-mark">✕</span><span>{error}</span></div>
+      </div>
+    );
+  }
+  if (!result) {
+    return (
+      <div className="q-con-log">
+        <div className="q-con-line muted">
+          <span className="q-con-mark">·</span>
+          <span>
+            Nothing audited this session. The Auditor reads the brief, the check results and the live
+            page — suspected bugs land in the review inbox, never straight into the tracker.
+          </span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="q-con-log">
+      {/* #239 — a REOPENED regression is called out first and separately. It is
+          the only outcome here that changed the tracker without a human asking,
+          and folding it into "already known" is how a bug that came back after
+          being fixed used to go unmentioned. */}
+      <div className="q-con-line">
+        <span className="q-con-mark">✧</span>
+        <span>
+          {(result.reopened ?? 0) > 0
+            ? `${result.reopened} fixed bug${result.reopened === 1 ? '' : 's'} found live again and reopened`
+              + (result.logged ? ` · ${result.logged} new to the review inbox` : '')
+            : result.logged
+              ? `${result.logged} logged to the review inbox${result.skipped ? ` · ${result.skipped} already known` : ''}`
+              : 'Audit came back clean — nothing worth logging.'}
+        </span>
+      </div>
+      {result.findings.map((f, i) => (
+        <div className={`q-con-find${f.outcome === 'reopened' ? ' regressed' : ''}`} key={i}>
+          <span className={`sev-pill ${f.severity}`}>{f.severity}</span>
+          <span className="t">{f.title}{f.evidence ? <em> — {f.evidence}</em> : null}</span>
+          <span className="q-out">
+            {f.outcome === 'logged' ? `→ ${f.bug?.id} · review inbox`
+              : f.outcome === 'reopened' ? `↩ ${f.bug?.id ?? 'a fixed bug'} · regression, reopened`
+              : f.outcome === 'duplicate' ? 'already tracked' : 'previously dismissed'}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AuditorConsole({
+  context, onSaveBrief, busy, result, error, onRun, checkCount, geminiReady,
+}: {
+  context: string; onSaveBrief: (t: string) => void;
+  busy: boolean; result: AuditResult | null; error: string; onRun: () => void;
+  checkCount: number; geminiReady: boolean;
+}) {
+  const [open, setOpen] = useState(true);
+  const [popped, setPopped] = useState(false);
+  const [draft, setDraft] = useState(context);
+  const [wide, setWide] = useState(false);
+
+  // A brief saved elsewhere (or arriving with the payload) wins over an
+  // untouched draft; a draft the human is mid-way through does not get stamped
+  // on by a re-render.
+  useEffect(() => { setDraft(context); }, [context]);
+
+  const dirty = draft.trim() !== context;
+  const save = () => { if (dirty) onSaveBrief(draft.trim()); setWide(false); };
+
+  const status = busy ? 'auditing…' : error ? 'last run failed' : result ? 'idle · last run read' : 'idle';
+
+  const body = (
+    <>
+      <AuditorLog busy={busy} result={result} error={error} checkCount={checkCount} />
+      <div className="q-con-prompt">
+        <span className="q-con-caret">›</span>
+        <textarea className="q-con-input" rows={wide ? 3 : 1} value={draft}
+          placeholder="The standing brief — what should the Auditor look for? Flows that matter, known trouble spots, what to ignore."
+          onFocus={() => setWide(true)}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); save(); }
+            else if (e.key === 'Escape') { e.preventDefault(); setDraft(context); setWide(false); }
+          }} />
+        {dirty && <button className="q-con-save" onClick={save}>Save brief</button>}
+      </div>
+      <div className="q-con-acts">
+        <button className="q-con-op run" disabled={busy} onClick={onRun}>
+          {busy ? '✧ Auditing…' : '✧ Run the audit'}
+        </button>
+        <span className="q-con-hint">
+          {dirty ? '⌘↵ saves the brief · esc reverts' : 'the brief is sent with every run'}
+        </span>
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      <div className={`q-con${open ? '' : ' shut'}${busy ? ' running' : ''}`}>
+        <div className="q-con-head">
+          <button className="q-con-chev" onClick={() => setOpen(!open)}
+            title={open ? 'Collapse the Auditor' : 'Open the Auditor'}>{open ? '▾' : '▸'}</button>
+          <span className={`q-con-dot${busy ? ' busy' : ''}`} />
+          <button className="q-con-name" onClick={() => setOpen(!open)}>Auditor</button>
+          {/* #364 — which backend, and is it up. Two chips rather than a picker:
+              the model an agent is pinned to is set in Mission Control → Agents,
+              and a control here that looked like a choice would be one. What
+              this tab CAN say is which backend each half stands on, so a
+              refusal is investigated in the right place. */}
+          <span className="q-con-backend on" title="The audit runs Claude on the host, through the terminal daemon">
+            Claude · host
+          </span>
+          <span className={`q-con-backend${geminiReady ? ' on' : ''}`}
+            title={geminiReady
+              ? 'Plain-language check assertions are judged by Gemini'
+              : 'No Gemini key — plain-language check assertions are unavailable'}>
+            Gemini · assertions
+          </span>
+          <div className="q-spacer" />
+          <span className="q-con-status">{status}</span>
+          <button className="q-con-pop" title="Pop out to full screen" onClick={() => setPopped(true)}>⤢</button>
+        </div>
+        {open && <div className="q-con-body">{body}</div>}
+      </div>
+
+      {popped && (
+        <div className="overlay q-con-scrim" onClick={(e) => { if (e.target === e.currentTarget) setPopped(false); }}>
+          <div className="q-con popped">
+            <div className="q-con-head">
+              <span className={`q-con-dot${busy ? ' busy' : ''}`} />
+              <span className="q-con-name big">Auditor</span>
+              <span className="q-con-backend on">Claude · host</span>
+              <span className={`q-con-backend${geminiReady ? ' on' : ''}`}>Gemini · assertions</span>
+              <div className="q-spacer" />
+              <span className="q-con-status">{status}</span>
+              <button className="q-con-pop" title="Close" onClick={() => setPopped(false)}>×</button>
+            </div>
+            <div className="q-con-body">{body}</div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1116,12 +1306,17 @@ function HistoryPanel({ runs }: { runs: CheckRun[] }) {
 // ---- the page ----------------------------------------------------------
 
 export function Quality({
-  slug, checks, bugs, siteUrl, geminiReady, highlightId,
+  slug, checks, bugs, siteUrl, geminiReady, agents, highlightId,
   checksBusy, onRunChecks, onAddCheck, onEditCheck, onDeleteCheck,
   onFileBug, onSetBugStatus, onDeleteBug, onOpenCommit,
+  auditContext, onSaveAuditContext, auditBusy, auditResult, auditError, onRunAudit,
 }: {
   slug: string;
   checks: Check[]; bugs: Bug[]; siteUrl: string; geminiReady: boolean;
+  // #361 — the AUDITOR's live state. This page is the Auditor's tab, and it is
+  // the one tab with room to say so when the agent is off, so it reads the
+  // state itself rather than taking pre-chewed booleans.
+  agents: TabAgentState;
   highlightId?: string | null;
   checksBusy: boolean;
   // undefined = the whole suite, {id} = one check, {feature} = one feature's
@@ -1135,7 +1330,15 @@ export function Quality({
   onSetBugStatus: (b: Bug, s: BugStatus) => void;
   onDeleteBug: (b: Bug) => void;
   onOpenCommit: (hash: string) => void;   // the ↳ commit chip — jumps to Activity
+  auditContext: string; onSaveAuditContext: (t: string) => void;
+  auditBusy: boolean; auditResult: AuditResult | null; auditError: string; onRunAudit: () => void;
 }) {
+  // #361 — what the Auditor may do on this project right now. Unknown reads as
+  // yes (an older server sends no agent state), so this only ever hides a
+  // surface the server has actually said it will refuse.
+  const canAudit = agentCan(agents, 'auditor', 'audit');
+  const auditorOff = agentOffReason(agents, 'auditor', 'audit');
+
   const [seg, setSeg] = useState<Seg>('now');
   const [runs, setRuns] = useState<CheckRun[]>([]);
   const [history, setHistory] = useState<CheckHistory>({});
@@ -1150,16 +1353,16 @@ export function Quality({
   const [openFeature, setOpenFeature] = useState<string | null>(null);
 
   // The run ledger and each check's own history (#279) are this page's own
-  // fetches (the detail payload stays lean); both refresh whenever a run
-  // settles. A miss on either is quietly no memory, never an error: an older
-  // server without /history just has no sparklines.
+  // fetches (the detail payload stays lean); both refresh whenever a run — or
+  // the check-rerunning audit — settles. A miss on either is quietly no memory,
+  // never an error: an older server without /history just has no sparklines.
   useEffect(() => {
-    if (checksBusy) return;
+    if (checksBusy || auditBusy) return;
     let live = true;
     getCheckRuns(slug).then((r) => { if (live) setRuns(r); }).catch(() => {});
     getCheckHistory(slug).then((h) => { if (live) setHistory(h); }).catch(() => {});
     return () => { live = false; };
-  }, [slug, checksBusy]);
+  }, [slug, checksBusy, auditBusy]);
 
   // A running suite ticks its own elapsed clock. The numbers above it grey out
   // rather than blanking — the last known state stays readable throughout.
@@ -1324,6 +1527,26 @@ export function Quality({
         </div>
       )}
 
+      {/* #361 — the Auditor can be switched off in Mission Control → Agents.
+          Off, the console is ABSENT rather than dead (the same treatment a
+          missing key gets), but unlike a missing key this is a state somebody
+          chose, so the note names the agent and where to undo it — a vanished
+          feature with no explanation is the worse half of "render it absent".
+          #364 — `canAudit` is the whole gate now: it folds in the agent switch,
+          the per-op switch AND whether the host daemon is up, and `auditorOff`
+          is the sentence for whichever one is missing. The console sits above
+          the segments because it belongs to the TAB, not to one view of it. */}
+      {canAudit ? (
+        <AuditorConsole context={auditContext} onSaveBrief={onSaveAuditContext}
+          busy={auditBusy} result={auditResult} error={auditError} onRun={onRunAudit}
+          checkCount={checks.length} geminiReady={geminiReady} />
+      ) : (
+        <div className="q-note dashed">
+          {auditorOff} The bug audit is hidden until then. Everything else here — filing, linking,
+          triage, the whole suite — never needed it, and the tab&rsquo;s own session has its own switch.
+        </div>
+      )}
+
       {seg === 'now' && (
         <div className="q-stack">
           {virgin ? (
@@ -1366,9 +1589,9 @@ export function Quality({
 
               {!geminiReady && (
                 <div className="q-note dashed">
-                  Plain-language check assertions need a Gemini key. Everything else on this page —
-                  filing, linking, triage, the whole suite — works without one, and the tab&rsquo;s own
-                  Claude session answers to the host daemon rather than to a key.
+                  Plain-language check assertions need a Gemini key — the bug audit does not any
+                  more, it runs Claude on the host (#364). Everything else on this page — filing,
+                  linking, triage, the whole suite — works without either.
                 </div>
               )}
             </>

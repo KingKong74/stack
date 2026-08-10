@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { worktreeShape } from '../shape.js';
+import { numericId } from '../params.js';
 
 // (#229) The worktree REGISTER — one row per git worktree the host has
 // checked out for a parallel interactive session (a terminal tab / `stack
@@ -13,6 +14,10 @@ import { worktreeShape } from '../shape.js';
 // alone creates and removes worktrees and reports what it did. A later
 // session adding a "clean up" endpoint here would break that invariant.
 export const worktrees = Router();
+
+// Refuse a non-numeric :id before any handler sees it — a NaN reaching
+// Postgres used to kill the whole process (see ../params.js).
+worktrees.param('id', numericId);
 
 const KINDS = ['term', 'autopilot'];
 

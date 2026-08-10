@@ -8,6 +8,7 @@ import { agentClient } from '../agents.js';
 import { buildPrompt } from '../prompts.js';
 import { readSettings, cleanModelAlias } from '../settings.js';
 import { extractInsights } from '../debrief.js';
+import { numericId } from '../params.js';
 
 // Mounted at /api/projects/:slug/workbench — the planning canvas that replaced
 // the notes wall.
@@ -62,6 +63,10 @@ import { extractInsights } from '../debrief.js';
 // model's STORED read and the files that branch touched — so the dialog prints
 // the list the server actually assembled (`read[]`), not a fixed caption.
 export const workbench = Router({ mergeParams: true });
+
+// Refuse a non-numeric :id before any handler sees it — a NaN reaching
+// Postgres used to kill the whole process (see ../params.js).
+workbench.param('id', numericId);
 
 workbench.use(async (req, res, next) => {
   const project = await projectBySlug(req.params.slug);
@@ -678,7 +683,7 @@ const describe = (c) => {
 // SAYS it is capped with its true total — an unmarked slice reads as "that is
 // all there is" and the model then reasons from an absence that isn't real.
 // Ordering is by importance, never by recency, so a cap never drops the
-// long-standing criticals (the same trap `prompts.js`'s header documents).
+// long-standing criticals (the same trap routes/audit.js documents).
 async function projectRecord(project) {
   const [road, bugs, files] = await Promise.all([
     q(

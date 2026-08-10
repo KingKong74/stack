@@ -5,6 +5,7 @@ import {
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   deleteNote, createFuture, patchFuture, deleteFuture, getFutures,
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
+  runAudit, type AuditResult,
   patchProject, createShareLink, deleteShareLink,
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, convergeFutures,
   type ConvergeDraft, assistRoadmapItem, proposeOrbits, restateFuture,
@@ -212,6 +213,9 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const [promotedFuture, setPromotedFuture] = useState<number[] | null>(null);
   const [pendingFuture, setPendingFuture] = useState<number[] | null>(null);
   const [checksBusy, setChecksBusy] = useState(false);
+  const [auditBusy, setAuditBusy] = useState(false);
+  const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
+  const [auditError, setAuditError] = useState('');
   const [editingUrl, setEditingUrl] = useState<'site' | 'repo' | null>(null);
   const [urlDraft, setUrlDraft] = useState('');
   const [actionError, setActionError] = useState('');
@@ -670,6 +674,35 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       setData({ ...data, checks: data.checks.filter((c) => c.id !== cid) });
     });
 
+  // ---- the automated bug audit (#144) ----
+  // Re-runs the checks first so the Auditor judges fresh evidence, then audits;
+  // logged findings are review-inbox bugs, merged straight into the list.
+  const runProjectAudit = async () => {
+    setAuditBusy(true); setAuditError(''); setAuditResult(null);
+    try {
+      let checks = data.checks;
+      if (checks.length) {
+        const updated = await runChecks(slug);
+        const byId = new Map(updated.map((c) => [c.id, c]));
+        checks = checks.map((c) => byId.get(c.id) ?? c);
+      }
+      const result = await runAudit(slug);
+      const logged = result.findings.flatMap((f) => (f.bug ? [f.bug] : []));
+      setData({ ...data, checks, bugs: [...logged, ...data.bugs] });
+      setAuditResult(result);
+    } catch (e) {
+      setAuditError((e as Error)?.message || 'Audit failed.');
+    } finally {
+      setAuditBusy(false);
+    }
+  };
+
+  const saveAuditContext = (text: string) =>
+    guard(async () => {
+      await patchProject(slug, { audit_context: text });
+      setData({ ...data, auditContext: text });
+    });
+
   const saveStack = (next: string[]) =>
     guard(async () => {
       await patchProject(slug, { tech_stack: next });
@@ -927,18 +960,21 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         )}
         {tab === 'quality' && (
           <Quality slug={slug} checks={data.checks} bugs={bugs} siteUrl={project.siteUrl}
-            geminiReady={data.geminiReady} highlightId={highlightId}
+            geminiReady={data.geminiReady} agents={data.agents} highlightId={highlightId}
             checksBusy={checksBusy} onRunChecks={runProjectChecks}
             onAddCheck={addCheck} onEditCheck={editCheck} onDeleteCheck={removeCheck}
             onFileBug={fileBug} onSetBugStatus={setBugStatus} onDeleteBug={(b) => setConfirmBugDelete(b)}
-            onOpenCommit={openBugLink} />
+            onOpenCommit={openBugLink}
+            auditContext={data.auditContext} onSaveAuditContext={saveAuditContext}
+            auditBusy={auditBusy} auditResult={auditResult} auditError={auditError}
+            onRunAudit={runProjectAudit} />
         )}
         {/* #361 — the ✧ surfaces on the Roadmap and Polaris tabs belong to the
             CURATOR and to POLARIS, and an absent callback is how each one goes
             away when its agent (or that one op) is switched off: the button is
-            not rendered at all, rather than rendered to fail. Quality has no ✧
-            of its own any more: the Auditor's whole surface there is the tab's
-            live session, which carries its own switch. */}
+            not rendered at all, rather than rendered to fail. Quality takes the
+            agent state itself, because its audit card has room to say who is
+            off and this position does not. */}
         {tab === 'roadmap' && (
           // RoadmapTab owns the view switch and every board under it. `legacy`
           // is the bag of callbacks that have to live up here because they open

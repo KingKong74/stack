@@ -5,6 +5,7 @@ import { checkShape, checkRunShape, checkResultShape } from '../shape.js';
 import { CHECK_HISTORY_KEEP } from '../util.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
+import { numericId } from '../params.js';
 
 // Mounted at /api/projects/:slug/checks — the Quality tab's Suite segment (#143,
 // named by #145, merged into Quality by #278).
@@ -34,6 +35,10 @@ import { buildPrompt } from '../prompts.js';
 // value (the ungrouped bucket), which is why POST /run takes a feature run off
 // the PRESENCE of the key rather than off a truthy string.
 export const checks = Router({ mergeParams: true });
+
+// Refuse a non-numeric :id before any handler sees it — a NaN reaching
+// Postgres used to kill the whole process (see ../params.js).
+checks.param('id', numericId);
 
 const RUN_TIMEOUT_MS = 8000;
 // How much of a response body an assertion may inspect. 1MB, not 256KB: the

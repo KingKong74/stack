@@ -16,6 +16,7 @@ import { workbench } from './routes/workbench.js';
 import { futures } from './routes/futures.js';
 import { presence } from './routes/presence.js';
 import { checks } from './routes/checks.js';
+import { audit } from './routes/audit.js';
 import { publicShowcase } from './routes/public.js';
 import { timeline } from './routes/timeline.js';
 import { auth } from './routes/auth.js';
@@ -87,6 +88,7 @@ app.use('/api/projects/:slug/notes', requireToken, notes);
 app.use('/api/projects/:slug/workbench', requireToken, workbench);
 app.use('/api/projects/:slug/futures', requireToken, futures);
 app.use('/api/projects/:slug/checks', requireToken, checks);
+app.use('/api/projects/:slug/audit', requireToken, audit);
 app.use('/api/projects/:slug/autopilot', requireToken, autopilot);
 app.use('/api/projects/:slug/branches', requireToken, branches);
 app.use('/api/projects/:slug/previews', requireToken, previews);
@@ -139,5 +141,37 @@ async function start() {
   const httpServer = app.listen(port, () => console.log(`Stack API listening on :${port}`));
   attachTerm(httpServer); // the web-terminal relay (/term + /term-agent websockets)
 }
+
+// ONE BAD REQUEST MUST NOT TAKE THE WHOLE API DOWN.
+//
+// Express 4 does not catch a rejected promise from an `async (req, res) =>`
+// handler, and this app has well over a hundred of them. Node has terminated
+// the process on an unhandled rejection since v15, so any handler that throws
+// — a malformed param reaching Postgres, a transient query error, a null deref
+// — killed Stack for every project until the container restarted.
+//
+// That is not theoretical: `DELETE /api/projects/:slug/roadmap/undefined` did
+// exactly this, found while testing #174 by a script that interpolated an
+// `undefined` id into a path. `src/params.js` now refuses non-numeric ids at
+// the routers, which fixes that whole family at the door; this is the backstop
+// for the next one, wherever it is.
+//
+// It deliberately does NOT exit. A rejected handler leaves its own request
+// hanging until the client times out, which is bad — but it is one request,
+// and the alternative is every other request on the box dying with it. The
+// stack goes to the log so the real bug is still findable, and the log line is
+// worded so nobody reads it as routine.
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED REJECTION — a request failed and its caller will hang. '
+    + 'This is a bug in the handler, not a normal condition:', reason);
+});
+
+// The uncaught kind is not survivable the same way: the process may be in an
+// unknown state, so this logs and lets it die rather than pretending otherwise.
+// Docker restarts it; a half-broken API that keeps answering is worse.
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION — exiting:', err);
+  process.exit(1);
+});
 
 start();

@@ -1,12 +1,17 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { tipShape } from '../shape.js';
+import { numericId } from '../params.js';
 
 // The recipe library — app-wide Claude recipes (the Stack Planning design's
 // Tips). Mounted at /api/tips: one library, read from the client's bottom-left
 // dock wherever you are. Running a recipe is a client flow (the terminal's
 // one-shot brief handoff); POST /:id/run just records that it happened.
 export const tips = Router();
+
+// Refuse a non-numeric :id before any handler sees it — a NaN reaching
+// Postgres used to kill the whole process (see ../params.js).
+tips.param('id', numericId);
 
 const STAGES = new Set(['diverge', 'converge', 'judge', 'ship']);
 

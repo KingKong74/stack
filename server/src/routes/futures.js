@@ -5,6 +5,7 @@ import { fingerprint } from '../util.js';
 import { futureShape } from '../shape.js';
 import { buildPrompt } from '../prompts.js';
 import { agentClient } from '../agents.js';
+import { numericId } from '../params.js';
 
 // Mounted at /api/projects/:slug/futures. Futures are loose directional ideas
 // curated against the project's north star; promotion to the roadmap is a
@@ -24,6 +25,10 @@ import { agentClient } from '../agents.js';
 // panel says "not sized yet" rather than the sky inventing an estimate nobody
 // gave. `area` survives as a plain tag and no longer decides where anything sits.
 export const futures = Router({ mergeParams: true });
+
+// Refuse a non-numeric :id before any handler sees it — a NaN reaching
+// Postgres used to kill the whole process (see ../params.js).
+futures.param('id', numericId);
 
 futures.use(async (req, res, next) => {
   const project = await projectBySlug(req.params.slug);

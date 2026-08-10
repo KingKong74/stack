@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { relativeTime } from '../util.js';
+import { numericId } from '../params.js';
 
 // (#208) Branch previews — a mirror site for pushed work, so a branch can be
 // LOOKED AT running before it is merged.
@@ -15,6 +16,10 @@ import { relativeTime } from '../util.js';
 // `previewsGlobal` is the cross-project surface the dispatcher sweeps and
 // Mission Control lists.
 export const previews = Router({ mergeParams: true });
+
+// Refuse a non-numeric :id before any handler sees it — a NaN reaching
+// Postgres used to kill the whole process (see ../params.js).
+previews.param('id', numericId);
 export const previewsGlobal = Router();
 
 const OPEN = ['queued', 'starting', 'live'];

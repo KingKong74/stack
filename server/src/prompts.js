@@ -1,24 +1,9 @@
-// The prompt templates, in one place instead of hardcoded per route. Each can
-// be replaced wholesale via a server env var (multiline is fine — set it in the
-// deploy env); ENV_KEYS at the bottom is the map, and the GEMINI_ prefix on the
-// older keys is a misnomer #364 chose not to break. {{TOKENS}} are substituted
-// at call time; unknown tokens render empty. Keep the JSON shape instructions
-// intact in any override — the routes validate against them.
-//
-// A CAPPED LIST INSIDE A PROMPT MUST SAY IT IS CAPPED, AND ON THE RIGHT AXIS
-// (#239). The rule was written for the bug audit's KNOWN_BUGS list and outlived
-// it, because every template here carries lists a route had to cut somewhere.
-// Two halves, and the second is the one that gets forgotten:
-//   • SAY SO. A model reads "what is already tracked" as complete and reasons
-//     from ABSENCE, so a silent slice does not merely omit — it asserts that
-//     nothing is known about whatever fell off the end. State the true total
-//     beside the shown count ("the 6 worst of 23 open bugs").
-//   • CUT ON THE AXIS THE READER CARES ABOUT. A LIMIT on created_at DESC keeps
-//     twenty recent trivia and drops the long-standing criticals, which are
-//     exactly the rows the prompt existed to carry. Order by what makes a row
-//     worth knowing (severity, queue order), and let recency break ties.
-// `routes/console.js`'s cap() and `routes/workbench.js` both restate it at
-// their own call sites; this is the statement they point at.
+// The Gemini prompt templates, in one place instead of hardcoded per route.
+// Each template can be replaced wholesale via a server env var (multiline is
+// fine — set it in the deploy env): GEMINI_JUDGE_PROMPT / GEMINI_AUDIT_PROMPT.
+// {{TOKENS}} are substituted at call time; unknown tokens render empty. Keep
+// the JSON shape instructions intact in any override — the routes validate
+// against them.
 
 const DEFAULTS = {
   judge: `You are helping curate a side project's idea funnel. The project's north star
@@ -312,6 +297,39 @@ Use en-AU spelling. Respond with ONLY this JSON:
   "suggestions":   [ { "ref": "bug:slug:BUG-3", "action": "keep|dismiss",
                        "reason": "one sentence, under 20 words" } ]
 }`;
+
+DEFAULTS.audit = `You are auditing a side project's live application for bugs. Work ONLY from the
+evidence below — the owner's brief, the check results and the fetched page text. Never invent a
+bug the evidence cannot support; an empty list is the normal answer for a healthy app.
+
+Project: {{NAME}}
+{{NORTH_STAR_LINE}}
+Phase: {{PHASE}}
+Tech stack: {{TECH}}
+
+THE OWNER'S AUDIT BRIEF (what to look for — weigh this heavily):
+{{BRIEF}}
+
+Check results (name | expectation | last result):
+{{CHECKS}}
+
+Bugs already tracked (do NOT report these again, or close variants of them):
+{{KNOWN_BUGS}}
+
+Recent pushes (what changed lately — regressions hide here):
+{{ACTIVITY}}
+
+Live page text from {{SITE_URL}} (tags stripped, truncated; "unavailable" = the fetch failed,
+which is itself worth reporting if the site should be up):
+{{PAGE}}
+
+Report at most {{MAX}} distinct suspected bugs, most serious first. Each needs:
+- "title": short and specific, ≤ 15 words — what is broken, where (en-AU spelling).
+- "severity": "critical|high|medium|low" — critical = down/data loss, high = a core flow broken.
+- "evidence": one sentence pointing at the exact evidence above that supports it.
+
+Respond with ONLY this JSON:
+{ "findings": [ { "title": "…", "severity": "critical|high|medium|low", "evidence": "…" } ] }`;
 
 // ---- the Workbench ops (the canvas that replaced the notes wall) ----
 //
@@ -617,6 +635,7 @@ const ENV_KEYS = {
   // host through the daemon (#364). GEMINI_ would be a lie about which model
   // reads it, whatever the older keys above are called.
   arrange: 'STACK_ARRANGE_PROMPT',
+  audit: 'GEMINI_AUDIT_PROMPT',
   triage: 'GEMINI_TRIAGE_PROMPT',
 };
 

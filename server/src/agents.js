@@ -1,7 +1,7 @@
 // THE AGENTS (#361, #364) — Stack's in-app specialists, each one bound to a
 // single SURFACE and unable to act anywhere else.
 //
-//   Auditor     · Quality tab      — investigates the app in a session of its own
+//   Auditor     · Quality tab      — reads the app and reports suspected bugs
 //   Curator     · Roadmap tab      — shapes the board and writes it up
 //   Foreman     · Review room      — walks a built change before it lands
 //   Polaris     · Futures tab      — judges, themes and converges the idea funnel
@@ -19,12 +19,6 @@
 // `console` is a LIVE SESSION: a real Claude running in the project's checkout,
 // inside tmux on the host, that the owner types into on the agent's own tab.
 // They are deliberately not the same mechanism — see the `console` note below.
-// EITHER HALF MAY BE EMPTY. The Auditor has no ops at all: its templated bug
-// audit was retired once the tab consoles landed, and an agent whose whole
-// surface is a session is a legitimate shape, not a half-built one. Anything
-// reading `ops` therefore has to survive an empty list rather than assume at
-// least one (Mission Control → Agents draws the op list only when there is
-// one, and says the session is the surface when there is not).
 //
 // Before this file the same three jobs existed as eight loose Gemini routes,
 // each one opening `if (!geminiEnabled()) 503` and calling askGemini directly.
@@ -43,9 +37,8 @@
 //
 // Two rules inherited from the rest of the codebase, and both matter here:
 //   • **The agent annotates, the human disposes.** Nothing an agent returns writes
-//     tracker state — and since the Auditor's bug audit went, not even into the
-//     review inbox: the one op that ever wrote a row was its findings landing as
-//     source 'hook' suggestions, and the rule is now without exception here.
+//     tracker state, with the one sanctioned exception the Auditor already had
+//     (findings land in the review INBOX as suggestions, source 'hook').
 //   • **A missing config row means ON.** Same direction as readSettings(): the
 //     agents are how several tabs already work, so a fresh deploy — or a row
 //     that has never been written — must degrade to working, not to a silently
@@ -79,9 +72,8 @@ import { askGemini, geminiEnabled } from './gemini.js';
 
 // The Claude aliases an agent may be pinned to. '' = whatever the CLI's own
 // default is, which is the right answer unless one agent's work has a shape
-// that wants a bigger or cheaper model: the Foreman reads a whole change and
-// earns Sonnet, the Curator's titler is a sentence and does not. It is also
-// what an agent's live session is spawned on, so the pick outlives the ops.
+// that wants a bigger or cheaper model: the Auditor reads a whole page and
+// earns Sonnet, the Curator's titler is a sentence and does not.
 export const AGENT_MODELS = [
   { model: '', label: 'CLI default' },
   { model: 'haiku', label: 'Haiku' },
@@ -214,20 +206,13 @@ export const AGENTS = [
     // does not exist. The binding is the agent's identity, so the word for it
     // has to be right.
     surface: 'tab',
-    blurb: 'Investigates the live app, the checks and the tracked bugs in a session on the Quality tab.',
+    blurb: 'Reads the live app, the checks and the tracked bugs, and reports what looks broken.',
     // What the model itself is told it may and may not touch (see preamble()).
     remit: 'the Quality tab: the project\'s checks, its tracked bugs and the live application',
-    console: projectConsole('for the investigation the checks can only point at'),
-    // NO OPS, and the only agent without any. It had exactly one — `audit`:
-    // fetch the site's HTML, hand the text plus the check results and the
-    // tracked bugs to a model, file what came back into the review inbox. The
-    // consoles made it the weaker half of its own tab. A session in the
-    // checkout reads the CODE behind a symptom rather than the rendered text,
-    // takes its steer as a sentence instead of a saved brief, and files what it
-    // finds through the same tracker the owner uses. Two auditors on one tab
-    // could not both be the Auditor, so the templated one went — with its
-    // route, its prompt and the `audit_context` column that fed it.
-    ops: [],
+    console: projectConsole('for the investigation an audit can only point at'),
+    ops: [
+      { op: 'audit', label: 'Bug audit', hint: 'Findings land in the review inbox as suggestions.' },
+    ],
   },
   {
     key: 'curator',
