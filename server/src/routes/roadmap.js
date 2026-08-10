@@ -621,7 +621,15 @@ roadmap.post('/arrange', async (req, res) => {
 // becomes a real area the moment a row mentions it (routes/board.js). Coining
 // is still the exception the prompt discourages, and the human sees the tag
 // before applying — an invented lane is a thing you should have to notice.
-const ALLOCATE_CAP = 60;
+//
+// THE CAP AND THE TIMEOUT ARE SET TOGETHER, because the work is proportional to
+// the list: a read of 44 items on this repo's own board did not answer inside
+// the 45s the `arrange` read uses, and the fix is not just a longer wait. Thirty
+// items with short notes answers comfortably; the timeout below has room for a
+// slow host on top of that, and both clear nginx's 300s (web/nginx.conf). What
+// is left over is not lost — it is stated in the prompt and in the summary, and
+// the next press picks it up.
+const ALLOCATE_CAP = 30;
 // The buckets in the order the owner reads them, so a cap cuts the Won'ts
 // before it cuts the Musts.
 const BUCKET_RANK = "CASE bucket WHEN 'must' THEN 0 WHEN 'should' THEN 1 WHEN 'could' THEN 2 ELSE 3 END";
@@ -669,14 +677,14 @@ roadmap.post('/allocate', async (req, res) => {
       ? `Only the first ${rows.length} of ${total} untagged items are listed, taken in bucket order (Musts first). File the ones you can see; the rest come round again next time.\n\n`
       : '',
     ITEMS: rows.map((r) =>
-      `${r.id} | ${r.bucket} | ${r.title} | ${(r.note || '-').slice(0, 300)}`).join('\n'),
+      `${r.id} | ${r.bucket} | ${r.title} | ${(r.note || '-').slice(0, 200)}`).join('\n'),
     NORTH_STAR_LINE: req.project.north_star
       ? `For context, the project's north star: "${String(req.project.north_star).slice(0, 400)}"`
       : '',
   });
 
   try {
-    const answer = await curator.ask('allocate', prompt, { timeoutMs: 45_000 });
+    const answer = await curator.ask('allocate', prompt, { timeoutMs: 150_000 });
     const byId = new Map(rows.map((r) => [r.id, r]));
     const seen = new Set();
     const picks = (Array.isArray(answer?.picks) ? answer.picks : [])
