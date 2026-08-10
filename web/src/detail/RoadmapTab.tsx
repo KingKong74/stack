@@ -45,7 +45,7 @@ import {
   addLabel as addLabelApi, deleteLabel as deleteLabelApi,
   setAreaColour, arrangeRoadmap, agentCan, agentOffReason,
 } from '../store';
-import { inCycle, UNALLOCATED } from '../lib/plan';
+import { areaMatches, inCycle, UNALLOCATED } from '../lib/plan';
 import { DEFAULT_LABELS } from '../lib/labels';
 import { RoadmapTimeline } from './RoadmapTimeline';
 import { RoadmapScope } from './RoadmapScope';
@@ -252,9 +252,17 @@ export function RoadmapTab({
   // The Curator's read of the timeline. It PROPOSES; the moves land in the same
   // proposal slot the arithmetic uses, so Apply and Discard work identically and
   // the timeline ghosts them the same way.
+  //
+  // It reads the SAME population the arithmetic actions do — whatever the area
+  // chip leaves on screen. The filter travels as an explicit `untagged` flag
+  // rather than as the UNALLOCATED sentinel: that sentinel is a client filter
+  // value (lib/plan.ts), and spelling it into the server would be a second copy
+  // of a magic string that only the client's own rules keep safe.
   const readTheBoard = () => {
     setReading(true);
-    arrangeRoadmap(slug)
+    const scope = areaFilter === UNALLOCATED ? { untagged: true } : areaFilter ? { area: areaFilter } : {};
+    const inScope = items.filter((i) => !i.archived && !i.done && areaMatches(i.area, areaFilter));
+    arrangeRoadmap(slug, scope)
       .then((r) => {
         const why: Record<number, string> = {};
         r.moves.forEach((m) => { if (m.why) why[m.id] = m.why; });
@@ -264,7 +272,7 @@ export function RoadmapTab({
           why,
           moves: r.moves.map((m) => ({ id: m.id, sched: m.sched })),
           summary: r.moves.length
-            ? `Read ${items.filter((i) => !i.archived && !i.done).length} items and found ${r.moves.length} that sit before something they depend on.`
+            ? `Read ${inScope.length} item${inScope.length === 1 ? '' : 's'}${areaFilter ? ` in ${areaFilter === UNALLOCATED ? 'unallocated' : areaFilter}` : ''} and found ${r.moves.length} that sit before something they depend on.`
             : r.note || 'Read the board and found nothing out of order — every item is scheduled after what it needs.',
         });
       })
@@ -437,9 +445,11 @@ export function RoadmapTab({
       {/* Arrange follows the view: each action is arithmetic over ONE thing, and
           offering "close the gaps on the timeline" while you are cutting scope
           is a button that answers a question you did not ask. A view with no
-          applicable action gets no panel — see ARRANGE_VIEWS in RoadmapArrange. */}
+          applicable action gets no panel — see ARRANGE_VIEWS in RoadmapArrange.
+          It follows the AREA CHIP too: filtered to one area, it proposes moves
+          for that area and nothing else. */}
       <RoadmapArrange
-        view={view} items={items} selected={selected} proposal={proposal} busy={busy}
+        view={view} items={items} areaFilter={areaFilter} selected={selected} proposal={proposal} busy={busy}
         open={arrangeOpen} onToggle={() => setArrangeOpen(!arrangeOpen)}
         onPropose={setProposal} onApply={applyProposal} onDiscard={() => setProposal(null)}
         onRead={readTheBoard} reading={reading}

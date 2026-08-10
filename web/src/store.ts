@@ -1917,10 +1917,18 @@ export async function setAreaColour(slug: string, name: string, dot: string): Pr
 }
 // The Curator's read of the timeline: what must come BEFORE what. Proposes only
 // — the caller ghosts the moves and applies them itself.
+//
+// `scope` narrows it to one area, so the read acts on the same rows the Arrange
+// panel's arithmetic does. `untagged` is a flag rather than the client's
+// UNALLOCATED sentinel: the sentinel is safe only under the client's own rules
+// (lib/plan.ts), and a second spelling of it on the wire is a rule the server
+// would have to keep in step with by discipline alone.
 export interface ArrangeMove { id: number; title: string; sched: SchedSpan; why: string }
-export async function arrangeRoadmap(slug: string): Promise<{ moves: ArrangeMove[]; note?: string }> {
+export async function arrangeRoadmap(
+  slug: string, scope: { area?: string; untagged?: boolean } = {},
+): Promise<{ moves: ArrangeMove[]; note?: string }> {
   return request<{ moves: ArrangeMove[]; note?: string }>(
-    `${roadmapBase(slug)}/arrange`, { method: 'POST', body: {} });
+    `${roadmapBase(slug)}/arrange`, { method: 'POST', body: scope });
 }
 export async function renameArea(slug: string, from: string, name: string): Promise<BoardArea[]> {
   const r = await request<{ areas: BoardArea[] }>(

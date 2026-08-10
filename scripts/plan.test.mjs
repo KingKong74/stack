@@ -28,7 +28,12 @@ const {
   listKeyOf, proposeSchedule, proposeCompact, proposeTrim, inCycle,
   nowLeft, whatsNext, calendarMonths, weekDate, fmtDate,
   proposeCatchUp, proposeBalance, proposeByTier, areaMatches, UNALLOCATED,
+  viewFor, clampView, focusOf, inView, SCALE_WEEKS,
 } = await import(planUrl.href);
+
+// Widest last — the order the toolbar draws them in, and the order the zoom
+// tests walk to assert each step condenses what the one before it showed.
+const SCALES = ['day', 'week', 'month', 'quarter'];
 
 let seq = 0;
 function item(over = {}) {
@@ -45,27 +50,113 @@ function item(over = {}) {
   };
 }
 
-// --- the scale is cosmetic ---------------------------------------------------
+// --- the scale is a zoom -----------------------------------------------------
 
-test('the scale changes the headings and never the geometry', () => {
-  for (const scale of ['week', 'month', 'quarter']) {
-    const cols = scaleCols(scale);
+test('every scale rules exactly the viewport it is given', () => {
+  for (const scale of SCALES) {
+    const view = viewFor(scale);
+    const cols = scaleCols(scale, view);
     const total = cols.reduce((n, c) => n + c.weeks, 0);
-    assert.equal(total, SCHED_WEEKS, `${scale} columns must span the whole window`);
+    // Floating point: a day column is a seventh of a week.
+    assert.ok(Math.abs(total - view.weeks) < 1e-9, `${scale} columns must span its window`);
+    assert.equal(cols[0].startWeek, view.start, `${scale} must start where its window does`);
   }
-  // A bar's position is in weeks, so it cannot depend on the scale at all.
+  // No scale may show more than can be scheduled — those weeks would be a
+  // window onto nothing, and a drop into them is clamped back anyway.
+  for (const scale of SCALES) assert.ok(SCALE_WEEKS[scale] <= SCHED_WEEKS);
+  assert.equal(SCALE_WEEKS[SCALES[SCALES.length - 1]], SCHED_WEEKS, 'the widest scale is the whole horizon');
+});
+
+test('a scale is a ZOOM: the same bar stretches and condenses, the schedule does not move', () => {
+  // The point of the control. A two-week bar inside a six-month window is four
+  // pixels of nothing; at days it fills the track. What must NOT change is the
+  // schedule — same weeks, different pixels.
   const it = item({ sched: { start: 6, len: 3 } });
-  const a = layoutLane('editor', [it], 1000).bars[0];
+  const widths = SCALES.map((s) => layoutLane('editor', [it], 1000, viewFor(s, 7)).bars[0].width);
+  for (let i = 1; i < widths.length; i += 1) {
+    assert.ok(widths[i] < widths[i - 1], `${SCALES[i]} must condense what ${SCALES[i - 1]} showed`);
+  }
+  // …and the item itself is untouched by any of it.
+  assert.deepEqual(it.sched, { start: 6, len: 3 });
+});
+
+test('the full view still positions a bar as a fraction of the whole horizon', () => {
+  const a = layoutLane('editor', [item({ sched: { start: 6, len: 3 } })], 1000).bars[0];
   assert.equal(a.left, (6 / SCHED_WEEKS) * 100);
   assert.equal(a.width, (3 / SCHED_WEEKS) * 100);
+});
+
+test('a bar is positioned against the viewport, not the horizon', () => {
+  const view = { start: 4, weeks: 6 };
+  const a = layoutLane('editor', [item({ sched: { start: 6, len: 3 } })], 1000, view).bars[0];
+  assert.equal(a.left, ((6 - 4) / 6) * 100, 'the left edge is measured from the window, not week zero');
+  assert.equal(a.width, (3 / 6) * 100);
+});
+
+test('a bar outside the window is COUNTED at its edge, never silently dropped', () => {
+  // Zooming in is the one gesture that can empty a lane that is full of work.
+  // A lane drawn as "drop something here" while holding three bars a fortnight
+  // to the left is the chart lying about the plan.
+  const lane = layoutLane('editor', [
+    item({ title: 'behind', sched: { start: 0, len: 2 } }),
+    item({ title: 'inside', sched: { start: 9, len: 2 } }),
+    item({ title: 'ahead', sched: { start: 20, len: 2 } }),
+  ], 1000, { start: 8, weeks: 6 });
+  assert.deepEqual(lane.bars.map((b) => b.item.title), ['inside']);
+  assert.equal(lane.offLeft, 1);
+  assert.equal(lane.offRight, 1);
+});
+
+test('a bar straddling the window edge is drawn, not counted off', () => {
+  const lane = layoutLane('editor', [item({ sched: { start: 6, len: 4 } })], 1000, { start: 8, weeks: 6 });
+  assert.equal(lane.bars.length, 1, 'work that overlaps the window is in it');
+  assert.equal(lane.offLeft, 0);
+  assert.ok(lane.bars[0].left < 0, 'and it starts off the left edge, where CSS clips it');
 });
 
 test('a quarter column really is a quarter wide', () => {
   // Equal-width columns would misdraw every bar crossing one. The widths are
   // proportional to `weeks`, so this is the check that keeps them honest.
-  const [q1, q2] = scaleCols('quarter');
+  const [q1, q2] = scaleCols('quarter', viewFor('quarter'));
   assert.equal(q1.weeks + q2.weeks, SCHED_WEEKS);
   assert.ok(q1.weeks > 1 && q2.weeks > 1);
+});
+
+test('days rules a seventh of a week per column and never claims to store one', () => {
+  const view = viewFor('day');
+  const cols = scaleCols('day', view, '2026-06-01');
+  assert.equal(cols.length, view.weeks * 7);
+  assert.ok(cols.every((c) => Math.abs(c.weeks - 1 / 7) < 1e-9));
+  // Consecutive columns are consecutive DAYS…
+  assert.equal(fmtDate(weekDate(cols[0].startWeek, '2026-06-01')), fmtDate(new Date(Date.parse('2026-06-01T00:00:00Z') + view.start * 7 * 86400000)));
+  // …and a drop is still clamped to a whole week, because that is the unit the
+  // column is reading, not the unit the schedule is stored in.
+  assert.equal(weekAt(0, 1000, 2, view), view.start);
+  assert.ok(Number.isInteger(weekAt(517, 1000, 2, view)));
+});
+
+// --- panning -----------------------------------------------------------------
+
+test('a viewport cannot be panned off the schedulable domain', () => {
+  assert.equal(clampView(-40, 6).start, 0);
+  assert.equal(clampView(999, 6).start, SCHED_WEEKS - 6);
+  assert.equal(clampView(999, SCHED_WEEKS).start, 0, 'the full horizon has nowhere to pan to');
+});
+
+test('zooming keeps the focus week, so what you are reading stays put', () => {
+  const wide = viewFor('quarter');
+  const near = viewFor('day', focusOf(wide));
+  assert.ok(Math.abs(focusOf(near) - focusOf(wide)) <= 1, 'the third-across week survives the zoom');
+  assert.ok(near.weeks < wide.weeks);
+});
+
+test('the now-line is reported OUTSIDE the track rather than pinned to its edge', () => {
+  // Same rule as a NULL review_verdict: "cannot be seen from here" is not
+  // "just off the edge". The caller draws nothing rather than a line at 0%.
+  const far = { start: NOW_WEEK + 6, weeks: 6 };
+  assert.ok(nowLeft(far) < 0, 'now is behind this window and must read as behind it');
+  assert.ok(nowLeft({ start: 0, weeks: 2 }) > 100, 'and ahead of a window that ends before it');
+  assert.equal(inView(NOW_WEEK, { start: NOW_WEEK, weeks: 2 }), true);
 });
 
 // --- slip --------------------------------------------------------------------
@@ -274,8 +365,8 @@ test('now sits inside the window, not at its edge', () => {
 });
 
 test('exactly one column is marked now, at every scale', () => {
-  for (const scale of ['week', 'month', 'quarter']) {
-    const marked = scaleCols(scale).filter((c) => c.now);
+  for (const scale of SCALES) {
+    const marked = scaleCols(scale, viewFor(scale)).filter((c) => c.now);
     assert.equal(marked.length, 1, `${scale} must mark one column`);
     const c = marked[0];
     assert.ok(c.startWeek <= NOW_WEEK && NOW_WEEK < c.startWeek + c.weeks,
@@ -310,8 +401,9 @@ test('a week index becomes a real date only when the project has a week zero', (
 });
 
 test('the ruler shows real months once there is a week zero, and M1..Mn without one', () => {
-  assert.equal(scaleCols('month', SCHED_WEEKS, null)[0].label, 'M1');
-  assert.equal(scaleCols('month', SCHED_WEEKS, '2026-06-01')[0].label, 'Jun');
+  const full = { start: 0, weeks: SCHED_WEEKS };
+  assert.equal(scaleCols('month', full, null)[0].label, 'M1');
+  assert.equal(scaleCols('month', full, '2026-06-01')[0].label, 'Jun');
 });
 
 test('the calendar refuses to draw without a start date rather than inventing one', () => {

@@ -6,7 +6,16 @@
 //  1. THE GEOMETRY IS NOT HERE. Bar positions, lane row-stacking and label
 //     placement all come from `lib/plan.ts`, pure and tested. A Gantt drawn
 //     from arithmetic buried in a render function is a Gantt nobody can check,
-//     and a wrong bar is a plan somebody acts on.
+//     and a wrong bar is a plan somebody acts on. THE SCALE IS A ZOOM: it sets
+//     the VIEWPORT — how many weeks fill the track — so bars stretch at days and
+//     condense at quarters while `sched` is untouched. Everything measured in
+//     pixels (the drag, a drop, inside-vs-outside labels) therefore divides by
+//     `view.weeks`, never by SCHED_WEEKS; the CLAMPS keep using SCHED_WEEKS,
+//     because zooming in must not be able to shorten the plan.
+//     Two things a viewport must never do quietly: a now-line outside it is not
+//     drawn at all (pinning it to an edge would put today somewhere it is not),
+//     and a bar outside it is COUNTED at the edge it went off, because zooming
+//     is the one gesture that can empty a lane that is full of work.
 //  2. A DRAG IS OPTIMISTIC, AND SAYS SO WHEN IT FAILS. The bar follows the
 //     pointer against local state and the PATCH goes out on release; if the
 //     write is rejected the bar goes BACK and the error is shown. Leaving it
@@ -38,13 +47,29 @@ import type { BoardArea, BoardLabel, RoadmapItem, SchedSpan } from '../types';
 import {
   SCHED_WEEKS, CYCLE_WEEKS, areaMatches, layoutLane, scaleCols, scopeTotals, slipOf, weekAt,
   nowLeft, whatsNext, calendarMonths, weekDate, fmtDate,
-  type Scale,
+  clampView, focusOf, spanPct, viewFor, SCALE_WEEKS,
+  type Scale, type Viewport,
 } from '../lib/plan';
 import { labelsOf } from '../lib/labels';
 
+// The zoom, widest last. Each step roughly halves the weeks on screen, so the
+// same bar doubles in width as you go left — see SCALE_WEEKS in lib/plan.ts.
 const SCALES: { key: Scale; label: string }[] = [
-  { key: 'week', label: 'Weeks' }, { key: 'month', label: 'Months' }, { key: 'quarter', label: 'Quarters' },
+  { key: 'day', label: 'Days' }, { key: 'week', label: 'Weeks' },
+  { key: 'month', label: 'Months' }, { key: 'quarter', label: 'Quarters' },
 ];
+
+/**
+ * What the window covers, in the units the project actually has. Real dates
+ * whenever there is a week zero; week indices when there is not — never an
+ * invented date, which is the calendar view's rule too.
+ */
+function windowLabel(view: Viewport, weekZero: string | null): string {
+  const from = weekDate(view.start, weekZero);
+  const to = weekDate(view.start + view.weeks, weekZero);
+  if (!from || !to) return `wk ${view.start + 1}–${view.start + view.weeks}`;
+  return `${fmtDate(from)} – ${fmtDate(new Date(to.getTime() - 86400000))}`;
+}
 
 const BUCKET_LABEL: Record<string, string> = {
   must: 'Must', should: 'Should', could: 'Could', wont: "Won't",
@@ -83,6 +108,10 @@ export function RoadmapTimeline({
   palette, onRecolour, onSchedule, onRebaseline, onOpen, onToggleSkip, proposed,
 }: TimelineProps) {
   const [scale, setScale] = useState<Scale>('month');
+  // The slice of the schedule on screen. The SCALE picks its width and the pan
+  // controls move it; the two are one piece of state because a scale that did
+  // not also say WHERE you are looking would jump you back to now every zoom.
+  const [view, setView] = useState<Viewport>(() => viewFor('month'));
   const [mode, setMode] = useState<'chart' | 'calendar'>('chart');
   // The chart shows LANES_SHOWN lanes and scrolls for the rest. A project with
   // thirty areas would otherwise push the tray and the drawer off the screen,
@@ -126,7 +155,23 @@ export function RoadmapTimeline({
 
   useEffect(() => { if (!err) return; const t = setTimeout(() => setErr(''), 6000); return () => clearTimeout(t); }, [err]);
 
-  const cols = scaleCols(scale, SCHED_WEEKS, weekZero);
+  // Zooming keeps the FOCUS week — the point a third across the track — so the
+  // bar you are reading stays put while everything stretches or condenses
+  // around it. Re-anchoring on now instead would throw away where you had
+  // scrolled to every time you changed scale.
+  const zoom = (next: Scale) => { setScale(next); setView(viewFor(next, focusOf(view))); };
+  const panBy = (weeks: number) => setView((v) => clampView(v.start + weeks, v.weeks));
+  const panStep = Math.max(1, Math.round(view.weeks / 2));
+  const canPan = view.weeks < SCHED_WEEKS;
+  const atStart = view.start <= 0;
+  const atEnd = view.start + view.weeks >= SCHED_WEEKS;
+
+  const cols = scaleCols(scale, view, weekZero);
+  // Outside 0–100 once the window is narrower than the horizon, and then the
+  // line is NOT drawn: a now-line pinned to an edge would be claiming today is
+  // just off screen when it can be four months away.
+  const nowPct = nowLeft(view);
+  const nowOn = nowPct >= 0 && nowPct <= 100;
   const visible = items.filter((i) => !i.archived);
   // An area with nothing in it is NOT a lane. The one exception is the area you
   // are filtered by: hiding that would leave the chart empty with no lane naming
@@ -163,7 +208,10 @@ export function RoadmapTimeline({
     if (!it.sched || trackW <= 0) return;
     e.preventDefault();
     e.stopPropagation();
-    const pxPerWeek = trackW / SCHED_WEEKS;
+    // Pixels per week comes from the VIEWPORT, so a drag tracks the pointer at
+    // every zoom. The clamps below stay on the schedulable domain: zooming in
+    // must not be able to shorten the plan.
+    const pxPerWeek = trackW / view.weeks;
     const from = { ...it.sched };
     const x0 = e.clientX;
     let latest = from;
@@ -214,7 +262,7 @@ export function RoadmapTimeline({
     if (!it) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const len = it.sched?.len ?? Math.max(1, Math.round(it.estimate ?? 2));
-    const start = weekAt(e.clientX - rect.left, rect.width, len);
+    const start = weekAt(e.clientX - rect.left, rect.width, len, view);
     onSelect(it.id);
     onSchedule(it.area === area ? it : { ...it, area }, { start, len })
       .catch((e2) => setErr(e2?.message || `Could not schedule ${it.title}.`));
@@ -240,16 +288,34 @@ export function RoadmapTimeline({
             <div className="seg-control sm" role="tablist" aria-label="Timeline scale">
               {SCALES.map((s) => (
                 <button key={s.key} role="tab" aria-selected={scale === s.key}
-                  className={`seg-opt ${scale === s.key ? 'on' : ''}`} onClick={() => setScale(s.key)}>
+                  className={`seg-opt ${scale === s.key ? 'on' : ''}`} onClick={() => zoom(s.key)}
+                  title={`${SCALE_WEEKS[s.key]} week${SCALE_WEEKS[s.key] === 1 ? '' : 's'} across the chart`}>
                   {s.label}
                 </button>
               ))}
             </div>
           )}
+          {/* A window narrower than the horizon can be scrolled, and MUST be:
+              zooming in is what puts the rest of the plan off screen, so the way
+              back to it belongs beside the control that did it. */}
+          {mode === 'chart' && canPan && (
+            <div className="rt-pan">
+              <button onClick={() => panBy(-panStep)} disabled={atStart}
+                title={`Back ${panStep} week${panStep === 1 ? '' : 's'}`} aria-label="Earlier">‹</button>
+              <button className="win" onClick={() => setView(viewFor(scale))}
+                title="Back to the window around now">{windowLabel(view, weekZero)}</button>
+              <button onClick={() => panBy(panStep)} disabled={atEnd}
+                title={`On ${panStep} week${panStep === 1 ? '' : 's'}`} aria-label="Later">›</button>
+            </div>
+          )}
           <span className="rt-hint">
-            {mode === 'chart'
-              ? 'Drag a bar to reschedule · drag its right edge to change duration · select it to unschedule'
-              : 'Each week lists what is running in it'}
+            {mode !== 'chart'
+              ? 'Each week lists what is running in it'
+              : scale === 'day'
+                // Days is a reading scale over a weekly model, and saying so is
+                // the difference between a fine grid and a false one.
+                ? 'Days read the plan finer than it is stored — a bar still moves a week at a time'
+                : 'Drag a bar to reschedule · drag its right edge to change duration · select it to unschedule'}
           </span>
         </div>
 
@@ -272,9 +338,10 @@ export function RoadmapTimeline({
                 </div>
               ))}
               {/* The now-line runs the full height of the chart from here; the
-                  lanes draw their own segment so it survives their scrolling. */}
-              <span className="rt-nowline head" style={{ left: `${nowLeft()}%` }} aria-hidden="true" />
-              <span className="rt-nowtag" style={{ left: `${nowLeft()}%` }}>now</span>
+                  lanes draw their own segment so it survives their scrolling.
+                  Absent entirely once now is outside the window — see nowOn. */}
+              {nowOn && <span className="rt-nowline head" style={{ left: `${nowPct}%` }} aria-hidden="true" />}
+              {nowOn && <span className="rt-nowtag" style={{ left: `${nowPct}%` }}>now</span>}
             </div>
           </div>
 
@@ -289,9 +356,10 @@ export function RoadmapTimeline({
 
           {shown.map((a) => {
             const mine = visible.filter((i) => i.area === a.name).map(withLive);
-            const lane = layoutLane(a.name, mine, trackW);
+            const lane = layoutLane(a.name, mine, trackW, view);
             return (
               <Lane key={a.name} name={a.name} dot={a.dot} lane={lane} cols={cols}
+                view={view} nowPct={nowPct} nowOn={nowOn} onPan={panBy} panStep={panStep}
                 selectedId={selectedId} proposed={proposed}
                 palette={palette} picking={colourFor === a.name}
                 onPick={() => setColourFor(colourFor === a.name ? null : a.name)}
@@ -310,8 +378,9 @@ export function RoadmapTimeline({
                 hint={openOrphans ? '' : 'scheduled, but tagged with no area'} />
               {/* No dot and no picker: there is no area here to give a colour to. */}
               {openOrphans && (
-                <Lane name="Unallocated" dot="" lane={layoutLane('', orphans.map(withLive), trackW)}
-                  cols={cols} selectedId={selectedId} proposed={proposed}
+                <Lane name="Unallocated" dot="" lane={layoutLane('', orphans.map(withLive), trackW, view)}
+                  cols={cols} view={view} nowPct={nowPct} nowOn={nowOn} onPan={panBy} panStep={panStep}
+                  selectedId={selectedId} proposed={proposed}
                   onDrop={dropOnLane('')} onSelect={onSelect} onOpen={onOpen} onDown={startDrag}
                   onUnschedule={(it) => {
                     onSchedule(it, null).catch((e2) => setErr(e2?.message || 'Could not unschedule.'));
@@ -471,14 +540,24 @@ function Fold({ open, onToggle, label, n, hint }: {
   );
 }
 
+const pctStyle = (p: { left: number; width: number }) =>
+  ({ left: `${p.left}%`, width: `${p.width}%` });
+
 // One area lane. Split out so a lane re-renders on its own during a drag.
 function Lane({
-  name, dot, lane, cols, selectedId, proposed, palette, picking,
+  name, dot, lane, cols, view, nowPct, nowOn, onPan, panStep,
+  selectedId, proposed, palette, picking,
   onPick, onRecolour, onDrop, onSelect, onOpen, onDown, onUnschedule,
 }: {
   name: string; dot: string;
   lane: ReturnType<typeof layoutLane>;
   cols: ReturnType<typeof scaleCols>;
+  /** The slice on screen — the proposal ghosts are positioned against it. */
+  view: Viewport;
+  nowPct: number;
+  nowOn: boolean;
+  onPan: (weeks: number) => void;
+  panStep: number;
   selectedId: number | null;
   proposed?: Map<number, SchedSpan>;
   /** Absent on the Unallocated lane — there is no area there to colour. */
@@ -519,7 +598,23 @@ function Lane({
         <div className="rt-grid" aria-hidden="true">
           {cols.map((c, k) => <div key={k} className={`rt-col${c.now ? ' now' : ''}`} style={{ flex: c.weeks }} />)}
         </div>
-        <span className="rt-nowline" style={{ left: `${nowLeft()}%` }} aria-hidden="true" />
+        {nowOn && <span className="rt-nowline" style={{ left: `${nowPct}%` }} aria-hidden="true" />}
+
+        {/* What the zoom put off screen, at the edge it went off. Counted, not
+            dropped — a lane holding three bars a fortnight to the left must not
+            draw as an empty one — and the marker pans you to them. */}
+        {lane.offLeft > 0 && (
+          <button className="rt-off left" onClick={() => onPan(-panStep)}
+            title={`${lane.offLeft} bar${lane.offLeft === 1 ? '' : 's'} earlier than this window`}>
+            ‹{lane.offLeft}
+          </button>
+        )}
+        {lane.offRight > 0 && (
+          <button className="rt-off right" onClick={() => onPan(panStep)}
+            title={`${lane.offRight} bar${lane.offRight === 1 ? '' : 's'} later than this window`}>
+            {lane.offRight}›
+          </button>
+        )}
 
         {lane.bars.map((bar) => {
           const it = bar.item;
@@ -536,11 +631,7 @@ function Lane({
               {/* an arrange proposal's position, ghosted in the accent */}
               {prop && (
                 <div className="rt-proposed" title="Proposed"
-                  style={{
-                    top: 10 + bar.row * 28,
-                    left: `${(prop.start / SCHED_WEEKS) * 100}%`,
-                    width: `${(prop.len / SCHED_WEEKS) * 100}%`,
-                  }} />
+                  style={{ top: 10 + bar.row * 28, ...pctStyle(spanPct(prop, view)) }} />
               )}
               {/* The bar wears its AREA's colour, and its state is how much of
                   it there is (styles.css). `--tint` is unset on the Unallocated
@@ -581,7 +672,15 @@ function Lane({
           );
         })}
 
-        {lane.bars.length === 0 && <span className="rt-lane-empty">Drop something here to schedule it</span>}
+        {/* "Nothing here" and "nothing in THIS WINDOW" are different answers,
+            and only one of them invites a drop. */}
+        {lane.bars.length === 0 && (
+          <span className="rt-lane-empty">
+            {lane.offLeft + lane.offRight > 0
+              ? `${lane.offLeft + lane.offRight} bar${lane.offLeft + lane.offRight === 1 ? '' : 's'}, all outside this window`
+              : 'Drop something here to schedule it'}
+          </span>
+        )}
       </div>
     </div>
   );

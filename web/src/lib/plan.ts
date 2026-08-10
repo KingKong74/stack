@@ -7,10 +7,16 @@
 //
 // FOUR THINGS THIS FILE INSISTS ON:
 //
-//  1. A WEEK INDEX IS NOT A DATE. `sched.start` counts weeks from the project's
-//     own week zero. The scale control (week / month / quarter) changes only the
-//     COLUMN HEADINGS and gridlines — never the geometry, which is always in
-//     weeks. That is why switching scale cannot move a bar.
+//  1. A WEEK INDEX IS NOT A DATE, AND A SCALE IS A ZOOM. `sched.start` counts
+//     weeks from the project's own week zero, and NO scale ever changes it. What
+//     a scale changes is the VIEWPORT — how many of those weeks fill the track —
+//     so the same bar stretches at days and condenses at quarters while the
+//     schedule it draws is untouched. Switching scale still cannot move a bar;
+//     it can only change how much track a week is worth.
+//     DAYS IS A READING SCALE, NOT A FINER UNIT. `sched_start`/`sched_len` are
+//     integer WEEKS server-side, so a bar zoomed to days still moves a week at a
+//     time — the view is finer than the model, and the toolbar says so rather
+//     than letting a day-wide grid imply a precision the column does not have.
 //  2. SLIP IS MEASURED AGAINST THE BASELINE, AND ONLY EXISTS IF THERE IS ONE.
 //     `baseline == null` means nothing was ever committed to, which is NOT the
 //     same as "on plan" and must not render as a clean bar. Same rule as a NULL
@@ -21,7 +27,7 @@
 //  4. THE ARRANGE ACTIONS PROPOSE, THEY DO NOT APPLY. Each returns a diff —
 //     a list of {id, sched} — and the caller decides. Nothing here mutates.
 
-import type { RoadmapItem } from '../types';
+import type { RoadmapItem, SchedSpan } from '../types';
 import { tierRank } from '../types';
 
 /** The timeline's span, in weeks. Twin of SCHED_WEEKS in server/src/routes/roadmap.js. */
@@ -39,8 +45,19 @@ export const CYCLE_WEEKS = 6;
  */
 export const NOW_WEEK = 8;
 
-export type Scale = 'week' | 'month' | 'quarter';
+export type Scale = 'day' | 'week' | 'month' | 'quarter';
 export interface ScaleCol { label: string; now: boolean; weeks: number; startWeek: number }
+
+/**
+ * WHICH SLICE OF THE SCHEDULE THE TRACK IS DRAWING. `start` is a week index and
+ * `weeks` is how many of them fill the whole track, so a narrow viewport is a
+ * zoom IN: fewer weeks over the same pixels means every bar is wider.
+ *
+ * It is a viewport and not a filter — nothing is excluded from the plan by being
+ * off-screen, which is why `layoutLane` counts what it left either side rather
+ * than dropping it silently.
+ */
+export interface Viewport { start: number; weeks: number }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -60,46 +77,123 @@ export const fmtDate = (d: Date): string =>
   `${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()]}`;
 
 /**
- * The columns under the timeline's ruler. Widths are proportional to `weeks`,
- * so a quarter column really is three months wide — a scale whose columns were
- * all equal would misdraw every bar that crossed one.
+ * HOW MANY WEEKS ONE SCREENFUL SHOWS AT EACH SCALE — the whole of what the scale
+ * control does. Each step is roughly half the one below it, so the same bar
+ * visibly doubles in width as you zoom in, which is the point: a two-week bar
+ * inside a six-month window is four pixels of nothing.
  *
- * Labels become REAL months once the project has a week zero; without one they
- * fall back to M1…M6, which is honest about not knowing when this is.
+ * The widest is the whole schedulable horizon. A viewport wider than the domain
+ * would be drawing weeks nothing can ever be scheduled into.
  */
-export function scaleCols(scale: Scale, weeks = SCHED_WEEKS, weekZero: string | null = null): ScaleCol[] {
+export const SCALE_WEEKS: Record<Scale, number> = {
+  day: 2, week: 6, month: 12, quarter: SCHED_WEEKS,
+};
+
+/** The whole horizon at once — what every geometry function falls back to. */
+export const FULL_VIEW: Viewport = { start: 0, weeks: SCHED_WEEKS };
+
+/** A viewport pinned inside the schedulable domain. */
+export const clampView = (start: number, weeks: number, domain = SCHED_WEEKS): Viewport => ({
+  start: Math.max(0, Math.min(domain - weeks, Math.round(start))),
+  weeks,
+});
+
+/**
+ * The viewport for a scale, with `focus` a THIRD of the way in.
+ *
+ * A third, not the middle, for the same reason NOW_WEEK sits a third in: a
+ * planning instrument should be mostly future. Zooming preserves the focus week
+ * rather than the window, so the bar you were looking at stays where it is on
+ * screen while everything around it stretches or condenses.
+ */
+export function viewFor(scale: Scale, focus = NOW_WEEK, domain = SCHED_WEEKS): Viewport {
+  const weeks = Math.min(domain, SCALE_WEEKS[scale]);
+  return clampView(focus - weeks / 3, weeks, domain);
+}
+
+/** The week a viewport is focused on — the inverse of `viewFor`'s third. */
+export const focusOf = (view: Viewport): number => view.start + view.weeks / 3;
+
+/**
+ * The columns under the timeline's ruler, for the slice of schedule the viewport
+ * is showing. Widths are proportional to `weeks`, so a quarter column really is
+ * three months wide — a scale whose columns were all equal would misdraw every
+ * bar that crossed one.
+ *
+ * Labels become REAL dates once the project has a week zero; without one they
+ * fall back to D1…/W1…/M1…/Q1…, which is honest about not knowing when this is.
+ */
+export function scaleCols(scale: Scale, view: Viewport = FULL_VIEW, weekZero: string | null = null): ScaleCol[] {
+  const { start, weeks } = view;
   const mark = (startWeek: number, span: number) => startWeek <= NOW_WEEK && NOW_WEEK < startWeek + span;
-  if (scale === 'week') {
-    return Array.from({ length: weeks }, (_, i) => {
-      const d = weekDate(i, weekZero);
+  if (scale === 'day') {
+    // A day is a seventh of a week. The MODEL is still weekly (see the header):
+    // these columns read the plan finer than it can be edited, and that is the
+    // whole of what "Days" is.
+    const days = Math.round(weeks * 7);
+    return Array.from({ length: days }, (_, i) => {
+      const startWeek = start + i / 7;
+      const d = weekDate(startWeek, weekZero);
       return {
-        // Every other week is labelled; all 24 would collide at any real width.
-        label: i % 2 === 0 ? (d ? fmtDate(d) : `W${i + 1}`) : '',
-        now: mark(i, 1), weeks: 1, startWeek: i,
+        label: d ? fmtDate(d) : `D${i + 1}`,
+        now: mark(startWeek, 1 / 7), weeks: 1 / 7, startWeek,
+      };
+    });
+  }
+  if (scale === 'week') {
+    return Array.from({ length: Math.round(weeks) }, (_, i) => {
+      const startWeek = start + i;
+      const d = weekDate(startWeek, weekZero);
+      return {
+        // Every column is labelled while there are few enough to read; past
+        // fourteen they collide at any real width, so every other one is.
+        label: weeks <= 14 || i % 2 === 0 ? (d ? fmtDate(d) : `W${startWeek + 1}`) : '',
+        now: mark(startWeek, 1), weeks: 1, startWeek,
       };
     });
   }
   if (scale === 'quarter') {
-    const half = Math.round(weeks / 2);
-    return [
-      { label: 'Q1', now: mark(0, half), weeks: half, startWeek: 0 },
-      { label: 'Q2', now: mark(half, weeks - half), weeks: weeks - half, startWeek: half },
-    ];
+    const quarters = Math.max(1, Math.round(weeks / 12));
+    const span = weeks / quarters;
+    return Array.from({ length: quarters }, (_, i) => {
+      const startWeek = start + i * span;
+      const from = weekDate(startWeek, weekZero);
+      const to = weekDate(startWeek + span - 1, weekZero);
+      return {
+        label: from && to
+          ? (from.getUTCMonth() === to.getUTCMonth()
+            ? MONTH_NAMES[from.getUTCMonth()]
+            : `${MONTH_NAMES[from.getUTCMonth()]}–${MONTH_NAMES[to.getUTCMonth()]}`)
+          : `Q${Math.floor(startWeek / 12) + 1}`,
+        now: mark(startWeek, span), weeks: span, startWeek,
+      };
+    });
   }
   const months = Math.max(1, Math.round(weeks / 4));
   const span = weeks / months;
   return Array.from({ length: months }, (_, i) => {
-    const startWeek = Math.round(i * span);
+    const startWeek = start + i * span;
     const d = weekDate(startWeek, weekZero);
     return {
-      label: d ? MONTH_NAMES[d.getUTCMonth()] : `M${i + 1}`,
+      label: d ? MONTH_NAMES[d.getUTCMonth()] : `M${Math.round(startWeek / 4) + 1}`,
       now: mark(startWeek, span), weeks: span, startWeek,
     };
   });
 }
 
-/** Where the now-line sits, as a percentage across the track. */
-export const nowLeft = (weeks = SCHED_WEEKS): number => (NOW_WEEK / weeks) * 100;
+/**
+ * Where the now-line sits, as a percentage across the track.
+ *
+ * It can be OUTSIDE 0–100 once the viewport is narrower than the horizon, and
+ * the caller has to check: a now-line clamped to an edge would be claiming today
+ * is at the edge of a window it is nowhere near.
+ */
+export const nowLeft = (view: Viewport = FULL_VIEW): number =>
+  ((NOW_WEEK - view.start) / view.weeks) * 100;
+
+/** Is a week index inside the viewport at all? */
+export const inView = (week: number, view: Viewport): boolean =>
+  week >= view.start && week < view.start + view.weeks;
 
 // --- what's next -----------------------------------------------------------
 
@@ -201,6 +295,15 @@ export interface Lane {
   bars: Bar[];
   /** Rows needed to stack these bars without overlap — drives the lane height. */
   rows: number;
+  /**
+   * Scheduled bars this lane has that sit entirely BEFORE / AFTER the viewport.
+   *
+   * Counted rather than dropped. Zooming in is the one thing that can empty a
+   * lane that has work in it, and a lane drawn as "drop something here" while
+   * holding three bars a fortnight to the left is the chart lying about the plan.
+   */
+  offLeft: number;
+  offRight: number;
 }
 
 // Roughly the width one character of the bar label occupies, plus the padding
@@ -215,16 +318,28 @@ const LABEL_PAD = 20;
  * that do not overlap can still collide through their labels, and a label
  * sitting on top of another bar is how a Gantt starts lying about dates.
  */
-export function layoutLane(area: string, items: RoadmapItem[], trackPx: number, weeks = SCHED_WEEKS): Lane {
+export function layoutLane(
+  area: string, items: RoadmapItem[], trackPx: number, view: Viewport = FULL_VIEW,
+): Lane {
+  const { start: winStart, weeks } = view;
+  const winEnd = winStart + weeks;
   const pxPerWeek = trackPx > 0 ? trackPx / weeks : 0;
+  // Off-screen either side, counted before anything is laid out — see Lane.
+  let offLeft = 0; let offRight = 0;
   const placed = items
     .filter((i) => i.sched)
+    .filter((i) => {
+      const { start, len } = i.sched!;
+      if (start + len <= winStart) { offLeft += 1; return false; }
+      if (start >= winEnd) { offRight += 1; return false; }
+      return true;
+    })
     .map((i) => {
       const sched = i.sched!;
       const barPx = sched.len * pxPerWeek;
       const labelPx = i.title.length * CHAR_PX + LABEL_PAD;
       const inside = barPx >= labelPx;
-      const x0 = sched.start * pxPerWeek;
+      const x0 = (sched.start - winStart) * pxPerWeek;
       const x1 = x0 + barPx;
       // If the label cannot sit inside and would overflow the track on the
       // right, it goes to the LEFT of the bar instead.
@@ -248,23 +363,38 @@ export function layoutLane(area: string, items: RoadmapItem[], trackPx: number, 
     const moved = !!base && (base.start !== sched.start || base.len !== sched.len);
     return {
       item: p.item,
-      left: (sched.start / weeks) * 100,
+      left: ((sched.start - winStart) / weeks) * 100,
       width: (sched.len / weeks) * 100,
       row,
       inside: p.inside,
       before: p.before,
-      ghost: moved ? { left: (base!.start / weeks) * 100, width: (base!.len / weeks) * 100 } : null,
+      ghost: moved
+        ? { left: ((base!.start - winStart) / weeks) * 100, width: (base!.len / weeks) * 100 }
+        : null,
     };
   });
 
-  return { area, bars, rows: Math.max(1, rowEnds.length) };
+  return { area, bars, rows: Math.max(1, rowEnds.length), offLeft, offRight };
 }
 
-/** Where a drop at this pixel offset lands, clamped so the bar stays in view. */
-export function weekAt(offsetPx: number, trackPx: number, len: number, weeks = SCHED_WEEKS): number {
+/** Where a span sits in the viewport, as percentages — for a bar drawn outside `layoutLane`. */
+export const spanPct = (span: SchedSpan, view: Viewport = FULL_VIEW) => ({
+  left: ((span.start - view.start) / view.weeks) * 100,
+  width: (span.len / view.weeks) * 100,
+});
+
+/**
+ * Where a drop at this pixel offset lands, clamped so the bar stays in the
+ * SCHEDULABLE domain — not in the viewport. Zooming must never be able to
+ * shorten the plan, and the server clamps to the same 24 weeks.
+ */
+export function weekAt(
+  offsetPx: number, trackPx: number, len: number,
+  view: Viewport = FULL_VIEW, domain = SCHED_WEEKS,
+): number {
   if (trackPx <= 0) return 0;
-  const raw = Math.round((offsetPx / trackPx) * weeks);
-  return Math.max(0, Math.min(weeks - len, raw));
+  const raw = Math.round(view.start + (offsetPx / trackPx) * view.weeks);
+  return Math.max(0, Math.min(domain - len, raw));
 }
 
 // --- the scope drawer ------------------------------------------------------
