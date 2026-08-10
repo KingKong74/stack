@@ -281,8 +281,9 @@ function AgentCard({
           has just offered a model and a steer for something. */}
       {agent.ops.length === 0 ? (
         <p className="mc-agnoops">
-          No ✧ ops — {agent.remit} is worked in the live session above, not through prompt
-          templates. The model and standing guidance here are what that session is spawned with.
+          No ✧ ops — the {agent.tabLabel} {agent.surface ?? 'tab'} is worked in the live session
+          above, not through prompt templates. The model and standing guidance here are what that
+          session is spawned with.
         </p>
       ) : (
       <button className="mc-agops-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
