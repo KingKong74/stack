@@ -49,7 +49,7 @@
 
 import type { RoadmapItem, SchedSpan } from '../types';
 import type { AllocatePick } from '../store';
-import { areaMatches, UNALLOCATED } from '../lib/plan';
+import { areaMatches, UNALLOCATED, weekNo } from '../lib/plan';
 import { ARRANGE_TASKS, type ArrangeView } from '../lib/curatorTasks';
 
 export type { ArrangeView };
@@ -291,8 +291,12 @@ export function RoadmapArrange({
             return (
               <div className="ra-move" key={mv.id}>
                 <span className="t">{it.title}</span>
+                {/* The order read reasons in WEEKS and the column stores
+                    minutes (#401) — see routes/roadmap.js. This is the same
+                    grain the model was shown, so the row says what it decided
+                    rather than a minute figure it never saw. */}
                 <span className="wk">
-                  {it.sched ? `wk ${it.sched.start + 1}` : 'tray'} → {mv.sched ? `wk ${mv.sched.start + 1}` : 'tray'}
+                  {it.sched ? `wk ${weekNo(it.sched.start)}` : 'tray'} → {mv.sched ? `wk ${weekNo(mv.sched.start)}` : 'tray'}
                 </span>
                 {proposal.why?.[mv.id] && <span className="why">{proposal.why[mv.id]}</span>}
               </div>

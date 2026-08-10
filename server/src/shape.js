@@ -94,14 +94,16 @@ export function roadmapItemShape(row) {
 
     // ---- the Roadmap tab v2 ----
     parentId: row.parent_id ?? null,   // the feature this ticket belongs to (null = a feature itself)
-    // The scheduled bar, in WEEKS from the project's week zero. null = UNSCHEDULED,
-    // which is a state (the tray), never week 0 — see schema.sql's header.
-    sched: row.sched_start === null || row.sched_start === undefined ? null
-      : { start: Number(row.sched_start), len: Math.max(1, Number(row.sched_len) || 1) },
+    // The scheduled bar, in MINUTES from the project's week zero (#401). null =
+    // UNSCHEDULED, which is a state (the tray), never minute 0 — see schema.sql's
+    // header. BIGINT comes back from pg as a STRING, so both fields need
+    // Number() and not just their null preserved; that is this file's whole job.
+    sched: row.sched_start_min === null || row.sched_start_min === undefined ? null
+      : { start: Number(row.sched_start_min), len: Math.max(1, Number(row.sched_len_min) || 1) },
     // The BASELINE, written once when a bar is first scheduled. The timeline
     // draws the difference as a ghost, so this must never follow a drag.
-    baseline: row.plan_start === null || row.plan_start === undefined ? null
-      : { start: Number(row.plan_start), len: Math.max(1, Number(row.plan_len) || 1) },
+    baseline: row.plan_start_min === null || row.plan_start_min === undefined ? null
+      : { start: Number(row.plan_start_min), len: Math.max(1, Number(row.plan_len_min) || 1) },
     labels: Array.isArray(row.labels) ? row.labels : [],
     // '' = derived from the row's own state (server/src/lists.js listFor), NOT
     // "the first list" — an untouched board must open already sorted.

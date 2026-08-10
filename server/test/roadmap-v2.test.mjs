@@ -59,28 +59,47 @@ async function main() {
   const ticket = await mk('Resolve / reopen', { bucket: 'should', area: 'editor' });
   const other = await mk('Usage metering', { bucket: 'should', area: 'billing' });
 
+  const wk = (n) => n * 7 * 24 * 60;
+  const hr = (n) => n * 60;
+
   // ---- scheduling + the baseline -----------------------------------------
+  //
+  // #401 — sched is MINUTES from week zero. `wk`/`hr` keep the fixtures
+  // readable, and the sub-day case below is the one the old integer-week column
+  // could not express at all.
 
   let r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${feature.id}`,
-    { sched: { start: 4, len: 5 } })).json;
-  ok('scheduling a bar writes the baseline with it', r.baseline?.start === 4 && r.baseline?.len === 5, r.baseline);
+    { sched: { start: wk(4), len: wk(5) } })).json;
+  ok('scheduling a bar writes the baseline with it', r.baseline?.start === wk(4) && r.baseline?.len === wk(5), r.baseline);
 
   r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${feature.id}`,
-    { sched: { start: 9, len: 6 } })).json;
-  ok('a drag moves the bar', r.sched?.start === 9 && r.sched?.len === 6, r.sched);
-  ok('a drag does NOT move the baseline — the slip stays visible', r.baseline?.start === 4 && r.baseline?.len === 5, r.baseline);
+    { sched: { start: wk(9), len: wk(6) } })).json;
+  ok('a drag moves the bar', r.sched?.start === wk(9) && r.sched?.len === wk(6), r.sched);
+  ok('a drag does NOT move the baseline — the slip stays visible', r.baseline?.start === wk(4) && r.baseline?.len === wk(5), r.baseline);
 
   r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${feature.id}`, { rebaseline: true })).json;
-  ok('re-baselining is the one explicit way to accept the new plan', r.baseline?.start === 9 && r.baseline?.len === 6, r.baseline);
+  ok('re-baselining is the one explicit way to accept the new plan', r.baseline?.start === wk(9) && r.baseline?.len === wk(6), r.baseline);
 
   r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${feature.id}`, { sched: null })).json;
   ok('unscheduling returns the bar to the tray', r.sched === null, r.sched);
-  ok('…and keeps the baseline, so rescheduling still shows the slip', r.baseline?.start === 9, r.baseline);
+  ok('…and keeps the baseline, so rescheduling still shows the slip', r.baseline?.start === wk(9), r.baseline);
 
   r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${feature.id}`,
-    { sched: { start: 300, len: 400 } })).json;
+    { sched: { start: wk(300), len: wk(400) } })).json;
   ok('an out-of-range bar is clamped into the window, not stored raw',
-    r.sched.start < 24 && r.sched.start + r.sched.len <= 24, r.sched);
+    r.sched.start < wk(24) && r.sched.start + r.sched.len <= wk(24), r.sched);
+
+  // The point of the unit change: a bar can be an afternoon, and it comes back
+  // exactly as sent rather than rounded up to a week.
+  r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${feature.id}`,
+    { sched: { start: wk(3) + hr(9) + 30, len: 90 } })).json;
+  ok('a sub-day bar survives the round trip to the minute',
+    r.sched.start === wk(3) + hr(9) + 30 && r.sched.len === 90, r.sched);
+
+  r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${feature.id}`,
+    { sched: { start: wk(3), len: 0 } })).json;
+  ok('a zero-length bar is floored, never stored — you could not see or grab one',
+    r.sched.len === 15, r.sched);
 
   // ---- hierarchy ----------------------------------------------------------
 

@@ -32,6 +32,12 @@ const DAY = 86400000;
 const NOW = Date.parse('2026-08-09T00:00:00Z');
 const ago = (days) => new Date(NOW - days * DAY).toISOString();
 
+// #401 — the schedule is MINUTES from week zero. These fixtures still think in
+// weeks because that is the grain a plan strip is read at, so `wk` is the one
+// place the conversion happens rather than 10080 appearing thirty times.
+const MIN_PER_WEEK = 7 * 24 * 60;
+const wk = (n) => Math.round(n * MIN_PER_WEEK);
+
 let seq = 0;
 function item(over = {}) {
   seq += 1;
@@ -361,16 +367,16 @@ test('the drill-down shows only the rows that named that model', () => {
 // --- the schedule strip -----------------------------------------------------
 
 test('only TOP-LEVEL items get a bar — a scope line is not a feature', () => {
-  const parent = item({ title: 'Inline comments', area: 'Editor', sched: { start: 2, len: 4 } });
-  const child = item({ title: 'Threading', parentId: parent.id, area: 'Editor', sched: { start: 2, len: 1 } });
-  const s = scheduleStrip(board([parent, child]), 24);
+  const parent = item({ title: 'Inline comments', area: 'Editor', sched: { start: wk(2), len: wk(4) } });
+  const child = item({ title: 'Threading', parentId: parent.id, area: 'Editor', sched: { start: wk(2), len: wk(1) } });
+  const s = scheduleStrip(board([parent, child]), wk(24));
   assert.equal(s.scheduled, 1, 'drawing children turns one feature into several');
   assert.deepEqual(s.lanes.map((l) => l.area), ['Editor']);
   assert.equal(s.lanes[0].bars.length, 1);
 });
 
-test('a bar is placed in WEEKS as a percentage of the track', () => {
-  const s = scheduleStrip(board([item({ sched: { start: 6, len: 6 }, area: 'Sync' })]), 24);
+test('a bar is placed as a percentage of the track it is measured against', () => {
+  const s = scheduleStrip(board([item({ sched: { start: wk(6), len: wk(6) }, area: 'Sync' })]), wk(24));
   const b = s.lanes[0].bars[0];
   assert.equal(b.left, 25);
   assert.equal(b.width, 25);
@@ -378,18 +384,18 @@ test('a bar is placed in WEEKS as a percentage of the track', () => {
 
 test('UNTAGGED is its own lane, never folded into the first real one', () => {
   const s = scheduleStrip(board([
-    item({ area: 'Editor', sched: { start: 0, len: 2 } }),
-    item({ area: '', sched: { start: 4, len: 2 } }),
-  ]), 24);
+    item({ area: 'Editor', sched: { start: wk(0), len: wk(2) } }),
+    item({ area: '', sched: { start: wk(4), len: wk(2) } }),
+  ]), wk(24));
   assert.deepEqual(s.lanes.map((l) => l.area).sort(), ['Editor', 'Untagged']);
 });
 
 test('the ghost is drawn only where the bar has MOVED off its baseline', () => {
   const put = scheduleStrip(board([
-    item({ area: 'A', sched: { start: 4, len: 2 }, baseline: { start: 4, len: 2 } }),
-    item({ area: 'A', sched: { start: 6, len: 2 }, baseline: { start: 4, len: 2 } }),
-    item({ area: 'A', sched: { start: 8, len: 2 }, baseline: null }),
-  ]), 24);
+    item({ area: 'A', sched: { start: wk(4), len: wk(2) }, baseline: { start: wk(4), len: wk(2) } }),
+    item({ area: 'A', sched: { start: wk(6), len: wk(2) }, baseline: { start: wk(4), len: wk(2) } }),
+    item({ area: 'A', sched: { start: wk(8), len: wk(2) }, baseline: null }),
+  ]), wk(24));
   const [same, moved, none] = put.lanes[0].bars;
   assert.equal(same.ghost, null, 'a ghost under its own bar reads as a slip on every row');
   assert.ok(moved.ghost, 'a bar that moved shows what it was committed to');
@@ -398,19 +404,19 @@ test('the ghost is drawn only where the bar has MOVED off its baseline', () => {
 
 test('unscheduled features are counted, not dropped', () => {
   const s = scheduleStrip(board([
-    item({ sched: { start: 0, len: 2 } }), item(), item({ archived: true }),
-  ]), 24);
+    item({ sched: { start: wk(0), len: wk(2) } }), item(), item({ archived: true }),
+  ]), wk(24));
   assert.equal(s.scheduled, 1);
   assert.equal(s.unscheduled, 1, 'an archived row is off the board entirely');
 });
 
 test('a bar wears the stage its own item is in', () => {
   const s = scheduleStrip(board([
-    item({ area: 'A', sched: { start: 0, len: 1 }, claimedBy: 'feat/1-x' }),
-    item({ area: 'A', sched: { start: 2, len: 1 }, builtNote: 'b', claimedBy: 'feat/2-y' }),
-    item({ area: 'A', sched: { start: 4, len: 1 }, done: true, reviewTag: 'solid' }),
-    item({ area: 'A', sched: { start: 6, len: 1 } }),
-  ]), 24);
+    item({ area: 'A', sched: { start: wk(0), len: wk(1) }, claimedBy: 'feat/1-x' }),
+    item({ area: 'A', sched: { start: wk(2), len: wk(1) }, builtNote: 'b', claimedBy: 'feat/2-y' }),
+    item({ area: 'A', sched: { start: wk(4), len: wk(1) }, done: true, reviewTag: 'solid' }),
+    item({ area: 'A', sched: { start: wk(6), len: wk(1) } }),
+  ]), wk(24));
   assert.deepEqual(s.lanes[0].bars.map((b) => b.state), ['inflight', 'built', 'landed', 'planned']);
 });
 
@@ -478,8 +484,8 @@ test('in flight covers what is BUILT too — it is still the thing being worked'
 
 test('NO BASELINE is unmeasured, and is NOT counted as on plan', () => {
   const p = planVsReality(board([
-    item({ sched: { start: 4, len: 2 }, baseline: null }),
-    item({ sched: { start: 4, len: 2 }, baseline: { start: 4, len: 2 } }),
+    item({ sched: { start: wk(4), len: wk(2) }, baseline: null }),
+    item({ sched: { start: wk(4), len: wk(2) }, baseline: { start: wk(4), len: wk(2) } }),
   ]));
   assert.equal(p.unmeasured, 1);
   assert.equal(p.measured, 1);
@@ -488,18 +494,18 @@ test('NO BASELINE is unmeasured, and is NOT counted as on plan', () => {
 
 test('slip is measured against the baseline, worst first, both axes', () => {
   const p = planVsReality(board([
-    item({ title: 'small', sched: { start: 5, len: 3 }, baseline: { start: 4, len: 3 } }),
-    item({ title: 'big', sched: { start: 8, len: 6 }, baseline: { start: 4, len: 4 } }),
-    item({ title: 'early', sched: { start: 2, len: 3 }, baseline: { start: 4, len: 3 } }),
+    item({ title: 'small', sched: { start: wk(5), len: wk(3) }, baseline: { start: wk(4), len: wk(3) } }),
+    item({ title: 'big', sched: { start: wk(8), len: wk(6) }, baseline: { start: wk(4), len: wk(4) } }),
+    item({ title: 'early', sched: { start: wk(2), len: wk(3) }, baseline: { start: wk(4), len: wk(3) } }),
   ]));
   assert.deepEqual(p.rows.map((r) => r.title), ['big', 'small', 'early']);
-  assert.deepEqual([p.rows[0].weeks, p.rows[0].longer], [4, 2]);
-  assert.equal(p.rows[2].weeks, -2, 'earlier than plan is a real answer, not a slip');
-  assert.equal(p.totalSlip, 5, 'only LATE weeks add to the slip total');
+  assert.deepEqual([p.rows[0].min, p.rows[0].longer], [wk(4), wk(2)]);
+  assert.equal(p.rows[2].min, wk(-2), 'earlier than plan is a real answer, not a slip');
+  assert.equal(p.totalSlip, wk(5), 'only LATE drift adds to the slip total');
 });
 
 test('an unscheduled item cannot slip and is left out entirely', () => {
-  const p = planVsReality(board([item({ sched: null, baseline: { start: 4, len: 2 } })]));
+  const p = planVsReality(board([item({ sched: null, baseline: { start: wk(4), len: wk(2) } })]));
   assert.equal(p.measured, 0);
   assert.equal(p.unmeasured, 0);
 });

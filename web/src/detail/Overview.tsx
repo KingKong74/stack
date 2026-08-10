@@ -49,6 +49,7 @@ import {
   type Stage, type VerdictRow, type ScheduleStrip, type InFlightFeature, type PlanVsReality,
 } from '../lib/spine';
 import { KIND_TONE, type LaneKind } from '../lib/branch';
+import { MIN_PER_WEEK, fmtDur } from '../lib/plan';
 import { go } from '../lib/route';
 
 // One row of the project-scoped review queue (hook-created, not yet reviewed).
@@ -277,9 +278,12 @@ function CadenceCard({ cadence, lastPushAt }: {
 /** One stacked row inside a lane, in px — bar, ghost and the gap under them. */
 const ROW_H = 16;
 
-// A WEEK INDEX IS NOT A DATE (lib/plan.ts's first rule). The axis is therefore
-// labelled in weeks and carries no month names and no "now" marker: a project
-// stores no week zero, so any calendar drawn here would be invented.
+// AN OFFSET IS NOT A DATE (lib/plan.ts's first rule). The axis is therefore
+// labelled in weeks and carries no month names and no "now" marker: this strip
+// is drawn without a week zero to hand, so any calendar here would be invented.
+// The offsets themselves are minutes (#401); weeks are what the axis SAYS,
+// because the whole horizon is what it draws and a minute is not a legible unit
+// for six months of plan.
 function ScheduleBand({ strip, slug }: { strip: ScheduleStrip; slug: string }) {
   return (
     <div className="band">
@@ -324,7 +328,7 @@ function ScheduleBand({ strip, slug }: { strip: ScheduleStrip; slug: string }) {
           <div className="strip-axis">
             <span>week 1</span>
             <span className="mid">week index, not a date — a slipping project moves its bars</span>
-            <span>week {strip.weeks}</span>
+            <span>week {Math.round(strip.span / MIN_PER_WEEK)}</span>
           </div>
         </>
       )}
@@ -418,17 +422,19 @@ function InFlightBand({ features, plan, slug }: {
             {plan.rows.map((r) => (
               <div className="slip" key={r.id}>
                 <span className="title">{r.title}</span>
-                <span className={`delta${r.weeks > 0 || r.longer > 0 ? ' late' : ' early'}`}>
-                  {r.weeks !== 0 && `${r.weeks > 0 ? '+' : ''}${r.weeks} wk${Math.abs(r.weeks) === 1 ? '' : 's'} later`}
-                  {r.weeks !== 0 && r.longer !== 0 && ' · '}
-                  {r.longer !== 0 && `${r.longer > 0 ? '+' : ''}${r.longer} wk${Math.abs(r.longer) === 1 ? '' : 's'} longer`}
+                {/* Said in the units the slip actually is (#401): a bar three
+                    days late reads as 3d, not as a rounded "0 wks". */}
+                <span className={`delta${r.min > 0 || r.longer > 0 ? ' late' : ' early'}`}>
+                  {r.min !== 0 && `${r.min > 0 ? '+' : '−'}${fmtDur(Math.abs(r.min))} ${r.min > 0 ? 'later' : 'earlier'}`}
+                  {r.min !== 0 && r.longer !== 0 && ' · '}
+                  {r.longer !== 0 && `${r.longer > 0 ? '+' : '−'}${fmtDur(Math.abs(r.longer))} ${r.longer > 0 ? 'longer' : 'shorter'}`}
                 </span>
               </div>
             ))}
           </div>
         )}
         <div className="eg-read">
-          {plan.totalSlip > 0 && <>{plan.totalSlip} weeks of slip across the board. </>}
+          {plan.totalSlip > 0 && <>{fmtDur(plan.totalSlip)} of slip across the board. </>}
           {/* NOT counted as "on plan" — the same NULL-verdict rule. */}
           {plan.unmeasured > 0
             ? <>{plan.unmeasured} scheduled feature{plan.unmeasured === 1 ? '' : 's'} carr{plan.unmeasured === 1 ? 'ies' : 'y'} no

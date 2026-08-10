@@ -43,9 +43,9 @@ import { hrefTo } from './route';
 import { tierRank } from '../types';
 import { parseBranch, type LaneKind } from './branch';
 // The Roadmap tab owns the schedule, so its arithmetic is imported and never
-// re-spelt here: one definition of a week index, of slip, and of what "in this
-// cycle" means, or the Overview and the Timeline disagree about the same plan.
-import { SCHED_WEEKS, slipOf, scopeTotals, type ScopeTotals } from './plan';
+// re-spelt here: one definition of the minute offsets, of slip, and of what "in
+// this cycle" means, or the Overview and the Timeline disagree about the same plan.
+import { SCHED_MINUTES, MIN_SCHED_LEN, slipOf, scopeTotals, type ScopeTotals } from './plan';
 
 export type StageKey = 'idea' | 'planned' | 'inflight' | 'built' | 'landed';
 
@@ -412,8 +412,10 @@ export function recentForModel(usage: PulseUsage, model: string, limit = 4) {
 //
 // The Roadmap tab's Timeline is where a bar is DRAGGED; this is the same plan
 // at a glance, on the tab that asks "which way is this project moving". Both
-// read `sched`/`baseline` through `lib/plan.ts` — one definition of a week
-// index and one of slip, or the two surfaces quietly disagree about the plan.
+// read `sched`/`baseline` through `lib/plan.ts` — one definition of the minute
+// offsets and one of slip, or the two surfaces quietly disagree about the plan.
+// This strip has NO zoom: it always draws the whole horizon, which is why its
+// domain is the constant and not a viewport.
 //
 // ONLY TOP-LEVEL ITEMS GET A BAR. A child is a scope line inside a feature, and
 // drawing it as its own bar turns one feature into five and makes the strip
@@ -434,7 +436,8 @@ export interface StripBar {
 export interface StripLane { area: string; bars: StripBar[]; rows: number }
 export interface ScheduleStrip {
   lanes: StripLane[];
-  weeks: number;
+  /** The horizon this strip draws, in minutes — the whole schedulable domain. */
+  span: number;
   scheduled: number;
   /** Committed to but never placed on the timeline — the Roadmap tab's tray. */
   unscheduled: number;
@@ -449,7 +452,7 @@ const stateOf = (it: RoadmapItem): StageKey =>
  * than being folded into the first real one — untagged is a state, and the same
  * carve-out `lanes.js` makes for the claim lanes (#267).
  */
-export function scheduleStrip(roadmap: Roadmap, weeks = SCHED_WEEKS): ScheduleStrip {
+export function scheduleStrip(roadmap: Roadmap, span = SCHED_MINUTES): ScheduleStrip {
   const features = flat(roadmap).filter((it) => it.parentId === null && !it.archived);
   const byArea = new Map<string, RoadmapItem[]>();
   let scheduled = 0;
@@ -462,7 +465,7 @@ export function scheduleStrip(roadmap: Roadmap, weeks = SCHED_WEEKS): ScheduleSt
     byArea.get(area)!.push(it);
   }
 
-  const pc = (n: number) => (n / weeks) * 100;
+  const pc = (n: number) => (n / span) * 100;
   const lanes: StripLane[] = [];
 
   for (const [area, items] of byArea) {
@@ -475,12 +478,12 @@ export function scheduleStrip(roadmap: Roadmap, weeks = SCHED_WEEKS): ScheduleSt
     const bars: StripBar[] = [];
     for (const it of [...items].sort((a, b) => a.sched!.start - b.sched!.start)) {
       const start = it.sched!.start;
-      const len = Math.max(1, it.sched!.len);
+      const len = Math.max(MIN_SCHED_LEN, it.sched!.len);
       // The ghost occupies the row too, or a bar can land on top of another
       // bar's baseline and the two become unreadable.
       const from = it.baseline ? Math.min(start, it.baseline.start) : start;
       const to = it.baseline
-        ? Math.max(start + len, it.baseline.start + Math.max(1, it.baseline.len))
+        ? Math.max(start + len, it.baseline.start + Math.max(MIN_SCHED_LEN, it.baseline.len))
         : start + len;
 
       let row = ends.findIndex((end) => end <= from);
@@ -489,7 +492,7 @@ export function scheduleStrip(roadmap: Roadmap, weeks = SCHED_WEEKS): ScheduleSt
       // The ghost is drawn only when the bar has actually MOVED. A ghost sitting
       // exactly under its bar is visual noise that reads as a slip on every row.
       const moved = it.baseline
-        && (it.baseline.start !== start || Math.max(1, it.baseline.len) !== len);
+        && (it.baseline.start !== start || Math.max(MIN_SCHED_LEN, it.baseline.len) !== len);
       bars.push({
         id: it.id,
         title: it.title,
@@ -498,7 +501,7 @@ export function scheduleStrip(roadmap: Roadmap, weeks = SCHED_WEEKS): ScheduleSt
         state: stateOf(it),
         row,
         ghost: moved && it.baseline
-          ? { left: pc(it.baseline.start), width: pc(Math.max(1, it.baseline.len)) }
+          ? { left: pc(it.baseline.start), width: pc(Math.max(MIN_SCHED_LEN, it.baseline.len)) }
           : null,
       });
     }
@@ -507,7 +510,7 @@ export function scheduleStrip(roadmap: Roadmap, weeks = SCHED_WEEKS): ScheduleSt
 
   return {
     lanes,
-    weeks,
+    span,
     scheduled,
     unscheduled: features.length - scheduled,
   };
@@ -589,16 +592,16 @@ export function inFlightScope(roadmap: Roadmap, limit = 4): InFlightFeature[] {
 export interface SlipRow {
   id: number;
   title: string;
-  /** Weeks later than the baseline start; negative = earlier. */
-  weeks: number;
-  /** Weeks longer than the baseline length. */
+  /** MINUTES later than the baseline start; negative = earlier (#401). */
+  min: number;
+  /** MINUTES longer than the baseline length. */
   longer: number;
 }
 export interface PlanVsReality {
   rows: SlipRow[];
   /** Scheduled features carrying NO baseline — not measured, and not on plan. */
   unmeasured: number;
-  /** Total weeks of slip across everything that IS measured. */
+  /** Total MINUTES of slip across everything that IS measured. */
   totalSlip: number;
   measured: number;
 }
@@ -621,14 +624,14 @@ export function planVsReality(roadmap: Roadmap, limit = 6): PlanVsReality {
     const s = slipOf(it);
     if (!s.measured) { unmeasured += 1; continue; }
     measured += 1;
-    const weeks = s.weeks ?? 0;
+    const min = s.min ?? 0;
     const longer = s.longer ?? 0;
-    if (weeks !== 0 || longer !== 0) {
-      rows.push({ id: it.id, title: it.title, weeks, longer });
-      if (weeks > 0) totalSlip += weeks;
+    if (min !== 0 || longer !== 0) {
+      rows.push({ id: it.id, title: it.title, min, longer });
+      if (min > 0) totalSlip += min;
     }
   }
 
-  rows.sort((a, b) => (b.weeks + b.longer) - (a.weeks + a.longer));
+  rows.sort((a, b) => (b.min + b.longer) - (a.min + a.longer));
   return { rows: rows.slice(0, limit), unmeasured, totalSlip, measured };
 }

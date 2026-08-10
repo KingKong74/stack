@@ -46,7 +46,7 @@ import {
   addLabel as addLabelApi, deleteLabel as deleteLabelApi,
   setAreaColour, arrangeRoadmap, allocateRoadmap, agentCan, agentOffReason,
 } from '../store';
-import { areaMatches, inCycle, UNALLOCATED } from '../lib/plan';
+import { areaMatches, clampSpanToDomain, defaultLen, inCycle, nowMin, UNALLOCATED } from '../lib/plan';
 import { taskByKey } from '../lib/curatorTasks';
 import { DEFAULT_LABELS } from '../lib/labels';
 import { RoadmapTimeline } from './RoadmapTimeline';
@@ -438,7 +438,7 @@ export function RoadmapTab({
           ))}
         </div>
         <span className="rtab-hint">
-          {view === 'timeline' ? 'Weeks from this project’s week zero — a plan, not a calendar'
+          {view === 'timeline' ? 'Scroll to zoom, from hours to quarters · drag anywhere to move through time'
             : view === 'scope' ? 'What is in the cycle, and what is first to cut'
               : board === 'tiers' ? 'What you want built NEXT — drag a card to rank it'
                 : board === 'parked' ? 'Cut from this cycle, still part of the feature'
@@ -568,11 +568,15 @@ export function RoadmapTab({
             setView('timeline');
             setSelectedId(it.id);
             if (!it.sched) {
-              const len = Math.max(1, Math.round(it.estimate ?? 2));
+              // After the last bar in its own lane, at its own size — the same
+              // rule the timeline's tray uses. Minutes (#401), and the length
+              // comes from `defaultLen` so the two paths cannot disagree about
+              // how long an unsized ticket is.
+              const len = defaultLen(it, 'week');
               const end = items
                 .filter((x) => x.area === it.area && x.sched)
-                .reduce((n, x) => Math.max(n, x.sched!.start + x.sched!.len), 0);
-              guard(write(it, { sched: { start: end, len } }), 'schedule that ticket');
+                .reduce((n, x) => Math.max(n, x.sched!.start + x.sched!.len), nowMin(weekZero));
+              guard(write(it, { sched: clampSpanToDomain({ start: end, len }) }), 'schedule that ticket');
             }
           }}
           onAdd={(bucket: Priority) => legacy.onAdd(bucket, filterArea || undefined)} />

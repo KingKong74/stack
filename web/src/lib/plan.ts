@@ -5,201 +5,458 @@
 // Gantt that is genuinely easy to get wrong, and a wrong bar is a plan you act
 // on. Tested in `scripts/plan.test.mjs`.
 //
-// FOUR THINGS THIS FILE INSISTS ON:
+// FIVE THINGS THIS FILE INSISTS ON:
 //
-//  1. A WEEK INDEX IS NOT A DATE, AND A SCALE IS A ZOOM. `sched.start` counts
-//     weeks from the project's own week zero, and NO scale ever changes it. What
-//     a scale changes is the VIEWPORT — how many of those weeks fill the track —
-//     so the same bar stretches at days and condenses at quarters while the
-//     schedule it draws is untouched. Switching scale still cannot move a bar;
-//     it can only change how much track a week is worth.
-//     DAYS IS A READING SCALE, NOT A FINER UNIT. `sched_start`/`sched_len` are
-//     integer WEEKS server-side, so a bar zoomed to days still moves a week at a
-//     time — the view is finer than the model, and the toolbar says so rather
-//     than letting a day-wide grid imply a precision the column does not have.
-//  2. SLIP IS MEASURED AGAINST THE BASELINE, AND ONLY EXISTS IF THERE IS ONE.
+//  1. THE SCHEDULE IS MINUTES FROM WEEK ZERO, AND A VIEWPORT IS A WINDOW ONTO
+//     IT (#401). `sched.start` and `sched.len` are both minute offsets, and NO
+//     amount of zooming ever changes either. What zooming changes is `span` —
+//     how many minutes fill the track — so the same bar stretches at the hour
+//     grain and condenses at quarters while the schedule it draws is untouched.
+//     IT WAS AN INTEGER WEEK INDEX UNTIL #401. The unit is the whole of what
+//     changed, and it changed because the timeline's zoom now runs from hours to
+//     quarters: a week-stored model made the hour grid a READING scale over
+//     something it could not edit, a precision the column behind it did not
+//     have. Minutes are the finest thing the UI offers (a 15-minute snap), so
+//     the grid and the model finally agree.
+//  2. THE GRAIN IS DERIVED FROM PIXELS, NOT PICKED. `grainFor` reads pixels-per-
+//     day off the measured track, so "Hour" means hours are actually legible
+//     rather than being a mode you can select onto a 4px column. The zoom stops
+//     are shortcuts to a pixel density, not five discrete states.
+//  3. SLIP IS MEASURED AGAINST THE BASELINE, AND ONLY EXISTS IF THERE IS ONE.
 //     `baseline == null` means nothing was ever committed to, which is NOT the
 //     same as "on plan" and must not render as a clean bar. Same rule as a NULL
 //     review_verdict.
-//  3. AN UNSIZED TICKET IS NOT A FREE ONE. `estimate == null` is excluded from
+//  4. AN UNSIZED TICKET IS NOT A FREE ONE. `estimate == null` is excluded from
 //     the scope drawer's committed total AND counted separately, so a cycle that
 //     looks like it fits because half of it is unsized says so out loud.
-//  4. THE ARRANGE ACTIONS PROPOSE, THEY DO NOT APPLY. Each returns a diff —
-//     a list of {id, sched} — and the caller decides. Nothing here mutates.
+//     `estimate` stays in WEEKS — it is a size somebody typed, not a position.
+//  5. THE VIEWPORT IS NOT CLAMPED TO THE DOMAIN; THE BARS ARE. You can pan past
+//     either end of the schedulable window, because the alternative is a pan
+//     that stops dead with no explanation. What must never move is a BAR: every
+//     drag, drop and nudge clamps to [0, SCHED_MINUTES], so a viewport that has
+//     wandered off the plan cannot schedule anything outside it. The way back is
+//     `centreOn(nowMin(...))` — and when now is off-screen, the caller says so
+//     rather than pinning a now-line to an edge it is nowhere near.
 
 import type { RoadmapItem, SchedSpan } from '../types';
 
+// --- units -----------------------------------------------------------------
+
+export const MIN_PER_HOUR = 60;
+export const MIN_PER_DAY = 24 * 60;
+export const MIN_PER_WEEK = 7 * MIN_PER_DAY;
+
 /** The timeline's span, in weeks. Twin of SCHED_WEEKS in server/src/routes/roadmap.js. */
 export const SCHED_WEEKS = 24;
+/** The schedulable domain, in minutes. Every bar is clamped inside it. */
+export const SCHED_MINUTES = SCHED_WEEKS * MIN_PER_WEEK;
+/**
+ * The floor on a bar's length. A minute column can express a zero-width bar,
+ * and a bar with no width is a schedule entry you can neither see nor grab.
+ * Twin of MIN_SCHED_LEN in server/src/routes/roadmap.js.
+ */
+export const MIN_SCHED_LEN = 15;
 /** The scope drawer's cycle length, in weeks — what "does this fit" is measured against. */
 export const CYCLE_WEEKS = 6;
 
 /**
- * Which week is "now". A THIRD of the way in, not at the right-hand edge.
+ * WHERE "NOW" IS WHEN THE PROJECT HAS NO WEEK ZERO. A third of the way in, not
+ * at the right-hand edge: the edge is where a timeline puts today if nobody
+ * thinks about it, and it leaves the whole chart showing what already happened
+ * with nowhere to draw what is coming. A planning instrument should be mostly
+ * future.
  *
- * The edge is where a timeline naturally puts today if nobody thinks about it,
- * and it is the wrong place: it leaves the whole chart showing what already
- * happened and nowhere to draw what is coming. Eight weeks of context behind,
- * sixteen ahead — a planning instrument should be mostly future.
+ * With a week zero, `nowMin` uses the REAL CLOCK instead — which it must, now
+ * that the chart draws hours. A fixed week 8 was tolerable while the finest
+ * column was a week wide; against an hour grid it would put the now-line
+ * somewhere today is provably not.
  */
 export const NOW_WEEK = 8;
 
-export type Scale = 'day' | 'week' | 'month' | 'quarter';
-export interface ScaleCol { label: string; now: boolean; weeks: number; startWeek: number }
+// --- time and dates --------------------------------------------------------
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DOW_NARROW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /**
- * WHICH SLICE OF THE SCHEDULE THE TRACK IS DRAWING. `start` is a week index and
- * `weeks` is how many of them fill the whole track, so a narrow viewport is a
- * zoom IN: fewer weeks over the same pixels means every bar is wider.
+ * The real instant a minute offset lands on. `weekZero` is the project's own
+ * start (projects.week_zero); without one the timeline still works — it just has
+ * no dates, which the calendar says rather than inventing a year.
+ *
+ * EVERYTHING HERE IS UTC. Week zero is a bare date with no zone, so reading it
+ * back in the browser's zone would slide every bar by the offset and put a 09:00
+ * start at 20:00 for anyone east of Greenwich.
+ */
+export function dateAt(min: number, weekZero: string | null): Date | null {
+  if (!weekZero) return null;
+  const t = Date.parse(`${weekZero}T00:00:00Z`);
+  if (!Number.isFinite(t)) return null;
+  return new Date(t + min * 60000);
+}
+
+/** The minute offset of a real instant. The inverse of `dateAt`. */
+export function minAt(at: Date, weekZero: string | null): number | null {
+  if (!weekZero) return null;
+  const t = Date.parse(`${weekZero}T00:00:00Z`);
+  if (!Number.isFinite(t)) return null;
+  return Math.round((at.getTime() - t) / 60000);
+}
+
+/**
+ * WHERE NOW IS, in minutes from week zero.
+ *
+ * NOT CLAMPED into the schedulable domain. A project whose week zero is nine
+ * months back has a now that is genuinely past the end of its own horizon, and
+ * clamping would draw the now-line at the right-hand edge — a claim that today
+ * is the last week of the plan. The callers check `inView` and say "now is off
+ * this window" instead.
+ */
+export const nowMin = (weekZero: string | null, at: Date = new Date()): number =>
+  minAt(at, weekZero) ?? NOW_WEEK * MIN_PER_WEEK;
+
+export const fmtDate = (d: Date): string => `${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()]}`;
+export const fmtDateYear = (d: Date): string => `${fmtDate(d)} ${d.getUTCFullYear()}`;
+export const fmtTime = (d: Date): string =>
+  `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+export const monthName = (d: Date): string => MONTH_NAMES[d.getUTCMonth()];
+export const dowShort = (d: Date): string => DOW_SHORT[d.getUTCDay()];
+export const dowNarrow = (d: Date): string => DOW_NARROW[d.getUTCDay()];
+
+/** The week number a minute offset falls in, 1-based — what a dateless project reads instead. */
+export const weekNo = (min: number): number => Math.floor(min / MIN_PER_WEEK) + 1;
+/** The day index from week zero (0 = week zero itself). */
+export const dayNo = (min: number): number => Math.floor(min / MIN_PER_DAY);
+/** The minute offset of the start of the day a minute offset falls in. */
+export const dayStart = (min: number): number => Math.floor(min / MIN_PER_DAY) * MIN_PER_DAY;
+
+/**
+ * A duration, in the units a person would say it in. Days once it is a day or
+ * more (a 3d 4h bar is 3d 4h, not 76h); hours and minutes below that. Never
+ * "0m" for something that has a length — the floor is MIN_SCHED_LEN.
+ */
+export function fmtDur(min: number): string {
+  const total = Math.max(0, Math.round(min));
+  if (total >= MIN_PER_DAY) {
+    const d = Math.floor(total / MIN_PER_DAY);
+    const h = Math.round((total - d * MIN_PER_DAY) / MIN_PER_HOUR);
+    return h ? `${d}d ${h}h` : `${d}d`;
+  }
+  const h = Math.floor(total / MIN_PER_HOUR);
+  const m = total - h * MIN_PER_HOUR;
+  if (h && m) return `${h}h ${m}m`;
+  if (h) return `${h}h`;
+  return `${m}m`;
+}
+
+// --- the viewport ----------------------------------------------------------
+
+export type Grain = 'hour' | 'day' | 'week' | 'month' | 'quarter';
+
+/**
+ * WHICH SLICE OF THE SCHEDULE THE TRACK IS DRAWING, in minutes. A narrow `span`
+ * is a zoom IN: fewer minutes over the same pixels means every bar is wider.
  *
  * It is a viewport and not a filter — nothing is excluded from the plan by being
  * off-screen, which is why `layoutLane` counts what it left either side rather
  * than dropping it silently.
  */
-export interface Viewport { start: number; weeks: number }
-
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export interface Viewport { start: number; span: number }
 
 /**
- * The real date a week index lands on. `weekZero` is the project's own start
- * (projects.week_zero); without one the timeline still works — it just has no
- * dates, which the calendar view says rather than inventing a start.
+ * The zoom's range, as pixels per DAY. The floor is where a quarter still has a
+ * readable column; the ceiling is where an hour is about an inch, past which
+ * there is nothing finer to see and panning becomes the only gesture that works.
  */
-export function weekDate(week: number, weekZero: string | null): Date | null {
-  if (!weekZero) return null;
-  const t = Date.parse(`${weekZero}T00:00:00Z`);
-  if (!Number.isFinite(t)) return null;
-  return new Date(t + week * 7 * 86400000);
+export const PX_DAY_MIN = 1.9;
+export const PX_DAY_MAX = 1440;
+
+/**
+ * The named stops on the zoom, coarsest last. A stop is a PIXEL DENSITY, not a
+ * mode: pressing "Week" sets the span that makes a day fifteen pixels wide on
+ * THIS track, so the same press gives the same reading experience on a phone and
+ * on a wide monitor. `grainFor` then names whatever density you land on, whether
+ * you got there by pressing a stop or by scrolling between two.
+ */
+export const ZOOM_STOPS: { key: Grain; label: string; px: number }[] = [
+  { key: 'hour', label: 'Hour', px: 300 },
+  { key: 'day', label: 'Day', px: 46 },
+  { key: 'week', label: 'Week', px: 15 },
+  { key: 'month', label: 'Month', px: 5 },
+  { key: 'quarter', label: 'Quarter', px: 2.1 },
+];
+
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+/** How many pixels one day occupies on a track of this width. */
+export const pxPerDay = (view: Viewport, trackPx: number): number =>
+  (trackPx <= 0 || view.span <= 0 ? 0 : (trackPx / view.span) * MIN_PER_DAY);
+
+/**
+ * WHAT THE CHART IS CURRENTLY DRAWING, read off the pixels rather than chosen.
+ *
+ * The thresholds are the points at which the next unit down stops being legible:
+ * below 150px a day cannot carry hour columns, below 26px it cannot carry its own
+ * date, and so on. Deriving it is what stops "Hour" being a mode you can select
+ * onto a four-pixel day.
+ */
+export function grainFor(view: Viewport, trackPx: number): Grain {
+  const px = pxPerDay(view, trackPx);
+  if (px >= 150) return 'hour';
+  if (px >= 26) return 'day';
+  if (px >= 10) return 'week';
+  if (px >= 3.4) return 'month';
+  return 'quarter';
 }
 
-export const fmtDate = (d: Date): string =>
-  `${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()]}`;
+/** The span, in minutes, that puts this many pixels on a day. */
+export const spanForPx = (px: number, trackPx: number): number =>
+  (trackPx <= 0 ? SCHED_MINUTES : (trackPx / clamp(px, PX_DAY_MIN, PX_DAY_MAX)) * MIN_PER_DAY);
 
-/**
- * HOW MANY WEEKS ONE SCREENFUL SHOWS AT EACH SCALE — the whole of what the scale
- * control does. Each step is roughly half the one below it, so the same bar
- * visibly doubles in width as you zoom in, which is the point: a two-week bar
- * inside a six-month window is four pixels of nothing.
- *
- * The widest is the whole schedulable horizon. A viewport wider than the domain
- * would be drawing weeks nothing can ever be scheduled into.
- */
-export const SCALE_WEEKS: Record<Scale, number> = {
-  day: 2, week: 6, month: 12, quarter: SCHED_WEEKS,
+/** A span pinned inside the zoom's range. */
+export const clampSpan = (span: number, trackPx: number): number => {
+  if (trackPx <= 0) return Math.max(1, span);
+  return clamp(span, spanForPx(PX_DAY_MAX, trackPx), spanForPx(PX_DAY_MIN, trackPx));
 };
 
-/** The whole horizon at once — what every geometry function falls back to. */
-export const FULL_VIEW: Viewport = { start: 0, weeks: SCHED_WEEKS };
+/** The window this project opens on: a fortnight, with now a third of the way in. */
+export const viewAround = (at: number, span = 14 * MIN_PER_DAY): Viewport =>
+  ({ start: at - span / 3, span });
 
-/** A viewport pinned inside the schedulable domain. */
-export const clampView = (start: number, weeks: number, domain = SCHED_WEEKS): Viewport => ({
-  start: Math.max(0, Math.min(domain - weeks, Math.round(start))),
-  weeks,
+/** Put a moment a third of the way across, keeping the current zoom. */
+export const centreOn = (view: Viewport, at: number): Viewport =>
+  ({ start: at - view.span / 3, span: view.span });
+
+/** Slide the window. Deliberately unclamped — see this file's rule 5. */
+export const panBy = (view: Viewport, minutes: number): Viewport =>
+  ({ start: view.start + minutes, span: view.span });
+
+/**
+ * Zoom about a point, keeping whatever is under it exactly where it is.
+ * `anchor` is a fraction of the track (0 = left edge, 0.5 = middle), so a wheel
+ * zoom anchors on the cursor and a button zoom anchors on the middle.
+ */
+export function zoomAt(view: Viewport, trackPx: number, factor: number, anchor = 0.5): Viewport {
+  const at = view.start + view.span * anchor;
+  const span = clampSpan(view.span / factor, trackPx);
+  return { start: at - span * anchor, span };
+}
+
+/** The window that holds every one of these spans, plus a margin either side. */
+export function fitAll(spans: SchedSpan[], trackPx: number, fallback: number): Viewport {
+  if (!spans.length) return viewAround(fallback);
+  let lo = Infinity; let hi = -Infinity;
+  for (const s of spans) { lo = Math.min(lo, s.start); hi = Math.max(hi, s.start + s.len); }
+  const pad = Math.max(MIN_PER_DAY, (hi - lo) * 0.06);
+  return { start: lo - pad, span: clampSpan((hi - lo) + pad * 2, trackPx) };
+}
+
+/** Where a minute offset sits, as a percentage across the track. Can be outside 0–100. */
+export const leftPct = (min: number, view: Viewport): number =>
+  ((min - view.start) / view.span) * 100;
+
+/** Where a span sits in the viewport, as percentages. */
+export const spanPct = (span: SchedSpan, view: Viewport) => ({
+  left: leftPct(span.start, view),
+  width: (span.len / view.span) * 100,
 });
 
+/** Is a moment inside the window at all? */
+export const inView = (min: number, view: Viewport): boolean =>
+  min >= view.start && min < view.start + view.span;
+
 /**
- * The viewport for a scale, with `focus` a THIRD of the way in.
- *
- * A third, not the middle, for the same reason NOW_WEEK sits a third in: a
- * planning instrument should be mostly future. Zooming preserves the focus week
- * rather than the window, so the bar you were looking at stays where it is on
- * screen while everything around it stretches or condenses.
+ * HOW FINELY AN EDIT MOVES AT THIS GRAIN. Quarter-hours when hours are on
+ * screen, an hour when days are, a whole day when they are not: a drag at the
+ * quarter grain that landed on 14:23 would be recording a precision the gesture
+ * never had.
  */
-export function viewFor(scale: Scale, focus = NOW_WEEK, domain = SCHED_WEEKS): Viewport {
-  const weeks = Math.min(domain, SCALE_WEEKS[scale]);
-  return clampView(focus - weeks / 3, weeks, domain);
+export const snapFor = (grain: Grain): number =>
+  (grain === 'hour' ? 15 : grain === 'day' ? MIN_PER_HOUR : MIN_PER_DAY);
+
+/** A moment snapped to the grain, then pinned inside the schedulable domain. */
+export const snapTo = (min: number, snap: number): number => Math.round(min / snap) * snap;
+
+/**
+ * Where a drop at this pixel offset lands, clamped so the bar stays in the
+ * SCHEDULABLE domain — not in the viewport. Zooming and panning must never be
+ * able to schedule outside the plan, and the server clamps to the same domain.
+ */
+export function timeAt(
+  offsetPx: number, trackPx: number, len: number, view: Viewport, snap = MIN_PER_DAY,
+): number {
+  if (trackPx <= 0) return 0;
+  const raw = snapTo(view.start + (offsetPx / trackPx) * view.span, snap);
+  return clamp(raw, 0, Math.max(0, SCHED_MINUTES - len));
 }
 
-/** The week a viewport is focused on — the inverse of `viewFor`'s third. */
-export const focusOf = (view: Viewport): number => view.start + view.weeks / 3;
+/** A whole span pinned inside the domain — what every drag and nudge ends with. */
+export function clampSpanToDomain(span: SchedSpan): SchedSpan {
+  const len = clamp(span.len, MIN_SCHED_LEN, SCHED_MINUTES);
+  return { start: clamp(span.start, 0, SCHED_MINUTES - len), len };
+}
+
+// --- the ruler -------------------------------------------------------------
+
+export interface Tick {
+  /** The moment this tick marks, in minutes. */
+  at: number;
+  /** Percentage across the track. Can be outside 0–100 at the edges. */
+  left: number;
+  label: string;
+  /** The line above the label — the date a run of hours belongs to, the year a run of months does. */
+  sub: string;
+  /** A stronger rule and a brighter label: midnight, a Monday, a January. */
+  major: boolean;
+}
+
+/** A shaded stretch of the track — nights at the hour grain, weekends at the day grain. */
+export interface Band { key: string; left: number; width: number }
 
 /**
- * The columns under the timeline's ruler, for the slice of schedule the viewport
- * is showing. Widths are proportional to `weeks`, so a quarter column really is
- * three months wide — a scale whose columns were all equal would misdraw every
- * bar that crossed one.
+ * THE RULER, AND THE SHADING UNDER IT, for whatever the chart is drawing.
  *
- * Labels become REAL dates once the project has a week zero; without one they
- * fall back to D1…/W1…/M1…/Q1…, which is honest about not knowing when this is.
+ * One function rather than a column list per grain, because both halves have to
+ * agree about where a day begins: a weekend band that started at a different
+ * minute from the Saturday tick is a chart whose grid and whose shading disagree
+ * about the date, and the eye believes the shading.
+ *
+ * Labels are REAL DATES once the project has a week zero, and D…/W…/M…/Q…
+ * without one — honest about not knowing when this is, rather than inventing a
+ * year. Bands are only ever drawn where a real date says where the weekend is,
+ * so a dateless project gets ticks and no shading rather than shading in the
+ * wrong place.
  */
-export function scaleCols(scale: Scale, view: Viewport = FULL_VIEW, weekZero: string | null = null): ScaleCol[] {
-  const { start, weeks } = view;
-  const mark = (startWeek: number, span: number) => startWeek <= NOW_WEEK && NOW_WEEK < startWeek + span;
-  if (scale === 'day') {
-    // A day is a seventh of a week. The MODEL is still weekly (see the header):
-    // these columns read the plan finer than it can be edited, and that is the
-    // whole of what "Days" is.
-    const days = Math.round(weeks * 7);
-    return Array.from({ length: days }, (_, i) => {
-      const startWeek = start + i / 7;
-      const d = weekDate(startWeek, weekZero);
-      return {
-        label: d ? fmtDate(d) : `D${i + 1}`,
-        now: mark(startWeek, 1 / 7), weeks: 1 / 7, startWeek,
-      };
-    });
+export function ticksFor(
+  view: Viewport, grain: Grain, weekZero: string | null, trackPx: number,
+): { ticks: Tick[]; bands: Band[] } {
+  const ticks: Tick[] = [];
+  const bands: Band[] = [];
+  const { start, span } = view;
+  const end = start + span;
+  const push = (at: number, label: string, sub: string, major: boolean) =>
+    ticks.push({ at, left: leftPct(at, view), label, sub, major });
+  const band = (key: string, from: number, to: number) =>
+    bands.push({ key, left: leftPct(from, view), width: ((to - from) / span) * 100 });
+
+  const firstDay = Math.floor(start / MIN_PER_DAY) - 1;
+  const lastDay = Math.ceil(end / MIN_PER_DAY) + 1;
+  // A pathological zoom must not build a million ticks. The cap is generous
+  // enough that it is never reached at a legible density, and it is a guard
+  // rather than a policy — nothing about the chart's meaning depends on it.
+  const MAX = 400;
+
+  if (grain === 'hour') {
+    const pxh = pxPerDay(view, trackPx) / 24;
+    const step = pxh >= 46 ? 1 : pxh >= 23 ? 2 : pxh >= 15 ? 3 : 6;
+    for (let d = firstDay; d <= lastDay && ticks.length < MAX; d += 1) {
+      const at0 = d * MIN_PER_DAY;
+      const dt = dateAt(at0, weekZero);
+      for (let hr = 0; hr < 24; hr += step) {
+        const at = at0 + hr * MIN_PER_HOUR;
+        push(at, `${String(hr).padStart(2, '0')}:00`,
+          hr === 0 ? (dt ? `${dowShort(dt)} ${fmtDate(dt)}` : `D${d + 1}`) : '', hr === 0);
+      }
+      // Night: 20:00 to 07:00 the next morning. Not "outside working hours" —
+      // it is the stretch nothing is expected to run in, which is what makes a
+      // bar drawn across it worth noticing.
+      band(`n${d}`, at0 + 20 * MIN_PER_HOUR, at0 + MIN_PER_DAY + 7 * MIN_PER_HOUR);
+    }
+    return { ticks, bands };
   }
-  if (scale === 'week') {
-    return Array.from({ length: Math.round(weeks) }, (_, i) => {
-      const startWeek = start + i;
-      const d = weekDate(startWeek, weekZero);
-      return {
-        // Every column is labelled while there are few enough to read; past
-        // fourteen they collide at any real width, so every other one is.
-        label: weeks <= 14 || i % 2 === 0 ? (d ? fmtDate(d) : `W${startWeek + 1}`) : '',
-        now: mark(startWeek, 1), weeks: 1, startWeek,
-      };
-    });
+
+  if (grain === 'day') {
+    for (let d = firstDay; d <= lastDay && ticks.length < MAX; d += 1) {
+      const at = d * MIN_PER_DAY;
+      const dt = dateAt(at, weekZero);
+      const dow = dt ? dt.getUTCDay() : ((d % 7) + 8) % 7; // week zero is a Monday
+      push(at, dt ? String(dt.getUTCDate()) : `D${d + 1}`, dt ? dowNarrow(dt) : '', dow === 1);
+      if (dow === 6) band(`w${d}`, at, at + 2 * MIN_PER_DAY);
+    }
+    return { ticks, bands };
   }
-  if (scale === 'quarter') {
-    const quarters = Math.max(1, Math.round(weeks / 12));
-    const span = weeks / quarters;
-    return Array.from({ length: quarters }, (_, i) => {
-      const startWeek = start + i * span;
-      const from = weekDate(startWeek, weekZero);
-      const to = weekDate(startWeek + span - 1, weekZero);
-      return {
-        label: from && to
-          ? (from.getUTCMonth() === to.getUTCMonth()
-            ? MONTH_NAMES[from.getUTCMonth()]
-            : `${MONTH_NAMES[from.getUTCMonth()]}–${MONTH_NAMES[to.getUTCMonth()]}`)
-          : `Q${Math.floor(startWeek / 12) + 1}`,
-        now: mark(startWeek, span), weeks: span, startWeek,
-      };
-    });
+
+  if (grain === 'week') {
+    const firstWeek = Math.floor(start / MIN_PER_WEEK) - 1;
+    const lastWeek = Math.ceil(end / MIN_PER_WEEK) + 1;
+    for (let w = firstWeek; w <= lastWeek && ticks.length < MAX; w += 1) {
+      const at = w * MIN_PER_WEEK;
+      const dt = dateAt(at, weekZero);
+      push(at, dt ? fmtDate(dt) : `W${w + 1}`, `wk ${w + 1}`, true);
+    }
+    return { ticks, bands };
   }
-  const months = Math.max(1, Math.round(weeks / 4));
-  const span = weeks / months;
-  return Array.from({ length: months }, (_, i) => {
-    const startWeek = start + i * span;
-    const d = weekDate(startWeek, weekZero);
-    return {
-      label: d ? MONTH_NAMES[d.getUTCMonth()] : `M${Math.round(startWeek / 4) + 1}`,
-      now: mark(startWeek, span), weeks: span, startWeek,
-    };
-  });
+
+  // Month and quarter both walk real calendar months, so they need a date to
+  // walk from. Without a week zero there is no calendar to speak of, and the
+  // labels fall back to indices on the same regular stride.
+  const from = dateAt(firstDay * MIN_PER_DAY, weekZero);
+  if (!from) {
+    const stride = grain === 'month' ? 4 * MIN_PER_WEEK : 12 * MIN_PER_WEEK;
+    const i0 = Math.floor(start / stride) - 1;
+    for (let i = i0; i * stride <= end + stride && ticks.length < MAX; i += 1) {
+      push(i * stride, grain === 'month' ? `M${i + 1}` : `Q${i + 1}`, '', grain === 'quarter');
+    }
+    return { ticks, bands };
+  }
+  const step = grain === 'month' ? 1 : 3;
+  const cursor = new Date(Date.UTC(
+    from.getUTCFullYear(),
+    grain === 'month' ? from.getUTCMonth() : Math.floor(from.getUTCMonth() / 3) * 3,
+    1));
+  for (let i = 0; i < MAX; i += 1) {
+    const at = minAt(cursor, weekZero)!;
+    if (at > end + MIN_PER_WEEK) break;
+    const jan = cursor.getUTCMonth() === 0;
+    push(at,
+      grain === 'month' ? monthName(cursor) : `Q${Math.floor(cursor.getUTCMonth() / 3) + 1}`,
+      jan || grain === 'quarter' ? String(cursor.getUTCFullYear()) : '',
+      jan);
+    cursor.setUTCMonth(cursor.getUTCMonth() + step);
+  }
+  return { ticks, bands };
 }
 
 /**
- * Where the now-line sits, as a percentage across the track.
- *
- * It can be OUTSIDE 0–100 once the viewport is narrower than the horizon, and
- * the caller has to check: a now-line clamped to an edge would be claiming today
- * is at the edge of a window it is nowhere near.
+ * WHAT THE WINDOW COVERS, in one line. Real dates whenever there is a week zero,
+ * week indices when there is not — never an invented date, which is the calendar
+ * view's rule too. It says the TIME as well once hours are on screen, because at
+ * that zoom "17 Aug → 17 Aug" is the one thing the reader already knows.
  */
-export const nowLeft = (view: Viewport = FULL_VIEW): number =>
-  ((NOW_WEEK - view.start) / view.weeks) * 100;
+export function windowLabel(view: Viewport, grain: Grain, weekZero: string | null): string {
+  const a = dateAt(view.start, weekZero);
+  const b = dateAt(view.start + view.span, weekZero);
+  if (!a || !b) {
+    return `wk ${weekNo(view.start)} – ${weekNo(view.start + view.span)}`;
+  }
+  if (grain === 'hour') return `${fmtDate(a)} · ${fmtTime(a)} → ${fmtTime(b)}`;
+  const crossesYear = a.getUTCFullYear() !== b.getUTCFullYear();
+  const wide = grain === 'month' || grain === 'quarter';
+  return crossesYear || wide
+    ? `${fmtDateYear(a)} → ${fmtDateYear(b)}`
+    : `${fmtDate(a)} → ${fmtDate(b)}`;
+}
 
-/** Is a week index inside the viewport at all? */
-export const inView = (week: number, view: Viewport): boolean =>
-  week >= view.start && week < view.start + view.weeks;
+/** The second, quieter line under the range — what scale of thing you are looking at. */
+export function spanLabel(view: Viewport, grain: Grain, weekZero: string | null): string {
+  const days = view.span / MIN_PER_DAY;
+  if (grain === 'hour') {
+    const d = dateAt(view.start, weekZero);
+    return d
+      ? `${DOW_SHORT[d.getUTCDay()]} · wk ${weekNo(view.start)}`
+      : `${Math.round(days * 24)} hours in view`;
+  }
+  if (days < 16) return `${Math.round(days)} days in view`;
+  if (days < 80) return `${Math.round(days / 7)} weeks in view`;
+  return `${Math.round(days / 30.4)} months in view`;
+}
 
 // --- what's next -----------------------------------------------------------
 
 export interface NextUpBar {
   item: RoadmapItem;
-  /** Weeks until it starts. 0 = this week, negative = already running. */
-  inWeeks: number;
+  /** Minutes until it starts. Negative = already running. */
+  inMin: number;
   running: boolean;
 }
 
@@ -208,47 +465,152 @@ export interface NextUpBar {
  * asking you to look at. Anything already finished is excluded: a Gantt's job
  * to the right of the now-line is to show what has not happened yet.
  */
-export function whatsNext(items: RoadmapItem[], limit = 5, now = NOW_WEEK): NextUpBar[] {
+export function whatsNext(items: RoadmapItem[], now: number, limit = 6): NextUpBar[] {
   return items
     .filter((i) => !i.archived && !i.done && i.sched && i.sched.start + i.sched.len > now)
     .map((i) => ({
       item: i,
-      inWeeks: i.sched!.start - now,
+      inMin: i.sched!.start - now,
       running: i.sched!.start <= now,
     }))
-    .sort((a, b) => a.inWeeks - b.inWeeks || a.item.title.localeCompare(b.item.title))
+    .sort((a, b) => a.inMin - b.inMin || a.item.title.localeCompare(b.item.title))
     .slice(0, limit);
 }
 
-// --- the calendar ----------------------------------------------------------
-
-export interface CalMonth {
-  label: string;
-  /** One entry per week that starts inside this month. */
-  weeks: { week: number; from: Date; to: Date; now: boolean; items: RoadmapItem[] }[];
+/** "in 3d", "in 40m", "running" — how far off something is, said the short way. */
+export function fmtWhen(inMin: number, running: boolean): string {
+  if (running) return 'running';
+  if (inMin < MIN_PER_HOUR) return `${Math.max(1, Math.round(inMin))}m`;
+  if (inMin < MIN_PER_DAY) return `${Math.round(inMin / MIN_PER_HOUR)}h`;
+  if (inMin < 14 * MIN_PER_DAY) return `${Math.round(inMin / MIN_PER_DAY)}d`;
+  return `${Math.round(inMin / MIN_PER_WEEK)}w`;
 }
 
+// --- the calendar ----------------------------------------------------------
+//
+// THE CALENDAR IS THE SAME SCHEDULE, READ AT WHATEVER GRAIN THE ZOOM IS ON.
+// Hours and days become a time grid with real hour rows; weeks and coarser
+// become month grids, because an hour row is meaningless once a screen holds a
+// quarter. It is the SAME `view` and the SAME zoom — switching to Calendar
+// changes the shape of the drawing and nothing about where you are looking.
+//
+// All of it needs a week zero. A week index has no place on a calendar, and a
+// calendar whose dates are made up is worse than no calendar, so both builders
+// return empty and the view says why.
+
+/** One event inside a day column — a bar shorter than a day. */
+export interface CalEvent { item: RoadmapItem; startMin: number; endMin: number }
+
+export interface CalDay {
+  /** Day index from week zero. */
+  day: number;
+  date: Date;
+  today: boolean;
+  /** Bars a day or longer, drawn in the all-day strip. `first` = it starts here. */
+  allDay: { item: RoadmapItem; first: boolean }[];
+  events: CalEvent[];
+}
+
+/** The hour window the day columns draw. Outside it a bar is still an event — see `calendarDays`. */
+export const CAL_HOUR_FROM = 6;
+export const CAL_HOUR_TO = 22;
+
 /**
- * The same schedule as months of weeks. Needs a week zero — a week index has no
- * place on a calendar — and returns [] without one so the caller can say why
- * rather than drawing an invented year.
+ * The day columns for the time grid: one day at the hour grain, a Monday-aligned
+ * week at the day grain.
+ *
+ * A bar SHORTER than a day is an event in its own column; a bar a day or longer
+ * is an all-day chip on every day it covers, marked on the one it starts. Two
+ * shapes because they are two different claims — "this happens at 14:00" and
+ * "this is what next week is about" — and drawing a five-day bar as a 120-hour
+ * event would fill the grid with one item.
+ */
+export function calendarDays(
+  items: RoadmapItem[], view: Viewport, grain: Grain, weekZero: string | null, now: number,
+): CalDay[] {
+  if (!weekZero) return [];
+  const n = grain === 'hour' ? 1 : 7;
+  let first = Math.floor(view.start / MIN_PER_DAY);
+  if (n === 7) {
+    // Anchor on the MIDDLE of the window, then walk back to its Monday: anchoring
+    // on the left edge shows the week the window happens to start in, which after
+    // a pan is usually the one you just left.
+    first = Math.floor((view.start + view.span / 2) / MIN_PER_DAY);
+    const d = dateAt(first * MIN_PER_DAY, weekZero)!;
+    first -= (d.getUTCDay() + 6) % 7;
+  }
+  const live = items.filter((i) => !i.archived && i.sched);
+  const today = Math.floor(now / MIN_PER_DAY);
+
+  return Array.from({ length: n }, (_, k) => {
+    const day = first + k;
+    const from = day * MIN_PER_DAY;
+    const to = from + MIN_PER_DAY;
+    return {
+      day,
+      date: dateAt(from, weekZero)!,
+      today: day === today,
+      allDay: live
+        .filter((i) => i.sched!.len >= MIN_PER_DAY && i.sched!.start < to && i.sched!.start + i.sched!.len > from)
+        .map((i) => ({ item: i, first: Math.floor(i.sched!.start / MIN_PER_DAY) === day })),
+      events: live
+        .filter((i) => i.sched!.len < MIN_PER_DAY && i.sched!.start < to && i.sched!.start + i.sched!.len > from)
+        .map((i) => ({ item: i, startMin: i.sched!.start, endMin: i.sched!.start + i.sched!.len }))
+        .sort((a, b) => a.startMin - b.startMin),
+    };
+  });
+}
+
+export interface CalCell {
+  day: number;
+  date: Date;
+  inMonth: boolean;
+  today: boolean;
+  items: RoadmapItem[];
+}
+export interface CalMonth { key: string; title: string; cells: CalCell[] }
+
+/**
+ * The month grids: one month at the week and month grains, a quarter's three at
+ * the quarter grain. Every cell lists what is ACTIVE that day, not what starts
+ * that day — a bar covering a fortnight belongs on all fourteen squares, and a
+ * month showing it once is a month claiming thirteen free days.
  */
 export function calendarMonths(
-  items: RoadmapItem[], weekZero: string | null, weeks = SCHED_WEEKS,
+  items: RoadmapItem[], view: Viewport, grain: Grain, weekZero: string | null, now: number,
 ): CalMonth[] {
   if (!weekZero) return [];
+  const count = grain === 'quarter' ? 3 : 1;
+  const mid = dateAt(view.start + view.span / 2, weekZero)!;
+  const anchorMonth = mid.getUTCMonth() - (count === 3 ? 1 : 0);
   const live = items.filter((i) => !i.archived && i.sched);
+  const today = Math.floor(now / MIN_PER_DAY);
   const out: CalMonth[] = [];
-  for (let w = 0; w < weeks; w += 1) {
-    const from = weekDate(w, weekZero)!;
-    const to = new Date(from.getTime() + 6 * 86400000);
-    const label = `${MONTH_NAMES[from.getUTCMonth()]} ${from.getUTCFullYear()}`;
-    if (!out.length || out[out.length - 1].label !== label) out.push({ label, weeks: [] });
-    out[out.length - 1].weeks.push({
-      week: w, from, to, now: w === NOW_WEEK,
-      // Active in this week — a bar spans weeks, so it appears on each one it
-      // covers rather than only on the week it starts.
-      items: live.filter((i) => i.sched!.start <= w && w < i.sched!.start + i.sched!.len),
+
+  for (let m = 0; m < count; m += 1) {
+    const first = new Date(Date.UTC(mid.getUTCFullYear(), anchorMonth + m, 1));
+    const lead = (first.getUTCDay() + 6) % 7;             // Monday-first grids
+    const dim = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+    const startDay = Math.floor(minAt(first, weekZero)! / MIN_PER_DAY) - lead;
+    const weeks = Math.ceil((lead + dim) / 7);
+    const cells: CalCell[] = [];
+    for (let i = 0; i < weeks * 7; i += 1) {
+      const day = startDay + i;
+      const from = day * MIN_PER_DAY;
+      const date = dateAt(from, weekZero)!;
+      cells.push({
+        day,
+        date,
+        inMonth: date.getUTCMonth() === first.getUTCMonth(),
+        today: day === today,
+        items: live.filter((i2) => i2.sched!.start < from + MIN_PER_DAY
+          && i2.sched!.start + i2.sched!.len > from),
+      });
+    }
+    out.push({
+      key: `${first.getUTCFullYear()}-${first.getUTCMonth()}`,
+      title: `${MONTH_NAMES[first.getUTCMonth()]} ${first.getUTCFullYear()}`,
+      cells,
     });
   }
   return out;
@@ -257,16 +619,16 @@ export function calendarMonths(
 // --- slip ------------------------------------------------------------------
 
 export interface Slip {
-  /** null = no baseline was ever set, which is NOT "on plan". */
-  weeks: number | null;
+  /** Minutes later than the baseline start. null = no baseline, which is NOT "on plan". */
+  min: number | null;
   longer: number | null;
   measured: boolean;
 }
 
 export function slipOf(it: RoadmapItem): Slip {
-  if (!it.sched || !it.baseline) return { weeks: null, longer: null, measured: false };
+  if (!it.sched || !it.baseline) return { min: null, longer: null, measured: false };
   return {
-    weeks: it.sched.start - it.baseline.start,
+    min: it.sched.start - it.baseline.start,
     longer: it.sched.len - it.baseline.len,
     measured: true,
   };
@@ -295,7 +657,8 @@ export interface Lane {
   /** Rows needed to stack these bars without overlap — drives the lane height. */
   rows: number;
   /**
-   * Scheduled bars this lane has that sit entirely BEFORE / AFTER the viewport.
+   * Scheduled bars this lane has that sit entirely BEFORE / AFTER the viewport,
+   * and the nearest one either way so the caller can pan to it.
    *
    * Counted rather than dropped. Zooming in is the one thing that can empty a
    * lane that has work in it, and a lane drawn as "drop something here" while
@@ -303,6 +666,8 @@ export interface Lane {
    */
   offLeft: number;
   offRight: number;
+  nearestLeft: number | null;
+  nearestRight: number | null;
 }
 
 // Roughly the width one character of the bar label occupies, plus the padding
@@ -318,30 +683,37 @@ const LABEL_PAD = 20;
  * sitting on top of another bar is how a Gantt starts lying about dates.
  */
 export function layoutLane(
-  area: string, items: RoadmapItem[], trackPx: number, view: Viewport = FULL_VIEW,
+  area: string, items: RoadmapItem[], trackPx: number, view: Viewport,
 ): Lane {
-  const { start: winStart, weeks } = view;
-  const winEnd = winStart + weeks;
-  const pxPerWeek = trackPx > 0 ? trackPx / weeks : 0;
-  // Off-screen either side, counted before anything is laid out — see Lane.
+  const { start: winStart, span } = view;
+  const winEnd = winStart + span;
+  const pxPerMin = trackPx > 0 && span > 0 ? trackPx / span : 0;
   let offLeft = 0; let offRight = 0;
+  let nearestLeft: number | null = null; let nearestRight: number | null = null;
+
   const placed = items
     .filter((i) => i.sched)
     .filter((i) => {
       const { start, len } = i.sched!;
-      if (start + len <= winStart) { offLeft += 1; return false; }
-      if (start >= winEnd) { offRight += 1; return false; }
+      if (start + len <= winStart) {
+        offLeft += 1;
+        nearestLeft = nearestLeft === null ? start : Math.max(nearestLeft, start);
+        return false;
+      }
+      if (start >= winEnd) {
+        offRight += 1;
+        nearestRight = nearestRight === null ? start : Math.min(nearestRight, start);
+        return false;
+      }
       return true;
     })
     .map((i) => {
       const sched = i.sched!;
-      const barPx = sched.len * pxPerWeek;
+      const barPx = sched.len * pxPerMin;
       const labelPx = i.title.length * CHAR_PX + LABEL_PAD;
       const inside = barPx >= labelPx;
-      const x0 = (sched.start - winStart) * pxPerWeek;
+      const x0 = (sched.start - winStart) * pxPerMin;
       const x1 = x0 + barPx;
-      // If the label cannot sit inside and would overflow the track on the
-      // right, it goes to the LEFT of the bar instead.
       const before = !inside && x1 + labelPx > trackPx;
       return {
         item: i,
@@ -362,38 +734,16 @@ export function layoutLane(
     const moved = !!base && (base.start !== sched.start || base.len !== sched.len);
     return {
       item: p.item,
-      left: ((sched.start - winStart) / weeks) * 100,
-      width: (sched.len / weeks) * 100,
+      left: leftPct(sched.start, view),
+      width: (sched.len / span) * 100,
       row,
       inside: p.inside,
       before: p.before,
-      ghost: moved
-        ? { left: ((base!.start - winStart) / weeks) * 100, width: (base!.len / weeks) * 100 }
-        : null,
+      ghost: moved ? spanPct(base!, view) : null,
     };
   });
 
-  return { area, bars, rows: Math.max(1, rowEnds.length), offLeft, offRight };
-}
-
-/** Where a span sits in the viewport, as percentages — for a bar drawn outside `layoutLane`. */
-export const spanPct = (span: SchedSpan, view: Viewport = FULL_VIEW) => ({
-  left: ((span.start - view.start) / view.weeks) * 100,
-  width: (span.len / view.weeks) * 100,
-});
-
-/**
- * Where a drop at this pixel offset lands, clamped so the bar stays in the
- * SCHEDULABLE domain — not in the viewport. Zooming must never be able to
- * shorten the plan, and the server clamps to the same 24 weeks.
- */
-export function weekAt(
-  offsetPx: number, trackPx: number, len: number,
-  view: Viewport = FULL_VIEW, domain = SCHED_WEEKS,
-): number {
-  if (trackPx <= 0) return 0;
-  const raw = Math.round(view.start + (offsetPx / trackPx) * view.weeks);
-  return Math.max(0, Math.min(domain - len, raw));
+  return { area, bars, rows: Math.max(1, rowEnds.length), offLeft, offRight, nearestLeft, nearestRight };
 }
 
 // --- the scope drawer ------------------------------------------------------
@@ -472,6 +822,33 @@ export const horizonOf = (items: RoadmapItem[], areaFilter: string): RoadmapItem
   items.filter((i) => !i.archived && !i.done && !i.sched && i.estimate === null
     && areaMatches(i.area, areaFilter));
 
+/**
+ * THE LENGTH A NEWLY PLACED BAR GETS, in minutes.
+ *
+ * `estimate` is in WEEKS and stays there — it is a size somebody typed, not a
+ * position — so this is the one place the two units meet. An UNSIZED item does
+ * not get a zero-length bar: it gets a working length for the grain you are
+ * looking at, because a bar you cannot see is not a schedule, and the Horizon
+ * row is where genuinely unsized work lives.
+ */
+export function defaultLen(it: RoadmapItem, grain: Grain): number {
+  if (it.estimate !== null) return Math.max(MIN_SCHED_LEN, Math.round(it.estimate * MIN_PER_WEEK));
+  if (grain === 'hour') return 2 * MIN_PER_HOUR;
+  if (grain === 'day') return 4 * MIN_PER_HOUR;
+  return 3 * MIN_PER_DAY;
+}
+
+/** The durations the drawer offers as one press. Anything else is a drag or a nudge. */
+export const DUR_OPTIONS: { label: string; min: number }[] = [
+  { label: '1h', min: MIN_PER_HOUR },
+  { label: '2h', min: 2 * MIN_PER_HOUR },
+  { label: '4h', min: 4 * MIN_PER_HOUR },
+  { label: '1d', min: MIN_PER_DAY },
+  { label: '3d', min: 3 * MIN_PER_DAY },
+  { label: '1w', min: MIN_PER_WEEK },
+  { label: '2w', min: 2 * MIN_PER_WEEK },
+];
+
 export function scopeTotals(children: RoadmapItem[], cycle = CYCLE_WEEKS): ScopeTotals {
   let committed = 0; let deferred = 0; let out = 0; let unsized = 0;
   for (const c of children) {
@@ -527,5 +904,5 @@ export function listKeyOf(it: RoadmapItem): string {
 // `Move` survives as the shape of a proposed position, because the two ✧ reads
 // still come back as one and the timeline still ghosts it.
 
-/** A proposed position for one bar. null = back to the tray. */
-export interface Move { id: number; sched: { start: number; len: number } | null }
+/** A proposed position for one bar, in minutes. null = back to the tray. */
+export interface Move { id: number; sched: SchedSpan | null }

@@ -115,8 +115,8 @@ export interface RoadmapItem {
 
   // ---- the Roadmap tab v2 ----
   parentId: number | null;  // the feature this ticket belongs to (null = it IS a feature)
-  // The scheduled bar, in WEEKS from the project's week zero. null = UNSCHEDULED,
-  // a real state (the tray) and never week 0.
+  // The scheduled bar, in MINUTES from the project's week zero (#401). null =
+  // UNSCHEDULED, a real state (the tray) and never minute 0.
   sched: SchedSpan | null;
   // What was committed to, written once when the bar was first scheduled. null =
   // never committed to, which is NOT "on plan" — see lib/plan.ts slipOf().
@@ -124,9 +124,14 @@ export interface RoadmapItem {
   labels: string[];         // ids from the fixed registry in lib/labels.ts
   listKey: string;          // '' = derived from the row's own state (lib/plan.ts listKeyOf)
   archived: boolean;        // off the board but recoverable — not parked, not deleted
-  estimate: number | null;  // size in weeks; null = UNSIZED, which is not zero
+  // Size in WEEKS; null = UNSIZED, which is not zero. Deliberately NOT in the
+  // minutes `sched` uses: an estimate is a size somebody typed, a schedule is a
+  // position on a chart, and `defaultLen` in lib/plan.ts is the one place the
+  // two units are allowed to meet.
+  estimate: number | null;
 }
 
+/** A position on the timeline, both fields in MINUTES from week zero (#401). */
 export interface SchedSpan { start: number; len: number }
 
 // The Roadmap tab's furniture (GET /api/projects/:slug/board).

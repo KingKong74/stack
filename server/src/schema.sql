@@ -1132,17 +1132,26 @@ CREATE TABLE IF NOT EXISTS agent_profiles (
 --
 -- Read this before touching any of it:
 --
---  • THE SCHEDULE IS A WEEK INDEX, NOT A DATE. `sched_start` counts weeks from
---    the project's own week zero, `sched_len` is a duration in weeks. Deliberately
---    not timestamps: the timeline is a planning instrument, not a calendar, and
---    a project that slips by a fortnight should move its bars, not have every
---    stored date rewritten. NULL sched_start = UNSCHEDULED, which is a real
---    state (the tray), never "week 0".
---  • `plan_start`/`plan_len` ARE THE BASELINE, written ONCE when a bar is first
---    scheduled and never again by a drag. That is the whole point: the ghost
---    the timeline draws behind a bar is the difference between what was planned
---    and what is now happening, and a baseline that follows the bar around can
---    never show a slip. Only an explicit "re-baseline" may overwrite it.
+--  • THE SCHEDULE IS AN OFFSET, NOT A DATE — and its unit is MINUTES (#401).
+--    `sched_start_min` counts minutes from the project's own week zero and
+--    `sched_len_min` is a duration in minutes. Still deliberately not
+--    timestamps: the timeline is a planning instrument, and a project that
+--    slips by a fortnight should move its bars, not have every stored date
+--    rewritten. NULL sched_start_min = UNSCHEDULED, which is a real state (the
+--    tray), never "minute 0".
+--    IT WAS A WEEK INDEX UNTIL #401, and the unit is the whole of what changed:
+--    the timeline's zoom now runs from hours to quarters, and a model stored in
+--    whole weeks meant the hour grain was a reading scale over something it
+--    could not edit — a grid finer than the column behind it, which is a
+--    precision the data does not have. The migration below is a RENAME plus a
+--    ×10080, so there is one column and one unit rather than a week column and
+--    a minute column drifting apart.
+--  • `plan_start_min`/`plan_len_min` ARE THE BASELINE, written ONCE when a bar
+--    is first scheduled and never again by a drag. That is the whole point: the
+--    ghost the timeline draws behind a bar is the difference between what was
+--    planned and what is now happening, and a baseline that follows the bar
+--    around can never show a slip. Only an explicit "re-baseline" may overwrite
+--    it.
 --  • `parent_id` IS ONE LEVEL DEEP. A ticket may hang off a feature; a feature
 --    may not hang off a ticket. The guard lives in PATCH /roadmap/:id, the same
 --    place the risk guard lives, because it is the only writer.
@@ -1161,10 +1170,49 @@ CREATE TABLE IF NOT EXISTS agent_profiles (
 --    means gone, and for a hook-created row it also tombstones the fingerprint.
 --    Three states, three meanings — collapsing any two loses the owner's intent.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS parent_id  INTEGER REFERENCES roadmap_items(id) ON DELETE SET NULL;
-ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS sched_start INTEGER;
-ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS sched_len   INTEGER;
-ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS plan_start  INTEGER;
-ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS plan_len    INTEGER;
+
+-- #401 — the schedule's unit became MINUTES. A RENAME and a multiply, not a new
+-- pair of columns beside the old: two spellings of one schedule is exactly the
+-- drifting second truth this schema keeps saying not to build.
+--
+-- Idempotent because the guard is the OLD column's existence, which the rename
+-- removes. Fresh database: no `sched_start`, so this no-ops and the ADD COLUMN
+-- lines below create the minute columns directly. Old database: renamed, widened
+-- and multiplied exactly once. Re-run: nothing left to match.
+--
+-- It is one-way. There is no reverse migration, and there should not be — a
+-- schedule the owner has since edited at hour precision cannot be put back into
+-- whole weeks without inventing which week each bar meant.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'roadmap_items'
+      AND column_name = 'sched_start'
+  ) THEN
+    ALTER TABLE roadmap_items RENAME COLUMN sched_start TO sched_start_min;
+    ALTER TABLE roadmap_items RENAME COLUMN sched_len   TO sched_len_min;
+    ALTER TABLE roadmap_items RENAME COLUMN plan_start  TO plan_start_min;
+    ALTER TABLE roadmap_items RENAME COLUMN plan_len    TO plan_len_min;
+    ALTER TABLE roadmap_items
+      ALTER COLUMN sched_start_min TYPE BIGINT,
+      ALTER COLUMN sched_len_min   TYPE BIGINT,
+      ALTER COLUMN plan_start_min  TYPE BIGINT,
+      ALTER COLUMN plan_len_min    TYPE BIGINT;
+    -- 10080 = minutes in a week. A week index becomes the minute that week began.
+    UPDATE roadmap_items SET
+      sched_start_min = sched_start_min * 10080,
+      sched_len_min   = sched_len_min   * 10080,
+      plan_start_min  = plan_start_min  * 10080,
+      plan_len_min    = plan_len_min    * 10080;
+  END IF;
+END $$;
+
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS sched_start_min BIGINT;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS sched_len_min   BIGINT;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS plan_start_min  BIGINT;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS plan_len_min    BIGINT;
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS labels      JSONB NOT NULL DEFAULT '[]'::jsonb;
 -- Which Plan list this card sits in. NULL = DERIVED from the row's own state
 -- (see listFor() in server/src/lists.js) rather than defaulted to the first

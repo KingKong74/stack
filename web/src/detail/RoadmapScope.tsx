@@ -27,7 +27,7 @@
 
 import { useState } from 'react';
 import type { BoardArea, BoardLabel, Priority, RoadmapItem } from '../types';
-import { areaMatches } from '../lib/plan';
+import { areaMatches, weekNo } from '../lib/plan';
 import { labelsOf } from '../lib/labels';
 
 const LANES: { key: Priority; name: string; meta: string }[] = [
@@ -196,7 +196,11 @@ export function RoadmapScope({
                       {working && <span className="work-chip" title={`Claimed by ${it.claimedBy} — read-only while the work is in flight`}>● in progress</span>}
                       {!working && it.claimedBy && <span className="rsc-claim" title={`Claimed by ${it.claimedBy} — no live session on it`}>⚑ {it.claimedBy}</span>}
                       {it.skipped && <span className="skip-chip" title="Parked — not to be picked up yet">⏸ parked</span>}
-                      {it.sched && <span className="rsc-sched" title="Scheduled on the timeline">wk {it.sched.start + 1}</span>}
+                      {/* The schedule is minutes (#401); a scope ROW is a list
+                          entry, so it says the week — which is the grain a
+                          reader scanning fifty rows can use. The Timeline is
+                          where the hour lives. */}
+                      {it.sched && <span className="rsc-sched" title="Scheduled on the timeline">wk {weekNo(it.sched.start)}</span>}
                     </span>
 
                     <span className="w">{it.estimate === null ? '—' : `${it.estimate}w`}</span>
