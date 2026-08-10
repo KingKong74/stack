@@ -8,23 +8,21 @@ something WRONG without it, and keep under the 40 KB budget
 (`node scripts/context-budget.test.mjs`). **Where a rule governs one file it lives in that file's
 header, and this file keeps only the pointer and the cross-cutting half** — `ingest.js`,
 `prompts.js`, `checks.js`, `workbench.js`, `futures.js`, `worktrees.js`, `instructions.js`,
-`lib/feature.ts`, `lib/branch.ts` and `ControlReview.tsx` all carry theirs.
+`lib/feature.ts`, `lib/branch.ts`, `lib/plan.ts` and `ControlReview.tsx` all carry theirs.
 
 ## What Stack is
 
 A self-hosted side-project command centre. The point is **frictionless resume**: open a project and
-the "pick up where you left off" card tells you where you were. Colours, type, spacing, copy and
-interactions are meant to match the Atlas design handoff.
+the "pick up where you left off" card tells you where you were. A push auto-extracts bugs and
+next-steps into the trackers, and dashboard progress is computed, not hand-set.
 
 North star: an autonomous software house run from the director's chair — SessionStart states it in full.
 
 ## Layout
 
 ```
-web/       Vite + React 18 + TS (strict), hash-routed. Persistence is the API, reached ONLY through
-           src/store.ts (every function async, bearer-token auth).
-server/    Express + Postgres. Idempotent schema migrate on boot, retries the first DB connect. Bearer
-           auth on every route except GET /api/health; fails closed if API_TOKEN is unset.
+web/       Vite + React 18 + TS (strict), hash-routed. Persistence is the API, via src/store.ts.
+server/    Express + Postgres. Idempotent schema migrate on boot; fails closed if API_TOKEN is unset.
 hook/      Zero-dependency Node ESM hooks + the /checkpoint poster.
 terminal/  The web terminal's host-side daemon (dials OUT; the firewall drops container→host).
 scripts/   Host-side CLI + automation. templates/ the portable agent manual.
@@ -37,14 +35,15 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
   clearing the token and returning to the gate.
 - `lib/route.ts` — hash router. `go.detail(slug, tab, highlight)` deep-links and **the TAB decides
   what `hl` means** (commit → activity, bug key → quality, row id → roadmap, NOTE id → workbench);
-  legacy tabs still resolve (`bugs`/`audit` → quality, `tips` → the corner dock, `notes` → workbench).
+  legacy tab spellings still resolve rather than 404ing.
   **Mission Control's room is part of the URL** (#316) and `Control.tsx` writes it back with
   `history.replaceState`, never a push, so Back leaves Mission Control rather than walking the rooms
   you looked at. `#/control` is the one canonical spelling of the default room; an unknown room lands
-  there rather than 404ing, which is what keeps a link to a removed room working.
+  there rather than 404ing — `#/control/build` and `/trees`, both removed, are the live cases.
 - `screens/` — `ls` is the index. What it doesn't say: Mission Control is a shell (`Control.tsx`) plus
-  one file per room, and `detail/Tips.tsx` is NOT a tab — the recipe library is app-wide, opened from
-  `components/TipsDock`.
+  one file per room, and the removed BUILD room's gates live elsewhere now (the verdict is Review's
+  subject; the merge is the Now room's branch strip and, house-wide, the Merge room).
+  `detail/Tips.tsx` is NOT a tab: the recipe library is app-wide, opened from `components/TipsDock`.
 - `lib/brief.ts` — the resume brief + the `DIRECTIVES` catalogue (keys mirror `SESSION_DEFAULTS`).
 - `lib/termClipboard.ts` — copy/paste for both xterms; its header says why ⌃C, ⌃V and OSC 52 each
   behave unlike a native terminal. Don't "simplify" any of the three.
@@ -57,15 +56,15 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
 
 - `schema.sql` — idempotent (ADD COLUMN IF NOT EXISTS + convergent data migrations). Read it for the
   column list; the non-obvious semantics are under **Data rules**.
-- `util.js` — helpers, `computeProgress` and the **three single-knob constants**: `STALE_DAYS` (14),
-  `PRESENCE_TTL_MINUTES` (240 — the crashed-session backstop), `CHECK_HISTORY_KEEP` (60 per check).
+- `util.js` — helpers, `computeProgress`, and the **three single-knob constants** every surface reads:
+  `STALE_DAYS`, `PRESENCE_TTL_MINUTES` (the crashed-session backstop) and `CHECK_HISTORY_KEEP`.
 - `shape.js` — the run ledger's SHARED shapes (`runCore`, `agentReads`): four routes serve
   `autopilot_runs` rows and each had grown its own drifting copy. **BIGINT and NUMERIC come back from
   pg as STRINGS**, so `tokens`/`cost_usd` need `Number()` while INT columns only need their null
   preserved — that coercion is what the copies got wrong.
 - `settings.js` — `readSettings()` **defaults to "on" when the row is missing**, and the hooks default
   to "on" when the API is unreachable, so a flaky API degrades to recording rather than silent-off.
-- `routes/` — one file per surface. `ingest.js` carries the most invariants; read it first.
+- `routes/` — one file per surface. `ingest.js` carries the most invariants; read its header first.
 
 ## The ingest package (what /checkpoint and the hook send)
 
@@ -74,9 +73,9 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
 `/checkpoint`, false = the hook's metadata backstop) and the usage fields (`tokens_used`,
 `model_usage`, `agent_calls`, `agent_types`) being **hook-only**, since it alone reads the transcript.
 
-Ingest, in one transaction: upsert the project by slug (first push creates it, assigns a tint, fills
-`repo_url` once via COALESCE so a hand-set URL is never overwritten); record the session; refresh the
-live resume fields; land extraction with `link_ref` = the commit. **Four invariants:**
+Ingest does the lot in ONE transaction — project upsert (`repo_url` filled once via COALESCE, so a
+hand-set URL survives), session row, resume refresh, extraction against the commit. **Four
+invariants:**
 
 1. **Idempotent on session_id, THEN commit_hash — never the other way round.** Matching the commit
    first collapsed parallel sessions: several in one checkout end at the same HEAD, so three pushes
@@ -93,10 +92,10 @@ live resume fields; land extraction with `link_ref` = the commit. **Four invaria
 
 ## Progress model (`util.computeProgress`)
 
-The single definition of "how done is a project". Only Must/Should items count; a done Must weighs
-double a done Should; capped at 90% while any critical/high bug is open; 0% with no Must/Should items.
-On every project payload, and the Dashboard's "Progress by app" panel is this and says so —
-deliberately NOT called a health score.
+The single definition of "how done is a project" — read the weighting off the function. What you
+would not guess: it is **capped at 90% while any critical/high bug is open**, and 0% with no
+Must/Should items at all. On every project payload; the Dashboard's "Progress by app" panel is this
+one and says so — deliberately NOT called a health score.
 
 ## Data rules (the non-obvious column semantics)
 
@@ -114,6 +113,14 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   can't race it); **never write `risk` from any path bypassing that PATCH.** Absent `risk_source` =
   human, unrecognised = auto — the fallback leans to the branch a row can still refuse. The modal sends
   `risk` only when the human touched the control, or every save silently reclaims the tier.
+- **The schedule is MINUTES from week zero, not a week index** (#401) — `sched_start_min`/`sched_len_min`
+  on `roadmap_items`, with `plan_start_min`/`plan_len_min` the write-once BASELINE a drag must never
+  move. The unit is load-bearing: the timeline zooms from hours to quarters, and whole weeks made its
+  hour grid a reading scale over a column that could not store one. Four packages must agree and none
+  can import another — `routes/roadmap.js`, `shape.js` (BIGINT arrives as a STRING, above),
+  `lib/plan.ts`, `lib/spine.ts`. **`estimate` stays in WEEKS**, so `defaultLen` in `lib/plan.ts` is the
+  ONE place the two units may meet. `/arrange` is shown WEEKS and converted at both boundaries —
+  ordering is a week-grained question, not a minute-grained one.
 - **The board order IS the run queue.** `position` is PATCHable and drag-reorderable; the Plan room's
   Save-order write is the same PATCH the drag makes.
 - **`claimed_by` is the branch claim** (#277 — called a "lane" until the rename; the `lane/` git ref
@@ -126,9 +133,9 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   fixed). Per-project cannot become a knob — every job runs against the one checkout at
   `$STACK_AUTOPILOT_ROOT/<slug>`, where two runners moving refs fight over git's ref locks — so
   widening concurrency widens the fleet cap and never the other two. The host lockfile is per-project
-  (`~/.stack/autopilot-<slug>.lock`), named by the same sanitiser in the runner and the dispatcher's
-  kill path; diverge the spellings and the kill path clears the wrong file, leaving a live lock
-  blocking that project for hours. `heldByArea` reports only LANE holds — a job waiting on the cap is
+  (`~/.stack/autopilot-<slug>.lock`), and the runner and the dispatcher's kill path must spell it with
+  the same sanitiser — diverge and the kill clears the wrong file, leaving a live lock blocking that
+  project for hours. `heldByArea` reports only LANE holds — a job waiting on the cap is
   not held by an area, and saying so blames the wrong thing.
 - **An area lane is `(project, area)`, and untagged is never a lane** (#267): an area with an OPEN
   claimed item admits no second worker, because two branches in one area collide at merge time. The rule
@@ -156,8 +163,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `itemId` (#365) uses the same `parseBranch`, so the server never grows a third copy.
 - **`built_note`** — what actually landed, PATCHed by the completing session; the Review room verdicts
   against it. Always write one.
-- **The Review queue is BUILT-or-ticked, not ticked** (#374). Nothing in Stack ticks an item, so a
-  `done = true` queue showed an empty room over a full night. `routes/review.js` queues `done` **OR**
+- **The Review queue is BUILT-or-ticked, not ticked** (#374). Nothing in Stack ticks an item, so a queue
+  of `done = true` showed an empty room over a full night's work. `routes/review.js` queues `done` **OR**
   (`built_note` non-empty **AND** `claimed_by` non-empty), each row carrying `stage`. **Both halves are
   load-bearing**: un-ticking clears `claimed_by` and keeps `built_note`, so `built_note` alone re-queues
   rejected changes and `claimed_by` alone queues items at claim time. So `settled` tests the verdict and
@@ -179,8 +186,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   the item's OWN branch (`scripts/lib/refine.mjs`, which says why), and `refine_note` surviving until
   the tick is what makes "is this an unclosed round" answerable at all.
 - **`agent_profiles` holds only OVERRIDES.** The built-ins (`executor`, `reviewer`) live in
-  `server/src/agent-profiles.js` and are never seeded, so a fresh database spawns identically to a
-  customised one — DELETE on a builtin RESETS it rather than removing it, because the spawn path needs
+  `server/src/agent-profiles.js` and are never seeded, so a fresh database spawns identically to a customised
+  one — and DELETE on a builtin RESETS it rather than removing it, because the spawn path needs
   `executor`. `roadmap_items.agent_profile` ('' = default) is the Polaris hook: a free string,
   validated client-side, deliberately absent from the tick/un-tick clearing lists. The invariant with
   teeth: **a spawn always gets at least one building agent** (no profiles, all disabled or an unknown
@@ -191,9 +198,9 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   them out. `magnitude` is nullable on purpose — an unsized idea says "not sized yet".
 - **A Workbench card is a PLACEMENT, not content** — `workbench_cards` holds where something sits and a
   `note`/`polaris` card's words are read THROUGH from `notes`/`futures`; copying the text onto the card
-  is what leaves ⌘K searching a stale one. The canvas's other invariants are in
-  `routes/workbench.js`'s header — read it before touching the canvas. Every ✧ op only PROPOSES a card; `Promote N phases → Roadmap` is the dispose
-  half, an ordinary roadmap POST.
+  is what leaves ⌘K searching a stale one. The canvas's other invariants are in `routes/workbench.js`'s header — read it
+  before touching the canvas. Every ✧ op only PROPOSES a card; `Promote N phases → Roadmap` is the
+  dispose half and goes through the ordinary roadmap POST.
 - **The Roles room reads two populations and must never mix their judgement.** `autopilot_runs` answers
   to the executor/advisor policy; `sessions.model_usage` (the human's interactive work) does not, so a
   model picked by hand is **not drift**. They merge only in the `everyModel` receipt and `manual`, and
@@ -233,9 +240,9 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   why): the host alone runs git, identity is the PATH, release is a stamp. Two things that reach past
   that file: `session_name` keeps the `stack-term-` prefix, which is what puts a session on the
   running-sessions strip and what the host reapers key off; and trees live at
-  `~/.stack/worktrees/<key>`, inside the $HOME cwd jail the daemon enforces — move the root outside
-  $HOME and browser access breaks silently.
-- **`0 = unlimited`** for `autopilotTokens`/`autopilotMaxItems` (#260); `termIdleHours` 0 = never.
+  `~/.stack/worktrees/<key>`, inside the $HOME cwd jail the terminal daemon enforces — move the root
+  outside $HOME and browser access breaks silently.
+- **`0 = unlimited`** for `autopilotTokens`/`autopilotMaxItems` (#260); `termIdleHours` `0 = never`.
 - **A managed CLAUDE.md is written by the HOST from Stack's copy**, so editing one in a repo by hand is
   a change the next sync overwrites — go through `PATCH /api/instructions/:id`. `body` IS the file:
   rules, scopes, off switches, precedence and the merge preview are derived in `lib/instructions.ts`,
@@ -266,26 +273,18 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   scratch directory**, because an agent prompt is assembled from tracker rows — text somebody else
   wrote — and NOT the autopilot's `--dangerously-skip-permissions` posture, safe only because it runs
   its own code in a throwaway worktree; and **`ask()` returns PARSED JSON**
-  (`parseAgentJson`, fence-tolerant), which every ✧ call site depends on. **Gemini is not gone**:
-  the per-push review note, check assertions, session labelling, triage and the Workbench ops are
-  still Gemini and still key-gated.
-- **A TAB AGENT'S CONSOLE IS SPAWNED AS THE AGENT (#379, #380)** — `routes/console.js` composes the
-  briefing, the daemon appends it with `--append-system-prompt` (`terminal/console-launch.mjs`), and
-  both headers carry the rest. **A system prompt, never a pasted brief**: nothing is typed in, and the
-  identity outlives a conversation a paste falls out of. The snapshot SAYS it is one. **Fail OPEN** —
-  an unreachable briefing opens the console unprimed and says so. `lib/agentConsole.ts` names it; the
-  Terminal screen parses that name to title one.
+  (`parseAgentJson`, fence-tolerant), which every ✧ call site depends on. **Gemini is not gone** — the per-push
+  review note, check assertions, labelling, triage and the Workbench ops are still Gemini, still
+  key-gated.
 - **AN AGENT'S BINDING IS CODE, NOT DATA (#361, #375).** `src/agents.js` is the registry and its header
-  lists the agents and their surfaces. The rules that bite: each agent's `ops` list is CLOSED, and
+  lists the five and their surfaces. The rules that bite: each agent's `ops` list is CLOSED, and
   `agent_configs` holds only what the owner tunes (enabled, model, guidance, `ops_off`) — never which
   surface or which ops, because those are the restriction itself. A route binds once
   (`agentClient('auditor')`) and that client THROWS on another agent's op; that throw, not a comment,
-  stops one tab's route running another's, and an unregistered op cannot run at all. An op
-  MOVES with its surface (#375 moved `reviewbrief`/`refinedraft` off the Curator): **one surface, one
-  switch**. **A missing config row means ON**, as with `readSettings()`; off means off
+  stops one tab's route running another's, and an unregistered op cannot run at all. An op MOVES with
+  its surface (#375 moved `reviewbrief`/`refinedraft` off the Curator): **one surface, one switch**. **A missing config row means ON**, as with `readSettings()`; off means off
   everywhere. An op's `backend` may be `'gemini'`, so a surface with two backends still has ONE switch;
-  only readiness and the refusal differ, and the refusal must NAME the missing backend. **`ops` may be
-  EMPTY** (the Auditor's is — its live session replaced it), and a retired op resolves to NO agent.
+  only readiness and the refusal differ, and the refusal must NAME the missing backend.
 - **THE FOREMAN ANNOTATES A VERDICT; IT NEVER GIVES ONE (#375).** `readchange` returns a CALL (approve /
   look / send-back) drawn in the accent, never a verdict tone — the three verdict buttons are the only
   green in that room. Every answer carries **`blind[]`** (what it could not see) and
@@ -399,8 +398,9 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
 - **Read layers** (`overview`, `control`, `review`, `search`, `timeline`, `public`) are computed in a
   handful of aggregate queries — **never one query per project**; keep it that way. `control.js` also
   exports the pure `computeFleetRoles()`; `review.js` serves the room, `/debrief` and the Foreman's four ops.
-- `merge.js` (#364) — the Merge agent's read; the only agent op needing the CODE, so diffs are gathered
-  host-side. `routes/agents.js` is the agents' CONFIG; the REGISTRY is `src/agents.js`. Per-project collections mount under `/api/projects/:slug/…` with `mergeParams`, and
+- `merge.js` (#364) — the only agent op needing the CODE, so diffs are gathered host-side.
+  `routes/agents.js` is the agents' CONFIG; the REGISTRY is `src/agents.js`.
+- Per-project collections mount under `/api/projects/:slug/…` with `mergeParams`, and
   `GET /api/projects/:slug` is the combined detail payload the SessionStart hook reads back.
 
 ## Conventions
@@ -449,8 +449,8 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
   `SELECT j.*` ships the kilobyte `advice` text on every Mission Control poll AND leaves `adviceReady`
   false forever, silently disabling the feature.
 - `stack-autopilot.mjs` still inlines its own `git worktree add/remove` rather than calling
-  `scripts/lib/worktree.mjs` (#229) — deliberately NOT refactored: the nightly is how this repo builds
-  itself, so pointing it at the module is a behaviour change, not a tidy-up.
+  `scripts/lib/worktree.mjs` (#229) — deliberately NOT refactored yet. The nightly is how this repo
+  builds itself, so pointing it at the module is a real behaviour change, not a no-op tidy-up.
 - **`grep` goes blind on `routes/control.js`** — it holds literal NUL bytes, so plain grep silently
   returns nothing. Use `LC_ALL=C grep -an`.
 - `scripts/feature.test.mjs` (#365) runs `web/src` TypeScript directly under Node's type-stripping
