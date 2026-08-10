@@ -6914,7 +6914,10 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .rt-names-list { max-height: 520px; overflow: hidden; }
 .rt-names-list.expanded { max-height: none; }
 
-.rt-lane-name { position: relative; height: 46px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px; border-bottom: 1px solid var(--line); }
+/* The HEIGHT is inline, from `heightOf` in RoadmapTimeline.tsx — a lane that
+   stacks two bars is taller than one that does not, and a fixed height here
+   would drift the names a row out of step with the bars they name. */
+.rt-lane-name { position: relative; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px; border-bottom: 1px solid var(--line); overflow: hidden; }
 .rt-lane-name:last-child { border-bottom: none; }
 .rt-lane-name .dot { flex: none; width: 7px; height: 7px; border-radius: 2px; background: var(--line-3); }
 .rt-lane-name .dot.ghost { background: transparent; border: 1px dashed var(--line-3); }
@@ -6958,8 +6961,11 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
    the left of its bar rather than overflowing), so nothing readable is lost. */
 .rt-lane { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); }
 .rt-lane:last-child { border-bottom: none; }
-.rt-lane.folded { height: 46px; }
-.rt-lane.horizon { min-height: 46px; display: flex; align-items: center; padding: 7px 10px; background: var(--panel); }
+/* The horizon row is a FIXED height and its chips do not wrap: it sits opposite
+   a name row that cannot grow with them, and a wrapped second line of chips
+   would push every lane above it out of alignment. What does not fit is what the
+   "…and N more" already accounts for. */
+.rt-lane.horizon { display: flex; align-items: center; padding: 0 10px; background: var(--panel); }
 .rt-lane-grid { position: absolute; inset: 0; pointer-events: none; }
 .rt-rule { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
 .rt-rule.major { background: var(--line-2); }
@@ -7009,7 +7015,7 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .rt-x:hover { color: var(--critical); border-color: var(--critical); }
 
 /* The horizon: sized nothing, so it has no bar — a row of chips instead. */
-.rt-horizon-chips { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.rt-horizon-chips { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; }
 .rt-horizon-chip { font-size: 11.5px; color: var(--muted); background: var(--card); border: 1px dashed var(--line-3); border-radius: 7px; padding: 4px 9px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rt-horizon-chip:hover { border-color: var(--accent); color: var(--accent); }
 /* NOT `.rt-lane-empty`: that one is absolutely positioned and centred, which

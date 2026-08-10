@@ -278,6 +278,20 @@ export function RoadmapTimeline({
   const children = selected ? items.filter((i) => i.parentId === selected.id && !i.archived) : [];
   const totals = scopeTotals(children);
 
+  // EVERY LANE IS LAID OUT ONCE, HERE, and both columns render from the result.
+  // The names sit in their own column beside a single shared track, so the two
+  // halves of a lane are different elements — and a lane that stacks two bars is
+  // taller than 46px. Measuring in one place and handing the height to both is
+  // what stops the names drifting a row out of step with the bars they name,
+  // which is a chart that labels the wrong work.
+  const laid = shown.map((a) => ({
+    area: a,
+    lane: layoutLane(a.name, liveItems.filter((i) => i.area === a.name), trackW, view),
+  }));
+  const orphanLane = orphans.length
+    ? layoutLane('', orphans.map(withLive), trackW, view) : null;
+  const heightOf = (lane: { rows: number }) => Math.max(LANE_H, 18 + lane.rows * BAR_ROW_H);
+
   const { ticks, bands } = ticksFor(view, grain, weekZero, px);
   const nowPct = leftPct(now, view);
   const nowOn = nowPct >= 0 && nowPct <= 100;
@@ -300,22 +314,32 @@ export function RoadmapTimeline({
   const DOUBLE_MS = 400;
   const lastPress = useRef<{ id: number; at: number } | null>(null);
 
-  const startBar = (it: RoadmapItem, kind: 'move' | 'resize') => (e: React.PointerEvent) => {
+  //
+  // THE AXIS IS A PARAMETER because the calendar resizes DOWNWARDS. Its grip is
+  // the same edit — "how long does this take" — but a pixel there is an hour of
+  // row height, not a slice of the viewport's span, and reading clientX for it
+  // would move a bar by weeks for a gesture of a few pixels.
+  const startBar = (it: RoadmapItem, kind: 'move' | 'resize', axis: 'x' | 'y' = 'x') =>
+    (e: React.PointerEvent) => {
     if (!it.sched) return;
     e.preventDefault();
     e.stopPropagation();
-    const perPx = view.span / px;
+    const perPx = axis === 'y' ? MIN_PER_HOUR / CAL_HOUR_H : view.span / px;
     const from = { ...it.sched };
-    const x0 = e.clientX;
+    const x0 = axis === 'y' ? e.clientY : e.clientX;
     let latest = from;
     let moved = false;
 
     const move = (ev: PointerEvent) => {
-      const d = (ev.clientX - x0) * perPx;
-      if (Math.abs(ev.clientX - x0) > 2) moved = true;
+      const at = axis === 'y' ? ev.clientY : ev.clientX;
+      const d = (at - x0) * perPx;
+      if (Math.abs(at - x0) > 2) moved = true;
+      // A vertical grip is always on an hour grid, whatever the chart's grain
+      // says — the calendar draws hours, so that is the precision the gesture has.
+      const step = axis === 'y' ? 15 : snap;
       latest = clampSpanToDomain(kind === 'move'
-        ? { start: snapTo(from.start + d, snap), len: from.len }
-        : { start: from.start, len: Math.max(MIN_SCHED_LEN, snapTo(from.len + d, snap)) });
+        ? { start: snapTo(from.start + d, step), len: from.len }
+        : { start: from.start, len: Math.max(MIN_SCHED_LEN, snapTo(from.len + d, step)) });
       setLive({ id: it.id, sched: latest });
     };
     const up = () => {
@@ -431,20 +455,19 @@ export function RoadmapTimeline({
                   <div className="rt-names">
                     <div className="rt-names-head">Area</div>
                     <div className={`rt-names-list${expanded ? ' expanded' : ''}`}>
-                      {shown.map((a) => {
-                        const n = liveItems.filter((i) => i.area === a.name && i.sched).length;
-                        return (
-                          <LaneName key={a.name} name={a.name} dot={a.dot} count={n}
-                            palette={palette} picking={colourFor === a.name}
-                            onPick={() => setColourFor(colourFor === a.name ? null : a.name)}
-                            onRecolour={(c) => { setColourFor(null); onRecolour(a.name, c); }} />
-                        );
-                      })}
-                      {orphans.length > 0 && (
+                      {laid.map(({ area: a, lane }) => (
+                        <LaneName key={a.name} name={a.name} dot={a.dot} height={heightOf(lane)}
+                          count={liveItems.filter((i) => i.area === a.name && i.sched).length}
+                          palette={palette} picking={colourFor === a.name}
+                          onPick={() => setColourFor(colourFor === a.name ? null : a.name)}
+                          onRecolour={(c) => { setColourFor(null); onRecolour(a.name, c); }} />
+                      ))}
+                      {orphanLane && (
                         <LaneName name="Unallocated" dot="" count={orphans.length}
+                          height={openOrphans ? heightOf(orphanLane) : LANE_H}
                           folded={!openOrphans} onFold={() => setOpenOrphans(!openOrphans)} />
                       )}
-                      <LaneName name="Horizon" dot="" count={horizon.length} ghost />
+                      <LaneName name="Horizon" dot="" count={horizon.length} height={LANE_H} ghost />
                     </div>
                   </div>
 
@@ -473,9 +496,9 @@ export function RoadmapTimeline({
                         </div>
                       )}
 
-                      {shown.map((a) => (
+                      {laid.map(({ area: a, lane }) => (
                         <Lane key={a.name} dot={a.dot} ticks={ticks} bands={bands}
-                          lane={layoutLane(a.name, liveItems.filter((i) => i.area === a.name), trackW, view)}
+                          lane={lane} height={heightOf(lane)}
                           view={view} selectedId={selectedId} proposed={proposed}
                           onDrop={dropOnLane(a.name)} onGoTo={goTo}
                           onSelect={onSelect} onOpen={onOpen} onDown={startBar}
@@ -484,10 +507,10 @@ export function RoadmapTimeline({
                           }} />
                       ))}
 
-                      {orphans.length > 0 && openOrphans && (
+                      {orphanLane && openOrphans && (
                         // No dot and no picker: there is no area here to give a colour to.
                         <Lane dot="" ticks={ticks} bands={bands}
-                          lane={layoutLane('', orphans.map(withLive), trackW, view)}
+                          lane={orphanLane} height={heightOf(orphanLane)}
                           view={view} selectedId={selectedId} proposed={proposed}
                           onDrop={dropOnLane('')} onGoTo={goTo}
                           onSelect={onSelect} onOpen={onOpen} onDown={startBar}
@@ -495,7 +518,9 @@ export function RoadmapTimeline({
                             onSchedule(it, null).catch((e2) => setErr((e2 as Error)?.message || 'Could not unschedule.'));
                           }} />
                       )}
-                      {orphans.length > 0 && !openOrphans && <div className="rt-lane folded" />}
+                      {orphanLane && !openOrphans && (
+                        <div className="rt-lane folded" style={{ height: LANE_H }} />
+                      )}
 
                       {/* The horizon: committed work with no schedule and no
                           estimate — it is on the roadmap but not yet in the plan,
@@ -582,7 +607,7 @@ export function RoadmapTimeline({
                   onSchedule(selectedLive, null).catch((e2) => setErr((e2 as Error)?.message || 'Could not unschedule.'));
                 }}
                 onGoTo={() => goTo(selectedLive.sched ? selectedLive.sched.start : now)}
-                onOpen={() => onOpen(selectedLive)} onToggleSkip={onToggleSkip}
+                onOpen={() => onOpen(selectedLive)} onOpenItem={onOpen} onToggleSkip={onToggleSkip}
                 onRebaseline={() => onRebaseline(selectedLive).catch((e2) => setErr((e2 as Error)?.message || 'Could not re-baseline.'))} />
             )}
             {selectedLive && !drawer && (
@@ -649,15 +674,17 @@ function ZoomControl({ view, trackPx, grain, onStop, onIn, onOut }: {
 
 // --- the lanes -------------------------------------------------------------
 
-function LaneName({ name, dot, count, palette, picking, onPick, onRecolour, ghost, folded, onFold }: {
+function LaneName({ name, dot, count, height, palette, picking, onPick, onRecolour, ghost, folded, onFold }: {
   name: string; dot: string; count: number;
+  /** Handed in, never chosen here — it must equal its lane's, see `heightOf`. */
+  height: number;
   palette?: string[]; picking?: boolean;
   onPick?: () => void; onRecolour?: (dot: string) => void;
   ghost?: boolean;
   folded?: boolean; onFold?: () => void;
 }) {
   return (
-    <div className={`rt-lane-name${ghost ? ' quiet' : ''}`}>
+    <div className={`rt-lane-name${ghost ? ' quiet' : ''}`} style={{ height }}>
       {/* The dot is the picker, because the moment you want a different colour
           is the moment you are looking at two lanes wearing the same one. */}
       {onPick && palette ? (
@@ -694,11 +721,13 @@ const pctStyle = (p: { left: number; width: number }) =>
 
 // One area lane. Split out so a lane re-renders on its own during a drag.
 function Lane({
-  dot, lane, ticks, bands, view, selectedId, proposed,
+  dot, lane, height, ticks, bands, view, selectedId, proposed,
   onDrop, onGoTo, onSelect, onOpen, onDown, onUnschedule,
 }: {
   dot: string;
   lane: ReturnType<typeof layoutLane>;
+  /** Handed in so the lane and its NAME are the same height — see `heightOf`. */
+  height: number;
   ticks: ReturnType<typeof ticksFor>['ticks'];
   bands: ReturnType<typeof ticksFor>['bands'];
   /** The slice on screen — the proposal ghosts are positioned against it. */
@@ -709,12 +738,12 @@ function Lane({
   onGoTo: (at: number) => void;
   onSelect: (id: number) => void;
   onOpen: (it: RoadmapItem) => void;
-  onDown: (it: RoadmapItem, kind: 'move' | 'resize') => (e: React.PointerEvent) => void;
+  onDown: (it: RoadmapItem, kind: 'move' | 'resize', axis?: 'x' | 'y') => (e: React.PointerEvent) => void;
   onUnschedule: (it: RoadmapItem) => void;
 }) {
   return (
     <div className="rt-lane" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}
-      style={{ minHeight: Math.max(LANE_H, 18 + lane.rows * BAR_ROW_H) }}>
+      style={{ height }}>
       <div className="rt-lane-grid" aria-hidden="true">
         {bands.map((b) => (
           <span key={b.key} className="rt-band" style={{ left: `${b.left}%`, width: `${b.width}%` }} />
@@ -835,7 +864,7 @@ function Lane({
  */
 function Drawer({
   item, areas, labels, children, totals, weekZero, snap,
-  onClose, onClear, onPatch, onUnschedule, onGoTo, onOpen, onToggleSkip, onRebaseline,
+  onClose, onClear, onPatch, onUnschedule, onGoTo, onOpen, onOpenItem, onToggleSkip, onRebaseline,
 }: {
   item: RoadmapItem;
   areas: BoardArea[];
@@ -850,6 +879,8 @@ function Drawer({
   onUnschedule: () => void;
   onGoTo: () => void;
   onOpen: () => void;
+  /** Opens a SCOPE ROW — a different item from the one the drawer is about. */
+  onOpenItem: (it: RoadmapItem) => void;
   onToggleSkip: (it: RoadmapItem) => void;
   onRebaseline: () => void;
 }) {
@@ -971,7 +1002,7 @@ function Drawer({
                 <div className={`rt-scope-row${c.skipped ? ' cut' : ''}`} key={c.id}>
                   <button className="mk" title={c.skipped ? 'Bring back into the cycle' : 'Defer this line'}
                     onClick={() => onToggleSkip(c)}>{c.skipped ? '↺' : '×'}</button>
-                  <button className="t" onClick={() => onOpen()}>{c.title}</button>
+                  <button className="t" onClick={() => onOpenItem(c)}>{c.title}</button>
                   {labelsOf(c.labels, labels).map((l) => (
                     <span key={l.key} className={`rl rl-${l.tone}`}>{l.name}</span>
                   ))}
@@ -1159,7 +1190,7 @@ function Calendar({
   onPointerDown: (e: React.PointerEvent) => void;
   calRef: React.MutableRefObject<HTMLDivElement | null>;
   onSelect: (id: number) => void;
-  onDown: (it: RoadmapItem, kind: 'move' | 'resize') => (e: React.PointerEvent) => void;
+  onDown: (it: RoadmapItem, kind: 'move' | 'resize', axis?: 'x' | 'y') => (e: React.PointerEvent) => void;
 }) {
   if (!weekZero) {
     return (
@@ -1247,7 +1278,10 @@ function Calendar({
                           top, height: h,
                           ...(dotOf(ev.item.area) ? { '--tint': dotOf(ev.item.area) } : {}),
                         } as React.CSSProperties}
-                        onPointerDown={onDown(ev.item, 'move')}
+                        // The body SELECTS and does not drag. A horizontal drag
+                        // here would be panning the days out from under the
+                        // event; the grip below is the one edit this shape offers.
+                        onPointerDown={(e) => e.stopPropagation()}
                         onClick={() => onSelect(ev.item.id)}>
                         <span className="tm">
                           {fmtTime(dateAt(ev.startMin, weekZero)!)} – {fmtTime(dateAt(ev.endMin, weekZero)!)}
@@ -1256,7 +1290,7 @@ function Calendar({
                         {/* The grip resizes along the SAME axis the chart's does
                             — time — even though it is drawn vertically here. */}
                         <span className="grip" title="Drag to change how long this takes"
-                          onPointerDown={onDown(ev.item, 'resize')} />
+                          onPointerDown={onDown(ev.item, 'resize', 'y')} />
                       </span>
                     );
                   })}
