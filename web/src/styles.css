@@ -7020,7 +7020,7 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .rt-horizon-chip:hover { border-color: var(--accent); color: var(--accent); }
 /* NOT `.rt-lane-empty`: that one is absolutely positioned and centred, which
    inside this wrapping flex row takes it out of the flow entirely. */
-.rt-horizon-more { font-size: 11.5px; color: var(--fainter); font-style: italic; }
+.rt-horizon-more { flex: none; white-space: nowrap; font-size: 11.5px; color: var(--fainter); font-style: italic; }
 
 /* The now marker. ONE overlay across the whole track rather than a segment per
    lane, because the lanes clip and a per-lane line would end at each border.
@@ -7035,7 +7035,10 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 /* Now is OUTSIDE the window: a button back to it, never a line pinned to the
    edge — that would be claiming today is just off screen when it can be months
    away. Same rule as a NULL review_verdict. */
-.rt-nowoff { position: absolute; top: -36px; height: 24px; padding: 0 10px; pointer-events: auto; font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent); border-radius: 7px; }
+/* Over the first LANE, not over the ruler: at the hour grain the ruler's first
+   label is a date, and a button parked on top of it hides the one thing that
+   says where the window even is. */
+.rt-nowoff { position: absolute; top: 9px; height: 24px; padding: 0 10px; pointer-events: auto; font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent); border-radius: 7px; }
 .rt-nowoff.left { left: 8px; }
 .rt-nowoff.right { right: 8px; }
 
@@ -7090,7 +7093,6 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .rt-chip .est { font-family: var(--mono); font-size: 10px; color: var(--fainter); }
 
 /* ---- the drawer: everything about the selected bar ---- */
-.rt.with-drawer { grid-template-columns: minmax(0, 1fr); }
 .rt-drawer { width: 340px; flex: none; display: flex; flex-direction: column; gap: 15px; padding: 13px 15px 15px; background: var(--panel); border-left: 1px solid var(--line-2); }
 .rt-drawer-head { display: flex; align-items: center; gap: 8px; }
 .rt-drawer-head .dot { flex: none; width: 7px; height: 7px; border-radius: 2px; background: var(--line-3); }

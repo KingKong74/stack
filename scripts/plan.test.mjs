@@ -417,6 +417,14 @@ test('the ruler shows real months once there is a week zero', () => {
 
 test('the window label says the time only once hours are on screen', () => {
   assert.ok(windowLabel(days(0, 1), 'hour', WZ).includes(':'));
+  // The TIME-ONLY form is honest only inside one day. The hour stop on a wide
+  // track is several days across, and dropping the date there made a four-day
+  // window read as twenty-nine minutes.
+  const oneDay = windowLabel({ start: 9 * MIN_PER_HOUR, span: 4 * MIN_PER_HOUR }, 'hour', WZ);
+  assert.equal((oneDay.match(/Jun/g) || []).length, 1, 'inside a day, the date is said once');
+  const fourDays = windowLabel({ start: 9 * MIN_PER_HOUR, span: 4 * MIN_PER_DAY }, 'hour', WZ);
+  assert.equal((fourDays.match(/Jun/g) || []).length, 2, 'across days, BOTH ends carry their date');
+  assert.ok(fourDays.includes(':'), 'and both still carry their time');
   assert.ok(!windowLabel(days(0, 60), 'month', WZ).includes(':'));
   assert.ok(windowLabel(days(0, 30), 'week', null).startsWith('wk '),
     'and falls back to week indices with no week zero');

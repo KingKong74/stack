@@ -429,8 +429,17 @@ export function windowLabel(view: Viewport, grain: Grain, weekZero: string | nul
   if (!a || !b) {
     return `wk ${weekNo(view.start)} – ${weekNo(view.start + view.span)}`;
   }
-  if (grain === 'hour') return `${fmtDate(a)} · ${fmtTime(a)} → ${fmtTime(b)}`;
   const crossesYear = a.getUTCFullYear() !== b.getUTCFullYear();
+  if (grain === 'hour') {
+    // The time-only form is only honest INSIDE ONE DAY. On a wide track the
+    // hour stop is several days across, and "10 Aug · 21:12 → 21:41" read as
+    // twenty-nine minutes when the window was four days — a label that
+    // understates its own range by two orders of magnitude.
+    const sameDay = Math.floor(view.start / MIN_PER_DAY) === Math.floor((view.start + view.span) / MIN_PER_DAY);
+    return sameDay
+      ? `${fmtDate(a)} · ${fmtTime(a)} → ${fmtTime(b)}`
+      : `${fmtDate(a)} ${fmtTime(a)} → ${fmtDate(b)} ${fmtTime(b)}`;
+  }
   const wide = grain === 'month' || grain === 'quarter';
   return crossesYear || wide
     ? `${fmtDateYear(a)} → ${fmtDateYear(b)}`

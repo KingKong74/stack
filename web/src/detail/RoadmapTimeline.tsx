@@ -415,7 +415,9 @@ export function RoadmapTimeline({
   const lanesOver = shown.length + (orphans.length ? 1 : 0) > LANES_SHOWN;
 
   return (
-    <div className={`rt${drawer && selected ? ' with-drawer' : ''}`}>
+    // The drawer lives INSIDE the chart card now (it is a column of it, beside
+    // the track), so this wrapper no longer changes shape when one opens.
+    <div className="rt">
       <div className="rt-main">
         <WhatsNext items={liveItems} areas={areas} weekZero={weekZero} now={now}
           onSelect={onSelect} open={openNext} onToggle={() => setOpenNext(!openNext)} />
