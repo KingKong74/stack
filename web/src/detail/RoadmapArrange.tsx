@@ -197,11 +197,21 @@ export function RoadmapArrange({
       // spends free-tier quota, and with that quota gone this is the only way
       // to run it at all. It also reads EVERY untagged row rather than a batch,
       // and can say why it could not place one.
+      //
+      // Its tooltip carries its OWN reasons, in its own order. The card's
+      // sentence explains the ✧ read, and the two do not fail for the same
+      // things: a spent quota is the read's problem and never this one's, a
+      // missing console is this one's and never the read's. A dead control
+      // repeating the other one's excuse is a dead control saying nothing.
       side: {
         label: '⌨ In the session',
         title: !onCommand
-          ? consoleOffReason || 'The Curator’s session cannot open.'
-          : `Hand the same job to the Curator’s session — it reads all ${untagged.length}, in one conversation, and asks before it writes`,
+          ? consoleOffReason || 'The Curator’s session cannot open, so there is nothing to send this to.'
+          : inAnArea
+            ? `Everything in ${areaName} already has an area. Clear the chip — or pick Unallocated — to sort the rows that have none.`
+            : untagged.length === 0
+              ? 'Every open item already carries an area. Nothing to sort.'
+              : `Hand the same job to the Curator’s session — it reads all ${untagged.length}, in one conversation, and asks before it writes`,
         disabled: !onCommand || inAnArea || untagged.length === 0,
         run: () => onCommand?.('allocate'),
       },
