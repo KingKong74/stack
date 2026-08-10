@@ -76,10 +76,19 @@ Do the following:
    `extract` proposes work for later; this one records work that has landed.
    One entry per thing you actually built this session:
 
-   - **Worked a roadmap item?** Send its id: `{"item": 381, "note": "…"}`. The
-     note becomes that row's `built_note` — the account the human verdicts
-     against in the Review room, so write two or three real sentences: what
-     landed, where it lives, how it was verified.
+   - **Worked a roadmap item?** Send its id **and its title**:
+     `{"item": 381, "title": "<that item's exact title>", "note": "…"}`. The note
+     becomes that row's `built_note` — the account the human verdicts against in
+     the Review room, so write two or three real sentences: what landed, where
+     it lives, how it was verified.
+
+     **Send the title. It is a safety check, not decoration.** Roadmap items and
+     futures are separate id sequences and both are cited as `#N` everywhere, so
+     `#174` is a roadmap item AND an unrelated future. If the title you send
+     doesn't match the row that id points at, the entry is refused instead of
+     obeyed — which is the only thing standing between a mistyped number and an
+     overwritten `built_note` on somebody else's finished work. Only send an
+     `item` id you have actually seen on the roadmap this session.
    - **Built something with no row at all?** Send a title instead:
      `{"title": "…", "note": "…", "bucket": "must", "area": "terminal"}`. It
      attaches to a matching row if one exists (including a ⚡ FLY card you opened
