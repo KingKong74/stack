@@ -62,7 +62,8 @@ Do the following:
      "extract": {
        "bugs": [{ "title": "<bug found/introduced>", "severity": "critical|high|medium|low" }],
        "next_steps": [{ "title": "<concrete follow-up>", "priority": "must|should|could|wont" }],
-       "futures": [{ "title": "<directional idea for later>", "note": "<why it might matter>" }]
+       "futures": [{ "title": "<directional idea for later>", "note": "<why it might matter>" }],
+       "built": [{ "item": 381, "note": "<what actually landed, where it lives, how it was verified>" }]
      }
    }
    ```
@@ -70,6 +71,29 @@ Do the following:
    Leave any list empty (`[]`) when there's nothing real to put in it — do **not**
    invent bugs, next-steps or futures. Auto-extracted items dedupe by title
    fingerprint, so don't restate ones already tracked.
+
+   **`built` — the board row for what you just built.** Everything else in
+   `extract` proposes work for later; this one records work that has landed.
+   One entry per thing you actually built this session:
+
+   - **Worked a roadmap item?** Send its id: `{"item": 381, "note": "…"}`. The
+     note becomes that row's `built_note` — the account the human verdicts
+     against in the Review room, so write two or three real sentences: what
+     landed, where it lives, how it was verified.
+   - **Built something with no row at all?** Send a title instead:
+     `{"title": "…", "note": "…", "bucket": "must", "area": "terminal"}`. It
+     attaches to a matching row if one exists (including a ⚡ FLY card you opened
+     when you started), and only files a new one if nothing matches. This is the
+     case that matters — a feature that ships with no row is a feature nobody
+     can cite, review or find again.
+   - It **never ticks the item.** The row lands as BUILT, not done, and goes to
+     the Review room for the human's verdict. Ticking is theirs, not yours.
+   - Leave `built` empty if this session built nothing — a refactor you reverted,
+     a question answered, an investigation with no change.
+
+   The poster prints a `built:` line to stderr saying what happened. If it
+   reports **ids NOT on this board**, say so to the user: you cited a number
+   that doesn't exist and that note was not written anywhere.
 
    `futures` vs `next_steps`: a next-step is concrete work someone could start
    tomorrow; a future is a **directional idea** worth curating later ("could

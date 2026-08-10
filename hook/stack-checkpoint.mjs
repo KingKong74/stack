@@ -14,6 +14,7 @@
 // Install: copy alongside the hooks into ~/.stack/ (with stack-post.mjs).
 
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import {
   loadStackEnv, logStderr, projectFromGit, fetchSettings, postIngest,
 } from './stack-post.mjs';
@@ -22,6 +23,25 @@ loadStackEnv();
 
 function readStdin() {
   try { return readFileSync(0, 'utf8'); } catch { return ''; }
+}
+
+// #381/#174 — the tmux session this checkpoint is being written from, so a fly
+// card and a built row can both be stamped with it. Filled HERE rather than
+// asked of the composing session: it is a fact about the process, and a model
+// asked for one it cannot see will supply a plausible-looking name instead of
+// nothing, which is worse than no provenance at all.
+//
+// Silent on every failure — not in tmux, no tmux binary, a name that is not the
+// shape the server accepts. This is provenance, and no checkpoint may ever fail
+// for want of it.
+function tmuxSession() {
+  if (!process.env.TMUX) return null;
+  try {
+    const name = execFileSync('tmux', ['display-message', '-p', '#S'], {
+      encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) ? name : null;
+  } catch { return null; }
 }
 
 (async () => {
@@ -60,6 +80,10 @@ function readStdin() {
     authored: true,
     commit_hash: input.session?.commit_hash || fromGit.commit,
     branch: input.session?.branch || fromGit.branch,
+    // A name the caller sent wins — a session may know better than the process
+    // it is running in (a console spawned under another name) — but it is
+    // filled from tmux when absent rather than left to be guessed.
+    session: input.session?.session || tmuxSession() || undefined,
     cwd,
   };
 
@@ -75,5 +99,20 @@ function readStdin() {
     process.exit(1);
   }
   logStderr(`checkpoint saved for ${project.slug}${session.commit_hash ? ` @ ${session.commit_hash}` : ''}`);
+
+  // #174 — say what the `built` block did, and say it even when it did nothing
+  // it was asked to. `missed` is the line that matters: a roadmap id that is
+  // not on this board means the session cited a wrong number, and a silent
+  // success there is exactly the failure this feature exists to end. Printed
+  // only when something was actually sent, so an ordinary checkpoint is as
+  // quiet as it always was.
+  const built = result.body?.built;
+  if (built && (built.linked || built.created || built.missed)) {
+    const parts = [];
+    if (built.linked) parts.push(`${built.linked} row(s) updated`);
+    if (built.created) parts.push(`${built.created} row(s) filed`);
+    if (built.missed) parts.push(`${built.missed} id(s) NOT on this board — nothing was written for them`);
+    logStderr(`built: ${parts.join(', ')}`);
+  }
   process.exit(0);
 })();

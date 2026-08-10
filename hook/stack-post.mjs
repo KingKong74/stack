@@ -134,7 +134,14 @@ export async function postIngest(body, { timeoutMs = 8000 } = {}) {
       signal: ctrl.signal,
     });
     clearTimeout(timer);
-    return { ok: res.ok, status: res.status };
+    // The parsed reply, best-effort (#174). The /checkpoint poster reports what
+    // the `built` block actually did, and a MISSED roadmap id — a number that
+    // is not on this board — has to reach the session that cited it, or a
+    // built_note disappears into a wrong id with nothing said. A body that will
+    // not parse is not an error: every existing caller only reads ok/status.
+    let payload = null;
+    try { payload = await res.json(); } catch { /* not JSON, or empty */ }
+    return { ok: res.ok, status: res.status, body: payload };
   } catch (e) {
     clearTimeout(timer);
     return { ok: false, reason: e.message };

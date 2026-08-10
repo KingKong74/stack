@@ -93,6 +93,15 @@ export function RoadmapTimeline({
   const [live, setLive] = useState<{ id: number; sched: SchedSpan } | null>(null);
   // Which lane's colour popover is open (one at a time), by area name.
   const [colourFor, setColourFor] = useState<string | null>(null);
+  // THE THREE SIDE PANELS START FOLDED. What's next, the Unallocated lane and
+  // the unscheduled tray each answer a question you ask sometimes; the CHART
+  // answers the one you opened the tab for, and three open panels pushed it
+  // below the fold. Each keeps its heading and its COUNT while folded, so
+  // nothing goes missing — a fold that hid the fact there are nine unscheduled
+  // items would be the tray's whole point, hidden.
+  const [openNext, setOpenNext] = useState(false);
+  const [openOrphans, setOpenOrphans] = useState(false);
+  const [openTray, setOpenTray] = useState(false);
   const [trackW, setTrackW] = useState(0);
   const trackRef = useRef<HTMLDivElement | null>(null);
 
@@ -242,7 +251,8 @@ export function RoadmapTimeline({
           </span>
         </div>
 
-        <WhatsNext items={visible} areas={areas} weekZero={weekZero} onSelect={onSelect} />
+        <WhatsNext items={visible} areas={areas} weekZero={weekZero} onSelect={onSelect}
+          open={openNext} onToggle={() => setOpenNext(!openNext)} />
 
         {err && <div className="action-error">{err}</div>}
 
@@ -292,13 +302,20 @@ export function RoadmapTimeline({
           })}
 
           {orphans.length > 0 && (
-            // No dot and no picker: there is no area here to give a colour to.
-            <Lane name="Unallocated" dot="" lane={layoutLane('', orphans.map(withLive), trackW)}
-              cols={cols} selectedId={selectedId} proposed={proposed}
-              onDrop={dropOnLane('')} onSelect={onSelect} onOpen={onOpen} onDown={startDrag}
-              onUnschedule={(it) => {
-                onSchedule(it, null).catch((e2) => setErr(e2?.message || 'Could not unschedule.'));
-              }} />
+            <div className="rt-fold-wrap">
+              <Fold open={openOrphans} onToggle={() => setOpenOrphans(!openOrphans)}
+                label="Unallocated" n={orphans.length}
+                hint={openOrphans ? '' : 'scheduled, but tagged with no area'} />
+              {/* No dot and no picker: there is no area here to give a colour to. */}
+              {openOrphans && (
+                <Lane name="Unallocated" dot="" lane={layoutLane('', orphans.map(withLive), trackW)}
+                  cols={cols} selectedId={selectedId} proposed={proposed}
+                  onDrop={dropOnLane('')} onSelect={onSelect} onOpen={onOpen} onDown={startDrag}
+                  onUnschedule={(it) => {
+                    onSchedule(it, null).catch((e2) => setErr(e2?.message || 'Could not unschedule.'));
+                  }} />
+              )}
+            </div>
           )}
 
           {/* The horizon: committed work with no schedule and no estimate — it
@@ -332,12 +349,15 @@ export function RoadmapTimeline({
         )}
 
         <div className="rt-tray">
-          <div className="rt-tray-head">
-            <span className="lbl">Unscheduled</span>
-            <span className="rt-hint">
-              {tray.length ? 'Drag onto a lane to place it' : 'Everything in this filter is on the timeline.'}
-            </span>
-          </div>
+          {/* Folded, the tray is one line that still says how many are waiting.
+              Dragging a chip onto a lane needs it open, which is the trade: the
+              gesture is available the moment you are looking for it. */}
+          <Fold open={openTray} onToggle={() => setOpenTray(!openTray)}
+            label="Unscheduled" n={tray.length}
+            hint={tray.length
+              ? (openTray ? 'Drag onto a lane to place it' : 'waiting for a place on the chart')
+              : 'Everything in this filter is on the timeline.'} />
+          {openTray && (
           <div className="rt-tray-items">
             {tray.map((i) => (
               <div key={i.id} className="rt-chip" draggable
@@ -350,6 +370,7 @@ export function RoadmapTimeline({
               </div>
             ))}
           </div>
+          )}
         </div>
       </div>
 
@@ -425,6 +446,26 @@ export function RoadmapTimeline({
         )
       )}
     </div>
+  );
+}
+
+// The heading of a folded section — the chart's three side panels share it.
+//
+// The COUNT is not decoration and is never hidden: a fold that said only
+// "Unscheduled ›" would have hidden the one number that decides whether you open
+// it, which is the tray's whole reason to exist. The heading is the control, so
+// there is nothing to hunt for.
+function Fold({ open, onToggle, label, n, hint }: {
+  open: boolean; onToggle: () => void; label: string; n: number; hint?: string;
+}) {
+  return (
+    <button className={`rt-fold${open ? ' on' : ''}`} onClick={onToggle} aria-expanded={open}
+      title={open ? `Fold ${label} away` : `Show ${label}`}>
+      <span className="chev" aria-hidden="true">{open ? '▾' : '▸'}</span>
+      <span className="lbl">{label}</span>
+      <span className="n">{n}</span>
+      {hint && <span className="rt-hint">{hint}</span>}
+    </button>
   );
 }
 
@@ -569,12 +610,15 @@ function SlipLine({ item, onRebaseline }: { item: RoadmapItem; onRebaseline: () 
 // The bars at and after the now-line, soonest first. The chart shows the whole
 // window; this says which end of it to look at, which is the question a Gantt
 // is worst at answering by itself.
-function WhatsNext({ items, areas, weekZero, onSelect }: {
+function WhatsNext({ items, areas, weekZero, onSelect, open, onToggle }: {
   items: RoadmapItem[]; areas: BoardArea[]; weekZero: string | null;
   onSelect: (id: number) => void;
+  open: boolean; onToggle: () => void;
 }) {
   const next = whatsNext(items);
   if (!next.length) {
+    // Nothing ahead is worth saying WITHOUT being opened for: it is the one
+    // state of this strip that is a finding rather than a list.
     return (
       <div className="rt-next empty">
         <span className="lbl">What&rsquo;s next</span>
@@ -584,19 +628,21 @@ function WhatsNext({ items, areas, weekZero, onSelect }: {
       </div>
     );
   }
+  const running = next.filter((n) => n.running).length;
   return (
-    <div className="rt-next">
-      <span className="lbl">What&rsquo;s next</span>
-      {next.map(({ item, inWeeks, running }) => {
+    <div className={`rt-next${open ? ' on' : ''}`}>
+      <Fold open={open} onToggle={onToggle} label="What’s next" n={next.length}
+        hint={open ? '' : running ? `${running} running now` : `next up in ${next[0].inWeeks} wks`} />
+      {open && next.map(({ item, inWeeks, running: live }) => {
         const d = weekDate(item.sched!.start, weekZero);
         return (
-          <button key={item.id} className={`rt-next-chip${running ? ' running' : ''}`}
+          <button key={item.id} className={`rt-next-chip${live ? ' running' : ''}`}
             onClick={() => onSelect(item.id)}
             title={`${item.area || 'untagged'} · ${item.sched!.len} wk${item.sched!.len === 1 ? '' : 's'}`}>
             <span className="dot" style={{ background: areas.find((a) => a.name === item.area)?.dot || 'var(--line-3)' }} />
             <span className="t">{item.title}</span>
             <span className="when">
-              {running ? 'running' : inWeeks === 1 ? 'next week' : `in ${inWeeks} wks`}
+              {live ? 'running' : inWeeks === 1 ? 'next week' : `in ${inWeeks} wks`}
               {d && ` · ${fmtDate(d)}`}
             </span>
           </button>

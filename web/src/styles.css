@@ -6918,6 +6918,11 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 
 .rt-lane { display: grid; grid-template-columns: 132px 1fr; align-items: stretch; border-bottom: 1px solid var(--line-2); }
 .rt-lane:last-child { border-bottom: none; }
+/* The folded Unallocated lane: its heading sits where a lane name would, and
+   the lane it reveals gives up its own rule so the pair reads as one row. */
+.rt-fold-wrap { border-bottom: 1px solid var(--line-2); }
+.rt-fold-wrap .rt-fold { padding: 12px 14px; }
+.rt-fold-wrap .rt-lane { border-bottom: none; }
 .rt-lane-name { position: relative; display: flex; align-items: center; gap: 9px; padding: 12px 14px; min-width: 0; }
 .rt-lane-name .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--line-3); }
 .rt-lane-name .dot.ghost { background: transparent; border: 1px dashed var(--accent-soft); }
@@ -6983,7 +6988,17 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 
 .rt-tray { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 13px 15px 15px; }
 .rt-tray-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 11px; flex-wrap: wrap; }
-.rt-tray-items { display: flex; gap: 8px; flex-wrap: wrap; }
+.rt-tray-items { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 11px; }
+
+/* The heading of a foldable panel — What's next, the Unallocated lane and the
+   tray. The COUNT keeps the type of a count and never dims: it is what the
+   heading is for while the panel is shut. */
+.rt-fold { display: flex; align-items: baseline; gap: 9px; width: 100%; text-align: left; padding: 2px 0; background: transparent; border: none; }
+.rt-fold .chev { flex: none; font-size: 10px; line-height: 1.6; color: var(--muted); }
+.rt-fold .n { font-family: var(--mono); font-size: 11px; color: var(--body); background: var(--panel);
+  border: 1px solid var(--line-2); border-radius: 999px; padding: 1px 7px; }
+.rt-fold:hover .chev, .rt-fold:hover .lbl { color: var(--accent); }
+.rt-fold .rt-hint { font-size: 12px; }
 .rt-chip { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--paper); border-radius: 9px; padding: 8px 11px; cursor: grab; font-size: 12.5px; }
 .rt-chip:hover { border-color: var(--accent); }
 .rt-chip .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }

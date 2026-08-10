@@ -46,6 +46,41 @@ function asFutureCandidates(v) {
     .slice(0, 25);
 }
 
+// #174 — what this session BUILT: [{ item?, title?, note, bucket?, area? }].
+//
+// The opposite direction to `next_steps`. Those are work proposed for later and
+// arrive as fresh 'hook' rows; these say "this is the board row for what just
+// landed", and each either attaches to a row that already exists or files the
+// one nobody remembered to make. The consoles shipped with no row at all, which
+// is why twenty-two citations pointed at another item's number.
+//
+// `item` (a roadmap id) is the precise form and always wins; `title` is the
+// fallback, matched by fingerprint and only then created. `note` is the
+// built_note — the account the Review room verdicts against — and is the one
+// genuinely required field: an entry with no note says a row exists and nothing
+// about what landed in it, which is the very gap this closes.
+//
+// Capped at 10. A session lands a handful of things, not fifty; a longer list
+// is a session describing every file it touched, and the cap is what stops that
+// becoming fifty board rows.
+function asBuiltCandidates(v) {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((b) => {
+      const id = Number(b?.item);
+      return {
+        item: Number.isFinite(id) && id > 0 ? Math.trunc(id) : null,
+        title: str(b?.title, 300),
+        note: str(b?.note, 4000) || '',
+        bucket: oneOf(b?.bucket, BUCKETS, 'should'),
+        area: str(b?.area, 40)?.toLowerCase() || null,
+      };
+    })
+    // An entry needs somewhere to land (an id or a title) AND something to say.
+    .filter((b) => (b.item || b.title) && b.note)
+    .slice(0, 10);
+}
+
 /**
  * POST /api/ingest
  *
@@ -62,7 +97,8 @@ function asFutureCandidates(v) {
  *   extract: {
  *     bugs?: [{ title, severity }],
  *     next_steps?: [{ title, priority }],
- *     futures?: [{ title, note? }]
+ *     futures?: [{ title, note? }],
+ *     built?: [{ item?, title?, note, bucket?, area? }]   // #174 — see below
  *   }
  * }
  *
@@ -70,6 +106,12 @@ function asFutureCandidates(v) {
  * commit/session id), refresh the live resume fields with COALESCE, then land
  * the auto-extracted bugs and roadmap items (deduped by fingerprint, honouring
  * tombstones, never touching manual items).
+ *
+ * `extract.built` (#174) runs in the SAME transaction and in the opposite
+ * direction to the rest: everything else here proposes work for later, that one
+ * records the board row for work that has just landed — attaching the
+ * `built_note` to the row that already exists, or filing the row nobody
+ * remembered to make. It never ticks an item; see the block itself for why.
  */
 // The SessionEnd hook's per-model transcript usage, shaped like the autopilot
 // runner's `model_usage` so one reader serves both populations. Untrusted
@@ -141,6 +183,13 @@ ingest.post('/', async (req, res) => {
     next_up: asList(s.next_up),
     working_well: asList(s.working_well),
     branch: str(s.branch, 200),
+    // #381/#174 — the tmux session name, if this post named one. Not a column
+    // on `sessions`: it is here only so the built rows below can be claimed and
+    // stamped as this session's, the same way a fly card opened at work-start
+    // is. Validated to the same shape the roadmap route accepts, so the two
+    // spellings of a claim cannot diverge.
+    fly_session: /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(String(s.session || '').trim())
+      ? String(s.session).trim() : null,
     cwd: str(s.cwd, 500),
     model: str(s.model, 100),
     reason: str(s.reason, 100),
@@ -161,6 +210,7 @@ ingest.post('/', async (req, res) => {
   const bugCandidates = asBugCandidates(extract.bugs);
   const stepCandidates = asStepCandidates(extract.next_steps);
   const futureCandidates = asFutureCandidates(extract.futures);
+  const builtCandidates = asBuiltCandidates(extract.built);
 
   const client = await pool.connect();
   try {
@@ -440,6 +490,107 @@ ingest.post('/', async (req, res) => {
       }
     }
 
+    // --- 6b. File the board row for what this session BUILT (#174) ---
+    //
+    // THIS NEVER TICKS AN ITEM. A row lands here as BUILT — a `built_note` plus
+    // a claim — and never as `done`. That is #374's queue predicate exactly
+    // (`done` OR (built_note AND claimed_by)), so the change reaches the Review
+    // room for a verdict without a machine having awarded itself one. Ticking
+    // belongs to the merge job, with a human verdict stored beside it, and a
+    // session declaring its own work finished is precisely the judgement the
+    // Review room exists to make.
+    //
+    // The claim is what makes it queue at all, so it is never left empty when
+    // there is anything honest to put in it: the tmux session if the checkpoint
+    // named one, else the branch the work is on.
+    let builtLinked = 0;
+    let builtCreated = 0;
+    let builtMissed = 0;
+    {
+      const claim = session.fly_session
+        ? `term:${session.fly_session}`.slice(0, 100)
+        : (session.branch || '').slice(0, 100) || null;
+
+      // Written only where it is EMPTY. A row already claimed by a lane keeps
+      // that claim: the branch doing the work is a fact about the fleet, and
+      // overwriting it with the checkpointing session would quietly reassign
+      // somebody else's in-flight work.
+      const attach = async (id, note) => {
+        await client.query(
+          `UPDATE roadmap_items
+              SET built_note = $2,
+                  claimed_by = COALESCE(NULLIF(claimed_by, ''), $3),
+                  updated_at = now()
+            WHERE id = $1 AND project_id = $4`,
+          [id, note, claim, projectId]
+        );
+      };
+
+      const seen = new Set();
+      for (const cand of builtCandidates) {
+        // --- the precise form: an id the session already claimed ---
+        if (cand.item) {
+          const row = await client.query(
+            'SELECT id FROM roadmap_items WHERE id = $1 AND project_id = $2',
+            [cand.item, projectId]
+          );
+          // An id belonging to another project (or long deleted) is COUNTED and
+          // dropped, never coerced into a new row: silently creating a card
+          // because a number was wrong is how a board fills with near-duplicates
+          // of work that is already on it.
+          if (!row.rows.length) { builtMissed++; continue; }
+          if (seen.has(`id:${cand.item}`)) continue;
+          seen.add(`id:${cand.item}`);
+          await attach(cand.item, cand.note);
+          builtLinked++;
+          continue;
+        }
+
+        // --- the fallback: match a row by title, and only then make one ---
+        const fp = fingerprint(cand.title);
+        if (!fp || seen.has(`fp:${fp}`)) continue;
+        seen.add(`fp:${fp}`);
+
+        // ANY source, open rows first, oldest first. Any source because the
+        // point is to land on the row that already represents this work,
+        // whoever made it — including the fly card (#381) this same session
+        // very likely opened when it started, which is what makes one row serve
+        // the whole life of a piece of work rather than two describing its ends.
+        const existing = await client.query(
+          `SELECT id FROM roadmap_items
+            WHERE project_id = $1 AND fingerprint = $2 AND NOT archived
+            ORDER BY done ASC, id ASC LIMIT 1`,
+          [projectId, fp]
+        );
+        if (existing.rows.length) {
+          await attach(existing.rows[0].id, cand.note);
+          builtLinked++;
+          continue;
+        }
+
+        // Nothing to attach to — file the row nobody remembered to make. The
+        // tombstone is honoured on CREATION only: a fingerprint the owner
+        // dismissed must not come back as a by-product of a checkpoint.
+        if (await dismissed('roadmap', fp)) continue;
+        const pos = await client.query(
+          'SELECT COALESCE(MAX(position), -1) + 1 AS p FROM roadmap_items WHERE project_id=$1 AND bucket=$2',
+          [projectId, cand.bucket]
+        );
+        await client.query(
+          // source 'fly' (#381), not 'hook': a session made this row, and the
+          // marker already means exactly that. It also keeps the row out of the
+          // extractor's dedup index and inside the same dismiss contract.
+          `INSERT INTO roadmap_items
+             (project_id, bucket, title, note, done, position, source, fingerprint,
+              built_note, claimed_by, area, fly_session)
+           VALUES ($1,$2,$3,'',false,$4,'fly',$5,$6,$7,$8,$9)`,
+          [projectId, cand.bucket, cand.title, pos.rows[0].p, fp,
+            cand.note, claim, cand.area, session.fly_session]
+        );
+        builtCreated++;
+      }
+    }
+
     // --- 7. Presence upkeep ---
     // An authored /checkpoint proves the session is alive → bump last_seen_at.
     // The metadata backstop (authored:false) only arrives when a session ends →
@@ -474,6 +625,11 @@ ingest.post('/', async (req, res) => {
       bugs: { created: createdBugs, relinked: relinkedBugs },
       roadmap: { created: createdSteps },
       futures: { created: createdFutures },
+      // #174 — `missed` is REPORTED, not swallowed: an id that matched nothing
+      // means a session cited a number that is not on this board, and the
+      // /checkpoint command tells the session to relay that rather than let a
+      // built_note vanish into a wrong id.
+      built: { linked: builtLinked, created: builtCreated, missed: builtMissed },
     });
   } catch (err) {
     await client.query('ROLLBACK');
