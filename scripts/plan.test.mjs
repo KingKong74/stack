@@ -27,7 +27,7 @@ const {
   SCHED_WEEKS, CYCLE_WEEKS, NOW_WEEK, scaleCols, slipOf, layoutLane, weekAt, scopeTotals,
   listKeyOf, proposeSchedule, proposeCompact, proposeTrim, inCycle,
   nowLeft, whatsNext, calendarMonths, weekDate, fmtDate,
-  proposeCatchUp, proposeBalance, proposeByTier,
+  proposeCatchUp, proposeBalance, proposeByTier, areaMatches, UNALLOCATED,
 } = await import(planUrl.href);
 
 let seq = 0;
@@ -451,4 +451,30 @@ test('none of the three arrangements mutates its input', () => {
   const before = JSON.stringify(items);
   proposeCatchUp(items); proposeBalance(items); proposeByTier(items);
   assert.equal(JSON.stringify(items), before);
+});
+
+// ---- the area filter --------------------------------------------------------
+// Every view filters on one string, and the sentinel is the part that can go
+// silently wrong: `i.area === areaFilter` under UNALLOCATED matches nothing and
+// renders as an empty board rather than as the filter it is.
+
+test('the empty filter admits every area, tagged or not', () => {
+  assert.equal(areaMatches('editor', ''), true);
+  assert.equal(areaMatches('', ''), true);
+});
+
+test('a named filter admits only that area', () => {
+  assert.equal(areaMatches('editor', 'editor'), true);
+  assert.equal(areaMatches('billing', 'editor'), false);
+  assert.equal(areaMatches('', 'editor'), false);
+});
+
+test('UNALLOCATED admits untagged rows and nothing else', () => {
+  assert.equal(areaMatches('', UNALLOCATED), true);
+  assert.equal(areaMatches('editor', UNALLOCATED), false);
+});
+
+test('the sentinel cannot collide with a real area — the server lowercases them', () => {
+  assert.equal(UNALLOCATED, UNALLOCATED.toUpperCase());
+  assert.notEqual(UNALLOCATED, UNALLOCATED.toLowerCase());
 });

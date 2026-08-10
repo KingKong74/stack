@@ -304,6 +304,27 @@ const IN_CYCLE = new Set(['must', 'should', 'could']);
 export const inCycle = (it: RoadmapItem): boolean =>
   !it.archived && !it.skipped && IN_CYCLE.has(it.bucket);
 
+/**
+ * The area filter's value for UNALLOCATED — items carrying no area at all.
+ *
+ * A SENTINEL rather than a second piece of state, because every view already
+ * threads one `areaFilter` string and a parallel boolean would be a second truth
+ * to keep in step. It is safe as a sentinel because it is UPPERCASE: the server
+ * lowercases every area it stores (`routes/board.js`, `routes/roadmap.js`), so
+ * no real area can ever spell it — which is the only reason a magic string is
+ * allowed here at all.
+ *
+ * Untagged work is the population most likely to be forgotten, so it needs to be
+ * filterable like any other area. Reach for `areaMatches` rather than comparing
+ * strings: `i.area === areaFilter` silently matches nothing under this value,
+ * which renders as an empty board rather than as the filter it is.
+ */
+export const UNALLOCATED = 'UNALLOCATED';
+
+/** Does this row's area pass the filter? '' = every area, UNALLOCATED = untagged. */
+export const areaMatches = (area: string, filter: string): boolean =>
+  (filter === '' ? true : filter === UNALLOCATED ? !area : area === filter);
+
 export function scopeTotals(children: RoadmapItem[], cycle = CYCLE_WEEKS): ScopeTotals {
   let committed = 0; let deferred = 0; let out = 0; let unsized = 0;
   for (const c of children) {

@@ -35,7 +35,7 @@
 
 import { useState } from 'react';
 import type { BoardArea, BoardList, Priority, RoadmapItem } from '../types';
-import { listKeyOf } from '../lib/plan';
+import { areaMatches, listKeyOf } from '../lib/plan';
 import { LABELS, labelsOf } from '../lib/labels';
 
 const BUCKETS: Priority[] = ['must', 'should', 'could', 'wont'];
@@ -76,7 +76,7 @@ export function RoadmapPlan({
 
   const visible = items.filter((i) =>
     !i.archived
-    && (areaFilter === '' || i.area === areaFilter)
+    && areaMatches(i.area, areaFilter)
     && (labelFilter === '' || i.labels.includes(labelFilter)));
   const archived = items.filter((i) => i.archived);
   // The column an archived card was sitting in. `listKeyOf` still answers,

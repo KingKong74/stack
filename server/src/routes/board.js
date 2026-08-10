@@ -36,14 +36,22 @@ board.use(async (req, res, next) => {
   next();
 });
 
-// The lane palette — sixteen, and the ONLY colours an area may wear.
+// The lane palette — thirty-two, and the ONLY colours an area may wear.
 //
 // A closed set rather than a free colour input, for the same reason the label
-// registry is code: these dots are read side by side down a Gantt's left edge,
-// and a free picker produces two areas a fortnight apart that nobody can tell
-// apart at 8px. Every entry is muted to the same degree so no lane shouts, and
-// they are ordered so that ADJACENT areas get contrasting hues — the assignment
-// below walks this list in order, so neighbours never come out as neighbours.
+// registry is code: these dots are read side by side down a Gantt's left edge
+// AND they now tint the bars themselves, so a free picker produces two areas a
+// fortnight apart that nobody can tell apart at 8px. Every entry is muted to the
+// same degree so no lane shouts, and they are ordered so that ADJACENT areas get
+// contrasting hues — the assignment below walks this list in order, so
+// neighbours never come out as neighbours.
+//
+// THE FIRST SIXTEEN ARE FROZEN IN PLACE. New colours go on the END, never in the
+// middle: an area with no stored dot takes PALETTE[its index], so inserting a
+// colour would silently recolour every unset lane on every board. The second
+// sixteen exist because a project with more than sixteen areas used to wrap and
+// draw two lanes the same colour — and a repeated colour on a chart that now
+// colours its bars by area is a chart that lies about which area is running.
 //
 // PALETTE[0] is the fallback for an area with no stored colour, which is a real
 // state: an area that arrived from a push has never been given one.
@@ -52,6 +60,10 @@ const PALETTE = [
   '#b08a2e', '#7a6f9a', '#b23b3b', '#5f8f6a',
   '#9a6f8a', '#7f8a4f', '#a8734a', '#5b7f9a',
   '#8a6f5a', '#6a8a8a', '#a05f7a', '#6f7a9a',
+  '#4d6f4f', '#cf8b5c', '#3f6f7f', '#b8a04a',
+  '#5a5f8f', '#8f4f5f', '#7fa05f', '#a58fbf',
+  '#d0725f', '#3f8f8a', '#8fa8b8', '#b06f9a',
+  '#7fb08a', '#8a5f3f', '#6faab0', '#4f5f6f',
 ];
 export const AREA_PALETTE = PALETTE;
 

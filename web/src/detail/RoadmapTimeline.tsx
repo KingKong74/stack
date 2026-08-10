@@ -19,11 +19,24 @@
 //     live position every few pixels; the HTML5 drag API only reports drops.
 //     The TRAY uses HTML5 drag because dropping a chip onto a lane is exactly
 //     what that API is for, and the two coexist without fighting.
+//
+// AN AREA'S COLOUR IS THE CHART'S ONLY KEY, so two things follow. The bars are
+// TINTED WITH IT (mixed against the surface in CSS, so the tint reads in both
+// themes) and the state — planned, running, done — is carried by how much tint
+// and how solid the border, never by swapping in another hue: a bar that turned
+// green when it finished would be indistinguishable from a green area. And the
+// lane's dot IS the picker, because the place you notice two areas look alike is
+// the place you should be able to fix it, not two screens away in Edit areas.
+//
+// A LANE WITH NO ITEMS IS NOT DRAWN. An empty lane is a row of grid and a "drop
+// something here" that costs a real lane its space, and a project accumulates
+// areas it has finished with. The chips above still list them (and the "+N
+// empty" reveal names them), which is where an area with nothing in it belongs.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { BoardArea, RoadmapItem, SchedSpan } from '../types';
 import {
-  SCHED_WEEKS, CYCLE_WEEKS, layoutLane, scaleCols, scopeTotals, slipOf, weekAt,
+  SCHED_WEEKS, CYCLE_WEEKS, areaMatches, layoutLane, scaleCols, scopeTotals, slipOf, weekAt,
   nowLeft, whatsNext, calendarMonths, weekDate, fmtDate,
   type Scale,
 } from '../lib/plan';
@@ -50,6 +63,10 @@ export interface TimelineProps {
   areaFilter: string;
   selectedId: number | null;
   onSelect: (id: number | null) => void;
+  /** The colours an area may wear — the server's closed set, not a free picker. */
+  palette: string[];
+  /** Set a lane's colour. The parent writes it and hands back fresh areas. */
+  onRecolour: (area: string, dot: string) => void;
   /** Resolves when the PATCH lands; REJECTS so the bar can go back. */
   onSchedule: (item: RoadmapItem, sched: SchedSpan | null) => Promise<void>;
   onRebaseline: (item: RoadmapItem) => Promise<void>;
@@ -61,7 +78,7 @@ export interface TimelineProps {
 
 export function RoadmapTimeline({
   items, areas, weekZero, areaFilter, selectedId, onSelect,
-  onSchedule, onRebaseline, onOpen, onToggleSkip, proposed,
+  palette, onRecolour, onSchedule, onRebaseline, onOpen, onToggleSkip, proposed,
 }: TimelineProps) {
   const [scale, setScale] = useState<Scale>('month');
   const [mode, setMode] = useState<'chart' | 'calendar'>('chart');
@@ -74,6 +91,8 @@ export function RoadmapTimeline({
   // The bar being dragged, held locally so the lane re-renders at pointer rate
   // without a round trip. Cleared on release, whether the PATCH lands or not.
   const [live, setLive] = useState<{ id: number; sched: SchedSpan } | null>(null);
+  // Which lane's colour popover is open (one at a time), by area name.
+  const [colourFor, setColourFor] = useState<string | null>(null);
   const [trackW, setTrackW] = useState(0);
   const trackRef = useRef<HTMLDivElement | null>(null);
 
@@ -97,12 +116,19 @@ export function RoadmapTimeline({
   useEffect(() => { if (!err) return; const t = setTimeout(() => setErr(''), 6000); return () => clearTimeout(t); }, [err]);
 
   const cols = scaleCols(scale, SCHED_WEEKS, weekZero);
-  const shown = areas.filter((a) => areaFilter === '' || a.name === areaFilter);
   const visible = items.filter((i) => !i.archived);
+  // An area with nothing in it is NOT a lane. The one exception is the area you
+  // are filtered by: hiding that would leave the chart empty with no lane naming
+  // what it is filtered to, which reads as "this area has no work" when what it
+  // means is "you filtered to an area that has none".
+  const populated = new Set(visible.map((i) => i.area));
+  const shown = areas.filter((a) => (areaFilter === '' ? populated.has(a.name) : a.name === areaFilter));
   // A scheduled item whose area is not a lane would otherwise vanish silently.
-  // It gets an "Unassigned" lane rather than being dropped from the view.
+  // It gets an "Unallocated" lane rather than being dropped from the view — and
+  // that lane is what the Unallocated chip filters the chart down to.
   const laneNames = shown.map((a) => a.name);
-  const orphans = visible.filter((i) => i.sched && !laneNames.includes(i.area) && areaFilter === '');
+  const orphans = visible.filter(
+    (i) => i.sched && !laneNames.includes(i.area) && areaMatches(i.area, areaFilter));
 
   const withLive = (i: RoadmapItem): RoadmapItem =>
     (live && live.id === i.id ? { ...i, sched: live.sched } : i);
@@ -184,7 +210,7 @@ export function RoadmapTimeline({
   };
 
   const tray = visible.filter(
-    (i) => !i.sched && !i.done && (areaFilter === '' || i.area === areaFilter));
+    (i) => !i.sched && !i.done && areaMatches(i.area, areaFilter));
 
   return (
     <div className={`rt${drawer && selected ? ' with-drawer' : ''}`}>
@@ -241,9 +267,11 @@ export function RoadmapTimeline({
           </div>
 
           <div className={`rt-lanes${expanded ? ' expanded' : ''}`}>
-          {shown.length === 0 && (
+          {shown.length === 0 && orphans.length === 0 && (
             <div className="rt-empty">
-              No areas yet. Tag an item with an area — or add one above — and it becomes a lane here.
+              {areaFilter === ''
+                ? 'No areas with work in them yet. Tag an item with an area — or add one above — and it becomes a lane here.'
+                : 'Nothing in this area. Clear the filter above, or drag something out of the tray onto a lane.'}
             </div>
           )}
 
@@ -253,6 +281,9 @@ export function RoadmapTimeline({
             return (
               <Lane key={a.name} name={a.name} dot={a.dot} lane={lane} cols={cols}
                 selectedId={selectedId} proposed={proposed}
+                palette={palette} picking={colourFor === a.name}
+                onPick={() => setColourFor(colourFor === a.name ? null : a.name)}
+                onRecolour={(c) => { setColourFor(null); onRecolour(a.name, c); }}
                 onDrop={dropOnLane(a.name)} onSelect={onSelect} onOpen={onOpen}
                 onDown={startDrag} onUnschedule={(it) => {
                   onSchedule(it, null).catch((e2) => setErr(e2?.message || 'Could not unschedule.'));
@@ -261,7 +292,8 @@ export function RoadmapTimeline({
           })}
 
           {orphans.length > 0 && (
-            <Lane name="Unassigned" dot="" lane={layoutLane('', orphans.map(withLive), trackW)}
+            // No dot and no picker: there is no area here to give a colour to.
+            <Lane name="Unallocated" dot="" lane={layoutLane('', orphans.map(withLive), trackW)}
               cols={cols} selectedId={selectedId} proposed={proposed}
               onDrop={dropOnLane('')} onSelect={onSelect} onOpen={onOpen} onDown={startDrag}
               onUnschedule={(it) => {
@@ -398,13 +430,19 @@ export function RoadmapTimeline({
 
 // One area lane. Split out so a lane re-renders on its own during a drag.
 function Lane({
-  name, dot, lane, cols, selectedId, proposed, onDrop, onSelect, onOpen, onDown, onUnschedule,
+  name, dot, lane, cols, selectedId, proposed, palette, picking,
+  onPick, onRecolour, onDrop, onSelect, onOpen, onDown, onUnschedule,
 }: {
   name: string; dot: string;
   lane: ReturnType<typeof layoutLane>;
   cols: ReturnType<typeof scaleCols>;
   selectedId: number | null;
   proposed?: Map<number, SchedSpan>;
+  /** Absent on the Unallocated lane — there is no area there to colour. */
+  palette?: string[];
+  picking?: boolean;
+  onPick?: () => void;
+  onRecolour?: (dot: string) => void;
   onDrop: (e: React.DragEvent) => void;
   onSelect: (id: number) => void;
   onOpen: (it: RoadmapItem) => void;
@@ -414,7 +452,24 @@ function Lane({
   return (
     <div className="rt-lane" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
       <div className="rt-lane-name">
-        <span className={`dot${dot ? '' : ' ghost'}`} style={dot ? { background: dot } : undefined} />
+        {/* The dot is the picker, because the moment you want a different colour
+            is the moment you are looking at two lanes wearing the same one. */}
+        {onPick && palette ? (
+          <button className="dot pick" style={dot ? { background: dot } : undefined}
+            aria-label={`Colour for ${name}`} title={`${name} — click to change its colour`}
+            onClick={onPick} />
+        ) : (
+          <span className={`dot${dot ? '' : ' ghost'}`} style={dot ? { background: dot } : undefined} />
+        )}
+        {picking && palette && onRecolour && (
+          <span className="rtab-palette" role="menu">
+            {palette.map((c) => (
+              <button key={c} role="menuitem" style={{ background: c }}
+                className={c === dot ? 'on' : ''} title={c}
+                onClick={() => onRecolour(c)} />
+            ))}
+          </span>
+        )}
         <span className="nm">{name}</span>
       </div>
       <div className="rt-lane-body" style={{ minHeight: 24 + lane.rows * 28 }}>
@@ -444,8 +499,15 @@ function Lane({
                     width: `${(prop.len / SCHED_WEEKS) * 100}%`,
                   }} />
               )}
-              <div className={`rt-bar ${state}${sel ? ' sel' : ''}`}
-                style={{ top: 10 + bar.row * 28, left: `${bar.left}%`, width: `${bar.width}%` }}
+              {/* The bar wears its AREA's colour, and its state is how much of
+                  it there is (styles.css). `--tint` is unset on the Unallocated
+                  lane, where the plain state colours still apply — an item with
+                  no area has no colour to be given. */}
+              <div className={`rt-bar ${state}${dot ? ' tinted' : ''}${sel ? ' sel' : ''}`}
+                style={{
+                  top: 10 + bar.row * 28, left: `${bar.left}%`, width: `${bar.width}%`,
+                  ...(dot ? { '--tint': dot } : {}),
+                } as React.CSSProperties}
                 onPointerDown={onDown(it, 'move')}
                 // No onClick/onDoubleClick: preventDefault in onDown suppresses
                 // both. Selecting and opening are decided in the pointer flow

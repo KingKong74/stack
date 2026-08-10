@@ -22,7 +22,10 @@
 // `lib/plan.ts`'s, the same predicate `scopeTotals` splits on, because a chip
 // counting a different population from the drawer beside it is two answers to
 // one question. The ACTIVE chip is never hidden, however its count falls: the
-// filter you are looking through has to stay on screen to be released. It writes through
+// filter you are looking through has to stay on screen to be released. UNALLOCATED is a
+// chip of its own and NOT an area (`lib/plan.ts` carries the sentinel and why it is safe):
+// untagged work sits in no lane and behind no chip, which makes it the population most
+// easily forgotten, so it gets the one chip that finds it. It writes through
 // `store.ts` like every other screen and hands its children plain callbacks —
 // the views themselves are presentational and testable by inspection.
 //
@@ -41,14 +44,12 @@ import {
   addArea, renameArea as renameAreaApi, deleteArea as deleteAreaApi, addList as addListApi,
   setAreaColour, arrangeRoadmap, agentCan, agentOffReason,
 } from '../store';
-import { inCycle } from '../lib/plan';
+import { inCycle, UNALLOCATED } from '../lib/plan';
 import { RoadmapTimeline } from './RoadmapTimeline';
 import { RoadmapScope } from './RoadmapScope';
 import { RoadmapPlan } from './RoadmapPlan';
 import { RoadmapTiers, RoadmapParked } from './RoadmapBoards';
 import { RoadmapArrange, proposedSpans, arrangementCount, type Arrangement } from './RoadmapArrange';
-import { NOW_WEEK, whatsNext } from '../lib/plan';
-import { go } from '../lib/route';
 
 type View = 'timeline' | 'scope' | 'plan';
 type PlanBoard = 'lists' | 'tiers' | 'parked';
@@ -259,48 +260,13 @@ export function RoadmapTab({
       .finally(() => setReading(false));
   };
 
-  // A Claude session primed with THIS tab's state.
-  //
-  // The same one-shot hand-off every other surface uses (sessionStorage +
-  // the terminal screen picks it up once). What makes it worth having here
-  // rather than a bare "open a terminal" is the brief: a session that opens
-  // knowing what is scheduled, what is late and what is still in the tray does
-  // not spend its first four turns asking.
-  const openSession = () => {
-    const live = items.filter((i) => !i.archived && !i.done);
-    const line = (i: RoadmapItem) =>
-      `- #${i.id} ${i.title}${i.area ? ` [${i.area}]` : ''}${i.tier ? ` · tier ${i.tier}` : ''}`
-      + `${i.sched ? ` · wk ${i.sched.start + 1}–${i.sched.start + i.sched.len}` : ''}`
-      + `${i.estimate === null ? '' : ` · ${i.estimate}w`}`;
-    const running = live.filter((i) => i.sched && i.sched.start <= NOW_WEEK && i.sched.start + i.sched.len > NOW_WEEK);
-    const soon = whatsNext(live, 5).filter((n) => !n.running).map((n) => n.item);
-    const late = live.filter((i) => i.sched && i.sched.start + i.sched.len <= NOW_WEEK);
-    const tray = live.filter((i) => !i.sched);
-
-    const brief = [
-      `Roadmap — ${slug}${areaFilter ? ` · area: ${areaFilter}` : ''}`,
-      '',
-      'Weeks below are indexes from this project\'s week zero, not dates.',
-      '',
-      running.length ? `RUNNING NOW (week ${NOW_WEEK + 1}):\n${running.map(line).join('\n')}` : 'RUNNING NOW: nothing.',
-      '',
-      soon.length ? `NEXT UP:\n${soon.map(line).join('\n')}` : 'NEXT UP: nothing scheduled ahead.',
-      '',
-      // Named separately because it is the one state the chart shows and
-      // nobody acts on: a bar whose whole span is behind the now-line.
-      late.length ? `SCHEDULED ENTIRELY IN THE PAST (slipped, not moved):\n${late.map(line).join('\n')}` : '',
-      late.length ? '' : null,
-      tray.length ? `UNSCHEDULED (${tray.length}):\n${tray.slice(0, 12).map(line).join('\n')}`
-        + (tray.length > 12 ? `\n…and ${tray.length - 12} more` : '') : 'UNSCHEDULED: nothing.',
-      '',
-      'I am looking at the Roadmap tab. Ask me what I want before changing anything.',
-    ].filter((x) => x !== null && x !== '').join('\n');
-
-    try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — it just opens unprimed */ }
-    go.terminal(slug);
-  };
-
   // --- areas ----------------------------------------------------------------
+
+  // An area's colour, changed from wherever it is drawn — the chips' edit mode
+  // and the timeline's own lane dots both land here. The write returns the whole
+  // collection, so the lanes recolour without a re-read.
+  const recolour = (name: string, dot: string) =>
+    guard(setAreaColour(slug, name, dot).then(setAreas), 'change that colour');
 
   // The chips count what is IN THE CYCLE (lib/plan.ts's `inCycle`), so the
   // number on a chip and the weeks in the scope drawer describe the same rows.
@@ -330,6 +296,18 @@ export function RoadmapTab({
   }, [areas, scoped, areaFilter]);
   const areaChips = showHiddenAreas || editAreas ? [...shownAreas, ...hiddenAreas] : shownAreas;
 
+  // UNALLOCATED is a chip of its own, not an area (lib/plan.ts says why the
+  // filter value is a sentinel). Untagged work is the population most likely to
+  // be forgotten — it is in no lane on the timeline and behind no chip on the
+  // boards — so it gets the one chip that can find it. Drawn only when there IS
+  // some, or while you are filtered by it: an "Unallocated 0" on a tidy board is
+  // furniture, but a filter with no way back is a trap.
+  const unallocated = scoped.filter((i) => !i.area).length;
+  // What a NEW row filed while a filter is on should be tagged with. Under
+  // UNALLOCATED that is nothing — the sentinel is a filter value, never an area,
+  // and passing it through would create an area literally called "unallocated".
+  const filterArea = areaFilter === UNALLOCATED ? '' : areaFilter;
+
   return (
     <div className="rtab">
       <div className="rtab-bar">
@@ -341,13 +319,6 @@ export function RoadmapTab({
             </button>
           ))}
         </div>
-        {/* A Claude session on this project, primed with what the tab is
-            showing. Sits with the view switch because it is about the whole
-            tab, not one board. */}
-        <button className="rtab-session" onClick={openSession}
-          title="Open a Claude session primed with this roadmap — what is running, what is next, what has slipped and what is still unscheduled">
-          ✳ Claude session
-        </button>
         <span className="rtab-hint">
           {view === 'timeline' ? 'Weeks from this project’s week zero — a plan, not a calendar'
             : view === 'scope' ? 'What is in the cycle, and what is first to cut'
@@ -376,10 +347,7 @@ export function RoadmapTab({
                     {palette.map((c) => (
                       <button key={c} role="menuitem" style={{ background: c }}
                         className={c === a.dot ? 'on' : ''} title={c}
-                        onClick={() => {
-                          setColourFor(null);
-                          guard(setAreaColour(slug, a.name, c).then(setAreas), 'change that colour');
-                        }} />
+                        onClick={() => { setColourFor(null); recolour(a.name, c); }} />
                     ))}
                   </span>
                 )}
@@ -402,6 +370,13 @@ export function RoadmapTab({
               </button>
             )
           ))}
+          {(unallocated > 0 || areaFilter === UNALLOCATED) && !editAreas && (
+            <button className={`chip-sm unalloc${areaFilter === UNALLOCATED ? ' on' : ''}`}
+              onClick={() => setAreaFilter(areaFilter === UNALLOCATED ? '' : UNALLOCATED)}
+              title={`Items with no area at all — ${unallocated} ${parkedBoard ? 'parked' : 'in the cycle'}`}>
+              Unallocated<span className="n">{unallocated}</span>
+            </button>
+          )}
           {editAreas && (
             areaDraft !== null ? (
               <input className="field-input sm" autoFocus value={areaDraft} placeholder="Area name, then Enter"
@@ -448,6 +423,7 @@ export function RoadmapTab({
           <RoadmapTimeline
             items={items} areas={areas} weekZero={weekZero} areaFilter={areaFilter}
             selectedId={selectedId} onSelect={setSelectedId}
+            palette={palette} onRecolour={recolour}
             proposed={proposedSpans(proposal)}
             onSchedule={(it, sched) => write(it, { sched }).then(() => undefined)}
             onRebaseline={(it) => write(it, { rebaseline: true }).then(() => undefined)}
@@ -477,7 +453,7 @@ export function RoadmapTab({
               guard(write(it, { sched: { start: end, len } }), 'schedule that ticket');
             }
           }}
-          onAdd={(bucket: Priority) => legacy.onAdd(bucket, areaFilter || undefined)} />
+          onAdd={(bucket: Priority) => legacy.onAdd(bucket, filterArea || undefined)} />
       )}
 
       {view === 'plan' && (
@@ -524,7 +500,7 @@ export function RoadmapTab({
           onArchiveMany={(cards) => { void archiveMany(cards); }}
           onAddCard={(listKey, title) => {
             guard(
-              createRoadmapItem(slug, { title, note: '', bucket: 'should', area: areaFilter || undefined })
+              createRoadmapItem(slug, { title, note: '', bucket: 'should', area: filterArea || undefined })
                 .then((created) => {
                   onItemAdded(created);
                   return patchRoadmapItem(slug, created.id, { listKey }).then(onItemChanged);

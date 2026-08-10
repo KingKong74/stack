@@ -27,6 +27,7 @@
 
 import { useState } from 'react';
 import type { BoardArea, Priority, RoadmapItem } from '../types';
+import { areaMatches } from '../lib/plan';
 import { labelsOf } from '../lib/labels';
 
 const LANES: { key: Priority; name: string; meta: string }[] = [
@@ -72,7 +73,7 @@ export function RoadmapScope({
   const dotOf = (area: string) => areas.find((a) => a.name === area)?.dot || 'var(--line-3)';
   const visible = items.filter((i) =>
     !i.archived && !i.done
-    && (areaFilter === '' || i.area === areaFilter)
+    && areaMatches(i.area, areaFilter)
     && (labelFilter === '' || i.labels.includes(labelFilter)));
 
   const drop = (bucket: Priority, beforeId: number | null) => {
@@ -158,6 +159,19 @@ export function RoadmapScope({
                         </span>
                       )}
                       {it.source === 'hook' && <span className="auto-cue" title="Auto-extracted from a push">auto</span>}
+                      {/* #381 — a card a live session opened for its own work.
+                          Its own cue rather than sharing the 'auto' one: the two
+                          are held from the runner identically but come from
+                          opposite directions, and knowing WHICH session opened
+                          a card is most of the value of the marker. */}
+                      {it.source === 'fly' && (
+                        <span className="fly-cue"
+                          title={it.flySession
+                            ? `Opened by the live session ${it.flySession} (#381) — held out of the runner until you sign it off`
+                            : 'Opened by a live session (#381) — held out of the runner until you sign it off'}>
+                          ⚡ fly{it.flySession ? ` · ${it.flySession}` : ''}
+                        </span>
+                      )}
                       {it.area && <span className="area-chip">{it.area}</span>}
                       {labelsOf(it.labels).map((l) => (
                         <span key={l.id} className={`rl rl-${l.tone}`}>{l.name}</span>

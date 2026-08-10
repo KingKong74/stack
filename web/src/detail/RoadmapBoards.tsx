@@ -26,7 +26,7 @@
 import type { BoardArea, Priority, RoadmapItem, Tier } from '../types';
 import { TIERS } from '../types';
 import { labelsOf } from '../lib/labels';
-import { inCycle } from '../lib/plan';
+import { areaMatches, inCycle } from '../lib/plan';
 
 const TIER_META: Record<string, string> = {
   S: 'next, whatever else is open', A: 'soon', B: 'after the above', C: 'someday',
@@ -110,7 +110,7 @@ export function RoadmapTiers({
   // entirely — and it is the same predicate the area chips count with, so the
   // number on a chip and the cards under it are one population.
   const pool = items.filter((i) =>
-    !i.done && inCycle(i) && (areaFilter === '' || i.area === areaFilter));
+    !i.done && inCycle(i) && areaMatches(i.area, areaFilter));
 
   const brief = () => {
     const top = pool.filter((i) => i.tier === 'S' || i.tier === 'A').slice(0, 8);
@@ -172,8 +172,7 @@ export function RoadmapParked({
   items, areas, areaFilter, staleItemDays = 14, onToggleSkip, onOpen,
 }: BoardsProps) {
   const parked = items.filter((i) =>
-    i.skipped && !i.done && !i.archived
-    && (areaFilter === '' || i.area === areaFilter));
+    i.skipped && !i.done && !i.archived && areaMatches(i.area, areaFilter));
   const stale = parked.filter((i) => (daysSince(i.skippedAt) ?? 0) >= staleItemDays).length;
 
   return (

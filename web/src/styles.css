@@ -6809,6 +6809,10 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
    not there. The lanes and cards still wear the area's dot, where it is doing
    the work of telling two rows apart. */
 .rtab-chips .chip-sm.empty { color: var(--faint); border-style: dashed; }
+/* Unallocated is not an area — it is the absence of one, and it is drawn as the
+   odd one out on purpose so it never reads as a lane you can file work into. */
+.rtab-chips .chip-sm.unalloc { font-style: italic; color: var(--muted); }
+.rtab-chips .chip-sm.unalloc.on { font-style: normal; color: #fff; }
 .rtab-hidden { font-family: var(--mono); font-size: 11px; color: var(--muted); background: transparent; border: 1px dashed var(--line-3); border-radius: 999px; padding: 5px 11px; white-space: nowrap; }
 .rtab-hidden:hover { color: var(--accent); border-color: var(--accent-tint-border); }
 
@@ -6897,9 +6901,20 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 
 .rt-lane { display: grid; grid-template-columns: 132px 1fr; align-items: stretch; border-bottom: 1px solid var(--line-2); }
 .rt-lane:last-child { border-bottom: none; }
-.rt-lane-name { display: flex; align-items: center; gap: 9px; padding: 12px 14px; min-width: 0; }
+.rt-lane-name { position: relative; display: flex; align-items: center; gap: 9px; padding: 12px 14px; min-width: 0; }
 .rt-lane-name .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--line-3); }
 .rt-lane-name .dot.ghost { background: transparent; border: 1px dashed var(--accent-soft); }
+/* The dot is a button on a real area lane — a bigger hit area than 8px without
+   a bigger dot, since the dot's size is what keeps the lane names calm. */
+.rt-lane-name .dot.pick { cursor: pointer; box-shadow: 0 0 0 4px transparent; }
+.rt-lane-name .dot.pick:hover { box-shadow: 0 0 0 4px var(--accent-tint); }
+/* Beside the dot and only two rows deep, NOT the chips' 8×4 block: the lane list
+   is a 520px scroll box, and a popover that opened downwards from the last lane
+   would open into the part of it you cannot see. */
+.rt-lane-name .rtab-palette {
+  grid-template-columns: repeat(16, 20px);
+  top: 50%; left: calc(100% - 6px); transform: translateY(-50%);
+}
 .rt-lane-name .nm { font-family: var(--disp); font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rt-lane-body { position: relative; padding: 0 14px 0 0; }
 .rt-grid { position: absolute; inset: 0; display: flex; pointer-events: none; }
@@ -6914,6 +6929,26 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .rt-bar.plan { background: var(--panel); border: 1px solid var(--line-3); color: var(--body); }
 .rt-bar.now { background: var(--accent-tint); border: 1px solid var(--accent); color: var(--accent-deep); }
 .rt-bar.done { background: var(--live-tint); border: 1px solid var(--live); color: var(--live); }
+/* A TINTED bar wears its area's colour, and its STATE is how much of that
+   colour there is — never a different hue, or a finished bar would be
+   indistinguishable from a green area. The tint is mixed against the surface
+   rather than laid over it at an alpha, so it reads the same in dark mode where
+   the surface is the thing that changed. `--tint` is set inline per bar. */
+.rt-bar.tinted { color: var(--body); }
+.rt-bar.tinted.plan {
+  background: color-mix(in srgb, var(--tint) 18%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--tint) 55%, var(--panel));
+}
+.rt-bar.tinted.now {
+  background: color-mix(in srgb, var(--tint) 42%, var(--panel));
+  border: 1px solid var(--tint); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tint) 40%, transparent);
+}
+.rt-bar.tinted.now .t { font-weight: 700; }
+.rt-bar.tinted.done {
+  background: color-mix(in srgb, var(--tint) 10%, var(--panel));
+  border: 1px dashed color-mix(in srgb, var(--tint) 45%, var(--panel));
+  color: var(--muted);
+}
 .rt-bar.sel { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
 .rt-bar:active { cursor: grabbing; }
 .rt-ghost { position: absolute; height: 22px; border-radius: 7px; border: 1px dashed var(--line-3); pointer-events: none; }
@@ -7484,26 +7519,23 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .ins-dest-other input:focus { border-color: var(--accent); }
 .ins-dest-other .btn-accent { flex: none; }
 
-/* ---- Roadmap: the area colour picker, the session hand-off, and Arrange's
-       per-move preview ---- */
+/* ---- Roadmap: the area colour picker and Arrange's per-move preview ---- */
 .rtab-swatch { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--line-3); }
 .rtab-swatch:hover { border-color: var(--accent); }
 .rtab-areaedit { position: relative; }
-/* Sixteen swatches in a 4×4 grid: a closed set the picker can show whole, so
-   there is never a colour on a lane you cannot get back to. */
+/* Thirty-two swatches in an 8×4 grid: a closed set the picker shows WHOLE, so
+   there is never a colour on a lane you cannot get back to. Widening the grid
+   rather than scrolling it is the same rule — a picker you have to scroll is one
+   that can hide the colour a lane is already wearing. */
 .rtab-palette {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
-  display: grid; grid-template-columns: repeat(4, 20px); gap: 6px;
+  display: grid; grid-template-columns: repeat(8, 20px); gap: 6px;
   background: var(--card); border: 1px solid var(--keyline); border-radius: 10px;
   padding: 8px; box-shadow: 0 6px 20px rgba(40, 30, 20, .14);
 }
 .rtab-palette button { width: 20px; height: 20px; border-radius: 50%; border: 1px solid rgba(0,0,0,.12); }
 .rtab-palette button:hover { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
 .rtab-palette button.on { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-.rtab-session { font-family: var(--mono); font-size: 11.5px; color: var(--body); background: var(--card);
-  border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px; white-space: nowrap; }
-.rtab-session:hover { border-color: var(--accent); color: var(--accent); }
 
 /* The ✦ action is the only one that costs a call and the only one that can be
    wrong about the WORK rather than the arithmetic. It looks different. */
