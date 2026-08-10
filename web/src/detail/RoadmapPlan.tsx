@@ -50,7 +50,10 @@
 //    built note and labels are legible without opening anything, and it is
 //    per-visit — the board is a place you scan, and a column left wide from
 //    last week is furniture nobody asked for. One at a time: two wide lanes on
-//    a 262px grid is a horizontal scroll with no board left in view.
+//    a 262px grid is a horizontal scroll with no board left in view. CLICKING
+//    THE LANE is the gesture and the ⇥ is the label for it; `toggleFocusFromLane`
+//    is what keeps the click off everything inside a lane that means something
+//    else, and its comment says why that guard lives in one place.
 //  • A CLICK OPENS THE CARD, A DOUBLE-CLICK OPENS THE ITEM. The inline detail is
 //    for the things you change constantly (labels and scope); everything
 //    else lives in the modal. A double-click toggles the detail twice on its way
@@ -149,6 +152,23 @@ export function RoadmapPlan({
   // The Review room, opened ON this change. `slug#id` is the room's own row key.
   const reviewHref = (it: RoadmapItem) => hrefTo.control('review', `${slug}#${it.id}`);
 
+  // CLICKING THE LANE IS THE GESTURE; the ⇥ is the label for it.
+  //
+  // The click sits on the whole column rather than on the head alone, because
+  // the thing you aim at when you mean "this lane" is the lane — its title, the
+  // gap beside its count, the empty space under its last card. What it must
+  // never do is fire for a click that meant something ELSE, and everything
+  // inside a lane means something else: a card opens its detail, a button acts,
+  // a link navigates, a field takes typing. So this walks up from the target
+  // and bails on any of them. The alternative — stopPropagation on every child
+  // — is the same rule written a dozen times, and the one place somebody
+  // forgets it is a card that silently resizes the board instead of opening.
+  const INERT = '.rp-card, .rp-col-tools, .rp-col-review, button, a, input, textarea, select, label';
+  const toggleFocusFromLane = (e: React.MouseEvent, key: string) => {
+    if ((e.target as HTMLElement).closest(INERT)) return;
+    setFocus((f) => (f === key ? '' : key));
+  };
+
   const dotOf = (area: string) => areas.find((a) => a.name === area)?.dot || 'var(--line-3)';
 
   const visible = items.filter((i) =>
@@ -221,13 +241,15 @@ export function RoadmapPlan({
           const wide = focus === list.key;
           return (
             <div className={`rp-col${wide ? ' focus' : ''}`} key={list.key}
+              onClick={(e) => toggleFocusFromLane(e, list.key)}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
                 const it = items.find((x) => x.id === Number(e.dataTransfer.getData('text/plain')));
                 if (it) onMoveToList(it, list.key);
               }}>
-              <div className="rp-col-head">
+              <div className="rp-col-head"
+                title={wide ? 'Click the lane to close it' : 'Click the lane to open it wide enough to read'}>
                 {renaming === list.key ? (
                   <input className="field-input sm" autoFocus value={renameDraft}
                     onChange={(e) => setRenameDraft(e.target.value)}
