@@ -1744,7 +1744,25 @@ export interface TimelineEntry {
   slug: string; name: string; tint: string | null; hash: string; branch: string;
   summary: string; tags: string[]; geminiNote: string; authored: boolean; time: string;
 }
-export interface TimelineDay { date: string; label: string; entries: TimelineEntry[] }
+// #381 — a card a live session opened that day. A separate feed from `entries`
+// rather than a member of it: entries are work that LANDED (a commit behind
+// each), these are work that BEGAN, and every count and cap already built on
+// `entries` means pushes.
+export interface TimelineFly {
+  kind: 'fly';
+  slug: string; name: string; tint: string | null;
+  id: number; title: string; note: string;
+  session: string;      // '' = a session that did not name itself
+  bucket: string; area: string;
+  reviewed: boolean;    // signed off, so the runner may take it
+  done: boolean;
+  time: string;
+}
+// `flies` is optional so a client running against a server that predates #381
+// renders the push feed exactly as before rather than throwing on undefined.
+export interface TimelineDay {
+  date: string; label: string; entries: TimelineEntry[]; flies?: TimelineFly[];
+}
 export interface TimelineData {
   days: TimelineDay[]; graph: { date: string; count: number }[]; total: number;
   windowDays: number; hasMore: boolean; capped: boolean;

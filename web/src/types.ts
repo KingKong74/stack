@@ -2,7 +2,11 @@ export type ProjectStatus = 'live' | 'building' | 'paused' | 'archived';
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 export type BugStatus = 'open' | 'investigating' | 'fixing' | 'fixed';
 export type Priority = 'must' | 'should' | 'could' | 'wont';
-export type Source = 'hook' | 'manual';   // hook = auto-extracted, manual = hand-entered
+// Where a tracker row came from. hook = auto-extracted from a push, manual =
+// hand-entered, fly = opened by a live Claude session for its own work (#381).
+// 'fly' is ROADMAP-ONLY — bugs and futures cannot hold it — but the type is
+// shared, so the renderers that switch on it must not assume all three.
+export type Source = 'hook' | 'manual' | 'fly';
 
 // What has pushed since the checkpoint that wrote the resume card. The card's
 // content only moves on an authored /checkpoint, while its timestamp moves on
@@ -88,6 +92,10 @@ export interface RoadmapItem {
   bucket: Priority;
   source: Source;
   reviewed: boolean;
+  // #381 — the live session that opened this card ('' = not a fly card, or a
+  // fly card whose session did not name itself). Outlives claimedBy on purpose:
+  // the claim is released and cleared, the provenance is not.
+  flySession: string;
   claimedBy: string;   // #277 — the BRANCH owning this item ('' = free)
   area: string;        // product-area tag ('' = untagged) — filters the board
   builtNote: string;   // what actually landed — shown on the Reviews view

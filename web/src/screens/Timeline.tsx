@@ -112,7 +112,17 @@ export function Timeline() {
                   <div className="tld" key={day.date}>
                     <div className="tld-head">
                       <span className="tld-label">{day.label}</span>
-                      <span className="tld-count">{day.entries.length} push{day.entries.length === 1 ? '' : 'es'}</span>
+                      {/* Two counts, never one total: a push landed and a fly
+                          card only began. Adding them would read as a busier
+                          day than actually happened (#381). */}
+                      <span className="tld-count">
+                        {day.entries.length} push{day.entries.length === 1 ? '' : 'es'}
+                        {!!day.flies?.length && (
+                          <span className="tld-flies">
+                            · {day.flies.length} card{day.flies.length === 1 ? '' : 's'} opened
+                          </span>
+                        )}
+                      </span>
                     </div>
                     {day.entries.map((e, i) => (
                       <button className="tld-row" key={`${e.hash}-${i}`}
@@ -131,6 +141,36 @@ export function Timeline() {
                           {e.tags.slice(0, 2).map((t, j) => (
                             <span key={j} className={`tag ${isAccentTag(t) ? 'accent' : ''}`}>{t}</span>
                           ))}
+                        </span>
+                      </button>
+                    ))}
+                    {/* #381 — what live sessions STARTED that day, under the
+                        pushes rather than mixed into them. Each row clicks
+                        through to the card on the Roadmap tab, which is where
+                        it gets signed off, reviewed or reworked. */}
+                    {day.flies?.map((f) => (
+                      <button className="tld-row fly" key={`fly-${f.id}`}
+                        onClick={() => go.detail(f.slug, 'roadmap', String(f.id))}>
+                        <span className="tld-time">{f.time}</span>
+                        <span className="tld-proj">
+                          <span className="tld-dot" style={{ background: f.tint || 'var(--line-3)' }} />
+                          {f.name}
+                        </span>
+                        <span className="tld-hash">⚡ #{f.id}</span>
+                        <span className="tld-summary">
+                          {f.title}
+                          <span className="tld-fly-by">
+                            opened by {f.session || 'an unnamed session'}
+                          </span>
+                        </span>
+                        <span className="tld-tags">
+                          {/* The state that decides what you do about it: an
+                              unsigned card is one you still owe a decision. */}
+                          {f.done
+                            ? <span className="tag">done</span>
+                            : f.reviewed
+                              ? <span className="tag">signed off</span>
+                              : <span className="tag accent">awaiting sign-off</span>}
                         </span>
                       </button>
                     ))}

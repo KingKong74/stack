@@ -181,5 +181,62 @@ const runNow = () => api('/api/autopilot/start', {
   check('…and fly_session survives that too', untick?.flySession, 'stack-term-held');
 }
 
+// ---- dismiss sticks ---------------------------------------------------------
+//
+// Without this the loop is: the owner deletes the card, the session re-reads its
+// own instructions two turns later and posts it straight back. A delete that
+// undoes itself reads as a broken button.
+
+{
+  const made = await post({ title: 'Card the owner does not want', source: 'fly', session: 'stack-term-dismiss' });
+  const del = await api(`/api/projects/${SLUG}/roadmap/${made.body.id}`, { method: 'DELETE' });
+  check('a fly card deletes', del.status, 200);
+
+  const again = await post({ title: 'Card the owner does not want', source: 'fly', session: 'stack-term-dismiss' });
+  check('and the session posting it again is REFUSED — dismiss sticks', again.status, 409);
+  check('…with a flag the caller can branch on', again.body?.dismissed, true);
+  check('…and words aimed at the session that will read them',
+    /Do not post it again/.test(String(again.body?.error)), true);
+
+  const byHand = await post({ title: 'Card the owner does not want' });
+  check('but a HUMAN may still write that card by hand — the tombstone is on the machine, not the words',
+    byHand.status, 201);
+}
+
+{
+  const made = await post({ title: 'A card written by a person', source: 'manual' });
+  await api(`/api/projects/${SLUG}/roadmap/${made.body.id}`, { method: 'DELETE' });
+  const again = await post({ title: 'A card written by a person', source: 'manual' });
+  check('deleting a MANUAL card tombstones nothing — nothing re-creates it', again.status, 201);
+}
+
+// ---- the timeline's second feed ---------------------------------------------
+//
+// A card opened is not a commit landed, and the payload keeps them apart so no
+// count built on `entries` quietly starts meaning something else. The graph is
+// the sharp end: it is the contribution graph, and letting a session brighten a
+// day by announcing intentions would flatter the wrong thing.
+
+{
+  const tl = (await api('/api/timeline?days=3')).body;
+  const today = (tl.days || [])[0];
+
+  check('the timeline carries a fly feed per day', Array.isArray(today?.flies), true);
+  check('…separate from the push feed, which is untouched',
+    (today?.entries || []).every((e) => e.kind === 'push'), true);
+  check('…and the fly rows say which session opened them',
+    (today?.flies || []).some((f) => f.session === 'stack-term-a1b2'), true);
+  check('…carrying the state that decides what you do about them',
+    (today?.flies || []).every((f) => 'reviewed' in f && 'done' in f), true);
+
+  // The seed ingest is the ONLY push on this database. Every fly card above it
+  // is invisible to the graph, or the graph is no longer a record of landings.
+  check('the contribution graph counts pushes ONLY — a card opened is not a square',
+    tl.total, 1);
+
+  const pushes = (today?.entries || []).length;
+  check('and the day is not padded with them either', pushes, 1);
+}
+
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);

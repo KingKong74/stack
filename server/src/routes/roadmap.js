@@ -133,6 +133,31 @@ roadmap.post('/', async (req, res) => {
   // Not a unique index: two different sessions working the same thing is a real
   // and interesting state (it is how you notice a collision), so the database
   // must not forbid it. Only a session duplicating ITSELF is the mistake.
+  // #381 — a fly card honours the DISMISS tombstone, the same way ingest's
+  // extractor does. Without it the loop is: the owner deletes the card, the
+  // session re-reads its instructions two turns later and posts it again.
+  //
+  // It REFUSES rather than silently succeeding-with-nothing, and the message is
+  // written to be read by the thing that will read it — a session, which needs
+  // to know not to try again. A silent 200 with no card would have it retrying
+  // every turn for the rest of the conversation.
+  //
+  // A MANUAL post is deliberately not gated: a human typing a title is not the
+  // machine that was dismissed, and telling somebody they may not write a card
+  // because a session once wrote one like it would be absurd.
+  if (source === 'fly') {
+    const { rows: dismissed } = await q(
+      `SELECT 1 FROM dismissed_items WHERE project_id = $1 AND kind = 'roadmap' AND fingerprint = $2`,
+      [req.project.id, fp]
+    );
+    if (dismissed.length) {
+      return res.status(409).json({
+        error: 'That card was dismissed by the owner and will not be re-created. Do not post it again — mention it in your summary instead.',
+        dismissed: true,
+      });
+    }
+  }
+
   if (source === 'fly' && flySession) {
     const { rows: dupe } = await q(
       `SELECT * FROM roadmap_items
@@ -619,7 +644,15 @@ roadmap.delete('/:id', async (req, res) => {
     [req.project.id, Number(req.params.id)]
   );
   if (!rows.length) return res.status(404).json({ error: 'No such roadmap item.' });
-  if (rows[0].source === 'hook') {
+  // Deleting a card NOBODY TYPED is a DISMISSAL, and a dismissal has to stick:
+  // the tombstone is what stops the thing that created it creating it again.
+  // 'hook' has always been here (the next push re-extracts). #381 adds 'fly'
+  // for the same reason with a shorter fuse — a session re-reads its own
+  // instructions every few turns, so a fly card deleted at 14:02 is back at
+  // 14:05 without this, and a delete that undoes itself reads as a broken
+  // button. A MANUAL card is never tombstoned: nothing re-creates it, and a
+  // permanent block on a title a human might type again is not a kindness.
+  if (rows[0].source === 'hook' || rows[0].source === 'fly') {
     await q(
       `INSERT INTO dismissed_items (project_id, kind, fingerprint)
        VALUES ($1,'roadmap',$2) ON CONFLICT DO NOTHING`,

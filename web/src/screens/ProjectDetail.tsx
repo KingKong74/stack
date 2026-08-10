@@ -244,11 +244,14 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const futures = data.futures;
 
   const allRoadmap = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
-  // The project-scoped review queue: hook-created items no human has looked at.
+  // The project-scoped review queue: items nobody typed, that no human has
+  // signed off. Bugs and futures can only be 'hook'; a roadmap item is also
+  // 'fly' (#381 — opened by a live session), held on the same footing, so it
+  // has to queue in the same place. Held and invisible is unapprovable.
   const reviewQueue: ReviewEntry[] = [
     ...bugs.filter((b) => b.source === 'hook' && !b.reviewed)
       .map((b) => ({ kind: 'bug' as const, key: b.id, title: b.title, meta: b.severity })),
-    ...allRoadmap.filter((r) => r.source === 'hook' && !r.reviewed)
+    ...allRoadmap.filter((r) => (r.source === 'hook' || r.source === 'fly') && !r.reviewed)
       .map((r) => ({ kind: 'roadmap' as const, key: String(r.id), title: r.title, meta: r.bucket })),
     ...futures.filter((f) => f.source === 'hook' && !f.reviewed)
       .map((f) => ({ kind: 'future' as const, key: String(f.id), title: f.title, meta: 'idea' })),
@@ -1136,8 +1139,15 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       {confirmRoadDelete && (
         <ConfirmModal
           title="Delete roadmap item?"
-          body={<>Delete <b>{confirmRoadDelete.title}</b>{confirmRoadDelete.source === 'hook'
-            ? ' — it was auto-extracted, so it won’t be re-created by the next push.' : '.'}</>}
+          // #381 — a fly card names who would otherwise re-create it. Same
+          // tombstone as a hook card, different thing doing the re-creating,
+          // and naming it is what makes the sentence true rather than generic.
+          body={<>Delete <b>{confirmRoadDelete.title}</b>{
+            confirmRoadDelete.source === 'hook'
+              ? ' — it was auto-extracted, so it won’t be re-created by the next push.'
+              : confirmRoadDelete.source === 'fly'
+                ? ` — it was opened by ${confirmRoadDelete.flySession || 'a live session'}, which won’t re-create it.`
+                : '.'}</>}
           confirmLabel="Delete item" cancelLabel="Cancel" danger
           onConfirm={() => { const it = confirmRoadDelete; setConfirmRoadDelete(null); removeRoad(it); }}
           onCancel={() => setConfirmRoadDelete(null)} />
