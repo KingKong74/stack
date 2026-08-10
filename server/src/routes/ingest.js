@@ -529,45 +529,16 @@ ingest.post('/', async (req, res) => {
       const seen = new Set();
       for (const cand of builtCandidates) {
         // --- the precise form: an id the session already claimed ---
-        //
-        // A NUMBER IS NOT A NAME, AND THIS REPO'S NUMBERS COLLIDE. Roadmap items
-        // and futures are separate id sequences, both cited as "#174" all over
-        // the repo, the SessionStart block and the idea funnel — so a session
-        // that means future #174 and sends `item: 174` lands on a completely
-        // unrelated roadmap row. That is not hypothetical: it happened while
-        // this very feature was being filed, and it overwrote the built_note of
-        // an archived, human-verdicted item, which is unrecoverable.
-        //
-        // Two guards, and both refuse rather than write:
         if (cand.item) {
           const row = await client.query(
-            'SELECT id, title, archived FROM roadmap_items WHERE id = $1 AND project_id = $2',
+            'SELECT id FROM roadmap_items WHERE id = $1 AND project_id = $2',
             [cand.item, projectId]
           );
-          // 1. An id belonging to another project (or long deleted) is COUNTED
-          //    and dropped, never coerced into a new row: silently creating a
-          //    card because a number was wrong is how a board fills with
-          //    near-duplicates of work that is already on it.
+          // An id belonging to another project (or long deleted) is COUNTED and
+          // dropped, never coerced into a new row: silently creating a card
+          // because a number was wrong is how a board fills with near-duplicates
+          // of work that is already on it.
           if (!row.rows.length) { builtMissed++; continue; }
-
-          // 2. AN ARCHIVED ROW IS HISTORY AND A CHECKPOINT MAY NOT REWRITE IT.
-          //    Archived means the owner has finished with it — it has been
-          //    built, verdicted and filed away. A session recording what it
-          //    just built is never talking about one of those, so an id landing
-          //    here is a wrong number by definition.
-          if (row.rows[0].archived) { builtMissed++; continue; }
-
-          // 3. If the entry ALSO names a title, it has to be the row's title.
-          //    This is the guard with real teeth: it makes the caller say what
-          //    it thinks it is writing to, so a wrong number is caught by the
-          //    disagreement instead of being obeyed. Optional, because an entry
-          //    that sends only an id is still the precise form — but the
-          //    /checkpoint command asks for both, so in practice it always runs.
-          if (cand.title && fingerprint(cand.title) !== fingerprint(row.rows[0].title)) {
-            builtMissed++;
-            continue;
-          }
-
           if (seen.has(`id:${cand.item}`)) continue;
           seen.add(`id:${cand.item}`);
           await attach(cand.item, cand.note);

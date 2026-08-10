@@ -212,6 +212,14 @@ roadmap.patch('/:id', async (req, res) => {
     // A verdict archives the item — it can't also sit on the review shelf
     // (#148). An explicit value in the same PATCH wins.
     if (verdict && req.body.review_shelved === undefined) sets.push('review_shelved = false');
+    // A verdict also hands the card back to the Plan view's DERIVED column,
+    // which now reads a verdict as Shipped (server/src/lists.js). Without this
+    // the move would work only for cards nobody had ever dragged: a stored
+    // `list_key` outranks the derivation, so a card once moved by hand would
+    // sit in "In progress" with a verdict on it. Clearing is safe in a way
+    // forcing 'shipped' would not be — un-ticking clears the verdict, and the
+    // derivation then returns the card to wherever it really belongs.
+    if (verdict && req.body.listKey === undefined) sets.push('list_key = NULL');
     if (verdict) {
       // #263 — a verdict is human unless the caller says otherwise. Only the
       // autoverdict gate (scripts/lib/autoverdict.mjs) ever sends 'auto'; any

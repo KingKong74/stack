@@ -7059,9 +7059,36 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .rp-cols { display: flex; gap: 14px; align-items: start; overflow-x: auto; padding-bottom: 6px; }
 .rp-col { flex: none; width: 262px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 9px; }
 .rp-col.newlist { background: transparent; border: none; padding: 0; }
+/* Focus: ~2.3x the 262px column, so a card's built note and its labels are
+   readable in place. A transition on width alone (never on `all`) so the
+   neighbouring lanes slide rather than jump. */
+.rp-col { transition: width .18s ease; }
+.rp-col.focus { width: 600px; border-color: var(--accent-tint-border); }
+@media (prefers-reduced-motion: reduce) { .rp-col { transition: none; } }
 .rp-col-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px 4px; }
 .rp-col-head .nm { font-family: var(--disp); font-size: 14px; font-weight: 600; }
 .rp-col-head .n { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.rp-col-head .field-input.sm { flex: 1; min-width: 0; }
+.rp-col-tools { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; flex: none; }
+/* The sweep keeps its own right-push for the case where it is the only tool;
+   inside the tools group that push is already spent, so it must not re-apply. */
+.rp-col-tools .rp-sweep, .rp-col-tools .rp-sweep-confirm { margin-left: 0; }
+.rp-col-act { font-size: 12px; line-height: 1; color: var(--fainter); background: transparent;
+  border: 1px solid transparent; border-radius: 6px; padding: 3px 5px; }
+.rp-col-act:hover { color: var(--accent); border-color: var(--accent-tint-border); }
+.rp-col-act.on { color: var(--accent); border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.rp-col-lock { font-size: 10px; opacity: .4; padding: 0 3px; cursor: help; }
+/* The lane's tie to the Review room — accent, because it is work waiting on a
+   person, and never a verdict tone: giving one is that room's job. */
+.rp-col-review { font-family: var(--mono); font-size: 10px; color: var(--accent);
+  background: var(--accent-tint); border: 1px solid var(--accent-tint-border);
+  border-radius: 6px; padding: 2px 7px; white-space: nowrap; }
+.rp-col-review:hover { background: var(--accent); color: var(--on-accent); }
+.rp-card-review { display: block; margin-top: 9px; font-family: var(--mono); font-size: 10.5px;
+  color: var(--faint); }
+.rp-card-review:hover { color: var(--accent); }
+.rp-card-review.waiting { color: var(--accent); font-weight: 600; }
+.rp-card-review.waiting:hover { color: var(--accent-deep); }
 .rp-card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; cursor: grab; }
 .rp-card:hover { border-color: var(--accent-tint-border); }
 .rp-stripes { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }

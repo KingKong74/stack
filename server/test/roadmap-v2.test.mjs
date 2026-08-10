@@ -150,11 +150,43 @@ async function main() {
   ok('a card can be moved to any list', r.listKey === 'shipped', r.listKey);
   ok('moving a card to Shipped does NOT tick it — a column is not a verdict', r.done === false, r.done);
 
-  await call('DELETE', `/api/projects/${SLUG}/board/lists/shipped`);
+  // The four defaults are the derivation's own targets and the Review room's
+  // ends, so they are LOCKED — see server/src/lists.js. The refusal has to come
+  // from the API rather than the board, because a client-side lock is a
+  // suggestion, and it has to NAME the reason.
+  let del = await call('DELETE', `/api/projects/${SLUG}/board/lists/shipped`);
+  ok('a default lane refuses to be deleted', del.status === 400, del.status);
+  ok('…and says why rather than just saying no', /cannot be renamed or removed/.test(del.json?.error || ''), del.json);
+  let ren = await call('PATCH', `/api/projects/${SLUG}/board/lists/progress`, { name: 'Doing' });
+  ok('a default lane refuses to be renamed', ren.status === 400, ren.status);
   let items = flat((await call('GET', `/api/projects/${SLUG}/roadmap`)).json);
+  ok('a refused delete leaves the cards exactly where they were',
+    items.find((i) => i.id === other.id).listKey === 'shipped', items.find((i) => i.id === other.id)?.listKey);
+
+  // A lane the OWNER added is the opposite: nothing derives into it, so it
+  // renames and deletes freely — and deleting it returns its cards to the
+  // derived column rather than orphaning them in a lane that is gone.
+  const spike = (await call('POST', `/api/projects/${SLUG}/board/lists`, { name: 'Spike' })).json.list;
+  ok('an added lane is never one of the locked keys', spike.locked === false, spike);
+  ren = await call('PATCH', `/api/projects/${SLUG}/board/lists/${spike.key}`, { name: 'Spikes' });
+  ok('an added lane renames', ren.json?.list?.name === 'Spikes', ren.json);
+  await call('PATCH', `/api/projects/${SLUG}/roadmap/${other.id}`, { listKey: spike.key });
+  await call('DELETE', `/api/projects/${SLUG}/board/lists/${spike.key}`);
+  items = flat((await call('GET', `/api/projects/${SLUG}/roadmap`)).json);
   ok('deleting a list keeps its cards', items.length === 3, items.length);
   ok('…and returns them to the derived column rather than orphaning them',
     items.find((i) => i.id === other.id).listKey === '', items.find((i) => i.id === other.id)?.listKey);
+
+  // A verdict clears a hand-dragged column, so the card lands in Shipped by
+  // derivation rather than sitting wherever it was last dropped — and it is
+  // STILL not a tick. This is the Review room's end of the round trip.
+  await call('PATCH', `/api/projects/${SLUG}/roadmap/${other.id}`, { listKey: 'planned', claimed_by: 'feat/9-x' });
+  r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${other.id}`, { review_tag: 'solid' })).json;
+  ok('a verdict releases the card back to the derivation', r.listKey === '', r.listKey);
+  ok('…which reads a verdict as shipped even with the claim still on it',
+    r.reviewTag === 'solid' && r.claimedBy === 'feat/9-x', [r.reviewTag, r.claimedBy]);
+  ok('…and a verdict still does not tick it', r.done === false, r.done);
+  await call('PATCH', `/api/projects/${SLUG}/roadmap/${other.id}`, { review_tag: '', claimed_by: '' });
 
   // ---- areas --------------------------------------------------------------
 

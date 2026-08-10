@@ -493,11 +493,13 @@ export function scopeTotals(children: RoadmapItem[], cycle = CYCLE_WEEKS): Scope
 
 /**
  * Client twin of `listFor` in server/src/lists.js. '' on the item means DERIVED,
- * never "the first list" — see that file's header.
+ * never "the first list" — see that file's header, which also carries why a
+ * VERDICT outranks the branch claim and why that is not a tick.
  */
 export function listKeyOf(it: RoadmapItem): string {
   if (it.listKey) return it.listKey;
   if (it.done) return 'shipped';
+  if (it.reviewTag.trim()) return 'shipped';
   if (it.claimedBy.trim()) return 'progress';
   // #381 — a released fly card sits with the hook extractions: a session's note
   // about what it was doing is not a commitment by the board until someone

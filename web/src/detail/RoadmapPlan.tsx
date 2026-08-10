@@ -31,6 +31,26 @@
 //    board that ticked on approval would be manufacturing the state the whole
 //    verdict chain exists to keep honest. A card with no `built_note` says so
 //    rather than presenting a title as evidence — the NULL-verdict rule.
+//  • FOUR LANES ARE LOCKED, THE REST ARE THE OWNER'S. `idea`, `planned`,
+//    `progress` and `shipped` are where `listKeyOf` derives cards to and where
+//    the Review room moves work through, so their keys are wiring: rename one
+//    and every derived card lands in a column that no longer exists. They carry
+//    a lock and no menu. A lane the owner ADDS is pure convenience — nothing
+//    derives into it — so it renames and deletes freely, and deleting it returns
+//    its cards to the derived column rather than taking them with it. The real
+//    guard is on the API (server/src/lists.js); this is only the affordance.
+//  • IN PROGRESS AND SHIPPED ARE THE REVIEW ROOM'S TWO ENDS. A change is in the
+//    Review room's queue from the moment it is BUILT (#374), which is exactly
+//    while it sits in In progress — so both lanes link into that room, per card
+//    and per lane, and a verdict given there brings the card back to Shipped
+//    (server/src/lists.js). The predicate is `isBuilt` from lib/spine, the same
+//    one the Overview's verdict queue counts: a lane saying "3 waiting" beside a
+//    room showing 4 is two answers to one question.
+//  • FOCUS IS READING, NOT STATE. A lane opens to ~2.3× its width so a card's
+//    built note and labels are legible without opening anything, and it is
+//    per-visit — the board is a place you scan, and a column left wide from
+//    last week is furniture nobody asked for. One at a time: two wide lanes on
+//    a 262px grid is a horizontal scroll with no board left in view.
 //  • A CLICK OPENS THE CARD, A DOUBLE-CLICK OPENS THE ITEM. The inline detail is
 //    for the things you change constantly (labels and scope); everything
 //    else lives in the modal. A double-click toggles the detail twice on its way
@@ -43,6 +63,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BoardArea, BoardLabel, BoardList, Priority, RoadmapItem } from '../types';
 import { areaMatches, listKeyOf } from '../lib/plan';
+import { isBuilt } from '../lib/spine';
+import { hrefTo } from '../lib/route';
 import { LABEL_TONES, labelsOf } from '../lib/labels';
 
 const BUCKETS: Priority[] = ['must', 'should', 'could', 'wont'];
@@ -50,7 +72,13 @@ const BUCKET_LABEL: Record<Priority, string> = {
   must: 'Must', should: 'Should', could: 'Could', wont: "Won't",
 };
 
+// The two lanes that are the Review room's ends — see the header. Named once so
+// the per-card strip, the lane head link and the styling cannot drift apart.
+const REVIEW_LANES = new Set(['progress', 'shipped']);
+
 export interface PlanProps {
+  /** The project, for the Review room link — a room-wide queue needs to be told whose change. */
+  slug: string;
   items: RoadmapItem[];
   lists: BoardList[];
   areas: BoardArea[];
@@ -77,13 +105,17 @@ export interface PlanProps {
   onSendBack: (item: RoadmapItem) => void;
   onAddCard: (listKey: string, title: string) => void;
   onAddList: (name: string) => void;
+  /** Rename an owner-added lane. Never called for a locked one. */
+  onRenameList: (list: BoardList, name: string) => void;
+  /** Remove an owner-added lane; its cards return to the derived column. */
+  onDeleteList: (list: BoardList) => void;
   onOpen: (item: RoadmapItem) => void;
 }
 
 export function RoadmapPlan({
-  items, lists, areas, labels, tones, areaFilter, labelFilter, onSetLabelFilter,
+  slug, items, lists, areas, labels, tones, areaFilter, labelFilter, onSetLabelFilter,
   onAddLabel, onDeleteLabel, onMoveToList, onSetBucket, onToggleLabel, onArchive, onArchiveMany,
-  onDelete, onApprove, onSendBack, onAddCard, onAddList, onOpen,
+  onDelete, onApprove, onSendBack, onAddCard, onAddList, onRenameList, onDeleteList, onOpen,
 }: PlanProps) {
   const [openCard, setOpenCard] = useState<number | null>(null);
   const [composer, setComposer] = useState<string | null>(null);
@@ -94,6 +126,17 @@ export function RoadmapPlan({
   // Which card's review panel is open, and which card's label menu is open.
   const [reviewing, setReviewing] = useState<number | null>(null);
   const [labelsFor, setLabelsFor] = useState<number | null>(null);
+  // The widened lane — '' = none. One at a time; see the header.
+  const [focus, setFocus] = useState('');
+  // The lane being renamed, and the lane whose delete is armed. Both are keys,
+  // and both are cleared by the other: a rename box left open behind an armed
+  // delete is two pending changes to one column.
+  const [renaming, setRenaming] = useState('');
+  const [renameDraft, setRenameDraft] = useState('');
+  const [confirmList, setConfirmList] = useState('');
+
+  // The Review room, opened ON this change. `slug#id` is the room's own row key.
+  const reviewHref = (it: RoadmapItem) => hrefTo.control('review', `${slug}#${it.id}`);
 
   const dotOf = (area: string) => areas.find((a) => a.name === area)?.dot || 'var(--line-3)';
 
@@ -159,8 +202,14 @@ export function RoadmapPlan({
       <div className="rp-cols">
         {lists.map((list) => {
           const cards = visible.filter((i) => listKeyOf(i) === list.key);
+          // How many cards in this lane the Review room is holding. Counted off
+          // the SHOWN cards, like the sweep: a lane head that counts rows the
+          // area filter is hiding is a number you cannot reconcile with the
+          // column under it.
+          const waiting = REVIEW_LANES.has(list.key) ? cards.filter(isBuilt).length : 0;
+          const wide = focus === list.key;
           return (
-            <div className="rp-col" key={list.key}
+            <div className={`rp-col${wide ? ' focus' : ''}`} key={list.key}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
@@ -168,29 +217,93 @@ export function RoadmapPlan({
                 if (it) onMoveToList(it, list.key);
               }}>
               <div className="rp-col-head">
-                <span className="nm">{list.name}</span>
-                <span className="n">{cards.length}</span>
-                {/* Shipped is the one lane work PILES UP in — every other column
-                    is somewhere a card is passing through. The sweep archives
-                    exactly the cards ON SCREEN, so it can never touch rows the
-                    area or label filter is hiding: a bulk action whose reach is
-                    wider than its view is how you lose work you never saw. */}
-                {list.key === 'shipped' && cards.length > 0 && (
-                  confirmSweep === list.key ? (
-                    <span className="rp-sweep-confirm">
-                      <button className="go" onClick={() => { onArchiveMany(cards); setConfirmSweep(''); }}>
-                        Archive {cards.length}?
+                {renaming === list.key ? (
+                  <input className="field-input sm" autoFocus value={renameDraft}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onBlur={() => setRenaming('')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const v = renameDraft.trim();
+                        if (v && v !== list.name) onRenameList(list, v);
+                        setRenaming('');
+                      } else if (e.key === 'Escape') setRenaming('');
+                    }} />
+                ) : (
+                  <>
+                    <span className="nm">{list.name}</span>
+                    <span className="n">{cards.length}</span>
+                  </>
+                )}
+                {/* The lane's own tie to the Review room. It states the NUMBER
+                    rather than just linking, because the two lanes are the only
+                    place on this board where work is waiting on the owner
+                    personally — and it is hidden at zero rather than drawn as a
+                    grey 0, which reads as "the room is empty" when what it
+                    means is "nothing of THIS lane is in it". */}
+                {waiting > 0 && (
+                  <a className="rp-col-review" href={hrefTo.control('review')}
+                    title={`${waiting} change${waiting === 1 ? '' : 's'} in this lane ${
+                      waiting === 1 ? 'is' : 'are'} waiting on your verdict in Mission Control’s Review room`}>
+                    {waiting} to review →
+                  </a>
+                )}
+
+                <span className="rp-col-tools">
+                  {/* Shipped is the one lane work PILES UP in — every other column
+                      is somewhere a card is passing through. The sweep archives
+                      exactly the cards ON SCREEN, so it can never touch rows the
+                      area or label filter is hiding: a bulk action whose reach is
+                      wider than its view is how you lose work you never saw. */}
+                  {list.key === 'shipped' && cards.length > 0 && (
+                    confirmSweep === list.key ? (
+                      <span className="rp-sweep-confirm">
+                        <button className="go" onClick={() => { onArchiveMany(cards); setConfirmSweep(''); }}>
+                          Archive {cards.length}?
+                        </button>
+                        <button className="no" onClick={() => setConfirmSweep('')}>Cancel</button>
+                      </span>
+                    ) : (
+                      <button className="rp-sweep" onClick={() => setConfirmSweep(list.key)}
+                        title={`Archive the ${cards.length} card${cards.length === 1 ? '' : 's'} shown here${
+                          areaFilter || labelFilter ? ' — the filter is on, so only these' : ''}`}>
+                        Archive all
                       </button>
-                      <button className="no" onClick={() => setConfirmSweep('')}>Cancel</button>
+                    )
+                  )}
+
+                  {/* Rename and remove, for the lanes that are the owner's. A
+                      locked lane gets the lock in place of the menu — the
+                      affordance says WHY rather than going missing, since a
+                      button absent from one column and present on the next
+                      reads as a rendering fault. */}
+                  {list.locked ? (
+                    <span className="rp-col-lock" aria-hidden="false"
+                      title="A built-in lane. Cards are sorted into it automatically and the Review room moves work through it, so it cannot be renamed or removed — lanes you add yourself can be.">
+                      🔒
+                    </span>
+                  ) : confirmList === list.key ? (
+                    <span className="rp-sweep-confirm">
+                      <button className="go" onClick={() => { setConfirmList(''); onDeleteList(list); }}
+                        title="The cards stay — they go back to the lane their own state puts them in">
+                        Remove lane{cards.length ? ` · ${cards.length} card${cards.length === 1 ? '' : 's'} stay` : ''}?
+                      </button>
+                      <button className="no" onClick={() => setConfirmList('')}>Cancel</button>
                     </span>
                   ) : (
-                    <button className="rp-sweep" onClick={() => setConfirmSweep(list.key)}
-                      title={`Archive the ${cards.length} card${cards.length === 1 ? '' : 's'} shown here${
-                        areaFilter || labelFilter ? ' — the filter is on, so only these' : ''}`}>
-                      Archive all
-                    </button>
-                  )
-                )}
+                    <>
+                      <button className="rp-col-act" title="Rename this lane"
+                        onClick={() => { setConfirmList(''); setRenameDraft(list.name); setRenaming(list.key); }}>✎</button>
+                      <button className="rp-col-act" title="Remove this lane — its cards are not deleted"
+                        onClick={() => { setRenaming(''); setConfirmList(list.key); }}>×</button>
+                    </>
+                  )}
+
+                  <button className={`rp-col-act${wide ? ' on' : ''}`} aria-pressed={wide}
+                    onClick={() => setFocus(wide ? '' : list.key)}
+                    title={wide ? 'Close this lane back to its column width' : 'Focus this lane — open it wide enough to read'}>
+                    {wide ? '⇤' : '⇥'}
+                  </button>
+                </span>
               </div>
 
               {cards.map((c) => (
@@ -214,6 +327,23 @@ export function RoadmapPlan({
                     <span className="est">{c.estimate === null ? '' : `${c.estimate}w`}</span>
                     {c.reviewTag && <span className="rp-verdict" title="Verdict already recorded">✓ {c.reviewTag}</span>}
                   </div>
+
+                  {/* The card's own end of the Review room. Two states, and the
+                      difference is the whole point of the link: a change still
+                      IN the queue is waiting on the owner, and a change already
+                      verdicted is a receipt you can go and re-read. A card in
+                      these lanes with neither — claimed but nothing built yet —
+                      shows nothing, because the room has never heard of it and
+                      a link landing on an empty queue teaches the wrong thing. */}
+                  {REVIEW_LANES.has(list.key) && (isBuilt(c) || c.reviewTag) && (
+                    <a className={`rp-card-review${isBuilt(c) ? ' waiting' : ''}`}
+                      href={reviewHref(c)} onClick={(e) => e.stopPropagation()}
+                      title={isBuilt(c)
+                        ? 'Open this change in Mission Control’s Review room — read what landed, then give it a verdict'
+                        : 'Open this change in Mission Control’s Review room — the verdict is already on record'}>
+                      {isBuilt(c) ? 'Waiting on your verdict' : `Verdicted ${c.reviewTag}`} →
+                    </a>
+                  )}
 
                   {list.key === 'shipped' && (
                     <div className="rp-shipped-acts" onClick={(e) => e.stopPropagation()}>

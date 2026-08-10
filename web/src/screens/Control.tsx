@@ -91,8 +91,11 @@ function firstPassTrend(fp: { now: { solid: number; verdicted: number }; prev: {
 const pct1 = (n: number) => `${Math.round(n * 100)}%`;
 
 
-export function ControlPanel({ initialRoom, full, onToggleFull }: {
-  initialRoom?: ControlRoom; full: boolean; onToggleFull: () => void;
+export function ControlPanel({ initialRoom, initialHighlight, full, onToggleFull }: {
+  initialRoom?: ControlRoom;
+  /** `?hl=` — one row the room should open on. See the Route type: a HANDOFF. */
+  initialHighlight?: string;
+  full: boolean; onToggleFull: () => void;
 }) {
   const [data, setData] = useState<ControlData | null>(null);
   const [error, setError] = useState('');
@@ -218,14 +221,24 @@ export function ControlPanel({ initialRoom, full, onToggleFull }: {
   // The route is the authority whenever it actually changes — a link pressed
   // anywhere in the app moves the room, not just the tabs above.
   useEffect(() => { setRoom(initialRoom ?? 'now'); }, [initialRoom]);
+  // The `?hl=` handoff, held for exactly as long as it takes the room to use
+  // it. It is STATE rather than the prop read straight through because the
+  // replaceState below strips it from the URL immediately — a room reading the
+  // route would find it already gone. Re-arming on the prop is what makes a
+  // second link, pressed while the room is already open, land on the new row.
+  const [highlight, setHighlight] = useState(initialHighlight ?? '');
+  useEffect(() => { if (initialHighlight) setHighlight(initialHighlight); }, [initialHighlight]);
   useEffect(() => {
     // Only ever RE-SPELL a control URL. This must not be able to navigate: the
     // tab click that mounts this panel can land here while the hash still says
     // '#/settings', and replacing that entry would eat it out of the history.
     if (!window.location.hash.replace(/^#/, '').startsWith('/control')) return;
+    // Deliberately WITHOUT the `hl`: it has been handed to the room by now, and
+    // a URL that kept it would re-select that row on every reload — which, in a
+    // queue you are working down, is the one row you have just finished with.
     const want = hrefTo.control(room);
     if (window.location.hash !== want) window.history.replaceState(null, '', want);
-  }, [room]);
+  }, [room, initialHighlight]);
   // #282 — how many changes are waiting on a verdict, for the room's badge.
   // The Review room owns the fetch and reports the count back up.
   const [reviewN, setReviewN] = useState(0);
@@ -1000,7 +1013,8 @@ export function ControlPanel({ initialRoom, full, onToggleFull }: {
                     review, which is how a verdict stops being given on a
                     description of the work. */}
                 {room === 'review' && (
-                  <ReviewRoom onCount={setReviewN}
+                  <ReviewRoom onCount={setReviewN} highlight={highlight}
+                    onHighlightUsed={() => setHighlight('')}
                     previews={previews} previewBusy={previewBusy} mirrorBusy={mirrorBusy}
                     onStartPreview={(slug, branch, itemId) => void openPreview(slug, branch, itemId)}
                     onStopPreview={setStopPending}

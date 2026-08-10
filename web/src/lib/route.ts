@@ -24,7 +24,12 @@ export type Route =
   | { name: 'dashboard' }
   | { name: 'settings' }
   | { name: 'timeline' }
-  | { name: 'control'; room?: ControlRoom }
+  // `highlight` names one row for the room to open ON — `#/control/review?hl=stack%2312`
+  // is "read THIS change", which is what a link from a project's board means.
+  // It is a HANDOFF, not state: the room selects it once and Control.tsx's
+  // replaceState drops it from the URL, so a reload is the plain room and Back
+  // does not walk you through rows you already read.
+  | { name: 'control'; room?: ControlRoom; highlight?: string }
   // The instructions tree — the third tab on the Settings screen, and a real
   // route so a link can land on it. `slug` picks whose tree you are reading;
   // absent means the first project, which is what a bare '#/instructions'
@@ -41,7 +46,8 @@ function parse(): Route {
   if (h === '/timeline' || h.startsWith('/timeline')) return { name: 'timeline' };
   if (h === '/control' || h.startsWith('/control')) {
     const room = h.split('?')[0].split('/')[2];
-    return { name: 'control', room: isControlRoom(room) ? room : undefined };
+    const hl = new URLSearchParams(h.split('?')[1] || '').get('hl') || '';
+    return { name: 'control', room: isControlRoom(room) ? room : undefined, highlight: hl || undefined };
   }
   if (h === '/instructions' || h.startsWith('/instructions')) {
     const slug = h.split('?')[0].split('/')[2];
@@ -87,7 +93,13 @@ export function useRoute(): Route {
 export const hrefTo = {
   // A room other than the default is named in the path; the default room keeps
   // the bare '#/control' as its one canonical URL, so nothing has two spellings.
-  control: (room?: ControlRoom) => (room && room !== 'now' ? `#/control/${room}` : '#/control'),
+  // `hl` is the one-shot row handoff — see the Route type. It is deliberately
+  // NOT part of the canonical form: Control.tsx rewrites the URL without it the
+  // moment the room has consumed it.
+  control: (room?: ControlRoom, hl?: string) => {
+    const base = room && room !== 'now' ? `#/control/${room}` : '#/control';
+    return hl ? `${base}?hl=${encodeURIComponent(hl)}` : base;
+  },
   settings: '#/settings',
   instructions: (slug?: string) => (slug ? `#/instructions/${encodeURIComponent(slug)}` : '#/instructions'),
   skills: '#/skills',
@@ -114,8 +126,8 @@ export const go = {
   timeline: () => { window.location.hash = '#/timeline'; },
   // The argument is VALIDATED rather than trusted: several call sites pass this
   // straight to onClick, which would hand it a mouse event as the room.
-  control: (room?: unknown) => {
-    window.location.hash = hrefTo.control(isControlRoom(room) ? room : undefined);
+  control: (room?: unknown, hl?: string) => {
+    window.location.hash = hrefTo.control(isControlRoom(room) ? room : undefined, hl);
   },
   instructions: (slug?: string) => { window.location.hash = hrefTo.instructions(slug); },
   skills: () => { window.location.hash = '#/skills'; },

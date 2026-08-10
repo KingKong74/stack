@@ -25,7 +25,7 @@
 import { Router } from 'express';
 import { pool, q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { ensureLists } from '../lists.js';
+import { ensureLists, isProtectedList } from '../lists.js';
 import { ensureLabels, labelKey, cleanTone, TONES } from '../labels.js';
 
 // Mounted at /api/projects/:slug/board (mergeParams to see :slug).
@@ -99,6 +99,12 @@ async function readAreas(projectId) {
   return out;
 }
 
+// `locked` is DERIVED from the key, never stored — the same rule areas follow
+// for their dots. A column is locked because `listFor` derives into it, and
+// that is a fact about the code, so a stored flag would be a second truth that
+// an old row could disagree with. See lists.js for what the lock protects.
+const shapeList = (r) => ({ ...r, locked: isProtectedList(r.key) });
+
 // GET / -> { areas, lists, labels }
 board.get('/', async (req, res) => {
   const [areas, lists, labels] = await Promise.all([
@@ -106,7 +112,7 @@ board.get('/', async (req, res) => {
     ensureLists(q, req.project.id),
     ensureLabels(q, req.project.id),
   ]);
-  res.json({ areas, lists, labels, palette: PALETTE, tones: TONES });
+  res.json({ areas, lists: lists.map(shapeList), labels, palette: PALETTE, tones: TONES });
 });
 
 // POST /areas  { name }
@@ -260,19 +266,29 @@ board.post('/lists', async (req, res) => {
        RETURNING id, key, name, position`,
     [req.project.id, `${key}-${pos[0].p}`, name, pos[0].p]
   );
-  res.status(201).json({ list: rows[0] });
+  // The `-<position>` suffix above is also what keeps an added list off the
+  // four protected keys, so a new lane is always an ordinary, editable one.
+  res.status(201).json({ list: shapeList(rows[0]) });
 });
+
+// The refusal both writers share. It NAMES the reason rather than just saying
+// no: "you cannot" with no "because" reads as a bug in the button.
+const LOCKED = 'That lane is part of how the board works — cards are sorted into '
+  + 'it automatically and the Review room moves work through it — so it cannot be '
+  + 'renamed or removed. Lanes you add yourself can be.';
 
 // PATCH /lists/:key  { name }
 board.patch('/lists/:key', async (req, res) => {
+  const key = String(req.params.key);
+  if (isProtectedList(key)) return res.status(400).json({ error: LOCKED });
   const name = String(req.body?.name || '').trim().slice(0, 60);
   if (!name) return res.status(400).json({ error: 'A list needs a name.' });
   const { rows } = await q(
     'UPDATE project_lists SET name = $1 WHERE project_id = $2 AND key = $3 RETURNING id, key, name, position',
-    [name, req.project.id, String(req.params.key)]
+    [name, req.project.id, key]
   );
   if (!rows.length) return res.status(404).json({ error: 'No such list.' });
-  res.json({ list: rows[0] });
+  res.json({ list: shapeList(rows[0]) });
 });
 
 // DELETE /lists/:key — the cards do not go with it. Their `list_key` is cleared,
@@ -280,6 +296,7 @@ board.patch('/lists/:key', async (req, res) => {
 // column that no longer exists.
 board.delete('/lists/:key', async (req, res) => {
   const key = String(req.params.key);
+  if (isProtectedList(key)) return res.status(400).json({ error: LOCKED });
   const { rows: left } = await q('SELECT count(*)::int AS n FROM project_lists WHERE project_id = $1', [req.project.id]);
   if (left[0].n <= 1) return res.status(400).json({ error: 'A board needs at least one list.' });
   await q('UPDATE roadmap_items SET list_key = NULL, updated_at = now() WHERE project_id = $1 AND list_key = $2', [req.project.id, key]);

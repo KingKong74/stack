@@ -13,7 +13,7 @@
 //
 // The derivation deliberately mirrors the states Stack tracks elsewhere, so the
 // Plan view agrees with the Overview spine without either importing the other:
-//   shipped   — done
+//   shipped   — done, OR a verdict is on record (see below)
 //   progress  — claimed by a branch or a session
 //   idea      — nobody typed it and nobody has signed it off yet (#359: an
 //               unapproved auto-extraction is not planned work, it is a
@@ -24,9 +24,21 @@
 //               which is where it spends its whole working life.
 //   planned   — everything else
 //
+// A VERDICT SHIPS THE CARD, AND STILL DOES NOT TICK IT. `review_tag` outranks
+// the branch claim here because approving in the Review room is the moment the
+// change stops being in progress — and the claim SURVIVES a verdict (it stays
+// until a human merges and ticks, CLAUDE.md), so a claim-first derivation left
+// every verdicted change sitting in "In progress" for as long as its branch
+// lived. What this is NOT is a tick: `done` is still what `computeProgress`
+// weighs and what the merge job writes, and nothing here touches it. The board
+// reads a verdict; it never manufactures one, which is the same rule from the
+// other side as "a board column is not a verdict".
+//
 // Moving a card writes `list_key` explicitly, and from then on the row says
-// where it lives. Dragging a card to "Shipped" does NOT tick it: ticking is a
-// verdict the Review room owns, and a board column is not a verdict.
+// where it lives — with one exception, in `PATCH /roadmap/:id`: recording a
+// verdict CLEARS `list_key`, so a card somebody once dragged still lands in
+// Shipped. Un-ticking clears the verdict, which hands the row straight back to
+// this derivation.
 
 export const DEFAULT_LISTS = [
   { key: 'idea', name: 'Ideas · Polaris', position: 0 },
@@ -35,9 +47,33 @@ export const DEFAULT_LISTS = [
   { key: 'shipped', name: 'Shipped', position: 3 },
 ];
 
+/**
+ * The four lanes above are LOCKED: they cannot be renamed and cannot be
+ * deleted, because their KEYS are wiring rather than decoration. `listFor`
+ * returns these four strings and nothing else, so a board missing one has a
+ * derived column with nowhere to render; the Review room's round trip (a
+ * change leaves `progress` and arrives in `shipped` on a verdict) names them;
+ * and the Plan view's Shipped-lane sweep and review panel key off `shipped`.
+ * Rename one and every card the derivation sends there vanishes from the board
+ * while still counting everywhere else — the worst kind of loss, the silent one.
+ *
+ * Lanes the owner adds are the opposite: pure convenience, nothing derives into
+ * them, and they rename and delete freely. `POST /lists` suffixes every new key
+ * with its position, so an added lane can never collide with one of these four.
+ *
+ * The guard lives on the ROUTES (board.js), because the API is the boundary —
+ * a client-side lock is a suggestion.
+ */
+export const PROTECTED_LISTS = new Set(DEFAULT_LISTS.map((l) => l.key));
+
+export const isProtectedList = (key) => PROTECTED_LISTS.has(String(key || '').trim());
+
 /** Where a row sits when `list_key` is NULL. Pure. */
 export function listFor(row) {
   if (row.done) return 'shipped';
+  // The verdict, before the claim — see the header. Any of the three verdicts
+  // counts: "needs-work" is still a change that has been read and answered.
+  if (String(row.review_tag || '').trim()) return 'shipped';
   if (String(row.claimed_by || '').trim()) return 'progress';
   if ((row.source === 'hook' || row.source === 'fly') && !row.reviewed_at) return 'idea';
   return 'planned';

@@ -136,7 +136,10 @@ export interface BoardArea {
   dot: string;
   registered: boolean;
 }
-export interface BoardList { id: number; key: string; name: string; position: number }
+// `locked` is one of the four lanes `listKeyOf` derives into and the Review room
+// moves work through, so it cannot be renamed or deleted — the server decides
+// it from the key and the guard lives there too (server/src/lists.js).
+export interface BoardList { id: number; key: string; name: string; position: number; locked?: boolean }
 // A label the owner has defined for THIS project (#382 — was a code registry).
 // `tone` is one of the closed Atlas set, because styles.css needs a rule for it.
 export interface BoardLabel { key: string; name: string; tone: string }

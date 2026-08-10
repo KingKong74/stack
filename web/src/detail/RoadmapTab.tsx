@@ -42,6 +42,7 @@ import type { TabAgentState } from '../store';
 import {
   getBoardShape, patchRoadmapItem, createRoadmapItem,
   addArea, renameArea as renameAreaApi, deleteArea as deleteAreaApi, addList as addListApi,
+  renameList as renameListApi, deleteList as deleteListApi,
   addLabel as addLabelApi, deleteLabel as deleteLabelApi,
   setAreaColour, arrangeRoadmap, allocateRoadmap, agentCan, agentOffReason,
 } from '../store';
@@ -577,6 +578,7 @@ export function RoadmapTab({
 
       {view === 'plan' && board === 'lists' && (
         <RoadmapPlan
+          slug={slug}
           items={items} lists={lists} areas={areas} areaFilter={areaFilter}
           labels={labels} tones={tones}
           labelFilter={labelFilter} onSetLabelFilter={setLabelFilter}
@@ -613,6 +615,22 @@ export function RoadmapTab({
               'add that card');
           }}
           onAddList={(name) => { guard(addListApi(slug, name).then((l) => setLists((ls) => [...ls, l])), 'add that list'); }}
+          onRenameList={(list, name) => {
+            guard(renameListApi(slug, list.key, name)
+              .then((l) => setLists((ls) => ls.map((x) => (x.key === l.key ? l : x)))), 'rename that lane');
+          }}
+          onDeleteList={(list) => {
+            // The lane goes; its cards do not. The server clears their
+            // `list_key`, which returns them to the DERIVED column — so the
+            // same clear is mirrored into the rows in hand. Without it the
+            // board would keep every one of those cards filed under a lane that
+            // no longer renders: work that is still there, and invisible.
+            const freed = items.filter((i) => i.listKey === list.key).map((i) => ({ ...i, listKey: '' }));
+            guard(deleteListApi(slug, list.key).then(() => {
+              setLists((ls) => ls.filter((x) => x.key !== list.key));
+              if (freed.length) onItemsChanged(freed);
+            }), 'remove that lane');
+          }}
           onOpen={onOpenItem} />
       )}
 

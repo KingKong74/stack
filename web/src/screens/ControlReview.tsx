@@ -149,12 +149,24 @@ function nightLabel(day: string): string {
 }
 
 export function ReviewRoom({
-  onCount, previews, previewBusy, mirrorBusy, onStartPreview, onStopPreview, onExtendPreview,
+  onCount, highlight, onHighlightUsed,
+  previews, previewBusy, mirrorBusy, onStartPreview, onStopPreview, onExtendPreview,
 }: {
   onCount?: (n: number) => void;
-  // There was a `focus` prop here — "slug#id", a specific change another room
-  // wanted judged. Its only caller was the Build room's verdict gate, and it
-  // went out with that room; the queue's own selection is the whole story now.
+  /**
+   * "slug#id" — one change to open on, from `#/control/review?hl=…`. A
+   * project's Plan board links its In progress and Shipped lanes here, so the
+   * lane you are looking at and the change you are judging are one press apart.
+   *
+   * A prop that once existed as `focus` and went out with the Build room. It is
+   * back because the caller is different in kind: not a room handing off inside
+   * Mission Control, but a LINK from a project's board, which cannot select
+   * anything itself. `onHighlightUsed` fires once the row is selected — the
+   * handoff must be spent, or the queue would keep snapping back to it as you
+   * work down the list.
+   */
+  highlight?: string;
+  onHighlightUsed?: () => void;
   //
   // #375 — the mirror sites come in as props rather than being fetched here.
   // Control.tsx already owns that poll for the Now and Merge rooms (a preview
@@ -274,6 +286,32 @@ export function ReviewRoom({
     if (!list.length) { setSelId(''); return; }
     if (!list.some((it) => key(it) === selId)) setSelId(key(list[0]));
   }, [list, selId]);
+
+  // Spend the `?hl=` handoff: find the change a link named and open ON it.
+  //
+  // It searches EVERY filter and moves to the one holding the row, because the
+  // link's sender does not know which — a board's Shipped lane links changes
+  // that are still queued and changes already settled, and landing on "todo"
+  // with the row nowhere in it looks like the link was broken. A row that has
+  // dropped out of the room entirely (deleted, or past the settled cap) spends
+  // the handoff anyway and leaves the queue where it was: silently re-selecting
+  // some other row would be a link to the wrong change, which is worse than a
+  // link to none.
+  //
+  // DECLARED AFTER the keep-a-selection effect above on purpose. Both run in the
+  // same commit and both may write `selId`; the later write wins, and this one
+  // has to, or the fallback would drag the selection back to the top of the list.
+  useEffect(() => {
+    if (!highlight || !data) return;
+    const where = (['todo', 'flagged', 'shelved', 'settled'] as Filter[])
+      .find((f) => lists[f].some((it) => key(it) === highlight));
+    if (where) {
+      setView('queue');
+      setFilter(where);
+      setSelId(highlight);
+    }
+    onHighlightUsed?.();
+  }, [highlight, data, lists, onHighlightUsed]);
 
   // #264 unit 1 — ten items from one night is one decision, not ten. Group
   // `list` into clusters keyed on night + branch (the branch CLAIM, #277 — the

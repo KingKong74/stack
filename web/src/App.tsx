@@ -78,7 +78,7 @@ export default function App() {
       ) : route.name === 'timeline' ? (
         <Timeline />
       ) : route.name === 'control' ? (
-        <Settings initialTab="control" initialRoom={route.room} />
+        <Settings initialTab="control" initialRoom={route.room} initialHighlight={route.highlight} />
       ) : route.name === 'instructions' ? (
         <Settings initialTab="instructions" initialSlug={route.slug} />
       ) : route.name === 'terminal' ? (

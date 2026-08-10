@@ -42,8 +42,10 @@ function maskToken(t: string | null): string {
   return `${'•'.repeat(Math.min(t.length - 4, 16))}${t.slice(-4)}`;
 }
 
-export function Settings({ initialTab = 'settings', initialRoom, initialSlug }: {
+export function Settings({ initialTab = 'settings', initialRoom, initialSlug, initialHighlight }: {
   initialTab?: ScreenTab; initialRoom?: ControlRoom; initialSlug?: string;
+  /** `?hl=` — one row for the room to open on. Passed straight through. */
+  initialHighlight?: string;
 }) {
   // One screen, three tabs: the app's settings, Mission Control (#/control
   // deep-links straight onto the control tab, and #/control/<room> onto a room
@@ -283,7 +285,10 @@ export function Settings({ initialTab = 'settings', initialRoom, initialSlug }: 
           </a>
         </div>
 
-        {screenTab === 'control' && <ControlPanel initialRoom={initialRoom} full={full} onToggleFull={toggleFull} />}
+        {screenTab === 'control' && (
+          <ControlPanel initialRoom={initialRoom} initialHighlight={initialHighlight}
+            full={full} onToggleFull={toggleFull} />
+        )}
 
         {/* Lazy, and for the same reason the Terminal and the skill tree are:
             the tab carries its own parser and map, and most visits to this

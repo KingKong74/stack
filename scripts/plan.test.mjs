@@ -355,6 +355,21 @@ test('an explicit column always wins over the derivation', () => {
   assert.equal(listKeyOf(item({ done: true, listKey: 'planned' })), 'planned');
 });
 
+// A verdict is what ends "in progress", and the claim outlives it — it stays
+// until a human merges and ticks. So the claim must NOT be what decides the
+// column, or a verdicted change sits in In progress for as long as its branch.
+test('a verdict ships the card even while its branch claim stands', () => {
+  assert.equal(listKeyOf(item({ claimedBy: 'feat/3-x', reviewTag: 'solid' })), 'shipped');
+  assert.equal(listKeyOf(item({ claimedBy: 'feat/3-x', reviewTag: 'needs-work' })), 'shipped');
+  // And still not a tick: `done` is untouched by any of this.
+  assert.equal(item({ claimedBy: 'feat/3-x', reviewTag: 'solid' }).done, false);
+});
+
+test('clearing the verdict returns the card to the lane its state puts it in', () => {
+  assert.equal(listKeyOf(item({ claimedBy: 'feat/3-x', reviewTag: '' })), 'progress');
+  assert.equal(listKeyOf(item({ claimedBy: '', reviewTag: '' })), 'planned');
+});
+
 // --- now, what's next, and the calendar --------------------------------------
 
 test('now sits inside the window, not at its edge', () => {
