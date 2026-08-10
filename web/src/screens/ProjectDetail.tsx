@@ -916,9 +916,21 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
 
             Four of the six tabs have one. Overview and Activity are readings of
             what happened, not surfaces with an agent working on them; the
-            registry says which agents own a console and this only asks. */}
+            registry says which agents own a console and this only asks.
+
+            IT IS KEYED PER AGENT, so switching tabs is a REMOUNT and not a prop
+            change. Everything the strip holds belongs to one agent's console:
+            whether the pane is open and tall (stored per agent, but READ once at
+            mount), the connection status, whether it re-attached, what the
+            briefing could not see, and the ⏻ two-step. Swapping the props alone
+            carried all of that from the tab you left onto the tab you arrived
+            at — the Quality strip opening in the Roadmap's open/tall state and
+            then writing it back under its own key. The pane keys itself on the
+            agent too; that one is about the SOCKET, this one is about the strip
+            around it. */}
         {tabAgent && (consoleCan || consoleOff) && (
-          <TabTerminal agentKey={tabAgent.key} agentName={tabAgent.name} slug={slug}
+          <TabTerminal key={`${tabAgent.key}:${slug}`}
+            agentKey={tabAgent.key} agentName={tabAgent.name} slug={slug}
             off={consoleCan ? '' : consoleOff}
             task={consoleTask} onTaskSent={() => setConsoleTask(null)} />
         )}

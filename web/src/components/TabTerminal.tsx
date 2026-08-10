@@ -306,7 +306,18 @@ export function TabTerminal({ agentKey, agentName, slug, off, task, onTaskSent }
 
       {open && (
         <Suspense fallback={<div className="tabterm-holder gitbash" />}>
-          <ConsolePane key={nonce} agentKey={agentKey} name={name} slug={slug}
+          {/* KEYED ON THE AGENT AND THE PROJECT, not just the reconnect nonce.
+              The pane holds the WebSocket, and the socket is bound to one tmux
+              session — the name is baked in at connect and its effect never
+              re-runs. Without the agent in this key, moving from the Roadmap to
+              Quality left the same pane mounted: the strip's heading recomputed
+              to `stack-term-auditor-…` while the terminal underneath was still
+              attached to the CURATOR's session. Every tab showed one console,
+              and typing into it typed at another agent's Claude.
+
+              The slug is in here for the same reason one tab further out: the
+              same agent on a different project is a different session. */}
+          <ConsolePane key={`${agentKey}:${slug}:${nonce}`} agentKey={agentKey} name={name} slug={slug}
             onStatus={(s, n) => { setStatus(s); setNote(n); }}
             onReattached={setReattached}
             onPrimed={setPrimeWarn}
