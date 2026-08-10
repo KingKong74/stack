@@ -330,7 +330,7 @@ const PATCHABLE = new Set([
   'merge_autonomy',
   'current_phase', 'summary', 'next_steps', 'blockers',
   'in_progress', 'next_up', 'working_well', 'tint', 'north_star', 'directives',
-  'deploy_platform', 'logs_url', 'tech_stack', 'audit_context',
+  'deploy_platform', 'logs_url', 'tech_stack',
 ]);
 const JSON_FIELDS = new Set(['next_steps', 'blockers', 'in_progress', 'next_up', 'working_well', 'directives', 'tech_stack']);
 

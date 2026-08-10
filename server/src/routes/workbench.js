@@ -678,7 +678,7 @@ const describe = (c) => {
 // SAYS it is capped with its true total — an unmarked slice reads as "that is
 // all there is" and the model then reasons from an absence that isn't real.
 // Ordering is by importance, never by recency, so a cap never drops the
-// long-standing criticals (the same trap routes/audit.js documents).
+// long-standing criticals (the same trap `prompts.js`'s header documents).
 async function projectRecord(project) {
   const [road, bugs, files] = await Promise.all([
     q(

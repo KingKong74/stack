@@ -31,10 +31,18 @@ console.log('--- the registry ---');
 check('the agents', AGENTS.map((a) => a.key),
   ['auditor', 'curator', 'foreman', 'merger', 'scribe', 'polaris', 'drafter']);
 check('one surface each, no surface shared', new Set(AGENTS.map((a) => a.tab)).size, AGENTS.length);
-check('every agent owns at least one op', AGENTS.every((a) => a.ops.length > 0), true);
+// Every agent has a SURFACE it can act through — ops, a console, or both. Not
+// "at least one op": the Auditor has none since its templated bug audit went,
+// and its whole surface is the live session on the Quality tab. An agent with
+// neither would be a card in the room that controls nothing.
+check('every agent can act somewhere', AGENTS.every((a) => a.ops.length > 0 || a.console), true);
+check('the op-less one is the Auditor, and only it',
+  AGENTS.filter((a) => a.ops.length === 0).map((a) => a.key), ['auditor']);
 // The op → agent map is built at import time and throws on a duplicate, so a
 // second owner for an op cannot even load. This asserts the resolved mapping.
-check('audit belongs to the Auditor', agentForOp('audit').key, 'auditor');
+// `audit` resolves to NOBODY now — a retired op must not keep a home, or a call
+// site left behind would go on working under an agent that no longer offers it.
+check('the retired audit op belongs to nobody', agentForOp('audit'), null);
 check('cleanup belongs to the Curator', agentForOp('cleanup').key, 'curator');
 check('judge belongs to Polaris', agentForOp('judge').key, 'polaris');
 check('mergeplan belongs to the Merge agent', agentForOp('mergeplan').key, 'merger');
@@ -54,10 +62,11 @@ check('the surfaces', AGENTS.map((a) => a.tab),
 // This list is the routes' side of the contract, written out so a renamed op
 // fails here rather than the first time somebody presses the button.
 const WIRED = {
-  // #379 — one op, since the tab consoles took the deep-audit prompt's job: it
-  // composed a hand-off for a Claude session the human opened elsewhere, and
-  // the tab now carries a live session of its own.
-  auditor: ['audit'],
+  // NO OPS. Both of the Auditor's went to the same place: the deep-audit prompt
+  // (#379) and then the bug audit itself, each a template standing in for an
+  // investigation the tab's live session does directly. Nothing routes to this
+  // agent any more — its model, guidance and switch govern that session.
+  auditor: [],
   // 'arrange' reads the timeline and proposes an ORDER — the one thing the
   // Arrange panel's arithmetic structurally cannot do. Routes: POST /roadmap/arrange.
   curator: ['titler', 'assist', 'cleanup', 'arrange'],
@@ -84,17 +93,21 @@ const polaris = agentClient('polaris');
 // refusal does not depend on a reachable Postgres.
 await rejects('the Auditor cannot run the Curator\'s cleanup', () => auditor.gate('cleanup'), 'Curator');
 await rejects('the Auditor cannot run Polaris\'s judge', () => auditor.gate('judge'), 'Polaris');
-await rejects('the Curator cannot run the audit', () => curator.gate('audit'), 'Auditor');
+// An agent with NO ops refuses everything, including the op it used to own.
+// That is the shape of a retired capability: not a switched-off op somebody can
+// turn back on, but a name no client resolves at all.
+await rejects('the Auditor cannot run its own retired audit', () => auditor.gate('audit'), 'not an op');
+await rejects('...and neither can anybody else', () => curator.gate('audit'), 'not an op');
 await rejects('Polaris cannot run the assist', () => polaris.gate('assist'), 'Curator');
 // The Merge agent reads diffs across every project; it must not be able to
 // reach a project tab's op just because its remit is the widest.
-await rejects('the Merge agent cannot run the audit', () => agentClient('merger').gate('audit'), 'Auditor');
+await rejects('the Merge agent cannot run the titler', () => agentClient('merger').gate('titler'), 'Curator');
 await rejects('...nor the Curator\'s cleanup', () => agentClient('merger').gate('cleanup'), 'Curator');
 await rejects('and nobody else can run its mergeplan', () => auditor.gate('mergeplan'), 'Merge agent');
 // #375 — the Foreman reads changes across every project, so the same rule that
 // bounds the Merge agent has to bound it: the widest remit is still a remit.
 const foreman = agentClient('foreman');
-await rejects('the Foreman cannot run the audit', () => foreman.gate('audit'), 'Auditor');
+await rejects('the Foreman cannot judge a future', () => foreman.gate('judge'), 'Polaris');
 await rejects('...nor tidy the board', () => foreman.gate('cleanup'), 'Curator');
 await rejects('...nor read a merge plan', () => foreman.gate('mergeplan'), 'Merge agent');
 // And the Curator can no longer reach what it used to own — the move is real,
@@ -110,17 +123,17 @@ await rejects('the refusal names the owning tab', () => auditor.gate('titler'), 
 console.log('\n--- the gate ---');
 const ON = { enabled: true, model: '', guidance: '', opsOff: [] };
 const A = agentByKey('auditor');
-const spec = (key, op) => agentByKey(key).ops.find((o) => o.op === op);
-check('on, with the host up, may act', gateDecision(A, spec('auditor', 'audit'), ON, true), null);
-check('off refuses with 409',
-  gateDecision(A, spec('auditor', 'audit'), { ...ON, enabled: false }, true)?.httpStatus, 409);
-check('off says which agent',
-  gateDecision(A, spec('auditor', 'audit'), { ...ON, enabled: false }, true)?.message.includes('Auditor'), true);
-check('an op switched off refuses with 409',
-  gateDecision(A, spec('auditor', 'audit'), { ...ON, opsOff: ['audit'] }, true)?.httpStatus, 409);
-// …and only that op. Read on an agent with more than one, since the Auditor is
-// down to a single op (#379) and a one-op agent cannot show the difference.
+// The gate is read on the CURATOR: it is the agent with several ops, and the
+// Auditor has none to gate at all now.
 const C = agentByKey('curator');
+const spec = (key, op) => agentByKey(key).ops.find((o) => o.op === op);
+check('on, with the host up, may act', gateDecision(C, spec('curator', 'cleanup'), ON, true), null);
+check('off refuses with 409',
+  gateDecision(C, spec('curator', 'cleanup'), { ...ON, enabled: false }, true)?.httpStatus, 409);
+check('off says which agent',
+  gateDecision(C, spec('curator', 'cleanup'), { ...ON, enabled: false }, true)?.message.includes('Curator'), true);
+check('an op switched off refuses with 409',
+  gateDecision(C, spec('curator', 'cleanup'), { ...ON, opsOff: ['cleanup'] }, true)?.httpStatus, 409);
 check('...and only that op',
   gateDecision(C, spec('curator', 'assist'), { ...ON, opsOff: ['cleanup'] }, true), null);
 // #364 — the backend is the HOST now, not a Gemini key: the agents run
@@ -128,9 +141,9 @@ check('...and only that op',
 // is no second backend to fall through to, so the op refuses and says which
 // thing is missing rather than answering emptily.
 check('no host refuses a model-backed op with 503',
-  gateDecision(A, spec('auditor', 'audit'), ON, false)?.httpStatus, 503);
+  gateDecision(C, spec('curator', 'cleanup'), ON, false)?.httpStatus, 503);
 check('...and the refusal names the host, not a key',
-  gateDecision(A, spec('auditor', 'audit'), ON, false)?.message.includes('host daemon'), true);
+  gateDecision(C, spec('curator', 'cleanup'), ON, false)?.message.includes('host daemon'), true);
 // EVERY op needs its backend now (#379). The Auditor's deep-audit prompt was
 // the one that didn't — it composed a hand-off for a Claude session the human
 // opened elsewhere, which is what the tab's own live session does properly —
@@ -140,7 +153,7 @@ check('no op is exempt from its backend', AGENTS.every((a) => a.ops.every((o) =>
 // Order matters: switched off AND host-down must read as switched off. The
 // owner who turned it off should not be sent to investigate the daemon.
 check('off beats host-down in the message',
-  gateDecision(A, spec('auditor', 'audit'), { ...ON, enabled: false }, false)?.httpStatus, 409);
+  gateDecision(C, spec('curator', 'cleanup'), { ...ON, enabled: false }, false)?.httpStatus, 409);
 
 // A GEMINI-BACKED OP ON A CLAUDE-BACKED AGENT (the Scribe's quick passes).
 // The point of the flag is that one surface keeps one switch even when its two
@@ -173,7 +186,11 @@ check('an explicit false is honoured', agentConfigShape(A, { enabled: false }).e
 // A stale op name (one renamed since the row was written) must not silently
 // disable something else — ops_off is filtered to the agent's own ops.
 check('a foreign op name in ops_off is ignored',
-  agentConfigShape(A, { enabled: true, ops_off: ['cleanup', 'audit', 'gone'] }).opsOff, ['audit']);
+  agentConfigShape(C, { enabled: true, ops_off: ['cleanup', 'audit', 'gone'] }).opsOff, ['cleanup']);
+// An op-less agent filters EVERYTHING out, including a row left behind by the
+// op it used to have — a stale ops_off must never resurrect a retired name.
+check('an op-less agent switches nothing off',
+  agentConfigShape(A, { enabled: true, ops_off: ['audit'] }).opsOff, []);
 // The model alias is spliced into an argv on the HOST now (#364), which raises
 // the stakes on this guard from "a bad URL path" to "a bad exec argument".
 check('a model with a space is rejected', cleanAgentModel('sonnet 4'), '');
@@ -198,8 +215,14 @@ const composed = agentPreamble(A, 'x') + 'Respond with ONLY this JSON:\n{ "a": 1
 check('the op prompt stays last', composed.endsWith('{ "a": 1 }'), true);
 
 console.log('\n--- the shape the room reads ---');
-const shaped = agentShape({ agent: A, config: agentConfigShape(A, { enabled: true, ops_off: ['audit'] }) });
-check('ops carry their own switch', shaped.ops.map((o) => [o.op, o.enabled]), [['audit', false]]);
+const shaped = agentShape({ agent: A, config: agentConfigShape(A, undefined) });
+// The room has to survive an empty op list — an agent whose surface is its
+// console draws no op drawer rather than an empty one.
+check('an op-less agent shapes to an empty list, not to nothing', shaped.ops, []);
+check('ops carry their own switch',
+  agentShape({ agent: C, config: agentConfigShape(C, { enabled: true, ops_off: ['cleanup'] }) })
+    .ops.map((o) => [o.op, o.enabled]),
+  [['titler', true], ['assist', true], ['cleanup', false], ['arrange', true]]);
 // An op switched off on ONE agent leaves another agent's alone — the shape is
 // read per agent, and ops_off is that agent's column.
 check('...and only that agent\'s',
@@ -243,8 +266,12 @@ check('a console-less agent reports null',
 // Switching the console off must not touch the ✧ ops, and switching the AGENT
 // off is a separate statement — that is why the console has a switch at all.
 check('the console switch leaves the ops alone',
-  agentShape({ agent: A, config: agentConfigShape(A, { enabled: true, console_off: true }) })
+  agentShape({ agent: C, config: agentConfigShape(C, { enabled: true, console_off: true }) })
     .ops.every((o) => o.enabled), true);
+// …and an agent with no ops still has its session: the console is the half that
+// survived, so a console read that depended on an op would report it as gone.
+check('an op-less agent still reports its console',
+  agentShape({ agent: A, config: agentConfigShape(A, undefined) }).console.enabled, true);
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);
