@@ -117,6 +117,10 @@ export function Timeline() {
                           day than actually happened (#381). */}
                       <span className="tld-count">
                         {day.entries.length} push{day.entries.length === 1 ? '' : 'es'}
+                        {/* The explicit space matters: JSX drops the newline
+                            between the text and the span, so without it this
+                            renders "1 push· 1 card opened". */}
+                        {!!day.flies?.length && ' '}
                         {!!day.flies?.length && (
                           <span className="tld-flies">
                             · {day.flies.length} card{day.flies.length === 1 ? '' : 's'} opened
