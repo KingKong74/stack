@@ -86,9 +86,15 @@ const withOpeners = consolePrime({ agent: AGENT, guidance: '', project: PROJECT,
 check('the openers are numbered', withOpeners.includes('1. Walk the failing checks'));
 check('…in the order they were given', withOpeners.indexOf('1. Walk the failing checks') < withOpeners.indexOf('2. Reproduce the top bug'));
 check('each opener carries its whole ask', withOpeners.includes('Reproduce the highest-severity open bug.'));
-check('a bare number is told to pick one', /answer with the number/.test(withOpeners));
-check('the first turn is instructed to print the list', /OPEN LIKE THIS/.test(withOpeners));
-check('and told not to start any of it', /menu, not permission/.test(withOpeners));
+check('a bare number resolves against the list', /A BARE NUMBER/.test(withOpeners));
+// The prime produces NO opening turn — `claude` is spawned with it and waits —
+// so the instruction has to branch on the owner's first message rather than
+// describe a greeting that never happens. That is the mechanical fact this
+// whole block rests on; a "say hello like this" prime reads as working and
+// does nothing at all.
+check('the first reply branches on what was said, not on a greeting', /YOUR FIRST REPLY/.test(withOpeners));
+check('an empty opener asks for the menu', /NOTHING IN PARTICULAR/.test(withOpeners));
+check('the menu is not permission to act', /menu, not permission/.test(withOpeners));
 
 // The menu must survive a board long enough to blow the cap — it is what the
 // opening turn is made of, and the cut takes the tail.

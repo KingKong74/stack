@@ -35,9 +35,12 @@ const ConsolePane = lazy(() => import('./TabTerminalPane'));
 //  • IT OPENS WITH SOMETHING TO ASK. Primed is not the same as useful: the
 //    agent knew the tab and the owner still faced an empty prompt, composing
 //    the question the tab could have handed them. The openers (`agents.js`)
-//    are that question, defined once and used twice — the session prints them
-//    as its numbered first turn, and the strip draws the same list as buttons
-//    that TYPE an ask at the prompt. Never with an Enter; the send is the
+//    are that question, defined once and used twice — the strip draws them as
+//    buttons that TYPE an ask at the prompt, and the prime carries the same
+//    numbered list so a bare "2" there means the second button. The BUTTONS
+//    are the visible half and have to be: a system prompt makes no opening
+//    turn (claude is spawned with it and waits), so a menu left to the agent
+//    to print is a menu nobody ever sees. Never with an Enter; the send is the
 //    owner's, as it is everywhere else in Stack.
 //  • IT CAN BE ENDED FROM HERE. Closing the strip only DETACHES (that is the
 //    point of tmux), which left ⏻ on the Terminal screen as the only way to
@@ -270,9 +273,9 @@ export function TabTerminal({ agentKey, agentName, slug, off }: {
         <div className="tabterm-shut">
           A Claude session in <span className="mono">~/{slug}</span>, in tmux on the host — it keeps
           running when you close this. It opens <strong>as {agentName}</strong>, briefed with this
-          tab&rsquo;s remit and what it shows right now, and its first turn is a short list of what
-          this tab is worth asking it — one press types any of them at the prompt. The ✧ buttons ask
-          it one question; this is the conversation.
+          tab&rsquo;s remit and what it shows right now. Opening it puts a short list of what this
+          tab is worth asking it above the prompt — one press types any of them, and you press
+          Enter. The ✧ buttons ask it one question; this is the conversation.
         </div>
       )}
     </div>

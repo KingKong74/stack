@@ -18,6 +18,14 @@
 //    agent is itself from turn zero and the owner's first message is theirs.
 //  • IT SURVIVES THE CONVERSATION. A pasted brief is turn one and slides out of
 //    the window; the identity is in every turn for as long as the session runs.
+//  • IT PRODUCES NO OPENING TURN, and this is the thing to get right before
+//    writing a word of it. A system prompt is not a message: `claude` spawns
+//    with it and then WAITS, so nothing is said until the owner types. A prime
+//    that instructs the agent to "open with…" is really instructing it about
+//    whatever the owner's first message turns out to be — which is why the text
+//    below branches on what that message IS, and why the menu of openers is
+//    drawn by the strip (TabTerminal.tsx) rather than left to a turn that never
+//    happens. Drive it and look, or this reads as working and does nothing.
 //  • IT IS A SNAPSHOT AND SAYS SO. The state below is read once, when the
 //    session is spawned, and the session can run for hours — so the text tells
 //    the model it is stale by construction and that Stack's API is the truth.
@@ -81,14 +89,18 @@ Work that belongs to another of Stack's agents is not forbidden to you — the o
 and this is their session — but say whose it is in one sentence before you do it, so they know they
 have left the surface they opened.
 
-OPEN LIKE THIS, in this order, and then stop:
-  1. One line: who you are, and the one thing in the snapshot below you would look at first.
-  2. The numbered list under "WHAT THIS SURFACE IS USUALLY OPENED FOR" — the same numbers, in the
-     same order, one short line each (the label, and what it would get them here given the snapshot).
-     Say that a bare number picks one. If there is no such list, say in one line what this surface is
-     worth asking you for right now, drawn from the snapshot.
-Then wait. That opening is the whole of your first turn: it is a menu, not permission — do not start
-any of it, and do not start work nobody has asked for.`;
+YOUR FIRST REPLY. You are spawned and then you wait — the owner speaks first, so there is no
+greeting to make. What they say first decides which of these you do:
+  • A BARE NUMBER (or a name from the list below) is the whole instruction: it means that item in
+    "WHAT THIS SURFACE IS USUALLY OPENED FOR", and the owner pressed a button to send it. Do it.
+  • NOTHING IN PARTICULAR — "hi", "what's here", "where do I start" — is asking for the menu.
+    Answer with that numbered list, the same numbers in the same order, one short line each: the
+    label, and what it would get them given the snapshot. Say a bare number picks one. Then stop:
+    that is a menu, not permission, so do not start any of it. If there is no such list below, say
+    in one line what this surface is worth asking you for right now, drawn from the snapshot.
+  • ANYTHING ELSE is the work. Answer it, and open with one line saying who you are and what you
+    are about to do.
+In every case: do not start work nobody has asked for.`;
 
   const steerBlock = steer ? `\n\nSTANDING GUIDANCE FROM THE OWNER (follow it):\n${steer}` : '';
 
@@ -100,9 +112,9 @@ a line of it as the live state.
 ${(sections || []).map(renderSection).join('\n\n')}`;
 
   // The openers sit BEFORE the snapshot on purpose: the cut below takes the
-  // TAIL, and the list is what the first turn is made of — a briefing that lost
-  // its menu to a long board would open exactly the way this item was raised to
-  // fix. The snapshot degrades gracefully; the menu does not.
+  // TAIL, and this list is what a bare "2" at the prompt resolves against — a
+  // briefing that lost its menu to a long board would answer a button press
+  // with "which one?". The snapshot degrades gracefully; the menu does not.
   const full = `${head}${steerBlock}${renderOpeners(openers)}${snapshot}\n`;
   if (full.length <= PRIME_CAP) return full;
   return `${full.slice(0, PRIME_CAP)}\n\n[This briefing was cut at ${PRIME_CAP} characters — the snapshot above is incomplete, and what is missing is the TAIL of it. Read the live state rather than assuming you have seen everything.]\n`;
