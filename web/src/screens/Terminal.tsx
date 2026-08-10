@@ -301,7 +301,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       let name = tmux;
       if (!name && cmd === 'claude') {
         const stored = getTermTmuxName(cwdKey);
-        if (stored && !s.some((x) => x.tmux === stored && (x.status === 'live' || x.status === 'connecting'))) {
+        // The console guard is on the READ as well as the write (BUG-13),
+        // because the write guard only stops NEW poisoning: a device that
+        // already attached a console before the fix has the agent's name
+        // sitting in its localStorage, and nothing else would ever clear it.
+        if (stored && !parseConsoleSession(stored)
+          && !s.some((x) => x.tmux === stored && (x.status === 'live' || x.status === 'connecting'))) {
           name = stored;
         }
       }
@@ -578,9 +583,20 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
   // The daemon confirmed (or assigned) a tab's tmux session — remember it on
   // the tab and in the device-local cwd map so a reload can resume it.
+  //
+  // BUG-13 — A TAB AGENT'S CONSOLE IS NEVER THE CWD'S RESUME SESSION. That map
+  // answers "which ad-hoc session was I last running here", and an agent's
+  // console is not ad-hoc: it is deterministic, owned by its project tab, and
+  // reachable by its own name. It still lands on this screen like anything else
+  // (⤢ sends one here, and it sits on the detached strip when its tab closes),
+  // so attaching one used to write `stack-term-auditor-stack` against
+  // /home/bailey/stack — after which every NEW claude tab opened in that
+  // directory silently re-attached the Auditor's console and wore its name.
+  // Two failures from one write: the owner's fresh tab is not fresh, and the
+  // agent's session is now mirrored somewhere it was never sent.
   const noteTmux = (id: number, cwdKey: string, name: string) => {
     setSessions((s) => s.map((x) => (x.id === id ? { ...x, tmux: name } : x)));
-    setTermTmuxName(cwdKey, name);
+    if (!parseConsoleSession(name)) setTermTmuxName(cwdKey, name);
   };
   // An exit frame while attached means the underlying process really ended
   // (a detach never sends one) — forget the mapping so the next open is fresh.
