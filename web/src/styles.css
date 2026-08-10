@@ -7171,7 +7171,10 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .rt-cal-none { padding: 26px 18px; font-size: 13px; line-height: 1.6; color: var(--faint); }
 .rt-cal-head, .rt-cal-allday { display: flex; border-bottom: 1px solid var(--line-2); }
 .rt-cal-head .gutter, .rt-cal-allday .gutter { width: 58px; flex: none; border-right: 1px solid var(--line); }
-.rt-cal-allday .gutter { display: flex; align-items: center; justify-content: flex-end; padding: 0 8px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--fainter); }
+/* `nowrap`: "All-day" at 9.5px uppercase is a hair wider than the 58px gutter
+   minus its padding, so it wrapped and pushed its own first line out of view —
+   the label read "DAY". */
+.rt-cal-allday .gutter { display: flex; align-items: center; justify-content: flex-end; padding: 0 6px; white-space: nowrap; font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--fainter); }
 .rt-cal-head .col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0 7px; border-right: 1px solid var(--line); }
 .rt-cal-allday .col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 5px 4px; min-height: 26px; border-right: 1px solid var(--line); }
 .rt-cal-head .col:last-child, .rt-cal-allday .col:last-child { border-right: none; }
