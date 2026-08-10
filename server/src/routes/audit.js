@@ -7,7 +7,7 @@ import { buildPrompt } from '../prompts.js';
 import { agentClient } from '../agents.js';
 
 // Mounted at /api/projects/:slug/audit — the Quality tab's automated bug
-// audit (#144; the ✧ Bug audit card on the Now segment). Two surfaces:
+// audit (#144; the Auditor's console on the Now segment). One surface:
 //   POST /        — the Auditor reads the owner's audit brief, the check
 //                   results, the tracked bugs and the live page, and reports
 //                   suspected bugs. Findings land as review-inbox bug rows
@@ -15,10 +15,11 @@ import { agentClient } from '../agents.js';
 //                   the Auditor's output touches state: as suggestions the
 //                   human keeps or dismisses, deduped by fingerprint and
 //                   honouring tombstones.
-//   GET  /prompt  — the Claude hand-off: the same context composed as a deep
-//                   investigation prompt to paste into a Claude session (the
-//                   web terminal's Claude mode, or any chat) — a separate,
-//                   human-driven session, not a call to the Auditor.
+// There was a second, GET /prompt: the same context composed as a deep
+// investigation prompt for a Claude session the human drove elsewhere. #376
+// gave every project tab its own live session in the tab, which is that
+// hand-off done properly — a session already sitting in the checkout beats a
+// prompt you copy to one — so the route and its `auditprompt` op are gone.
 // A capped list inside a prompt must SAY it is capped, and must be capped on the
 // right axis (#239). The auditor reads KNOWN_BUGS as "what is already tracked"
 // and reasons from ABSENCE, so a silent slice makes it re-report tracked bugs.
@@ -249,46 +250,3 @@ audit.post('/', async (req, res) => {
   }
 });
 
-// GET /prompt  -> the deep-audit prompt for a Claude session (keyless — no
-// model call at all; the client copies it to the clipboard).
-audit.get('/prompt', async (req, res) => {
-  const p = req.project;
-  // Keyless, but still the Auditor's op: switching the agent off means it
-  // stops acting, not "it stops acting where it costs money". The refusal is a
-  // 409 the client can render, not a silent empty prompt.
-  try {
-    await auditor.gate('auditprompt');
-  } catch (err) {
-    return res.status(err.httpStatus || 503).json({ error: err.message });
-  }
-  const ctx = await gatherContext(p);
-  const v = contextVars(p, ctx);
-
-  const prompt = `You are doing a deep bug audit of the side project "${v.NAME}".
-${v.NORTH_STAR_LINE ? v.NORTH_STAR_LINE + '\n' : ''}Phase: ${v.PHASE}
-Tech stack: ${v.TECH}
-${p.repo_url ? `Repo: ${p.repo_url}\n` : ''}${p.site_url ? `Live app: ${p.site_url}\n` : ''}${p.logs_url ? `Logs: ${p.logs_url}\n` : ''}
-THE OWNER'S AUDIT BRIEF (what to look for — weigh this heavily):
-${v.BRIEF}
-
-Check results (name | expectation | last result):
-${v.CHECKS}
-
-Bugs already tracked (do not re-report these):
-${v.KNOWN_BUGS}
-
-Recent pushes:
-${v.ACTIVITY}
-
-Unlike a surface scan, you should INVESTIGATE: read the code where you have it, exercise the live
-app and its API, reproduce anything suspicious, and check the recent pushes for regressions. Be
-sceptical of your own findings — confirm each one before reporting it.
-
-For each confirmed bug, report: a short specific title (≤ 15 words), severity
-(critical/high/medium/low) and how to reproduce it. If this machine has the Stack CLI set up
-(~/.stack/env), you may also file each one via
-POST $STACK_API/api/projects/${p.slug}/bugs with {"title","severity"} — otherwise just report back
-and the owner will file them. Use en-AU spelling.`;
-
-  res.json({ prompt });
-});

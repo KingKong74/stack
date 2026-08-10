@@ -2423,13 +2423,6 @@ export interface AuditResult { findings: AuditFinding[]; logged: number; reopene
 export async function runAudit(slug: string): Promise<AuditResult> {
   return request<AuditResult>(`/projects/${encodeURIComponent(slug)}/audit`, { method: 'POST' });
 }
-// The deep-audit hand-off: the same context composed as a prompt for a Claude
-// session (keyless — the client copies it to the clipboard).
-export async function getAuditPrompt(slug: string): Promise<string> {
-  const r = await request<{ prompt: string }>(`/projects/${encodeURIComponent(slug)}/audit/prompt`);
-  return r.prompt;
-}
-
 // ---- the TAB AGENTS (#361) ----
 //
 // Three named specialists, each bound to one project tab: the Auditor
@@ -2452,7 +2445,6 @@ export interface TabAgentOp {
   op: string;
   label: string;
   hint: string;
-  needsModel: boolean; // false = asks no model at all (the Auditor's hand-off prompt)
   enabled: boolean;
 }
 

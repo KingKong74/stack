@@ -101,9 +101,8 @@ export function AgentsRoom() {
         <div className="mc-agnokey">
           <b>The host daemon is not connected.</b> These agents run Claude on the host — the same CLI
           the overnight autopilot uses — so the switches below still save, but nothing runs until the
-          daemon is back: an agent that is <em>on</em> here is on and idle. The Auditor's deep-audit
-          prompt is the one op that works regardless, because it asks no model at all — it composes
-          the prompt for a Claude session you drive yourself.
+          daemon is back: an agent that is <em>on</em> here is on and idle. The consoles need it too —
+          a tab agent&rsquo;s live session is a tmux session on that same host.
         </div>
       )}
 
@@ -283,12 +282,7 @@ function AgentCard({
           {agent.ops.map((o) => (
             <div key={o.op} className={`op ${o.enabled ? '' : 'off'}`}>
               <div className="txt">
-                <div className="lb">
-                  {o.label}
-                  {/* The one op that asks no model is worth marking: it is why
-                      the Auditor is still useful with the host offline. */}
-                  {!o.needsModel && <span className="free">no model needed</span>}
-                </div>
+                <div className="lb">{o.label}</div>
                 <div className="hint">{o.hint}</div>
               </div>
               <button

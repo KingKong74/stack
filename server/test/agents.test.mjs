@@ -54,7 +54,10 @@ check('the surfaces', AGENTS.map((a) => a.tab),
 // This list is the routes' side of the contract, written out so a renamed op
 // fails here rather than the first time somebody presses the button.
 const WIRED = {
-  auditor: ['audit', 'auditprompt'],
+  // #376 — one op, since the tab consoles took the deep-audit prompt's job: it
+  // composed a hand-off for a Claude session the human opened elsewhere, and
+  // the tab now carries a live session of its own.
+  auditor: ['audit'],
   // 'arrange' reads the timeline and proposes an ORDER — the one thing the
   // Arrange panel's arithmetic structurally cannot do. Routes: POST /roadmap/arrange.
   curator: ['titler', 'assist', 'cleanup', 'arrange'],
@@ -115,8 +118,11 @@ check('off says which agent',
   gateDecision(A, spec('auditor', 'audit'), { ...ON, enabled: false }, true)?.message.includes('Auditor'), true);
 check('an op switched off refuses with 409',
   gateDecision(A, spec('auditor', 'audit'), { ...ON, opsOff: ['audit'] }, true)?.httpStatus, 409);
+// …and only that op. Read on an agent with more than one, since the Auditor is
+// down to a single op (#376) and a one-op agent cannot show the difference.
+const C = agentByKey('curator');
 check('...and only that op',
-  gateDecision(A, spec('auditor', 'auditprompt'), { ...ON, opsOff: ['audit'] }, true), null);
+  gateDecision(C, spec('curator', 'assist'), { ...ON, opsOff: ['cleanup'] }, true), null);
 // #364 — the backend is the HOST now, not a Gemini key: the agents run
 // `claude -p` through the terminal daemon's uplink. With the daemon down there
 // is no second backend to fall through to, so the op refuses and says which
@@ -125,18 +131,16 @@ check('no host refuses a model-backed op with 503',
   gateDecision(A, spec('auditor', 'audit'), ON, false)?.httpStatus, 503);
 check('...and the refusal names the host, not a key',
   gateDecision(A, spec('auditor', 'audit'), ON, false)?.message.includes('host daemon'), true);
-// The Auditor's deep-audit prompt asks no model at all — it composes the prompt
-// for a Claude session the human drives — so an offline host must not refuse
-// it. It is the reason the whole card is still worth rendering with the daemon
-// down, and it was the reason it was worth rendering without a key before.
-check('no host still allows the model-less op',
-  gateDecision(A, spec('auditor', 'auditprompt'), ON, false), null);
+// EVERY op needs its backend now (#376). The Auditor's deep-audit prompt was
+// the one that didn't — it composed a hand-off for a Claude session the human
+// opened elsewhere, which is what the tab's own live session does properly —
+// and the `model: false` flag went out with it rather than staying as a branch
+// nothing takes. This asserts the registry carries no exemption left over.
+check('no op is exempt from its backend', AGENTS.every((a) => a.ops.every((o) => o.model !== false)), true);
 // Order matters: switched off AND host-down must read as switched off. The
 // owner who turned it off should not be sent to investigate the daemon.
 check('off beats host-down in the message',
   gateDecision(A, spec('auditor', 'audit'), { ...ON, enabled: false }, false)?.httpStatus, 409);
-check('the model-less op still obeys the agent switch',
-  gateDecision(A, spec('auditor', 'auditprompt'), { ...ON, enabled: false }, false)?.httpStatus, 409);
 
 // A GEMINI-BACKED OP ON A CLAUDE-BACKED AGENT (the Scribe's quick passes).
 // The point of the flag is that one surface keeps one switch even when its two
@@ -195,10 +199,13 @@ check('the op prompt stays last', composed.endsWith('{ "a": 1 }'), true);
 
 console.log('\n--- the shape the room reads ---');
 const shaped = agentShape({ agent: A, config: agentConfigShape(A, { enabled: true, ops_off: ['audit'] }) });
-check('ops carry their own switch', shaped.ops.map((o) => [o.op, o.enabled]), [['audit', false], ['auditprompt', true]]);
-check('the model-less op is marked', opSpec('auditprompt').model, false);
-check('...and the shape reports it to the room', 
-  agentShape({ agent: A, config: agentConfigShape(A, undefined) }).ops.find((o) => o.op === 'auditprompt').needsModel, false);
+check('ops carry their own switch', shaped.ops.map((o) => [o.op, o.enabled]), [['audit', false]]);
+// An op switched off on ONE agent leaves another agent's alone — the shape is
+// read per agent, and ops_off is that agent's column.
+check('...and only that agent\'s',
+  agentShape({ agent: C, config: agentConfigShape(C, { enabled: true, ops_off: ['cleanup'] }) })
+    .ops.map((o) => o.enabled), [true, true, false, true]);
+check('an op nobody registered has no spec', opSpec('auditprompt'), null);
 check('the tab rides along', shaped.tabLabel, 'Quality');
 // #375 — and what KIND of surface it is, so no card says "Merge tab".
 check('a tab agent knows it is a tab', shaped.surface, 'tab');

@@ -35,8 +35,10 @@ import { STATUS_LABEL } from '../lib/ui';
 //     that backend is up, what it last found, and the standing brief. The brief
 //     IS the console's prompt line — the one piece of free text the Auditor
 //     actually reads — so the line does what it looks like it does. There is no
-//     chat here because there is no ask op: the Auditor's ops are `audit` and
-//     `auditprompt` and the registry is closed (server/src/agents.js).
+//     chat here because there is no ask op: the Auditor's one op is `audit` and
+//     the registry is closed (server/src/agents.js). For anything a template
+//     doesn't cover there is the tab's live session (#376), the strip under the
+//     tab bar — a real Claude in this project's checkout.
 //
 //  3. **The health read leads the page** as one band of five: the verdict, its
 //     trend, and the four numbers. Same numbers as before, one row instead of
@@ -551,12 +553,18 @@ function OneCause({ signature, count, busy, onRunAll, onFileHost }: {
 // or switched off.
 //
 // The prompt line is the BRIEF and nothing else. A console with a text input
-// implies a conversation, and there isn't one — the Auditor's ops are `audit`
-// and `auditprompt` (server/src/agents.js, and the list is closed), so a chat
-// box here would be a control that quietly did something other than what it
-// looked like. The brief is the one piece of free text the Auditor actually
-// reads, it is sent with every run, and it is worth typing — so it gets the
-// line, with the hint saying exactly where the words go.
+// implies a conversation, and there isn't one — the Auditor's one op is `audit`
+// (server/src/agents.js, and the list is closed), so a chat box here would be a
+// control that quietly did something other than what it looked like. The brief
+// is the one piece of free text the Auditor actually reads, it is sent with
+// every run, and it is worth typing — so it gets the line, with the hint saying
+// exactly where the words go.
+//
+// The conversation is a floor up: the tab's live session (#376), the strip
+// directly under the tab bar. This band used to carry a second button that
+// composed a deep-audit prompt to paste into a Claude session you opened
+// yourself; a real session already sitting in the checkout is that hand-off
+// without the copying, so the button and its op went with it.
 
 // What the run produced, as console lines. Shared verbatim by the band and the
 // popped-out overlay, because two renderings of one log is how they drift.
@@ -633,17 +641,10 @@ function AuditorLog({ busy, result, error, checkCount }: {
 }
 
 function AuditorConsole({
-  context, onSaveBrief, busy, result, error, onRun, canPrompt, claudeCopy, onCopyClaude,
-  checkCount, geminiReady,
+  context, onSaveBrief, busy, result, error, onRun, checkCount, geminiReady,
 }: {
   context: string; onSaveBrief: (t: string) => void;
   busy: boolean; result: AuditResult | null; error: string; onRun: () => void;
-  // #361 — the deep-audit hand-off is the Auditor's SECOND op and switches
-  // separately: it needs no model call at all, so it is the half that still
-  // works with the host offline and the half worth being able to keep when
-  // the other goes.
-  canPrompt: boolean;
-  claudeCopy: 'idle' | 'busy' | 'copied' | 'failed'; onCopyClaude: () => void;
   checkCount: number; geminiReady: boolean;
 }) {
   const [open, setOpen] = useState(true);
@@ -658,12 +659,6 @@ function AuditorConsole({
 
   const dirty = draft.trim() !== context;
   const save = () => { if (dirty) onSaveBrief(draft.trim()); setWide(false); };
-
-  // No ⧉ on this label any more: the console is set in the mono face and
-  // JetBrains Mono has no glyph for it, so it drew as a tofu box. An icon that
-  // renders as a missing character is worse than no icon.
-  const claudeLabel = claudeCopy === 'busy' ? 'Composing…'
-    : claudeCopy === 'copied' ? '✓ Copied' : claudeCopy === 'failed' ? 'Copy failed' : 'Copy the deep-audit prompt';
 
   const status = busy ? 'auditing…' : error ? 'last run failed' : result ? 'idle · last run read' : 'idle';
 
@@ -686,12 +681,6 @@ function AuditorConsole({
         <button className="q-con-op run" disabled={busy} onClick={onRun}>
           {busy ? '✧ Auditing…' : '✧ Run the audit'}
         </button>
-        {canPrompt && (
-          <button className="q-con-op" disabled={claudeCopy === 'busy'} onClick={onCopyClaude}
-            title="Copy a deep-audit prompt for a Claude session you drive yourself — the investigation the Auditor can't do from outside">
-            {claudeLabel}
-          </button>
-        )}
         <span className="q-con-hint">
           {dirty ? '⌘↵ saves the brief · esc reverts' : 'the brief is sent with every run'}
         </span>
@@ -1321,7 +1310,6 @@ export function Quality({
   checksBusy, onRunChecks, onAddCheck, onEditCheck, onDeleteCheck,
   onFileBug, onSetBugStatus, onDeleteBug, onOpenCommit,
   auditContext, onSaveAuditContext, auditBusy, auditResult, auditError, onRunAudit,
-  claudeCopy, onCopyClaudePrompt,
 }: {
   slug: string;
   checks: Check[]; bugs: Bug[]; siteUrl: string; geminiReady: boolean;
@@ -1344,13 +1332,11 @@ export function Quality({
   onOpenCommit: (hash: string) => void;   // the ↳ commit chip — jumps to Activity
   auditContext: string; onSaveAuditContext: (t: string) => void;
   auditBusy: boolean; auditResult: AuditResult | null; auditError: string; onRunAudit: () => void;
-  claudeCopy: 'idle' | 'busy' | 'copied' | 'failed'; onCopyClaudePrompt: () => void;
 }) {
   // #361 — what the Auditor may do on this project right now. Unknown reads as
   // yes (an older server sends no agent state), so this only ever hides a
   // surface the server has actually said it will refuse.
   const canAudit = agentCan(agents, 'auditor', 'audit');
-  const canPrompt = agentCan(agents, 'auditor', 'auditprompt');
   const auditorOff = agentOffReason(agents, 'auditor', 'audit');
 
   const [seg, setSeg] = useState<Seg>('now');
@@ -1553,12 +1539,11 @@ export function Quality({
       {canAudit ? (
         <AuditorConsole context={auditContext} onSaveBrief={onSaveAuditContext}
           busy={auditBusy} result={auditResult} error={auditError} onRun={onRunAudit}
-          canPrompt={canPrompt} claudeCopy={claudeCopy} onCopyClaude={onCopyClaudePrompt}
           checkCount={checks.length} geminiReady={geminiReady} />
       ) : (
         <div className="q-note dashed">
-          {auditorOff} The bug audit and its Claude hand-off are hidden until then.
-          Everything else here — filing, linking, triage, the whole suite — never needed it.
+          {auditorOff} The bug audit is hidden until then. Everything else here — filing, linking,
+          triage, the whole suite — never needed it, and the tab&rsquo;s own session has its own switch.
         </div>
       )}
 

@@ -128,13 +128,13 @@ export const cleanGuidance = (v) => String(v ?? '').replace(/\s+$/g, '').slice(0
 // The registry. `ops` is CLOSED: it is the definition of what this agent may
 // do, and every op name here is the name a route passes to its client.
 //
-// `model: false` marks an op that asks no model at all — the Auditor's
-// deep-audit prompt is composed server-side and handed to a Claude session the
-// human drives. It is still the Auditor's op and still answers to the Auditor's
-// switch: switching an agent off means it stops acting, not "it stops acting
-// where it costs something". (It was `gemini: false` before #364; the flag was
-// renamed with the backend, because "needs no key" and "needs no model" stopped
-// being the same statement once the backend became a local CLI.)
+// EVERY OP HERE ASKS A MODEL. There used to be a `model: false` flag for one
+// that didn't — the Auditor's deep-audit prompt, composed server-side and
+// handed to a Claude session the human drove — and it went when the tab
+// consoles landed (#376): a session in the tab is the thing that prompt was a
+// substitute for. It is not worth carrying the flag for a hypothetical second
+// one: a model-less op is a template, and a template that needs the agent's
+// switch is the shape to re-derive if it ever comes back.
 //
 // `backend: 'gemini'` marks an op that runs on GEMINI rather than on Claude via
 // the host. #364 moved the tab agents off Gemini because the CLI was the only
@@ -210,7 +210,6 @@ export const AGENTS = [
     console: projectConsole('for the investigation an audit can only point at'),
     ops: [
       { op: 'audit', label: 'Bug audit', hint: 'Findings land in the review inbox as suggestions.' },
-      { op: 'auditprompt', label: 'Deep-audit prompt', model: false, hint: 'Composes the hand-off prompt for a Claude session you drive yourself.' },
     ],
   },
   {
@@ -402,7 +401,7 @@ export function gateDecision(agent, spec, config, backendReady) {
   // owner to restart a daemon that was never involved; a Gemini op needs a key
   // on the server and a Claude op needs the host on the line, and the two are
   // fixed in completely different places.
-  if (spec.model !== false && !backendReady) {
+  if (!backendReady) {
     return refuse(
       spec.backend === 'gemini'
         ? 'Gemini is not configured on this server, so this pass cannot run (it is the read-only backend; GEMINI_API_KEY is unset).'
@@ -670,7 +669,7 @@ export async function agentsForClient() {
       // both reads this instead of `ready`. Every op is in `ops`; only the
       // runnable ones are here, which is what lets a button say "the daemon is
       // offline" beside one ✧ and stay live beside the other.
-      opsReady: live.filter((s) => s.model === false || backendReadyFor(s)).map((s) => s.op),
+      opsReady: live.filter((s) => backendReadyFor(s)).map((s) => s.op),
       // The console, as three states rather than two: null = this agent has no
       // live session at all (the two room-bound agents, the Scribe), false =
       // it has one and the owner switched it off, true = it has one and may
@@ -698,10 +697,9 @@ export const agentShape = ({ agent, config }) => ({
     op: s.op,
     label: s.label,
     hint: s.hint || '',
-    needsModel: s.model !== false,
     // Which backend this op runs on, so the Agents room can say which of the
     // two an op depends on rather than implying every op needs the host.
-    backend: s.model === false ? 'none' : (s.backend || 'claude'),
+    backend: s.backend || 'claude',
     enabled: !config.opsOff.includes(s.op),
   })),
   // Null for an agent with no live session, so the room draws nothing rather

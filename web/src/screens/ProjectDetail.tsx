@@ -5,7 +5,7 @@ import {
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   deleteNote, createFuture, patchFuture, deleteFuture, getFutures,
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
-  runAudit, getAuditPrompt, type AuditResult,
+  runAudit, type AuditResult,
   patchProject, createShareLink, deleteShareLink,
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, convergeFutures,
   type ConvergeDraft, assistRoadmapItem, proposeOrbits, restateFuture,
@@ -216,7 +216,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const [auditBusy, setAuditBusy] = useState(false);
   const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
   const [auditError, setAuditError] = useState('');
-  const [claudeCopy, setClaudeCopy] = useState<'idle' | 'busy' | 'copied' | 'failed'>('idle');
   const [editingUrl, setEditingUrl] = useState<'site' | 'repo' | null>(null);
   const [urlDraft, setUrlDraft] = useState('');
   const [actionError, setActionError] = useState('');
@@ -701,18 +700,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       setData({ ...data, auditContext: text });
     });
 
-  const copyClaudePrompt = async () => {
-    setClaudeCopy('busy');
-    try {
-      const prompt = await getAuditPrompt(slug);
-      await navigator.clipboard.writeText(prompt);
-      setClaudeCopy('copied');
-    } catch {
-      setClaudeCopy('failed');
-    }
-    window.setTimeout(() => setClaudeCopy('idle'), 2600);
-  };
-
   const saveStack = (next: string[]) =>
     guard(async () => {
       await patchProject(slug, { tech_stack: next });
@@ -977,7 +964,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             onOpenCommit={openBugLink}
             auditContext={data.auditContext} onSaveAuditContext={saveAuditContext}
             auditBusy={auditBusy} auditResult={auditResult} auditError={auditError}
-            onRunAudit={runProjectAudit} claudeCopy={claudeCopy} onCopyClaudePrompt={copyClaudePrompt} />
+            onRunAudit={runProjectAudit} />
         )}
         {/* #361 — the ✧ surfaces on the Roadmap and Polaris tabs belong to the
             CURATOR and to POLARIS, and an absent callback is how each one goes

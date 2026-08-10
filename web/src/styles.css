@@ -4778,7 +4778,6 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .mc-agops .op.off .txt { opacity: 0.55; }
 .mc-agops .op .txt { flex: 1; min-width: 0; }
 .mc-agops .op .lb { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--ink); }
-.mc-agops .op .free { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.06em; color: var(--live); background: var(--green-tint); border-radius: 4px; padding: 1px 6px; }
 .mc-agops .op .hint { font-size: 10.5px; line-height: 1.5; color: var(--muted); }
 .mc-agops .scope { margin: 2px 0 0; font-size: 10.5px; line-height: 1.55; color: var(--paused); }
 
