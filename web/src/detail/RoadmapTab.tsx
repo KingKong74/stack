@@ -14,8 +14,8 @@
 // moving all of that would have quietly removed controls the fleet depends on.
 //
 // This file owns everything the views share: the area chips and their editor,
-// the label filter, the board's furniture (areas + lists, fetched once here),
-// the selected bar, and the arrange proposal.
+// the label filter, the board's furniture (areas + lists + labels, fetched once
+// here), the selected bar, and the arrange proposal.
 //
 // THE AREA CHIPS COUNT WHAT IS IN THE CYCLE, and an area with nothing in it is
 // hidden behind a "+N more" rather than drawn as a zero. `inCycle` is
@@ -36,15 +36,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
-  BoardArea, BoardList, Priority, Roadmap as RoadmapData, RoadmapItem, Tier,
+  BoardArea, BoardLabel, BoardList, Priority, Roadmap as RoadmapData, RoadmapItem, Tier,
 } from '../types';
 import type { TabAgentState } from '../store';
 import {
   getBoardShape, patchRoadmapItem, createRoadmapItem,
   addArea, renameArea as renameAreaApi, deleteArea as deleteAreaApi, addList as addListApi,
+  addLabel as addLabelApi, deleteLabel as deleteLabelApi,
   setAreaColour, arrangeRoadmap, agentCan, agentOffReason,
 } from '../store';
 import { inCycle, UNALLOCATED } from '../lib/plan';
+import { DEFAULT_LABELS } from '../lib/labels';
 import { RoadmapTimeline } from './RoadmapTimeline';
 import { RoadmapScope } from './RoadmapScope';
 import { RoadmapPlan } from './RoadmapPlan';
@@ -130,6 +132,11 @@ export function RoadmapTab({
   const [showHiddenAreas, setShowHiddenAreas] = useState(false);
   const [areas, setAreas] = useState<BoardArea[]>([]);
   const [lists, setLists] = useState<BoardList[]>([]);
+  // #382 — the project's own labels. DEFAULT_LABELS until the read lands (and
+  // for a server too old to serve them), never an empty list: a filter that
+  // renders as "no labels" while five are on the cards is a lie about the data.
+  const [labels, setLabels] = useState<BoardLabel[]>(DEFAULT_LABELS);
+  const [tones, setTones] = useState<string[]>([]);
   // The colours an area may wear, served by the board read so the picker can
   // only offer what the server will store.
   const [palette, setPalette] = useState<string[]>([]);
@@ -150,7 +157,12 @@ export function RoadmapTab({
   useEffect(() => {
     let alive = true;
     getBoardShape(slug)
-      .then((b) => { if (alive) { setAreas(b.areas); setLists(b.lists); setPalette(b.palette || []); } })
+      .then((b) => {
+        if (!alive) return;
+        setAreas(b.areas); setLists(b.lists); setPalette(b.palette || []);
+        setTones(b.tones || []);
+        if (b.labels) setLabels(b.labels);
+      })
       .catch((e) => { if (alive) setErr(e?.message || 'Could not read the board’s areas.'); });
     return () => { alive = false; };
   }, [slug]);
@@ -267,6 +279,22 @@ export function RoadmapTab({
   // collection, so the lanes recolour without a re-read.
   const recolour = (name: string, dot: string) =>
     guard(setAreaColour(slug, name, dot).then(setAreas), 'change that colour');
+
+  // --- labels (#382) ---------------------------------------------------------
+  //
+  // Both writers answer with the whole set. A DELETE also takes the label off
+  // every card server-side; the local rows still carry the dead id for this
+  // render, which is harmless — `labelsOf` only draws labels the board knows,
+  // and the next PATCH that sends the id back has it dropped again. What is not
+  // harmless is leaving the board filtered by a label that no longer exists, so
+  // the filter is released in the same step.
+  const addLabel = (name: string, tone: string) =>
+    guard(addLabelApi(slug, name, tone).then(setLabels), 'add that label');
+  const removeLabel = (key: string) =>
+    guard(deleteLabelApi(slug, key).then((next) => {
+      setLabels(next);
+      if (labelFilter === key) setLabelFilter('');
+    }), 'delete that label');
 
   // The chips count what is IN THE CYCLE (lib/plan.ts's `inCycle`), so the
   // number on a chip and the weeks in the scope drawer describe the same rows.
@@ -421,7 +449,7 @@ export function RoadmapTab({
       {view === 'timeline' && (
         <>
           <RoadmapTimeline
-            items={items} areas={areas} weekZero={weekZero} areaFilter={areaFilter}
+            items={items} areas={areas} labels={labels} weekZero={weekZero} areaFilter={areaFilter}
             selectedId={selectedId} onSelect={setSelectedId}
             palette={palette} onRecolour={recolour}
             proposed={proposedSpans(proposal)}
@@ -434,7 +462,7 @@ export function RoadmapTab({
 
       {view === 'scope' && (
         <RoadmapScope
-          items={items} areas={areas} areaFilter={areaFilter} labelFilter={labelFilter}
+          items={items} areas={areas} labels={labels} areaFilter={areaFilter} labelFilter={labelFilter}
           liveBranches={legacy.liveBranches || []} highlightId={legacy.highlightId}
           onEdit={legacy.onEdit} onDelete={legacy.onDelete} onBranch={legacy.onBranch}
           onClearNote={legacy.onClearNote} onToggleDone={legacy.onToggle}
@@ -471,7 +499,7 @@ export function RoadmapTab({
 
       {view === 'plan' && board === 'tiers' && (
         <RoadmapTiers
-          items={items} areas={areas} areaFilter={areaFilter}
+          items={items} areas={areas} labels={labels} areaFilter={areaFilter}
           onSetTier={(it, tier) => { guard(write(it, { tier }), 'rank that item'); }}
           onToggleSkip={(it) => { guard(write(it, { skipped: !it.skipped }), 'park that item'); }}
           onOpen={onOpenItem}
@@ -480,7 +508,7 @@ export function RoadmapTab({
 
       {view === 'plan' && board === 'parked' && (
         <RoadmapParked
-          items={items} areas={areas} areaFilter={areaFilter} staleItemDays={legacy.staleItemDays}
+          items={items} areas={areas} labels={labels} areaFilter={areaFilter} staleItemDays={legacy.staleItemDays}
           onSetTier={(it, tier) => { guard(write(it, { tier }), 'rank that item'); }}
           onToggleSkip={(it) => { guard(write(it, { skipped: !it.skipped }), 'unpark that item'); }}
           onOpen={onOpenItem} />
@@ -489,7 +517,23 @@ export function RoadmapTab({
       {view === 'plan' && board === 'lists' && (
         <RoadmapPlan
           items={items} lists={lists} areas={areas} areaFilter={areaFilter}
+          labels={labels} tones={tones}
           labelFilter={labelFilter} onSetLabelFilter={setLabelFilter}
+          onAddLabel={addLabel} onDeleteLabel={removeLabel}
+          onDelete={legacy.onDelete}
+          onApprove={(it) => {
+            // The Review room's verdict, made from the board: `review_tag`
+            // and the archive in ONE write. Deliberately no `done` — approving
+            // has never meant ticked (CLAUDE.md), and the item's own merge is
+            // what ticks it.
+            guard(write(it, { review_tag: 'solid', archived: true }), 'record that verdict');
+          }}
+          onSendBack={(it) => {
+            // Un-ticking clears review_tag and claimed_by server-side; clearing
+            // listKey returns the card to its DERIVED column, so a card dragged
+            // into Shipped by hand leaves the lane too.
+            guard(write(it, { done: false, listKey: '' }), 'send that card back');
+          }}
           onMoveToList={(it, listKey) => { guard(write(it, { listKey }), 'move that card'); }}
           onSetBucket={(it, bucket) => { guard(write(it, { bucket }), 'change that card’s scope'); }}
           onToggleLabel={(it, id) => {

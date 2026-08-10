@@ -23,7 +23,7 @@
 // before that column existed; those read "parked" with no age rather than as
 // parked today — absent is not zero, the same rule as everywhere else.
 
-import type { BoardArea, Priority, RoadmapItem, Tier } from '../types';
+import type { BoardArea, BoardLabel, Priority, RoadmapItem, Tier } from '../types';
 import { TIERS } from '../types';
 import { labelsOf } from '../lib/labels';
 import { areaMatches, inCycle } from '../lib/plan';
@@ -46,6 +46,8 @@ const PARK_COLS: Priority[] = ['must', 'should', 'could', 'wont'];
 export interface BoardsProps {
   items: RoadmapItem[];
   areas: BoardArea[];
+  /** #382 — the project's labels; a card's stripes are drawn from these. */
+  labels: BoardLabel[];
   areaFilter: string;
   /** #247 — days a parked item may sit before the shelf calls it stale. */
   staleItemDays?: number;
@@ -67,8 +69,9 @@ function daysSince(iso: string | null): number | null {
   return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 86400000)) : null;
 }
 
-function Card({ it, areas, onOpen, children }: {
-  it: RoadmapItem; areas: BoardArea[]; onOpen: (i: RoadmapItem) => void;
+function Card({ it, areas, labels, onOpen, children }: {
+  it: RoadmapItem; areas: BoardArea[]; labels: BoardLabel[];
+  onOpen: (i: RoadmapItem) => void;
   children?: React.ReactNode;
 }) {
   return (
@@ -83,8 +86,8 @@ function Card({ it, areas, onOpen, children }: {
       title="Double-click to open">
       {it.labels.length > 0 && (
         <div className="rp-stripes">
-          {labelsOf(it.labels).map((l) => (
-            <span key={l.id} className={`rp-stripe rl-${l.tone}`} title={l.name} />
+          {labelsOf(it.labels, labels).map((l) => (
+            <span key={l.key} className={`rp-stripe rl-${l.tone}`} title={l.name} />
           ))}
         </div>
       )}
@@ -102,7 +105,7 @@ function Card({ it, areas, onOpen, children }: {
 // ---------------------------------------------------------------------------
 
 export function RoadmapTiers({
-  items, areas, areaFilter, onSetTier, onOpen, onCleanup, onSendToTerminal,
+  items, areas, labels, areaFilter, onSetTier, onOpen, onCleanup, onSendToTerminal,
 }: BoardsProps) {
   // The run queue's population: open work that is actually pickable. `inCycle`
   // rules out the three things the fleet will never reach — archived is off the
@@ -153,7 +156,7 @@ export function RoadmapTiers({
               </div>
               <div className="rp-col-meta">{col.meta}</div>
               {cards.map((c) => (
-                <Card key={c.id} it={c} areas={areas} onOpen={onOpen}>
+                <Card key={c.id} it={c} areas={areas} labels={labels} onOpen={onOpen}>
                   {c.claimedBy && <span className="est" title={`Claimed on ${c.claimedBy}`}>⚑</span>}
                 </Card>
               ))}
@@ -169,7 +172,7 @@ export function RoadmapTiers({
 // ---------------------------------------------------------------------------
 
 export function RoadmapParked({
-  items, areas, areaFilter, staleItemDays = 14, onToggleSkip, onOpen,
+  items, areas, labels, areaFilter, staleItemDays = 14, onToggleSkip, onOpen,
 }: BoardsProps) {
   const parked = items.filter((i) =>
     i.skipped && !i.done && !i.archived && areaMatches(i.area, areaFilter));
@@ -204,7 +207,7 @@ export function RoadmapParked({
                   <span className="n">{cards.length}</span>
                 </div>
                 {cards.map(({ it, days }) => (
-                  <Card key={it.id} it={it} areas={areas} onOpen={onOpen}>
+                  <Card key={it.id} it={it} areas={areas} labels={labels} onOpen={onOpen}>
                     <span className={`est${days !== null && days >= staleItemDays ? ' stale' : ''}`}
                       title={days === null
                         ? 'Parked before Stack recorded when — the age is unknown, not zero'

@@ -1146,12 +1146,16 @@ CREATE TABLE IF NOT EXISTS agent_profiles (
 --  • `parent_id` IS ONE LEVEL DEEP. A ticket may hang off a feature; a feature
 --    may not hang off a ticket. The guard lives in PATCH /roadmap/:id, the same
 --    place the risk guard lives, because it is the only writer.
---  • `labels` IS A FIXED REGISTRY, held in code (web/src/lib/labels.ts and
---    server/src/labels.js), NOT a table — same reasoning as agents.js: the set
---    is the classification itself, so an owner-editable list would be a second
---    truth that the filters and the colours both drift from. AREAS are the
---    opposite and DO get a table, because an area names a part of THIS project
---    and only the owner can know them.
+--  • `labels` HOLDS IDS FROM `project_labels`, which is now a TABLE — the owner
+--    asked for a set they can add to and delete from, so the classification is
+--    theirs, exactly as AREAS and LISTS already are. What survives from the old
+--    code registry is the SEED (server/src/labels.js's DEFAULT_LABELS, planted
+--    on first read like the default lists) and the closed TONE set, because a
+--    tone names an Atlas token that styles.css has to have a rule for — a free
+--    colour would be a label that renders wrong in one of the two themes.
+--    Deleting a label STRIPS ITS ID off every row in the same transaction, the
+--    same rule as deleting an area: never leave a row carrying a property that
+--    nothing can name.
 --  • `archived` IS NOT `skipped` AND NOT DELETED. Parked (`skipped`) means
 --    planned but not yet; archived means off the board but recoverable; deleted
 --    means gone, and for a hook-created row it also tombstones the fingerprint.
@@ -1202,6 +1206,24 @@ CREATE TABLE IF NOT EXISTS project_lists (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS project_lists_key_idx ON project_lists (project_id, key);
+
+-- The project's LABELS — was a code registry, now the owner's own set.
+--
+-- Seeded per project on first read (server/src/labels.js, the same shape as
+-- `ensureLists`), so an existing board keeps the five it already had and a
+-- project whose labels the owner has deleted down to none does not silently get
+-- them back. `key` is what `roadmap_items.labels` stores; `tone` is one of the
+-- Atlas tokens styles.css has a `.rl-<tone>` rule for, validated on write.
+CREATE TABLE IF NOT EXISTS project_labels (
+  id         SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  key        TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  tone       TEXT NOT NULL DEFAULT 'muted',
+  position   INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS project_labels_key_idx ON project_labels (project_id, key);
 
 -- The project's WEEK ZERO: the Monday the timeline counts weeks from, and the
 -- only thing that turns a week index into a date.

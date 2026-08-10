@@ -1,37 +1,80 @@
-// The roadmap's LABEL REGISTRY — the classification a card carries beyond its
-// MoSCoW bucket and its area.
+// The roadmap's LABELS — the classification a card carries beyond its MoSCoW
+// bucket and its area.
 //
-// This is CODE, NOT DATA, for the same reason `agents.js` is: the five labels
-// below are the classification itself. An owner-editable list would be a second
-// truth — the filter chips, the card stripes and any prompt that reasons about
-// "what kind of work is this" would each drift from it at their own pace, and a
-// label nobody can name is worse than no label. Areas are the exact opposite
-// and DO live in a table (`project_areas`), because an area names a part of one
-// particular project and only its owner can know what those parts are.
+// This WAS a code registry, on the argument that the set is the classification
+// itself. The owner's call reversed that: labels are theirs to add to and delete
+// from, like areas and lists, and this file kept only the parts that a table
+// genuinely cannot hold.
 //
-// The colours are Atlas tokens by name rather than hexes — `web/src/lib/labels.ts`
-// is the client twin and resolves them against the same palette, so a label
-// looks identical in both themes without either file holding a colour value.
+//  • DEFAULT_LABELS is a SEED, not a registry. `ensureLabels` plants it the
+//    first time a project's labels are read — the same shape as `ensureLists`,
+//    and for the same reason: a board that pre-dates the feature opens with the
+//    five it always had, and a project whose labels the owner has deleted down
+//    to none does not silently get them back, because we only seed when the
+//    table has never been written for that project.
+//  • TONES stays CLOSED. A tone names an Atlas token, and `styles.css` has to
+//    carry a `.rl-<tone>` rule for it — a free colour would be a label that
+//    renders wrong in one of the two themes, or not at all. Same argument as
+//    the area palette: a closed set the picker can show whole.
+//  • `cleanLabels` now takes the project's ALLOWED ids, since there is no
+//    global set to check against. It still DROPS what it does not recognise:
+//    storing an unknown id creates a card carrying an invisible property.
+//
+// The client twin is `web/src/lib/labels.ts`, which holds the same defaults as a
+// FALLBACK for a server that has not been redeployed yet — not as a second
+// truth. What the board read serves always wins.
 
-export const LABELS = [
-  { id: 'customer', name: 'Customer ask', tone: 'accent' },
-  { id: 'debt', name: 'Tech debt', tone: 'muted' },
-  { id: 'polish', name: 'Polish', tone: 'live' },
-  { id: 'risk', name: 'Risk', tone: 'building' },
-  { id: 'blocked', name: 'Blocked', tone: 'critical' },
+export const TONES = ['accent', 'muted', 'live', 'building', 'critical', 'sage', 'paused'];
+
+export const DEFAULT_LABELS = [
+  { key: 'customer', name: 'Customer ask', tone: 'accent' },
+  { key: 'debt', name: 'Tech debt', tone: 'muted' },
+  { key: 'polish', name: 'Polish', tone: 'live' },
+  { key: 'risk', name: 'Risk', tone: 'building' },
+  { key: 'blocked', name: 'Blocked', tone: 'critical' },
 ];
 
-const IDS = new Set(LABELS.map((l) => l.id));
+/** A label's id, derived from its name the way a list's key is. */
+export const labelKey = (name) =>
+  (String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'label').slice(0, 40);
+
+/** One of the closed tone set, or the neutral default. Never a stored unknown. */
+export const cleanTone = (tone) => (TONES.includes(String(tone || '').trim()) ? String(tone).trim() : 'muted');
 
 /**
- * Clean an incoming labels array: unknown ids are DROPPED rather than kept.
- * A label the registry does not know cannot be rendered, filtered or explained,
- * so storing it would create a card carrying an invisible property.
- * Order is the registry's, not the caller's, so two cards with the same labels
- * always render the same stripes in the same order.
+ * The project's labels, seeding the defaults for a project that has none.
+ * Returns rows in board order — the order every card's stripes render in.
  */
-export function cleanLabels(input) {
+export async function ensureLabels(q, projectId) {
+  const read = () => q(
+    'SELECT id, key, name, tone, position FROM project_labels WHERE project_id = $1 ORDER BY position, id',
+    [projectId]
+  );
+  const { rows } = await read();
+  if (rows.length) return rows;
+  // Cards already carry ids from the old code registry, and the seed uses those
+  // same keys — which is what makes an existing board's stripes keep rendering
+  // through the move from code to table.
+  for (const [i, l] of DEFAULT_LABELS.entries()) {
+    await q(
+      `INSERT INTO project_labels (project_id, key, name, tone, position) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (project_id, key) DO NOTHING`,
+      [projectId, l.key, l.name, l.tone, i]
+    );
+  }
+  return (await read()).rows;
+}
+
+/**
+ * Clean an incoming labels array against the ids this project actually has.
+ * Unknown ids are DROPPED rather than kept — a label nothing can name cannot be
+ * rendered, filtered or explained. Order is the project's own, not the
+ * caller's, so two cards with the same labels always render the same stripes in
+ * the same order.
+ */
+export function cleanLabels(input, allowed) {
   if (!Array.isArray(input)) return [];
-  const want = new Set(input.map((v) => String(v || '').trim()).filter((v) => IDS.has(v)));
-  return LABELS.filter((l) => want.has(l.id)).map((l) => l.id);
+  const order = Array.isArray(allowed) ? allowed.map((l) => (typeof l === 'string' ? l : l.key)) : [];
+  const want = new Set(input.map((v) => String(v || '').trim()));
+  return order.filter((k) => want.has(k));
 }

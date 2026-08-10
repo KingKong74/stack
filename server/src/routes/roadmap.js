@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags, riskWriteSource, capNote } from '../util.js';
-import { cleanLabels } from '../labels.js';
+import { cleanLabels, ensureLabels } from '../labels.js';
 
 // How many weeks the timeline spans, and which week is "now". A bar is a week
 // INDEX from the project's own week zero, never a date — see schema.sql's
@@ -394,8 +394,11 @@ roadmap.patch('/:id', async (req, res) => {
     }
   }
   if (req.body?.labels !== undefined) {
+    // Cleaned against THIS PROJECT'S labels (#382 moved them out of code and
+    // into `project_labels`), so an id belonging to another board — or to a
+    // label since deleted — is dropped rather than stored invisibly.
     sets.push(`labels = $${i++}::jsonb`);
-    vals.push(JSON.stringify(cleanLabels(req.body.labels)));
+    vals.push(JSON.stringify(cleanLabels(req.body.labels, await ensureLabels(q, req.project.id))));
   }
   if (req.body?.listKey !== undefined) {
     // '' clears back to DERIVED. Moving a card never ticks it: `done` is a
@@ -537,18 +540,29 @@ roadmap.post('/assist', async (req, res) => {
 // timeline ghosts each move in the accent and the owner applies or discards.
 // That is what keeps "Gemini annotates, the human disposes" true of a button
 // whose whole job is rearranging a plan.
+//
+// SCOPED BY AREA, because the panel that calls it is. `{area}` narrows the read
+// to one area and `{untagged:true}` to the items carrying none; neither is the
+// client's UNALLOCATED sentinel, which stays a client filter value. The rows the
+// model may MOVE are the rows it is SHOWN — a model handed the whole board and
+// asked to move part of it will move the part it was not asked about.
 roadmap.post('/arrange', async (req, res) => {
   if (await refused('arrange', res)) return;
+  const area = String(req.body?.area || '').trim().toLowerCase();
+  const untagged = req.body?.untagged === true;
+  const scope = untagged ? " AND COALESCE(area, '') = ''" : area ? ' AND area = $2' : '';
   const { rows } = await q(
     `SELECT id, bucket, area, title, note, sched_start, sched_len, estimate
        FROM roadmap_items
-      WHERE project_id = $1 AND NOT done AND NOT archived
+      WHERE project_id = $1 AND NOT done AND NOT archived${scope}
       ORDER BY sched_start NULLS LAST, bucket, position`,
-    [req.project.id]
+    area && !untagged ? [req.project.id, area] : [req.project.id]
   );
   // Two bars cannot be ordered against each other, and one cannot be ordered at
-  // all. Say so rather than spending a call to be told the same.
-  if (rows.length < 2) return res.json({ moves: [], note: 'Not enough on the board to order.' });
+  // all. Say so rather than spending a call to be told the same — and name the
+  // filter when there is one, or a full board reads as an empty one.
+  const where = untagged ? ' in unallocated' : area ? ` in ${area}` : ' on the board';
+  if (rows.length < 2) return res.json({ moves: [], note: `Not enough${where} to order.` });
 
   const byId = new Map(rows.map((r) => [r.id, r]));
   const prompt = buildPrompt('arrange', {

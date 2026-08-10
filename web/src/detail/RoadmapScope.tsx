@@ -26,7 +26,7 @@
 // behaved.
 
 import { useState } from 'react';
-import type { BoardArea, Priority, RoadmapItem } from '../types';
+import type { BoardArea, BoardLabel, Priority, RoadmapItem } from '../types';
 import { areaMatches } from '../lib/plan';
 import { labelsOf } from '../lib/labels';
 
@@ -40,6 +40,8 @@ const LANES: { key: Priority; name: string; meta: string }[] = [
 export interface ScopeProps {
   items: RoadmapItem[];
   areas: BoardArea[];
+  /** #382 — the project's labels; a card's stripes are drawn from these. */
+  labels: BoardLabel[];
   areaFilter: string;
   labelFilter: string;
   /** Branches with a live session right now — what makes a claim read-only. */
@@ -60,7 +62,7 @@ export interface ScopeProps {
 }
 
 export function RoadmapScope({
-  items, areas, areaFilter, labelFilter, liveBranches, highlightId,
+  items, areas, labels, areaFilter, labelFilter, liveBranches, highlightId,
   onSetBucket, onReorder, onToggleDone, onToggleSkip, onArchive, onSchedule,
   onEdit, onDelete, onBranch, onClearNote, onAdd,
 }: ScopeProps) {
@@ -173,8 +175,8 @@ export function RoadmapScope({
                         </span>
                       )}
                       {it.area && <span className="area-chip">{it.area}</span>}
-                      {labelsOf(it.labels).map((l) => (
-                        <span key={l.id} className={`rl rl-${l.tone}`}>{l.name}</span>
+                      {labelsOf(it.labels, labels).map((l) => (
+                        <span key={l.key} className={`rl rl-${l.tone}`}>{l.name}</span>
                       ))}
                       {it.risk !== 'normal' && (
                         <span className={`risk-chip ${it.risk}`}

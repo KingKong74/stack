@@ -137,12 +137,20 @@ export interface BoardArea {
   registered: boolean;
 }
 export interface BoardList { id: number; key: string; name: string; position: number }
+// A label the owner has defined for THIS project (#382 — was a code registry).
+// `tone` is one of the closed Atlas set, because styles.css needs a rule for it.
+export interface BoardLabel { key: string; name: string; tone: string }
+
 export interface BoardShape {
   areas: BoardArea[];
   lists: BoardList[];
-  // The colours an area may wear. Served rather than duplicated client-side so
-  // the picker can only offer what the server will actually store.
+  // Optional so a not-yet-redeployed server can't blank the label filter — the
+  // client falls back to DEFAULT_LABELS, the same five the server seeds.
+  labels?: BoardLabel[];
+  // The colours an area may wear, and the tones a label may wear. Served rather
+  // than duplicated client-side so a picker can only offer what will store.
   palette?: string[];
+  tones?: string[];
 }
 export interface Roadmap { must: RoadmapItem[]; should: RoadmapItem[]; could: RoadmapItem[]; wont: RoadmapItem[] }
 

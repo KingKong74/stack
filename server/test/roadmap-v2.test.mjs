@@ -104,7 +104,40 @@ async function main() {
   r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${ticket.id}`,
     { labels: ['risk', 'not-a-label', 'customer'] })).json;
   ok('unknown labels are dropped, not stored invisibly', !r.labels.includes('not-a-label'), r.labels);
-  ok('labels come back in registry order, not the caller\'s', r.labels.join() === 'customer,risk', r.labels);
+  ok('labels come back in board order, not the caller\'s', r.labels.join() === 'customer,risk', r.labels);
+
+  // #382 — labels are the OWNER'S now (project_labels), seeded with the five
+  // that used to live in code. Each of these pins a way the move could have
+  // lost something: the seed not landing (every existing card's stripes go),
+  // an added label being unstorable (the add looks like it worked and no card
+  // can wear it), or a delete leaving its id behind on the rows.
+  let lb = (await call('GET', `/api/projects/${SLUG}/board`)).json;
+  ok('the five default labels seed on first read', lb.labels.length === 5, lb.labels?.map((l) => l.key));
+  ok('the tone set is served, so the picker can only offer what will store',
+    Array.isArray(lb.tones) && lb.tones.includes('accent'), lb.tones);
+
+  lb = (await call('POST', `/api/projects/${SLUG}/board/labels`, { name: 'Spike', tone: 'sage' })).json;
+  ok('a label can be added', lb.labels.some((l) => l.key === 'spike' && l.tone === 'sage'), lb.labels);
+
+  lb = (await call('POST', `/api/projects/${SLUG}/board/labels`, { name: 'Spike', tone: 'nonsense' })).json;
+  ok('the same name is one label, not two rows wearing one id',
+    lb.labels.filter((l) => l.key === 'spike').length === 1, lb.labels);
+
+  r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${ticket.id}`,
+    { labels: ['spike', 'customer'] })).json;
+  ok('an owner-added label is storable on a card', r.labels.includes('spike'), r.labels);
+
+  lb = (await call('DELETE', `/api/projects/${SLUG}/board/labels/spike`)).json;
+  ok('deleting a label removes it from the board', !lb.labels.some((l) => l.key === 'spike'), lb.labels);
+  r = flat((await call('GET', `/api/projects/${SLUG}/roadmap`)).json).find((i) => i.id === ticket.id);
+  ok('…and takes it off every card that carried it', !r.labels.includes('spike'), r.labels);
+  ok('…without touching the labels beside it', r.labels.includes('customer'), r.labels);
+
+  // A tone nothing can render is never stored: styles.css has a rule per tone,
+  // so an unknown one would be a label that vanishes in one of the two themes.
+  lb = (await call('POST', `/api/projects/${SLUG}/board/labels`, { name: 'Odd', tone: 'chartreuse' })).json;
+  ok('an unknown tone falls back rather than being stored',
+    lb.labels.find((l) => l.key === 'odd')?.tone === 'muted', lb.labels.find((l) => l.key === 'odd'));
 
   // ---- lists --------------------------------------------------------------
 

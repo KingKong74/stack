@@ -3,7 +3,7 @@ import type {
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Tip, Tier, ResumeSince, ProjectDebrief,
   WorkbenchData, WorkbenchCard, WorkbenchEdge, WorkbenchBody, WorkbenchOp, WorkbenchCascade,
-  WorkbenchDebrief, SchedSpan, BoardShape, BoardArea, BoardList, ProjectPulse,
+  WorkbenchDebrief, SchedSpan, BoardShape, BoardArea, BoardLabel, BoardList, ProjectPulse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1931,6 +1931,21 @@ export async function deleteArea(slug: string, name: string): Promise<BoardArea[
   const r = await request<{ areas: BoardArea[] }>(
     `${boardBase(slug)}/areas/${encodeURIComponent(name)}`, { method: 'DELETE' });
   return r.areas;
+}
+/**
+ * The project's labels (#382). Both writers answer with the WHOLE set, like the
+ * area writers: a delete takes the label off every card server-side, so the
+ * caller must never assume the collection it had is still current.
+ */
+export async function addLabel(slug: string, name: string, tone: string): Promise<BoardLabel[]> {
+  const r = await request<{ labels: BoardLabel[] }>(
+    `${boardBase(slug)}/labels`, { method: 'POST', body: { name, tone } });
+  return r.labels;
+}
+export async function deleteLabel(slug: string, key: string): Promise<BoardLabel[]> {
+  const r = await request<{ labels: BoardLabel[] }>(
+    `${boardBase(slug)}/labels/${encodeURIComponent(key)}`, { method: 'DELETE' });
+  return r.labels;
 }
 export async function addList(slug: string, name: string): Promise<BoardList> {
   const r = await request<{ list: BoardList }>(`${boardBase(slug)}/lists`, { method: 'POST', body: { name } });

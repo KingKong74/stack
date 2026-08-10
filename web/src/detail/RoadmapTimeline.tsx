@@ -34,7 +34,7 @@
 // empty" reveal names them), which is where an area with nothing in it belongs.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { BoardArea, RoadmapItem, SchedSpan } from '../types';
+import type { BoardArea, BoardLabel, RoadmapItem, SchedSpan } from '../types';
 import {
   SCHED_WEEKS, CYCLE_WEEKS, areaMatches, layoutLane, scaleCols, scopeTotals, slipOf, weekAt,
   nowLeft, whatsNext, calendarMonths, weekDate, fmtDate,
@@ -58,6 +58,8 @@ const LANES_SHOWN = 10;
 export interface TimelineProps {
   items: RoadmapItem[];
   areas: BoardArea[];
+  /** #382 — the project's labels; the scope drawer draws its chips from these. */
+  labels: BoardLabel[];
   /** The Monday weeks are counted from. null = no dates, so no calendar. */
   weekZero: string | null;
   areaFilter: string;
@@ -77,7 +79,7 @@ export interface TimelineProps {
 }
 
 export function RoadmapTimeline({
-  items, areas, weekZero, areaFilter, selectedId, onSelect,
+  items, areas, labels, weekZero, areaFilter, selectedId, onSelect,
   palette, onRecolour, onSchedule, onRebaseline, onOpen, onToggleSkip, proposed,
 }: TimelineProps) {
   const [scale, setScale] = useState<Scale>('month');
@@ -423,8 +425,8 @@ export function RoadmapTimeline({
                         <button className="mk" title={c.skipped ? 'Bring back into the cycle' : 'Defer this line'}
                           onClick={() => onToggleSkip(c)}>{c.skipped ? '↺' : '×'}</button>
                         <button className="t" onClick={() => onOpen(c)}>{c.title}</button>
-                        {labelsOf(c.labels).map((l) => (
-                          <span key={l.id} className={`rl rl-${l.tone}`}>{l.name}</span>
+                        {labelsOf(c.labels, labels).map((l) => (
+                          <span key={l.key} className={`rl rl-${l.tone}`}>{l.name}</span>
                         ))}
                         <span className="w">{c.estimate === null ? '—' : `${c.estimate}w`}</span>
                       </div>

@@ -11,21 +11,28 @@
 //    moves it, and `listKeyOf` derives where it belongs from the state the row
 //    already carries. That is why an existing project opens already sorted
 //    rather than with every card piled in the first column.
-//  • THE LABEL SET IS FIXED (lib/labels.ts). Toggling one writes ids; the
-//    server drops anything it does not know, so a card can never carry a label
-//    nothing can render.
+//  • THE LABELS ARE THE OWNER'S (#382), not a code registry, and they arrive
+//    with the board read. They are a MENU rather than a strip of chips because
+//    a set you can add to has no ceiling, and eleven filter chips across the top
+//    of a board is a legend nobody asked for. Deleting one takes it off every
+//    card — server-side, in one transaction — so the delete is a two-press
+//    confirm that SAYS how many cards it touches.
 //  • ARCHIVING IS NOT DELETING AND NOT PARKING. Three states, three meanings —
 //    see schema.sql. The archive strip is where the third one lives, and every
 //    row in it is one press from coming back — which is why "Archive all" on
 //    the Shipped lane is a two-press confirm and not a modal: reversible, but
-//    not so reversible that a misclick should be able to empty a lane.
-//  • AN ARCHIVED ROW REMEMBERS ITS LANE, and nothing had to be stored for that.
-//    Archiving changes `archived` and nothing else, so `listKeyOf` still
-//    resolves the column the card was sitting in. The strip names it, because
-//    "Threading" tells you nothing about whether it shipped or was abandoned in
-//    Planned — and Restore puts it back in exactly that column.
+//    not so reversible that a misclick should be able to empty a lane. DELETE
+//    is the one action here that is none of those things: it goes through the
+//    parent's confirm modal, the same one Scope's × opens.
+//  • REVIEWING FROM THE SHIPPED LANE (#382) records the SAME verdict the Review
+//    room records — `review_tag: 'solid'` — and archives the card in the same
+//    write. What it does NOT do is tick the item: approving has never meant
+//    done (the merge job ticks, with the human's verdict already stored), and a
+//    board that ticked on approval would be manufacturing the state the whole
+//    verdict chain exists to keep honest. A card with no `built_note` says so
+//    rather than presenting a title as evidence — the NULL-verdict rule.
 //  • A CLICK OPENS THE CARD, A DOUBLE-CLICK OPENS THE ITEM. The inline detail is
-//    for the two things you change constantly (labels and scope); everything
+//    for the things you change constantly (labels and scope); everything
 //    else lives in the modal. A double-click toggles the detail twice on its way
 //    through, which lands it back where it started — harmless, and cheaper than
 //    a click-delay timer that would make every single click feel slow.
@@ -33,10 +40,10 @@
 // Lists is one of THREE boards here; Tiers and Parked are in RoadmapBoards.tsx,
 // and the switcher between them is this view's own, not the tab's.
 
-import { useState } from 'react';
-import type { BoardArea, BoardList, Priority, RoadmapItem } from '../types';
+import { useEffect, useRef, useState } from 'react';
+import type { BoardArea, BoardLabel, BoardList, Priority, RoadmapItem } from '../types';
 import { areaMatches, listKeyOf } from '../lib/plan';
-import { LABELS, labelsOf } from '../lib/labels';
+import { LABEL_TONES, labelsOf } from '../lib/labels';
 
 const BUCKETS: Priority[] = ['must', 'should', 'could', 'wont'];
 const BUCKET_LABEL: Record<Priority, string> = {
@@ -47,23 +54,36 @@ export interface PlanProps {
   items: RoadmapItem[];
   lists: BoardList[];
   areas: BoardArea[];
+  /** #382 — the project's own labels, in board order. */
+  labels: BoardLabel[];
+  /** The tones a new label may wear; falls back to the client's own set. */
+  tones?: string[];
   areaFilter: string;
   labelFilter: string;
   onSetLabelFilter: (id: string) => void;
+  onAddLabel: (name: string, tone: string) => void;
+  onDeleteLabel: (key: string) => void;
   onMoveToList: (item: RoadmapItem, listKey: string) => void;
   onSetBucket: (item: RoadmapItem, bucket: Priority) => void;
   onToggleLabel: (item: RoadmapItem, labelId: string) => void;
   onArchive: (item: RoadmapItem, archived: boolean) => void;
   /** Bulk archive, applied by the parent so a partial failure is reported once. */
   onArchiveMany: (items: RoadmapItem[]) => void;
+  /** The parent's confirm modal — deleting is not archiving and asks first. */
+  onDelete: (item: RoadmapItem) => void;
+  /** Verdict + archive in one write. Never ticks the item; see the header. */
+  onApprove: (item: RoadmapItem) => void;
+  /** It did not hold up: un-tick, clear the claim, back to the derived column. */
+  onSendBack: (item: RoadmapItem) => void;
   onAddCard: (listKey: string, title: string) => void;
   onAddList: (name: string) => void;
   onOpen: (item: RoadmapItem) => void;
 }
 
 export function RoadmapPlan({
-  items, lists, areas, areaFilter, labelFilter, onSetLabelFilter,
-  onMoveToList, onSetBucket, onToggleLabel, onArchive, onArchiveMany, onAddCard, onAddList, onOpen,
+  items, lists, areas, labels, tones, areaFilter, labelFilter, onSetLabelFilter,
+  onAddLabel, onDeleteLabel, onMoveToList, onSetBucket, onToggleLabel, onArchive, onArchiveMany,
+  onDelete, onApprove, onSendBack, onAddCard, onAddList, onOpen,
 }: PlanProps) {
   const [openCard, setOpenCard] = useState<number | null>(null);
   const [composer, setComposer] = useState<string | null>(null);
@@ -71,6 +91,9 @@ export function RoadmapPlan({
   const [listDraft, setListDraft] = useState<string | null>(null);
   const [showArchive, setShowArchive] = useState(false);
   const [confirmSweep, setConfirmSweep] = useState('');
+  // Which card's review panel is open, and which card's label menu is open.
+  const [reviewing, setReviewing] = useState<number | null>(null);
+  const [labelsFor, setLabelsFor] = useState<number | null>(null);
 
   const dotOf = (area: string) => areas.find((a) => a.name === area)?.dot || 'var(--line-3)';
 
@@ -99,11 +122,18 @@ export function RoadmapPlan({
   return (
     <div className="rp">
       <div className="rp-bar">
-        <span className="lbl">Labels</span>
-        {LABELS.map((l) => (
-          <button key={l.id} className={`rl rl-${l.tone}${labelFilter === l.id ? ' on' : ''}`}
-            onClick={() => onSetLabelFilter(labelFilter === l.id ? '' : l.id)}>{l.name}</button>
-        ))}
+        <LabelMenu labels={labels} tones={tones && tones.length ? tones : LABEL_TONES}
+          filter={labelFilter} onFilter={onSetLabelFilter}
+          countOf={(key) => items.filter((i) => !i.archived && i.labels.includes(key)).length}
+          onAdd={onAddLabel} onDelete={onDeleteLabel} />
+        {/* The active filter stays OUTSIDE the menu: a filter you can only see
+            by opening the thing that set it is a board quietly hiding rows. */}
+        {labelFilter && (
+          <button className={`rl rl-${labels.find((l) => l.key === labelFilter)?.tone || 'muted'} on`}
+            onClick={() => onSetLabelFilter('')} title="Clear this label filter">
+            {labels.find((l) => l.key === labelFilter)?.name || labelFilter} ×
+          </button>
+        )}
         <button className="rp-archive-toggle" onClick={() => setShowArchive(!showArchive)}>
           {showArchive ? 'Hide archive' : `Archive${archived.length ? ` · ${archived.length}` : ''}`}
         </button>
@@ -119,6 +149,7 @@ export function RoadmapPlan({
               <span className="lane" title="The list it was archived from — Restore puts it back there">
                 {laneOf(a)}
               </span>
+              {a.reviewTag && <span className="rp-verdict" title="The verdict recorded on it">✓ {a.reviewTag}</span>}
               <button className="rail-link" onClick={() => onArchive(a, false)}>Restore</button>
             </div>
           )) : <div className="rail-empty">Nothing archived yet.</div>}
@@ -170,8 +201,8 @@ export function RoadmapPlan({
                   title="Click for labels and scope · double-click to open">
                   {c.labels.length > 0 && (
                     <div className="rp-stripes">
-                      {labelsOf(c.labels).map((l) => (
-                        <span key={l.id} className={`rp-stripe rl-${l.tone}`} title={l.name} />
+                      {labelsOf(c.labels, labels).map((l) => (
+                        <span key={l.key} className={`rp-stripe rl-${l.tone}`} title={l.name} />
                       ))}
                     </div>
                   )}
@@ -181,19 +212,54 @@ export function RoadmapPlan({
                     <span className="area">{c.area || 'untagged'}</span>
                     <span className={`rp-mos ${c.bucket}`}>{BUCKET_LABEL[c.bucket]}</span>
                     <span className="est">{c.estimate === null ? '' : `${c.estimate}w`}</span>
+                    {c.reviewTag && <span className="rp-verdict" title="Verdict already recorded">✓ {c.reviewTag}</span>}
                   </div>
+
+                  {list.key === 'shipped' && (
+                    <div className="rp-shipped-acts" onClick={(e) => e.stopPropagation()}>
+                      <button className="rail-link"
+                        onClick={() => setReviewing(reviewing === c.id ? null : c.id)}
+                        title="Read what landed and give it a verdict">
+                        {reviewing === c.id ? 'Close review' : '✓ Review'}
+                      </button>
+                    </div>
+                  )}
+
+                  {reviewing === c.id && (
+                    <div className="rp-review" onClick={(e) => e.stopPropagation()}>
+                      {/* The NULL-verdict rule: no built note is NOT "it went
+                          fine". Say what is missing, hardest under an approve. */}
+                      {c.builtNote
+                        ? <div className="rp-note built">{c.builtNote}</div>
+                        : (
+                          <div className="rp-review-blind">
+                            No built note on this card — nothing was recorded about what actually landed,
+                            so there is nothing to read here but the title.
+                          </div>
+                        )}
+                      {c.claimedBy && <div className="rp-review-branch">{c.claimedBy}</div>}
+                      <div className="rp-acts">
+                        <button className="rail-link go" onClick={() => { setReviewing(null); onApprove(c); }}
+                          title="Records the same verdict the Review room records, and archives the card. It does not tick the item.">
+                          ✓ Approve &amp; archive
+                        </button>
+                        <button className="rail-link" onClick={() => { setReviewing(null); onSendBack(c); }}
+                          title="It did not hold up — un-ticks it, clears the branch claim and returns it to the board">
+                          ↩ Send back
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {openCard === c.id && (
                     <div className="rp-detail" onClick={(e) => e.stopPropagation()}>
                       {c.note && <div className="rp-note">{c.note}</div>}
 
                       <div className="lbl">Labels</div>
-                      <div className="rp-toggles">
-                        {LABELS.map((l) => (
-                          <button key={l.id} className={`rl rl-${l.tone}${c.labels.includes(l.id) ? ' on' : ''}`}
-                            onClick={() => onToggleLabel(c, l.id)}>{l.name}</button>
-                        ))}
-                      </div>
+                      <CardLabels labels={labels} on={c.labels}
+                        open={labelsFor === c.id}
+                        onToggleOpen={() => setLabelsFor(labelsFor === c.id ? null : c.id)}
+                        onToggle={(key) => onToggleLabel(c, key)} />
 
                       <div className="lbl">Scope</div>
                       <div className="rp-toggles">
@@ -206,6 +272,12 @@ export function RoadmapPlan({
                       <div className="rp-acts">
                         <button className="rail-link" onClick={() => onOpen(c)}>Open</button>
                         <button className="rail-link" onClick={() => onArchive(c, true)}>Archive</button>
+                        {/* Deleting is not archiving: it is gone, and for a
+                            hook-extracted row it tombstones the fingerprint so
+                            the next push cannot re-create it. The parent's
+                            modal is what says so before it happens. */}
+                        <button className="rail-link danger" onClick={() => onDelete(c)}
+                          title="Delete this item — not the same as archiving it">Delete</button>
                       </div>
                     </div>
                   )}
@@ -236,6 +308,137 @@ export function RoadmapPlan({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// --- the label menu ---------------------------------------------------------
+
+// The board's label filter AND its editor, in one menu.
+//
+// One menu rather than two surfaces because they answer the same question from
+// either side — "which labels does this board have" — and a set the owner can
+// grow has no ceiling to lay out flat. The DELETE is a two-press confirm that
+// names the number of cards it will touch: the label comes off all of them, in
+// one transaction, and that is not something to learn afterwards.
+function LabelMenu({ labels, tones, filter, onFilter, countOf, onAdd, onDelete }: {
+  labels: BoardLabel[]; tones: string[];
+  filter: string; onFilter: (key: string) => void;
+  countOf: (key: string) => number;
+  onAdd: (name: string, tone: string) => void;
+  onDelete: (key: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [tone, setTone] = useState(tones[0] || 'muted');
+  const [confirm, setConfirm] = useState('');
+  const box = useRef<HTMLDivElement | null>(null);
+
+  // A menu that only closes on its own button is a menu you fight. Any press
+  // outside it closes it, and the pending delete goes with it — a confirm left
+  // armed behind a closed menu is a press you did not know you had queued.
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) { setOpen(false); setConfirm(''); }
+    };
+    document.addEventListener('mousedown', away);
+    return () => document.removeEventListener('mousedown', away);
+  }, [open]);
+
+  const add = () => {
+    const v = name.trim();
+    if (!v) return;
+    onAdd(v, tone);
+    setName('');
+  };
+
+  return (
+    <div className="rp-labelmenu" ref={box}>
+      <button className={`rp-labelbtn${open ? ' on' : ''}`} aria-expanded={open}
+        onClick={() => { setOpen(!open); setConfirm(''); }}>
+        Labels <span className="n">{labels.length}</span> <span className="chev" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="rp-labelpop" role="menu">
+          {labels.map((l) => (
+            <div className={`rp-labelrow${filter === l.key ? ' on' : ''}`} key={l.key}>
+              <button className={`rl rl-${l.tone}${filter === l.key ? ' on' : ''}`} role="menuitem"
+                onClick={() => onFilter(filter === l.key ? '' : l.key)}
+                title={filter === l.key ? 'Clear this filter' : `Show only cards labelled ${l.name}`}>
+                {l.name}
+              </button>
+              <span className="n">{countOf(l.key)}</span>
+              {confirm === l.key ? (
+                <span className="rp-labelconfirm">
+                  <button className="go" onClick={() => { setConfirm(''); onDelete(l.key); }}>
+                    Delete{countOf(l.key) > 0 ? ` from ${countOf(l.key)}?` : '?'}
+                  </button>
+                  <button className="no" onClick={() => setConfirm('')}>No</button>
+                </span>
+              ) : (
+                <button className="x" onClick={() => setConfirm(l.key)}
+                  title={`Delete ${l.name} — it comes off every card that carries it`}>×</button>
+              )}
+            </div>
+          ))}
+          {labels.length === 0 && (
+            <div className="rp-labelempty">No labels on this board. Add one below.</div>
+          )}
+          <div className="rp-labeladd">
+            <span className="rp-tones">
+              {tones.map((t) => (
+                <button key={t} className={`rl rl-${t}${tone === t ? ' on' : ''}`} title={t}
+                  onClick={() => setTone(t)} />
+              ))}
+            </span>
+            <input className="field-input sm" value={name} placeholder="New label, then Enter"
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') add();
+                else if (e.key === 'Escape') { setName(''); setOpen(false); }
+              }} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A card's own labels: the ones it wears, plus a menu to change them. The chips
+// stay visible with the menu shut — what a card is labelled is information, and
+// only CHANGING it needs a menu.
+function CardLabels({ labels, on, open, onToggleOpen, onToggle }: {
+  labels: BoardLabel[]; on: string[];
+  open: boolean; onToggleOpen: () => void; onToggle: (key: string) => void;
+}) {
+  const mine = labelsOf(on, labels);
+  return (
+    <div className="rp-cardlabels">
+      <div className="rp-toggles">
+        {mine.map((l) => (
+          <span key={l.key} className={`rl rl-${l.tone} on`}>{l.name}</span>
+        ))}
+        <button className="rp-labelbtn sm" aria-expanded={open} onClick={onToggleOpen}>
+          {mine.length ? 'Change' : 'Add a label'} <span className="chev" aria-hidden="true">▾</span>
+        </button>
+      </div>
+      {open && (
+        <div className="rp-labelpop inline" role="menu">
+          {labels.map((l) => (
+            <div className="rp-labelrow" key={l.key}>
+              <button className={`rl rl-${l.tone}${on.includes(l.key) ? ' on' : ''}`} role="menuitemcheckbox"
+                aria-checked={on.includes(l.key)} onClick={() => onToggle(l.key)}>
+                {l.name}
+              </button>
+              {on.includes(l.key) && <span className="tick" aria-hidden="true">✓</span>}
+            </div>
+          ))}
+          {labels.length === 0 && (
+            <div className="rp-labelempty">No labels on this board yet — add one from the Labels menu above.</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
