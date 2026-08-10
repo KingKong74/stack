@@ -112,6 +112,38 @@ fingerprint of their title. So:
 - Manual items are never touched by the extractor. Reach for a manual bug/roadmap
   item/note when you want something the session summary wouldn't capture.
 
+## Open a FLY card when you start ad-hoc work (#381)
+
+Asked to build something **not already a roadmap item**? Open a card first, or
+the work lives only in this transcript — not somewhere the owner can review it,
+rework it, or find it next week.
+
+```bash
+source ~/.stack/env
+curl -s -X POST "$STACK_API/api/projects/<slug>/roadmap" \
+  -H "authorization: Bearer $STACK_TOKEN" -H 'content-type: application/json' \
+  -d '{"source":"fly","session":"'"$(tmux display-message -p '#S' 2>/dev/null)"'",
+       "title":"Fix the console strip flicker","note":"What was asked for.",
+       "bucket":"should","area":"terminal"}'
+```
+
+- **`source:"fly"`** is the marker — a live session opened this, as against
+  `manual` (a human typed it) and `hook` (extracted from a push). Posting
+  `"hook"` is refused; that source is the extractor's alone.
+- **`session`** is your tmux session name. Send it if you can find it; the card
+  is created without one, and inventing a plausible name is far worse.
+- **It is HELD from the overnight runner** until the owner signs it off, like a
+  hook item — you are recording work, not commissioning a night of it. It does
+  not stop YOU doing the work now.
+- **One card per piece of work, not per turn.** The same title twice from one
+  session returns the first card (200, not 201) — don't lean on that.
+- **409 with `"dismissed":true`** = the owner deleted that card. Don't post it
+  again; say so in your summary.
+- Then treat it as any other item: claim it, and write a `built_note` when done.
+
+Not for trivia — a typo, a question answered, a file read. The test is whether
+the owner would want it on the board tomorrow.
+
 ## Branch naming
 
 Cut branches as **`<kind>/<id>-<summary>`** — `feat/271-mission-control`,

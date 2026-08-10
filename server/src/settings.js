@@ -17,6 +17,19 @@ export const SESSION_DEFAULTS = [
   { key: 'checkpoint', line: 'Run /checkpoint before wrapping up the session.' },
   { key: 'confirm', line: 'Check in before changing API contracts or the schema, or deleting anything.' },
   { key: 'verify', line: 'Run the build/typecheck and verify before declaring work done.' },
+  // #381 — the switch that makes fly cards happen at all. The line has to carry
+  // the WHOLE recipe: it is injected into sessions that have never read the
+  // agent manual (a bare `claude` in a checkout gets the SessionStart block and
+  // nothing else), and an instruction that says "open a card" without saying
+  // how produces a session that tries to and gives up.
+  {
+    key: 'fly',
+    line: 'If you are asked to build something that is not already a roadmap item, open a card for it first: '
+      + 'POST /api/projects/<slug>/roadmap with {"source":"fly","session":"<your tmux session name>","title":…,"note":…}, '
+      + 'bearer $STACK_TOKEN from ~/.stack/env. It is held out of the overnight runner until the owner signs it off, '
+      + 'so it records the work without commissioning any. One card per piece of work, not per turn; skip it for trivia. '
+      + 'A 409 with "dismissed":true means the owner deleted that card — do not post it again.',
+  },
 ];
 const SESSION_DEFAULT_KEYS = new Set(SESSION_DEFAULTS.map((d) => d.key));
 

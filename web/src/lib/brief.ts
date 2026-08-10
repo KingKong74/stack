@@ -35,7 +35,11 @@ export const DIRECTIVES: { key: string; label: string; hint: string; line: strin
     key: 'ship',
     label: 'Commit + push each unit',
     hint: 'Land every completed unit of work on the remote.',
-    line: 'Commit and push after every completed unit of work.',
+    // Verbatim the server twin. It used to read "Commit and push after every
+    // completed unit of work." — the same instruction with the PERMISSION taken
+    // out, so a session handed an exported brief still stopped to ask for what
+    // a session handed the SessionStart block had already been granted.
+    line: 'Commits are pre-authorised: commit and push after every completed unit of work — no need to ask.',
   },
   {
     key: 'checkpoint',
@@ -54,6 +58,21 @@ export const DIRECTIVES: { key: string; label: string; hint: string; line: strin
     label: 'Verify before done',
     hint: 'Build + typecheck must pass before calling work done.',
     line: 'Run the build/typecheck and verify before declaring work done.',
+  },
+  {
+    key: 'fly',
+    label: 'Open a card for ad-hoc work',
+    hint: 'Work you ask for in a session gets a ⚡ FLY roadmap card.',
+    // VERBATIM the server twin's line (server/src/settings.js SESSION_DEFAULTS).
+    // Both copies end up in front of a session — that one through the
+    // SessionStart hook, this one through the exported brief a human pastes in —
+    // so both have to carry the whole recipe, and any difference between them is
+    // a session behaving differently depending on which door it came through.
+    line: 'If you are asked to build something that is not already a roadmap item, open a card for it first: '
+      + 'POST /api/projects/<slug>/roadmap with {"source":"fly","session":"<your tmux session name>","title":…,"note":…}, '
+      + 'bearer $STACK_TOKEN from ~/.stack/env. It is held out of the overnight runner until the owner signs it off, '
+      + 'so it records the work without commissioning any. One card per piece of work, not per turn; skip it for trivia. '
+      + 'A 409 with "dismissed":true means the owner deleted that card — do not post it again.',
   },
 ];
 
