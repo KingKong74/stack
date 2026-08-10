@@ -638,9 +638,12 @@ const ENV_KEYS = {
   // model reads it.
   readchange: 'STACK_READCHANGE_PROMPT',
   triagequeue: 'STACK_TRIAGEQUEUE_PROMPT',
-  // Same reasoning: the Curator is a TAB AGENT, so this runs `claude -p` on the
-  // host through the daemon (#364). GEMINI_ would be a lie about which model
-  // reads it, whatever the older keys above are called.
+  // The Curator's two board reads. They were coined STACK_ when they ran
+  // `claude -p` on the host and they have since moved to the Gemini backend
+  // (agents.js) — the keys stay put, because a live deploy may have an override
+  // set against them and a rename would silently drop it. STACK_ has stopped
+  // meaning "reads on Claude" and now means what it should have meant all
+  // along: Stack's own op, whichever backend answers it.
   arrange: 'STACK_ARRANGE_PROMPT',
   allocate: 'STACK_ALLOCATE_PROMPT',
   triage: 'GEMINI_TRIAGE_PROMPT',

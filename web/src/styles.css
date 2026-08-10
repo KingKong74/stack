@@ -7659,6 +7659,16 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
    wrong about the WORK rather than the arithmetic. It looks different. */
 .ra-action.read { border-color: var(--accent-tint-border); background: var(--accent-tint); }
 .ra-action.read .nm { color: var(--accent-deep); }
+/* What a quick command actually does, said ONCE under the row. A press opens a
+   session and sets it talking, which is a different kind of act from the ✧
+   reads beside it, and repeating that sentence on six buttons would bury the
+   thing each button is actually for. */
+.ra-cmdnote { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin: -4px 16px 14px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.ra-cmdnote strong { color: var(--body); font-weight: 600; }
+.ra-cmdnote .sent { font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em;
+  color: var(--accent-deep); background: var(--accent-tint); border: 1px solid var(--accent-tint-border);
+  border-radius: 5px; padding: 2px 7px; }
 .ra-readtag { flex: none; font-family: var(--mono); font-size: 10px; letter-spacing: .05em; text-transform: uppercase;
   color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border);
   border-radius: 5px; padding: 1px 6px; }

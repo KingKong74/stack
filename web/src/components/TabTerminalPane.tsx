@@ -17,6 +17,14 @@ import type { ConsoleStatus } from './TabTerminal';
 // Mounted only while the console is open, which is what makes "open" mean
 // "spawn or attach" and "close" mean "detach": the tmux session is untouched by
 // either, so the work outlives the tab, the screen and the browser.
+
+// How long the session's output must be quiet before a submitted command is
+// sent, how long to wait for that quiet before sending anyway, and the beat
+// between the paste and its Enter. See submitAtPrompt for why each exists.
+const SETTLE_MS = 1200;
+const SETTLE_MAX = 25_000;
+const ENTER_DELAY = 150;
+
 export default function ConsolePane({
   agentKey, name, slug, onStatus, onReattached, onPrimed, onOpeners, onCopied,
 }: {
@@ -32,7 +40,17 @@ export default function ConsolePane({
   // come out of the SAME briefing fetch, so the buttons the strip draws are
   // exactly the list the session was primed with — and they arrive together,
   // because a menu with nothing to type into is a row of dead buttons.
-  onOpeners: (list: { label: string; ask: string }[], type: (s: string) => void) => void;
+  // The channel to the session's prompt, handed up once the socket is live.
+  // TWO functions, because Stack does two different things at that prompt and
+  // must never confuse them: `type` puts text there and leaves it (the #380
+  // openers, and every other Stack surface — the Enter is the owner's), while
+  // `submit` types AND presses Enter. `submit` exists for the Arrange panel's
+  // quick commands alone, on the owner's explicit call; see TabTerminal.
+  onOpeners: (
+    list: { label: string; ask: string }[],
+    type: (s: string) => void,
+    submit: (s: string) => void,
+  ) => void;
   onCopied: () => void;
 }) {
   const holderRef = useRef<HTMLDivElement>(null);
@@ -102,12 +120,55 @@ export default function ConsolePane({
       // lines) and WITHOUT an Enter — the same rule the Terminal screen's brief
       // paste and the ✧ assist follow, and the reason a console is safe to put
       // one press away: nothing Stack composes is ever submitted for the owner.
-      const typeAtPrompt = (text: string) => {
+      const paste = (text: string) => {
         const live = wsRef.current;
-        if (live?.readyState !== WebSocket.OPEN || !text) return;
+        if (live?.readyState !== WebSocket.OPEN || !text) return false;
         live.send(JSON.stringify({ t: 'in', data: b64encode(`\x1b[200~${text}\x1b[201~`) }));
         term.focus();
+        return true;
       };
+      const typeAtPrompt = (text: string) => { paste(text); };
+
+      // TYPE **AND** SUBMIT — the one path in Stack that presses Enter for you,
+      // and it waits for the prompt to be there before it does.
+      //
+      // A freshly spawned `claude` is not ready the instant the socket says
+      // ready: the TUI is still painting, and text sent into that window is
+      // swallowed or lands half-composed. There is no "ready" signal to wait
+      // for — the daemon relays bytes, not application state — so the proxy is
+      // OUTPUT GOING QUIET: the session is still writing while it boots, and it
+      // stops when it is waiting for you. Quiet for SETTLE_MS, or give up
+      // waiting after SETTLE_MAX and send anyway rather than silently dropping
+      // the command the owner pressed for.
+      //
+      // The Enter is a SEPARATE frame a beat later, not \r on the end of the
+      // paste: inside a bracketed paste a newline is a literal newline, so a
+      // multi-line brief with the Enter glued on submits nothing and leaves the
+      // prompt full of text.
+      const submitAtPrompt = (text: string) => {
+        if (!text) return;
+        const started = Date.now();
+        const tick = () => {
+          if (disposed) return;
+          const quiet = Date.now() - lastOut;
+          if (quiet < SETTLE_MS && Date.now() - started < SETTLE_MAX) {
+            setTimeout(tick, 150);
+            return;
+          }
+          if (!paste(text)) return;
+          setTimeout(() => {
+            const live = wsRef.current;
+            if (disposed || live?.readyState !== WebSocket.OPEN) return;
+            live.send(JSON.stringify({ t: 'in', data: b64encode('\r') }));
+          }, ENTER_DELAY);
+        };
+        tick();
+      };
+
+      // When output last arrived, which is how submitAtPrompt knows the TUI has
+      // finished painting. Seeded at connect so a session that says nothing at
+      // all still becomes "quiet" rather than waiting out SETTLE_MAX.
+      let lastOut = Date.now();
 
       // Same write-batching as the Terminal screen: high-throughput output
       // arrives as dozens of tiny frames, and one rAF flush per batch keeps
@@ -130,6 +191,7 @@ export default function ConsolePane({
         let m: { t: string; data?: string; msg?: string; code?: number; tmuxSession?: string; reattached?: boolean };
         try { m = JSON.parse(ev.data); } catch { return; }
         if (m.t === 'out' && m.data) {
+          lastOut = Date.now();
           writeBuf.push(b64decode(m.data));
           if (!rafPending) { rafPending = true; requestAnimationFrame(flushWrites); }
         } else if (m.t === 'ready') {
@@ -141,7 +203,7 @@ export default function ConsolePane({
           // The openers go up only once there is a session to type into — a
           // menu drawn beside a socket that never opened would be four buttons
           // that silently do nothing.
-          onOpeners(openers, typeAtPrompt);
+          onOpeners(openers, typeAtPrompt, submitAtPrompt);
           term.focus();
         } else if (m.t === 'exit') {
           onStatus('closed', `exited (${m.code})`);

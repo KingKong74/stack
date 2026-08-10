@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Roadmap as RoadmapData, RoadmapItem, Future, Severity, Priority, Bug, BugStatus, WorkbenchPhase, ProjectPulse } from '../types';
 import {
   getProjectDetail, getProjectPulse, type ProjectDetailData,
@@ -812,6 +812,14 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const tabAgent = TAB_AGENT[tab];
   const consoleCan = !!tabAgent && agentConsoleCan(data.agents, tabAgent.key);
   const consoleOff = tabAgent ? agentConsoleOffReason(data.agents, tabAgent.key) : '';
+  // A brief on its way to THIS TAB'S console (the Roadmap's Arrange commands).
+  // It is state here rather than inside the tab because the console is drawn
+  // here: the strip is one component above every tab's content, and a tab
+  // reaching into it any other way would be a second channel to the same
+  // session. The counter is what makes the same brief pressed twice two
+  // commands rather than a no-op re-render.
+  const [consoleTask, setConsoleTask] = useState<{ text: string; id: number } | null>(null);
+  const consoleTaskSeq = useRef(0);
 
   const openBugLink = (hash: string) => { setHighlightRef(hash); setTab('activity'); };
   const viewAll = () => { setHighlightRef(null); setTab('activity'); };
@@ -911,7 +919,8 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             registry says which agents own a console and this only asks. */}
         {tabAgent && (consoleCan || consoleOff) && (
           <TabTerminal agentKey={tabAgent.key} agentName={tabAgent.name} slug={slug}
-            off={consoleCan ? '' : consoleOff} />
+            off={consoleCan ? '' : consoleOff}
+            task={consoleTask} onTaskSent={() => setConsoleTask(null)} />
         )}
 
         {tab === 'overview' && (
@@ -969,6 +978,16 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
               },
               onSetTier: setTierRoad,
               onBranch: (it: RoadmapItem) => branchItem(it),
+              // The Arrange panel's quick commands. Undefined when the console
+              // cannot open, so the buttons go dead with a reason rather than
+              // failing on the press.
+              onSendToConsole: consoleCan
+                ? (brief: string) => {
+                  consoleTaskSeq.current += 1;
+                  setConsoleTask({ text: brief, id: consoleTaskSeq.current });
+                }
+                : undefined,
+              consoleOffReason: consoleOff,
             }} />
         )}
         {tab === 'futures' && (

@@ -25,9 +25,9 @@ module.registerHooks({
 const planUrl = new URL('../web/src/lib/plan.ts', import.meta.url);
 const {
   SCHED_WEEKS, CYCLE_WEEKS, NOW_WEEK, scaleCols, slipOf, layoutLane, weekAt, scopeTotals,
-  listKeyOf, proposeSchedule, proposeCompact, proposeTrim, inCycle,
+  listKeyOf, inCycle,
   nowLeft, whatsNext, calendarMonths, weekDate, fmtDate,
-  proposeCatchUp, proposeBalance, proposeByTier, areaMatches, horizonOf, UNALLOCATED,
+  areaMatches, horizonOf, UNALLOCATED,
   viewFor, clampView, focusOf, inView, SCALE_WEEKS,
 } = await import(planUrl.href);
 
@@ -237,7 +237,7 @@ test('a drop is clamped so the whole bar stays in the window', () => {
 test('a Could is IN the cycle until it is cut — that is what "first to cut" means', () => {
   // The distinction that matters: committed is Must+Should+Could, deferred is
   // what has actually been parked. Treating Coulds as pre-deferred made
-  // proposeTrim believe cutting one bought back a week it had never spent.
+  // the old trim arithmetic believe cutting one bought back a week never spent.
   const t = scopeTotals([
     item({ bucket: 'must', estimate: 2 }),
     item({ bucket: 'should', estimate: 1.5 }),
@@ -265,81 +265,6 @@ test('a parked line stops counting against the cycle', () => {
   assert.equal(scopeTotals(kids).fits, false);
   kids[1].skipped = true;
   assert.equal(scopeTotals(kids).fits, true);
-});
-
-// --- the proposals -----------------------------------------------------------
-
-test('schedule proposes and never mutates its input', () => {
-  const items = [item({ bucket: 'must', estimate: 2, area: 'editor' })];
-  const before = JSON.stringify(items);
-  const p = proposeSchedule(items);
-  assert.equal(p.moves.length, 1);
-  assert.equal(JSON.stringify(items), before, 'the input must be untouched');
-  assert.equal(items[0].sched, null, 'nothing is applied');
-});
-
-test('schedule stacks each area after its own last bar', () => {
-  const p = proposeSchedule([
-    item({ area: 'editor', bucket: 'must', sched: { start: 0, len: 4 } }),
-    item({ area: 'editor', bucket: 'must', estimate: 2 }),
-    item({ area: 'billing', bucket: 'must', estimate: 3 }),
-  ]);
-  const byId = Object.fromEntries(p.moves.map((m) => [m.id, m.sched]));
-  const editorNew = Object.values(byId)[0];
-  assert.equal(editorNew.start, 4, 'follows the editor lane, not the billing one');
-  assert.equal(Object.values(byId)[1].start, 0, 'billing is empty so it starts at zero');
-});
-
-test('schedule leaves Coulds and Wonts alone', () => {
-  const p = proposeSchedule([
-    item({ bucket: 'could', estimate: 1 }), item({ bucket: 'wont', estimate: 1 }),
-  ]);
-  assert.equal(p.moves.length, 0);
-  assert.match(p.summary, /already on the timeline/);
-});
-
-test('compact closes gaps but never moves finished work', () => {
-  const p = proposeCompact([
-    item({ area: 'editor', sched: { start: 0, len: 2 }, done: true }),
-    item({ area: 'editor', sched: { start: 10, len: 2 } }),
-  ]);
-  // The done bar is excluded entirely, so the planned one is the first in its
-  // lane and has nothing to close up against.
-  assert.equal(p.moves.length, 0, 'a lane holding only finished work has no gap to close');
-});
-
-test('compact pulls a later bar up to the one before it', () => {
-  const p = proposeCompact([
-    item({ area: 'editor', sched: { start: 0, len: 3 } }),
-    item({ area: 'editor', sched: { start: 9, len: 2 } }),
-  ]);
-  assert.equal(p.moves.length, 1);
-  assert.equal(p.moves[0].sched.start, 3);
-  assert.match(p.summary, /6 idle weeks/);
-});
-
-test('trim defers Coulds before Shoulds and never touches a Must', () => {
-  const kids = [
-    item({ bucket: 'must', estimate: 5, title: 'must' }),
-    item({ bucket: 'should', estimate: 2, title: 'should' }),
-    item({ bucket: 'could', estimate: 2, title: 'could' }),
-  ];
-  const p = proposeTrim(kids, CYCLE_WEEKS);
-  const titles = p.defer.map((id) => kids.find((k) => k.id === id).title);
-  assert.deepEqual(titles, ['could', 'should']);
-  assert.ok(!titles.includes('must'));
-});
-
-test('trim refuses rather than cutting a Must, and says so', () => {
-  const p = proposeTrim([item({ bucket: 'must', estimate: 20 })], CYCLE_WEEKS);
-  assert.equal(p.defer.length, 0);
-  assert.match(p.summary, /only Musts remain/);
-});
-
-test('trim on a feature that already fits proposes nothing', () => {
-  const p = proposeTrim([item({ bucket: 'must', estimate: 1 })], CYCLE_WEEKS);
-  assert.equal(p.defer.length, 0);
-  assert.match(p.summary, /nothing to cut/i);
 });
 
 // --- list derivation ---------------------------------------------------------
@@ -482,82 +407,6 @@ test('inCycle agrees with scopeTotals about what is committed', () => {
   const totals = scopeTotals(kids);
   const summed = kids.filter(inCycle).reduce((n, k) => n + (k.estimate ?? 0), 0);
   assert.equal(summed, totals.committed);
-});
-
-// --- the three new arrangements ---------------------------------------------
-
-test('catch-up moves only what finished in the past, never what is running', () => {
-  const past = item({ title: 'past', sched: { start: 0, len: 3 } });          // ends wk 3, now is 8
-  const running = item({ title: 'running', sched: { start: NOW_WEEK - 1, len: 4 } });
-  const ahead = item({ title: 'ahead', sched: { start: NOW_WEEK + 3, len: 2 } });
-  const p = proposeCatchUp([past, running, ahead]);
-  assert.deepEqual(p.moves.map((m) => m.id), [past.id]);
-  assert.equal(p.moves[0].sched.start, NOW_WEEK);
-  assert.equal(p.moves[0].sched.len, 3, 'catching up must not change how long it takes');
-});
-
-test('catch-up says so when nothing is stranded in the past', () => {
-  const p = proposeCatchUp([item({ sched: { start: NOW_WEEK + 1, len: 2 } })]);
-  assert.equal(p.moves.length, 0);
-  assert.match(p.summary, /Nothing is scheduled entirely in the past/);
-});
-
-test('levelling hands one bar from the busiest lane to the emptiest', () => {
-  const heavy = [
-    item({ area: 'editor', sched: { start: NOW_WEEK, len: 4 } }),
-    item({ area: 'editor', title: 'last in editor', sched: { start: NOW_WEEK + 4, len: 3 } }),
-  ];
-  const light = [item({ area: 'billing', sched: { start: NOW_WEEK, len: 1 } })];
-  const p = proposeBalance([...heavy, ...light]);
-  assert.equal(p.moves.length, 1, 'one bar only — levelling is not worth reorganising a board over');
-  assert.equal(p.moves[0].id, heavy[1].id, 'the LAST bar in the heavy lane is the cheapest to move');
-});
-
-test('levelling never moves claimed work, and says why it could not', () => {
-  const p = proposeBalance([
-    item({ area: 'editor', claimedBy: 'feat/1-x', sched: { start: NOW_WEEK, len: 6 } }),
-    item({ area: 'billing', sched: { start: NOW_WEEK, len: 1 } }),
-  ]);
-  assert.equal(p.moves.length, 0);
-  assert.match(p.summary, /every bar in it is claimed/);
-});
-
-test('levelling leaves lanes that are already within a week of each other', () => {
-  const p = proposeBalance([
-    item({ area: 'editor', sched: { start: NOW_WEEK, len: 3 } }),
-    item({ area: 'billing', sched: { start: NOW_WEEK, len: 3 } }),
-  ]);
-  assert.equal(p.moves.length, 0);
-  assert.match(p.summary, /within a week/);
-});
-
-test('tier order reorders a lane to S, A, B, C without changing lengths', () => {
-  const c = item({ area: 'editor', tier: 'C', sched: { start: NOW_WEEK, len: 2 } });
-  const s0 = item({ area: 'editor', tier: 'S', sched: { start: NOW_WEEK + 2, len: 3 } });
-  const p = proposeByTier([c, s0]);
-  const byId = Object.fromEntries(p.moves.map((m) => [m.id, m.sched]));
-  assert.equal(byId[s0.id].start, NOW_WEEK, 'the S takes the first slot');
-  assert.equal(byId[s0.id].len, 3, 'lengths are untouched');
-  assert.equal(byId[c.id].start, NOW_WEEK + 3, 'the C follows it');
-});
-
-test('tier order leaves a lane that is already in order, and says so', () => {
-  const p = proposeByTier([
-    item({ area: 'editor', tier: 'S', sched: { start: NOW_WEEK, len: 2 } }),
-    item({ area: 'editor', tier: 'B', sched: { start: NOW_WEEK + 2, len: 2 } }),
-  ]);
-  assert.equal(p.moves.length, 0);
-  assert.match(p.summary, /already runs in tier order/);
-});
-
-test('none of the three arrangements mutates its input', () => {
-  const items = [
-    item({ area: 'editor', tier: 'C', sched: { start: 0, len: 2 } }),
-    item({ area: 'billing', tier: 'S', sched: { start: NOW_WEEK + 1, len: 4 } }),
-  ];
-  const before = JSON.stringify(items);
-  proposeCatchUp(items); proposeBalance(items); proposeByTier(items);
-  assert.equal(JSON.stringify(items), before);
 });
 
 // ---- the area filter --------------------------------------------------------

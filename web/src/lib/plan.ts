@@ -28,7 +28,6 @@
 //     a list of {id, sched} — and the caller decides. Nothing here mutates.
 
 import type { RoadmapItem, SchedSpan } from '../types';
-import { tierRank } from '../types';
 
 /** The timeline's span, in weeks. Twin of SCHED_WEEKS in server/src/routes/roadmap.js. */
 export const SCHED_WEEKS = 24;
@@ -414,8 +413,9 @@ export interface ScopeTotals {
 // What "committed" means, and it is NOT Must+Should. A Could is in the cycle
 // until somebody cuts it — that is what "first to cut" means, and it is why
 // cutting one actually buys a week back. Counting Coulds as pre-deferred made
-// `proposeTrim` believe it had saved time it had never spent, and a trim that
-// reports weeks it did not save is worse than one that refuses.
+// the old trim arithmetic believe it had saved time it had never spent, and a
+// figure that claims weeks it did not save is worse than one that refuses. The
+// trim is the Curator's job now, and the total it reads is still this one.
 const IN_CYCLE = new Set(['must', 'should', 'could']);
 
 /**
@@ -509,202 +509,23 @@ export function listKeyOf(it: RoadmapItem): string {
   return 'planned';
 }
 
-// --- the arrange proposals -------------------------------------------------
+// THE ARRANGE PROPOSALS ARE GONE, and their absence is the point.
 //
-// Deterministic arithmetic, not a model read — and the UI says so. Each returns
-// a DIFF the caller renders as ghosts and the owner applies or discards, which
-// is what keeps "the human disposes" true of a button that rearranges a board.
+// proposeSchedule / proposeCompact / proposeCatchUp / proposeBalance /
+// proposeByTier / proposeTrim lived here: deterministic sums over the rows on
+// screen, each returning a diff the owner applied or discarded. They were exact
+// and they were the ceiling — six jobs somebody had written a function for, and
+// every one of them blind to everything the board does not store.
+//
+// The Arrange panel's six buttons now hand the same jobs to the CURATOR'S OWN
+// SESSION instead (web/src/lib/curatorTasks.ts composes the brief; the console
+// on the Roadmap tab runs it), which can read the board AND the code, ask a
+// question back, and be told the thing the sum could not know. What is left in
+// this file is the GEOMETRY — where a bar is drawn — which is arithmetic that
+// has one right answer and belongs nowhere near a model.
+//
+// `Move` survives as the shape of a proposed position, because the two ✧ reads
+// still come back as one and the timeline still ghosts it.
 
+/** A proposed position for one bar. null = back to the tray. */
 export interface Move { id: number; sched: { start: number; len: number } | null }
-export interface Proposal { kind: string; moves: Move[]; summary: string }
-
-const lenFor = (it: RoadmapItem) => Math.max(1, Math.round(it.estimate ?? 2));
-
-/** Every unscheduled Must and Should onto its own area lane, after the last bar there. */
-export function proposeSchedule(items: RoadmapItem[], weeks = SCHED_WEEKS): Proposal {
-  const live = items.filter((i) => !i.archived && !i.done);
-  // Must and Should only — deliberately NOT the same set as IN_CYCLE. A Could
-  // is in the cycle's arithmetic but is not COMMITTED work, and putting one on
-  // the timeline unasked is how a maybe becomes a promise.
-  const pending = live.filter((i) => !i.sched && (i.bucket === 'must' || i.bucket === 'should'));
-  const ends = new Map<string, number>();
-  live.filter((i) => i.sched).forEach((i) => {
-    const end = i.sched!.start + i.sched!.len;
-    ends.set(i.area, Math.max(ends.get(i.area) ?? 0, end));
-  });
-  const moves: Move[] = pending.map((i) => {
-    const len = lenFor(i);
-    const start = Math.max(0, Math.min(ends.get(i.area) ?? 0, weeks - len));
-    ends.set(i.area, start + len);
-    return { id: i.id, sched: { start, len } };
-  });
-  return {
-    kind: 'schedule',
-    moves,
-    summary: moves.length
-      ? `Places ${moves.length} committed item${moves.length === 1 ? '' : 's'} on the timeline, each after the last bar in its own area.`
-      : 'Nothing committed is unscheduled — every Must and Should is already on the timeline.',
-  };
-}
-
-/** Pull planned bars earlier so no lane sits idle. Never moves finished work. */
-export function proposeCompact(items: RoadmapItem[]): Proposal {
-  const live = items.filter((i) => !i.archived && i.sched && !i.done);
-  const byArea = new Map<string, RoadmapItem[]>();
-  live.forEach((i) => byArea.set(i.area, [...(byArea.get(i.area) || []), i]));
-  const moves: Move[] = [];
-  let saved = 0;
-  byArea.forEach((bars) => {
-    const sorted = bars.slice().sort((a, b) => a.sched!.start - b.sched!.start);
-    let cursor: number | null = null;
-    sorted.forEach((b) => {
-      const { start, len } = b.sched!;
-      if (cursor === null) { cursor = start + len; return; }
-      if (start > cursor) {
-        saved += start - cursor;
-        moves.push({ id: b.id, sched: { start: cursor, len } });
-        cursor += len;
-      } else {
-        cursor = Math.max(cursor, start + len);
-      }
-    });
-  });
-  return {
-    kind: 'compact',
-    moves,
-    summary: moves.length
-      ? `Pulls ${moves.length} bar${moves.length === 1 ? '' : 's'} earlier and removes ${saved} idle week${saved === 1 ? '' : 's'}.`
-      : 'No dead weeks to remove — every planned bar already starts as its area frees up.',
-  };
-}
-
-export interface TrimProposal { kind: 'trim'; defer: number[]; summary: string }
-
-/**
- * Defer Coulds, then Shoulds, until the feature fits its cycle. Returns the ids
- * to park rather than parking them — and stops at Shoulds: cutting a Must is a
- * decision about what the feature IS, which no arithmetic gets to make.
- */
-export function proposeTrim(children: RoadmapItem[], cycle = CYCLE_WEEKS): TrimProposal {
-  const totals = scopeTotals(children, cycle);
-  if (totals.fits) {
-    const spare = Math.round((cycle - totals.committed) * 10) / 10;
-    return {
-      kind: 'trim', defer: [],
-      summary: `Fits the ${cycle}-week cycle with ${spare} week${spare === 1 ? '' : 's'} spare — nothing to cut.`,
-    };
-  }
-  let over = totals.committed - cycle;
-  const defer: number[] = [];
-  for (const bucket of ['could', 'should'] as const) {
-    for (const c of children.filter((k) => k.bucket === bucket && !k.skipped && k.estimate !== null)) {
-      if (over <= 0) break;
-      defer.push(c.id);
-      over -= c.estimate ?? 0;
-    }
-  }
-  return {
-    kind: 'trim',
-    defer,
-    summary: defer.length
-      ? `Defers ${defer.length} line${defer.length === 1 ? '' : 's'} to bring the feature inside ${cycle} weeks. Musts are never cut — that is a decision about what the feature is.`
-      : `Over the ${cycle}-week cycle by ${Math.round(over * 10) / 10} weeks, but only Musts remain. Cutting one is a decision about what the feature is, so nothing is proposed.`,
-  };
-}
-
-/**
- * Push every bar that has fallen behind its baseline so it starts at NOW.
- *
- * The one the timeline makes obvious and nothing acts on: a bar whose ghost is
- * behind it has already slipped, and leaving it starting in the past is how a
- * plan quietly becomes fiction. Only bars that START before now are touched —
- * a bar already running is not late, it is running.
- */
-export function proposeCatchUp(items: RoadmapItem[], now = NOW_WEEK, weeks = SCHED_WEEKS): Proposal {
-  const moves: Move[] = [];
-  for (const i of items) {
-    if (i.archived || i.done || !i.sched) continue;
-    if (i.sched.start + i.sched.len > now && i.sched.start < now) continue; // running, not late
-    if (i.sched.start + i.sched.len > now) continue;                        // still ahead
-    const len = i.sched.len;
-    moves.push({ id: i.id, sched: { start: Math.min(now, weeks - len), len } });
-  }
-  return {
-    kind: 'catchup',
-    moves,
-    summary: moves.length
-      ? `Moves ${moves.length} bar${moves.length === 1 ? '' : 's'} that finished in the past up to now — they were still drawn as if they had not slipped.`
-      : 'Nothing is scheduled entirely in the past. Every bar either ran, is running, or is still ahead.',
-  };
-}
-
-/**
- * Level the load: give the busiest area's overflow to the emptiest one.
- *
- * It only moves UNCLAIMED, unstarted work, and only between areas — a claimed
- * item belongs to whoever claimed it, and a running bar is not a spare part.
- * Deliberately conservative: one pass, and it stops as soon as the spread is
- * within a week, because "balanced" is not worth reorganising a board over.
- */
-export function proposeBalance(items: RoadmapItem[], now = NOW_WEEK): Proposal {
-  const live = items.filter((i) => !i.archived && !i.done && i.sched && i.sched.start >= now);
-  const load = new Map<string, number>();
-  for (const i of live) load.set(i.area, (load.get(i.area) ?? 0) + i.sched!.len);
-  if (load.size < 2) {
-    return { kind: 'balance', moves: [], summary: 'Only one area has upcoming work, so there is nothing to level against.' };
-  }
-  const sorted = [...load.entries()].sort((a, b) => b[1] - a[1]);
-  const [heavy, heavyW] = sorted[0];
-  const [lightArea, lightW] = sorted[sorted.length - 1];
-  if (heavyW - lightW <= 1) {
-    return { kind: 'balance', moves: [], summary: `The areas are within a week of each other (${heavy} ${heavyW}w, ${lightArea} ${lightW}w). Nothing worth moving.` };
-  }
-  // The heavy lane's LAST unclaimed bar — the one whose move costs least.
-  const movable = live
-    .filter((i) => i.area === heavy && !i.claimedBy)
-    .sort((a, b) => b.sched!.start - a.sched!.start)[0];
-  if (!movable) {
-    return { kind: 'balance', moves: [], summary: `${heavy} carries the most (${heavyW}w) but every bar in it is claimed, so none can be handed over.` };
-  }
-  const lightEnd = live
-    .filter((i) => i.area === lightArea)
-    .reduce((n, i) => Math.max(n, i.sched!.start + i.sched!.len), now);
-  return {
-    kind: 'balance',
-    moves: [{ id: movable.id, sched: { start: lightEnd, len: movable.sched!.len } }],
-    summary: `Hands "${movable.title}" from ${heavy} (${heavyW}w) to ${lightArea} (${lightW}w). One bar — levelling is not worth reorganising a board over.`,
-  };
-}
-
-/**
- * Reorder the unstarted bars in each lane so the desire tier leads.
- *
- * `tier` is the run queue's primary sort (#227), and a timeline that schedules
- * a C before an S is quietly disagreeing with the queue about what matters.
- * Lengths and lane are untouched; only the ORDER within a lane changes.
- */
-export function proposeByTier(items: RoadmapItem[], now = NOW_WEEK): Proposal {
-  const moves: Move[] = [];
-  const byArea = new Map<string, RoadmapItem[]>();
-  for (const i of items) {
-    if (i.archived || i.done || !i.sched || i.sched.start < now) continue;
-    byArea.set(i.area, [...(byArea.get(i.area) || []), i]);
-  }
-  byArea.forEach((lane) => {
-    const slots = lane.map((i) => i.sched!.start).sort((a, b) => a - b);
-    const wanted = lane.slice().sort((a, b) =>
-      tierRank(a.tier) - tierRank(b.tier) || a.sched!.start - b.sched!.start);
-    let cursor = slots[0];
-    wanted.forEach((i) => {
-      if (i.sched!.start !== cursor) moves.push({ id: i.id, sched: { start: cursor, len: i.sched!.len } });
-      cursor += i.sched!.len;
-    });
-  });
-  return {
-    kind: 'tier',
-    moves,
-    summary: moves.length
-      ? `Reorders ${moves.length} bar${moves.length === 1 ? '' : 's'} so each lane runs S, A, B, C — the same sort the run queue uses.`
-      : 'Every lane already runs in tier order.',
-  };
-}

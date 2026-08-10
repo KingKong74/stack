@@ -62,10 +62,24 @@ const STATUS_NOTE: Record<ConsoleStatus, string> = {
   error: '',
 };
 
-export function TabTerminal({ agentKey, agentName, slug, off }: {
+export function TabTerminal({ agentKey, agentName, slug, off, task, onTaskSent }: {
   agentKey: TabAgentKey;
   agentName: string;
   slug: string;
+  /**
+   * A COMMAND TO RUN IN THIS SESSION — the Arrange panel's quick commands, and
+   * the one place in Stack where text Stack composed is SUBMITTED rather than
+   * typed and left (console-prime.js carries the rule this departs from; the
+   * owner asked for the press to start the session working). `id` is what makes
+   * a repeat of the same text a second command rather than a no-op re-render.
+   *
+   * It OPENS the console if it is shut and holds the brief until the socket is
+   * live, because the press has to work from a closed strip — that is the state
+   * it will usually be pressed in.
+   */
+  task?: { text: string; id: number } | null;
+  /** Fired once the brief has gone to the session, so the sender can clear it. */
+  onTaskSent?: (id: number) => void;
   // The sentence to show INSTEAD, when this agent's console may not open. Empty
   // means it may — the caller has already read the agent state, so this
   // component never re-derives a reason of its own.
@@ -99,6 +113,10 @@ export function TabTerminal({ agentKey, agentName, slug, off }: {
   // when the socket is live. Held in a ref rather than state because it is a
   // channel, not something rendered.
   const typeAt = useRef<((s: string) => void) | null>(null);
+  // The submitting twin, and a brief waiting for it. Held apart from `typeAt`
+  // so that nothing which means to TYPE can reach the one that presses Enter.
+  const submitAt = useRef<((s: string) => void) | null>(null);
+  const pendingTask = useRef<{ text: string; id: number } | null>(null);
   // The two-step ⏻. A stray click in a strip of small glyph buttons must not
   // kill a Claude session mid-thought, and a modal for it would be heavier than
   // the act deserves — so the button asks, in place, and forgets in a few
@@ -109,6 +127,33 @@ export function TabTerminal({ agentKey, agentName, slug, off }: {
 
   const name = consoleSessionName(agentKey, slug);
   const write = (p: { open: boolean; tall: boolean }) => { setPrefs(p); setTabTermPrefs(agentKey, p); };
+
+  // Hand a waiting brief to the session, if there is one and there is a channel
+  // to hand it to. Called from both ends — the arrival of a task and the
+  // arrival of the channel — because either can happen first: pressing from a
+  // closed strip opens the console and waits for the socket, pressing from an
+  // open one has the channel already.
+  const flushTask = () => {
+    const t = pendingTask.current;
+    if (!t || !submitAt.current) return;
+    pendingTask.current = null;
+    submitAt.current(t.text);
+    setFlash('sent to the session');
+    onTaskSent?.(t.id);
+  };
+
+  useEffect(() => {
+    if (!task) return;
+    // A console the server will not let open cannot be sent a command. The
+    // caller already knows (it draws the reason on the button), so this is the
+    // backstop rather than the message.
+    if (off) return;
+    pendingTask.current = task;
+    if (!prefs.open) write({ ...prefs, open: true });
+    flushTask();
+    // Keyed on the id: the same brief pressed twice is two commands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.id]);
 
   // END IT FOR REAL, in the two steps the daemon's own rule forces: closing the
   // console detaches the tmux client, and only THEN does the host advertise the
@@ -160,6 +205,7 @@ export function TabTerminal({ agentKey, agentName, slug, off }: {
     // console would leave buttons that type into nothing.
     setOpeners([]);
     typeAt.current = null;
+    submitAt.current = null;
   }, [open]);
   useEffect(() => {
     if (!flash) return;
@@ -264,7 +310,10 @@ export function TabTerminal({ agentKey, agentName, slug, off }: {
             onStatus={(s, n) => { setStatus(s); setNote(n); }}
             onReattached={setReattached}
             onPrimed={setPrimeWarn}
-            onOpeners={(list, type) => { setOpeners(list); typeAt.current = type; }}
+            onOpeners={(list, type, submit) => {
+              setOpeners(list); typeAt.current = type; submitAt.current = submit;
+              flushTask();
+            }}
             onCopied={() => setFlash('copied')} />
         </Suspense>
       )}

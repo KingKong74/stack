@@ -47,6 +47,7 @@ import {
   setAreaColour, arrangeRoadmap, allocateRoadmap, agentCan, agentOffReason,
 } from '../store';
 import { areaMatches, inCycle, UNALLOCATED } from '../lib/plan';
+import { taskByKey } from '../lib/curatorTasks';
 import { DEFAULT_LABELS } from '../lib/labels';
 import { RoadmapTimeline } from './RoadmapTimeline';
 import { RoadmapScope } from './RoadmapScope';
@@ -98,6 +99,14 @@ export interface RoadmapLegacy {
   /** ✧ the Curator's board cleanup — Tiers board only, where it has lived. */
   onCleanup?: () => void;
   onSendToTerminal?: (brief: string) => void;
+  /**
+   * Hand a brief to THIS TAB'S AGENT CONSOLE — the Curator's live session,
+   * drawn by ProjectDetail directly above this tab. Undefined when the console
+   * cannot open at all, which is what makes the quick commands go dead rather
+   * than fail on the press; `consoleOffReason` is what they say instead.
+   */
+  onSendToConsole?: (brief: string) => void;
+  consoleOffReason?: string;
   /** #227 — set (or clear, with '') an item's desire tier. HUMANS ONLY. */
   onSetTier?: (item: RoadmapItem, tier: Tier) => void;
   /** ⎇ claim a branch and open a primed session (#205). */
@@ -154,6 +163,10 @@ export function RoadmapTab({
   const [areaDraft, setAreaDraft] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [proposal, setProposal] = useState<Arrangement | null>(null);
+  // What the last quick command did, so the panel can say the brief went to the
+  // session. It is a receipt, not state anything depends on — the session
+  // itself is the thing to look at, and it is drawn right above this.
+  const [sentNote, setSentNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -206,12 +219,7 @@ export function RoadmapTab({
     setBusy(true);
     const landed: RoadmapItem[] = [];
     try {
-      if (proposal.kind === 'trim') {
-        for (const id of proposal.defer) {
-          const it = items.find((x) => x.id === id);
-          if (it) landed.push(await writeOnly(it, { skipped: true }));
-        }
-      } else if (proposal.kind === 'allocate') {
+      if (proposal.kind === 'allocate') {
         for (const p of proposal.picks) {
           const it = items.find((x) => x.id === p.id);
           if (it) landed.push(await writeOnly(it, { area: p.area }));
@@ -331,6 +339,28 @@ export function RoadmapTab({
       .catch((e) => setErr((e as Error)?.message || 'The Curator could not read the untagged items.'))
       .finally(() => setReading(''));
   };
+
+  // A QUICK COMMAND: compose the brief and hand it to the Curator's session.
+  //
+  // Everything the brief needs is the view's own state — which chip is on, and
+  // which bar is selected — so the composition is pure (lib/curatorTasks.ts) and
+  // this only supplies it and reports that it went. Nothing here waits for an
+  // answer: the answer arrives in the session, which is on screen.
+  const runCommand = (key: string) => {
+    const task = taskByKey(key);
+    if (!task || !legacy.onSendToConsole) return;
+    legacy.onSendToConsole(task.brief({
+      slug,
+      areaFilter,
+      feature: selected ? { id: selected.id, title: selected.title } : null,
+    }));
+    setSentNote(`“${task.name}” sent to the session`);
+  };
+  useEffect(() => {
+    if (!sentNote) return;
+    const t = setTimeout(() => setSentNote(''), 6000);
+    return () => clearTimeout(t);
+  }, [sentNote]);
 
   // --- areas ----------------------------------------------------------------
 
@@ -503,7 +533,9 @@ export function RoadmapTab({
       <RoadmapArrange
         view={view} items={items} areaFilter={areaFilter} selected={selected} proposal={proposal} busy={busy}
         open={arrangeOpen} onToggle={() => setArrangeOpen(!arrangeOpen)}
-        onPropose={setProposal} onApply={applyProposal} onDiscard={() => setProposal(null)}
+        onApply={applyProposal} onDiscard={() => setProposal(null)}
+        onCommand={legacy.onSendToConsole ? runCommand : undefined}
+        consoleOffReason={legacy.consoleOffReason || ''} sentNote={sentNote}
         onRead={(op) => (op === 'allocate' ? sortTheUnallocated() : readTheBoard())} reading={reading}
         canRead={(op) => agentCan(agents, 'curator', op)}
         readOffReason={(op) => agentOffReason(agents, 'curator', op)} />

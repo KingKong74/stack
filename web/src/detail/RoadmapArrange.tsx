@@ -1,111 +1,93 @@
-// The arrange panel — the design's "✦ Gemini" band, built as PROPOSE then APPLY.
+// The arrange panel — two kinds of button, and the difference between them is
+// the whole design.
 //
-// TWO DEPARTURES FROM THE DESIGN, both deliberate, both about not lying:
+//  · SIX QUICK COMMANDS hand a job to the CURATOR'S OWN SESSION, live on this
+//    tab. They were arithmetic until now — pure functions over the rows on
+//    screen that returned a diff to accept or discard — and the sums were exact
+//    and also the ceiling: they could do the six things somebody had written a
+//    function for and nothing else, and each was blind to everything the board
+//    does not store. Now the press composes an instruction (lib/curatorTasks.ts,
+//    pure and tested) and starts the session on it, so the answer can be argued
+//    with, corrected, and told what the board could not know.
+//  · TWO ✧ READS still answer in one shot and still come back as a DIFF the
+//    timeline ghosts until you apply it. They run on Gemini (server/src/
+//    agents.js), which is why they stay up when the host daemon is down and the
+//    six commands cannot run at all.
 //
-//  1. THE ARITHMETIC IS NOT LABELLED GEMINI, because no model is involved.
-//     Most of the actions are deterministic sums over the rows already on
-//     screen (lib/plan.ts). Badging arithmetic as an AI read would be the same
-//     class of claim as rendering a NULL verdict green — it invites you to
-//     trust the output for a reason that does not exist. TWO OF THEM REALLY ARE
-//     CLAUDE READS (on the host, via the daemon — #364) and wear the ✦, because
-//     they do the two things the sums structurally cannot: notice that a
-//     dashboard cannot precede the pipeline that feeds it (order), and read what
-//     an untagged item is actually about (allocate). A panel where every button
-//     looked alike would hide which ones cost a call and which can be wrong in a
-//     different way.
-//  2. IT PROPOSES; IT DOES NOT WRITE. The design applies each action straight
-//     to the board and offers "drag it back" as the undo. Here the proposal
-//     comes back as a diff, the timeline draws it ghosted in the accent, and
-//     nothing is stored until Apply. That keeps "the human disposes" true of a
-//     button whose whole job is rearranging your plan — and unlike drag-it-back
-//     it is still an undo after you have closed the tab.
+// A panel where both looked alike would hide which press opens a session in
+// your checkout and which one costs a read and proposes.
 //
-// A proposal that would change nothing says so and offers no Apply. An empty
-// answer is a real answer here, exactly as it is for the ✎ Refine draft.
+// THE COMMANDS ARE SENT, NOT TYPED, on the owner's explicit call. Everywhere
+// else Stack puts text at a prompt and leaves the Enter to the human
+// (console-prime.js says why, at length). Here the press starts the session
+// working. The half of that rule which is NOT waived is in every brief: each
+// one ends by asking for the moves as a list before anything is written, so the
+// session starts immediately and stops at the write. Sent is not applied.
 //
-// THE PANEL FOLLOWS THE VIEW. Each action is arithmetic over ONE thing —
-// scheduling and gap-closing are about bars, trimming is about scope — and
-// offering "close the gaps on the timeline" while you are cutting a feature is
-// a button answering a question you did not ask. `ARRANGE_VIEWS` on each action
-// is what it applies to, and a view with none gets no panel at all rather than
-// an empty one. The Plan boards still have no ARITHMETIC to offer — a list, a
-// tier and a park are all decisions, and there is nothing to compute about them
-// — but they do have untagged rows, so ✦ Sort the unallocated is the one action
-// that reaches them and the only reason the panel appears there at all.
+// IT FOLLOWS THE VIEW. Each action is about ONE thing — scheduling is about
+// bars, trimming is about scope — and offering "close the gaps on the timeline"
+// while you are cutting a feature is a button answering a question you did not
+// ask. `views` on each action is what it applies to, and a view with none gets
+// no panel at all rather than an empty one. The Plan boards have no bars to
+// arrange, so their only action is the ✧ allocation — which is a real reason
+// for the panel to be there, since untagged rows are exactly what those boards
+// are full of.
 //
-// THE PANEL ALSO FOLLOWS THE AREA FILTER. An action proposes moves for the rows
-// you can SEE: filter the board to `agents` and Arrange rearranges agents work
-// and nothing else. A panel that quietly moved bars in six other lanes because
-// they were on the same board is a diff nobody asked for and nobody was looking
-// at, and it is worse for being applied in one press. The panel SAYS which
-// population it is acting on rather than leaving it to be inferred.
-//
-// THREE ACTIONS DO NOT NARROW, and each for its own reason:
+// IT FOLLOWS THE AREA CHIP. A command names its population inside the brief, so
+// filtered to `agents` the session is told to work agents and nothing else.
+// THREE ACTIONS DO NOT NARROW, each for its own reason:
 //   • LEVEL THE LANES moves work BETWEEN areas, so one area is not a population
-//     it can work on at all. It is disabled under a filter and says why — a
-//     "nothing to level against" summary would blame the board for the filter.
-//   • FIT THE CYCLE trims a FEATURE's scope, and `scopeTotals` over a subset of
-//     its lines would report a cycle that fits because the lines in other areas
-//     were not counted. The arithmetic has to see every line or it is wrong, so
-//     trim always reads the whole feature.
-//   • SORT THE UNALLOCATED works on the rows carrying NO area, which is the one
-//     population an area chip cannot contain: filtered to `agents`, every row on
-//     screen already has an area and there is nothing to sort. So it is disabled
-//     under a real area chip and says that, and under the Unallocated chip it is
-//     the rows on screen anyway. Its dead-button reasons run capability first
-//     (the agent's own off reason), then population — the same order the server
-//     gates in, so the two never disagree about why nothing happened.
+//     it can work on at all.
+//   • FIT THE CYCLE reads every line of a feature, because a scope total over a
+//     subset reports a cycle that fits by not counting the rest.
+//   • ✧ SORT THE UNALLOCATED works on the rows carrying NO area, which is the
+//     one population an area chip cannot contain — under a real chip there is
+//     nothing to sort, so it is disabled and says so.
 //
-// It is COLLAPSED by default. This is a tool, not information, and three tall
-// buttons above the board is chrome in front of the thing you came to read.
+// It is COLLAPSED by default. This is a tool, not information, and a row of
+// tall buttons above the board is chrome in front of the thing you came to read.
 
 import type { RoadmapItem, SchedSpan } from '../types';
 import type { AllocatePick } from '../store';
-import {
-  proposeCompact, proposeSchedule, proposeTrim, proposeCatchUp, proposeBalance, proposeByTier,
-  areaMatches, UNALLOCATED,
-  type Proposal, type TrimProposal,
-} from '../lib/plan';
+import { areaMatches, UNALLOCATED } from '../lib/plan';
+import { ARRANGE_TASKS, type ArrangeView } from '../lib/curatorTasks';
 
-/** The two actions that cost a Curator call. The op names are the server's. */
+export type { ArrangeView };
+
+/** The two actions that cost a Gemini call. The op names are the server's. */
 export type ReadOp = 'arrange' | 'allocate';
 
 export type Arrangement =
   | {
-    kind: 'schedule' | 'compact' | 'catchup' | 'balance' | 'tier' | 'order';
+    kind: 'order';
     summary: string;
     moves: { id: number; sched: SchedSpan | null }[];
-    /** Per-item reasons, only the model read supplies them. */
+    /** Per-item reasons — the read supplies them. */
     why?: Record<number, string>;
-    /** True for an action that spent a model call. */
-    read?: boolean;
+    read: true;
   }
-  | { kind: 'trim'; summary: string; defer: number[] }
   /** Areas for the rows that carry none. Changes no schedule, so ghosts nothing. */
   | { kind: 'allocate'; summary: string; picks: AllocatePick[]; read: true };
 
 export const arrangementCount = (a: Arrangement): number =>
-  a.kind === 'trim' ? a.defer.length : a.kind === 'allocate' ? a.picks.length : a.moves.length;
+  (a.kind === 'allocate' ? a.picks.length : a.moves.length);
 
 /**
- * The proposed positions, for the timeline to ghost. Empty for a trim, and for
- * an allocation: neither moves a bar, and a ghost drawn where the bar already
- * is would say a move is pending when none is.
+ * The proposed positions, for the timeline to ghost. Empty for an allocation:
+ * it moves no bar, and a ghost drawn where the bar already is would say a move
+ * is pending when none is.
  */
 export function proposedSpans(a: Arrangement | null): Map<number, SchedSpan> {
   const m = new Map<number, SchedSpan>();
-  if (a && a.kind !== 'trim' && a.kind !== 'allocate') {
+  if (a && a.kind === 'order') {
     a.moves.forEach((mv) => { if (mv.sched) m.set(mv.id, mv.sched); });
   }
   return m;
 }
 
-/** Which view an action belongs to. */
-export type ArrangeView = 'timeline' | 'scope' | 'plan';
-
 export function RoadmapArrange({
-  view, items, areaFilter, selected, proposal, onPropose, onApply, onDiscard, busy, open, onToggle,
-  onRead, canRead, readOffReason, reading,
+  view, items, areaFilter, selected, proposal, onApply, onDiscard, busy, open, onToggle,
+  onRead, canRead, readOffReason, reading, onCommand, consoleOffReason, sentNote,
 }: {
   view: ArrangeView;
   items: RoadmapItem[];
@@ -113,7 +95,6 @@ export function RoadmapArrange({
   areaFilter: string;
   selected: RoadmapItem | null;
   proposal: Arrangement | null;
-  onPropose: (a: Arrangement) => void;
   onApply: () => void;
   onDiscard: () => void;
   busy: boolean;
@@ -121,18 +102,20 @@ export function RoadmapArrange({
   onToggle: () => void;
   /** Ask the Curator for one of its two reads of the board. */
   onRead: (op: ReadOp) => void;
-  /** The Curator is registered, switched on, allowed THIS op AND has a host. */
+  /** The Curator is switched on, allowed THIS op AND its backend is up. */
   canRead: (op: ReadOp) => boolean;
   /** Why not, straight from agentOffReason — never a string invented here. */
   readOffReason: (op: ReadOp) => string;
   /** Which read is in flight — one at a time, and only that button says so. */
   reading: ReadOp | '';
+  /** Send a brief to the Curator's console. Undefined = the console cannot take one. */
+  onCommand?: (key: string) => void;
+  /** Why the console cannot, straight from agentConsoleOffReason. */
+  consoleOffReason: string;
+  /** The last command handed over, so the panel can say it went. */
+  sentNote: string;
 }) {
-  // The trim reads EVERY line of the feature, filter or not — see the header.
-  const children = selected ? items.filter((i) => i.parentId === selected.id && !i.archived) : [];
-  // Everything else acts on exactly the rows the filter leaves on screen.
   const filtered = !!areaFilter;
-  const pool = filtered ? items.filter((i) => areaMatches(i.area, areaFilter)) : items;
   const areaName = areaFilter === UNALLOCATED ? 'unallocated' : areaFilter;
   const only = filtered ? ` — ${areaName} only` : '';
   // The allocate action's population, and the same rows the server will read:
@@ -141,75 +124,41 @@ export function RoadmapArrange({
   const untagged = items.filter((i) => !i.area && !i.archived && !i.done);
   // A real area chip — the Unallocated chip is not one, it IS this population.
   const inAnArea = filtered && areaFilter !== UNALLOCATED;
+  // What a command will be told to work on, for the line under the buttons.
+  const inScope = items.filter((i) => !i.archived && !i.done && areaMatches(i.area, areaFilter));
 
-  const actions: {
+  type Action = {
     key: string; name: string; note: string; views: ArrangeView[];
-    disabled?: boolean; read?: boolean; run: () => void;
-  }[] = [
-    {
-      key: 'schedule',
-      name: 'Schedule what is committed',
-      note: `Every unscheduled Must and Should onto its own area lane, after the last bar there${only}.`,
-      views: ['timeline'],
-      run: () => {
-        const p: Proposal = proposeSchedule(pool);
-        onPropose({ kind: 'schedule', summary: p.summary, moves: p.moves });
-      },
-    },
-    {
-      key: 'compact',
-      name: 'Close the gaps',
-      note: `Pull planned bars earlier so no lane sits idle${only}. Finished work never moves.`,
-      views: ['timeline'],
-      run: () => {
-        const p: Proposal = proposeCompact(pool);
-        onPropose({ kind: 'compact', summary: p.summary, moves: p.moves });
-      },
-    },
-    {
-      key: 'catchup',
-      name: 'Catch up the past',
-      note: `Move bars that finished before now up to now${only} — they had slipped and were still drawn as if they had not.`,
-      views: ['timeline'],
-      run: () => {
-        const p: Proposal = proposeCatchUp(pool);
-        onPropose({ kind: 'catchup', summary: p.summary, moves: p.moves });
-      },
-    },
-    {
-      key: 'balance',
-      name: 'Level the lanes',
-      // The one action a single area is not a population for — see the header.
-      note: filtered
-        ? `Levelling moves work between areas, so it needs more than one. Clear the ${areaName} filter to use it.`
-        : 'Hand one unclaimed bar from the busiest area to the emptiest. Claimed work never moves.',
-      views: ['timeline'],
-      disabled: filtered,
-      run: () => {
-        const p: Proposal = proposeBalance(items);
-        onPropose({ kind: 'balance', summary: p.summary, moves: p.moves });
-      },
-    },
-    {
-      key: 'tier',
-      name: 'Lead with the tier',
-      note: `Reorder each lane so it runs S, A, B, C — the same sort the run queue uses${only}.`,
-      views: ['timeline'],
-      run: () => {
-        const p: Proposal = proposeByTier(pool);
-        onPropose({ kind: 'tier', summary: p.summary, moves: p.moves });
-      },
-    },
+    disabled?: boolean; read?: boolean; cmd?: boolean; run: () => void;
+  };
+
+  // The six that drive the session. A dead one says WHY, and the reasons run
+  // console → selection, which is the order the owner would fix them in: no
+  // session at all, then nothing for this one to act on.
+  const commands: Action[] = ARRANGE_TASKS.map((t) => ({
+    key: t.key,
+    name: t.name,
+    views: t.views,
+    cmd: true,
+    disabled: !onCommand || (!!t.needsFeature && !selected),
+    note: !onCommand
+      ? consoleOffReason || 'The Curator’s session cannot open, so there is nothing to send this to.'
+      : t.needsFeature && !selected
+        ? 'Select a bar on the timeline first — this one trims that feature’s scope.'
+        : `${t.note}${t.needsFeature && selected ? ` Reads every line of ${selected.title}.` : ''}${t.wide ? '' : only}`,
+    run: () => onCommand?.(t.key),
+  }));
+
+  const reads: Action[] = [
     {
       key: 'order',
-      name: '✦ Order by dependency',
-      // The only one that costs a call, and the only one that can be wrong
-      // about the WORK rather than the arithmetic. Named so you can tell.
+      name: '✧ Order by dependency',
+      // The read that can be wrong about the WORK rather than the arithmetic.
       // The reason comes from agentOffReason, never from a string written here:
-      // "switched off" and "the host is not connected" send you to different
+      // "switched off" and "Gemini is not configured" send you to different
       // places, and only the state knows which one it is.
       note: canRead('arrange')
-        ? `Reads what these items actually are and says what must come before what${only}. Asks Claude — on your own host, through the terminal daemon.`
+        ? `Reads what these items actually are and says what must come before what${only}. One Gemini read, back as a diff you apply.`
         : readOffReason('arrange') || 'Nothing can read the board right now.',
       views: ['timeline'],
       disabled: !canRead('arrange') || !!reading,
@@ -218,60 +167,28 @@ export function RoadmapArrange({
     },
     {
       key: 'allocate',
-      name: '✦ Sort the unallocated',
-      // The second read, and the second thing arithmetic cannot do: an area is
-      // what a piece of work is ABOUT, and no sum over the board can read that.
-      // Untagged work is the population that quietly disappears — it draws no
-      // lane on the timeline and hides behind no chip — so this is the action
-      // that goes and finds it.
-      //
-      // The reasons run capability → filter → nothing-to-do, matching the
-      // server's own order (it gates the agent before it counts the rows), and
-      // each one names the thing you would actually go and change.
+      name: '✧ Sort the unallocated',
+      // The other axis: `arrange` says WHEN a row runs, this says WHERE it
+      // belongs. Untagged work draws no lane and hides behind no chip, so this
+      // is the action that goes and finds it. Reasons run capability → filter →
+      // nothing-to-do, matching the server's own order.
       note: !canRead('allocate')
         ? readOffReason('allocate') || 'Nothing can read the board right now.'
         : inAnArea
           ? `Everything in ${areaName} already has an area. Clear the chip — or pick Unallocated — to sort the rows that have none.`
           : untagged.length === 0
             ? 'Every open item already carries an area. Nothing to sort.'
-            // The count is the POPULATION, not the promise: the server caps
-            // each read, so "reads the 44" would be a claim it will not keep.
-            // The cap is not spelled here — one number, one home — the batch is
-            // what the owner needs to know and the summary names the figures.
-            : `${untagged.length} item${untagged.length === 1 ? '' : 's'} carry no area. Reads them and proposes one for each, from the areas this project already uses — a big backlog comes in batches, so press again for what is left. Asks Claude on your own host.`,
+            : `${untagged.length} item${untagged.length === 1 ? '' : 's'} carry no area. Reads them and proposes one for each, from the areas this project already uses — a big backlog comes in batches, so press again for what is left.`,
       views: ['timeline', 'scope', 'plan'],
       disabled: !canRead('allocate') || !!reading || inAnArea || untagged.length === 0,
       read: true,
       run: () => onRead('allocate'),
     },
-    {
-      key: 'trim',
-      name: 'Fit the cycle',
-      // Trim belongs to BOTH: it is a scope decision you take while looking at
-      // scope, and while looking at the bar whose length that scope sets.
-      views: ['timeline', 'scope'],
-      // The one action the area filter does NOT narrow, and it says so: a cycle
-      // total missing the lines in other areas would "fit" by not counting them.
-      note: selected
-        ? `Defer Coulds, then Shoulds, until ${selected.title} fits. Musts are never cut.${
-          filtered ? ' Reads every line of the feature, including the ones outside this filter.' : ''}`
-        : 'Select a bar on the timeline first — this one trims that feature’s scope.',
-      disabled: !selected,
-      run: () => {
-        if (!selected) return;
-        const p: TrimProposal = proposeTrim(children);
-        onPropose({ kind: 'trim', summary: p.summary, defer: p.defer });
-      },
-    },
   ];
 
   const n = proposal ? arrangementCount(proposal) : 0;
-  const mine = actions.filter((a) => a.views.includes(view));
-  // The hint has to describe THIS view's panel: the Plan boards get the ✦
-  // allocation and no arithmetic at all, and telling them about sums over the
-  // board would describe buttons that are not there.
-  const sums = mine.filter((a) => !a.read).length;
-  const reads = mine.filter((a) => a.read).length;
+  const mine = [...commands, ...reads].filter((a) => a.views.includes(view));
+  const cmds = mine.filter((a) => a.cmd).length;
 
   // Nothing to arrange here. Not an empty panel — a panel with no buttons reads
   // as one that failed to load.
@@ -283,13 +200,11 @@ export function RoadmapArrange({
         <span className="chev">{open ? '▾' : '▸'}</span>
         <span className="nm">Arrange</span>
         {/* WHICH ROWS, on the heading, open or shut. The filter is a chip
-            further up the tab and is easy to forget you set; an action that
-            silently moved half as many bars as you expected would read as an
-            action that half-worked. */}
-        {/* NAMES the population and does not count it. The area chip above is
-            already counting `agents`, and a second number beside it counting a
-            different set — that one is the cycle, this one would be what an
-            action can move — is two answers to one question. */}
+            further up the tab and is easy to forget you set; a command that
+            silently worked half the board would read as one that half-worked.
+            It NAMES the population and does not count it — the area chip above
+            is already counting, and a second number beside it counting a
+            different set is two answers to one question. */}
         {filtered && (
           <span className="ra-scope" title={`Only items in ${areaName} — clear the area chip above for the whole board`}>
             {areaName} only
@@ -297,11 +212,9 @@ export function RoadmapArrange({
         )}
         <span className="ra-hint">
           {open
-            ? `${sums === 0
-              ? 'A ✦ read of the rows carrying no area'
-              : `Arithmetic over ${filtered ? `the ${areaName} rows` : 'what is on the board'}, plus ${
-                reads === 1 ? 'one ✦ read that asks' : `${reads} ✦ reads that ask`} Claude`
-            }. Nothing is saved until you apply it.`
+            ? `${cmds ? `${cmds} command${cmds === 1 ? '' : 's'} for the Curator’s session, plus ` : ''}${
+              mine.length - cmds === 1 ? 'one ✧ read' : `${mine.length - cmds} ✧ reads`} of ${
+              filtered ? `the ${areaName} rows` : 'the board'}.`
             : `${mine.length} action${mine.length === 1 ? '' : 's'} for this view`}
         </span>
         {/* A proposal outlives a collapse, so the count comes with it — folding
@@ -310,29 +223,48 @@ export function RoadmapArrange({
       </button>
 
       {open && (
-        <div className="ra-actions">
-          {mine.map((a) => (
-            <button key={a.key} className={`ra-action${a.read ? ' read' : ''}`}
-              disabled={!!a.disabled || busy} onClick={a.run}>
-              {/* Only the button that is reading says so. Two ✦ actions both
-                  showing "reading…" would claim two calls are out. */}
-              <span className="nm">
-                {reading === 'arrange' && a.key === 'order' ? '✦ Reading the board…'
-                  : reading === 'allocate' && a.key === 'allocate' ? '✦ Reading the untagged…'
-                    : a.name}
-              </span>
-              <span className="desc">{a.note}</span>
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="ra-actions">
+            {mine.map((a) => (
+              <button key={a.key} className={`ra-action${a.read ? ' read' : ' cmd'}`}
+                disabled={!!a.disabled || busy} onClick={a.run}>
+                {/* Only the button that is reading says so. Two ✧ actions both
+                    showing "reading…" would claim two calls are out. */}
+                <span className="nm">
+                  {reading === 'arrange' && a.key === 'order' ? '✧ Reading the board…'
+                    : reading === 'allocate' && a.key === 'allocate' ? '✧ Reading the untagged…'
+                      : a.name}
+                </span>
+                <span className="desc">{a.note}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* What a command press actually does, said once under the row rather
+              than repeated on six buttons. The owner needs to know that a press
+              starts a session TALKING — not that it computed something. */}
+          {cmds > 0 && (
+            <div className="ra-cmdnote">
+              {onCommand
+                ? (
+                  <span>
+                    A command opens <strong>the Curator’s session</strong> below and sets it working
+                    on {filtered ? `the ${areaName} rows` : `all ${inScope.length} open items`}. It
+                    shows you the moves and asks before it writes anything.
+                  </span>
+                )
+                : <span>{consoleOffReason}</span>}
+              {sentNote && <span className="sent">{sentNote}</span>}
+            </div>
+          )}
+        </>
       )}
 
-      {/* The per-move list. A summary says how many will change; this says
-          WHICH — and for the ✦ read, why. Applying a diff you cannot see is
-          the thing propose-then-accept was supposed to prevent. */}
-      {/* The same list for an allocation, reading area → area rather than week
-          → week. A COINED area is tagged: the timeline gains a lane nobody
-          asked for, and that is a thing to notice before applying, not after. */}
+      {/* The per-item list. A summary says how many will change; this says
+          WHICH — and why. Applying a diff you cannot see is the thing
+          propose-then-accept was supposed to prevent. A COINED area is tagged:
+          the timeline gains a lane nobody asked for, and that is a thing to
+          notice before applying, not after. */}
       {open && proposal && proposal.kind === 'allocate' && proposal.picks.length > 0 && (
         <div className="ra-moves">
           {proposal.picks.slice(0, 8).map((p) => (
@@ -351,7 +283,7 @@ export function RoadmapArrange({
         </div>
       )}
 
-      {open && proposal && proposal.kind !== 'trim' && proposal.kind !== 'allocate' && proposal.moves.length > 0 && (
+      {open && proposal && proposal.kind === 'order' && proposal.moves.length > 0 && (
         <div className="ra-moves">
           {proposal.moves.slice(0, 8).map((mv) => {
             const it = items.find((x) => x.id === mv.id);
@@ -374,7 +306,7 @@ export function RoadmapArrange({
 
       {open && proposal && (
         <div className={`ra-result${n ? ' actionable' : ''}`}>
-          {proposal.kind !== 'trim' && proposal.read && <span className="ra-readtag">✦ read</span>}
+          <span className="ra-readtag">✧ read</span>
           <span className="txt">{proposal.summary}</span>
           {n > 0 && (
             <span className="acts">
