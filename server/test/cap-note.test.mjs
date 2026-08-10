@@ -42,6 +42,18 @@ const check = (name, ok, detail = '') => {
   check('the marker is the only thing past the cap', out.length < NOTE_MAX + 120, `length ${out.length}`);
 }
 
+// ---- the marker needs HEADROOM, which is what a second capper must leave ----
+// The stored value is deliberately longer than the cap. That is the trap the
+// rest of BUG-12 lived in: reviewbrief.js re-cut built_note at the same 2000
+// on its way into a prompt, and the bytes it cut were the marker — so a note
+// that HAD been truncated arrived looking whole. Anything re-capping this
+// column has to allow for the marker, or it silently undoes the fix.
+{
+  const out = capNote('x'.repeat(5000));
+  check('the stored value is longer than the cap', out.length > NOTE_MAX, `length ${out.length}`);
+  check('re-capping does not stack markers', (capNote(out).match(/truncated/g) || []).length === 1);
+}
+
 // ---- the cap is a parameter, and the marker follows it ----------------------
 {
   const out = capNote('abcdefghij', 4);
