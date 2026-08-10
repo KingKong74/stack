@@ -234,7 +234,11 @@ export function RoadmapArrange({
           ? `Everything in ${areaName} already has an area. Clear the chip — or pick Unallocated — to sort the rows that have none.`
           : untagged.length === 0
             ? 'Every open item already carries an area. Nothing to sort.'
-            : `Reads the ${untagged.length} item${untagged.length === 1 ? '' : 's'} carrying no area and proposes one for each, from the areas this project already uses. Asks Claude on your own host.`,
+            // The count is the POPULATION, not the promise: the server caps
+            // each read, so "reads the 44" would be a claim it will not keep.
+            // The cap is not spelled here — one number, one home — the batch is
+            // what the owner needs to know and the summary names the figures.
+            : `${untagged.length} item${untagged.length === 1 ? '' : 's'} carry no area. Reads them and proposes one for each, from the areas this project already uses — a big backlog comes in batches, so press again for what is left. Asks Claude on your own host.`,
       views: ['timeline', 'scope', 'plan'],
       disabled: !canRead('allocate') || !!reading || inAnArea || untagged.length === 0,
       read: true,
@@ -296,7 +300,7 @@ export function RoadmapArrange({
             ? `${sums === 0
               ? 'A ✦ read of the rows carrying no area'
               : `Arithmetic over ${filtered ? `the ${areaName} rows` : 'what is on the board'}, plus ${
-                reads === 1 ? 'one ✦ read' : `${reads} ✦ reads`} that ask Claude`
+                reads === 1 ? 'one ✦ read that asks' : `${reads} ✦ reads that ask`} Claude`
             }. Nothing is saved until you apply it.`
             : `${mine.length} action${mine.length === 1 ? '' : 's'} for this view`}
         </span>
