@@ -224,9 +224,13 @@ export function RoadmapArrange({
             further up the tab and is easy to forget you set; an action that
             silently moved half as many bars as you expected would read as an
             action that half-worked. */}
+        {/* NAMES the population and does not count it. The area chip above is
+            already counting `agents`, and a second number beside it counting a
+            different set — that one is the cycle, this one would be what an
+            action can move — is two answers to one question. */}
         {filtered && (
           <span className="ra-scope" title={`Only items in ${areaName} — clear the area chip above for the whole board`}>
-            {areaName} only<span className="n">{pool.filter((i) => !i.archived && !i.done).length}</span>
+            {areaName} only
           </span>
         )}
         <span className="ra-hint">

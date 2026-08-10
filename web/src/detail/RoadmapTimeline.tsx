@@ -640,6 +640,13 @@ function Lane({
               <div className={`rt-bar ${state}${dot ? ' tinted' : ''}${sel ? ' sel' : ''}`}
                 style={{
                   top: 10 + bar.row * 28, left: `${bar.left}%`, width: `${bar.width}%`,
+                  // A bar that starts before the window keeps its title VISIBLE:
+                  // the hidden part is padded away, so the label sits at the
+                  // left edge of the track instead of off it. Percentages here
+                  // and in `left` both resolve against the lane's width, so the
+                  // two cancel exactly. Without it, panning turns every bar it
+                  // clips into an anonymous block of colour.
+                  ...(bar.left < 0 ? { paddingLeft: `calc(9px + ${-bar.left}%)` } : {}),
                   ...(dot ? { '--tint': dot } : {}),
                 } as React.CSSProperties}
                 onPointerDown={onDown(it, 'move')}
