@@ -7077,12 +7077,14 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
   border: 1px solid transparent; border-radius: 6px; padding: 3px 5px; }
 .rp-col-act:hover { color: var(--accent); border-color: var(--accent-tint-border); }
 .rp-col-act.on { color: var(--accent); border-color: var(--accent-tint-border); background: var(--accent-tint); }
-.rp-col-lock { font-size: 10px; opacity: .4; padding: 0 3px; cursor: help; }
+.rp-col-lock { display: inline-flex; align-items: center; color: var(--fainter); padding: 0 3px; cursor: help; }
+.rp-lock-ico { display: block; }
 /* The lane's tie to the Review room — accent, because it is work waiting on a
-   person, and never a verdict tone: giving one is that room's job. */
-.rp-col-review { font-family: var(--mono); font-size: 10px; color: var(--accent);
+   person, and never a verdict tone: giving one is that room's job. Its own row
+   under the head, so it can never reflow the lane name; see RoadmapPlan.tsx. */
+.rp-col-review { display: block; font-family: var(--mono); font-size: 10px; color: var(--accent);
   background: var(--accent-tint); border: 1px solid var(--accent-tint-border);
-  border-radius: 6px; padding: 2px 7px; white-space: nowrap; }
+  border-radius: 7px; padding: 4px 8px; margin: -2px 0 1px; text-align: center; }
 .rp-col-review:hover { background: var(--accent); color: var(--on-accent); }
 .rp-card-review { display: block; margin-top: 9px; font-family: var(--mono); font-size: 10.5px;
   color: var(--faint); }

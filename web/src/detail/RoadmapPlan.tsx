@@ -76,6 +76,17 @@ const BUCKET_LABEL: Record<Priority, string> = {
 // the per-card strip, the lane head link and the styling cannot drift apart.
 const REVIEW_LANES = new Set(['progress', 'shipped']);
 
+// DRAWN, not typed. A 🔒 renders as a tofu box in the display face this board
+// uses — an empty rectangle where the explanation was supposed to be, which is
+// worse than no affordance at all. An inline SVG in currentColor always draws
+// and follows the theme.
+const LockIcon = () => (
+  <svg className="rp-lock-ico" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true" focusable="false">
+    <path d="M3.6 5.2V3.9a2.4 2.4 0 0 1 4.8 0v1.3" fill="none" stroke="currentColor" strokeWidth="1.2" />
+    <rect x="2.4" y="5.2" width="7.2" height="5.4" rx="1.1" fill="currentColor" />
+  </svg>
+);
+
 export interface PlanProps {
   /** The project, for the Review room link — a room-wide queue needs to be told whose change. */
   slug: string;
@@ -234,20 +245,6 @@ export function RoadmapPlan({
                     <span className="n">{cards.length}</span>
                   </>
                 )}
-                {/* The lane's own tie to the Review room. It states the NUMBER
-                    rather than just linking, because the two lanes are the only
-                    place on this board where work is waiting on the owner
-                    personally — and it is hidden at zero rather than drawn as a
-                    grey 0, which reads as "the room is empty" when what it
-                    means is "nothing of THIS lane is in it". */}
-                {waiting > 0 && (
-                  <a className="rp-col-review" href={hrefTo.control('review')}
-                    title={`${waiting} change${waiting === 1 ? '' : 's'} in this lane ${
-                      waiting === 1 ? 'is' : 'are'} waiting on your verdict in Mission Control’s Review room`}>
-                    {waiting} to review →
-                  </a>
-                )}
-
                 <span className="rp-col-tools">
                   {/* Shipped is the one lane work PILES UP in — every other column
                       is somewhere a card is passing through. The sweep archives
@@ -277,9 +274,9 @@ export function RoadmapPlan({
                       button absent from one column and present on the next
                       reads as a rendering fault. */}
                   {list.locked ? (
-                    <span className="rp-col-lock" aria-hidden="false"
+                    <span className="rp-col-lock"
                       title="A built-in lane. Cards are sorted into it automatically and the Review room moves work through it, so it cannot be renamed or removed — lanes you add yourself can be.">
-                      🔒
+                      <LockIcon />
                     </span>
                   ) : confirmList === list.key ? (
                     <span className="rp-sweep-confirm">
@@ -305,6 +302,26 @@ export function RoadmapPlan({
                   </button>
                 </span>
               </div>
+
+              {/* The lane's own tie to the Review room. It states the NUMBER
+                  rather than just linking, because these two lanes are the only
+                  place on this board where work is waiting on the owner
+                  personally — and it is hidden at zero rather than drawn as a
+                  grey 0, which reads as "the room is empty" when what it means
+                  is "nothing of THIS lane is in it".
+
+                  ITS OWN ROW, not a chip in the head. Inside the head it fought
+                  the lane name for a 262px column and won: "In progress" broke
+                  across two lines and the whole board's heads went out of
+                  alignment. A line that only appears sometimes must not be able
+                  to reflow the line that is always there. */}
+              {waiting > 0 && (
+                <a className="rp-col-review" href={hrefTo.control('review')}
+                  title={`${waiting} change${waiting === 1 ? '' : 's'} in this lane ${
+                    waiting === 1 ? 'is' : 'are'} waiting on your verdict in Mission Control’s Review room`}>
+                  {waiting} waiting on your verdict →
+                </a>
+              )}
 
               {cards.map((c) => (
                 <div className="rp-card" key={c.id} draggable
