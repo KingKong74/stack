@@ -43,7 +43,7 @@ import {
   getBoardShape, patchRoadmapItem, createRoadmapItem,
   addArea, renameArea as renameAreaApi, deleteArea as deleteAreaApi, addList as addListApi,
   addLabel as addLabelApi, deleteLabel as deleteLabelApi,
-  setAreaColour, arrangeRoadmap, agentCan, agentOffReason,
+  setAreaColour, arrangeRoadmap, allocateRoadmap, agentCan, agentOffReason,
 } from '../store';
 import { areaMatches, inCycle, UNALLOCATED } from '../lib/plan';
 import { DEFAULT_LABELS } from '../lib/labels';
@@ -51,7 +51,9 @@ import { RoadmapTimeline } from './RoadmapTimeline';
 import { RoadmapScope } from './RoadmapScope';
 import { RoadmapPlan } from './RoadmapPlan';
 import { RoadmapTiers, RoadmapParked } from './RoadmapBoards';
-import { RoadmapArrange, proposedSpans, arrangementCount, type Arrangement } from './RoadmapArrange';
+import {
+  RoadmapArrange, proposedSpans, arrangementCount, type Arrangement, type ReadOp,
+} from './RoadmapArrange';
 
 type View = 'timeline' | 'scope' | 'plan';
 type PlanBoard = 'lists' | 'tiers' | 'parked';
@@ -142,7 +144,9 @@ export function RoadmapTab({
   const [palette, setPalette] = useState<string[]>([]);
   // Which area's swatch popover is open (one at a time).
   const [colourFor, setColourFor] = useState<string | null>(null);
-  const [reading, setReading] = useState(false);
+  // WHICH ✦ read is in flight, not whether one is: the panel has two, and a
+  // shared boolean would put "reading…" on the button you did not press.
+  const [reading, setReading] = useState<ReadOp | ''>('');
   const [areaFilter, setAreaFilter] = useState('');
   const [labelFilter, setLabelFilter] = useState('');
   const [editAreas, setEditAreas] = useState(false);
@@ -206,6 +210,19 @@ export function RoadmapTab({
           const it = items.find((x) => x.id === id);
           if (it) landed.push(await writeOnly(it, { skipped: true }));
         }
+      } else if (proposal.kind === 'allocate') {
+        for (const p of proposal.picks) {
+          const it = items.find((x) => x.id === p.id);
+          if (it) landed.push(await writeOnly(it, { area: p.area }));
+        }
+        // An area is real the moment a row mentions it (routes/board.js unions
+        // the two), but this component's `areas` were read once on mount — so a
+        // coined area would have no lane, no chip and no colour until a reload,
+        // and its items would land in the timeline's Unallocated fold looking
+        // exactly like the ones the read had just failed to place.
+        await getBoardShape(slug)
+          .then((b) => { setAreas(b.areas); setPalette(b.palette || []); })
+          .catch(() => { /* the areas are stale, not wrong; the writes landed */ });
       } else {
         for (const mv of proposal.moves) {
           const it = items.find((x) => x.id === mv.id);
@@ -259,7 +276,7 @@ export function RoadmapTab({
   // value (lib/plan.ts), and spelling it into the server would be a second copy
   // of a magic string that only the client's own rules keep safe.
   const readTheBoard = () => {
-    setReading(true);
+    setReading('arrange');
     const scope = areaFilter === UNALLOCATED ? { untagged: true } : areaFilter ? { area: areaFilter } : {};
     const inScope = items.filter((i) => !i.archived && !i.done && areaMatches(i.area, areaFilter));
     arrangeRoadmap(slug, scope)
@@ -277,7 +294,41 @@ export function RoadmapTab({
         });
       })
       .catch((e) => setErr((e as Error)?.message || 'The Curator could not read the board.'))
-      .finally(() => setReading(false));
+      .finally(() => setReading(''));
+  };
+
+  // The Curator's OTHER read: an area for each row carrying none. Same proposal
+  // slot, same Apply and Discard — it writes `area` where the order writes
+  // `sched`, and nothing at all until the owner presses.
+  //
+  // NO SCOPE ARGUMENT, unlike the order read above. Untagged IS the population,
+  // so there is nothing an area chip could narrow it to; the panel disables the
+  // button under a real chip rather than sending a filter the server would have
+  // to answer with an empty list.
+  const sortTheUnallocated = () => {
+    setReading('allocate');
+    allocateRoadmap(slug)
+      .then((r) => {
+        const missed = Math.max(0, r.seen - r.picks.length);
+        // Named, not just counted: a coined area is a new lane on the timeline,
+        // and "2 new areas" without their names is a change you cannot check.
+        const coined = [...new Set(r.picks.filter((p) => p.isNew).map((p) => p.area))];
+        setProposal({
+          kind: 'allocate',
+          read: true,
+          picks: r.picks,
+          // The read is CAPPED server-side, so the count says what was looked at
+          // out of what there is. A summary reading "12 untagged items" on a
+          // board holding eighty would be the capped-list lie (#239) again.
+          summary: r.picks.length
+            ? `Read ${r.seen}${r.total > r.seen ? ` of ${r.total}` : ''} untagged item${r.seen === 1 ? '' : 's'} and placed ${r.picks.length}${
+              missed ? `, leaving ${missed} it could not read` : ''}${
+              coined.length ? `. New ${coined.length === 1 ? 'area' : 'areas'}: ${coined.join(', ')}` : ''}.`
+            : r.note || `Read ${r.seen} untagged item${r.seen === 1 ? '' : 's'} and could not place any of them — these need your eye, not the Curator's.`,
+        });
+      })
+      .catch((e) => setErr((e as Error)?.message || 'The Curator could not read the untagged items.'))
+      .finally(() => setReading(''));
   };
 
   // --- areas ----------------------------------------------------------------
@@ -452,9 +503,9 @@ export function RoadmapTab({
         view={view} items={items} areaFilter={areaFilter} selected={selected} proposal={proposal} busy={busy}
         open={arrangeOpen} onToggle={() => setArrangeOpen(!arrangeOpen)}
         onPropose={setProposal} onApply={applyProposal} onDiscard={() => setProposal(null)}
-        onRead={readTheBoard} reading={reading}
-        canRead={agentCan(agents, 'curator', 'arrange')}
-        readOffReason={agentOffReason(agents, 'curator', 'arrange')} />
+        onRead={(op) => (op === 'allocate' ? sortTheUnallocated() : readTheBoard())} reading={reading}
+        canRead={(op) => agentCan(agents, 'curator', op)}
+        readOffReason={(op) => agentOffReason(agents, 'curator', op)} />
 
       {view === 'timeline' && (
         <>

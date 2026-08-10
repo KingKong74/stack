@@ -7615,3 +7615,8 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .ra-move .wk { font-family: var(--mono); font-size: 10.5px; color: var(--accent-deep); white-space: nowrap; }
 .ra-move .why { flex: 1 1 100%; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
 .ra-move.more { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+/* A COINED area on an allocation. Deliberately louder than the rest of the
+   line: applying it puts a lane on the timeline that the project has never had,
+   and that is the one thing in the diff worth stopping on. */
+.ra-move .ra-newarea { margin-left: 6px; font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--critical); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 4px; }

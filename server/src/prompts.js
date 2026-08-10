@@ -160,6 +160,31 @@ Use en-AU spelling. Respond with ONLY this JSON:
 { "moves": [ { "id": 123, "start": 12,
                "why": "one plain sentence naming what it depends on, under 20 words" } ] }`;
 
+DEFAULTS.allocate = `You are filing a side project's untagged roadmap items into its AREAS. An area
+is the part of the product a piece of work belongs to — it is what the timeline draws as a lane and
+what every board filters by, so an item carrying none is in no lane and behind no chip.
+{{NORTH_STAR_LINE}}
+
+The areas this project already uses, with how many open items each one holds:
+{{AREAS}}
+
+{{CAP_LINE}}THE UNTAGGED ITEMS (id | bucket | title | note):
+{{ITEMS}}
+
+Give each item the area it belongs to. Rules:
+- PREFER AN EXISTING AREA. Reach for one of the areas above whenever the work plausibly sits in it;
+  the point of this is to fill the lanes the project already has, not to redraw them.
+- Coin a new area only when a real group of items has no home above — lowercase, one or two words,
+  and never one that is a near-synonym of an existing area.
+- LEAVE AN ITEM OUT when you genuinely cannot tell what it is about. A short honest list beats a
+  complete one full of guesses: an item left out stays exactly as it is now, and the owner files it
+  by hand. AN EMPTY LIST IS A VALID ANSWER.
+- Never rename, re-bucket, re-word, merge or drop anything. The only thing you decide is the area.
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "picks": [ { "id": 123, "area": "…",
+               "why": "one plain sentence naming what the item touches, under 15 words" } ] }`;
+
 DEFAULTS.cluster = `You are clustering a side project's idea funnel into themes. Below are the
 project's loose ideas (id | current theme | title | note). Known themes on the project: {{AREAS}}
 {{NORTH_STAR_LINE}}
@@ -617,6 +642,7 @@ const ENV_KEYS = {
   // host through the daemon (#364). GEMINI_ would be a lie about which model
   // reads it, whatever the older keys above are called.
   arrange: 'STACK_ARRANGE_PROMPT',
+  allocate: 'STACK_ALLOCATE_PROMPT',
   triage: 'GEMINI_TRIAGE_PROMPT',
 };
 

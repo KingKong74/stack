@@ -1930,6 +1930,23 @@ export async function arrangeRoadmap(
   return request<{ moves: ArrangeMove[]; note?: string }>(
     `${roadmapBase(slug)}/arrange`, { method: 'POST', body: scope });
 }
+// The Curator's other read of the board: WHERE each untagged item belongs.
+// Proposes only, exactly like arrangeRoadmap — the caller ghosts the picks and
+// writes the areas itself, one ordinary PATCH each.
+//
+// NO SCOPE ARGUMENT, and that is the contract: untagged IS the population, so
+// there is nothing for an area filter to narrow it to. `seen` is how many
+// untagged rows the read was shown (the server caps the list) and `total` how
+// many there are, so the caller can say "9 of 12" rather than implying it saw
+// the lot. `isNew` marks an area the project has never used — a coined lane is
+// something the owner should have to notice before applying it.
+export interface AllocatePick { id: number; title: string; area: string; isNew: boolean; why: string }
+export async function allocateRoadmap(
+  slug: string,
+): Promise<{ picks: AllocatePick[]; seen: number; total: number; note?: string }> {
+  return request<{ picks: AllocatePick[]; seen: number; total: number; note?: string }>(
+    `${roadmapBase(slug)}/allocate`, { method: 'POST', body: {} });
+}
 export async function renameArea(slug: string, from: string, name: string): Promise<BoardArea[]> {
   const r = await request<{ areas: BoardArea[] }>(
     `${boardBase(slug)}/areas/${encodeURIComponent(from)}`, { method: 'PATCH', body: { name } });

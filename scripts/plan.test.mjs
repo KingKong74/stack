@@ -27,7 +27,7 @@ const {
   SCHED_WEEKS, CYCLE_WEEKS, NOW_WEEK, scaleCols, slipOf, layoutLane, weekAt, scopeTotals,
   listKeyOf, proposeSchedule, proposeCompact, proposeTrim, inCycle,
   nowLeft, whatsNext, calendarMonths, weekDate, fmtDate,
-  proposeCatchUp, proposeBalance, proposeByTier, areaMatches, UNALLOCATED,
+  proposeCatchUp, proposeBalance, proposeByTier, areaMatches, horizonOf, UNALLOCATED,
   viewFor, clampView, focusOf, inView, SCALE_WEEKS,
 } = await import(planUrl.href);
 
@@ -569,4 +569,39 @@ test('UNALLOCATED admits untagged rows and nothing else', () => {
 test('the sentinel cannot collide with a real area — the server lowercases them', () => {
   assert.equal(UNALLOCATED, UNALLOCATED.toUpperCase());
   assert.notEqual(UNALLOCATED, UNALLOCATED.toLowerCase());
+});
+
+// ---- the horizon ------------------------------------------------------------
+// Unscheduled AND unsized: on the roadmap, not yet in the plan. It is drawn as
+// its own row under the lanes, and it used to be the ONE population on the
+// chart that ignored the area chip — which does not look like a bug, it looks
+// like unsized work in the area you are filtered to.
+
+test('the horizon is the unscheduled and unsized, and obeys the area chip', () => {
+  const items = [
+    item({ area: 'editor', title: 'no size', estimate: null, sched: null }),
+    item({ area: 'billing', title: 'other area', estimate: null, sched: null }),
+    item({ area: 'editor', title: 'sized', estimate: 2, sched: null }),
+    item({ area: 'editor', title: 'scheduled', estimate: null, sched: { start: 3, len: 2 } }),
+  ];
+  assert.deepEqual(horizonOf(items, '').map((i) => i.title), ['no size', 'other area']);
+  assert.deepEqual(horizonOf(items, 'editor').map((i) => i.title), ['no size']);
+  assert.deepEqual(horizonOf(items, 'billing').map((i) => i.title), ['other area']);
+});
+
+test('the horizon takes the untagged chip like any other filter', () => {
+  const items = [
+    item({ area: '', title: 'untagged', estimate: null, sched: null }),
+    item({ area: 'editor', title: 'tagged', estimate: null, sched: null }),
+  ];
+  assert.deepEqual(horizonOf(items, UNALLOCATED).map((i) => i.title), ['untagged']);
+});
+
+test('the horizon holds no finished or archived work', () => {
+  const items = [
+    item({ area: 'editor', title: 'done', estimate: null, sched: null, done: true }),
+    item({ area: 'editor', title: 'archived', estimate: null, sched: null, archived: true }),
+    item({ area: 'editor', title: 'open', estimate: null, sched: null }),
+  ];
+  assert.deepEqual(horizonOf(items, '').map((i) => i.title), ['open']);
 });

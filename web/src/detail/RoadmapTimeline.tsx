@@ -45,9 +45,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { BoardArea, BoardLabel, RoadmapItem, SchedSpan } from '../types';
 import {
-  SCHED_WEEKS, CYCLE_WEEKS, areaMatches, layoutLane, scaleCols, scopeTotals, slipOf, weekAt,
+  SCHED_WEEKS, CYCLE_WEEKS, areaMatches, horizonOf, layoutLane, scaleCols, scopeTotals, slipOf, weekAt,
   nowLeft, whatsNext, calendarMonths, weekDate, fmtDate,
-  clampView, focusOf, spanPct, viewFor, SCALE_WEEKS,
+  clampView, focusOf, spanPct, viewFor, SCALE_WEEKS, UNALLOCATED,
   type Scale, type Viewport,
 } from '../lib/plan';
 import { labelsOf } from '../lib/labels';
@@ -270,6 +270,9 @@ export function RoadmapTimeline({
 
   const tray = visible.filter(
     (i) => !i.sched && !i.done && areaMatches(i.area, areaFilter));
+  // Unscheduled AND unsized — a subset of the tray, drawn as its own row
+  // because a bar cannot be laid out for something with no length. Same chip.
+  const horizon = horizonOf(items, areaFilter);
 
   return (
     <div className={`rt${drawer && selected ? ' with-drawer' : ''}`}>
@@ -391,19 +394,30 @@ export function RoadmapTimeline({
 
           {/* The horizon: committed work with no schedule and no estimate — it
               is on the roadmap but not yet in the plan, and saying so is more
-              honest than parking it at week zero. */}
+              honest than parking it at week zero. The population is
+              `horizonOf`, filter and all: it is the same chip the lanes, the
+              tray and the orphan fold obey, and this row used to be the one
+              thing on the chart that did not. */}
           <div className="rt-lane horizon">
             <div className="rt-lane-name">
               <span className="dot ghost" />
               <span className="nm">Horizon</span>
             </div>
             <div className="rt-lane-body">
-              {visible.filter((i) => !i.sched && i.estimate === null && !i.done).slice(0, 6).map((i) => (
+              {horizon.slice(0, 6).map((i) => (
                 <button key={i.id} className="rt-horizon-chip" onClick={() => onOpen(i)}
                   title="Give it a size and it can be scheduled">{i.title}</button>
               ))}
-              {visible.filter((i) => !i.sched && i.estimate === null && !i.done).length === 0 && (
-                <span className="rt-lane-empty">Everything unscheduled has been sized.</span>
+              {horizon.length > 6 && (
+                <span className="rt-lane-empty">…and {horizon.length - 6} more</span>
+              )}
+              {horizon.length === 0 && (
+                // Scoped, because the claim is: "everything unscheduled HERE".
+                // Unqualified under a filter it would speak for a board it is
+                // not looking at.
+                <span className="rt-lane-empty">
+                  Everything unscheduled{areaFilter ? ` in ${areaFilter === UNALLOCATED ? 'unallocated' : areaFilter}` : ''} has been sized.
+                </span>
               )}
             </div>
           </div>

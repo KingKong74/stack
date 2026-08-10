@@ -245,6 +245,11 @@ export const AGENTS = [
       // #364's rule holds: this READS the board and proposes an order. It never
       // writes — the timeline ghosts the proposal and the owner applies it.
       { op: 'arrange', label: 'Order by dependency', hint: 'Reads what the items are and says what must come first.' },
+      // Same rule again, on the other axis: `arrange` says WHEN a row runs,
+      // this says WHERE it belongs. Untagged work is in no lane and behind no
+      // chip, so it is the population that goes missing; the arithmetic cannot
+      // help, because an area is a reading of what the item is about.
+      { op: 'allocate', label: 'Sort the unallocated', hint: 'Proposes an area for each item carrying none.' },
     ],
   },
   // #375 — THE FOREMAN, the Review room's own agent.

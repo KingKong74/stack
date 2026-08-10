@@ -455,6 +455,23 @@ export const UNALLOCATED = 'UNALLOCATED';
 export const areaMatches = (area: string, filter: string): boolean =>
   (filter === '' ? true : filter === UNALLOCATED ? !area : area === filter);
 
+/**
+ * THE HORIZON: committed work with no schedule AND no estimate — on the roadmap
+ * but not yet in the plan. Drawn as a row of chips under the lanes rather than
+ * parked at week zero, because a bar at week zero is a claim about when it runs.
+ *
+ * IT OBEYS THE AREA CHIP, like every other population on the chart. It is a
+ * function here, and not four filters inlined in the render, because it was
+ * inlined and the filter was the clause that got left out: the lanes, the tray
+ * and the orphan fold all narrowed to the chip and the Horizon alone kept
+ * listing every area's unsized work. A lane that ignores the filter above it
+ * does not read as a bug — it reads as unsized work belonging to the area you
+ * are looking at, which is the one thing it is not.
+ */
+export const horizonOf = (items: RoadmapItem[], areaFilter: string): RoadmapItem[] =>
+  items.filter((i) => !i.archived && !i.done && !i.sched && i.estimate === null
+    && areaMatches(i.area, areaFilter));
+
 export function scopeTotals(children: RoadmapItem[], cycle = CYCLE_WEEKS): ScopeTotals {
   let committed = 0; let deferred = 0; let out = 0; let unsized = 0;
   for (const c of children) {

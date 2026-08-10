@@ -69,7 +69,9 @@ const WIRED = {
   auditor: [],
   // 'arrange' reads the timeline and proposes an ORDER — the one thing the
   // Arrange panel's arithmetic structurally cannot do. Routes: POST /roadmap/arrange.
-  curator: ['titler', 'assist', 'cleanup', 'arrange'],
+  // 'allocate' is its other half: WHERE an untagged row belongs, not when it
+  // runs. Routes: POST /roadmap/allocate.
+  curator: ['titler', 'assist', 'cleanup', 'arrange', 'allocate'],
   foreman: ['readchange', 'triagequeue', 'reviewbrief', 'refinedraft'],
   merger: ['mergeplan'],
   polaris: ['judge', 'cluster', 'converge'],
@@ -222,12 +224,12 @@ check('an op-less agent shapes to an empty list, not to nothing', shaped.ops, []
 check('ops carry their own switch',
   agentShape({ agent: C, config: agentConfigShape(C, { enabled: true, ops_off: ['cleanup'] }) })
     .ops.map((o) => [o.op, o.enabled]),
-  [['titler', true], ['assist', true], ['cleanup', false], ['arrange', true]]);
+  [['titler', true], ['assist', true], ['cleanup', false], ['arrange', true], ['allocate', true]]);
 // An op switched off on ONE agent leaves another agent's alone — the shape is
 // read per agent, and ops_off is that agent's column.
 check('...and only that agent\'s',
   agentShape({ agent: C, config: agentConfigShape(C, { enabled: true, ops_off: ['cleanup'] }) })
-    .ops.map((o) => o.enabled), [true, true, false, true]);
+    .ops.map((o) => o.enabled), [true, true, false, true, true]);
 check('an op nobody registered has no spec', opSpec('auditprompt'), null);
 check('the tab rides along', shaped.tabLabel, 'Quality');
 // #375 — and what KIND of surface it is, so no card says "Merge tab".

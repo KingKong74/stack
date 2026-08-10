@@ -602,6 +602,110 @@ roadmap.post('/arrange', async (req, res) => {
   }
 });
 
+// POST /allocate -> the Curator reads the UNTAGGED items and proposes an area
+// for each. The other half of /arrange: that one says WHEN a row runs, this one
+// says WHERE it belongs, and neither is arithmetic — an area is a reading of
+// what the work is about, which is why the Arrange panel's sums cannot do it.
+//
+// PROPOSES ONLY, like everything else the Curator does: the panel ghosts the
+// picks and the owner applies or discards. Nothing here writes an area.
+//
+// IT IS NOT SCOPED BY THE AREA CHIP, and that is not an oversight — untagged IS
+// the population, so narrowing it to an area would leave nothing to work on.
+// The panel says so at the button rather than proposing zero picks and letting
+// the filter take the blame.
+//
+// THE MODEL MAY COIN AN AREA, and each pick says whether it did (`isNew`). A
+// board with no areas yet would otherwise get an empty answer to the one
+// question it most needs asked, and `roadmap_items.area` is a free string that
+// becomes a real area the moment a row mentions it (routes/board.js). Coining
+// is still the exception the prompt discourages, and the human sees the tag
+// before applying — an invented lane is a thing you should have to notice.
+const ALLOCATE_CAP = 60;
+// The buckets in the order the owner reads them, so a cap cuts the Won'ts
+// before it cuts the Musts.
+const BUCKET_RANK = "CASE bucket WHEN 'must' THEN 0 WHEN 'should' THEN 1 WHEN 'could' THEN 2 ELSE 3 END";
+
+roadmap.post('/allocate', async (req, res) => {
+  if (await refused('allocate', res)) return;
+  const [{ rows }, { rows: areaRows }, { rows: registered }] = await Promise.all([
+    // COUNT(*) OVER () is the pre-LIMIT total: the cap has to be stated in the
+    // prompt (and on the right axis), and it cannot be stated without it.
+    q(
+      `SELECT id, bucket, title, note, COUNT(*) OVER ()::int AS total
+         FROM roadmap_items
+        WHERE project_id = $1 AND NOT done AND NOT archived AND COALESCE(area, '') = ''
+        ORDER BY ${BUCKET_RANK}, position, id
+        LIMIT $2`,
+      [req.project.id, ALLOCATE_CAP]
+    ),
+    q(
+      `SELECT area, COUNT(*)::int AS n FROM roadmap_items
+        WHERE project_id = $1 AND NOT done AND NOT archived AND COALESCE(area, '') <> ''
+        GROUP BY area`,
+      [req.project.id]
+    ),
+    q('SELECT name FROM project_areas WHERE project_id = $1 ORDER BY position, id', [req.project.id]),
+  ]);
+  const total = rows.length ? rows[0].total : 0;
+  if (!rows.length) {
+    return res.json({ picks: [], seen: 0, total: 0, note: 'Nothing is unallocated — every open item already carries an area.' });
+  }
+
+  // A registered area with nothing in it is still a real area to file into —
+  // the same union readAreas() does, for the same reason.
+  const counts = new Map(areaRows.map((r) => [r.area, r.n]));
+  registered.forEach((r) => { if (!counts.has(r.name)) counts.set(r.name, 0); });
+  const known = new Set(counts.keys());
+  const areaList = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([name, n]) => `- ${name} (${n} open)`)
+    .join('\n');
+
+  const prompt = buildPrompt('allocate', {
+    AREAS: areaList || '(none yet — this project has never used an area, so every one you give will be new)',
+    // #239 — a capped list says it is capped, and names the axis it was cut on.
+    CAP_LINE: total > rows.length
+      ? `Only the first ${rows.length} of ${total} untagged items are listed, taken in bucket order (Musts first). File the ones you can see; the rest come round again next time.\n\n`
+      : '',
+    ITEMS: rows.map((r) =>
+      `${r.id} | ${r.bucket} | ${r.title} | ${(r.note || '-').slice(0, 300)}`).join('\n'),
+    NORTH_STAR_LINE: req.project.north_star
+      ? `For context, the project's north star: "${String(req.project.north_star).slice(0, 400)}"`
+      : '',
+  });
+
+  try {
+    const answer = await curator.ask('allocate', prompt, { timeoutMs: 45_000 });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const seen = new Set();
+    const picks = (Array.isArray(answer?.picks) ? answer.picks : [])
+      .map((p) => {
+        const cur = byId.get(Number(p?.id));
+        if (!cur || seen.has(cur.id)) return null; // unknown row, or answered twice
+        const area = String(p?.area || '').trim().toLowerCase().slice(0, 40);
+        // A non-answer dressed as one. "unallocated" is the worst of them: the
+        // client's chip for untagged work is a SENTINEL that is safe only
+        // because no stored area can spell it (lib/plan.ts), and an area
+        // literally called unallocated would sit beside it meaning something
+        // else entirely.
+        if (!area || ['unallocated', 'none', 'n/a', 'unknown', 'other', '-'].includes(area)) return null;
+        seen.add(cur.id);
+        return {
+          id: cur.id,
+          title: cur.title,
+          area,
+          isNew: !known.has(area),
+          why: String(p?.why || '').trim().slice(0, 200),
+        };
+      })
+      .filter(Boolean);
+    res.json({ picks, seen: rows.length, total });
+  } catch (err) {
+    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
+  }
+});
+
 roadmap.post('/cleanup', async (req, res) => {
   if (await refused('cleanup', res)) return;
   const { rows } = await q(
