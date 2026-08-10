@@ -193,13 +193,35 @@ export const cleanGuidance = (v) => String(v ?? '').replace(/\s+$/g, '').slice(0
 // `label` names it in Mission Control → Agents; `hint` is the sentence under
 // the switch. The registry says WHICH agents have one and nothing more — how it
 // is drawn belongs to the tab.
+//
+// `openers` — WHAT THIS TAB IS USUALLY OPENED FOR (#380 follow-up).
+//
+// A primed session that answers "hello, I am the Auditor" and waits is still a
+// blank prompt as far as the owner is concerned: they know the agent's name,
+// what they do not know is what it is worth asking HERE, so the first thing
+// they do is compose the question the tab could have handed them. So each
+// console carries a short list of the asks that tab is actually for, and it is
+// used TWICE from this one definition:
+//
+//  • the prime prints it, numbered, as the session's opening turn, so a bare
+//    "2" in the console is a complete instruction; and
+//  • the strip draws it as buttons that TYPE the ask at the prompt — never
+//    with an Enter, the same rule the Terminal screen's brief paste follows.
+//
+// One list, so the number the owner reads on the strip is the number the agent
+// answers to. They are deliberately STATIC — an opener is what the tab is FOR,
+// not what is on it today; the snapshot below already carries the state, and an
+// opener computed from it would go stale the moment the session outlived its
+// briefing. `label` is the button (keep it short); `ask` is what gets typed and
+// must stand alone, because that is all the session receives.
 // ---------------------------------------------------------------------------
-const projectConsole = (what) => ({
+const projectConsole = (what, openers) => ({
   label: 'Live session',
   hint: `A Claude session in the project's checkout, on this agent's own tab — ${what}. `
     + 'It runs in tmux on the host, so it survives the tab being closed, and it is SPAWNED as '
     + 'this agent: its identity, this steer and a snapshot of the tab go in as a system prompt '
     + '(#377), so the session is the agent from its first turn rather than a blank prompt.',
+  openers,
 });
 
 export const AGENTS = [
@@ -217,7 +239,30 @@ export const AGENTS = [
     blurb: 'Investigates the live app, the checks and the tracked bugs in a session on the Quality tab.',
     // What the model itself is told it may and may not touch (see preamble()).
     remit: 'the Quality tab: the project\'s checks, its tracked bugs and the live application',
-    console: projectConsole('for the investigation the checks can only point at'),
+    console: projectConsole('for the investigation the checks can only point at', [
+      {
+        label: 'Walk the failing checks',
+        ask: 'Take the failing checks in the snapshot one at a time. For each, read the code behind '
+          + 'it in this checkout and tell me whether it is a real regression or a check that has gone '
+          + 'stale — with the evidence. Do not change anything yet.',
+      },
+      {
+        label: 'Reproduce the top bug',
+        ask: 'Take the highest-severity open bug and try to reproduce it here: find the code path, '
+          + 'say what actually happens and what should, and tell me whether the report is accurate '
+          + 'before you propose a fix.',
+      },
+      {
+        label: 'Probe the live app',
+        ask: 'Probe the live application for what the suite cannot see — the states a check does not '
+          + 'visit. Tell me what you drove, what you found, and what you could not reach.',
+      },
+      {
+        label: 'Find the gap in the suite',
+        ask: 'Read the checks against what this project actually does and tell me the most valuable '
+          + 'thing the suite does not cover. If I agree, write that check.',
+      },
+    ]),
     // NO OPS, and the only agent without any. It had exactly one — `audit`:
     // fetch the site's HTML, hand the text plus the check results and the
     // tracked bugs to a model, file what came back into the review inbox. The
@@ -237,19 +282,52 @@ export const AGENTS = [
     surface: 'tab',
     blurb: 'Shapes what is on the board: titles, areas, honest buckets, and the write-ups a reviewer reads.',
     remit: 'the Roadmap tab: the project\'s roadmap items, their fields and what was built against them',
-    console: projectConsole('for the reshuffle no template anticipated'),
+    console: projectConsole('for the reshuffle no template anticipated', [
+      {
+        label: 'Read the top of the queue',
+        ask: 'Read the top of the board in the order the run queue would take it and tell me which '
+          + 'of those items an unattended session could NOT build as written — what is missing from '
+          + 'each, in one line apiece.',
+      },
+      {
+        label: 'Split what is too big',
+        ask: 'Find the open items that are really several pieces of work, and propose the split for '
+          + 'each: the titles, and what belongs in which. Do not write anything to the board — show me.',
+      },
+      {
+        label: 'Write up what was built',
+        ask: 'Take the items that have been built but read thinly, look at what actually landed on '
+          + 'their branches, and draft a built_note for each that a reviewer could give a verdict '
+          + 'against.',
+      },
+      {
+        label: 'Sort the untagged',
+        ask: 'Find the open items carrying no area and propose one for each, with the reason. An '
+          + 'untagged item is in no lane, so it is the work that quietly never runs.',
+      },
+    ]),
     ops: [
       { op: 'titler', label: 'Suggest a title', hint: 'Titles an item from its note.' },
       { op: 'assist', label: 'Fill from note', hint: 'Fills an item\'s fields; never overwrites one you set.' },
       { op: 'cleanup', label: 'Tidy the board', hint: 'Suggests fixes across the open items.' },
-      // #364's rule holds: this READS the board and proposes an order. It never
-      // writes — the timeline ghosts the proposal and the owner applies it.
-      { op: 'arrange', label: 'Order by dependency', hint: 'Reads what the items are and says what must come first.' },
-      // Same rule again, on the other axis: `arrange` says WHEN a row runs,
-      // this says WHERE it belongs. Untagged work is in no lane and behind no
-      // chip, so it is the population that goes missing; the arithmetic cannot
-      // help, because an area is a reading of what the item is about.
-      { op: 'allocate', label: 'Sort the unallocated', hint: 'Proposes an area for each item carrying none.' },
+      // THE BOARD'S TWO READS, and both run on GEMINI (owner's call).
+      //
+      // They read tracker rows and hand back a diff the owner applies — the
+      // read-only second-opinion shape the `backend` flag exists for, and the
+      // same job the Scribe's quick passes do. Moving them off the host bought
+      // two things a Claude session on the daemon could not: they answer in
+      // seconds rather than the seventy-plus a `claude -p` round trip took on
+      // this host, and they no longer go dark when the daemon does — which
+      // matters more now that the Arrange panel's OTHER buttons need the daemon
+      // for the console. One surface, two backends, still one switch (#375).
+      //
+      // #364's rule holds either way: they READ and propose. Nothing they
+      // return writes a row — the timeline ghosts it and the owner applies.
+      { op: 'arrange', label: 'Order by dependency', backend: 'gemini', hint: 'Reads what the items are and says what must come first.' },
+      // Same rule on the other axis: `arrange` says WHEN a row runs, this says
+      // WHERE it belongs. Untagged work is in no lane and behind no chip, so it
+      // is the population that goes missing.
+      { op: 'allocate', label: 'Sort the unallocated', backend: 'gemini', hint: 'Proposes an area for each item carrying none.' },
     ],
   },
   // #375 — THE FOREMAN, the Review room's own agent.
@@ -335,7 +413,30 @@ export const AGENTS = [
     surface: 'tab',
     blurb: 'Keeps the idea funnel pointed at the north star: verdicts, themes, and tickets when an idea is ready.',
     remit: 'the Futures tab: the project\'s idea funnel and its north star',
-    console: projectConsole('for thinking an idea through before it is worth a verdict'),
+    console: projectConsole('for thinking an idea through before it is worth a verdict', [
+      {
+        label: 'Judge the drift belt',
+        ask: 'Take the unjudged ideas in the funnel and say, for each, how it stands against this '
+          + "project's north star — aligned, adjacent or off it — and why in one line. Where the "
+          + 'north star cannot answer the question, say that instead of guessing.',
+      },
+      {
+        label: 'Think one idea through',
+        ask: 'Pick the idea in the funnel with the most upside and think it through with me: what it '
+          + 'really means in this codebase, what it would cost, and what it forecloses. Ask me before '
+          + 'you assume the shape.',
+      },
+      {
+        label: 'Find the theme',
+        ask: 'Read the funnel and tell me what these ideas are actually about — the two or three '
+          + 'themes underneath them, and which ideas are the same idea twice.',
+      },
+      {
+        label: 'Ready one for the board',
+        ask: 'Take the idea closest to being worth building and draft the roadmap ticket for it: '
+          + 'title, note, bucket and area, written so an unattended session could build it.',
+      },
+    ]),
     ops: [
       { op: 'judge', label: 'Judge alignment', hint: 'Suggests a verdict against the north star.' },
       { op: 'cluster', label: 'Cluster themes', hint: 'Suggests a theme for unthemed ideas.' },
@@ -365,7 +466,28 @@ export const AGENTS = [
     surface: 'tab',
     blurb: 'Thinks on the canvas: expands a scrap, finds the theme in a pile, drafts the plan and says what it would break.',
     remit: "the Workbench tab: the cards on this project's canvas, what is wired to what, and the record behind them",
-    console: projectConsole('for the thinking a card cannot hold'),
+    console: projectConsole('for the thinking a card cannot hold', [
+      {
+        label: 'Expand a scrap',
+        ask: 'Take the thinnest card on the canvas and expand it into something worth deciding on: '
+          + 'what it means, the shape it would take here, and what it depends on.',
+      },
+      {
+        label: 'Draft the plan',
+        ask: 'Read the cards on the canvas as one piece of work and draft the plan: the phases, in '
+          + 'order, with what each is done when.',
+      },
+      {
+        label: 'Blast radius',
+        ask: 'Say what this canvas would touch if it were built — the files, the routes and the rules '
+          + 'in CLAUDE.md it runs into — and what would break first.',
+      },
+      {
+        label: 'Critique it',
+        ask: 'Argue against what is on this canvas. What is wrong with it, what is being assumed '
+          + 'without evidence, and what would a reviewer send back?',
+      },
+    ]),
     ops: [
       { op: 'canvas', label: 'Canvas ops', backend: 'gemini', hint: 'Every ✧ op on a card: expand, cluster, plan, blast radius, touches, critique, ask.' },
     ],
@@ -692,6 +814,12 @@ export async function agentsForClient() {
       // runnable ones are here, which is what lets a button say "the daemon is
       // offline" beside one ✧ and stay live beside the other.
       opsReady: live.filter((s) => backendReadyFor(s)).map((s) => s.op),
+      // …and which of them run on GEMINI, so a client that has to explain a
+      // dead button names the right backend. `opsReady` says an op cannot run;
+      // only this says whether to send the owner to the host daemon or to
+      // GEMINI_API_KEY, and gateDecision's refusal is emphatic that naming the
+      // wrong one sends them to investigate something that is fine.
+      opsGemini: live.filter((s) => s.backend === 'gemini').map((s) => s.op),
       // The console, as three states rather than two: null = this agent has no
       // live session at all (the two room-bound agents, the Scribe), false =
       // it has one and the owner switched it off, true = it has one and may

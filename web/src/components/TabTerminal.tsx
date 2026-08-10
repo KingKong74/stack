@@ -32,6 +32,13 @@ const ConsolePane = lazy(() => import('./TabTerminalPane'));
 //    session is the Auditor from turn zero instead of a blank prompt in a
 //    checkout. Nothing is typed and nothing runs — see console-prime.js for why
 //    a system prompt rather than a pasted brief.
+//  • IT OPENS WITH SOMETHING TO ASK. Primed is not the same as useful: the
+//    agent knew the tab and the owner still faced an empty prompt, composing
+//    the question the tab could have handed them. The openers (`agents.js`)
+//    are that question, defined once and used twice — the session prints them
+//    as its numbered first turn, and the strip draws the same list as buttons
+//    that TYPE an ask at the prompt. Never with an Enter; the send is the
+//    owner's, as it is everywhere else in Stack.
 //  • IT CAN BE ENDED FROM HERE. Closing the strip only DETACHES (that is the
 //    point of tmux), which left ⏻ on the Terminal screen as the only way to
 //    stop a session this strip had started. The two-step below is the same one
@@ -78,6 +85,17 @@ export function TabTerminal({ agentKey, agentName, slug, off }: {
   // primed look identical until the agent answers something it should have
   // known (#380).
   const [primeWarn, setPrimeWarn] = useState('');
+  // WHAT THIS TAB IS WORTH ASKING FOR — the openers the session was primed with
+  // (server-side, `agents.js`), drawn as the same numbered list the agent's own
+  // first turn prints. A primed console still opened on a blank prompt as far
+  // as the owner was concerned: the agent knew the tab, and the owner was left
+  // composing the question the tab could have handed them. A press TYPES the
+  // ask; the Enter is theirs.
+  const [openers, setOpeners] = useState<{ label: string; ask: string }[]>([]);
+  // The one way to put text at that session's prompt, handed up by the pane
+  // when the socket is live. Held in a ref rather than state because it is a
+  // channel, not something rendered.
+  const typeAt = useRef<((s: string) => void) | null>(null);
   // The two-step ⏻. A stray click in a strip of small glyph buttons must not
   // kill a Claude session mid-thought, and a modal for it would be heavier than
   // the act deserves — so the button asks, in place, and forgets in a few
@@ -130,7 +148,16 @@ export function TabTerminal({ agentKey, agentName, slug, off }: {
   // run is the server's, and the server wins.
   const open = prefs.open && !off;
 
-  useEffect(() => { if (!open) { setStatus('shut'); setReattached(null); setPrimeWarn(''); } }, [open]);
+  useEffect(() => {
+    if (open) return;
+    setStatus('shut');
+    setReattached(null);
+    setPrimeWarn('');
+    // The openers belong to a live socket. Keeping them drawn over a closed
+    // console would leave buttons that type into nothing.
+    setOpeners([]);
+    typeAt.current = null;
+  }, [open]);
   useEffect(() => {
     if (!flash) return;
     // Long enough to read a sentence, since one of these is now "it did not
@@ -174,7 +201,8 @@ export function TabTerminal({ agentKey, agentName, slug, off }: {
         <div className="tabterm-acts">
           {open && (
             <>
-              <button className="tabterm-act" onClick={() => setNonce((n) => n + 1)}
+              <button className="tabterm-act"
+                onClick={() => { setOpeners([]); typeAt.current = null; setNonce((n) => n + 1); }}
                 title="Re-attach — or start a new session if this one ended">⟳</button>
               {/* Words, not glyphs. The header is set in the mono face, where
                   half the obvious icons for "make this taller" are either tofu
@@ -206,12 +234,34 @@ export function TabTerminal({ agentKey, agentName, slug, off }: {
         </div>
       </div>
 
+      {/* The menu, above the terminal rather than inside it: the session's own
+          first turn prints the same list, and that scrolls away with the
+          conversation. The numbers are shared with it on purpose, so "2" typed
+          at the prompt and the second button here are one thing. */}
+      {open && openers.length > 0 && (
+        <div className="tabterm-openers">
+          <span className="tabterm-openers-lead">Ask it to</span>
+          {openers.map((o, i) => (
+            <button key={o.label} className="tabterm-open"
+              onClick={() => {
+                if (!typeAt.current) { setFlash('the session is not live yet'); return; }
+                typeAt.current(o.ask);
+                setFlash('typed — press Enter to send it');
+              }}
+              title={`${o.ask}\n\nTypes it at the prompt — you press Enter. (Or just type ${i + 1}.)`}>
+              <span className="tabterm-open-n">{i + 1}</span>{o.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {open && (
         <Suspense fallback={<div className="tabterm-holder gitbash" />}>
           <ConsolePane key={nonce} agentKey={agentKey} name={name} slug={slug}
             onStatus={(s, n) => { setStatus(s); setNote(n); }}
             onReattached={setReattached}
             onPrimed={setPrimeWarn}
+            onOpeners={(list, type) => { setOpeners(list); typeAt.current = type; }}
             onCopied={() => setFlash('copied')} />
         </Suspense>
       )}
@@ -220,8 +270,9 @@ export function TabTerminal({ agentKey, agentName, slug, off }: {
         <div className="tabterm-shut">
           A Claude session in <span className="mono">~/{slug}</span>, in tmux on the host — it keeps
           running when you close this. It opens <strong>as {agentName}</strong>, briefed with this
-          tab&rsquo;s remit and what it shows right now; the ✧ buttons ask it one question, this is the
-          conversation.
+          tab&rsquo;s remit and what it shows right now, and its first turn is a short list of what
+          this tab is worth asking it — one press types any of them at the prompt. The ✧ buttons ask
+          it one question; this is the conversation.
         </div>
       )}
     </div>

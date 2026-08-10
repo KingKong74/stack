@@ -220,6 +220,7 @@ consoles.get('/:key', async (req, res) => {
   }
 
   const project = req.project;
+  const openers = agent.console.openers || [];
   let sections = [];
   let partial = '';
   try {
@@ -240,7 +241,14 @@ consoles.get('/:key', async (req, res) => {
     // the owner chose for that agent's ✧ work rather than the CLI default.
     // '' = whatever the CLI would do, which is what "CLI default" means.
     model: config.model || '',
-    prime: consolePrime({ agent, guidance: config.guidance, project, sections }),
+    prime: consolePrime({ agent, guidance: config.guidance, project, sections, openers }),
+    // The SAME list, in the same order, for the buttons beside the console. It
+    // is sent rather than re-typed client-side for the reason the prime is
+    // composed here at all: an opener is registry state, and a second copy in
+    // the client would be a menu that drifts from the one the agent was given —
+    // so pressing button 2 would ask for something other than the "2" the
+    // session just offered.
+    openers,
     partial,
   });
 });

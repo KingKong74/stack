@@ -5529,6 +5529,23 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
    line high by design, and the whole sentence is on the title. */
 .tabterm-warn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 10.5px; color: var(--critical); }
+/* THE OPENERS — what this tab is worth asking for, between the head and the
+   terminal. They are drawn as quiet outlined chips, not as accented buttons:
+   the accent in this strip belongs to the controls that DO something, and these
+   only type. They wrap rather than scroll, since four short labels on a phone
+   are two rows and a hidden fourth ask is a menu that lies about its length. */
+.tabterm-openers { display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  padding: 0 13px 10px; }
+.tabterm-openers-lead { font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--console-faint); margin-right: 2px; }
+.tabterm-open { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; line-height: 1;
+  color: var(--console-dim); background: transparent; border: 1px solid var(--console-line);
+  border-radius: 999px; padding: 5px 10px 5px 6px; text-align: left; }
+.tabterm-open:hover { color: var(--accent); border-color: var(--accent); }
+.tabterm-open-n { flex: none; font-family: var(--mono); font-size: 9px; color: var(--console-faint);
+  border: 1px solid var(--console-line); border-radius: 50%; width: 14px; height: 14px;
+  display: inline-flex; align-items: center; justify-content: center; }
+.tabterm-open:hover .tabterm-open-n { color: var(--accent); border-color: var(--accent); }
 .tabterm-shut { padding: 0 15px 11px; font-size: 11.5px; line-height: 1.6; color: var(--console-faint); text-wrap: pretty; }
 .tabterm-shut .mono { font-family: var(--mono); color: var(--console-dim); }
 /* Same trap .term-holder documents: padding on the holder is space the fit

@@ -2548,6 +2548,16 @@ export async function patchAgent(
 // act, and which of their ops. Keyed by agent.
 export type TabAgentState = Partial<Record<TabAgentKey, {
   name: string; tab: string; enabled: boolean; ready?: boolean; ops: string[];
+  /**
+   * The ops whose BACKEND is up. An agent with ops on two backends has no
+   * single answer to "is it ready" — the Curator's two reads run on Gemini
+   * while its console needs the host daemon — so anything asking about one op
+   * reads this and not `ready`. Absent from an older server, which is what
+   * makes `ready` still the fallback rather than dead code.
+   */
+  opsReady?: string[];
+  /** Which of them are Gemini-backed, so a refusal names the right backend. */
+  opsGemini?: string[];
   // #379 — three states, not two: null/absent = this agent has no live session,
   // false = it has one and the owner switched it off, true = it may open.
   console?: boolean | null;
@@ -2561,11 +2571,18 @@ export type TabAgentState = Partial<Record<TabAgentKey, {
 export function agentCan(state: TabAgentState | undefined, key: TabAgentKey, op: string): boolean {
   const a = state?.[key];
   if (!a) return true;
-  // #364 — `ready` is the BACKEND (the host daemon that runs Claude), `enabled`
-  // is the owner's switch. Both are required to offer a ✧, and they are kept
-  // apart so the reason below can say which one is missing. `ready` is optional
-  // so a server that pre-dates the Claude backend still reads as usable.
-  return a.enabled && a.ready !== false && a.ops.includes(op);
+  // #364 — `ready` is the BACKEND, `enabled` is the owner's switch. Both are
+  // required to offer a ✧, and they are kept apart so the reason below can say
+  // which one is missing.
+  //
+  // PER-OP FIRST. `ready` is one boolean for the host daemon, and an agent
+  // whose ops sit on two backends cannot be described by one boolean: with the
+  // daemon down, the Curator's Gemini reads are fine and only its console is
+  // not. `opsReady` is the answer for the op actually being asked about; the
+  // agent-wide `ready` is the fallback for a server that predates it.
+  return a.enabled
+    && (a.opsReady ? a.opsReady.includes(op) : a.ready !== false)
+    && a.ops.includes(op);
 }
 
 // What to say instead. Reads the same state, so the reason is never invented:
@@ -2577,7 +2594,15 @@ export function agentOffReason(state: TabAgentState | undefined, key: TabAgentKe
   // backend, so somebody who turned an agent off is not sent to investigate a
   // host that is fine.
   if (!a.enabled) return `The ${a.name} is switched off.`;
-  if (a.ready === false) {
+  // The op is registered but its BACKEND is down — and which backend it is
+  // decides where the owner goes to fix it, so it has to be named. Same order
+  // and same two sentences as the server's gateDecision.
+  if (a.opsReady && a.ops.includes(op) && !a.opsReady.includes(op)) {
+    return a.opsGemini?.includes(op)
+      ? `This pass runs on Gemini, and Gemini is not configured on this server (GEMINI_API_KEY is unset).`
+      : `The ${a.name} runs Claude on the host, and the host daemon is not connected.`;
+  }
+  if (!a.opsReady && a.ready === false) {
     return `The ${a.name} runs Claude on the host, and the host daemon is not connected.`;
   }
   return `The ${a.name} can still work here, but this one is switched off.`;
@@ -2624,6 +2649,12 @@ export interface AgentConsolePrime {
   model: string;
   prime: string;
   partial: string;
+  // What this tab is usually opened for — the buttons beside the console, in
+  // the order the session was told them, so a press and a bare number ask for
+  // the same thing. It comes from the server because it is registry state; a
+  // client-side copy would be a menu drifting from the one the agent has.
+  // Absent on an older server, so it is read as a list that may not be there.
+  openers?: { label: string; ask: string }[];
 }
 export async function getAgentConsolePrime(slug: string, key: TabAgentKey): Promise<AgentConsolePrime> {
   return request<AgentConsolePrime>(

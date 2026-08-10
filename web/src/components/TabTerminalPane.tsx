@@ -17,7 +17,9 @@ import type { ConsoleStatus } from './TabTerminal';
 // Mounted only while the console is open, which is what makes "open" mean
 // "spawn or attach" and "close" mean "detach": the tmux session is untouched by
 // either, so the work outlives the tab, the screen and the browser.
-export default function ConsolePane({ agentKey, name, slug, onStatus, onReattached, onPrimed, onCopied }: {
+export default function ConsolePane({
+  agentKey, name, slug, onStatus, onReattached, onPrimed, onOpeners, onCopied,
+}: {
   agentKey: TabAgentKey; name: string; slug: string;
   onStatus: (s: ConsoleStatus, note: string) => void;
   onReattached: (r: boolean | null) => void;
@@ -26,6 +28,11 @@ export default function ConsolePane({ agentKey, name, slug, onStatus, onReattach
   // owner typing at an agent that cannot see the tab has no other way to find
   // out (the session looks identical).
   onPrimed: (why: string) => void;
+  // The tab's openers, plus the one way to type at this session's prompt. Both
+  // come out of the SAME briefing fetch, so the buttons the strip draws are
+  // exactly the list the session was primed with — and they arrive together,
+  // because a menu with nothing to type into is a row of dead buttons.
+  onOpeners: (list: { label: string; ask: string }[], type: (s: string) => void) => void;
   onCopied: () => void;
 }) {
   const holderRef = useRef<HTMLDivElement>(null);
@@ -64,10 +71,12 @@ export default function ConsolePane({ agentKey, name, slug, onStatus, onReattach
       // query 500'd has been given the worst of both.
       let prime = '';
       let model = '';
+      let openers: { label: string; ask: string }[] = [];
       try {
         const p = await getAgentConsolePrime(slug, agentKey);
         prime = p.prime;
         model = p.model;
+        openers = p.openers || [];
         onPrimed(p.partial ? `primed, but Stack could not read the tab: ${p.partial}` : '');
       } catch (e) {
         onPrimed(`opened unprimed — ${e instanceof Error ? e.message : 'the briefing could not be fetched'}`);
@@ -87,6 +96,18 @@ export default function ConsolePane({ agentKey, name, slug, onStatus, onReattach
         prime, model,
       });
       wsRef.current = ws;
+
+      // TYPE, never run. An opener lands at the agent's prompt bracketed (so a
+      // multi-line ask arrives as one paste rather than as three submitted
+      // lines) and WITHOUT an Enter — the same rule the Terminal screen's brief
+      // paste and the ✧ assist follow, and the reason a console is safe to put
+      // one press away: nothing Stack composes is ever submitted for the owner.
+      const typeAtPrompt = (text: string) => {
+        const live = wsRef.current;
+        if (live?.readyState !== WebSocket.OPEN || !text) return;
+        live.send(JSON.stringify({ t: 'in', data: b64encode(`\x1b[200~${text}\x1b[201~`) }));
+        term.focus();
+      };
 
       // Same write-batching as the Terminal screen: high-throughput output
       // arrives as dozens of tiny frames, and one rAF flush per batch keeps
@@ -117,6 +138,10 @@ export default function ConsolePane({ agentKey, name, slug, onStatus, onReattach
           // and null says that rather than claiming a fresh one.
           onReattached(typeof m.reattached === 'boolean' ? m.reattached : null);
           onStatus('live', '');
+          // The openers go up only once there is a session to type into — a
+          // menu drawn beside a socket that never opened would be four buttons
+          // that silently do nothing.
+          onOpeners(openers, typeAtPrompt);
           term.focus();
         } else if (m.t === 'exit') {
           onStatus('closed', `exited (${m.code})`);

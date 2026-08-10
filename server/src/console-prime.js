@@ -46,7 +46,25 @@ function renderSection({ title, lines, note }) {
   return `${title}\n${body}${note ? `\n  (${note})` : ''}`;
 }
 
-export function consolePrime({ agent, guidance, project, sections }) {
+// THE OPENERS, numbered. The list is the registry's (`agents.js` — one
+// definition, drawn as buttons on the strip and printed here), and the NUMBERS
+// are the contract between the two: the owner sees them in this order beside
+// the console, so a bare "2" typed at the prompt has to mean the same thing to
+// the agent. An agent with no openers gets no block at all rather than an empty
+// heading — there is nothing to be told, and a heading over nothing reads as a
+// list that failed to load.
+function renderOpeners(openers) {
+  const list = (openers || []).filter((o) => o && o.label && o.ask);
+  if (!list.length) return '';
+  const lines = list.map((o, i) => `  ${i + 1}. ${o.label} — ${o.ask}`).join('\n');
+  return `\n\nWHAT THIS SURFACE IS USUALLY OPENED FOR
+The owner has these as buttons beside this session, in this order, and pressing one types its ask at
+your prompt. They may also just answer with the number, and that means this list:
+
+${lines}`;
+}
+
+export function consolePrime({ agent, guidance, project, sections, openers }) {
   const steer = String(guidance || '').trim();
   const name = project?.name || project?.slug || 'this project';
   const surface = `${agent.tabLabel} ${agent.surface || 'tab'}`;
@@ -63,8 +81,14 @@ Work that belongs to another of Stack's agents is not forbidden to you — the o
 and this is their session — but say whose it is in one sentence before you do it, so they know they
 have left the surface they opened.
 
-Open with a single line: who you are, and the one thing in the snapshot below that you would look at
-first. Then stop and wait. Do not start work nobody has asked for.`;
+OPEN LIKE THIS, in this order, and then stop:
+  1. One line: who you are, and the one thing in the snapshot below you would look at first.
+  2. The numbered list under "WHAT THIS SURFACE IS USUALLY OPENED FOR" — the same numbers, in the
+     same order, one short line each (the label, and what it would get them here given the snapshot).
+     Say that a bare number picks one. If there is no such list, say in one line what this surface is
+     worth asking you for right now, drawn from the snapshot.
+Then wait. That opening is the whole of your first turn: it is a menu, not permission — do not start
+any of it, and do not start work nobody has asked for.`;
 
   const steerBlock = steer ? `\n\nSTANDING GUIDANCE FROM THE OWNER (follow it):\n${steer}` : '';
 
@@ -75,7 +99,11 @@ a line of it as the live state.
 
 ${(sections || []).map(renderSection).join('\n\n')}`;
 
-  const full = `${head}${steerBlock}${snapshot}\n`;
+  // The openers sit BEFORE the snapshot on purpose: the cut below takes the
+  // TAIL, and the list is what the first turn is made of — a briefing that lost
+  // its menu to a long board would open exactly the way this item was raised to
+  // fix. The snapshot degrades gracefully; the menu does not.
+  const full = `${head}${steerBlock}${renderOpeners(openers)}${snapshot}\n`;
   if (full.length <= PRIME_CAP) return full;
   return `${full.slice(0, PRIME_CAP)}\n\n[This briefing was cut at ${PRIME_CAP} characters — the snapshot above is incomplete, and what is missing is the TAIL of it. Read the live state rather than assuming you have seen everything.]\n`;
 }

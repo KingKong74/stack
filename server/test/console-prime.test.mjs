@@ -72,6 +72,39 @@ const huge = consolePrime({
 check('an over-long briefing is cut', huge.length <= PRIME_CAP + 200);
 check('and says so, and on which end', huge.includes('was cut at') && huge.includes('TAIL'));
 
+// ---- the openers ----------------------------------------------------------
+// The menu the session prints on its first turn and the strip draws as buttons
+// are ONE list, and the numbers are the contract between them: a bare "2" at
+// the prompt has to mean the second button. So the order is pinned, and so is
+// the instruction to print it — a primed session that opens with a greeting and
+// nothing to ask is the state this whole list exists to end.
+const OPENERS = [
+  { label: 'Walk the failing checks', ask: 'Take the failing checks one at a time.' },
+  { label: 'Reproduce the top bug', ask: 'Reproduce the highest-severity open bug.' },
+];
+const withOpeners = consolePrime({ agent: AGENT, guidance: '', project: PROJECT, sections: [], openers: OPENERS });
+check('the openers are numbered', withOpeners.includes('1. Walk the failing checks'));
+check('…in the order they were given', withOpeners.indexOf('1. Walk the failing checks') < withOpeners.indexOf('2. Reproduce the top bug'));
+check('each opener carries its whole ask', withOpeners.includes('Reproduce the highest-severity open bug.'));
+check('a bare number is told to pick one', /answer with the number/.test(withOpeners));
+check('the first turn is instructed to print the list', /OPEN LIKE THIS/.test(withOpeners));
+check('and told not to start any of it', /menu, not permission/.test(withOpeners));
+
+// The menu must survive a board long enough to blow the cap — it is what the
+// opening turn is made of, and the cut takes the tail.
+const crowded = consolePrime({
+  agent: AGENT, guidance: '', project: PROJECT, openers: OPENERS,
+  sections: [{ title: 'THE BOARD', lines: Array.from({ length: 400 }, (_, i) => `#${i} an item with a reasonably long title`) }],
+});
+check('a cut briefing keeps its openers', crowded.includes('1. Walk the failing checks'));
+
+// No openers = no block. An empty menu would read as a list that failed to
+// load, which is a different (and wrong) thing to tell an agent. The opening
+// instruction still NAMES the list — that is the head, and it carries its own
+// "if there is no such list" branch, so the two are checked apart.
+check('no openers, no menu block', !plain.includes('The owner has these as buttons'));
+check('…and the fallback opening is still asked for', /If there is no such list/.test(plain));
+
 // ---- the launcher ---------------------------------------------------------
 const script = launchScript({ promptPath: '/home/me/.stack/console/stack-term-auditor-stack.md' });
 check('the prompt is read from the file, never inlined', script.includes('--append-system-prompt "$(cat '));
