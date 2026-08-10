@@ -531,7 +531,11 @@ export function RoadmapTimeline({
                           is the same chip the lanes, the tray and the orphan fold
                           obey, and this row used to be the one thing on the chart
                           that did not. */}
-                      <div className="rt-lane horizon">
+                      {/* LANE_H explicitly, like every other lane: its name row
+                          opposite is a fixed height, and letting this one shrink
+                          to its chips is what put the two columns 21px out of
+                          step at the bottom of the chart. */}
+                      <div className="rt-lane horizon" style={{ height: LANE_H }}>
                         <div className="rt-horizon-chips">
                           {horizon.slice(0, 6).map((i) => (
                             <button key={i.id} className="rt-horizon-chip" onClick={() => onOpen(i)}
