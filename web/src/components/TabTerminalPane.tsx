@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { openTerminal, getTermSessionPrefs } from '../store';
+import { openTerminal, getTermSessionPrefs, getAgentConsolePrime, type TabAgentKey } from '../store';
 import { wireTermClipboard } from '../lib/termClipboard';
 import { b64encode, b64decode, GIT_BASH_THEME } from '../lib/termWire';
 import type { ConsoleStatus } from './TabTerminal';
@@ -17,10 +17,15 @@ import type { ConsoleStatus } from './TabTerminal';
 // Mounted only while the console is open, which is what makes "open" mean
 // "spawn or attach" and "close" mean "detach": the tmux session is untouched by
 // either, so the work outlives the tab, the screen and the browser.
-export default function ConsolePane({ name, slug, onStatus, onReattached, onCopied }: {
-  name: string; slug: string;
+export default function ConsolePane({ agentKey, name, slug, onStatus, onReattached, onPrimed, onCopied }: {
+  agentKey: TabAgentKey; name: string; slug: string;
   onStatus: (s: ConsoleStatus, note: string) => void;
   onReattached: (r: boolean | null) => void;
+  // #380 — what the session was spawned KNOWING: '' when it opened primed,
+  // otherwise the reason it did not. Reported rather than swallowed, because an
+  // owner typing at an agent that cannot see the tab has no other way to find
+  // out (the session looks identical).
+  onPrimed: (why: string) => void;
   onCopied: () => void;
 }) {
   const holderRef = useRef<HTMLDivElement>(null);
@@ -38,10 +43,36 @@ export default function ConsolePane({ name, slug, onStatus, onReattached, onCopi
     if (holderRef.current) { term.open(holderRef.current); fit.fit(); }
     const unwireClipboard = wireTermClipboard(term, onCopied);
 
-    const connect = () => {
+    // Set by the cleanup, so a briefing that lands after the console was closed
+    // never opens a socket nobody is watching.
+    let disposed = false;
+
+    const connect = async () => {
       wsRef.current?.close();
       onStatus('connecting', '');
       fit.fit();
+      // #380 — the briefing, fetched on EVERY open rather than cached: it
+      // carries a snapshot of the tab, and a cached one would be the stale
+      // state its own header warns the agent about. The daemon ignores it when
+      // it re-attaches, so this costs one read against a session that is
+      // already running and changes nothing about it.
+      //
+      // FAIL OPEN. A failed fetch opens the console unprimed and SAYS so; it
+      // never withholds the session. The prime is what makes it the agent, but
+      // a terminal in the right checkout is most of the value, and an owner
+      // staring at a strip that refused to open a terminal because a briefing
+      // query 500'd has been given the worst of both.
+      let prime = '';
+      let model = '';
+      try {
+        const p = await getAgentConsolePrime(slug, agentKey);
+        prime = p.prime;
+        model = p.model;
+        onPrimed(p.partial ? `primed, but Stack could not read the tab: ${p.partial}` : '');
+      } catch (e) {
+        onPrimed(`opened unprimed — ${e instanceof Error ? e.message : 'the briefing could not be fetched'}`);
+      }
+      if (disposed) return;
       const ws = openTerminal({
         // The project's checkout, jail-relative — the same cwd every other
         // "open a session on this project" path uses.
@@ -53,6 +84,7 @@ export default function ConsolePane({ name, slug, onStatus, onReattached, onCopi
         // Terminal). A console is not a different kind of session and must not
         // quietly run under a different permission posture to the tabs.
         skipPerms: getTermSessionPrefs().skipPermissions ? true : undefined,
+        prime, model,
       });
       wsRef.current = ws;
 
@@ -96,7 +128,7 @@ export default function ConsolePane({ name, slug, onStatus, onReattached, onCopi
       });
       ws.addEventListener('error', () => onStatus('error', 'Could not reach the terminal relay.'));
     };
-    connect();
+    void connect();
 
     const data = term.onData((d) => {
       const ws = wsRef.current;
@@ -128,6 +160,7 @@ export default function ConsolePane({ name, slug, onStatus, onReattached, onCopi
     if (holderRef.current) ro.observe(holderRef.current);
 
     return () => {
+      disposed = true;
       clearTimeout(resizeTimer);
       window.removeEventListener('resize', onResize);
       ro.disconnect();

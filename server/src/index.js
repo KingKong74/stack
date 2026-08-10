@@ -26,6 +26,7 @@ import { review } from './routes/review.js';
 import { autopilot, autopilotGlobal } from './routes/autopilot.js';
 import { branches } from './routes/branches.js';
 import { previews, previewsGlobal } from './routes/previews.js';
+import { consoles } from './routes/console.js';
 import { terminal } from './routes/terminal.js';
 import { triage } from './routes/triage.js';
 import { tips } from './routes/tips.js';
@@ -91,6 +92,10 @@ app.use('/api/projects/:slug/audit', requireToken, audit);
 app.use('/api/projects/:slug/autopilot', requireToken, autopilot);
 app.use('/api/projects/:slug/branches', requireToken, branches);
 app.use('/api/projects/:slug/previews', requireToken, previews);
+// #380 — the briefing a tab agent's live session is SPAWNED with, so the
+// console on the Quality tab opens as the Auditor rather than as a bare claude
+// in a checkout. Per-project because the snapshot is this project's state.
+app.use('/api/projects/:slug/console', requireToken, consoles);
 app.use('/api/autopilot', requireToken, autopilotGlobal);
 app.use('/api/previews', requireToken, previewsGlobal);
 app.use('/api/terminal', requireToken, terminal);

@@ -189,7 +189,9 @@ export const cleanGuidance = (v) => String(v ?? '').replace(/\s+$/g, '').slice(0
 const projectConsole = (what) => ({
   label: 'Live session',
   hint: `A Claude session in the project's checkout, on this agent's own tab — ${what}. `
-    + 'It runs in tmux on the host, so it survives the tab being closed.',
+    + 'It runs in tmux on the host, so it survives the tab being closed, and it is SPAWNED as '
+    + 'this agent: its identity, this steer and a snapshot of the tab go in as a system prompt '
+    + '(#377), so the session is the agent from its first turn rather than a blank prompt.',
 });
 
 export const AGENTS = [

@@ -70,7 +70,12 @@ The block is a snapshot. For the current state at any moment, read the API:
   Control → Agents. The four project-tab agents also carry a `console` — a live
   Claude session in the project's checkout, opened from a strip on their own
   tab and running in tmux on the host. It has its own switch (`consoleEnabled`
-  on the PATCH), is not an op, and never appears in `ops`. Worth reading only to
+  on the PATCH), is not an op, and never appears in `ops`. Its session is
+  SPAWNED as that agent: `GET /api/projects/:slug/console/:key` composes the
+  briefing (identity, remit, the owner's standing guidance and a snapshot of the
+  tab) and the host appends it to the session's system prompt, so one of these
+  may introduce itself as the Auditor or the Curator — that is a primed console,
+  not another session pretending to be one. Worth reading only to
   explain why a ✧ surface is missing, or why one of those routes answered 409
   (switched off) or 503 (the backend is down — since #364 they run `claude -p`
   on the host through the terminal daemon, so that daemon is their backend

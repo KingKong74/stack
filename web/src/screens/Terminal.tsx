@@ -26,6 +26,12 @@ import { wireTermClipboard } from '../lib/termClipboard';
 // The wire codec and the palette are shared with the tab agents' consoles
 // (#379) — see lib/termWire.ts for why those three and nothing else.
 import { b64encode, b64decode, GIT_BASH_THEME } from '../lib/termWire';
+// #380 — a tab agent's console is an ordinary session on this screen in every
+// way except its name, which is the only evidence here of what it is: this
+// screen has no project payload and no agent state to read. Titling one
+// `claude · stack` hides the one fact that distinguishes it from the four
+// beside it, so the name is parsed back.
+import { parseConsoleSession, consoleTitle } from '../lib/agentConsole';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { tierRank, TIERS, type RoadmapItem, type Tier } from '../types';
 
@@ -666,6 +672,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // so a tab that re-attached a detached session inherits the name it wore as
   // a chip instead of reading as unnamed until the next ask.
   const labelOf = (s: Sess) => (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux]) || '';
+  // #380 — is this session a tab agent's console, and whose? Null for every
+  // ordinary session, which is most of them. The tmux name is the whole of the
+  // evidence: a shell tab has none, so a shell can never read as an agent.
+  const paneConsole = (s: Sess) => (s.tmux ? parseConsoleSession(s.tmux) : null);
   const claudeLive = sessions.some((s) => s.cmd === 'claude' && (s.status === 'live' || s.status === 'connecting'));
   // Which sessions are on screen. The window STARTS at the active tab, so
   // clicking a tab always puts it top-left with its neighbours filling in
@@ -1215,12 +1225,19 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           <div className="term-tabs">
             {sessions.map((s) => {
               const label = labelOf(s);
+              // A console wears its AGENT, not its command: "Auditor · stack"
+              // is what the owner opened and what they are looking for when
+              // they come back to this screen with six tabs up.
+              const con = paneConsole(s);
               return (
                 <span key={s.id} className={`term-tab ${s.id === active ? 'on' : ''}`}>
                   <button className="term-tab-name" onClick={() => setActive(s.id)}
-                    title={label ? `${label}${s.tmux ? ` (tmux ${s.tmux})` : ''}` : s.tmux ? `tmux ${s.tmux}` : undefined}>
+                    title={[
+                      con ? `The ${con.agentName}'s console, from the ${con.slug} project's own tab` : '',
+                      label, s.tmux ? `tmux ${s.tmux}` : '',
+                    ].filter(Boolean).join(' — ') || undefined}>
                     <span className={`dot ${s.status}`} />
-                    {s.cmd === 'claude' ? 'claude' : 'shell'}{s.cwd ? ` · ${s.cwd}` : ''}
+                    {con ? consoleTitle(con) : `${s.cmd === 'claude' ? 'claude' : 'shell'}${s.cwd ? ` · ${s.cwd}` : ''}`}
                     {/* #120 — what this session is doing, in its own words via
                         Gemini. Absent until one comes back: a tab with no name
                         reads as unnamed, never as idle. */}
@@ -1436,6 +1453,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             {detachedShown.map((d) => {
               const name = labels[d.name] || d.label || '';
               const picked = killPick.includes(d.name);
+              // A tab agent's console left running is the commonest chip on
+              // this strip now — closing the tab it lives on detaches it — so
+              // it is named as what it is rather than as a fifth "claude".
+              const con = parseConsoleSession(d.name);
               return (
                 <span key={d.name} className={`td-chip${d.attached ? ' away' : ''}${picked ? ' picked' : ''}${d.keep ? ' pinned' : ''}`}>
                   {/* #292 — the keep pin. Offered on EVERY chip, attached or
@@ -1451,11 +1472,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     {d.keep ? '📌' : '📍'}
                   </button>
                   <button className="td-attach"
-                    title={d.attached
-                      ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
-                      : `Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`}
+                    title={[
+                      con ? `The ${con.agentName}'s console, opened from the ${con.slug} project's own tab.` : '',
+                      d.attached
+                        ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
+                        : `Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`,
+                    ].filter(Boolean).join(' ')}
                     onClick={() => attachDetached(d)}>
-                    ↺ claude · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}{name ? ` — ${name}` : ''}
+                    ↺ {con ? con.agentName : 'claude'} · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}{name ? ` — ${name}` : ''}
                   </button>
                   {/* Selection for a multi-kill sits on killable chips only:
                       the daemon refuses a name a client still holds, so
@@ -1513,11 +1537,20 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     + 'Paste: ⌃V. Shift-drag selects in the browser instead of tmux.'}>
                   <span className={`dot ${s.status}`} />
                   <span className="what">
+                    {/* A console that the labeller has not named yet is not
+                        "not named yet" — Stack knows exactly what it is, and
+                        the agent's own name is a better answer than a
+                        placeholder waiting on a Gemini call. */}
                     {labelOf(s) || (s.status === 'live'
-                      ? (labelBusy ? 'naming this session…' : 'not named yet')
+                      ? (paneConsole(s) ? `the ${paneConsole(s)!.agentName}'s console`
+                        : labelBusy ? 'naming this session…' : 'not named yet')
                       : s.note || s.status)}
                   </span>
-                  <span className="where">{s.cmd === 'claude' ? 'claude' : 'shell'} · {s.cwd || '~'}</span>
+                  <span className="where">
+                    {paneConsole(s)
+                      ? `${paneConsole(s)!.agentName} · ${s.cwd || '~'}`
+                      : `${s.cmd === 'claude' ? 'claude' : 'shell'} · ${s.cwd || '~'}`}
+                  </span>
                   {copied?.id === s.id && <span className="pane-copied">⧉ {copied.label}</span>}
                   {/* #292 — pin this session against the idle reaper. On the
                       PANE because that is where you are when you realise the

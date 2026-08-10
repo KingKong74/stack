@@ -1388,7 +1388,15 @@ export function takeReviewPrefill(slug: string): ReviewPrefill | null {
 // attaches its handlers to the returned socket but never touches storage. The
 // start frame goes out on open; the daemon validates the token against the API
 // before anything spawns.
-export function openTerminal(opts: { cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number; tmuxSession?: string; skipPerms?: boolean }): WebSocket {
+// #380 — `prime` is a tab agent's briefing, appended to the spawned session's
+// system prompt by the daemon (see terminal/console-launch.mjs), and `model`
+// the alias that agent is pinned to. Both are ignored on a re-attach, because
+// there is nothing to spawn: an already-running session keeps the identity it
+// was started with.
+export function openTerminal(opts: {
+  cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number;
+  tmuxSession?: string; skipPerms?: boolean; prime?: string; model?: string;
+}): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${window.location.host}/term`);
   ws.addEventListener('open', () => {
@@ -2570,6 +2578,23 @@ export function agentConsoleOffReason(state: TabAgentState | undefined, key: Tab
     return `The ${a.name}'s session runs on the host, and the host daemon is not connected.`;
   }
   return `The ${a.name} can still work here, but its live session is switched off.`;
+}
+
+// #380 — the briefing a console is SPAWNED with, composed server-side from the
+// agent's registry entry, the owner's standing guidance and a snapshot of the
+// tab. `partial` is non-empty when the snapshot could not be read: the session
+// still opens (fail open — an unprimed console is a working terminal), and the
+// strip says so rather than letting the owner believe the agent can see the tab.
+export interface AgentConsolePrime {
+  agent: TabAgentKey;
+  name: string;
+  model: string;
+  prime: string;
+  partial: string;
+}
+export async function getAgentConsolePrime(slug: string, key: TabAgentKey): Promise<AgentConsolePrime> {
+  return request<AgentConsolePrime>(
+    `/projects/${encodeURIComponent(slug)}/console/${encodeURIComponent(key)}`);
 }
 
 // How each tab agent's console is left on this DEVICE: open or shut, and how

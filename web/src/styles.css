@@ -5562,6 +5562,17 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .tabterm-act { font-family: var(--mono); font-size: 10.5px; line-height: 1; color: var(--console-dim);
   border: 1px solid var(--console-line); border-radius: 6px; padding: 4px 7px; }
 .tabterm-act:hover { color: var(--accent); border-color: var(--accent); }
+.tabterm-act:disabled { opacity: .45; }
+/* The armed ⏻. It is the only control in this strip that destroys something,
+   so it is the only one that wears the critical tone — and it wears it only
+   while it is armed, because a permanently red button in a row of grey glyphs
+   reads as a warning about the strip rather than about the press. */
+.tabterm-act.warn { color: var(--critical); border-color: var(--critical); }
+.tabterm-act.warn:hover { color: #fff; background: var(--critical); border-color: var(--critical); }
+/* What the agent could not see. Truncated rather than wrapped: the strip is one
+   line high by design, and the whole sentence is on the title. */
+.tabterm-warn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 10.5px; color: var(--critical); }
 .tabterm-shut { padding: 0 15px 11px; font-size: 11.5px; line-height: 1.6; color: var(--console-faint); text-wrap: pretty; }
 .tabterm-shut .mono { font-family: var(--mono); color: var(--console-dim); }
 /* Same trap .term-holder documents: padding on the holder is space the fit

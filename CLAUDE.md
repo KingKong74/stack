@@ -159,8 +159,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `itemId` (#365) uses the same `parseBranch`, so the server never grows a third copy.
 - **`built_note`** — what actually landed, PATCHed by the completing session; the Review room verdicts
   against it. Always write one.
-- **The Review queue is BUILT-or-ticked, not ticked** (#374). Nothing in Stack ticks an item, so a queue
-  of `done = true` showed an empty room over a full night's work. `routes/review.js` queues `done` **OR**
+- **The Review queue is BUILT-or-ticked, not ticked** (#374). Nothing in Stack ticks an item, so a
+  `done = true` queue showed an empty room over a full night. `routes/review.js` queues `done` **OR**
   (`built_note` non-empty **AND** `claimed_by` non-empty), each row carrying `stage`. **Both halves are
   load-bearing**: un-ticking clears `claimed_by` and keeps `built_note`, so `built_note` alone re-queues
   rejected changes and `claimed_by` alone queues items at claim time. So `settled` tests the verdict and
@@ -194,11 +194,9 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   them out. `magnitude` is nullable on purpose — an unsized idea says "not sized yet".
 - **A Workbench card is a PLACEMENT, not content** — `workbench_cards` holds where something sits and a
   `note`/`polaris` card's words are read THROUGH from `notes`/`futures`; copying the text onto the card
-  is what leaves ⌘K searching a stale one. The canvas's other invariants (what a removal deletes, the
-  `onCanvas` flag that stops a double pull, the debrief pull travelling as a fingerprint, and why the
-  op hints are narrower than the design handoff's copy) are in `routes/workbench.js`'s header — read it
-  before touching the canvas. Every ✧ op only PROPOSES a card; `Promote N phases → Roadmap` is the
-  dispose half and goes through the ordinary roadmap POST.
+  is what leaves ⌘K searching a stale one. The canvas's other invariants are in
+  `routes/workbench.js`'s header — read it before touching the canvas. Every ✧ op only PROPOSES a card; `Promote N phases → Roadmap` is the dispose
+  half, an ordinary roadmap POST.
 - **The Roles room reads two populations and must never mix their judgement.** `autopilot_runs` answers
   to the executor/advisor policy; `sessions.model_usage` (the human's interactive work) does not, so a
   model picked by hand is **not drift**. They merge only in the `everyModel` receipt and `manual`, and
@@ -238,17 +236,17 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   why): the host alone runs git, identity is the PATH, release is a stamp. Two things that reach past
   that file: `session_name` keeps the `stack-term-` prefix, which is what puts a session on the
   running-sessions strip and what the host reapers key off; and trees live at
-  `~/.stack/worktrees/<key>`, inside the $HOME cwd jail the terminal daemon enforces — move the root
-  outside $HOME and browser access breaks silently.
-- **`0 = unlimited`** for `autopilotTokens`/`autopilotMaxItems` (#260); `termIdleHours` `0 = never`.
+  `~/.stack/worktrees/<key>`, inside the $HOME cwd jail the daemon enforces — move the root outside
+  $HOME and browser access breaks silently.
+- **`0 = unlimited`** for `autopilotTokens`/`autopilotMaxItems` (#260); `termIdleHours` 0 = never.
 - **A managed CLAUDE.md is written by the HOST from Stack's copy**, so editing one in a repo by hand is
   a change the next sync overwrites — go through `PATCH /api/instructions/:id`. `body` IS the file:
   rules, scopes, off switches, precedence and the merge preview are derived in `lib/instructions.ts`,
   never stored, since a rules table is wrong the moment somebody edits the file on disk. The
   `<!-- stack-managed -->` marker and the ONE-TIME Adopt licence are in `routes/instructions.js`.
 - **A worktree report's NULL is not `[]`** (#365) — same rule as a NULL `review_verdict`: defaulting it
-  to `[]` reports every feature as tree-less, i.e. uncommitted work as absent. The client type is
-  `Worktree[] | null` and `getControl` must never default it.
+  to `[]` reports uncommitted work as absent. The client type is `Worktree[] | null` and `getControl`
+  must never default it.
 - **A feature's STAGE (#365) and a branch's four-valued merge state (#363) are derived, never stored**,
   in `web/src/lib/feature.ts` and `web/src/lib/branch.ts` — both headers carry the guesses that cost
   the first cut its correctness. The one to hold in mind everywhere: **`unprobed` is not `clean`**, the
@@ -267,21 +265,27 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
 - **THE TAB AGENTS RUN CLAUDE ON THE HOST (#364), not Gemini** — `agentClient().ask()` goes through the
   terminal daemon's uplink to `claude -p --output-format json`, the owner's own subscription, so the
   no-paid-external-AI rule holds. Three consequences: **the readiness signal is the DAEMON, not a key**
-  (a switched-off agent is reported before an offline host); **every tool is disabled and they run
-  in a scratch directory**, because an agent prompt is assembled from tracker rows and a tracker row is
-  text somebody else wrote — NOT the autopilot's `--dangerously-skip-permissions` posture, safe only
-  because it runs its own code in a throwaway worktree; and **`ask()` returns PARSED JSON**
+  (a switched-off agent is reported before an offline host); **every tool is disabled and they run in a
+  scratch directory**, because an agent prompt is assembled from tracker rows — text somebody else
+  wrote — and NOT the autopilot's `--dangerously-skip-permissions` posture, safe only because it runs
+  its own code in a throwaway worktree; and **`ask()` returns PARSED JSON**
   (`parseAgentJson`, fence-tolerant), which every ✧ call site depends on. **Gemini is not gone**:
   the per-push review note, check assertions, session labelling, triage and the Workbench ops are
   still Gemini and still key-gated.
+- **A TAB AGENT'S CONSOLE IS SPAWNED AS THE AGENT (#379, #380)** — `routes/console.js` composes the
+  briefing, the daemon appends it with `--append-system-prompt` (`terminal/console-launch.mjs`), and
+  both headers carry the rest. **A system prompt, never a pasted brief**: nothing is typed in, and the
+  identity outlives a conversation a paste falls out of. The snapshot SAYS it is one. **Fail OPEN** —
+  an unreachable briefing opens the console unprimed and says so. `lib/agentConsole.ts` names it; the
+  Terminal screen parses that name to title one.
 - **AN AGENT'S BINDING IS CODE, NOT DATA (#361, #375).** `src/agents.js` is the registry and its header
   lists the five and their surfaces. The rules that bite: each agent's `ops` list is CLOSED, and
   `agent_configs` holds only what the owner tunes (enabled, model, guidance, `ops_off`) — never which
   surface or which ops, because those are the restriction itself. A route binds once
   (`agentClient('auditor')`) and that client THROWS on another agent's op; that throw, not a comment,
   stops the Quality route running the board cleanup, and an unregistered op cannot run at all. An op
-  MOVES with its surface (#375 moved `reviewbrief`/`refinedraft` off the Curator), because **one
-  surface, one switch**. **A missing config row means ON**, as with `readSettings()`; off means off
+  MOVES with its surface (#375 moved `reviewbrief`/`refinedraft` off the Curator): **one surface, one
+  switch**. **A missing config row means ON**, as with `readSettings()`; off means off
   everywhere. An op's `backend` may be `'gemini'`, so a surface with two backends still has ONE switch;
   only readiness and the refusal differ, and the refusal must NAME the missing backend.
 - **THE FOREMAN ANNOTATES A VERDICT; IT NEVER GIVES ONE (#375).** `readchange` returns a CALL (approve /
@@ -290,11 +294,11 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   **`read[]`** (what the server assembled), the blind list rendered hardest under an `approve`.
   `where[]` is the one agent field that becomes **a link the owner clicks**, so `cleanPath()` drops
   anything that is not a same-origin path. `triagequeue` returns an ORDER and no judgements; a change
-  it fails to place is appended as unplaced, never dropped.
+  it fails to place is appended, never dropped.
 - **A MIRROR SITE ON THE CHANGE UNDER REVIEW IS THE POINT OF THE ROOM (#375).** Previews (#208) are
   reachable from the room's built changes and `where[]` links into them. They arrive as PROPS from
-  `Control.tsx`, which already polls them for the Now and Merge rooms — a second poller would show two
-  answers for one row. Built changes only: a ticked one is on main, where you look at the app.
+  `Control.tsx`, which already polls them — a second poller would show two answers for one row. Built
+  changes only: a ticked one is on main.
 - **The Review rail's clusters are derived and its batch overlay has one home** — see
   `ControlReview.tsx`'s header. The rule that generalises: a cluster's evidence summary counts unrun
   checks and absent verdicts APART from green and clean, or a select-all becomes a blind mass-approve.
@@ -336,10 +340,9 @@ may be sitting in it), and `orphanWorktrees` only reports.
 running session, and every rule on it exists because of one hazard: **the row the human clicked was
 drawn from a pane read up to twenty seconds ago**, in which time the session can have been answered at
 the keyboard and be sitting on a text input where the menu was — so "1" becomes a stray digit in
-someone's message. The rules (the HOST decides and the server only relays; the fingerprint covers the
-BODY, not just the question; Approve sends the plain Yes, never "and don't ask again"; the refusal is
-shown verbatim, because "already answered" is a NORMAL outcome) are in `routes/terminal.js`, at the
-route.
+someone's message. The rules that follow from it (who decides, what the fingerprint covers, why
+Approve never sends "and don't ask again", why the refusal is shown verbatim) are in
+`routes/terminal.js`, at the route.
 
 `terminal/prompt-scan.mjs` is pure and leans hard towards null: a false block puts an Approve button in
 front of a question nobody asked, far worse than a real block noticed a minute late.
@@ -369,11 +372,10 @@ one checkout share a dirty tree, so git cannot say who wrote what and a transcri
 
 ## The /checkpoint command + poster
 
-Rich resume content is **Claude-authored, free, no external API**. `.claude/commands/checkpoint.md` has
-the session read settings via `stack-checkpoint.mjs --settings` (honour `checkpointDetail` +
-`includeChores`), derive the slug from the git remote, compose the schema and pipe it to
-`~/.stack/stack-checkpoint.mjs`, which sets `authored:true`, fills commit/branch from git, reads the
-token from `~/.stack/env` (never printed) and POSTs to `/api/ingest`. The SessionEnd hook is the silent
+Rich resume content is **Claude-authored, free, no external API** — the session composes it
+(`.claude/commands/checkpoint.md` has the steps and the settings it must honour) and pipes it to
+`~/.stack/stack-checkpoint.mjs`, which sets `authored:true`, fills commit/branch from git and POSTs to
+`/api/ingest` with the token from `~/.stack/env` (never printed). The SessionEnd hook is the silent
 metadata backstop so the feed never has gaps. **Don't replace /checkpoint with an API summariser.**
 
 ## Settings that change behaviour
@@ -450,8 +452,8 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
   `SELECT j.*` ships the kilobyte `advice` text on every Mission Control poll AND leaves `adviceReady`
   false forever, silently disabling the feature.
 - `stack-autopilot.mjs` still inlines its own `git worktree add/remove` rather than calling
-  `scripts/lib/worktree.mjs` (#229) — deliberately NOT refactored yet. The nightly is how this repo
-  builds itself, so pointing it at the module is a real behaviour change, not a no-op tidy-up.
+  `scripts/lib/worktree.mjs` (#229) — deliberately NOT refactored: the nightly is how this repo builds
+  itself, so pointing it at the module is a behaviour change, not a tidy-up.
 - **`grep` goes blind on `routes/control.js`** — it holds literal NUL bytes, so plain grep silently
   returns nothing. Use `LC_ALL=C grep -an`.
 - `scripts/feature.test.mjs` (#365) runs `web/src` TypeScript directly under Node's type-stripping

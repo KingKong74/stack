@@ -55,6 +55,7 @@ import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, kil
 import { detectPrompt } from './prompt-scan.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
 import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
+import { primedLaunch, launchCommand } from './console-launch.mjs';
 import { createEditWatch } from './edit-watch.mjs';
 import {
   availableProviders, providerEnv, getProvider,
@@ -693,6 +694,13 @@ function startSession(msg) {
     // only, mapped to the one allow-listed flag here. There is no path for
     // arbitrary arguments to reach the spawn.
     const claudeCmd = msg.skipPerms === true ? 'exec claude --dangerously-skip-permissions' : 'exec claude';
+    // #380 — a tab agent's console is spawned AS that agent: the server's
+    // briefing goes in as an appended system prompt via a launcher script (see
+    // console-launch.mjs for why the text never travels through a command
+    // line). Everything about this is fail-safe: no prime, an unwritable
+    // directory or a session that already exists all fall through to the plain
+    // `exec claude` above, because an unprimed console is a working terminal.
+    const prime = typeof msg.prime === 'string' ? msg.prime : '';
     if (tmuxAvailable()) {
       // Use a validated name from the browser if provided, otherwise generate one.
       tmuxSession = validName(msg.tmuxSession) ? msg.tmuxSession : generateName('term');
@@ -704,12 +712,35 @@ function startSession(msg) {
       // was already running" is a different thing to be told than "this one
       // just started". Asking after the spawn would always answer yes.
       reattached = sessionExists(tmuxSession);
-      argv = sessionArgv(tmuxSession, cwd, `/bin/bash -lc "${claudeCmd}"`);
+      // Only for a session being CREATED. `new-session -A` ignores the command
+      // when it attaches, so priming a re-attach would write a briefing nothing
+      // ever reads — and, worse, would read as having re-primed a session whose
+      // agent is still running on the identity it was spawned with.
+      let shellCmd = `/bin/bash -lc "${claudeCmd}"`;
+      if (!reattached && prime) {
+        const primed = primedLaunch({
+          key: tmuxSession, prime, skipPerms: msg.skipPerms === true, model: msg.model,
+        });
+        if (primed) {
+          shellCmd = launchCommand(primed);
+          log(`session ${sid}: primed ${tmuxSession} (${prime.length} chars${msg.model ? `, model ${msg.model}` : ''})`);
+        } else {
+          log(`session ${sid}: could not write the prime for ${tmuxSession} — opening unprimed`);
+        }
+      }
+      argv = sessionArgv(tmuxSession, cwd, shellCmd);
       log(`session ${sid}: tmux session ${tmuxSession} (${reattached ? 're-attach' : 'new'})`);
     } else {
       // Degrade gracefully when tmux is absent — direct spawn, no persistence.
-      argv = ['/bin/bash', '-lc', claudeCmd];
-      log(`session ${sid}: tmux not available, running claude directly`);
+      // A prime still applies: persistence and identity are separate questions,
+      // and the launcher is keyed by the relay's session id here because there
+      // is no tmux name to key it by.
+      const primed = primedLaunch({
+        key: `sid-${String(sid).replace(/[^A-Za-z0-9_-]/g, '')}`,
+        prime, skipPerms: msg.skipPerms === true, model: msg.model,
+      });
+      argv = primed ? ['/bin/bash', '-l', primed] : ['/bin/bash', '-lc', claudeCmd];
+      log(`session ${sid}: tmux not available, running claude directly${primed ? ' (primed)' : ''}`);
     }
   } else {
     argv = [process.env.SHELL || '/bin/bash', '-l'];
