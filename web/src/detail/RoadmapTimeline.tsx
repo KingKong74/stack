@@ -537,10 +537,10 @@ export function RoadmapTimeline({
                             <button key={i.id} className="rt-horizon-chip" onClick={() => onOpen(i)}
                               title="Give it a size and it can be scheduled">{i.title}</button>
                           ))}
-                          {/* NOT `rt-lane-empty`: that one is `height: 100%`,
-                              which inside this wrapping flex row takes a whole
-                              lane's height to itself and pushes the chips out of
-                              a body that clips. */}
+                          {/* NOT `rt-lane-empty`: that one is absolutely
+                              positioned and centred over its whole lane, so in
+                              this flex row it would sit on top of the chips
+                              rather than after them. */}
                           {horizon.length > 6 && (
                             <span className="rt-horizon-more">…and {horizon.length - 6} more</span>
                           )}
@@ -1015,7 +1015,12 @@ function Drawer({
           );
         })}
         {children.length === 0 && (
-          <div className="rt-lane-empty">
+          // NOT `rt-lane-empty`: that one is absolutely positioned and centred
+          // inside a lane, so in this flex column it escaped to the nearest
+          // positioned ancestor — the chart — and painted this sentence across
+          // the bars. Third collision of its kind in this view; check what a
+          // class already does before borrowing it.
+          <div className="rt-scope-empty">
             No scope lines yet. Items whose parent is this one appear here.
           </div>
         )}
