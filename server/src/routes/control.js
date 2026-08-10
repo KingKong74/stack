@@ -7,7 +7,7 @@ import { termAgentConnected, termSessions, termDetached, termEdits, termPlanUsag
 import { geminiEnabled } from '../gemini.js';
 import { scheduleShapeRows, jobShapeRows, JOB_SELECT } from './autopilot.js';
 import { occupiedAreas, areaHeld } from '../lanes.js';
-import { isApproved } from '../approval.js';
+import { isApproved, PENDING_SQL } from '../approval.js';
 
 // GET /api/control — Mission Control: every project's automation state in one
 // payload, computed in aggregate queries (never one request per project).
@@ -33,7 +33,7 @@ import { isApproved } from '../approval.js';
 //                   ahead?, behind?, mergeClean?,   // git state via the host's
 //                   subject?, when? } ],            // branch report (#207)
 //     absorbedBranches, branchesWhen,       // prune count + report freshness
-//     reviewCount,                          // hook items awaiting approval (the
+//     reviewCount,                          // hook + fly items awaiting approval (the
 //                                           // Plan room inbox — NOT the post-build
 //                                           // verdict queue, a different population)
 //     worktrees: [ { path, name, branch, head, subject, committedAt, when,
@@ -276,7 +276,11 @@ export function computeAttention({ detached = [], jobs = [], projects = [], now 
       slug: p.slug,
       name: p.name,
       count: p.reviewCount,
-      text: `${p.reviewCount} auto-found item${p.reviewCount === 1 ? '' : 's'} awaiting approval — held out of the runner`,
+      // 'unsigned' rather than 'auto-found' since #381: this counts hook
+      // extractions AND fly cards a live session opened, and calling a card
+      // somebody's own session just wrote 'auto-found' sends its reader
+      // hunting through commits for a push that never happened.
+      text: `${p.reviewCount} unsigned item${p.reviewCount === 1 ? '' : 's'} awaiting approval — held out of the runner`,
       detail: '',
       at: now,
       when: '',
@@ -1100,7 +1104,7 @@ control.get('/', async (_req, res) => {
     q(`SELECT project_id, count(*)::int AS n FROM (
          SELECT project_id FROM bugs WHERE source = 'hook' AND reviewed_at IS NULL
          UNION ALL
-         SELECT project_id FROM roadmap_items WHERE source = 'hook' AND reviewed_at IS NULL AND NOT done
+         SELECT project_id FROM roadmap_items r WHERE ${PENDING_SQL('r')} AND NOT done
          UNION ALL
          SELECT project_id FROM futures WHERE source = 'hook' AND reviewed_at IS NULL
        ) r GROUP BY project_id`),

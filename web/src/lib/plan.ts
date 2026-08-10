@@ -331,7 +331,11 @@ export function listKeyOf(it: RoadmapItem): string {
   if (it.listKey) return it.listKey;
   if (it.done) return 'shipped';
   if (it.claimedBy.trim()) return 'progress';
-  if (it.source === 'hook' && !it.reviewed) return 'idea';
+  // #381 — a released fly card sits with the hook extractions: a session's note
+  // about what it was doing is not a commitment by the board until someone
+  // signs it off. While the session still holds it, `progress` above wins,
+  // which is where a fly card spends its whole working life.
+  if ((it.source === 'hook' || it.source === 'fly') && !it.reviewed) return 'idea';
   return 'planned';
 }
 

@@ -116,7 +116,10 @@ const BUILDERS = {
     );
     const total = Number(items[0]?.total ?? 0);
     const claimed = items.filter((it) => it.claimed_by);
-    const inbox = items.filter((it) => it.source === 'hook' && !it.reviewed_at);
+    // #381 — 'fly' is held on the same footing as 'hook' (approval.js), so it
+    // belongs in the same briefing line. An agent told the inbox is empty while
+    // a card sits waiting reports the board as clear when it is not.
+    const inbox = items.filter((it) => (it.source === 'hook' || it.source === 'fly') && !it.reviewed_at);
     return [
       {
         title: `THE BOARD — ${total} open item(s), in the order the run queue would take them`,

@@ -15,8 +15,13 @@
 // Plan view agrees with the Overview spine without either importing the other:
 //   shipped   — done
 //   progress  — claimed by a branch or a session
-//   idea      — hook-extracted and not yet approved (#359: an unapproved
-//               auto-extraction is not planned work, it is a suggestion)
+//   idea      — nobody typed it and nobody has signed it off yet (#359: an
+//               unapproved auto-extraction is not planned work, it is a
+//               suggestion; #381 puts a released fly card here on the same
+//               footing — a session's note about what it was doing is not a
+//               commitment by the board until someone says so). A fly card
+//               still claimed by its session is caught by `progress` above,
+//               which is where it spends its whole working life.
 //   planned   — everything else
 //
 // Moving a card writes `list_key` explicitly, and from then on the row says
@@ -34,7 +39,7 @@ export const DEFAULT_LISTS = [
 export function listFor(row) {
   if (row.done) return 'shipped';
   if (String(row.claimed_by || '').trim()) return 'progress';
-  if (row.source === 'hook' && !row.reviewed_at) return 'idea';
+  if ((row.source === 'hook' || row.source === 'fly') && !row.reviewed_at) return 'idea';
   return 'planned';
 }
 

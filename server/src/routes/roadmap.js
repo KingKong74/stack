@@ -67,10 +67,43 @@ roadmap.get('/', async (req, res) => {
   res.json(groupRoadmap(rows));
 });
 
-// POST /  -> create a manual roadmap item (optionally pre-claimed to a lane)
+// A tmux session name, as the terminal daemon spells them ('stack-term-a1b2').
+// Constrained rather than free text because it is rendered as a chip, parsed
+// back into a `term:` claim and matched against the running-sessions strip; a
+// name with a space in it would break all three quietly.
+const FLY_SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+// POST /  -> create a roadmap item (optionally pre-claimed to a lane)
+//
+// #381 — TWO ORIGINS MAY POST HERE, and 'hook' is not one of them. `source`
+// defaults to 'manual' (a human at the board) and the only other value this
+// route accepts is 'fly': a live Claude session opening a card for work it has
+// just been asked to do, so that ad-hoc work is on the board like any other
+// rather than existing only in a transcript nobody re-reads.
+//
+// 'hook' is REFUSED, not silently downgraded. That source carries the
+// extractor's fingerprint dedup and the `dismissed_items` tombstone contract,
+// and a caller who could claim it could resurrect an item the owner dismissed
+// or collide with the unique index. Only ingest.js writes 'hook'.
+//
+// A fly item is HELD from the auto runner exactly like a hook item (see
+// approval.js) — the sign-off is the distance between a session taking a note
+// and a session commissioning a night's work.
 roadmap.post('/', async (req, res) => {
   const title = String(req.body?.title || '').trim().slice(0, 300);
   if (!title) return res.status(400).json({ error: 'Title is required.' });
+  const wantSource = String(req.body?.source || 'manual').trim().toLowerCase();
+  if (wantSource !== 'manual' && wantSource !== 'fly') {
+    return res.status(400).json({
+      error: `source must be 'manual' or 'fly' — '${wantSource}' cannot be set from here.`,
+    });
+  }
+  const source = wantSource;
+  // Who opened it. Only meaningful on a fly item, and a fly item without one is
+  // still a fly item: the session is provenance, not identity, and refusing the
+  // card because a session could not name itself would lose the work.
+  const rawSession = String(req.body?.session || '').trim();
+  const flySession = source === 'fly' && FLY_SESSION_RE.test(rawSession) ? rawSession : null;
   const note = String(req.body?.note || '').trim().slice(0, 1000);
   const bucket = oneOf(req.body?.bucket, BUCKETS, 'should');
   const claimedBy = String(req.body?.claimed_by || '').trim().slice(0, 100) || null;
@@ -85,6 +118,32 @@ roadmap.post('/', async (req, res) => {
   // the default executor). A plain string, same handling as any other.
   const agentProfile = String(req.body?.agentProfile || '').trim().slice(0, 60);
 
+  const fp = fingerprint(title);
+
+  // #381 — the SAME-SESSION GUARD, and only for fly items.
+  //
+  // A session is told to open a card when it starts work, and a session is not
+  // a reliable narrator of whether it has already done so: a compaction, a
+  // re-read of its own instructions or a second turn on the same task all end
+  // with it posting again. Nothing else on this route dedups (two people may
+  // legitimately write the same card by hand), so this is deliberately the
+  // narrowest possible test — same project, same fingerprint, same session,
+  // still open — and it returns 200 with the EXISTING card rather than 201.
+  //
+  // Not a unique index: two different sessions working the same thing is a real
+  // and interesting state (it is how you notice a collision), so the database
+  // must not forbid it. Only a session duplicating ITSELF is the mistake.
+  if (source === 'fly' && flySession) {
+    const { rows: dupe } = await q(
+      `SELECT * FROM roadmap_items
+        WHERE project_id = $1 AND fingerprint = $2 AND source = 'fly'
+          AND fly_session = $3 AND NOT done AND NOT archived
+        ORDER BY id LIMIT 1`,
+      [req.project.id, fp, flySession]
+    );
+    if (dupe.length) return res.status(200).json(roadmapItemShape(dupe[0]));
+  }
+
   const { rows: pos } = await q(
     'SELECT COALESCE(MAX(position), -1) + 1 AS p FROM roadmap_items WHERE project_id = $1 AND bucket = $2',
     [req.project.id, bucket]
@@ -94,9 +153,9 @@ roadmap.post('/', async (req, res) => {
     // branches that each rewrote this one statement. Both columns are real;
     // the merge left two whole INSERTs stacked, which JS read as a tagged
     // template call rather than a syntax error.
-    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, tier, agent_profile)
-     VALUES ($1,$2,$3,$4,$5,'manual',$6,$7,$8,$9::jsonb,$10,$11,$12,$13) RETURNING *`,
-    [req.project.id, bucket, title, note, pos[0].p, fingerprint(title), claimedBy, area, JSON.stringify(plan), risk, riskSource, tier, agentProfile]
+    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, tier, agent_profile, fly_session)
+     VALUES ($1,$2,$3,$4,$5,$14,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$15) RETURNING *`,
+    [req.project.id, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, tier, agentProfile, source, flySession]
   );
   res.status(201).json(roadmapItemShape(rows[0]));
 });

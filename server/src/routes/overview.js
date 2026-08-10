@@ -3,6 +3,7 @@ import { q } from '../db.js';
 import { relativeTime, STALE_DAYS, PRESENCE_TTL_MINUTES } from '../util.js';
 import { readSettings } from '../settings.js';
 import { resumeSince } from '../shape.js';
+import { PENDING_SQL } from '../approval.js';
 
 // GET /api/overview — the cross-project command deck, computed server-side in a
 // handful of aggregate queries (never one request per project).
@@ -56,7 +57,10 @@ overview.get('/', async (_req, res) => {
          FROM sessions s
          JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
         WHERE s.created_at > now() - interval '7 days'`),
-    // The review inbox: auto-extracted items no human has looked at yet.
+    // The review inbox: items no human has signed off yet. Bugs and futures can
+    // only ever be 'hook'; roadmap items are also 'fly' (#381, opened by a live
+    // session), and the test there goes through PENDING_SQL so the inbox and
+    // the runner's gate cannot disagree about what "waiting" means.
     // `batch` clusters one ingest's extractions (same push, same minute) so
     // the deck can group them as a session (#140).
     q(`SELECT 'bug' AS kind, project_id, bug_key AS ref, title, severity AS meta, created_at,
@@ -65,7 +69,7 @@ overview.get('/', async (_req, res) => {
        UNION ALL
        SELECT 'roadmap', project_id, id::text, title, bucket, created_at,
               to_char(date_trunc('minute', created_at), 'YYYY-MM-DD HH24:MI')
-         FROM roadmap_items WHERE source = 'hook' AND reviewed_at IS NULL AND NOT done
+         FROM roadmap_items r WHERE ${PENDING_SQL('r')} AND NOT done
        UNION ALL
        SELECT 'future', project_id, id::text, title, 'idea', created_at,
               to_char(date_trunc('minute', created_at), 'YYYY-MM-DD HH24:MI')

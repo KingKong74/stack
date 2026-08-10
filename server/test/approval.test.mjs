@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-  isApproved, approvalHold, APPROVED_SQL, partitionApproved,
+  isApproved, approvalHold, APPROVED_SQL, PENDING_SQL, partitionApproved,
   roadmapIdsIn, scheduleGate, startGate,
 } from '../src/approval.js';
 
@@ -52,17 +52,70 @@ check('a hook item with reviewed:true is approved (client shape)',
 check('null is not approved (fail safe)', isApproved(null), false);
 check('undefined is not approved (fail safe)', isApproved(undefined), false);
 
+// ---- #381: fly, the third origin -------------------------------------------
+//
+// A fly card is one API call away from being tonight's build, so it is held on
+// exactly the same footing as a hook extraction. What differs is only the WORDS
+// — a card the owner's own session opened, described as "auto-found", sends
+// them looking through commits for a push that never happened.
+
+check('a fly item with no reviewed_at is not approved (DB shape)',
+  isApproved({ source: 'fly', reviewed_at: null }), false);
+check('a fly item with reviewed:false is not approved (client shape)',
+  isApproved({ source: 'fly', reviewed: false }), false);
+check('a signed-off fly item IS approved',
+  isApproved({ source: 'fly', reviewed_at: '2026-08-10T00:00:00Z' }), true);
+check('approvalHold says SESSION for a fly item, not "auto-found"',
+  approvalHold({ source: 'fly', reviewed_at: null }),
+  'opened by a live session and not yet approved — it is in the review inbox');
+check('a source the rule has never heard of is NOT held — only hook and fly are',
+  isApproved({ source: 'imported', reviewed_at: null }), true);
+
 // ---- APPROVED_SQL -----------------------------------------------------------
 
 check('APPROVED_SQL produces the expected fragment',
-  APPROVED_SQL('ri'), "(ri.source <> 'hook' OR ri.reviewed_at IS NOT NULL)");
+  APPROVED_SQL('ri'), "(ri.source NOT IN ('hook', 'fly') OR ri.reviewed_at IS NOT NULL)");
 check('APPROVED_SQL defaults to alias r',
-  APPROVED_SQL(), "(r.source <> 'hook' OR r.reviewed_at IS NOT NULL)");
+  APPROVED_SQL(), "(r.source NOT IN ('hook', 'fly') OR r.reviewed_at IS NOT NULL)");
 
 {
   let threw = false;
   try { APPROVED_SQL('r; DROP TABLE'); } catch { threw = true; }
   check('APPROVED_SQL rejects an alias that is not a plain identifier', threw, true);
+}
+
+// ---- PENDING_SQL, the exact inverse -----------------------------------------
+//
+// The inbox and the runner gate must partition the board between them. An item
+// held from the runner but absent from the inbox is work with no way ever to be
+// approved, which is the failure this pair exists to make impossible.
+
+check('PENDING_SQL produces the expected fragment',
+  PENDING_SQL('ri'), "(ri.source IN ('hook', 'fly') AND ri.reviewed_at IS NULL)");
+check('PENDING_SQL defaults to alias r',
+  PENDING_SQL(), "(r.source IN ('hook', 'fly') AND r.reviewed_at IS NULL)");
+
+{
+  let threw = false;
+  try { PENDING_SQL('r; DROP TABLE'); } catch { threw = true; }
+  check('PENDING_SQL rejects an alias that is not a plain identifier', threw, true);
+}
+
+// The two fragments must be complements. Evaluated in JS rather than SQL, over
+// every combination the columns can actually hold, so this test needs no
+// database and still catches a drift between the two spellings.
+{
+  let disagree = 0;
+  for (const source of ['hook', 'fly', 'manual', 'imported']) {
+    for (const reviewed_at of [null, '2026-08-10T00:00:00Z']) {
+      const approved = source === 'manual' || source === 'imported' || reviewed_at !== null;
+      const pending = (source === 'hook' || source === 'fly') && reviewed_at === null;
+      if (approved === pending) disagree++;              // never both, never neither
+      if (isApproved({ source, reviewed_at }) !== approved) disagree++;
+    }
+  }
+  check('every row is either approved or pending, never both and never neither',
+    disagree, 0);
 }
 
 // ---- partitionApproved -------------------------------------------------------
@@ -146,7 +199,10 @@ check('start: bug keys pass and keep their place',
 // Scoped to the files that actually gate execution. The review-inbox COUNTS
 // (overview.js, triage.js, ProjectDetail.tsx) legitimately spell
 // source='hook' AND reviewed_at IS NULL — they count a different population,
-// across three tables, and are not an approval gate.
+// across three tables, and are not an approval gate. Since #381 their ROADMAP
+// half goes through PENDING_SQL (the inverse of this rule, so the inbox and the
+// gate cannot disagree); their bug and future halves still spell 'hook' by
+// hand, correctly — neither of those tables can ever hold a 'fly' row.
 
 const QUEUES = [
   ['scripts/stack-autopilot.mjs', 'lib/approval.mjs'],          // the runner's eligible()/pins/agenda

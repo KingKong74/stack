@@ -142,13 +142,32 @@ CREATE TABLE IF NOT EXISTS roadmap_items (
   note        TEXT,
   done        BOOLEAN NOT NULL DEFAULT false,
   position    INTEGER NOT NULL DEFAULT 0,              -- order within a bucket
-  source      TEXT NOT NULL DEFAULT 'manual',          -- hook | manual
+  source      TEXT NOT NULL DEFAULT 'manual',          -- hook | manual | fly (#381)
   fingerprint TEXT NOT NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_roadmap_auto_fp
   ON roadmap_items (project_id, fingerprint) WHERE source = 'hook';
+-- #381 — FLY: which live session opened this card, kept FOREVER.
+--
+-- `source = 'fly'` says a running Claude session made this card for work it had
+-- just been asked to do — the third origin, beside the extractor's 'hook' and a
+-- human's 'manual'. This column says WHICH session, and it is a separate column
+-- rather than a read of `claimed_by` because the claim is TRANSIENT: releasing
+-- an item clears it, and so does un-ticking (see the PATCH). Provenance that
+-- evaporates the first time the board is tidied cannot answer "what did last
+-- Tuesday's sessions actually start", which is the whole point of the marker.
+--
+-- The value is the tmux session name ('stack-term-a1b2'), i.e. the same string
+-- the `term:` claim is built from, so the two agree while the claim lasts.
+-- NULL on every other row, and NULL on a fly row only if a session posted one
+-- without naming itself — reported as "an unnamed session", never as "none".
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS fly_session TEXT;
+-- The board queries and the Timeline both filter on it, and a fly item is a
+-- small minority of any board, so the index is partial.
+CREATE INDEX IF NOT EXISTS idx_roadmap_fly
+  ON roadmap_items (project_id, created_at DESC) WHERE source = 'fly';
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;  -- see bugs.reviewed_at
 -- Lane claims: which parallel session (usually a branch, e.g. lane/ui) owns an
 -- open item. Injected by the SessionStart hook so lanes never double-grab.

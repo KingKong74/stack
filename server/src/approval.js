@@ -3,26 +3,48 @@
 // scripts/lib/approval.mjs and the client's is web/src/lib/approval.ts (both
 // land in later commits — it is fine that they do not exist yet).
 //
-// Rule: a hook-extracted item needs a human's sign-off (reviewed_at set, or
-// the client-shaped `reviewed: true`) before the auto runner may pick it up;
-// a manual item is approved the moment a human writes it — a manual item is
-// NEVER held, because blocking hand-written work is the failure mode this
-// feature must not have.
+// Rule: an item NOBODY TYPED needs a human's sign-off (reviewed_at set, or the
+// client-shaped `reviewed: true`) before the auto runner may pick it up. Two
+// origins qualify — 'hook' (the extractor read it off a push) and 'fly' (#381,
+// a live session opened a card for its own work) — and a MANUAL item is NEVER
+// held, because blocking hand-written work is the failure mode this feature
+// must not have.
+//
+// Why 'fly' is held (#381): a card a session can create in one API call, that
+// the runner would then treat as approved work, is a path from "an agent typed
+// a sentence" to "the fleet built it overnight" with no human anywhere in it.
+// The sign-off is the whole distance between a session taking a note and a
+// session commissioning a night's work.
 //
 // Works against either shape: a DB row ({ source, reviewed_at }) or a
 // client-shaped item ({ source, reviewed }).
+
+// The origins that need signing off. Adding one here is the ONLY place the
+// server-side rule changes — but the two twins do not import this file, so
+// change scripts/lib/approval.mjs and web/src/lib/approval.ts with it.
+const NEEDS_SIGNOFF = new Set(['hook', 'fly']);
+
+// Why each held origin is held, in the words the refusals say. Keyed by source
+// so a refusal names the RIGHT reason: telling someone their session's own card
+// was "auto-found on a push" sends them looking through commits for it.
+const HOLD_REASON = {
+  hook: 'auto-found and not yet approved — it is in the review inbox',
+  fly: 'opened by a live session and not yet approved — it is in the review inbox',
+};
 
 // roadmap_items.source defaults to 'manual' at the column level, so a missing
 // source is treated the same way here.
 export function isApproved(item) {
   if (!item) return false; // fail safe: no item, no approval
   const src = String(item.source || 'manual');
-  if (src !== 'hook') return true;
+  if (!NEEDS_SIGNOFF.has(src)) return true;
   return Boolean(item.reviewed_at) || item.reviewed === true;
 }
 
 export function approvalHold(item) {
-  return isApproved(item) ? '' : 'auto-found and not yet approved — it is in the review inbox';
+  if (isApproved(item)) return '';
+  const src = String(item?.source || 'manual');
+  return HOLD_REASON[src] || HOLD_REASON.hook;
 }
 
 // SQL fragment for use inside a WHERE clause. `alias` is interpolated
@@ -32,7 +54,22 @@ export function APPROVED_SQL(alias = 'r') {
   if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) {
     throw new Error(`APPROVED_SQL: invalid alias ${JSON.stringify(alias)}`);
   }
-  return `(${alias}.source <> 'hook' OR ${alias}.reviewed_at IS NOT NULL)`;
+  return `(${alias}.source NOT IN ('hook', 'fly') OR ${alias}.reviewed_at IS NOT NULL)`;
+}
+
+// The exact inverse, for the review INBOX — the queue of things awaiting that
+// sign-off. It exists so the inbox and the runner gate can never disagree about
+// what "waiting" means: an item held from the runner but absent from the inbox
+// is work with no way to ever be approved.
+//
+// ROADMAP ONLY. `bugs` and `futures` carry no 'fly' rows (only a roadmap item
+// can be built), so their inboxes keep their own `source = 'hook'` test rather
+// than testing for a value that column can never hold.
+export function PENDING_SQL(alias = 'r') {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) {
+    throw new Error(`PENDING_SQL: invalid alias ${JSON.stringify(alias)}`);
+  }
+  return `(${alias}.source IN ('hook', 'fly') AND ${alias}.reviewed_at IS NULL)`;
 }
 
 // Splits a list into { approved, held }, preserving order — used by the

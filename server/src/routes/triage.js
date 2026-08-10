@@ -3,6 +3,7 @@ import { q } from '../db.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { buildPrompt } from '../prompts.js';
 import { PRESENCE_TTL_MINUTES } from '../util.js';
+import { PENDING_SQL } from '../approval.js';
 
 // POST /api/triage — cross-project inbox triage assist (#76).
 //
@@ -36,7 +37,7 @@ triage.post('/', async (_req, res) => {
     SELECT 'roadmap', p.slug, p.id, r.id::text,
            r.title, r.bucket, r.created_at
       FROM roadmap_items r JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
-     WHERE r.source = 'hook' AND r.reviewed_at IS NULL AND NOT r.done
+     WHERE ${PENDING_SQL('r')} AND NOT r.done
     UNION ALL
     SELECT 'future',  p.slug, p.id, f.id::text,
            f.title, 'idea', f.created_at

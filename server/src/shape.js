@@ -63,8 +63,12 @@ export function roadmapItemShape(row) {
     note: row.note || '',
     done: row.done,
     bucket: row.bucket,
-    source: row.source,
+    source: row.source,                // 'hook' | 'manual' | 'fly' (#381)
     reviewed: !!row.reviewed_at,
+    // #381 — the live session that opened this card ('' = not a fly item, or a
+    // fly item whose session did not name itself). Kept after the claim is
+    // released, which is exactly why it is not read off claimed_by.
+    flySession: row.fly_session || '',
     claimedBy: row.claimed_by || '',   // lane owning this item ('' = free)
     area: row.area || '',              // product-area tag ('' = untagged) — filters the board
     builtNote: row.built_note || '',   // what actually landed — shown on the Reviews view
