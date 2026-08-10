@@ -13,9 +13,8 @@ header, and this file keeps only the pointer and the cross-cutting half** — `i
 ## What Stack is
 
 A self-hosted side-project command centre. The point is **frictionless resume**: open a project and
-the "pick up where you left off" card tells you where you were. A push auto-extracts bugs and
-next-steps into the trackers, and dashboard progress is computed, not hand-set. Colours, type,
-spacing, copy and interactions are meant to match the Atlas design handoff.
+the "pick up where you left off" card tells you where you were. Colours, type, spacing, copy and
+interactions are meant to match the Atlas design handoff.
 
 North star: an autonomous software house run from the director's chair — SessionStart states it in full.
 
@@ -42,11 +41,10 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
   **Mission Control's room is part of the URL** (#316) and `Control.tsx` writes it back with
   `history.replaceState`, never a push, so Back leaves Mission Control rather than walking the rooms
   you looked at. `#/control` is the one canonical spelling of the default room; an unknown room lands
-  there rather than 404ing — `#/control/build` and `/trees`, both removed, are the live cases.
+  there rather than 404ing, which is what keeps a link to a removed room working.
 - `screens/` — `ls` is the index. What it doesn't say: Mission Control is a shell (`Control.tsx`) plus
-  one file per room, and the removed BUILD room's gates live elsewhere now (the verdict is Review's
-  subject; the merge is the Now room's branch strip and, house-wide, the Merge room).
-  `detail/Tips.tsx` is NOT a tab: the recipe library is app-wide, opened from `components/TipsDock`.
+  one file per room, and `detail/Tips.tsx` is NOT a tab — the recipe library is app-wide, opened from
+  `components/TipsDock`.
 - `lib/brief.ts` — the resume brief + the `DIRECTIVES` catalogue (keys mirror `SESSION_DEFAULTS`).
 - `lib/termClipboard.ts` — copy/paste for both xterms; its header says why ⌃C, ⌃V and OSC 52 each
   behave unlike a native terminal. Don't "simplify" any of the three.
@@ -181,8 +179,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   the item's OWN branch (`scripts/lib/refine.mjs`, which says why), and `refine_note` surviving until
   the tick is what makes "is this an unclosed round" answerable at all.
 - **`agent_profiles` holds only OVERRIDES.** The built-ins (`executor`, `reviewer`) live in
-  `server/src/agents.js` and are never seeded, so a fresh database spawns identically to a customised
-  one — and DELETE on a builtin RESETS it rather than removing it, because the spawn path needs
+  `server/src/agent-profiles.js` and are never seeded, so a fresh database spawns identically to a
+  customised one — DELETE on a builtin RESETS it rather than removing it, because the spawn path needs
   `executor`. `roadmap_items.agent_profile` ('' = default) is the Polaris hook: a free string,
   validated client-side, deliberately absent from the tick/un-tick clearing lists. The invariant with
   teeth: **a spawn always gets at least one building agent** (no profiles, all disabled or an unknown
@@ -329,10 +327,9 @@ and it is not a bug that it isn't:**
 Related and just as absolute: **Stack only ever writes or removes skills IT PLANTED** — each managed
 directory carries a `.stack-managed` marker, a skill without one is REPORTED and never touched, and
 removal is driven by the server's KEEP list, never a diff against the last report. **A preview never
-writes to the real database.** And `scripts/lib/worktree.mjs` (#229) fails safe both ways: it only
-deletes a path git vouches for as a worktree of that repo, refuses a dirty tree unless forced (the
-uncommitted work may be the only copy), never force-removes an existing worktree path (a live session
-may be sitting in it), and `orphanWorktrees` only reports.
+writes to the real database.** And `scripts/lib/worktree.mjs` (#229) fails safe both ways — it deletes
+only what git vouches for, never over a dirty tree or an existing path, and `orphanWorktrees` only
+reports; its header says why each of those is not negotiable.
 
 ## Answering a permission prompt from the browser
 
@@ -471,11 +468,8 @@ every `#id` cited in the repo against the real board.
 node hook/stack-session-{end,start}.mjs --demo   # fire the backstop / print the resume block
 node hook/stack-checkpoint.mjs --settings  # print current settings (what /checkpoint reads)
 cp hook/*.mjs ~/.stack/                    # install the hooks — ~/.stack holds COPIES
-./stack                                    # tree · models · agents · term · start-session ·
-                                           # list-sessions · ui-smoke · skills · instructions ·
-                                           # seed-checks · seed-galaxy · risk-backfill · worktrees
-                                           # (--help each;
-                                           # the writing ones are DRY until --run)
+./stack                                    # the host CLI — bare prints its sub-commands, --help each;
+                                           # the writing ones are DRY until --run
 node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack --dry  # tonight's pick?
 node scripts/stack-autopilot-dispatch.mjs  # one dispatcher poll by hand (normally the cron line)
 node scripts/stack-preview.mjs --start <id>  # bring a branch up as a preview (normally spawned)
