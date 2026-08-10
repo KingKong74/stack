@@ -8,6 +8,19 @@ import { q } from './db.js';
 import { askGemini, geminiEnabled } from './gemini.js';
 import { buildPrompt } from './prompts.js';
 
+// #239's rule — a capped thing inside a prompt must SAY it is capped. A silent
+// slice here was the last of BUG-12 and the worst-placed one: the column is
+// already stored capped-out-loud at NOTE_MAX, and this cut at the same 2000
+// took capNote's own marker off the end, so a note that had been truncated
+// reached Gemini looking whole. Cutting at all is right — a prompt has a budget
+// — but it has to leave the sentence that says so.
+const clip = (v, max) => {
+  const t = String(v ?? '').trim();
+  return t.length > max
+    ? `${t.slice(0, max).trimEnd()}\n[truncated for this brief — ${t.length} characters in full]`
+    : t;
+};
+
 // Compose the brief for a completed roadmap item. Returns { brief, runId }:
 // `brief` is { summary, test, risks } or null when Gemini returned nothing
 // usable; `runId` is the id of the newest landed run for the item (or null
@@ -29,10 +42,10 @@ export async function composeReviewBrief(project, item) {
     ID: String(item.id),
     BUCKET: item.bucket,
     TITLE: item.title,
-    NOTE_LINE: item.note ? `The item's note: ${String(item.note).slice(0, 1000)}` : '',
-    BUILT_NOTE: String(item.built_note || '(none recorded)').slice(0, 2000),
+    NOTE_LINE: item.note ? `The item's note: ${clip(item.note, 1000)}` : '',
+    BUILT_NOTE: clip(item.built_note || '(none recorded)', 2400),
     RUN_BLOCK: run
-      ? `Built by an unattended session on branch ${run.branch} (${run.commits} commit${run.commits === 1 ? '' : 's'}). The session's own account:\n${String(run.summary || '').slice(0, 3000)}`
+      ? `Built by an unattended session on branch ${run.branch} (${run.commits} commit${run.commits === 1 ? '' : 's'}). The session's own account:\n${clip(run.summary, 3000)}`
       : 'No autopilot run recorded for it — likely built by hand or an interactive session.',
     CHECKS_BLOCK: checkRows.length
       ? `The project's HTTP checks (runnable from the Bugs tab): ${checkRows.map((c) => `${c.name} (${c.last_status || 'never run'})`).join(', ')}`

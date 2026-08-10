@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db.js';
 import {
   slugify, fingerprint, asList, oneOf, TINTS,
-  SEVERITIES, BUCKETS,
+  SEVERITIES, BUCKETS, capNote,
 } from '../util.js';
 import { readSettings } from '../settings.js';
 import { geminiEnabled, askGemini } from '../gemini.js';
@@ -515,6 +515,13 @@ ingest.post('/', async (req, res) => {
       // that claim: the branch doing the work is a fact about the fleet, and
       // overwriting it with the checkpointing session would quietly reassign
       // somebody else's in-flight work.
+      // Capped OUT LOUD, the same way PATCH /roadmap/:id caps it (BUG-12).
+      // This route is the second writer of the column — a claim that the PATCH
+      // was the only one is what left this path uncapped — and a note arriving
+      // here is exactly as long as one arriving there: it is the same session's
+      // account of the same work, just travelling in the checkpoint package
+      // instead of a PATCH. Capping in only one of the two writers means the
+      // marker's absence stops meaning "nothing was cut".
       const attach = async (id, note) => {
         await client.query(
           `UPDATE roadmap_items
@@ -522,7 +529,7 @@ ingest.post('/', async (req, res) => {
                   claimed_by = COALESCE(NULLIF(claimed_by, ''), $3),
                   updated_at = now()
             WHERE id = $1 AND project_id = $4`,
-          [id, note, claim, projectId]
+          [id, capNote(note) || null, claim, projectId]
         );
       };
 
@@ -614,7 +621,7 @@ ingest.post('/', async (req, res) => {
               built_note, claimed_by, area, fly_session)
            VALUES ($1,$2,$3,'',false,$4,'fly',$5,$6,$7,$8,$9)`,
           [projectId, cand.bucket, cand.title, pos.rows[0].p, fp,
-            cand.note, claim, cand.area, session.fly_session]
+            capNote(cand.note) || null, claim, cand.area, session.fly_session]
         );
         builtCreated++;
       }
