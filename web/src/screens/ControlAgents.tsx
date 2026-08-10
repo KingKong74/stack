@@ -243,7 +243,7 @@ function AgentCard({
         </div>
       </div>
 
-      {/* #376 — THE LIVE SESSION, and it is drawn apart from the ops on purpose.
+      {/* #379 — THE LIVE SESSION, and it is drawn apart from the ops on purpose.
           An op is this agent asked one question; the console is a Claude
           session running in the project's checkout on its own tab, which the
           owner types into. Folding it into the op list would put a switch for

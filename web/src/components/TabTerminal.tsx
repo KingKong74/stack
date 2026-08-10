@@ -7,7 +7,7 @@ import { go } from '../lib/route';
 // almost none of them open it, and xterm is a quarter of a megabyte.
 const ConsolePane = lazy(() => import('./TabTerminalPane'));
 
-// THE TAB AGENT'S CONSOLE (#376) — a real Claude session, on the tab the agent
+// THE TAB AGENT'S CONSOLE (#379) — a real Claude session, on the tab the agent
 // is bound to, in the same position on every one of them.
 //
 // The ✧ buttons are the agent asked a question: one prompt, one JSON answer,

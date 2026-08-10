@@ -699,7 +699,7 @@ function startSession(msg) {
       // Did this session already exist? `new-session -A` deliberately does not
       // say — it creates or attaches with one command precisely so there is no
       // race between the two — so the answer has to be taken BEFORE the spawn.
-      // The browser needs it: a tab agent's console (#376) opens the same
+      // The browser needs it: a tab agent's console (#379) opens the same
       // deterministic name every time, and "you are looking at a session that
       // was already running" is a different thing to be told than "this one
       // just started". Asking after the spawn would always answer yes.

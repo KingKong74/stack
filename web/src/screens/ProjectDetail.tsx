@@ -38,7 +38,7 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
 
-// #376 — which agent owns each tab, for the console strip under the tab bar.
+// #379 — which agent owns each tab, for the console strip under the tab bar.
 // The BINDING is the server's (agents.js); this is only the name to draw before
 // the payload has arrived, and the four tabs that have one. Overview and
 // Activity are readings of what already happened — there is nobody working
@@ -834,7 +834,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
     } catch { /* clipboard blocked — the field is selectable */ }
   };
 
-  // #376 — this tab's agent and whether its live session may open. Three
+  // #379 — this tab's agent and whether its live session may open. Three
   // outcomes, and the strip is drawn for two of them: it may open, or it may
   // not and there is a reason worth printing. An agent the server reports with
   // NO console at all yields neither, and nothing is drawn — a sentence
@@ -929,7 +929,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           })}
         </div>
 
-        {/* #376 — THE TAB AGENT'S CONSOLE, and it is here rather than inside
+        {/* #379 — THE TAB AGENT'S CONSOLE, and it is here rather than inside
             each tab on purpose: "the same position on every tab" is the whole
             proposition. A console the Roadmap drew above its board and Quality
             drew below its health band would be four consoles that happen to

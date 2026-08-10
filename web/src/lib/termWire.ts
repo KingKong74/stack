@@ -1,7 +1,7 @@
 // What every xterm in Stack shares: the wire codec and the colour scheme.
 //
 // There are two terminals now — the Terminal screen's tabs and each tab agent's
-// console (#376) — and both talk the same protocol to the same daemon. These
+// console (#379) — and both talk the same protocol to the same daemon. These
 // three things were the parts that would have been copied: a base64 pair that
 // has to agree byte for byte with the daemon's, and a palette that is the whole
 // visual identity of a Stack terminal. A second spelling of either is a bug

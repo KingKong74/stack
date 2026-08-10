@@ -37,7 +37,7 @@ import { STATUS_LABEL } from '../lib/ui';
 //     actually reads — so the line does what it looks like it does. There is no
 //     chat here because there is no ask op: the Auditor's one op is `audit` and
 //     the registry is closed (server/src/agents.js). For anything a template
-//     doesn't cover there is the tab's live session (#376), the strip under the
+//     doesn't cover there is the tab's live session (#379), the strip under the
 //     tab bar — a real Claude in this project's checkout.
 //
 //  3. **The health read leads the page** as one band of five: the verdict, its
@@ -560,7 +560,7 @@ function OneCause({ signature, count, busy, onRunAll, onFileHost }: {
 // every run, and it is worth typing — so it gets the line, with the hint saying
 // exactly where the words go.
 //
-// The conversation is a floor up: the tab's live session (#376), the strip
+// The conversation is a floor up: the tab's live session (#379), the strip
 // directly under the tab bar. This band used to carry a second button that
 // composed a deep-audit prompt to paste into a Claude session you opened
 // yourself; a real session already sitting in the checkout is that hand-off

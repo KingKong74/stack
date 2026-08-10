@@ -16,7 +16,7 @@ import { agentClient } from '../agents.js';
 //                   human keeps or dismisses, deduped by fingerprint and
 //                   honouring tombstones.
 // There was a second, GET /prompt: the same context composed as a deep
-// investigation prompt for a Claude session the human drove elsewhere. #376
+// investigation prompt for a Claude session the human drove elsewhere. #379
 // gave every project tab its own live session in the tab, which is that
 // hand-off done properly — a session already sitting in the checkout beats a
 // prompt you copy to one — so the route and its `auditprompt` op are gone.

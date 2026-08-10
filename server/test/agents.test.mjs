@@ -54,7 +54,7 @@ check('the surfaces', AGENTS.map((a) => a.tab),
 // This list is the routes' side of the contract, written out so a renamed op
 // fails here rather than the first time somebody presses the button.
 const WIRED = {
-  // #376 — one op, since the tab consoles took the deep-audit prompt's job: it
+  // #379 — one op, since the tab consoles took the deep-audit prompt's job: it
   // composed a hand-off for a Claude session the human opened elsewhere, and
   // the tab now carries a live session of its own.
   auditor: ['audit'],
@@ -64,7 +64,7 @@ const WIRED = {
   foreman: ['readchange', 'triagequeue', 'reviewbrief', 'refinedraft'],
   merger: ['mergeplan'],
   polaris: ['judge', 'cluster', 'converge'],
-  // #376 — ONE op for the canvas's seven ✧ buttons. Routes: POST
+  // #379 — ONE op for the canvas's seven ✧ buttons. Routes: POST
   // /projects/:slug/workbench/ops, which gates on it and then makes its own
   // Gemini call (it wants the answer field by field and honours the canvas's
   // model picker). Two of the button names would collide with other agents'
@@ -119,7 +119,7 @@ check('off says which agent',
 check('an op switched off refuses with 409',
   gateDecision(A, spec('auditor', 'audit'), { ...ON, opsOff: ['audit'] }, true)?.httpStatus, 409);
 // …and only that op. Read on an agent with more than one, since the Auditor is
-// down to a single op (#376) and a one-op agent cannot show the difference.
+// down to a single op (#379) and a one-op agent cannot show the difference.
 const C = agentByKey('curator');
 check('...and only that op',
   gateDecision(C, spec('curator', 'assist'), { ...ON, opsOff: ['cleanup'] }, true), null);
@@ -131,7 +131,7 @@ check('no host refuses a model-backed op with 503',
   gateDecision(A, spec('auditor', 'audit'), ON, false)?.httpStatus, 503);
 check('...and the refusal names the host, not a key',
   gateDecision(A, spec('auditor', 'audit'), ON, false)?.message.includes('host daemon'), true);
-// EVERY op needs its backend now (#376). The Auditor's deep-audit prompt was
+// EVERY op needs its backend now (#379). The Auditor's deep-audit prompt was
 // the one that didn't — it composed a hand-off for a Claude session the human
 // opened elsewhere, which is what the tab's own live session does properly —
 // and the `model: false` flag went out with it rather than staying as a branch
@@ -216,7 +216,7 @@ check('a room agent knows it is a room', agentByKey('foreman').surface, 'room');
 check('every registry field the room shows is present',
   ['key', 'name', 'tab', 'tabLabel', 'surface', 'blurb', 'remit'].every((k) => k in shaped), true);
 
-console.log('\n--- the console (#376): an agent\'s live session ---');
+console.log('\n--- the console (#379): an agent\'s live session ---');
 // A console is NOT an op. Nothing routes to it, nothing asks it for JSON, and
 // putting it in `ops` would have made `ask()` able to reach it.
 check('no agent lists a console among its ops',

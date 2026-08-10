@@ -24,7 +24,7 @@ import { PRODUCT_NAME } from '../lib/ui';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
 // The wire codec and the palette are shared with the tab agents' consoles
-// (#376) — see lib/termWire.ts for why those three and nothing else.
+// (#379) — see lib/termWire.ts for why those three and nothing else.
 import { b64encode, b64decode, GIT_BASH_THEME } from '../lib/termWire';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { tierRank, TIERS, type RoadmapItem, type Tier } from '../types';

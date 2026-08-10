@@ -131,7 +131,7 @@ export const cleanGuidance = (v) => String(v ?? '').replace(/\s+$/g, '').slice(0
 // EVERY OP HERE ASKS A MODEL. There used to be a `model: false` flag for one
 // that didn't — the Auditor's deep-audit prompt, composed server-side and
 // handed to a Claude session the human drove — and it went when the tab
-// consoles landed (#376): a session in the tab is the thing that prompt was a
+// consoles landed (#379): a session in the tab is the thing that prompt was a
 // substitute for. It is not worth carrying the flag for a hypothetical second
 // one: a model-less op is a template, and a template that needs the agent's
 // switch is the shape to re-derive if it ever comes back.

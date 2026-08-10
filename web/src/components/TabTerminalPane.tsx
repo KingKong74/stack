@@ -7,7 +7,7 @@ import { wireTermClipboard } from '../lib/termClipboard';
 import { b64encode, b64decode, GIT_BASH_THEME } from '../lib/termWire';
 import type { ConsoleStatus } from './TabTerminal';
 
-// The xterm half of a tab agent's console (#376), split into its own module for
+// The xterm half of a tab agent's console (#379), split into its own module for
 // ONE reason: xterm and its fit addon are a quarter of a megabyte, and every
 // project screen renders the console strip while almost none of them open it.
 // TabTerminal lazy-imports this, so the cost is paid by the press that asks for

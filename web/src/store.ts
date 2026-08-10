@@ -2435,7 +2435,7 @@ export async function runAudit(slug: string): Promise<AuditResult> {
 // #375 — and 'foreman', bound to the Review room. It also took `reviewbrief`
 // and `refinedraft` off the Curator: their only surface was ever that room, and
 // a room whose ✧ buttons answer to two agents' switches cannot be switched off.
-// #376 — 'drafter' joins them on the Workbench tab, whose seven ✧ canvas ops
+// #379 — 'drafter' joins them on the Workbench tab, whose seven ✧ canvas ops
 // had answered to no switch at all. 'scribe' (Instructions) was in the server's
 // registry already and missing from this union, which made it the one agent no
 // client code could name.
@@ -2462,7 +2462,7 @@ export interface TabAgent {
   model: string;      // #364 — a Claude alias ('' = the CLI's own default)
   guidance: string;   // the owner's standing steer, prefixed to every prompt
   ops: TabAgentOp[];
-  // #376 — the agent's LIVE SESSION on its own tab, and its own switch. NULL
+  // #379 — the agent's LIVE SESSION on its own tab, and its own switch. NULL
   // for an agent that has none (the two room-bound agents, the Scribe): the
   // room must draw nothing there rather than a switch for a session that does
   // not exist. Not an op, and deliberately not in `ops` — nothing asks it for
@@ -2507,7 +2507,7 @@ export async function patchAgent(
 // act, and which of their ops. Keyed by agent.
 export type TabAgentState = Partial<Record<TabAgentKey, {
   name: string; tab: string; enabled: boolean; ready?: boolean; ops: string[];
-  // #376 — three states, not two: null/absent = this agent has no live session,
+  // #379 — three states, not two: null/absent = this agent has no live session,
   // false = it has one and the owner switched it off, true = it may open.
   console?: boolean | null;
 }>>;
@@ -2542,7 +2542,7 @@ export function agentOffReason(state: TabAgentState | undefined, key: TabAgentKe
   return `The ${a.name} can still work here, but this one is switched off.`;
 }
 
-// ---- the tab agents' CONSOLES (#376) ----
+// ---- the tab agents' CONSOLES (#379) ----
 //
 // The same two-function shape as agentCan/agentOffReason, and for the same
 // reason: what may be drawn and what to say instead are read off ONE state, so

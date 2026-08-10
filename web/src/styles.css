@@ -4781,7 +4781,7 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .mc-agops .op .hint { font-size: 10.5px; line-height: 1.5; color: var(--muted); }
 .mc-agops .scope { margin: 2px 0 0; font-size: 10.5px; line-height: 1.55; color: var(--paused); }
 
-/* #376 — the live-session row. Same anatomy as an op row so the switch reads
+/* #379 — the live-session row. Same anatomy as an op row so the switch reads
    the same way, on the console ground rather than the panel so it is visibly
    not one of the ops above it. */
 .mc-agcon { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 9px;
@@ -5533,7 +5533,7 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .q-con.popped .q-con-log { flex: 1; max-height: none; }
 .q-con.popped .q-con-line, .q-con.popped .q-con-find .t { font-size: 13px; }
 
-/* ---- #376 THE TAB AGENT'S CONSOLE -----------------------------------------
+/* ---- #379 THE TAB AGENT'S CONSOLE -----------------------------------------
    The strip under the tab bar on Quality, Roadmap, Polaris and Workbench: one
    position, one anatomy, four agents. It borrows the console palette the
    Auditor's card already established — this is the same dark ground, and a
