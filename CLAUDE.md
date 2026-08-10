@@ -7,7 +7,7 @@ message and its `built_note`, which the Review room shows. Add here only when a 
 something WRONG without it, and keep under the 40 KB budget
 (`node scripts/context-budget.test.mjs`). **Where a rule governs one file it lives in that file's
 header, and this file keeps only the pointer and the cross-cutting half** — `ingest.js`,
-`audit.js`, `checks.js`, `workbench.js`, `futures.js`, `worktrees.js`, `instructions.js`,
+`prompts.js`, `checks.js`, `workbench.js`, `futures.js`, `worktrees.js`, `instructions.js`,
 `lib/feature.ts`, `lib/branch.ts` and `ControlReview.tsx` all carry theirs.
 
 ## What Stack is
@@ -67,8 +67,7 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
   preserved — that coercion is what the copies got wrong.
 - `settings.js` — `readSettings()` **defaults to "on" when the row is missing**, and the hooks default
   to "on" when the API is unreachable, so a flaky API degrades to recording rather than silent-off.
-- `routes/` — one file per surface. `ingest.js` and `audit.js` carry the most invariants; both have
-  long explanatory headers, read them before editing.
+- `routes/` — one file per surface. `ingest.js` carries the most invariants; read it first.
 
 ## The ingest package (what /checkpoint and the hook send)
 
@@ -279,15 +278,16 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   an unreachable briefing opens the console unprimed and says so. `lib/agentConsole.ts` names it; the
   Terminal screen parses that name to title one.
 - **AN AGENT'S BINDING IS CODE, NOT DATA (#361, #375).** `src/agents.js` is the registry and its header
-  lists the five and their surfaces. The rules that bite: each agent's `ops` list is CLOSED, and
+  lists the agents and their surfaces. The rules that bite: each agent's `ops` list is CLOSED, and
   `agent_configs` holds only what the owner tunes (enabled, model, guidance, `ops_off`) — never which
   surface or which ops, because those are the restriction itself. A route binds once
   (`agentClient('auditor')`) and that client THROWS on another agent's op; that throw, not a comment,
-  stops the Quality route running the board cleanup, and an unregistered op cannot run at all. An op
+  stops one tab's route running another's, and an unregistered op cannot run at all. An op
   MOVES with its surface (#375 moved `reviewbrief`/`refinedraft` off the Curator): **one surface, one
   switch**. **A missing config row means ON**, as with `readSettings()`; off means off
   everywhere. An op's `backend` may be `'gemini'`, so a surface with two backends still has ONE switch;
-  only readiness and the refusal differ, and the refusal must NAME the missing backend.
+  only readiness and the refusal differ, and the refusal must NAME the missing backend. **`ops` may be
+  EMPTY** (the Auditor's is — its live session replaced it), and a retired op resolves to NO agent.
 - **THE FOREMAN ANNOTATES A VERDICT; IT NEVER GIVES ONE (#375).** `readchange` returns a CALL (approve /
   look / send-back) drawn in the accent, never a verdict tone — the three verdict buttons are the only
   green in that room. Every answer carries **`blind[]`** (what it could not see) and
@@ -438,8 +438,8 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
 ## Gotchas
 
 - `server` retries the first Postgres connection — don't "fix" that; it's what survives compose order.
-- **A capped list inside a prompt must say it is capped, and on the right axis** (#239) — the rule and
-  the regression-reopen rule are in `routes/audit.js`'s header. It applies to any list in any prompt.
+- **A capped list inside a prompt must say it is capped, and on the right axis** (#239) — the rule is in
+  `prompts.js`'s header. It applies to any list in any prompt.
 - Status vocabulary is `live | building | paused | archived`. The old `active` migrates to `live`.
 - The web Dockerfile is multi-stage (Vite build → nginx), which does SPA fallback **and** proxies
   `/api` to `server:4000` plus `/term*` with upgrade headers; in local dev Vite proxies `/api`.

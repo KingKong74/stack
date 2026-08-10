@@ -4788,6 +4788,8 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .mc-agcard .steer { display: flex; flex-direction: column; gap: 5px; }
 .mc-agcard .steer .row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 
+/* an agent with no ops at all — its whole surface is the live session */
+.mc-agnoops { margin: 0; font-size: 10.5px; line-height: 1.55; color: var(--paused); }
 .mc-agops-toggle { align-self: flex-start; background: none; border: none; padding: 0; font-family: var(--mono); font-size: 10px; color: var(--muted); }
 .mc-agops-toggle:hover { color: var(--accent-deep); }
 .mc-agops { display: flex; flex-direction: column; gap: 7px; padding: 9px 11px; border-radius: 9px; background: var(--panel); }
@@ -5365,9 +5367,6 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .q-onecause p { margin: 0; font-size: 11.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
 .q-onecause code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
 
-/* the audit run's placeholder lines, drawn inside the Auditor console */
-.q-skel { height: 11px; border-radius: 4px; background: var(--panel); }
-
 /* the assertion chip and the result stamp, worn by the Suite's rows */
 .q-assert { flex: none; max-width: 150px; font-family: var(--mono); font-size: 9px; font-weight: 500; color: var(--chip-ink);
   background: var(--panel); border-radius: 4px; padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -5489,73 +5488,12 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .q-stack { display: flex; flex-direction: column; gap: 14px; }
 .q-hint.flat { margin-right: 0; }
 
-/* ---- the Auditor's console ---- */
-.q-con { border-radius: 13px; border: 1px solid var(--console-line); background: var(--console);
-  font-family: var(--mono); overflow: hidden; }
-.q-con.running { border-color: color-mix(in srgb, var(--accent) 45%, var(--console-line)); }
-.q-con-head { display: flex; align-items: center; gap: 9px; padding: 11px 15px; flex-wrap: wrap; }
-.q-con-chev { flex: none; font-size: 10px; color: var(--console-faint); padding: 2px 3px; }
-.q-con-chev:hover { color: var(--console-dim); }
-.q-con-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
-.q-con-dot.busy { background: var(--building); animation: q-con-pulse 1.1s ease-in-out infinite; }
-@keyframes q-con-pulse { 50% { opacity: 0.3; } }
-.q-con-name { font-size: 12px; letter-spacing: 0.04em; color: var(--console-ink); }
-.q-con-name.big { font-family: var(--disp); font-size: 15px; font-weight: 600; letter-spacing: 0; }
-.q-con-backend { flex: none; font-size: 9.5px; font-weight: 600; letter-spacing: 0.03em; color: var(--console-faint);
-  border: 1px solid var(--console-line); border-radius: 6px; padding: 2px 8px; }
-.q-con-backend.on { color: var(--console-ink); border-color: color-mix(in srgb, var(--accent) 40%, var(--console-line)); }
-.q-con-status { flex: none; font-size: 10.5px; color: var(--console-faint); }
-.q-con-pop { flex: none; font-size: 11px; color: var(--console-dim); border: 1px solid var(--console-line);
-  border-radius: 6px; padding: 2px 7px; }
-.q-con-pop:hover { color: var(--accent); border-color: var(--accent); }
-.q-con-body { padding: 0 15px 14px; }
-.q-con-log { display: flex; flex-direction: column; gap: 8px; max-height: 210px; overflow-y: auto; padding: 4px 2px 2px 0; }
-.q-con-line { display: flex; gap: 9px; font-size: 12px; line-height: 1.6; color: var(--console-dim); text-wrap: pretty; }
-.q-con-line.muted { color: var(--console-faint); }
-.q-con-line.bad { color: var(--console-bad); }
-.q-con-line.working { color: var(--console-ink); }
-.q-con-mark { flex: none; color: var(--accent); }
-.q-con-line.muted .q-con-mark, .q-con-line.bad .q-con-mark { color: inherit; }
-.q-con .q-skel { background: #262019; }
-.q-con-find { display: flex; align-items: baseline; gap: 9px; padding-left: 21px; }
-.q-con-find .t { flex: 1; min-width: 0; font-size: 12px; line-height: 1.55; color: var(--console-ink); text-wrap: pretty; }
-.q-con-find .t em { font-style: normal; color: var(--console-faint); }
-.q-con-find .q-out { flex: none; font-size: 9.5px; color: var(--console-faint); white-space: nowrap; }
-/* #239 — a regression: something the tracker calls fixed, found live again. */
-.q-con-find.regressed .q-out { color: var(--console-bad); }
-.q-con-prompt { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px;
-  border-top: 1px solid var(--console-line); padding-top: 12px; }
-.q-con-caret { flex: none; color: var(--accent); font-size: 13px; line-height: 1.6; }
-.q-con-input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; line-height: 1.6;
-  background: transparent; border: none; color: var(--console-ink); resize: none; padding: 0; }
-.q-con-input:focus { outline: none; }
-.q-con-input::placeholder { color: var(--console-faint); }
-.q-con-save { flex: none; font-size: 11px; font-weight: 600; color: var(--console); background: var(--accent);
-  border-radius: 7px; padding: 5px 11px; }
-.q-con-save:hover { background: var(--accent-deep); }
-.q-con-acts { display: flex; align-items: center; gap: 7px; margin-top: 11px; flex-wrap: wrap; }
-.q-con-op { font-size: 11px; color: var(--console-dim); border: 1px solid var(--console-line);
-  border-radius: 7px; padding: 5px 11px; white-space: nowrap; }
-.q-con-op:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
-.q-con-op:disabled { opacity: 0.5; }
-.q-con-op.run { font-weight: 600; color: var(--console); background: var(--accent); border-color: var(--accent); }
-.q-con-op.run:hover:not(:disabled) { color: var(--console); background: var(--accent-deep); border-color: var(--accent-deep); }
-.q-con-hint { margin-left: auto; font-size: 10px; color: var(--console-faint); }
-
-/* popped out: the same console, given the screen */
-.q-con-scrim { padding: 42px 60px; align-items: stretch; }
-.q-con.popped { flex: 1; min-width: 0; display: flex; flex-direction: column; border-radius: 16px;
-  box-shadow: 0 24px 60px rgba(20, 14, 10, 0.45); }
-.q-con.popped .q-con-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.q-con.popped .q-con-log { flex: 1; max-height: none; }
-.q-con.popped .q-con-line, .q-con.popped .q-con-find .t { font-size: 13px; }
-
 /* ---- #379 THE TAB AGENT'S CONSOLE -----------------------------------------
    The strip under the tab bar on Quality, Roadmap, Polaris and Workbench: one
-   position, one anatomy, four agents. It borrows the console palette the
-   Auditor's card already established — this is the same dark ground, and a
-   second dark surface with its own tones would read as a different kind of
-   thing. Shut it is one line; open it is a real terminal, and the holder gets
+   position, one anatomy, four agents. It wears the console palette (the
+   `--console*` tokens) — the one dark ground in the app, so a second surface
+   with its own tones would read as a different kind of thing. Shut it is one
+   line; open it is a real terminal, and the holder gets
    an explicit height because xterm's fit addon measures its parent and a
    flex-sized box gives it nothing to measure. */
 .tabterm { border-radius: 12px; border: 1px solid var(--console-line); background: var(--console);
@@ -5567,7 +5505,8 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .tabterm-chev:hover { color: var(--console-dim); }
 .tabterm-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--console-faint); }
 .tabterm-dot.live { background: var(--live); }
-.tabterm-dot.connecting { background: var(--building); animation: q-con-pulse 1.1s ease-in-out infinite; }
+.tabterm-dot.connecting { background: var(--building); animation: tabterm-pulse 1.1s ease-in-out infinite; }
+@keyframes tabterm-pulse { 50% { opacity: 0.3; } }
 .tabterm-dot.error, .tabterm-dot.closed { background: var(--console-bad); }
 .tabterm-name { font-size: 12px; letter-spacing: 0.04em; color: var(--console-ink); }
 .tabterm-tag { flex: none; font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em;
@@ -5667,8 +5606,6 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
   .q-feat-head span:nth-child(n+4) { display: none; }
   .q-feat-open { grid-template-columns: 1fr; padding-left: 15px; }
   .q-feat-read { border-left: none; border-top: 1px solid var(--line-2); padding: 12px 0 0; }
-  .q-con-scrim { padding: 14px; }
-  .q-con-hint { margin-left: 0; flex-basis: 100%; }
 }
 
 /* ============================================================

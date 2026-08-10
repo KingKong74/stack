@@ -1084,7 +1084,6 @@ export interface ProjectDetailData {
   project: Project;
   currentPhase: string;
   northStar: string;
-  auditContext: string;  // the audit brief (#144) — the Quality tab's steer for the bug audit
   blockers: string[];
   directives: string[];
   activity: Activity[];
@@ -1110,12 +1109,11 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; futures?: Future[];
     checks?: Check[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
-    auditContext?: string; staleItemDays?: number; geminiReady?: boolean; agents?: TabAgentState;
+    staleItemDays?: number; geminiReady?: boolean; agents?: TabAgentState;
     cadence?: { day: string; n: number }[]; lastPushAt?: string | null;
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
     project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
-    auditContext: d.auditContext || '',
     blockers: d.blockers || [], directives: d.directives || [],
     activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes, futures: d.futures || [],
     checks: d.checks || [],
@@ -1827,7 +1825,7 @@ export async function patchProject(
     subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean;
     automode: boolean; autopilot_area: string; merge_autonomy: MergeAutonomy;
     name: string; north_star: string; directives: string[]; deploy_platform: string; logs_url: string;
-    tech_stack: string[]; audit_context: string;
+    tech_stack: string[];
   }>,
 ): Promise<Project> {
   return toProject(await request<ProjectPayload>(`/projects/${encodeURIComponent(slug)}`, { method: 'PATCH', body: patch }));
@@ -2426,29 +2424,6 @@ export async function scanInstructions(slug: string, pass: string): Promise<Scan
   return request<ScanResult>('/instructions/scan', { method: 'POST', body: { slug, pass } });
 }
 
-// ---- automated bug audit (#144) ----
-
-// One audit finding and what happened to it: 'logged' = a new review-inbox bug
-// (carried in `bug`), 'duplicate' = already tracked, 'dismissed' = tombstoned,
-// 'reopened' (#239) = it matched a bug the tracker calls FIXED, so the auditor
-// found a regression — that bug is open again, and it carries the row.
-export interface AuditFinding {
-  title: string;
-  severity: Severity;
-  evidence: string;
-  outcome: 'logged' | 'duplicate' | 'dismissed' | 'reopened';
-  bug: Bug | null;
-}
-// `reopened` is optional: an older server counts a regression as skipped, and
-// the finding rows still say what happened either way.
-export interface AuditResult { findings: AuditFinding[]; logged: number; reopened?: number; skipped: number }
-
-// Gemini audits the project (brief + checks + tracked bugs + the live page)
-// and files suspected bugs straight into the review inbox — the human keeps
-// or dismisses each one from there.
-export async function runAudit(slug: string): Promise<AuditResult> {
-  return request<AuditResult>(`/projects/${encodeURIComponent(slug)}/audit`, { method: 'POST' });
-}
 // ---- the TAB AGENTS (#361) ----
 //
 // Three named specialists, each bound to one project tab: the Auditor
