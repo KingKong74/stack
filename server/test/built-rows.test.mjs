@@ -114,6 +114,50 @@ const made = (await api(`/api/projects/${SLUG}/roadmap`, {
   check('…and nothing was written', (await roadmap()).length, before);
 }
 
+// ---- a number is not a name, and this repo's numbers collide ----------------
+//
+// Roadmap items and futures are separate id sequences and both are cited as
+// "#N" throughout the repo, the SessionStart block and the idea funnel. A
+// session that means future #174 and sends `item: 174` lands on an unrelated
+// roadmap row. That is not hypothetical — it happened while this feature was
+// being filed, and it overwrote the built_note of an archived, human-verdicted
+// item, which could not be recovered.
+
+{
+  const r = await checkpoint([{
+    item: made.id, title: 'A title that is not that row at all',
+    note: 'An account that must not land.',
+  }]);
+  check('an id whose TITLE disagrees is refused, not obeyed',
+    r.body?.built, { linked: 0, created: 0, missed: 1 });
+  check('…and the row it pointed at is untouched', (await byId(made.id))?.builtNote,
+    'A second, fuller account after more work.');
+}
+
+{
+  const r = await checkpoint([{
+    item: made.id, title: 'A planned piece of work', note: 'The matching title lands.',
+  }]);
+  check('an id whose title MATCHES still links, as the checkpoint command asks for',
+    r.body?.built, { linked: 1, created: 0, missed: 0 });
+  check('…and writes', (await byId(made.id))?.builtNote, 'The matching title lands.');
+}
+
+{
+  const arch = (await api(`/api/projects/${SLUG}/roadmap`, {
+    method: 'POST', body: JSON.stringify({ title: 'Finished long ago', bucket: 'should' }),
+  })).body;
+  await api(`/api/projects/${SLUG}/roadmap/${arch.id}`, {
+    method: 'PATCH', body: JSON.stringify({ done: true, built_note: 'The real account of it.', archived: true }),
+  });
+
+  const r = await checkpoint([{ item: arch.id, note: 'A checkpoint rewriting history.' }]);
+  check('an ARCHIVED row is refused — a checkpoint may not rewrite finished history',
+    r.body?.built, { linked: 0, created: 0, missed: 1 });
+  const row = await byId(arch.id);
+  check('…and its account survives', row?.builtNote, 'The real account of it.');
+}
+
 // ---- the fallback: a title ---------------------------------------------------
 
 {
