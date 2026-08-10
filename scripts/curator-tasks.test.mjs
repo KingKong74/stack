@@ -28,16 +28,41 @@ module.registerHooks({
 });
 
 const url = new URL('../web/src/lib/curatorTasks.ts', import.meta.url);
-const { ARRANGE_TASKS, taskByKey, scopeLine } = await import(url.href);
+const { ARRANGE_TASKS, TOP_LEVEL_TASKS, taskByKey, scopeLine } = await import(url.href);
 
 const scope = (over = {}) => ({
   slug: 'stack', areaFilter: '', feature: { id: 12, title: 'The editor' }, ...over,
 });
 
-test('the catalogue is the six commands, each in a view', () => {
-  assert.deepEqual(ARRANGE_TASKS.map((t) => t.key),
+test('the catalogue is the six top-level commands plus the one side action', () => {
+  assert.deepEqual(TOP_LEVEL_TASKS.map((t) => t.key),
     ['schedule', 'compact', 'catchup', 'balance', 'tier', 'trim']);
+  // `allocate` is drawn INSIDE the ✧ read's card, not as a seventh button —
+  // two top-level buttons with the same name would be a puzzle, not a choice.
+  assert.deepEqual(ARRANGE_TASKS.filter((t) => t.side).map((t) => t.key), ['allocate']);
   for (const t of ARRANGE_TASKS) assert.ok(t.views.length > 0, `${t.key} belongs to no view`);
+});
+
+// It is a SECOND WAY to run the ✧ read, so the two must agree about what they
+// act on. The read works the untagged rows whatever the chip says; a brief that
+// let the chip narrow it would send the session after the one population that
+// by definition holds none of them.
+test('the side allocation works the untagged rows whatever the chip says', () => {
+  const t = taskByKey('allocate');
+  assert.equal(t.wide, true);
+  const narrow = t.brief(scope({ areaFilter: 'agents' }));
+  assert.doesNotMatch(narrow, /ONLY the items in the "agents" area/);
+  assert.match(narrow, /whatever the board is filtered to/);
+});
+
+test('the side allocation changes the area and nothing else, and says which areas are new', () => {
+  const b = taskByKey('allocate').brief(scope());
+  assert.match(b, /PREFER THE AREAS THIS PROJECT ALREADY USES/);
+  assert.match(b, /which ones would be new/);
+  assert.match(b, /no retitling, no re-bucketing/);
+  // The same escape hatch the ✧ read's prompt gives: an unplaceable item is
+  // left alone rather than guessed at.
+  assert.match(b, /LEAVE OUT anything you genuinely cannot place/);
 });
 
 test('EVERY brief names the rows it may touch', () => {

@@ -6851,9 +6851,19 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .rp-card .est.stale { color: var(--building); font-weight: 600; }
 .rp-unpark { font-size: 11px; color: var(--accent); padding: 0 2px; }
 .rp-unpark:hover { color: var(--accent-deep); }
+/* A card, and it is a DIV: the ✧ allocation carries a second action inside it
+   and a button cannot hold a button. `.off` stands in for :disabled on the card
+   for the same reason. */
 .ra-action { display: flex; flex-direction: column; gap: 5px; text-align: left; background: var(--paper); border: 1px solid var(--line); border-radius: 11px; padding: 11px 13px; }
-.ra-action:hover:not(:disabled) { border-color: var(--accent); }
-.ra-action:disabled { opacity: .55; }
+.ra-action:hover:not(.off) { border-color: var(--accent); }
+.ra-action.off { opacity: .55; }
+.ra-main { display: flex; flex-direction: column; gap: 5px; text-align: left; background: none; border: 0; padding: 0; width: 100%; }
+/* THE SECOND ROUTE, drawn quieter than the card's own action: it runs the same
+   job the card is named for, so it must not compete with it for the press. */
+.ra-side { align-self: flex-start; margin-top: 2px; font-size: 11.5px; color: var(--accent);
+  background: none; border: 1px solid var(--accent-tint-border); border-radius: 999px; padding: 2px 9px; }
+.ra-side:hover:not(:disabled) { background: var(--accent-tint); }
+.ra-side:disabled { opacity: .5; }
 .ra-action .nm { font-size: 13px; font-weight: 600; color: var(--ink); }
 /* `desc`, not `note` — `.note` is the Workbench sticky and paints anything
    wearing it on yellow paper. It has now caught two new surfaces in this

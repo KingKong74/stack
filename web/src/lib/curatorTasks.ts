@@ -55,10 +55,21 @@ export interface ArrangeTask {
   /** The sentence under it, when the command is available. */
   note: string;
   views: ArrangeView[];
-  /** True for the two that act on a population the area chip cannot narrow. */
+  /** True for the ones that act on a population the area chip cannot narrow. */
   wide?: boolean;
   /** Needs a bar selected on the timeline. */
   needsFeature?: boolean;
+  /**
+   * NOT a button of its own — this task is a SECOND WAY to run a job the panel
+   * already offers as a ✧ read, drawn inside that read's card. Two top-level
+   * buttons called "Sort the unallocated" would be a puzzle, not a choice.
+   *
+   * It still lives in this catalogue rather than off to one side, because the
+   * two properties the tests assert over every task — it names its population,
+   * it asks before it writes — are exactly as load-bearing here. A brief kept
+   * somewhere else to avoid the list is a brief nothing checks.
+   */
+  side?: boolean;
   /** The instruction itself. */
   brief: (s: TaskScope) => string;
 }
@@ -163,7 +174,36 @@ export const ARRANGE_TASKS: ArrangeTask[] = [
       + 'reports a cycle that fits by not counting it.\n\n'
       + ASK_FIRST.replace('{slug}', s.slug),
   },
+  {
+    key: 'allocate',
+    name: 'Sort the unallocated',
+    note: 'Reads every item carrying no area and files it, in the session rather than in one shot.',
+    views: ['timeline', 'scope', 'plan'],
+    // The area chip cannot scope this one either, and for the sharpest reason
+    // of the three: untagged IS the population. A chip naming an area selects
+    // rows that all have one, which is the exact complement of what this works
+    // on.
+    wide: true,
+    // Drawn inside the ✧ read's card — same job, other way round. See `side`.
+    side: true,
+    brief: (s) => 'Sort the unallocated items into areas.\n\n'
+      + 'Every open item carrying no area at all needs one. An area is the part of the product a '
+      + 'piece of work belongs to — it is what the timeline draws as a lane and what every board '
+      + 'filters by, so an item with none is in no lane and behind no chip.\n\n'
+      + 'PREFER THE AREAS THIS PROJECT ALREADY USES; read them off the board first. Coin a new one '
+      + 'only when a real group of items has no home among them — lowercase, one or two words, never '
+      + 'a near-synonym of an existing area — and say plainly which ones would be new, because a new '
+      + 'area is a new lane on the timeline. LEAVE OUT anything you genuinely cannot place: an item '
+      + 'left alone is better than a guessed one, and I will file those by hand.\n\n'
+      + 'This works on the UNTAGGED items whatever the board is filtered to — they are the whole '
+      + 'population, so a filter naming an area would select the exact rows this cannot act on. The '
+      + 'area is the only thing you change: no retitling, no re-bucketing, no merging.\n\n'
+      + ASK_FIRST.replace('{slug}', s.slug),
+  },
 ];
 
 export const taskByKey = (key: string): ArrangeTask | undefined =>
   ARRANGE_TASKS.find((t) => t.key === key);
+
+/** The six drawn as buttons of their own — everything that is not a side action. */
+export const TOP_LEVEL_TASKS = ARRANGE_TASKS.filter((t) => !t.side);

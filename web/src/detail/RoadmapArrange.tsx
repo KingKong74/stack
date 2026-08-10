@@ -50,7 +50,7 @@
 import type { RoadmapItem, SchedSpan } from '../types';
 import type { AllocatePick } from '../store';
 import { areaMatches, UNALLOCATED, weekNo } from '../lib/plan';
-import { ARRANGE_TASKS, type ArrangeView } from '../lib/curatorTasks';
+import { TOP_LEVEL_TASKS, type ArrangeView } from '../lib/curatorTasks';
 
 export type { ArrangeView };
 
@@ -130,12 +130,21 @@ export function RoadmapArrange({
   type Action = {
     key: string; name: string; note: string; views: ArrangeView[];
     disabled?: boolean; read?: boolean; cmd?: boolean; run: () => void;
+    /**
+     * A SECOND WAY TO RUN THE SAME JOB, drawn inside the card. The ✧ read
+     * answers in one shot, capped and quota-bound; the session reads every row
+     * and can be argued with. They are two routes to one outcome, so they
+     * belong on one card — two top-level buttons with the same name would be a
+     * puzzle, not a choice — and they go dead independently, because what stops
+     * one (a spent Gemini quota) is not what stops the other (no console).
+     */
+    side?: { label: string; title: string; disabled: boolean; run: () => void };
   };
 
   // The six that drive the session. A dead one says WHY, and the reasons run
   // console → selection, which is the order the owner would fix them in: no
   // session at all, then nothing for this one to act on.
-  const commands: Action[] = ARRANGE_TASKS.map((t) => ({
+  const commands: Action[] = TOP_LEVEL_TASKS.map((t) => ({
     key: t.key,
     name: t.name,
     views: t.views,
@@ -183,6 +192,19 @@ export function RoadmapArrange({
       disabled: !canRead('allocate') || !!reading || inAnArea || untagged.length === 0,
       read: true,
       run: () => onRead('allocate'),
+      // The same job, handed to the session instead. It is the route that
+      // survives what stops the read: the ✧ pass is capped at a batch and
+      // spends free-tier quota, and with that quota gone this is the only way
+      // to run it at all. It also reads EVERY untagged row rather than a batch,
+      // and can say why it could not place one.
+      side: {
+        label: '⌨ In the session',
+        title: !onCommand
+          ? consoleOffReason || 'The Curator’s session cannot open.'
+          : `Hand the same job to the Curator’s session — it reads all ${untagged.length}, in one conversation, and asks before it writes`,
+        disabled: !onCommand || inAnArea || untagged.length === 0,
+        run: () => onCommand?.('allocate'),
+      },
     },
   ];
 
@@ -224,20 +246,34 @@ export function RoadmapArrange({
 
       {open && (
         <>
+          {/* A card is a DIV holding its button, not a button itself: one of
+              them carries a second action, and a button inside a button is not
+              a thing. `off` on the card is what the disabled styling hangs off,
+              since the card itself can no longer be :disabled. */}
           <div className="ra-actions">
-            {mine.map((a) => (
-              <button key={a.key} className={`ra-action${a.read ? ' read' : ' cmd'}`}
-                disabled={!!a.disabled || busy} onClick={a.run}>
-                {/* Only the button that is reading says so. Two ✧ actions both
-                    showing "reading…" would claim two calls are out. */}
-                <span className="nm">
-                  {reading === 'arrange' && a.key === 'order' ? '✧ Reading the board…'
-                    : reading === 'allocate' && a.key === 'allocate' ? '✧ Reading the untagged…'
-                      : a.name}
-                </span>
-                <span className="desc">{a.note}</span>
-              </button>
-            ))}
+            {mine.map((a) => {
+              const off = !!a.disabled || busy;
+              return (
+                <div key={a.key} className={`ra-action${a.read ? ' read' : ' cmd'}${off ? ' off' : ''}`}>
+                  <button className="ra-main" disabled={off} onClick={a.run}>
+                    {/* Only the button that is reading says so. Two ✧ actions
+                        both showing "reading…" would claim two calls are out. */}
+                    <span className="nm">
+                      {reading === 'arrange' && a.key === 'order' ? '✧ Reading the board…'
+                        : reading === 'allocate' && a.key === 'allocate' ? '✧ Reading the untagged…'
+                          : a.name}
+                    </span>
+                    <span className="desc">{a.note}</span>
+                  </button>
+                  {a.side && (
+                    <button className="ra-side" disabled={a.side.disabled || busy}
+                      title={a.side.title} onClick={a.side.run}>
+                      {a.side.label}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {/* What a command press actually does, said once under the row rather
