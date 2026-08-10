@@ -4,12 +4,19 @@ import { projectBySlug } from '../resolve.js';
 import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags, riskWriteSource, capNote } from '../util.js';
 import { cleanLabels, ensureLabels } from '../labels.js';
 
-// How many weeks the timeline spans, and which week is "now". A bar is a week
-// INDEX from the project's own week zero, never a date — see schema.sql's
-// Roadmap-v2 header for why. The client twins are SCHED_WEEKS and NOW_WEEK in
+// How far the timeline spans, and where "now" sits in it. A bar is an OFFSET IN
+// MINUTES from the project's own week zero, never a date — see schema.sql's
+// Roadmap-v2 header for why, and for why the unit stopped being whole weeks
+// (#401). The client twins are SCHED_WEEKS / MIN_PER_WEEK / NOW_WEEK in
 // web/src/lib/plan.ts; change them together.
 const SCHED_WEEKS = 24;
 const SCHED_NOW_WEEK = 8;
+const MIN_PER_WEEK = 7 * 24 * 60;
+const SCHED_MINUTES = SCHED_WEEKS * MIN_PER_WEEK;
+// The floor on a bar's length. A minute-resolution column can express a
+// zero-width bar, and a bar with no width is a schedule entry you cannot see or
+// grab — fifteen minutes is the finest the timeline's hour grain snaps to.
+const MIN_SCHED_LEN = 15;
 
 // Risk tiers (#212) — graduated trust. 'low' lets a green overnight run
 // auto-queue its own merge; anything else keeps the human on the merge button.
@@ -362,22 +369,27 @@ roadmap.patch('/:id', async (req, res) => {
     // and leaves the ghost where the plan put it. A baseline that followed the
     // bar could never show a slip, so this is the one place it may be set and
     // it may only ever set it ONCE. Re-baselining is an explicit, separate act.
+    //
+    // BOTH FIELDS ARE MINUTES from week zero (#401), and the clamp is the same
+    // domain a drag is clamped to client-side: zooming in must never be able to
+    // shorten the plan, so the ceiling is SCHED_MINUTES and not whatever window
+    // the browser happened to be showing.
     const s = req.body.sched;
     if (s === null) {
-      sets.push('sched_start = NULL', 'sched_len = NULL');
+      sets.push('sched_start_min = NULL', 'sched_len_min = NULL');
     } else if (Number.isFinite(s?.start) && Number.isFinite(s?.len)) {
-      const start = Math.max(0, Math.min(SCHED_WEEKS - 1, Math.trunc(s.start)));
-      const len = Math.max(1, Math.min(SCHED_WEEKS - start, Math.trunc(s.len)));
-      sets.push(`sched_start = $${i++}`); vals.push(start);
-      sets.push(`sched_len = $${i++}`); vals.push(len);
-      sets.push(`plan_start = COALESCE(plan_start, $${i++})`); vals.push(start);
-      sets.push(`plan_len = COALESCE(plan_len, $${i++})`); vals.push(len);
+      const start = Math.max(0, Math.min(SCHED_MINUTES - MIN_SCHED_LEN, Math.trunc(s.start)));
+      const len = Math.max(MIN_SCHED_LEN, Math.min(SCHED_MINUTES - start, Math.trunc(s.len)));
+      sets.push(`sched_start_min = $${i++}`); vals.push(start);
+      sets.push(`sched_len_min = $${i++}`); vals.push(len);
+      sets.push(`plan_start_min = COALESCE(plan_start_min, $${i++})`); vals.push(start);
+      sets.push(`plan_len_min = COALESCE(plan_len_min, $${i++})`); vals.push(len);
     }
   }
   if (req.body?.rebaseline === true) {
     // "This is the plan now." The only path that overwrites the ghost, and it
     // is deliberately its own flag rather than a side effect of a drag.
-    sets.push('plan_start = sched_start', 'plan_len = sched_len');
+    sets.push('plan_start_min = sched_start_min', 'plan_len_min = sched_len_min');
   }
   if (req.body?.parentId !== undefined) {
     // ONE LEVEL DEEP. A ticket hangs off a feature; a feature may not hang off
@@ -560,10 +572,10 @@ roadmap.post('/arrange', async (req, res) => {
   const untagged = req.body?.untagged === true;
   const scope = untagged ? " AND COALESCE(area, '') = ''" : area ? ' AND area = $2' : '';
   const { rows } = await q(
-    `SELECT id, bucket, area, title, note, sched_start, sched_len, estimate
+    `SELECT id, bucket, area, title, note, sched_start_min, sched_len_min, estimate
        FROM roadmap_items
       WHERE project_id = $1 AND NOT done AND NOT archived${scope}
-      ORDER BY sched_start NULLS LAST, bucket, position`,
+      ORDER BY sched_start_min NULLS LAST, bucket, position`,
     area && !untagged ? [req.project.id, area] : [req.project.id]
   );
   // Two bars cannot be ordered against each other, and one cannot be ordered at
@@ -573,12 +585,22 @@ roadmap.post('/arrange', async (req, res) => {
   if (rows.length < 2) return res.json({ moves: [], note: `Not enough${where} to order.` });
 
   const byId = new Map(rows.map((r) => [r.id, r]));
+  // THE MODEL IS SHOWN WEEKS, AND THE COLUMN IS MINUTES (#401). Deliberately:
+  // this read answers "what must come before what", which is an ordering
+  // question a week is the right grain for, and a prompt quoting six-figure
+  // minute offsets asks a model to do arithmetic instead of reading. The
+  // conversion happens at both boundaries below, and NOTHING about a bar's
+  // LENGTH round-trips through it — the prompt already forbids changing one, and
+  // a sub-week bar rounded to weeks on the way out would come back resized.
+  const weekOf = (min) => (min === null || min === undefined ? null : Math.floor(Number(min) / MIN_PER_WEEK));
   const prompt = buildPrompt('arrange', {
     NOW_WEEK: SCHED_NOW_WEEK,
     ITEMS: rows.map((r) => [
       r.id, r.area || '-', r.bucket,
-      r.sched_len ?? (r.estimate === null ? '-' : Math.max(1, Math.round(Number(r.estimate)))),
-      r.sched_start === null ? '-' : r.sched_start,
+      r.sched_len_min === null
+        ? (r.estimate === null ? '-' : Math.max(1, Math.round(Number(r.estimate))))
+        : Math.max(1, Math.round(Number(r.sched_len_min) / MIN_PER_WEEK)),
+      weekOf(r.sched_start_min) ?? '-',
       r.title, (r.note || '-').slice(0, 200),
     ].join(' | ')).join('\n'),
     NORTH_STAR_LINE: req.project.north_star
@@ -592,14 +614,21 @@ roadmap.post('/arrange', async (req, res) => {
       .map((m) => {
         const cur = byId.get(Number(m?.id));
         if (!cur) return null;
-        const len = Math.max(1, Number(cur.sched_len)
-          || (cur.estimate === null ? 2 : Math.round(Number(cur.estimate))) || 2);
-        // Clamped the same way a drag is, and never earlier than now: a model
-        // is allowed to be wrong about the week, not to schedule the past.
-        const start = Math.max(SCHED_NOW_WEEK,
-          Math.min(SCHED_WEEKS - len, Math.trunc(Number(m.start))));
-        if (!Number.isFinite(start)) return null;
-        if (cur.sched_start === start && cur.sched_len === len) return null; // a no-op is not a move
+        // The bar KEEPS ITS OWN LENGTH, in minutes, exactly as it is stored. An
+        // unscheduled row has none, so it gets its estimate (weeks) or a
+        // fortnight — the only place a length is invented here.
+        const len = Math.max(MIN_SCHED_LEN, Number(cur.sched_len_min)
+          || (cur.estimate === null ? 2 : Math.round(Number(cur.estimate))) * MIN_PER_WEEK
+          || 2 * MIN_PER_WEEK);
+        // The answer is a week index; the column is minutes. Clamped the same
+        // way a drag is, and never earlier than now: a model is allowed to be
+        // wrong about the week, not to schedule the past.
+        const week = Math.trunc(Number(m.start));
+        if (!Number.isFinite(week)) return null;
+        const start = Math.max(SCHED_NOW_WEEK * MIN_PER_WEEK,
+          Math.min(SCHED_MINUTES - len, week * MIN_PER_WEEK));
+        // A no-op is not a move. Numbers either side: BIGINT arrives as a string.
+        if (Number(cur.sched_start_min) === start && Number(cur.sched_len_min) === len) return null;
         return { id: cur.id, title: cur.title, sched: { start, len }, why: String(m.why || '').trim().slice(0, 200) };
       })
       .filter(Boolean)
@@ -630,13 +659,19 @@ roadmap.post('/arrange', async (req, res) => {
 // is still the exception the prompt discourages, and the human sees the tag
 // before applying — an invented lane is a thing you should have to notice.
 //
-// THE CAP AND THE TIMEOUT ARE SET TOGETHER, because the work is proportional to
-// the list: a read of 44 items on this repo's own board did not answer inside
-// the 45s the `arrange` read uses, and the fix is not just a longer wait. Thirty
-// items with short notes answers comfortably; the timeout below has room for a
-// slow host on top of that, and both clear nginx's 300s (web/nginx.conf). What
-// is left over is not lost — it is stated in the prompt and in the summary, and
-// the next press picks it up.
+// THE CAP IS ABOUT THE PROMPT, NOT THE WAIT — which is a change of reason, so
+// it is written down. Thirty was chosen when this op ran `claude -p` on the
+// host and a 44-item read did not answer inside 45s; the op has since moved to
+// the Gemini backend, where that round trip is gone. What survives the move is
+// the other half: a long list of items in one prompt is a list a model reads
+// less carefully at the end than at the start, and thirty of them with short
+// notes is a question it can actually answer. The timeout below is now a
+// ceiling rather than a fitted number — it clears nginx's 300s (web/nginx.conf)
+// and Gemini should not come near it.
+//
+// What is left over is not lost: the cut is stated in the prompt on the axis it
+// was made (#239) and again in the panel's summary, and the next press picks up
+// what was left.
 const ALLOCATE_CAP = 30;
 // The buckets in the order the owner reads them, so a cap cuts the Won'ts
 // before it cuts the Musts.
