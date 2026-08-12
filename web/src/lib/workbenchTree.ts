@@ -111,7 +111,10 @@ export const SMART: Smart[] = [
   },
   {
     key: 'smart:polaris',
-    name: 'Polaris · on the canvas',
+    // NOT "Polaris": the system folder below is called that, and two rows in
+    // one tree wearing the same name is a tree you cannot navigate by reading.
+    // This one is the cards already placed; that one is the funnel.
+    name: 'Ideas placed',
     tone: 'var(--accent)',
     test: (c) => c.kind === 'polaris',
   },

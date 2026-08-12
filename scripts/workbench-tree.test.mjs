@@ -134,6 +134,13 @@ test('every smart folder carries a token, never a hex', () => {
   for (const s of SMART) assert.match(s.tone, /^var\(--[a-z-]+\)$/);
 });
 
+test('no smart folder shares a name with a system folder', () => {
+  // Two rows in one tree wearing the same name is a tree you cannot navigate
+  // by reading — and it was "Polaris" twice until this caught it.
+  const names = [...SMART, ...SYSTEM].map((f) => f.name.toLowerCase());
+  assert.equal(new Set(names).size, names.length, names.join(' | '));
+});
+
 // --- the system folders -----------------------------------------------
 
 test('a system folder holds no CARDS — its rows live in other tables', () => {

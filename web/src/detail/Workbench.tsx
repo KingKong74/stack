@@ -1542,8 +1542,13 @@ export function Workbench({
           // Hidden with a class, never unmounted: the wheel listener and the
           // measured card heights are attached to this node, and remounting it
           // per view switch would drop both (#414, #415).
+          // Shown for EVERY spatial view, not just the canvas. The map is
+          // drawn inside this same field — it needs the pan, the zoom and the
+          // wheel listener — so a canvas-only test hid the map in a
+          // display:none container: the nodes were in the DOM and nothing was
+          // on screen, which no assertion about element counts can catch.
           className={`wb-ground${linking !== null ? ' linking' : ''}`
-            + `${view === 'canvas' && !sysOpen ? '' : ' hidden'}`}
+            + `${spatial(view) && !sysOpen ? '' : ' hidden'}`}
           onPointerDown={startPan}
           style={{
             backgroundSize: `${GRID * zoom}px ${GRID * zoom}px`,
