@@ -294,6 +294,90 @@ export function foldName(first: string, count: number): string {
   return count > 1 ? `${head} + ${count - 1}` : head;
 }
 
+// --- the Map view (#415) ----------------------------------------------------
+
+export interface MapNode {
+  card: WorkbenchCard | null;   // null = the project root, which has no card
+  id: FolderId;
+  name: string;
+  x: number; y: number;
+  depth: number;
+  kids: number;                 // folders inside (what an expand would reveal)
+  holds: number;                // everything inside, folders included
+  collapsed: boolean;
+}
+export interface MapEdge { x1: number; y1: number; x2: number; y2: number }
+export interface MapLayout {
+  nodes: MapNode[]; edges: MapEdge[]; w: number; h: number; nodeW: number;
+}
+
+export const MAP_COL = 236;   // horizontal step per level
+export const MAP_ROW = 62;    // vertical step per leaf
+export const MAP_NODE_W = 198;
+
+/**
+ * THE MAP: the folder tree drawn left-to-right, one column per level.
+ *
+ * A parent sits at the MIDPOINT of its children rather than at the first one —
+ * the difference is what makes a deep branch read as a branch instead of a
+ * staircase. Leaves consume a row each; that is the only thing that advances
+ * the cursor, which is what keeps the layout stable as branches collapse.
+ *
+ * FOLDERS ONLY. Drawing every note would make this the canvas with worse
+ * geometry; the map answers "how is this workbench arranged", and the arrangement
+ * is the folders. Each node still carries `holds`, so a folder full of notes is
+ * visibly heavier than an empty one without a hundred dots being drawn.
+ *
+ * `collapsed` is passed in rather than stored: it is a way of LOOKING at the
+ * tree, like a scroll position, and persisting it would make two panes showing
+ * the same map unable to disagree.
+ */
+export function mapLayout(
+  cards: WorkbenchCard[], rootName: string, collapsed: Set<number>,
+): MapLayout {
+  const nodes: MapNode[] = [];
+  const edges: MapEdge[] = [];
+  let row = 0;
+  const seen = new Set<number>();
+
+  const place = (id: FolderId, name: string, card: WorkbenchCard | null, depth: number): number => {
+    const kids = childrenOf(cards, id).filter((c) => isFolder(c) && !seen.has(c.id));
+    const shut = typeof id === 'number' && collapsed.has(id);
+    let y: number;
+    if (!kids.length || shut) {
+      y = row * MAP_ROW;
+      row += 1;
+    } else {
+      const ys = kids.map((k) => {
+        seen.add(k.id);
+        return place(k.id, k.title || 'Untitled folder', k, depth + 1);
+      });
+      y = (ys[0] + ys[ys.length - 1]) / 2;
+    }
+    nodes.push({
+      card, id, name, x: depth * MAP_COL, y, depth,
+      kids: kids.length, holds: descendantsOf(cards, id).length, collapsed: shut,
+    });
+    if (!shut) {
+      for (const k of kids) {
+        const child = nodes.find((n) => n.id === k.id);
+        if (child) {
+          edges.push({
+            x1: depth * MAP_COL + MAP_NODE_W, y1: y + 22,
+            x2: child.x, y2: child.y + 22,
+          });
+        }
+      }
+    }
+    return y;
+  };
+
+  place(ROOT, rootName, null, 0);
+  const w = Math.max(...nodes.map((n) => n.x)) + MAP_NODE_W + 40;
+  const h = Math.max(...nodes.map((n) => n.y)) + 80;
+  return { nodes, edges, w: Math.max(320, w), h: Math.max(200, h), nodeW: MAP_NODE_W };
+}
+
 /**
  * A folder's contents as roadmap PHASES, for Promote → Roadmap. Everything
  * named inside becomes one phase, in the order the folder shows them; the

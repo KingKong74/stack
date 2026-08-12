@@ -16,7 +16,7 @@ const url = new URL('../web/src/lib/workbenchTree.ts', import.meta.url);
 const {
   SMART, SYSTEM, ROOT, STALE_DAYS, smartOf, isSmart, isSystem, systemOf, isFolder,
   childrenOf, descendantsOf, countIn, pathTo, canFileInto, sortCards, upFrom,
-  foldName, phasesOf, KIND_LABEL,
+  foldName, phasesOf, KIND_LABEL, mapLayout, MAP_ROW,
 } = await import(url.href);
 
 // --- fixtures ---------------------------------------------------------
@@ -217,6 +217,62 @@ test('sorting by items counts a folder’s contents and ranks files below', () =
   const cards = tree();
   const shown = childrenOf(cards, ROOT);
   assert.deepEqual(sortCards(shown, 'items', -1, cards).map((c) => c.id), [1, 5]);
+});
+
+// --- the map ----------------------------------------------------------
+
+test('the map draws folders only, root included', () => {
+  const { nodes } = mapLayout(tree(), 'Stack', new Set());
+  assert.deepEqual(nodes.map((n) => n.name).sort(), ['Deep', 'Stack', 'Work']);
+  const root = nodes.find((n) => n.name === 'Stack');
+  assert.equal(root.card, null);      // the root has no card
+  assert.equal(root.depth, 0);
+});
+
+test('a parent sits at the midpoint of its children, not on the first one', () => {
+  // root -> A -> (B, C). A must sit BETWEEN B and C, or a branch reads as a
+  // staircase and the map stops showing structure.
+  const cards = [
+    folder({ id: 1, title: 'A', parentId: null }),
+    folder({ id: 2, title: 'B', parentId: 1 }),
+    folder({ id: 3, title: 'C', parentId: 1 }),
+  ];
+  const { nodes } = mapLayout(cards, 'Stack', new Set());
+  const y = (n) => nodes.find((x) => x.name === n).y;
+  assert.equal(y('B'), 0);
+  assert.equal(y('C'), MAP_ROW);
+  assert.equal(y('A'), MAP_ROW / 2);
+  assert.equal(y('Stack'), MAP_ROW / 2);
+});
+
+test('a collapsed folder takes one row and draws no edges below it', () => {
+  const cards = [
+    folder({ id: 1, title: 'A', parentId: null }),
+    folder({ id: 2, title: 'B', parentId: 1 }),
+  ];
+  const open = mapLayout(cards, 'Stack', new Set());
+  const shut = mapLayout(cards, 'Stack', new Set([1]));
+  assert.equal(open.nodes.length, 3);
+  assert.equal(shut.nodes.length, 2);          // B is not placed
+  assert.equal(shut.edges.length, 1);          // root -> A only
+  assert.equal(shut.nodes.find((n) => n.name === 'A').collapsed, true);
+});
+
+test('a node counts everything it holds, not just its folders', () => {
+  const { nodes } = mapLayout(tree(), 'Stack', new Set());
+  const work = nodes.find((n) => n.name === 'Work');
+  assert.equal(work.kids, 1);    // one folder inside
+  assert.equal(work.holds, 3);   // Deep + its note + the loose note in Work
+});
+
+test('a cycle in remote data does not make the map recurse forever', () => {
+  const cards = [
+    folder({ id: 1, title: 'A', parentId: 2 }),
+    folder({ id: 2, title: 'B', parentId: 1 }),
+  ];
+  const out = mapLayout(cards, 'Stack', new Set());
+  assert(out.nodes.length >= 1);
+  assert(out.w > 0 && out.h > 0);
 });
 
 // --- fold + promote ---------------------------------------------------

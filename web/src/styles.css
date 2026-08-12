@@ -1534,6 +1534,41 @@ a.tab { display: inline-block; }
 .wb-tile .ic.k-polaris, .wb-row .ic.k-polaris { background: var(--accent); }
 .wb-tile .ic.k-ai, .wb-row .ic.k-ai { background: var(--live); }
 
+/* ---------- the Map view, minimap and fullscreen (#415) ---------- */
+.wb-map { position: relative; transform-origin: 0 0; }
+.wb-map-wires { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.wb-map-wires path { stroke: var(--line-3); stroke-width: 1.5; }
+.wb-map-node { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 8px;
+  height: 44px; padding: 0 11px; border-radius: 9px; cursor: pointer; user-select: none;
+  background: var(--surface); border: 1px solid var(--line-2); box-shadow: var(--shadow-note); }
+.wb-map-node:hover { box-shadow: var(--shadow-raise); }
+.wb-map-node.root { background: var(--panel); border-color: var(--line-3); }
+.wb-map-node.here { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+.wb-map-node .nm { flex: 1; min-width: 0; font-size: 13px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.wb-map-node .ct { font-family: var(--mono); font-size: 10px; color: var(--fainter); flex: none; }
+.wb-map-node .tw { flex: none; min-width: 22px; height: 20px; padding: 0 5px; border-radius: 5px;
+  font-family: var(--mono); font-size: 10px; color: var(--muted); border: 1px solid var(--line-2);
+  background: var(--panel); }
+.wb-map-node .tw:hover { color: var(--accent); border-color: var(--accent-tint-border); }
+
+/* The minimap sits opposite the zoom chip so the two never overlap. */
+.wb-mini { position: absolute; right: 12px; bottom: 46px; width: 168px; height: 112px;
+  border: 1px solid var(--line-3); border-radius: 8px; background: var(--panel);
+  overflow: hidden; cursor: pointer; box-shadow: var(--shadow-raise); }
+.wb-mini .dot { position: absolute; border-radius: 2px; background: var(--accent-soft); opacity: .55; }
+/* The viewport frame is the ONE thing that must stay legible over the dots. */
+.wb-mini .port { position: absolute; border: 1.5px solid var(--accent); border-radius: 3px;
+  background: var(--accent-tint); opacity: .38; pointer-events: none; }
+.wb-zoom button.on { color: var(--accent); background: var(--accent-tint); }
+
+/* Fullscreen is a class on the tab's own root: fixed, above the app chrome,
+   with the body's height freed so the canvas takes everything that is left. */
+.wb.full { position: fixed; inset: 0; z-index: 60; margin: 0; padding: 10px 12px 0;
+  background: var(--bg); overflow: hidden; }
+.wb.full .section-bar { display: none; }
+.wb.full .wb-body { height: calc(100vh - 100px); }
+
 /* The two system folders (#415) — Polaris and the Roadmap. Read-only, so they
    get a header saying what they are instead of the toolbar's verbs. */
 .wb-system-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;

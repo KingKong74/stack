@@ -11,6 +11,7 @@ import {
 import {
   ROOT, SMART, SYSTEM, KIND_LABEL, childrenOf, descendantsOf, countIn, pathTo, canFileInto,
   isFolder, isSmart, isSystem, systemOf, sortCards, foldName, phasesOf, upFrom,
+  mapLayout, MAP_NODE_W,
   type FolderId, type SortKey,
 } from '../lib/workbenchTree';
 import { go } from '../lib/route';
@@ -49,12 +50,17 @@ const GRID = 26;
 // The three ways to look at a folder. Canvas is the original Workbench and
 // stays the default; the other two are for a folder holding more than a screen
 // of work, where position stops being the thing you are reading by.
-type View = 'canvas' | 'tiles' | 'details';
+type View = 'canvas' | 'tiles' | 'details' | 'map';
 const VIEWS: { key: View; label: string }[] = [
   { key: 'canvas', label: 'Canvas' },
   { key: 'tiles', label: 'Tiles' },
   { key: 'details', label: 'Details' },
+  { key: 'map', label: 'Map' },
 ];
+// Which views are a ZOOMABLE SPACE rather than a list. The wheel, the zoom chip
+// and the minimap all key off this one predicate, so they cannot end up
+// disagreeing about whether the thing on screen can be zoomed.
+const spatial = (v: View) => v === 'canvas' || v === 'map';
 
 // A deep-link's hl token is a NOTE id (bare, ⌘K's form) or a FUTURE id
 // (f<id>, a pulled Polaris idea) — the two tables' ids collide, so the form is
@@ -160,6 +166,11 @@ export function Workbench({
   // `sel`, which is the ops rail's subject and is exactly one card — merging
   // them would make every ops button ambiguous the moment two things are ticked.
   const [marked, setMarked] = useState<Set<number>>(new Set());
+  // Which map nodes are shut. A way of LOOKING at the tree, like a scroll
+  // position — not stored, so two panes on the same map may differ.
+  const [mapShut, setMapShut] = useState<Set<number>>(new Set());
+  const [full, setFull] = useState(false);
+  const [minimap, setMinimap] = useState(true);
   const [hotEdge, setHotEdge] = useState<number | null>(null);
   const [linking, setLinking] = useState<number | null>(null);
   const [busyOp, setBusyOp] = useState<WorkbenchOp | null>(null);
@@ -199,6 +210,9 @@ export function Workbench({
   // and would test the drop against a tree that has since changed.
   const allCardsRef = useRef<WorkbenchCard[]>([]);
   allCardsRef.current = data?.cards ?? [];
+  // The wheel listener is attached once, so it reads "is this a zoomable view"
+  // through a ref rather than closing over a value it would then hold stale.
+  const spatialRef = useRef(true);
   // Measured card heights, keyed by card id. Edges attach to a card's middle and
   // op output stacks under the last one, and both need the height the browser
   // actually gave a card — not one we guessed from its content.
@@ -271,6 +285,7 @@ export function Workbench({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      if (full) { setFull(false); return; }
       if (debriefOpen) closeDebrief();
       else if (pickerOpen) closePicker();
       else if (linking !== null) setLinking(null);
@@ -280,7 +295,7 @@ export function Workbench({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [linking, asking, pickerOpen, debriefOpen, focus, closePicker, closeDebrief]);
+  }, [linking, asking, pickerOpen, debriefOpen, focus, full, closePicker, closeDebrief]);
 
   // ---- pan + zoom ----
   // Native wheel listener with passive:false, so the page never scrolls out
@@ -298,6 +313,9 @@ export function Workbench({
     const el = groundRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      // Only a spatial view zooms; a list scrolls, and hijacking its wheel
+      // would make Details unreadable below the fold.
+      if (!spatialRef.current) return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
       const mx = e.clientX - r.left;
@@ -1180,6 +1198,48 @@ export function Workbench({
     say(`Pulled ${card.meta} into ${where}.`);
   });
 
+  spatialRef.current = spatial(view) && !sysOpen;
+
+  // The map, laid out from the whole tree — not from `shown`. It is a picture
+  // of how the workbench is ARRANGED, so standing inside a folder must not
+  // shrink it to that folder; the current folder is highlighted instead.
+  const map = view === 'map' && !sysOpen
+    ? mapLayout(allCards, projectName, mapShut) : null;
+
+  // THE MINIMAP. Bounds come from what is actually drawn, so it frames the work
+  // rather than a fixed field — an empty canvas has no minimap at all rather
+  // than a rectangle wandering an imaginary 2400px plane.
+  const mini = (() => {
+    if (!minimap || !spatialRef.current) return null;
+    const boxes = map
+      ? map.nodes.map((n) => ({ x: n.x, y: n.y, w: MAP_NODE_W, h: 44 }))
+      : shown.map((c) => ({ x: c.x, y: c.y, w: c.w, h: hOf(c) }));
+    if (boxes.length < 2) return null;
+    const pad = 80;
+    const x0 = Math.min(...boxes.map((b) => b.x)) - pad;
+    const y0 = Math.min(...boxes.map((b) => b.y)) - pad;
+    const x1 = Math.max(...boxes.map((b) => b.x + b.w)) + pad;
+    const y1 = Math.max(...boxes.map((b) => b.y + b.h)) + pad;
+    const w = Math.max(1, x1 - x0);
+    const h = Math.max(1, y1 - y0);
+    const el = groundRef.current;
+    const vw = el?.clientWidth ?? 800;
+    const vh = el?.clientHeight ?? 520;
+    // The viewport rect, in the same world coordinates as the boxes.
+    const vx = -pan.x / zoom;
+    const vy = -pan.y / zoom;
+    return {
+      x0, y0, w, h, boxes,
+      view: { x: vx, y: vy, w: vw / zoom, h: vh / zoom },
+      // Screen point inside the minimap -> a pan that centres that world point.
+      panTo: (fx: number, fy: number) => {
+        const wx = x0 + fx * w;
+        const wy = y0 + fy * h;
+        setPan({ x: vw / 2 - wx * zoom, y: vh / 2 - wy * zoom });
+      },
+    };
+  })();
+
   const sortHead = (key: SortKey, label: string) => (
     <button className={`wb-sort${sortKey === key ? ' on' : ''}`}
       onClick={() => {
@@ -1191,7 +1251,10 @@ export function Workbench({
   );
 
   return (
-    <div className="wb">
+    // Fullscreen is a CLASS, not a portal or the Fullscreen API: the canvas has
+    // to keep its measured card heights and its wheel listener across the
+    // switch, and both are attached to nodes that a portal would remount.
+    <div className={`wb${full ? ' full' : ''}`}>
       <div className="section-bar" style={{ marginBottom: 6 }}>
         <div className="titles">
           <div className="h">Workbench</div>
@@ -1475,7 +1538,8 @@ export function Workbench({
           }}
         >
           <div className="wb-field" style={{ transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})` }}>
-            <svg className="wb-wires" width="2400" height="1800">
+            <svg className="wb-wires" width="2400" height="1800"
+              style={{ display: view === 'canvas' ? undefined : 'none' }}>
               {wires.map((p) => (
                 <path key={`w${p.id}`} d={p.d} fill="none"
                   className={`wb-wire${p.ai ? ' ai' : ''}${hotEdge === p.id ? ' hot' : ''}${p.dim ? ' dim' : ''}`} />
@@ -1497,7 +1561,40 @@ export function Workbench({
               ))}
             </svg>
 
-            {cards.map((c) => (
+            {view === 'map' && map && (
+              <div className="wb-map" style={{ width: map.w, height: map.h }}>
+                <svg width={map.w} height={map.h} className="wb-map-wires">
+                  {map.edges.map((e, i) => (
+                    <path key={i} fill="none"
+                      d={`M ${e.x1} ${e.y1} C ${e.x1 + 60} ${e.y1}, ${e.x2 - 60} ${e.y2}, ${e.x2} ${e.y2}`} />
+                  ))}
+                </svg>
+                {map.nodes.map((n) => (
+                  <div key={String(n.id)}
+                    className={`wb-map-node${n.id === cwd ? ' here' : ''}${n.card ? '' : ' root'}`}
+                    style={{ transform: `translate(${n.x}px,${n.y}px)`, width: MAP_NODE_W }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => navigate(n.id)}>
+                    <span className="nm">{n.name}</span>
+                    <span className="ct">{n.holds}</span>
+                    {n.kids > 0 && (
+                      <button className="tw" title={n.collapsed ? 'Expand' : 'Collapse'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMapShut((prev) => {
+                            const next = new Set(prev);
+                            if (typeof n.id !== 'number') return next;
+                            if (next.has(n.id)) next.delete(n.id); else next.add(n.id);
+                            return next;
+                          });
+                        }}>{n.collapsed ? `+${n.kids}` : '−'}</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {view === 'canvas' && cards.map((c) => (
               <CardView
                 key={c.id} card={c}
                 selected={c.id === sel}
@@ -1523,7 +1620,51 @@ export function Workbench({
             <button onClick={() => zoomBy(1 / 1.2)} aria-label="Zoom out">−</button>
             <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>{Math.round(zoom * 100)}%</button>
             <button onClick={() => zoomBy(1.2)} aria-label="Zoom in">+</button>
+            <button className={minimap ? 'on' : ''} title="Minimap"
+              onClick={() => setMinimap((m) => !m)}>▣</button>
+            <button className={full ? 'on' : ''} title={full ? 'Leave fullscreen (Esc)' : 'Fullscreen'}
+              onClick={() => setFull((f) => !f)}>{full ? '⤡' : '⤢'}</button>
           </div>
+
+          {/* THE MINIMAP frames what is DRAWN, not a fixed field: an empty
+              canvas gets no minimap rather than a rectangle wandering an
+              imaginary plane. Press or drag anywhere in it to pan there. */}
+          {mini && (
+            <div className="wb-mini"
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                const el = e.currentTarget;
+                const move = (ev: PointerEvent | React.PointerEvent) => {
+                  const r = el.getBoundingClientRect();
+                  mini.panTo(
+                    Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)),
+                    Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height)),
+                  );
+                };
+                move(e);
+                const up = () => {
+                  window.removeEventListener('pointermove', move as (e: PointerEvent) => void);
+                  window.removeEventListener('pointerup', up);
+                };
+                window.addEventListener('pointermove', move as (e: PointerEvent) => void);
+                window.addEventListener('pointerup', up);
+              }}>
+              {mini.boxes.map((b, i) => (
+                <span key={i} className="dot" style={{
+                  left: `${((b.x - mini.x0) / mini.w) * 100}%`,
+                  top: `${((b.y - mini.y0) / mini.h) * 100}%`,
+                  width: `${Math.max(1.5, (b.w / mini.w) * 100)}%`,
+                  height: `${Math.max(1.5, (b.h / mini.h) * 100)}%`,
+                }} />
+              ))}
+              <span className="port" style={{
+                left: `${((mini.view.x - mini.x0) / mini.w) * 100}%`,
+                top: `${((mini.view.y - mini.y0) / mini.h) * 100}%`,
+                width: `${(mini.view.w / mini.w) * 100}%`,
+                height: `${(mini.view.h / mini.h) * 100}%`,
+              }} />
+            </div>
+          )}
 
           {pickerOpen && (
             <div className="wb-picker" onPointerDown={(e) => e.stopPropagation()}>
