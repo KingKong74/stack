@@ -1573,7 +1573,9 @@ a.tab { display: inline-block; }
 .wb-map-node .tw:hover { color: var(--accent); border-color: var(--accent-tint-border); }
 
 /* The minimap sits opposite the zoom chip so the two never overlap. */
-.wb-mini { position: absolute; right: 12px; bottom: 46px; width: 168px; height: 112px;
+/* Clears the zoom chip below it (bottom 16 + ~32 tall) with room to spare —
+   two floating overlays sharing a corner is a control you cannot press. */
+.wb-mini { position: absolute; right: 16px; bottom: 60px; width: 168px; height: 112px;
   border: 1px solid var(--line-3); border-radius: 8px; background: var(--panel);
   overflow: hidden; cursor: pointer; box-shadow: var(--shadow-raise); }
 .wb-mini .dot { position: absolute; border-radius: 2px; background: var(--accent-soft); opacity: .55; }
