@@ -948,11 +948,18 @@ export function Workbench({
   // A search reaches DOWN from here, not across the whole canvas: you are
   // searching the folder you are standing in, and its subfolders are part of
   // it. Searching everything would make the breadcrumb a lie.
+  //
+  // EXCEPT ON THE CANVAS, which cannot honestly draw a result set from several
+  // folders at once: x/y are read INSIDE a folder, so two matches from two
+  // folders carry two unrelated coordinate systems and land on top of each
+  // other. The canvas is a place, so it searches only what is placed in it, and
+  // the status bar says which of the two searches you got rather than leaving
+  // the difference to be discovered.
+  const deepSearch = searching && view !== 'canvas';
   const shown = (() => {
     const needle = query.trim().toLowerCase();
-    const base = searching
-      ? descendantsOf(allCards, cwd).filter((c) => c.title.toLowerCase().includes(needle))
-      : childrenOf(allCards, cwd);
+    const pool = deepSearch ? descendantsOf(allCards, cwd) : childrenOf(allCards, cwd);
+    const base = searching ? pool.filter((c) => c.title.toLowerCase().includes(needle)) : pool;
     return view === 'canvas' && !searching ? base : sortCards(base, sortKey, sortDir, allCards);
   })();
   const shownIds = new Set(shown.map((c) => c.id));
@@ -1108,7 +1115,9 @@ export function Workbench({
     ? data.edges.filter((e) => shownIds.has(e.a) !== shownIds.has(e.b)).length
     : 0;
   const statusCount = `${shown.length} ${shown.length === 1 ? 'item' : 'items'}`
-    + (searching ? ` matching “${query.trim()}”` : '');
+    + (searching
+      ? ` matching “${query.trim()}”${deepSearch ? ' in here and below' : ' placed in this folder'}`
+      : '');
   const statusMarked = marked.size ? `${marked.size} marked` : selCard ? `“${selCard.title.slice(0, 60)}”` : '';
   // A wire crossing a folder boundary is not drawn, and saying nothing about it
   // would make the canvas read as a thread that simply ends (see the header).
@@ -1286,7 +1295,7 @@ export function Workbench({
               ))}
               {!shown.length && (
                 <div className="wb-list-empty">
-                  {searching ? 'Nothing in this folder matches that.'
+                  {searching ? 'Nothing in this folder or below it matches that.'
                     : isSmart(cwd) ? 'Nothing on the canvas answers that search right now.'
                       : 'This folder is empty. Drag cards onto it, or make a note here.'}
                 </div>
@@ -1512,11 +1521,19 @@ export function Workbench({
 
           {!loading && cards.length === 0 && (
             <div className="wb-empty">
-              <div className="big">{cwd === ROOT ? 'An empty bench' : 'An empty folder'}</div>
+              <div className="big">
+                {searching ? 'Nothing placed here matches'
+                  : cwd === ROOT ? 'An empty bench' : 'An empty folder'}
+              </div>
               <div>
-                {cwd === ROOT
-                  ? 'Jot a note or pull an idea across from Polaris, then select it and run an ✧ op.'
-                  : 'Drag cards onto this folder from anywhere, or add a note — it will be filed here.'}
+                {/* The canvas searches only what is PLACED in this folder, so
+                    an empty result here is not the same answer the lists give.
+                    Say which search ran, and where the other one lives. */}
+                {searching
+                  ? 'The canvas can only search what is placed in this folder. Tiles or Details will search the subfolders too.'
+                  : cwd === ROOT
+                    ? 'Jot a note or pull an idea across from Polaris, then select it and run an ✧ op.'
+                    : 'Drag cards onto this folder from anywhere, or add a note — it will be filed here.'}
               </div>
             </div>
           )}
