@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 
 const url = new URL('../web/src/lib/workbenchTree.ts', import.meta.url);
 const {
-  SMART, ROOT, STALE_DAYS, smartOf, isSmart, isFolder,
+  SMART, SYSTEM, ROOT, STALE_DAYS, smartOf, isSmart, isSystem, systemOf, isFolder,
   childrenOf, descendantsOf, countIn, pathTo, canFileInto, sortCards, upFrom,
   foldName, phasesOf, KIND_LABEL,
 } = await import(url.href);
@@ -132,6 +132,50 @@ test('"loose" is unfiled work, and a folder at the root is not loose', () => {
 
 test('every smart folder carries a token, never a hex', () => {
   for (const s of SMART) assert.match(s.tone, /^var\(--[a-z-]+\)$/);
+});
+
+// --- the system folders -----------------------------------------------
+
+test('a system folder holds no CARDS — its rows live in other tables', () => {
+  const cards = tree();
+  assert.deepEqual(childrenOf(cards, 'sys:polaris'), []);
+  assert.deepEqual(childrenOf(cards, 'sys:roadmap'), []);
+  assert.equal(countIn(cards, 'sys:roadmap'), 0);
+});
+
+test('a system folder is undeletable because there is nothing to delete', () => {
+  // The property, stated as a test: neither key is a card id, so no delete path
+  // can reach one. A `system: true` flag on a real row would need defending in
+  // DELETE, in the move guard and in the fold — three places to forget.
+  const cards = tree();
+  for (const s of SYSTEM) {
+    assert.equal(typeof s.key, 'string');
+    assert.equal(cards.some((c) => String(c.id) === s.key), false);
+    assert(isSystem(s.key));
+    assert.equal(systemOf(s.key).name, s.name);
+  }
+});
+
+test('nothing may be filed into a system folder', () => {
+  const cards = tree();
+  assert.equal(canFileInto(cards, 5, 'sys:polaris'), false);
+  assert.equal(canFileInto(cards, 1, 'sys:roadmap'), false);
+});
+
+test('a system folder hangs off the root and Up goes there', () => {
+  const cards = tree();
+  assert.deepEqual(upFrom(cards, 'sys:polaris'), { to: null });
+  assert.deepEqual(pathTo(cards, 'sys:roadmap', 'Stack').map((c) => c.name), ['Stack', 'Roadmap']);
+});
+
+test('smart and system keys cannot be mistaken for each other', () => {
+  assert(isSmart('smart:stale') && !isSystem('smart:stale'));
+  assert(isSystem('sys:polaris') && !isSmart('sys:polaris'));
+  assert(!isSmart(3) && !isSystem(3) && !isSmart(null) && !isSystem(null));
+});
+
+test('every system folder carries a token, never a hex', () => {
+  for (const s of SYSTEM) assert.match(s.tone, /^var\(--[a-z-]+\)$/);
 });
 
 // --- the cycle guard --------------------------------------------------

@@ -243,6 +243,21 @@ export function workbenchCardShape(row) {
   };
 }
 
+// One board item inside the Workbench's ROADMAP system folder (#415). A thin
+// read: enough to recognise the item and open it on the Roadmap tab, and
+// nothing that would tempt a reader to treat this as an editable copy of the
+// board. The folder is READ-ONLY for exactly that reason — the roadmap's own
+// PATCH is the only writer, and a second editing surface would be a second
+// truth about what the plan says.
+export const workbenchBoardShape = (row) => ({
+  id: row.id,
+  title: row.title,
+  bucket: row.bucket,
+  area: row.area || '',
+  tier: row.tier || '',
+  when: relativeTime(row.updated_at) || 'just now',
+});
+
 export const workbenchEdgeShape = (row) => ({
   id: row.id, a: row.a_id, b: row.b_id, ai: Boolean(row.ai),
 });

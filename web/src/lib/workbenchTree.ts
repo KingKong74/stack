@@ -27,13 +27,64 @@ import type { WorkbenchCard } from '../types';
 /** The root's id in navigation state. Not a card id — the root has no card. */
 export const ROOT: null = null;
 
-/** Where the Explorer can be: a real folder card, or the root, or a smart folder. */
-export type FolderId = number | null | SmartKey;
+/** Where the Explorer can be: a folder card, the root, a smart folder, a system one. */
+export type FolderId = number | null | SmartKey | SystemKey;
 
 export type SmartKey = 'smart:stale' | 'smart:polaris' | 'smart:sessions' | 'smart:loose';
 
 export const isSmart = (id: FolderId): id is SmartKey =>
   typeof id === 'string' && id.startsWith('smart:');
+
+/**
+ * THE SYSTEM FOLDERS (#415) — Polaris and the Roadmap, pinned under the project
+ * root, showing the two things the Workbench turns loose thinking INTO.
+ *
+ * They are DERIVED, exactly like a smart folder, and that is what makes them
+ * undeletable: there is no row to delete. A `system: true` flag on a real
+ * folder row would have to be defended in DELETE, in the move guard and in the
+ * fold — three places to forget — and a project restored from a backup taken
+ * before the flag existed would come back with a deletable Polaris folder.
+ *
+ * Their contents are NOT cards. A Polaris idea lives in `futures` and a board
+ * item in `roadmap_items`, and neither becomes a workbench card by being looked
+ * at. So `childrenOf` answers EMPTY for them and the screen renders the right
+ * list itself — the alternative, faking cards for rows that are not cards, is
+ * how a read-only view acquires an edit button nobody meant to give it.
+ *
+ * READ-ONLY, therefore, in both directions: nothing files INTO them (there is
+ * no parent to write) and nothing inside them is edited here. Polaris offers
+ * the one write that already existed — pull an idea onto the canvas.
+ */
+export type SystemKey = 'sys:polaris' | 'sys:roadmap';
+
+export const isSystem = (id: FolderId): id is SystemKey =>
+  typeof id === 'string' && id.startsWith('sys:');
+
+export interface System {
+  key: SystemKey;
+  name: string;
+  tone: string;
+  /** What the folder is, said on the empty state and under the title. */
+  blurb: string;
+}
+
+export const SYSTEM: System[] = [
+  {
+    key: 'sys:polaris',
+    name: 'Polaris',
+    tone: 'var(--accent)',
+    blurb: 'The idea funnel. Pull one onto the canvas to work on it.',
+  },
+  {
+    key: 'sys:roadmap',
+    name: 'Roadmap',
+    tone: 'var(--building)',
+    blurb: 'The open board, in the run queue’s order. Read-only here — the Roadmap tab is where it is edited.',
+  },
+];
+
+export const systemOf = (id: FolderId): System | undefined =>
+  SYSTEM.find((s) => s.key === id);
 
 /** How old a card has to be before the Explorer calls it stale. */
 export const STALE_DAYS = 30;
@@ -94,6 +145,9 @@ export const isFolder = (c: WorkbenchCard | undefined | null): boolean => !!c &&
  * the toolbar already.
  */
 export function childrenOf(cards: WorkbenchCard[], id: FolderId): WorkbenchCard[] {
+  // A system folder holds rows from other tables, not cards. Empty here is the
+  // honest answer; the screen renders its list from the payload it belongs to.
+  if (isSystem(id)) return [];
   const smart = smartOf(id);
   if (smart) return cards.filter((c) => smart.test(c, cards));
   return cards.filter((c) => c.parentId === id);
@@ -133,6 +187,8 @@ export interface Crumb { id: FolderId; name: string }
 export function pathTo(cards: WorkbenchCard[], id: FolderId, rootName: string): Crumb[] {
   const smart = smartOf(id);
   if (smart) return [{ id: ROOT, name: rootName }, { id: smart.key, name: smart.name }];
+  const system = systemOf(id);
+  if (system) return [{ id: ROOT, name: rootName }, { id: system.key, name: system.name }];
   const chain: Crumb[] = [];
   const seen = new Set<number>();
   let at: number | null = typeof id === 'number' ? id : null;
@@ -157,7 +213,8 @@ export function pathTo(cards: WorkbenchCard[], id: FolderId, rootName: string): 
  * BAD_PARENT sentinel, and the same fix.
  */
 export function upFrom(cards: WorkbenchCard[], id: FolderId): { to: FolderId } | null {
-  if (isSmart(id)) return { to: ROOT };        // a query's parent is the root
+  // A query and a system folder both hang off the root by definition.
+  if (isSmart(id) || isSystem(id)) return { to: ROOT };
   if (id === ROOT) return null;                // the root has nothing above it
   return { to: cards.find((c) => c.id === id)?.parentId ?? ROOT };
 }
@@ -171,6 +228,7 @@ export function upFrom(cards: WorkbenchCard[], id: FolderId): { to: FolderId } |
  */
 export function canFileInto(cards: WorkbenchCard[], cardId: number, target: FolderId): boolean {
   if (isSmart(target)) return false;              // a query holds nothing
+  if (isSystem(target)) return false;             // and neither does a read-only view
   if (target === cardId) return false;            // nothing contains itself
   const card = cards.find((c) => c.id === cardId);
   if (!card) return false;

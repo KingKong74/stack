@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { pool, q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { NOTE_PALETTE, relativeTime } from '../util.js';
-import { workbenchCardShape, workbenchEdgeShape, workbenchIdeaShape } from '../shape.js';
+import { workbenchCardShape, workbenchEdgeShape, workbenchIdeaShape, workbenchBoardShape } from '../shape.js';
 import { askGemini, GEMINI_MODELS } from '../gemini.js';
 import { agentClient } from '../agents.js';
 import { buildPrompt } from '../prompts.js';
@@ -98,6 +98,11 @@ const OPS = {
 };
 
 const BUCKETS = ['must', 'should', 'could', 'wont'];
+
+// How many open board items the Roadmap system folder carries (#415). Capped
+// because this rides on every Workbench read, and stated out loud on the folder
+// itself — a list that is silently cut reads as the whole board.
+const BOARD_IN_FOLDER = 60;
 
 // A note plus its card, or an op's output plus the line feeding it, must land
 // together or not at all — a half-written pair is a card with nothing in it, or
@@ -202,7 +207,7 @@ async function backfillNoteCards(projectId) {
 // full, and a silent slice here would read as "that's all the ideas you have".
 workbench.get('/', async (req, res) => {
   await backfillNoteCards(req.project.id);
-  const [cards, edges, ideas, settings] = await Promise.all([
+  const [cards, edges, ideas, board, settings] = await Promise.all([
     cardsOf(req.project.id),
     q('SELECT * FROM workbench_edges WHERE project_id = $1 ORDER BY id', [req.project.id]),
     q(
@@ -214,12 +219,34 @@ workbench.get('/', async (req, res) => {
         ORDER BY f.created_at DESC`,
       [req.project.id]
     ),
+    // #415 — the ROADMAP system folder. The Workbench's whole job is turning
+    // loose thinking into planned work, and it could not see the plan; this is
+    // the board, read-only, so a note can be written next to the item it is
+    // about. Deliberately NOT the whole roadmap payload: the folder lists what
+    // is OPEN and in play, because a done item is not something you are still
+    // thinking about, and it is capped and SAYS SO (#239's rule) rather than
+    // quietly showing the first fifty of a hundred.
+    q(
+      `SELECT id, title, bucket, area, tier, done, updated_at,
+              count(*) OVER ()::int AS total
+         FROM roadmap_items
+        WHERE project_id = $1 AND NOT done AND NOT archived AND NOT skipped
+        ORDER BY CASE tier WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END,
+                 CASE bucket WHEN 'must' THEN 0 WHEN 'should' THEN 1 WHEN 'could' THEN 2 ELSE 3 END,
+                 position, id
+        LIMIT $2`,
+      [req.project.id, BOARD_IN_FOLDER]
+    ),
     readSettings(),
   ]);
   res.json({
     cards,
     edges: edges.rows.map(workbenchEdgeShape),
     polaris: ideas.rows.map(workbenchIdeaShape),
+    // The board, in the run queue's own order — the same order the Roadmap tab
+    // shows, so the folder is not a second opinion about what comes next.
+    board: board.rows.map(workbenchBoardShape),
+    boardTotal: board.rows.length ? board.rows[0].total : 0,
     ops: Object.entries(OPS).map(([key, o]) => ({ key, glyph: o.glyph, label: o.label })),
     // #327 — the model picker's catalogue and current pick. Served
     // unconditionally: the client hides the whole ops rail when there's no

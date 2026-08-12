@@ -280,10 +280,27 @@ export interface WorkbenchModel {
   note: string;
 }
 
+// One board item inside the Workbench's Roadmap system folder (#415). A thin,
+// READ-ONLY read: the roadmap's own PATCH is the only writer of a board item,
+// and a second editing surface here would be a second truth about the plan.
+export interface WorkbenchBoardItem {
+  id: number;
+  title: string;
+  bucket: Priority;
+  area: string;
+  tier: string;      // S|A|B|C, '' = unranked
+  when: string;
+}
+
 export interface WorkbenchData {
   cards: WorkbenchCard[];
   edges: WorkbenchEdge[];
   polaris: WorkbenchIdea[];
+  // The open board, in the run queue's order, for the Roadmap system folder.
+  // Capped server-side; `boardTotal` is how many there really are, so the
+  // folder can say it is showing a slice rather than implying it is the lot.
+  board: WorkbenchBoardItem[];
+  boardTotal: number;
   ops: { key: WorkbenchOp; glyph: string; label: string }[];
   models: WorkbenchModel[];
   model: string;  // the currently-selected model id, '' = the server's default

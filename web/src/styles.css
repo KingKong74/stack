@@ -1534,6 +1534,27 @@ a.tab { display: inline-block; }
 .wb-tile .ic.k-polaris, .wb-row .ic.k-polaris { background: var(--accent); }
 .wb-tile .ic.k-ai, .wb-row .ic.k-ai { background: var(--live); }
 
+/* The two system folders (#415) — Polaris and the Roadmap. Read-only, so they
+   get a header saying what they are instead of the toolbar's verbs. */
+.wb-system-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+  padding: 11px 13px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.wb-system-head .dot { width: 7px; height: 7px; border-radius: 50%; align-self: center; flex: none; }
+.wb-system-head .t { font-size: 13.5px; font-weight: 600; }
+.wb-system-head .b { font-size: 11.5px; color: var(--muted); }
+.wb-tree-row.system .name { color: var(--body-2); }
+.wb-row.sys { grid-template-columns: 1fr 132px 110px 104px; }
+.wb-row.sys .when { display: flex; justify-content: flex-end; }
+.wb-row.sys .on-canvas { font-family: var(--mono); font-size: 10px; color: var(--faint); }
+/* The bucket swatch on a board row: the roadmap's own four tones, so the two
+   surfaces cannot disagree about what "must" looks like. */
+.wb-row .ic.bk-must { background: var(--critical); }
+.wb-row .ic.bk-should { background: var(--accent); }
+.wb-row .ic.bk-could { background: var(--sage); }
+.wb-row .ic.bk-wont { background: var(--paused); }
+/* A capped list says so, and on the axis that matters — see routes/audit.js. */
+.wb-list-note { padding: 10px 13px; font-size: 11.5px; color: var(--faint);
+  border-top: 1px solid var(--line); line-height: 1.6; }
+
 .wb-status { display: flex; align-items: center; gap: 14px; height: 26px; padding: 0 11px;
   border: 1px solid var(--line-2); border-top: 0; border-radius: 0 0 14px 14px;
   background: var(--panel); font-family: var(--mono); font-size: 10.5px; color: var(--faint); }

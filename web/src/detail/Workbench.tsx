@@ -9,10 +9,11 @@ import {
   getWorkbenchDebrief, importWorkbenchDebrief,
 } from '../store';
 import {
-  ROOT, SMART, KIND_LABEL, childrenOf, descendantsOf, countIn, pathTo, canFileInto,
-  isFolder, isSmart, sortCards, foldName, phasesOf, upFrom,
+  ROOT, SMART, SYSTEM, KIND_LABEL, childrenOf, descendantsOf, countIn, pathTo, canFileInto,
+  isFolder, isSmart, isSystem, systemOf, sortCards, foldName, phasesOf, upFrom,
   type FolderId, type SortKey,
 } from '../lib/workbenchTree';
+import { go } from '../lib/route';
 import { WorkbenchDesign } from './WorkbenchDesign';
 
 // The Workbench — the planning canvas that replaced the notes wall.
@@ -138,6 +139,12 @@ export function Workbench({
   const [cwd, setCwd] = useState<FolderId>(ROOT);
   const [hist, setHist] = useState<FolderId[]>([ROOT]);
   const [hi, setHi] = useState(0);
+  // The last folder that can actually HOLD a card. A smart or system folder
+  // cannot, so anything made while one is open has to land somewhere real —
+  // and the somewhere it should land is where you were last working, not the
+  // root by default. Kept beside `cwd` rather than derived from history,
+  // because history contains the unholdable ones too.
+  const [lastRealFolder, setLastRealFolder] = useState<FolderId>(ROOT);
   const [view, setView] = useState<View>('canvas');
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
@@ -278,6 +285,15 @@ export function Workbench({
   // ---- pan + zoom ----
   // Native wheel listener with passive:false, so the page never scrolls out
   // from under the canvas mid-zoom.
+  //
+  // KEYED ON THE GROUND EXISTING, not on mount. This effect used to run once
+  // with `[]` — and the first render is the LOADING state, which has no canvas
+  // in it, so `groundRef.current` was null, the effect bailed, and it never ran
+  // again. Wheel zoom was silently dead from the moment the loading state was
+  // added: the buttons still worked, so it read as a preference rather than a
+  // bug. Anything reaching for a DOM node that appears after a fetch has this
+  // hazard; the fix is to depend on the node being there.
+  const groundReady = !loading || !!data;
   useEffect(() => {
     const el = groundRef.current;
     if (!el) return;
@@ -296,7 +312,7 @@ export function Workbench({
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [groundReady]);
 
   const zoomBy = (f: number) => {
     const el = groundRef.current;
@@ -431,6 +447,7 @@ export function Workbench({
   // folder into another is how a Fold ends up eating a card nobody can see.
   const arrive = useCallback((next: FolderId) => {
     setCwd(next);
+    if (!isSmart(next) && !isSystem(next)) setLastRealFolder(next);
     setSel(null);
     setMarked(new Set());
     setQuery('');
@@ -474,10 +491,12 @@ export function Workbench({
     });
   };
 
-  // A smart folder is a query, so it cannot hold a new card — anything created
-  // while one is open belongs at the root, where it is visible, rather than
-  // being refused with nothing made (#414).
-  const folderForNew = (): number | null => (typeof cwd === 'number' ? cwd : null);
+  // Neither a smart folder nor a system one can hold a card, so anything made
+  // while one is open lands in the last folder that CAN — which is where you
+  // were working, not the root. Making it at the root instead would be correct
+  // and still feel like the card went missing (#414, #415).
+  const folderForNew = (): number | null => (typeof cwd === 'number' ? cwd
+    : typeof lastRealFolder === 'number' ? lastRealFolder : null);
 
   const addNote = () => guard(async () => {
     const at = centreOfView();
@@ -507,7 +526,9 @@ export function Workbench({
   // refused move that still redrew as moved is the one failure this must not
   // have.
   const fileInto = (cardId: number, target: FolderId) => guard(async () => {
-    if (isSmart(target)) return;
+    // Neither a query nor a read-only view is a place. Refused here as well as
+    // in canFileInto so no caller can reach the PATCH with one of them.
+    if (isSmart(target) || isSystem(target)) return;
     const ids = marked.has(cardId) ? [...marked] : [cardId];
     const movable = ids.filter((id) => canFileInto(allCards, id, target));
     setOver(null);
@@ -943,6 +964,13 @@ export function Workbench({
   // tree question is asked of the first and every render of the second — mixing
   // them is how a count says twelve over a folder drawing three.
   const allCards = data?.cards ?? [];
+  // Which system folder, if any, is open. Everything else on the screen keys
+  // off this rather than re-testing `cwd`, so the canvas, the lists and the
+  // status bar cannot disagree about whether one is showing.
+  const sysOpen = systemOf(cwd);
+  const board = data?.board ?? [];
+  const boardCapped = (data?.boardTotal ?? 0) > board.length;
+
   const crumbs = pathTo(allCards, cwd, projectName);
   const searching = query.trim().length > 0;
   // A search reaches DOWN from here, not across the whole canvas: you are
@@ -1114,7 +1142,11 @@ export function Workbench({
   const hiddenWires = data
     ? data.edges.filter((e) => shownIds.has(e.a) !== shownIds.has(e.b)).length
     : 0;
-  const statusCount = `${shown.length} ${shown.length === 1 ? 'item' : 'items'}`
+  const sysCount = sysOpen
+    ? (sysOpen.key === 'sys:polaris' ? ideas.length : data?.boardTotal ?? 0) : 0;
+  const statusCount = sysOpen
+    ? `${sysCount} ${sysCount === 1 ? 'item' : 'items'} · read-only`
+    : `${shown.length} ${shown.length === 1 ? 'item' : 'items'}`
     + (searching
       ? ` matching “${query.trim()}”${deepSearch ? ' in here and below' : ' placed in this folder'}`
       : '');
@@ -1127,6 +1159,26 @@ export function Workbench({
 
   // Only wires with BOTH ends in this folder are drawn — see the file header.
   const wires = paths.filter((p) => shownIds.has(p.a) && shownIds.has(p.b));
+
+  // Pull ONE idea from the Polaris folder onto the canvas, into whatever real
+  // folder you were last in — never into the system folder itself, which holds
+  // no cards. Same POST the picker uses; this is just a one-click door onto it.
+  const pullIdea = (futureId: number) => guard(async () => {
+    const into = typeof lastRealFolder === 'number' ? lastRealFolder : null;
+    const at = centreOfView();
+    const card = await addWorkbenchCard(slug, {
+      kind: 'polaris', futureId, x: at.x, y: at.y, parentId: into,
+    });
+    setData((d) => (d ? {
+      ...d,
+      cards: [...d.cards, card, ...(card.cascaded?.cards ?? [])],
+      edges: [...d.edges, ...(card.cascaded?.edges ?? [])],
+      polaris: d.polaris.map((p) => (p.id === futureId ? { ...p, onCanvas: true } : p)),
+    } : d));
+    const where = into === null ? 'the workbench'
+      : `“${allCards.find((c) => c.id === into)?.title || 'folder'}”`;
+    say(`Pulled ${card.meta} into ${where}.`);
+  });
 
   const sortHead = (key: SortKey, label: string) => (
     <button className={`wb-sort${sortKey === key ? ' on' : ''}`}
@@ -1174,24 +1226,33 @@ export function Workbench({
           ))}
         </div>
 
-        <input className="wb-search" value={query} placeholder="Search this folder…"
-          onChange={(e) => setQuery(e.target.value)} />
-
-        <div className="wb-views">
-          {VIEWS.map((v) => (
-            <button key={v.key} className={view === v.key ? 'on' : ''}
-              onClick={() => setView(v.key)}>{v.label}</button>
-          ))}
-        </div>
-
-        <button className="ghost sm" onClick={() => void newFolder()}>+ Folder</button>
-        {marked.size > 1 && (
-          <button className="ghost sm" onClick={() => void foldMarked()}>Fold {marked.size}</button>
+        {!sysOpen && (
+          <input className="wb-search" value={query} placeholder="Search this folder…"
+            onChange={(e) => setQuery(e.target.value)} />
         )}
-        {selFolder && (
-          <button className="ghost sm" onClick={() => void promoteFolder(selFolder)}>
-            Promote “{selFolder.title.slice(0, 22)}{selFolder.title.length > 22 ? '…' : ''}”
-          </button>
+
+        {/* A system folder has one way of being looked at, so the view switch
+            and the folder verbs are not offered rather than offered-and-inert:
+            a disabled control still says "this is a thing you do here". */}
+        {!sysOpen && (
+          <>
+            <div className="wb-views">
+              {VIEWS.map((v) => (
+                <button key={v.key} className={view === v.key ? 'on' : ''}
+                  onClick={() => setView(v.key)}>{v.label}</button>
+              ))}
+            </div>
+
+            <button className="ghost sm" onClick={() => void newFolder()}>+ Folder</button>
+            {marked.size > 1 && (
+              <button className="ghost sm" onClick={() => void foldMarked()}>Fold {marked.size}</button>
+            )}
+            {selFolder && (
+              <button className="ghost sm" onClick={() => void promoteFolder(selFolder)}>
+                Promote “{selFolder.title.slice(0, 22)}{selFolder.title.length > 22 ? '…' : ''}”
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -1220,6 +1281,23 @@ export function Workbench({
               <span className="name">{projectName}</span>
               <span className="count">{countIn(allCards, ROOT)}</span>
             </button>
+            {/* The two system folders sit UNDER the project, indented like any
+                other child, because that is what they are — the Workbench's
+                connection to the funnel it draws from and the board it feeds.
+                They carry no drop handler and no delete: they are derived, so
+                there is nothing to file into and nothing to remove (#415). */}
+            {SYSTEM.map((sysf) => (
+              <button key={sysf.key}
+                className={`wb-tree-row system${cwd === sysf.key ? ' on' : ''}`}
+                style={{ paddingLeft: 23 }}
+                onClick={() => navigate(sysf.key)}>
+                <span className="ic" style={{ background: sysf.tone }} />
+                <span className="name">{sysf.name}</span>
+                <span className="count">
+                  {sysf.key === 'sys:polaris' ? ideas.length : data?.boardTotal ?? 0}
+                </span>
+              </button>
+            ))}
             {treeRows.map((r) => (
               <button key={r.card.id}
                 className={`wb-tree-row${cwd === r.card.id ? ' on' : ''}${over === r.card.id ? ' over' : ''}`}
@@ -1246,7 +1324,82 @@ export function Workbench({
           <button className="wb-tree-peg" onClick={() => setTree(true)} title="Show the explorer">›</button>
         )}
 
-        {view !== 'canvas' && (
+        {/* A SYSTEM FOLDER RENDERS ITSELF, whatever view is selected: its rows
+            are futures and roadmap items, not cards, so Canvas/Tiles/Details
+            have nothing to say about them. Read-only both ways — the one write
+            offered is the pull that already existed (#415). */}
+        {sysOpen && (
+          <div className="wb-list wb-system">
+            <div className="wb-system-head">
+              <span className="dot" style={{ background: sysOpen.tone }} />
+              <span className="t">{sysOpen.name}</span>
+              <span className="b">{sysOpen.blurb}</span>
+            </div>
+
+            {sysOpen.key === 'sys:polaris' && (
+              <div className="wb-rows">
+                {ideas.map((idea) => (
+                  <div className="wb-row sys" key={idea.id}>
+                    <span className="name">
+                      <span className="ic k-polaris" />
+                      <span className="t">{idea.title}</span>
+                    </span>
+                    <span className="kind">{idea.area || '—'}</span>
+                    <span className="items">{idea.meta}</span>
+                    <span className="when">
+                      {idea.onCanvas
+                        ? <span className="on-canvas">on the canvas</span>
+                        : (
+                          <button className="chip-sm" onClick={() => void pullIdea(idea.id)}>
+                            → canvas
+                          </button>
+                        )}
+                    </span>
+                  </div>
+                ))}
+                {!ideas.length && (
+                  <div className="wb-list-empty">
+                    No Polaris ideas yet — the funnel is on the Polaris tab.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {sysOpen.key === 'sys:roadmap' && (
+              <div className="wb-rows">
+                {board.map((it) => (
+                  <div className="wb-row sys" key={it.id}
+                    onDoubleClick={() => go.detail(slug, 'roadmap', String(it.id))}>
+                    <span className="name">
+                      <span className={`ic bk-${it.bucket}`} />
+                      <span className="t">#{it.id} {it.title}</span>
+                    </span>
+                    <span className="kind">{it.bucket}{it.tier ? ` · ${it.tier}` : ''}</span>
+                    <span className="items">{it.area || '—'}</span>
+                    <span className="when">
+                      <button className="chip-sm" onClick={() => go.detail(slug, 'roadmap', String(it.id))}>
+                        open ↗
+                      </button>
+                    </span>
+                  </div>
+                ))}
+                {!board.length && (
+                  <div className="wb-list-empty">Nothing open on the board right now.</div>
+                )}
+                {/* #239's rule: a capped list says it is capped, and on the
+                    right axis — how many there are, not how many are shown. */}
+                {boardCapped && (
+                  <div className="wb-list-note">
+                    Showing the first {board.length} of {data?.boardTotal ?? 0} open items, in the
+                    run queue’s order. The Roadmap tab has the rest.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!sysOpen && view !== 'canvas' && (
           <div className={`wb-list${view === 'details' ? ' details' : ''}`}>
             {view === 'details' && (
               <div className="wb-list-head">
@@ -1310,7 +1463,11 @@ export function Workbench({
 
         <div
           ref={groundRef}
-          className={`wb-ground${linking !== null ? ' linking' : ''}${view === 'canvas' ? '' : ' hidden'}`}
+          // Hidden with a class, never unmounted: the wheel listener and the
+          // measured card heights are attached to this node, and remounting it
+          // per view switch would drop both (#414, #415).
+          className={`wb-ground${linking !== null ? ' linking' : ''}`
+            + `${view === 'canvas' && !sysOpen ? '' : ' hidden'}`}
           onPointerDown={startPan}
           style={{
             backgroundSize: `${GRID * zoom}px ${GRID * zoom}px`,
