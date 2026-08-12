@@ -1245,11 +1245,29 @@ export function Workbench({
                   }}
                   onDoubleClick={() => openCard(c)}
                   {...dragProps(c)} {...(isFolder(c) ? dropProps(c.id) : {})}>
-                  <span className={`ic ${c.kind}`} />
-                  <span className="name">{c.title || 'Untitled'}</span>
-                  <span className="kind">{KIND_LABEL[c.kind]}</span>
-                  <span className="items">{isFolder(c) ? countIn(allCards, c.id) : '—'}</span>
-                  <span className="when">{c.when}</span>
+                  {/* THE TWO VIEWS DO NOT SHARE MARKUP. A Details row is a
+                      four-column grid, so the icon has to live INSIDE the name
+                      cell or it takes a column of its own and shifts every
+                      other cell one to the right — which is exactly what the
+                      first cut did. A tile is a stack, and wants its meta on
+                      one line underneath. Same fields, two structures. */}
+                  <span className="name">
+                    <span className={`ic ${c.kind}`} />
+                    <span className="t">{c.title || 'Untitled'}</span>
+                  </span>
+                  {view === 'details' ? (
+                    <>
+                      <span className="kind">{KIND_LABEL[c.kind]}</span>
+                      <span className="items">{isFolder(c) ? countIn(allCards, c.id) : '—'}</span>
+                      <span className="when">{c.when}</span>
+                    </>
+                  ) : (
+                    <span className="meta">
+                      <span className="kind">{KIND_LABEL[c.kind]}</span>
+                      {isFolder(c) && <span className="items">{countIn(allCards, c.id)} in</span>}
+                      <span className="when">{c.when}</span>
+                    </span>
+                  )}
                 </div>
               ))}
               {!shown.length && (
@@ -1655,10 +1673,14 @@ const OP_LABEL: Record<WorkbenchOp, string> = {
   touches: 'Touches', critique: 'Critique', ask: 'Ask',
 };
 
+// The rail's one-line description of the selection. The `ai` case is the
+// FALLBACK, so every new kind has to be named above it — a folder fell through
+// to it once and the rail called a folder "a suggestion, not a decision".
 const kindLine = (c: WorkbenchCard) =>
   c.kind === 'polaris' ? `Polaris idea · ${c.meta}`
     : c.kind === 'note' ? `Scratch note · ${c.meta}`
-      : `✧ ${OP_LABEL[c.op as WorkbenchOp] || 'AI'} output · a suggestion, not a decision`;
+      : c.kind === 'folder' ? 'Folder · double-click it, or use the explorer, to go in'
+        : `✧ ${OP_LABEL[c.op as WorkbenchOp] || 'AI'} output · a suggestion, not a decision`;
 
 // One card. Note and Polaris cards read their title through from the row they
 // wrap, so editing here writes to the note or the idea, never to a copy.

@@ -1492,8 +1492,10 @@ a.tab { display: inline-block; }
 .wb-row .kind, .wb-row .items { font-size: 12px; color: var(--muted); }
 .wb-row .items { font-family: var(--mono); font-size: 11.5px; }
 .wb-row .when { font-family: var(--mono); font-size: 11px; color: var(--muted); }
-.wb-row .name { display: flex; align-items: center; gap: 8px; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+/* The icon lives INSIDE the name cell — as a grid child of its own it would
+   take a column and shift Kind, Items and Updated one place to the right. */
+.wb-row .name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
+.wb-row .name .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .wb-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
   gap: 10px; padding: 12px; }
@@ -1501,10 +1503,13 @@ a.tab { display: inline-block; }
   border: 1px solid var(--line-2); border-radius: 9px; background: var(--surface);
   cursor: default; user-select: none; }
 .wb-tile:hover { box-shadow: var(--shadow-raise); }
-.wb-tile .name { font-size: 13px; font-weight: 500; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; }
-.wb-tile .kind, .wb-tile .when { font-family: var(--mono); font-size: 10px; color: var(--fainter); }
-.wb-tile .items { display: none; }
+.wb-tile .name { display: flex; align-items: center; gap: 7px; min-width: 0;
+  font-size: 13px; font-weight: 500; }
+.wb-tile .name .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-tile .meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.wb-tile .kind, .wb-tile .when, .wb-tile .items {
+  font-family: var(--mono); font-size: 10px; color: var(--fainter); }
+.wb-tile .when { margin-left: auto; }
 
 /* One selection style for both, because they are one selection. */
 .wb-tile.sel, .wb-row.sel { border-color: var(--accent); background: var(--accent-tint); }
@@ -1515,8 +1520,11 @@ a.tab { display: inline-block; }
 .wb-tile.stale, .wb-row.stale { opacity: .66; }
 .wb-list-empty { padding: 26px 16px; font-size: 12.5px; color: var(--faint); text-align: center; }
 
-/* The kind swatch, shared by the tree, the tiles and the rows. */
-.wb-tile .ic, .wb-row .ic { flex: none; width: 11px; height: 11px; border-radius: 2px; }
+/* The kind swatch, shared by the tiles and the rows. `flex: none` is doing real
+   work: inside a column-flex tile an unpinned span stretches to the full tile
+   width and draws as a large empty box. */
+.wb-tile .ic, .wb-row .ic { flex: none; width: 11px; height: 11px; border-radius: 2px;
+  align-self: center; }
 .wb-tile .ic.folder, .wb-row .ic.folder { background: var(--accent-soft); border-radius: 1px 3px 3px 3px; }
 .wb-tile .ic.note, .wb-row .ic.note { background: var(--note-paper); border: 1px solid var(--note-paper-border); }
 .wb-tile .ic.polaris, .wb-row .ic.polaris { background: var(--accent); }
