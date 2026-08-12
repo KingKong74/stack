@@ -171,6 +171,16 @@ export function Workbench({
   const [mapShut, setMapShut] = useState<Set<number>>(new Set());
   const [full, setFull] = useState(false);
   const [minimap, setMinimap] = useState(true);
+  // THE SIDE PANE (#415). Its own folder and its own view, because the whole
+  // point is looking at two places at once — sharing either would make it a
+  // mirror rather than a second pane. Deliberately LIST-ONLY: the canvas's pan,
+  // zoom, wheel listener and measured card heights are attached to one ground
+  // element, and a second live canvas needs all four duplicated. Dragging works
+  // ACROSS the split regardless, because the lists are HTML5 drag targets and
+  // that is what the split is actually for.
+  const [split, setSplit] = useState(false);
+  const [cwd2, setCwd2] = useState<FolderId>(ROOT);
+  const [view2, setView2] = useState<Exclude<View, 'canvas'>>('tiles');
   const [hotEdge, setHotEdge] = useState<number | null>(null);
   const [linking, setLinking] = useState<number | null>(null);
   const [busyOp, setBusyOp] = useState<WorkbenchOp | null>(null);
@@ -1306,6 +1316,9 @@ export function Workbench({
               ))}
             </div>
 
+            <button className={`ghost sm${split ? ' on' : ''}`}
+              title="Show a second folder beside this one"
+              onClick={() => setSplit((v) => !v)}>Split</button>
             <button className="ghost sm" onClick={() => void newFolder()}>+ Folder</button>
             {marked.size > 1 && (
               <button className="ghost sm" onClick={() => void foldMarked()}>Fold {marked.size}</button>
@@ -1841,6 +1854,18 @@ export function Workbench({
           )}
         </div>
 
+        {split && !sysOpen && (
+          <SidePane
+            cards={allCards} projectName={projectName}
+            cwd={cwd2} onNavigate={setCwd2}
+            view={view2} onView={setView2}
+            over={over} dragProps={dragProps} dropProps={dropProps}
+            onClose={() => setSplit(false)}
+            onOpenCard={(c) => { if (isFolder(c)) setCwd2(c.id); else setSel(c.id); }}
+            sel={sel}
+          />
+        )}
+
         {rail ? (
           <div className="wb-rail">
             <div className="wb-rail-head">
@@ -1968,6 +1993,126 @@ export function Workbench({
         <span>{statusCount}</span>
         <span className="mid">{statusMarked}</span>
         <span className="right">{statusWires}</span>
+      </div>
+    </div>
+  );
+}
+
+// THE SIDE PANE (#415) — the right half of a split.
+//
+// It is a second EXPLORER, not a second canvas, and the distinction is
+// deliberate rather than a shortfall of effort. The canvas's pan, zoom, native
+// wheel listener and measured card heights all hang off one ground element;
+// a live second canvas means four duplicated subsystems and two sets of
+// coordinates for a drag to reason about. What a split is actually FOR — see
+// two folders at once and move work between them — is delivered by the list
+// views, which are HTML5 drag targets already, so a drag crosses the split for
+// free. The pane says what it is rather than looking like a broken canvas.
+function SidePane({
+  cards, projectName, cwd, onNavigate, view, onView, over, dragProps, dropProps,
+  onClose, onOpenCard, sel,
+}: {
+  cards: WorkbenchCard[];
+  projectName: string;
+  cwd: FolderId;
+  onNavigate: (id: FolderId) => void;
+  view: Exclude<View, 'canvas'>;
+  onView: (v: Exclude<View, 'canvas'>) => void;
+  over: FolderId | null;
+  dragProps: (c: WorkbenchCard) => Record<string, unknown>;
+  dropProps: (t: FolderId) => Record<string, unknown>;
+  onClose: () => void;
+  onOpenCard: (c: WorkbenchCard) => void;
+  sel: number | null;
+}) {
+  const [shut, setShut] = useState<Set<number>>(new Set());
+  const crumbs = pathTo(cards, cwd, projectName);
+  const up = upFrom(cards, cwd);
+  const rows = sortCards(childrenOf(cards, cwd), 'name', 1, cards);
+  const map = view === 'map' ? mapLayout(cards, projectName, shut) : null;
+
+  return (
+    <div className="wb-side">
+      <div className="wb-side-bar">
+        <button className="nav" disabled={!up} title="Up one level"
+          onClick={() => up && onNavigate(up.to)}>↑</button>
+        <div className="wb-crumbs">
+          {crumbs.map((c, i) => (
+            <span key={`${String(c.id)}-${i}`} className="wb-crumb-wrap">
+              {i > 0 && <span className="sep">/</span>}
+              <button className={`wb-crumb${i === crumbs.length - 1 ? ' here' : ''}`}
+                onClick={() => onNavigate(c.id)}>{c.name}</button>
+            </span>
+          ))}
+        </div>
+        <div className="wb-views">
+          {VIEWS.filter((v) => v.key !== 'canvas').map((v) => (
+            <button key={v.key} className={view === v.key ? 'on' : ''}
+              onClick={() => onView(v.key as Exclude<View, 'canvas'>)}>{v.label}</button>
+          ))}
+        </div>
+        <button className="nav" title="Close the split" onClick={onClose}>✕</button>
+      </div>
+
+      <div className="wb-side-body">
+        {view === 'map' && map && (
+          <div className="wb-map" style={{ width: map.w, height: map.h }}>
+            <svg width={map.w} height={map.h} className="wb-map-wires">
+              {map.edges.map((e, i) => (
+                <path key={i} fill="none"
+                  d={`M ${e.x1} ${e.y1} C ${e.x1 + 60} ${e.y1}, ${e.x2 - 60} ${e.y2}, ${e.x2} ${e.y2}`} />
+              ))}
+            </svg>
+            {map.nodes.map((n) => (
+              <div key={String(n.id)}
+                className={`wb-map-node${n.id === cwd ? ' here' : ''}${n.card ? '' : ' root'}`}
+                style={{ transform: `translate(${n.x}px,${n.y}px)`, width: MAP_NODE_W }}
+                onClick={() => onNavigate(n.id)}>
+                <span className="nm">{n.name}</span>
+                <span className="ct">{n.holds}</span>
+                {n.kids > 0 && (
+                  <button className="tw" onClick={(e) => {
+                    e.stopPropagation();
+                    setShut((prev) => {
+                      const next = new Set(prev);
+                      if (typeof n.id !== 'number') return next;
+                      if (next.has(n.id)) next.delete(n.id); else next.add(n.id);
+                      return next;
+                    });
+                  }}>{n.collapsed ? `+${n.kids}` : '−'}</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {view !== 'map' && (
+          <div className={view === 'tiles' ? 'wb-tiles' : 'wb-rows'}>
+            {rows.map((c) => (
+              <div key={c.id}
+                className={`${view === 'tiles' ? 'wb-tile' : 'wb-row'}`
+                  + `${sel === c.id ? ' sel' : ''}${over === c.id ? ' over' : ''}`}
+                onClick={() => onOpenCard(c)}
+                onDoubleClick={() => onOpenCard(c)}
+                {...dragProps(c)} {...(isFolder(c) ? dropProps(c.id) : {})}>
+                <span className="name">
+                  <span className={`ic k-${c.kind}`} />
+                  <span className="t">{c.title || 'Untitled'}</span>
+                </span>
+                <span className="meta">
+                  <span className="kind">{KIND_LABEL[c.kind]}</span>
+                  {isFolder(c) && <span className="items">{countIn(cards, c.id)} in</span>}
+                  <span className="when">{c.when}</span>
+                </span>
+              </div>
+            ))}
+            {!rows.length && (
+              <div className="wb-list-empty">
+                Empty. Drag something across from the other side.
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

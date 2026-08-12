@@ -1534,6 +1534,26 @@ a.tab { display: inline-block; }
 .wb-tile .ic.k-polaris, .wb-row .ic.k-polaris { background: var(--accent); }
 .wb-tile .ic.k-ai, .wb-row .ic.k-ai { background: var(--live); }
 
+/* The split's second pane (#415). A list explorer, not a second canvas — its
+   header says so by offering only the views it actually has. */
+.wb-side { flex: 0 0 340px; min-width: 260px; display: flex; flex-direction: column;
+  border-left: 1px solid var(--line); background: var(--card); min-height: 0; }
+.wb-side-bar { display: flex; align-items: center; gap: 7px; flex: none; padding: 7px 8px;
+  border-bottom: 1px solid var(--line); background: var(--panel); }
+.wb-side-bar .nav { flex: none; width: 25px; height: 25px; border-radius: 6px; color: var(--muted);
+  border: 1px solid var(--line-2); background: var(--surface); font-size: 12px; }
+.wb-side-bar .nav:hover:not(:disabled) { color: var(--ink); }
+.wb-side-bar .nav:disabled { opacity: .38; cursor: default; }
+.wb-side-bar .wb-crumbs { height: 25px; flex: 1 1 auto; min-width: 0; }
+.wb-side-bar .wb-views { height: 25px; }
+.wb-side-bar .wb-views button { padding: 0 7px; font-size: 11px; }
+.wb-side-body { flex: 1; min-height: 0; overflow: auto; position: relative; }
+.wb-side .wb-tiles { grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); padding: 9px; }
+.wb-side .wb-row { grid-template-columns: 1fr; }
+.wb-side .wb-row .meta { display: none; }
+.wb-side .wb-map { margin: 10px; }
+.ghost.sm.on { color: var(--accent); background: var(--accent-tint); border-color: var(--accent-tint-border); }
+
 /* ---------- the Map view, minimap and fullscreen (#415) ---------- */
 .wb-map { position: relative; transform-origin: 0 0; }
 .wb-map-wires { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
