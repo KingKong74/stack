@@ -1225,13 +1225,14 @@ export function Workbench({
       ? map.nodes.map((n) => ({ x: n.x, y: n.y, w: MAP_NODE_W, h: 44 }))
       : shown.map((c) => ({ x: c.x, y: c.y, w: c.w, h: hOf(c) }));
     if (!boxes.length) return null;
-    const pad = 80;
-    const x0 = Math.min(...boxes.map((b) => b.x)) - pad;
-    const y0 = Math.min(...boxes.map((b) => b.y)) - pad;
-    const x1 = Math.max(...boxes.map((b) => b.x + b.w)) + pad;
-    const y1 = Math.max(...boxes.map((b) => b.y + b.h)) + pad;
-    const w = Math.max(1, x1 - x0);
-    const h = Math.max(1, y1 - y0);
+    // RAW bounds decide whether anything overflows; PADDED bounds are what the
+    // minimap draws. Using the padded ones for both lets the display margin
+    // manufacture an overflow that is not there — 160px of padding on an 846px
+    // viewport put a minimap over a canvas that fitted perfectly well.
+    const rawX0 = Math.min(...boxes.map((b) => b.x));
+    const rawY0 = Math.min(...boxes.map((b) => b.y));
+    const rawW = Math.max(1, Math.max(...boxes.map((b) => b.x + b.w)) - rawX0);
+    const rawH = Math.max(1, Math.max(...boxes.map((b) => b.y + b.h)) - rawY0);
     const el = groundRef.current;
     const vw = el?.clientWidth ?? 800;
     const vh = el?.clientHeight ?? 520;
@@ -1239,7 +1240,12 @@ export function Workbench({
     // items — is what decides whether it appears. Counting was the first cut,
     // and it hid the minimap on a one-node map that fitted anyway while
     // promising one for two cards sitting side by side.
-    if (w <= vw / zoom && h <= vh / zoom) return null;
+    if (rawW <= vw / zoom && rawH <= vh / zoom) return null;
+    const pad = 80;
+    const x0 = rawX0 - pad;
+    const y0 = rawY0 - pad;
+    const w = rawW + pad * 2;
+    const h = rawH + pad * 2;
     // The viewport rect, in the same world coordinates as the boxes.
     const vx = -pan.x / zoom;
     const vy = -pan.y / zoom;
