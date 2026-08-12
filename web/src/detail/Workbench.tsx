@@ -10,7 +10,7 @@ import {
 } from '../store';
 import {
   ROOT, SMART, KIND_LABEL, childrenOf, descendantsOf, countIn, pathTo, canFileInto,
-  isFolder, isSmart, sortCards, foldName, phasesOf,
+  isFolder, isSmart, sortCards, foldName, phasesOf, upFrom,
   type FolderId, type SortKey,
 } from '../lib/workbenchTree';
 import { WorkbenchDesign } from './WorkbenchDesign';
@@ -947,9 +947,7 @@ export function Workbench({
   // A folder is where the canvas can go next; the toolbar's Promote and the
   // ops rail both need to know whether the selection is one.
   const selFolder = isFolder(selCard) ? selCard : null;
-  const upTo: FolderId | null = isSmart(cwd) ? ROOT
-    : cwd === ROOT ? null
-      : (allCards.find((c) => c.id === cwd)?.parentId ?? ROOT);
+  const upTo = upFrom(allCards, cwd);
   const ops = data?.ops ?? [];
   const models = data?.models ?? [];
   const selectedModel = models.find((m) => m.model === model);
@@ -1135,7 +1133,7 @@ export function Workbench({
         <div className="wb-nav">
           <button onClick={back} disabled={hi <= 0} title="Back">‹</button>
           <button onClick={forward} disabled={hi >= hist.length - 1} title="Forward">›</button>
-          <button onClick={() => upTo !== null && navigate(upTo)} disabled={upTo === null}
+          <button onClick={() => upTo && navigate(upTo.to)} disabled={!upTo}
             title="Up one level">↑</button>
         </div>
 

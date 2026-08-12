@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 const url = new URL('../web/src/lib/workbenchTree.ts', import.meta.url);
 const {
   SMART, ROOT, STALE_DAYS, smartOf, isSmart, isFolder,
-  childrenOf, descendantsOf, countIn, pathTo, canFileInto, sortCards,
+  childrenOf, descendantsOf, countIn, pathTo, canFileInto, sortCards, upFrom,
   foldName, phasesOf, KIND_LABEL,
 } = await import(url.href);
 
@@ -90,6 +90,19 @@ test('pathTo names the project first and the folder last', () => {
 test('an untitled folder still gets a crumb you can click', () => {
   const cards = [folder({ id: 1, title: '', parentId: null })];
   assert.deepEqual(pathTo(cards, 1, 'Stack').map((c) => c.name), ['Stack', 'Untitled folder']);
+});
+
+// --- going up ---------------------------------------------------------
+
+test('Up returns a BOX, so "the root" and "nowhere" cannot collide', () => {
+  const cards = tree();
+  // The bug this pins: a folder at the root goes UP to the root, and the root
+  // is null — so a bare-id return made "go to the root" indistinguishable from
+  // "there is nowhere to go" and disabled the button in the commonest case.
+  assert.deepEqual(upFrom(cards, 1), { to: null });
+  assert.deepEqual(upFrom(cards, 2), { to: 1 });
+  assert.equal(upFrom(cards, ROOT), null);
+  assert.deepEqual(upFrom(cards, 'smart:stale'), { to: null });
 });
 
 // --- smart folders ----------------------------------------------------

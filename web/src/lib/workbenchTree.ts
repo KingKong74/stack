@@ -147,6 +147,22 @@ export function pathTo(cards: WorkbenchCard[], id: FolderId, rootName: string): 
 }
 
 /**
+ * WHERE "UP ONE LEVEL" GOES FROM HERE, or null when there is nowhere above.
+ *
+ * IT RETURNS A BOX, and that is the whole point of it being a function. `null`
+ * is already the ROOT — a real, common destination — so a bare id return cannot
+ * also carry "nowhere to go" without the two meanings colliding. They did
+ * collide in the first cut, and the result was Up disabled inside every folder
+ * that sits at the root, which is most of them. Same hazard as the server's
+ * BAD_PARENT sentinel, and the same fix.
+ */
+export function upFrom(cards: WorkbenchCard[], id: FolderId): { to: FolderId } | null {
+  if (isSmart(id)) return { to: ROOT };        // a query's parent is the root
+  if (id === ROOT) return null;                // the root has nothing above it
+  return { to: cards.find((c) => c.id === id)?.parentId ?? ROOT };
+}
+
+/**
  * MAY `cardId` BE FILED INTO `target`? The client's copy of the server's guard,
  * and it exists so a drop that will be refused never draws as accepted — not so
  * the server can trust it. Both halves have to say no; only the server's is
