@@ -206,7 +206,9 @@ export interface Note {
 // A card is a PLACEMENT. 'note' and 'polaris' cards wrap a Note / Future row
 // and read their title through from it, so the collections stay authoritative;
 // only 'ai' cards own their own words.
-export type WorkbenchKind = 'note' | 'polaris' | 'ai';
+// 'folder' (#414) is the second kind that owns its own title — it wraps no row,
+// so there is nothing to read the words through from.
+export type WorkbenchKind = 'note' | 'polaris' | 'ai' | 'folder';
 export type WorkbenchOp = 'expand' | 'cluster' | 'plan' | 'blast' | 'touches' | 'critique' | 'ask';
 
 export interface WorkbenchLine { mk: string; t: string }
@@ -237,6 +239,8 @@ export interface WorkbenchCard {
   meta: string;        // the corner stamp: P-number, op name, or a note's age
   body: WorkbenchBody;
   x: number; y: number; w: number;
+  parentId: number | null;  // which folder it sits in; null = the root (#414)
+  days: number;             // age of the WRAPPED row, for the smart folders to compare
   when: string;
 }
 

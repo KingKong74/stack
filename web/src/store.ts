@@ -2760,10 +2760,12 @@ export async function getWorkbench(slug: string): Promise<WorkbenchData> {
 
 // A note card writes a REAL note (it shows up in ⌘K and promotes to a bug like
 // any other); a polaris card pulls an existing idea onto the canvas.
+// `parentId` is which folder the card is born in — null (or omitted) is the
+// root, which is what every caller predating folders means (#414).
 export async function addWorkbenchCard(
   slug: string,
-  input: { kind: 'note'; text: string; x: number; y: number }
-       | { kind: 'polaris'; futureId: number; x: number; y: number },
+  input: { kind: 'note'; text: string; x: number; y: number; parentId?: number | null }
+       | { kind: 'polaris'; futureId: number; x: number; y: number; parentId?: number | null },
 ): Promise<WorkbenchCard & { cascaded?: WorkbenchCascade }> {
   return request<WorkbenchCard & { cascaded?: WorkbenchCascade }>(
     `${wbBase(slug)}/cards`, { method: 'POST', body: input });
@@ -2771,11 +2773,27 @@ export async function addWorkbenchCard(
 
 // `title` writes THROUGH to the note or idea the card wraps — there is no
 // second copy of the text to drift.
+// `parentId` refiles the card: a folder id, or null for the root. The server
+// refuses a target that would make a loop and leaves the card where it was, so
+// a caller must take the RETURNED parentId as the truth rather than assuming
+// the one it sent stuck (#414).
 export async function patchWorkbenchCard(
   slug: string, id: number,
-  patch: Partial<{ x: number; y: number; w: number; title: string; body: WorkbenchBody }>,
+  patch: Partial<{
+    x: number; y: number; w: number; title: string; body: WorkbenchBody;
+    parentId: number | null;
+  }>,
 ): Promise<WorkbenchCard> {
   return request<WorkbenchCard>(`${wbBase(slug)}/cards/${id}`, { method: 'PATCH', body: patch });
+}
+
+// A new folder inside `parentId` (null = the root). Folders are cards, so the
+// answer slots straight into `data.cards` beside everything else.
+export async function addWorkbenchFolder(
+  slug: string,
+  input: { title: string; parentId: number | null; x: number; y: number },
+): Promise<WorkbenchCard> {
+  return request<WorkbenchCard>(`${wbBase(slug)}/folders`, { method: 'POST', body: input });
 }
 
 // `dropped` is every card that went with it: an op's output takes the branch it
@@ -2822,7 +2840,11 @@ export async function getWorkbenchDebrief(slug: string, days?: number): Promise<
 // instead of as a card).
 export async function importWorkbenchDebrief(
   slug: string,
-  input: { as: 'note' | 'idea'; picks: { key: string; x: number; y: number }[] },
+  input: {
+    as: 'note' | 'idea';
+    picks: { key: string; x: number; y: number }[];
+    parentId?: number | null;   // the folder the picker was opened from (#414)
+  },
 ): Promise<{ cards: WorkbenchCard[]; skipped: { key: string; why: string }[] }> {
   return request<{ cards: WorkbenchCard[]; skipped: { key: string; why: string }[] }>(
     `${wbBase(slug)}/debrief`, { method: 'POST', body: input });

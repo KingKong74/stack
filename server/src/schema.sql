@@ -316,11 +316,11 @@ CREATE INDEX IF NOT EXISTS idx_notes_project ON notes (project_id, created_at DE
 CREATE TABLE IF NOT EXISTS workbench_cards (
   id          SERIAL PRIMARY KEY,
   project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  kind        TEXT NOT NULL,                           -- note | polaris | ai
+  kind        TEXT NOT NULL,                           -- note | polaris | ai | folder
   note_id     INTEGER REFERENCES notes(id) ON DELETE CASCADE,
   future_id   INTEGER REFERENCES futures(id) ON DELETE CASCADE,
   op          TEXT NOT NULL DEFAULT '',                -- ai only: which op made it
-  title       TEXT NOT NULL DEFAULT '',                -- ai only (others read through)
+  title       TEXT NOT NULL DEFAULT '',                -- ai + folder (others read through)
   body        JSONB NOT NULL DEFAULT '{}'::jsonb,      -- lines | phases | chips | chosen
   x           INTEGER NOT NULL DEFAULT 0,
   y           INTEGER NOT NULL DEFAULT 0,
@@ -336,6 +336,28 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_cards_note
 CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_cards_future
   ON workbench_cards (future_id) WHERE future_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_wb_cards_project ON workbench_cards (project_id, created_at);
+
+-- #414 — THE CANVAS BECAME A FILING SURFACE. A `folder` card is the one other
+-- kind that owns its own `title` (an 'ai' card was the first), because a folder
+-- wraps nothing: it is a name and a place, and there is no row underneath it to
+-- read the words through from.
+--
+-- `parent_id` is which folder a card sits in. NULL = the root, which is the
+-- PROJECT ITSELF and deliberately has no row — a root row would be a second
+-- spelling of `projects` that every read would then have to keep in step.
+--
+-- ON DELETE SET NULL, and this is the load-bearing choice. Deleting a note card
+-- deletes the note (it has no other home), so a CASCADE here would quietly turn
+-- "delete this folder" into a bulk note delete — the one direction the fail-safe
+-- rule in CLAUDE.md forbids. Emptying a folder returns its children to the root,
+-- where they are visible and recoverable, and the route says so out loud.
+--
+-- Positions stay per-card and are read PER FOLDER: x/y mean "where in this
+-- folder's canvas", so the same coordinates in two folders are two places. That
+-- is why filing a card does not move it and does not need to.
+ALTER TABLE workbench_cards
+  ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES workbench_cards(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_wb_cards_parent ON workbench_cards (project_id, parent_id);
 
 -- Lines between cards. `ai` marks the ones an op drew (dashed on the canvas);
 -- cutting one of those drops the output it fed, which is what makes an op

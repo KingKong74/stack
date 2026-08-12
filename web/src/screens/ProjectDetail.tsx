@@ -1019,7 +1019,8 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             onOpenInWorkbench={openFutureInWorkbench} />
         )}
         {tab === 'workbench' && (
-          <Workbench slug={slug} geminiReady={data.geminiReady} highlightId={highlightId}
+          <Workbench slug={slug} projectName={data.project.name} geminiReady={data.geminiReady}
+            highlightId={highlightId}
             notesNonce={notesNonce} onPromoteNote={promoteNote} onPromotePlan={promotePlan} />
         )}
         {tab === 'activity' && (

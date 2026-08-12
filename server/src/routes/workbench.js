@@ -25,6 +25,16 @@ import { numericId } from '../params.js';
 // how tall a card rendered, and stacking an op's output under the last one
 // requires that. The server places cards exactly once: the backfill below.
 //
+// FOLDERS (#414) are cards too — `kind = 'folder'`, owning their own title, with
+// `parent_id` saying which folder each card sits in and NULL meaning the root.
+// Three rules live at their routes below and nowhere else: only a folder may be
+// a parent, the cycle guard is a recursive CTE inside the move's own UPDATE (so
+// two tabs cannot race a loop into the tree), and deleting a folder LIFTS its
+// contents one level rather than cascading — a cascade would make "delete
+// folder" a bulk note delete, which is the fail-safe direction inverted. The
+// SMART folders the Explorer shows are computed client-side from the cards this
+// route already sends; they are queries, not rows, and must never become rows.
+//
 // Ops are the Gemini surface. Every one of them PROPOSES — output lands as a
 // card the owner keeps, edits or cuts. Nothing here writes tracker state; the
 // plan card's "promote to Roadmap" is a separate thing the human clicks, and it
@@ -111,6 +121,27 @@ const clampInt = (v, lo, hi, dflt) => {
   const n = Math.round(Number(v));
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
 };
+
+// A folder id that does not resolve. Distinct from `null`, which is the ROOT and
+// a perfectly good answer — collapsing the two would file a card at the top of
+// the canvas because someone sent a stale id, which reads as the drop having
+// worked and gone somewhere else (#414).
+const BAD_PARENT = Symbol('bad-parent');
+
+// `parentId` off the wire -> a folder id, null for the root, or BAD_PARENT.
+// Only a FOLDER may hold cards: naming a note as a parent would make a tree the
+// Explorer can draw and nothing else in the app can read.
+async function resolveParent(projectId, raw, dflt) {
+  if (raw === undefined) return dflt;
+  if (raw === null || raw === '') return null;
+  const id = Number(raw);
+  if (!Number.isFinite(id) || id <= 0) return BAD_PARENT;
+  const { rows } = await q(
+    `SELECT id FROM workbench_cards WHERE project_id = $1 AND id = $2 AND kind = 'folder'`,
+    [projectId, id]
+  );
+  return rows.length ? id : BAD_PARENT;
+}
 
 // The SELECT every read goes through. The joins are what let the client treat a
 // card's title as a card's title whatever table it actually lives in.
@@ -216,7 +247,7 @@ const CASCADE_PLANETS = 24;
 // Returns null when the star has no planets (nothing to report), otherwise
 // { cards, edges, placed, total } — `cards` holds only the NEWLY created
 // planet cards, `edges` only the edges actually created this call.
-async function cascadePlanets(client, projectId, starId, starCardId, starX, starY) {
+async function cascadePlanets(client, projectId, starId, starCardId, starX, starY, parentId) {
   const { rows: children } = await client.query(
     `SELECT id, count(*) OVER ()::int AS total
        FROM futures
@@ -238,12 +269,12 @@ async function cascadePlanets(client, projectId, starId, starCardId, starX, star
   // Single multi-row insert — no per-planet query. Planets already on the
   // canvas are silently skipped by the partial unique index.
   const { rows: insertedIds } = await client.query(
-    `INSERT INTO workbench_cards (project_id, kind, future_id, x, y, w)
-     SELECT $1, 'polaris', v.future_id, v.x, v.y, 244
+    `INSERT INTO workbench_cards (project_id, kind, future_id, x, y, w, parent_id)
+     SELECT $1, 'polaris', v.future_id, v.x, v.y, 244, $3
        FROM jsonb_to_recordset($2::jsonb) AS v(future_id int, x int, y int)
      ON CONFLICT (future_id) WHERE future_id IS NOT NULL DO NOTHING
      RETURNING id`,
-    [projectId, JSON.stringify(placements)]
+    [projectId, JSON.stringify(placements), parentId ?? null]
   );
   const newCardShapes = insertedIds.length
     ? (await client.query(
@@ -282,6 +313,10 @@ workbench.post('/cards', async (req, res) => {
   const x = clampInt(req.body?.x, -20000, 20000, 40);
   const y = clampInt(req.body?.y, -20000, 20000, 40);
   const kind = req.body?.kind === 'polaris' ? 'polaris' : 'note';
+  // A card is born in the folder the canvas was showing (#414). Omitted = the
+  // root, which is what every caller predating folders means.
+  const parentId = await resolveParent(req.project.id, req.body?.parentId, null);
+  if (parentId === BAD_PARENT) return res.status(400).json({ error: 'No such folder.' });
 
   if (kind === 'polaris') {
     const futureId = Number(req.body?.futureId);
@@ -292,15 +327,15 @@ workbench.post('/cards', async (req, res) => {
 
     const result = await tx(async (c) => {
       const { rows } = await c.query(
-        `INSERT INTO workbench_cards (project_id, kind, future_id, x, y, w)
-         VALUES ($1,'polaris',$2,$3,$4,244)
+        `INSERT INTO workbench_cards (project_id, kind, future_id, x, y, w, parent_id)
+         VALUES ($1,'polaris',$2,$3,$4,244,$5)
          ON CONFLICT (future_id) WHERE future_id IS NOT NULL DO NOTHING RETURNING id`,
-        [req.project.id, futureId, x, y]
+        [req.project.id, futureId, x, y, parentId]
       );
       if (!rows.length) return { conflict: true };
       const starCardId = rows[0].id;
       const cascaded = f[0].is_star
-        ? await cascadePlanets(c, req.project.id, futureId, starCardId, x, y)
+        ? await cascadePlanets(c, req.project.id, futureId, starCardId, x, y, parentId)
         : null;
       return { starCardId, cascaded };
     });
@@ -323,16 +358,37 @@ workbench.post('/cards', async (req, res) => {
       [req.project.id, text, colour]
     );
     const { rows: card } = await c.query(
-      `INSERT INTO workbench_cards (project_id, kind, note_id, x, y, w)
-       VALUES ($1,'note',$2,$3,$4,244) RETURNING id`,
-      [req.project.id, n[0].id, x, y]
+      `INSERT INTO workbench_cards (project_id, kind, note_id, x, y, w, parent_id)
+       VALUES ($1,'note',$2,$3,$4,244,$5) RETURNING id`,
+      [req.project.id, n[0].id, x, y, parentId]
     );
     return card[0].id;
   });
   res.status(201).json(await oneCard(req.project.id, created));
 });
 
-// PATCH /cards/:id -> move it, retitle it, or edit its body.
+// POST /folders -> a new folder in `parentId` (omitted / null = the root).
+//
+// A folder is a card like any other — it draws on the canvas, it can be wired,
+// it has a position — and the only thing that makes it a folder is that other
+// cards may name it as their parent. That is why it lives in workbench_cards
+// and not in a table of its own: a second table would need its own positions,
+// its own edges and its own selection rules, all of which already exist here.
+workbench.post('/folders', async (req, res) => {
+  const x = clampInt(req.body?.x, -20000, 20000, 40);
+  const y = clampInt(req.body?.y, -20000, 20000, 40);
+  const title = String(req.body?.title || '').trim().slice(0, 300) || 'New folder';
+  const parentId = await resolveParent(req.project.id, req.body?.parentId, null);
+  if (parentId === BAD_PARENT) return res.status(400).json({ error: 'No such folder.' });
+  const { rows } = await q(
+    `INSERT INTO workbench_cards (project_id, kind, title, parent_id, x, y, w)
+     VALUES ($1,'folder',$2,$3,$4,$5,244) RETURNING id`,
+    [req.project.id, title, parentId, x, y]
+  );
+  res.status(201).json(await oneCard(req.project.id, rows[0].id));
+});
+
+// PATCH /cards/:id -> move it, refile it, retitle it, or edit its body.
 //
 // A title edit WRITES THROUGH to whatever the card wraps: renaming a note card
 // renames the note, renaming a polaris card renames the idea. Anything else
@@ -355,6 +411,36 @@ workbench.patch('/cards/:id', async (req, res) => {
     push('body', JSON.stringify(body.body));
   }
 
+  // Refiling (#414). THE CYCLE GUARD IS A RECURSIVE CTE INSIDE THIS UPDATE, not
+  // a check before it, for the same reason the roadmap's parent guard is: the
+  // right-hand side sees the OLD rows, so two tabs dragging two folders into
+  // each other cannot race a loop into existence — a loop the Explorer would
+  // then recurse into forever. `line` walks UP from the target; if the card
+  // being moved is anywhere in that chain the move is refused and the row keeps
+  // the parent it had, which is also what a stale target must do. Never
+  // resolving to NULL: a rejected drop that quietly filed the card at the root
+  // looks exactly like a drop that worked.
+  let prefix = '';
+  if (body.parentId !== undefined) {
+    const target = await resolveParent(req.project.id, body.parentId, card.parent_id);
+    if (target === BAD_PARENT) return res.status(400).json({ error: 'No such folder.' });
+    if (target === null) {
+      sets.push('parent_id = NULL');
+    } else {
+      vals.push(target);
+      const t = `$${vals.length}`;
+      prefix = `WITH RECURSIVE line(id) AS (
+                    SELECT ${t}::int
+                  UNION
+                    SELECT c.parent_id FROM workbench_cards c
+                      JOIN line l ON c.id = l.id
+                     WHERE c.parent_id IS NOT NULL
+                 )`;
+      sets.push(`parent_id = CASE WHEN EXISTS (SELECT 1 FROM line WHERE id = $2)
+                                  THEN parent_id ELSE ${t}::int END`);
+    }
+  }
+
   const title = body.title !== undefined ? String(body.title).trim().slice(0, 4000) : null;
   if (title !== null && title) {
     if (card.kind === 'note') {
@@ -369,7 +455,7 @@ workbench.patch('/cards/:id', async (req, res) => {
 
   if (sets.length) {
     await q(
-      `UPDATE workbench_cards SET ${sets.join(', ')}, updated_at = now()
+      `${prefix} UPDATE workbench_cards SET ${sets.join(', ')}, updated_at = now()
         WHERE project_id = $1 AND id = $2`,
       vals
     );
@@ -401,12 +487,31 @@ async function dropAiBranch(projectId, rootId) {
 //   note    -> delete the note. It has no other home; this is the sticky's ×.
 //   polaris -> take it off the canvas ONLY. The idea belongs to Polaris.
 //   ai      -> delete it and everything it fed.
+//   folder  -> delete the FOLDER and LIFT its contents one level (#414).
 workbench.delete('/cards/:id', async (req, res) => {
   const id = Number(req.params.id);
   const { rows } = await q(
     'SELECT * FROM workbench_cards WHERE project_id = $1 AND id = $2', [req.project.id, id]);
   if (!rows.length) return res.status(404).json({ error: 'No such card.' });
   const card = rows[0];
+
+  // Deleting a folder is deleting a NAME, never the work inside it. The
+  // children are lifted to the folder's own parent — one level, not to the
+  // root, so emptying a folder three deep does not fling its notes to the top
+  // of the canvas where nobody was looking. The schema's ON DELETE SET NULL is
+  // the backstop for any path that does not come through here; this route is
+  // the one that keeps the contents where the owner can still find them.
+  if (card.kind === 'folder') {
+    const lifted = await tx(async (c) => {
+      const { rows: kids } = await c.query(
+        'UPDATE workbench_cards SET parent_id = $3, updated_at = now() WHERE project_id = $1 AND parent_id = $2 RETURNING id',
+        [req.project.id, id, card.parent_id]
+      );
+      await c.query('DELETE FROM workbench_cards WHERE project_id = $1 AND id = $2', [req.project.id, id]);
+      return kids.map((r) => r.id);
+    });
+    return res.json({ ok: true, dropped: [id], lifted, liftedTo: card.parent_id ?? null });
+  }
 
   if (card.kind === 'note') {
     await q('DELETE FROM notes WHERE id = $1', [card.note_id]); // cascades the card
@@ -573,6 +678,9 @@ workbench.get('/debrief', async (req, res) => {
 workbench.post('/debrief', async (req, res) => {
   const as = req.body?.as === 'idea' ? 'idea' : req.body?.as === 'note' ? 'note' : null;
   if (!as) return res.status(400).json({ error: "as must be 'note' or 'idea'." });
+  // Imports land in the folder the picker was opened from (#414).
+  const parentId = await resolveParent(req.project.id, req.body?.parentId, null);
+  if (parentId === BAD_PARENT) return res.status(400).json({ error: 'No such folder.' });
 
   const rawPicks = Array.isArray(req.body?.picks) ? req.body.picks : [];
   const picks = rawPicks.slice(0, DEBRIEF_PICK_CAP);
@@ -631,9 +739,9 @@ workbench.post('/debrief', async (req, res) => {
           [req.project.id, pick.text.slice(0, 4000), colour, pick.key]
         );
         const { rows: card } = await c.query(
-          `INSERT INTO workbench_cards (project_id, kind, note_id, x, y, w)
-           VALUES ($1,'note',$2,$3,$4,244) RETURNING id`,
-          [req.project.id, n[0].id, pick.x, pick.y]
+          `INSERT INTO workbench_cards (project_id, kind, note_id, x, y, w, parent_id)
+           VALUES ($1,'note',$2,$3,$4,244,$5) RETURNING id`,
+          [req.project.id, n[0].id, pick.x, pick.y, parentId]
         );
         ids.push(card[0].id);
       } else {
@@ -650,9 +758,9 @@ workbench.post('/debrief', async (req, res) => {
           [req.project.id, pick.text.slice(0, 300), provenance, pick.key]
         );
         const { rows: card } = await c.query(
-          `INSERT INTO workbench_cards (project_id, kind, future_id, x, y, w)
-           VALUES ($1,'polaris',$2,$3,$4,244) RETURNING id`,
-          [req.project.id, f[0].id, pick.x, pick.y]
+          `INSERT INTO workbench_cards (project_id, kind, future_id, x, y, w, parent_id)
+           VALUES ($1,'polaris',$2,$3,$4,244,$5) RETURNING id`,
+          [req.project.id, f[0].id, pick.x, pick.y, parentId]
         );
         ids.push(card[0].id);
       }
@@ -819,8 +927,8 @@ workbench.post('/ops', async (req, res) => {
 
   const created = await tx(async (c) => {
     const { rows } = await c.query(
-      `INSERT INTO workbench_cards (project_id, kind, op, title, body, x, y, w)
-       VALUES ($1,'ai',$2,$3,$4,$5,$6,$7) RETURNING id`,
+      `INSERT INTO workbench_cards (project_id, kind, op, title, body, x, y, w, parent_id)
+       VALUES ($1,'ai',$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [
         req.project.id, op,
         String(answer?.title || OPS[op].label).trim().slice(0, 200),
@@ -828,6 +936,11 @@ workbench.post('/ops', async (req, res) => {
         clampInt(req.body?.x, -20000, 20000, sel.x + sel.w + 60),
         clampInt(req.body?.y, -20000, 20000, sel.y),
         OPS[op].w,
+        // Output lands in the SOURCE card's folder, never the caller's idea of
+        // one: an op is a thing done to that card, and its answer appearing in
+        // a folder the input is not in would break the wire between them across
+        // a boundary the canvas cannot draw (#414).
+        sel.parent_id ?? null,
       ]
     );
     await c.query(

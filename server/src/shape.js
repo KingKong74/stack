@@ -211,6 +211,9 @@ export function noteShape(row) {
 // which table a card's words came from.
 export function workbenchCardShape(row) {
   const ai = row.kind === 'ai';
+  // A folder owns its title the same way an 'ai' card does — there is no row
+  // underneath it to read the words through from (#414).
+  const own = ai || row.kind === 'folder';
   // Age is the WRAPPED row's, not the card's: a note filed months ago that only
   // got a card when the Workbench backfilled would otherwise read as brand new.
   const born = row.note_created_at || row.future_created_at || row.created_at;
@@ -220,7 +223,9 @@ export function workbenchCardShape(row) {
     op: row.op || '',
     noteId: row.note_id ?? null,
     futureId: row.future_id ?? null,
-    title: ai ? row.title : (row.note_text ?? row.future_title ?? row.title),
+    title: own ? row.title : (row.note_text ?? row.future_title ?? row.title),
+    // Which folder it sits in. null = the root, i.e. the project itself (#414).
+    parentId: row.parent_id ?? null,
     // The sticky's palette colour, so a note keeps the tint it was filed with.
     colour: row.note_colour || '',
     // The corner stamp: an idea's P-number, an op's name, or a note's age.
@@ -229,6 +234,11 @@ export function workbenchCardShape(row) {
     x: row.x,
     y: row.y,
     w: row.w,
+    // Days since the wrapped row was born, alongside `when`, because the
+    // Explorer's smart folders have to COMPARE ages and re-parsing "3w ago" on
+    // the client would be inventing precision the string threw away — the same
+    // reason workbenchIdeaShape sends `days` beside `age`.
+    days: born ? Math.max(0, Math.floor((Date.now() - new Date(born).getTime()) / 86400000)) : 0,
     when: relativeTime(born) || 'just now',
   };
 }

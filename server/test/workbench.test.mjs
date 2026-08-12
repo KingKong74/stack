@@ -19,6 +19,10 @@
 //   • THE PICKER SEES THE WHOLE FUNNEL — a pulled idea stays in the list with
 //     `onCanvas` flipped rather than vanishing from it. That flag is the only
 //     thing stopping the same idea being pulled onto the canvas twice.
+//   • FOLDERS DO NOT CASCADE (#414) — deleting a folder lifts its contents one
+//     level. A cascade would make "delete this folder" a bulk note delete. The
+//     cycle guard is here too: a refused move leaves the card where it was,
+//     because resolving it to the root reads as a move that worked.
 //
 // Needs a running server on an EMPTY database (it writes real rows):
 //   docker run -d --rm --name pg -e POSTGRES_PASSWORD=t -e POSTGRES_USER=t \
@@ -246,6 +250,57 @@ const board = () => call(`/projects/${SLUG}/workbench`);
   check('a star reads isStar: true in the picker', star1Idea.isStar, true);
   check('a plain idea reads isStar: false', plainIdea.isStar, false);
   check('links still counts the star\'s direct children', star1Idea.links, 3);
+
+  // 11. FOLDERS (#414). A folder is a card that other cards may name as their
+  // parent, and the three properties worth pinning are the three that are
+  // expensive to get wrong: the cycle guard, what a delete does to the contents,
+  // and where a newly made card is born.
+  const wb = `/projects/${SLUG}/workbench`;
+  const outer = await call(`${wb}/folders`, { method: 'POST', body: { title: 'Outer', x: 10, y: 10 } });
+  const inner = await call(`${wb}/folders`, {
+    method: 'POST', body: { title: 'Inner', parentId: outer.id, x: 20, y: 20 },
+  });
+  check('a folder is a card of kind folder', outer.kind, 'folder');
+  check('a folder owns its own title', outer.title, 'Outer');
+  check('a root folder has no parent', outer.parentId, null);
+  check('a nested folder names its parent', inner.parentId, outer.id);
+
+  const filed = await call(`${wb}/cards`, {
+    method: 'POST', body: { kind: 'note', text: 'filed on arrival', x: 1, y: 1, parentId: inner.id },
+  });
+  check('a card is born in the folder it was made in', filed.parentId, inner.id);
+  check('and carries an age the smart folders can compare', typeof filed.days, 'number');
+
+  // THE CYCLE GUARD. A refused move must leave the row where it was — resolving
+  // to the root instead would look exactly like a move that worked.
+  const cycled = await call(`${wb}/cards/${outer.id}`, {
+    method: 'PATCH', body: { parentId: inner.id },
+  });
+  check('a folder cannot be filed into its own descendant', cycled.parentId, null);
+  const selfed = await call(`${wb}/cards/${inner.id}`, {
+    method: 'PATCH', body: { parentId: inner.id },
+  });
+  check('and cannot be filed into itself', selfed.parentId, outer.id);
+
+  const lifted = await call(`${wb}/cards/${filed.id}`, { method: 'PATCH', body: { parentId: null } });
+  check('a legal move out to the root sticks', lifted.parentId, null);
+  await call(`${wb}/cards/${filed.id}`, { method: 'PATCH', body: { parentId: inner.id } });
+
+  let refusedNonFolder = 0;
+  try { await call(`${wb}/cards/${inner.id}`, { method: 'PATCH', body: { parentId: filed.id } }); }
+  catch { refusedNonFolder = 1; }
+  check('only a folder may be a parent', refusedNonFolder, 1);
+
+  // DELETING A FOLDER IS DELETING A NAME. If this ever cascades, it becomes a
+  // bulk note delete — the one direction the fail-safe rule forbids.
+  const dropped = await call(`${wb}/cards/${inner.id}`, { method: 'DELETE' });
+  check('deleting a folder lifts its contents rather than cascading', dropped.lifted.length, 1);
+  check('and lifts them one level, not to the root', dropped.liftedTo, outer.id);
+  const afterDelete = await board();
+  const survivor = afterDelete.cards.find((c) => c.id === filed.id);
+  check('the note inside the deleted folder still exists', Boolean(survivor), true);
+  check('and now sits in the folder that held its folder', survivor.parentId, outer.id);
+  check('the deleted folder is gone', afterDelete.cards.some((c) => c.id === inner.id), false);
 
   console.log(failed ? `\n${failed} check(s) failed.` : '\nall checks passed.');
   process.exit(failed ? 1 : 0);

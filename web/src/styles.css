@@ -58,6 +58,14 @@
   --resume-when: #a9947f;
   /* the ink a sticky's own paper wants; dark re-bases it rather than inverting */
   --note-ink: #473f30;
+  /* the hairline around a sticky's paper. Was an inline hex on .wb-card.note
+     until the Workbench folder import (#414) needed the same edge on a second
+     surface — a colour used twice is a token, per the rule at the top here. */
+  --note-paper-border: #ecdf8a;
+
+  /* the one shadow a resting card may have: hover lift, and the folder cards
+     the Workbench stacks. Everything heavier is a floating layer's. */
+  --shadow-raise: 0 3px 10px rgba(28,26,23,.10);
 
   --green: var(--live);
   --green-tint: #e4efe8;
@@ -140,6 +148,11 @@
      muted; the sticky's ink follows its remixed paper rather than staying brown */
   --resume-when: var(--muted);
   --note-ink: #e4ddd1;
+  /* the sticky's paper is remixed against the dark ground (see .wb-card.note),
+     so its hairline has to be too rather than staying a light-mode yellow */
+  --note-paper-border: #4a4433;
+  /* a shadow on a dark ground reads as a hole unless it is deeper and softer */
+  --shadow-raise: 0 3px 12px rgba(0,0,0,.36);
 }
 
 /* ============================================================
@@ -1391,11 +1404,130 @@ a.tab { display: inline-block; }
    every hairline comes from the named palette above. */
 .wb { display: flex; flex-direction: column; }
 .wb-hint { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-.wb-body { display: flex; min-height: 0; height: calc(100vh - 300px); min-height: 520px;
-  border: 1px solid var(--line-2); border-radius: 14px; overflow: hidden; background: var(--card); }
+.wb-body { display: flex; min-height: 0; height: calc(100vh - 340px); min-height: 520px;
+  border: 1px solid var(--line-2); border-radius: 14px 14px 0 0; overflow: hidden; background: var(--card); }
+
+/* ---------- the explorer (#414) ----------
+   The bar above the canvas and the tree beside it. Both are chrome around the
+   canvas rather than part of it: nothing here scrolls with the field, and the
+   ground keeps its own overflow so a zoomed canvas cannot push them about. */
+.wb-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 9px;
+  border: 1px solid var(--line-2); border-bottom: 0; border-radius: 10px 10px 0 0;
+  background: var(--panel); }
+.wb-nav { display: flex; gap: 3px; }
+.wb-nav button { width: 27px; height: 27px; border-radius: 6px; color: var(--muted);
+  border: 1px solid var(--line-2); background: var(--surface); font-size: 13px; }
+.wb-nav button:hover:not(:disabled) { color: var(--ink); border-color: var(--line-3); }
+.wb-nav button:disabled { opacity: .38; cursor: default; }
+
+.wb-crumbs { flex: 1 1 220px; min-width: 170px; display: flex; align-items: center;
+  height: 27px; padding: 0 8px; overflow: hidden;
+  border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); }
+.wb-crumb-wrap { display: inline-flex; align-items: center; min-width: 0; }
+.wb-crumbs .sep { font-family: var(--mono); font-size: 10.5px; color: var(--fainter); padding: 0 4px; }
+.wb-crumb { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 190px; border-radius: 4px; padding: 1px 3px; }
+.wb-crumb:hover { color: var(--accent); }
+.wb-crumb.here { color: var(--ink); font-weight: 500; }
+/* A crumb lights up only when the drop will be ACCEPTED — the accepts test runs
+   before this class is set, so a target that would refuse never highlights. */
+.wb-crumb.over { background: var(--accent-tint); color: var(--accent-deep);
+  outline: 1px dashed var(--accent-soft); }
+
+.wb-search { width: 180px; height: 27px; padding: 0 9px; font-size: 12.5px;
+  border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.wb-search::placeholder { color: var(--placeholder); }
+
+.wb-views { display: flex; height: 27px; border: 1px solid var(--line-2); border-radius: 6px;
+  overflow: hidden; background: var(--surface); }
+.wb-views button { padding: 0 10px; font-size: 12px; color: var(--muted);
+  border-right: 1px solid var(--line-2); }
+.wb-views button:last-child { border-right: 0; }
+.wb-views button.on { background: var(--accent-tint); color: var(--accent-deep); font-weight: 500; }
+
+.wb-tree { flex: 0 0 216px; min-width: 216px; overflow-y: auto; padding: 8px 6px;
+  border-right: 1px solid var(--line); background: var(--panel); }
+.wb-tree-head { display: flex; align-items: center; justify-content: space-between;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--faint); padding: 0 6px 6px; }
+.wb-tree-head button { width: 20px; height: 20px; border-radius: 5px; color: var(--faint); }
+.wb-tree-head button:hover { color: var(--ink); background: var(--line); }
+.wb-tree-label { font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--fainter); padding: 9px 6px 4px; }
+.wb-tree-row { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 8px;
+  border-radius: 6px; text-align: left; color: var(--body); font-size: 12.5px; }
+.wb-tree-row:hover { background: var(--line); }
+.wb-tree-row.on { background: var(--accent-tint); color: var(--accent-deep); }
+.wb-tree-row.over { outline: 1px dashed var(--accent-soft); background: var(--accent-tint); }
+.wb-tree-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-tree-row .count { font-family: var(--mono); font-size: 10px; color: var(--fainter); }
+.wb-tree-row .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.wb-tree-row .ic { width: 12px; height: 9px; flex: none; border-radius: 1px 2px 2px 2px;
+  background: var(--accent-soft); opacity: .85; }
+.wb-tree-row .ic.root { background: var(--accent); }
+.wb-tree-row .twist { flex: none; width: 10px; font-size: 8px; color: var(--faint);
+  transition: transform .12s; }
+.wb-tree-row .twist.open { transform: rotate(90deg); }
+.wb-tree-row .twist.none { opacity: 0; }
+.wb-tree-empty { font-size: 11.5px; color: var(--faint); line-height: 1.6; padding: 6px 8px; }
+.wb-tree-peg { flex: none; width: 18px; border-right: 1px solid var(--line);
+  background: var(--panel); color: var(--faint); font-size: 11px; }
+.wb-tree-peg:hover { color: var(--ink); background: var(--line); }
+
+/* Tiles and Details. Both read the same rows and differ only in how much of
+   each one they show, so the row markup is shared and the layout is not. */
+.wb-list { flex: 1; min-width: 0; overflow-y: auto; background: var(--card); }
+.wb-list-head, .wb-row { display: grid; grid-template-columns: 1fr 110px 74px 96px;
+  gap: 10px; align-items: center; padding: 7px 12px; }
+.wb-list-head { position: sticky; top: 0; z-index: 1; background: var(--panel);
+  border-bottom: 1px solid var(--line); }
+.wb-sort { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--faint); text-align: left; }
+.wb-sort.on, .wb-sort:hover { color: var(--ink); }
+.wb-row { border-bottom: 1px solid var(--line); cursor: default; user-select: none; }
+.wb-row:hover { background: var(--panel); }
+.wb-row .kind, .wb-row .items { font-size: 12px; color: var(--muted); }
+.wb-row .items { font-family: var(--mono); font-size: 11.5px; }
+.wb-row .when { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.wb-row .name { display: flex; align-items: center; gap: 8px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+
+.wb-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px; padding: 12px; }
+.wb-tile { display: flex; flex-direction: column; gap: 5px; padding: 10px;
+  border: 1px solid var(--line-2); border-radius: 9px; background: var(--surface);
+  cursor: default; user-select: none; }
+.wb-tile:hover { box-shadow: var(--shadow-raise); }
+.wb-tile .name { font-size: 13px; font-weight: 500; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.wb-tile .kind, .wb-tile .when { font-family: var(--mono); font-size: 10px; color: var(--fainter); }
+.wb-tile .items { display: none; }
+
+/* One selection style for both, because they are one selection. */
+.wb-tile.sel, .wb-row.sel { border-color: var(--accent); background: var(--accent-tint); }
+.wb-tile.marked, .wb-row.marked { outline: 2px solid var(--accent); outline-offset: -2px; }
+.wb-tile.over, .wb-row.over { outline: 2px dashed var(--accent-soft); outline-offset: -2px; }
+/* Stale is dimmed, never hidden: the point of the smart folder is that you can
+   still read what has gone quiet. */
+.wb-tile.stale, .wb-row.stale { opacity: .66; }
+.wb-list-empty { padding: 26px 16px; font-size: 12.5px; color: var(--faint); text-align: center; }
+
+/* The kind swatch, shared by the tree, the tiles and the rows. */
+.wb-tile .ic, .wb-row .ic { flex: none; width: 11px; height: 11px; border-radius: 2px; }
+.wb-tile .ic.folder, .wb-row .ic.folder { background: var(--accent-soft); border-radius: 1px 3px 3px 3px; }
+.wb-tile .ic.note, .wb-row .ic.note { background: var(--note-paper); border: 1px solid var(--note-paper-border); }
+.wb-tile .ic.polaris, .wb-row .ic.polaris { background: var(--accent); }
+.wb-tile .ic.ai, .wb-row .ic.ai { background: var(--live); }
+
+.wb-status { display: flex; align-items: center; gap: 14px; height: 26px; padding: 0 11px;
+  border: 1px solid var(--line-2); border-top: 0; border-radius: 0 0 14px 14px;
+  background: var(--panel); font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.wb-status .mid { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-status .right { color: var(--building); }
 
 .wb-ground { flex: 1; position: relative; overflow: hidden; cursor: grab; background-color: var(--paper);
   background-image: radial-gradient(var(--line-3) 1px, transparent 1px); touch-action: none; }
+.wb-ground.hidden { display: none; }
 .wb-ground:active { cursor: grabbing; }
 .wb-ground.linking { cursor: crosshair; }
 .wb-field { position: absolute; inset: 0; transform-origin: 0 0; }
@@ -1418,8 +1550,17 @@ a.tab { display: inline-block; }
   cursor: grab; user-select: none; animation: wb-in .18s ease;
   transition: opacity .16s;
   background: var(--card); border: 1px solid var(--line); box-shadow: 0 2px 8px rgba(28,26,23,.06); }
-.wb-card.note { background: var(--note-c, #fef4a8); border-color: #ecdf8a; }
+.wb-card.note { background: var(--note-c, #fef4a8); border-color: var(--note-paper-border); }
 .wb-card.polaris { background: var(--sand); border-color: var(--resume-border); }
+/* A folder card (#414). It is the one card with nothing inside to read, so it
+   is shorter than the rest and says how much it holds instead. */
+.wb-card.folder { background: var(--panel); border-color: var(--line-3); }
+.wb-card.folder .wb-card-head .k { color: var(--accent-soft); }
+.wb-card.folder.over { border-color: var(--accent); border-style: dashed;
+  box-shadow: 0 0 0 3px var(--accent-tint); }
+.wb-card.marked { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wb-open { margin-top: 9px; font-size: 12px; color: var(--accent); }
+.wb-open:hover { color: var(--accent-deep); }
 .wb-card.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint), 0 8px 22px rgba(28,26,23,.10); }
 .wb-card.linking { border-color: var(--accent); border-style: dashed; }
 .wb-card.hl { outline: 2px solid var(--accent); outline-offset: 3px; }

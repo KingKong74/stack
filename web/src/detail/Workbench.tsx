@@ -4,10 +4,15 @@ import type {
   WorkbenchDebrief, DebriefInsight, DebriefInsightKind,
 } from '../types';
 import {
-  getWorkbench, addWorkbenchCard, patchWorkbenchCard, deleteWorkbenchCard,
+  getWorkbench, addWorkbenchCard, addWorkbenchFolder, patchWorkbenchCard, deleteWorkbenchCard,
   linkWorkbenchCards, cutWorkbenchEdge, runWorkbenchOp, patchSettings,
   getWorkbenchDebrief, importWorkbenchDebrief,
 } from '../store';
+import {
+  ROOT, SMART, KIND_LABEL, childrenOf, descendantsOf, countIn, pathTo, canFileInto,
+  isFolder, isSmart, sortCards, foldName, phasesOf,
+  type FolderId, type SortKey,
+} from '../lib/workbenchTree';
 import { WorkbenchDesign } from './WorkbenchDesign';
 
 // The Workbench — the planning canvas that replaced the notes wall.
@@ -26,10 +31,29 @@ import { WorkbenchDesign } from './WorkbenchDesign';
 // Geometry lives in this file. Card positions are field coordinates; the field
 // is one CSS transform, which is why wheel-zoom can anchor exactly on the
 // cursor here (the galaxy re-lays-out per zoom and deliberately cannot).
+//
+// #414 PUT A FOLDER TREE UNDER ALL OF IT, and the shape of that is in
+// lib/workbenchTree.ts — read its header first. What belongs HERE and not there
+// is the consequence for this screen: the canvas draws ONE FOLDER AT A TIME.
+// `cwd` is which, and a card's x/y are read inside it, so the same coordinates
+// in two folders are two different places and filing a card never has to move
+// it. A wire whose other end is in another folder is not drawn — a line running
+// off to a card you cannot see is a thread the canvas cannot tell you about —
+// and the status bar counts what that hides rather than letting it go quiet.
 
 const Z_MIN = 0.4;
 const Z_MAX = 2;
 const GRID = 26;
+
+// The three ways to look at a folder. Canvas is the original Workbench and
+// stays the default; the other two are for a folder holding more than a screen
+// of work, where position stops being the thing you are reading by.
+type View = 'canvas' | 'tiles' | 'details';
+const VIEWS: { key: View; label: string }[] = [
+  { key: 'canvas', label: 'Canvas' },
+  { key: 'tiles', label: 'Tiles' },
+  { key: 'details', label: 'Details' },
+];
 
 // A deep-link's hl token is a NOTE id (bare, ⌘K's form) or a FUTURE id
 // (f<id>, a pulled Polaris idea) — the two tables' ids collide, so the form is
@@ -88,9 +112,10 @@ const DEBRIEF_FROM: Record<DebriefInsight['from'], string> = {
 };
 
 export function Workbench({
-  slug, geminiReady, highlightId, notesNonce, onPromoteNote, onPromotePlan,
+  slug, projectName, geminiReady, highlightId, notesNonce, onPromoteNote, onPromotePlan,
 }: {
   slug: string;
+  projectName: string;             // names the root crumb — the tree has no root row (#414)
   geminiReady: boolean;
   highlightId?: string | null;      // a NOTE id (⌘K) or f<futureId> (a Polaris-idea deep-link)
   notesNonce: number;               // bumped when a note is deleted elsewhere
@@ -105,6 +130,29 @@ export function Workbench({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [rail, setRail] = useState(true);
+
+  // ---- the explorer (#414) ----
+  // `hist` + `hi` are a browser history, not a stack: Back then a new folder
+  // truncates the forward end, which is the behaviour every file browser has
+  // and the one thing a plain stack gets wrong.
+  const [cwd, setCwd] = useState<FolderId>(ROOT);
+  const [hist, setHist] = useState<FolderId[]>([ROOT]);
+  const [hi, setHi] = useState(0);
+  const [view, setView] = useState<View>('canvas');
+  const [query, setQuery] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDir, setSortDir] = useState<1 | -1>(1);
+  const [tree, setTree] = useState(true);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  // The card being dragged, and the folder it is currently over. Both are
+  // pointer-lifetime state and deliberately not refs: the drop target has to
+  // RE-RENDER to show it will accept, and a ref cannot do that.
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [over, setOver] = useState<FolderId | null>(null);
+  // A second selection, for folding several cards into one. Separate from
+  // `sel`, which is the ops rail's subject and is exactly one card — merging
+  // them would make every ops button ambiguous the moment two things are ticked.
+  const [marked, setMarked] = useState<Set<number>>(new Set());
   const [hotEdge, setHotEdge] = useState<number | null>(null);
   const [linking, setLinking] = useState<number | null>(null);
   const [busyOp, setBusyOp] = useState<WorkbenchOp | null>(null);
@@ -331,6 +379,42 @@ export function Workbench({
     catch (e) { setError((e as Error)?.message || 'Something went wrong.'); }
   };
 
+  // ---- navigation (#414) ----
+  // Every arrival clears the selection, the search box and the marks. They are
+  // all statements about the folder you were in, and carrying a tick from one
+  // folder into another is how a Fold ends up eating a card nobody can see.
+  const arrive = useCallback((next: FolderId) => {
+    setCwd(next);
+    setSel(null);
+    setMarked(new Set());
+    setQuery('');
+    setPan({ x: 0, y: 0 });
+    setZoom(1);
+  }, []);
+
+  const navigate = useCallback((next: FolderId) => {
+    setHist((prev) => {
+      const cut = prev.slice(0, hi + 1);
+      // Re-entering the folder you are already in is not a history entry.
+      if (cut[cut.length - 1] === next) return prev;
+      setHi(cut.length);
+      return [...cut, next];
+    });
+    arrive(next);
+  }, [hi, arrive]);
+
+  const back = useCallback(() => {
+    if (hi <= 0) return;
+    setHi(hi - 1);
+    arrive(hist[hi - 1]);
+  }, [hi, hist, arrive]);
+
+  const forward = useCallback(() => {
+    if (hi >= hist.length - 1) return;
+    setHi(hi + 1);
+    arrive(hist[hi + 1]);
+  }, [hi, hist, arrive]);
+
   // Sets the choice immediately (an in-flight op sees it disabled, never a
   // stale value slipping through) and persists it as the app-wide default;
   // a failed save reports through the same banner as every other mutation and
@@ -344,13 +428,93 @@ export function Workbench({
     });
   };
 
+  // A smart folder is a query, so it cannot hold a new card — anything created
+  // while one is open belongs at the root, where it is visible, rather than
+  // being refused with nothing made (#414).
+  const folderForNew = (): number | null => (typeof cwd === 'number' ? cwd : null);
+
   const addNote = () => guard(async () => {
     const at = centreOfView();
     const text = 'New note';
-    const card = await addWorkbenchCard(slug, { kind: 'note', text, x: at.x, y: at.y });
+    const card = await addWorkbenchCard(slug, {
+      kind: 'note', text, x: at.x, y: at.y, parentId: folderForNew(),
+    });
     setData((d) => (d ? { ...d, cards: [...d.cards, card] } : d));
     setSel(card.id);
     say('Added a note. Click its text to write it.');
+  });
+
+  // ---- folders (#414) ----
+  const newFolder = () => guard(async () => {
+    const at = centreOfView();
+    const card = await addWorkbenchFolder(slug, {
+      title: 'New folder', parentId: folderForNew(), x: at.x, y: at.y,
+    });
+    setData((d) => (d ? { ...d, cards: [...d.cards, card] } : d));
+    setSel(card.id);
+    say(`Folder made in ${crumbs[crumbs.length - 1]?.name ?? 'the workbench'}. Click its name to rename it.`);
+  });
+
+  // Refile one card, or the whole marked set if the dragged card is part of it.
+  // Each move is its own PATCH and the server may refuse any of them, so the
+  // state is rebuilt from what came BACK rather than from what was sent — a
+  // refused move that still redrew as moved is the one failure this must not
+  // have.
+  const fileInto = (cardId: number, target: FolderId) => guard(async () => {
+    if (isSmart(target)) return;
+    const ids = marked.has(cardId) ? [...marked] : [cardId];
+    const movable = ids.filter((id) => canFileInto(allCards, id, target));
+    setOver(null);
+    setDragging(null);
+    if (!movable.length) return;
+    const moved = await Promise.all(movable.map((id) =>
+      patchWorkbenchCard(slug, id, { parentId: target })));
+    setData((d) => (d ? {
+      ...d,
+      cards: d.cards.map((c) => moved.find((m) => m.id === c.id) ?? c),
+    } : d));
+    setMarked(new Set());
+    const landed = moved.filter((m) => m.parentId === (typeof target === 'number' ? target : null));
+    const name = target === ROOT ? 'the workbench'
+      : `“${allCards.find((c) => c.id === target)?.title || 'folder'}”`;
+    if (!landed.length) say('Nothing moved — that folder cannot hold those cards.');
+    else say(`Filed ${landed.length} ${landed.length === 1 ? 'card' : 'cards'} into ${name}.`);
+  });
+
+  // Fold the marked cards into a new folder that takes the anchor's place on
+  // the canvas — the pile stays where you were looking, which is the whole
+  // point of folding rather than filing.
+  const foldMarked = () => guard(async () => {
+    const ids = [...marked];
+    if (ids.length < 2) return;
+    const members = ids.map((id) => allCards.find((c) => c.id === id)).filter(Boolean) as WorkbenchCard[];
+    if (members.length < 2) return;
+    const anchor = members[0];
+    const folder = await addWorkbenchFolder(slug, {
+      title: foldName(anchor.title, members.length),
+      parentId: folderForNew(),
+      x: anchor.x,
+      y: anchor.y,
+    });
+    const moved = await Promise.all(members.map((m) =>
+      patchWorkbenchCard(slug, m.id, { parentId: folder.id })));
+    setData((d) => (d ? {
+      ...d,
+      cards: [...d.cards.map((c) => moved.find((m) => m.id === c.id) ?? c), folder],
+    } : d));
+    setMarked(new Set());
+    setSel(folder.id);
+    say(`Folded ${moved.length} cards into “${folder.title}”.`);
+  });
+
+  // Promote a folder's contents to the Roadmap as phases. It goes through the
+  // same dialog a plan card's Ship does — one promote path, one place the
+  // owner edits what is about to be written.
+  const promoteFolder = (folder: WorkbenchCard) => guard(async () => {
+    const phases = phasesOf(allCards, folder.id, folder.title || 'Folder');
+    const ok = await onPromotePlan(phases);
+    if (!ok) return;
+    say(`“${folder.title}” promoted — ${phases.length} ${phases.length === 1 ? 'phase' : 'phases'} on the Roadmap.`);
   });
 
   // A design pasted back from a Claude session. It stacks where an ✧ op's
@@ -698,22 +862,48 @@ export function Workbench({
         d = `M${cx1},${y1} C${cx1},${y1 + dy} ${cx2},${y2 - dy} ${cx2},${y2}`;
       }
       return {
-        id: e.id, d, ai: e.ai,
+        id: e.id, a: e.a, b: e.b, d, ai: e.ai,
         // A line dims unless BOTH its ends are in the thread — a wire that
         // trails off into dimmed space reads as a thread that continues.
         dim: dimming && !(attached.has(e.a) && attached.has(e.b)),
         mx: Math.round((a.x + a.w / 2 + b.x + b.w / 2) / 2),
         my: Math.round((ay + by) / 2),
       };
-    }).filter(Boolean) as { id: number; d: string; ai: boolean; dim: boolean; mx: number; my: number }[];
+    }).filter(Boolean) as {
+      id: number; a: number; b: number; d: string; ai: boolean; dim: boolean; mx: number; my: number;
+    }[];
   }, [data, hOf, dimming, attached]);
 
   if (loading && !data) {
     return <div className="empty-state"><div className="big">Loading the workbench…</div></div>;
   }
 
-  const cards = data?.cards ?? [];
-  const selCard = cards.find((c) => c.id === sel) || null;
+  // ---- the folder in view (#414) ----
+  // `allCards` is the whole canvas; `shown` is what this folder holds. Every
+  // tree question is asked of the first and every render of the second — mixing
+  // them is how a count says twelve over a folder drawing three.
+  const allCards = data?.cards ?? [];
+  const crumbs = pathTo(allCards, cwd, projectName);
+  const searching = query.trim().length > 0;
+  // A search reaches DOWN from here, not across the whole canvas: you are
+  // searching the folder you are standing in, and its subfolders are part of
+  // it. Searching everything would make the breadcrumb a lie.
+  const shown = (() => {
+    const needle = query.trim().toLowerCase();
+    const base = searching
+      ? descendantsOf(allCards, cwd).filter((c) => c.title.toLowerCase().includes(needle))
+      : childrenOf(allCards, cwd);
+    return view === 'canvas' && !searching ? base : sortCards(base, sortKey, sortDir, allCards);
+  })();
+  const shownIds = new Set(shown.map((c) => c.id));
+  const cards = shown;
+  const selCard = allCards.find((c) => c.id === sel) || null;
+  // A folder is where the canvas can go next; the toolbar's Promote and the
+  // ops rail both need to know whether the selection is one.
+  const selFolder = isFolder(selCard) ? selCard : null;
+  const upTo: FolderId | null = isSmart(cwd) ? ROOT
+    : cwd === ROOT ? null
+      : (allCards.find((c) => c.id === cwd)?.parentId ?? ROOT);
   const ops = data?.ops ?? [];
   const models = data?.models ?? [];
   const selectedModel = models.find((m) => m.model === model);
@@ -779,6 +969,104 @@ export function Workbench({
     return next;
   });
 
+  // ---- the explorer's derived view (#414) ----
+  const toggleMark = (id: number, additive: boolean) => setMarked((prev) => {
+    const next = additive ? new Set(prev) : new Set<number>();
+    if (prev.has(id) && additive) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  // Open what was double-clicked: a folder navigates, anything else selects and
+  // centres. A smart folder can be opened too — it just never becomes a place
+  // you can put something.
+  const openCard = (c: WorkbenchCard) => {
+    if (isFolder(c)) { navigate(c.id); return; }
+    setSel(c.id);
+    if (view === 'canvas') goTo(c);
+  };
+
+  // One row per folder in the Explorer, flattened depth-first so the tree can
+  // be a list of divs rather than nested containers — nesting is what makes a
+  // drag target's hit box overlap its parent's.
+  const treeRows = (() => {
+    const rows: { card: WorkbenchCard; depth: number; open: boolean; kids: number }[] = [];
+    const walk = (parent: FolderId, depth: number, seen: Set<number>) => {
+      for (const c of childrenOf(allCards, parent)) {
+        if (!isFolder(c) || seen.has(c.id)) continue;
+        seen.add(c.id);
+        const open = expanded.has(c.id);
+        rows.push({ card: c, depth, open, kids: countIn(allCards, c.id) });
+        if (open) walk(c.id, depth + 1, seen);
+      }
+    };
+    walk(ROOT, 0, new Set());
+    return rows;
+  })();
+
+  const toggleExpand = (id: number) => setExpanded((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  // Drop handlers, shared by every surface that accepts one (the tree rows, the
+  // breadcrumb, a folder card on the canvas, a tile). `accepts` is asked before
+  // anything is painted, so a target that will refuse never lights up.
+  const dropProps = (target: FolderId) => ({
+    onDragOver: (e: React.DragEvent) => {
+      if (dragging === null || !canFileInto(allCards, dragging, target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (over !== target) setOver(target);
+    },
+    onDragLeave: () => setOver((o) => (o === target ? null : o)),
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (dragging === null) return;
+      void fileInto(dragging, target);
+    },
+  });
+
+  const dragProps = (c: WorkbenchCard) => ({
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      setDragging(c.id);
+      e.dataTransfer.effectAllowed = 'move';
+      // Firefox will not start a drag without payload. The id is not read back
+      // — `dragging` is the truth — but it has to be set.
+      e.dataTransfer.setData('text/plain', String(c.id));
+    },
+    onDragEnd: () => { setDragging(null); setOver(null); },
+  });
+
+  // What the status bar says, and it is three separate facts rather than one
+  // sentence because two of them are frequently empty.
+  const hiddenWires = data
+    ? data.edges.filter((e) => shownIds.has(e.a) !== shownIds.has(e.b)).length
+    : 0;
+  const statusCount = `${shown.length} ${shown.length === 1 ? 'item' : 'items'}`
+    + (searching ? ` matching “${query.trim()}”` : '');
+  const statusMarked = marked.size ? `${marked.size} marked` : selCard ? `“${selCard.title.slice(0, 60)}”` : '';
+  // A wire crossing a folder boundary is not drawn, and saying nothing about it
+  // would make the canvas read as a thread that simply ends (see the header).
+  const statusWires = hiddenWires
+    ? `${hiddenWires} ${hiddenWires === 1 ? 'wire runs' : 'wires run'} outside this folder`
+    : '';
+
+  // Only wires with BOTH ends in this folder are drawn — see the file header.
+  const wires = paths.filter((p) => shownIds.has(p.a) && shownIds.has(p.b));
+
+  const sortHead = (key: SortKey, label: string) => (
+    <button className={`wb-sort${sortKey === key ? ' on' : ''}`}
+      onClick={() => {
+        if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1));
+        else { setSortKey(key); setSortDir(1); }
+      }}>
+      {label}{sortKey === key ? (sortDir === 1 ? ' ▲' : ' ▼') : ''}
+    </button>
+  );
+
   return (
     <div className="wb">
       <div className="section-bar" style={{ marginBottom: 6 }}>
@@ -786,15 +1074,147 @@ export function Workbench({
           <div className="h">Workbench</div>
           <div className="subtitle">Notes, Polaris ideas and the ✧ ops that turn them into a plan</div>
         </div>
-        <div className="wb-hint">drag ↔ move · wheel ↔ zoom · hover a line ↔ ✂ cut · plan text is editable</div>
+        <div className="wb-hint">drag ↔ move · wheel ↔ zoom · hover a line ↔ ✂ cut · drag onto a folder ↔ file</div>
       </div>
 
       {error && <div className="action-error">{error}</div>}
 
+      {/* The explorer bar (#414): where you are, what you are looking at it
+          with, and the three things you can do to a folder. */}
+      <div className="wb-bar">
+        <div className="wb-nav">
+          <button onClick={back} disabled={hi <= 0} title="Back">‹</button>
+          <button onClick={forward} disabled={hi >= hist.length - 1} title="Forward">›</button>
+          <button onClick={() => upTo !== null && navigate(upTo)} disabled={upTo === null}
+            title="Up one level">↑</button>
+        </div>
+
+        <div className="wb-crumbs" {...dropProps(ROOT)}>
+          {crumbs.map((c, i) => (
+            <span key={`${String(c.id)}-${i}`} className="wb-crumb-wrap">
+              {i > 0 && <span className="sep">/</span>}
+              <button
+                className={`wb-crumb${i === crumbs.length - 1 ? ' here' : ''}${over === c.id && i < crumbs.length - 1 ? ' over' : ''}`}
+                onClick={() => navigate(c.id)}
+                {...(i < crumbs.length - 1 ? dropProps(c.id) : {})}>
+                {c.name}
+              </button>
+            </span>
+          ))}
+        </div>
+
+        <input className="wb-search" value={query} placeholder="Search this folder…"
+          onChange={(e) => setQuery(e.target.value)} />
+
+        <div className="wb-views">
+          {VIEWS.map((v) => (
+            <button key={v.key} className={view === v.key ? 'on' : ''}
+              onClick={() => setView(v.key)}>{v.label}</button>
+          ))}
+        </div>
+
+        <button className="ghost sm" onClick={() => void newFolder()}>+ Folder</button>
+        {marked.size > 1 && (
+          <button className="ghost sm" onClick={() => void foldMarked()}>Fold {marked.size}</button>
+        )}
+        {selFolder && (
+          <button className="ghost sm" onClick={() => void promoteFolder(selFolder)}>
+            Promote “{selFolder.title.slice(0, 22)}{selFolder.title.length > 22 ? '…' : ''}”
+          </button>
+        )}
+      </div>
+
       <div className="wb-body">
+        {tree && (
+          <div className="wb-tree">
+            <div className="wb-tree-head">
+              <span>Explorer</span>
+              <button onClick={() => setTree(false)} title="Hide the explorer">‹</button>
+            </div>
+
+            <div className="wb-tree-label">Smart folders</div>
+            {SMART.map((s) => (
+              <button key={s.key} className={`wb-tree-row${cwd === s.key ? ' on' : ''}`}
+                onClick={() => navigate(s.key)}>
+                <span className="dot" style={{ background: s.tone }} />
+                <span className="name">{s.name}</span>
+                <span className="count">{countIn(allCards, s.key)}</span>
+              </button>
+            ))}
+
+            <div className="wb-tree-label">Folders</div>
+            <button className={`wb-tree-row${cwd === ROOT ? ' on' : ''}${over === ROOT ? ' over' : ''}`}
+              onClick={() => navigate(ROOT)} {...dropProps(ROOT)}>
+              <span className="ic root" />
+              <span className="name">{projectName}</span>
+              <span className="count">{countIn(allCards, ROOT)}</span>
+            </button>
+            {treeRows.map((r) => (
+              <button key={r.card.id}
+                className={`wb-tree-row${cwd === r.card.id ? ' on' : ''}${over === r.card.id ? ' over' : ''}`}
+                style={{ paddingLeft: 10 + (r.depth + 1) * 13 }}
+                onClick={() => navigate(r.card.id)}
+                onDoubleClick={() => toggleExpand(r.card.id)}
+                {...dragProps(r.card)} {...dropProps(r.card.id)}>
+                <span className={`twist${r.kids ? '' : ' none'}${r.open ? ' open' : ''}`}
+                  onClick={(e) => { e.stopPropagation(); toggleExpand(r.card.id); }}>▸</span>
+                <span className="ic" />
+                <span className="name">{r.card.title || 'Untitled folder'}</span>
+                <span className="count">{r.kids}</span>
+              </button>
+            ))}
+            {!treeRows.length && (
+              <div className="wb-tree-empty">
+                No folders yet. <button className="linkish" onClick={() => void newFolder()}>Make one</button> and
+                drag cards onto it.
+              </div>
+            )}
+          </div>
+        )}
+        {!tree && (
+          <button className="wb-tree-peg" onClick={() => setTree(true)} title="Show the explorer">›</button>
+        )}
+
+        {view !== 'canvas' && (
+          <div className={`wb-list${view === 'details' ? ' details' : ''}`}>
+            {view === 'details' && (
+              <div className="wb-list-head">
+                {sortHead('name', 'Name')}
+                {sortHead('kind', 'Kind')}
+                {sortHead('items', 'Items')}
+                {sortHead('updated', 'Updated')}
+              </div>
+            )}
+            <div className={view === 'tiles' ? 'wb-tiles' : 'wb-rows'}>
+              {shown.map((c) => (
+                <div key={c.id}
+                  className={`${view === 'tiles' ? 'wb-tile' : 'wb-row'}`
+                    + `${marked.has(c.id) ? ' marked' : ''}${sel === c.id ? ' sel' : ''}`
+                    + `${over === c.id ? ' over' : ''}${c.days >= 30 ? ' stale' : ''}`}
+                  onClick={(e) => { toggleMark(c.id, e.metaKey || e.ctrlKey); setSel(c.id); }}
+                  onDoubleClick={() => openCard(c)}
+                  {...dragProps(c)} {...(isFolder(c) ? dropProps(c.id) : {})}>
+                  <span className={`ic ${c.kind}`} />
+                  <span className="name">{c.title || 'Untitled'}</span>
+                  <span className="kind">{KIND_LABEL[c.kind]}</span>
+                  <span className="items">{isFolder(c) ? countIn(allCards, c.id) : '—'}</span>
+                  <span className="when">{c.when}</span>
+                </div>
+              ))}
+              {!shown.length && (
+                <div className="wb-list-empty">
+                  {searching ? 'Nothing in this folder matches that.'
+                    : isSmart(cwd) ? 'Nothing on the canvas answers that search right now.'
+                      : 'This folder is empty. Drag cards onto it, or make a note here.'}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div
           ref={groundRef}
-          className={`wb-ground${linking !== null ? ' linking' : ''}`}
+          className={`wb-ground${linking !== null ? ' linking' : ''}${view === 'canvas' ? '' : ' hidden'}`}
           onPointerDown={startPan}
           style={{
             backgroundSize: `${GRID * zoom}px ${GRID * zoom}px`,
@@ -803,11 +1223,11 @@ export function Workbench({
         >
           <div className="wb-field" style={{ transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})` }}>
             <svg className="wb-wires" width="2400" height="1800">
-              {paths.map((p) => (
+              {wires.map((p) => (
                 <path key={`w${p.id}`} d={p.d} fill="none"
                   className={`wb-wire${p.ai ? ' ai' : ''}${hotEdge === p.id ? ' hot' : ''}${p.dim ? ' dim' : ''}`} />
               ))}
-              {paths.map((p) => (
+              {wires.map((p) => (
                 <g key={`h${p.id}`} className="wb-wire-hit">
                   <path d={p.d} fill="none" stroke="transparent" strokeWidth={16}
                     onClick={(e) => { e.stopPropagation(); void cut(p.id); }}
@@ -828,14 +1248,20 @@ export function Workbench({
               <CardView
                 key={c.id} card={c}
                 selected={c.id === sel}
+                marked={marked.has(c.id)}
                 linkingFrom={linking === c.id}
                 highlighted={c.id === highlightedCard?.id}
                 dimmed={dimming && !attached.has(c.id)}
+                over={over === c.id}
+                inside={isFolder(c) ? countIn(allCards, c.id) : 0}
                 nodeRef={(el) => { if (el) nodeRef.current[c.id] = el; else delete nodeRef.current[c.id]; }}
                 onDown={(e) => startDrag(e, c)}
                 onTitle={(t) => saveTitle(c, t)}
                 onBody={(b) => saveBody(c, b)}
                 onShip={() => void shipPlan(c)}
+                onOpen={() => openCard(c)}
+                dragProps={dragProps(c)}
+                dropProps={isFolder(c) ? dropProps(c.id) : undefined}
               />
             ))}
           </div>
@@ -1005,8 +1431,12 @@ export function Workbench({
 
           {!loading && cards.length === 0 && (
             <div className="wb-empty">
-              <div className="big">An empty bench</div>
-              <div>Jot a note or pull an idea across from Polaris, then select it and run an ✧ op.</div>
+              <div className="big">{cwd === ROOT ? 'An empty bench' : 'An empty folder'}</div>
+              <div>
+                {cwd === ROOT
+                  ? 'Jot a note or pull an idea across from Polaris, then select it and run an ✧ op.'
+                  : 'Drag cards onto this folder from anywhere, or add a note — it will be filed here.'}
+              </div>
             </div>
           )}
         </div>
@@ -1130,6 +1560,15 @@ export function Workbench({
           </div>
         )}
       </div>
+
+      {/* Three separate facts, not one sentence: two of them are usually
+          empty, and the wire count is the only place the canvas admits it is
+          hiding a thread that leaves this folder (#414). */}
+      <div className="wb-status">
+        <span>{statusCount}</span>
+        <span className="mid">{statusMarked}</span>
+        <span className="right">{statusWires}</span>
+      </div>
     </div>
   );
 }
@@ -1175,18 +1614,25 @@ const kindLine = (c: WorkbenchCard) =>
 // One card. Note and Polaris cards read their title through from the row they
 // wrap, so editing here writes to the note or the idea, never to a copy.
 function CardView({
-  card, selected, linkingFrom, highlighted, dimmed, nodeRef, onDown, onTitle, onBody, onShip,
+  card, selected, marked, linkingFrom, highlighted, dimmed, over, inside,
+  nodeRef, onDown, onTitle, onBody, onShip, onOpen, dragProps, dropProps,
 }: {
   card: WorkbenchCard;
   selected: boolean;
+  marked: boolean;
   linkingFrom: boolean;
   highlighted: boolean;
   dimmed: boolean;
+  over: boolean;                    // a drag is hovering this folder and it will accept
+  inside: number;                   // how many cards a folder holds (0 for anything else)
   nodeRef: (el: HTMLDivElement | null) => void;
   onDown: (e: React.PointerEvent) => void;
   onTitle: (t: string) => void;
   onBody: (b: WorkbenchCard['body']) => void;
   onShip: () => void;
+  onOpen: () => void;
+  dragProps: Record<string, unknown>;
+  dropProps?: Record<string, unknown>;
 }) {
   const body = card.body;
   const lines = body.lines || [];
@@ -1197,16 +1643,44 @@ function CardView({
   const setPhase = (i: number, patch: Partial<WorkbenchPhase>) =>
     onBody({ ...body, phases: phases.map((p, j) => (j === i ? { ...p, ...patch } : p)) });
 
+  // A FOLDER CARD IS ITS OWN SHAPE (#414) — it has no body to draw, and what it
+  // does have is a count and a way in. Double-click opens it, the same gesture
+  // as the Explorer and the tiles, so the canvas is not the one surface with a
+  // different way of entering a folder.
+  if (card.kind === 'folder') {
+    return (
+      <div
+        ref={nodeRef}
+        className={`wb-card folder${selected ? ' on' : ''}${marked ? ' marked' : ''}`
+          + `${highlighted ? ' hl' : ''}${dimmed ? ' dim' : ''}${over ? ' over' : ''}`}
+        onPointerDown={onDown}
+        onDoubleClick={onOpen}
+        style={{ transform: `translate(${card.x}px,${card.y}px)`, width: card.w }}
+        {...dragProps}
+        {...dropProps}
+      >
+        <div className="wb-card-head">
+          <span className="k">folder</span>
+          <span className="m">{inside} {inside === 1 ? 'item' : 'items'}</span>
+        </div>
+        <Editable className="wb-title" value={card.title} onCommit={onTitle} onPointerDown={stop} />
+        <button className="wb-open" onPointerDown={stop} onClick={onOpen}>Open →</button>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={nodeRef}
-      className={`wb-card ${card.kind}${selected ? ' on' : ''}${linkingFrom ? ' linking' : ''}${highlighted ? ' hl' : ''}${dimmed ? ' dim' : ''}`}
+      className={`wb-card ${card.kind}${selected ? ' on' : ''}${marked ? ' marked' : ''}${linkingFrom ? ' linking' : ''}${highlighted ? ' hl' : ''}${dimmed ? ' dim' : ''}`}
       onPointerDown={onDown}
+      onDoubleClick={onOpen}
       style={{
         transform: `translate(${card.x}px,${card.y}px)`,
         width: card.w,
         ...(card.colour ? { ['--note-c' as string]: card.colour } : {}),
       }}
+      {...dragProps}
     >
       <div className="wb-card-head">
         <span className="k">{card.kind === 'polaris' ? 'from polaris' : card.kind === 'ai' ? card.op : 'note'}</span>
