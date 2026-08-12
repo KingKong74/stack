@@ -187,6 +187,11 @@ export function Workbench({
   const groundRef = useRef<HTMLDivElement | null>(null);
   const panRef = useRef(pan); panRef.current = pan;
   const zoomRef = useRef(zoom); zoomRef.current = zoom;
+  // The pointer-drag closure outlives the render that made it, so it reads the
+  // card list through a ref — a captured array would be one drag out of date
+  // and would test the drop against a tree that has since changed.
+  const allCardsRef = useRef<WorkbenchCard[]>([]);
+  allCardsRef.current = data?.cards ?? [];
   // Measured card heights, keyed by card id. Edges attach to a card's middle and
   // op output stacks under the last one, and both need the height the browser
   // actually gave a card — not one we guessed from its content.
@@ -342,10 +347,27 @@ export function Workbench({
   // Dragging a card moves it locally at pointer speed and persists ONCE on
   // release — a PATCH per frame would be a write storm for a position nobody
   // has finished choosing yet.
+  //
+  // THE CANVAS DOES NOT USE HTML5 DRAG (#414), and that is not an oversight.
+  // Setting `draggable` on a card would hand mousedown to the native drag,
+  // which suppresses pointermove — the card would stop being movable at all.
+  // So filing from the canvas is decided HERE, on release: whatever folder card
+  // is under the pointer takes the drop. The Explorer, the tiles and the rows
+  // are plain lists with no positions to defend, so those DO use HTML5 drag.
   const startDrag = (e: React.PointerEvent, card: WorkbenchCard) => {
     if (e.button !== 0) return;
     e.stopPropagation();
     if (linking !== null && linking !== card.id) { void wire(linking, card.id); return; }
+    // ⌘/Ctrl-click marks rather than selects: marking is how a Fold is built,
+    // and it has to be reachable on the canvas too, not only in the lists.
+    if (e.metaKey || e.ctrlKey) {
+      setMarked((prev) => {
+        const next = new Set(prev);
+        if (next.has(card.id)) next.delete(card.id); else next.add(card.id);
+        return next;
+      });
+      return;
+    }
     setSel(card.id);
     const x0 = e.clientX, y0 = e.clientY;
     const c0 = { x: card.x, y: card.y };
@@ -354,6 +376,16 @@ export function Workbench({
     // StrictMode, and that would be two PATCHes for one drag.
     const at = { ...c0 };
     let moved = false;
+    // Which folder card the pointer is currently over, if any. Read off the
+    // DOM rather than from the card coordinates: the cards under the cursor are
+    // exactly what the browser already knows, and recomputing hit boxes through
+    // a pan and a zoom is arithmetic that only has to be wrong once.
+    const folderUnder = (ev: { clientX: number; clientY: number }): number | null => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const host = el?.closest?.('[data-folder-id]') as HTMLElement | null | undefined;
+      const id = host ? Number(host.dataset.folderId) : NaN;
+      return Number.isFinite(id) && id !== card.id ? id : null;
+    };
     const move = (ev: PointerEvent) => {
       const z = zoomRef.current;
       const nx = Math.round(c0.x + (ev.clientX - x0) / z);
@@ -362,11 +394,25 @@ export function Workbench({
       moved = true;
       at.x = nx; at.y = ny;
       setData((d) => (d ? { ...d, cards: d.cards.map((c) => (c.id === card.id ? { ...c, x: nx, y: ny } : c)) } : d));
+      // Light the folder up only if it would actually take the card.
+      const hit = folderUnder(ev);
+      const ok = hit !== null && canFileInto(allCardsRef.current, card.id, hit);
+      setOver(ok ? hit : null);
     };
-    const up = () => {
+    const up = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       if (!moved) return;
+      const hit = folderUnder(ev);
+      if (hit !== null && canFileInto(allCardsRef.current, card.id, hit)) {
+        // Dropped ONTO a folder: file it, and leave the position alone. The
+        // card is about to stop being drawn here, so persisting where it was
+        // let go would write a coordinate inside a folder it never sat in.
+        setOver(null);
+        void fileInto(card.id, hit);
+        return;
+      }
+      setOver(null);
       void patchWorkbenchCard(slug, card.id, { x: at.x, y: at.y }).catch(() => {});
     };
     window.addEventListener('pointermove', move);
@@ -970,6 +1016,10 @@ export function Workbench({
   });
 
   // ---- the explorer's derived view (#414) ----
+  // ⌘/Ctrl-click builds the marked set; a plain click clears it and selects.
+  // Marking is deliberately its own gesture: `sel` is the ops rail's single
+  // subject, and letting a plain click accumulate would make every op button
+  // ambiguous the moment two things were ticked.
   const toggleMark = (id: number, additive: boolean) => setMarked((prev) => {
     const next = additive ? new Set(prev) : new Set<number>();
     if (prev.has(id) && additive) next.delete(id); else next.add(id);
@@ -1191,7 +1241,10 @@ export function Workbench({
                   className={`${view === 'tiles' ? 'wb-tile' : 'wb-row'}`
                     + `${marked.has(c.id) ? ' marked' : ''}${sel === c.id ? ' sel' : ''}`
                     + `${over === c.id ? ' over' : ''}${c.days >= 30 ? ' stale' : ''}`}
-                  onClick={(e) => { toggleMark(c.id, e.metaKey || e.ctrlKey); setSel(c.id); }}
+                  onClick={(e) => {
+                    if (e.metaKey || e.ctrlKey) toggleMark(c.id, true);
+                    else { setSel(c.id); setMarked(new Set()); }
+                  }}
                   onDoubleClick={() => openCard(c)}
                   {...dragProps(c)} {...(isFolder(c) ? dropProps(c.id) : {})}>
                   <span className={`ic ${c.kind}`} />
@@ -1260,8 +1313,6 @@ export function Workbench({
                 onBody={(b) => saveBody(c, b)}
                 onShip={() => void shipPlan(c)}
                 onOpen={() => openCard(c)}
-                dragProps={dragProps(c)}
-                dropProps={isFolder(c) ? dropProps(c.id) : undefined}
               />
             ))}
           </div>
@@ -1615,7 +1666,7 @@ const kindLine = (c: WorkbenchCard) =>
 // wrap, so editing here writes to the note or the idea, never to a copy.
 function CardView({
   card, selected, marked, linkingFrom, highlighted, dimmed, over, inside,
-  nodeRef, onDown, onTitle, onBody, onShip, onOpen, dragProps, dropProps,
+  nodeRef, onDown, onTitle, onBody, onShip, onOpen,
 }: {
   card: WorkbenchCard;
   selected: boolean;
@@ -1631,8 +1682,6 @@ function CardView({
   onBody: (b: WorkbenchCard['body']) => void;
   onShip: () => void;
   onOpen: () => void;
-  dragProps: Record<string, unknown>;
-  dropProps?: Record<string, unknown>;
 }) {
   const body = card.body;
   const lines = body.lines || [];
@@ -1656,8 +1705,9 @@ function CardView({
         onPointerDown={onDown}
         onDoubleClick={onOpen}
         style={{ transform: `translate(${card.x}px,${card.y}px)`, width: card.w }}
-        {...dragProps}
-        {...dropProps}
+        /* How a pointer-drag finds a drop target: the release reads this off
+           the DOM under the cursor rather than recomputing hit boxes. */
+        data-folder-id={card.id}
       >
         <div className="wb-card-head">
           <span className="k">folder</span>
@@ -1680,7 +1730,6 @@ function CardView({
         width: card.w,
         ...(card.colour ? { ['--note-c' as string]: card.colour } : {}),
       }}
-      {...dragProps}
     >
       <div className="wb-card-head">
         <span className="k">{card.kind === 'polaris' ? 'from polaris' : card.kind === 'ai' ? card.op : 'note'}</span>
