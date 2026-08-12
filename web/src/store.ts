@@ -2799,11 +2799,19 @@ export async function addWorkbenchFolder(
 // `dropped` is every card that went with it: an op's output takes the branch it
 // fed. A polaris card only comes OFF the canvas — `returnedToTray` is the idea
 // id to flip back to pickable, never a deletion.
+// Deleting a FOLDER reports `lifted` — the cards that were inside it — and
+// `liftedTo`, the folder they went to. They are NOT in `dropped`: a folder
+// delete never deletes what it held (#414).
 export async function deleteWorkbenchCard(
   slug: string, id: number,
-): Promise<{ dropped: number[]; returnedToTray?: number }> {
-  return request<{ dropped: number[]; returnedToTray?: number }>(
-    `${wbBase(slug)}/cards/${id}`, { method: 'DELETE' });
+): Promise<{
+  dropped: number[]; returnedToTray?: number;
+  lifted?: number[]; liftedTo?: number | null;
+}> {
+  return request<{
+    dropped: number[]; returnedToTray?: number;
+    lifted?: number[]; liftedTo?: number | null;
+  }>(`${wbBase(slug)}/cards/${id}`, { method: 'DELETE' });
 }
 
 export async function linkWorkbenchCards(slug: string, a: number, b: number): Promise<WorkbenchEdge> {

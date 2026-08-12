@@ -728,9 +728,18 @@ export function Workbench({
   const dropCard = (card: WorkbenchCard) => guard(async () => {
     const res = await deleteWorkbenchCard(slug, card.id);
     const gone = new Set(res.dropped);
+    // A deleted FOLDER lifts its contents rather than taking them with it, so
+    // the ones it held have to be re-parented HERE too. Dropping the folder and
+    // leaving its children pointing at it would strand them: nothing draws a
+    // card whose parent is not there, so the work would simply vanish from the
+    // canvas until the next reload (#414).
+    const lifted = new Set(res.lifted ?? []);
+    const liftedTo = res.liftedTo ?? null;
     setData((d) => (d ? {
       ...d,
-      cards: d.cards.filter((c) => !gone.has(c.id)),
+      cards: d.cards
+        .filter((c) => !gone.has(c.id))
+        .map((c) => (lifted.has(c.id) ? { ...c, parentId: liftedTo } : c)),
       edges: d.edges.filter((e) => !gone.has(e.a) && !gone.has(e.b)),
       // The idea itself never left — it just becomes pickable again.
       polaris: res.returnedToTray
@@ -738,9 +747,14 @@ export function Workbench({
         : d.polaris,
     } : d));
     if (sel != null && gone.has(sel)) setSel(null);
+    // Standing inside a folder that has just been deleted is a dead end — the
+    // breadcrumb would name something that no longer exists.
+    if (cwd === card.id) navigate(liftedTo);
     say(card.kind === 'polaris'
       ? `Took ${card.meta} off the canvas. The idea is untouched.`
-      : `Removed ${gone.size} card${gone.size > 1 ? 's' : ''}.`);
+      : lifted.size
+        ? `Removed the folder. Its ${lifted.size} card${lifted.size > 1 ? 's' : ''} moved up a level — nothing inside was deleted.`
+        : `Removed ${gone.size} card${gone.size > 1 ? 's' : ''}.`);
   });
 
   const wire = (a: number, b: number) => guard(async () => {
