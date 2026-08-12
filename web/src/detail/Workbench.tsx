@@ -1275,7 +1275,11 @@ export function Workbench({
                       first cut did. A tile is a stack, and wants its meta on
                       one line underneath. Same fields, two structures. */}
                   <span className="name">
-                    <span className={`ic ${c.kind}`} />
+                    {/* `k-` prefixed, NOT the bare kind. This stylesheet is one
+                        global scope and `.note` is already the notes-wall
+                        sticky — an unprefixed kind class inherited its padding
+                        and border and drew an 11px swatch as a 34px box. */}
+                    <span className={`ic k-${c.kind}`} />
                     <span className="t">{c.title || 'Untitled'}</span>
                   </span>
                   {view === 'details' ? (

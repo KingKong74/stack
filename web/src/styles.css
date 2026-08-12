@@ -58,6 +58,10 @@
   --resume-when: #a9947f;
   /* the ink a sticky's own paper wants; dark re-bases it rather than inverting */
   --note-ink: #473f30;
+  /* a sticky's default paper. The literal lived only as a var() fallback
+     (`var(--note-c, #fef4a8)`), so anything else wanting the same yellow had
+     nothing to name — the explorer's note swatch drew transparent. */
+  --note-paper: #fef4a8;
   /* the hairline around a sticky's paper. Was an inline hex on .wb-card.note
      until the Workbench folder import (#414) needed the same edge on a second
      surface — a colour used twice is a token, per the rule at the top here. */
@@ -1525,10 +1529,10 @@ a.tab { display: inline-block; }
    width and draws as a large empty box. */
 .wb-tile .ic, .wb-row .ic { flex: none; width: 11px; height: 11px; border-radius: 2px;
   align-self: center; }
-.wb-tile .ic.folder, .wb-row .ic.folder { background: var(--accent-soft); border-radius: 1px 3px 3px 3px; }
-.wb-tile .ic.note, .wb-row .ic.note { background: var(--note-paper); border: 1px solid var(--note-paper-border); }
-.wb-tile .ic.polaris, .wb-row .ic.polaris { background: var(--accent); }
-.wb-tile .ic.ai, .wb-row .ic.ai { background: var(--live); }
+.wb-tile .ic.k-folder, .wb-row .ic.k-folder { background: var(--accent-soft); border-radius: 1px 3px 3px 3px; }
+.wb-tile .ic.k-note, .wb-row .ic.k-note { background: var(--note-paper); border: 1px solid var(--note-paper-border); }
+.wb-tile .ic.k-polaris, .wb-row .ic.k-polaris { background: var(--accent); }
+.wb-tile .ic.k-ai, .wb-row .ic.k-ai { background: var(--live); }
 
 .wb-status { display: flex; align-items: center; gap: 14px; height: 26px; padding: 0 11px;
   border: 1px solid var(--line-2); border-top: 0; border-radius: 0 0 14px 14px;
