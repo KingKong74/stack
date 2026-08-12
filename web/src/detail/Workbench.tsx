@@ -1475,7 +1475,10 @@ export function Workbench({
           </div>
         )}
 
-        {!sysOpen && view !== 'canvas' && (
+        {/* The LIST views, named rather than defined as "not canvas" — that
+            spelling silently swallowed Map the moment it was added, and drew a
+            list of rows beside the graph. */}
+        {!sysOpen && (view === 'tiles' || view === 'details') && (
           <div className={`wb-list${view === 'details' ? ' details' : ''}`}>
             {view === 'details' && (
               <div className="wb-list-head">
