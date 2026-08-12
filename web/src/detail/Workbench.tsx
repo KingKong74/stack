@@ -1224,7 +1224,7 @@ export function Workbench({
     const boxes = map
       ? map.nodes.map((n) => ({ x: n.x, y: n.y, w: MAP_NODE_W, h: 44 }))
       : shown.map((c) => ({ x: c.x, y: c.y, w: c.w, h: hOf(c) }));
-    if (boxes.length < 2) return null;
+    if (!boxes.length) return null;
     const pad = 80;
     const x0 = Math.min(...boxes.map((b) => b.x)) - pad;
     const y0 = Math.min(...boxes.map((b) => b.y)) - pad;
@@ -1235,6 +1235,11 @@ export function Workbench({
     const el = groundRef.current;
     const vw = el?.clientWidth ?? 800;
     const vh = el?.clientHeight ?? 520;
+    // A MINIMAP IS FOR CONTENT THAT DOES NOT FIT, so that — not a count of
+    // items — is what decides whether it appears. Counting was the first cut,
+    // and it hid the minimap on a one-node map that fitted anyway while
+    // promising one for two cards sitting side by side.
+    if (w <= vw / zoom && h <= vh / zoom) return null;
     // The viewport rect, in the same world coordinates as the boxes.
     const vx = -pan.x / zoom;
     const vy = -pan.y / zoom;
