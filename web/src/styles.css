@@ -1722,7 +1722,14 @@ a.tab { display: inline-block; }
 .wb-zoom button:hover { background: var(--panel); }
 
 /* The bottom-left dock: pull ideas across, or start a note. */
-.wb-dock { position: absolute; left: 18px; bottom: 18px; display: flex; align-items: center; gap: 8px; }
+/* THE BOTTOM OF THE CANVAS HAS TWO OVERLAYS and they must not share pixels.
+   The dock grew wide enough (two pull buttons plus + note) to run underneath
+   the zoom chip on the right, and its + note button then intercepted every
+   click meant for the chip — the Fullscreen button was simply unpressable.
+   Capping the width and allowing a wrap keeps the dock out of the chip's
+   column at every viewport instead of only at the wide one. */
+.wb-dock { position: absolute; left: 18px; bottom: 18px; display: flex; align-items: center;
+  gap: 8px; flex-wrap: wrap; max-width: calc(100% - 250px); }
 .wb-pull { display: flex; align-items: center; gap: 9px; padding: 9px 13px; border-radius: 11px;
   border: 1px solid var(--line-3); background: var(--surface); box-shadow: 0 6px 18px rgba(28,26,23,.08); }
 .wb-pull:hover, .wb-pull.on { border-color: var(--accent); }
