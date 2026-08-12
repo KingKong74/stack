@@ -1401,8 +1401,11 @@ export function Workbench({
             ))}
             {!treeRows.length && (
               <div className="wb-tree-empty">
-                No folders yet. <button className="linkish" onClick={() => void newFolder()}>Make one</button> and
-                drag cards onto it.
+                {/* "No folders yet" sat directly beneath Polaris and Roadmap
+                    and contradicted them. Those two are not yours to make. */}
+                No folders of your own yet.{' '}
+                <button className="linkish" onClick={() => void newFolder()}>Make one</button> and drag
+                cards onto it.
               </div>
             )}
           </div>
