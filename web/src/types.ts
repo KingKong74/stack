@@ -401,27 +401,6 @@ export interface Check {
   when: string;
 }
 
-// The planning stage a Tips-library recipe belongs to — the left rail's
-// filter chips on the Tips tab.
-export type TipStage = 'diverge' | 'converge' | 'judge' | 'ship';
-
-// A Tips-library recipe: a kept Claude prompt plus the context of when to
-// reach for it. The library is app-wide — every project's Tips tab reads the
-// same recipes; Run opens a terminal session in that project with the prompt.
-export interface Tip {
-  id: number;
-  name: string;
-  stage: TipStage;
-  surface: string;   // where it runs best (Polaris / Roadmap / …; '' = anywhere)
-  blurb: string;     // the one-line list-row pitch
-  when: string;      // when to reach for it
-  prompt: string;    // [square-bracket] slots are fill-ins
-  best: string[];    // "works best when" lines
-  who: string;       // provenance — who kept it, where output lands
-  pinned: boolean;
-  uses: number;
-  lastRun: string;   // relative, server-rendered ('' = never run)
-}
 
 // One Audit-tab run-history row — the summary of a Run-all (or run-one),
 // newest first from the API. Feeds the dashboard's trend strip.

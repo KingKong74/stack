@@ -143,7 +143,7 @@ function SkillModal({ skill, projects, onClose, onSave }: {
 export default function Skills() {
   const [data, setData] = useState<SkillsData | null>(null);
   // The project list is only needed to say WHERE a project skill goes, so the
-  // screen fetches its own rather than being handed one — same as the Tips tab.
+  // screen fetches its own rather than being handed one — same as the corner ＋.
   const [projects, setProjects] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<Partial<Skill> | null>(null);

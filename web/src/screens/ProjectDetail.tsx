@@ -9,7 +9,7 @@ import {
   getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, convergeFutures,
   type ConvergeDraft, assistRoadmapItem, proposeOrbits, restateFuture,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
-  takeReviewPrefill, agentCan, setLastViewedProject,
+  takeReviewPrefill, agentCan, setLastViewedProject, onItemFiled,
   agentConsoleCan, agentConsoleOffReason, type TabAgentKey,
   HttpError, getWorkbench, addWorkbenchCard,
 } from '../store';
@@ -51,10 +51,10 @@ const TAB_AGENT: Partial<Record<Tab, { key: TabAgentKey; name: string }>> = {
 
 const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'futures', 'workbench', 'activity']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
-// payload from an older server, a ⌘K target) keep working. 'tips' is the same
-// idea: the recipe library left the tab strip for the bottom-left dock, which
-// opens itself on that link (components/TipsDock) and rewrites the hash, so the
-// page underneath just shows Overview. 'notes' resolves to the Workbench, which
+// payload from an older server, a ⌘K target) keep working. 'tips' still
+// resolves too: the recipe library was a tab, then the bottom-left dock, and
+// is now neither — the corner holds the quick ＋ instead — so an old link lands
+// on Overview rather than 404ing. 'notes' resolves to the Workbench, which
 // is where a note is read now — and `hl` on that link is still a NOTE id, which
 // the canvas resolves to the card wrapping it.
 const LEGACY_TABS: Record<string, Tab> = { bugs: 'quality', audit: 'quality', tips: 'overview', notes: 'workbench' };
@@ -204,6 +204,16 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   // Bumped whenever a note is deleted from outside the canvas, so the Workbench
   // reloads instead of drawing a card whose note no longer exists.
   const [notesNonce, setNotesNonce] = useState(0);
+  // The corner ＋ writes through store.ts, not through this screen, so an item
+  // filed into the project already on screen would otherwise be saved and
+  // invisible. Re-read the payload (no loading flash — the page is already
+  // drawn) and bump the canvas, which owns its own copy of the notes.
+  useEffect(() => onItemFiled((filedSlug) => {
+    if (filedSlug !== slug) return;
+    getProjectDetail(slug)
+      .then((d) => { setData(d); setNotesNonce((n) => n + 1); })
+      .catch(() => { /* the write succeeded; a stale read is not worth an error banner */ });
+  }), [slug, setData]);
   // #314 — the ids a promotion actually carried through: the idea plus its
   // orbit (planets/moons), never just the one that was clicked. Keep-or-delete
   // has to cover the whole set, or a deleted star leaves its planets pointing

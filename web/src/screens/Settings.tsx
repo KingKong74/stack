@@ -97,7 +97,7 @@ export function Settings({ initialTab = 'settings', initialRoom, initialSlug, in
   useEffect(() => () => {
     if (fullRef.current && document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
   }, []);
-  // The corner docks (TipsDock, ToTop, the terminal presence pill) are
+  // The corner docks (QuickAddDock, ToTop, the terminal presence pill) are
   // siblings of this screen, rendered by App.tsx — a dataset flag on <body>
   // is how they fold away without this component reaching outside its tree.
   useEffect(() => {

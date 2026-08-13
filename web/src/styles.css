@@ -4181,21 +4181,18 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .spm-foot { display: flex; justify-content: flex-end; gap: 8px; }
 @media (max-width: 720px) { .spm { min-width: 0; } .spm-agenda { flex-direction: column; } }
 
-/* ---- the recipe library (the Stack Planning design's Tips) ---- */
-/* It left the tab strip for the bottom-left corner: a quiet launcher on every
-   screen, and a sheet that rises from it over whatever you were doing. The
-   right-hand corners are spoken for (the to-top button, the terminal dock). */
-/* Glass, not paint (BUG-8). A launcher fixed to the corner of a column that
-   runs full-bleed to 32px of the edge WILL sit on top of something: measured
-   at rest on the dashboard it covered the "Pick up where you left off" heading
-   at 1024 and "Currently in progress" at 1440. It stays fixed — it is meant to
-   be reachable from every screen, the way the presence pill is — but it stops
-   being opaque about it: a translucent, blurred background leaves the words
-   behind it readable, and below 1200px it drops the label for its glyph alone,
-   which is 34px of corner instead of 89px across a heading. */
-.tips-dock {
+/* ---- the corner ＋ (quick add) ---- */
+/* The recipe library used to sit here. What you actually reach for from every
+   screen is somewhere to PUT a thought — a roadmap item, or a note that lands
+   on the Workbench — so the corner holds a composer instead of a library.
+   Glass, not paint (BUG-8, and it still applies): a launcher fixed to the
+   corner of a column that runs full-bleed to 32px of the edge WILL sit on top
+   of something, so it stays translucent and blurred, and below 1200px it drops
+   the label for its glyph alone. The right-hand corners are spoken for (the
+   to-top button, the terminal dock). */
+.quick-dock {
   position: fixed; bottom: 28px; left: 24px; z-index: 50;
-  display: inline-flex; align-items: center; gap: 7px;
+  display: inline-flex; align-items: center; gap: 6px;
   background: color-mix(in srgb, var(--surface) 72%, transparent);
   -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px);
   border: 1px solid var(--keyline); border-radius: 999px;
@@ -4204,110 +4201,68 @@ button.mc-day-chip:hover { border-color: var(--accent); }
   opacity: 0.92; cursor: pointer; transition: opacity 0.15s, border-color 0.15s, color 0.15s;
 }
 /* Hovered or open, it is being USED — no longer chrome to see past. */
-.tips-dock:hover, .tips-dock.on { background: var(--surface); opacity: 1; border-color: var(--accent-soft); color: var(--ink); }
-.tips-dock .glyph { font-size: 13px; color: var(--accent); line-height: 1; }
-.tips-dock.on { background: var(--accent-tint); border-color: var(--accent-tint-border); }
+.quick-dock:hover, .quick-dock.on { background: var(--surface); opacity: 1; border-color: var(--accent-soft); color: var(--ink); }
+.quick-dock .glyph { font-size: 13px; color: var(--accent); line-height: 1; }
+.quick-dock.on { background: var(--accent-tint); border-color: var(--accent-tint-border); }
 /* 1200, not 620: the label is only affordable where the page has room to
    spare beside it, and below --page-max it never has. */
-@media (max-width: 1200px) { .tips-dock .label { display: none; } .tips-dock { padding: 9px 11px; } }
+@media (max-width: 1200px) { .quick-dock .label { display: none; } .quick-dock { padding: 9px 11px; } }
 
-.tips-scrim { position: fixed; inset: 0; z-index: 55; background: rgba(28, 26, 23, 0.30); animation: fade 0.12s ease; }
-.tips-sheet {
+.quick-scrim { position: fixed; inset: 0; z-index: 55; background: rgba(28, 26, 23, 0.30); animation: fade 0.12s ease; }
+/* A composer, not a library: narrow enough to read as a note you are writing,
+   and anchored to the button it came out of rather than centred like a modal —
+   what you were looking at is often what you are writing about. */
+.quick-sheet {
   position: fixed; z-index: 56; left: 24px; bottom: 76px;
-  width: min(1120px, calc(100vw - 48px)); max-height: calc(100vh - 108px); overflow-y: auto;
-  padding: 20px 22px 22px;
+  width: min(420px, calc(100vw - 48px)); max-height: calc(100vh - 108px); overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 16px 16px 14px;
   background: var(--paper); border: 1px solid var(--keyline); border-radius: 14px;
   box-shadow: 0 18px 48px rgba(28, 26, 23, 0.26);
   animation: fade 0.12s ease;
 }
-/* Inside the sheet the rail carries its own scroll — the sheet shouldn't grow
-   a second one for a long library. */
-.tips-sheet .tips-list { max-height: min(52vh, 460px); }
-.tips-close { margin-left: 10px; font-size: 18px; line-height: 1; color: var(--muted); background: none; border: none; cursor: pointer; padding: 0 4px; }
-.tips-close:hover { color: var(--ink); }
 @media (max-width: 620px) {
-  .tips-sheet { left: 12px; width: calc(100vw - 24px); bottom: 68px; max-height: calc(100vh - 92px); padding: 14px; }
+  .quick-sheet { left: 12px; width: calc(100vw - 24px); bottom: 68px; max-height: calc(100vh - 92px); padding: 14px; }
 }
 
-.tips-count { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-right: 12px; white-space: nowrap; }
-.tips-loading { padding: 28px 0; font-size: 13px; color: var(--muted); }
-.tips-empty { max-width: 520px; margin: 26px auto; padding: 22px 26px; border: 1px dashed var(--keyline); border-radius: 12px; font-size: 13px; line-height: 1.7; color: var(--muted); text-align: center; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+.qa-head { display: flex; align-items: center; gap: 10px; }
+.qa-modes { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--panel); flex: 1; }
+.qa-mode { flex: 1; padding: 6px 10px; border-radius: 6px; border: none; background: transparent; font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; }
+.qa-mode:hover { color: var(--ink); }
+.qa-mode.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(28, 26, 23, 0.06); }
+.qa-close { font-size: 18px; line-height: 1; color: var(--muted); background: none; border: none; cursor: pointer; padding: 0 2px; }
+.qa-close:hover { color: var(--ink); }
 
-.tips-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 18px; align-items: start; }
-@media (max-width: 900px) { .tips-layout { grid-template-columns: 1fr; } }
+/* The target is shown even with one project: a quick-add whose destination is
+   implicit is one that files into the wrong app exactly once. */
+.qa-project { display: flex; align-items: center; gap: 8px; }
+.qa-project .cap { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--paused); }
+.qa-project select { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--line-3); background: var(--card); color: var(--ink); font: inherit; font-size: 12.5px; }
+.qa-quiet { font-size: 12px; color: var(--muted); }
 
-.tips-rail { background: var(--card); border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden; }
-.tips-search { display: flex; align-items: center; gap: 8px; margin: 12px 12px 10px; padding: 7px 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line-3); }
-.tips-search .glyph { font-family: var(--mono); font-size: 11px; color: var(--paused); }
-.tips-search input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; font-size: 12.5px; color: var(--ink); }
-.tips-cats { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 12px 12px; border-bottom: 1px solid var(--line-2); }
-.tips-cat { padding: 4px 11px; border-radius: 20px; border: 1px solid var(--line-3); background: transparent; font-size: 11px; font-weight: 500; color: var(--muted); cursor: pointer; }
-.tips-cat:hover { border-color: var(--accent); }
-.tips-cat.on { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-deep); }
-.tips-list { max-height: 560px; overflow-y: auto; padding: 8px; }
-.tips-row { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; padding: 10px 11px; border-radius: 8px; background: transparent; border: 1px solid transparent; cursor: pointer; margin-bottom: 3px; }
-.tips-row:hover { border-color: var(--accent); }
-.tips-row.on { background: var(--accent-tint); border-color: var(--accent-tint-border); }
-.tips-row .top { display: flex; align-items: baseline; gap: 8px; }
-.tips-row .name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--ink); }
-.tips-row .pin { color: var(--accent); }
-.tips-row .uses { font-family: var(--mono); font-size: 9.5px; color: var(--paused); white-space: nowrap; }
-.tips-row .sub { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.tips-row .tag { flex: none; padding: 2px 6px; border-radius: 4px; background: var(--bg); font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
-.tips-row.on .tag { background: var(--card); }
-.tips-row .blurb { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted); }
-.tips-none { padding: 18px 12px; font-size: 12px; line-height: 1.6; color: var(--muted); }
-
-.tips-detail { background: var(--card); border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden; }
-.tips-head { padding: 20px 24px 18px; border-bottom: 1px solid var(--line-2); background: var(--sand); }
-.tips-head .meta { display: flex; align-items: center; gap: 8px; }
-.tips-head .stage { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.08em; }
-.tips-head .quiet { font-family: var(--mono); font-size: 10px; color: var(--paused); }
-.tips-head-row { display: flex; align-items: flex-start; gap: 16px; margin-top: 7px; }
-.tips-head-row .grow { flex: 1; min-width: 0; }
-.tips-head .name { font-family: var(--disp); font-size: 20px; font-weight: 600; line-height: 1.3; color: var(--ink); }
-.tips-head .when { font-size: 13px; line-height: 1.6; color: var(--muted); margin-top: 6px; max-width: 620px; }
-.tips-head .acts { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: none; }
-.tips-run { padding: 9px 18px; border-radius: 7px; background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 500; cursor: pointer; border: none; white-space: nowrap; }
-.tips-run:hover { background: var(--accent-deep); }
-.tips-pin { font-family: var(--mono); font-size: 10.5px; color: var(--paused); background: none; border: none; cursor: pointer; }
-.tips-pin:hover { color: var(--accent); }
-
-.tips-body { padding: 20px 24px 22px; display: flex; flex-direction: column; gap: 20px; }
-.tips-cap { font-family: var(--mono); font-size: 10px; font-weight: 500; color: var(--muted); letter-spacing: 0.08em; margin-bottom: 4px; }
-.tips-block { display: flex; flex-direction: column; gap: 7px; }
-.tips-prompt { padding: 15px 17px; border-radius: 9px; background: var(--bg); border: 1px solid var(--line-3); font-family: var(--mono); font-size: 12.5px; line-height: 1.85; color: var(--ink); white-space: pre-wrap; }
-.tip-slot { padding: 1px 5px; border-radius: 4px; background: var(--accent-tint); color: var(--accent-deep); font-family: inherit; }
-.tips-slot-hint { font-size: 11px; line-height: 1.9; color: var(--paused); }
-.tips-cols { display: flex; gap: 24px; align-items: flex-start; }
-@media (max-width: 720px) { .tips-cols { flex-direction: column; } }
-.tips-cols .grow { flex: 1; min-width: 0; }
-.tips-best { display: flex; gap: 9px; align-items: baseline; font-size: 12.5px; line-height: 1.6; color: var(--ink); }
-.tips-best .arrow { font-family: var(--mono); font-size: 10px; color: var(--accent); }
-.tips-who { width: 280px; flex: none; padding: 13px 15px; border-radius: 9px; background: var(--bg); border: 1px solid var(--line-3); }
-@media (max-width: 720px) { .tips-who { width: auto; } }
-.tips-who .txt { font-size: 12px; line-height: 1.6; color: var(--muted); }
-.tips-idle { padding: 14px 17px; border-radius: 9px; border: 1px dashed var(--keyline); font-size: 12px; line-height: 1.65; color: var(--muted); }
-.tips-manage { display: flex; gap: 12px; }
-.tips-edit, .tips-delete { font-size: 11.5px; color: var(--muted); background: none; border: none; cursor: pointer; padding: 0; }
-.tips-edit:hover { color: var(--accent-deep); }
-.tips-delete:hover { color: var(--critical); }
-.lbl-opt { font-weight: 400; color: var(--faint); text-transform: none; letter-spacing: 0; }
-
-/* Collapsible recipe rail: the strip re-opens it; the fold lives in the search row. */
-.tips-layout.rail-closed { grid-template-columns: 40px minmax(0, 1fr); }
-.tips-rail-strip { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 0; background: var(--card); border: 1px solid var(--line-2); border-radius: 12px; cursor: pointer; align-self: stretch; }
-.tips-rail-strip .glyph { font-family: var(--mono); font-size: 11px; color: var(--paused); }
-.tips-rail-strip .vlabel { writing-mode: vertical-rl; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--muted); white-space: nowrap; }
-.tips-rail-strip:hover { border-color: var(--accent); }
-.tips-rail-strip:hover .glyph, .tips-rail-strip:hover .vlabel { color: var(--accent-deep); }
-.tips-rail-fold { flex: none; font-family: var(--mono); font-size: 12px; line-height: 1; color: var(--paused); padding: 0 2px; cursor: pointer; }
-.tips-rail-fold:hover { color: var(--accent-deep); }
-@media (max-width: 900px) {
-  .tips-layout.rail-closed { grid-template-columns: 1fr; }
-  .tips-rail-strip { flex-direction: row; justify-content: center; padding: 9px 14px; }
-  .tips-rail-strip .vlabel { writing-mode: horizontal-tb; }
+.qa-input, .qa-area {
+  width: 100%; padding: 9px 11px; border-radius: 8px;
+  border: 1px solid var(--line-3); background: var(--card); color: var(--ink);
+  font: inherit; font-size: 13px; line-height: 1.55; resize: vertical;
 }
+.qa-input:focus, .qa-area:focus { outline: none; border-color: var(--accent); }
+.qa-area.tall { min-height: 118px; }
+
+.qa-priorities { display: flex; gap: 6px; }
+.qa-pri { flex: 1; padding: 5px 8px; border-radius: 20px; border: 1px solid var(--line-3); background: transparent; font-size: 11px; font-weight: 500; color: var(--muted); cursor: pointer; }
+.qa-pri:hover { border-color: var(--accent); }
+.qa-pri.on { background: var(--accent-tint); }
+
+.qa-hint { font-size: 11px; line-height: 1.6; color: var(--paused); }
+.qa-err { font-size: 12px; color: var(--critical); }
+/* A save with no way to what it made reads as a press that went nowhere. */
+.qa-filed { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); font-size: 12px; color: var(--ink); }
+.qa-link { background: none; border: none; padding: 0; font: inherit; font-size: 12px; font-weight: 500; color: var(--accent-deep); cursor: pointer; }
+.qa-link:hover { text-decoration: underline; }
+
+.qa-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 2px; }
+.qa-kbd { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.qa-foot .btn-accent:disabled { opacity: 0.45; cursor: default; }
 
 /* The sky's growth scrub (design 6b/7a): ticks along the funnel's real history. */
 .psky-scrub { display: flex; align-items: center; gap: 14px; padding: 10px 18px 0; }
@@ -4341,7 +4296,7 @@ button.mc-day-chip:hover { border-color: var(--accent); }
    Mission Control/Terminal strip all go, because none of them is Mission
    Control itself. What survives is the room strip below (`.mc14-tabs`) — it
    is Mission Control's OWN navigation, not page chrome, and the way out has
-   to stay where the way in was. The corner docks (tips, to-top, terminal
+   to stay where the way in was. The corner docks (quick add, to-top, terminal
    presence) are siblings outside this tree entirely, so they fold via a
    `data-mc-full` flag on <body> instead of a descendant selector.
    z-index 40 matches `.term-fullscreen` and is deliberate: it clears the
@@ -4364,7 +4319,7 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .mc-fullscreen .page.detail > .tabs { display: none; }
 .mc-fullscreen .page.detail { max-width: none; margin: 0; padding: 0 20px 28px; }
 .mc-fullscreen .mc14-tabs { position: sticky; top: 0; width: auto; z-index: 3; border-radius: 0; margin: 0 -20px 10px; padding: 8px 20px; border-bottom: 1px solid var(--line-2); }
-body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .term-presence { display: none; }
+body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .term-presence { display: none; }
 
 /* ---- Mission Control 14a: rooms behind one live strip + a persistent rail ---- */
 .mc14-tabs { display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 9px; background: var(--panel); width: fit-content; min-width: 100%; margin-bottom: 10px; }
@@ -4506,7 +4461,7 @@ body[data-mc-full] .tips-dock, body[data-mc-full] .totop, body[data-mc-full] .te
 .mc-lane .lane-roles .m { font-family: var(--mono); font-size: 10.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mc-lane .lane-roles .r.idle .m, .mc-lane .lane-roles .r.off .m { color: var(--paused); }
 /* Scoped to .mc-lane on purpose: `.tag` is the app-wide activity-chip class
-   (styles.css:559, used by Activity/Overview/Timeline/Tips/Showcase). These
+   (styles.css:559, used by Activity/Overview/Timeline/Showcase). These
    role tags are a different, much smaller thing and must not leak into it. */
 .mc-lane .tag { font-family: var(--mono); font-size: 8.5px; font-weight: 500; font-style: normal; padding: 1px 6px; border-radius: 4px; border: none; flex: none; }
 .mc-lane .tag.exec { background: var(--green-tint); color: var(--live); }

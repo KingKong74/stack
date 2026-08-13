@@ -1,7 +1,7 @@
 import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
-  AuthDevice, Tip, Tier, ResumeSince, ProjectDebrief,
+  AuthDevice, Tier, ResumeSince, ProjectDebrief,
   WorkbenchData, WorkbenchCard, WorkbenchEdge, WorkbenchBody, WorkbenchOp, WorkbenchCascade,
   WorkbenchDebrief, SchedSpan, BoardShape, BoardArea, BoardLabel, BoardList, ProjectPulse,
 } from './types';
@@ -2294,42 +2294,23 @@ export function setLastViewedProject(slug: string) {
   catch { /* storage full or unavailable — a nicety, never a blocker */ }
 }
 
-// ---- tips (the app-wide recipe library — the bottom-left dock) ----
+// ---- what the corner ＋ just filed ----
+//
+// The quick-add dock is a SIBLING of every screen (App.tsx renders it outside
+// the page tree), so an item it writes into the project you are looking at has
+// no props path back to that screen — it would sit saved and invisible, which
+// reads as a press that did nothing. Same one-line pub/sub as `onAuthChange`:
+// the dock announces the slug it wrote to and the open project re-reads.
+// The GET /api/tips recipe routes are still served and their rows untouched;
+// nothing in the client calls them since the library left the corner.
+let filedListeners: Array<(slug: string) => void> = [];
 
-// The recipe rail's collapsed state — device-local, like the theme. Collapsed
-// = the detail pane takes the full width; a slim strip re-opens the list.
-const TIPS_RAIL_KEY = 'stack.tipsRail';
-
-export function getTipsRailCollapsed(): boolean {
-  return readStoredJSON(TIPS_RAIL_KEY, (p) => p === true);
+export function emitItemFiled(slug: string) {
+  for (const cb of [...filedListeners]) cb(slug);
 }
-export function setTipsRailCollapsed(collapsed: boolean) {
-  localStorage.setItem(TIPS_RAIL_KEY, JSON.stringify(collapsed));
-}
-
-// What a recipe is made of, as the API takes it. `best` is the whole
-// "works best when" list; PATCH takes any subset (incl. { pinned }).
-export interface TipInput {
-  name: string; stage?: string; surface?: string; blurb?: string;
-  when?: string; prompt: string; best?: string[]; who?: string; pinned?: boolean;
-}
-
-export async function getTips(): Promise<Tip[]> {
-  return request<Tip[]>('/tips');
-}
-export async function createTip(input: TipInput): Promise<Tip> {
-  return request<Tip>('/tips', { method: 'POST', body: input });
-}
-export async function patchTip(id: number, patch: Partial<TipInput>): Promise<Tip> {
-  return request<Tip>(`/tips/${id}`, { method: 'PATCH', body: patch });
-}
-export async function deleteTip(id: number): Promise<void> {
-  await request<void>(`/tips/${id}`, { method: 'DELETE' });
-}
-// Record a run (uses + last-run stamp); the run itself is the terminal
-// session the caller opens with the recipe's prompt.
-export async function runTip(id: number): Promise<Tip> {
-  return request<Tip>(`/tips/${id}/run`, { method: 'POST', body: {} });
+export function onItemFiled(cb: (slug: string) => void): () => void {
+  filedListeners.push(cb);
+  return () => { filedListeners = filedListeners.filter((x) => x !== cb); };
 }
 
 // ---- the skill tree (#228) ----
