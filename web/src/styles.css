@@ -4202,7 +4202,9 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 }
 /* Hovered or open, it is being USED — no longer chrome to see past. */
 .quick-dock:hover, .quick-dock.on { background: var(--surface); opacity: 1; border-color: var(--accent-soft); color: var(--ink); }
-.quick-dock .glyph { font-size: 13px; color: var(--accent); line-height: 1; }
+/* An ASCII plus, sized up a little so it reads as the ＋ the copy calls it:
+   the body font has no U+FF0B and drew a tofu box in its place. */
+.quick-dock .glyph { font-size: 16px; font-weight: 500; color: var(--accent); line-height: 1; }
 .quick-dock.on { background: var(--accent-tint); border-color: var(--accent-tint-border); }
 /* 1200, not 620: the label is only affordable where the page has room to
    spare beside it, and below --page-max it never has. */

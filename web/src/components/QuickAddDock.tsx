@@ -133,7 +133,11 @@ export function QuickAddDock() {
     <>
       <button className={`quick-dock ${open ? 'on' : ''}`} onClick={() => { setOpen((o) => !o); setFiled(null); setError(''); }}
         title="Add a roadmap item, or jot a thought to the Workbench" aria-label="Quick add">
-        <span className="glyph">＋</span>
+        {/* An ASCII '+', not the fullwidth ＋ the rest of the app writes in
+            prose: the body font has no glyph for U+FF0B and the pill rendered
+            a tofu box — which the strict build cannot see and only shows up at
+            3× on the collapsed, label-less pill. */}
+        <span className="glyph">+</span>
         <span className="label">Add</span>
       </button>
       {open && (
