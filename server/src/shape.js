@@ -71,6 +71,10 @@ export function roadmapItemShape(row) {
     flySession: row.fly_session || '',
     claimedBy: row.claimed_by || '',   // lane owning this item ('' = free)
     area: row.area || '',              // product-area tag ('' = untagged) — filters the board
+    // #411 — the optional second level under `area` ('' = none). A finer
+    // label for finding work; it is NOT part of the area lane, which stays
+    // (project, area) — see schema.sql.
+    subArea: row.sub_area || '',
     builtNote: row.built_note || '',   // what actually landed — shown on the Reviews view
     reviewTag: row.review_tag || '',   // archive verdict: solid | needs-work | rethink
     // #263 — who gave the verdict above and on what evidence. '' evidence on

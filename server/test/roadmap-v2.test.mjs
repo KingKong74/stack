@@ -231,11 +231,26 @@ async function main() {
   r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${ticket.id}`, { estimate: null })).json;
   ok('unsized is null, not zero — an unsized ticket is not a free one', r.estimate === null, r.estimate);
 
-  // ---- #425: a row may be born on the timeline ----------------------------
+  // ---- #411 + #425 --------------------------------------------------------
   // LAST on purpose: these add rows, and several checks above assert an exact
   // item or area count. Creating them earlier makes those fail for a reason
   // that has nothing to do with what they are testing.
-  // ---- #425: a row may be born on the timeline ----------------------------
+
+  // #411 — the optional level under an area.
+  const sub = await mk('Sub-area carrier', { area: 'Roadmap', subArea: '  TIMELINE  ' });
+  ok('#411 — a sub-area is normalised exactly as an area is, or one label gets two spellings',
+    sub.area === 'roadmap' && sub.subArea === 'timeline', { a: sub.area, s: sub.subArea });
+
+  const noSub = await mk('No sub-area');
+  ok("#411 — no sub-area is '', which is what every row predating the column reads as",
+    noSub.subArea === '', noSub.subArea);
+
+  r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${noSub.id}`, { subArea: 'Scope' })).json;
+  ok('#411 — PATCH sets it', r.subArea === 'scope', r.subArea);
+  r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${noSub.id}`, { subArea: '' })).json;
+  ok("#411 — and '' clears it back to none, rather than to NULL", r.subArea === '', r.subArea);
+
+  // #425 — a row may be born on the timeline.
   const born = await mk('Born scheduled', { bucket: 'should', sched: { start: wk(2), len: hr(6) } });
   ok('#425 — a create may carry a schedule', born.sched?.start === wk(2) && born.sched?.len === hr(6), born.sched);
   ok('#425 — …and it is baselined on the way in, or its first drag would slip against nothing',

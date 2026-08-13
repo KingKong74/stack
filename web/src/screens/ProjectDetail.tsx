@@ -359,12 +359,12 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
     });
 
   // Create, or save an edit, depending on how the modal was opened.
-  const submitRoad = ({ title, note, priority, branch, area, plan, risk, tier, riskChanged }: RoadmapFields) =>
+  const submitRoad = ({ title, note, priority, branch, area, subArea, plan, risk, tier, riskChanged }: RoadmapFields) =>
     guard(async () => {
       const editing = roadModal.editing;
       if (editing) {
         const updated = await patchRoadmapItem(slug, editing.id, {
-          title, note, bucket: priority, claimed_by: branch, area, plan,
+          title, note, bucket: priority, claimed_by: branch, area, subArea, plan,
           // #262 — a save the human made without touching Risk must not write the
           // tier back, because the server records any risk write with no explicit
           // source as human-set. Reclaiming it that way would freeze the tier and
@@ -379,7 +379,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       }
       // #425 — an item somebody adds by hand lands ON the timeline, so deciding
       // to do something puts it on the plan rather than in the tray.
-      const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: branch || undefined, area: area || undefined, plan: plan.length ? plan : undefined, risk: risk !== 'normal' ? risk : undefined, tier: tier || undefined, sched: newItemSched(project.weekZero) });
+      const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: branch || undefined, area: area || undefined, subArea: subArea || undefined, plan: plan.length ? plan : undefined, risk: risk !== 'normal' ? risk : undefined, tier: tier || undefined, sched: newItemSched(project.weekZero) });
       const fromNote = roadModal.fromNote;
       const fromFuture = pendingFuture;
       if (roadModal.fromDraft) updateRoadDraft(null); // the draft landed — clear it
@@ -1103,6 +1103,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         <RoadmapModal initialPriority={roadModal.priority} initialTitle={roadModal.title}
           initialNote={roadModal.note} initialBranch={roadModal.editing?.claimedBy ?? roadModal.branch ?? ''}
           initialArea={roadModal.editing?.area ?? roadModal.area ?? ''}
+          initialSubArea={roadModal.editing?.subArea ?? ''}
           initialPlan={roadModal.editing?.plan ?? []}
           initialRisk={roadModal.editing?.risk ?? 'normal'}
           initialRiskSource={roadModal.editing?.riskSource ?? ''}
@@ -1110,6 +1111,9 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           initialTier={roadModal.editing?.tier ?? ''}
           branches={[...new Set(allRoadmap.map((i) => i.claimedBy))].filter(Boolean).sort()}
           areas={[...new Set([...allRoadmap.map((i) => i.area), ...futures.map((f) => f.area)])].filter(Boolean).sort()}
+          subAreas={[...new Set(allRoadmap
+            .filter((i) => i.area === (roadModal.editing?.area ?? roadModal.area ?? ''))
+            .map((i) => i.subArea))].filter(Boolean).sort()}
           mode={roadModal.editing ? 'edit' : 'add'}
           onClose={() => { setRoadModal(roadModalClosed); setPendingFuture(null); }}
           onDismiss={(d) => updateRoadDraft(d)}

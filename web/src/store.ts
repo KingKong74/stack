@@ -1872,7 +1872,7 @@ export async function createRoadmapItem(
   // born unscheduled, which stays the right answer for anything the owner did
   // not place by hand.
   input: {
-    title: string; note: string; bucket: Priority; claimed_by?: string; area?: string;
+    title: string; note: string; bucket: Priority; claimed_by?: string; area?: string; subArea?: string;
     plan?: PlanStep[]; risk?: RoadmapItem['risk']; tier?: RoadmapItem['tier'];
     sched?: { start: number; len: number };
   },
@@ -1884,7 +1884,7 @@ export async function patchRoadmapItem(
   patch: Partial<{
     done: boolean; bucket: Priority; title: string; note: string; reviewed: boolean;
     claimed_by: string; review_tag: string; review_tags: string[]; refine_note: string;
-    review_shelved: boolean; skipped: boolean; area: string; position: number;
+    review_shelved: boolean; skipped: boolean; area: string; subArea: string; position: number;
     built_note: string; plan: PlanStep[]; risk: RoadmapItem['risk'];
     // #262 — omitting risk_source means the server records the write as human,
     // which is exactly what an edit from the modal is.

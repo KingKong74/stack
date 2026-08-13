@@ -23,7 +23,7 @@ import { PRIORITY_META } from '../lib/ui';
 // stays a genuine discard.
 // What the modal hands back on save (and on a draft-keeping dismiss).
 export interface RoadmapFields {
-  title: string; note: string; priority: Priority; branch: string; area: string;
+  title: string; note: string; priority: Priority; branch: string; area: string; subArea: string;
   plan: PlanStep[]; risk: RoadmapItem['risk']; tier: Tier;
   riskChanged: boolean; // #262 — did the human actually touch Risk this time?
 }
@@ -32,7 +32,7 @@ export function RoadmapModal({
   initialPriority, onClose, onSubmit, onDismiss, onAssist,
   initialTitle = '', initialNote = '', initialBranch = '', initialArea = '', initialPlan = [],
   initialRisk = 'normal', initialRiskSource = '', initialRiskReason = '',
-  initialTier = '', branches = [], areas = [], mode = 'add',
+  initialTier = '', branches = [], areas = [], subAreas = [], initialSubArea = '', mode = 'add',
 }: {
   initialPriority: Priority; onClose: () => void;
   onSubmit: (v: RoadmapFields) => void;
@@ -42,12 +42,13 @@ export function RoadmapModal({
   initialPlan?: PlanStep[]; initialRisk?: RoadmapItem['risk'];
   initialRiskSource?: RoadmapItem['riskSource']; initialRiskReason?: string;
   initialTier?: Tier;
-  branches?: string[]; areas?: string[]; mode?: 'add' | 'edit';
+  branches?: string[]; areas?: string[]; subAreas?: string[]; initialSubArea?: string; mode?: 'add' | 'edit';
 }) {
   const [title, setTitle] = useState(initialTitle);
   const [note, setNote] = useState(initialNote);
   const [branch, setBranch] = useState(initialBranch);
   const [area, setArea] = useState(initialArea);
+  const [subArea, setSubArea] = useState(initialSubArea);
   const [priority, setPriority] = useState<Priority>(initialPriority);
   const [risk, setRisk] = useState<RoadmapItem['risk']>(initialRisk);
   // #277 — the desire tier, '' = unranked (which sorts last in the run queue).
@@ -87,8 +88,15 @@ export function RoadmapModal({
   const [areaOpen, setAreaOpen] = useState(false);
   const areaMatches = knownAreas.filter(
     (a) => !area.trim() || a.includes(area.trim().toLowerCase()));
+  // #411 — the sub-areas already in use, narrowed to the area you have chosen.
+  // There is no sub-area table to read: the set IS the distinct values in use,
+  // so offering ones from a DIFFERENT area would invent a hierarchy nobody made.
+  const [subOpen, setSubOpen] = useState(false);
+  const knownSubAreas = [...new Set([...subAreas, ...(initialSubArea ? [initialSubArea] : [])])].sort();
+  const subMatches = knownSubAreas.filter(
+    (a) => !subArea.trim() || a.includes(subArea.trim().toLowerCase()));
   const fields = (): RoadmapFields =>
-    ({ title, note, priority, branch: branch.trim(), area: area.trim().toLowerCase(), plan: fullPlan(),
+    ({ title, note, priority, branch: branch.trim(), area: area.trim().toLowerCase(), subArea: subArea.trim().toLowerCase(), plan: fullPlan(),
       risk, tier, riskChanged: risk !== initialRisk });
   const submit = () => { if (title.trim()) onSubmit(fields()); };
   const typed = Boolean(title.trim() || note.trim());
@@ -189,6 +197,31 @@ export function RoadmapModal({
           </div>
         )}
       </div>
+      {/* #411 — only under a chosen area. A sub-area with no area above it is
+          not a second level, it is a second area spelled in the wrong field. */}
+      {area.trim() && (
+        <>
+          <div className="lbl">Sub-area <span className="optional">optional — a finer split within {area.trim().toLowerCase()}</span></div>
+          <div className="combo" style={{ marginBottom: 18 }}>
+            <input className="field-input" value={subArea}
+              placeholder="e.g. timeline, scope, plan"
+              onChange={(e) => { setSubArea(e.target.value); setSubOpen(true); }}
+              onFocus={() => setSubOpen(true)}
+              onBlur={() => setSubOpen(false)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { setSubOpen(false); submit(); } if (e.key === 'Escape') setSubOpen(false); }} />
+            {subOpen && subMatches.length > 0 && (
+              <div className="combo-list">
+                {subMatches.map((a) => (
+                  <button type="button" className={`combo-opt ${a === subArea.trim().toLowerCase() ? 'on' : ''}`} key={a}
+                    onMouseDown={(e) => { e.preventDefault(); setSubArea(a); setSubOpen(false); }}>
+                    {a}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
       <div className="lbl">Plan <span className="optional">optional — ordered steps for bigger work; whoever builds it ticks them off</span></div>
       <div className="plan-edit" style={{ marginBottom: 18 }}>
         {plan.map((s, idx) => (

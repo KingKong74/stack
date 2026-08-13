@@ -196,6 +196,7 @@ roadmap.post('/', async (req, res) => {
   // every agent post) still means NULL, which is UNSCHEDULED and a real state —
   // auto-placing a push's worth of unreviewed extractions would bury the chart
   // under work nobody has agreed to yet.
+  const subArea = String(req.body?.subArea || '').trim().toLowerCase().slice(0, 40);
   let schedStart = null; let schedLen = null;
   const s = req.body?.sched;
   if (s && Number.isFinite(s.start) && Number.isFinite(s.len)) {
@@ -208,10 +209,10 @@ roadmap.post('/', async (req, res) => {
     // the merge left two whole INSERTs stacked, which JS read as a tagged
     // template call rather than a syntax error.
     `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, tier, agent_profile, fly_session,
-                                sched_start_min, sched_len_min, plan_start_min, plan_len_min)
-     VALUES ($1,$2,$3,$4,$5,$14,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$15,$16,$17,$16,$17) RETURNING *`,
+                                sched_start_min, sched_len_min, plan_start_min, plan_len_min, sub_area)
+     VALUES ($1,$2,$3,$4,$5,$14,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$15,$16,$17,$16,$17,$18) RETURNING *`,
     [req.project.id, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, tier, agentProfile, source, flySession,
-      schedStart, schedLen]
+      schedStart, schedLen, subArea]
   );
   res.status(201).json(roadmapItemShape(rows[0]));
 });
@@ -334,6 +335,15 @@ roadmap.patch('/:id', async (req, res) => {
   if (req.body?.area !== undefined) {
     sets.push(`area = $${i++}`);
     vals.push(String(req.body.area || '').trim().toLowerCase().slice(0, 40) || null);
+  }
+  // #411 — the optional level under `area`. Normalised identically, because the
+  // two are the same kind of thing and a sub-area that round-trips differently
+  // from an area would produce two spellings of one label. '' clears it, and is
+  // stored as '' rather than NULL: the column is NOT NULL DEFAULT '' so that
+  // every row predating it reads as "no sub-area" without a backfill.
+  if (req.body?.subArea !== undefined) {
+    sets.push(`sub_area = $${i++}`);
+    vals.push(String(req.body.subArea || '').trim().toLowerCase().slice(0, 40));
   }
   if (req.body?.risk !== undefined) {
     // #262 — where the tier comes from decides who may write it. A human

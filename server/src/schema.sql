@@ -1265,6 +1265,24 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS archived    BOOLEAN NOT NULL 
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS estimate    NUMERIC(4,1);
 CREATE INDEX IF NOT EXISTS roadmap_items_parent_idx ON roadmap_items (parent_id);
 
+-- #411 — a second, OPTIONAL level under `area`: roadmap -> timeline / scope /
+-- plan. '' = no sub-area, which is the default and stays valid for ever; every
+-- row that existed before this column has one and nothing about it changed.
+--
+-- A FREE STRING under a free string, exactly as `area` already is, and
+-- deliberately NOT a table: `project_areas` earns its row by carrying a COLOUR
+-- and an ORDER for the timeline's lanes, and a sub-area has neither. It is a
+-- finer label for finding work, so the set of them is simply the distinct
+-- values in use.
+--
+-- THE LANE IS STILL `(project, area)` AND MUST STAY THAT WAY. The area lane
+-- (#267) is mirrored in four runtimes that cannot import each other, and it
+-- exists because two branches in one area collide at merge time — which is just
+-- as true of two branches in two sub-areas of one area, since they are the same
+-- area. Narrowing the lane to the sub-area would let exactly the collisions that
+-- rule prevents through, silently and only at night.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS sub_area    TEXT NOT NULL DEFAULT '';
+
 -- The project's own product areas: the timeline's lanes, and the chips that
 -- filter every view. `area` on an item stays the free STRING it has always been
 -- (futures.area mirrors it, and neither is worth a foreign key), so this table

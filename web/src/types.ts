@@ -98,6 +98,9 @@ export interface RoadmapItem {
   flySession: string;
   claimedBy: string;   // #277 — the BRANCH owning this item ('' = free)
   area: string;        // product-area tag ('' = untagged) — filters the board
+  // #411 — an optional second level under `area` ('' = none). A finer label
+  // for finding work; NOT part of the area lane, which stays (project, area).
+  subArea: string;
   builtNote: string;   // what actually landed — shown on the Reviews view
   reviewTag: string;   // archive verdict: '' | solid | needs-work | rethink
   reviewTags: string[]; // review annotations ('fix', 'needs-more', …) — #146
