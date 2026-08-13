@@ -34,6 +34,9 @@ import { numericId } from '../params.js';
 // folder" a bulk note delete, which is the fail-safe direction inverted. The
 // SMART folders the Explorer shows are computed client-side from the cards this
 // route already sends; they are queries, not rows, and must never become rows.
+// The one exception is the STACK folder (#416): a real row flagged `system`,
+// ensured on every read, refused by DELETE and by a move or a rename. It is a
+// row and not a query BECAUSE cards are filed into it — see ensureStackFolder.
 //
 // Ops are the Gemini surface. Every one of them PROPOSES — output lands as a
 // card the owner keeps, edits or cuts. Nothing here writes tracker state; the
@@ -198,6 +201,28 @@ async function backfillNoteCards(projectId) {
   );
 }
 
+// THE STACK FOLDER (#416) — the one folder a project always has. It is a real
+// `folder` card carrying `system = 'stack'`, made here on read rather than at
+// project creation, because every project that predates this must get one too
+// and a migration that back-filled them would still miss the next project
+// created by a path that forgot to call it. Idempotent: the partial unique index
+// on (project_id, system) means two tabs reading at once make exactly one.
+//
+// REAL AND NOT DERIVED, unlike Polaris and Roadmap (#415), for one reason: it
+// HOLDS CARDS. A derived folder has no id, so `parent_id` has nothing to point
+// at and nothing can be filed into it. The cost of that choice is the flag has
+// to be defended in three places — DELETE, the move, the retitle — and all
+// three are below.
+const STACK_FOLDER = 'stack';
+async function ensureStackFolder(projectId) {
+  await q(
+    `INSERT INTO workbench_cards (project_id, kind, system, title, parent_id, x, y, w)
+     VALUES ($1, 'folder', $2, 'Stack', NULL, 40, 40, 244)
+     ON CONFLICT (project_id, system) WHERE system <> '' DO NOTHING`,
+    [projectId, STACK_FOLDER]
+  );
+}
+
 // GET / -> the whole canvas, plus EVERY Polaris idea for the pull picker.
 //
 // The picker sends the whole funnel rather than only what is unpicked, because
@@ -206,6 +231,7 @@ async function backfillNoteCards(projectId) {
 // purpose: `GET /futures` and the detail payload already return the funnel in
 // full, and a silent slice here would read as "that's all the ideas you have".
 workbench.get('/', async (req, res) => {
+  await ensureStackFolder(req.project.id);
   await backfillNoteCards(req.project.id);
   const [cards, edges, ideas, board, settings] = await Promise.all([
     cardsOf(req.project.id),
@@ -428,6 +454,23 @@ workbench.patch('/cards/:id', async (req, res) => {
   const card = cur[0];
   const body = req.body || {};
 
+  // The Stack folder's POSITION is the owner's; its PLACE and its NAME are not
+  // (#416). It stays at the root and it stays called Stack, because a pinned
+  // folder that has been renamed and dragged three levels down is a folder that
+  // cannot be removed and can no longer be recognised — worse than either. Loud
+  // rather than silently ignored: no client path sends these, so anything that
+  // does is a bug, and a 400 is how it gets found.
+  if (card.system) {
+    const moving = body.parentId !== undefined
+      && (body.parentId === '' || body.parentId === null
+        ? card.parent_id !== null
+        : Number(body.parentId) !== card.parent_id);
+    if (moving) return res.status(400).json({ error: 'The Stack folder stays at the root.' });
+    if (body.title !== undefined && String(body.title).trim() !== card.title) {
+      return res.status(400).json({ error: 'The Stack folder cannot be renamed.' });
+    }
+  }
+
   const sets = [];
   const vals = [req.project.id, id];
   const push = (frag, v) => { vals.push(v); sets.push(`${frag} = $${vals.length}`); };
@@ -521,6 +564,14 @@ workbench.delete('/cards/:id', async (req, res) => {
     'SELECT * FROM workbench_cards WHERE project_id = $1 AND id = $2', [req.project.id, id]);
   if (!rows.length) return res.status(404).json({ error: 'No such card.' });
   const card = rows[0];
+
+  // The one card that does not delete (#416). The client offers no × on it, so
+  // this is the guard behind the guard — and it refuses out loud rather than
+  // no-opping, because a delete that reports ok and changes nothing is the
+  // worse of the two lies.
+  if (card.system) {
+    return res.status(400).json({ error: 'The Stack folder cannot be removed. Its contents can.' });
+  }
 
   // Deleting a folder is deleting a NAME, never the work inside it. The
   // children are lifted to the folder's own parent — one level, not to the

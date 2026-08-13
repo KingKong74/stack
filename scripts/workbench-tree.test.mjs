@@ -16,7 +16,7 @@ const url = new URL('../web/src/lib/workbenchTree.ts', import.meta.url);
 const {
   SMART, SYSTEM, ROOT, STALE_DAYS, smartOf, isSmart, isSystem, systemOf, isFolder,
   childrenOf, descendantsOf, countIn, pathTo, canFileInto, sortCards, upFrom,
-  foldName, phasesOf, KIND_LABEL, mapLayout, MAP_ROW,
+  foldName, phasesOf, KIND_LABEL, mapLayout, MAP_ROW, isPinned, pinnedFolder,
 } = await import(url.href);
 
 // --- fixtures ---------------------------------------------------------
@@ -183,6 +183,38 @@ test('smart and system keys cannot be mistaken for each other', () => {
 
 test('every system folder carries a token, never a hex', () => {
   for (const s of SYSTEM) assert.match(s.tone, /^var\(--[a-z-]+\)$/);
+});
+
+// --- the Stack folder (#416) ------------------------------------------
+//
+// The pinned folder is the opposite trade from the two above: a REAL row, so
+// that cards can be filed into it, and therefore a flag that has to be defended
+// everywhere a folder can be moved. These pin the client half — the server
+// refuses the same three things at their own routes, and both halves have to.
+
+test('the Stack folder is a real folder, and holds cards like one', () => {
+  const cards = [...tree(), folder({ id: 9, title: 'Stack', system: 'stack' })];
+  assert.equal(pinnedFolder(cards).id, 9);
+  assert(isPinned(pinnedFolder(cards)));
+  assert(isFolder(pinnedFolder(cards)));
+  // The point of it being a row rather than a query: things go IN.
+  assert.equal(canFileInto(cards, 5, 9), true);
+  assert.equal(canFileInto(cards, 1, 9), true);
+});
+
+test('the Stack folder itself is filed nowhere — it stays at the root', () => {
+  const cards = [...tree(), folder({ id: 9, title: 'Stack', system: 'stack' })];
+  assert.equal(canFileInto(cards, 9, 1), false);      // into another folder
+  assert.equal(canFileInto(cards, 9, ROOT), false);   // already there anyway
+  assert.equal(canFileInto(cards, 9, 2), false);      // and not deeper down
+});
+
+test('an ordinary folder is not pinned, and a canvas may have none', () => {
+  const cards = tree();
+  assert.equal(pinnedFolder(cards), undefined);
+  assert.equal(isPinned(cards[0]), false);
+  assert.equal(isPinned(undefined), false);
+  assert.equal(isPinned(null), false);
 });
 
 // --- the cycle guard --------------------------------------------------

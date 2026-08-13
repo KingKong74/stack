@@ -399,16 +399,25 @@ function scanLayout() {
   //     Workbench canvas is 2400px wide and deliberately pannable —
   //     `div.wb-ground` clips it with `overflow: hidden`, so it never
   //     causes the page itself to scroll and is not a bug.
-  //   - element-overflow-x on a VIEWPORT: an element windowing a coordinate
+  //   - either overflow axis on a VIEWPORT: an element windowing a coordinate
   //     space larger than itself is doing its job, not running out of room.
-  //     The Timeline is the live case — `.rt-lane` clips overflow-x and holds
-  //     `.rt-bar`s placed at a percentage of a window zoomable from an hour to
-  //     a quarter, so at most zooms most bars are off-window BY DESIGN, and
-  //     the app discloses it itself with the `.rt-off` chip counting what went
-  //     off each edge. Adding the zoom interactions made this the single
+  //     The Timeline is the horizontal case — `.rt-lane` clips overflow-x and
+  //     holds `.rt-bar`s placed at a percentage of a window zoomable from an
+  //     hour to a quarter, so at most zooms most bars are off-window BY DESIGN,
+  //     and the app discloses it itself with the `.rt-off` chip counting what
+  //     went off each edge. Adding the zoom interactions made this the single
   //     loudest finding in the run (12 at first paint, 49 once pressed), all
   //     of it structural noise. Same reasoning as the ellipsis rule: the app
   //     shows the cut, so it is not the silent cut this finding hunts.
+  //     THE VERTICAL HALF (#423) is the Workbench ground and the Polaris
+  //     stage: both hold an absolutely-positioned field panned under them, both
+  //     are 3× their own height in content by design, and both offer a minimap
+  //     or a fit control that says so. What that rule must NOT swallow is a
+  //     pane whose FLOW content is too tall for it — which is why the test
+  //     disqualifies an element with any in-flow child that spills, and why
+  //     the Futures scrub's clipped drag handle (the fourth of the four
+  //     findings this closed) was still reported and then fixed in styles.css
+  //     rather than filtered away here.
   //
   // Every one of these is COUNTED, never dropped silently: `suppressed`
   // below is folded into the screen's report and the run's printed summary,
@@ -456,15 +465,26 @@ function scanLayout() {
   // honest — a real "content ran out of room" bug is a flow child pushing past
   // the edge, and one of those anywhere disqualifies the element no matter how
   // many absolute siblings it has.
-  const isViewport = (el) => {
+  //
+  // ONE FUNCTION, BOTH AXES (#423). It was horizontal-only while the Timeline
+  // was the only surface it had been checked against; the vertical case is now
+  // proven on two more — the Workbench ground (`div.wb-field` is
+  // `position: absolute; inset: 0` under a 2400×1800 wire canvas, panned and
+  // zoomed by a transform) and the Polaris stage (a fixed-height window onto a
+  // galaxy that is laid out well past it). Both are the same shape as
+  // `.rt-lane`: every child positioned into the space, nothing in flow that
+  // spills. Two spellings of this test would be the drift the rest of this
+  // file's rules exist to prevent, so the axis is a parameter.
+  const isViewport = (el, axis = 'x') => {
     const kids = Array.from(el.children);
     if (!kids.length) return false;
-    const edge = el.getBoundingClientRect().right;
+    const far = axis === 'y' ? 'bottom' : 'right';
+    const edge = el.getBoundingClientRect()[far];
     let positioned = 0;
     for (const k of kids) {
       const pos = getComputedStyle(k).position;
       if (pos === 'absolute' || pos === 'fixed') positioned++;
-      else if (k.getBoundingClientRect().right > edge + 1) return false;
+      else if (k.getBoundingClientRect()[far] > edge + 1) return false;
     }
     return positioned > 0;
   };
@@ -490,11 +510,7 @@ function scanLayout() {
         results.suppressed.ellipsis++;
       } else if (onlyForeignFrames(el)) {
         results.suppressed.foreignFrame++;
-      } else if (isViewport(el)) {
-        // X only, and not mirrored onto the overflow-y branch below: the
-        // horizontal case is the one verified against a real surface (the
-        // Timeline), and this file's standing direction is that an unproven
-        // suppression is worse than a noisy true finding.
+      } else if (isViewport(el, 'x')) {
         results.suppressed.viewport++;
       } else if (!hasReportedAncestor(el, reportedX)) {
         reportedX.push(el);
@@ -513,6 +529,8 @@ function scanLayout() {
         results.suppressed.lineClamp++;
       } else if (onlyForeignFrames(el)) {
         results.suppressed.foreignFrame++;
+      } else if (isViewport(el, 'y')) {
+        results.suppressed.viewport++;
       } else if (!hasReportedAncestor(el, reportedY)) {
         reportedY.push(el);
         results.elementOverflowY.push({

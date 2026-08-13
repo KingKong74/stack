@@ -359,6 +359,23 @@ ALTER TABLE workbench_cards
   ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES workbench_cards(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_wb_cards_parent ON workbench_cards (project_id, parent_id);
 
+-- #416 — THE STACK FOLDER. One folder per project that the owner did not make
+-- and cannot remove, sitting at the root beside the derived Polaris and Roadmap
+-- ones. It is a REAL ROW and not derived like those two, because unlike them it
+-- HOLDS CARDS: a derived folder has no id for `parent_id` to point at, so
+-- nothing could be filed into it.
+--
+-- That makes `system` a flag with teeth, and #415's warning applies in full —
+-- it has to be defended in DELETE, in the move guard and in the fold, all three
+-- in routes/workbench.js, or the one folder that must always be there becomes
+-- deletable by whichever path forgot. The partial unique index is what makes
+-- the ensure-on-read safely re-runnable from two tabs at once, exactly like the
+-- note backfill's.
+ALTER TABLE workbench_cards
+  ADD COLUMN IF NOT EXISTS system TEXT NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_cards_system
+  ON workbench_cards (project_id, system) WHERE system <> '';
+
 -- Lines between cards. `ai` marks the ones an op drew (dashed on the canvas);
 -- cutting one of those drops the output it fed, which is what makes an op
 -- undoable without an undo stack.

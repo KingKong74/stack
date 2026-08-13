@@ -240,6 +240,10 @@ export function workbenchCardShape(row) {
     // reason workbenchIdeaShape sends `days` beside `age`.
     days: born ? Math.max(0, Math.floor((Date.now() - new Date(born).getTime()) / 86400000)) : 0,
     when: relativeTime(born) || 'just now',
+    // '' for every card the owner made; 'stack' for the one folder they did not
+    // and cannot remove (#416). The client reads this to withhold the ×, the
+    // rename and the drag — the server refuses all three regardless.
+    system: row.system || '',
   };
 }
 
