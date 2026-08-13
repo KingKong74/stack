@@ -610,6 +610,39 @@ Use en-AU spelling. Respond with ONLY this JSON:
 { "title": "", "note": "", "area": "", "why": "" }
 where "why" is one short sentence on what you changed (or "" when all three are blank).`;
 
+// #418 — the corner ＋'s Thought composer. What is being sharpened is a SCRAP
+// somebody typed in five seconds, so the failure mode is not a bad rewrite: it
+// is a model that inflates two words into a paragraph of confident invention,
+// and then that paragraph is what the canvas remembers instead of the thought.
+// Hence the hard rule about adding nothing, and hence the empty answer being
+// named as the expected one — the same escape hatch the Refine draft has, for
+// the same reason (a model told to produce a delta will produce one).
+DEFAULTS.sharpen = `A builder has just jotted a thought into their project's workbench. It is a scrap,
+written fast, and it is about to be filed as a note they will read back weeks from now.
+
+THE THOUGHT:
+{{TEXT}}
+
+{{PROJECT_LINE}}
+{{NORTH_STAR_LINE}}
+
+TASK — SHARPEN. Rewrite it so it still makes sense to them later: keep every specific they wrote
+(names, numbers, files, the actual complaint), fix what is garbled, and finish the sentence they
+were clearly in the middle of. Their words, tidied — not yours.
+
+Two things you must NOT do:
+  • Do not add information that is not in the thought. No invented reasons, no suggested solutions,
+    no "this would also affect…". If the thought is a fragment, it stays a fragment that reads well.
+  • Do not inflate it. A one-line thought comes back as one line. Never more than 3 short sentences.
+
+Returning "text": "" means "this is already clear — leave their words alone", and that is the
+EXPECTED answer whenever you cannot honestly say it better. Do not paraphrase for the sake of
+answering.
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "text": "", "why": "" }
+where "why" is at most eight words on what you changed (or "" when text is blank).`;
+
 const ENV_KEYS = {
   judge: 'GEMINI_JUDGE_PROMPT',
   futureorbits: 'GEMINI_FUTUREORBITS_PROMPT',
@@ -646,6 +679,9 @@ const ENV_KEYS = {
   // along: Stack's own op, whichever backend answers it.
   arrange: 'STACK_ARRANGE_PROMPT',
   allocate: 'STACK_ALLOCATE_PROMPT',
+  // Coined today, so it wears STACK_ like the other new ones — it is Stack's
+  // own op, whichever backend answers it (this one is Gemini's).
+  sharpen: 'STACK_SHARPEN_PROMPT',
   triage: 'GEMINI_TRIAGE_PROMPT',
 };
 

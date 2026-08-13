@@ -490,6 +490,13 @@ export const AGENTS = [
     ]),
     ops: [
       { op: 'canvas', label: 'Canvas ops', backend: 'gemini', hint: 'Every ✧ op on a card: expand, cluster, plan, blast radius, touches, critique, ask.' },
+      // #418 — the corner ＋'s Thought composer, which files a note and so is
+      // this canvas's front door. It is the Drafter's because the thing being
+      // sharpened is a Workbench card the moment it saves: one surface, one
+      // switch. Its OWN op rather than an eighth `canvas` button, because it
+      // is the only one that runs BEFORE a card exists — `canvas` reads a card
+      // id and writes a card, and this reads loose text and writes nothing.
+      { op: 'sharpen', label: 'Sharpen a thought', backend: 'gemini', hint: 'Tidies a jotted scrap into a note that will still make sense later; says so when it is already clear.' },
     ],
   },
 ];

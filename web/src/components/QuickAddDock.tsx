@@ -4,6 +4,8 @@ import { PRIORITY_META } from '../lib/ui';
 import type { Priority, Project } from '../types';
 import {
   createNote, createRoadmapItem, getProjects, getLastViewedProject, emitItemFiled,
+  assistRoadmapItem, sharpenThought, getAgentState, agentCan, agentOffReason,
+  type TabAgentState,
 } from '../store';
 
 // The bottom-left corner used to hold the recipe library. It holds the ＋
@@ -26,6 +28,30 @@ import {
 // looking at, else the last project you opened, else the first on the list.
 // The picker stays visible even when there is only one — a quick-add whose
 // target is implicit is a quick-add that files into the wrong app once.
+//
+// THE TWO ✧ PASSES, one per destination, each the agent that owns that surface:
+//
+//   Fill from note — the CURATOR's `assist`, the same op and the same route the
+//     Roadmap modal's ✧ uses. Same rule too: it fills what you left EMPTY and
+//     never re-decides what you typed. What it does NOT take here is as
+//     deliberate as what it does. `tier` is the run queue's own rank and this
+//     composer has no control for it, and `risk` sent from a form the human did
+//     not touch would be credited as a HUMAN decision (`risk_source`, #262) and
+//     lock out the plan-time pre-pass — so a quick add leaves both unset and the
+//     full modal keeps being where they are decided. `area` it does take, and
+//     shows as a chip you can drop: untagged work is in no lane, which is the
+//     population that quietly never runs.
+//   Sharpen — the DRAFTER's `sharpen`, its own op on the Workbench surface,
+//     because a filed thought IS a card on that canvas. It proposes beside your
+//     words and only a press replaces them, and an empty answer ("already
+//     clear") is a real answer the composer states rather than hiding.
+//
+// Readiness comes from `GET /api/agents/state` — the same map a project tab
+// reads, so this cannot grow a second opinion about whether an agent may act.
+// Unknown means yes (`agentCan`), so a slow or older server offers a button
+// that answers honestly rather than hiding one that works; a switched-off agent
+// or a missing backend takes the button AWAY and leaves the sentence that says
+// which, since a dead ✧ explaining itself is the thing that rule forbids.
 export function QuickAddDock() {
   const route = useRoute();
   const [open, setOpen] = useState(false);
@@ -39,6 +65,19 @@ export function QuickAddDock() {
   const [note, setNote] = useState('');
   const [priority, setPriority] = useState<Priority>('should');
   const [thought, setThought] = useState('');
+
+  // The assist's area suggestion, held as a droppable chip: the composer has no
+  // area field to fill, and applying one invisibly would tag work with a lane
+  // nobody chose. '' = none suggested (or dropped).
+  const [area, setArea] = useState('');
+  // ✧ state, one pair per pass. The sharpen answer is a PROPOSAL: `text` is
+  // what it would say instead, 'clear' is the honest empty answer.
+  const [assistBusy, setAssistBusy] = useState(false);
+  const [assistErr, setAssistErr] = useState('');
+  const [sharpBusy, setSharpBusy] = useState(false);
+  const [sharpErr, setSharpErr] = useState('');
+  const [sharpened, setSharpened] = useState<{ text: string; why: string } | 'clear' | null>(null);
+  const [agents, setAgents] = useState<TabAgentState | undefined>(undefined);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -60,6 +99,20 @@ export function QuickAddDock() {
       .catch((e) => { if (live) setProjectsError(e?.message || 'Could not load the project list.'); });
     return () => { live = false; };
   }, [open, projects]);
+
+  // Which ✧ may be drawn. Read once per open, and NOT per project: the map is
+  // app-wide (the agents are the app's, not a project's), which is why it has a
+  // route of its own rather than riding a detail payload.
+  useEffect(() => {
+    if (!open || agents) return;
+    let live = true;
+    // A failed read leaves it undefined, which agentCan reads as YES — the
+    // buttons stay and the server refuses honestly if it has to. Hiding a
+    // working feature because a readiness probe fell over is the worse way
+    // round.
+    getAgentState().then((s) => { if (live) setAgents(s); }).catch(() => { /* unknown means yes */ });
+    return () => { live = false; };
+  }, [open, agents]);
 
   // Preferred target, in order: the project on screen, the last one opened,
   // the first that loaded. Re-runs while the sheet is open so walking onto a
@@ -90,8 +143,57 @@ export function QuickAddDock() {
   }, [open, mode]);
 
   const project = (projects || []).find((p) => p.id === slug);
+  // Both ✧ read the one map, and the sentence beside a missing button is read
+  // off the same state — so this can never print a reason it did not check.
+  const curatorCan = agentCan(agents, 'curator', 'assist');
+  const curatorOff = agentOffReason(agents, 'curator', 'assist');
+  const drafterCan = agentCan(agents, 'drafter', 'sharpen');
+  const drafterOff = agentOffReason(agents, 'drafter', 'sharpen');
   const ready = Boolean(slug) && !busy;
   const filled = mode === 'item' ? title.trim().length > 0 : thought.trim().length > 0;
+
+  // ✧ Fill from note. The note leads, but a quick add is often a title and
+  // nothing else — so whatever you actually typed is what it reads, rather than
+  // refusing over an empty second field.
+  const assistSource = note.trim() || title.trim();
+  async function assist() {
+    if (!slug || !assistSource || assistBusy) return;
+    setAssistBusy(true);
+    setAssistErr('');
+    try {
+      const s = await assistRoadmapItem(slug, assistSource);
+      // Fills gaps, never re-decides: the title only when you left it empty.
+      // The note is the exception by design — it is the input, and tidying it
+      // is the feature.
+      if (!title.trim()) setTitle(s.title);
+      if (s.note) setNote(s.note);
+      if (s.priority) setPriority(s.priority);
+      if (s.area) setArea(s.area);
+      // s.branch / s.tier / s.tierSuggested / s.risk are deliberately dropped
+      // here — see the header. They are the full modal's to decide.
+    } catch (e) {
+      setAssistErr((e as Error)?.message || 'The Curator could not answer.');
+    } finally {
+      setAssistBusy(false);
+    }
+  }
+
+  // ✧ Sharpen. Proposes only — `sharpened` is shown beside the words you wrote
+  // and replaces them on a press, never before it.
+  async function sharpen() {
+    if (!slug || !thought.trim() || sharpBusy) return;
+    setSharpBusy(true);
+    setSharpErr('');
+    setSharpened(null);
+    try {
+      const s = await sharpenThought(slug, thought.trim());
+      setSharpened(s.text ? { text: s.text, why: s.why } : 'clear');
+    } catch (e) {
+      setSharpErr((e as Error)?.message || 'The Drafter could not answer.');
+    } finally {
+      setSharpBusy(false);
+    }
+  }
 
   async function save() {
     if (!ready || !filled) return;
@@ -99,13 +201,19 @@ export function QuickAddDock() {
     setError('');
     try {
       if (mode === 'item') {
-        const item = await createRoadmapItem(slug, { title: title.trim(), note: note.trim(), bucket: priority });
+        const item = await createRoadmapItem(slug, {
+          title: title.trim(), note: note.trim(), bucket: priority,
+          // Only when there is one to send: an empty string is a real area
+          // value ('' = untagged) and posting it would be indistinguishable
+          // from a lane somebody chose.
+          ...(area ? { area } : {}),
+        });
         setFiled({ kind: 'item', id: item.id, slug });
-        setTitle(''); setNote('');
+        setTitle(''); setNote(''); setArea(''); setAssistErr('');
       } else {
         const created = await createNote(slug, { text: thought.trim() });
         setFiled({ kind: 'thought', id: created.id, slug });
-        setThought('');
+        setThought(''); setSharpened(null); setSharpErr('');
       }
       // The screen underneath may be the project just written to; it holds its
       // own copy of the payload and has no props path to this dock.
@@ -172,6 +280,17 @@ export function QuickAddDock() {
                   onChange={(e) => { setTitle(e.target.value); setFiled(null); }} onKeyDown={onFieldKey} />
                 <textarea className="qa-area" rows={3} placeholder="Note — the why, the shape, what done looks like (optional)"
                   value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} onKeyDown={onFieldKey} />
+                <div className="qa-tools">
+                  {curatorCan ? (
+                    <button type="button" className="gemini-btn sm" onClick={() => void assist()}
+                      disabled={!assistSource || assistBusy || !slug}
+                      title={assistSource
+                        ? 'The Curator fills the title, priority and area from what you have written, and tidies the note'
+                        : 'Write something first — it all comes from what you typed'}>
+                      {assistBusy ? '✧ Filling…' : '✧ Fill from note'}
+                    </button>
+                  ) : <span className="qa-hint">{curatorOff}</span>}
+                </div>
                 <div className="qa-priorities">
                   {PRIORITY_META.map((p) => (
                     <button key={p.key} className={`qa-pri ${priority === p.key ? 'on' : ''}`}
@@ -181,13 +300,54 @@ export function QuickAddDock() {
                     </button>
                   ))}
                 </div>
+                {/* The one field the assist fills that this composer cannot
+                    show: an area is a LANE, so it is drawn where you can see
+                    it and drop it, never applied out of sight. */}
+                {area && (
+                  <div className="qa-chiprow">
+                    <span className="qa-chip">area · {area}
+                      <button className="x" onClick={() => setArea('')} aria-label="Drop the suggested area">×</button>
+                    </span>
+                    <span className="qa-hint">✧ suggested — untagged work sits in no lane</span>
+                  </div>
+                )}
+                {assistErr && <div className="qa-err">✧ {assistErr}</div>}
               </>
             ) : (
               <>
                 <textarea ref={firstField as React.RefObject<HTMLTextAreaElement>} className="qa-area tall" rows={5}
                   placeholder="Jot it down — it lands on the Workbench canvas" value={thought} maxLength={4000}
-                  onChange={(e) => { setThought(e.target.value); setFiled(null); }} onKeyDown={onFieldKey} />
-                <div className="qa-hint">Saved as a note; the Workbench draws it as a card next time you open the canvas.</div>
+                  onChange={(e) => { setThought(e.target.value); setFiled(null); setSharpened(null); }} onKeyDown={onFieldKey} />
+                <div className="qa-tools">
+                  <span className="qa-hint grow">Saved as a note; the Workbench draws it as a card.</span>
+                  {drafterCan ? (
+                    <button type="button" className="gemini-btn sm" onClick={() => void sharpen()}
+                      disabled={!thought.trim() || sharpBusy || !slug}
+                      title={thought.trim()
+                        ? 'The Drafter tidies what you wrote so it still makes sense later — it proposes, you keep or discard'
+                        : 'Jot something first'}>
+                      {sharpBusy ? '✧ Sharpening…' : '✧ Sharpen'}
+                    </button>
+                  ) : <span className="qa-hint">{drafterOff}</span>}
+                </div>
+                {sharpErr && <div className="qa-err">✧ {sharpErr}</div>}
+                {/* An empty answer is a real answer, and it gets said out loud:
+                    a pass that found nothing to change must not look like a
+                    pass that failed, or the next press is a retry of a
+                    question already answered. */}
+                {sharpened === 'clear' && (
+                  <div className="qa-hint">✧ Already clear — your words are better left alone.</div>
+                )}
+                {sharpened && sharpened !== 'clear' && (
+                  <div className="qa-draft">
+                    <div className="txt">{sharpened.text}</div>
+                    <div className="row">
+                      {sharpened.why && <span className="why">{sharpened.why}</span>}
+                      <button className="use" onClick={() => { setThought(sharpened.text); setSharpened(null); }}>Use this</button>
+                      <button className="drop" onClick={() => setSharpened(null)}>Keep mine</button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
 

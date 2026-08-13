@@ -260,6 +260,16 @@ function suiteFor(slug, ORIGIN) {
     // is the argument for seeding a check in the same commit that adds it.
     { name: 'Agents — the host flag frames the room', url: u('/api/agents'), auth: true, json_path: 'hostReady' },
     { name: 'Agents — auth gate closed', url: u('/api/agents'), expect_status: 401 },
+    // #418 — the app-wide readiness map the corner ＋ reads. It fails the way
+    // every readiness read fails: SILENTLY. A payload that stops carrying
+    // `curator.opsReady` leaves the dock unable to tell "switched off" from
+    // "backend down", and the ✧ that should have said which one just stops
+    // being drawn — a feature disappearing with nothing anywhere to notice.
+    // `opsReady` and not `enabled`, for the reason the block above gives: the
+    // switch is the owner's to flip, the SHAPE is the contract.
+    { name: 'Agents — the app-wide readiness map', url: u('/api/agents/state'), auth: true, json_path: 'curator.opsReady' },
+    { name: 'Agents — readiness names the Gemini-backed ops', url: u('/api/agents/state'), auth: true, json_path: 'drafter.opsGemini' },
+    { name: 'Agents — state gate closed', url: u('/api/agents/state'), expect_status: 401 },
     // The per-project read the tabs actually use — a different route with its
     // own shape, and the one whose absence hides the switch rather than the
     // feature.

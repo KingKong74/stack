@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { termAgentConnected } from '../term.js';
-import { AGENT_MODELS, agentByKey, agentShape, readAgents, readAgent, writeAgent } from '../agents.js';
+import { AGENT_MODELS, agentByKey, agentShape, agentsForClient, readAgents, readAgent, writeAgent } from '../agents.js';
 
 // The TAB AGENTS surface (#361) — app-wide, no slug, read by Mission Control's
 // Agents room. Two routes and nothing else:
@@ -31,6 +31,22 @@ agents.get('/', async (_req, res) => {
     models: AGENT_MODELS,
     agents: all.map(agentShape),
   });
+});
+
+// GET /state -> the compact "may this op run right now" map (#418).
+//
+// It is the SAME `agentsForClient()` shape the project detail payload already
+// carries, and deliberately so: a second answer to "can the Curator fill this
+// in" is a second thing to keep in step. This route exists because the corner
+// ＋ is app-wide — it has no project loaded and must not pull a whole detail
+// payload (activity, bugs, the board, the funnel, the checks) to find out
+// whether to draw two buttons. The map is project-independent, which is what
+// makes serving it without a slug correct rather than a shortcut.
+//
+// Mounted before PATCH /:key and there is no GET /:key, so 'state' can never be
+// read as an agent key.
+agents.get('/state', async (_req, res) => {
+  res.json(await agentsForClient());
 });
 
 agents.patch('/:key', async (req, res) => {

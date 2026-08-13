@@ -2512,6 +2512,15 @@ export async function getAgents(): Promise<TabAgentsData> {
   return request<TabAgentsData>('/agents');
 }
 
+// #418 — the same per-op readiness map the project detail payload carries, on
+// its own so an APP-WIDE surface can read it. The corner ＋ has no project
+// loaded and pulling a whole detail payload (activity, bugs, board, funnel,
+// checks) to decide whether to draw two buttons would be absurd. Same shape,
+// same `agentCan`/`agentOffReason` below — never a second answer.
+export async function getAgentState(): Promise<TabAgentState> {
+  return request<TabAgentState>('/agents/state');
+}
+
 // PATCH a subset: {enabled} | {model} | {guidance} | {op, opEnabled}. The op
 // form is a single toggle rather than the whole set, so two switches flipped
 // in quick succession can't clobber each other.
@@ -2812,6 +2821,16 @@ export async function runWorkbenchOp(
 ): Promise<{ card: WorkbenchCard; edge: WorkbenchEdge }> {
   return request<{ card: WorkbenchCard; edge: WorkbenchEdge }>(
     `${wbBase(slug)}/ops`, { method: 'POST', body: input });
+}
+
+// #418 — the Drafter's pass over a thought that has NOT been filed yet (the
+// corner ＋'s Thought composer). It writes nothing and returns a proposal; an
+// empty `text` is the honest answer for a scrap that already reads well, not a
+// failure, and the composer says so rather than replacing the words with the
+// same words.
+export async function sharpenThought(slug: string, text: string): Promise<{ text: string; why: string }> {
+  return request<{ text: string; why: string }>(
+    `${wbBase(slug)}/sharpen`, { method: 'POST', body: { text } });
 }
 
 // A night's own account of itself, pulled onto the canvas the same way an idea

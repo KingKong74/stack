@@ -81,7 +81,11 @@ const WIRED = {
   // model picker). Two of the button names would collide with other agents'
   // ops if they were registered separately — which is the registry saying
   // correctly that they are one surface, not seven capabilities.
-  drafter: ['canvas'],
+  // #418 — 'sharpen' is the SECOND, and it is not an eighth canvas button: it
+  // runs before a card exists (the corner ＋'s Thought composer, whose save
+  // files the note this canvas then draws), reads loose text and writes
+  // nothing. Routes: POST /projects/:slug/workbench/sharpen.
+  drafter: ['canvas', 'sharpen'],
 };
 for (const [key, ops] of Object.entries(WIRED)) {
   check(`${key}'s ops are exactly what its routes call`, agentByKey(key).ops.map((o) => o.op), ops);

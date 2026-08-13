@@ -4256,6 +4256,30 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .qa-pri.on { background: var(--accent-tint); }
 
 .qa-hint { font-size: 11px; line-height: 1.6; color: var(--paused); }
+.qa-hint.grow { flex: 1; min-width: 0; }
+
+/* The ✧ row sits UNDER its field, not in a label above it: this composer has
+   no labels, and a button floating over a bare textarea reads as chrome. */
+.qa-tools { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: -2px; }
+.qa-tools .gemini-btn { flex: none; }
+
+/* An area is a LANE, so the assist's suggestion is shown where it can be
+   dropped rather than applied out of sight. */
+.qa-chiprow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.qa-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px 3px 9px; border-radius: 20px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); font-size: 11px; font-weight: 500; color: var(--accent-deep); }
+.qa-chip .x { background: none; border: none; padding: 0 2px; font-size: 13px; line-height: 1; color: var(--accent-deep); opacity: 0.7; cursor: pointer; }
+.qa-chip .x:hover { opacity: 1; }
+
+/* The sharpen PROPOSAL: it sits beside your words rather than in them, and
+   only a press moves it into the field. */
+.qa-draft { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line-2); }
+.qa-draft .txt { font-size: 12.5px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; }
+.qa-draft .row { display: flex; align-items: center; gap: 8px; }
+.qa-draft .why { flex: 1; min-width: 0; font-size: 11px; color: var(--muted); }
+.qa-draft .use { font-size: 11.5px; font-weight: 600; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 7px; padding: 3px 10px; cursor: pointer; }
+.qa-draft .use:hover { border-color: var(--accent); }
+.qa-draft .drop { font-size: 11.5px; color: var(--muted); background: none; border: none; padding: 3px 4px; cursor: pointer; }
+.qa-draft .drop:hover { color: var(--ink); }
 .qa-err { font-size: 12px; color: var(--critical); }
 /* A save with no way to what it made reads as a press that went nowhere. */
 .qa-filed { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); font-size: 12px; color: var(--ink); }

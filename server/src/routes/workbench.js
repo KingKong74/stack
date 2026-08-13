@@ -986,3 +986,57 @@ workbench.post('/ops', async (req, res) => {
     edge: workbenchEdgeShape(edge[0]),
   });
 });
+
+// POST /sharpen -> tidy a thought that has not been filed yet (#418).
+//
+// The corner ＋'s Thought composer is this canvas's front door: what it saves
+// is a note, and a note IS a card the next time the canvas is read. So the pass
+// over it belongs to the Drafter — one surface, one switch — and it is that
+// agent's own `sharpen` op rather than an eighth `canvas` button, because it is
+// the only one that runs BEFORE a card exists. /ops reads a card id and writes
+// a card and an edge; this reads loose text and writes NOTHING.
+//
+// It PROPOSES, hardest of all the ✧ surfaces: the answer is shown beside the
+// owner's own words and only a press replaces them. Nothing here touches the
+// composer's text, and the route cannot — it has no id to write to.
+//
+// AN EMPTY ANSWER IS THE EXPECTED ONE when the scrap already reads well. The
+// prompt says so and this hands `text: ''` straight through, because "already
+// clear" is a real answer; turning it into an error would teach the model to
+// manufacture a rewrite, which is the failure the Refine draft's `draft: ""`
+// exists to prevent.
+workbench.post('/sharpen', async (req, res) => {
+  try {
+    await drafter.gate('sharpen');
+  } catch (err) {
+    return res.status(err.httpStatus || 503).json({ error: err.message });
+  }
+  const text = String(req.body?.text || '').trim().slice(0, 4000);
+  if (!text) return res.status(400).json({ error: 'Write the thought first — there is nothing to sharpen.' });
+
+  const prompt = buildPrompt('sharpen', {
+    TEXT: text,
+    PROJECT_LINE: `The project is "${req.project.name}".`,
+    NORTH_STAR_LINE: req.project.north_star
+      ? `Its north star, for tone and vocabulary only: "${String(req.project.north_star).slice(0, 400)}"`
+      : '',
+  });
+
+  // The canvas's own model picker governs here too — it is the same backend
+  // doing the same job on the same tab, and two model settings for one surface
+  // is the drifting second truth this codebase keeps refusing to build.
+  const model = cleanModelAlias(req.body?.model) || (await readSettings()).workbench_model;
+  try {
+    const answer = await askGemini(prompt, { timeoutMs: 20_000, model });
+    const sharpened = String(answer?.text || '').trim().slice(0, 4000);
+    res.json({
+      // Identical text is the same answer as none: saying "nothing to sharpen"
+      // is honest, while showing the owner their own words as a proposal to
+      // accept would be a button that does nothing dressed as one that did.
+      text: sharpened && sharpened !== text ? sharpened : '',
+      why: String(answer?.why || '').trim().slice(0, 120),
+    });
+  } catch (err) {
+    res.status(err.httpStatus || 502).json({ error: err.message || 'Gemini call failed.' });
+  }
+});
