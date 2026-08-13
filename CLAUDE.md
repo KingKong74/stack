@@ -145,10 +145,11 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   load-bearing: an untagged (`''`) area never occupies or is blocked by a lane (else every untagged item
   collapses into one giant lane and the night silently does nothing), and the key includes the project.
   A worker never blocks itself. A skipped job always logs why: a lane delay must never be a silence.
-- **"Approved for the auto runner" is `source <> 'hook' OR reviewed_at IS NOT NULL`** (#359), with no
-  column of its own — an `approved` flag would be a second, drifting truth. Hook-extracted items need a
-  human's sign-off in the Plan room inbox; **a manual item is NEVER held**, because blocking
-  hand-written work is the failure mode this must not have. Written out THREE times (`server/src/`,
+- **"Approved for the auto runner" is `source NOT IN ('hook','fly') OR reviewed_at IS NOT NULL`** (#359,
+  widened by #381), with no column of its own — an `approved` flag would be a second, drifting truth.
+  TWO origins need a human's sign-off in the Plan room inbox: `hook` (the extractor read it off a push)
+  and `fly` (a live session opened it for its own ad-hoc work). **A manual item is NEVER held**, because
+  blocking hand-written work is the failure mode this must not have. Written out THREE times (`server/src/`,
   `scripts/lib/`, `web/src/lib/approval.*`) since none of the packages can import another. An
   unattended enqueue **drops a held item silently**; Run now / `POST /start` **refuses out loud and
   names it**, since a silent drop under a button looks like the press did nothing. Not the **verdict**
