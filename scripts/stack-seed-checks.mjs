@@ -243,7 +243,16 @@ function suiteFor(slug, ORIGIN) {
     // thing that is not supposed to move.
     { name: 'Agents — the registry is served', url: u('/api/agents'), auth: true, json_path: 'agents.0.key' },
     { name: 'Agents — each one names its tab', url: u('/api/agents'), auth: true, json_path: 'agents.0.tab' },
-    { name: 'Agents — the ops list is served', url: u('/api/agents'), auth: true, json_path: 'agents.0.ops.0.op' },
+    // NOT `agents.0` like its two neighbours, and the index is load-bearing.
+    // Every agent has a `key` and a `tab`; an `ops` list is the one half that
+    // may legitimately be EMPTY — the Auditor's whole surface is its console
+    // session, and agents.js says so and tells readers to survive it. Agent 0
+    // IS the Auditor, so this check spent its life asserting that a documented
+    // empty list was not empty, and went red the day the templated bug audit
+    // was retired. It now pins the Curator (registry order, agents.js), whose
+    // ops are CLOSED and code-defined: the only thing that can empty them is a
+    // commit that should be revisiting this line anyway.
+    { name: 'Agents — the ops list is served', url: u('/api/agents'), auth: true, json_path: 'agents.1.ops.0.op' },
     // #364 moved the tab agents onto Claude on the host, so what frames this
     // room is whether the DAEMON is on the line — not whether a key exists.
     // `geminiReady` went out of the payload deliberately; this check kept
