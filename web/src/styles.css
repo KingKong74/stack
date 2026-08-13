@@ -7013,6 +7013,16 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rtab-chips .chip-sm.unalloc.on { font-style: normal; color: #fff; }
 .rtab-hidden { font-family: var(--mono); font-size: 11px; color: var(--muted); background: transparent; border: 1px dashed var(--line-3); border-radius: 999px; padding: 5px 11px; white-space: nowrap; }
 .rtab-hidden:hover { color: var(--accent); border-color: var(--accent-tint-border); }
+/* #378 — the area-chip search. Sized to a chip rather than to a form field: it
+   sits IN the chip row and a full-width input would read as the row's subject
+   rather than as the thing that narrows it. */
+.rtab-areasearch { display: inline-flex; align-items: center; }
+.rtab-areasearch .field-input { width: 168px; height: 30px; font-size: 12px; border-radius: 999px; padding: 0 12px; }
+/* Safari draws its own round × on a type=search and it lands off-centre in a
+   pill this short; Escape and clearing the text are the affordances here. */
+.rtab-areasearch input[type='search']::-webkit-search-decoration,
+.rtab-areasearch input[type='search']::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.rtab-nomatch { font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; }
 
 /* ---- the Plan view's three boards ---- */
 .rtab-boards { display: inline-flex; gap: 3px; padding: 3px; margin-bottom: 14px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; }

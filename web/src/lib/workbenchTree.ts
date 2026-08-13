@@ -54,6 +54,12 @@ export const isSmart = (id: FolderId): id is SmartKey =>
  * READ-ONLY, therefore, in both directions: nothing files INTO them (there is
  * no parent to write) and nothing inside them is edited here. Polaris offers
  * the one write that already existed — pull an idea onto the canvas.
+ *
+ * The STACK folder (#416) is drawn in line with these two and is NOT one of
+ * them: it is a real row, because it holds cards, and `isPinned` below is what
+ * withholds the three gestures it must not accept. Read that before adding a
+ * third key here — "pinned" and "derived" are different answers to different
+ * questions, and a folder that has to hold cards can only be the former.
  */
 export type SystemKey = 'sys:polaris' | 'sys:roadmap';
 
@@ -140,6 +146,24 @@ export const smartOf = (id: FolderId): Smart | undefined =>
 
 /** Is this card one that other cards may be filed into? */
 export const isFolder = (c: WorkbenchCard | undefined | null): boolean => !!c && c.kind === 'folder';
+
+/**
+ * THE STACK FOLDER (#416) — the one folder that is a REAL ROW and still not the
+ * owner's to remove, rename or move. It sits at the root beside the derived
+ * Polaris and Roadmap folders and, unlike them, holds cards: that is the whole
+ * reason it is a row at all, since `parent_id` needs an id to point at.
+ *
+ * A card carrying `system` is therefore a folder with THREE affordances
+ * withheld — the ×, the rename and the drag — and the tree draws it pinned,
+ * out of the ordinary children, so its place never depends on a sort. The
+ * server refuses all three independently; this is only what stops the UI
+ * offering a gesture that is about to be refused.
+ */
+export const isPinned = (c: WorkbenchCard | undefined | null): boolean => !!c && !!c.system;
+
+/** The project's Stack folder, if the payload has reached the client yet. */
+export const pinnedFolder = (cards: WorkbenchCard[]): WorkbenchCard | undefined =>
+  cards.find((c) => c.system === 'stack');
 
 /**
  * What is directly inside a folder. A smart folder answers with its query over
@@ -235,6 +259,7 @@ export function canFileInto(cards: WorkbenchCard[], cardId: number, target: Fold
   if (target === cardId) return false;            // nothing contains itself
   const card = cards.find((c) => c.id === cardId);
   if (!card) return false;
+  if (isPinned(card)) return false;               // the Stack folder stays at the root (#416)
   if (card.parentId === target) return false;     // already there — not a move
   if (target === null) return true;               // out to the root is always legal
   const folder = cards.find((c) => c.id === target);

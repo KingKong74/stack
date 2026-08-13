@@ -242,6 +242,10 @@ export interface WorkbenchCard {
   parentId: number | null;  // which folder it sits in; null = the root (#414)
   days: number;             // age of the WRAPPED row, for the smart folders to compare
   when: string;
+  // '' for everything the owner made. 'stack' marks the one folder they did not
+  // and cannot remove (#416) — it is why this is a STRING and not a boolean:
+  // the next pinned folder is a second value here, not a second column.
+  system: string;
 }
 
 export interface WorkbenchEdge { id: number; a: number; b: number; ai: boolean }

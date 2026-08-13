@@ -72,6 +72,11 @@ const PLAN_BOARDS: { key: PlanBoard; label: string; title: string }[] = [
   { key: 'parked', label: 'Parked', title: 'Everything parked, oldest park first' },
 ];
 
+// #378 — how many areas a board needs before the chip row is worth searching.
+// Below this the chips all fit and a search box is furniture; above it you are
+// scanning a wall of them for one name.
+const AREA_SEARCH_FROM = 6;
+
 const flat = (r: RoadmapData): RoadmapItem[] => [...r.must, ...r.should, ...r.could, ...r.wont];
 
 /**
@@ -158,6 +163,8 @@ export function RoadmapTab({
   // shared boolean would put "reading…" on the button you did not press.
   const [reading, setReading] = useState<ReadOp | ''>('');
   const [areaFilter, setAreaFilter] = useState('');
+  // #378 — narrows which area CHIPS are drawn; never which items are shown.
+  const [areaQuery, setAreaQuery] = useState('');
   const [labelFilter, setLabelFilter] = useState('');
   const [editAreas, setEditAreas] = useState(false);
   const [areaDraft, setAreaDraft] = useState<string | null>(null);
@@ -412,7 +419,24 @@ export function RoadmapTab({
       hiddenAreas: withCounts.filter((a) => a.n === 0 && a.name !== areaFilter),
     };
   }, [areas, scoped, areaFilter]);
-  const areaChips = showHiddenAreas || editAreas ? [...shownAreas, ...hiddenAreas] : shownAreas;
+  // #378 — the chip row is the only way to reach an area, and it grows without
+  // limit: one chip per area, on one line, so past a handful you are reading a
+  // wall to find the one you want. The search narrows the CHIPS, not the items —
+  // picking a chip is still what filters the board.
+  //
+  // It appears only once there are enough areas to hunt through. A search box
+  // over three chips is furniture, the same judgement that keeps "Unallocated 0"
+  // off a tidy board.
+  const areaQ = areaQuery.trim().toLowerCase();
+  const searchableAreas = areas.length >= AREA_SEARCH_FROM;
+  const areaChips = useMemo(() => {
+    const base = showHiddenAreas || editAreas ? [...shownAreas, ...hiddenAreas] : shownAreas;
+    if (!areaQ) return base;
+    // The chip you are filtered BY survives the search for the same reason it
+    // survives an empty count: hiding it would leave the board filtered with the
+    // filter itself off screen, and no way back to All areas except guessing.
+    return base.filter((a) => a.name.toLowerCase().includes(areaQ) || a.name === areaFilter);
+  }, [shownAreas, hiddenAreas, showHiddenAreas, editAreas, areaQ, areaFilter]);
 
   // UNALLOCATED is a chip of its own, not an area (lib/plan.ts says why the
   // filter value is a sentinel). Untagged work is the population most likely to
@@ -449,6 +473,17 @@ export function RoadmapTab({
       {err && <div className="action-error">{err}</div>}
 
       <div className="rtab-chips">
+          {searchableAreas && (
+            <span className="rtab-areasearch">
+              <input className="field-input sm" type="search" value={areaQuery}
+                placeholder={`Find one of ${areas.length} areas`}
+                aria-label="Filter the area chips by name"
+                onChange={(e) => setAreaQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setAreaQuery(''); }} />
+            </span>
+          )}
+          {/* All areas is never searched away: it is the way back from a filter,
+              and a filter with no way back is a trap. */}
           <button className={`chip-sm${areaFilter === '' ? ' on' : ''}`} onClick={() => setAreaFilter('')}>
             All areas<span className="n">{scoped.length}</span>
           </button>
@@ -488,7 +523,14 @@ export function RoadmapTab({
               </button>
             )
           ))}
-          {(unallocated > 0 || areaFilter === UNALLOCATED) && !editAreas && (
+          {/* A search that matches no area says so. An empty row would read as
+              "this board has no areas", which is a different and wrong answer —
+              the same reason a NULL verdict is not drawn as green. */}
+          {areaQ && areaChips.length === 0 && (
+            <span className="rtab-nomatch">No area matching “{areaQuery.trim()}”</span>
+          )}
+          {(unallocated > 0 || areaFilter === UNALLOCATED)
+            && (!areaQ || 'unallocated'.includes(areaQ) || areaFilter === UNALLOCATED) && !editAreas && (
             <button className={`chip-sm unalloc${areaFilter === UNALLOCATED ? ' on' : ''}`}
               onClick={() => setAreaFilter(areaFilter === UNALLOCATED ? '' : UNALLOCATED)}
               title={`Items with no area at all — ${unallocated} ${parkedBoard ? 'parked' : 'in the cycle'}`}>
