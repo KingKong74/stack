@@ -1752,9 +1752,13 @@ export function Workbench({
 
           {/* THE MINIMAP frames what is DRAWN, not a fixed field: an empty
               canvas gets no minimap rather than a rectangle wandering an
-              imaginary plane. Press or drag anywhere in it to pan there. */}
+              imaginary plane. Press or drag anywhere in it to pan there.
+              content-box, so the 1px border does not come out of the inside:
+              everything in here is a percentage of the CONTENT box, and the
+              aspect the frame was fitted to has to be that same box or the
+              fitting is 2px out in one axis and not the other. */}
           {mini && (
-            <div className="wb-mini" style={{ width: MINI_W, height: MINI_H }}
+            <div className="wb-mini" style={{ width: MINI_W, height: MINI_H, boxSizing: 'content-box' }}
               onPointerDown={(e) => {
                 e.stopPropagation();
                 const el = e.currentTarget;
