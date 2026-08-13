@@ -86,6 +86,17 @@ export function QuickAddDock() {
   const [filed, setFiled] = useState<{ kind: 'item' | 'thought'; id: number; slug: string } | null>(null);
 
   const firstField = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  // The note box is three rows because a quick add is usually a line. The ✧
+  // fills paragraphs into it, and a composer that hides what you are about to
+  // save is worse than a tall one — so it grows to what it holds, to a cap,
+  // and scrolls beyond that rather than taking over the sheet.
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+  const growNote = () => {
+    const el = noteRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  };
 
   const routeSlug = route.name === 'detail' ? route.id : '';
 
@@ -166,7 +177,7 @@ export function QuickAddDock() {
       // The note is the exception by design — it is the input, and tidying it
       // is the feature.
       if (!title.trim()) setTitle(s.title);
-      if (s.note) setNote(s.note);
+      if (s.note) { setNote(s.note); requestAnimationFrame(growNote); }
       if (s.priority) setPriority(s.priority);
       if (s.area) setArea(s.area);
       // s.branch / s.tier / s.tierSuggested / s.risk are deliberately dropped
@@ -210,6 +221,7 @@ export function QuickAddDock() {
         });
         setFiled({ kind: 'item', id: item.id, slug });
         setTitle(''); setNote(''); setArea(''); setAssistErr('');
+        requestAnimationFrame(growNote);   // a box grown to a filled note must shrink back with it
       } else {
         const created = await createNote(slug, { text: thought.trim() });
         setFiled({ kind: 'thought', id: created.id, slug });
@@ -278,8 +290,9 @@ export function QuickAddDock() {
                 <input ref={firstField as React.RefObject<HTMLInputElement>} className="qa-input"
                   placeholder="What needs building?" value={title} maxLength={300}
                   onChange={(e) => { setTitle(e.target.value); setFiled(null); }} onKeyDown={onFieldKey} />
-                <textarea className="qa-area" rows={3} placeholder="Note — the why, the shape, what done looks like (optional)"
-                  value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} onKeyDown={onFieldKey} />
+                <textarea ref={noteRef} className="qa-area" rows={3} placeholder="Note — the why, the shape, what done looks like (optional)"
+                  value={note} maxLength={1000}
+                  onChange={(e) => { setNote(e.target.value); growNote(); }} onKeyDown={onFieldKey} />
                 <div className="qa-tools">
                   {curatorCan ? (
                     <button type="button" className="gemini-btn sm" onClick={() => void assist()}
