@@ -7,10 +7,11 @@ overflowing its own height (a bare `1fr` floors at the canvas intrinsic
 height). "Build green" (tsc, strict TS) says the TypeScript compiles; it says
 nothing about what actually paints. This drives real Chromium against a
 running instance of the app, walks every top-level screen at two viewports,
-and reports what it finds.
+presses the controls a screen declares, and reports what it finds.
 
-It is **read-only** — it navigates and observes, never clicks a control that
-writes. The screens it visits are the live app's real trackers.
+It is **read-only** — it navigates and observes, and the only controls it
+presses are ones that change view state and nothing else (see "Interactions").
+The screens it visits are the live app's real trackers.
 
 ## Running it
 
@@ -19,6 +20,8 @@ scripts/run-ui-smoke.sh                              # against ~/.stack/env's ST
 scripts/run-ui-smoke.sh --url http://localhost:5173   # against a local `npm run dev`
 scripts/run-ui-smoke.sh --url http://localhost:8787   # against a running `docker compose` stack
 scripts/run-ui-smoke.sh --slug myproject --json
+scripts/run-ui-smoke.sh --screens project-roadmap     # the Timeline, zoom stops and all
+scripts/run-ui-smoke.sh --no-interactions             # walk and scan only, press nothing
 node scripts/playwright/smoke.mjs --help
 ```
 
@@ -86,6 +89,17 @@ from noise this harness chose not to hold Stack responsible for:
   others: it means the harness smoke-tested a **signed-out** app, so every
   layout finding recorded alongside it is worthless.
 - `navigation-failed` — `page.goto` itself threw.
+- `control-missing` — an interaction's control (see "Interactions") was never
+  found on the screen. It moved, was renamed, or the screen did not render it;
+  either way **nothing about that control was tested**, which is why this is an
+  error and not a skip.
+- `control-inert` — the control was found and pressed, but left no trace: its
+  `expect` selector never appeared, or the element it was supposed to change
+  still reads exactly as it did before. A control that does nothing is the
+  defect this catches.
+- `interaction-abandoned` — an earlier interaction on the same screen failed,
+  so this one was not attempted: the view it needed was never established, and
+  measuring from the wrong state would produce a confidently wrong reading.
 
 **`layout`** — the page rendered but something visually broke:
 - `page-overflow-x` — the document is wider than the window (the symptom).
@@ -117,7 +131,7 @@ harness cry wolf loudly enough that nobody would read it — which defeats the
 whole point (CLAUDE.md: "a harness that cries wolf ... is a harness nobody
 reads"). None of this is a silent slice: every filtered item is **counted**,
 in a per-screen `suppressed: { ellipsis, lineClamp, thirdParty,
-clippedAncestor, foreignFrame }` object in `report.json` and in the run's printed summary
+clippedAncestor, foreignFrame, viewport }` object in `report.json` and in the run's printed summary
 line (e.g. `... (47 suppressed: 41 ellipsis, 6 third-party)`), and `info`
 findings are shown in full, in their own section — filtered out of the
 pass/fail count, never out of the report.
@@ -130,6 +144,19 @@ pass/fail count, never out of the report.
   equivalent, an element whose computed `-webkit-line-clamp` is a number
   (not `none`). The bug this finding exists to catch is content cut off with
   **no** visual hint at all — that case still reports.
+- **A viewport onto a larger space is not a box that ran out of room.** The
+  Timeline's lanes and ruler clip `overflow-x` and hold bars and ticks placed
+  at a percentage of a window that zooms from an hour to a quarter, so at most
+  zooms most bars sit off-window **by design** — and the app discloses it
+  itself, with the `.rt-off` chip counting what went off each edge. Same for
+  the Workbench ground (2400px, deliberately pannable) and the Polaris galaxy
+  stage. `element-overflow-x` therefore skips an element whose overflowing
+  children are all absolutely positioned, provided **no** child left in normal
+  flow spills — one of those is a genuine out-of-room bug and disqualifies the
+  element however many absolute siblings it has. Counted as `viewport`, and
+  applied to the horizontal axis only, which is the one verified against a real
+  surface. This is what stopped the Timeline interactions below burying the run:
+  they took it from 12 such findings to 49, none of them defects.
 - **A preview of another project's site is not Stack's problem.** The
   dashboard renders live previews of other projects' cards, so a console
   error or failed request can genuinely originate from a page this harness
@@ -183,12 +210,58 @@ pass/fail count, never out of the report.
   edge with nothing clipping or scrolling it actually causes the
   document-level overflow that `page-overflow-x` names the symptom of.
 
+## Interactions: pressing a control, not just looking at one
+
+Walking a screen only ever measures its **first paint**, which is its
+most-tested state. #401 is the case that forced this: all five of its defects
+sat behind a control — a grain label that understated a four-day window as
+twenty-nine minutes, a calendar grip that resized on the wrong axis, lane names
+that desynced once a lane stacked two bars. A green build could not see any of
+them, and neither could a harness that only navigates.
+
+So a screen may declare `interactions`. Each is a press, and each press is a
+**pass of its own**: the harness presses, waits, then runs exactly the same
+layout scan and screenshot it runs on a first paint. They run in sequence on
+one page and deliberately do not reset it between presses, because a control
+that only misbehaves once you have already moved the view is precisely what
+walking cannot reach. `project-roadmap` currently declares seven — the five
+zoom stops (coarsest first, so each is a real change from the last), then
+`Fit all` and `Now`.
+
+**What may be an interaction.** The read-only rule is not relaxed here, it is
+narrowed to something checkable: a control qualifies only if pressing it
+changes **view state only** — React state that no `store.ts` call reads and no
+request follows. The Timeline's zoom stops, `Now` and `Fit all` are all bare
+`setView` calls, verified by reading the handlers. A bar, a card, a tick, a
+drawer field, anything that opens a modal over real tracker rows: no. That a
+press "only opens something" is not the test — the test is whether a write can
+follow from where it leaves you.
+
+**Every press must prove it landed**, or the harness is photographing the
+Timeline rather than testing it. A zoom stop proves itself structurally: the
+stop wearing `.on` is `grainFor()`'s answer to the resulting pixel density, not
+an echo of the click, so a stop whose label and density disagree is caught
+here. `Fit all` and `Now` are not toggles and prove themselves by the window
+label's **text changing** across the press. Anything else — control absent,
+unclickable, or inert — is an `error` finding, and the rest of that screen's
+interactions are abandoned rather than measured from a state that was never
+established.
+
+`--no-interactions` walks and scans only, which is how you tell whether a
+finding needs a press to appear.
+
 ## Output
 
 `<out>/report.json` (default `scripts/playwright/screenshots/report.json` —
 see `--out`) holds the full machine-readable report;
 `<out>/<screen-id>@<viewport>.png` holds one screenshot per screen per
-viewport. Neither ever contains the bearer token.
+viewport, and `<out>/<screen-id>--<interaction-id>@<viewport>.png` one per
+interaction. Neither ever contains the bearer token.
+
+In the report, a row is a **pass**, not a screen: `totals.screens` counts
+routes, `totals.passes` counts rows and `totals.interactions` counts the
+pressed ones. Counting passes as screens would report a run that pressed seven
+controls on one screen as having covered seven screens.
 
 ## `--report`: landing a run on the Quality page
 

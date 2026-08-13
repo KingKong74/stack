@@ -21,11 +21,35 @@
 // control that writes — the screens it visits are the live app's real
 // trackers, and a stray click here would land in a real project.
 //
+// WALKING IS NOT ENOUGH (#401): every one of that item's five defects sat
+// behind a CONTROL — a grain label that understated a four-day window as
+// twenty-nine minutes, a calendar grip that resized on the wrong axis, lane
+// names that desynced once a lane stacked two bars. A harness that only
+// navigates cannot see any of them, because the first paint of a screen is
+// its most-tested state. So a screen may also declare `interactions`: presses
+// the harness makes before scanning again.
+//
+// WHAT MAY BE AN INTERACTION — the read-only rule above is NOT relaxed here,
+// it is narrowed to something checkable. A control qualifies only if pressing
+// it changes VIEW STATE ONLY: React state that no store.ts call reads and no
+// request follows. The Timeline's zoom stops, Now and Fit all all qualify —
+// each is a bare `setView`, verified by reading the handlers. A bar, a card, a
+// tick, a drawer field and anything opening a modal over real tracker rows do
+// NOT, and the fact that a press "only opens something" is not the test: the
+// test is whether a write can follow from where it leaves you.
+//
+// AND AN INTERACTION FAILS LOUD (see the fail-safe note below). A control that
+// cannot be found, cannot be pressed, or leaves no trace of having been pressed
+// is an `error` finding, never a skip. Silence there would be this file's own
+// central lie in miniature — a run reporting a clean Timeline because it never
+// managed to touch one.
+//
 //   node scripts/playwright/smoke.mjs [options]
 //   scripts/run-ui-smoke.sh [options]     (installs deps first if missing)
 //
 // Options: --url --token --slug --out --screens --viewport --timeout
-//          --headed --json --report --help          (see --help for details)
+//          --headed --json --report --no-interactions --help
+//          (see --help for details)
 
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -33,6 +57,50 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// ---- the interactions ------------------------------------------------------
+// Presses a screen may declare. Each is { id, label, click, expect }:
+//
+//   click   the control to press (a Playwright selector)
+//   expect  proof the press LANDED — a selector that must exist afterwards and
+//           must not already exist before. Without it a run cannot tell a
+//           working control from an inert one, which is the difference between
+//           this harness testing the Timeline and merely photographing it.
+//
+// The Timeline's zoom is the whole grain space (`ZOOM_STOPS` in
+// web/src/lib/plan.ts), pressed coarsest-first so each step is a real change
+// from the one before — the roadmap tab opens at a week-ish span, so leading
+// with `Week` would press a control that was already on and prove nothing.
+// The pressed stop is the one wearing `.on`, which is `grainFor()`'s answer
+// and not an echo of the click: if the density and the label ever disagree,
+// this is the finding that says so.
+const TIMELINE_ZOOM = ['Quarter', 'Month', 'Week', 'Day', 'Hour'].map((label) => ({
+  id: `zoom-${label.toLowerCase()}`,
+  label: `Timeline — zoom to ${label}`,
+  click: `.rt-zoom .stops button:text-is("${label}")`,
+  expect: `.rt-zoom .stops button.on:text-is("${label}")`,
+}));
+
+// Both are bare `setView` calls (RoadmapTimeline.tsx) and so are read-only by
+// the rule above. They are proved by the WINDOW LABEL changing rather than by a
+// pressed state, because neither is a toggle — `.rt-window .range` is what the
+// owner reads to know where they are looking, and #401 shipped a bug in exactly
+// that label. `expect` therefore names the label element and the run compares
+// its TEXT across the press (see `runInteraction`).
+const TIMELINE_JUMPS = [
+  {
+    id: 'fit-all',
+    label: 'Timeline — Fit all',
+    click: '.rt-jump:text-is("Fit all")',
+    expectTextChangeIn: '.rt-window .range',
+  },
+  {
+    id: 'now',
+    label: 'Timeline — Now',
+    click: '.rt-jump.now',
+    expectTextChangeIn: '.rt-window .range',
+  },
+];
 
 // ---- the screens ---------------------------------------------------------
 // One entry per top-level route this harness walks. `<slug>` is substituted
@@ -53,7 +121,16 @@ export const SCREENS = [
   { id: 'instructions', label: 'Instructions', path: '#/instructions/<slug>' },
   { id: 'project-overview', label: 'Project — Overview', path: '#/p/<slug>' },
   { id: 'project-quality', label: 'Project — Quality', path: '#/p/<slug>/quality' },
-  { id: 'project-roadmap', label: 'Project — Roadmap', path: '#/p/<slug>/roadmap' },
+  // The roadmap tab opens on the Timeline view (RoadmapTab.tsx defaults
+  // `view` to 'timeline'), so the zoom is on screen at first paint and needs
+  // no navigating to. If that default ever changes, the interactions below
+  // start reporting a missing control — which is the correct, loud answer.
+  {
+    id: 'project-roadmap',
+    label: 'Project — Roadmap',
+    path: '#/p/<slug>/roadmap',
+    interactions: [...TIMELINE_ZOOM, ...TIMELINE_JUMPS],
+  },
   { id: 'project-futures', label: 'Project — Futures', path: '#/p/<slug>/futures' },
   { id: 'project-workbench', label: 'Project — Workbench', path: '#/p/<slug>/workbench' },
   { id: 'project-activity', label: 'Project — Activity', path: '#/p/<slug>/activity' },
@@ -139,6 +216,7 @@ function parseArgs(argv) {
     headed: flag('headed'),
     json: flag('json'),
     report: flag('report'),
+    noInteractions: flag('no-interactions'),
     help: flag('help'),
   };
 }
@@ -158,10 +236,16 @@ function printHelp() {
   --json           print the report JSON to stdout instead of the table
   --report         POST the outcome to the project's own checks (Quality page,
                     Suite segment) as '${REPORT_CHECK_NAME}' — off by default
+  --no-interactions  walk and scan only; do not press any control. The default
+                    is to press them, because a screen's first paint is its
+                    most-tested state and #401's defects were all behind a
+                    control. Use this to isolate whether a finding needs a press.
   --help           print this message
 
 Screens: ${SCREENS.map((s) => s.id).join(', ')}
 Viewports: ${Object.keys(VIEWPORTS).join(', ')}
+Interactions: ${SCREENS.filter((s) => s.interactions?.length)
+    .map((s) => `${s.id} (${s.interactions.length})`).join(', ') || 'none'}
 
 Exits 0 only when zero error or layout findings were reported across every
 screen and viewport run. 'info' findings (third-party noise) are always
@@ -183,15 +267,22 @@ function severityCounts(findings) {
   };
 }
 
+// A row is a PASS, not a screen: one screen contributes its first paint plus
+// one row per interaction, and the label has to distinguish them or a reader
+// cannot tell which press a finding belongs to.
+function rowLabel(r) {
+  return `${r.id}${r.interaction ? `/${r.interaction}` : ''}@${r.viewport}`;
+}
+
 function printTable(report, out) {
   const rows = report.screens;
-  const pad = Math.max(...rows.map((r) => `${r.id}@${r.viewport}`.length), 20);
+  const pad = Math.max(...rows.map((r) => rowLabel(r).length), 20);
   process.stdout.write('\nscreen@viewport'.padEnd(0) + '\n');
   for (const r of rows) {
     const { errors, layout, info } = severityCounts(r.findings);
     const ok = errors === 0 && layout === 0;
     process.stdout.write(
-      `  ${ok ? '✓' : '✗'} ${`${r.id}@${r.viewport}`.padEnd(pad)}  `
+      `  ${ok ? '✓' : '✗'} ${rowLabel(r).padEnd(pad)}  `
       + `errors:${String(errors).padStart(2)}  layout:${String(layout).padStart(2)}  info:${String(info).padStart(2)}\n`,
     );
   }
@@ -200,7 +291,7 @@ function printTable(report, out) {
   if (withFindings.length) {
     process.stdout.write('\nfindings:\n');
     for (const r of withFindings) {
-      process.stdout.write(`\n  ${r.id}@${r.viewport} (${r.path}):\n`);
+      process.stdout.write(`\n  ${rowLabel(r)} (${r.path}):\n`);
       for (const sev of ['error', 'layout']) {
         const findings = r.findings.filter((f) => f.severity === sev);
         if (!findings.length) continue;
@@ -223,7 +314,7 @@ function printTable(report, out) {
     process.stdout.write('\ninfo — third-party, recorded but does not fail the run:\n');
     for (const r of infoRows) {
       const infoFindings = r.findings.filter((f) => f.severity === 'info');
-      process.stdout.write(`\n  ${r.id}@${r.viewport} (${r.path}):\n`);
+      process.stdout.write(`\n  ${rowLabel(r)} (${r.path}):\n`);
       for (const f of infoFindings) {
         process.stdout.write(`    [info] ${f.kind}: ${f.detail}\n`);
       }
@@ -231,18 +322,21 @@ function printTable(report, out) {
   }
 
   const totals = report.totals;
-  const s = totals.suppressed || { ellipsis: 0, lineClamp: 0, thirdParty: 0, clippedAncestor: 0, foreignFrame: 0 };
-  const suppressedTotal = s.ellipsis + s.lineClamp + s.thirdParty + s.clippedAncestor + (s.foreignFrame || 0);
+  const s = totals.suppressed || { ellipsis: 0, lineClamp: 0, thirdParty: 0, clippedAncestor: 0, foreignFrame: 0, viewport: 0 };
+  const suppressedTotal = s.ellipsis + s.lineClamp + s.thirdParty + s.clippedAncestor + (s.foreignFrame || 0) + (s.viewport || 0);
   const suppressedParts = [];
   if (s.ellipsis) suppressedParts.push(`${s.ellipsis} ellipsis`);
   if (s.lineClamp) suppressedParts.push(`${s.lineClamp} line-clamp`);
   if (s.thirdParty) suppressedParts.push(`${s.thirdParty} third-party`);
   if (s.clippedAncestor) suppressedParts.push(`${s.clippedAncestor} clipped-ancestor`);
   if (s.foreignFrame) suppressedParts.push(`${s.foreignFrame} foreign-frame`);
+  if (s.viewport) suppressedParts.push(`${s.viewport} viewport`);
   const suppressedStr = suppressedTotal ? ` (${suppressedTotal} suppressed: ${suppressedParts.join(', ')})` : '';
 
   process.stdout.write(
-    `\n${totals.screens} screen${totals.screens === 1 ? '' : 's'} run, `
+    `\n${totals.screens} screen${totals.screens === 1 ? '' : 's'} run `
+    + `(${totals.passes} pass${totals.passes === 1 ? '' : 'es'}, `
+    + `${totals.interactions} interaction${totals.interactions === 1 ? '' : 's'}), `
     + `${totals.errors} error finding${totals.errors === 1 ? '' : 's'}, `
     + `${totals.layout} layout finding${totals.layout === 1 ? '' : 's'}, `
     + `${totals.info} info finding${totals.info === 1 ? '' : 's'}, `
@@ -305,13 +399,23 @@ function scanLayout() {
   //     Workbench canvas is 2400px wide and deliberately pannable —
   //     `div.wb-ground` clips it with `overflow: hidden`, so it never
   //     causes the page itself to scroll and is not a bug.
+  //   - element-overflow-x on a VIEWPORT: an element windowing a coordinate
+  //     space larger than itself is doing its job, not running out of room.
+  //     The Timeline is the live case — `.rt-lane` clips overflow-x and holds
+  //     `.rt-bar`s placed at a percentage of a window zoomable from an hour to
+  //     a quarter, so at most zooms most bars are off-window BY DESIGN, and
+  //     the app discloses it itself with the `.rt-off` chip counting what went
+  //     off each edge. Adding the zoom interactions made this the single
+  //     loudest finding in the run (12 at first paint, 49 once pressed), all
+  //     of it structural noise. Same reasoning as the ellipsis rule: the app
+  //     shows the cut, so it is not the silent cut this finding hunts.
   //
   // Every one of these is COUNTED, never dropped silently: `suppressed`
   // below is folded into the screen's report and the run's printed summary,
   // so a reader can always see how much was filtered and why.
   const results = {
     pageOverflowX: null, elementOverflowX: [], elementOverflowY: [], elementPastViewport: [],
-    suppressed: { ellipsis: 0, lineClamp: 0, clippedAncestor: 0, foreignFrame: 0 },
+    suppressed: { ellipsis: 0, lineClamp: 0, clippedAncestor: 0, foreignFrame: 0, viewport: 0 },
   };
 
   const docWidth = document.documentElement.scrollWidth;
@@ -344,6 +448,27 @@ function scanLayout() {
     });
   };
 
+  // Is this element WINDOWING a larger coordinate space, rather than being a
+  // box its content outgrew? Absolute positioning is the signature, and the
+  // test is deliberately two-sided: at least one child positioned into the
+  // space (so an ordinary empty clipper does not qualify), and NO child left in
+  // normal flow that actually spills. That second half is what keeps the rule
+  // honest — a real "content ran out of room" bug is a flow child pushing past
+  // the edge, and one of those anywhere disqualifies the element no matter how
+  // many absolute siblings it has.
+  const isViewport = (el) => {
+    const kids = Array.from(el.children);
+    if (!kids.length) return false;
+    const edge = el.getBoundingClientRect().right;
+    let positioned = 0;
+    for (const k of kids) {
+      const pos = getComputedStyle(k).position;
+      if (pos === 'absolute' || pos === 'fixed') positioned++;
+      else if (k.getBoundingClientRect().right > edge + 1) return false;
+    }
+    return positioned > 0;
+  };
+
   const CLIPPING_OVERFLOW = ['hidden', 'clip', 'auto', 'scroll'];
   const hasClippingAncestor = (el) => {
     let node = el;
@@ -365,6 +490,12 @@ function scanLayout() {
         results.suppressed.ellipsis++;
       } else if (onlyForeignFrames(el)) {
         results.suppressed.foreignFrame++;
+      } else if (isViewport(el)) {
+        // X only, and not mirrored onto the overflow-y branch below: the
+        // horizontal case is the one verified against a real surface (the
+        // Timeline), and this file's standing direction is that an unproven
+        // suppression is worse than a noisy true finding.
+        results.suppressed.viewport++;
       } else if (!hasReportedAncestor(el, reportedX)) {
         reportedX.push(el);
         results.elementOverflowX.push({
@@ -439,6 +570,121 @@ function describeLayoutFinding(kind, item) {
     default:
       return kind;
   }
+}
+
+// ---- one pass ---------------------------------------------------------------
+// The layout scan, its capped findings and a screenshot, over whatever is on
+// screen RIGHT NOW. Shared by the base pass and by every interaction, so a
+// pressed screen is measured with exactly the same yardstick as a first paint —
+// a second, drifting copy of this is how those two would start disagreeing.
+async function scanAndShoot(page, { screenId, viewportName, sink, shotPath }) {
+  let layout = {
+    pageOverflowX: null, elementOverflowX: [], elementOverflowY: [], elementPastViewport: [],
+    suppressed: { ellipsis: 0, lineClamp: 0, clippedAncestor: 0, foreignFrame: 0, viewport: 0 },
+  };
+  try {
+    layout = await page.evaluate(scanLayout);
+  } catch (e) {
+    sink.findings.push({
+      kind: 'page-error', severity: 'error', screen: screenId, viewport: viewportName,
+      detail: `layout scan failed: ${e.message}`.slice(0, 300),
+    });
+  }
+
+  if (layout.pageOverflowX) {
+    sink.findings.push({
+      kind: 'page-overflow-x', severity: 'layout', screen: screenId, viewport: viewportName,
+      detail: `document scrollWidth ${layout.pageOverflowX.scrollWidth} > window innerWidth ${layout.pageOverflowX.innerWidth}`,
+      ...layout.pageOverflowX,
+    });
+  }
+  sink.findings.push(...capList(layout.elementOverflowX, 'element-overflow-x', screenId, viewportName));
+  sink.findings.push(...capList(layout.elementOverflowY, 'element-overflow-y', screenId, viewportName));
+  sink.findings.push(...capList(layout.elementPastViewport, 'element-past-viewport', screenId, viewportName));
+
+  try {
+    // VIEWPORT-CLIPPED, never fullPage: a full-page shot grows the viewport to
+    // fit the content, which hides the exact overflow bug this harness exists
+    // to catch. A human never scrolls to see the problem — they see the clipped
+    // viewport, so that's what this shoots.
+    await page.screenshot({ path: shotPath, fullPage: false });
+  } catch (e) {
+    sink.findings.push({
+      kind: 'page-error', severity: 'error', screen: screenId, viewport: viewportName,
+      detail: `screenshot failed: ${e.message}`.slice(0, 300),
+    });
+  }
+
+  return layout;
+}
+
+// A control is given its own short deadline rather than --timeout's. That flag
+// budgets a NAVIGATION — a page load, a round trip, a render. A control that is
+// already on screen either responds in a moment or is broken, and inheriting a
+// 20s navigation budget would turn each missing control into a 20s stall,
+// making a fully-broken Timeline the slowest possible run.
+const CONTROL_TIMEOUT_MS = 4000;
+
+// Press one control and decide whether the press LANDED. Returns true only when
+// it did; every other road out files an `error` finding and returns false, so a
+// control this harness could not work is never mistaken for one that works
+// (the fail-loud rule in the header).
+async function runInteraction(page, { screenId, viewportName, interaction, sink }) {
+  const fail = (kind, detail) => {
+    sink.findings.push({
+      kind, severity: 'error', screen: screenId, viewport: viewportName,
+      interaction: interaction.id, detail: String(detail).slice(0, 300),
+    });
+    return false;
+  };
+
+  const control = page.locator(interaction.click).first();
+  try {
+    await control.waitFor({ state: 'visible', timeout: CONTROL_TIMEOUT_MS });
+  } catch {
+    return fail('control-missing',
+      `${interaction.label}: no visible control matched \`${interaction.click}\` — it moved, was renamed, `
+      + 'or the screen never rendered it. Nothing about this control was tested.');
+  }
+
+  // Read the "before" side BEFORE the press, or there is nothing to compare to.
+  const textProbe = interaction.expectTextChangeIn
+    ? page.locator(interaction.expectTextChangeIn).first()
+    : null;
+  const before = textProbe ? await textProbe.textContent().catch(() => null) : null;
+
+  try {
+    await control.click({ timeout: CONTROL_TIMEOUT_MS });
+  } catch (e) {
+    return fail('control-inert', `${interaction.label}: \`${interaction.click}\` could not be clicked — ${e.message}`);
+  }
+
+  await page.waitForTimeout(SETTLE_MS);
+
+  if (interaction.expect) {
+    try {
+      await page.locator(interaction.expect).first().waitFor({ state: 'visible', timeout: CONTROL_TIMEOUT_MS });
+    } catch {
+      return fail('control-inert',
+        `${interaction.label}: pressed \`${interaction.click}\`, but \`${interaction.expect}\` never appeared — `
+        + 'the press did not take effect.');
+    }
+  }
+
+  if (textProbe) {
+    const after = await textProbe.textContent().catch(() => null);
+    if (after === null) {
+      return fail('control-inert',
+        `${interaction.label}: \`${interaction.expectTextChangeIn}\` is gone after the press, so the press cannot be judged.`);
+    }
+    if (after === before) {
+      return fail('control-inert',
+        `${interaction.label}: pressed \`${interaction.click}\`, but \`${interaction.expectTextChangeIn}\` still reads `
+        + `"${String(after).trim()}" — the press changed nothing.`);
+    }
+  }
+
+  return true;
 }
 
 // ---- third-party attribution -----------------------------------------------
@@ -573,7 +819,11 @@ function summariseFailure(screenReports, viewportNames) {
   const errors = allFindings.filter((f) => f.severity === 'error').length;
   const layout = allFindings.filter((f) => f.severity === 'layout').length;
   const worst = allFindings.find((f) => f.severity === 'error') || allFindings[0];
-  const worstStr = worst ? ` — worst: ${worst.kind} on ${worst.screen}@${worst.viewport}: ${worst.detail}` : '';
+  // The interaction rides in the one-line summary too: "a layout finding on the
+  // roadmap" and "a layout finding on the roadmap once zoomed to Hour" send a
+  // reader to different places, and this line is all the Quality page shows.
+  const worstWhere = worst ? `${worst.screen}${worst.interaction ? `/${worst.interaction}` : ''}@${worst.viewport}` : '';
+  const worstStr = worst ? ` — worst: ${worst.kind} on ${worstWhere}: ${worst.detail}` : '';
   const summary = `${errors} errors, ${layout} layout findings over ${uniqueScreens} screen${uniqueScreens === 1 ? '' : 's'} `
     + `/ ${viewportNames.length} viewport${viewportNames.length === 1 ? '' : 's'}${worstStr}`;
   return summary.slice(0, REPORT_ERROR_CAP);
@@ -716,11 +966,16 @@ export async function main(argv = process.argv.slice(2)) {
 
       for (const screen of wantScreens) {
         const path = screen.path.replace('<slug>', opts.slug);
-        const findings = [];
-        // Per-screen tally folded into `suppressed.thirdParty` below — these
-        // findings are NOT dropped (they still land in `findings` as `info`),
-        // this just counts how many were kept out of the error tally.
-        let thirdPartyCount = 0;
+
+        // The listeners below fire for whichever PASS is running: the screen's
+        // first paint, then each interaction in turn. `sink` is what they push
+        // into and it is re-pointed as each pass starts, so a console error
+        // raised BY a zoom press is filed against that press rather than
+        // against the paint that happened to come before it.
+        // `thirdParty` is the per-pass tally folded into `suppressed` — those
+        // findings are NOT dropped (they still land as `info`), this just
+        // counts how many were kept out of the error tally.
+        let sink = { findings: [], thirdParty: 0 };
 
         const onConsole = (msg) => {
           if (msg.type() === 'error') {
@@ -734,13 +989,13 @@ export async function main(argv = process.argv.slice(2)) {
             const foreign = foreignOriginIn(text, baseOrigin)
               || (at && originOf(at) && originOf(at) !== baseOrigin ? originOf(at) : null);
             if (foreign) {
-              thirdPartyCount++;
-              findings.push({
+              sink.thirdParty++;
+              sink.findings.push({
                 kind: 'third-party-console', severity: 'info', screen: screen.id, viewport: viewportName,
                 detail: text.slice(0, 300), origin: foreign,
               });
             } else {
-              findings.push({
+              sink.findings.push({
                 kind: 'console-error', severity: 'error', screen: screen.id, viewport: viewportName,
                 detail: text.slice(0, 300),
               });
@@ -751,13 +1006,13 @@ export async function main(argv = process.argv.slice(2)) {
           const detail = String(err && err.message ? err.message : err).slice(0, 300);
           const foreign = foreignStackOrigin(err && err.stack, baseOrigin);
           if (foreign) {
-            thirdPartyCount++;
-            findings.push({
+            sink.thirdParty++;
+            sink.findings.push({
               kind: 'third-party-page-error', severity: 'info', screen: screen.id, viewport: viewportName,
               detail, origin: foreign,
             });
           } else {
-            findings.push({
+            sink.findings.push({
               kind: 'page-error', severity: 'error', screen: screen.id, viewport: viewportName, detail,
             });
           }
@@ -767,14 +1022,14 @@ export async function main(argv = process.argv.slice(2)) {
           if (IGNORED_REQUEST_PATTERNS.some((p) => p.test ? p.test(reqUrl) : reqUrl.includes(p))) return;
           const origin = originOf(reqUrl);
           if (origin && origin !== baseOrigin) {
-            thirdPartyCount++;
-            findings.push({
+            sink.thirdParty++;
+            sink.findings.push({
               kind: 'third-party-request', severity: 'info', screen: screen.id, viewport: viewportName,
               detail: `${reqUrl} — ${req.failure()?.errorText || 'unknown failure'}`,
               url: reqUrl,
             });
           } else {
-            findings.push({
+            sink.findings.push({
               kind: 'request-failed', severity: 'error', screen: screen.id, viewport: viewportName,
               detail: `${reqUrl} — ${req.failure()?.errorText || 'unknown failure'}`,
               url: reqUrl,
@@ -787,20 +1042,20 @@ export async function main(argv = process.argv.slice(2)) {
           if (status >= 500) {
             const origin = originOf(resUrl);
             if (origin && origin !== baseOrigin) {
-              thirdPartyCount++;
-              findings.push({
+              sink.thirdParty++;
+              sink.findings.push({
                 kind: 'third-party-request', severity: 'info', screen: screen.id, viewport: viewportName,
                 detail: `${resUrl} → ${status}`, url: resUrl, status,
               });
             } else {
-              findings.push({
+              sink.findings.push({
                 kind: 'http-error', severity: 'error', screen: screen.id, viewport: viewportName,
                 detail: `${resUrl} → ${status}`, url: resUrl, status,
               });
             }
           }
           if (resUrl.includes('/api/') && status === 401) {
-            findings.push({
+            sink.findings.push({
               kind: 'auth-rejected', severity: 'error', screen: screen.id, viewport: viewportName,
               detail: `${resUrl} → 401 — the app was tested SIGNED OUT; every layout result for this screen is worthless.`,
               url: resUrl,
@@ -813,75 +1068,93 @@ export async function main(argv = process.argv.slice(2)) {
         page.on('requestfailed', onRequestFailed);
         page.on('response', onResponse);
 
+        let navigated = true;
         try {
           await page.goto(`${url}/${path}`, { waitUntil: 'load', timeout: opts.timeout });
           await page.waitForLoadState('networkidle', { timeout: opts.timeout }).catch(() => {});
           await page.waitForTimeout(SETTLE_MS);
         } catch (e) {
-          findings.push({
+          navigated = false;
+          sink.findings.push({
             kind: 'navigation-failed', severity: 'error', screen: screen.id, viewport: viewportName,
             detail: e.message.slice(0, 300),
           });
         }
 
-        let layout = {
-          pageOverflowX: null, elementOverflowX: [], elementOverflowY: [], elementPastViewport: [],
-          suppressed: { ellipsis: 0, lineClamp: 0, clippedAncestor: 0, foreignFrame: 0 },
+        // Closes off the pass that `sink` is currently collecting and files it
+        // as its own row. "It is capped and says so" (CLAUDE.md) applied to
+        // suppression: a reader must be able to see that filtering happened and
+        // how much, for every pass, every run — never a silent slice.
+        const closePass = (layout, screenshotPath, interaction) => {
+          screenReports.push({
+            id: screen.id,
+            label: interaction ? `${screen.label} · ${interaction.label}` : screen.label,
+            path, viewport: viewportName,
+            ...(interaction ? { interaction: interaction.id } : {}),
+            screenshot: screenshotPath,
+            findings: sink.findings,
+            suppressed: {
+              ellipsis: layout.suppressed?.ellipsis || 0,
+              lineClamp: layout.suppressed?.lineClamp || 0,
+              thirdParty: sink.thirdParty,
+              clippedAncestor: layout.suppressed?.clippedAncestor || 0,
+              foreignFrame: layout.suppressed?.foreignFrame || 0,
+              viewport: layout.suppressed?.viewport || 0,
+            },
+          });
         };
-        try {
-          layout = await page.evaluate(scanLayout);
-        } catch (e) {
-          findings.push({
-            kind: 'page-error', severity: 'error', screen: screen.id, viewport: viewportName,
-            detail: `layout scan failed: ${e.message}`.slice(0, 300),
-          });
-        }
 
-        if (layout.pageOverflowX) {
-          findings.push({
-            kind: 'page-overflow-x', severity: 'layout', screen: screen.id, viewport: viewportName,
-            detail: `document scrollWidth ${layout.pageOverflowX.scrollWidth} > window innerWidth ${layout.pageOverflowX.innerWidth}`,
-            ...layout.pageOverflowX,
-          });
-        }
-        findings.push(...capList(layout.elementOverflowX, 'element-overflow-x', screen.id, viewportName));
-        findings.push(...capList(layout.elementOverflowY, 'element-overflow-y', screen.id, viewportName));
-        findings.push(...capList(layout.elementPastViewport, 'element-past-viewport', screen.id, viewportName));
+        const baseShot = join(opts.out, `${screen.id}@${viewportName}.png`);
+        const baseLayout = await scanAndShoot(page, {
+          screenId: screen.id, viewportName, sink, shotPath: baseShot,
+        });
+        closePass(baseLayout, baseShot, null);
 
-        const screenshotPath = join(opts.out, `${screen.id}@${viewportName}.png`);
-        try {
-          // VIEWPORT-CLIPPED, never fullPage: a full-page shot grows the
-          // viewport to fit the content, which hides the exact overflow bug
-          // this harness exists to catch. A human never scrolls to see the
-          // problem — they see the clipped viewport, so that's what this shoots.
-          await page.screenshot({ path: screenshotPath, fullPage: false });
-        } catch (e) {
-          findings.push({
-            kind: 'page-error', severity: 'error', screen: screen.id, viewport: viewportName,
-            detail: `screenshot failed: ${e.message}`.slice(0, 300),
-          });
+        // Each interaction is a pass of its own: press, then measure with the
+        // same yardstick. They run in SEQUENCE on the one page and deliberately
+        // do not reset it between presses — the zoom stops are ordered
+        // coarsest-first so each is a real change from the last, and a control
+        // that only misbehaves once you have already moved the view is exactly
+        // the kind of defect walking a screen cannot reach.
+        //
+        // A failed press still closes a pass. What it must never do is skip
+        // silently, and it must not let the NEXT press inherit a view it never
+        // established, so the rest of the screen's interactions are abandoned
+        // and each says so — a wrong reading is worse than an absent one.
+        const interactions = opts.noInteractions ? [] : (screen.interactions || []);
+        if (navigated && interactions.length) {
+          let broken = null;
+          for (const interaction of interactions) {
+            sink = { findings: [], thirdParty: 0 };
+            const shot = join(opts.out, `${screen.id}--${interaction.id}@${viewportName}.png`);
+
+            if (broken) {
+              sink.findings.push({
+                kind: 'interaction-abandoned', severity: 'error', screen: screen.id, viewport: viewportName,
+                interaction: interaction.id,
+                detail: `${interaction.label}: not attempted — "${broken}" failed earlier on this screen, so the view `
+                  + 'it needed was never established. Nothing about this control was tested.',
+              });
+              closePass({ suppressed: {} }, null, interaction);
+              continue;
+            }
+
+            const landed = await runInteraction(page, {
+              screenId: screen.id, viewportName, interaction, sink,
+            });
+            if (!landed) broken = interaction.label;
+
+            const layout = await scanAndShoot(page, {
+              screenId: screen.id, viewportName, sink, shotPath: shot,
+            });
+            closePass(layout, shot, interaction);
+          }
         }
 
         page.off('console', onConsole);
         page.off('pageerror', onPageError);
         page.off('requestfailed', onRequestFailed);
         page.off('response', onResponse);
-
-        // "It is capped and says so" (CLAUDE.md) applied to suppression: a
-        // reader must be able to see that filtering happened and how much,
-        // for every screen, every run — never a silent slice.
-        const suppressed = {
-          ellipsis: layout.suppressed?.ellipsis || 0,
-          lineClamp: layout.suppressed?.lineClamp || 0,
-          thirdParty: thirdPartyCount,
-          clippedAncestor: layout.suppressed?.clippedAncestor || 0,
-          foreignFrame: layout.suppressed?.foreignFrame || 0,
-        };
-
-        screenReports.push({
-          id: screen.id, label: screen.label, path, viewport: viewportName,
-          screenshot: screenshotPath, findings, suppressed,
-        });
       }
 
       await ctx.close();
@@ -892,7 +1165,12 @@ export async function main(argv = process.argv.slice(2)) {
 
   const durationMs = Date.now() - startedAt;
   const totals = {
-    screens: screenReports.length,
+    // A PASS is a row (a first paint, or one interaction); a SCREEN is a route.
+    // Counting passes as screens would report a run that pressed seven controls
+    // on one screen as having covered seven screens.
+    screens: new Set(screenReports.map((r) => `${r.id}@${r.viewport}`)).size,
+    passes: screenReports.length,
+    interactions: screenReports.filter((r) => r.interaction).length,
     errors: screenReports.reduce((n, r) => n + r.findings.filter((f) => f.severity === 'error').length, 0),
     layout: screenReports.reduce((n, r) => n + r.findings.filter((f) => f.severity === 'layout').length, 0),
     // 'info' findings (third-party console/request noise) are recorded and
@@ -905,8 +1183,9 @@ export async function main(argv = process.argv.slice(2)) {
       thirdParty: screenReports.reduce((n, r) => n + (r.suppressed?.thirdParty || 0), 0),
       clippedAncestor: screenReports.reduce((n, r) => n + (r.suppressed?.clippedAncestor || 0), 0),
       foreignFrame: screenReports.reduce((n, r) => n + (r.suppressed?.foreignFrame || 0), 0),
+      viewport: screenReports.reduce((n, r) => n + (r.suppressed?.viewport || 0), 0),
     },
-    screenshots: screenReports.length,
+    screenshots: screenReports.filter((r) => r.screenshot).length,
   };
 
   const report = {
