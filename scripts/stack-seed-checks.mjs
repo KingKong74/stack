@@ -187,11 +187,19 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Control — auto-merge share', url: u('/api/control'), auth: true, json_path: 'ledger.merges.now.auto' },
     { name: 'Control — first-pass verdicts', url: u('/api/control'), auth: true, json_path: 'ledger.firstPass.now.verdicted' },
     { name: 'Control — executor vs advisor spend', url: u('/api/control'), auth: true, json_path: 'ledger.roles.executor.costUsd' },
-    // Turn 3 — whether the Refine dialog offers its ✦ draft at all. The button
-    // is ABSENT without a key, so losing this field silently removes an
-    // affordance rather than breaking one: the dialog still works and nobody
-    // finds out the assist stopped being offered.
-    { name: 'Review — the Gemini-ready flag', url: u('/api/review'), auth: true, json_path: 'geminiReady' },
+    // Turn 3 — whether a ✦ draft is offered at all. The button is ABSENT
+    // without a backend, so losing this field silently removes an affordance
+    // rather than breaking one: the dialog still works and nobody finds out the
+    // assist stopped being offered.
+    //
+    // It asserted `geminiReady` on /api/review until now, and had been red
+    // since #375 REPLACED that field with `agents` — the room's ops became the
+    // Foreman's, which runs Claude on the host, so a Gemini key stopped saying
+    // anything about whether they can run. The room's own readiness is already
+    // covered two lines up (`agents.foreman.ready`); the flag itself still
+    // exists, and still gates a ✦, on the DEBRIEF payload — so the check moves
+    // to where the contract actually lives rather than being deleted.
+    { name: 'Review — the Gemini-ready flag', url: u('/api/review/debrief'), auth: true, json_path: 'geminiReady' },
     // #263 — the auto-verdicted strip's count. It stays present (0 counts as
     // present) even with nothing on it, so losing the key entirely — the
     // route forgetting the field — is what this catches, not an empty strip.
