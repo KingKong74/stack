@@ -842,6 +842,19 @@ export const horizonOf = (items: RoadmapItem[], areaFilter: string): RoadmapItem
  */
 export function defaultLen(it: RoadmapItem, grain: Grain): number {
   if (it.estimate !== null) return Math.max(MIN_SCHED_LEN, Math.round(it.estimate * MIN_PER_WEEK));
+  // #412 — an IDEA is two hours until somebody sizes it, at every grain.
+  //
+  // Asked for as "default the estimate field to 2 hours", which that column
+  // cannot hold: `estimate` is NUMERIC(4,1) in WEEKS, so two hours is 0.0119 and
+  // stores as 0.0 — a zero-length bar, the exact thing the note above forbids.
+  // The request is really about the SIZE an unsized idea is drawn at, which is
+  // this function, so it lands here and the units rule is left alone.
+  //
+  // Above the grain fallbacks because an idea is unsized in a way a planned item
+  // is not: it is a line somebody's session dropped on the board, and three days
+  // is a claim about it that nobody made. It still yields to a real `estimate`,
+  // which is what "the owner can still override" means.
+  if (listKeyOf(it) === 'idea') return 2 * MIN_PER_HOUR;
   if (grain === 'hour') return 2 * MIN_PER_HOUR;
   if (grain === 'day') return 4 * MIN_PER_HOUR;
   return 3 * MIN_PER_DAY;

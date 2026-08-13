@@ -484,6 +484,34 @@ test('an unsized item gets a working length for the grain, never a zero-width ba
   assert.equal(defaultLen(item({ estimate: null }), 'quarter'), 3 * MIN_PER_DAY);
 });
 
+test('#412 — an unsized IDEA is two hours at every grain, not three days', () => {
+  // An idea is a line somebody's session dropped on the board and nobody has
+  // sized: the grain fallback would draw it as three days at a quarter view,
+  // which is a claim about it that nobody made.
+  const idea = { estimate: null, source: 'hook', reviewed: false };
+  for (const g of ['hour', 'day', 'week', 'month', 'quarter']) {
+    assert.equal(defaultLen(item(idea), g), 2 * MIN_PER_HOUR, g);
+  }
+  // A released fly card is the same population until it is signed off.
+  assert.equal(defaultLen(item({ ...idea, source: 'fly' }), 'quarter'), 2 * MIN_PER_HOUR);
+});
+
+test('#412 — a real estimate still wins, and a signed-off item is not an idea', () => {
+  // "The owner can still override" is exactly this: the estimate branch is
+  // above the idea branch, so sizing an idea sizes it.
+  assert.equal(
+    defaultLen(item({ estimate: 1, source: 'hook', reviewed: false }), 'quarter'),
+    MIN_PER_WEEK,
+  );
+  // Reviewed, claimed or ticked all move it out of the idea list, and with it
+  // out of the two-hour default — the size follows the STAGE, not the source.
+  assert.equal(defaultLen(item({ estimate: null, source: 'hook', reviewed: true }), 'quarter'), 3 * MIN_PER_DAY);
+  assert.equal(
+    defaultLen(item({ estimate: null, source: 'hook', reviewed: false, claimedBy: 'term:x' }), 'quarter'),
+    3 * MIN_PER_DAY,
+  );
+});
+
 test('every duration preset is a length the domain and the server will accept', () => {
   for (const d of DUR_OPTIONS) {
     assert.ok(d.min >= MIN_SCHED_LEN && d.min <= SCHED_MINUTES, d.label);
