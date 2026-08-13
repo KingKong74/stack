@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Roadmap as RoadmapData, RoadmapItem, Future, Severity, Priority, Bug, BugStatus, WorkbenchPhase, ProjectPulse } from '../types';
 import {
   getProjectDetail, getProjectPulse, type ProjectDetailData,
@@ -26,6 +26,7 @@ import { BugModal } from '../components/BugModal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { TabTerminal } from '../components/TabTerminal';
+import { useAutoRefresh } from '../lib/autoRefresh';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
 // (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
@@ -208,12 +209,15 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   // filed into the project already on screen would otherwise be saved and
   // invisible. Re-read the payload (no loading flash — the page is already
   // drawn) and bump the canvas, which owns its own copy of the notes.
-  useEffect(() => onItemFiled((filedSlug) => {
-    if (filedSlug !== slug) return;
+  const reread = useCallback(() => {
     getProjectDetail(slug)
       .then((d) => { setData(d); setNotesNonce((n) => n + 1); })
       .catch(() => { /* the write succeeded; a stale read is not worth an error banner */ });
-  }), [slug, setData]);
+  }, [slug]);
+  useEffect(() => onItemFiled((filedSlug) => {
+    if (filedSlug === slug) reread();
+  }), [slug, reread]);
+
   // #314 — the ids a promotion actually carried through: the idea plus its
   // orbit (planets/moons), never just the one that was clicked. Keep-or-delete
   // has to cover the whole set, or a deleted star leaves its planets pointing
@@ -225,6 +229,52 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const [editingUrl, setEditingUrl] = useState<'site' | 'repo' | null>(null);
   const [urlDraft, setUrlDraft] = useState('');
   const [actionError, setActionError] = useState('');
+
+  // #409 — an AGENT's edits have no event to fire. The Curator rewrites a title
+  // on the host, the Foreman re-tags a change, a night lands a `built_note`, and
+  // this screen went on drawing whatever it fetched when it mounted, so the only
+  // way to see any of it was a manual reload. One re-read fixes it for EVERY tab
+  // rather than only the Roadmap, because `data` is the single payload all of
+  // them render from — which is also why this must not be done per-tab.
+  //
+  // Through `useAutoRefresh` (#312), never a bare setInterval: the device-local
+  // Auto refresh setting governs the cadence and a hidden tab stops polling.
+  //
+  // GATED ON THE OWNER'S OWN HANDS. Replacing `data` under a drag makes the bar
+  // you are holding jump, and under an open modal it can swap the very row being
+  // edited — a background read is worth nothing if it fights the foreground. So
+  // it waits on a pointer that is currently DOWN, which covers every drag
+  // surface at once (timeline bars, calendar grips, the board's reorder, the
+  // canvas) without threading a flag up through four components, plus any modal
+  // or confirm this screen owns. Every one of those is brief and the next tick
+  // is seconds behind it, so nothing is lost by waiting — whereas a refresh that
+  // lands mid-gesture is a bug the owner sees.
+  //
+  // Note this deliberately does NOT gate on `checksBusy` or the Curator's own
+  // in-flight reads: those are the screen waiting on the server, not the owner
+  // holding something, and a refresh during one is exactly what should happen.
+  const [pointerDown, setPointerDown] = useState(false);
+  useEffect(() => {
+    const down = () => setPointerDown(true);
+    const up = () => setPointerDown(false);
+    window.addEventListener('pointerdown', down);
+    window.addEventListener('pointerup', up);
+    // A pointer released outside the window never fires pointerup on it, and a
+    // stuck `true` here would silently stop the screen refreshing for good.
+    window.addEventListener('pointercancel', up);
+    window.addEventListener('blur', up);
+    return () => {
+      window.removeEventListener('pointerdown', down);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      window.removeEventListener('blur', up);
+    };
+  }, []);
+  const interacting = pointerDown
+    || bugModal.open || roadModal.open || shareOpen || editingUrl !== null
+    || confirmRoadDelete !== null || confirmBugDelete !== null
+    || cleanup !== null || promotedFuture !== null || pendingFuture !== null;
+  useAutoRefresh(reread, !interacting);
 
   // #282 — the Review room's ＋ Bug / ＋ Audit. The room has no modals and no
   // project loaded, so it stashes a prefill and opens the project; this picks it
