@@ -644,6 +644,28 @@ export function slipOf(it: RoadmapItem): Slip {
 }
 
 /**
+ * #425 — WHERE A NEWLY ADDED ITEM LANDS.
+ *
+ * An item added by hand used to be born unscheduled, so the act of deciding to
+ * do something put it in the tray rather than on the plan, and the timeline only
+ * ever showed the subset somebody had gone back and dragged. It now starts at
+ * now, for a working day.
+ *
+ * A DAY, not `defaultLen`'s three: this runs when nobody is looking at a grain
+ * (the add modal is reachable from every tab), and a new line is the least-known
+ * thing on the board — the smaller claim is the honest one, and it is one drag
+ * from being whatever it really is.
+ *
+ * Only ever for something a PERSON added. Nothing here is applied to hook
+ * extractions or agent posts: `sched` is omitted for those and NULL still means
+ * UNSCHEDULED, which is a real state and the right one for work nobody has
+ * agreed to yet.
+ */
+export function newItemSched(weekZero: string | null, at: Date = new Date()): SchedSpan {
+  return { start: Math.min(nowMin(weekZero, at), SCHED_MINUTES - MIN_PER_DAY), len: MIN_PER_DAY };
+}
+
+/**
  * #410 — IS THIS WORK IN FLIGHT? Claimed by a session, or ticked. Either way its
  * bar reports something that actually happened and must not be moved by a clock.
  */

@@ -27,6 +27,7 @@ import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { TabTerminal } from '../components/TabTerminal';
 import { useAutoRefresh } from '../lib/autoRefresh';
+import { newItemSched } from '../lib/plan';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
 // (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
@@ -376,7 +377,9 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         setRoadModal(roadModalClosed);
         return;
       }
-      const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: branch || undefined, area: area || undefined, plan: plan.length ? plan : undefined, risk: risk !== 'normal' ? risk : undefined, tier: tier || undefined });
+      // #425 — an item somebody adds by hand lands ON the timeline, so deciding
+      // to do something puts it on the plan rather than in the tray.
+      const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: branch || undefined, area: area || undefined, plan: plan.length ? plan : undefined, risk: risk !== 'normal' ? risk : undefined, tier: tier || undefined, sched: newItemSched(project.weekZero) });
       const fromNote = roadModal.fromNote;
       const fromFuture = pendingFuture;
       if (roadModal.fromDraft) updateRoadDraft(null); // the draft landed — clear it

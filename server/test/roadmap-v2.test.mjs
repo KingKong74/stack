@@ -60,6 +60,8 @@ async function main() {
   const other = await mk('Usage metering', { bucket: 'should', area: 'billing' });
 
   const wk = (n) => n * 7 * 24 * 60;
+  // The horizon, twinned with SCHED_WEEKS in server/src/routes/roadmap.js.
+  const HORIZON_WEEKS = 24;
   const hr = (n) => n * 60;
 
   // ---- scheduling + the baseline -----------------------------------------
@@ -79,6 +81,7 @@ async function main() {
 
   r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${feature.id}`, { rebaseline: true })).json;
   ok('re-baselining is the one explicit way to accept the new plan', r.baseline?.start === wk(9) && r.baseline?.len === wk(6), r.baseline);
+
 
   r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${feature.id}`, { sched: null })).json;
   ok('unscheduling returns the bar to the tray', r.sched === null, r.sched);
@@ -227,6 +230,29 @@ async function main() {
   ok('an estimate round-trips as a number, not a pg string', r.estimate === 2.5, r.estimate);
   r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${ticket.id}`, { estimate: null })).json;
   ok('unsized is null, not zero — an unsized ticket is not a free one', r.estimate === null, r.estimate);
+
+  // ---- #425: a row may be born on the timeline ----------------------------
+  // LAST on purpose: these add rows, and several checks above assert an exact
+  // item or area count. Creating them earlier makes those fail for a reason
+  // that has nothing to do with what they are testing.
+  // ---- #425: a row may be born on the timeline ----------------------------
+  const born = await mk('Born scheduled', { bucket: 'should', sched: { start: wk(2), len: hr(6) } });
+  ok('#425 — a create may carry a schedule', born.sched?.start === wk(2) && born.sched?.len === hr(6), born.sched);
+  ok('#425 — …and it is baselined on the way in, or its first drag would slip against nothing',
+    born.baseline?.start === wk(2) && born.baseline?.len === hr(6), born.baseline);
+
+  const unplaced = await mk('Born in the tray');
+  ok('#425 — omitting sched still means UNSCHEDULED, which is a real state',
+    unplaced.sched === null && unplaced.baseline === null, { s: unplaced.sched, b: unplaced.baseline });
+
+  const junk = await mk('Born with nonsense', { sched: { start: 'soon', len: null } });
+  ok('#425 — a malformed sched on create is ignored, never stored or 500d',
+    junk.sched === null, junk.sched);
+
+  const farOut = await mk('Born past the horizon', { sched: { start: wk(99999), len: wk(9999) } });
+  ok('#425 — a create is clamped to the same domain a drag is',
+    farOut.sched.start + farOut.sched.len <= wk(HORIZON_WEEKS), farOut.sched);
+
 
   await call('DELETE', `/api/projects/${SLUG}`);
   await call('DELETE', `/api/projects/${SLUG}/purge`);

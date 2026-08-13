@@ -38,6 +38,7 @@ const {
   ticksFor, windowLabel, spanLabel,
   whatsNext, fmtWhen, calendarDays, calendarMonths, CAL_HOUR_FROM,
   slipOf, layoutLane, scopeTotals, defaultLen, DUR_OPTIONS, rolledSched, isRolled,
+  newItemSched,
   listKeyOf, inCycle, areaMatches, horizonOf, UNALLOCATED,
 } = await import(planUrl.href);
 
@@ -482,6 +483,26 @@ test('an unsized item gets a working length for the grain, never a zero-width ba
   }
   assert.equal(defaultLen(item({ estimate: null }), 'hour'), 2 * MIN_PER_HOUR);
   assert.equal(defaultLen(item({ estimate: null }), 'quarter'), 3 * MIN_PER_DAY);
+});
+
+// --- #425, where a new item lands --------------------------------------------
+
+test('#425 — an item added by hand is born ON the timeline, at now', () => {
+  const at = new Date(Date.parse('2026-06-17T14:36:00Z'));
+  const s = newItemSched(WZ, at);
+  assert.equal(s.start, nowMin(WZ, at), 'starts at now');
+  assert.equal(s.len, MIN_PER_DAY, 'a working day — the smallest honest claim about a new line');
+});
+
+test('#425 — a new item never lands outside the domain the server will accept', () => {
+  // Without a week zero, now is the fixed fallback; with one far in the past it
+  // can be beyond the horizon, and an unclamped start would be rejected on
+  // arrival or clamped to something nobody chose.
+  const late = new Date(Date.parse('2099-01-01T00:00:00Z'));
+  for (const wz of [null, WZ]) {
+    const s = newItemSched(wz, late);
+    assert.ok(s.start >= 0 && s.start + s.len <= SCHED_MINUTES, `${wz} -> ${JSON.stringify(s)}`);
+  }
 });
 
 // --- #410, the roll to now ---------------------------------------------------

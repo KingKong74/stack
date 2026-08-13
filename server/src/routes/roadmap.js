@@ -185,14 +185,33 @@ roadmap.post('/', async (req, res) => {
     'SELECT COALESCE(MAX(position), -1) + 1 AS p FROM roadmap_items WHERE project_id = $1 AND bucket = $2',
     [req.project.id, bucket]
   );
+  // #425 — a row may be born ON the timeline. The caller supplies the span
+  // because placement is the timeline's own arithmetic (lib/plan.ts owns "now"
+  // and the default length, and week zero lives on the project), and a second
+  // copy of that here is exactly the drift #401 spent a migration undoing.
+  //
+  // Clamped and baselined identically to PATCH's `sched`: a bar created at a
+  // position is a plan, so it gets a baseline like any other, or its first drag
+  // would register as a slip against nothing. Omitted (every hook extraction,
+  // every agent post) still means NULL, which is UNSCHEDULED and a real state —
+  // auto-placing a push's worth of unreviewed extractions would bury the chart
+  // under work nobody has agreed to yet.
+  let schedStart = null; let schedLen = null;
+  const s = req.body?.sched;
+  if (s && Number.isFinite(s.start) && Number.isFinite(s.len)) {
+    schedStart = Math.max(0, Math.min(SCHED_MINUTES - MIN_SCHED_LEN, Math.trunc(s.start)));
+    schedLen = Math.max(MIN_SCHED_LEN, Math.min(SCHED_MINUTES - schedStart, Math.trunc(s.len)));
+  }
   const { rows } = await q(
     // #262 brought risk_source, #334 brought agent_profile, on separate
     // branches that each rewrote this one statement. Both columns are real;
     // the merge left two whole INSERTs stacked, which JS read as a tagged
     // template call rather than a syntax error.
-    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, tier, agent_profile, fly_session)
-     VALUES ($1,$2,$3,$4,$5,$14,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$15) RETURNING *`,
-    [req.project.id, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, tier, agentProfile, source, flySession]
+    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, tier, agent_profile, fly_session,
+                                sched_start_min, sched_len_min, plan_start_min, plan_len_min)
+     VALUES ($1,$2,$3,$4,$5,$14,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$15,$16,$17,$16,$17) RETURNING *`,
+    [req.project.id, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, tier, agentProfile, source, flySession,
+      schedStart, schedLen]
   );
   res.status(201).json(roadmapItemShape(rows[0]));
 });

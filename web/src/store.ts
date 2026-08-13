@@ -1867,7 +1867,15 @@ export async function getRoadmap(slug: string): Promise<Roadmap> {
   return request<Roadmap>(roadmapBase(slug));
 }
 export async function createRoadmapItem(
-  slug: string, input: { title: string; note: string; bucket: Priority; claimed_by?: string; area?: string; plan?: PlanStep[]; risk?: RoadmapItem['risk']; tier?: RoadmapItem['tier'] },
+  slug: string,
+  // #425 — `sched` is optional and the caller decides. Omitted means the row is
+  // born unscheduled, which stays the right answer for anything the owner did
+  // not place by hand.
+  input: {
+    title: string; note: string; bucket: Priority; claimed_by?: string; area?: string;
+    plan?: PlanStep[]; risk?: RoadmapItem['risk']; tier?: RoadmapItem['tier'];
+    sched?: { start: number; len: number };
+  },
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(roadmapBase(slug), { method: 'POST', body: input });
 }
