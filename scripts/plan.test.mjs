@@ -37,7 +37,7 @@ const {
   leftPct, spanPct, inView, snapFor, snapTo, timeAt, clampSpanToDomain,
   ticksFor, windowLabel, spanLabel,
   whatsNext, fmtWhen, calendarDays, calendarMonths, CAL_HOUR_FROM,
-  slipOf, layoutLane, scopeTotals, defaultLen, DUR_OPTIONS,
+  slipOf, layoutLane, scopeTotals, defaultLen, DUR_OPTIONS, rolledSched, isRolled,
   listKeyOf, inCycle, areaMatches, horizonOf, UNALLOCATED,
 } = await import(planUrl.href);
 
@@ -482,6 +482,53 @@ test('an unsized item gets a working length for the grain, never a zero-width ba
   }
   assert.equal(defaultLen(item({ estimate: null }), 'hour'), 2 * MIN_PER_HOUR);
   assert.equal(defaultLen(item({ estimate: null }), 'quarter'), 3 * MIN_PER_DAY);
+});
+
+// --- #410, the roll to now ---------------------------------------------------
+
+test('#410 — an unstarted bar follows now instead of falling behind it', () => {
+  const now = 10 * MIN_PER_WEEK;
+  const it = item({ sched: { start: now - MIN_PER_WEEK, len: MIN_PER_DAY } });
+  const rolled = rolledSched(it, now);
+  assert.equal(rolled.start, now, 'starts at now');
+  assert.equal(rolled.len, MIN_PER_DAY, 'and keeps its length — only the start floors');
+  assert.ok(isRolled(it, now));
+});
+
+test('#410 — work IN FLIGHT is a record, not a plan, so nothing moves it', () => {
+  const now = 10 * MIN_PER_WEEK;
+  const behind = { start: now - MIN_PER_WEEK, len: MIN_PER_DAY };
+  for (const over of [{ claimedBy: 'term:x' }, { done: true }, { skipped: true }, { archived: true }]) {
+    const it = item({ sched: behind, ...over });
+    assert.deepEqual(rolledSched(it, now), behind, JSON.stringify(over));
+    assert.equal(isRolled(it, now), false, JSON.stringify(over));
+  }
+});
+
+test('#410 — a bar already at or after now is left exactly alone', () => {
+  const now = 10 * MIN_PER_WEEK;
+  for (const start of [now, now + 1, now + MIN_PER_WEEK]) {
+    const it = item({ sched: { start, len: MIN_PER_DAY } });
+    assert.equal(rolledSched(it, now), it.sched, `start ${start}`);
+    assert.equal(isRolled(it, now), false);
+  }
+  // Unscheduled is not "behind" — it is not on the chart at all.
+  assert.equal(rolledSched(item({ sched: null }), now), null);
+  assert.equal(isRolled(item({ sched: null }), now), false);
+});
+
+test('#410 — the roll is DISPLAY only: it never touches sched or the baseline', () => {
+  // The stored span is what slip is measured from, and the ghost is the
+  // baseline. If the roll wrote either, the chart would erase its own evidence
+  // that the work slipped at all.
+  const now = 10 * MIN_PER_WEEK;
+  const sched = { start: now - MIN_PER_WEEK, len: MIN_PER_DAY };
+  const baseline = { start: now - 2 * MIN_PER_WEEK, len: MIN_PER_DAY };
+  const it = item({ sched, baseline });
+  rolledSched(it, now);
+  assert.deepEqual(it.sched, sched, 'sched untouched');
+  assert.deepEqual(it.baseline, baseline, 'baseline untouched');
+  assert.equal(slipOf(it).min, MIN_PER_WEEK, 'slip still reads off the stored span');
 });
 
 test('#412 — an unsized IDEA is two hours at every grain, not three days', () => {

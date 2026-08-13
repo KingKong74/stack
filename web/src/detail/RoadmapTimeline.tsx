@@ -65,7 +65,8 @@ import {
   MIN_SCHED_LEN, PX_DAY_MAX, PX_DAY_MIN, UNALLOCATED, ZOOM_STOPS,
   areaMatches, calendarDays, calendarMonths, centreOn, clampSpan, clampSpanToDomain,
   dateAt, defaultLen, dowShort, fitAll as fitAllView, fmtDate, fmtDur, fmtTime,
-  fmtWhen, grainFor, horizonOf, layoutLane, leftPct, nowMin, panBy, pxPerDay, scopeTotals,
+  fmtWhen, grainFor, horizonOf, isRolled, layoutLane, leftPct, nowMin, panBy, pxPerDay,
+  rolledSched, scopeTotals,
   slipOf, snapFor, snapTo, spanForPx, spanLabel, spanPct, ticksFor, timeAt, viewAround,
   weekNo, whatsNext, windowLabel, zoomAt,
   type Grain, type Viewport,
@@ -266,12 +267,34 @@ export function RoadmapTimeline({
   const orphans = visible.filter(
     (i) => i.sched && !laneNames.includes(i.area) && areaMatches(i.area, areaFilter));
 
+  // #410 — an unstarted bar is drawn from now rather than from a start that has
+  // already gone by, so the plan does not rot while you look at it. The bar you
+  // are DRAGGING is never rolled: `live` wins outright, or the bar would fight
+  // the pointer at exactly the moment you are placing it.
+  const rollFor = (i: RoadmapItem): RoadmapItem => {
+    const s = rolledSched(i, now);
+    return s === i.sched ? i : { ...i, sched: s };
+  };
   const withLive = (i: RoadmapItem): RoadmapItem =>
-    (live && live.id === i.id ? { ...i, sched: live.sched } : i);
+    (live && live.id === i.id ? { ...i, sched: live.sched } : rollFor(i));
   const liveItems = useMemo(
     () => visible.map(withLive),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [visible, live]);
+    [visible, live, now]);
+  // Which bars were moved, and how far behind they had fallen. A roll the chart
+  // does not admit to is a chart quietly disagreeing with the drawer, so the bar
+  // wears it — see `.rt-bar.rolled` and the title below.
+  // The bar being DRAGGED is left out: `live` owns its position, so calling it
+  // rolled would label the bar under your own pointer as something the chart
+  // moved for you.
+  const rolledBy = useMemo(() => {
+    const m = new Map<number, number>();
+    visible.forEach((i) => {
+      if (i.id !== live?.id && isRolled(i, now)) m.set(i.id, now - i.sched!.start);
+    });
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, now, live]);
 
   const selected = selectedId === null ? null : items.find((i) => i.id === selectedId) || null;
   const selectedLive = selected ? withLive(selected) : null;
@@ -499,7 +522,7 @@ export function RoadmapTimeline({
                       )}
 
                       {laid.map(({ area: a, lane }) => (
-                        <Lane key={a.name} dot={a.dot} ticks={ticks} bands={bands}
+                        <Lane key={a.name} dot={a.dot} ticks={ticks} bands={bands} rolledBy={rolledBy}
                           lane={lane} height={heightOf(lane)}
                           view={view} selectedId={selectedId} proposed={proposed}
                           onDrop={dropOnLane(a.name)} onGoTo={goTo}
@@ -511,7 +534,7 @@ export function RoadmapTimeline({
 
                       {orphanLane && openOrphans && (
                         // No dot and no picker: there is no area here to give a colour to.
-                        <Lane dot="" ticks={ticks} bands={bands}
+                        <Lane dot="" ticks={ticks} bands={bands} rolledBy={rolledBy}
                           lane={orphanLane} height={heightOf(orphanLane)}
                           view={view} selectedId={selectedId} proposed={proposed}
                           onDrop={dropOnLane('')} onGoTo={goTo}
@@ -727,7 +750,7 @@ const pctStyle = (p: { left: number; width: number }) =>
 
 // One area lane. Split out so a lane re-renders on its own during a drag.
 function Lane({
-  dot, lane, height, ticks, bands, view, selectedId, proposed,
+  dot, lane, height, ticks, bands, view, selectedId, proposed, rolledBy,
   onDrop, onGoTo, onSelect, onOpen, onDown, onUnschedule,
 }: {
   dot: string;
@@ -740,6 +763,8 @@ function Lane({
   view: Viewport;
   selectedId: number | null;
   proposed?: Map<number, SchedSpan>;
+  /** #410 — id -> how far behind now it had fallen before being rolled. */
+  rolledBy: Map<number, number>;
   onDrop: (e: React.DragEvent) => void;
   onGoTo: (at: number) => void;
   onSelect: (id: number) => void;
@@ -781,6 +806,9 @@ function Lane({
         const it = bar.item;
         const state = it.done ? 'done' : it.claimedBy ? 'now' : 'plan';
         const sel = selectedId === it.id;
+        // #410 — how far behind now this one had fallen before it was rolled.
+        // The bar being dragged is already absent from the map.
+        const behind = rolledBy.get(it.id);
         const prop = proposed?.get(it.id);
         const top = 9 + bar.row * BAR_ROW_H;
         return (
@@ -799,7 +827,7 @@ function Lane({
                 there is (styles.css). `--tint` is unset on the Unallocated lane,
                 where the plain state colours still apply — an item with no area
                 has no colour to be given. */}
-            <div className={`rt-bar ${state}${dot ? ' tinted' : ''}${sel ? ' sel' : ''}`}
+            <div className={`rt-bar ${state}${dot ? ' tinted' : ''}${sel ? ' sel' : ''}${behind ? ' rolled' : ''}`}
               style={{
                 top, left: `${bar.left}%`, width: `${bar.width}%`,
                 // A bar that starts before the window keeps its title VISIBLE:
@@ -815,7 +843,9 @@ function Lane({
               // No onClick/onDoubleClick: preventDefault in onDown suppresses
               // both. Selecting and opening are decided in the pointer flow
               // above, which is the only place that can tell a press from a drag.
-              title={`${it.title} — drag to reschedule, click for its detail, double-click to open`}>
+              title={behind
+                ? `${it.title} — not started, so it follows today. Its slot was ${fmtWhen(behind, false)} ago; drag it to commit to a date.`
+                : `${it.title} — drag to reschedule, click for its detail, double-click to open`}>
               <span className="cap" aria-hidden="true" />
               {bar.inside && <span className="t">{it.title}</span>}
               <span className="grip" title="Drag to change how long this takes"

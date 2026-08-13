@@ -10,7 +10,7 @@ import {
 } from '../store';
 import {
   ROOT, SMART, SYSTEM, KIND_LABEL, childrenOf, descendantsOf, countIn, pathTo, canFileInto,
-  isFolder, isSmart, isSystem, systemOf, sortCards, foldName, phasesOf, upFrom,
+  isFolder, isSmart, isSystem, isPinned, pinnedFolder, systemOf, sortCards, foldName, phasesOf, upFrom,
   mapLayout, MAP_NODE_W,
   type FolderId, type SortKey,
 } from '../lib/workbenchTree';
@@ -43,9 +43,21 @@ import { WorkbenchDesign } from './WorkbenchDesign';
 // off to a card you cannot see is a thread the canvas cannot tell you about —
 // and the status bar counts what that hides rather than letting it go quiet.
 
-const Z_MIN = 0.4;
-const Z_MAX = 2;
+// The zoom range (#417). 4× rather than the first cut's 2×: a plan card's
+// phase list is 11px type, and reading one on a laptop meant leaning in. The
+// floor came down with it, because a canvas that can be worked at 400% is one
+// you then have to find your way back out of.
+const Z_MIN = 0.25;
+const Z_MAX = 4;
 const GRID = 26;
+
+// THE MINIMAP's size, in this file rather than only in the stylesheet, because
+// the frame it draws has to be fitted to the SHAPE of the box (#417) — scaling
+// x and y independently to a fixed rectangle was what made the viewport rect
+// lie about which way the canvas ran. A CSS-only width would leave the maths
+// guessing at it, and the two would drift the first time either changed.
+const MINI_W = 208;
+const MINI_H = 146;
 
 // The three ways to look at a folder. Canvas is the original Workbench and
 // stays the default; the other two are for a folder holding more than a screen
@@ -91,6 +103,11 @@ const OP_HINT: Record<WorkbenchOp, string> = {
 };
 
 type LogEntry = { when: string; t: string };
+
+// One line of the Explorer's flattened tree. `kids` is everything inside, not
+// only the folders — it is the count printed on the row, and a folder holding
+// six notes and no subfolders is not empty.
+type TreeRow = { card: WorkbenchCard; depth: number; open: boolean; kids: number };
 
 type PolarisFilter = 'unpicked' | 'recent' | 'all';
 const POLARIS_FILTERS: { key: PolarisFilter; label: string }[] = [
@@ -582,7 +599,10 @@ export function Workbench({
   const foldMarked = () => guard(async () => {
     const ids = [...marked];
     if (ids.length < 2) return;
-    const members = ids.map((id) => allCards.find((c) => c.id === id)).filter(Boolean) as WorkbenchCard[];
+    // The Stack folder is never a member of a fold (#416): it cannot be moved,
+    // so folding it in would build a folder the server then refuses to fill.
+    const members = (ids.map((id) => allCards.find((c) => c.id === id))
+      .filter(Boolean) as WorkbenchCard[]).filter((c) => !isPinned(c));
     if (members.length < 2) return;
     const anchor = members[0];
     const folder = await addWorkbenchFolder(slug, {
@@ -1113,20 +1133,31 @@ export function Workbench({
   // One row per folder in the Explorer, flattened depth-first so the tree can
   // be a list of divs rather than nested containers — nesting is what makes a
   // drag target's hit box overlap its parent's.
-  const treeRows = (() => {
-    const rows: { card: WorkbenchCard; depth: number; open: boolean; kids: number }[] = [];
-    const walk = (parent: FolderId, depth: number, seen: Set<number>) => {
-      for (const c of childrenOf(allCards, parent)) {
-        if (!isFolder(c) || seen.has(c.id)) continue;
-        seen.add(c.id);
-        const open = expanded.has(c.id);
-        rows.push({ card: c, depth, open, kids: countIn(allCards, c.id) });
-        if (open) walk(c.id, depth + 1, seen);
-      }
-    };
-    walk(ROOT, 0, new Set());
+  //
+  // THE STACK FOLDER IS LIFTED OUT OF THIS LIST (#416) and drawn in line with
+  // Polaris and Roadmap instead, because where it sits is not a sort result: it
+  // is always there and always first, and a folder someone called "Admin" must
+  // not be able to push it down. Its own subtree flattens through this same
+  // walk, so an expanded Stack folder reads exactly like any other.
+  const flatten = (parent: FolderId, depth: number, seen: Set<number>): TreeRow[] => {
+    const rows: TreeRow[] = [];
+    for (const c of childrenOf(allCards, parent)) {
+      if (!isFolder(c) || seen.has(c.id) || isPinned(c)) continue;
+      seen.add(c.id);
+      const open = expanded.has(c.id);
+      rows.push({ card: c, depth, open, kids: countIn(allCards, c.id) });
+      if (open) rows.push(...flatten(c.id, depth + 1, seen));
+    }
     return rows;
-  })();
+  };
+  const treeRows = flatten(ROOT, 0, new Set());
+  const pinned = pinnedFolder(allCards);
+  const pinnedKids = pinned ? countIn(allCards, pinned.id) : 0;
+  const pinnedOpen = !!pinned && expanded.has(pinned.id);
+  const pinnedRows = pinned && pinnedOpen ? flatten(pinned.id, 1, new Set()) : [];
+  // Standing IN the Stack folder — which is what puts the two pulls on the dock
+  // (#416) and nothing else.
+  const inPinned = !!pinned && cwd === pinned.id;
 
   const toggleExpand = (id: number) => setExpanded((prev) => {
     const next = new Set(prev);
@@ -1154,7 +1185,10 @@ export function Workbench({
   });
 
   const dragProps = (c: WorkbenchCard) => ({
-    draggable: true,
+    // The Stack folder does not drag anywhere (#416) — every drop it could
+    // reach is refused, and a drag that can only end in a refusal is a gesture
+    // the surface should never have started.
+    draggable: !isPinned(c),
     onDragStart: (e: React.DragEvent) => {
       setDragging(c.id);
       e.dataTransfer.effectAllowed = 'move';
@@ -1221,9 +1255,12 @@ export function Workbench({
   // than a rectangle wandering an imaginary 2400px plane.
   const mini = (() => {
     if (!minimap || !spatialRef.current) return null;
-    const boxes = map
-      ? map.nodes.map((n) => ({ x: n.x, y: n.y, w: MAP_NODE_W, h: 44 }))
-      : shown.map((c) => ({ x: c.x, y: c.y, w: c.w, h: hOf(c) }));
+    // Each box carries WHAT IT IS, so the minimap is read as a plan of the
+    // canvas rather than a field of identical grey chips — the folders are the
+    // landmarks you navigate by, and a wall of one colour hid them (#417).
+    const boxes: { x: number; y: number; w: number; h: number; kind: string }[] = map
+      ? map.nodes.map((n) => ({ x: n.x, y: n.y, w: MAP_NODE_W, h: 44, kind: 'folder' }))
+      : shown.map((c) => ({ x: c.x, y: c.y, w: c.w, h: hOf(c), kind: c.kind }));
     if (!boxes.length) return null;
     // RAW bounds decide whether anything overflows; PADDED bounds are what the
     // minimap draws. Using the padded ones for both lets the display margin
@@ -1242,10 +1279,27 @@ export function Workbench({
     // promising one for two cards sitting side by side.
     if (rawW <= vw / zoom && rawH <= vh / zoom) return null;
     const pad = 80;
-    const x0 = rawX0 - pad;
-    const y0 = rawY0 - pad;
-    const w = rawW + pad * 2;
-    const h = rawH + pad * 2;
+    let x0 = rawX0 - pad;
+    let y0 = rawY0 - pad;
+    let w = rawW + pad * 2;
+    let h = rawH + pad * 2;
+    // FIT THE FRAME TO THE BOX'S SHAPE, don't stretch the world into it (#417).
+    // Percentages of two different scales were being written into one square
+    // element, so a canvas twice as wide as it is tall drew as if it were
+    // square: the cards came out the wrong shape and — the part that actually
+    // misleads — so did the viewport rect, which is the one thing in here that
+    // has to be trusted. Growing the SHORT side keeps every box in frame; the
+    // alternative, cropping the long one, hides work.
+    const aspect = MINI_W / MINI_H;
+    if (w / h < aspect) {
+      const nw = h * aspect;
+      x0 -= (nw - w) / 2;
+      w = nw;
+    } else {
+      const nh = w / aspect;
+      y0 -= (nh - h) / 2;
+      h = nh;
+    }
     // The viewport rect, in the same world coordinates as the boxes.
     const vx = -pan.x / zoom;
     const vy = -pan.y / zoom;
@@ -1258,8 +1312,36 @@ export function Workbench({
         const wy = y0 + fy * h;
         setPan({ x: vw / 2 - wx * zoom, y: vh / 2 - wy * zoom });
       },
+      // DRAGGING THE RECT ITSELF IS RELATIVE, not a centring jump: grabbing a
+      // window by its edge and having it leap so its middle is under your
+      // finger is the one interaction a minimap must not have. Everywhere else
+      // in the frame still centres, which is what a press on empty space means.
+      // Functional, not a read of panRef: a drag fires faster than a render, and
+      // reading the pan back each time would drop every move that landed
+      // between two paints — the rect would trail the pointer.
+      panBy: (dfx: number, dfy: number) => setPan((p) => ({
+        x: p.x - dfx * w * zoom, y: p.y - dfy * h * zoom,
+      })),
     };
   })();
+
+  // One Explorer row, shared by the Stack folder's subtree and the owner's own
+  // folders — the two lists are drawn in different places and must not drift
+  // into two different rows.
+  const folderRow = (r: TreeRow) => (
+    <button key={r.card.id}
+      className={`wb-tree-row${cwd === r.card.id ? ' on' : ''}${over === r.card.id ? ' over' : ''}`}
+      style={{ paddingLeft: 10 + (r.depth + 1) * 13 }}
+      onClick={() => navigate(r.card.id)}
+      onDoubleClick={() => toggleExpand(r.card.id)}
+      {...dragProps(r.card)} {...dropProps(r.card.id)}>
+      <span className={`twist${r.kids ? '' : ' none'}${r.open ? ' open' : ''}`}
+        onClick={(e) => { e.stopPropagation(); toggleExpand(r.card.id); }}>▸</span>
+      <span className="ic" />
+      <span className="name">{r.card.title || 'Untitled folder'}</span>
+      <span className="count">{r.kids}</span>
+    </button>
+  );
 
   const sortHead = (key: SortKey, label: string) => (
     <button className={`wb-sort${sortKey === key ? ' on' : ''}`}
@@ -1385,20 +1467,27 @@ export function Workbench({
                 </span>
               </button>
             ))}
-            {treeRows.map((r) => (
-              <button key={r.card.id}
-                className={`wb-tree-row${cwd === r.card.id ? ' on' : ''}${over === r.card.id ? ' over' : ''}`}
-                style={{ paddingLeft: 10 + (r.depth + 1) * 13 }}
-                onClick={() => navigate(r.card.id)}
-                onDoubleClick={() => toggleExpand(r.card.id)}
-                {...dragProps(r.card)} {...dropProps(r.card.id)}>
-                <span className={`twist${r.kids ? '' : ' none'}${r.open ? ' open' : ''}`}
-                  onClick={(e) => { e.stopPropagation(); toggleExpand(r.card.id); }}>▸</span>
-                <span className="ic" />
-                <span className="name">{r.card.title || 'Untitled folder'}</span>
-                <span className="count">{r.kids}</span>
+            {/* THE STACK FOLDER (#416), in line with those two and a real
+                folder unlike them — it takes drops. No drag handle and no ×
+                anywhere on it: it is not the owner's to move or remove, and a
+                control that is offered and then refused is worse than one that
+                was never drawn. */}
+            {pinned && (
+              <button
+                className={`wb-tree-row system pinned${cwd === pinned.id ? ' on' : ''}${over === pinned.id ? ' over' : ''}`}
+                style={{ paddingLeft: 23 }}
+                onClick={() => navigate(pinned.id)}
+                onDoubleClick={() => toggleExpand(pinned.id)}
+                {...dropProps(pinned.id)}>
+                <span className={`twist${pinnedKids ? '' : ' none'}${pinnedOpen ? ' open' : ''}`}
+                  onClick={(e) => { e.stopPropagation(); toggleExpand(pinned.id); }}>▸</span>
+                <span className="ic" style={{ background: 'var(--sage)' }} />
+                <span className="name">{pinned.title}</span>
+                <span className="count">{pinnedKids}</span>
               </button>
-            ))}
+            )}
+            {pinnedRows.map((r) => folderRow(r))}
+            {treeRows.map((r) => folderRow(r))}
             {!treeRows.length && (
               <div className="wb-tree-empty">
                 {/* "No folders yet" sat directly beneath Polaris and Roadmap
@@ -1665,7 +1754,7 @@ export function Workbench({
               canvas gets no minimap rather than a rectangle wandering an
               imaginary plane. Press or drag anywhere in it to pan there. */}
           {mini && (
-            <div className="wb-mini"
+            <div className="wb-mini" style={{ width: MINI_W, height: MINI_H }}
               onPointerDown={(e) => {
                 e.stopPropagation();
                 const el = e.currentTarget;
@@ -1685,19 +1774,40 @@ export function Workbench({
                 window.addEventListener('pointerup', up);
               }}>
               {mini.boxes.map((b, i) => (
-                <span key={i} className="dot" style={{
+                <span key={i} className={`dot k-${b.kind}`} style={{
                   left: `${((b.x - mini.x0) / mini.w) * 100}%`,
                   top: `${((b.y - mini.y0) / mini.h) * 100}%`,
                   width: `${Math.max(1.5, (b.w / mini.w) * 100)}%`,
                   height: `${Math.max(1.5, (b.h / mini.h) * 100)}%`,
                 }} />
               ))}
+              {/* The viewport, and the one thing in here you can take hold of.
+                  Its own handler pans RELATIVELY and stops the frame's centring
+                  press from firing underneath it. */}
               <span className="port" style={{
                 left: `${((mini.view.x - mini.x0) / mini.w) * 100}%`,
                 top: `${((mini.view.y - mini.y0) / mini.h) * 100}%`,
                 width: `${(mini.view.w / mini.w) * 100}%`,
                 height: `${(mini.view.h / mini.h) * 100}%`,
-              }} />
+              }}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  const r = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
+                  let lastX = e.clientX;
+                  let lastY = e.clientY;
+                  const move = (ev: PointerEvent) => {
+                    mini.panBy((ev.clientX - lastX) / r.width, (ev.clientY - lastY) / r.height);
+                    lastX = ev.clientX;
+                    lastY = ev.clientY;
+                  };
+                  const up = () => {
+                    window.removeEventListener('pointermove', move);
+                    window.removeEventListener('pointerup', up);
+                  };
+                  window.addEventListener('pointermove', move);
+                  window.addEventListener('pointerup', up);
+                }} />
+              <span className="cap">{mini.boxes.length} on this canvas · {Math.round(zoom * 100)}%</span>
             </div>
           )}
 
@@ -1840,23 +1950,37 @@ export function Workbench({
             </div>
           )}
 
+          {/* THE TWO PULLS MOVED INTO THE STACK FOLDER (#416). They sat on
+              every folder's dock and were the loudest thing on a canvas that is
+              mostly not about them — but removing them outright would delete
+              the multi-select pull (#333's night import has no other way in).
+              So they are offered exactly where what they bring in belongs: open
+              Stack and both are there, and what they pull lands in it, because
+              a new card is filed into the folder you are standing in. */}
           <div className="wb-dock" onPointerDown={(e) => e.stopPropagation()}>
-            <button className={`wb-pull${pickerOpen ? ' on' : ''}`}
-              onClick={() => (pickerOpen ? closePicker() : openPicker())}>
-              <span className="dot" />
-              <span className="l">Pull from Polaris</span>
-              <span className="n">{unpickedCount} unpicked</span>
-            </button>
-            <button className={`wb-debrief${debriefOpen ? ' on' : ''}`}
-              onClick={() => (debriefOpen ? closeDebrief() : openDebrief())}>
-              <span className="dot" />
-              <span className="l">⤓ Pull from a night</span>
-              {debrief && <span className="n">{debriefNewCount} new</span>}
-            </button>
+            {inPinned && (
+              <>
+                <button className={`wb-pull${pickerOpen ? ' on' : ''}`}
+                  onClick={() => (pickerOpen ? closePicker() : openPicker())}>
+                  <span className="dot" />
+                  <span className="l">Pull from Polaris</span>
+                  <span className="n">{unpickedCount} unpicked</span>
+                </button>
+                <button className={`wb-debrief${debriefOpen ? ' on' : ''}`}
+                  onClick={() => (debriefOpen ? closeDebrief() : openDebrief())}>
+                  <span className="dot" />
+                  <span className="l">⤓ Pull from a night</span>
+                  {debrief && <span className="n">{debriefNewCount} new</span>}
+                </button>
+              </>
+            )}
             <button className="chip-sm add" onClick={addNote}>+ note</button>
           </div>
 
-          {!loading && cards.length === 0 && (
+          {/* A bench holding nothing but the Stack folder is an empty bench
+              (#416): the one card the owner did not put there must not be what
+              silences the prompt telling them how to start. */}
+          {!loading && cards.every((c) => isPinned(c)) && (
             <div className="wb-empty">
               <div className="big">
                 {searching ? 'Nothing placed here matches'
@@ -1869,8 +1993,10 @@ export function Workbench({
                 {searching
                   ? 'The canvas can only search what is placed in this folder. Tiles or Details will search the subfolders too.'
                   : cwd === ROOT
-                    ? 'Jot a note or pull an idea across from Polaris, then select it and run an ✧ op.'
-                    : 'Drag cards onto this folder from anywhere, or add a note — it will be filed here.'}
+                    ? 'Jot a note, or open the Stack folder to pull an idea across from Polaris or a night’s debrief — then select it and run an ✧ op.'
+                    : inPinned
+                      ? 'Pull an idea from Polaris or an insight from a night — both land here — or drag cards in from anywhere.'
+                      : 'Drag cards onto this folder from anywhere, or add a note — it will be filed here.'}
               </div>
             </div>
           )}
@@ -1906,9 +2032,14 @@ export function Workbench({
                       <button className="chip-sm" onClick={() => onPromoteNote(selCard.noteId as number, selCard.title, 'roadmap')}>→ Roadmap</button>
                     </>
                   )}
-                  <button className="chip-sm danger" onClick={() => void dropCard(selCard)}>
-                    {selCard.kind === 'polaris' ? '↩ off canvas' : '× remove'}
-                  </button>
+                  {/* No × on the Stack folder (#416) — nothing here is
+                      disabled-and-explained, it is simply not offered, the
+                      same as the system folders' missing delete. */}
+                  {!isPinned(selCard) && (
+                    <button className="chip-sm danger" onClick={() => void dropCard(selCard)}>
+                      {selCard.kind === 'polaris' ? '↩ off canvas' : '× remove'}
+                    </button>
+                  )}
                 </div>
               )}
               {linking !== null && <div className="linking-hint">Click another card to wire them. Esc or the ground cancels.</div>}
@@ -2220,7 +2351,7 @@ function CardView({
     return (
       <div
         ref={nodeRef}
-        className={`wb-card folder${selected ? ' on' : ''}${marked ? ' marked' : ''}`
+        className={`wb-card folder${card.system ? ' pinned' : ''}${selected ? ' on' : ''}${marked ? ' marked' : ''}`
           + `${highlighted ? ' hl' : ''}${dimmed ? ' dim' : ''}${over ? ' over' : ''}`}
         onPointerDown={onDown}
         onDoubleClick={onOpen}
@@ -2230,10 +2361,16 @@ function CardView({
         data-folder-id={card.id}
       >
         <div className="wb-card-head">
-          <span className="k">folder</span>
+          <span className="k">{card.system ? 'stack' : 'folder'}</span>
           <span className="m">{inside} {inside === 1 ? 'item' : 'items'}</span>
         </div>
-        <Editable className="wb-title" value={card.title} onCommit={onTitle} onPointerDown={stop} />
+        {/* The Stack folder's name is not editable (#416): the server refuses
+            the rename, so an Editable here would be a text box that silently
+            reverts. Its position IS the owner's — it drags on the canvas like
+            any other card. */}
+        {card.system
+          ? <div className="wb-title">{card.title}</div>
+          : <Editable className="wb-title" value={card.title} onCommit={onTitle} onPointerDown={stop} />}
         <button className="wb-open" onPointerDown={stop} onClick={onOpen}>Open →</button>
       </div>
     );

@@ -643,6 +643,46 @@ export function slipOf(it: RoadmapItem): Slip {
   };
 }
 
+/**
+ * #410 — IS THIS WORK IN FLIGHT? Claimed by a session, or ticked. Either way its
+ * bar reports something that actually happened and must not be moved by a clock.
+ */
+export const inFlight = (it: RoadmapItem): boolean => it.done || it.claimedBy.trim() !== '';
+
+/**
+ * #410 — THE SPAN A BAR IS DRAWN AT, which is not always the span it is stored
+ * at.
+ *
+ * A plan rots by standing still. Work nobody has started keeps the dates it was
+ * given, so a week later the chart shows it as having been due in the past — and
+ * the further back it falls the less the whole view says about what happens
+ * next. So an unstarted bar keeps its LENGTH and floors its START at now: it
+ * moves with the now line instead of falling behind it.
+ *
+ * Four populations do NOT move, and each for its own reason:
+ *   • in flight (claimed or done) — the bar is a record, not a plan;
+ *   • skipped — parked on purpose, and rolling it forward would quietly
+ *     un-park it;
+ *   • archived — not on the chart at all;
+ *   • anything already at or after now — there is nothing to catch up to.
+ *
+ * DISPLAY ONLY. Nothing here writes: `sched` is untouched in the database, and
+ * the baseline it is measured against is untouched too, so the ghost still shows
+ * where the work was first planned and the gap between them is the slip. A
+ * stored roll would need a machine writing the owner's plan on a timer, which is
+ * a much larger claim than "draw it where it can still happen".
+ */
+export function rolledSched(it: RoadmapItem, now: number): SchedSpan | null {
+  if (!it.sched) return null;
+  if (inFlight(it) || it.skipped || it.archived) return it.sched;
+  if (it.sched.start >= now) return it.sched;
+  return { start: now, len: it.sched.len };
+}
+
+/** Did `rolledSched` actually move this one? The bar says so when it did. */
+export const isRolled = (it: RoadmapItem, now: number): boolean =>
+  !!it.sched && rolledSched(it, now) !== it.sched;
+
 // --- lane geometry ---------------------------------------------------------
 
 export interface Bar {

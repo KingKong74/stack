@@ -1575,13 +1575,28 @@ a.tab { display: inline-block; }
 /* The minimap sits opposite the zoom chip so the two never overlap. */
 /* Clears the zoom chip below it (bottom 16 + ~32 tall) with room to spare —
    two floating overlays sharing a corner is a control you cannot press. */
-.wb-mini { position: absolute; right: 16px; bottom: 60px; width: 168px; height: 112px;
+/* Width and height come from the COMPONENT (#417): the frame it draws is fitted
+   to this box's aspect ratio, so a size that lived only here would be a number
+   the maths had to guess at. */
+.wb-mini { position: absolute; right: 16px; bottom: 60px;
   border: 1px solid var(--line-3); border-radius: 8px; background: var(--panel);
-  overflow: hidden; cursor: pointer; box-shadow: var(--shadow-raise); }
-.wb-mini .dot { position: absolute; border-radius: 2px; background: var(--accent-soft); opacity: .55; }
-/* The viewport frame is the ONE thing that must stay legible over the dots. */
+  overflow: hidden; cursor: crosshair; box-shadow: var(--shadow-raise); }
+.wb-mini .dot { position: absolute; border-radius: 2px; background: var(--accent-soft); opacity: .5; }
+/* A card's kind, in the canvas's own tones — the folders are the landmarks you
+   steer by, so they are the one thing drawn solid (#417). */
+.wb-mini .dot.k-folder { background: var(--accent-deep); opacity: .8; border-radius: 1px; }
+.wb-mini .dot.k-polaris { background: var(--accent); opacity: .6; }
+.wb-mini .dot.k-ai { background: var(--sage); opacity: .6; }
+.wb-mini .dot.k-note { background: var(--paused); opacity: .55; }
+/* The viewport frame is the ONE thing that must stay legible over the dots, and
+   the one thing you can take hold of — hence the grab cursor and, unlike the
+   first cut, pointer events. */
 .wb-mini .port { position: absolute; border: 1.5px solid var(--accent); border-radius: 3px;
-  background: var(--accent-tint); opacity: .38; pointer-events: none; }
+  background: var(--accent-tint); opacity: .42; cursor: grab; }
+.wb-mini .port:active { cursor: grabbing; opacity: .55; }
+.wb-mini .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 6px;
+  font-family: var(--mono); font-size: 9px; color: var(--faint); pointer-events: none;
+  background: color-mix(in srgb, var(--panel) 78%, transparent); }
 .wb-zoom button.on { color: var(--accent); background: var(--accent-tint); }
 
 /* Fullscreen is a class on the tab's own root: fixed, above the app chrome,
@@ -1599,6 +1614,10 @@ a.tab { display: inline-block; }
 .wb-system-head .t { font-size: 13.5px; font-weight: 600; }
 .wb-system-head .b { font-size: 11.5px; color: var(--muted); }
 .wb-tree-row.system .name { color: var(--body-2); }
+/* The Stack folder (#416) draws in line with the two derived ones and still
+   reads as a folder you can drop into — the sage tone is the difference, and
+   it is the same token the roadmap's "could" swatch uses. */
+.wb-tree-row.pinned .name { color: var(--body); font-weight: 550; }
 .wb-row.sys { grid-template-columns: 1fr 132px 110px 104px; }
 .wb-row.sys .when { display: flex; justify-content: flex-end; }
 .wb-row.sys .on-canvas { font-family: var(--mono); font-size: 10px; color: var(--faint); }
@@ -1651,6 +1670,10 @@ a.tab { display: inline-block; }
 .wb-card.folder .wb-card-head .k { color: var(--accent-soft); }
 .wb-card.folder.over { border-color: var(--accent); border-style: dashed;
   box-shadow: 0 0 0 3px var(--accent-tint); }
+/* The one folder the owner did not make (#416) — same card, a sage edge and no
+   editable title, so it is recognisable without being a different shape. */
+.wb-card.folder.pinned { border-color: var(--sage); }
+.wb-card.folder.pinned .wb-card-head .k { color: var(--sage); }
 .wb-card.marked { outline: 2px solid var(--accent); outline-offset: 2px; }
 .wb-open { margin-top: 9px; font-size: 12px; color: var(--accent); }
 .wb-open:hover { color: var(--accent-deep); }
@@ -4291,7 +4314,12 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 .qa-foot .btn-accent:disabled { opacity: 0.45; cursor: default; }
 
 /* The sky's growth scrub (design 6b/7a): ticks along the funnel's real history. */
-.psky-scrub { display: flex; align-items: center; gap: 14px; padding: 10px 18px 0; }
+/* The bottom padding is the GRIP's overhang, not spacing (#423). The handle is
+   `bottom: -4px` on a 22px track — it deliberately crosses the baseline — and
+   the scrub is the last thing in `.psky-main`, which `.psky` clips. Without
+   room for the overhang the bottom of the drag handle was cut off, and cut off
+   silently: the one thing the smoke harness's overflow finding exists to catch. */
+.psky-scrub { display: flex; align-items: center; gap: 14px; padding: 10px 18px 5px; }
 .psky-scrub .edge { font-family: var(--mono); font-size: 10px; color: var(--paused); white-space: nowrap; }
 /* The window track: day (or week) ticks for rhythm, a shaded region for what
    the window excludes, and a grip you can grab anywhere along the bar. */
@@ -7234,6 +7262,12 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rt-bar .t { font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rt-bar .cap { position: absolute; left: 0; top: 0; bottom: 0; width: 2px; }
 .rt-bar .grip { position: absolute; right: 0; top: 0; bottom: 0; width: 7px; cursor: ew-resize; border-radius: 0 5px 5px 0; }
+/* #410 — a bar the chart moved for you. Dashed leading edge, because the start
+   is the part that is not a commitment: the length is still what was planned,
+   the start is only "no earlier than today". Never a tone of its own — it is
+   still a plan bar, and giving it a colour would read as a new state. */
+.rt-bar.rolled { border-left: 2px dashed var(--line-3); }
+
 .rt-bar:hover .grip, .rt-bar.sel .grip { background: currentColor; opacity: .5; }
 .rt-bar.plan { background: var(--panel); border: 1px solid var(--line-3); color: var(--body); }
 .rt-bar.plan .cap { background: var(--line-3); }
