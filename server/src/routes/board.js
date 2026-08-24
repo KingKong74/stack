@@ -10,9 +10,9 @@
 //
 // The rule that shapes this whole file: **`roadmap_items.area` stays a free
 // STRING.** `project_areas` names and colours areas; it does not own them, and
-// there is no foreign key. That is deliberate — `futures.area` mirrors the same
-// string, the ingest hook writes areas it has never heard of, and an area that
-// only exists because some row mentions it is a real area. So:
+// there is no foreign key. That is deliberate — the ingest hook writes areas it
+// has never heard of, and an area that only exists because some row mentions it
+// is a real area. So:
 //
 //  • RENAME rewrites every row carrying the old string, in the same transaction
 //    as the row itself. Half a rename is a board that has quietly split one
@@ -161,7 +161,6 @@ board.patch('/areas/:name', async (req, res) => {
       );
       await client.query('DELETE FROM project_areas WHERE project_id = $1 AND name = $2', [req.project.id, from]);
       await client.query('UPDATE roadmap_items SET area = $1, updated_at = now() WHERE project_id = $2 AND area = $3', [to, req.project.id, from]);
-      await client.query('UPDATE futures SET area = $1 WHERE project_id = $2 AND area = $3', [to, req.project.id, from]);
     } else if (dot !== null) {
       await client.query(
         `INSERT INTO project_areas (project_id, name, dot, position) VALUES ($1, $2, $3, 0)
@@ -187,7 +186,6 @@ board.delete('/areas/:name', async (req, res) => {
     await client.query('BEGIN');
     await client.query('DELETE FROM project_areas WHERE project_id = $1 AND name = $2', [req.project.id, name]);
     await client.query('UPDATE roadmap_items SET area = NULL, updated_at = now() WHERE project_id = $1 AND area = $2', [req.project.id, name]);
-    await client.query('UPDATE futures SET area = NULL WHERE project_id = $1 AND area = $2', [req.project.id, name]);
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK');

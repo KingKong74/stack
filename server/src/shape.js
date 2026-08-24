@@ -129,25 +129,6 @@ export function groupRoadmap(rows) {
   return out;
 }
 
-export function futureShape(row) {
-  return {
-    id: row.id,
-    title: row.title,
-    note: row.note || '',
-    when: relativeTime(row.created_at) || 'just now',
-    createdAt: row.created_at,       // raw ISO — the sky's time scrub buckets on it
-    source: row.source,
-    reviewed: !!row.reviewed_at,
-    alignment: row.alignment || '',  // north-star verdict: on-course | tangent | off-course
-    area: row.area || '',            // product-area tag ('' = untagged) — filters the funnel
-    canvasX: row.x_coord ?? null,   // visual canvas position (null = auto-layout)
-    canvasY: row.y_coord ?? null,
-    // The galaxy (#312): shape is derived from these two, never stored as a kind.
-    parentId: row.parent_id ?? null, // the idea this one orbits (null = loose)
-    isStar: !!row.is_star,           // promoted to its own orbit
-    magnitude: row.magnitude ?? null,// 1–5 how much work; null = not sized yet
-  };
-}
 
 export function checkShape(row) {
   return {
@@ -210,9 +191,8 @@ export function noteShape(row) {
 }
 
 // One Workbench card. The route joins the row it wraps, so `title` here is
-// always the text the canvas should DRAW — read through from notes/futures for
-// those kinds, and the card's own only for 'ai'. The client never has to know
-// which table a card's words came from.
+// always the text the canvas should DRAW — read through from `notes` for a note
+// card, and the card's own for 'ai' and 'folder'.
 export function workbenchCardShape(row) {
   const ai = row.kind === 'ai';
   // A folder owns its title the same way an 'ai' card does — there is no row
@@ -220,28 +200,26 @@ export function workbenchCardShape(row) {
   const own = ai || row.kind === 'folder';
   // Age is the WRAPPED row's, not the card's: a note filed months ago that only
   // got a card when the Workbench backfilled would otherwise read as brand new.
-  const born = row.note_created_at || row.future_created_at || row.created_at;
+  const born = row.note_created_at || row.created_at;
   return {
     id: row.id,
     kind: row.kind,
     op: row.op || '',
     noteId: row.note_id ?? null,
-    futureId: row.future_id ?? null,
-    title: own ? row.title : (row.note_text ?? row.future_title ?? row.title),
+    title: own ? row.title : (row.note_text ?? row.title),
     // Which folder it sits in. null = the root, i.e. the project itself (#414).
     parentId: row.parent_id ?? null,
     // The sticky's palette colour, so a note keeps the tint it was filed with.
     colour: row.note_colour || '',
-    // The corner stamp: an idea's P-number, an op's name, or a note's age.
-    meta: row.kind === 'polaris' ? `P-${row.future_id}` : ai ? (row.op || 'ai') : (relativeTime(born) || 'now'),
+    // The corner stamp: an op's name, or a note's age.
+    meta: ai ? (row.op || 'ai') : (relativeTime(born) || 'now'),
     body: row.body && typeof row.body === 'object' ? row.body : {},
     x: row.x,
     y: row.y,
     w: row.w,
     // Days since the wrapped row was born, alongside `when`, because the
     // Explorer's smart folders have to COMPARE ages and re-parsing "3w ago" on
-    // the client would be inventing precision the string threw away — the same
-    // reason workbenchIdeaShape sends `days` beside `age`.
+    // the client would be inventing precision the string threw away.
     days: born ? Math.max(0, Math.floor((Date.now() - new Date(born).getTime()) / 86400000)) : 0,
     when: relativeTime(born) || 'just now',
     // '' for every card the owner made; 'stack' for the one folder they did not
@@ -269,26 +247,6 @@ export const workbenchBoardShape = (row) => ({
 export const workbenchEdgeShape = (row) => ({
   id: row.id, a: row.a_id, b: row.b_id, ai: Boolean(row.ai),
 });
-
-// One row in the Workbench's Polaris picker. `days` is sent alongside `age`
-// because the picker's "Recent" filter has to compare, and re-parsing "3w ago"
-// on the client to get a number back would be inventing precision the string
-// already threw away. `links` is how many ideas orbit this one in the galaxy —
-// a rough "how developed is this thought", visible before you pull it.
-export function workbenchIdeaShape(row) {
-  const created = new Date(row.created_at);
-  return {
-    id: row.id,
-    title: row.title,
-    meta: `P-${row.id}`,
-    area: row.area || '',
-    links: row.links || 0,
-    age: relativeTime(row.created_at) || 'just now',
-    days: Math.max(0, Math.floor((Date.now() - created.getTime()) / 86_400_000)),
-    onCanvas: Boolean(row.on_canvas),
-    isStar: !!row.is_star,
-  };
-}
 
 // One Tips-library recipe: a kept Claude prompt plus the context of when to
 // reach for it. `when`/`who` are the human framing; `best` the checklist.
@@ -362,7 +320,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, notes, futures, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, agents, since }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, notes, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, agents, since }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
@@ -412,7 +370,6 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cade
     bugs,
     roadmap,
     notes,
-    futures: futures || [],
     checks: checks || [],
   };
 }

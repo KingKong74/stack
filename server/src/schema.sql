@@ -246,49 +246,6 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS verdict_evidence TEXT;
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS agent_profile TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
--- Per-project futures: loose directional ideas, curated against the north star
--- and promoted into the roadmap (promotion = create the roadmap item, then
--- delete the idea — a hook idea's fingerprint is tombstoned on delete like any
--- auto item). Same review-inbox semantics as bugs/roadmap via reviewed_at.
-CREATE TABLE IF NOT EXISTS futures (
-  id          SERIAL PRIMARY KEY,
-  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  title       TEXT NOT NULL,
-  note        TEXT,
-  source      TEXT NOT NULL DEFAULT 'manual',          -- hook | manual
-  fingerprint TEXT NOT NULL,
-  reviewed_at TIMESTAMPTZ,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
--- The curation verdict against the north star: on-course | tangent | off-course
--- (NULL = unsorted). The Futures tab groups ideas by this.
-ALTER TABLE futures ADD COLUMN IF NOT EXISTS alignment TEXT;
--- Canvas coordinates for the visual canvas view. NULL = auto-layout by alignment group.
-ALTER TABLE futures ADD COLUMN IF NOT EXISTS x_coord FLOAT;
-ALTER TABLE futures ADD COLUMN IF NOT EXISTS y_coord FLOAT;
--- The Polaris galaxy (#312). An idea's SHAPE in the sky is derived from two
--- columns, never stored as a kind — so there is one place a thing can be:
---   is_star             -> a STAR: a promoted idea with its own orbit
---   parent is a star    -> a PLANET in that star's orbit
---   parent is a planet  -> a MOON, a piece of that planet
---   no parent, judged   -> rides one of the north star's three shells
---   no parent, unjudged -> the drift belt
--- Depth is capped at star → planet → moon by the PATCH route, and a star never
--- carries a parent. ON DELETE SET NULL is the honest fallback: dismissing a
--- planet returns its moons to the shells rather than deleting work you kept.
-ALTER TABLE futures ADD COLUMN IF NOT EXISTS parent_id INTEGER
-  REFERENCES futures(id) ON DELETE SET NULL;
-ALTER TABLE futures ADD COLUMN IF NOT EXISTS is_star BOOLEAN NOT NULL DEFAULT false;
--- Magnitude 1–5 = how much work the idea is (an afternoon → a quarter). NULL is
--- "not sized yet" and stays NULL: the sky draws an unsized idea at its smallest
--- and the panel says so, rather than inventing an estimate nobody gave.
-ALTER TABLE futures ADD COLUMN IF NOT EXISTS magnitude SMALLINT;
-CREATE INDEX IF NOT EXISTS idx_futures_parent ON futures (parent_id) WHERE parent_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_futures_auto_fp
-  ON futures (project_id, fingerprint) WHERE source = 'hook';
-CREATE INDEX IF NOT EXISTS idx_futures_project ON futures (project_id, created_at DESC);
-
 -- Per-project sticky notes. The Workbench canvas is where they are READ now
 -- (the notes wall is gone), but the rows still live here: ingest, search and
 -- promote-to-bug/roadmap all address a note, not a card.
@@ -305,20 +262,20 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE INDEX IF NOT EXISTS idx_notes_project ON notes (project_id, created_at DESC);
 
 -- The Workbench canvas — the tab that replaced the notes wall. A row here is a
--- PLACEMENT, not content: a note card carries note_id and a polaris card
--- carries future_id, so `notes` and `futures` stay the one source of truth for
--- their own text (edit a card title and the write goes through to the row it
--- wraps). Only an 'ai' card owns its body, because nothing else does.
+-- PLACEMENT, not content: a note card carries note_id, so `notes` stays the one
+-- source of truth for its own text (edit a card title and the write goes
+-- through to the row it wraps). Only an 'ai' card owns its body, because
+-- nothing else does. (A 'polaris' card carried future_id and went with the
+-- Polaris cull — see the DROP block at the foot of this file.)
 --
--- Both foreign keys are ON DELETE CASCADE: delete the note or the idea anywhere
--- in the app and its card leaves the canvas with it, so a card can never
--- outlive what it points at.
+-- note_id is ON DELETE CASCADE: delete the note anywhere in the app and its
+-- card leaves the canvas with it, so a card can never outlive what it points
+-- at.
 CREATE TABLE IF NOT EXISTS workbench_cards (
   id          SERIAL PRIMARY KEY,
   project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  kind        TEXT NOT NULL,                           -- note | polaris | ai | folder
+  kind        TEXT NOT NULL,                           -- note | ai | folder
   note_id     INTEGER REFERENCES notes(id) ON DELETE CASCADE,
-  future_id   INTEGER REFERENCES futures(id) ON DELETE CASCADE,
   op          TEXT NOT NULL DEFAULT '',                -- ai only: which op made it
   title       TEXT NOT NULL DEFAULT '',                -- ai + folder (others read through)
   body        JSONB NOT NULL DEFAULT '{}'::jsonb,      -- lines | phases | chips | chosen
@@ -328,13 +285,11 @@ CREATE TABLE IF NOT EXISTS workbench_cards (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
--- One card per note and per idea: the canvas shows a thing once, and the
--- backfill that materialises cards for pre-Workbench notes leans on this to be
--- safely re-runnable.
+-- One card per note: the canvas shows a thing once, and the backfill that
+-- materialises cards for pre-Workbench notes leans on this to be safely
+-- re-runnable.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_cards_note
   ON workbench_cards (note_id) WHERE note_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_cards_future
-  ON workbench_cards (future_id) WHERE future_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_wb_cards_project ON workbench_cards (project_id, created_at);
 
 -- #414 — THE CANVAS BECAME A FILING SURFACE. A `folder` card is the one other
@@ -606,7 +561,6 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 -- Area tags: which part of the product an idea lives in (landing page,
 -- settings, mobile, …) — a second, orthogonal axis to alignment. Freeform,
 -- filterable on the Futures tab. NULL = untagged.
-ALTER TABLE futures ADD COLUMN IF NOT EXISTS area TEXT;
 
 -- Semantic checks: an optional plain-language assertion judged by Gemini
 -- against the fetched page ("shows the dashboard with no error banners").
@@ -1342,77 +1296,48 @@ CREATE UNIQUE INDEX IF NOT EXISTS project_labels_key_idx ON project_labels (proj
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS week_zero DATE;
 UPDATE projects SET week_zero = (date_trunc('week', created_at))::date WHERE week_zero IS NULL;
 
--- ---------------------------------------------------------------------------
--- THE INSTRUCTIONS TREE — the CLAUDE.md files Stack manages, one per place.
---
--- Same arrangement as the skill tree above, and for the same reason: these
--- files live in the repos on the HOST, behind the firewall the server cannot
--- cross. So the server holds the library and the intent, the host does the
--- writing, and `installed_at` is a fact the host REPORTS, never something a
--- save sets.
---
--- `body` is the file, verbatim — the whole markdown, including the HTML-comment
--- annotations that carry a rule's scope and its off switch. The structured
--- view, the precedence map and the merge preview are all DERIVED from it
--- (web/src/lib/instructions.ts) and none of them is stored: rules in their own
--- table would be a second truth that drifts the moment anybody edits the file
--- on disk, and the file on disk is the thing Claude actually reads.
---
--- `adopted` is consent, and it is why this table can be trusted with somebody
--- else's file. Stack writes a file only where it planted the `<!-- stack-managed -->`
--- marker; adopting an unmanaged file is the owner asking for that marker to be
--- added, in one press, with the sentence saying so.
-CREATE TABLE IF NOT EXISTS instruction_files (
-  id           SERIAL PRIMARY KEY,
-  scope        TEXT NOT NULL DEFAULT 'project',  -- global (~/.claude/CLAUDE.md) | project (<repo>/<dir>/CLAUDE.md)
-  project_id   BIGINT REFERENCES projects(id) ON DELETE CASCADE,  -- NULL for global
-  dir          TEXT NOT NULL DEFAULT '',         -- '' = repo root; 'web' = web/CLAUDE.md
-  body         TEXT NOT NULL DEFAULT '',
-  enabled      BOOLEAN NOT NULL DEFAULT true,    -- off = the host removes the file IT planted
-  adopted      BOOLEAN NOT NULL DEFAULT false,   -- taken over from a file somebody else wrote
-  claimed_at   TIMESTAMPTZ,                      -- when the takeover actually happened (see below)
-  installed_at TIMESTAMPTZ,                      -- when the host last wrote this exact content
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-ALTER TABLE instruction_files ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;
--- `claimed_at` is what makes ADOPTION a one-time act rather than a standing
--- licence, and it exists because the obvious two-state version is wrong.
---
--- The host refuses to write over a CLAUDE.md that carries no marker. An adopted
--- file carries no marker YET — that is the whole point of adopting it — so the
--- first write has to be allowed past the refusal, which means the server has to
--- say "this one is a sanctioned takeover". `installed_at` cannot carry that: any
--- edit clears it, so the licence would come back every time the owner saved,
--- and a human who had meanwhile stripped the marker to take their file BACK
--- would silently lose it again. `claimed_at` is stamped once, by the host's
--- report of the first successful write, and never cleared. After it, the
--- ordinary marker rule applies for good — and a stripped marker reads as
--- unmanaged, which is the direction a mistake should fall.
--- One file per PLACE, as two partial indexes rather than one UNIQUE over a
--- nullable column — in Postgres NULLs are distinct, so a plain constraint would
--- let the global file be created twice.
-CREATE UNIQUE INDEX IF NOT EXISTS instruction_global_idx
-  ON instruction_files (dir) WHERE scope = 'global';
-CREATE UNIQUE INDEX IF NOT EXISTS instruction_project_idx
-  ON instruction_files (project_id, dir) WHERE scope = 'project';
 
--- What the host actually found on disk, replaced whole on each sync — the same
--- single-row shape as skill_reports, and the same rule: this describes ONE
--- host, the one the dispatcher runs on. A file in here that no row above claims
--- is an UNMANAGED file: reported so the tree is honest about what Claude reads,
--- and never touched.
-CREATE TABLE IF NOT EXISTS instruction_reports (
-  only_row    BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (only_row),
-  report      JSONB NOT NULL DEFAULT '[]',       -- [{scope, slug, dir, path, managed, body, reach, bytes}]
-  detail      TEXT NOT NULL DEFAULT '',          -- what the last sync did, for the UI
-  reported_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
--- Where a nested CLAUDE.md COULD go: per repo, the tracked directories and how
--- many files each would govern. Its own column rather than part of `report`,
--- because it answers the opposite question — `report` is every file that EXISTS,
--- this is every place one does not yet. Only the host can know either.
--- `known: false` means git could not be asked; the app must offer a free-text
--- path then, never an empty list, which would read as "this repo has no
--- directories" rather than "nobody looked".
-ALTER TABLE instruction_reports ADD COLUMN IF NOT EXISTS repos JSONB NOT NULL DEFAULT '[]';
+-- ---------------------------------------------------------------------------
+-- THE CULL — dropping the surfaces that were removed, convergently.
+--
+-- The rest of this file is idempotent CREATEs and ADD COLUMNs, so removing a
+-- table's definition above is only half the job: a database that already ran
+-- an older schema still HAS the table. These statements are the other half,
+-- and they live at the FOOT of the file on purpose — everything they drop must
+-- already have had its dependants removed by the time they run.
+--
+-- They are as destructive as they look. That is what was asked for; the
+-- ordinary IF EXISTS guards make them safe to re-run, not safe to undo.
+-- ---------------------------------------------------------------------------
+
+-- Polaris. Order is load-bearing: the cards that POINT at an idea go first,
+-- then the column that points, then the table. Dropping the table first would
+-- take the cards with it via ON DELETE CASCADE — the same end state, but by an
+-- accident of the foreign key rather than by saying so.
+DELETE FROM workbench_cards WHERE kind = 'polaris';
+ALTER TABLE workbench_cards DROP COLUMN IF EXISTS future_id;
+DROP INDEX IF EXISTS idx_wb_cards_future;
+DROP TABLE IF EXISTS futures CASCADE;
+
+-- The tombstones a dismissed idea left behind. They exist to stop the next push
+-- re-creating a row in a table that is now gone, so they have nothing left to
+-- guard. Scoped to kind = 'future' — a bug's or an item's tombstone is still
+-- doing its job.
+DELETE FROM dismissed_items WHERE kind = 'future';
+
+-- The instructions tree. Nothing references these two, so no ordering applies.
+DROP TABLE IF EXISTS instruction_files CASCADE;
+DROP TABLE IF EXISTS instruction_reports CASCADE;
+
+-- The four agents whose surfaces went with them (agents.js — one surface, one
+-- switch, in both directions). `agent_configs` holds only OVERRIDES, so these
+-- rows govern nothing now; leaving them would make a re-registered agent of the
+-- same name silently inherit a switch the owner set for a different one.
+DELETE FROM agent_configs WHERE key IN ('polaris', 'foreman', 'merger', 'scribe');
+
+-- The recipe library outlived Polaris. `surface` is a free-text label saying
+-- where a recipe runs best, and four of the seeded ones named a screen that no
+-- longer exists — retargeted rather than deleted, because a recipe is a PROMPT
+-- and these still work; only the signpost was wrong. Convergent, so an owner
+-- who has since retitled the surface themselves is left alone.
+UPDATE tips SET surface = 'Workbench' WHERE surface = 'Polaris';

@@ -20,21 +20,7 @@
 // `routes/console.js`'s cap() and `routes/workbench.js` both restate it at
 // their own call sites; this is the statement they point at.
 
-const DEFAULTS = {
-  judge: `You are helping curate a side project's idea funnel. The project's north star
-(the one-paragraph statement of what it is becoming) is:
-
-"{{NORTH_STAR}}"
-
-Judge this idea against that north star:
-Title: {{TITLE}}
-{{NOTE_LINE}}
-
-Verdicts: "on-course" (pulls directly toward the north star), "tangent" (worthwhile-ish but
-sideways — doesn't serve the core direction), "off-course" (pulls away from or against it).
-Use en-AU spelling. Respond with ONLY this JSON:
-{ "alignment": "on-course|tangent|off-course", "why": "one plain sentence, under 25 words" }`,
-};
+const DEFAULTS = {};
 
 DEFAULTS.semantic = `You are a smoke-test judge. A web page was fetched and its visible text is below
 (tags stripped, truncated). Judge this plain-language expectation about the page:
@@ -185,43 +171,6 @@ Use en-AU spelling. Respond with ONLY this JSON:
 { "picks": [ { "id": 123, "area": "…",
                "why": "one plain sentence naming what the item touches, under 15 words" } ] }`;
 
-DEFAULTS.cluster = `You are clustering a side project's idea funnel into themes. Below are the
-project's loose ideas (id | current theme | title | note). Known themes on the project: {{AREAS}}
-{{NORTH_STAR_LINE}}
-
-Give EVERY unthemed idea a theme: lowercase, one or two words. Aim for 3–7 coherent themes across
-the whole funnel — prefer the known themes where they fit, and coin a new one only when a real
-cluster has no name yet. Ideas already carrying a sensible theme keep it (omit them from the
-answer); answer only for ideas whose theme is missing ("-") or clearly wrong. Never invent, merge
-or drop ideas.
-
-THE IDEAS:
-{{ITEMS}}
-
-Use en-AU spelling. Respond with ONLY this JSON:
-{ "items": [ { "id": 123, "area": "…" } ] }`;
-
-DEFAULTS.converge = `You are converging a side project's judged ideas into concrete roadmap tickets.
-{{NORTH_STAR_LINE}}
-
-{{MODE_LINE}}
-
-Ground every ticket in the ideas below — never invent unrelated work. Titles are short
-imperatives naming the surface they touch; notes say what "done" looks like in one or two
-sentences; "plan" is 2-6 short build steps (omit it when the ticket is trivial). Buckets:
-"must" only when the north star clearly demands it now, otherwise "should" (or "could" for
-nice-to-haves). Keep each idea's theme as its "area" unless it is plainly wrong. "sources"
-lists the id(s) of the idea(s) each ticket came from. Ideas are listed with their orbit — a
-"star" idea and its "orbits <id>" planets/moons are grouped together on purpose: when merging
-into one epic, treat a star and its own orbit as one thread of work, not unrelated ideas.
-
-THE IDEAS (id | theme | verdict | orbit | title | note):
-{{ITEMS}}
-
-Use en-AU spelling. Respond with ONLY this JSON:
-{ "items": [ { "title": "…", "note": "…", "bucket": "must|should|could", "area": "…",
-               "plan": ["step", "…"], "sources": [123] } ] }`;
-
 DEFAULTS.reviewbrief = `You are the reviewer's assistant on a side project command centre. A change is
 awaiting a human verdict (solid / rethink). Write it up so the reviewer can judge quickly without
 re-reading everything.
@@ -256,55 +205,6 @@ Use en-AU spelling. Respond with ONLY this JSON:
 // structural read, the files the work touched. The reviewer's note is a read of
 // the diff and is the closest thing here to one; the prompt says so plainly so
 // the model does not write as though it had seen the code.
-DEFAULTS.refinedraft = `You are helping the owner of a side project send a built change back to
-the board with a REFINEMENT — a short instruction saying only what to change on top of what
-already landed. The item keeps its id and its record; your sentence is the whole brief the next
-session gets.
-{{NORTH_STAR_LINE}}
-{{STAGE_LINE}}
-
-The item:
-#{{ID}} ({{BUCKET}}) {{TITLE}}
-{{NOTE_LINE}}
-What the builder says landed: {{BUILT_NOTE}}
-{{RUN_BLOCK}}
-{{REVIEW_BLOCK}}
-{{ARCHITECT_BLOCK}}
-{{FILES_BLOCK}}
-{{OWNER_BLOCK}}
-
-You have NOT been shown the diff — you cannot read the repository. Everything above is the
-project's record of the work.
-
-Write ONE instruction, 1-3 plain sentences, in the owner's voice, addressed to whoever picks the
-item up next:
-- Say what to CHANGE, not what was built. No preamble, no restating the item.
-- Prefer the specific over the general: name the behaviour, the file or the case, when the record
-  names it.
-- Only raise what the record actually EVIDENCES: a finding the reviewer wrote, an observation the
-  architect made, a specific claim in the item that the built note does not answer.
-
-**An empty draft is a correct answer, and often the right one.** If the record does not evidence
-something to change, return "draft": "" — the owner is then told plainly that nothing in the
-record calls for a refinement, which is far more useful than a manufactured one. Do not reach.
-In particular, these are NOT deltas and must never be the draft:
-- "verify it works", "test it in real use", "make sure it behaves correctly" — the owner is the
-  one testing it; that is why they are in this dialog.
-- "review the code", "run a review", "get a second pass" — a missing review is a missing review,
-  not a change to make.
-- restating the item's own goal back as an instruction.
-
-Two things you must not misread:
-- Failing CHECKS listed above are project-wide and may long predate this item. Only mention one
-  if this item's own subject plausibly caused it; otherwise ignore it.
-- "No review ran" and "no run recorded" are ABSENCES OF EVIDENCE. They are never themselves a
-  fault to fix, and never a reason to write a draft.
-
-Use en-AU spelling. Respond with ONLY this JSON:
-{ "draft": "…", "basis": "…" }
-where "basis" is a 2-5 word phrase naming what you leaned on ("the reviewer's finding", "the
-architect's note", "a gap in the built note"), or "" when the draft is empty.`;
-
 DEFAULTS.triage = `You are a triage assistant for a side project command centre's review inbox.
 The inbox holds auto-extracted bugs, roadmap items and ideas that no human has approved yet.
 Your job is purely advisory — the human keeps or dismisses each item themselves.
@@ -482,141 +382,6 @@ Respond with ONLY this JSON:
 // because these apps are hash-routed. An empty list is correct whenever the
 // record does not evidence which screen changed — inventing a plausible route
 // sends the reviewer to a page that has nothing to do with the change.
-DEFAULTS.readchange = `You are the Foreman on a side project command centre. A change is sitting in
-front of the owner, who is about to give it a verdict: approve it, send it back with a refinement,
-or shelve it. Read it with them.
-{{NORTH_STAR_LINE}}
-{{STAGE_LINE}}
-
-The item it was built against:
-#{{ID}} ({{BUCKET}}) {{TITLE}}
-{{NOTE_LINE}}
-What the builder says landed: {{BUILT_NOTE}}
-{{RUN_BLOCK}}
-{{REVIEW_BLOCK}}
-{{ARCHITECT_BLOCK}}
-{{CHECKS_BLOCK}}
-{{FILES_BLOCK}}
-{{MERGE_BLOCK}}
-{{MIRROR_BLOCK}}
-
-You have NOT been shown the diff and you cannot read the repository. Everything above is the
-project's RECORD of the work — mostly the builder's own account of it. Weigh it as such: a built
-note is a claim, not evidence.
-
-Produce:
-- "call": "approve" | "look" | "send-back".
-  · "approve" ONLY when the record positively evidences that what the item asked for is what
-    landed, and nothing (reviewer, architect, checks, merge state) contradicts it.
-  · "look" when the record is consistent but thin — the honest answer whenever the only thing
-    saying it works is the session that wrote it. THIS IS THE COMMON ANSWER. Expect to give it.
-  · "send-back" only when the record itself evidences a gap: a reviewer finding, an architect
-    concern, red checks plausibly caused by this change, or a claim in the item the built note
-    does not answer.
-- "why": 1-2 plain sentences for the call. Name the specific thing that decided it. Never
-  "it looks fine" or "more testing is needed".
-- "test": 2-5 concrete things to do to check it, most telling first — real clicks, screens,
-  commands or URLs. Order matters: the first one should be the thing most likely to expose it if
-  the change is wrong.
-- "where": up to 4 places in the RUNNING APP where this change shows, as {"path","what"}. "path"
-  is from the site root and includes the hash route where the app has one (e.g.
-  "/#/control/review", "/#/p/stack/roadmap"); "what" is under 12 words on what to look at there.
-  Base it on the files touched and what the built note says, never on a guess about the app's
-  shape. **An empty list is correct and expected** when the record does not say which screen
-  changed, or when the change is not user-visible at all (a route, a migration, a test).
-- "blind": 1-3 plain statements of what you could NOT see that a verdict depends on. Be specific
-  ("no reviewer read this branch", "the built note claims the totals are fixed but nothing here
-  evidences it"), never the generic "I cannot see the code" — the owner knows that.
-
-Do not manufacture a concern to have something to say, and do not restate the item back. If the
-record is genuinely thin, say that in "why" and let "blind" carry the weight.
-
-Use en-AU spelling. Respond with ONLY this JSON:
-{ "call": "approve|look|send-back", "why": "…", "test": ["…"],
-  "where": [ { "path": "/#/…", "what": "…" } ], "blind": ["…"] }`;
-
-// #375 — the Foreman's read of the WHOLE queue. One question: what do I open
-// first? The room can already sort by age and flag red checks; what it cannot
-// do is weigh a blocked reviewer verdict on a small change against an unread
-// one that touches the schema. Ordering is the entire answer — this op never
-// gives verdicts, and it must not, or the queue would arrive pre-decided.
-DEFAULTS.triagequeue = `You are the Foreman on a side project command centre. Below is every change
-waiting on the owner's verdict this morning, across all their projects. They have limited time and
-want to know what to open FIRST.
-
-Each row is: key | project | stage | age | reviewer verdict | checks | merge state | title
-(stage "built" = still on a branch, not on main yet; "ticked" = already closed out by hand.
-An empty reviewer verdict means NO REVIEW RAN — that is an absence of evidence, not a clean bill.)
-
-THE QUEUE ({{COUNT}} change{{PLURAL}}):
-{{QUEUE}}
-
-Order them for the owner. Put first what is most likely to need a decision that only they can
-make, or where waiting costs the most: evidence of something wrong (a blocked verdict, red
-checks), a branch that conflicts with main and is rotting, a large change nobody has read. Put
-last what can be cleared in a glance.
-
-Rules:
-- Order EVERY change you were given, exactly once, using its key verbatim. Invent nothing.
-- "why" is under 15 words and names the reason THIS one is where it is. Never "review this
-  change" or "it is waiting".
-- Do NOT give verdicts, and do not say whether something looks good — you have not read any of it.
-  This is an order of reading, nothing more.
-- "note" is one sentence on the shape of the morning ("four of these are one night's work on the
-  same area"), or "" when there is nothing worth saying.
-
-Use en-AU spelling. Respond with ONLY this JSON:
-{ "order": [ { "key": "slug#id", "why": "…" } ], "note": "…" }`;
-DEFAULTS.futureorbits = `You are curating a side project's Polaris galaxy — its idea funnel shaped
-into orbits. A star holds planets in its orbit; star → planet → moon is the whole depth.
-{{NORTH_STAR_LINE}}
-
-THE STARS (id | title | note) — the only legal orbits to propose:
-{{STARS}}
-
-THE LOOSE IDEAS (id | title | note | area) — currently in no orbit at all:
-{{LOOSE}}
-
-For each loose idea, decide whether it is PLAINLY a piece of one star's own work — not merely
-related in theme, but work that star's own definition would cover. Only propose an orbit when it
-is obviously true; never force a match, and never propose more than a handful. Return
-{"items":[]} if none of them clearly belong — that is the expected, normal answer for a healthy
-funnel, not a failure to try harder.
-
-Use en-AU spelling. Respond with ONLY this JSON:
-{ "items": [ { "id": 123, "parentId": 456, "why": "one short sentence" } ] }`;
-
-DEFAULTS.futurerestate = `You are helping the owner of a side project sharpen how one idea in their
-Polaris galaxy is worded.
-{{NORTH_STAR_LINE}}
-
-THE IDEA{{STAR_LINE}}:
-Title: {{TITLE}}
-Note: {{NOTE_LINE}}
-Area: {{AREA_LINE}}
-{{MAGNITUDE_LINE}}
-{{ALIGNMENT_LINE}}
-{{CHILDREN_BLOCK}}
-
-A star's title is a short name for a whole body of work; its note is one or two sentences of what
-it covers. Judge whether the CURRENT wording already says that plainly.
-
-Leaving a field as an empty string means "the existing wording is already right", and that is the
-expected answer whenever the record does not evidence a better statement — you must not paraphrase
-for the sake of producing output. Only propose a field when you can genuinely say it more clearly
-or more accurately than what is there, grounded in the idea itself and (if any) its children.
-
-Use en-AU spelling. Respond with ONLY this JSON:
-{ "title": "", "note": "", "area": "", "why": "" }
-where "why" is one short sentence on what you changed (or "" when all three are blank).`;
-
-// #418 — the corner ＋'s Thought composer. What is being sharpened is a SCRAP
-// somebody typed in five seconds, so the failure mode is not a bad rewrite: it
-// is a model that inflates two words into a paragraph of confident invention,
-// and then that paragraph is what the canvas remembers instead of the thought.
-// Hence the hard rule about adding nothing, and hence the empty answer being
-// named as the expected one — the same escape hatch the Refine draft has, for
-// the same reason (a model told to produce a delta will produce one).
 DEFAULTS.sharpen = `A builder has just jotted a thought into their project's workbench. It is a scrap,
 written fast, and it is about to be filed as a note they will read back weeks from now.
 
@@ -660,17 +425,7 @@ const ENV_KEYS = {
   titler: 'GEMINI_TITLER_PROMPT',
   assist: 'GEMINI_ASSIST_PROMPT',
   cleanup: 'GEMINI_CLEANUP_PROMPT',
-  cluster: 'GEMINI_CLUSTER_PROMPT',
-  converge: 'GEMINI_CONVERGE_PROMPT',
   reviewbrief: 'GEMINI_REVIEWBRIEF_PROMPT',
-  refinedraft: 'GEMINI_REFINEDRAFT_PROMPT',
-  // #375 — the two new ones wear STACK_, not GEMINI_. Every template above
-  // predates #364 and its env name is now a misnomer (the tab agents run Claude
-  // on the host); renaming those would break whatever overrides are set in a
-  // live deploy for no gain, but a name coined TODAY should not lie about which
-  // model reads it.
-  readchange: 'STACK_READCHANGE_PROMPT',
-  triagequeue: 'STACK_TRIAGEQUEUE_PROMPT',
   // The Curator's two board reads. They were coined STACK_ when they ran
   // `claude -p` on the host and they have since moved to the Gemini backend
   // (agents.js) — the keys stay put, because a live deploy may have an override

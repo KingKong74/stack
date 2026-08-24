@@ -1,16 +1,21 @@
 // THE AGENTS (#361, #364) — Stack's in-app specialists, each one bound to a
 // single SURFACE and unable to act anywhere else.
 //
-//   Auditor     · Quality tab      — investigates the app in a session of its own
-//   Curator     · Roadmap tab      — shapes the board and writes it up
-//   Foreman     · Review room      — walks a built change before it lands
-//   Polaris     · Futures tab      — judges, themes and converges the idea funnel
-//   Drafter     · Workbench tab    — thinks on the canvas: expands, plans, critiques
-//   Scribe      · Instructions tab — keeps the CLAUDE.md tree honest
-//   Merge agent · Merge room       — reads the diffs of the branches about to land
+//   Auditor  · Quality tab   — investigates the app in a session of its own
+//   Curator  · Roadmap tab   — shapes the board and writes it up
+//   Drafter  · Workbench tab — thinks on the canvas: expands, plans, critiques
 //
-// Most are PROJECT tabs; the Foreman and the Merge agent are bound to Mission
-// Control ROOMS instead, which is why "surface" and not "tab".
+// There were seven. The cull took four of them — the Foreman (Review room),
+// the Merge agent (Merge room), Polaris (Futures tab) and the Scribe
+// (Instructions tab) — WITH their surfaces, and that is the rule rather than
+// an accident of tidying: ONE SURFACE, ONE SWITCH cuts both ways. An agent
+// whose only surface is gone has nothing left to switch, so it leaves the
+// registry rather than lingering as a toggle that governs nothing and a card
+// naming a screen that does not exist.
+//
+// All three survivors are PROJECT tabs, so `surface` is 'tab' throughout now.
+// The field stays because it is the agent's identity rather than a convenience
+// — a room-bound agent coming back must be able to say so.
 // Nothing else about the binding changes: an agent owns its ops, and the client
 // that binds to it throws on anybody else's.
 //
@@ -23,8 +28,9 @@
 // audit was retired once the tab consoles landed, and an agent whose whole
 // surface is a session is a legitimate shape, not a half-built one. Anything
 // reading `ops` therefore has to survive an empty list rather than assume at
-// least one (Mission Control → Agents draws the op list only when there is
-// one, and says the session is the surface when there is not).
+// least one (the Agents room drew the op list only when there was one, and
+// said the session was the surface when there was not; whatever replaces it
+// has to do the same).
 //
 // Before this file the same three jobs existed as eight loose Gemini routes,
 // each one opening `if (!geminiEnabled()) 503` and calling askGemini directly.
@@ -79,7 +85,7 @@ import { askGemini, geminiEnabled } from './gemini.js';
 
 // The Claude aliases an agent may be pinned to. '' = whatever the CLI's own
 // default is, which is the right answer unless one agent's work has a shape
-// that wants a bigger or cheaper model: the Foreman reads a whole change and
+// that wants a bigger or cheaper model: an agent that reads a whole change
 // earns Sonnet, the Curator's titler is a sentence and does not. It is also
 // what an agent's live session is spawned on, so the pick outlives the ops.
 export const AGENT_MODELS = [
@@ -149,8 +155,8 @@ export const cleanGuidance = (v) => String(v ?? '').replace(/\s+$/g, '').slice(0
 // way to reach a model without spending, and that stands — but it never made
 // Gemini wrong, and Stack still runs it, key-gated, wherever the job is a
 // READ-ONLY second opinion (the per-push review note, triage, the Workbench
-// ops). The Scribe's quick passes are exactly that job, and the design they
-// come from names the two backends apart on screen for exactly that reason.
+// ops). The Curator's two board reads are exactly that job, and the design
+// they come from names the two backends apart on screen for that reason.
 //
 // The flag buys one thing that matters: it keeps **one surface, one switch**
 // (#375) true for a surface with two backends. Before it, an agent could only
@@ -230,11 +236,11 @@ export const AGENTS = [
     name: 'Auditor',
     tab: 'quality',
     tabLabel: 'Quality',
-    // #375 — tab or room. Three of these are project tabs and two are Mission
-    // Control rooms, and until now everything that printed the binding said
-    // "tab": the Merge agent's card read "Merge tab", which is a screen that
-    // does not exist. The binding is the agent's identity, so the word for it
-    // has to be right.
+    // #375 — tab or room. Every surviving agent is a project tab; the two
+    // room-bound ones went with their rooms. Kept because the binding is the
+    // agent's identity: everything used to print "tab" regardless, and the
+    // Merge agent's card read "Merge tab", which was a screen that never
+    // existed.
     surface: 'tab',
     blurb: 'Investigates the live app, the checks and the tracked bugs in a session on the Quality tab.',
     // What the model itself is told it may and may not touch (see preamble()).
@@ -313,8 +319,8 @@ export const AGENTS = [
       // THE BOARD'S TWO READS, and both run on GEMINI (owner's call).
       //
       // They read tracker rows and hand back a diff the owner applies — the
-      // read-only second-opinion shape the `backend` flag exists for, and the
-      // same job the Scribe's quick passes do. Moving them off the host bought
+      // read-only second-opinion shape the `backend` flag exists for. Moving
+      // them off the host bought
       // two things a Claude session on the daemon could not: they answer in
       // seconds rather than the seventy-plus a `claude -p` round trip took on
       // this host, and they no longer go dark when the daemon does — which
@@ -330,134 +336,6 @@ export const AGENTS = [
       { op: 'allocate', label: 'Sort the unallocated', backend: 'gemini', hint: 'Proposes an area for each item carrying none.' },
     ],
   },
-  // #375 — THE FOREMAN, the Review room's own agent.
-  //
-  // It is not called the Reviewer, and that is deliberate: the room already
-  // shows something labelled REVIEWER — the second model's read of the branch
-  // diff, taken at push time and stored on the run (`review_verdict`). Two
-  // things called the reviewer on one screen would make "what did the reviewer
-  // say" unanswerable. The Foreman walks the site: it reads a change with you
-  // when you are the one about to give the verdict, where the push reviewer
-  // read the diff hours ago without you.
-  //
-  // `reviewbrief` and `refinedraft` MOVED HERE from the Curator. Their only
-  // surface has always been this room, and an agent switch that silences half a
-  // room's ✧ buttons while another agent's switch silences the rest is the
-  // restriction working against the owner. One room, one switch. (The Curator
-  // keeps everything whose surface is the board itself.) An `ops_off` row that
-  // still names them under the Curator is ignored on read — agentConfigShape
-  // filters to the agent's own ops — so a moved op degrades to ON, the same
-  // direction as a missing row.
-  {
-    key: 'foreman',
-    name: 'Foreman',
-    tab: 'review',
-    tabLabel: 'Review',
-    surface: 'room',
-    blurb: 'Walks each built change before it lands: what it really is, where to look at it running, and what would send it back.',
-    remit: "Mission Control's Review room: the changes waiting on a verdict, what built them, and what the other agents already said about them",
-    ops: [
-      { op: 'readchange', label: 'Read this change', hint: 'A pre-verdict on one change — what to test, and where it shows in the mirror site.' },
-      { op: 'triagequeue', label: 'Triage the queue', hint: 'Says what to read first across every waiting change, and why.' },
-      { op: 'reviewbrief', label: 'Reviewer\'s brief', hint: 'Writes up a change for the verdict.' },
-      { op: 'refinedraft', label: 'Refine draft', hint: 'Drafts the delta when a change is sent back.' },
-    ],
-  },
-  {
-    key: 'merger',
-    name: 'Merge agent',
-    tab: 'merge',
-    tabLabel: 'Merge',
-    surface: 'room',
-    blurb: 'Reads the diffs of the branches about to be merged and says which pairings should not go in the same wave.',
-    remit: "Mission Control's Merge room: the open branches of every project and the diffs they carry",
-    ops: [
-      { op: 'mergeplan', label: 'Read the plan', hint: 'Reads the real diffs and flags pairings the file paths missed.' },
-    ],
-  },
-  // THE SCRIBE — the Instructions tab's agent, and the only one bound to a
-  // screen beside Settings and Mission Control rather than to a project tab or
-  // a Mission Control room.
-  //
-  // Its subject is the CLAUDE.md tree: the files that decide how every OTHER
-  // agent and every session behaves. That makes the "annotates, never disposes"
-  // rule sharper here than anywhere else, not softer — a rule the Scribe wrote
-  // itself would be a model editing its own instructions, unread. So
-  // `ruledraft` returns a DIFF against one named file and nothing else; the
-  // route never applies it, the owner presses Apply, and the ordinary PATCH
-  // does the writing.
-  //
-  // `rulescan` is the read-only half and runs on Gemini: four passes over the
-  // tree (contradictions, missing conventions, wording, token budget) that
-  // return findings and never a change. One op with a `pass` argument rather
-  // than four ops, because the switch the owner wants is "quick passes on or
-  // off", not four switches for four prompts of the same shape.
-  {
-    key: 'scribe',
-    name: 'Scribe',
-    tab: 'instructions',
-    tabLabel: 'Instructions',
-    surface: 'tab',
-    blurb: 'Keeps the CLAUDE.md tree honest: drafts rule changes as diffs you accept, and reads the tree for contradictions it cannot see itself.',
-    remit: "the Instructions tab: the CLAUDE.md files Stack manages, the rules in them and what the merged context costs",
-    ops: [
-      { op: 'ruledraft', label: 'Draft a rule change', hint: 'Answers as a diff against one file — nothing is written until you apply it.' },
-      { op: 'rulescan', label: 'Quick passes', backend: 'gemini', hint: 'Read-only passes over the tree: contradictions, gaps, wording, token budget.' },
-    ],
-  },
-  {
-    key: 'polaris',
-    name: 'Polaris',
-    tab: 'futures',
-    tabLabel: 'Futures',
-    surface: 'tab',
-    blurb: 'Keeps the idea funnel pointed at the north star: verdicts, themes, and tickets when an idea is ready.',
-    remit: 'the Futures tab: the project\'s idea funnel and its north star',
-    console: projectConsole('for thinking an idea through before it is worth a verdict', [
-      {
-        label: 'Judge the drift belt',
-        ask: 'Take the unjudged ideas in the funnel and say, for each, how it stands against this '
-          + "project's north star — aligned, adjacent or off it — and why in one line. Where the "
-          + 'north star cannot answer the question, say that instead of guessing.',
-      },
-      {
-        label: 'Think one idea through',
-        ask: 'Pick the idea in the funnel with the most upside and think it through with me: what it '
-          + 'really means in this codebase, what it would cost, and what it forecloses. Ask me before '
-          + 'you assume the shape.',
-      },
-      {
-        label: 'Find the theme',
-        ask: 'Read the funnel and tell me what these ideas are actually about — the two or three '
-          + 'themes underneath them, and which ideas are the same idea twice.',
-      },
-      {
-        label: 'Ready one for the board',
-        ask: 'Take the idea closest to being worth building and draft the roadmap ticket for it: '
-          + 'title, note, bucket and area, written so an unattended session could build it.',
-      },
-    ]),
-    ops: [
-      { op: 'judge', label: 'Judge alignment', hint: 'Suggests a verdict against the north star.' },
-      { op: 'cluster', label: 'Cluster themes', hint: 'Suggests a theme for unthemed ideas.' },
-      { op: 'converge', label: 'Converge to tickets', hint: 'Drafts roadmap tickets from picked ideas.' },
-    ],
-  },
-  // THE DRAFTER — the Workbench tab's agent.
-  //
-  // The canvas has had ✧ ops since it landed (expand, cluster, draft a plan,
-  // blast radius, touches, critique, ask) and they answered to NO switch: they
-  // were loose `askGemini` calls behind a bare `if (!geminiEnabled())`, which is
-  // precisely the arrangement this registry exists to end. Naming the agent is
-  // what lets the Workbench be switched off, steered and given a console like
-  // every other tab.
-  //
-  // ONE op for seven buttons, the same shape as the Scribe's `rulescan`. The
-  // switch the owner wants here is "the canvas ops on or off", not seven
-  // switches for seven prompts of one shape — and two of those button names
-  // (`cluster`, `ask`) are already other agents' ops or would collide with
-  // them, which is the registry telling the truth: they are not seven separate
-  // capabilities, they are one surface with seven phrasings.
   {
     key: 'drafter',
     name: 'Drafter',
@@ -773,8 +651,11 @@ export function agentClient(key) {
       const r = await askClaudeOnHost(full, {
         model: config.model || opts.model || '',
         timeoutMs: opts.timeoutMs,
-        // Host-side material the SERVER cannot gather (the Merge agent's real
-        // branch diffs). The host reads it and puts it in front of the prompt.
+        // Host-side material the SERVER cannot gather — real branch diffs. The
+        // host reads it and puts it in front of the prompt. No surviving op
+        // passes it (the Merge agent was its only caller and went with its
+        // room); the CAPABILITY is kept because it is the uplink's, not a
+        // room's, and re-deriving it is the expensive part.
         diffs: opts.diffs || null,
       });
       if (!r.ok) {
@@ -828,7 +709,8 @@ export async function agentsForClient() {
       // wrong one sends them to investigate something that is fine.
       opsGemini: live.filter((s) => s.backend === 'gemini').map((s) => s.op),
       // The console, as three states rather than two: null = this agent has no
-      // live session at all (the two room-bound agents, the Scribe), false =
+      // live session at all — every survivor has one, but a room-bound agent
+      // would not — false =
       // it has one and the owner switched it off, true = it has one and may
       // open it. A tab that cannot tell "no console" from "console off" would
       // print a reason for a feature that was never there.

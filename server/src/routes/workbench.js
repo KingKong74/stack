@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { pool, q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
 import { NOTE_PALETTE, relativeTime } from '../util.js';
-import { workbenchCardShape, workbenchEdgeShape, workbenchIdeaShape, workbenchBoardShape } from '../shape.js';
+import { workbenchCardShape, workbenchEdgeShape, workbenchBoardShape } from '../shape.js';
 import { askGemini, GEMINI_MODELS } from '../gemini.js';
 import { agentClient } from '../agents.js';
 import { buildPrompt } from '../prompts.js';
@@ -14,12 +14,12 @@ import { numericId } from '../params.js';
 // the notes wall.
 //
 // THE ONE RULE HERE: a card is a PLACEMENT, not content. A note card carries
-// note_id and a polaris card carries future_id; their words live in `notes` and
-// `futures` and are read through on the way out and written through on the way
-// in. That is what keeps ingest, search, ⌘K and promote-to-bug/roadmap all
-// working against a note without ever knowing the canvas exists — and it is why
-// deleting a polaris card must NOT delete the idea. Only an 'ai' card owns its
-// own title and body, because nothing else does.
+// note_id; its words live in `notes` and are read through on the way out and
+// written through on the way in. That is what keeps ingest, search, ⌘K and
+// promote-to-bug/roadmap all working against a note without ever knowing the
+// canvas exists. Only an 'ai' card owns its own title and body, because nothing
+// else does. (A 'polaris' card was the second placement kind and went with the
+// Polaris cull, along with the funnel it pointed at.)
 //
 // Positions come from the CLIENT, deliberately. It is the only side that knows
 // how tall a card rendered, and stacking an op's output under the last one
@@ -43,17 +43,11 @@ import { numericId } from '../params.js';
 // plan card's "promote to Roadmap" is a separate thing the human clicks, and it
 // goes through the ordinary roadmap POST.
 // Three more consequences of that rule. Removing a note card DOES delete the
-// note (it has no other home) while removing a polaris card returns the idea to
-// the picker; cutting an edge drops the 'ai' branch below it, and only ever 'ai'
-// cards, which is what makes an op undoable without an undo stack; and a READ
-// backfills a card for any note lacking one, which is how pre-canvas notes and
-// notes filed through the plain notes route reach the canvas at all.
-//
-// The `polaris` payload is the WHOLE funnel, not what is left of it: every idea
-// comes down carrying `onCanvas`, because the picker's All filter shows an idea
-// already placed — greyed, unpickable — and that flag is the only thing stopping
-// the same idea being pulled twice. Filtering the placed ones out server-side is
-// the obvious tidy-up that breaks it.
+// note (it has no other home); cutting an edge drops the 'ai' branch below it,
+// and only ever 'ai' cards, which is what makes an op undoable without an undo
+// stack; and a READ backfills a card for any note lacking one, which is how
+// pre-canvas notes and notes filed through the plain notes route reach the
+// canvas at all.
 //
 // The second pull source is the autopilot DEBRIEF (extraction in ../debrief.js).
 // Its structured halves — the session's next_steps/blockers, the advisor's
@@ -62,7 +56,7 @@ import { numericId } from '../params.js';
 // pick travels as a FINGERPRINT, never as text: the server re-runs its own
 // extraction and reads the words out of that, so the canvas cannot hold a copy
 // that drifted from the record and `debrief` cannot become a source anyone can
-// write arbitrary text under. Imports land as a real note/future keyed on
+// write arbitrary text under. Imports land as a real note keyed on
 // fingerprint (re-import is a no-op), dismissed fingerprints are never
 // re-offered, and the list comes down including what is already imported, greyed
 // — same rule as `onCanvas`. Every skip states its reason. Keyless by design: no
@@ -154,11 +148,9 @@ async function resolveParent(projectId, raw, dflt) {
 // The SELECT every read goes through. The joins are what let the client treat a
 // card's title as a card's title whatever table it actually lives in.
 const CARD_SELECT = `
-  SELECT c.*, n.text AS note_text, n.colour AS note_colour, n.created_at AS note_created_at,
-         f.title AS future_title, f.created_at AS future_created_at
+  SELECT c.*, n.text AS note_text, n.colour AS note_colour, n.created_at AS note_created_at
     FROM workbench_cards c
-    LEFT JOIN notes n ON n.id = c.note_id
-    LEFT JOIN futures f ON f.id = c.future_id`;
+    LEFT JOIN notes n ON n.id = c.note_id`;
 
 const cardsOf = async (projectId) => {
   const { rows } = await q(`${CARD_SELECT} WHERE c.project_id = $1 ORDER BY c.created_at, c.id`, [projectId]);
@@ -208,7 +200,7 @@ async function backfillNoteCards(projectId) {
 // created by a path that forgot to call it. Idempotent: the partial unique index
 // on (project_id, system) means two tabs reading at once make exactly one.
 //
-// REAL AND NOT DERIVED, unlike Polaris and Roadmap (#415), for one reason: it
+// REAL AND NOT DERIVED, unlike the Roadmap folder (#415), for one reason: it
 // HOLDS CARDS. A derived folder has no id, so `parent_id` has nothing to point
 // at and nothing can be filed into it. The cost of that choice is the flag has
 // to be defended in three places — DELETE, the move, the retitle — and all
@@ -223,28 +215,13 @@ async function ensureStackFolder(projectId) {
   );
 }
 
-// GET / -> the whole canvas, plus EVERY Polaris idea for the pull picker.
-//
-// The picker sends the whole funnel rather than only what is unpicked, because
-// its "All" filter has to be able to show an idea that is already on the canvas
-// — greyed, with `onCanvas` saying why it can't be picked twice. Uncapped on
-// purpose: `GET /futures` and the detail payload already return the funnel in
-// full, and a silent slice here would read as "that's all the ideas you have".
+// GET / -> the whole canvas, plus the board for the Roadmap system folder.
 workbench.get('/', async (req, res) => {
   await ensureStackFolder(req.project.id);
   await backfillNoteCards(req.project.id);
-  const [cards, edges, ideas, board, settings] = await Promise.all([
+  const [cards, edges, board, settings] = await Promise.all([
     cardsOf(req.project.id),
     q('SELECT * FROM workbench_edges WHERE project_id = $1 ORDER BY id', [req.project.id]),
-    q(
-      `SELECT f.id, f.title, f.area, f.created_at, f.is_star,
-              (SELECT count(*) FROM futures ch WHERE ch.parent_id = f.id)::int AS links,
-              EXISTS (SELECT 1 FROM workbench_cards c WHERE c.future_id = f.id) AS on_canvas
-         FROM futures f
-        WHERE f.project_id = $1
-        ORDER BY f.created_at DESC`,
-      [req.project.id]
-    ),
     // #415 — the ROADMAP system folder. The Workbench's whole job is turning
     // loose thinking into planned work, and it could not see the plan; this is
     // the board, read-only, so a note can be written next to the item it is
@@ -268,7 +245,6 @@ workbench.get('/', async (req, res) => {
   res.json({
     cards,
     edges: edges.rows.map(workbenchEdgeShape),
-    polaris: ideas.rows.map(workbenchIdeaShape),
     // The board, in the run queue's own order — the same order the Roadmap tab
     // shows, so the folder is not a second opinion about what comes next.
     board: board.rows.map(workbenchBoardShape),
@@ -282,122 +258,15 @@ workbench.get('/', async (req, res) => {
   });
 });
 
-// A canvas full of one star's orbit is not a canvas — cap the fan-out.
-const CASCADE_PLANETS = 24;
-
-// Pulling a STAR onto the canvas also pulls its direct children (planets) —
-// not moons, because star -> planet -> moon is the whole depth this galaxy
-// goes to and a moon cascading in behind its planet would bury the canvas two
-// levels deep in one click. Three rules that aren't obvious from the SQL:
-//   - a planet already on the canvas is NOT duplicated: the INSERT's
-//     ON CONFLICT on the future_id partial index just no-ops for it, and we
-//     still wire an edge to whatever card it already has.
-//   - the UNIQUE (a_id, b_id) index on workbench_edges is what makes a
-//     re-pull of the same star idempotent rather than laying a second line
-//     over the first.
-//   - only DIRECT children cascade (parent_id = the star's id) — a grandchild
-//     (a moon) is left in the tray for its own planet to bring in, if ever.
-// Returns null when the star has no planets (nothing to report), otherwise
-// { cards, edges, placed, total } — `cards` holds only the NEWLY created
-// planet cards, `edges` only the edges actually created this call.
-async function cascadePlanets(client, projectId, starId, starCardId, starX, starY, parentId) {
-  const { rows: children } = await client.query(
-    `SELECT id, count(*) OVER ()::int AS total
-       FROM futures
-      WHERE project_id = $1 AND parent_id = $2
-      ORDER BY created_at ASC
-      LIMIT $3`,
-    [projectId, starId, CASCADE_PLANETS]
-  );
-  if (!children.length) return null;
-  const total = children[0].total;
-  const planetIds = children.map((c) => c.id);
-
-  const placements = children.map((c, i) => ({
-    future_id: c.id,
-    x: clampInt(starX + 268, -20000, 20000, starX + 268),
-    y: clampInt(starY + i * 128, -20000, 20000, starY + i * 128),
-  }));
-
-  // Single multi-row insert — no per-planet query. Planets already on the
-  // canvas are silently skipped by the partial unique index.
-  const { rows: insertedIds } = await client.query(
-    `INSERT INTO workbench_cards (project_id, kind, future_id, x, y, w, parent_id)
-     SELECT $1, 'polaris', v.future_id, v.x, v.y, 244, $3
-       FROM jsonb_to_recordset($2::jsonb) AS v(future_id int, x int, y int)
-     ON CONFLICT (future_id) WHERE future_id IS NOT NULL DO NOTHING
-     RETURNING id`,
-    [projectId, JSON.stringify(placements), parentId ?? null]
-  );
-  const newCardShapes = insertedIds.length
-    ? (await client.query(
-        `${CARD_SELECT} WHERE c.project_id = $1 AND c.id = ANY($2::int[]) ORDER BY c.id`,
-        [projectId, insertedIds.map((r) => r.id)]
-      )).rows.map(workbenchCardShape)
-    : [];
-
-  // Wire the star to every planet's card, new or pre-existing, in one
-  // statement. ON CONFLICT (a_id, b_id) is what makes a re-pull non-
-  // duplicating; c.id <> starCardId guards defensively even though a planet
-  // can never be its own star.
-  const { rows: edgeRows } = await client.query(
-    `INSERT INTO workbench_edges (project_id, a_id, b_id, ai)
-     SELECT $1, $2, c.id, false
-       FROM workbench_cards c
-      WHERE c.project_id = $1 AND c.future_id = ANY($3::int[]) AND c.id <> $2
-     ON CONFLICT (a_id, b_id) DO NOTHING
-     RETURNING *`,
-    [projectId, starCardId, planetIds]
-  );
-
-  return {
-    cards: newCardShapes,
-    edges: edgeRows.map(workbenchEdgeShape),
-    placed: planetIds.length,
-    total,
-  };
-}
-
 // POST /cards -> put something on the canvas.
-//   { kind:'note', text, x, y }        writes a real note, then wraps it
-//   { kind:'polaris', futureId, x, y } pulls an idea out of the tray — and,
-//                                      if it is a star, cascades its planets
+//   { kind:'note', text, x, y }  writes a real note, then wraps it
 workbench.post('/cards', async (req, res) => {
   const x = clampInt(req.body?.x, -20000, 20000, 40);
   const y = clampInt(req.body?.y, -20000, 20000, 40);
-  const kind = req.body?.kind === 'polaris' ? 'polaris' : 'note';
   // A card is born in the folder the canvas was showing (#414). Omitted = the
   // root, which is what every caller predating folders means.
   const parentId = await resolveParent(req.project.id, req.body?.parentId, null);
   if (parentId === BAD_PARENT) return res.status(400).json({ error: 'No such folder.' });
-
-  if (kind === 'polaris') {
-    const futureId = Number(req.body?.futureId);
-    if (!Number.isFinite(futureId)) return res.status(400).json({ error: 'futureId is required.' });
-    const { rows: f } = await q(
-      'SELECT id, is_star FROM futures WHERE project_id = $1 AND id = $2', [req.project.id, futureId]);
-    if (!f.length) return res.status(404).json({ error: 'No such idea.' });
-
-    const result = await tx(async (c) => {
-      const { rows } = await c.query(
-        `INSERT INTO workbench_cards (project_id, kind, future_id, x, y, w, parent_id)
-         VALUES ($1,'polaris',$2,$3,$4,244,$5)
-         ON CONFLICT (future_id) WHERE future_id IS NOT NULL DO NOTHING RETURNING id`,
-        [req.project.id, futureId, x, y, parentId]
-      );
-      if (!rows.length) return { conflict: true };
-      const starCardId = rows[0].id;
-      const cascaded = f[0].is_star
-        ? await cascadePlanets(c, req.project.id, futureId, starCardId, x, y, parentId)
-        : null;
-      return { starCardId, cascaded };
-    });
-
-    if (result.conflict) return res.status(409).json({ error: 'That idea is already on the canvas.' });
-    const card = await oneCard(req.project.id, result.starCardId);
-    if (result.cascaded) card.cascaded = result.cascaded;
-    return res.status(201).json(card);
-  }
 
   const text = String(req.body?.text || '').trim().slice(0, 4000);
   if (!text) return res.status(400).json({ error: 'Text is required.' });
@@ -444,8 +313,8 @@ workbench.post('/folders', async (req, res) => {
 // PATCH /cards/:id -> move it, refile it, retitle it, or edit its body.
 //
 // A title edit WRITES THROUGH to whatever the card wraps: renaming a note card
-// renames the note, renaming a polaris card renames the idea. Anything else
-// would fork the text and leave ⌘K searching a stale copy.
+// renames the note. Anything else would fork the text and leave ⌘K searching a
+// stale copy.
 workbench.patch('/cards/:id', async (req, res) => {
   const id = Number(req.params.id);
   const { rows: cur } = await q(
@@ -515,9 +384,6 @@ workbench.patch('/cards/:id', async (req, res) => {
   if (title !== null && title) {
     if (card.kind === 'note') {
       await q('UPDATE notes SET text = $2, updated_at = now() WHERE id = $1', [card.note_id, title]);
-    } else if (card.kind === 'polaris') {
-      await q('UPDATE futures SET title = $2, updated_at = now() WHERE id = $1',
-        [card.future_id, title.slice(0, 300)]);
     } else {
       push('title', title.slice(0, 300));
     }
@@ -534,9 +400,9 @@ workbench.patch('/cards/:id', async (req, res) => {
 });
 
 // Cutting an op's output takes its own output with it — the whole branch that
-// grew from it. That recursion only ever follows into 'ai' cards, so a note or
-// an idea downstream of a cut line stays exactly where it is. It is what makes
-// an op undoable without an undo stack.
+// grew from it. That recursion only ever follows into 'ai' cards, so a note
+// downstream of a cut line stays exactly where it is. It is what makes an op
+// undoable without an undo stack.
 async function dropAiBranch(projectId, rootId) {
   const { rows } = await q(
     `WITH RECURSIVE doomed(id) AS (
@@ -555,7 +421,6 @@ async function dropAiBranch(projectId, rootId) {
 
 // DELETE /cards/:id — what "remove" means depends on what the card wraps:
 //   note    -> delete the note. It has no other home; this is the sticky's ×.
-//   polaris -> take it off the canvas ONLY. The idea belongs to Polaris.
 //   ai      -> delete it and everything it fed.
 //   folder  -> delete the FOLDER and LIFT its contents one level (#414).
 workbench.delete('/cards/:id', async (req, res) => {
@@ -599,7 +464,7 @@ workbench.delete('/cards/:id', async (req, res) => {
     return res.json({ ok: true, dropped: await dropAiBranch(req.project.id, id) });
   }
   await q('DELETE FROM workbench_cards WHERE project_id = $1 AND id = $2', [req.project.id, id]);
-  res.json({ ok: true, dropped: [id], returnedToTray: card.future_id });
+  res.json({ ok: true, dropped: [id] });
 });
 
 // POST /edges -> wire two cards together by hand.
@@ -698,16 +563,15 @@ async function debriefNights(projectId, days) {
 // GET /debrief -> what the last few autopilot nights turned up, mined for
 // things worth picking up.
 //
-// Sent down WHOLE, already-imported insights included, exactly like the
-// polaris list at the top of GET / carries every idea with an `onCanvas`
-// flag: the picker's All filter has to be able to show one that is already a
-// note or an idea, greyed, and `imported` is the only thing stopping it being
-// pulled twice. A night that produced nothing to act on is still returned
+// Sent down WHOLE, already-imported insights included: the picker's All filter
+// has to be able to show one that is already a note, greyed, and `imported` is
+// the only thing stopping it being pulled twice. A night that produced nothing
+// to act on is still returned
 // with an empty `insights` list — dropping it would read as "that night
 // never happened", which isn't true.
 workbench.get('/debrief', async (req, res) => {
   const days = clampInt(req.query?.days, 1, 90, 21);
-  const [nights, totalRes, noteFps, futureFps, deadFps] = await Promise.all([
+  const [nights, totalRes, noteFps, deadFps] = await Promise.all([
     debriefNights(req.project.id, days),
     q(
       `SELECT count(*)::int AS n FROM autopilot_runs
@@ -715,15 +579,13 @@ workbench.get('/debrief', async (req, res) => {
       [req.project.id, days]
     ),
     q(`SELECT fingerprint FROM notes WHERE project_id = $1 AND fingerprint <> ''`, [req.project.id]),
-    q(`SELECT fingerprint FROM futures WHERE project_id = $1`, [req.project.id]),
     q(`SELECT fingerprint FROM dismissed_items WHERE project_id = $1`, [req.project.id]),
   ]);
 
   const noteSet = new Set(noteFps.rows.map((r) => r.fingerprint));
-  const futureSet = new Set(futureFps.rows.map((r) => r.fingerprint));
   const deadSet = new Set(deadFps.rows.map((r) => r.fingerprint));
   const importedAs = (key) =>
-    noteSet.has(key) ? 'note' : futureSet.has(key) ? 'idea' : deadSet.has(key) ? 'dismissed' : '';
+    noteSet.has(key) ? 'note' : deadSet.has(key) ? 'dismissed' : '';
 
   let total = 0;
   const shaped = nights.map((night) => {
@@ -744,7 +606,7 @@ workbench.get('/debrief', async (req, res) => {
   });
 });
 
-// POST /debrief -> land picked insights on the canvas as notes or ideas.
+// POST /debrief -> land picked insights on the canvas as notes.
 //
 // The body carries only keys and positions. The server re-runs the same
 // extraction GET /debrief just ran and reads the landing text OUT OF THAT —
@@ -754,8 +616,12 @@ workbench.get('/debrief', async (req, res) => {
 // ceiling) rather than a client-supplied `days`, so a key picked off any GET
 // call is still found here regardless of what window that call used.
 workbench.post('/debrief', async (req, res) => {
-  const as = req.body?.as === 'idea' ? 'idea' : req.body?.as === 'note' ? 'note' : null;
-  if (!as) return res.status(400).json({ error: "as must be 'note' or 'idea'." });
+  // `as` is still validated rather than ignored: the client sends it, and a
+  // silently-accepted 'idea' would land a note while the caller believed it had
+  // filed an idea. The idea half went with the Polaris cull.
+  if (req.body?.as !== undefined && req.body.as !== 'note') {
+    return res.status(400).json({ error: "as must be 'note'." });
+  }
   // Imports land in the folder the picker was opened from (#414).
   const parentId = await resolveParent(req.project.id, req.body?.parentId, null);
   if (parentId === BAD_PARENT) return res.status(400).json({ error: 'No such folder.' });
@@ -767,10 +633,9 @@ workbench.post('/debrief', async (req, res) => {
     why: `only the first ${DEBRIEF_PICK_CAP} picks in one import are landed — resubmit the rest separately`,
   }));
 
-  const [nights, noteFps, futureFps, deadFps] = await Promise.all([
+  const [nights, noteFps, deadFps] = await Promise.all([
     debriefNights(req.project.id, 90),
     q(`SELECT fingerprint FROM notes WHERE project_id = $1 AND fingerprint <> ''`, [req.project.id]),
-    q(`SELECT fingerprint FROM futures WHERE project_id = $1`, [req.project.id]),
     q(`SELECT fingerprint FROM dismissed_items WHERE project_id = $1`, [req.project.id]),
   ]);
   const byKey = new Map();
@@ -778,7 +643,6 @@ workbench.post('/debrief', async (req, res) => {
     for (const ins of night.insights) byKey.set(ins.key, { insight: ins, night });
   }
   const noteSet = new Set(noteFps.rows.map((r) => r.fingerprint));
-  const futureSet = new Set(futureFps.rows.map((r) => r.fingerprint));
   const deadSet = new Set(deadFps.rows.map((r) => r.fingerprint));
 
   const toLand = [];
@@ -788,7 +652,7 @@ workbench.post('/debrief', async (req, res) => {
     const found = byKey.get(key);
     if (!found) { skipped.push({ key, why: 'that insight is no longer in the debrief' }); continue; }
     if (deadSet.has(key)) { skipped.push({ key, why: 'dismissed' }); continue; }
-    if (noteSet.has(key) || futureSet.has(key) || claimed.has(key)) {
+    if (noteSet.has(key) || claimed.has(key)) {
       skipped.push({ key, why: 'already imported' });
       continue;
     }
@@ -805,7 +669,7 @@ workbench.post('/debrief', async (req, res) => {
   const cardIds = await tx(async (c) => {
     const ids = [];
     for (const pick of toLand) {
-      if (as === 'note') {
+      {
         // Same palette cycle POST /cards uses, so a debrief note looks like
         // any other note filed on the wall.
         const { rows: cnt } = await c.query(
@@ -820,25 +684,6 @@ workbench.post('/debrief', async (req, res) => {
           `INSERT INTO workbench_cards (project_id, kind, note_id, x, y, w, parent_id)
            VALUES ($1,'note',$2,$3,$4,244,$5) RETURNING id`,
           [req.project.id, n[0].id, pick.x, pick.y, parentId]
-        );
-        ids.push(card[0].id);
-      } else {
-        // An idea landed this way is a real idea in the funnel — that is the
-        // whole point of "import into ideas" — so it gets the same provenance
-        // note a human would type by hand, naming the night it came from.
-        const itemPart = pick.night.itemId != null
-          ? `#${pick.night.itemId} ${pick.night.itemTitle}`
-          : (pick.night.itemTitle || 'no roadmap item');
-        const provenance = `From the ${pick.night.day} autopilot debrief — ${itemPart} (${pick.night.branch}).`;
-        const { rows: f } = await c.query(
-          `INSERT INTO futures (project_id, title, note, source, fingerprint)
-           VALUES ($1,$2,$3,'debrief',$4) RETURNING id`,
-          [req.project.id, pick.text.slice(0, 300), provenance, pick.key]
-        );
-        const { rows: card } = await c.query(
-          `INSERT INTO workbench_cards (project_id, kind, future_id, x, y, w, parent_id)
-           VALUES ($1,'polaris',$2,$3,$4,244,$5) RETURNING id`,
-          [req.project.id, f[0].id, pick.x, pick.y, parentId]
         );
         ids.push(card[0].id);
       }
@@ -860,8 +705,8 @@ const BUG_CAP = 15;
 const FILE_CAP = 30;
 
 const describe = (c) => {
-  const kind = c.kind === 'polaris' ? `idea P-${c.future_id}` : c.kind === 'ai' ? `${c.op} output` : 'note';
-  const text = c.kind === 'ai' ? c.title : (c.note_text || c.future_title || c.title);
+  const kind = c.kind === 'ai' ? `${c.op} output` : 'note';
+  const text = c.kind === 'ai' ? c.title : (c.note_text || c.title);
   return `[${kind}] ${String(text || '').slice(0, 240)}`;
 };
 
@@ -956,7 +801,7 @@ workbench.post('/ops', async (req, res) => {
     PROJECT: req.project.name,
     NORTH_STAR_LINE: req.project.north_star
       ? `NORTH STAR: "${String(req.project.north_star).slice(0, 600)}"` : '',
-    SELECTED_KIND: sel.kind === 'polaris' ? 'a Polaris idea' : sel.kind === 'ai' ? `an earlier ${sel.op} output` : 'a scratch note',
+    SELECTED_KIND: sel.kind === 'ai' ? `an earlier ${sel.op} output` : 'a scratch note',
     SELECTED: describe(sel),
     NEIGHBOURS: all.filter((c) => wired.has(c.id)).map(describe).join('\n') || '(nothing wired to it yet)',
     CANVAS_SHOWN: Math.min(others.length, CANVAS_CAP),

@@ -36,16 +36,6 @@ function asStepCandidates(v) {
     .slice(0, 25);
 }
 
-// Candidate futures list off the wire: [{ title, note? }] — loose directional
-// ideas for the Futures tab, distinct from concrete next-steps.
-function asFutureCandidates(v) {
-  if (!Array.isArray(v)) return [];
-  return v
-    .map((f) => ({ title: str(f?.title, 300), note: str(f?.note, 1000) || '' }))
-    .filter((f) => f.title)
-    .slice(0, 25);
-}
-
 // #174 — what this session BUILT: [{ item?, title?, note, bucket?, area? }].
 //
 // The opposite direction to `next_steps`. Those are work proposed for later and
@@ -97,7 +87,6 @@ function asBuiltCandidates(v) {
  *   extract: {
  *     bugs?: [{ title, severity }],
  *     next_steps?: [{ title, priority }],
- *     futures?: [{ title, note? }],
  *     built?: [{ item?, title?, note, bucket?, area? }]   // #174 — see below
  *   }
  * }
@@ -209,7 +198,6 @@ ingest.post('/', async (req, res) => {
 
   const bugCandidates = asBugCandidates(extract.bugs);
   const stepCandidates = asStepCandidates(extract.next_steps);
-  const futureCandidates = asFutureCandidates(extract.futures);
   const builtCandidates = asBuiltCandidates(extract.built);
 
   const client = await pool.connect();
@@ -461,36 +449,7 @@ ingest.post('/', async (req, res) => {
       }
     }
 
-    // --- 6. Land auto-extracted futures (directional ideas) ---
-    let createdFutures = 0;
-    {
-      const seen = new Set();
-      for (const cand of futureCandidates) {
-        const fp = fingerprint(cand.title);
-        if (!fp || seen.has(fp)) continue;
-        seen.add(fp);
-        if (await dismissed('future', fp)) continue;
-
-        const existing = await client.query(
-          `SELECT id FROM futures WHERE project_id=$1 AND fingerprint=$2 AND source='hook'`,
-          [projectId, fp]
-        );
-        if (existing.rows.length) {
-          await client.query('UPDATE futures SET updated_at = now() WHERE id = $1', [
-            existing.rows[0].id,
-          ]);
-        } else {
-          await client.query(
-            `INSERT INTO futures (project_id, title, note, source, fingerprint)
-             VALUES ($1,$2,$3,'hook',$4)`,
-            [projectId, cand.title, cand.note, fp]
-          );
-          createdFutures++;
-        }
-      }
-    }
-
-    // --- 6b. File the board row for what this session BUILT (#174) ---
+    // --- 6. File the board row for what this session BUILT (#174) ---
     //
     // THIS NEVER TICKS AN ITEM. A row lands here as BUILT — a `built_note` plus
     // a claim — and never as `done`. That is #374's queue predicate exactly
@@ -537,10 +496,10 @@ ingest.post('/', async (req, res) => {
       for (const cand of builtCandidates) {
         // --- the precise form: an id the session already claimed ---
         //
-        // A NUMBER IS NOT A NAME, AND THIS REPO'S NUMBERS COLLIDE. Roadmap items
-        // and futures are separate id sequences, both cited as "#174" all over
-        // the repo, the SessionStart block and the idea funnel — so a session
-        // that means future #174 and sends `item: 174` lands on a completely
+        // A NUMBER IS NOT A NAME, AND THIS REPO'S NUMBERS COLLIDE. Roadmap
+        // items and bugs are separate id sequences, both cited as "#174" all
+        // over the repo and the SessionStart block — so a session that means a
+        // different table's #174 and sends `item: 174` lands on a completely
         // unrelated roadmap row. That is not hypothetical: it happened while
         // this very feature was being filed, and it overwrote the built_note of
         // an archived, human-verdicted item, which is unrecoverable.
@@ -660,7 +619,6 @@ ingest.post('/', async (req, res) => {
       session: existingSession ? 'updated' : 'created',
       bugs: { created: createdBugs, relinked: relinkedBugs },
       roadmap: { created: createdSteps },
-      futures: { created: createdFutures },
       // #174 — `missed` is REPORTED, not swallowed: an id that matched nothing
       // means a session cited a number that is not on this board, and the
       // /checkpoint command tells the session to relay that rather than let a

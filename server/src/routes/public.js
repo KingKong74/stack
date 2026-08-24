@@ -6,7 +6,7 @@ import { activityShape } from '../shape.js';
 // GET /api/public/:slug/:token — the tokenless showcase view. Mounted WITHOUT
 // bearer auth (like /api/health), so it must stay strictly read-only and
 // strictly limited: project basics + progress + the resume summary + recent
-// activity. No bugs, roadmap, notes, futures, directives, blockers or north
+// activity. No bugs, roadmap, notes, directives, blockers or north
 // star — those are the owner's workbench, not the shop window.
 export const publicShowcase = Router();
 

@@ -38,11 +38,6 @@ triage.post('/', async (_req, res) => {
            r.title, r.bucket, r.created_at
       FROM roadmap_items r JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
      WHERE ${PENDING_SQL('r')} AND NOT r.done
-    UNION ALL
-    SELECT 'future',  p.slug, p.id, f.id::text,
-           f.title, 'idea', f.created_at
-      FROM futures f JOIN projects p ON p.id = f.project_id AND p.deleted_at IS NULL
-     WHERE f.source = 'hook' AND f.reviewed_at IS NULL
     ORDER BY created_at DESC
     LIMIT $1
   `, [TRIAGE_CAP]);

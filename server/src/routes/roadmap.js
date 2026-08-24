@@ -32,7 +32,6 @@ import { roadmapItemShape, groupRoadmap } from '../shape.js';
 import { buildPrompt } from '../prompts.js';
 import { agentClient } from '../agents.js';
 import { readSettings } from '../settings.js';
-import { composeReviewBrief, storeReviewBrief } from '../reviewbrief.js';
 import { numericId } from '../params.js';
 
 // Mounted at /api/projects/:slug/roadmap.
@@ -516,8 +515,7 @@ roadmap.post('/assist', async (req, res) => {
   if (!note) return res.status(400).json({ error: 'Write the note first — everything comes from it.' });
   const [{ rows: areaRows }, { rows: branchRows }] = await Promise.all([
     q(
-      `SELECT DISTINCT area FROM roadmap_items WHERE project_id = $1 AND area IS NOT NULL
-       UNION SELECT DISTINCT area FROM futures WHERE project_id = $1 AND area IS NOT NULL`,
+      `SELECT DISTINCT area FROM roadmap_items WHERE project_id = $1 AND area IS NOT NULL`,
       [req.project.id]
     ),
     q(

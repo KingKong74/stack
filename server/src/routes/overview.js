@@ -57,8 +57,8 @@ overview.get('/', async (_req, res) => {
          FROM sessions s
          JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL
         WHERE s.created_at > now() - interval '7 days'`),
-    // The review inbox: items no human has signed off yet. Bugs and futures can
-    // only ever be 'hook'; roadmap items are also 'fly' (#381, opened by a live
+    // The review inbox: items no human has signed off yet. A bug can only ever
+    // be 'hook'; roadmap items are also 'fly' (#381, opened by a live
     // session), and the test there goes through PENDING_SQL so the inbox and
     // the runner's gate cannot disagree about what "waiting" means.
     // `batch` clusters one ingest's extractions (same push, same minute) so
@@ -70,10 +70,6 @@ overview.get('/', async (_req, res) => {
        SELECT 'roadmap', project_id, id::text, title, bucket, created_at,
               to_char(date_trunc('minute', created_at), 'YYYY-MM-DD HH24:MI')
          FROM roadmap_items r WHERE ${PENDING_SQL('r')} AND NOT done
-       UNION ALL
-       SELECT 'future', project_id, id::text, title, 'idea', created_at,
-              to_char(date_trunc('minute', created_at), 'YYYY-MM-DD HH24:MI')
-         FROM futures WHERE source = 'hook' AND reviewed_at IS NULL
        ORDER BY created_at DESC`),
     // Live sessions: presence pings still inside the TTL window.
     q(`SELECT project_id, branch, last_seen_at FROM presence

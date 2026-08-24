@@ -62,7 +62,7 @@ export function APPROVED_SQL(alias = 'r') {
 // what "waiting" means: an item held from the runner but absent from the inbox
 // is work with no way to ever be approved.
 //
-// ROADMAP ONLY. `bugs` and `futures` carry no 'fly' rows (only a roadmap item
+// ROADMAP ONLY. `bugs` carries no 'fly' rows (only a roadmap item
 // can be built), so their inboxes keep their own `source = 'hook'` test rather
 // than testing for a value that column can never hold.
 export function PENDING_SQL(alias = 'r') {

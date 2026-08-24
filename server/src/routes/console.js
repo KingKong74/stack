@@ -145,43 +145,12 @@ const BUILDERS = {
     ];
   },
 
-  async polaris(project) {
-    const { rows: ideas } = await q(
-      `SELECT id, title, alignment, magnitude, is_star, parent_id, COUNT(*) OVER () AS total
-         FROM futures WHERE project_id = $1
-        ORDER BY is_star DESC, (alignment IS NULL) DESC, updated_at DESC LIMIT $2`,
-      [project.id, ROW_CAP]
-    );
-    const total = Number(ideas[0]?.total ?? 0);
-    const unjudged = ideas.filter((f) => !f.alignment);
-    return [
-      {
-        title: 'THE NORTH STAR — what every idea here is judged against',
-        lines: project.north_star ? [String(project.north_star).trim()] : [],
-        note: project.north_star ? '' : 'this project has no north star set, so alignment is unanswerable until it does',
-      },
-      {
-        title: `THE FUNNEL — ${total} idea(s)`,
-        lines: ideas.map((f) => {
-          const shape = f.is_star ? 'star' : f.parent_id ? 'in orbit' : (f.alignment || 'unjudged');
-          const size = f.magnitude ? `magnitude ${f.magnitude}` : 'not sized yet';
-          return `#${f.id} ${f.title} (${shape} · ${size})`;
-        }),
-        note: [
-          cap(ideas.length, total, 'ideas'),
-          unjudged.length ? `${unjudged.length} shown are unjudged — that is the drift belt, and it is your queue` : '',
-        ].filter(Boolean).join('; '),
-      },
-    ];
-  },
-
   async drafter(project) {
     const { rows: cards } = await q(
-      `SELECT c.kind, c.op, COALESCE(NULLIF(c.title, ''), LEFT(n.text, 90), f.title, '') AS label,
+      `SELECT c.kind, c.op, COALESCE(NULLIF(c.title, ''), LEFT(n.text, 90), '') AS label,
               COUNT(*) OVER () AS total
          FROM workbench_cards c
          LEFT JOIN notes n ON n.id = c.note_id
-         LEFT JOIN futures f ON f.id = c.future_id
         WHERE c.project_id = $1 ORDER BY c.updated_at DESC LIMIT $2`,
       [project.id, ROW_CAP]
     );
@@ -196,7 +165,7 @@ const BUILDERS = {
       {
         title: 'WHAT A CARD IS',
         lines: [
-          'A card is a PLACEMENT, not content: a note or idea card reads its words through from `notes`/`futures`.',
+          'A card is a PLACEMENT, not content: a note card reads its words through from `notes`.',
           'Every ✧ op on the canvas only PROPOSES a card — the owner disposes.',
         ],
       },
