@@ -191,7 +191,11 @@ function suiteFor(slug, ORIGIN) {
     // profiles merge in from code and can't all be deleted, so a non-empty
     // keyed `profiles` list is the real invariant — not which one sorts
     // first, which shifts the moment a custom profile's key sorts earlier.
-    { name: 'Agents — profile catalogue', url: u('/api/agents'), auth: true, json_path: 'profiles.0.key' },
+    // The URL is /api/agent-profiles, NOT /api/agents: those are two different
+    // things that arrived under the same word (agents.js's header says so). The
+    // check named the surface registry and asserted the SPAWN catalogue's shape,
+    // so it had been red on a working route.
+    { name: 'Agents — profile catalogue', url: u('/api/agent-profiles'), auth: true, json_path: 'profiles.0.key' },
 
     // -- the automation spine: the payloads the fleet itself depends on
     { name: 'Autopilot — run ledger', url: u(`/api/projects/${slug}/autopilot/runs`), auth: true, json_path: '0.outcome' },
