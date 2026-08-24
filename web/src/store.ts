@@ -1,8 +1,8 @@
 import type {
-  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Future, Check, CheckRun, CheckHistory, Overview,
+  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Tier, ResumeSince, ProjectDebrief,
-  WorkbenchData, WorkbenchCard, WorkbenchEdge, WorkbenchBody, WorkbenchOp, WorkbenchCascade,
+  WorkbenchData, WorkbenchCard, WorkbenchEdge, WorkbenchBody, WorkbenchOp,
   WorkbenchDebrief, SchedSpan, BoardShape, BoardArea, BoardLabel, BoardList, ProjectPulse,
 } from './types';
 
@@ -308,95 +308,38 @@ export async function getOverview(): Promise<Overview> {
 // ---- search (the ⌘K command palette) ----
 
 export async function getSearch(query: string): Promise<SearchResponse> {
-  const r = await request<SearchResponse>(`/search?q=${encodeURIComponent(query)}`);
-  // Default the futures group so a not-yet-redeployed server can't break the palette.
-  return {
-    ...r,
-    groups: { ...r.groups, futures: r.groups.futures ?? [] },
-    counts: { ...r.counts, futures: r.counts.futures ?? 0 },
-  };
+  return request<SearchResponse>(`/search?q=${encodeURIComponent(query)}`);
 }
-
-// ---- mission control ----
 
 // #363 — 'auto': ▶ Run queues this project's mergeable branches; 'plan': they
 // are named in the proposed plan but merge one press each; 'off': out of the
-// plan. None of the three relaxes the conflict probe, the #212 risk gate or
-// the merge confirm — they decide what one press covers, not what is checked.
+// plan. The Merge room that pressed the button is culled; the COLUMN is the
+// autopilot's and outlived it.
 export type MergeAutonomy = 'auto' | 'plan' | 'off';
 
-// (#365) Git state sitting in a parallel checkout that no pushed ref would
-// ever reveal — uncommitted work, or commits ahead of a branch nobody has
-// opened as anything yet. One entry per worktree the host's scan found.
-export interface Worktree {
-  path: string; name: string; branch: string; head: string;
-  subject: string; committedAt: string | null; when: string;
-  dirty: number;            // uncommitted paths in this tree
-  ahead: number;            // commits origin/main does not have, pushed or not
-  unpushed: number | null;  // commits ahead of its OWN upstream; null = no upstream at all
-  main: boolean;            // the primary checkout
-  prunable: boolean;        // the tree's directory is gone
-  itemId: string; itemTitle: string;
+// A permission prompt a host session has stopped on. `fingerprint` is the
+// handle answerPrompt() sends back: the host re-reads the pane and refuses
+// unless the prompt it finds is still this exact one, so a stale row cannot
+// approve something the human never read. Rides on DetachedSession — a
+// terminal concern, not one of the culled rooms'.
+export interface BlockedPrompt {
+  question: string;
+  title: string;
+  detail: string;        // the command, the file, the URL — what it is ABOUT
+  options: { n: number; label: string }[];
+  yes: number;           // the plain Yes, never "and don't ask again"
+  fingerprint: string;
+  since: number;         // epoch ms the relay first saw this question
 }
 
-export interface ControlProject {
-  slug: string; name: string; tint: string | null; status: ProjectStatus;
-  automode: boolean; progress: number; lastPush: string;
-  // #363 — how much of this project's merging the Merge room's agent may do on
-  // one ▶ Run press. Distinct from `automode`, which is about BUILDING it
-  // overnight: a house can want a project built unattended and still want every
-  // merge of it looked at. Absent on a pre-#363 server — read as 'plan'.
-  mergeAutonomy?: MergeAutonomy;
-  autopilotArea: string;   // '' = whole board; else the nightly pick's area filter
-  areas: string[];         // target options — areas on this project's open must/should items
-  live: { count: number; branches: string[] } | null;
-  // #365 adds the per-feature plan progress and the item's own classification/
-  // judgement so far, so the Trees room needs no second round trip per claim.
-  claims: {
-    id: string; title: string; branch: string;
-    planTotal: number; planDone: number;
-    bucket: string; tier: string | null; risk: string; area: string;
-    builtNote: string; reviewTag: string; reviewedAt: string | null;
-    claimedWhen: string;
-  }[];
-  // #154 — open branches with the item each one owns; powers the merge strip.
-  // #207 — the host's git branch report enriches each chip where it exists:
-  // ahead/behind vs main, the merge-tree conflict probe and the last subject.
-  // Claim-only chips (no report yet) carry just the first three fields.
-  // #363 — and the DIFF: the host's `git diff --numstat origin/main...<ref>`,
-  // which is what the Merge room weighs a branch by. `files` 0 means the size
-  // is UNKNOWN (a report an older dispatcher wrote, or a claim-only chip), not
-  // that the branch is empty — the room draws no size bar rather than a zero.
-  // `topFiles` is capped server-side; `files` is the true total, so the panel
-  // can say what it is not showing.
-  branches: {
-    branch: string; itemId: string; itemTitle: string;
-    ahead?: number; behind?: number;
-    mergeClean?: boolean | null;  // false = conflicts with main; null/absent = not probed
-    subject?: string; when?: string; committedAt?: string | null;
-    adds?: number; dels?: number; files?: number; area?: string;
-    topFiles?: { path: string; adds: number; dels: number; binary?: boolean }[];
-  }[];
-  // #207 — fully-merged origin branches never deleted (prune hint) + report age.
-  absorbedBranches?: number;
-  branchesWhen?: string;
-  // #365 — git state sitting in a parallel checkout (uncommitted or unpushed
-  // work no ref would ever reveal). `null` is load-bearing and MUST stay in
-  // the type: it means the host has never reported worktrees at all (no pass
-  // ran ≠ nothing found), while `[]` means it reported and there are none.
-  // Never default this to `[]` — that would erase the distinction.
-  worktrees: Worktree[] | null;
-  worktreesWhen: string | null;
-  reviewCount: number;
-  // #255 — open must/should with no design, and plan jobs already standing by.
-  planCoverage?: { unplanned: number; queued: number };
-  bugs: { serious: number; open: number };
-  // #206 — audit pass rate from the checks' stored results; null/absent = never run.
-  audit?: { run: number; passing: number } | null;
-  blockers: string[];
-  nextPick: { id: string; bucket: Priority; title: string } | null;
-  lastAuto: { branch: string; summary: string; when: string } | null;
-}
+// ---- the autopilot's jobs and schedules ----
+//
+// The NIGHTLY RUNNER outlived Mission Control. Its rooms were the console, but
+// the queue itself is the host dispatcher's and is read from two surviving
+// places: the Terminal screen's pending-resume chip, and the session planner.
+// So these types and calls stayed while the rooms' own payload (`/api/control`)
+// went — a job is not a room.
+
 // #228 — the session planner: what a scheduled session IS, beyond a time slot.
 export type SessionKind = 'build' | 'plan' | 'debug' | 'audit' | 'refine';
 
@@ -411,6 +354,7 @@ export interface AutopilotSchedule {
   agenda: (number | string)[];   // ordered work list: item ids, or bug keys (debug)
   area: string;                  // scope the general pick ('' = whole board)
 }
+
 export interface AutopilotJob {
   id: string; slug: string; name: string; tint: string | null;
   kind: 'manual' | 'nightly' | 'scheduled' | 'revert' | 'resume' | 'merge' | 'plan' | 'advise';
@@ -422,9 +366,6 @@ export interface AutopilotJob {
   sessionKind?: SessionKind;           // #228 — the session plan the job carries
   agenda?: (number | string)[];
   area?: string;
-  // #243 — the merge advisor: the branch it ran against ('' when not
-  // applicable) and whether its report has landed. The report text itself
-  // does NOT ride here — it's kilobytes, and lives behind getMergeAdvice.
   branch: string;
   adviceReady: boolean;
   when: string;
@@ -432,556 +373,12 @@ export interface AutopilotJob {
   tokenBudget: number | null; // (#266) this job's share of the night's token budget, or null
 }
 
-// #243 — a merge advisor pass. `advice: null` means no pass has run yet;
-// it does NOT mean "no conflicts" — don't coerce the two together.
-export interface MergeAdvice {
-  id: string; slug: string; branch: string; kind: string; status: string;
-  detail: string; advice: string | null; when: string;
-}
 export interface TermSession {
   sid: string; cwd: string; cmd: 'shell' | 'claude';
   startedAt: number;       // epoch ms
   label: string;           // ✧ Gemini's take on what it's doing ('' until asked)
   tmux?: string;           // the host tmux session behind a claude tab ('' for
                            // shells / pre-tmux daemons) — the jump-in target
-}
-export interface ModelEntry { model: string; label: string }
-
-// (#194) Weekly + today token/cost summary for Mission Control's usage card.
-export interface UsageSummary {
-  weekTokens: number;
-  weekCostUsd: number;
-  weekRuns: number;
-  weekNights: number;      // distinct calendar nights that had at least one run
-  todayTokens: number;
-  todayCostUsd: number;
-  budgetPerNight: number;  // echo of settings.autopilot_tokens; 0 = unlimited
-  models: { model: string; tokens: number; costUsd: number }[];
-  // #200 — month-to-date rollup (calendar month, UTC), across all projects.
-  monthTokens?: number;
-  monthCostUsd?: number;
-  monthRuns?: number;
-  // #177 — the newest runs with their per-model (agent) split for the breakdown.
-  // `day` (#14a) = the UTC calendar date, so the Nights room can place each run.
-  recentRuns?: RunRow[];
-  // (#271) The true row count before the server's cap — recentRuns is
-  // fleet-wide and can be truncated in a busy house. Greater than
-  // recentRuns.length means the Nights calendar is missing older nights.
-  recentRunsTotal?: number;
-}
-
-// One row of the run ledger. #286 added what the run PRODUCED (branch, commits,
-// its own account, the checks it left red) and the item's current `verdict` —
-// '' meaning nobody has dispositioned it, which is what the night debrief asks
-// you to do. All optional: an older server sends the #177 shape alone.
-export interface RunRow {
-  slug: string; name: string; tint: string | null; itemId: string | null; itemTitle: string;
-  outcome: string; day?: string; when: string; tokens: number; costUsd: number;
-  models: { model: string; tokens: number; costUsd: number }[];
-  branch?: string;
-  commits?: number;
-  summary?: string;              // the session's own account of the item
-  checksFailing?: number | null; // null = the run never ran the checks
-  verdict?: string;              // '' = awaiting your verdict
-  itemDone?: boolean;
-  // (#282) The reviewer's stored read on this run: clean | concerns | blocked.
-  // '' = no review ran — keyless, no diff, or a row from before it was kept.
-  // That is NOT the same as "nothing found", and the debrief says so.
-  reviewVerdict?: string;
-  reviewNote?: string;
-  reviewFindings?: number | null;
-  // (#284) The architect's structural read: aligned | drifting | concerning.
-  // '' = no pass ran. A change can be correct and still drift, which is why
-  // this is a separate verdict from the reviewer's rather than folded into it.
-  architectVerdict?: string;
-  architectNote?: string;
-  architectObs?: string[];
-}
-
-// (#286) The reviewer's per-push line — the second model's take on one auto/*
-// push, and the only durable trace of the diff review (its structured verdict
-// is consumed by the auto-merge gate and deleted). Empty list = no reviewer
-// ran, which the debrief states rather than drawing an empty reviewer.
-export interface ReviewNote {
-  slug: string; hash: string; branch: string;
-  day: string; when: string;
-  summary: string; note: string;
-}
-
-// Account-level Plan windows (#220) — the daemon's cached snapshot of the
-// same session/week percentages the Terminal strip shows (#195).
-export interface PlanUsageSnapshot {
-  plan: {
-    session?: { pct: number; resetAt: number | null } | null;
-    week?: { pct: number; resetAt: number | null } | null;
-    weekModel?: { pct: number; resetAt: number | null; model?: string } | null;
-  };
-  tokens: number; // today's fresh transcript tokens at snapshot time
-  at: number;     // epoch ms the relay cached it — staleness gate
-}
-
-// (#268) A worker slot — one in-flight autopilot job. `branch` is the lane
-// claim the runner holds ('' until a general night claims its first item);
-// `tokens`/`costUsd` are spend BANKED by items this job already finished, so
-// the first in-flight item honestly reads 0. `tmux` is the host session name
-// (#171) — not browser-attachable, offered as a `tmux attach -t` hint.
-export interface FleetSlot {
-  jobId: string; slug: string; name: string; tint: string | null;
-  status: 'claimed' | 'running';
-  kind: AutopilotJob['kind'];
-  sessionKind: SessionKind;
-  itemId: string; itemTitle: string;
-  branch: string;
-  startedAt: string | null;
-  since: string;
-  tokens: number; costUsd: number;
-  tmux: string;
-  // (#280) The roles on this lane. `exec`/`adv` are the app-wide policy (the
-  // runner takes its models from settings); everything below is this session's
-  // own spend, so the pair reads as "who was meant to run it" beside "what it
-  // actually cost". Optional throughout — a pre-#280 server sends none.
-  exec?: RoleModel;
-  adv?: RoleModel | null;
-  spend?: RoleSpend[];
-  execCostUsd?: number; advCostUsd?: number;
-  advShare?: number;        // advisor's % of the attributed total
-  advisorSeen?: boolean;    // the advisor's model appears in the banked usage
-  ledger?: RoleLedgerEntry[];
-  // (#366) The host's own read of this lane's tmux pane, refreshed on the
-  // control payload's cadence. null means the host has not reported this
-  // session — never render that as idle or calm; it is "we cannot see", the
-  // same reading as a NULL review verdict.
-  activity?: { doing: string; idleMs: number; at: number; lines: number; attached: boolean } | null;
-}
-
-// (#280) One of the two roles: the configured model, catalogue-labelled.
-export interface RoleModel { model: string; label: string }
-
-// (#280) One model's share of a session's banked spend. `role` is '' when
-// neither alias claims the model — the split shows it as unattributed rather
-// than guessing. `inferred` marks the one documented inference: a lone
-// unattributed model while the executor is on the CLI's default IS the executor.
-export interface RoleSpend {
-  model: string; label: string;
-  role: 'exec' | 'adv' | '';
-  tokens: number; costUsd: number;
-  share: number; inferred: boolean;
-}
-
-// (#280) One item this session has already banked, with the roles that were on
-// it. Stack records role spend, not the advisor conversation — so an item is
-// the honest granularity for "what the advice cost".
-export interface RoleLedgerEntry {
-  itemId: string; itemTitle: string;
-  outcome: string; when: string;
-  tokens: number; costUsd: number;
-  advCostUsd: number;
-  models: { model: string; label: string; role: 'exec' | 'adv' | ''; tokens: number; costUsd: number }[];
-}
-
-// (#270) Loud idle — the honest reason the fleet is or is not running, resolved
-// server-side most-fundamental-first. `tone` drives the colour; `fix` is the
-// one-click remedy where one exists; `hint` is the host-side instruction when
-// it doesn't. 'dispatcher-silent' outranks everything: if nobody is polling,
-// no amount of correct configuration matters.
-export type FleetStatusCode =
-  | 'dispatcher-silent' | 'working' | 'disarmed' | 'no-automode'
-  | 'paused' | 'nothing-eligible' | 'waiting';
-
-export interface FleetStatus {
-  code: FleetStatusCode;
-  tone: 'good' | 'warn' | 'bad';
-  text: string;
-  hint: string;
-  fix: { kind: 'arm' | 'resume' | 'plan'; label: string } | null;
-}
-
-// (#269) The throughput ledger — is the automation getting better? Every metric
-// is a pair: `now` (last 7 days) against `prev` (the 7 before), so the rail can
-// render a direction rather than a table. Plan nights are excluded throughout —
-// they never commit by design.
-export interface LedgerWindow {
-  landed: number;
-  perNight: number;       // landed items per ACTIVE night (idle nights excluded)
-  tokensPerItem: number;
-  costPerItem: number;
-  noCommitRate: number;   // 0–1
-}
-
-export interface Ledger {
-  // 14 daily buckets, oldest first; empty days are present as zeroes.
-  days: { day: string; landed: number; runs: number; tokens: number; costUsd: number }[];
-  now: LedgerWindow;
-  prev: LedgerWindow;
-  // Completed merge jobs split by who queued them — the runner's own low-risk
-  // auto-merges (#212) vs a human ⇥ Merge.
-  merges: { now: { total: number; auto: number }; prev: { total: number; auto: number } };
-  reverts: {
-    now: number; prev: number;
-    // Reverts as a share of that window's landed work. `number | null`, NOT
-    // optional and NOT 0: null means nothing landed in the window, so the
-    // rate has no denominator — an unknown, not a good one.
-    rateNow: number | null; ratePrev: number | null;
-  };
-  // Of items a run landed and a human has since verdicted, how many were called
-  // solid. Current state, so a refined-then-passed item counts — this is the
-  // CEILING of the true first-pass rate. The 14-day totals are the headline;
-  // now/prev are the same 7-and-7 split as every other metric here, for the
-  // direction arrow.
-  firstPass: {
-    solid: number; verdicted: number;
-    now: { solid: number; verdicted: number };
-    prev: { solid: number; verdicted: number };
-  };
-  // Executor vs advisor spend (#153), attributed by the SAME alias match the
-  // lane split (#280) and the fleet table (#281) use. `assumed` is the slice
-  // the fallback placed — models the current policy names for neither role,
-  // split the old highest-token way — so the client can qualify the claim
-  // rather than present a partly-guessed total as measured.
-  roles: {
-    executor: { tokens: number; costUsd: number };
-    advisor: { tokens: number; costUsd: number };
-    assumed?: { tokens: number; costUsd: number };
-  };
-}
-
-// (#281 / design 23b) Roles across the fleet. `models` is the week per model,
-// `assignments` is what ACTUALLY ran per project — compared against the
-// configured policy rather than assumed equal to it, which is the only way
-// drift becomes visible. `worth` is numbers only; the sentences are composed
-// in the Roles room, the same way a lane's read is.
-export interface FleetRoleModel {
-  model: string; label: string;
-  role: 'exec' | 'adv' | '';
-  runs: number; tokens: number; costUsd: number;
-  todayTokens: number; todayCostUsd: number;
-  share: number; lastSeen: string;
-  // (#288) The catalogue alias that would ADOPT this model into a role, so an
-  // off-policy model can offer the settings write instead of describing it.
-  // '' = no catalogue entry claims it (a Fable night is reportable, not
-  // adoptable as an executor). Absent on a server that pre-dates #288.
-  adoptExec?: string; adoptAdv?: string;
-}
-
-// drift: '' = the runs match the policy · 'no-runs' = quiet, not drift ·
-// 'off-policy' = a model ran that neither current role claims (a changed
-// setting, or a host-side --executor-model override) · 'advisor-unused' = an
-// advisor is configured but never appeared in this project's runs.
-// 'no-runs' and 'no-breakdown' are absences of EVIDENCE, not disagreements:
-// a run that recorded no per-model breakdown cannot say what it ran on, so it
-// can neither prove nor disprove the policy. Only isDrift() values are a real
-// finding, and only they colour a row or count toward the room's tab badge.
-export type RoleDrift = '' | 'no-runs' | 'no-breakdown' | 'off-policy' | 'advisor-unused';
-export const isDrift = (d: RoleDrift) => d === 'off-policy' || d === 'advisor-unused';
-
-export interface FleetRoleAssignment {
-  slug: string; name: string; tint: string | null; automode: boolean;
-  runs: number;
-  exec: string; execExtra: number;
-  adv: string; advExtra: number;
-  drift: RoleDrift;
-  driftModel: string;
-  lastRun: string;
-}
-
-export interface FleetRoleWorth {
-  advisedRuns: number; advisedLanded: number;
-  plainRuns: number; plainLanded: number;
-  // Plan nights build nothing by design, so they sit out the land-rate
-  // comparison above and are counted here instead. Absent on an older server.
-  planRuns?: number; advisedPlanRuns?: number;
-  advCostUsd: number; execCostUsd: number; totalCostUsd: number;
-  advShare: number; execShare: number; avgAdvPerRun: number;
-  costBasis: boolean;   // false = no cost reported, the shares are token-based
-}
-
-// (#288, design 1b) The run-level counts the two role cards lead with. Counted
-// once per RUN, which the per-model tallies cannot do — one run using three
-// models increments three of them. `total` is every run that recorded a
-// per-model breakdown, which is the population `offPolicy` is drawn from;
-// `plan` is the slice of it that built nothing by design, and `noBreakdown` is
-// what sat out entirely, said plainly rather than folded in as compliance.
-export interface FleetRoleRuns {
-  total: number; offPolicy: number; onPolicy: number; noBreakdown: number;
-  plan?: number;   // absent on a server that pre-dates the plan-night split
-}
-
-// A model in the merged receipt: nights and the human's own sessions in one
-// list. `role` is only ever set on an autopilot row — the executor/advisor
-// policy governs the autopilot, so a model picked by hand in a terminal
-// carries none and must never be rendered as drift. `share` is TOKEN-based on
-// both sides, the only basis both populations have (a transcript has no cost).
-export interface FleetEveryModel {
-  model: string; label: string;
-  role: 'exec' | 'adv' | '';    // '' on every manual-only row, by construction
-  source: 'autopilot' | 'manual' | 'both';
-  runs: number; sessions: number;
-  tokens: number; costUsd: number; todayTokens: number;
-  // How much of `tokens` was spent by SUBAGENTS rather than in a main loop.
-  agentTokens?: number;
-  share: number; lastSeen: string;
-}
-
-export interface FleetManualModel {
-  model: string; label: string;
-  sessions: number; tokens: number; todayTokens: number;
-  share: number; lastSeen: string;
-}
-
-// The interactive population, split the way the work actually splits: `tokens`
-// and `models` are the MAIN LOOP, `agentTokens` and `agentModels` are the
-// subagents — read from their own transcripts under `<session>/subagents/`,
-// which is the only place a delegation's real cost exists. In an interactive
-// session those two are the director/executor split, and the delegated half is
-// routinely the larger one.
-export interface FleetManual {
-  sessions: number;
-  sessionsWithUsage: number;   // the honest denominator — the rest sent no breakdown
-  tokens: number;
-  models: FleetManualModel[];
-  delegatedSessions: number;
-  agentCalls: number;
-  // Delegations that left a readable transcript. `agentTokens` prices exactly
-  // these, so a cleaned-up subagent directory reads as unpriced, not as free.
-  agentsRecorded?: number;
-  agentTokens?: number;
-  agentModels?: FleetManualModel[];
-  agentTypes: { type: string; count: number }[];
-}
-
-export interface FleetRoles {
-  days: number;
-  models: FleetRoleModel[];
-  assignments: FleetRoleAssignment[];
-  worth: FleetRoleWorth;
-  runs?: FleetRoleRuns;   // absent on a server that pre-dates #288
-  // Both absent on a server that pre-dates interactive sessions being read.
-  everyModel?: FleetEveryModel[];
-  manual?: FleetManual;
-}
-
-// A permission prompt a host session has stopped on. `fingerprint` is the
-// handle answerPrompt() sends back: the host re-reads the pane and refuses
-// unless the prompt it finds is still this exact one, so a stale row cannot
-// approve something the human never read.
-export interface BlockedPrompt {
-  question: string;
-  title: string;
-  detail: string;        // the command, the file, the URL — what it is ABOUT
-  options: { n: number; label: string }[];
-  yes: number;           // the plain Yes, never "and don't ask again"
-  fingerprint: string;
-  since: number;         // epoch ms the relay first saw this question
-}
-
-// What has STOPPED and is waiting on the human, worst first. Three kinds, and
-// the difference matters: `permission` is a session that would be working,
-// `paused` is one the limit or a hang-up holds, `review` is work that landed
-// and nobody has judged. Empty with no host daemon on the line — which is
-// "we cannot see", not "all clear", and the room says so.
-export interface AttentionRow {
-  key: string;
-  kind: 'permission' | 'paused' | 'review';
-  slug: string;
-  name: string;
-  text: string;
-  detail: string;
-  at: number;
-  when: string;
-  tmux?: string;         // permission — the session to answer in
-  cwd?: string;
-  fingerprint?: string;  // permission — the answer handle
-  jobId?: string;        // paused — the resume handle
-  notBefore?: string | null;
-  count?: number;        // review — how many are queued
-}
-
-// Two live sessions writing one file in one checkout. Read off the sessions'
-// own transcripts, not off git: a shared checkout has one dirty tree and git
-// cannot say who wrote what.
-export interface SessionConflict {
-  key: string;
-  file: string;
-  cwd: string;
-  branch: string;
-  slug: string;
-  name: string;
-  count: number;
-  sessions: { sessionId: string; at: number; when: string }[];
-  at: number;
-  when: string;
-}
-
-export interface ControlData {
-  // (#269) The throughput ledger; absent on a server that pre-dates it.
-  ledger?: Ledger;
-  // (#268) The fleet: how many workers the host may run at once, and what each
-  // busy one holds. Slots below capacity are idle — the strip renders them.
-  // (#270) …plus why it is or is not running, and the dispatcher's pulse.
-  fleet?: {
-    capacity: number;
-    slots: FleetSlot[];
-    // (#280) The role policy stated once above the lanes. Undefined on a
-    // pre-#280 server — the roles strip hides rather than inventing one.
-    roles?: {
-      executor: RoleModel;
-      advisor: RoleModel | null;   // null = no advisor: single-model sessions
-      note: string;
-    };
-    status?: FleetStatus;
-    // ageSec null = no heartbeat recorded (a pre-#270 server) — reads as
-    // unknown, never as silent.
-    heartbeat?: { ageSec: number | null; silent: boolean; hostLocal: string };
-  };
-  autopilot: {
-    enabled: boolean; minutes: number; tokens: number; time: string; maxItems: number;
-    workers: number;        // #335 — fleet-wide concurrency cap; 0 = unlimited
-    planSweep: boolean;     // #255 — auto-plan unplanned must/should work
-    executorModel: string;  // '' = the claude CLI's default model (#153)
-    advisorModel: string;   // '' = no advisor subagent
-  };
-  // Model picker catalogue (#175) — served from the backend so there is one
-  // source of truth. Undefined while loading; the frontend falls back to the
-  // hardcoded lists in Control.tsx.
-  models?: { executors: ModelEntry[]; advisors: ModelEntry[] };
-  terminal?: {
-    connected: boolean; sessions?: TermSession[]; detached?: DetachedSession[];
-    // (#366) When the host's autopilot pane report last landed; 0 = no report
-    // has ever landed — apart from "reported and nothing running".
-    autoSeenAt?: number;
-  };  // host daemon + open web terminals + orphaned tmux survivors
-  schedules: AutopilotSchedule[];
-  jobs: AutopilotJob[];                // recent first; queued/claimed/running lead the strip
-  projects: ControlProject[];
-  totals: { automode: number; liveSessions: number; claims: number; review: number };
-  usage?: UsageSummary | null;
-  planUsage?: PlanUsageSnapshot | null; // Plan windows via the daemon (#220)
-  // (#281) Undefined on a pre-#281 server — the Roles room says so rather than
-  // rendering an empty fleet as if nothing had ever run.
-  roles?: FleetRoles | null;
-  // (#286) The reviewer's per-push notes, for the night debrief, and whether a
-  // Gemini key exists at all — false lets the debrief say "no reviewer ran"
-  // instead of drawing a reviewer with nothing to say.
-  reviewNotes?: ReviewNote[];
-  geminiReady?: boolean;
-  // What is waiting on you, and who is about to collide. Both default to []
-  // on a server that pre-dates them, which renders as nothing waiting — the
-  // same reading as a host with nothing to report.
-  attention?: AttentionRow[];
-  conflicts?: SessionConflict[];
-}
-
-export async function getControl(): Promise<ControlData> {
-  const d = await request<ControlData>('/control');
-  // Defaults so a not-yet-redeployed server can't blank Mission Control.
-  return {
-    ...d,
-    autopilot: {
-      enabled: d.autopilot?.enabled ?? false,
-      minutes: d.autopilot?.minutes ?? 120,
-      tokens: d.autopilot?.tokens ?? 1_500_000,
-      time: d.autopilot?.time ?? '23:05',
-      maxItems: d.autopilot?.maxItems ?? 3,
-      // A pre-#335 server sends none — 3 matches the server-side default.
-      workers: d.autopilot?.workers ?? 3,
-      // An older server that does not send it reads as ON, matching the
-      // server-side default — the switch then simply has nothing to gate.
-      planSweep: d.autopilot?.planSweep ?? true,
-      executorModel: d.autopilot?.executorModel ?? '',
-      advisorModel: d.autopilot?.advisorModel ?? '',
-    },
-    schedules: d.schedules ?? [],
-    // #243 — default branch/adviceReady so a pre-deploy server can't send a
-    // job that throws the UI; branch: '' reads as "not applicable", same as
-    // the merge strip's existing convention.
-    jobs: (d.jobs ?? []).map((j) => ({ ...j, branch: j.branch ?? '', adviceReady: j.adviceReady ?? false })),
-    // #154 — default branches so a pre-deploy server can't break the strip.
-    // #365 — worktrees defaults to `null` (never `[]`) on a pre-deploy server:
-    // the key is genuinely absent, which means no report ever ran, not that
-    // the host looked and found nothing. worktreesWhen follows the same rule.
-    projects: (d.projects ?? []).map((p) => ({
-      ...p,
-      branches: p.branches ?? [],
-      worktrees: p.worktrees ?? null,
-      worktreesWhen: p.worktreesWhen ?? null,
-    })),
-    // #194 — null when the server pre-dates this feature; the usage card hides.
-    usage: d.usage ?? null,
-    // #268 — a pre-deploy server sends no fleet; one idle slot is the honest
-    // default, since the dispatcher has always been one worker wide.
-    fleet: d.fleet ?? { capacity: 1, slots: [] },
-    // #281 — null when the server pre-dates the fleet roles block; the Roles
-    // room draws its own "this server has no roles data" state.
-    roles: d.roles ?? null,
-    // Nothing waiting and nobody colliding, on a server that cannot yet see
-    // either. The Now room reads the daemon's own connected flag to tell that
-    // apart from "the host says all clear".
-    attention: d.attention ?? [],
-    conflicts: d.conflicts ?? [],
-  };
-}
-
-// ---- Mission Control: watch a running autopilot session (#366) ----
-//
-// Two independent reads behind the fleet strip's Watch action:
-// `getAutoSession` is the session's OWN record (what it's on, its plan, what
-// it has already banked tonight) — cheap, from the database, refreshed on the
-// control payload's cadence. `viewAutoPane` is an on-demand FRESH read of the
-// tmux pane itself, taken host-side at the moment it is asked for. Both are
-// read-only: nothing here can type into a session.
-
-export interface AutoSessionDetail {
-  job: {
-    id: string; slug: string; name: string; tint: string | null;
-    kind: AutopilotJob['kind']; sessionKind: SessionKind;
-    status: AutopilotJob['status'];
-    itemId: string | null; itemTitle: string;
-    branch: string; detail: string;
-    agenda: (number | string)[]; area: string;
-    createdAt: string | null; claimedAt: string | null;
-    startedAt: string | null; finishedAt: string | null;
-    tmux: string;
-  };
-  plan: PlanStep[];
-  planDone: number;
-  planTotal: number;
-  // Units this night has already banked, since the job claimed — the shared
-  // run-ledger shape (`runCore`/`agentReads`, same fields the run ledger and
-  // the Review room use), plus the item identity and its own timestamps.
-  runs: {
-    id: string; itemId: string | null; itemTitle: string;
-    branch: string; outcome: string; commits: number; tokens: number; costUsd: number;
-    checksFailing: number | null; summary: string;
-    reviewVerdict: string; reviewNote: string; reviewFindings: number | null;
-    architectVerdict: string; architectNote: string; architectObs: string[];
-    startedAt: string | null; finishedAt: string | null;
-  }[];
-  // The session's own pushed accounts on this branch, newest first.
-  pushes: { sessionId: string; summary: string; currentPhase: string; commitHash: string; branch: string; createdAt: string | null }[];
-  presence: { sessionId: string; branch: string; startedAt: string | null; lastSeenAt: string | null }[];
-  // The same activity shape a fleet slot carries — null = not reported.
-  activity: { doing: string; idleMs: number; at: number; lines: number; attached: boolean } | null;
-}
-
-export async function getAutoSession(jobId: string): Promise<AutoSessionDetail> {
-  const d = await request<AutoSessionDetail>(`/control/session/${encodeURIComponent(jobId)}`);
-  return {
-    ...d,
-    plan: d.plan ?? [],
-    runs: d.runs ?? [],
-    pushes: d.pushes ?? [],
-    presence: d.presence ?? [],
-    activity: d.activity ?? null,
-  };
-}
-
-// An on-demand fresh read of one stack-auto-* pane. Throws with the host's
-// own sentence on failure ("the host daemon is not connected", "that
-// autopilot session is not on this host any more") — shown verbatim, never
-// swallowed, and never rendered as a blank pane that looks like a working one.
-export interface AutoPaneView { ok: true; name: string; tail: string; doing: string; idleMs: number; alive: boolean }
-export async function viewAutoPane(name: string, lines?: number): Promise<AutoPaneView> {
-  return request<AutoPaneView>('/terminal/auto-view', { method: 'POST', body: { name, ...(lines ? { lines } : {}) } });
 }
 
 // ✧ Label the terminal sessions — live ones AND the detached tmux survivors —
@@ -992,34 +389,10 @@ export async function labelTerminalSessions(): Promise<{ sessions: TermSession[]
   return { sessions: r.sessions, detached: r.detached ?? [] };
 }
 
-// The Run-now button: queue a manual job the host dispatcher picks up within
-// a minute. An already open job for the project comes back instead.
-// A session plan can ride along (#228/#255): `kind` picks the runner mode
-// (build | plan | debug | audit | refine), `agenda` is the ORDERED list of
-// roadmap ids (or BUG-N keys for debug) it must work, `area` scopes an
-// agenda-less pick.
-export interface SessionPlanInput {
-  itemId?: string;
-  kind?: SessionKind;
-  agenda?: (string | number)[];
-  area?: string;
-}
-export async function startAutopilot(
-  slug: string, opts?: string | SessionPlanInput,
-): Promise<AutopilotJob> {
-  const plan: SessionPlanInput = typeof opts === 'string' ? { itemId: opts } : (opts ?? {});
-  const body: Record<string, unknown> = { slug };
-  if (plan.itemId) body.itemId = plan.itemId;
-  if (plan.kind) body.kind = plan.kind;
-  if (plan.agenda?.length) body.agenda = plan.agenda.map(String);
-  if (plan.area) body.area = plan.area;
-  return request<AutopilotJob>('/autopilot/start', { method: 'POST', body });
-}
-
 // #142 — the paused-session controls. A session that hit the usage limit sits
 // in the queue as a kind='resume' job holding until the reset: Resume clears
 // the hold (the dispatcher then treats it as a manual press), hang-up parks it
-// until resumed by hand, dismiss drops it entirely.
+// until resumed by hand.
 export async function resumeAutopilotJob(id: string): Promise<AutopilotJob> {
   return request<AutopilotJob>(`/autopilot/jobs/${id}`, {
     method: 'PATCH', body: { status: 'queued', notBefore: null },
@@ -1028,11 +401,8 @@ export async function resumeAutopilotJob(id: string): Promise<AutopilotJob> {
 export async function hangupAutopilotJob(id: string): Promise<AutopilotJob> {
   return request<AutopilotJob>(`/autopilot/jobs/${id}`, { method: 'PATCH', body: { status: 'paused' } });
 }
-export async function dismissAutopilotJob(id: string): Promise<void> {
-  await request(`/autopilot/jobs/${id}`, { method: 'DELETE' });
-}
-// The job queue without the full Mission Control payload — the Terminal's
-// pending-resume chip reads it per project.
+
+// The job queue, read per project by the Terminal's pending-resume chip.
 export async function getAutopilotJobs(slug?: string, limit = 20): Promise<AutopilotJob[]> {
   const qs = `${slug ? `slug=${encodeURIComponent(slug)}&` : ''}limit=${limit}`;
   return request<AutopilotJob[]>(`/autopilot/jobs?${qs}`);
@@ -1057,9 +427,6 @@ export async function patchAutopilotSchedule(
   id: string, patch: Partial<Omit<SchedulePayload, 'slug'>> & { enabled?: boolean },
 ): Promise<AutopilotSchedule> {
   return request<AutopilotSchedule>(`/autopilot/schedule/${id}`, { method: 'PATCH', body: patch });
-}
-export async function deleteAutopilotSchedule(id: string): Promise<void> {
-  await request(`/autopilot/schedule/${id}`, { method: 'DELETE' });
 }
 
 // ---- settings ----
@@ -1090,7 +457,6 @@ export interface ProjectDetailData {
   bugs: Bug[];
   roadmap: Roadmap;
   notes: Note[];
-  futures: Future[];
   checks: Check[];
   keepResumeCard: boolean;
   staleItemDays: number;   // parked-item stale threshold in days (#247) — ages the Parked view
@@ -1107,7 +473,7 @@ export interface ProjectDetailData {
 
 export async function getProjectDetail(slug: string): Promise<ProjectDetailData> {
   const d = await request<ProjectPayload & {
-    activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[]; futures?: Future[];
+    activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[];
     checks?: Check[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
     staleItemDays?: number; geminiReady?: boolean; agents?: TabAgentState;
     cadence?: { day: string; n: number }[]; lastPushAt?: string | null;
@@ -1115,7 +481,7 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   return {
     project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
     blockers: d.blockers || [], directives: d.directives || [],
-    activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes, futures: d.futures || [],
+    activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes,
     checks: d.checks || [],
     keepResumeCard: d.keepResumeCard !== false,
     // An older server that doesn't send it falls back to the same default (#247).
@@ -1148,236 +514,6 @@ export async function getProjectDebrief(slug: string): Promise<ProjectDebrief> {
 // The Overview draws each band absent when its `measured` is false.
 export async function getProjectPulse(slug: string): Promise<ProjectPulse> {
   return request<ProjectPulse>(`/projects/${encodeURIComponent(slug)}/pulse`);
-}
-
-// ---- the Review room (#282, GET /api/review) ----
-//
-// Cross-project, because the nights are: one payload holds every completed item
-// nobody has verdicted yet (with the run that built it and the reviewer's stored
-// read), the settled archive, and a fortnight of runs grouped by night for the
-// debrief. Read-only — every verdict still goes through the per-project roadmap
-// routes, so nothing here can mutate a tracker.
-
-export interface ReviewRun {
-  id: number;
-  branch: string;
-  outcome: string;
-  commits: number;
-  tokens: number;
-  costUsd: number;
-  checksFailing: number | null;
-  summary: string;
-  reviewVerdict: '' | 'clean' | 'concerns' | 'blocked';  // '' = no review ran
-  reviewNote: string;
-  reviewFindings: number | null;
-  // #284 — the architect's structural read, beside the reviewer's correctness one.
-  // '' = no architect pass ran (keyless, or a run that predates it).
-  architectVerdict: '' | 'aligned' | 'drifting' | 'concerning';
-  architectNote: string;
-  architectObs: string[];
-  // #263 — the run's own auto-verdict evidence, when the machine gave one.
-  // '' = no auto-verdict was given, which is NOT the same as one refused.
-  autoVerdict: string;
-  when: string;
-  finishedAt: string;
-  // #273 — the reviewer's brief is written automatically at run end and stored
-  // on the run itself. `null` means no brief was written (keyless, a failed
-  // call, or a run predating the column) — deliberately not an empty brief.
-  // The ✧ Brief button is now an explicit RE-ASK; `getReviewBrief()` below
-  // both refreshes this and returns the fresh copy.
-  reviewBrief: ReviewBrief | null;
-  reviewBriefAt: string | null;
-}
-
-// #374 — the host's probe on the branch a change is still sitting on. Only a
-// 'built' item carries one, and `null` is its own answer: no report names the
-// branch, which leaves "the host has not reported since it was pushed" and
-// "somebody merged it without ticking" both open. Never drawn as clean.
-export interface ReviewMerge {
-  branch: string;
-  ahead: number;
-  behind: number;
-  mergeClean: boolean | null;   // false = conflicts with main; null = not probed
-  subject: string;
-  when: string;
-}
-
-export interface ReviewItem {
-  slug: string; name: string; tint: string | null;
-  id: string; title: string; bucket: Priority;
-  note: string; builtNote: string; refineNote: string;
-  reviewTags: string[]; reviewTag: string; shelved: boolean;
-  branch: string; origin: 'auto' | 'branch' | 'manual';
-  when: string; doneAt: string; risk: string;
-  // #374 — 'built' = the work is on a branch and wants reading BEFORE it
-  // lands; 'ticked' = the human has already closed it out. Absent on a
-  // pre-#374 server, where everything in the queue was ticked by definition.
-  stage?: 'built' | 'ticked';
-  merge?: ReviewMerge | null;
-  // #263 — who gave the verdict and on what evidence. verdictSource defaults
-  // to 'human' server-side (also true of every row that predates the column);
-  // verdictEvidence '' means the evidence was not recorded, never "none found".
-  verdictSource: 'human' | 'auto';
-  verdictAt: string | null;
-  verdictEvidence: string;
-  run: ReviewRun | null;
-}
-
-export interface ReviewNightRun extends ReviewRun {
-  slug: string; name: string; tint: string | null;
-  itemId: string; itemTitle: string;
-  day: string;   // UTC calendar day the run finished — the debrief groups on it
-}
-
-export interface ReviewData {
-  queue: ReviewItem[];
-  settled: ReviewItem[];
-  // #263 — the last 12 items the MACHINE verdicted, newest verdict first: the
-  // audit strip for the risk-tiered auto-verdict gate. Deliberately capped and
-  // deliberately says so — a silent slice reads as "that was all of them".
-  autoVerdicted: ReviewItem[];
-  nights: ReviewNightRun[];
-  // `unmerged` (#374) is a subset of `pending`, not a sibling of `flagged`:
-  // how many of the changes waiting on you are still on a branch.
-  totals: {
-    pending: number; shelved: number; flagged: number; projects: number; settled: number;
-    // `unmerged` (#374) is a subset of `pending`, not a sibling of `flagged`:
-    // how many of the changes waiting on you are still on a branch.
-    unmerged?: number;
-    // #263 — how many verdicts in the archive the machine gave itself.
-    autoVerdicted: number;
-  };
-  // #375 — which agents may act, and which of their ops. Every ✧ in this room
-  // is the Foreman's, and each one is ABSENT rather than disabled when it
-  // cannot run — with the reason said beside it. This replaced `geminiReady`:
-  // the room's ops moved onto Claude on the host with the agent, so a key says
-  // nothing about whether they work.
-  agents?: TabAgentState;
-  // Turn 3 — a Gemini key exists on the server. The Refine dialog's ✦ draft
-  // button is ABSENT without one, never a disabled button explaining itself.
-  geminiReady?: boolean;
-}
-
-export async function getReview(): Promise<ReviewData> {
-  return request<ReviewData>('/review');
-}
-
-// GET /api/review/debrief — one night, composed server-side (#286/#24a). The
-// arithmetic (landed/failed/planned/noCommits, the reviewer/architect rollup,
-// where they disagree, the decisions the night is waiting on) is the SERVER's
-// now — debrief.js is the one definition, shared with Mission Control's
-// NightDebrief panel — so this client no longer re-derives it from `nights`.
-export interface ReviewDebriefRun extends ReviewNightRun { pushNote: string }
-export interface ReviewDebriefDecision {
-  kind: 'blocked' | 'checks' | 'paused' | 'failed';
-  tag: string;
-  slug: string | null;
-  itemId: string | null;
-  itemTitle: string;
-  branch: string;
-  sentence: string;
-}
-export interface ReviewDebrief {
-  geminiReady: boolean;
-  day: string;
-  scope: string | null;
-  ran: boolean;
-  stats: {
-    runs: number; landed: number; failed: number; planned: number; noCommits: number;
-    projects: number; tokens: number; costUsd: number; costPerLanded: number | null;
-  };
-  runs: ReviewDebriefRun[];
-  reviewer: { ran: number; clean: number; flagged: number; blocked: number; findings: number };
-  architect: { ran: number; aligned: number; drifted: number };
-  disagree: {
-    slug: string | null; itemId: string | null; itemTitle: string; branch: string;
-    reviewVerdict: string; architectVerdict: string;
-  }[];
-  decisions: ReviewDebriefDecision[];
-}
-export async function getReviewDebrief(night: string, slug?: string): Promise<ReviewDebrief> {
-  const qs = `night=${encodeURIComponent(night)}${slug ? `&slug=${encodeURIComponent(slug)}` : ''}`;
-  return request<ReviewDebrief>(`/review/debrief?${qs}`);
-}
-
-// Turn 3 — ✦ the Refine draft: Gemini's first pass at the delta that sends a
-// completed item back to the board. Offered, never forced; it returns text for
-// a box the human edits and sends, and writes nothing itself.
-//
-// `read` is what the server actually had to go on. It exists because the design
-// captions this "reads the run log + diff" and the server has no checkout —
-// what it really reads is the record (the session's account, the second model's
-// stored read OF the diff, the files touched), and how much of that exists
-// varies per item. The dialog prints this list rather than the fixed caption.
-export interface RefineDraft { draft: string; basis: string; read: string[] }
-export async function getRefineDraft(slug: string, id: number): Promise<RefineDraft> {
-  return request<RefineDraft>(`${reviewBase(slug, id)}/refine-draft`, { method: 'POST' });
-}
-
-// #375 — the Foreman's ops all hang off the ROOM's route rather than the
-// project's, because the room is the agent's surface. (The two older ones lived
-// under /projects/:slug/roadmap while they were the Curator's; they moved with
-// the op.)
-const reviewBase = (slug: string, id: number) =>
-  `/review/${encodeURIComponent(slug)}/${encodeURIComponent(String(id))}`;
-
-// ✧ Read this change — the pre-verdict. What makes it worth reading is the
-// last two fields, not the first: `blind` is what the Foreman could NOT see
-// (it has no diff — the server has no checkout), and `read` is what the server
-// actually put in front of it. A change with no run behind it says so instead
-// of wearing a caption that claims more.
-//
-// `where` is the mirror-site half: paths INTO the running copy of the branch,
-// which the room turns into links against the preview's URL. Server-validated
-// as same-origin paths; an empty list is a real answer (the change isn't
-// user-visible, or the record doesn't say which screen moved).
-export interface ForemanRead {
-  call: 'approve' | 'look' | 'send-back';
-  why: string;
-  test: string[];
-  where: { path: string; what: string }[];
-  blind: string[];
-  read: string[];
-}
-export async function getForemanRead(slug: string, id: number): Promise<ForemanRead> {
-  return request<ForemanRead>(`${reviewBase(slug, id)}/read`, { method: 'POST' });
-}
-
-// ✧ Triage the queue — an ORDER over everything waiting, and nothing else: no
-// verdicts, because the Foreman has read none of them. `placed: false` marks a
-// change the Foreman left out of its own order; the room shows those at the
-// end, said out loud, rather than dropping them from the list the owner is
-// now working from. `considered` < `total` when the queue was capped.
-export interface QueueTriage {
-  order: { key: string; why: string; placed: boolean }[];
-  note: string;
-  considered: number;
-  total: number;
-}
-export async function getQueueTriage(): Promise<QueueTriage> {
-  return request<QueueTriage>('/review/triage', { method: 'POST' });
-}
-
-// The one-shot hand-off behind the Review room's ＋ Bug / ＋ Audit: the room has
-// no modals of its own (and no project loaded), so it stashes the prefill and
-// opens the project, where ProjectDetail picks it up exactly once — the same
-// pattern as the terminal brief and the Polaris thought.
-export interface ReviewPrefill { kind: 'bug' | 'audit'; slug: string; itemId: string; title: string }
-const REVIEW_PREFILL_KEY = 'stack.review.prefill';
-
-export function setReviewPrefill(p: ReviewPrefill) {
-  try { sessionStorage.setItem(REVIEW_PREFILL_KEY, JSON.stringify(p)); }
-  catch { /* private mode — the modal just won't open prefilled */ }
-}
-export function takeReviewPrefill(slug: string): ReviewPrefill | null {
-  try {
-    const raw = sessionStorage.getItem(REVIEW_PREFILL_KEY);
-    if (!raw) return null;
-    const p = JSON.parse(raw) as ReviewPrefill;
-    if (p?.slug !== slug) return null;      // meant for a different project
-    sessionStorage.removeItem(REVIEW_PREFILL_KEY);
-    return p;
-  } catch { return null; }
 }
 
 // ---- web terminal (ws to /term — the host PTY daemon behind nginx) ----
@@ -1577,22 +713,6 @@ export interface DetachedSession {
   blocked?: BlockedPrompt | null;  // stopped on a permission prompt right now
 }
 
-// Say yes or no to a permission prompt a host session is stopped on.
-//
-// The host is the one that decides. It re-reads the pane before it types
-// anything and refuses if the prompt has changed — the row on screen can be up
-// to twenty seconds old, and in twenty seconds a session can be answered at the
-// keyboard and be sitting on a text input where the menu was. A refusal comes
-// back as a thrown Error carrying the host's own sentence, which is the thing
-// worth showing: "already answered", "moved on to a different prompt".
-//
-// `state` on success is what the host saw a beat later — 'cleared' (it took),
-// 'still-up' (the keystroke did not land) or 'next-prompt' (it took and the
-// session immediately asked something else).
-export async function answerPrompt(name: string, fingerprint: string, choice: 'approve' | 'deny'):
-Promise<{ ok: boolean; state: string; choice: string }> {
-  return request('/terminal/answer', { method: 'POST', body: { name, fingerprint, choice } });
-}
 export async function getDetachedSessions(): Promise<DetachedSession[]> {
   const r = await request<{ sessions: DetachedSession[] }>('/terminal/detached');
   return r.sessions;
@@ -1659,81 +779,6 @@ export function getTermOpenTabs(): TermOpenTab[] {
 }
 export function setTermOpenTabs(tabs: TermOpenTab[]) {
   localStorage.setItem(TERM_TABS_KEY, JSON.stringify(tabs.slice(0, TERM_TABS_MAX)));
-}
-
-// ---- Gemini judge assist (POST .../futures/:id/judge — suggestion only) ----
-
-export interface JudgeSuggestion { alignment: 'on-course' | 'tangent' | 'off-course'; why: string }
-
-export async function judgeFuture(slug: string, id: number): Promise<JudgeSuggestion> {
-  return request<JudgeSuggestion>(
-    `/projects/${encodeURIComponent(slug)}/futures/${id}/judge`, { method: 'POST' });
-}
-
-// ---- Gemini theme clustering (POST .../futures/cluster — suggestions only;
-// the human applies each through the normal PATCH) ----
-
-export interface ClusterSuggestion { id: number; currentTitle: string; area: string }
-
-export async function clusterFutures(slug: string): Promise<ClusterSuggestion[]> {
-  const r = await request<{ items: ClusterSuggestion[] }>(
-    `/projects/${encodeURIComponent(slug)}/futures/cluster`, { method: 'POST' });
-  return r.items;
-}
-
-// ---- converge (POST .../futures/converge — Gemini drafts tickets from picked
-// ideas; drafts only, the client creates through the normal roadmap POST) ----
-
-export interface ConvergeDraft {
-  title: string;
-  note: string;
-  bucket: 'must' | 'should' | 'could';
-  area: string;
-  plan: string[];
-  sources: number[];
-}
-
-export async function convergeFutures(
-  slug: string, ids: number[], mode: 'tickets' | 'epic',
-): Promise<ConvergeDraft[]> {
-  const r = await request<{ items: ConvergeDraft[] }>(
-    `/projects/${encodeURIComponent(slug)}/futures/converge`, { method: 'POST', body: { ids, mode } });
-  return r.items;
-}
-
-// ---- orbits (POST .../futures/orbits — Gemini proposes parent/child pairings
-// among ideas already on the canvas; suggestions only, the human applies each
-// through the normal PATCH) ----
-
-export interface OrbitProposal {
-  id: number;
-  title: string;
-  parentId: number;
-  parentTitle: string;
-  why: string;
-}
-
-export async function proposeOrbits(slug: string): Promise<OrbitProposal[]> {
-  const r = await request<{ items: OrbitProposal[] }>(
-    `/projects/${encodeURIComponent(slug)}/futures/orbits`, { method: 'POST' });
-  return r.items;
-}
-
-// ---- restate (POST .../futures/:id/restate — Gemini drafts a clearer title/
-// note for one idea; a draft only, the human applies it through the normal
-// PATCH) ----
-
-export interface RestateDraft { title: string; note: string; area: string; why: string }
-
-export async function restateFuture(slug: string, id: number): Promise<RestateDraft> {
-  const d = await request<Partial<RestateDraft>>(
-    `/projects/${encodeURIComponent(slug)}/futures/${id}/restate`, { method: 'POST' });
-  return {
-    title: d.title || '',
-    note: d.note || '',
-    area: d.area || '',
-    why: d.why || '',
-  };
 }
 
 // ---- timeline (GET /api/timeline — cross-project pushes + contribution graph) ----
@@ -2000,96 +1045,6 @@ export async function deleteRoadmapItem(slug: string, id: number): Promise<void>
 export async function getAutopilotRuns(slug: string): Promise<AutopilotRun[]> {
   return request<AutopilotRun[]>(`/projects/${encodeURIComponent(slug)}/autopilot/runs`);
 }
-// ✧ Reviewer's brief for a completed item (#134): Gemini reads the item, its
-// built_note, the run that built it and the project's checks — returns what
-// shipped, hands-on test steps and likely risks. #273 — the route now
-// persists this onto the run at the same time, so a call here is a RE-ASK:
-// it refreshes the stored brief and returns the fresh copy.
-export interface ReviewBrief { summary: string; test: string[]; risks: string[] }
-export async function getReviewBrief(slug: string, id: number): Promise<ReviewBrief> {
-  return request<ReviewBrief>(`${reviewBase(slug, id)}/brief`, { method: 'POST' });
-}
-// ⎌ Undo a completed item (#128): queues a revert job — the host dispatcher
-// reverts the item's #N-tagged commits on main in a throwaway worktree, pushes,
-// and un-ticks the item so it returns to the board fresh.
-export async function queueUndo(slug: string, itemId: number): Promise<AutopilotJob> {
-  return request<AutopilotJob>('/autopilot/undo', { method: 'POST', body: { slug, itemId } });
-}
-// ---- (#208) branch previews — a mirror site for pushed work ----
-// The server holds the state; the host dispatcher does the doing. A preview is
-// an isolated docker stack of one branch, exposed on its own ephemeral
-// Cloudflare quick-tunnel URL, so a branch can be LOOKED AT before it is
-// merged. That URL is public and unauthenticated while it lives, which is why
-// every preview carries an expiry the server enforces.
-export interface Preview {
-  id: string;
-  slug: string; name: string; tint: string | null;
-  branch: string;
-  itemId: string | null; itemTitle: string;
-  // queued → starting → live → stopping → stopped | failed
-  status: 'queued' | 'starting' | 'live' | 'stopping' | 'stopped' | 'failed';
-  url: string;        // '' until the tunnel is up — a live row with no url is still arriving
-  detail: string;     // progress line, or why it failed
-  port: number | null;
-  createdAt: string; startedAt: string | null; expiresAt: string | null;
-  when: string;
-}
-
-// Queue a preview of one branch. Idempotent per branch: asking twice returns
-// the SAME row rather than racing a second docker stack onto the host.
-export async function startPreview(
-  slug: string, branch: string, opts?: { itemId?: string | null; hours?: number },
-): Promise<Preview> {
-  return request<Preview>(`/projects/${encodeURIComponent(slug)}/previews`, {
-    method: 'POST',
-    body: { branch, itemId: opts?.itemId ?? undefined, hours: opts?.hours ?? undefined },
-  });
-}
-
-// Every open preview, plus recent history.
-export async function getPreviews(): Promise<Preview[]> {
-  return request<Preview[]>('/previews');
-}
-
-// Ask for a teardown. This only marks intent — the host tears it down on its
-// next sweep — so it works even while the host is briefly unreachable.
-export async function stopPreview(id: string): Promise<Preview> {
-  return request<Preview>(`/previews/${encodeURIComponent(id)}/stop`, { method: 'POST' });
-}
-
-// Re-arm a live preview's expiry (the one write that isn't a stop).
-export async function extendPreview(id: string, hours: number): Promise<Preview> {
-  return request<Preview>(`/previews/${encodeURIComponent(id)}`, { method: 'PATCH', body: { hours } });
-}
-
-// ⇥ Merge a claim branch (#154): queues a merge job — the host dispatcher fetches,
-// merges origin/<branch> into main with --no-ff in a throwaway worktree, pushes
-// main, and deletes the remote branch on success. Conflicts fail safely.
-// itemId is advisory metadata only — the dispatcher does NOT tick the item.
-// #193: other queued merges never block a new one (trains run sequentially via
-// /next, each from the fresh main the last one pushed); aiResolve opts a dirty
-// branch into the dispatcher's claude conflict-resolution pass.
-export async function queueMerge(slug: string, branch: string, itemId?: string, aiResolve?: boolean): Promise<AutopilotJob> {
-  return request<AutopilotJob>('/autopilot/merge', {
-    method: 'POST',
-    body: { slug, branch, ...(itemId ? { itemId } : {}), ...(aiResolve ? { aiResolve: true } : {}) },
-  });
-}
-// #243 — queues a merge advisor pass: the host dispatcher runs it against the
-// branch and stores a text report. itemId is advisory metadata only, same as
-// queueMerge. Returns 201 for a new job or 200 if an open advise job for that
-// project+branch already exists — either way, an AutopilotJob.
-export async function queueAdvice(slug: string, branch: string, itemId?: string): Promise<AutopilotJob> {
-  return request<AutopilotJob>('/autopilot/advise', {
-    method: 'POST',
-    body: { slug, branch, ...(itemId ? { itemId } : {}) },
-  });
-}
-// #243 — the advisor's stored report for one job. advice is string|null and
-// null must stay null: it means no pass ran, not "no conflicts found".
-export async function getMergeAdvice(id: string): Promise<MergeAdvice> {
-  return request<MergeAdvice>(`/autopilot/jobs/${id}/advice`);
-}
 // Gemini titles an item from its note (the modal's ✧ button) — suggestion only.
 export async function suggestRoadmapTitle(slug: string, note: string): Promise<string> {
   const r = await request<{ title: string }>(`${roadmapBase(slug)}/suggest-title`, { method: 'POST', body: { note } });
@@ -2123,32 +1078,6 @@ export interface RoadmapCleanupSuggestion {
 export async function cleanupRoadmap(slug: string): Promise<RoadmapCleanupSuggestion[]> {
   const r = await request<{ items: RoadmapCleanupSuggestion[] }>(`${roadmapBase(slug)}/cleanup`, { method: 'POST', body: {} });
   return r.items;
-}
-
-// ---- futures ----
-
-const futuresBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/futures`;
-
-export async function getFutures(slug: string): Promise<Future[]> {
-  return request<Future[]>(futuresBase(slug));
-}
-export async function createFuture(slug: string, input: { title: string; note?: string }): Promise<Future> {
-  return request<Future>(futuresBase(slug), { method: 'POST', body: input });
-}
-export async function patchFuture(
-  slug: string, id: number,
-  patch: Partial<{
-    title: string; note: string; reviewed: boolean; alignment: string; area: string;
-    canvasX: number | null; canvasY: number | null;
-    // The galaxy's three (#312) — where it orbits, whether it has its own orbit,
-    // and how much work it is.
-    parentId: number | null; isStar: boolean; magnitude: number | null;
-  }>,
-): Promise<Future> {
-  return request<Future>(`${futuresBase(slug)}/${id}`, { method: 'PATCH', body: patch });
-}
-export async function deleteFuture(slug: string, id: number): Promise<void> {
-  await request<void>(`${futuresBase(slug)}/${id}`, { method: 'DELETE' });
 }
 
 // ---- checks (the Quality tab's Suite segment) ----
@@ -2195,52 +1124,6 @@ export async function getCheckHistory(slug: string, limit = 20): Promise<CheckHi
   return request<CheckHistory>(`${checksBase(slug)}/history?limit=${limit}`);
 }
 
-// #260 — how many sessions the Plan room assumes you run in parallel. A
-// PLANNING lens, not a runner setting: the overnight autopilot is one lane, the
-// rest are sessions you (or another machine) start, and Stack's branch claims
-// already keep them off each other's items. Device-local, because it describes
-// how you intend to work rather than what the server does.
-const PLAN_LANES_KEY = 'stack.planLanes';
-export const PLAN_LANE_CHOICES = [1, 2, 3, 4] as const;
-
-export function getPlanLanes(): number {
-  return readStoredJSON(PLAN_LANES_KEY, (v) =>
-    (typeof v === 'number' && PLAN_LANE_CHOICES.includes(v as 1 | 2 | 3 | 4) ? v : 1));
-}
-export function setPlanLanes(n: number) {
-  localStorage.setItem(PLAN_LANES_KEY, JSON.stringify(n));
-}
-
-// Mission Control's right rail: open, or collapsed to the 76px slim rail.
-// Device-local like the Terminal's cockpit rail — it describes how much screen
-// you want to give the rooms on THIS machine, not anything about the work.
-// Defaults OPEN, which is the rail exactly as it shipped; the slim state is the
-// thing you opt into, so a wiped browser behaves as before.
-const CONTROL_RAIL_KEY = 'stack.controlRail';
-export function getControlRailOpen(): boolean {
-  return readStoredJSON(CONTROL_RAIL_KEY, (v) => v !== false);
-}
-export function setControlRailOpen(open: boolean) {
-  localStorage.setItem(CONTROL_RAIL_KEY, JSON.stringify(open));
-}
-
-// #306 — the expanded rail's last measured height, so the slim rail can keep
-// the column's LENGTH through a collapse instead of shrinking to a stub. Only a
-// remembered measurement, never a preference: 0 means "never measured on this
-// device", and the slim rail then takes its natural height (the old behaviour).
-// Clamped because a stored height is applied sight-unseen on the next load, and
-// a corrupt one would otherwise stretch the page.
-const CONTROL_RAIL_H_KEY = 'stack.controlRailH';
-export function getControlRailHeight(): number {
-  return readStoredJSON(CONTROL_RAIL_H_KEY, (v) =>
-    typeof v === 'number' && v >= 200 && v <= 3000 ? Math.round(v) : 0);
-}
-export function setControlRailHeight(px: number) {
-  if (!(px >= 200 && px <= 3000)) return;
-  try { localStorage.setItem(CONTROL_RAIL_H_KEY, JSON.stringify(Math.round(px))); }
-  catch { /* storage full — the rail's length is a nicety, never a blocker */ }
-}
-
 // #251 — the Roadmap board's layout, per project. Which bucket column is
 // FOCUSED (fills the board, the others fold away), which columns are folded to
 // their header, and which tier rows are folded on the Tiers view. Device-local
@@ -2268,22 +1151,6 @@ export function getBoardLayout(slug: string): BoardLayout {
 export function setBoardLayout(slug: string, layout: BoardLayout) {
   try { localStorage.setItem(BOARD_LAYOUT_KEY(slug), JSON.stringify(layout)); }
   catch { /* storage full or unavailable — the layout is a nicety, never a blocker */ }
-}
-
-// #307 — the Polaris tab's north star band, device-local per project. The band
-// is the one thing on the page that never changes between visits: a paragraph
-// you wrote once, sitting above the sky you actually came to read. So it opens
-// COLLAPSED by default and the summary line carries it. Expanding is
-// remembered per slug, because "I am rewriting this project's direction" is a
-// state worth keeping across a reload — but it is never the state you arrive in.
-const NORTH_STAR_KEY = (slug: string) => `stack.northStarOpen.${slug}`;
-
-export function getNorthStarOpen(slug: string): boolean {
-  return readStoredJSON(NORTH_STAR_KEY(slug), (p) => p === true);
-}
-export function setNorthStarOpen(slug: string, open: boolean) {
-  try { localStorage.setItem(NORTH_STAR_KEY(slug), JSON.stringify(open)); }
-  catch { /* storage full or unavailable — the band is a nicety, never a blocker */ }
 }
 
 // #297 — the last project a detail page loaded successfully, device-local:
@@ -2363,161 +1230,26 @@ export async function deleteSkill(id: number): Promise<void> {
   await request<{ ok: boolean }>(`/skills/${id}`, { method: 'DELETE' });
 }
 
-// ---- the instructions tree ----
-//
-// The managed CLAUDE.md library — the same arrangement as the skill tree above,
-// for the same reason (the server cannot see a repo; the host can). `body` is
-// the FILE, verbatim: every rule, scope, off switch, the precedence order and
-// the merge preview are derived from it in lib/instructions.ts and none of them
-// is stored. `installedAt` is a fact the host reported, never something a save
-// sets, so a file can be saved here and not be on disk for another five minutes.
-
-export interface InstructionFile {
-  id: number;
-  scope: 'global' | 'project';  // ~/.claude/CLAUDE.md, or <repo>/<dir>/CLAUDE.md
-  slug: string;                 // the project, '' for global
-  dir: string;                  // '' = repo root; 'web' = web/CLAUDE.md
-  path: string;                 // how the owner reads it
-  body: string;
-  enabled: boolean;             // off = the host removes the file IT planted
-  adopted: boolean;             // taken over from a file somebody else wrote
-  installedAt: string | null;   // null = not on disk (yet, or any more)
-  updatedAt: string | null;
-}
-// One CLAUDE.md the host found. An UNMANAGED one is reported and never touched
-// — it is somebody else's file, and the tree shows it so it can be adopted
-// rather than silently overwritten. `reach` is how many tracked files its
-// directory covers, and **-1 means the host could not count**, never zero.
-export interface InstructionOnDisk {
-  scope: 'global' | 'project'; slug: string; dir: string;
-  path: string; managed: boolean; body: string; reach: number; bytes: number;
-}
-// Where a nested CLAUDE.md COULD go, as the host found it — the opposite
-// question from `files`, which is where one already is. **`known: false` means
-// the host could not ask git**, not that the repo has no directories: an empty
-// list rendered as "nowhere to put one" would be the NULL-verdict lie again, so
-// the picker falls back to a typed path instead.
-export interface RepoDirs {
-  slug: string;
-  known: boolean;
-  root: number;                        // tracked files in the repo, -1 = unknown
-  dirs: { dir: string; files: number }[];
-}
-export interface InstructionReport {
-  files: InstructionOnDisk[]; repos: RepoDirs[]; detail: string; when: string | null;
-}
-// The Scribe's live state. Its two ops sit on two backends (Claude via the
-// host, Gemini for the read-only passes), so there is no single "is it ready" —
-// `opsReady` is per-op, and a dock that offers both reads it rather than
-// greying out a pass because the terminal daemon happens to be down.
-export interface ScribeState { enabled: boolean; ops: string[]; opsReady: string[] }
-export interface InstructionsData {
-  files: InstructionFile[]; report: InstructionReport; agent: ScribeState;
-}
-export type InstructionInput =
-  Partial<Pick<InstructionFile, 'scope' | 'slug' | 'dir' | 'body' | 'enabled'>>;
-
-/** One rule change the Scribe proposes. Never applied server-side. */
-export interface RuleDiff { path: string; section: string; remove: string[]; add: string[] }
-export interface RuleDraft { reply: string; diff: RuleDiff | null }
-export interface ScanFinding { text: string; where: string; action: string }
-export interface ScanResult {
-  pass: string; title: string; meta: string; items: ScanFinding[];
-}
-
-export async function getInstructions(): Promise<InstructionsData> {
-  return request<InstructionsData>('/instructions');
-}
-export async function createInstructionFile(input: InstructionInput): Promise<InstructionFile> {
-  return request<InstructionFile>('/instructions', { method: 'POST', body: input });
-}
-export async function patchInstructionFile(id: number, input: InstructionInput): Promise<InstructionFile> {
-  return request<InstructionFile>(`/instructions/${id}`, { method: 'PATCH', body: input });
-}
-export async function deleteInstructionFile(id: number): Promise<void> {
-  await request<{ ok: boolean }>(`/instructions/${id}`, { method: 'DELETE' });
-}
-/** Take over a file on disk that nobody manages. The body comes from the host's
- *  report, not from here — the owner is adopting what is actually there. */
-export async function adoptInstructionFile(
-  place: { scope: 'global' | 'project'; slug: string; dir: string },
-): Promise<InstructionFile> {
-  return request<InstructionFile>('/instructions/adopt', { method: 'POST', body: place });
-}
-export async function draftRuleChange(
-  slug: string, ask: string, history: { role: string; text: string }[],
-): Promise<RuleDraft> {
-  return request<RuleDraft>('/instructions/draft', { method: 'POST', body: { slug, ask, history } });
-}
-export async function scanInstructions(slug: string, pass: string): Promise<ScanResult> {
-  return request<ScanResult>('/instructions/scan', { method: 'POST', body: { slug, pass } });
-}
-
 // ---- the TAB AGENTS (#361) ----
 //
-// Three named specialists, each bound to one project tab: the Auditor
-// (Quality), the Curator (Roadmap) and Polaris (Futures). The binding is the
+// Named specialists, each bound to one project tab: the Auditor (Quality),
+// the Curator (Roadmap) and the Drafter (Workbench). The binding is the
 // SERVER's — agents.js owns which agent may run which op — so nothing here
 // invents an agent or widens one; this is the read of that registry plus the
-// four things the owner may tune from Mission Control → Agents.
-// #364 — 'merger' joins them, bound to Mission Control's Merge room rather
-// than a project tab. The binding works the same way; only the surface differs.
-// #375 — and 'foreman', bound to the Review room. It also took `reviewbrief`
-// and `refinedraft` off the Curator: their only surface was ever that room, and
-// a room whose ✧ buttons answer to two agents' switches cannot be switched off.
-// #379 — 'drafter' joins them on the Workbench tab, whose seven ✧ canvas ops
-// had answered to no switch at all. 'scribe' (Instructions) was in the server's
-// registry already and missing from this union, which made it the one agent no
-// client code could name.
-export type TabAgentKey = 'auditor' | 'curator' | 'foreman' | 'merger' | 'polaris' | 'scribe' | 'drafter';
+// things the owner may tune.
+// The cull took three with their surfaces: 'polaris' (the Futures tab),
+// 'merger' (Mission Control's Merge room) and 'foreman' (the Review room).
+// ONE SURFACE, ONE SWITCH cuts both ways — an agent whose only surface is gone
+// has nothing left to switch, so it leaves the registry rather than lingering
+// as a toggle that governs nothing. 'scribe' went with the instructions tree
+// for the same reason.
+export type TabAgentKey = 'auditor' | 'curator' | 'drafter';
 
 export interface TabAgentOp {
   op: string;
   label: string;
   hint: string;
   enabled: boolean;
-}
-
-export interface TabAgent {
-  key: TabAgentKey;
-  name: string;
-  tab: string;        // the surface it is bound to — quality | roadmap | review | merge | futures
-  tabLabel: string;
-  // #375 — which KIND of surface that is. The Merge agent's card read "Merge
-  // tab" before this existed, and there is no such screen.
-  surface?: 'tab' | 'room';
-  blurb: string;
-  remit: string;      // what the model itself is told it may work on
-  enabled: boolean;
-  model: string;      // #364 — a Claude alias ('' = the CLI's own default)
-  guidance: string;   // the owner's standing steer, prefixed to every prompt
-  ops: TabAgentOp[];
-  // #379 — the agent's LIVE SESSION on its own tab, and its own switch. NULL
-  // for an agent that has none (the two room-bound agents, the Scribe): the
-  // room must draw nothing there rather than a switch for a session that does
-  // not exist. Not an op, and deliberately not in `ops` — nothing asks it for
-  // JSON; the owner types into it.
-  console?: { label: string; hint: string; enabled: boolean } | null;
-  // The ledger: an agent that keeps failing says so here rather than only in a
-  // toast the owner saw once.
-  runs: number;
-  costUsd: number;    // #364 — what it has actually spent, from the CLI's own report
-  lastRunAt: string | null;
-  lastOp: string;
-  lastOutcome: string; // 'ok' or the error message
-}
-
-export interface TabAgentsData {
-  // #364 — the agents run Claude on the HOST, so the frame around every switch
-  // is the daemon, not an API key: an agent can be on and still unable to act.
-  hostReady: boolean;
-  defaultModel: string;
-  models: { model: string; label: string }[];
-  agents: TabAgent[];
-}
-
-export async function getAgents(): Promise<TabAgentsData> {
-  return request<TabAgentsData>('/agents');
 }
 
 // #418 — the same per-op readiness map the project detail payload carries, on
@@ -2527,19 +1259,6 @@ export async function getAgents(): Promise<TabAgentsData> {
 // same `agentCan`/`agentOffReason` below — never a second answer.
 export async function getAgentState(): Promise<TabAgentState> {
   return request<TabAgentState>('/agents/state');
-}
-
-// PATCH a subset: {enabled} | {model} | {guidance} | {op, opEnabled}. The op
-// form is a single toggle rather than the whole set, so two switches flipped
-// in quick succession can't clobber each other.
-export async function patchAgent(
-  key: TabAgentKey,
-  patch: {
-    enabled?: boolean; model?: string; guidance?: string; op?: string; opEnabled?: boolean;
-    consoleEnabled?: boolean;
-  }
-): Promise<TabAgent> {
-  return request<TabAgent>(`/agents/${encodeURIComponent(key)}`, { method: 'PATCH', body: patch });
 }
 
 // The compact per-project read that rides the detail payload: which agents may
@@ -2680,25 +1399,6 @@ export function setTabTermPrefs(key: TabAgentKey, prefs: TabTermPrefs) {
   localStorage.setItem(TAB_TERM_KEY, JSON.stringify({ ...readTabTerms(), [key]: prefs }));
 }
 
-// ---- the Merge agent's read of a proposed plan (#364) ----
-//
-// Advisory and stateless: it reads the real diffs on the host and annotates the
-// plan. `verdict: 'ok'` with no notes is a REAL answer — it read them and found
-// nothing — and the room must not render that the same way it renders "no read
-// has run", which is the NULL-verdict rule.
-export interface MergeReview {
-  verdict: 'ok' | 'concerns';
-  summary: string;
-  notes: { branches: string[]; severity: 'warn' | 'info'; text: string }[];
-  read: string[];   // what was actually put in front of the model
-}
-
-export async function reviewMergePlan(
-  waves: { slug: string; branch: string; area: string }[][],
-): Promise<MergeReview> {
-  return request<MergeReview>('/merge/review', { method: 'POST', body: { waves } });
-}
-
 // ---- inbox triage (#76 — Gemini's cross-project review assist) ----
 
 // One annotation entry in the triage result, keyed by ref (kind:slug:id).
@@ -2756,21 +1456,19 @@ export async function getWorkbench(slug: string): Promise<WorkbenchData> {
   return request<WorkbenchData>(wbBase(slug));
 }
 
-// A note card writes a REAL note (it shows up in ⌘K and promotes to a bug like
-// any other); a polaris card pulls an existing idea onto the canvas.
-// `parentId` is which folder the card is born in — null (or omitted) is the
-// root, which is what every caller predating folders means (#414).
+// A note card writes a REAL note — it shows up in ⌘K and promotes to a bug
+// like any other. `parentId` is which folder the card is born in; null (or
+// omitted) is the root, which is what every caller predating folders means
+// (#414).
 export async function addWorkbenchCard(
   slug: string,
-  input: { kind: 'note'; text: string; x: number; y: number; parentId?: number | null }
-       | { kind: 'polaris'; futureId: number; x: number; y: number; parentId?: number | null },
-): Promise<WorkbenchCard & { cascaded?: WorkbenchCascade }> {
-  return request<WorkbenchCard & { cascaded?: WorkbenchCascade }>(
-    `${wbBase(slug)}/cards`, { method: 'POST', body: input });
+  input: { kind: 'note'; text: string; x: number; y: number; parentId?: number | null },
+): Promise<WorkbenchCard> {
+  return request<WorkbenchCard>(`${wbBase(slug)}/cards`, { method: 'POST', body: input });
 }
 
-// `title` writes THROUGH to the note or idea the card wraps — there is no
-// second copy of the text to drift.
+// `title` writes THROUGH to the note the card wraps — there is no second copy
+// of the text to drift.
 // `parentId` refiles the card: a folder id, or null for the root. The server
 // refuses a target that would make a loop and leaves the card where it was, so
 // a caller must take the RETURNED parentId as the truth rather than assuming
@@ -2795,19 +1493,18 @@ export async function addWorkbenchFolder(
 }
 
 // `dropped` is every card that went with it: an op's output takes the branch it
-// fed. A polaris card only comes OFF the canvas — `returnedToTray` is the idea
-// id to flip back to pickable, never a deletion.
+// fed.
 // Deleting a FOLDER reports `lifted` — the cards that were inside it — and
 // `liftedTo`, the folder they went to. They are NOT in `dropped`: a folder
 // delete never deletes what it held (#414).
 export async function deleteWorkbenchCard(
   slug: string, id: number,
 ): Promise<{
-  dropped: number[]; returnedToTray?: number;
+  dropped: number[];
   lifted?: number[]; liftedTo?: number | null;
 }> {
   return request<{
-    dropped: number[]; returnedToTray?: number;
+    dropped: number[];
     lifted?: number[]; liftedTo?: number | null;
   }>(`${wbBase(slug)}/cards/${id}`, { method: 'DELETE' });
 }

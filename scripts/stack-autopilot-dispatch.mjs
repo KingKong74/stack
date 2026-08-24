@@ -298,6 +298,10 @@ if (reportDue) {
 }
 
 // (#228) The skill-tree sync — the host half of the managed skill library.
+// The instructions tree used to ride this same stamp and wrote each repo's
+// CLAUDE.md from Stack's copy. That whole surface is culled: a managed
+// CLAUDE.md is now nobody's to write but the repo's own author, so nothing
+// here touches one.
 // Its own stamp and its own cadence, because it has nothing to do with the job
 // queue and must not wait behind a three-hour build night. Silent and swallowed
 // like the branch report: a failure here costs a five-minute delay, never the
@@ -312,14 +316,6 @@ if (skillsDue) {
   try {
     const { syncSkills } = await import('./stack-skills.mjs');
     await syncSkills();
-  } catch { /* next cycle retries */ }
-  // The instructions tree rides the SAME stamp, not one of its own: it is the
-  // other half of "make the host's Claude config match the library", it costs
-  // about as much, and two independent five-minute timers walking the same
-  // repos would interleave a scan with a write for no benefit.
-  try {
-    const { syncInstructions } = await import('./stack-instructions.mjs');
-    await syncInstructions();
   } catch { /* next cycle retries */ }
 }
 

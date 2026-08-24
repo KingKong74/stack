@@ -28,7 +28,7 @@ function bodyLines(body: WorkbenchBody): string[] {
 // The same expression Workbench.tsx uses to label a card's kind — kept here
 // too because the subject card arrives on its own, not as a lineage entry.
 const kindLabel = (c: WorkbenchCard) =>
-  (c.kind === 'polaris' ? c.meta : c.kind === 'note' ? 'note' : (c.op || 'ai'));
+  (c.kind === 'note' ? 'note' : (c.op || 'ai'));
 
 // Pure — no React, no network. Markdown out, nothing else.
 export function composeDesignBrief(

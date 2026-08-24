@@ -656,7 +656,6 @@ export function RoadmapTab({
 
       {view === 'plan' && board === 'lists' && (
         <RoadmapPlan
-          slug={slug}
           items={items} lists={lists} areas={areas} areaFilter={areaFilter}
           labels={labels} tones={tones}
           labelFilter={labelFilter} onSetLabelFilter={setLabelFilter}

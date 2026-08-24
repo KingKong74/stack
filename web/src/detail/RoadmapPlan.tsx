@@ -39,13 +39,15 @@
 //    derives into it — so it renames and deletes freely, and deleting it returns
 //    its cards to the derived column rather than taking them with it. The real
 //    guard is on the API (server/src/lists.js); this is only the affordance.
-//  • IN PROGRESS AND SHIPPED ARE THE REVIEW ROOM'S TWO ENDS. A change is in the
-//    Review room's queue from the moment it is BUILT (#374), which is exactly
-//    while it sits in In progress — so both lanes link into that room, per card
-//    and per lane, and a verdict given there brings the card back to Shipped
-//    (server/src/lists.js). The predicate is `isBuilt` from lib/spine, the same
-//    one the Overview's verdict queue counts: a lane saying "3 waiting" beside a
-//    room showing 4 is two answers to one question.
+//  • IN PROGRESS AND SHIPPED ARE THE TWO ENDS OF A VERDICT. A change is
+//    waiting on one from the moment it is BUILT (#374), which is exactly while
+//    it sits in In progress — so both lanes carry the state, per card and per
+//    lane, and a verdict given from the card's ✓ Review panel brings it back to
+//    Shipped (server/src/lists.js). The predicate is `isBuilt` from lib/spine,
+//    the same one the Overview's verdict queue counts: a lane saying "3
+//    waiting" beside a queue showing 4 is two answers to one question. Mission
+//    Control's Review room was culled and this board is now the ONLY place a
+//    verdict can be given — do not remove the ✓ Review panel with it.
 //  • FOCUS IS READING, NOT STATE. A lane opens to ~2.3× its width so a card's
 //    built note and labels are legible without opening anything, and it is
 //    per-visit — the board is a place you scan, and a column left wide from
@@ -67,7 +69,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { BoardArea, BoardLabel, BoardList, Priority, RoadmapItem } from '../types';
 import { areaMatches, listKeyOf } from '../lib/plan';
 import { isBuilt } from '../lib/spine';
-import { hrefTo } from '../lib/route';
 import { LABEL_TONES, labelsOf } from '../lib/labels';
 
 const BUCKETS: Priority[] = ['must', 'should', 'could', 'wont'];
@@ -92,7 +93,6 @@ const LockIcon = () => (
 
 export interface PlanProps {
   /** The project, for the Review room link — a room-wide queue needs to be told whose change. */
-  slug: string;
   items: RoadmapItem[];
   lists: BoardList[];
   areas: BoardArea[];
@@ -127,7 +127,7 @@ export interface PlanProps {
 }
 
 export function RoadmapPlan({
-  slug, items, lists, areas, labels, tones, areaFilter, labelFilter, onSetLabelFilter,
+  items, lists, areas, labels, tones, areaFilter, labelFilter, onSetLabelFilter,
   onAddLabel, onDeleteLabel, onMoveToList, onSetBucket, onToggleLabel, onArchive, onArchiveMany,
   onDelete, onApprove, onSendBack, onAddCard, onAddList, onRenameList, onDeleteList, onOpen,
 }: PlanProps) {
@@ -148,9 +148,6 @@ export function RoadmapPlan({
   const [renaming, setRenaming] = useState('');
   const [renameDraft, setRenameDraft] = useState('');
   const [confirmList, setConfirmList] = useState('');
-
-  // The Review room, opened ON this change. `slug#id` is the room's own row key.
-  const reviewHref = (it: RoadmapItem) => hrefTo.control('review', `${slug}#${it.id}`);
 
   // CLICKING THE LANE IS THE GESTURE; the ⇥ is the label for it.
   //
@@ -338,11 +335,11 @@ export function RoadmapPlan({
                   alignment. A line that only appears sometimes must not be able
                   to reflow the line that is always there. */}
               {waiting > 0 && (
-                <a className="rp-col-review" href={hrefTo.control('review')}
+                <span className="rp-col-review"
                   title={`${waiting} change${waiting === 1 ? '' : 's'} in this lane ${
-                    waiting === 1 ? 'is' : 'are'} waiting on your verdict in Mission Control’s Review room`}>
-                  {waiting} waiting on your verdict →
-                </a>
+                    waiting === 1 ? 'is' : 'are'} built and waiting on your verdict`}>
+                  {waiting} waiting on your verdict
+                </span>
               )}
 
               {cards.map((c) => (
@@ -367,21 +364,22 @@ export function RoadmapPlan({
                     {c.reviewTag && <span className="rp-verdict" title="Verdict already recorded">✓ {c.reviewTag}</span>}
                   </div>
 
-                  {/* The card's own end of the Review room. Two states, and the
-                      difference is the whole point of the link: a change still
-                      IN the queue is waiting on the owner, and a change already
-                      verdicted is a receipt you can go and re-read. A card in
-                      these lanes with neither — claimed but nothing built yet —
-                      shows nothing, because the room has never heard of it and
-                      a link landing on an empty queue teaches the wrong thing. */}
+                  {/* The card's verdict state. It was a link into the Review
+                      room; the room was culled and the LABEL stayed, because
+                      the two states are what the lane is read for — a change
+                      still waiting on the owner, against one already verdicted.
+                      A card in these lanes with neither — claimed but nothing
+                      built yet — shows nothing. Deliberately not a link now:
+                      the verdict is given from the ✓ Review panel on the card
+                      itself, and a link to a culled room would teach a route
+                      that no longer exists. */}
                   {REVIEW_LANES.has(list.key) && (isBuilt(c) || c.reviewTag) && (
-                    <a className={`rp-card-review${isBuilt(c) ? ' waiting' : ''}`}
-                      href={reviewHref(c)} onClick={(e) => e.stopPropagation()}
+                    <span className={`rp-card-review${isBuilt(c) ? ' waiting' : ''}`}
                       title={isBuilt(c)
-                        ? 'Open this change in Mission Control’s Review room — read what landed, then give it a verdict'
-                        : 'Open this change in Mission Control’s Review room — the verdict is already on record'}>
-                      {isBuilt(c) ? 'Waiting on your verdict' : `Verdicted ${c.reviewTag}`} →
-                    </a>
+                        ? 'Built and waiting on your verdict — give it from ✓ Review on this card'
+                        : 'The verdict is already on record'}>
+                      {isBuilt(c) ? 'Waiting on your verdict' : `Verdicted ${c.reviewTag}`}
+                    </span>
                   )}
 
                   {list.key === 'shipped' && (

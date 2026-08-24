@@ -204,9 +204,6 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
                   <div className="h">Audit</div>
                   <div className="subtitle">What needs a human</div>
                 </div>
-                <div className="bar-actions">
-                  <a className="viewall" href="#/control">Open Mission Control →</a>
-                </div>
               </div>
               <ReviewQueue initial={overview.review} />
               <AttentionRow blockers={overview.blockers} stale={overview.stale} bugs={overview.bugs} />

@@ -37,7 +37,7 @@
 
 import { useState } from 'react';
 import type {
-  Activity, Bug, Future, Project, ProjectPulse, ProjectStatus, PulseUsage,
+  Activity, Bug, Project, ProjectPulse, ProjectStatus, PulseUsage,
   Roadmap as RoadmapData,
 } from '../types';
 import { PRODUCT_NAME } from '../lib/ui';
@@ -54,7 +54,7 @@ import { go } from '../lib/route';
 
 // One row of the project-scoped review queue (hook-created, not yet reviewed).
 export interface ReviewEntry {
-  kind: 'bug' | 'roadmap' | 'future';
+  kind: 'bug' | 'roadmap';
   key: string;      // bug key or row id
   title: string;
   meta: string;     // severity / bucket / 'idea'
@@ -461,7 +461,6 @@ function UsageBand({ usage, windowDays }: { usage: PulseUsage; windowDays: numbe
       <div className="band-head">
         <span className="h">Model usage</span>
         <span className="sub">this project · last {Math.round(windowDays / 7)} weeks</span>
-        <button className="band-link" onClick={go.control}>Roles room →</button>
       </div>
 
       <div className="usage-stats">
@@ -696,7 +695,6 @@ function EngBand({ pulse, slug, built }: {
               ? <>{r.autoVerdictRuns} run{r.autoVerdictRuns === 1 ? '' : 's'} verdicted themselves under the low-risk gate, with the evidence kept and an undo.</>
               : <>Every verdict here was given by a human. A NULL review is a pass that never ran, not a clean one.</>}
           </div>
-          <button className="band-link" onClick={go.control}>Open Review →</button>
         </div>
 
         {/* --- the autopilot's runs --- */}
@@ -731,7 +729,6 @@ function EngBand({ pulse, slug, built }: {
                 {r.commits} commit{r.commits === 1 ? '' : 's'} came out of those runs.
                 {r.planned > 0 && ' Plan nights are excluded from the rate — they commit nothing by design, so counting them would score the advisor as having failed to land work nobody asked it to land.'}
               </div>
-              <button className="band-link" onClick={go.control}>Mission Control →</button>
             </>
           )}
         </div>
@@ -751,7 +748,7 @@ function KindTag({ kind }: { kind: LaneKind | '' }) {
   return <span className="kindtag" style={{ color: KIND_TONE[kind], borderColor: KIND_TONE[kind] }}>{kind}</span>;
 }
 
-function VerdictBand({ rows, total }: { rows: VerdictRow[]; total: number }) {
+function VerdictBand({ rows, total, slug }: { rows: VerdictRow[]; total: number; slug: string }) {
   return (
     <div className="band verdicts">
       <div className="band-head">
@@ -759,7 +756,7 @@ function VerdictBand({ rows, total }: { rows: VerdictRow[]; total: number }) {
         <span className="sub">
           {total} change{total === 1 ? '' : 's'} built and waiting · oldest first
         </span>
-        <button className="btn-accent sm" onClick={go.control}>Open Review →</button>
+        <button className="btn-accent sm" onClick={() => go.detail(slug, 'roadmap')}>Open roadmap →</button>
       </div>
       {rows.map((r) => (
         <div className={`vrow${r.ageDays !== null && r.ageDays >= 3 ? ' hot' : ''}`} key={r.id}>
@@ -780,7 +777,7 @@ function VerdictBand({ rows, total }: { rows: VerdictRow[]; total: number }) {
             <span className={`vage${r.ageDays !== null && r.ageDays >= 3 ? ' hot' : ''}`}>
               {r.ageDays === null ? 'no stamp' : r.ageDays === 0 ? 'today' : days(r.ageDays)}
             </span>
-            <button className="vgo" onClick={go.control}>Review</button>
+            <button className="vgo" onClick={() => go.detail(slug, 'roadmap', String(r.id))}>Review</button>
           </div>
         </div>
       ))}
@@ -912,6 +909,63 @@ function ConfigStrip({ project, onSaveDeploy, onSaveStack }: {
 // the panels
 // ---------------------------------------------------------------------------
 
+// The north star. Its editor lived on the Polaris tab and came here when that
+// tab was culled — the FIELD is not a Polaris artifact: `projects.north_star`
+// is read by the autopilot's spec prompt, the roadmap's ✧ ops, the tab
+// consoles, the Workbench ops and the SessionStart hook, so leaving it with no
+// editor would have made six live surfaces depend on a value nobody could
+// change. It sits beside Directives because they are the same kind of thing:
+// standing text that shapes every session, edited in one place.
+function NorthStarPanel({ text, onSave }: { text: string; onSave: (t: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(text);
+
+  const save = () => {
+    const t = draft.trim();
+    setEditing(false);
+    if (t !== text) onSave(t);
+  };
+
+  return (
+    <div className="rail-panel">
+      <div className="rail-head">
+        <span className="lbl">★ North star</span>
+        {!editing && (
+          <button className="rail-link" onClick={() => { setDraft(text); setEditing(true); }}>
+            {text ? 'Edit' : '+ Set'}
+          </button>
+        )}
+      </div>
+      <div className="rail-note">injected into every session start</div>
+      {editing ? (
+        <div className="northstar-editor">
+          <textarea value={draft} autoFocus rows={3}
+            placeholder="One paragraph: what is this project becoming?"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); }
+              else if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
+            }} />
+          <div className="row">
+            <span className="hint">⏎ to save · esc to cancel</span>
+            <span style={{ display: 'flex', gap: 8 }}>
+              <button className="btn-cancel sm" onClick={() => setEditing(false)}>Cancel</button>
+              <button className="btn-submit sm" onClick={save}>Save</button>
+            </span>
+          </div>
+        </div>
+      ) : text ? (
+        <div className="pns-text">{text}</div>
+      ) : (
+        <div className="rail-empty">
+          Not set. One paragraph on what this project is becoming — it is injected into every
+          session, so every agent pulls in the same direction.
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Standing instructions for the next session(s): edited here, injected
 // verbatim at every SessionStart — steering without the terminal. Lines stay
 // until removed.
@@ -990,14 +1044,16 @@ function LandedRow({ a }: { a: Activity }) {
 // ---------------------------------------------------------------------------
 
 export function Overview({
-  project, phase, activity, directives, reviewQueue, roadmap, futures, bugs, cadence, lastPushAt,
+  project, phase, activity, directives, reviewQueue, roadmap, bugs, cadence, lastPushAt,
+  northStar, onSaveNorthStar,
   pulse, pulseError,
   onViewAll, onChangeDirectives, onReviewKeep, onReviewDismiss, onSaveDeploy, onSaveStack,
   keepResumeCard = true, onJumpBack,
 }: {
   project: Project; phase: string;
   activity: Activity[]; directives: string[]; reviewQueue: ReviewEntry[];
-  roadmap: RoadmapData; futures: Future[]; bugs: Bug[];
+  roadmap: RoadmapData; bugs: Bug[];
+  northStar: string; onSaveNorthStar: (text: string) => void;
   cadence: { day: string; n: number }[]; lastPushAt: string | null;
   /** null = the second trip has not answered yet; see `pulseError` for a failure. */
   pulse: ProjectPulse | null; pulseError: string;
@@ -1013,7 +1069,7 @@ export function Overview({
   const [heroOpen, setHeroOpen] = useState(true);
   const r = project.resume;
   const slug = project.id;
-  const stages = buildSpine(roadmap, futures, slug);
+  const stages = buildSpine(roadmap, slug);
   const built = stages.find((s) => s.key === 'built');
   const queue = nextUp(roadmap, 5);
   const spread = bugSpread(bugs);
@@ -1027,7 +1083,6 @@ export function Overview({
   const plan = planVsReality(roadmap);
   const shipped = shippedRecently(roadmap, 5);
   const latest = activity.slice(0, 6);
-  const horizon = futures.slice(0, 8);
 
   return (
     <div className="ov">
@@ -1135,7 +1190,7 @@ export function Overview({
                 ? `Oldest moved ${days(built.lastMovedDays)} ago. Nothing behind it can land.`
                 : 'None of these rows carries a stamp, so how long they have waited is unknown.'}
           </div>
-          <button className="ovc-go" onClick={go.control}>Open Review →</button>
+          <button className="ovc-go" onClick={() => go.detail(slug, 'roadmap')}>Open roadmap →</button>
         </div>
 
         <div className={`ovc${serious > 0 ? ' flag' : ''}`}>
@@ -1260,7 +1315,7 @@ export function Overview({
         </>
       )}
 
-      {(built?.count ?? 0) > 0 && <VerdictBand rows={verdicts} total={built?.count ?? 0} />}
+      {(built?.count ?? 0) > 0 && <VerdictBand rows={verdicts} total={built?.count ?? 0} slug={slug} />}
 
       {/* ---- the river, and what is queued behind it ---- */}
       <div className="ov-split">
@@ -1331,33 +1386,13 @@ export function Overview({
             </div>
           ) : (
             <div className="rail-empty">
-              Nothing has been verdicted and merged yet. Ticking is not a verdict — the Review room
-              stores one.
+              Nothing has been verdicted and merged yet. Ticking is not a verdict — the board's
+              ✓ Review panel stores one.
             </div>
           )}
         </div>
 
-        <div className="rail-panel horizon">
-          <div className="rail-head">
-            <span className="lbl">✧ Horizon</span>
-            <button className="rail-link" onClick={() => go.detail(slug, 'futures')}>Polaris</button>
-          </div>
-          <div className="rail-note">directional, uncommitted — no dates</div>
-          {horizon.length ? (
-            <div className="horizon-chips">
-              {horizon.map((f) => (
-                <button className="hchip" key={f.id} onClick={() => go.detail(slug, 'futures')}>
-                  {f.title}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="rail-empty">No ideas parked. Polaris is where a thought goes before it is a plan.</div>
-          )}
-          {futures.length > horizon.length && (
-            <div className="rail-more">{futures.length - horizon.length} more in Polaris</div>
-          )}
-        </div>
+        <NorthStarPanel text={northStar} onSave={onSaveNorthStar} />
 
         <DirectivesPanel directives={directives} onChange={onChangeDirectives} />
       </div>

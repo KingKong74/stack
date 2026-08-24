@@ -8117,3 +8117,44 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    and that is the one thing in the diff worth stopping on. */
 .ra-move .ra-newarea { margin-left: 6px; font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase;
   color: var(--critical); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 4px; }
+
+/* ---- Mission Control, culled (#/control renders screens/ControlMock.tsx) ----
+   Deliberately self-contained: it borrows nothing from the old `.mc-*` /
+   `.mc14-*` rules, so the rebuild can delete or rewrite those without this
+   placeholder quietly losing its layout. Nothing here uses a semantic tone
+   (--live, --green, --critical) — a skeleton must not be able to read as a
+   status. The bars do not animate: a shimmer means "loading, wait", and this
+   is not loading. */
+.mcx-badge {
+  display: inline-block; margin-left: 12px; padding: 3px 10px; border-radius: 999px;
+  font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em;
+  text-transform: uppercase; vertical-align: middle;
+  color: var(--muted); background: var(--panel); border: 1px solid var(--line-2);
+}
+.mcx-rail {
+  display: flex; align-items: center; gap: 2px; padding: 3px; margin-bottom: 14px;
+  border-radius: 9px; background: var(--panel); width: fit-content; min-width: 100%;
+  overflow-x: auto;
+}
+.mcx-tab {
+  padding: 6px 16px; border-radius: 6px; white-space: nowrap;
+  font-size: 12.5px; font-weight: 500; color: var(--placeholder); cursor: default;
+}
+.mcx-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px; margin-bottom: 18px;
+}
+.mcx-panel {
+  background: var(--card); border: 1px solid var(--line-2); border-radius: 14px;
+  padding: 16px 18px; min-height: 120px;
+}
+.mcx-panel-head {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--placeholder); margin-bottom: 14px;
+}
+.mcx-bars { display: flex; flex-direction: column; gap: 10px; }
+.mcx-bar { display: block; height: 10px; border-radius: 5px; background: var(--panel); }
+.mcx-foot {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--muted);
+}

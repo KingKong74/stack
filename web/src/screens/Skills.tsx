@@ -210,7 +210,7 @@ export default function Skills() {
         </div>
         <div className="right">
           <a className="btn-repo" href={hrefTo.settings}>Settings</a>
-          <a className="btn-repo" href={hrefTo.control()}>Mission Control</a>
+          <a className="btn-repo" href={hrefTo.control}>Mission Control</a>
           <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
         </div>
       </div>

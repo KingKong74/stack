@@ -30,38 +30,39 @@ export const ROOT: null = null;
 /** Where the Explorer can be: a folder card, the root, a smart folder, a system one. */
 export type FolderId = number | null | SmartKey | SystemKey;
 
-export type SmartKey = 'smart:stale' | 'smart:polaris' | 'smart:sessions' | 'smart:loose';
+export type SmartKey = 'smart:stale' | 'smart:sessions' | 'smart:loose';
 
 export const isSmart = (id: FolderId): id is SmartKey =>
   typeof id === 'string' && id.startsWith('smart:');
 
 /**
- * THE SYSTEM FOLDERS (#415) — Polaris and the Roadmap, pinned under the project
- * root, showing the two things the Workbench turns loose thinking INTO.
+ * THE SYSTEM FOLDER (#415) — the Roadmap, pinned under the project root,
+ * showing what the Workbench turns loose thinking INTO. Polaris was the other
+ * one and went with the Polaris cull; the machinery below stayed plural
+ * because the shape is the point, not the count.
  *
- * They are DERIVED, exactly like a smart folder, and that is what makes them
+ * It is DERIVED, exactly like a smart folder, and that is what makes it
  * undeletable: there is no row to delete. A `system: true` flag on a real
  * folder row would have to be defended in DELETE, in the move guard and in the
  * fold — three places to forget — and a project restored from a backup taken
- * before the flag existed would come back with a deletable Polaris folder.
+ * before the flag existed would come back with a deletable system folder.
  *
- * Their contents are NOT cards. A Polaris idea lives in `futures` and a board
- * item in `roadmap_items`, and neither becomes a workbench card by being looked
- * at. So `childrenOf` answers EMPTY for them and the screen renders the right
- * list itself — the alternative, faking cards for rows that are not cards, is
- * how a read-only view acquires an edit button nobody meant to give it.
+ * Its contents are NOT cards. A board item lives in `roadmap_items` and does
+ * not become a workbench card by being looked at. So `childrenOf` answers
+ * EMPTY for it and the screen renders the right list itself — the alternative,
+ * faking cards for rows that are not cards, is how a read-only view acquires
+ * an edit button nobody meant to give it.
  *
- * READ-ONLY, therefore, in both directions: nothing files INTO them (there is
- * no parent to write) and nothing inside them is edited here. Polaris offers
- * the one write that already existed — pull an idea onto the canvas.
+ * READ-ONLY, therefore, in both directions: nothing files INTO it (there is no
+ * parent to write) and nothing inside it is edited here.
  *
- * The STACK folder (#416) is drawn in line with these two and is NOT one of
- * them: it is a real row, because it holds cards, and `isPinned` below is what
- * withholds the three gestures it must not accept. Read that before adding a
- * third key here — "pinned" and "derived" are different answers to different
- * questions, and a folder that has to hold cards can only be the former.
+ * The STACK folder (#416) is drawn in line with it and is NOT one of these: it
+ * is a real row, because it holds cards, and `isPinned` below is what withholds
+ * the three gestures it must not accept. Read that before adding a second key
+ * here — "pinned" and "derived" are different answers to different questions,
+ * and a folder that has to hold cards can only be the former.
  */
-export type SystemKey = 'sys:polaris' | 'sys:roadmap';
+export type SystemKey = 'sys:roadmap';
 
 export const isSystem = (id: FolderId): id is SystemKey =>
   typeof id === 'string' && id.startsWith('sys:');
@@ -75,12 +76,6 @@ export interface System {
 }
 
 export const SYSTEM: System[] = [
-  {
-    key: 'sys:polaris',
-    name: 'Polaris',
-    tone: 'var(--accent)',
-    blurb: 'The idea funnel. Pull one onto the canvas to work on it.',
-  },
   {
     key: 'sys:roadmap',
     name: 'Roadmap',
@@ -104,9 +99,9 @@ export interface Smart {
 }
 
 /**
- * The four saved searches. Order is the order they are shown in, and it runs
- * most-urgent-first: what has gone quiet, what is unresolved, what arrived on
- * its own, what nobody has filed.
+ * The saved searches. Order is the order they are shown in, and it runs
+ * most-urgent-first: what has gone quiet, what arrived on its own, what nobody
+ * has filed.
  */
 export const SMART: Smart[] = [
   {
@@ -114,15 +109,6 @@ export const SMART: Smart[] = [
     name: 'Stale · 30d+',
     tone: 'var(--paused)',
     test: (c) => c.kind !== 'folder' && c.days >= STALE_DAYS,
-  },
-  {
-    key: 'smart:polaris',
-    // NOT "Polaris": the system folder below is called that, and two rows in
-    // one tree wearing the same name is a tree you cannot navigate by reading.
-    // This one is the cards already placed; that one is the funnel.
-    name: 'Ideas placed',
-    tone: 'var(--accent)',
-    test: (c) => c.kind === 'polaris',
   },
   {
     key: 'smart:sessions',
@@ -150,8 +136,8 @@ export const isFolder = (c: WorkbenchCard | undefined | null): boolean => !!c &&
 /**
  * THE STACK FOLDER (#416) — the one folder that is a REAL ROW and still not the
  * owner's to remove, rename or move. It sits at the root beside the derived
- * Polaris and Roadmap folders and, unlike them, holds cards: that is the whole
- * reason it is a row at all, since `parent_id` needs an id to point at.
+ * Roadmap folder and, unlike it, holds cards: that is the whole reason it is a
+ * row at all, since `parent_id` needs an id to point at.
  *
  * A card carrying `system` is therefore a folder with THREE affordances
  * withheld — the ×, the rename and the drag — and the tree draws it pinned,
@@ -278,12 +264,12 @@ export function canFileInto(cards: WorkbenchCard[], cardId: number, target: Fold
 export type SortKey = 'name' | 'kind' | 'items' | 'updated';
 
 const KIND_ORDER: Record<WorkbenchCard['kind'], number> = {
-  folder: 0, polaris: 1, ai: 2, note: 3,
+  folder: 0, ai: 1, note: 2,
 };
 
 /** What a card is called in the Kind column, and in a folder's contents list. */
 export const KIND_LABEL: Record<WorkbenchCard['kind'], string> = {
-  folder: 'Folder', polaris: 'Polaris', ai: 'Op output', note: 'Note',
+  folder: 'Folder', ai: 'Op output', note: 'Note',
 };
 
 /**

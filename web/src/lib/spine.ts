@@ -1,5 +1,5 @@
 // The Overview tab's PROGRESSION SPINE (design 4a) — pure derivation, no
-// network, no React. Turns a project's own collections into the five stages a
+// network, no React. Turns a project's own collections into the four stages a
 // change passes through, the progress ledger's arithmetic, and the small
 // panels that hang off the spine.
 //
@@ -11,12 +11,12 @@
 //
 // THE PREDICATES, AND THE TWO THAT ARE EASY TO GET WRONG:
 //
-//  • BUILT is the Review room's own queue predicate (#374) — `done` OR
+//  • BUILT is the old Review room's queue predicate (#374) — `done` OR
 //    (`builtNote` non-empty AND `claimedBy` non-empty), with no verdict yet.
 //    NOT `done && !reviewTag`: nothing in Stack ticks an item, so that spelling
-//    draws an empty stage over a full night's work. If `routes/review.js` ever
-//    changes its predicate, this changes with it or the spine's Built count
-//    stops agreeing with the room it links to.
+//    draws an empty stage over a full night's work. The room was culled; the
+//    predicate outlived it and is now the ONLY definition of "built but not
+//    verdicted" on the client, so it must not be simplified back.
 //  • LANDED is `done && reviewTag` — verdicted, not merely ticked. Built and
 //    Landed are therefore disjoint by construction (one demands an empty
 //    verdict, the other a non-empty one), so no change is ever counted twice.
@@ -27,8 +27,14 @@
 //    stages at once. In flight therefore means claimed and NOT yet built:
 //    something is being worked on, as against something waiting on you.
 //
-// The four roadmap stages partition the board exactly — every row is in one and
-// only one — which is what lets the spine's counts be added up and trusted.
+// The four stages partition the board exactly — every row is in one and only
+// one — which is what lets the spine's counts be added up and trusted.
+//
+// The Idea stage was Polaris and went with it; Built no longer links to the
+// Review room, which was culled with Mission Control. The BUILT PREDICATE
+// stays exactly as it was even so — it is what the board's own "waiting on
+// you" reading is built from, and softening it to `done` would hide a night's
+// work the same way it did before #374.
 //
 // WHAT IS DELIBERATELY NOT HERE: a flow rate per hand-off. The design draws a
 // throughput figure between each pair of stages, and Stack cannot honestly
@@ -38,7 +44,7 @@
 // data does support: how long the queue in a stage has sat untouched. Absent is
 // not zero — the same rule as a NULL `review_verdict`.
 
-import type { Bug, Future, PulseUsage, Roadmap, RoadmapItem, Severity } from '../types';
+import type { Bug, PulseUsage, Roadmap, RoadmapItem, Severity } from '../types';
 import { hrefTo } from './route';
 import { tierRank } from '../types';
 import { parseBranch, type LaneKind } from './branch';
@@ -47,7 +53,7 @@ import { parseBranch, type LaneKind } from './branch';
 // this cycle" means, or the Overview and the Timeline disagree about the same plan.
 import { SCHED_MINUTES, MIN_SCHED_LEN, slipOf, scopeTotals, type ScopeTotals } from './plan';
 
-export type StageKey = 'idea' | 'planned' | 'inflight' | 'built' | 'landed';
+export type StageKey = 'planned' | 'inflight' | 'built' | 'landed';
 
 export interface Stage {
   key: StageKey;
@@ -64,7 +70,7 @@ export interface Stage {
 
 const flat = (r: Roadmap): RoadmapItem[] => [...r.must, ...r.should, ...r.could, ...r.wont];
 
-/** The Review room's queue predicate (#374), kept in one place on the client. */
+/** The built-not-verdicted predicate (#374), kept in one place on the client. */
 export const isBuilt = (it: RoadmapItem): boolean =>
   (it.done || (it.builtNote.trim() !== '' && it.claimedBy.trim() !== '')) && it.reviewTag === '';
 
@@ -93,12 +99,12 @@ function lastMoved(items: RoadmapItem[], now: number): number | null {
 }
 
 /**
- * The five stages, in order. `blocked` marks at most ONE stage — the deepest
+ * The four stages, in order. `blocked` marks at most ONE stage — the deepest
  * queue that is also standing still — because a spine that flags three
  * bottlenecks has told you nothing about where to go first.
  */
 export function buildSpine(
-  roadmap: Roadmap, futures: Future[], slug: string, now = Date.now()
+  roadmap: Roadmap, slug: string, now = Date.now()
 ): Stage[] {
   const items = flat(roadmap);
   const planned = items.filter(isPlanned);
@@ -108,12 +114,6 @@ export function buildSpine(
 
   const stages: Stage[] = [
     {
-      key: 'idea', label: 'Idea', sub: 'directional, uncommitted',
-      count: futures.length,
-      href: hrefTo.detail(slug, 'futures'), hrefLabel: 'Polaris',
-      blocked: false, lastMovedDays: null,
-    },
-    {
       key: 'planned', label: 'Planned', sub: 'open, unclaimed',
       count: planned.length,
       href: hrefTo.detail(slug, 'roadmap'), hrefLabel: 'Roadmap',
@@ -122,13 +122,13 @@ export function buildSpine(
     {
       key: 'inflight', label: 'In flight', sub: 'claimed right now',
       count: inflight.length,
-      href: hrefTo.control('now'), hrefLabel: 'Mission Control',
+      href: hrefTo.detail(slug, 'roadmap'), hrefLabel: 'Roadmap',
       blocked: false, lastMovedDays: lastMoved(inflight, now),
     },
     {
       key: 'built', label: 'Built', sub: 'awaiting your verdict',
       count: built.length,
-      href: hrefTo.control('review'), hrefLabel: 'Review',
+      href: hrefTo.detail(slug, 'roadmap'), hrefLabel: 'Roadmap',
       blocked: false, lastMovedDays: lastMoved(built, now),
     },
     {
@@ -146,7 +146,7 @@ export function buildSpine(
   const MIN_QUEUE = 5;
   let worst: Stage | null = null;
   for (const s of stages) {
-    if (s.key === 'landed' || s.key === 'idea') continue;
+    if (s.key === 'landed') continue;
     if (s.count < MIN_QUEUE) continue;
     if (s.lastMovedDays === null || s.lastMovedDays < STILL_DAYS) continue;
     if (!worst || s.count > worst.count) worst = s;
@@ -262,8 +262,9 @@ export interface VerdictRow {
 }
 
 /**
- * The Review room's queue, for THIS project — the same `isBuilt` predicate the
- * spine's Built stage counts, so the list and the number can never disagree.
+ * What is built and waiting on a verdict, for THIS project — the same `isBuilt`
+ * predicate the spine's Built stage counts, so the list and the number can
+ * never disagree.
  *
  * OLDEST FIRST. The design orders by age because that is the actionable order:
  * the row that has waited longest is the one blocking everything behind it, and

@@ -1,24 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Future, Severity, Priority, Bug, BugStatus, WorkbenchPhase, ProjectPulse } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Severity, Priority, Bug, BugStatus, WorkbenchPhase, ProjectPulse } from '../types';
 import {
   getProjectDetail, getProjectPulse, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
-  deleteNote, createFuture, patchFuture, deleteFuture, getFutures,
+  deleteNote,
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
   patchProject, createShareLink, deleteShareLink,
-  getRoadDraft, setRoadDraft, type RoadDraft, judgeFuture, clusterFutures, convergeFutures,
-  type ConvergeDraft, assistRoadmapItem, proposeOrbits, restateFuture,
+  getRoadDraft, setRoadDraft, type RoadDraft, assistRoadmapItem,
   cleanupRoadmap, type RoadmapCleanupSuggestion,
-  takeReviewPrefill, agentCan, setLastViewedProject, onItemFiled,
+  agentCan, setLastViewedProject, onItemFiled,
   agentConsoleCan, agentConsoleOffReason, type TabAgentKey,
-  HttpError, getWorkbench, addWorkbenchCard,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
-import { planWorkbenchOpen } from '../lib/workbenchOpen';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Quality } from '../detail/Quality';
 import { RoadmapTab } from '../detail/RoadmapTab';
-import { Futures, type Alignment } from '../detail/Futures';
 import { Workbench } from '../detail/Workbench';
 import { Activity } from '../detail/Activity';
 import { Modal } from '../components/Modal';
@@ -31,10 +27,10 @@ import { newItemSched } from '../lib/plan';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
 // (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
-type Tab = 'overview' | 'quality' | 'roadmap' | 'futures' | 'workbench' | 'activity';
+type Tab = 'overview' | 'quality' | 'roadmap' | 'workbench' | 'activity';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Overview' }, { key: 'quality', label: 'Quality' },
-  { key: 'roadmap', label: 'Roadmap' }, { key: 'futures', label: 'Polaris' },
+  { key: 'roadmap', label: 'Roadmap' },
   { key: 'workbench', label: 'Workbench' }, { key: 'activity', label: 'Activity' },
 ];
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
@@ -47,19 +43,23 @@ const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', arc
 const TAB_AGENT: Partial<Record<Tab, { key: TabAgentKey; name: string }>> = {
   quality: { key: 'auditor', name: 'Auditor' },
   roadmap: { key: 'curator', name: 'Curator' },
-  futures: { key: 'polaris', name: 'Polaris' },
   workbench: { key: 'drafter', name: 'Drafter' },
 };
 
-const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'futures', 'workbench', 'activity']);
+const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'workbench', 'activity']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
 // payload from an older server, a ⌘K target) keep working. 'tips' still
 // resolves too: the recipe library was a tab, then the bottom-left dock, and
 // is now neither — the corner holds the quick ＋ instead — so an old link lands
 // on Overview rather than 404ing. 'notes' resolves to the Workbench, which
 // is where a note is read now — and `hl` on that link is still a NOTE id, which
-// the canvas resolves to the card wrapping it.
-const LEGACY_TABS: Record<string, Tab> = { bugs: 'quality', audit: 'quality', tips: 'overview', notes: 'workbench' };
+// the canvas resolves to the card wrapping it. 'futures' joins them now that
+// Polaris is culled — the tab is gone, but `#/p/<slug>/futures` is in
+// bookmarks and in every older search payload, and landing it on Overview is
+// the same courtesy the three above already get.
+const LEGACY_TABS: Record<string, Tab> = {
+  bugs: 'quality', audit: 'quality', tips: 'overview', notes: 'workbench', futures: 'overview',
+};
 const asTab = (t: string | undefined): Tab =>
   (t && TAB_KEYS.has(t as Tab) ? (t as Tab) : (t && LEGACY_TABS[t]) || 'overview');
 
@@ -224,8 +224,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   // has to cover the whole set, or a deleted star leaves its planets pointing
   // at a row that no longer exists (the server only cuts them loose when a
   // star is UN-starred, not when it's deleted).
-  const [promotedFuture, setPromotedFuture] = useState<number[] | null>(null);
-  const [pendingFuture, setPendingFuture] = useState<number[] | null>(null);
   const [checksBusy, setChecksBusy] = useState(false);
   const [editingUrl, setEditingUrl] = useState<'site' | 'repo' | null>(null);
   const [urlDraft, setUrlDraft] = useState('');
@@ -274,48 +272,26 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const interacting = pointerDown
     || bugModal.open || roadModal.open || shareOpen || editingUrl !== null
     || confirmRoadDelete !== null || confirmBugDelete !== null
-    || cleanup !== null || promotedFuture !== null || pendingFuture !== null;
+    || cleanup !== null;
   useAutoRefresh(reread, !interacting);
-
-  // #282 — the Review room's ＋ Bug / ＋ Audit. The room has no modals and no
-  // project loaded, so it stashes a prefill and opens the project; this picks it
-  // up exactly once (the same one-shot idiom as the terminal brief). Runs after
-  // mount so the modal state is live.
-  useEffect(() => {
-    const p = takeReviewPrefill(slug);
-    if (!p) return;
-    if (p.kind === 'bug') {
-      setBugModal({ open: true, title: `#${p.itemId} ${p.title}: `, fromNote: null });
-    } else {
-      setRoadModal({
-        open: true, priority: 'should', title: `Audit #${p.itemId} — ${p.title}`,
-        note: `Audit what landed for #${p.itemId}: exercise it against the item's intent and log bugs for anything off.`,
-        area: 'audit', fromNote: null, editing: null,
-      });
-    }
-  }, [slug]);
 
   const bugs = data.bugs;
   const roadmap = data.roadmap;
   const notes = data.notes;
-  const futures = data.futures;
 
   const allRoadmap = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
   // The project-scoped review queue: items nobody typed, that no human has
-  // signed off. Bugs and futures can only be 'hook'; a roadmap item is also
-  // 'fly' (#381 — opened by a live session), held on the same footing, so it
-  // has to queue in the same place. Held and invisible is unapprovable.
+  // signed off. A bug can only be 'hook'; a roadmap item is also 'fly' (#381 —
+  // opened by a live session), held on the same footing, so it has to queue in
+  // the same place. Held and invisible is unapprovable.
   const reviewQueue: ReviewEntry[] = [
     ...bugs.filter((b) => b.source === 'hook' && !b.reviewed)
       .map((b) => ({ kind: 'bug' as const, key: b.id, title: b.title, meta: b.severity })),
     ...allRoadmap.filter((r) => (r.source === 'hook' || r.source === 'fly') && !r.reviewed)
       .map((r) => ({ kind: 'roadmap' as const, key: String(r.id), title: r.title, meta: r.bucket })),
-    ...futures.filter((f) => f.source === 'hook' && !f.reviewed)
-      .map((f) => ({ kind: 'future' as const, key: String(f.id), title: f.title, meta: 'idea' })),
   ];
 
   const openRoadCount = allRoadmap.filter((r) => !r.done).length;
-  const unsortedFutures = futures.filter((f) => !f.alignment).length;
   const failingChecks = data.checks.filter((c) => c.lastStatus === 'fail').length;
   // The Quality tab's single badge (#278): red checks plus serious open bugs.
   const needsAttention = failingChecks
@@ -381,13 +357,10 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       // to do something puts it on the plan rather than in the tray.
       const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: branch || undefined, area: area || undefined, subArea: subArea || undefined, plan: plan.length ? plan : undefined, risk: risk !== 'normal' ? risk : undefined, tier: tier || undefined, sched: newItemSched(project.weekZero) });
       const fromNote = roadModal.fromNote;
-      const fromFuture = pendingFuture;
       if (roadModal.fromDraft) updateRoadDraft(null); // the draft landed — clear it
       setData({ ...data, roadmap: { ...roadmap, [priority]: [...roadmap[priority], item] } });
       setRoadModal(roadModalClosed);
-      setPendingFuture(null);
       if (fromNote != null) setPromotedNote({ id: fromNote, kind: 'roadmap' });
-      else if (fromFuture != null) setPromotedFuture(fromFuture);
     });
 
   const removeRoad = (item: RoadmapItem) =>
@@ -546,107 +519,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       setNotesNonce((n) => n + 1);
     });
 
-  // ---- futures (the ideas curated against the north star) ----
-  const addFuture = (title: string, note: string) =>
-    guard(async () => {
-      const f = await createFuture(slug, { title, note });
-      setData({ ...data, futures: [f, ...futures] });
-    });
-
-  const editFuture = (fid: number, patch: { title: string; note: string; area: string }) =>
-    guard(async () => {
-      const updated = await patchFuture(slug, fid, patch);
-      setData({ ...data, futures: futures.map((f) => (f.id === fid ? updated : f)) });
-    });
-
-  const alignFuture = (fid: number, alignment: Alignment | '') =>
-    guard(async () => {
-      const updated = await patchFuture(slug, fid, { alignment });
-      setData({ ...data, futures: futures.map((f) => (f.id === fid ? updated : f)) });
-    });
-
-  // #312 — where an idea sits in the galaxy and how big it is. One handler for
-  // all three because the moves overlap: adopting demotes a star, promoting
-  // cuts the old orbit, and the server resolves that pair in one statement.
-  // It re-reads the whole collection rather than patching the one row: a
-  // promotion or a dissolve moves the idea's CHILDREN too, and those rows come
-  // back changed without being in the response.
-  const shapeFuture = (fid: number, patch: { parentId?: number | null; isStar?: boolean; magnitude?: number | null }) =>
-    guard(async () => {
-      await patchFuture(slug, fid, patch);
-      setData({ ...data, futures: await getFutures(slug) });
-    });
-
-  // Deleting an idea changes rows the response never mentions: `futures.parent_id`
-  // is ON DELETE SET NULL, so dismissing a star cuts its planets loose in the same
-  // statement (schema.sql — "returns its moons to the shells rather than deleting
-  // work you kept"). Filtering the one row out of the snapshot leaves every child
-  // still naming a parent that is gone, and the panel reads parentId raw: it goes
-  // on offering "— cut it loose —" on an idea that is already loose. Refetch, like
-  // shapeFuture — only the server knows what its own foreign key did.
-  const removeFuture = (fid: number) =>
-    guard(async () => {
-      await deleteFuture(slug, fid);
-      setData({ ...data, futures: await getFutures(slug) });
-    });
-
-  // #314 — keep-or-delete after a promotion has to cover the whole set that
-  // rode through (the idea plus its orbit), or a deleted star leaves its
-  // planets pointing at a row that's gone.
-  const removeFutures = (ids: number[]) =>
-    guard(async () => {
-      for (const id of ids) await deleteFuture(slug, id);
-      const removed = new Set(ids);
-      setData({ ...data, futures: futures.filter((f) => !removed.has(f.id)) });
-    });
-
-  // The orbit rail's own adopt path — same two steps as shapeFuture, but NOT
-  // wrapped in guard: the server legitimately rejects some adoptions (a target
-  // that isn't a star or planet, self-orbit, a target that has since moved),
-  // and the rail's row needs that rejection to reach it so it can show the
-  // reason beside the row rather than lose it to the page banner and vanish
-  // the row as though the adoption had applied.
-  const adoptOrbit = async (fid: number, parentId: number) => {
-    await patchFuture(slug, fid, { parentId });
-    setData({ ...data, futures: await getFutures(slug) });
-  };
-
-  // Applies a ✧ Cluster batch in one go — one state write, so N area patches
-  // never clobber each other on the shared snapshot.
-  const applyFutureAreas = (pairs: { id: number; area: string }[]) =>
-    guard(async () => {
-      const updated = await Promise.all(pairs.map((p) => patchFuture(slug, p.id, { area: p.area })));
-      const byId = new Map(updated.map((u) => [u.id, u]));
-      setData({ ...data, futures: futures.map((f) => byId.get(f.id) || f) });
-    });
-
-  // Converge (the sky's tray → tickets): create every draft through the normal
-  // roadmap POST, retire the converged ideas, then one state write for both.
-  const convergeCreate = (drafts: ConvergeDraft[], retireIds: number[]) =>
-    guard(async () => {
-      const created: RoadmapItem[] = [];
-      for (const d of drafts) {
-        created.push(await createRoadmapItem(slug, {
-          title: d.title.trim(), note: d.note.trim(), bucket: d.bucket,
-          area: d.area.trim().toLowerCase() || undefined,
-          plan: (() => {
-            const steps = d.plan.map((t) => t.trim()).filter(Boolean);
-            return steps.length ? steps.map((text) => ({ text, done: false })) : undefined;
-          })(),
-        }));
-      }
-      for (const id of retireIds) await deleteFuture(slug, id);
-      const nextRoadmap = { ...roadmap };
-      for (const it of created) nextRoadmap[it.bucket] = [...nextRoadmap[it.bucket], it];
-      // Retiring converged ideas is a delete, so the same rule as removeFuture:
-      // read back rather than filter, or the survivors keep orbiting a retired one.
-      setData({
-        ...data,
-        roadmap: nextRoadmap,
-        futures: retireIds.length ? await getFutures(slug) : futures,
-      });
-    });
-
   const saveNorthStar = (text: string) =>
     guard(async () => {
       await patchProject(slug, { north_star: text });
@@ -664,10 +536,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         const id = Number(e.key);
         const u = await patchRoadmapItem(slug, id, { reviewed: true });
         setData({ ...data, roadmap: { ...roadmap, [u.bucket]: roadmap[u.bucket].map((i) => (i.id === id ? u : i)) } });
-      } else {
-        const id = Number(e.key);
-        const u = await patchFuture(slug, id, { reviewed: true });
-        setData({ ...data, futures: futures.map((f) => (f.id === id ? u : f)) });
       }
     });
 
@@ -682,11 +550,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         if (!item) return;
         await deleteRoadmapItem(slug, id);
         setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].filter((i) => i.id !== id) } });
-      } else {
-        // Same as removeFuture: the delete may have cut children loose, and only
-        // a read back says so.
-        await deleteFuture(slug, Number(e.key));
-        setData({ ...data, futures: await getFutures(slug) });
       }
     });
 
@@ -752,37 +615,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   // first — untouched when there's no orbit — with the orbit appended as a
   // plain list, same '- title — note' shape the converge tray's epic draft
   // already uses.
-  const promoteFuture = (f: Future, orbit: Future[]) => {
-    setPendingFuture([f.id, ...orbit.map((o) => o.id)]);
-    const note = orbit.length
-      ? [f.note, `Orbiting this idea:\n${orbit.map((o) => `- ${o.title}${o.note ? ` — ${o.note}` : ''}`).join('\n')}`]
-        .filter(Boolean).join('\n\n')
-      : f.note;
-    setRoadModal({ open: true, priority: 'should', title: f.title, note, fromNote: null, editing: null });
-  };
-
-  // #321 — the sidebar's "Open in Workbench": create the idea's card if it
-  // doesn't have one yet (planWorkbenchOpen decides which), then navigate to
-  // it. The Workbench tab fetches its own data on mount, so there's nothing
-  // to refresh here.
-  const openFutureInWorkbench = (futureId: number) =>
-    guard(async () => {
-      try {
-        const wb = await getWorkbench(slug);
-        const plan = planWorkbenchOpen(wb.cards, futureId);
-        if (plan.action === 'create') await addWorkbenchCard(slug, { kind: 'polaris', futureId, x: plan.x, y: plan.y });
-      } catch (e) {
-        // A 409 from POST /cards means the partial unique index on future_id
-        // refused a second card — another tab (or a lost race between two
-        // clicks) already put this idea on the canvas. The user's intent is
-        // still met, so only that case is swallowed.
-        // HttpError, not #321's own ApiError: the two classes were the same
-        // thing under two names, and store.ts keeps the older one.
-        if (!(e instanceof HttpError && e.status === 409)) throw e;
-      }
-      go.detail(slug, 'workbench', `f${futureId}`);
-    });
-
   // Promote a note into the existing create-bug / create-roadmap flow, prefilled.
   // The Workbench hands over the note id and the text it is currently showing —
   // it holds cards, not Note rows, and the text on the card IS the note's text.
@@ -960,7 +792,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             // (red checks + serious open bugs). Two badges gave two counts and
             // no sense of how bad it was.
             const n = t.key === 'quality' ? needsAttention
-              : t.key === 'roadmap' ? openRoadCount : t.key === 'futures' ? unsortedFutures
+              : t.key === 'roadmap' ? openRoadCount
                 : t.key === 'workbench' ? notes.length : 0;
             return (
               <button key={t.key} className={`tab ${tab === t.key ? 'on' : ''}`} onClick={() => setTab(t.key)}>
@@ -1001,7 +833,8 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         {tab === 'overview' && (
           <Overview project={project} phase={data.currentPhase} activity={activity} directives={data.directives}
             reviewQueue={reviewQueue} keepResumeCard={data.keepResumeCard}
-            roadmap={roadmap} futures={futures} bugs={bugs}
+            roadmap={roadmap} bugs={bugs}
+            northStar={data.northStar} onSaveNorthStar={saveNorthStar}
             cadence={data.cadence} lastPushAt={data.lastPushAt}
             pulse={pulse} pulseError={pulseError}
             onViewAll={viewAll} onJumpBack={() => setTab('roadmap')}
@@ -1065,22 +898,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
               consoleOffReason: consoleOff,
             }} />
         )}
-        {tab === 'futures' && (
-          <Futures northStar={data.northStar} futures={futures} highlightId={highlightId} slug={slug}
-            onSaveNorthStar={saveNorthStar} onAdd={addFuture} onEdit={editFuture} onAlign={alignFuture}
-            onAskPolaris={agentCan(data.agents, 'polaris', 'judge') ? (id) => judgeFuture(slug, id) : undefined}
-            onCluster={agentCan(data.agents, 'polaris', 'cluster') ? () => clusterFutures(slug) : undefined}
-            onSetAreas={applyFutureAreas}
-            onConvergeDraft={agentCan(data.agents, 'polaris', 'converge')
-              ? (ids, mode) => convergeFutures(slug, ids, mode) : undefined}
-            onConvergeCreate={convergeCreate}
-            onShape={shapeFuture} onAdoptOrbit={adoptOrbit}
-            onDelete={removeFuture} onPromote={promoteFuture}
-            geminiReady={data.geminiReady}
-            onProposeOrbits={() => proposeOrbits(slug)}
-            onRestate={(id) => restateFuture(slug, id)}
-            onOpenInWorkbench={openFutureInWorkbench} />
-        )}
         {tab === 'workbench' && (
           <Workbench slug={slug} projectName={data.project.name} geminiReady={data.geminiReady}
             highlightId={highlightId}
@@ -1110,12 +927,12 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           initialRiskReason={roadModal.editing?.riskReason ?? ''}
           initialTier={roadModal.editing?.tier ?? ''}
           branches={[...new Set(allRoadmap.map((i) => i.claimedBy))].filter(Boolean).sort()}
-          areas={[...new Set([...allRoadmap.map((i) => i.area), ...futures.map((f) => f.area)])].filter(Boolean).sort()}
+          areas={[...new Set(allRoadmap.map((i) => i.area))].filter(Boolean).sort()}
           subAreas={[...new Set(allRoadmap
             .filter((i) => i.area === (roadModal.editing?.area ?? roadModal.area ?? ''))
             .map((i) => i.subArea))].filter(Boolean).sort()}
           mode={roadModal.editing ? 'edit' : 'add'}
-          onClose={() => { setRoadModal(roadModalClosed); setPendingFuture(null); }}
+          onClose={() => setRoadModal(roadModalClosed)}
           onDismiss={(d) => updateRoadDraft(d)}
           onAssist={agentCan(data.agents, 'curator', 'assist') ? (note) => assistRoadmapItem(slug, note) : undefined}
           onSubmit={submitRoad} />
@@ -1215,20 +1032,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           onConfirm={() => { const it = confirmRoadDelete; setConfirmRoadDelete(null); removeRoad(it); }}
           onCancel={() => setConfirmRoadDelete(null)} />
       )}
-      {promotedFuture != null && (() => {
-        const orbitCount = promotedFuture.length - 1;
-        return (
-          <ConfirmModal
-            title="Promoted to a roadmap item"
-            body={orbitCount > 0
-              ? <>Keep the idea and the {orbitCount} that orbit it in Futures, or delete all {promotedFuture.length} now that they're on the roadmap?</>
-              : "Keep the original idea in Futures, or delete it now that it's on the roadmap?"}
-            confirmLabel={orbitCount > 0 ? `Delete ${promotedFuture.length} ideas` : 'Delete idea'}
-            cancelLabel={orbitCount > 0 ? 'Keep ideas' : 'Keep idea'} danger
-            onConfirm={() => { const ids = promotedFuture; setPromotedFuture(null); removeFutures(ids); }}
-            onCancel={() => setPromotedFuture(null)} />
-        );
-      })()}
       {promotedNote && (
         <ConfirmModal
           title={promotedNote.kind === 'bug' ? 'Promoted to a bug' : 'Promoted to a roadmap item'}

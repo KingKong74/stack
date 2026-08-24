@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Settings as SettingsData, CheckpointDetail, AuthDevice, Project } from '../types';
 import {
   getSettings, patchSettings, getToken, clearToken, verifyToken, AuthError,
@@ -9,21 +9,14 @@ import {
   getTermSessionPrefs, setTermSessionPrefs, type TermSessionPrefs,
   getAutoRefreshSeconds, setAutoRefreshSeconds, AUTO_REFRESH_CHOICES, type AutoRefreshSeconds,
 } from '../store';
-import { go, type ControlRoom } from '../lib/route';
+import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { DIRECTIVES } from '../lib/brief';
-import { ControlPanel } from './Control';
 
-// The three house-wide surfaces this screen holds. `instructions` arrived last
-// and is lazy — see below.
-type ScreenTab = 'settings' | 'control' | 'instructions';
-const TAB_TITLE: Record<ScreenTab, string> = {
-  settings: 'Settings',
-  control: 'Mission Control',
-  instructions: 'Instructions',
-};
-const InstructionsPanel = lazy(() =>
-  import('./Instructions').then((m) => ({ default: m.InstructionsPanel })));
+// Mission Control and the instructions tree were culled, so this screen is
+// back to the one surface it started as. The strip below is kept for the
+// Terminal jump that has always lived beside the tabs — it is the only way to
+// the host shell from here, and it was never a tab in the first place.
 
 const THEMES: { key: ThemePref; label: string }[] = [
   { key: 'system', label: 'System' }, { key: 'light', label: 'Light' }, { key: 'dark', label: 'Dark' },
@@ -42,68 +35,7 @@ function maskToken(t: string | null): string {
   return `${'•'.repeat(Math.min(t.length - 4, 16))}${t.slice(-4)}`;
 }
 
-export function Settings({ initialTab = 'settings', initialRoom, initialSlug, initialHighlight }: {
-  initialTab?: ScreenTab; initialRoom?: ControlRoom; initialSlug?: string;
-  /** `?hl=` — one row for the room to open on. Passed straight through. */
-  initialHighlight?: string;
-}) {
-  // One screen, three tabs: the app's settings, Mission Control (#/control
-  // deep-links straight onto the control tab, and #/control/<room> onto a room
-  // — #316), and the instructions tree (#/instructions[/<slug>]).
-  //
-  // The three belong together because they are the house-wide surfaces: what
-  // the fleet is doing, how sessions are recorded, and what every session is
-  // told before it starts. Instructions is not a project tab for the same
-  // reason — the personal file and the repo files are ONE tree, and "which of
-  // these wins" cannot be asked from inside one project.
-  const [screenTab, setScreenTab] = useState<ScreenTab>(initialTab);
-  // App renders this same component for both routes, so React keeps the
-  // instance and the tab would otherwise be whatever it was left on: a
-  // `#/control/review` link pressed while the Settings tab is showing changed
-  // the URL and nothing else. The route is the authority.
-  useEffect(() => { setScreenTab(initialTab); }, [initialTab]);
-  // #329 — full screen belongs to Mission Control, not the screen: Settings
-  // owns the chrome (topbar, tab strip) that full screen hides, so it has to
-  // be the one holding the flag. Same shape as Futures' galaxy full screen —
-  // a CSS mode first, the Fullscreen API second, so a refused or unavailable
-  // request still gives you the whole viewport.
-  const [full, setFull] = useState(false);
-  const toggleFull = () => {
-    const next = !full;
-    setFull(next);
-    if (next) void document.documentElement.requestFullscreen?.().catch(() => {});
-    else if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
-  };
-  useEffect(() => {
-    const onChange = () => { if (!document.fullscreenElement) setFull(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.fullscreenElement) setFull(false); };
-    document.addEventListener('fullscreenchange', onChange);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('fullscreenchange', onChange);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, []);
-  // Leaving the Mission Control tab drops full screen — it's a Mission
-  // Control mode, not a Settings-screen one.
-  useEffect(() => { if (screenTab !== 'control') setFull(false); }, [screenTab]);
-  // Navigating away from #/control unmounts this component entirely, and the
-  // browser would otherwise stay fullscreen with nothing left to show for it.
-  // The ref (rather than closing over `full`) is what stops this cleanup
-  // cancelling a fullscreen some OTHER screen — the persistent terminal dock
-  // — asked for in the meantime.
-  const fullRef = useRef(full);
-  useEffect(() => { fullRef.current = full; }, [full]);
-  useEffect(() => () => {
-    if (fullRef.current && document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
-  }, []);
-  // The corner docks (QuickAddDock, ToTop, the terminal presence pill) are
-  // siblings of this screen, rendered by App.tsx — a dataset flag on <body>
-  // is how they fold away without this component reaching outside its tree.
-  useEffect(() => {
-    if (full) document.body.dataset.mcFull = '1';
-    return () => { delete document.body.dataset.mcFull; };
-  }, [full]);
+export function Settings() {
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -239,13 +171,13 @@ export function Settings({ initialTab = 'settings', initialRoom, initialSlug, in
   };
 
   return (
-    <div className={full ? 'mc-fullscreen' : undefined}>
+    <div>
       <div className="topbar">
         <div className="crumb">
           <span className="chev" onClick={go.dashboard}>‹</span>
           <span className="back" onClick={go.dashboard}>Projects</span>
           <span className="sep">/</span>
-          <span className="here">{TAB_TITLE[screenTab]}</span>
+          <span className="here">Settings</span>
         </div>
         <div className="right">
           <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
@@ -255,28 +187,16 @@ export function Settings({ initialTab = 'settings', initialRoom, initialSlug, in
       <div className="page detail">
         <div className="dash-head" style={{ marginBottom: 16 }}>
           <div>
-            <div className="dash-title">{TAB_TITLE[screenTab]}</div>
+            <div className="dash-title">Settings</div>
             <div className="dash-count">
-              {screenTab === 'control'
-                ? 'Every project and its automation, from one point.'
-                : screenTab === 'instructions'
-                  ? 'What Claude reads before it touches a repo. Rules cascade down the tree — the closest file wins.'
-                  : `How ${PRODUCT_NAME} records your work, and the access it uses.`}
+              How {PRODUCT_NAME} records your work, and the access it uses.
             </div>
           </div>
         </div>
 
         <div className="tabs">
-          {/* Anchors with real hrefs so middle/ctrl-click opens a new tab; the
-              onClick still flips the local tab state (the component stays
-              mounted, so a same-page hash change alone wouldn't switch). */}
-          <a className={`tab ${screenTab === 'settings' ? 'on' : ''}`} href="#/settings"
-            onClick={() => setScreenTab('settings')}>Settings</a>
-          <a className={`tab ${screenTab === 'control' ? 'on' : ''}`} href="#/control"
-            onClick={() => setScreenTab('control')}>Mission Control</a>
-          <a className={`tab ${screenTab === 'instructions' ? 'on' : ''}`} href="#/instructions"
-            onClick={() => setScreenTab('instructions')}>Instructions</a>
-          {/* Not a tab — the jump to the host terminal, up here beside them.
+          <a className="tab on" href="#/settings">Settings</a>
+          {/* Not a tab — the jump to the host terminal, up here beside it.
               Opens in the most recently touched project (the Terminal screen
               resolves the cwd itself when none is given). */}
           <a className="tab tab-term" href="#/terminal"
@@ -285,23 +205,9 @@ export function Settings({ initialTab = 'settings', initialRoom, initialSlug, in
           </a>
         </div>
 
-        {screenTab === 'control' && (
-          <ControlPanel initialRoom={initialRoom} initialHighlight={initialHighlight}
-            full={full} onToggleFull={toggleFull} />
-        )}
+        {error ? <div className="action-error">{error}</div> : null}
 
-        {/* Lazy, and for the same reason the Terminal and the skill tree are:
-            the tab carries its own parser and map, and most visits to this
-            screen are not to it. */}
-        {screenTab === 'instructions' && (
-          <Suspense fallback={<div className="empty-state"><div className="big">Loading…</div></div>}>
-            <InstructionsPanel initialSlug={initialSlug} />
-          </Suspense>
-        )}
-
-        {screenTab === 'settings' && (error ? <div className="action-error">{error}</div> : null)}
-
-        {screenTab === 'settings' && (loading || !settings ? (
+        {loading || !settings ? (
           <div className="empty-state"><div className="big">Loading…</div></div>
         ) : (
           <div className="set-cols">
@@ -397,40 +303,6 @@ export function Settings({ initialTab = 'settings', initialRoom, initialSlug, in
                   </div>
                 </div>
                 <a className="btn-accent" href="#/skills">Open the skill tree →</a>
-              </div>
-            </section>
-
-            {/* ---- Instructions — the other half of "what shapes a session".
-                    The switches above are five fixed lines Stack injects; this
-                    is the CLAUDE.md tree in the repos themselves, which Claude
-                    reads whether or not Stack knows about it. A pointer, not a
-                    section: the tab has a map and an editor in it. */}
-            <section className="set-card set-mc-pointer">
-              <div className="set-mc-pointer-body">
-                <div className="set-mc-pointer-text">
-                  <div className="set-card-title">Instructions</div>
-                  <div className="set-card-sub">
-                    Every <span className="mono">CLAUDE.md</span> in the tree — your personal one and each
-                    project's — with what the merged context actually says, what it costs, and which
-                    file wins where they disagree.
-                  </div>
-                </div>
-                <a className="btn-accent" href="#/instructions"
-                  onClick={() => setScreenTab('instructions')}>Open the instructions tree →</a>
-              </div>
-            </section>
-
-            {/* ---- Autopilot — single source of truth in Mission Control ---- */}
-            <section className="set-card set-mc-pointer">
-              <div className="set-mc-pointer-body">
-                <div className="set-mc-pointer-text">
-                  <div className="set-card-title">Autopilot</div>
-                  <div className="set-card-sub">
-                    The arm switch, session cap, token budget, nightly time, items per night, executor and
-                    advisor models — everything in one place.
-                  </div>
-                </div>
-                <a className="btn-accent" href="#/control" onClick={() => setScreenTab('control')}>Open Mission Control →</a>
               </div>
             </section>
 
@@ -582,9 +454,9 @@ export function Settings({ initialTab = 'settings', initialRoom, initialSlug, in
                 <div className="set-row-text">
                   <div className="set-row-label">Refresh every</div>
                   <div className="set-row-hint">
-                    The terminal’s running sessions, branch previews, Mission Control’s queue and the
-                    skill tree all move on the <b>host’s</b> clock — a preview comes up, a session is
-                    reaped, a night’s job finishes. This is how often they re-read, so finding out
+                    The terminal’s running sessions, branch previews and the skill tree all move on
+                    the <b>host’s</b> clock — a preview comes up, a session is reaped, a background
+                    job finishes. This is how often they re-read, so finding out
                     doesn’t mean reloading the page. A tab you aren’t looking at never polls, and
                     refreshes the moment you come back to it. <b>Off</b> leaves every screen reading
                     on arrival and after anything you do, which is what they did before.
@@ -788,7 +660,7 @@ export function Settings({ initialTab = 'settings', initialRoom, initialSlug, in
               </div>
             </section>
           </div>
-        ))}
+        )}
       </div>
     </div>
   );

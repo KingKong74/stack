@@ -10,13 +10,12 @@ import { go } from '../lib/route';
 // and flagging it via the existing highlight mechanism), esc to close. Scope
 // chips filter by kind. Focus is trapped while open and restored on close.
 
-type Scope = 'all' | 'bugs' | 'roadmap' | 'futures' | 'notes' | 'activity';
+type Scope = 'all' | 'bugs' | 'roadmap' | 'notes' | 'activity';
 
 const SCOPES: { key: Scope; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'bugs', label: 'Bugs' },
   { key: 'roadmap', label: 'Roadmap' },
-  { key: 'futures', label: 'Polaris' },
   { key: 'notes', label: 'Notes' },
   { key: 'activity', label: 'Activity' },
 ];
@@ -26,13 +25,12 @@ const GROUP_ORDER: { key: keyof SearchResponse['groups']; label: string }[] = [
   { key: 'projects', label: 'Projects' },
   { key: 'bugs', label: 'Bugs' },
   { key: 'roadmap', label: 'Roadmap' },
-  { key: 'futures', label: 'Polaris' },
   { key: 'notes', label: 'Notes' },
   { key: 'activity', label: 'Activity' },
 ];
 
 const KIND_ICON: Record<SearchResult['kind'], string> = {
-  project: '▦', bug: '!', roadmap: '◆', future: '✦', note: '✎', activity: '↗',
+  project: '▦', bug: '!', roadmap: '◆', note: '✎', activity: '↗',
 };
 
 // Wrap each case-insensitive occurrence of the query in <mark> (terracotta).
@@ -174,7 +172,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           <input
             ref={inputRef}
             className="cmdk-input"
-            placeholder="Search projects, bugs, roadmap, futures, notes, activity…"
+            placeholder="Search projects, bugs, roadmap, notes, activity…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             aria-label="Search query"

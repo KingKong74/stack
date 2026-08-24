@@ -5,7 +5,7 @@ import type {
 import { go } from '../lib/route';
 import {
   getProjectDetail, patchBug, deleteBug, patchRoadmapItem, deleteRoadmapItem,
-  patchFuture, deleteFuture, triageInbox, AuthError,
+  triageInbox, AuthError,
   type TriageAnnotation, type TriageResult,
 } from '../store';
 import { ExportBriefModal } from './ExportBriefModal';
@@ -274,8 +274,7 @@ export function ReviewQueue({ initial }: { initial: Overview['review'] }) {
 
   const keepOne = async (it: ReviewItem) => {
     if (it.kind === 'bug') await patchBug(it.slug, it.id, { reviewed: true });
-    else if (it.kind === 'roadmap') await patchRoadmapItem(it.slug, Number(it.id), { reviewed: true });
-    else await patchFuture(it.slug, Number(it.id), { reviewed: true });
+    else await patchRoadmapItem(it.slug, Number(it.id), { reviewed: true });
   };
 
   const act = async (it: ReviewItem, action: 'keep' | 'dismiss') => {
@@ -287,10 +286,8 @@ export function ReviewQueue({ initial }: { initial: Overview['review'] }) {
         await keepOne(it);
       } else if (it.kind === 'bug') {
         await deleteBug(it.slug, it.id);
-      } else if (it.kind === 'roadmap') {
-        await deleteRoadmapItem(it.slug, Number(it.id));
       } else {
-        await deleteFuture(it.slug, Number(it.id));
+        await deleteRoadmapItem(it.slug, Number(it.id));
       }
       setItems((prev) => prev.filter((x) => rowKey(x) !== rowKey(it)));
       setTotal((t) => Math.max(0, t - 1));
@@ -402,10 +399,10 @@ export function ReviewQueue({ initial }: { initial: Overview['review'] }) {
                 const hasAnn = ann.action || ann.clusterLabel || ann.suggestedSeverity;
                 return (
                   <div className={`review-row${busyKey === rowKey(it) || busyKey === g.key ? ' busy' : ''}${hasAnn ? ' has-triage' : ''}`} key={rowKey(it)}>
-                    <span className={`review-kind ${it.kind}`}>{it.kind === 'bug' ? it.id : it.kind === 'roadmap' ? 'roadmap' : 'idea'}</span>
+                    <span className={`review-kind ${it.kind}`}>{it.kind === 'bug' ? it.id : 'roadmap'}</span>
                     <span className="review-row-body">
                       <button className="review-title" title="Open in its tracker"
-                        onClick={() => go.detail(it.slug, it.kind === 'bug' ? 'quality' : it.kind === 'roadmap' ? 'roadmap' : 'futures', it.id)}>
+                        onClick={() => go.detail(it.slug, it.kind === 'bug' ? 'quality' : 'roadmap', it.id)}>
                         {it.title}
                       </button>
                       {/* #76 — triage annotations */}

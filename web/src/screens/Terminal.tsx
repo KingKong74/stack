@@ -1207,7 +1207,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         <div className="right">
           {/* #316 — the review quick link is the rail's `review ↗`, not a
               second button up here: one entrance per screen. */}
-          <a className="btn-repo" href={hrefTo.control()} title="Mission Control">Mission Control</a>
+          <a className="btn-repo" href={hrefTo.control} title="Mission Control">Mission Control</a>
           <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
         </div>
       </div>
@@ -1630,22 +1630,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               the open segment are device-local. ---- */}
           <div className={`term-cockpit${viewPrefs.railOpen ? '' : ' collapsed'}`}>
             <div className="tc-top">
-              {/* #316 — the jump link, at the top of the rail and in the same
-                  hand as DO NEXT's `roadmap ↗` below: the rail is where this
-                  session's work is picked up, so it is also where the verdict
-                  on the last one belongs. Sits above the segment picker, so it
-                  is there whichever segment is open. An anchor (`#/control/review`
-                  is a real URL now), so it can be opened in a tab beside the
-                  session rather than replacing it. This is the screen's ONE
-                  entrance to Review — a second button in the top bar was tried
-                  and taken back out — so a collapsed rail reaches it by opening
-                  the rail, the same as everything else the rail holds. */}
-              {viewPrefs.railOpen && (
-                <a className="tc-link" href={hrefTo.control('review')}
-                  title="Review — every change waiting on your verdict, across every project">
-                  review ↗
-                </a>
-              )}
               {/* The two Session layouts, switchable in a press so they can be
                   compared against real work rather than against a mock. Named
                   by what you are going TO, since that is the choice. */}

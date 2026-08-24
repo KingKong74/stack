@@ -4,8 +4,8 @@ export type BugStatus = 'open' | 'investigating' | 'fixing' | 'fixed';
 export type Priority = 'must' | 'should' | 'could' | 'wont';
 // Where a tracker row came from. hook = auto-extracted from a push, manual =
 // hand-entered, fly = opened by a live Claude session for its own work (#381).
-// 'fly' is ROADMAP-ONLY — bugs and futures cannot hold it — but the type is
-// shared, so the renderers that switch on it must not assume all three.
+// 'fly' is ROADMAP-ONLY — a bug cannot hold it — but the type is shared, so
+// the renderers that switch on it must not assume all three.
 export type Source = 'hook' | 'manual' | 'fly';
 
 // What has pushed since the checkpoint that wrote the resume card. The card's
@@ -206,12 +206,12 @@ export interface Note {
 
 // ---- the Workbench canvas (the tab that replaced the notes wall) ----
 
-// A card is a PLACEMENT. 'note' and 'polaris' cards wrap a Note / Future row
-// and read their title through from it, so the collections stay authoritative;
-// only 'ai' cards own their own words.
+// A card is a PLACEMENT. A 'note' card wraps a Note row and reads its title
+// through from it, so `notes` stays authoritative; only 'ai' cards own their
+// own words. ('polaris' was the third kind and went with the Polaris cull.)
 // 'folder' (#414) is the second kind that owns its own title — it wraps no row,
 // so there is nothing to read the words through from.
-export type WorkbenchKind = 'note' | 'polaris' | 'ai' | 'folder';
+export type WorkbenchKind = 'note' | 'ai' | 'folder';
 export type WorkbenchOp = 'expand' | 'cluster' | 'plan' | 'blast' | 'touches' | 'critique' | 'ask';
 
 export interface WorkbenchLine { mk: string; t: string }
@@ -236,7 +236,6 @@ export interface WorkbenchCard {
   kind: WorkbenchKind;
   op: WorkbenchOp | '';
   noteId: number | null;
-  futureId: number | null;
   title: string;
   colour: string;      // the sticky's palette tint ('' for anything but a note)
   meta: string;        // the corner stamp: P-number, op name, or a note's age
@@ -252,32 +251,6 @@ export interface WorkbenchCard {
 }
 
 export interface WorkbenchEdge { id: number; a: number; b: number; ai: boolean }
-
-// One row in the pull-from-Polaris picker. The WHOLE funnel comes down, not
-// just what is unpicked — the picker's All filter shows an idea already on the
-// canvas too, greyed, with `onCanvas` saying why it can't be picked again.
-export interface WorkbenchIdea {
-  id: number;
-  title: string;
-  meta: string;        // P-<id>
-  area: string;        // '' = untagged
-  links: number;       // ideas orbiting this one in the galaxy
-  age: string;         // '3w ago'
-  days: number;        // the same age as a number, for the Recent filter
-  onCanvas: boolean;
-  isStar: boolean;
-}
-
-// Pulling a star onto the canvas also cascades its direct planets in (#326).
-// `cards`/`edges` are only what THIS call newly created — a planet already on
-// the canvas isn't repeated, and `placed` (capped at 24) vs `total` is how the
-// caller knows to say the fan-out was capped.
-export interface WorkbenchCascade {
-  cards: WorkbenchCard[];
-  edges: WorkbenchEdge[];
-  placed: number;
-  total: number;
-}
 
 // One choice in the model picker above the ops rail — an app-wide server
 // setting (workbenchModel), not a per-project one.
@@ -302,7 +275,6 @@ export interface WorkbenchBoardItem {
 export interface WorkbenchData {
   cards: WorkbenchCard[];
   edges: WorkbenchEdge[];
-  polaris: WorkbenchIdea[];
   // The open board, in the run queue's order, for the Roadmap system folder.
   // Capped server-side; `boardTotal` is how many there really are, so the
   // folder can say it is showing a slice rather than implying it is the lot.
@@ -331,7 +303,7 @@ export interface DebriefInsight {
   from: DebriefInsightFrom;
   text: string;
   imported: boolean;
-  importedAs: '' | 'note' | 'idea' | 'dismissed';
+  importedAs: '' | 'note' | 'dismissed';
 }
 
 export interface DebriefNight {
@@ -352,28 +324,6 @@ export interface WorkbenchDebrief {
   runsShown: number;
   runsTotal: number;    // vs runsShown: how much the `days` window is hiding
   total: number;
-}
-
-// A future: a loose directional idea, curated against the project's north star
-// and promoted into the roadmap when it firms up.
-export interface Future {
-  id: number;
-  title: string;
-  note: string;
-  when: string;
-  createdAt: string;   // raw ISO — the sky's time scrub buckets on it
-  source: Source;
-  reviewed: boolean;
-  alignment: string;   // north-star verdict: '' | on-course | tangent | off-course
-  area: string;        // product-area tag ('' = untagged) — filters the funnel
-  canvasX: number | null;  // visual canvas position (null = auto-layout)
-  canvasY: number | null;
-  // The galaxy (#312). What an idea IS is derived from these, never stored:
-  // isStar = its own orbit; parent a star = a planet; parent a planet = a moon;
-  // no parent and judged = a shell of the north star; unjudged = the drift belt.
-  parentId: number | null;
-  isStar: boolean;
-  magnitude: number | null;  // 1–5 how much work; null = not sized yet
 }
 
 // The methods a check may use — GET probes a page, the rest exercise an API
@@ -496,11 +446,11 @@ export interface PresenceItem {
   seen: string;            // most recent ping, relative
 }
 export interface ReviewItem {
-  kind: 'bug' | 'roadmap' | 'future';
+  kind: 'bug' | 'roadmap';
   slug: string; name: string;
-  id: string;              // bug key (BUG-N) or row id (roadmap/future)
+  id: string;              // bug key (BUG-N) or row id (roadmap)
   title: string;
-  meta: string;            // severity (bug) / bucket (roadmap) / 'idea' (future)
+  meta: string;            // severity (bug) / bucket (roadmap)
   when: string;
   batch?: string;          // one ingest's extractions share it — the session group key (#140)
 }
@@ -571,7 +521,7 @@ export interface Overview {
 }
 
 // ---- ⌘K command palette search (GET /api/search) ----
-export type SearchKind = 'project' | 'bug' | 'roadmap' | 'future' | 'note' | 'activity';
+export type SearchKind = 'project' | 'bug' | 'roadmap' | 'note' | 'activity';
 export interface SearchTarget { slug: string; tab: string; highlight: string | null }
 export interface SearchResult {
   kind: SearchKind;
@@ -581,12 +531,12 @@ export interface SearchResult {
 }
 export interface SearchGroups {
   projects: SearchResult[]; bugs: SearchResult[]; roadmap: SearchResult[];
-  futures: SearchResult[]; notes: SearchResult[]; activity: SearchResult[];
+  notes: SearchResult[]; activity: SearchResult[];
 }
 export interface SearchResponse {
   query: string;
   groups: SearchGroups;
-  counts: { projects: number; bugs: number; roadmap: number; futures: number; notes: number; activity: number; total: number };
+  counts: { projects: number; bugs: number; roadmap: number; notes: number; activity: number; total: number };
   projectCount: number;
 }
 

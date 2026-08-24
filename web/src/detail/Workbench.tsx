@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
-  WorkbenchCard, WorkbenchCascade, WorkbenchData, WorkbenchEdge, WorkbenchOp, WorkbenchPhase,
+  WorkbenchCard, WorkbenchData, WorkbenchOp, WorkbenchPhase,
   WorkbenchDebrief, DebriefInsight, DebriefInsightKind,
 } from '../types';
 import {
@@ -21,12 +21,13 @@ import { WorkbenchDesign } from './WorkbenchDesign';
 //
 // Notes were a pile: a wall of stickies with no way to say that two of them are
 // the same thought, or that one of them became a plan. This is the same notes,
-// on a ground where they can be placed, wired and worked — with Polaris ideas
-// pulled in beside them and the ✧ ops rail turning a rough card into
-// directions, a phased plan, a counter-case.
+// on a ground where they can be placed, wired and worked, with the ✧ ops rail
+// turning a rough card into directions, a phased plan, a counter-case.
+// (Polaris ideas were the second thing pulled onto this ground and went with
+// the Polaris cull; a night's debrief insight is the pull that remains.)
 //
 // What is REAL here: the notes are notes (⌘K finds them, → Bug still promotes
-// them), the ideas are Polaris ideas, and Promote → Roadmap writes real items.
+// them), and Promote → Roadmap writes real items.
 // What is a SUGGESTION: everything an op produces. It lands as a card the owner
 // keeps, edits or cuts — nothing an op says changes tracker state on its own.
 //
@@ -74,16 +75,13 @@ const VIEWS: { key: View; label: string }[] = [
 // disagreeing about whether the thing on screen can be zoomed.
 const spatial = (v: View) => v === 'canvas' || v === 'map';
 
-// A deep-link's hl token is a NOTE id (bare, ⌘K's form) or a FUTURE id
-// (f<id>, a pulled Polaris idea) — the two tables' ids collide, so the form is
-// what tells them apart. Resolved to a card once, so the centring effect and
-// the per-card highlight prop can never disagree.
+// A deep-link's hl token is a NOTE id. It used to be either that or a FUTURE
+// id (`f<id>`, a pulled Polaris idea), because the two tables' ids collide and
+// the form was what told them apart; Polaris is culled, so an `f`-prefixed
+// token now matches nothing rather than being read as a note id — the ids
+// still collide, and guessing would centre the canvas on the wrong card.
 const matchHighlight = (cards: WorkbenchCard[], token: string): WorkbenchCard | undefined => {
-  const future = /^f(\d+)$/.exec(token);
-  if (future) {
-    const futureId = Number(future[1]);
-    return cards.find((c) => c.futureId === futureId);
-  }
+  if (/^f\d+$/.test(token)) return undefined;
   return cards.find((c) => String(c.noteId) === token);
 };
 
@@ -109,17 +107,6 @@ type LogEntry = { when: string; t: string };
 // six notes and no subfolders is not empty.
 type TreeRow = { card: WorkbenchCard; depth: number; open: boolean; kids: number };
 
-type PolarisFilter = 'unpicked' | 'recent' | 'all';
-const POLARIS_FILTERS: { key: PolarisFilter; label: string }[] = [
-  { key: 'unpicked', label: 'Unpicked' },
-  { key: 'recent', label: 'Recent' },
-  { key: 'all', label: 'All' },
-];
-// What "Recent" means in the picker. A fortnight, and its own constant rather
-// than borrowing util.js's STALE_DAYS — that one is the deck's stale threshold
-// and coupling the two would make a change to one silently move the other.
-const RECENT_DAYS = 14;
-
 type DebriefFilter = 'new' | 'advisor' | 'all';
 const DEBRIEF_FILTERS: { key: DebriefFilter; label: string }[] = [
   { key: 'new', label: 'New' },
@@ -141,7 +128,7 @@ export function Workbench({
   slug: string;
   projectName: string;             // names the root crumb — the tree has no root row (#414)
   geminiReady: boolean;
-  highlightId?: string | null;      // a NOTE id (⌘K) or f<futureId> (a Polaris-idea deep-link)
+  highlightId?: string | null;      // a NOTE id (⌘K)
   notesNonce: number;               // bumped when a note is deleted elsewhere
   onPromoteNote: (noteId: number, text: string, kind: 'bug' | 'roadmap') => void;
   onPromotePlan: (phases: WorkbenchPhase[]) => Promise<boolean>;
@@ -213,15 +200,9 @@ export function Workbench({
   // Focus mode: dim everything not attached to the selection. On a canvas that
   // has been worked for a while this is the only way to read one thread.
   const [focus, setFocus] = useState(false);
-  // The pull-from-Polaris picker.
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [pQuery, setPQuery] = useState('');
-  const [pFilter, setPFilter] = useState<PolarisFilter>('unpicked');
-  const [picked, setPicked] = useState<Set<number>>(new Set());
-
   // The pull-from-debrief picker. Loaded lazily on first open, not with the
   // tab — most sessions on this project never touch it, and a night's account
-  // is a heavier read than the Polaris list already sitting in `data`.
+  // is a heavy read.
   const [debriefOpen, setDebriefOpen] = useState(false);
   const [debrief, setDebrief] = useState<WorkbenchDebrief | null>(null);
   const [debriefLoading, setDebriefLoading] = useState(false);
@@ -247,22 +228,12 @@ export function Workbench({
   const [heights, setHeights] = useState<Record<number, number>>({});
 
   // Closing drops the ticks too: a selection you left behind and forgot would
-  // pull an idea you didn't mean to the next time you opened the panel.
-  const closePicker = useCallback(() => {
-    setPickerOpen(false);
-    setPicked(new Set());
-    setPQuery('');
-  }, []);
-
-  // Same rule for the debrief picker — and the two are mutually exclusive, so
-  // opening either one first closes the other rather than stacking two panels
-  // over the same dock corner.
+  // import an insight you didn't mean to the next time you opened the panel.
   const closeDebrief = useCallback(() => {
     setDebriefOpen(false);
     setDPicked(new Set());
     setDQuery('');
   }, []);
-  const openPicker = useCallback(() => { closeDebrief(); setPickerOpen(true); }, [closeDebrief]);
 
   // A wall-clock stamp rather than "now / 1m / 5m": this log is not re-rendered
   // on a timer, so a relative age would freeze at whatever it said when it was
@@ -314,7 +285,6 @@ export function Workbench({
       if (e.key !== 'Escape') return;
       if (full) { setFull(false); return; }
       if (debriefOpen) closeDebrief();
-      else if (pickerOpen) closePicker();
       else if (linking !== null) setLinking(null);
       else if (asking) { setAsking(false); setQuestion(''); }
       else if (focus) setFocus(false);
@@ -322,7 +292,7 @@ export function Workbench({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [linking, asking, pickerOpen, debriefOpen, focus, full, closePicker, closeDebrief]);
+  }, [linking, asking, debriefOpen, focus, full, closeDebrief]);
 
   // ---- pan + zoom ----
   // Native wheel listener with passive:false, so the page never scrolls out
@@ -650,81 +620,10 @@ export function Workbench({
     say(`Design pasted back as a note, wired to “${into.title.slice(0, 34)}${into.title.length > 34 ? '…' : ''}”.`);
   });
 
-  // Pull the whole selection in one go, laid out in a column of four that steps
-  // sideways — a batch dumped on one spot is a stack you then have to unpile.
-  // Each idea is its own POST (the route is per-card and already pinned); they
-  // go concurrently because their positions are decided here, not server-side.
-  const pullPicked = () => guard(async () => {
-    const ids = [...picked];
-    if (!ids.length) return;
-    const at = centreOfView();
-    const settled = await Promise.allSettled(ids.map((futureId, i) => addWorkbenchCard(slug, {
-      kind: 'polaris', futureId,
-      x: at.x + Math.floor(i / 4) * 268,
-      y: at.y + (i % 4) * 128,
-    })));
-    const made = settled
-      .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof addWorkbenchCard>>> => r.status === 'fulfilled')
-      .map((r) => r.value);
-    const failed = settled.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
-    if (!made.length) throw (failed[0]?.reason ?? new Error('Something went wrong.'));
-    const pulled = new Set(ids);
-    // A star's pull cascades its planets in alongside it (#326). Dedupe by id
-    // when merging — two picked stars can't share a planet (an idea has one
-    // parent) but a planet could in principle arrive both picked directly and
-    // cascaded in by its star in the same batch.
-    const cascadedCards = made.flatMap((c) => c.cascaded?.cards ?? []);
-    const cascadedEdges = made.flatMap((c) => c.cascaded?.edges ?? []);
-    const cascadedFutureIds = new Set(cascadedCards.map((c) => c.futureId));
-    const capped = made
-      .filter((c) => c.cascaded && c.cascaded.total > c.cascaded.placed)
-      .map((c) => c.cascaded as WorkbenchCascade);
-    setData((d) => {
-      if (!d) return d;
-      const cardIds = new Set(d.cards.map((c) => c.id));
-      const edgeIds = new Set(d.edges.map((e) => e.id));
-      const newCards: WorkbenchCard[] = [];
-      for (const c of [...made, ...cascadedCards]) {
-        if (cardIds.has(c.id)) continue;
-        cardIds.add(c.id);
-        newCards.push(c);
-      }
-      const newEdges: WorkbenchEdge[] = [];
-      for (const e of cascadedEdges) {
-        if (edgeIds.has(e.id)) continue;
-        edgeIds.add(e.id);
-        newEdges.push(e);
-      }
-      return {
-        ...d,
-        cards: [...d.cards, ...newCards],
-        edges: [...d.edges, ...newEdges],
-        polaris: d.polaris.map((p) => (
-          pulled.has(p.id) || cascadedFutureIds.has(p.id) ? { ...p, onCanvas: true } : p)),
-      };
-    });
-    setPicked(new Set());
-    setPickerOpen(false);
-    setSel(made[0].id);
-    say(`Pulled ${made.map((c) => c.meta).join(', ')} in from Polaris.`);
-    if (capped.length) {
-      const placed = capped.reduce((n, c) => n + c.placed, 0);
-      const total = capped.reduce((n, c) => n + c.total, 0);
-      say(`Placed ${placed} of ${total} planets — the rest are still in the tray.`);
-    }
-    if (failed.length) {
-      const reasons = failed
-        .map((r) => (r.reason as Error)?.message || 'Something went wrong.')
-        .join('; ');
-      say(`${failed.length} of ${ids.length} did not land: ${reasons}`);
-    }
-  });
-
   // Opens the debrief picker and loads it on first open only — the tab does
   // not warm it, and a re-open reuses what is already in state rather than
   // re-reading a night's account every time the dock button is pressed.
   const openDebrief = () => {
-    closePicker();
     setDebriefOpen(true);
     if (debrief || debriefLoading) return;
     setDebriefLoading(true);
@@ -737,7 +636,7 @@ export function Workbench({
   // Land the ticked insights in one POST, laid out exactly like `pullPicked` —
   // same origin, same column-of-four step, so the two pickers feel like the
   // same object dropping cards on the same ground.
-  const importPicked = (as: 'note' | 'idea') => guard(async () => {
+  const importPicked = (as: 'note') => guard(async () => {
     const keys = [...dPicked];
     if (!keys.length || !debrief) return;
     const at = centreOfView();
@@ -771,7 +670,7 @@ export function Workbench({
       const nights = debrief.nights.filter((n) => n.insights.some((ins) => landedSet.has(ins.key)));
       const from = nights.length === 1 ? `the ${nights[0].day} night`
         : nights.length > 1 ? `${nights.length} nights` : 'the debrief';
-      say(`Imported ${landed.length} insight${landed.length > 1 ? 's' : ''} from ${from} as ${as === 'note' ? 'notes' : 'ideas'}.`);
+      say(`Imported ${landed.length} insight${landed.length > 1 ? 's' : ''} from ${from} as notes.`);
     }
     // A refusal that is swallowed leaves a button that silently does nothing —
     // every skip is reported, verbatim, in the reason the server gave.
@@ -810,18 +709,12 @@ export function Workbench({
         .filter((c) => !gone.has(c.id))
         .map((c) => (lifted.has(c.id) ? { ...c, parentId: liftedTo } : c)),
       edges: d.edges.filter((e) => !gone.has(e.a) && !gone.has(e.b)),
-      // The idea itself never left — it just becomes pickable again.
-      polaris: res.returnedToTray
-        ? d.polaris.map((p) => (p.id === res.returnedToTray ? { ...p, onCanvas: false } : p))
-        : d.polaris,
     } : d));
     if (sel != null && gone.has(sel)) setSel(null);
     // Standing inside a folder that has just been deleted is a dead end — the
     // breadcrumb would name something that no longer exists.
     if (cwd === card.id) navigate(liftedTo);
-    say(card.kind === 'polaris'
-      ? `Took ${card.meta} off the canvas. The idea is untouched.`
-      : lifted.size
+    say(lifted.size
         ? `Removed the folder. Its ${lifted.size} card${lifted.size > 1 ? 's' : ''} moved up a level — nothing inside was deleted.`
         : `Removed ${gone.size} card${gone.size > 1 ? 's' : ''}.`);
   });
@@ -888,7 +781,7 @@ export function Workbench({
     say(`${phases.length} phases promoted to the Roadmap as ${phases.map((p) => p.bucket).join(' / ')}.`);
   });
 
-  // ---- a deep-link (⌘K's note id, or a sidebar's f<futureId>) finds its card ----
+  // ---- a deep-link (⌘K's note id) finds its card ----
   const highlightedCard = useMemo(
     () => (data && highlightId ? matchHighlight(data.cards, highlightId) : undefined),
     [data, highlightId],
@@ -957,7 +850,7 @@ export function Workbench({
       .map((c) => ({
         card: c,
         depth: (attached.get(c.id) as number),
-        kind: c.kind === 'polaris' ? c.meta : c.kind === 'note' ? 'note' : (c.op || 'ai'),
+        kind: c.kind === 'note' ? 'note' : (c.op || 'ai'),
       }));
   }, [data, sel, attached]);
 
@@ -1049,31 +942,6 @@ export function Workbench({
   const models = data?.models ?? [];
   const selectedModel = models.find((m) => m.model === model);
 
-  // ---- the Polaris picker's derived view ----
-  const ideas = data?.polaris ?? [];
-  const unpickedCount = ideas.filter((p) => !p.onCanvas).length;
-  const shownIdeas = (() => {
-    const needle = pQuery.trim().toLowerCase();
-    return ideas
-      .filter((p) => (pFilter === 'all' ? true
-        : pFilter === 'recent' ? p.days <= RECENT_DAYS
-          : !p.onCanvas))
-      .filter((p) => !needle
-        || `${p.title} ${p.meta} ${p.area}`.toLowerCase().includes(needle));
-  })();
-  // Four ways to have an empty list, and they want four different sentences —
-  // "no matches" over an empty funnel is the unhelpful version of the truth.
-  const emptyPickerCopy = ideas.length === 0
-    ? 'No Polaris ideas yet — capture them on the Polaris tab.'
-    : pQuery.trim() ? 'Nothing matches that.'
-      : pFilter === 'unpicked' ? 'Every idea is already on the canvas.'
-        : `Nothing captured in the last ${RECENT_DAYS} days.`;
-
-  const togglePick = (id: number) => setPicked((prev) => {
-    const next = new Set(prev);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  });
 
   // ---- the debrief picker's derived view ----
   const nights = debrief?.nights ?? [];
@@ -1135,7 +1003,7 @@ export function Workbench({
   // drag target's hit box overlap its parent's.
   //
   // THE STACK FOLDER IS LIFTED OUT OF THIS LIST (#416) and drawn in line with
-  // Polaris and Roadmap instead, because where it sits is not a sort result: it
+  // the Roadmap folder instead, because where it sits is not a sort result: it
   // is always there and always first, and a folder someone called "Admin" must
   // not be able to push it down. Its own subtree flattens through this same
   // walk, so an expanded Stack folder reads exactly like any other.
@@ -1204,8 +1072,7 @@ export function Workbench({
   const hiddenWires = data
     ? data.edges.filter((e) => shownIds.has(e.a) !== shownIds.has(e.b)).length
     : 0;
-  const sysCount = sysOpen
-    ? (sysOpen.key === 'sys:polaris' ? ideas.length : data?.boardTotal ?? 0) : 0;
+  const sysCount = sysOpen ? (data?.boardTotal ?? 0) : 0;
   const statusCount = sysOpen
     ? `${sysCount} ${sysCount === 1 ? 'item' : 'items'} · read-only`
     : `${shown.length} ${shown.length === 1 ? 'item' : 'items'}`
@@ -1221,26 +1088,6 @@ export function Workbench({
 
   // Only wires with BOTH ends in this folder are drawn — see the file header.
   const wires = paths.filter((p) => shownIds.has(p.a) && shownIds.has(p.b));
-
-  // Pull ONE idea from the Polaris folder onto the canvas, into whatever real
-  // folder you were last in — never into the system folder itself, which holds
-  // no cards. Same POST the picker uses; this is just a one-click door onto it.
-  const pullIdea = (futureId: number) => guard(async () => {
-    const into = typeof lastRealFolder === 'number' ? lastRealFolder : null;
-    const at = centreOfView();
-    const card = await addWorkbenchCard(slug, {
-      kind: 'polaris', futureId, x: at.x, y: at.y, parentId: into,
-    });
-    setData((d) => (d ? {
-      ...d,
-      cards: [...d.cards, card, ...(card.cascaded?.cards ?? [])],
-      edges: [...d.edges, ...(card.cascaded?.edges ?? [])],
-      polaris: d.polaris.map((p) => (p.id === futureId ? { ...p, onCanvas: true } : p)),
-    } : d));
-    const where = into === null ? 'the workbench'
-      : `“${allCards.find((c) => c.id === into)?.title || 'folder'}”`;
-    say(`Pulled ${card.meta} into ${where}.`);
-  });
 
   spatialRef.current = spatial(view) && !sysOpen;
 
@@ -1361,7 +1208,7 @@ export function Workbench({
       <div className="section-bar" style={{ marginBottom: 6 }}>
         <div className="titles">
           <div className="h">Workbench</div>
-          <div className="subtitle">Notes, Polaris ideas and the ✧ ops that turn them into a plan</div>
+          <div className="subtitle">Notes and the ✧ ops that turn them into a plan</div>
         </div>
         <div className="wb-hint">drag ↔ move · wheel ↔ zoom · hover a line ↔ ✂ cut · drag onto a folder ↔ file</div>
       </div>
@@ -1450,11 +1297,11 @@ export function Workbench({
               <span className="name">{projectName}</span>
               <span className="count">{countIn(allCards, ROOT)}</span>
             </button>
-            {/* The two system folders sit UNDER the project, indented like any
-                other child, because that is what they are — the Workbench's
-                connection to the funnel it draws from and the board it feeds.
-                They carry no drop handler and no delete: they are derived, so
-                there is nothing to file into and nothing to remove (#415). */}
+            {/* The system folder sits UNDER the project, indented like any
+                other child, because that is what it is — the Workbench's
+                connection to the board it feeds. It carries no drop handler and
+                no delete: it is derived, so there is nothing to file into and
+                nothing to remove (#415). */}
             {SYSTEM.map((sysf) => (
               <button key={sysf.key}
                 className={`wb-tree-row system${cwd === sysf.key ? ' on' : ''}`}
@@ -1462,13 +1309,11 @@ export function Workbench({
                 onClick={() => navigate(sysf.key)}>
                 <span className="ic" style={{ background: sysf.tone }} />
                 <span className="name">{sysf.name}</span>
-                <span className="count">
-                  {sysf.key === 'sys:polaris' ? ideas.length : data?.boardTotal ?? 0}
-                </span>
+                <span className="count">{data?.boardTotal ?? 0}</span>
               </button>
             ))}
-            {/* THE STACK FOLDER (#416), in line with those two and a real
-                folder unlike them — it takes drops. No drag handle and no ×
+            {/* THE STACK FOLDER (#416), in line with it and a real folder
+                unlike it — it takes drops. No drag handle and no ×
                 anywhere on it: it is not the owner's to move or remove, and a
                 control that is offered and then refused is worse than one that
                 was never drawn. */}
@@ -1490,8 +1335,8 @@ export function Workbench({
             {treeRows.map((r) => folderRow(r))}
             {!treeRows.length && (
               <div className="wb-tree-empty">
-                {/* "No folders yet" sat directly beneath Polaris and Roadmap
-                    and contradicted them. Those two are not yours to make. */}
+                {/* "No folders yet" sat directly beneath the Roadmap folder
+                    and contradicted it. That one is not yours to make. */}
                 No folders of your own yet.{' '}
                 <button className="linkish" onClick={() => void newFolder()}>Make one</button> and drag
                 cards onto it.
@@ -1504,9 +1349,8 @@ export function Workbench({
         )}
 
         {/* A SYSTEM FOLDER RENDERS ITSELF, whatever view is selected: its rows
-            are futures and roadmap items, not cards, so Canvas/Tiles/Details
-            have nothing to say about them. Read-only both ways — the one write
-            offered is the pull that already existed (#415). */}
+            are roadmap items, not cards, so Canvas/Tiles/Details have nothing
+            to say about them. Read-only both ways (#415). */}
         {sysOpen && (
           <div className="wb-list wb-system">
             <div className="wb-system-head">
@@ -1514,35 +1358,6 @@ export function Workbench({
               <span className="t">{sysOpen.name}</span>
               <span className="b">{sysOpen.blurb}</span>
             </div>
-
-            {sysOpen.key === 'sys:polaris' && (
-              <div className="wb-rows">
-                {ideas.map((idea) => (
-                  <div className="wb-row sys" key={idea.id}>
-                    <span className="name">
-                      <span className="ic k-polaris" />
-                      <span className="t">{idea.title}</span>
-                    </span>
-                    <span className="kind">{idea.area || '—'}</span>
-                    <span className="items">{idea.meta}</span>
-                    <span className="when">
-                      {idea.onCanvas
-                        ? <span className="on-canvas">on the canvas</span>
-                        : (
-                          <button className="chip-sm" onClick={() => void pullIdea(idea.id)}>
-                            → canvas
-                          </button>
-                        )}
-                    </span>
-                  </div>
-                ))}
-                {!ideas.length && (
-                  <div className="wb-list-empty">
-                    No Polaris ideas yet — the funnel is on the Polaris tab.
-                  </div>
-                )}
-              </div>
-            )}
 
             {sysOpen.key === 'sys:roadmap' && (
               <div className="wb-rows">
@@ -1815,65 +1630,6 @@ export function Workbench({
             </div>
           )}
 
-          {pickerOpen && (
-            <div className="wb-picker" onPointerDown={(e) => e.stopPropagation()}>
-              <div className="head">
-                <span className="dot" />
-                <span className="t">Polaris</span>
-                <span className="n">{ideas.length} idea{ideas.length === 1 ? '' : 's'}</span>
-                <button className="x" onClick={closePicker} aria-label="Close">×</button>
-              </div>
-              <div className="find">
-                <div className="searchbox">
-                  <span className="glass" />
-                  <input value={pQuery} autoFocus placeholder="Filter ideas…"
-                    onChange={(e) => setPQuery(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); closePicker(); } }} />
-                </div>
-                <div className="filters">
-                  {POLARIS_FILTERS.map((f) => (
-                    <button key={f.key} className={`chip-sm${pFilter === f.key ? ' on' : ''}`}
-                      onClick={() => setPFilter(f.key)}>{f.label}</button>
-                  ))}
-                </div>
-              </div>
-              <div className="list">
-                {shownIdeas.map((p) => (
-                  <button key={p.id} type="button"
-                    className={`wb-idea${picked.has(p.id) ? ' picked' : ''}${p.onCanvas ? ' on-canvas' : ''}`}
-                    disabled={p.onCanvas}
-                    onClick={() => togglePick(p.id)}>
-                    <span className="box">{picked.has(p.id) ? '✓' : ''}</span>
-                    <span className="b">
-                      <span className="top">
-                        <span className="meta">{p.meta}</span>
-                        <span className="age">{p.age}</span>
-                      </span>
-                      <span className="t">{p.title}</span>
-                      <span className="sub">
-                        {p.onCanvas
-                          ? 'already on the canvas'
-                          : p.isStar && p.links > 0
-                            ? <>{p.area || 'untagged'} ·{' '}
-                              <span className="star">★ {p.links} planet{p.links === 1 ? '' : 's'}</span></>
-                            : [p.area || 'untagged', `${p.links} linked`].join(' · ')}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-                {shownIdeas.length === 0 && (
-                  <div className="none">{emptyPickerCopy}</div>
-                )}
-              </div>
-              <div className="foot">
-                <span className="n">{picked.size ? `${picked.size} selected` : 'Select one or more'}</span>
-                <button className="btn-accent" disabled={picked.size === 0} onClick={pullPicked}>
-                  Pull → canvas
-                </button>
-              </div>
-            </div>
-          )}
-
           {debriefOpen && (
             <div className="wb-picker" onPointerDown={(e) => e.stopPropagation()}>
               <div className="head">
@@ -1929,8 +1685,7 @@ export function Workbench({
                           {ins.imported && (
                             <span className="sub">
                               {ins.importedAs === 'note' ? 'already a note on the canvas'
-                                : ins.importedAs === 'idea' ? 'already an idea'
-                                  : 'dismissed earlier, not offered again'}
+                                : 'dismissed earlier, not offered again'}
                             </span>
                           )}
                         </span>
@@ -1947,9 +1702,6 @@ export function Workbench({
                 <button className="btn-accent" disabled={dPicked.size === 0} onClick={() => void importPicked('note')}>
                   Import → canvas
                 </button>
-                <button className="chip-sm" disabled={dPicked.size === 0} onClick={() => void importPicked('idea')}>
-                  → Ideas
-                </button>
               </div>
             </div>
           )}
@@ -1964,12 +1716,6 @@ export function Workbench({
           <div className="wb-dock" onPointerDown={(e) => e.stopPropagation()}>
             {inPinned && (
               <>
-                <button className={`wb-pull${pickerOpen ? ' on' : ''}`}
-                  onClick={() => (pickerOpen ? closePicker() : openPicker())}>
-                  <span className="dot" />
-                  <span className="l">Pull from Polaris</span>
-                  <span className="n">{unpickedCount} unpicked</span>
-                </button>
                 <button className={`wb-debrief${debriefOpen ? ' on' : ''}`}
                   onClick={() => (debriefOpen ? closeDebrief() : openDebrief())}>
                   <span className="dot" />
@@ -1997,9 +1743,9 @@ export function Workbench({
                 {searching
                   ? 'The canvas can only search what is placed in this folder. Tiles or Details will search the subfolders too.'
                   : cwd === ROOT
-                    ? 'Jot a note, or open the Stack folder to pull an idea across from Polaris or a night’s debrief — then select it and run an ✧ op.'
+                    ? 'Jot a note, or open the Stack folder to pull an insight across from a night’s debrief — then select it and run an ✧ op.'
                     : inPinned
-                      ? 'Pull an idea from Polaris or an insight from a night — both land here — or drag cards in from anywhere.'
+                      ? 'Pull an insight from a night — it lands here — or drag cards in from anywhere.'
                       : 'Drag cards onto this folder from anywhere, or add a note — it will be filed here.'}
               </div>
             </div>
@@ -2041,7 +1787,7 @@ export function Workbench({
                       same as the system folders' missing delete. */}
                   {!isPinned(selCard) && (
                     <button className="chip-sm danger" onClick={() => void dropCard(selCard)}>
-                      {selCard.kind === 'polaris' ? '↩ off canvas' : '× remove'}
+                      × remove
                     </button>
                   )}
                 </div>
@@ -2312,10 +2058,9 @@ const OP_LABEL: Record<WorkbenchOp, string> = {
 // FALLBACK, so every new kind has to be named above it — a folder fell through
 // to it once and the rail called a folder "a suggestion, not a decision".
 const kindLine = (c: WorkbenchCard) =>
-  c.kind === 'polaris' ? `Polaris idea · ${c.meta}`
-    : c.kind === 'note' ? `Scratch note · ${c.meta}`
-      : c.kind === 'folder' ? 'Folder · double-click it, or use the explorer, to go in'
-        : `✧ ${OP_LABEL[c.op as WorkbenchOp] || 'AI'} output · a suggestion, not a decision`;
+  c.kind === 'note' ? `Scratch note · ${c.meta}`
+    : c.kind === 'folder' ? 'Folder · double-click it, or use the explorer, to go in'
+      : `✧ ${OP_LABEL[c.op as WorkbenchOp] || 'AI'} output · a suggestion, not a decision`;
 
 // One card. Note and Polaris cards read their title through from the row they
 // wrap, so editing here writes to the note or the idea, never to a copy.
@@ -2393,12 +2138,12 @@ function CardView({
       }}
     >
       <div className="wb-card-head">
-        <span className="k">{card.kind === 'polaris' ? 'from polaris' : card.kind === 'ai' ? card.op : 'note'}</span>
+        <span className="k">{card.kind === 'ai' ? card.op : 'note'}</span>
         <span className="m">{card.kind === 'ai' ? 'ai' : card.meta}</span>
       </div>
 
-      {/* An op's title is its own; a note's or an idea's is the row's, and
-          editing it writes back to that row. */}
+      {/* An op's title is its own; a note's is the row's, and editing it
+          writes back to that row. */}
       {card.kind === 'ai'
         ? <div className="wb-title">{card.title}</div>
         : <Editable className="wb-title" value={card.title} onCommit={onTitle} onPointerDown={stop} />}
