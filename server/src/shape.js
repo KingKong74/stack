@@ -377,7 +377,7 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cade
 // ---- the run ledger's shared shapes --------------------------------------
 // Four places read an `autopilot_runs` row and hand it to a client: the job
 // ledger (routes/autopilot.js), the Review room's queue and its nights list
-// (routes/review.js), and Mission Control's recentRuns (routes/control.js).
+// and the culled review/control read layers.
 // They had each grown their own copy, and the copies had already drifted on
 // the numeric coercions — which matters, because node-postgres returns BIGINT
 // and NUMERIC as STRINGS. `tokens` and `cost_usd` must go through Number();

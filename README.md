@@ -6,10 +6,10 @@ removes the friction of re-loading context when you jump between projects.
 
 Each project tracks its live site, repo, deploy status, an auto-generated **activity feed**
 (one summary per session/push), a **bug tracker**, a **MoSCoW roadmap**, and freeform
-**sticky notes**. Two screens: a cover-forward **projects dashboard** and a six-tab
-**project detail** (Overview · Quality · Roadmap · Polaris · Workbench · Activity) — where
-**Workbench** is the planning canvas the notes wall became: notes and Polaris ideas placed and
-wired on a ground, with an ✧ ops rail that expands, critiques or phases a card into a plan you
+**sticky notes**. Two screens: a cover-forward **projects dashboard** and a five-tab
+**project detail** (Overview · Quality · Roadmap · Workbench · Activity) — where
+**Workbench** is the planning canvas the notes wall became: notes placed and wired on a
+ground, with an ✧ ops rail that expands, critiques or phases a card into a plan you
 promote onto the roadmap.
 
 The dashboard opens with a **cross-project command deck** — a console that glances across everything:
@@ -40,8 +40,8 @@ stack/
               stack-tree.mjs — the branch navigator (`./stack tree`): the repo's branches +
               ideas as one textual tree, trunk first, merged branches folded back in;
               stack-sessions.mjs — automation sessions from the terminal
-              (`stack start-session` queues the same manual job as Mission Control's
-              ▶ Run now, `stack list-sessions` reads the queue back)
+              (`stack start-session` queues a manual job for the host dispatcher,
+              `stack list-sessions` reads the queue back)
   stack       the `stack` CLI dispatcher (`stack tree`, `stack start-session`,
               `stack list-sessions`)
   .claude/commands/checkpoint.md — the /checkpoint slash command (install to ~/.claude/commands/)
@@ -76,10 +76,9 @@ stack/
 - **Live-now presence:** the deck shows which projects have a Claude session open right now (and on
   which branches — parallel worktree sessions each count). The SessionStart hook pings, an authored
   `/checkpoint` proves liveness, SessionEnd clears, and a TTL ages out crashed sessions.
-- **A Futures tab curates direction:** each project can carry a **north star** — one paragraph on
-  what it's becoming, injected into every session start so all agents pull the same way — plus an
-  idea funnel: loose "could become…" ideas (yours, or extracted from checkpoints via
-  `extract.futures`) that you promote into the roadmap when they firm up, or dismiss.
+- **A north star steers every session:** each project can carry one — a paragraph on what it's
+  becoming, edited on the Overview tab beside its directives and injected into every session
+  start so all agents pull the same way.
 - **Checks — click-to-test your live apps:** each project's Bugs tab has a testing panel of HTTP
   probes (site up, API health, expected status + optional body keyword). Run them all with one
   button; a failing check files itself as a bug in one click.

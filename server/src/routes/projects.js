@@ -251,7 +251,7 @@ projects.get('/:slug/pulse', async (req, res) => {
 // status plus the last few commits, shown on the terminal screen when "Jump
 // back in" drops the owner into a Claude session, so they can resume without
 // reconstructing context. NOT the same thing as the autopilot's NIGHT debrief
-// (routes/review.js's GET /api/review/ — one night's runs across every
+// (the culled review route's nights index — one night's runs across every
 // project); this one is a single project's live resume state. Don't collapse
 // the two.
 projects.get('/:slug/debrief', async (req, res) => {

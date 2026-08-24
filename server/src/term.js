@@ -20,7 +20,7 @@ import { tokenValid } from './auth.js';
 // looks inside the data frames (base64 both ways). No agent = the browser
 // gets a plain "daemon offline" error, nothing else changes.
 // Mission Control asks whether the host daemon is on the line — module-level
-// so routes/control.js can read it without holding the relay.
+// so a route can read it without holding the relay.
 let agentConnected = false;
 export const termAgentConnected = () => agentConnected;
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stack — automation sessions from the terminal (`stack start-session` /
-// `stack list-sessions`). The CLI face of Mission Control's job queue: start
+// `stack list-sessions`). The CLI face of the autopilot's job queue: start
 // queues a manual autopilot job through the same POST /api/autopilot/start the
 // ▶ Run now button uses (so the host dispatcher picks it up within a minute),
 // list reads the queue back via GET /api/autopilot/jobs.
@@ -119,7 +119,7 @@ export async function mainStart(argv = process.argv.slice(2)) {
   }
   process.stdout.write('Automation session started.\n');
   process.stdout.write(`Session ID: ${job.id} · project ${job.slug}${job.itemId ? ` · item #${job.itemId}` : ''} · status ${job.status}\n`);
-  process.stdout.write('The host dispatcher picks it up within a minute; follow along with `stack list-sessions` or Mission Control.\n');
+  process.stdout.write('The host dispatcher picks it up within a minute; follow along with `stack list-sessions`.\n');
   return 0;
 }
 

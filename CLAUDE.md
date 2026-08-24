@@ -3,12 +3,18 @@
 **What this file is for:** the rules and invariants you cannot read off the code — why something is
 the way it is, and what breaks if you change it. NOT a feature list or an API reference: the code is
 the reference, and a doc restating it drifts. A shipped feature's rationale lives in its commit
-message and its `built_note`, which the Review room shows. Add here only when a session would get
-something WRONG without it, and keep under the 40 KB budget
-(`node scripts/context-budget.test.mjs`). **Where a rule governs one file it lives in that file's
-header, and this file keeps only the pointer and the cross-cutting half** — `ingest.js`,
-`prompts.js`, `checks.js`, `workbench.js`, `futures.js`, `worktrees.js`, `instructions.js`,
-`lib/feature.ts`, `lib/branch.ts`, `lib/plan.ts` and `ControlReview.tsx` all carry theirs.
+message and its `built_note`. Add here only when a session would get something WRONG without it,
+and keep under the 40 KB budget (`node scripts/context-budget.test.mjs`). **Where a rule governs
+one file it lives in that file's header, and this file keeps only the pointer and the
+cross-cutting half** — `ingest.js`, `prompts.js`, `checks.js`, `workbench.js`, `worktrees.js`,
+`lib/branch.ts` and `lib/plan.ts` all carry theirs.
+
+**THREE SURFACES WERE CULLED** at the owner's request: **Mission Control** (all seven rooms, and
+the `/api/control`, `/api/review` and `/api/merge` layers), **Polaris** (the Futures tab, the
+galaxy, the `futures` table and the Workbench's pull) and the **instructions tree** (the managed
+CLAUDE.md library and its host sync). `#/control` renders `screens/ControlMock.tsx`, a placeholder.
+Rules that outlived their surface are kept below and SAY SO — a predicate written for a room is
+still the only definition of what it decided.
 
 ## What Stack is
 
@@ -35,15 +41,12 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
   clearing the token and returning to the gate.
 - `lib/route.ts` — hash router. `go.detail(slug, tab, highlight)` deep-links and **the TAB decides
   what `hl` means** (commit → activity, bug key → quality, row id → roadmap, NOTE id → workbench);
-  legacy tab spellings still resolve rather than 404ing.
-  **Mission Control's room is part of the URL** (#316) and `Control.tsx` writes it back with
-  `history.replaceState`, never a push, so Back leaves Mission Control rather than walking the rooms
-  you looked at. `#/control` is the one canonical spelling of the default room; an unknown room lands
-  there rather than 404ing — `#/control/build` and `/trees`, both removed, are the live cases.
-- `screens/` — `ls` is the index. What it doesn't say: Mission Control is a shell (`Control.tsx`) plus
-  one file per room, and the removed BUILD room's gates live elsewhere now (the verdict is Review's
-  subject; the merge is the Now room's branch strip and, house-wide, the Merge room).
-  `detail/Tips.tsx` is NOT a tab: the recipe library is app-wide, opened from `components/TipsDock`.
+  legacy tab spellings still resolve rather than 404ing — `futures` joins them, so a Polaris
+  bookmark lands on Overview. `#/control` and anything under it lands on the placeholder rather
+  than 404ing: it is linked from six topbars, and a dead link reads as a broken app rather than as
+  a surface being rebuilt.
+- `screens/` — `ls` is the index. The recipe library (`/api/tips`) is app-wide and has no screen of
+  its own; the corner dock that opened it is gone, so nothing reaches it from the UI.
 - `lib/brief.ts` — the resume brief + the `DIRECTIVES` catalogue (keys mirror `SESSION_DEFAULTS`).
 - `lib/termClipboard.ts` — copy/paste for both xterms; its header says why ⌃C, ⌃V and OSC 52 each
   behave unlike a native terminal. Don't "simplify" any of the three.
@@ -121,8 +124,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `lib/plan.ts`, `lib/spine.ts`. **`estimate` stays in WEEKS**, so `defaultLen` in `lib/plan.ts` is the
   ONE place the two units may meet. `/arrange` is shown WEEKS and converted at both boundaries —
   ordering is a week-grained question, not a minute-grained one.
-- **The board order IS the run queue.** `position` is PATCHable and drag-reorderable; the Plan room's
-  Save-order write is the same PATCH the drag makes.
+- **The board order IS the run queue.** `position` is PATCHable and drag-reorderable; a Save-order
+  write is the same PATCH the drag makes.
 - **`claimed_by` is the branch claim** (#277 — called a "lane" until the rename; the `lane/` git ref
   prefix is unchanged, naming branches already on origin). Claim before starting; a terminal tab's
   claim is `term:<name>`. It is the don't-re-pick marker, injected by SessionStart as "Branch claims —
@@ -140,15 +143,15 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
 - **An area lane is `(project, area)`, and untagged is never a lane** (#267): an area with an OPEN
   claimed item admits no second worker, because two branches in one area collide at merge time. The rule
   lives in `server/src/lanes.js` (pure) and is MIRRORED in four runtimes that cannot import each other —
-  `routes/autopilot.js`'s claim, `pickFor()` in `control.js`, the runner's pick and
-  `schedulable()`/`heldWhy()` in `ControlRooms.tsx`; change one, change all four. Two carve-outs are
+  `routes/autopilot.js`'s claim and the runner's pick; the two client mirrors went with Mission
+  Control, so it is TWO runtimes now — change one, change the other. Two carve-outs are
   load-bearing: an untagged (`''`) area never occupies or is blocked by a lane (else every untagged item
   collapses into one giant lane and the night silently does nothing), and the key includes the project.
   A worker never blocks itself. A skipped job always logs why: a lane delay must never be a silence.
 - **"Approved for the auto runner" is `source NOT IN ('hook','fly') OR reviewed_at IS NOT NULL`** (#359,
   widened by #381), with no column of its own — an `approved` flag would be a second, drifting truth.
-  TWO origins need a human's sign-off in the Plan room inbox: `hook` (the extractor read it off a push)
-  and `fly` (a live session opened it for its own ad-hoc work). **A manual item is NEVER held**, because
+  TWO origins need a human's sign-off: `hook` (the extractor read it off a push) and `fly` (a live
+  session opened it for its own ad-hoc work). **A manual item is NEVER held**, because
   blocking hand-written work is the failure mode this must not have. Written out THREE times (`server/src/`,
   `scripts/lib/`, `web/src/lib/approval.*`) since none of the packages can import another. An
   unattended enqueue **drops a held item silently**; Run now / `POST /start` **refuses out loud and
@@ -159,26 +162,27 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   client twin, kept in step by discipline, not a shared test. **The old flat `auto/item-N-<slug>`
   spelling must keep parsing forever** — those branches are on origin and in live `claimed_by` strings,
   so a reader knowing only the new form reports a working fleet as empty. A legacy lane's kind is `''`,
-  **never `feat`**. SQL that tested `branch LIKE 'auto/%'` goes through `laneSql()` in `control.js` — a
-  predicate knowing only `auto/` blanks the last-auto chip and the reviewer's notes. A worktree's
-  `itemId` (#365) uses the same `parseBranch`, so the server never grows a third copy.
-- **`built_note`** — what actually landed, PATCHed by the completing session; the Review room verdicts
+  **never `feat`**. A worktree's `itemId` (#365) uses the same `parseBranch`, so the server never
+  grows a second copy.
+- **`built_note`** — what actually landed, PATCHed by the completing session; a verdict is given
   against it. Always write one.
-- **The Review queue is BUILT-or-ticked, not ticked** (#374). Nothing in Stack ticks an item, so a queue
-  of `done = true` showed an empty room over a full night's work. `routes/review.js` queues `done` **OR**
-  (`built_note` non-empty **AND** `claimed_by` non-empty), each row carrying `stage`. **Both halves are
-  load-bearing**: un-ticking clears `claimed_by` and keeps `built_note`, so `built_note` alone re-queues
-  rejected changes and `claimed_by` alone queues items at claim time. So `settled` tests the verdict and
-  **nothing about `done`**, and approving does NOT tick (the merge job does, with a human verdict
-  stored). **Anything acting on a change in that room shares the predicate** — the Foreman's ops opened
-  `if (!item.done) 400` until #375.
+- **"Built" is BUILT-or-ticked, not ticked** (#374). Nothing in Stack ticks an item, so `done = true`
+  drew an empty queue over a full night's work. The predicate is `done` **OR** (`built_note`
+  non-empty **AND** `claimed_by` non-empty). **Both halves are load-bearing**: un-ticking clears
+  `claimed_by` and keeps `built_note`, so `built_note` alone re-queues rejected changes and
+  `claimed_by` alone queues items at claim time. It was the Review room's; the room is culled and
+  `isBuilt` in `web/src/lib/spine.ts` is now its ONLY definition, read by the Overview's verdict
+  band and the Roadmap board's lanes — do not simplify it back. Approving does NOT tick (the merge
+  job does, with a human verdict stored). **Anything acting on a built change shares the
+  predicate**; a path that opens `if (!item.done) 400` refuses the whole night's work.
 - **`verdict_source` / `verdict_at` / `verdict_evidence` (#263, owner-sanctioned)** — the one place a
   machine may verdict instead of the human, and only while it is **positive evidence**, **reversible**
   and **visible**; drop one and it is not sanctioned. The gate is one pure function,
   `scripts/lib/autoverdict.mjs`, whose header carries the reasoning — never a second spelling. Two
   exclusions are not negotiable: a refine round and a limit-hit run. Clearing `review_tag` resets
   `verdict_source` to 'human' and wipes the other two in the same statement, so ⎌ undo needs no second
-  route; `verdict_evidence` is the receipt, shown in the AUTO-VERDICTED strip and the night log.
+  route; `verdict_evidence` is the receipt — the strip that showed it went with Mission Control, so
+  whatever surfaces a machine verdict next must show it too, or the sanction's "visible" leg is gone.
 - **Un-ticking clears `review_tag` and `claimed_by`** (unless the same PATCH sets them), so a sent-back
   item re-enters play fresh. Ticking clears `review_tags`, `refine_note` and `review_shelved` — each
   verify round starts unannotated.
@@ -189,24 +193,20 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
 - **`agent_profiles` holds only OVERRIDES.** The built-ins (`executor`, `reviewer`) live in
   `server/src/agent-profiles.js` and are never seeded, so a fresh database spawns identically to a customised
   one — and DELETE on a builtin RESETS it rather than removing it, because the spawn path needs
-  `executor`. `roadmap_items.agent_profile` ('' = default) is the Polaris hook: a free string,
-  validated client-side, deliberately absent from the tick/un-tick clearing lists. The invariant with
+  `executor`. `roadmap_items.agent_profile` ('' = default) is a free string, validated client-side,
+  deliberately absent from the tick/un-tick clearing lists. The invariant with
   teeth: **a spawn always gets at least one building agent** (no profiles, all disabled or an unknown
   key all fall back to the executor), or the expensive director model silently does all the building.
-- **A future's SHAPE in the Polaris galaxy (#312) is derived, never stored** — star → planet → moon →
-  shells → drift belt, from `is_star`/parent/`alignment`, with no `kind` column and there must not be
-  one. `PATCH /futures/:id` owns the depth and demotion rules and is the only guard; its header spells
-  them out. `magnitude` is nullable on purpose — an unsized idea says "not sized yet".
-- **A Workbench card is a PLACEMENT, not content** — `workbench_cards` holds where something sits and a
-  `note`/`polaris` card's words are read THROUGH from `notes`/`futures`; copying the text onto the card
-  is what leaves ⌘K searching a stale one. The canvas's other invariants are in `routes/workbench.js`'s header — read it
+- **A Workbench card is a PLACEMENT, not content** — `workbench_cards` holds where something sits and
+  a `note` card's words are read THROUGH from `notes`; copying the text onto the card is what leaves
+  ⌘K searching a stale one. The canvas's other invariants are in `routes/workbench.js`'s header — read it
   before touching the canvas. Every ✧ op only PROPOSES a card; `Promote N phases → Roadmap` is the
   dispose half and goes through the ordinary roadmap POST.
-- **The Roles room reads two populations and must never mix their judgement.** `autopilot_runs` answers
-  to the executor/advisor policy; `sessions.model_usage` (the human's interactive work) does not, so a
-  model picked by hand is **not drift**. They merge only in the `everyModel` receipt and `manual`, and
-  merged shares are **token-based**, because a transcript carries no cost. A manual session's
-  `model_usage` (main loop) and `agent_usage` (subagents) ARE its director/executor split.
+- **Model spend is TWO populations and they must never be mixed.** `autopilot_runs` answers to the
+  executor/advisor policy; `sessions.model_usage` (the human's interactive work) does not, so a model
+  picked by hand is **not drift**. Any merged share must be **token-based**, because a transcript
+  carries no cost. A manual session's `model_usage` (main loop) and `agent_usage` (subagents) ARE its
+  director/executor split. (The Roles room read this and is culled; `pulse.js` still computes it.)
 - **A subagent's usage is NOT in the parent transcript — it has its own**, at
   `<transcript-dir>/<session-id>/subagents/agent-*.jsonl` with a `.meta.json` naming the `agentType`.
   The parent records only the Agent call and never sets `isSidechain`, so globbing top-level `*.jsonl`
@@ -244,29 +244,26 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `~/.stack/worktrees/<key>`, inside the $HOME cwd jail the terminal daemon enforces — move the root
   outside $HOME and browser access breaks silently.
 - **`0 = unlimited`** for `autopilotTokens`/`autopilotMaxItems` (#260); `termIdleHours` `0 = never`.
-- **A managed CLAUDE.md is written by the HOST from Stack's copy**, so editing one in a repo by hand is
-  a change the next sync overwrites — go through `PATCH /api/instructions/:id`. `body` IS the file:
-  rules, scopes, off switches, precedence and the merge preview are derived in `lib/instructions.ts`,
-  never stored, since a rules table is wrong the moment somebody edits the file on disk. The
-  `<!-- stack-managed -->` marker and the ONE-TIME Adopt licence are in `routes/instructions.js`.
+- **A repo's CLAUDE.md is the repo's.** Stack used to manage a tree of them and write each from its
+  own copy every five minutes; that surface is culled. It is worth knowing WHY it went the way it
+  did: the sync was authoritative by design, so a stale DB copy silently reverted this very file for
+  several sessions running, and each one filed it as a mystery blocker. Nothing writes a CLAUDE.md
+  now — if something starts to again, it needs an off switch before it needs a schedule.
 - **A worktree report's NULL is not `[]`** (#365) — same rule as a NULL `review_verdict`: defaulting it
-  to `[]` reports uncommitted work as absent. The client type is `Worktree[] | null` and `getControl`
-  must never default it.
-- **A feature's STAGE (#365) and a branch's four-valued merge state (#363) are derived, never stored**,
-  in `web/src/lib/feature.ts` and `web/src/lib/branch.ts` — both headers carry the guesses that cost
-  the first cut its correctness. The one to hold in mind everywhere: **`unprobed` is not `clean`**, the
-  same NO PASS RAN rule as a NULL `review_verdict`.
+  to `[]` reports uncommitted work as absent. The client type is `Worktree[] | null` and nothing may
+  default it.
+- **A branch's four-valued merge state (#363) is derived, never stored**, in `web/src/lib/branch.ts` —
+  its header carries the guesses that cost the first cut its correctness. The one to hold in mind
+  everywhere: **`unprobed` is not `clean`**, the same NO PASS RAN rule as a NULL `review_verdict`.
 - **`projects.merge_autonomy` is not `automode`** (#363 — auto | plan | off, default plan). `automode`
   says whether a project is BUILT unattended; this says how much of its MERGING one press of ▶ Run
   covers. `plan` still names its branches in the plan (an ordering that hid them would not be honest)
   but the press leaves them alone. None of the three relaxes the conflict probe, the #212 risk gate or
   the merge confirm.
-- **The MERGE AGENT is arithmetic plus a read, and the two must not be confused** (#364). The waves are
-  computed in the browser from file paths and are deterministic; `POST /api/merge/review` is the
-  optional second half, where Claude reads the REAL diffs on the host and annotates that plan — never
-  reordering, never queueing. `verdict: 'ok'` with no notes is a REAL answer and must not render like
-  "no read has run". The host caps the diffs and **states what it cut inside the prompt**: a model that
-  silently saw a tenth of a diff answers confidently about the other nine.
+- **A CAPPED PROMPT MUST STATE ITS OWN CAP** (#364, from the culled Merge agent). Where host-side
+  material is trimmed before it reaches a model, the trim is named INSIDE the prompt: a model that
+  silently saw a tenth of a diff answers confidently about the other nine. Same rule as any capped
+  list in any prompt (`prompts.js`'s header).
 - **THE TAB AGENTS RUN CLAUDE ON THE HOST (#364), not Gemini** — `agentClient().ask()` goes through the
   terminal daemon's uplink to `claude -p --output-format json`, the owner's own subscription, so the
   no-paid-external-AI rule holds. Three consequences: **the readiness signal is the DAEMON, not a key**
@@ -278,28 +275,27 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   review note, check assertions, labelling, triage and the Workbench ops are still Gemini, still
   key-gated.
 - **AN AGENT'S BINDING IS CODE, NOT DATA (#361, #375).** `src/agents.js` is the registry and its header
-  lists the five and their surfaces. The rules that bite: each agent's `ops` list is CLOSED, and
+  lists the three and their surfaces. The rules that bite: each agent's `ops` list is CLOSED, and
   `agent_configs` holds only what the owner tunes (enabled, model, guidance, `ops_off`) — never which
   surface or which ops, because those are the restriction itself. A route binds once
   (`agentClient('auditor')`) and that client THROWS on another agent's op; that throw, not a comment,
   stops one tab's route running another's, and an unregistered op cannot run at all. An op MOVES with
-  its surface (#375 moved `reviewbrief`/`refinedraft` off the Curator): **one surface, one switch**. **A missing config row means ON**, as with `readSettings()`; off means off
-  everywhere. An op's `backend` may be `'gemini'`, so a surface with two backends still has ONE switch;
+  its surface: **one surface, one switch**, and that cuts BOTH ways — the cull took the four agents
+  whose surfaces went, because an agent with nothing left to govern is a switch that governs nothing.
+  **A missing config row means ON**, as with `readSettings()`; off means off everywhere. An op's `backend` may be `'gemini'`, so a surface with two backends still has ONE switch;
   only readiness and the refusal differ, and the refusal must NAME the missing backend.
-- **THE FOREMAN ANNOTATES A VERDICT; IT NEVER GIVES ONE (#375).** `readchange` returns a CALL (approve /
-  look / send-back) drawn in the accent, never a verdict tone — the three verdict buttons are the only
-  green in that room. Every answer carries **`blind[]`** (what it could not see) and
-  **`read[]`** (what the server assembled), the blind list rendered hardest under an `approve`.
-  `where[]` is the one agent field that becomes **a link the owner clicks**, so `cleanPath()` drops
-  anything that is not a same-origin path. `triagequeue` returns an ORDER and no judgements; a change
-  it fails to place is appended, never dropped.
-- **A MIRROR SITE ON THE CHANGE UNDER REVIEW IS THE POINT OF THE ROOM (#375).** Previews (#208) are
-  reachable from the room's built changes and `where[]` links into them. They arrive as PROPS from
-  `Control.tsx`, which already polls them — a second poller would show two answers for one row. Built
-  changes only: a ticked one is on main.
-- **The Review rail's clusters are derived and its batch overlay has one home** — see
-  `ControlReview.tsx`'s header. The rule that generalises: a cluster's evidence summary counts unrun
-  checks and absent verdicts APART from green and clean, or a select-all becomes a blind mass-approve.
+- **AN AGENT ANNOTATES A VERDICT; IT NEVER GIVES ONE (#375).** The Foreman proved the shape and went
+  with its room, but the contract generalises to whatever reads a change next: answer with a CALL
+  (approve / look / send-back) drawn in the accent and never in a verdict tone, carry **`blind[]`**
+  (what it could not see) rendered hardest under an `approve`, and **`read[]`** (what the server
+  assembled). Any agent field that becomes **a link the owner clicks** goes through a `cleanPath()`
+  that drops anything not a same-origin path.
+- **Branch previews (#208) have no UI left.** The server route, the host sweep and
+  `scripts/stack-preview.mjs` all survive the cull, but the only screens that reached them were
+  Mission Control's rooms — so a preview is started by hand until something surfaces it again.
+- **A batch verdict must count absence apart from green** — the rule that outlived the Review rail:
+  an evidence summary tallies unrun checks and absent verdicts SEPARATELY from passing ones, or a
+  select-all becomes a blind mass-approve. Same NO PASS RAN rule as a NULL `review_verdict`.
 - **An autopilot `stack-auto-*` session is READABLE from the browser and still not mirrorable, killable
   or typeable-into** (#366). `listAutoSessions()` is a SIBLING of `listStackSessions()`, and the
   terminal's mirror/kill/reap paths read the `stack-term-*` list only — widening `listStackSessions` to
@@ -396,11 +392,9 @@ also documents the self-describing ones). The ones whose meaning isn't obvious f
 One file per surface in `server/src/routes/` — `ls` is the index. All behind bearer auth except
 `GET /api/health`, `POST /api/auth/login`, `GET /api/public/:slug/:token`. What filenames don't say:
 
-- **Read layers** (`overview`, `control`, `review`, `search`, `timeline`, `public`) are computed in a
-  handful of aggregate queries — **never one query per project**; keep it that way. `control.js` also
-  exports the pure `computeFleetRoles()`; `review.js` serves the room, `/debrief` and the Foreman's four ops.
-- `merge.js` (#364) — the only agent op needing the CODE, so diffs are gathered host-side.
-  `routes/agents.js` is the agents' CONFIG; the REGISTRY is `src/agents.js`.
+- **Read layers** (`overview`, `search`, `timeline`, `public`) are computed in a handful of aggregate
+  queries — **never one query per project**; keep it that way.
+- `routes/agents.js` is the agents' CONFIG; the REGISTRY is `src/agents.js`.
 - Per-project collections mount under `/api/projects/:slug/…` with `mergeParams`, and
   `GET /api/projects/:slug` is the combined detail payload the SessionStart hook reads back.
 
@@ -442,20 +436,17 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
 - The web Dockerfile is multi-stage (Vite build → nginx), which does SPA fallback **and** proxies
   `/api` to `server:4000` plus `/term*` with upgrade headers; in local dev Vite proxies `/api`.
   **Host-side agent ops run far longer than a web request** — nginx's `/api` read timeout and each op's
-  own timeout must both clear `claude -p` (a 60s cut made the Merge agent's 240s read unreachable,
-  silently, for weeks), and Cloudflare cuts at ~100s regardless.
+  own timeout must both clear `claude -p` (a 60s cut made a 240s agent read unreachable, silently,
+  for weeks), and Cloudflare cuts at ~100s regardless.
 - Both closure counts in `totals` lean on `updated_at`, the only stamp either table carries — read them
   as MOVEMENT, not an exact ledger.
-- **`autopilot.js`'s `JOB_SELECT` is shared with `control.js` and must stay that way** (#243) — a private
-  `SELECT j.*` ships the kilobyte `advice` text on every Mission Control poll AND leaves `adviceReady`
-  false forever, silently disabling the feature.
+- **`autopilot.js`'s `JOB_SELECT` names its columns on purpose** (#243) — a `SELECT j.*` ships the
+  kilobyte `advice` text on every job poll AND leaves `adviceReady` false forever.
 - `stack-autopilot.mjs` still inlines its own `git worktree add/remove` rather than calling
   `scripts/lib/worktree.mjs` (#229) — deliberately NOT refactored yet. The nightly is how this repo
   builds itself, so pointing it at the module is a real behaviour change, not a no-op tidy-up.
-- **`grep` goes blind on `routes/control.js`** — it holds literal NUL bytes, so plain grep silently
-  returns nothing. Use `LC_ALL=C grep -an`.
-- `scripts/feature.test.mjs` (#365) runs `web/src` TypeScript directly under Node's type-stripping
-  loader with a `module.registerHooks` shim; follow that pattern for client-side coverage.
+- `scripts/spine.test.mjs` runs `web/src` TypeScript directly under Node's type-stripping loader;
+  follow that pattern for client-side coverage.
 
 ## Tests and quick commands
 

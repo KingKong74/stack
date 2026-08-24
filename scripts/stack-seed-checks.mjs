@@ -81,15 +81,6 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Overview — blockers', url: u('/api/overview'), auth: true, json_path: 'blockers' },
     { name: 'Overview — roadmap rollup buckets', url: u('/api/overview'), auth: true, json_path: 'roadmap.buckets' },
     { name: 'Overview — bugs by project', url: u('/api/overview'), auth: true, json_path: 'bugs.byProject' },
-    { name: 'Control — autopilot config', url: u('/api/control'), auth: true, json_path: 'autopilot.maxItems' },
-    // BUG-2, and the one flag on this payload that decides what a room is
-    // allowed to SAY. With no host daemon on the line, attention[] and
-    // conflicts[] are empty — so the Now room reads terminal.connected and says
-    // "Stack cannot see whether a session is stopped" instead of "nothing is
-    // waiting on you". Lose the flag and the room tells a calm lie all night.
-    { name: 'Control — is the host on the line', url: u('/api/control'), auth: true, json_path: 'terminal.connected' },
-    { name: 'Control — the arm switch', url: u('/api/control'), auth: true, json_path: 'autopilot.enabled' },
-    { name: 'Control — the job queue', url: u('/api/control'), auth: true, json_path: 'jobs' },
     // #255 — the plan sweep's two halves of the contract: the switch the Now
     // room writes, and the coverage the Plan room reads. Asserting the PATH
     // exists (not a value) is the point — the numbers change every night.
@@ -106,133 +97,6 @@ function suiteFor(slug, ORIGIN) {
     // running in a worktree), so this asserts the route answers rather than
     // asserting a count.
     { name: 'Worktrees — registry', url: u('/api/worktrees'), auth: true, expect_status: 200 },
-    // The instructions tree. `/work` is the one the host polls, and its shape
-    // breaking is the failure that matters most: the sync fails safe and does
-    // NOTHING, so the CLAUDE.md files quietly stop tracking the library and
-    // there is no error anywhere to notice. `scan` is asserted because it is
-    // the field the host cannot do without — with no list of repos it reports
-    // an empty tree, which reads exactly like a host with no files on it.
-    { name: 'Instructions — the host\'s work feed', url: u('/api/instructions/work'), auth: true, json_path: 'scan' },
-    { name: 'Instructions — the keep list', url: u('/api/instructions/work'), auth: true, json_path: 'keep' },
-    // The tab's own payload. `agent.opsReady` is per-op because the Scribe's
-    // two ops sit on two backends; a payload without it leaves the dock unable
-    // to say which half is unavailable and why.
-    { name: 'Instructions — the library', url: u('/api/instructions'), auth: true, json_path: 'files' },
-    { name: 'Instructions — the Scribe\'s per-op readiness', url: u('/api/instructions'), auth: true, json_path: 'agent.opsReady' },
-    { name: 'Auth gate closed — instructions', url: u('/api/instructions'), expect_status: 401 },
-    { name: 'Control — plan coverage', url: u('/api/control'), auth: true, json_path: 'projects.0.planCoverage.unplanned' },
-    { name: 'Control — per-project rows', url: u('/api/control'), auth: true, json_path: 'projects' },
-    // #363 — the Merge room's whole contract. Both fields fail SILENTLY if
-    // they go: without `mergeAutonomy` every project reads as 'plan' and ▶ Run
-    // quietly queues nothing, and without the branch diff every row reads
-    // "size unknown" — a room that looks fine and has stopped saying anything.
-    { name: 'Control — merge autonomy', url: u('/api/control'), auth: true, json_path: 'projects.0.mergeAutonomy' },
-    { name: 'Control — branch diff for the merge ledger', url: u('/api/control'), auth: true, json_path: 'projects.0.branches' },
-    { name: 'Control — model catalogue', url: u('/api/control'), auth: true, json_path: 'models' },
-    // #270 — the loud-idle status: the honest reason nothing is starting, and
-    // its own copy. `code` and `text` are non-empty strings in EVERY state
-    // (working, disarmed, waiting, …), so the path is stable regardless of
-    // what the fleet is doing right now — losing either would let the Now
-    // room fall silent about why nothing is running while looking unchanged.
-    { name: 'Control — fleet idle reason', url: u('/api/control'), auth: true, json_path: 'fleet.status.code' },
-    { name: 'Control — the idle reason\'s remedy', url: u('/api/control'), auth: true, json_path: 'fleet.status.text' },
-    // The dispatcher's own pulse. Asserting the whole object rather than a
-    // leaf: `silent` is `false` and `ageSec` can legitimately be `null` in the
-    // healthy case, and either still counts as PRESENT — but the object is
-    // what proves the heartbeat is being served at all.
-    { name: 'Control — dispatcher pulse', url: u('/api/control'), auth: true, json_path: 'fleet.heartbeat' },
-    // The Roles room's run-level counters. `plan` is the one that carries a
-    // rule rather than a number: a plan night commits nothing by design, so it
-    // is counted apart from the advised/unadvised land rate. Losing the field
-    // would fold plan nights back into that comparison and quietly score the
-    // advisor as having failed to land runs it was never asked to land.
-    { name: 'Control — roles run counters', url: u('/api/control'), auth: true, json_path: 'roles.runs.plan' },
-    { name: 'Control — roles plan-night split', url: u('/api/control'), auth: true, json_path: 'roles.worth.advisedPlanRuns' },
-    // The interactive half. `manual` is what makes the room readable while the
-    // arm switch is off; `everyModel` is the merged receipt. Both are pure
-    // reads over sessions the hook already records, so losing either is silent
-    // — the room simply falls back to autopilot-only and looks correct.
-    { name: 'Control — roles interactive sessions', url: u('/api/control'), auth: true, json_path: 'roles.manual.sessions' },
-    { name: 'Control — roles delegation count', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentCalls' },
-    { name: 'Control — roles merged model receipt', url: u('/api/control'), auth: true, json_path: 'roles.everyModel' },
-    // The delegated half, read from each subagent's OWN transcript. Losing it
-    // is the silent failure that matters: the room keeps rendering main-loop
-    // spend and looks complete while the larger half of every delegating
-    // session goes unreported.
-    { name: 'Control — roles subagent spend', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentTokens' },
-    { name: 'Control — roles priced delegations', url: u('/api/control'), auth: true, json_path: 'roles.manual.agentsRecorded' },
-    // #375 — whether the room's ✧ surfaces are offered at all. Every one of
-    // them is the FOREMAN's now, and they are ABSENT rather than disabled when
-    // it cannot act, so losing this field silently removes affordances instead
-    // of breaking one: the room still works and nobody finds out the agent
-    // stopped being offered. (This asserted `geminiReady` until the ops moved
-    // off Gemini and onto Claude on the host — the same correction #364 made
-    // one route over, and the same reason the check moves in the same commit.)
-    { name: 'Review — the room agent is served', url: u('/api/review'), auth: true, json_path: 'agents.foreman.enabled' },
-    { name: 'Review — the agent readiness flag', url: u('/api/review'), auth: true, json_path: 'agents.foreman.ready' },
-    // #374 — how much of the queue is still on a branch. Like `attention`, this
-    // is a count that is MEANT to be zero much of the time, so the check asserts
-    // the path rather than a value: losing the key would take every unmerged
-    // change back out of the queue and the room would read "Nothing waiting on
-    // you" all over again — the exact failure #374 exists to fix, and one that
-    // looks completely correct from the screen.
-    { name: 'Review — changes still on a branch', url: u('/api/review'), auth: true, json_path: 'totals.unmerged' },
-    // #269 — the throughput ledger. Mission Control's only record of whether
-    // the machine is getting BETTER, not just what it did tonight. Paths only,
-    // never values — the numbers move every night by design. `reverts.rateNow`
-    // is deliberately NOT covered here: it reads null whenever nothing landed
-    // in the window, and a null is not a fault this suite should raise on.
-    { name: 'Control — throughput spine', url: u('/api/control'), auth: true, json_path: 'ledger.days' },
-    { name: 'Control — throughput per night', url: u('/api/control'), auth: true, json_path: 'ledger.now.perNight' },
-    { name: 'Control — auto-merge share', url: u('/api/control'), auth: true, json_path: 'ledger.merges.now.auto' },
-    { name: 'Control — first-pass verdicts', url: u('/api/control'), auth: true, json_path: 'ledger.firstPass.now.verdicted' },
-    { name: 'Control — executor vs advisor spend', url: u('/api/control'), auth: true, json_path: 'ledger.roles.executor.costUsd' },
-    // Turn 3 — whether a ✦ draft is offered at all. The button is ABSENT
-    // without a backend, so losing this field silently removes an affordance
-    // rather than breaking one: the dialog still works and nobody finds out the
-    // assist stopped being offered.
-    //
-    // It asserted `geminiReady` on /api/review until now, and had been red
-    // since #375 REPLACED that field with `agents` — the room's ops became the
-    // Foreman's, which runs Claude on the host, so a Gemini key stopped saying
-    // anything about whether they can run. The room's own readiness is already
-    // covered two lines up (`agents.foreman.ready`); the flag itself still
-    // exists, and still gates a ✦, on the DEBRIEF payload — so the check moves
-    // to where the contract actually lives rather than being deleted.
-    { name: 'Review — the Gemini-ready flag', url: u('/api/review/debrief'), auth: true, json_path: 'geminiReady' },
-    // #263 — the auto-verdicted strip's count. It stays present (0 counts as
-    // present) even with nothing on it, so losing the key entirely — the
-    // route forgetting the field — is what this catches, not an empty strip.
-    { name: 'Review — auto-verdicted strip', url: u('/api/review'), auth: true, json_path: 'totals.autoVerdicted' },
-    // #286/#24a — the composed single-night debrief. Two code invariants that
-    // can be equality-asserted safely, the auth gate, and one presence check
-    // on `day`, which composeDebrief echoes on every answer including a
-    // `ran:false` quiet night. The debrief's OWN numbers (stats.landed,
-    // reviewer.ran, stats.planned, …) are deliberately not asserted here:
-    // they read 0 on a night nothing ran — that is the design, not a gap —
-    // so a check on any of them would go red on good news, exactly what the
-    // design rules above forbid.
-    { name: 'Auth gate closed — review debrief', url: u('/api/review/debrief'), expect_status: 401 },
-    { name: 'Review debrief — a bad night is refused', url: u('/api/review/debrief?night=not-a-date'), auth: true, expect_status: 400 },
-    { name: 'Review debrief — unknown project 404s', url: u('/api/review/debrief?slug=no-such-project-x'), auth: true, expect_status: 404 },
-    { name: 'Review debrief — composed payload has a day', url: u('/api/review/debrief'), auth: true, json_path: 'day' },
-    // The Now room's two host-fed signals. Both are ARRAYS that are usually
-    // EMPTY — nothing is normally stopped and nobody is normally colliding —
-    // which is exactly why they need a check: if the key stops being served,
-    // the room renders "nothing is waiting on you" and looks entirely correct
-    // while a session sits blocked on a permission prompt all night. Asserting
-    // the path, not a count: the count is meant to be zero most of the time.
-    { name: 'Control — what is waiting on you', url: u('/api/control'), auth: true, json_path: 'attention' },
-    { name: 'Control — same-file collisions', url: u('/api/control'), auth: true, json_path: 'conflicts' },
-    // #366 — the autopilot pane report's clock. 0 is the honest idle value (no
-    // host has ever reported), so this asserts the KEY exists, never a value;
-    // losing it collapses "the daemon reported and nothing is running" into
-    // "nothing has reported at all", which is the same silent failure as a
-    // missing `attention`/`conflicts` above.
-    { name: 'Control — autopilot pane report clock', url: u('/api/control'), auth: true, json_path: 'terminal.autoSeenAt' },
-    // The Nights calendar's entire data source. Losing it is silent: the
-    // calendar just renders empty and looks like a quiet week.
-    { name: 'Control — nights calendar source', url: u('/api/control'), auth: true, json_path: 'usage.recentRuns' },
     // The answer channel's front door. A bad fingerprint must be REFUSED with
     // a 400 rather than relayed — the host's re-read is the real guard, but a
     // server that forwarded anything shaped like a request would put the whole
@@ -321,21 +185,16 @@ function suiteFor(slug, ORIGIN) {
     // go red the day that check is renamed or retired.
     { name: 'Checks — per-check history', url: u(`/api/projects/${slug}/checks/history?limit=5`), auth: true },
     { name: 'Roadmap — collection', url: u(`/api/projects/${slug}/roadmap`), auth: true, json_path: 'must' },
-    { name: 'Futures — collection', url: u(`/api/projects/${slug}/futures`), auth: true, json_path: '0.title' },
     // #312 — the whole Polaris galaxy is derived from this field: no isStar and
     // every idea renders loose, with no star, no planet and no moon anywhere in
     // the sky. Existence only — false is the common value and a real answer.
-    { name: 'Futures — galaxy shape field', url: u(`/api/projects/${slug}/futures`), auth: true, json_path: '0.isStar' },
     { name: 'Notes — collection', url: u(`/api/projects/${slug}/notes`), auth: true, expect_status: 200 },
     // The Workbench canvas. `cards` is the load-bearing key — the tab renders
     // nothing without it, and the read is also what BACKFILLS a card for any
     // note filed outside the canvas, so a green here means old notes are still
-    // reachable. `polaris` is the pull picker's whole funnel — its onCanvas
-    // flag is what stops an idea being pulled onto the canvas twice, and a
-    // missing flag would read as "nothing is picked yet" for every idea.
+    // reachable. (`polaris`, the pull picker's funnel, was asserted here too
+    // and went with the Polaris cull.)
     { name: 'Workbench — the canvas', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'cards' },
-    { name: 'Workbench — the Polaris picker', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'polaris' },
-    { name: 'Workbench — picker already-on-canvas flag', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'polaris.0.onCanvas' },
     // #327 — the ✧ ops' model picker. Losing `models` silently empties the
     // picker (the rail still renders, ops still fire against whatever the
     // stored setting resolves to); losing `model` loses the current pick, so
@@ -366,8 +225,8 @@ function suiteFor(slug, ORIGIN) {
     // #243 — jobShape()'s new field. Depends, like the check above it, on at
     // least one job ever having been queued. `adviceReady` is a boolean and
     // false is the common value, so existence (not truth) is the assertion —
-    // losing the field would leave Mission Control's advice affordance dark
-    // with no visible error.
+    // the field is part of the job payload's contract, and losing it would go
+    // unnoticed with no visible error.
     { name: 'Autopilot — job payload carries advice state', url: u('/api/autopilot/jobs'), auth: true, json_path: '0.adviceReady' },
     { name: 'Autopilot — schedule', url: u('/api/autopilot/schedule'), auth: true, expect_status: 200 },
 
@@ -402,10 +261,6 @@ const FEATURE_BY_PREFIX = {
   Overview: 'The read layer',
   Search: 'The read layer',
   Timeline: 'The read layer',
-  // the fleet's own screens
-  Control: 'Mission Control',
-  Review: 'Mission Control',
-  'Review debrief': 'Mission Control',
   // what actually runs the nights
   Autopilot: 'The automation spine',
   Terminal: 'The automation spine',
@@ -510,9 +365,9 @@ export async function main(argv = process.argv.slice(2)) {
   // Checks the suite does not own. Nothing here is ever deleted — a check added
   // by hand is the owner's, and this file has no way to tell one from a row the
   // suite renamed away from. But a RED one has to be said loudly (BUG-11): when
-  // the Workbench payload's `tray` became `polaris`, the new check was added
-  // under a new name and the old row was left behind asserting a key that no
-  // longer exists. It failed every night for a fortnight, indistinguishable on
+  // the Workbench payload's `tray` was renamed, the new check was added under a
+  // new name and the old row was left behind asserting a key that no longer
+  // existed. It failed every night for a fortnight, indistinguishable on
   // the Quality page from a real regression, and "left alone" is what this line
   // said about it each time. An unowned check that passes is somebody's extra
   // cover; an unowned check that fails is a claim nobody is maintaining.

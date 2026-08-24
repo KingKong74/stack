@@ -107,18 +107,15 @@ const TIMELINE_JUMPS = [
 // for the --slug value at run time. Order matches the app's own nav order.
 export const SCREENS = [
   { id: 'dashboard', label: 'Dashboard', path: '#/' },
-  { id: 'control-now', label: 'Control — Now', path: '#/control' },
-  { id: 'control-review', label: 'Control — Review', path: '#/control/review' },
-  { id: 'control-roles', label: 'Control — Roles', path: '#/control/roles' },
+  // Mission Control's rooms are culled; `#/control` is the placeholder that
+  // stands where they were. Still walked, and deliberately: it is linked from
+  // six topbars, so a layout break on it is a break the owner meets — and the
+  // walk is what proves the route still resolves rather than 404ing.
+  { id: 'control', label: 'Control — placeholder', path: '#/control' },
   { id: 'terminal', label: 'Terminal', path: '#/terminal' },
   { id: 'skills', label: 'Skills', path: '#/skills' },
   { id: 'timeline', label: 'Timeline', path: '#/timeline' },
   { id: 'settings', label: 'Settings', path: '#/settings' },
-  // The instructions tree — a three-column grid with a sticky rail on each
-  // side, which is exactly the shape #291 exists to catch at `narrow`.
-  // …and the slug rides in the path, so the run also exercises the deep link
-  // rather than whichever project the picker happened to default to.
-  { id: 'instructions', label: 'Instructions', path: '#/instructions/<slug>' },
   { id: 'project-overview', label: 'Project — Overview', path: '#/p/<slug>' },
   { id: 'project-quality', label: 'Project — Quality', path: '#/p/<slug>/quality' },
   // The roadmap tab opens on the Timeline view (RoadmapTab.tsx defaults
@@ -131,7 +128,6 @@ export const SCREENS = [
     path: '#/p/<slug>/roadmap',
     interactions: [...TIMELINE_ZOOM, ...TIMELINE_JUMPS],
   },
-  { id: 'project-futures', label: 'Project — Futures', path: '#/p/<slug>/futures' },
   { id: 'project-workbench', label: 'Project — Workbench', path: '#/p/<slug>/workbench' },
   { id: 'project-activity', label: 'Project — Activity', path: '#/p/<slug>/activity' },
 ];
@@ -409,15 +405,16 @@ function scanLayout() {
   //     loudest finding in the run (12 at first paint, 49 once pressed), all
   //     of it structural noise. Same reasoning as the ellipsis rule: the app
   //     shows the cut, so it is not the silent cut this finding hunts.
-  //     THE VERTICAL HALF (#423) is the Workbench ground and the Polaris
-  //     stage: both hold an absolutely-positioned field panned under them, both
-  //     are 3× their own height in content by design, and both offer a minimap
-  //     or a fit control that says so. What that rule must NOT swallow is a
-  //     pane whose FLOW content is too tall for it — which is why the test
-  //     disqualifies an element with any in-flow child that spills, and why
-  //     the Futures scrub's clipped drag handle (the fourth of the four
-  //     findings this closed) was still reported and then fixed in styles.css
-  //     rather than filtered away here.
+  //     THE VERTICAL HALF (#423) is the Workbench ground: it holds an
+  //     absolutely-positioned field panned under it, it is 3× its own height in
+  //     content by design, and it offers a minimap that says so. (The Polaris
+  //     stage was the second such surface and went with the Polaris cull; the
+  //     rule is kept general because the shape, not the screen, is what it is
+  //     about.) What it must NOT swallow is a pane whose FLOW content is too
+  //     tall for it — which is why the test disqualifies an element with any
+  //     in-flow child that spills, and why the Futures scrub's clipped drag
+  //     handle was still reported and then fixed in styles.css rather than
+  //     filtered away here.
   //
   // Every one of these is COUNTED, never dropped silently: `suppressed`
   // below is folded into the screen's report and the run's printed summary,
@@ -470,11 +467,10 @@ function scanLayout() {
   // was the only surface it had been checked against; the vertical case is now
   // proven on two more — the Workbench ground (`div.wb-field` is
   // `position: absolute; inset: 0` under a 2400×1800 wire canvas, panned and
-  // zoomed by a transform) and the Polaris stage (a fixed-height window onto a
-  // galaxy that is laid out well past it). Both are the same shape as
-  // `.rt-lane`: every child positioned into the space, nothing in flow that
-  // spills. Two spellings of this test would be the drift the rest of this
-  // file's rules exist to prevent, so the axis is a parameter.
+  // zoomed by a transform). It is the same shape as `.rt-lane`: every child
+  // positioned into the space, nothing in flow that spills. Two spellings of
+  // this test would be the drift the rest of this file's rules exist to
+  // prevent, so the axis is a parameter.
   const isViewport = (el, axis = 'x') => {
     const kids = Array.from(el.children);
     if (!kids.length) return false;

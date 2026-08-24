@@ -111,10 +111,10 @@ test('a smart folder is a query over the whole canvas, flat', () => {
   const cards = [
     ...tree(),
     card({ id: 6, title: 'old', parentId: 1, days: STALE_DAYS + 1 }),
-    card({ id: 7, kind: 'polaris', futureId: 9, title: 'idea', parentId: 2 }),
+    card({ id: 7, kind: 'ai', op: 'plan', title: 'from an op', parentId: 2 }),
   ];
   assert.deepEqual(childrenOf(cards, 'smart:stale').map((c) => c.id), [6]);
-  assert.deepEqual(childrenOf(cards, 'smart:polaris').map((c) => c.id), [7]);
+  assert.deepEqual(childrenOf(cards, 'smart:sessions').map((c) => c.id), [7]);
   assert(isSmart('smart:stale'));
   assert(!isSmart(1));
   assert.equal(smartOf('smart:stale').name, 'Stale · 30d+');
@@ -136,7 +136,9 @@ test('every smart folder carries a token, never a hex', () => {
 
 test('no smart folder shares a name with a system folder', () => {
   // Two rows in one tree wearing the same name is a tree you cannot navigate
-  // by reading — and it was "Polaris" twice until this caught it.
+  // by reading — and it was "Polaris" twice until this caught it. Polaris is
+  // culled and both of those rows went with it; the property still holds for
+  // whatever is added next, which is why the test stays.
   const names = [...SMART, ...SYSTEM].map((f) => f.name.toLowerCase());
   assert.equal(new Set(names).size, names.length, names.join(' | '));
 });
@@ -145,7 +147,6 @@ test('no smart folder shares a name with a system folder', () => {
 
 test('a system folder holds no CARDS — its rows live in other tables', () => {
   const cards = tree();
-  assert.deepEqual(childrenOf(cards, 'sys:polaris'), []);
   assert.deepEqual(childrenOf(cards, 'sys:roadmap'), []);
   assert.equal(countIn(cards, 'sys:roadmap'), 0);
 });
@@ -165,19 +166,19 @@ test('a system folder is undeletable because there is nothing to delete', () => 
 
 test('nothing may be filed into a system folder', () => {
   const cards = tree();
-  assert.equal(canFileInto(cards, 5, 'sys:polaris'), false);
+  assert.equal(canFileInto(cards, 5, 'sys:roadmap'), false);
   assert.equal(canFileInto(cards, 1, 'sys:roadmap'), false);
 });
 
 test('a system folder hangs off the root and Up goes there', () => {
   const cards = tree();
-  assert.deepEqual(upFrom(cards, 'sys:polaris'), { to: null });
+  assert.deepEqual(upFrom(cards, 'sys:roadmap'), { to: null });
   assert.deepEqual(pathTo(cards, 'sys:roadmap', 'Stack').map((c) => c.name), ['Stack', 'Roadmap']);
 });
 
 test('smart and system keys cannot be mistaken for each other', () => {
   assert(isSmart('smart:stale') && !isSystem('smart:stale'));
-  assert(isSystem('sys:polaris') && !isSmart('sys:polaris'));
+  assert(isSystem('sys:roadmap') && !isSmart('sys:roadmap'));
   assert(!isSmart(3) && !isSystem(3) && !isSmart(null) && !isSystem(null));
 });
 
@@ -336,7 +337,7 @@ test('an empty folder promotes as one phase, never as nothing', () => {
 });
 
 test('every card kind has a label the Details view can print', () => {
-  for (const k of ['folder', 'polaris', 'ai', 'note']) assert(KIND_LABEL[k]);
+  for (const k of ['folder', 'ai', 'note']) assert(KIND_LABEL[k]);
   assert.equal(isFolder(folder()), true);
   assert.equal(isFolder(card()), false);
 });

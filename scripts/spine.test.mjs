@@ -106,7 +106,7 @@ test('IN FLIGHT excludes what has already been built on the same claim', () => {
   assert.equal(isInFlight(refining), true);
 });
 
-test('the five stages count a real board without overlap', () => {
+test('the four stages count a real board without overlap', () => {
   const items = [
     item({ bucket: 'must' }),                                             // planned
     item({ bucket: 'should' }),                                           // planned
@@ -115,20 +115,23 @@ test('the five stages count a real board without overlap', () => {
     item({ done: true }),                                                 // built (ticked, no verdict)
     item({ done: true, reviewTag: 'solid' }),                             // landed
   ];
-  const s = buildSpine(board(items), [{ id: 1 }, { id: 2 }], 'demo', NOW);
-  assert.deepEqual(s.map((x) => x.count), [2, 2, 1, 2, 1]);
-  // every roadmap row lands in exactly one of the four roadmap stages
-  const roadmapTotal = s.slice(1).reduce((n, x) => n + x.count, 0);
-  assert.equal(roadmapTotal, items.length);
+  const s = buildSpine(board(items), 'demo', NOW);
+  assert.deepEqual(s.map((x) => x.count), [2, 1, 2, 1]);
+  // every roadmap row lands in exactly one of the four stages
+  const total = s.reduce((n, x) => n + x.count, 0);
+  assert.equal(total, items.length);
 });
 
-test('a stage sends you to the tab or room that owns it', () => {
-  const s = buildSpine(board([]), [], 'demo', NOW);
-  assert.match(stage(s, 'idea').href, /futures/);
+test('a stage sends you to the tab that owns it', () => {
+  // The Idea stage was Polaris and In flight / Built pointed into Mission
+  // Control's rooms. All three are culled, so every stage now lands on a tab
+  // that exists — which is the property worth pinning, not the destinations.
+  const s = buildSpine(board([]), 'demo', NOW);
   assert.match(stage(s, 'planned').href, /roadmap/);
-  assert.equal(stage(s, 'inflight').href, '#/control');
-  assert.equal(stage(s, 'built').href, '#/control/review');
+  assert.match(stage(s, 'inflight').href, /roadmap/);
+  assert.match(stage(s, 'built').href, /roadmap/);
   assert.match(stage(s, 'landed').href, /activity/);
+  for (const st of s) assert.doesNotMatch(st.href, /control|futures/);
 });
 
 // --- the bottleneck ---------------------------------------------------
@@ -138,7 +141,7 @@ test('a deep queue that has not moved in days is flagged, and only one is', () =
     ...Array.from({ length: 12 }, () => item({ updatedAt: ago(9) })),                 // planned, still
     ...Array.from({ length: 20 }, () => item({ done: true, updatedAt: ago(6) })),     // built, still
   ];
-  const s = buildSpine(board(items), [], 'demo', NOW);
+  const s = buildSpine(board(items), 'demo', NOW);
   assert.equal(s.filter((x) => x.blocked).length, 1, 'exactly one bottleneck');
   assert.equal(stage(s, 'built').blocked, true, 'the deeper still queue wins');
   assert.equal(stage(s, 'built').lastMovedDays, 6);
@@ -146,13 +149,13 @@ test('a deep queue that has not moved in days is flagged, and only one is', () =
 
 test('a queue that moved today is not a bottleneck however deep', () => {
   const items = Array.from({ length: 40 }, () => item({ done: true, updatedAt: ago(0) }));
-  const s = buildSpine(board(items), [], 'demo', NOW);
+  const s = buildSpine(board(items), 'demo', NOW);
   assert.equal(s.some((x) => x.blocked), false);
 });
 
 test('LANDED is never the bottleneck — a finished project is not stuck', () => {
   const items = Array.from({ length: 300 }, () => item({ done: true, reviewTag: 'solid', updatedAt: ago(90) }));
-  const s = buildSpine(board(items), [], 'demo', NOW);
+  const s = buildSpine(board(items), 'demo', NOW);
   assert.equal(stage(s, 'landed').count, 300);
   assert.equal(s.some((x) => x.blocked), false);
 });
@@ -161,7 +164,7 @@ test('an unstamped queue is not reported as still', () => {
   // No updatedAt anywhere: the rows have not been SHOWN to be sitting, which is
   // a different claim from having sat. Absent is not zero.
   const items = Array.from({ length: 30 }, () => item({ done: true, updatedAt: null }));
-  const s = buildSpine(board(items), [], 'demo', NOW);
+  const s = buildSpine(board(items), 'demo', NOW);
   assert.equal(stage(s, 'built').lastMovedDays, null);
   assert.equal(stage(s, 'built').blocked, false);
 });
@@ -243,7 +246,7 @@ test('the verdict queue is the Built stage, row for row', () => {
   const rows = verdictQueue(b, 5, NOW);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].kind, 'ui');
-  assert.equal(stage(buildSpine(b, [], 'p', NOW), 'built').count, rows.length,
+  assert.equal(stage(buildSpine(b, 'p', NOW), 'built').count, rows.length,
     'the list and the stage number must never disagree');
 });
 
@@ -288,7 +291,7 @@ test('the tiles NAME what is in flight rather than just counting it', () => {
     item({ title: 'Inline comments', claimedBy: 'feat/9-inline' }),
     item({ done: true, reviewTag: 'solid' }),
   ]);
-  const tiles = overviewStats(b, buildSpine(b, [], 'p', NOW), 62, []);
+  const tiles = overviewStats(b, buildSpine(b, 'p', NOW), 62, []);
   assert.equal(tiles[0].value, '1 of 2');
   assert.equal(tiles[1].value, '1');
   assert.match(tiles[1].note, /Inline comments/);
@@ -297,14 +300,14 @@ test('the tiles NAME what is in flight rather than just counting it', () => {
 
 test('an absent cadence strip does not report zero pushes', () => {
   const b = board([item()]);
-  const stages = buildSpine(b, [], 'p', NOW);
+  const stages = buildSpine(b, 'p', NOW);
   assert.match(overviewStats(b, stages, 10, []).at(-1).note, /weighted/);
   assert.match(overviewStats(b, stages, 10, [{ day: '2026-08-01', n: 2 }]).at(-1).note, /2 pushes/);
 });
 
 test('an empty board says so instead of reading 0 of 0', () => {
   const b = board([]);
-  const tiles = overviewStats(b, buildSpine(b, [], 'p', NOW), 0, []);
+  const tiles = overviewStats(b, buildSpine(b, 'p', NOW), 0, []);
   assert.equal(tiles[0].value, '0 of 0');
   assert.match(tiles[0].note, /nothing on the board/);
 });

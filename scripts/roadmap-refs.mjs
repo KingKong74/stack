@@ -80,23 +80,21 @@ export async function main(argv = process.argv.slice(2)) {
     return Array.isArray(body) ? body : Object.values(body).flat().filter((x) => x && typeof x === 'object');
   };
 
-  // TWO populations, because `#N` in this repo means either. The roadmap is
-  // numbered into the 300s and the idea funnel only reaches 153, so most
-  // citations are unambiguous — but under 153 an id can name one of each, and
-  // saying "no such item" about a number that is a perfectly good future would
-  // be the same false certainty this tool exists to remove.
-  let items; let futures;
+  // ONE population now. It was two — `#N` in this repo named either a roadmap
+  // item or an idea in the funnel, and under #153 an id could name one of each
+  // — but the funnel is culled, so an id that resolves to nothing really does
+  // resolve to nothing. What that CHANGES is the false-negative direction: a
+  // citation of a since-deleted idea now reports as stale rather than being
+  // quietly excused, which is the honest answer for a reference that no longer
+  // leads anywhere.
+  let items;
   try {
-    [items, futures] = await Promise.all([
-      get(`/api/projects/${slug}/roadmap`),
-      get(`/api/projects/${slug}/futures`).catch(() => []),
-    ]);
+    items = await get(`/api/projects/${slug}/roadmap`);
   } catch (e) {
     process.stdout.write(`Could not read ${slug}'s roadmap (${e.message}) — nothing was checked.\n`);
     return 0;
   }
   const byId = new Map(items.map((i) => [Number(i.id), i]));
-  const futureById = new Map(futures.map((f) => [Number(f.id), f]));
   const maxId = Math.max(...byId.keys());
 
   const files = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
@@ -118,11 +116,9 @@ export async function main(argv = process.argv.slice(2)) {
         if (id < 2 || id > maxId + 200) continue; // far above the board = not a citation
         cited++;
         const item = byId.get(id);
-        const future = futureById.get(id);
         const where = { file, line: n + 1, text: line.trim().slice(0, 140) };
         if (!item) {
-          // A valid idea number is not a dangling citation.
-          if (!future) (id > maxId ? missing : stale).push({ id, ...where });
+          (id > maxId ? missing : stale).push({ id, ...where });
           continue;
         }
         // Scored against the item's title AND its note, because a note is
@@ -134,11 +130,10 @@ export async function main(argv = process.argv.slice(2)) {
         // or "run". A heuristic that cries wolf is the thing this repo keeps
         // refusing to ship.
         const a = words(line.replace(REF, ' '));
-        const b = words(`${item.title} ${String(item.note || '').slice(0, 600)}`
-          + (future ? ` ${future.title} ${String(future.note || '').slice(0, 300)}` : ''));
+        const b = words(`${item.title} ${String(item.note || '').slice(0, 600)}`);
         const shared = [...b].filter((w) => a.has(w));
         if (b.size && shared.length === 0) {
-          suspect.push({ id, title: item.title, alsoFuture: future ? future.title : null, ...where });
+          suspect.push({ id, title: item.title, ...where });
         }
       }
     });
@@ -150,7 +145,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
 
   process.stdout.write(`${cited} citations across ${files.length} tracked files `
-    + `(${byId.size} roadmap items to #${maxId}, ${futureById.size} ideas).\n\n`);
+    + `(${byId.size} roadmap items to #${maxId}).\n\n`);
 
   if (missing.length) {
     process.stdout.write(`MISSING — ${missing.length} citation(s) name an id above #${maxId}, the highest the\n`
@@ -171,19 +166,18 @@ export async function main(argv = process.argv.slice(2)) {
   }
 
   // Ranked before it is capped: a wrong id in CLAUDE.md or in the agent manual
-  // is read by every session that starts here, and one in a generated Polaris
-  // report is read by nobody. Same finding, different cost.
+  // is read by every session that starts here, and one in a stray markdown file
+  // is read by nobody. Same finding, different cost.
   const rank = (f) => (f === 'CLAUDE.md' ? 0 : f.startsWith('templates/') ? 1
     : f.startsWith('server/') || f.startsWith('web/') || f.startsWith('scripts/') || f.startsWith('hook/') ? 2
-      : f.startsWith('polaris/') ? 4 : 3);
+      : 3);
   suspect.sort((x, y) => rank(x.file) - rank(y.file) || x.file.localeCompare(y.file) || x.line - y.line);
   const show = flag('all') ? suspect : suspect.slice(0, 20);
   if (suspect.length) {
     process.stdout.write(`SUSPECT — ${suspect.length} citation(s) share no word with the item they name.\n`
       + 'A heuristic, and terse prose is allowed — read the pair and judge:\n');
     for (const r of show) {
-      process.stdout.write(`  ${r.file}:${r.line}  #${r.id} is "${r.title}"`
-        + `${r.alsoFuture ? ` (or the idea "${r.alsoFuture}")` : ''}\n      ${r.text}\n`);
+      process.stdout.write(`  ${r.file}:${r.line}  #${r.id} is "${r.title}"\n      ${r.text}\n`);
     }
     if (show.length < suspect.length) {
       process.stdout.write(`  … ${suspect.length - show.length} more not shown — pass --all for the rest.\n`);

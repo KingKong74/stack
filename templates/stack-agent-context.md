@@ -40,8 +40,7 @@ and uses no API. When you wrap up meaningful work, run **`/checkpoint`**. It:
   summary explains; `include_chores` decides whether chore-only sessions count),
 - derives the project slug from the git remote,
 - has you compose the full checkpoint schema — summary, current phase, in-progress,
-  next-up, working-well, blockers, tags, plus candidate bugs, next-steps and
-  futures (loose directional ideas, distinct from concrete next-steps) for
+  next-up, working-well, blockers, tags, plus candidate bugs and next-steps for
   auto-extraction — and
 - pipes that JSON to `~/.stack/stack-checkpoint.mjs`, which posts it (reading the
   token from `~/.stack/env`, never printing it).
@@ -56,18 +55,17 @@ The block is a snapshot. For the current state at any moment, read the API:
 
 - `GET /api/projects` — all projects with computed progress.
 - `GET /api/projects/<slug>` — one project plus its activity, bugs, roadmap,
-  notes and futures. This is the authoritative "how is this project doing right
+  notes and checks. This is the authoritative "how is this project doing right
   now".
   If it carries a **north star** (`northStar`), treat it as the project's
   direction and pull your work towards it. If it carries **directives**, they
   are standing instructions from the owner — honour them before anything else,
   and don't remove them yourself (they're cleared from the dashboard).
 - `GET /api/agents` — Stack's own in-app agents (Auditor · Quality tab,
-  Curator · Roadmap tab, Polaris · Futures tab, Drafter · Workbench tab,
-  Foreman · Review room, Merge agent · Merge room, Scribe · Instructions tab).
+  Curator · Roadmap tab, Drafter · Workbench tab).
   **These are not you**: they are the ✧ buttons on those surfaces, each
-  restricted to its own, and any of them can be switched off in Mission
-  Control → Agents. The four project-tab agents also carry a `console` — a live
+  restricted to its own, and any of them can be switched off. Each also carries
+  a `console` — a live
   Claude session in the project's checkout, opened from a strip on their own
   tab and running in tmux on the host. It has its own switch (`consoleEnabled`
   on the PATCH), is not an op, and never appears in `ops`. Its session is
@@ -79,17 +77,14 @@ The block is a snapshot. For the current state at any moment, read the API:
   explain why a ✧ surface is missing, or why one of those routes answered 409
   (switched off) or 503 (the backend is down — since #364 they run `claude -p`
   on the host through the terminal daemon, so that daemon is their backend
-  rather than an API key; the Scribe's read-only quick passes are the one
-  exception and still run on Gemini, so a 503 there means the key, not the
-  daemon — each op reports which in `backend`).
-- `GET /api/instructions` — the CLAUDE.md tree Stack manages: the personal
-  `~/.claude/CLAUDE.md` and each project's root and nested files, plus what the
-  host last found on disk. **Worth reading when you are about to change a
-  CLAUDE.md**: a file listed here with `enabled` is written by the host from
-  Stack's copy on its next sync, so editing it in the repo by hand is a change
-  that gets overwritten. Edit it through `PATCH /api/instructions/<id>` instead,
-  or leave it alone. A file the report lists as `managed: false` is nobody's but
-  the repo's — edit that one normally.
+  rather than an API key; the Curator's read-only board reads are the exception
+  and run on Gemini, so a 503 there means the key, not the daemon — each op
+  reports which in `backend`).
+
+**A repo's CLAUDE.md is the repo's.** Stack used to manage a tree of them and
+write each one from its own copy on a five-minute sync; that surface is culled,
+so a CLAUDE.md is now edited in the repo like any other file and nothing
+overwrites it behind you.
 
 The base URL and slug for the project you're in are stamped at the bottom of this
 file when it was exported (or are blank in the generic template).
@@ -103,7 +98,7 @@ shell profile or settings file — `~/.stack/env` is the only source.
 
 ## Don't hand-create duplicates
 
-Bugs, roadmap items and futures **auto-extract from sessions** and dedupe by a
+Bugs and roadmap items **auto-extract from sessions** and dedupe by a
 fingerprint of their title. So:
 
 - Don't manually re-add a bug or next-step the hook will extract anyway — you'll
@@ -150,10 +145,9 @@ Cut branches as **`<kind>/<id>-<summary>`** — `feat/271-mission-control`,
 `fix/312-galaxy-drift-belt`, `ui/288-roles-room-by-job`. The kinds are
 `feat · fix · ui · refactor · perf · test · docs · chore`; a bug's branch is
 `fix/bug-<n>-<summary>` and an audit night's is `test/audit-<date>`. The
-autopilot names its own lanes this way, and Mission Control's Merge room
-filters and groups on the prefix — so the kind is read off the branch name
-before anything reads the diff. Get it wrong and the branch still merges; it
-just lands in the unlabelled bucket.
+autopilot names its own lanes this way, and the kind is read off the branch
+name before anything reads the diff. Get it wrong and the branch still merges;
+it just lands in the unlabelled bucket.
 
 Older `auto/item-N-<summary>` branches are still read everywhere (they are
 still on origin and still named in claims). Don't rename them — a claim is a
@@ -167,8 +161,7 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
 - **Never start an item claimed by another branch.**
 - **Never start an unapproved auto-found item.** An item with `source: "hook"`
   was extracted from a push by the tooling, not written by the owner, and until
-  they sign it off in the Plan room inbox (`reviewed: true`) it is not work
-  anybody has agreed to. Every unattended path already refuses it, so if you
+  they sign it off (`reviewed: true`) it is not work anybody has agreed to. Every unattended path already refuses it, so if you
   find one in front of you, leave it and take the next item. An item with
   `source: "manual"` is approved the moment it exists — a human wrote it —
   whatever `reviewed` says.
@@ -180,13 +173,10 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   MoSCoW bucket's sizing. It is the primary sort of the run queue: work S before
   A before B before C, and unranked items last. Never set or change a tier
   yourself — it's the owner's ground truth for what matters.
-- **A claim is on the ITEM; the collision is on the FILE.** Mission Control now
-  watches which files each live session is writing (read off the transcripts —
-  two sessions in one checkout share a dirty tree, so git cannot tell them
-  apart) and flags a file two of you are editing at once. The claim is still
-  the protocol; this only means the owner sees it when the protocol is not
-  enough. If you are in a shared checkout, prefer a worktree for anything that
-  rewrites a large file.
+- **A claim is on the ITEM; the collision is on the FILE.** A claim says who
+  owns a roadmap row, not who owns a file — two sessions in one checkout share
+  a dirty tree, so git cannot tell their edits apart. If you are in a shared
+  checkout, prefer a worktree for anything that rewrites a large file.
 - If you're one of several parallel sessions and you pick up a roadmap item,
   **claim it first** (your claim label = your branch name):
 

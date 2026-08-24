@@ -277,7 +277,7 @@ export function extractInsights(run = {}, sessions = [], opts = {}) {
 // pinned without a server:
 //   node server/test/debrief.test.mjs
 //
-// Callers pass it the ALREADY-SHAPED run rows (routes/review.js's `nights`,
+// Callers pass it the ALREADY-SHAPED run rows (the Workbench's debrief pull,
 // built from shape.js's runCore()/agentReads()) plus the per-push Gemini
 // notes — this module only does the arithmetic, never the shaping.
 

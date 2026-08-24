@@ -207,16 +207,14 @@ check('start: bug keys pass and keep their place',
 const QUEUES = [
   ['scripts/stack-autopilot.mjs', 'lib/approval.mjs'],          // the runner's eligible()/pins/agenda
   ['server/src/routes/autopilot.js', '../approval.js'],         // the two enqueue gates
-  ['server/src/routes/control.js', '../approval.js'],           // Mission Control's tonight pick
-  ['web/src/screens/ControlRooms.tsx', '../lib/approval'],      // the Plan room queue + inboxes
   ['web/src/components/SessionPlanModal.tsx', '../lib/approval'], // the Run-now agenda picker
 ];
 // A hand-rolled copy is a source test and a reviewed test close enough
 // together to be the same expression…
 const HANDROLLED = /source\s*(===|!==|==|!=|<>|=)\s*['"](hook|manual)['"][^\n]{0,80}reviewed/i;
 // …but those same two columns ALSO spell the review inbox, which is a count,
-// not a gate — control.js tallies it over bugs, roadmap items and futures a
-// few hundred lines from its tonight-pick. What tells the two apart is that
+// not a gate — overview.js tallies it over bugs and roadmap items. What tells
+// the two apart is that
 // an eligibility filter is never only about approval: it asks in the same
 // breath whether the item is claimed or parked. So a hit needs an
 // eligibility neighbour within a few lines.

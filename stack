@@ -22,16 +22,14 @@ const COMMANDS = {
   'start-session': { script: 'stack-sessions.mjs', fn: 'mainStart', blurb: 'start an automation session (▶ Run now, from the terminal)' },
   'list-sessions': { script: 'stack-sessions.mjs', fn: 'mainList', blurb: 'list recent automation sessions' },
   sessions: { script: 'stack-sessions.mjs', fn: 'mainList', blurb: 'alias for list-sessions' },
-  term: { script: 'stack-term-cli.mjs', blurb: 'claude in a stack-term tmux session (visible on Mission Control; --shell, --safe, --worktree)' },
+  term: { script: 'stack-term-cli.mjs', blurb: 'claude in a stack-term tmux session (--shell, --safe, --worktree)' },
   worktrees: { script: 'stack-worktrees-cli.mjs', blurb: 'see and reap interactive worktrees (--json, --prune, --run)' },
   'seed-checks': { script: 'stack-seed-checks.mjs', blurb: 'sync the regression suite onto a project (--dry, --run)' },
-  'seed-galaxy': { script: 'stack-seed-galaxy.mjs', blurb: 'shape a flat idea funnel into stars and planets (dry unless --run)' },
   'risk-backfill': { script: 'stack-risk-backfill.mjs', blurb: 'tier the open board\'s risk at plan time (dry unless --run)' },
   skills: { script: 'stack-skills.mjs', blurb: 'sync the managed skill tree onto this host (--dry)' },
-  instructions: { script: 'stack-instructions.mjs', blurb: 'sync the managed CLAUDE.md tree onto this host (--dry)' },
   'ui-smoke': { script: 'playwright/smoke.mjs', blurb: 'headless browser smoke pass over the UI (#291; --url, --slug, --json)' },
-  // Named for what it lists. `stack agents` would read as the five tab/room
-  // agents (#361), which this has nothing to do with.
+  // Named for what it lists. `stack agents` would read as the tab agents
+  // (#361), which this has nothing to do with.
   'agent-profiles': { script: 'stack-agent-profiles.mjs', blurb: 'list and customise the agent SPAWN profiles (list, show, set, reset, assign)' },
 };
 

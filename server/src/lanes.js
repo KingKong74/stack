@@ -27,7 +27,7 @@
 //     ignore the claim it holds on its own pinned item.
 //
 // Pure, no DB, no imports from the app — callers (routes/autopilot.js,
-// routes/control.js) build the `holders` list from their own queries.
+// the runner's pick) build the `holders` list from their own queries.
 
 export function normArea(a) {
   return (a || '').trim().toLowerCase();

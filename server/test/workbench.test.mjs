@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The Workbench canvas — the five properties that keep it honest.
+// The Workbench canvas — the properties that keep it honest.
 //
 // The canvas is a PLACEMENT layer over rows that live somewhere else, and every
 // bug worth pinning here comes from forgetting that:
@@ -9,16 +9,12 @@
 //     second read must not give them a second one.
 //   • WRITE-THROUGH — retitling a card retitles the NOTE. A second copy of the
 //     text would leave ⌘K searching a stale one.
-//   • DELETE ASYMMETRY — a note card's × deletes the note (it has no other
-//     home); a polaris card's × only takes the idea OFF the canvas. Deleting
-//     someone's Polaris idea because they tidied their workspace is the
-//     expensive version of this bug.
+//   • DELETE — a note card's × deletes the note, because it has no other home.
+//     (Polaris cards were the asymmetric case — their × only unplaced the idea
+//     — and went with the Polaris cull.)
 //   • CUT DROPS THE BRANCH — cutting an op's line drops the output it fed and
-//     everything downstream of THAT, but never a note or an idea that happens
-//     to sit below the cut.
-//   • THE PICKER SEES THE WHOLE FUNNEL — a pulled idea stays in the list with
-//     `onCanvas` flipped rather than vanishing from it. That flag is the only
-//     thing stopping the same idea being pulled onto the canvas twice.
+//     everything downstream of THAT, but never a note that happens to sit
+//     below the cut.
 //   • FOLDERS DO NOT CASCADE (#414) — deleting a folder lifts its contents one
 //     level. A cascade would make "delete this folder" a bulk note delete. The
 //     cycle guard is here too: a refused move leaves the card where it was,
@@ -82,7 +78,7 @@ const owned = (b) => b.cards.filter((c) => !c.system);
 
 (async () => {
   // A project, one note filed the OLD way (straight at the notes route, as the
-  // ✧ re-entry plan and every pre-Workbench note was), and one Polaris idea.
+  // ✧ re-entry plan and every pre-Workbench note was).
   await call('/ingest', {
     method: 'POST',
     body: {
@@ -91,14 +87,11 @@ const owned = (b) => b.cards.filter((c) => !c.system);
     },
   });
   await call(`/projects/${SLUG}/notes`, { method: 'POST', body: { text: 'a note from before the canvas' } });
-  const idea = await call(`/projects/${SLUG}/futures`, { method: 'POST', body: { title: 'an idea to pull' } });
 
   // 1. BACKFILL — the legacy note gets a card on read, and only ever one.
   const first = await board();
   check('a pre-canvas note is materialised as a card', owned(first).length, 1);
   check('its title reads through from the note', owned(first)[0].title, 'a note from before the canvas');
-  check('the funnel comes down for the picker', first.polaris.length, 1);
-  check('and the idea reads as not yet pulled', first.polaris[0].onCanvas, false);
   const second = await board();
   check('reading twice does not double the card', owned(second).length, 1);
 
@@ -120,24 +113,7 @@ const owned = (b) => b.cards.filter((c) => !c.system);
   const moved = owned(await board())[0];
   check('and the move persisted', `${moved.x},${moved.y}`, '120,240');
 
-  // 3. THE PICKER'S ONE INVARIANT: an idea stays in the list once pulled and
-  //    flips `onCanvas`, rather than disappearing — the picker's All filter has
-  //    to be able to show it, greyed, and that flag is the only thing stopping
-  //    it being pulled onto the canvas a second time. Putting it back is not a
-  //    delete: the flag flips off and the idea itself never moved.
-  const polarisCard = await call(`/projects/${SLUG}/workbench/cards`, {
-    method: 'POST', body: { kind: 'polaris', futureId: idea.id, x: 400, y: 40 },
-  });
-  const withIdea = await board();
-  check('a pulled idea stays listed', withIdea.polaris.length, 1);
-  check('and now reads as on the canvas', withIdea.polaris[0].onCanvas, true);
-  check('and puts a second card on the canvas', owned(withIdea).length, 2);
-  await call(`/projects/${SLUG}/workbench/cards/${polarisCard.id}`, { method: 'DELETE' });
-  const afterReturn = await board();
-  check('taking it off the canvas clears the flag', afterReturn.polaris[0].onCanvas, false);
-  check('and does NOT delete the idea', (await call(`/projects/${SLUG}/futures`)).length, 1);
-
-  // 4. CUT DROPS THE BRANCH. Ops need a live Gemini key, so the shapes an op
+  // 3. CUT DROPS THE BRANCH. Ops need a live Gemini key, so the shapes an op
   //    would make are built by hand: note → ai → ai, plus a plain note wired
   //    below the cut that must survive it.
   const bystander = await call(`/projects/${SLUG}/workbench/cards`, {
@@ -155,113 +131,12 @@ const owned = (b) => b.cards.filter((c) => !c.system);
   check('the note and the bystander are untouched', owned(after).length, 2);
   check('the bystander note still exists', (await call(`/projects/${SLUG}/notes`)).length, 2);
 
-  // 5. A note card's × really does delete the note.
+  // 4. A note card's × really does delete the note.
   await call(`/projects/${SLUG}/workbench/cards/${bystander.id}`, { method: 'DELETE' });
   check('removing a note card deletes the note', (await call(`/projects/${SLUG}/notes`)).length, 1);
   check('and its card goes with it', owned(await board()).length, 1);
 
-  // 6. THE #326 CASCADE — pulling a STAR also pulls its direct children, and
-  //    only its direct children: star -> planet -> moon is the whole depth.
-  const star1 = await call(`/projects/${SLUG}/futures`, { method: 'POST', body: { title: 'a star to cascade' } });
-  await call(`/projects/${SLUG}/futures/${star1.id}`, { method: 'PATCH', body: { isStar: true } });
-  const planet1a = await mkOrbiting(star1.id, 'planet one');
-  const planet1b = await mkOrbiting(star1.id, 'planet two');
-  const planet1c = await mkOrbiting(star1.id, 'planet three');
-  // A moon on one of those planets, wired BEFORE the star is ever pulled — the
-  // cascade must not reach past its own planet to find it.
-  const moon1 = await mkOrbiting(planet1a.id, 'a moon of planet one');
-
-  const starCard1 = await call(`/projects/${SLUG}/workbench/cards`, {
-    method: 'POST', body: { kind: 'polaris', futureId: star1.id, x: 800, y: 40 },
-  });
-  check('the star reports its whole orbit as the total', starCard1.cascaded.total, 3);
-  check('and places all of it (under the cap)', starCard1.cascaded.placed, 3);
-  check('one new card per planet, no more', starCard1.cascaded.cards.length, 3);
-  check('every cascaded card is a polaris card',
-    starCard1.cascaded.cards.every((c) => c.kind === 'polaris'), true);
-  check('the cascaded cards are exactly the three planets, no moon among them',
-    starCard1.cascaded.cards.map((c) => c.futureId).sort((a, b) => a - b).join(','),
-    [planet1a.id, planet1b.id, planet1c.id].sort((a, b) => a - b).join(','));
-  check('one edge per planet', starCard1.cascaded.edges.length, 3);
-  check('every edge starts at the star\'s own card',
-    starCard1.cascaded.edges.every((e) => e.a === starCard1.id), true);
-  check('every edge lands on one of the new planet cards',
-    starCard1.cascaded.edges.map((e) => e.b).sort((a, b) => a - b).join(','),
-    starCard1.cascaded.cards.map((c) => c.id).sort((a, b) => a - b).join(','));
-  check('every cascaded edge is hand-drawn, not an op line',
-    starCard1.cascaded.edges.every((e) => e.ai === false), true);
-  const boardAfterCascade = await board();
-  check('the moon gets NO card of its own',
-    boardAfterCascade.cards.some((c) => c.futureId === moon1.id), false);
-
-  // 7. A non-star pull is unchanged, even when the idea itself has children —
-  //    only a star cascades. planet2 here is a plain future carrying a moon.
-  const star2 = await call(`/projects/${SLUG}/futures`, { method: 'POST', body: { title: 'a second star, never pulled' } });
-  await call(`/projects/${SLUG}/futures/${star2.id}`, { method: 'PATCH', body: { isStar: true } });
-  const planet2 = await mkOrbiting(star2.id, 'a planet pulled on its own');
-  await mkOrbiting(planet2.id, 'a moon under that planet');
-  const pulledPlanet2 = await call(`/projects/${SLUG}/workbench/cards`, {
-    method: 'POST', body: { kind: 'polaris', futureId: planet2.id, x: 40, y: 900 },
-  });
-  check('pulling a non-star carries no cascaded key at all', 'cascaded' in pulledPlanet2, false);
-
-  // 8. A planet already on the canvas is wired, not duplicated, when its star
-  //    is pulled afterwards.
-  const star3 = await call(`/projects/${SLUG}/futures`, { method: 'POST', body: { title: 'a third star' } });
-  await call(`/projects/${SLUG}/futures/${star3.id}`, { method: 'PATCH', body: { isStar: true } });
-  const planet3a = await mkOrbiting(star3.id, 'already on the canvas');
-  const planet3b = await mkOrbiting(star3.id, 'not yet on the canvas');
-  const preplaced = await call(`/projects/${SLUG}/workbench/cards`, {
-    method: 'POST', body: { kind: 'polaris', futureId: planet3a.id, x: 40, y: 1200 },
-  });
-  const starCard3 = await call(`/projects/${SLUG}/workbench/cards`, {
-    method: 'POST', body: { kind: 'polaris', futureId: star3.id, x: 400, y: 1200 },
-  });
-  check('the pre-placed planet is NOT among the newly created cards',
-    starCard3.cascaded.cards.some((c) => c.futureId === planet3a.id), false);
-  check('only the not-yet-placed planet is newly created',
-    starCard3.cascaded.cards.map((c) => c.futureId).join(','), String(planet3b.id));
-  check('but the star still gets a full two edges, one per planet',
-    starCard3.cascaded.edges.length, 2);
-  check('one of them wires to the pre-existing card, not a new one',
-    starCard3.cascaded.edges.some((e) => e.b === preplaced.id), true);
-  const boardAfter8 = await board();
-  check('the pre-placed planet still has exactly one card',
-    boardAfter8.cards.filter((c) => c.futureId === planet3a.id).length, 1);
-
-  // 9. The cascade does not duplicate on a re-pull, even after the star's own
-  //    card is removed and put back. Deleting a polaris card only unplaces the
-  //    idea (case 3 above already covers that for a plain idea); the star is
-  //    no different, and workbench_edges cascades away with the deleted card.
-  await call(`/projects/${SLUG}/workbench/cards/${starCard3.id}`, { method: 'DELETE' });
-  const boardAfterUnplace = await board();
-  check('unplacing the star leaves its planets exactly as they were',
-    boardAfterUnplace.cards.filter((c) => c.futureId === planet3a.id || c.futureId === planet3b.id).length, 2);
-  const starCard3Again = await call(`/projects/${SLUG}/workbench/cards`, {
-    method: 'POST', body: { kind: 'polaris', futureId: star3.id, x: 400, y: 1200 },
-  });
-  check('a re-pull creates no new planet cards — both already exist',
-    starCard3Again.cascaded.cards.length, 0);
-  check('but still wires both edges off the new star card',
-    starCard3Again.cascaded.edges.length, 2);
-  check('every rewired edge starts at the NEW star card, not the deleted one',
-    starCard3Again.cascaded.edges.every((e) => e.a === starCard3Again.id), true);
-  const boardAfterRepull = await board();
-  const starFutureIds = [star3.id, planet3a.id, planet3b.id];
-  for (const fid of starFutureIds) {
-    check(`future ${fid} has exactly one card after the re-pull`,
-      boardAfterRepull.cards.filter((c) => c.futureId === fid).length, 1);
-  }
-
-  // 10. The tray marks stars, and still counts direct children as `links`.
-  const boardFinal = await board();
-  const star1Idea = boardFinal.polaris.find((p) => p.id === star1.id);
-  const plainIdea = boardFinal.polaris.find((p) => p.id === idea.id);
-  check('a star reads isStar: true in the picker', star1Idea.isStar, true);
-  check('a plain idea reads isStar: false', plainIdea.isStar, false);
-  check('links still counts the star\'s direct children', star1Idea.links, 3);
-
-  // 11. FOLDERS (#414). A folder is a card that other cards may name as their
+  // 5. FOLDERS (#414). A folder is a card that other cards may name as their
   // parent, and the three properties worth pinning are the three that are
   // expensive to get wrong: the cycle guard, what a delete does to the contents,
   // and where a newly made card is born.
@@ -312,8 +187,8 @@ const owned = (b) => b.cards.filter((c) => !c.system);
   check('and now sits in the folder that held its folder', survivor.parentId, outer.id);
   check('the deleted folder is gone', afterDelete.cards.some((c) => c.id === inner.id), false);
 
-  // 12. THE STACK FOLDER (#416). A real row — unlike the derived Polaris and
-  // Roadmap folders, because cards are filed INTO this one — and therefore a
+  // 6. THE STACK FOLDER (#416). A real row — unlike the derived Roadmap
+  // folder, because cards are filed INTO this one — and therefore a
   // flag that has to be defended at every route a folder can be reached
   // through. Three refusals and one permission are what make it what it is.
   const stack = afterDelete.cards.find((c) => c.system === 'stack');
@@ -357,14 +232,6 @@ const owned = (b) => b.cards.filter((c) => !c.system);
 // Create a future and set it to orbit `parentId` — a planet under a star, or a
 // moon under a planet, exactly as the galaxy's own PATCH /:id would do it by
 // hand from the Sky view.
-async function mkOrbiting(parentId, title) {
-  const f = await call(`/projects/${SLUG}/futures`, { method: 'POST', body: { title } });
-  return call(`/projects/${SLUG}/futures/${f.id}`, { method: 'PATCH', body: { parentId } });
-}
-
-// Ops are the only way to make an 'ai' card through the API, and they need a
-// key. The chain is stood up directly in the DB instead — the thing under test
-// is the CUT, not how the cards got there.
 async function seedAiChain(fromCardId, bystanderCardId) {
   if (!process.env.DATABASE_URL) {
     throw new Error('This test writes the ai chain directly — run it with the same DATABASE_URL as the server.');
