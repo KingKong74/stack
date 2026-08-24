@@ -30,7 +30,7 @@
 //
 // It needs DATABASE_URL as well as the API: sessions have to be back-dated
 // to exact UTC days and there is no ingest field for that, so the fixture
-// rows are written directly, the same way workbench.test.mjs stands up its
+// rows are written directly, the same way ingest-identity.test.mjs stands up its
 // 'ai' cards.
 //
 // `hasMore` and `graph`/`total` are computed by the route ACROSS ALL

@@ -28,9 +28,10 @@ const rejects = async (label, fn, match) => {
 };
 
 console.log('--- the registry ---');
-// There were seven. The cull took the Foreman, the Merge agent, Polaris and
-// the Scribe WITH their surfaces — one surface, one switch, in both directions.
-check('the agents', AGENTS.map((a) => a.key), ['auditor', 'curator', 'drafter']);
+// There were seven. The cull took the Foreman, the Merge agent, Polaris, the
+// Scribe and the Drafter WITH their surfaces — one surface, one switch, in
+// both directions.
+check('the agents', AGENTS.map((a) => a.key), ['auditor', 'curator']);
 check('one surface each, no surface shared', new Set(AGENTS.map((a) => a.tab)).size, AGENTS.length);
 // Every agent has a SURFACE it can act through — ops, a console, or both. Not
 // "at least one op": the Auditor has none since its templated bug audit went,
@@ -61,7 +62,7 @@ check('an op nobody owns resolves to nothing', agentForOp('nonsense'), null);
 // Every survivor is a project tab; the two room-bound agents went with their
 // rooms. `surface` stays on the shape even so — it is the agent's identity, and
 // a room-bound agent coming back must be able to say so.
-check('the surfaces', AGENTS.map((a) => a.tab), ['quality', 'roadmap', 'workbench']);
+check('the surfaces', AGENTS.map((a) => a.tab), ['quality', 'roadmap']);
 check('and all of them are tabs now', AGENTS.every((a) => a.surface === 'tab'), true);
 // Every op the ROUTES call has to exist here, or the call throws at runtime.
 // This list is the routes' side of the contract, written out so a renamed op
@@ -77,17 +78,6 @@ const WIRED = {
   // 'allocate' is its other half: WHERE an untagged row belongs, not when it
   // runs. Routes: POST /roadmap/allocate.
   curator: ['titler', 'assist', 'cleanup', 'arrange', 'allocate'],
-  // #379 — ONE op for the canvas's seven ✧ buttons. Routes: POST
-  // /projects/:slug/workbench/ops, which gates on it and then makes its own
-  // Gemini call (it wants the answer field by field and honours the canvas's
-  // model picker). Two of the button names would collide with other agents'
-  // ops if they were registered separately — which is the registry saying
-  // correctly that they are one surface, not seven capabilities.
-  // #418 — 'sharpen' is the SECOND, and it is not an eighth canvas button: it
-  // runs before a card exists (the corner ＋'s Thought composer, whose save
-  // files the note this canvas then draws), reads loose text and writes
-  // nothing. Routes: POST /projects/:slug/workbench/sharpen.
-  drafter: ['canvas', 'sharpen'],
 };
 for (const [key, ops] of Object.entries(WIRED)) {
   check(`${key}'s ops are exactly what its routes call`, agentByKey(key).ops.map((o) => o.op), ops);
@@ -99,7 +89,6 @@ const curator = agentClient('curator');
 // These reject BEFORE any database read — the binding is checked first, so the
 // refusal does not depend on a reachable Postgres.
 await rejects('the Auditor cannot run the Curator\'s cleanup', () => auditor.gate('cleanup'), 'Curator');
-await rejects('the Auditor cannot run the Drafter\'s canvas op', () => auditor.gate('canvas'), 'Drafter');
 // An agent with NO ops refuses everything, including the op it used to own.
 // That is the shape of a retired capability: not a switched-off op somebody can
 // turn back on, but a name no client resolves at all.
@@ -109,12 +98,11 @@ await rejects('...and neither can anybody else', () => curator.gate('audit'), 'n
 // resolves, exactly like the retired `audit`. This is the assertion that stops
 // a leftover call site quietly finding a new owner: the refusal has to be
 // "not an op", never another agent's name.
-for (const op of ['judge', 'mergeplan', 'readchange', 'rulescan']) {
+for (const op of ['judge', 'mergeplan', 'readchange', 'rulescan', 'canvas', 'sharpen']) {
   await rejects(`nobody can run the culled ${op}`, () => curator.gate(op), 'not an op');
   await rejects(`...not the Auditor either (${op})`, () => auditor.gate(op), 'not an op');
 }
 await rejects('nobody can run an op that does not exist', () => curator.ask('sudo', 'x'), 'not an op');
-await rejects('the Drafter cannot tidy the board', () => agentClient('drafter').gate('cleanup'), 'Curator');
 // And the message names the surface, so the exception says where the op
 // belongs — in the word that surface actually goes by (#375).
 await rejects('the refusal names the owning tab', () => auditor.gate('titler'), 'the Roadmap tab');
@@ -256,7 +244,7 @@ check('no agent lists a console among its ops',
 // the RULE, and it holds vacuously now rather than being deleted with the two
 // agents that happened to demonstrate it.
 check('which agents have one', AGENTS.filter((a) => a.console).map((a) => a.key),
-  ['auditor', 'curator', 'drafter']);
+  ['auditor', 'curator']);
 check('none of the room-bound agents does',
   AGENTS.filter((a) => a.surface === 'room').every((a) => !a.console), true);
 // Same direction as everything else here: a missing row — and a row written

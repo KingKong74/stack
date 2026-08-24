@@ -8,7 +8,7 @@
 //
 // This drives the real HTTP surface end to end (POST /schedule then
 // GET /next), the same throwaway-postgres-plus-running-server harness as
-// ingest-identity.test.mjs and workbench.test.mjs, rather than the SQL-only
+// ingest-identity.test.mjs, rather than the SQL-only
 // harness of #335's autopilot-next.test.mjs (a file of the same shape on a
 // separate, unmerged branch — feat/335-get-next-hands-out-one-job-at — that
 // exports CLAIM_NEXT_SQL from routes/autopilot.js; that export does not

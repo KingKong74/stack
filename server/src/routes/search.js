@@ -5,11 +5,11 @@ import { relativeTime, PRIORITY_SHORT } from '../util.js';
 // GET /api/search?q=… — the ⌘K command palette.
 //
 // Case-insensitive match across project names/subtitles, bug titles, roadmap
-// titles/notes, note text and session summaries. Results are grouped by kind;
+// titles/notes and session summaries. Results are grouped by kind;
 // each carries its owning project (slug/name/tint), a display title, a meta
 // field and a navigation target { slug, tab, highlight }. The tab disambiguates
 // what `highlight` means: a commit hash (activity), a bug key (bugs) or a row id
-// (roadmap/notes). Each group and the overall total are capped; an empty query
+// (roadmap). Each group and the overall total are capped; an empty query
 // returns nothing.
 //
 // Response shape:
@@ -17,9 +17,9 @@ import { relativeTime, PRIORITY_SHORT } from '../util.js';
 //   query: "…",
 //   groups: {
 //     projects: [ { kind, slug, name, tint, title, meta, target } ],
-//     bugs:     [ … ], roadmap: [ … ], notes: [ … ], activity: [ … ]
+//     bugs:     [ … ], roadmap: [ … ], activity: [ … ]
 //   },
-//   counts: { projects, bugs, roadmap, notes, activity, total },
+//   counts: { projects, bugs, roadmap, activity, total },
 //   projectCount: 3            // distinct projects across all results
 // }
 export const search = Router();
@@ -39,15 +39,15 @@ search.get('/', async (req, res) => {
   const query = String(req.query.q || '').trim();
   const empty = {
     query,
-    groups: { projects: [], bugs: [], roadmap: [], notes: [], activity: [] },
-    counts: { projects: 0, bugs: 0, roadmap: 0, notes: 0, activity: 0, total: 0 },
+    groups: { projects: [], bugs: [], roadmap: [], activity: [] },
+    counts: { projects: 0, bugs: 0, roadmap: 0, activity: 0, total: 0 },
     projectCount: 0,
   };
   if (!query) return res.json(empty);
 
   const pat = likePattern(query);
 
-  const [projR, bugR, roadR, noteR, actR] = await Promise.all([
+  const [projR, bugR, roadR, actR] = await Promise.all([
     q(
       `SELECT slug, name, tint, status, subtitle FROM projects
         WHERE deleted_at IS NULL AND (name ILIKE $1 OR subtitle ILIKE $1)
@@ -68,14 +68,6 @@ search.get('/', async (req, res) => {
          FROM roadmap_items r JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
         WHERE r.title ILIKE $1 OR r.note ILIKE $1
         ORDER BY r.updated_at DESC NULLS LAST, r.created_at DESC
-        LIMIT $2`,
-      [pat, PER_GROUP]
-    ),
-    q(
-      `SELECT n.id, n.text, n.created_at, p.slug, p.name, p.tint
-         FROM notes n JOIN projects p ON p.id = n.project_id AND p.deleted_at IS NULL
-        WHERE n.text ILIKE $1
-        ORDER BY n.created_at DESC
         LIMIT $2`,
       [pat, PER_GROUP]
     ),
@@ -113,16 +105,6 @@ search.get('/', async (req, res) => {
     target: { slug: r.slug, tab: 'roadmap', highlight: String(r.id) },
   }));
 
-  const notes = noteR.rows.map((r) => ({
-    kind: 'note',
-    slug: r.slug, name: r.name, tint: r.tint || null,
-    title: trim(r.text, 90),
-    meta: relativeTime(r.created_at) || 'just now',
-    // The Workbench is where a note is read now; `highlight` is still the NOTE
-    // id, and the canvas resolves it to the card wrapping it.
-    target: { slug: r.slug, tab: 'workbench', highlight: String(r.id) },
-  }));
-
   const activity = actR.rows.map((r) => ({
     kind: 'activity',
     slug: r.slug, name: r.name, tint: r.tint || null,
@@ -133,9 +115,9 @@ search.get('/', async (req, res) => {
 
   // Apply the overall total cap, trimming from the largest groups so no single
   // kind crowds the rest out.
-  const groups = { projects, bugs, roadmap, notes, activity };
+  const groups = { projects, bugs, roadmap, activity };
   let total = Object.values(groups).reduce((n, g) => n + g.length, 0);
-  const order = ['activity', 'notes', 'roadmap', 'bugs', 'projects']; // trim these first
+  const order = ['activity', 'roadmap', 'bugs', 'projects']; // trim these first
   while (total > TOTAL_CAP) {
     const key = order.find((k) => groups[k].length === Math.max(...order.map((o) => groups[o].length)));
     if (!key || !groups[key].length) break;
@@ -147,7 +129,6 @@ search.get('/', async (req, res) => {
     projects: groups.projects.length,
     bugs: groups.bugs.length,
     roadmap: groups.roadmap.length,
-    notes: groups.notes.length,
     activity: groups.activity.length,
     total,
   };

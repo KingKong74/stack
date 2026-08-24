@@ -144,33 +144,6 @@ const BUILDERS = {
       },
     ];
   },
-
-  async drafter(project) {
-    const { rows: cards } = await q(
-      `SELECT c.kind, c.op, COALESCE(NULLIF(c.title, ''), LEFT(n.text, 90), '') AS label,
-              COUNT(*) OVER () AS total
-         FROM workbench_cards c
-         LEFT JOIN notes n ON n.id = c.note_id
-        WHERE c.project_id = $1 ORDER BY c.updated_at DESC LIMIT $2`,
-      [project.id, ROW_CAP]
-    );
-    const total = Number(cards[0]?.total ?? 0);
-    return [
-      {
-        title: `THE CANVAS — ${total} card(s)`,
-        lines: cards.map((c) =>
-          `[${c.kind}${c.op ? `/${c.op}` : ''}] ${String(c.label || '(untitled)').replace(/\s+/g, ' ').slice(0, 120)}`),
-        note: cap(cards.length, total, 'cards'),
-      },
-      {
-        title: 'WHAT A CARD IS',
-        lines: [
-          'A card is a PLACEMENT, not content: a note card reads its words through from `notes`.',
-          'Every ✧ op on the canvas only PROPOSES a card — the owner disposes.',
-        ],
-      },
-    ];
-  },
 };
 
 consoles.get('/:key', async (req, res) => {

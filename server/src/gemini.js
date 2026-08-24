@@ -29,9 +29,12 @@ const defaultTemperature = () => {
 
 export const geminiEnabled = () => Boolean(process.env.GEMINI_API_KEY);
 
-// The UI catalogue served to the Workbench's model picker — the SINGLE source
-// of truth for what it offers, the same role EXECUTOR_CATALOGUE plays for
-// Mission Control's model pickers in settings.js. '' = the server default.
+// The UI catalogue of Gemini models — the SINGLE source of truth for what may
+// be offered, the same role EXECUTOR_CATALOGUE plays for the autopilot's model
+// pickers in settings.js. '' = the server default. The Workbench's picker was
+// its last reader and went with the canvas; the catalogue stays because
+// `cleanModelAlias` is validated against the same idea of what a model id is,
+// and re-deriving this list is the expensive part.
 export const GEMINI_MODELS = [
   { model: '', label: 'Server default', note: 'whatever the server is configured with' },
   { model: 'gemini-2.5-pro', label: 'Pro', note: 'deepest read, smallest free quota' },
@@ -89,7 +92,8 @@ async function callModel(model, prompt, { timeoutMs, generation }) {
 // `model` pins this one call to a model other than the server's. Two callers
 // arrived at it independently: the tab agents (#361), since free-tier quotas
 // are per model and one agent should not be able to eat another's, and the
-// Workbench's own picker (#327). '' or absent = the server's GEMINI_MODEL.
+// Workbench's own picker (#327, culled). '' or absent = the server's
+// GEMINI_MODEL.
 // Everything else about the fallback dance below is unchanged either way.
 export async function askGemini(prompt, { timeoutMs = 25_000, generation = {}, model = '' } = {}) {
   const primary = model || MODEL();

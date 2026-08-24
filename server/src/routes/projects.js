@@ -6,7 +6,7 @@ import {
   MERGE_AUTONOMY, PRESENCE_TTL_MINUTES,
 } from '../util.js';
 import {
-  bugShape, groupRoadmap, noteShape, checkShape, activityShape,
+  bugShape, groupRoadmap, checkShape, activityShape,
   projectListShape, projectDetailShape, resumeSince,
 } from '../shape.js';
 import { readUsage, readTests, readRuns, PULSE_DAYS } from '../pulse.js';
@@ -115,7 +115,7 @@ projects.get('/:slug', async (req, res) => {
   // #361 — the tab agents' live state rides the detail payload (one small read,
   // the same trip that already carries geminiReady).
   const tabAgents = await agentsForClient();
-  const [sessions, bugs, road, notes, checks, weekly, cadence, live] = await Promise.all([
+  const [sessions, bugs, road, checks, weekly, cadence, live] = await Promise.all([
     q(
       // `authored` rides along for resumeSince(): which of these pushes actually
       // wrote the resume card, and what has landed since.
@@ -126,7 +126,6 @@ projects.get('/:slug', async (req, res) => {
     ),
     q('SELECT * FROM bugs WHERE project_id = $1 ORDER BY created_at DESC', [p.id]),
     q('SELECT * FROM roadmap_items WHERE project_id = $1 ORDER BY bucket, position, created_at', [p.id]),
-    q('SELECT * FROM notes WHERE project_id = $1 ORDER BY created_at DESC', [p.id]),
     q('SELECT * FROM checks WHERE project_id = $1 ORDER BY created_at', [p.id]),
     q(
       `SELECT count(*)::int AS n FROM sessions
@@ -162,7 +161,6 @@ projects.get('/:slug', async (req, res) => {
       activity: sessions.rows.map(activityShape),
       bugs: bugs.rows.map(bugShape),
       roadmap: groupRoadmap(road.rows),
-      notes: notes.rows.map(noteShape),
       checks: checks.rows.map(checkShape),
       keepResumeCard: appSettings.keep_resume_card,
       sessionDefaults: sessionDefaultLines(appSettings.session_defaults),

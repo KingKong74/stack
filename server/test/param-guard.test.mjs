@@ -61,10 +61,8 @@ const ROUTES = [
   ['PATCH', `/api/projects/${SLUG}/roadmap`],
   ['DELETE', `/api/projects/${SLUG}/futures`],
   ['PATCH', `/api/projects/${SLUG}/futures`],
-  ['DELETE', `/api/projects/${SLUG}/notes`],
   ['DELETE', `/api/projects/${SLUG}/checks`],
   ['PATCH', `/api/projects/${SLUG}/checks`],
-  ['DELETE', `/api/projects/${SLUG}/workbench/cards`],
   ['DELETE', '/api/tips'],
   ['PATCH', '/api/tips'],
 ];

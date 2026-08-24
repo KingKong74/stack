@@ -16,7 +16,7 @@
 //     item's field becoming a real spawn spec is the whole point of the hook.
 //
 // Needs a running server on an EMPTY database (it writes real rows) — same
-// shape as workbench.test.mjs:
+// shape as ingest-identity.test.mjs:
 //   docker run -d --rm --name pg -e POSTGRES_PASSWORD=t -e POSTGRES_USER=t \
 //     -e POSTGRES_DB=t -p 55432:5432 postgres:16-alpine
 //   DATABASE_URL=postgres://t:t@127.0.0.1:55432/t API_TOKEN=testtok PORT=4599 \
@@ -63,7 +63,7 @@ const call = async (path, opts = {}) => {
   return { status: r.status, body };
 };
 
-// Same shape as call(), but throws on a non-2xx like workbench.test.mjs's
+// Same shape as call(), but throws on a non-2xx like ingest-identity.test.mjs's
 // helper — used for setup steps where a failure IS a real test failure.
 const callOk = async (path, opts = {}) => {
   const { status, body } = await call(path, opts);

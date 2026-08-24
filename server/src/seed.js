@@ -25,7 +25,6 @@ const DEMO = [
       must: [{ title: 'Remove the temporary token hack', done: false }],
       should: [{ title: 'Test the difficulty filter', done: false }],
     },
-    notes: ['Ask a few hikers to try the difficulty filter before tagging v1.5.'],
   },
   {
     slug: 'beacon', name: 'Beacon', repo: 'KingKong74/beacon',
@@ -44,7 +43,6 @@ const DEMO = [
       should: [{ title: 'Slack delivery with retry', done: false }],
       could: [{ title: 'Status-page themes', done: false }],
     },
-    notes: ['Drift is worst when many checks share a 60s interval — jitter them.'],
   },
 ];
 
@@ -89,9 +87,6 @@ async function seed() {
           [pid, bucket, it.title, it.done, pos++, fingerprint(it.title)]
         );
       }
-    }
-    for (const text of d.notes || []) {
-      await q(`INSERT INTO notes (project_id, text, source) VALUES ($1,$2,'manual')`, [pid, text]);
     }
     console.log(`seeded ${d.slug}`);
   }

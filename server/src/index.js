@@ -11,8 +11,6 @@ import { projects } from './routes/projects.js';
 import { bugs } from './routes/bugs.js';
 import { roadmap } from './routes/roadmap.js';
 import { board } from './routes/board.js';
-import { notes } from './routes/notes.js';
-import { workbench } from './routes/workbench.js';
 import { presence } from './routes/presence.js';
 import { checks } from './routes/checks.js';
 import { publicShowcase } from './routes/public.js';
@@ -75,8 +73,6 @@ app.use('/api/projects/:slug/roadmap', requireToken, roadmap);
 // the Plan view's lists. Separate from /roadmap because it is the BOARD's
 // shape rather than its contents.
 app.use('/api/projects/:slug/board', requireToken, board);
-app.use('/api/projects/:slug/notes', requireToken, notes);
-app.use('/api/projects/:slug/workbench', requireToken, workbench);
 app.use('/api/projects/:slug/checks', requireToken, checks);
 app.use('/api/projects/:slug/autopilot', requireToken, autopilot);
 app.use('/api/projects/:slug/branches', requireToken, branches);
@@ -91,7 +87,7 @@ app.use('/api/terminal', requireToken, terminal);
 app.use('/api/triage', requireToken, triage);
 app.use('/api/tips', requireToken, tips);
 app.use('/api/skills', requireToken, skills);
-// #361 — the tab agents (Auditor · Curator · Drafter). The REGISTRY of who may
+// #361 — the tab agents (Auditor · Curator). The REGISTRY of who may
 // act on which surface. App-wide, no slug.
 app.use('/api/agents', requireToken, agents);
 // #334 — a different thing that arrived under the same name: the catalogue of

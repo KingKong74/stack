@@ -1,19 +1,18 @@
 // THE AGENTS (#361, #364) — Stack's in-app specialists, each one bound to a
 // single SURFACE and unable to act anywhere else.
 //
-//   Auditor  · Quality tab   — investigates the app in a session of its own
-//   Curator  · Roadmap tab   — shapes the board and writes it up
-//   Drafter  · Workbench tab — thinks on the canvas: expands, plans, critiques
+//   Auditor  · Quality tab — investigates the app in a session of its own
+//   Curator  · Roadmap tab — shapes the board and writes it up
 //
-// There were seven. The cull took four of them — the Foreman (Review room),
-// the Merge agent (Merge room), Polaris (Futures tab) and the Scribe
-// (Instructions tab) — WITH their surfaces, and that is the rule rather than
-// an accident of tidying: ONE SURFACE, ONE SWITCH cuts both ways. An agent
-// whose only surface is gone has nothing left to switch, so it leaves the
-// registry rather than lingering as a toggle that governs nothing and a card
-// naming a screen that does not exist.
+// There were seven. The cull took five of them — the Foreman (Review room),
+// the Merge agent (Merge room), Polaris (Futures tab), the Scribe
+// (Instructions tab) and the Drafter (Workbench tab) — WITH their surfaces,
+// and that is the rule rather than an accident of tidying: ONE SURFACE, ONE
+// SWITCH cuts both ways. An agent whose only surface is gone has nothing left
+// to switch, so it leaves the registry rather than lingering as a toggle that
+// governs nothing and a card naming a screen that does not exist.
 //
-// All three survivors are PROJECT tabs, so `surface` is 'tab' throughout now.
+// Both survivors are PROJECT tabs, so `surface` is 'tab' throughout now.
 // The field stays because it is the agent's identity rather than a convenience
 // — a room-bound agent coming back must be able to say so.
 // Nothing else about the binding changes: an agent owns its ops, and the client
@@ -80,8 +79,8 @@ import { askGemini, geminiEnabled } from './gemini.js';
 //     one backend, and it is stated at the button rather than discovered.
 //
 // Gemini has NOT been removed from the app — the per-push review note, the
-// semantic check assertions, session labelling, triage and the Workbench ops
-// are still Gemini and still key-gated. Only the three tab agents moved.
+// semantic check assertions, session labelling and triage are still Gemini and
+// still key-gated. Only the tab agents moved.
 
 // The Claude aliases an agent may be pinned to. '' = whatever the CLI's own
 // default is, which is the right answer unless one agent's work has a shape
@@ -154,8 +153,8 @@ export const cleanGuidance = (v) => String(v ?? '').replace(/\s+$/g, '').slice(0
 // the host. #364 moved the tab agents off Gemini because the CLI was the only
 // way to reach a model without spending, and that stands — but it never made
 // Gemini wrong, and Stack still runs it, key-gated, wherever the job is a
-// READ-ONLY second opinion (the per-push review note, triage, the Workbench
-// ops). The Curator's two board reads are exactly that job, and the design
+// READ-ONLY second opinion (the per-push review note, triage). The Curator's
+// two board reads are exactly that job, and the design
 // they come from names the two backends apart on screen for that reason.
 //
 // The flag buys one thing that matters: it keeps **one surface, one switch**
@@ -172,7 +171,7 @@ export const cleanGuidance = (v) => String(v ?? '').replace(/\s+$/g, '').slice(0
 // An op is a question: the server composes a prompt, `claude -p` answers once,
 // the answer is parsed and the run is over. That is the whole of what the ✧
 // buttons can do, and it is not what somebody wants when the board is wrong in
-// a way no template anticipated. So the four PROJECT tabs whose agents work on
+// a way no template anticipated. So the PROJECT tabs whose agents work on
 // something you can point at get a session instead: `cmd: 'claude'` in the
 // project's own checkout, inside a tmux session on the host — the same thing
 // the Terminal screen opens, in the tab where the work is.
@@ -334,47 +333,6 @@ export const AGENTS = [
       // WHERE it belongs. Untagged work is in no lane and behind no chip, so it
       // is the population that goes missing.
       { op: 'allocate', label: 'Sort the unallocated', backend: 'gemini', hint: 'Proposes an area for each item carrying none.' },
-    ],
-  },
-  {
-    key: 'drafter',
-    name: 'Drafter',
-    tab: 'workbench',
-    tabLabel: 'Workbench',
-    surface: 'tab',
-    blurb: 'Thinks on the canvas: expands a scrap, finds the theme in a pile, drafts the plan and says what it would break.',
-    remit: "the Workbench tab: the cards on this project's canvas, what is wired to what, and the record behind them",
-    console: projectConsole('for the thinking a card cannot hold', [
-      {
-        label: 'Expand a scrap',
-        ask: 'Take the thinnest card on the canvas and expand it into something worth deciding on: '
-          + 'what it means, the shape it would take here, and what it depends on.',
-      },
-      {
-        label: 'Draft the plan',
-        ask: 'Read the cards on the canvas as one piece of work and draft the plan: the phases, in '
-          + 'order, with what each is done when.',
-      },
-      {
-        label: 'Blast radius',
-        ask: 'Say what this canvas would touch if it were built — the files, the routes and the rules '
-          + 'in CLAUDE.md it runs into — and what would break first.',
-      },
-      {
-        label: 'Critique it',
-        ask: 'Argue against what is on this canvas. What is wrong with it, what is being assumed '
-          + 'without evidence, and what would a reviewer send back?',
-      },
-    ]),
-    ops: [
-      { op: 'canvas', label: 'Canvas ops', backend: 'gemini', hint: 'Every ✧ op on a card: expand, cluster, plan, blast radius, touches, critique, ask.' },
-      // #418 — the corner ＋'s Thought composer, which files a note and so is
-      // this canvas's front door. It is the Drafter's because the thing being
-      // sharpened is a Workbench card the moment it saves: one surface, one
-      // switch. Its OWN op rather than an eighth `canvas` button, because it
-      // is the only one that runs BEFORE a card exists — `canvas` reads a card
-      // id and writes a card, and this reads loose text and writes nothing.
-      { op: 'sharpen', label: 'Sharpen a thought', backend: 'gemini', hint: 'Tidies a jotted scrap into a note that will still make sense later; says so when it is already clear.' },
     ],
   },
 ];

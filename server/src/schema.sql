@@ -246,105 +246,6 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS verdict_evidence TEXT;
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS agent_profile TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
 
--- Per-project sticky notes. The Workbench canvas is where they are READ now
--- (the notes wall is gone), but the rows still live here: ingest, search and
--- promote-to-bug/roadmap all address a note, not a card.
-CREATE TABLE IF NOT EXISTS notes (
-  id          SERIAL PRIMARY KEY,
-  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  text        TEXT NOT NULL,
-  colour      TEXT NOT NULL DEFAULT '#fef4a8',
-  source      TEXT NOT NULL DEFAULT 'manual',          -- hook | manual
-  fingerprint TEXT NOT NULL DEFAULT '',
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_notes_project ON notes (project_id, created_at DESC);
-
--- The Workbench canvas — the tab that replaced the notes wall. A row here is a
--- PLACEMENT, not content: a note card carries note_id, so `notes` stays the one
--- source of truth for its own text (edit a card title and the write goes
--- through to the row it wraps). Only an 'ai' card owns its body, because
--- nothing else does. (A 'polaris' card carried future_id and went with the
--- Polaris cull — see the DROP block at the foot of this file.)
---
--- note_id is ON DELETE CASCADE: delete the note anywhere in the app and its
--- card leaves the canvas with it, so a card can never outlive what it points
--- at.
-CREATE TABLE IF NOT EXISTS workbench_cards (
-  id          SERIAL PRIMARY KEY,
-  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  kind        TEXT NOT NULL,                           -- note | ai | folder
-  note_id     INTEGER REFERENCES notes(id) ON DELETE CASCADE,
-  op          TEXT NOT NULL DEFAULT '',                -- ai only: which op made it
-  title       TEXT NOT NULL DEFAULT '',                -- ai + folder (others read through)
-  body        JSONB NOT NULL DEFAULT '{}'::jsonb,      -- lines | phases | chips | chosen
-  x           INTEGER NOT NULL DEFAULT 0,
-  y           INTEGER NOT NULL DEFAULT 0,
-  w           INTEGER NOT NULL DEFAULT 244,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
--- One card per note: the canvas shows a thing once, and the backfill that
--- materialises cards for pre-Workbench notes leans on this to be safely
--- re-runnable.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_cards_note
-  ON workbench_cards (note_id) WHERE note_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_wb_cards_project ON workbench_cards (project_id, created_at);
-
--- #414 — THE CANVAS BECAME A FILING SURFACE. A `folder` card is the one other
--- kind that owns its own `title` (an 'ai' card was the first), because a folder
--- wraps nothing: it is a name and a place, and there is no row underneath it to
--- read the words through from.
---
--- `parent_id` is which folder a card sits in. NULL = the root, which is the
--- PROJECT ITSELF and deliberately has no row — a root row would be a second
--- spelling of `projects` that every read would then have to keep in step.
---
--- ON DELETE SET NULL, and this is the load-bearing choice. Deleting a note card
--- deletes the note (it has no other home), so a CASCADE here would quietly turn
--- "delete this folder" into a bulk note delete — the one direction the fail-safe
--- rule in CLAUDE.md forbids. Emptying a folder returns its children to the root,
--- where they are visible and recoverable, and the route says so out loud.
---
--- Positions stay per-card and are read PER FOLDER: x/y mean "where in this
--- folder's canvas", so the same coordinates in two folders are two places. That
--- is why filing a card does not move it and does not need to.
-ALTER TABLE workbench_cards
-  ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES workbench_cards(id) ON DELETE SET NULL;
-CREATE INDEX IF NOT EXISTS idx_wb_cards_parent ON workbench_cards (project_id, parent_id);
-
--- #416 — THE STACK FOLDER. One folder per project that the owner did not make
--- and cannot remove, sitting at the root beside the derived Polaris and Roadmap
--- ones. It is a REAL ROW and not derived like those two, because unlike them it
--- HOLDS CARDS: a derived folder has no id for `parent_id` to point at, so
--- nothing could be filed into it.
---
--- That makes `system` a flag with teeth, and #415's warning applies in full —
--- it has to be defended in DELETE, in the move guard and in the fold, all three
--- in routes/workbench.js, or the one folder that must always be there becomes
--- deletable by whichever path forgot. The partial unique index is what makes
--- the ensure-on-read safely re-runnable from two tabs at once, exactly like the
--- note backfill's.
-ALTER TABLE workbench_cards
-  ADD COLUMN IF NOT EXISTS system TEXT NOT NULL DEFAULT '';
-CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_cards_system
-  ON workbench_cards (project_id, system) WHERE system <> '';
-
--- Lines between cards. `ai` marks the ones an op drew (dashed on the canvas);
--- cutting one of those drops the output it fed, which is what makes an op
--- undoable without an undo stack.
-CREATE TABLE IF NOT EXISTS workbench_edges (
-  id          SERIAL PRIMARY KEY,
-  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  a_id        INTEGER NOT NULL REFERENCES workbench_cards(id) ON DELETE CASCADE,
-  b_id        INTEGER NOT NULL REFERENCES workbench_cards(id) ON DELETE CASCADE,
-  ai          BOOLEAN NOT NULL DEFAULT false,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_wb_edges_project ON workbench_edges (project_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_wb_edges_pair ON workbench_edges (a_id, b_id);
-
 -- Per-project checks: HTTP probes run against the project's live application
 -- from the Bugs tab ("is the site up, does the API answer"). Run on demand;
 -- the last result lives on the row.
@@ -512,10 +413,6 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS gcal_client_id     TEXT NOT NULL D
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS gcal_client_secret TEXT NOT NULL DEFAULT '';
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS gcal_refresh_token TEXT NOT NULL DEFAULT '';
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS gcal_calendar_id   TEXT NOT NULL DEFAULT '';
-
--- Workbench model picker (#327): which Gemini model the ✧ ops run against.
--- '' = the server's own GEMINI_MODEL (see gemini.js MODEL()).
-ALTER TABLE settings ADD COLUMN IF NOT EXISTS workbench_model TEXT NOT NULL DEFAULT '';
 
 -- Device tokens issued by POST /api/auth/login (PIN sign-in). Only the sha256
 -- of each token is stored; the bearer gate accepts API_TOKEN or a live row
@@ -1310,13 +1207,9 @@ UPDATE projects SET week_zero = (date_trunc('week', created_at))::date WHERE wee
 -- ordinary IF EXISTS guards make them safe to re-run, not safe to undo.
 -- ---------------------------------------------------------------------------
 
--- Polaris. Order is load-bearing: the cards that POINT at an idea go first,
--- then the column that points, then the table. Dropping the table first would
--- take the cards with it via ON DELETE CASCADE — the same end state, but by an
--- accident of the foreign key rather than by saying so.
-DELETE FROM workbench_cards WHERE kind = 'polaris';
-ALTER TABLE workbench_cards DROP COLUMN IF EXISTS future_id;
-DROP INDEX IF EXISTS idx_wb_cards_future;
+-- Polaris. The cards that pointed at an idea, and the column that pointed, are
+-- both inside `workbench_cards` — dropped wholesale by the Workbench block
+-- below, so only the table itself is named here now.
 DROP TABLE IF EXISTS futures CASCADE;
 
 -- The tombstones a dismissed idea left behind. They exist to stop the next push
@@ -1333,11 +1226,31 @@ DROP TABLE IF EXISTS instruction_reports CASCADE;
 -- switch, in both directions). `agent_configs` holds only OVERRIDES, so these
 -- rows govern nothing now; leaving them would make a re-registered agent of the
 -- same name silently inherit a switch the owner set for a different one.
-DELETE FROM agent_configs WHERE key IN ('polaris', 'foreman', 'merger', 'scribe');
+DELETE FROM agent_configs WHERE key IN ('polaris', 'foreman', 'merger', 'scribe', 'drafter');
 
--- The recipe library outlived Polaris. `surface` is a free-text label saying
--- where a recipe runs best, and four of the seeded ones named a screen that no
--- longer exists — retargeted rather than deleted, because a recipe is a PROMPT
--- and these still work; only the signpost was wrong. Convergent, so an owner
--- who has since retitled the surface themselves is left alone.
-UPDATE tips SET surface = 'Workbench' WHERE surface = 'Polaris';
+-- The recipe library outlived Polaris, and has now outlived the Workbench it
+-- was pointed at instead. `surface` is a free-text label saying where a recipe
+-- runs best, and the screens these named are gone — retargeted rather than
+-- deleted, because a recipe is a PROMPT and these still work; only the signpost
+-- was wrong. Roadmap is where planning happens now, so that is where they
+-- point. Convergent, so an owner who has since retitled a surface themselves is
+-- left alone.
+UPDATE tips SET surface = 'Roadmap' WHERE surface IN ('Polaris', 'Workbench', 'Notes');
+
+-- ---------------------------------------------------------------------------
+-- The Workbench canvas, and the notes underneath it.
+--
+-- `notes` goes too, and that is the part worth stating. The notes WALL was
+-- replaced by the canvas, so the canvas was the only surface that read a note;
+-- ⌘K searched them and the corner ＋ wrote them, and both of those are gone
+-- with it. A table nothing can read and nothing can write is not data being
+-- kept safe, it is data nobody will ever see again.
+--
+-- Order is load-bearing the same way Polaris's was: edges reference cards, and
+-- cards reference notes. Dropping `notes` first would reach the same end state
+-- through ON DELETE CASCADE rather than by saying so.
+DROP TABLE IF EXISTS workbench_edges CASCADE;
+DROP TABLE IF EXISTS workbench_cards CASCADE;
+DROP TABLE IF EXISTS notes CASCADE;
+ALTER TABLE settings DROP COLUMN IF EXISTS workbench_model;
+

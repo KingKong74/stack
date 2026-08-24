@@ -180,74 +180,6 @@ export function checkResultShape(row) {
   };
 }
 
-export function noteShape(row) {
-  return {
-    id: row.id,
-    text: row.text,
-    colour: row.colour,
-    when: relativeTime(row.created_at) || 'just now',
-    source: row.source,
-  };
-}
-
-// One Workbench card. The route joins the row it wraps, so `title` here is
-// always the text the canvas should DRAW — read through from `notes` for a note
-// card, and the card's own for 'ai' and 'folder'.
-export function workbenchCardShape(row) {
-  const ai = row.kind === 'ai';
-  // A folder owns its title the same way an 'ai' card does — there is no row
-  // underneath it to read the words through from (#414).
-  const own = ai || row.kind === 'folder';
-  // Age is the WRAPPED row's, not the card's: a note filed months ago that only
-  // got a card when the Workbench backfilled would otherwise read as brand new.
-  const born = row.note_created_at || row.created_at;
-  return {
-    id: row.id,
-    kind: row.kind,
-    op: row.op || '',
-    noteId: row.note_id ?? null,
-    title: own ? row.title : (row.note_text ?? row.title),
-    // Which folder it sits in. null = the root, i.e. the project itself (#414).
-    parentId: row.parent_id ?? null,
-    // The sticky's palette colour, so a note keeps the tint it was filed with.
-    colour: row.note_colour || '',
-    // The corner stamp: an op's name, or a note's age.
-    meta: ai ? (row.op || 'ai') : (relativeTime(born) || 'now'),
-    body: row.body && typeof row.body === 'object' ? row.body : {},
-    x: row.x,
-    y: row.y,
-    w: row.w,
-    // Days since the wrapped row was born, alongside `when`, because the
-    // Explorer's smart folders have to COMPARE ages and re-parsing "3w ago" on
-    // the client would be inventing precision the string threw away.
-    days: born ? Math.max(0, Math.floor((Date.now() - new Date(born).getTime()) / 86400000)) : 0,
-    when: relativeTime(born) || 'just now',
-    // '' for every card the owner made; 'stack' for the one folder they did not
-    // and cannot remove (#416). The client reads this to withhold the ×, the
-    // rename and the drag — the server refuses all three regardless.
-    system: row.system || '',
-  };
-}
-
-// One board item inside the Workbench's ROADMAP system folder (#415). A thin
-// read: enough to recognise the item and open it on the Roadmap tab, and
-// nothing that would tempt a reader to treat this as an editable copy of the
-// board. The folder is READ-ONLY for exactly that reason — the roadmap's own
-// PATCH is the only writer, and a second editing surface would be a second
-// truth about what the plan says.
-export const workbenchBoardShape = (row) => ({
-  id: row.id,
-  title: row.title,
-  bucket: row.bucket,
-  area: row.area || '',
-  tier: row.tier || '',
-  when: relativeTime(row.updated_at) || 'just now',
-});
-
-export const workbenchEdgeShape = (row) => ({
-  id: row.id, a: row.a_id, b: row.b_id, ai: Boolean(row.ai),
-});
-
 // One Tips-library recipe: a kept Claude prompt plus the context of when to
 // reach for it. `when`/`who` are the human framing; `best` the checklist.
 export function tipShape(row) {
@@ -320,7 +252,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, notes, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, agents, since }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, agents, since }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
@@ -369,7 +301,6 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cade
     activity,
     bugs,
     roadmap,
-    notes,
     checks: checks || [],
   };
 }

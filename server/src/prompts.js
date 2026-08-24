@@ -17,8 +17,8 @@
 //     twenty recent trivia and drops the long-standing criticals, which are
 //     exactly the rows the prompt existed to carry. Order by what makes a row
 //     worth knowing (severity, queue order), and let recency break ties.
-// `routes/console.js`'s cap() and `routes/workbench.js` both restate it at
-// their own call sites; this is the statement they point at.
+// `routes/console.js`'s cap() restates it at its own call sites; this is the
+// statement it points at.
 
 const DEFAULTS = {};
 
@@ -199,8 +199,8 @@ Use en-AU spelling. Respond with ONLY this JSON:
 // completed item and wants it sent back with a DELTA: only what to change on
 // top of what landed. This writes a first pass at that sentence.
 //
-// Note what it is NOT given: the diff. The server cannot read the repository
-// (same limit the Workbench ops document), so the material is the RECORD — the
+// Note what it is NOT given: the diff. The server cannot read the repository,
+// so the material is the RECORD — the
 // session's own account, the second model's read of the diff, the architect's
 // structural read, the files the work touched. The reviewer's note is a read of
 // the diff and is the closest thing here to one; the prompt says so plainly so
@@ -238,188 +238,10 @@ Use en-AU spelling. Respond with ONLY this JSON:
                        "reason": "one sentence, under 20 words" } ]
 }`;
 
-// ---- the Workbench ops (the canvas that replaced the notes wall) ----
-//
-// Every op shares one frame: the card you ran it ON, the cards wired to it, and
-// what Stack knows about the project. The frame is spliced into each template
-// as {{CONTEXT}} so an override only has to restate its own instruction and
-// JSON shape. Output is a CARD — a suggestion sitting on the canvas that the
-// owner keeps, edits or cuts. No op writes tracker state; promoting a plan to
-// the roadmap is a separate thing the human clicks.
-DEFAULTS.wbcontext = `You are the thinking partner on a side project's planning canvas.
-
-PROJECT: {{PROJECT}}
-{{NORTH_STAR_LINE}}
-
-THE CARD THIS WAS RUN ON ({{SELECTED_KIND}}):
-{{SELECTED}}
-
-WIRED TO IT ON THE CANVAS (what the owner has already connected — may be empty):
-{{NEIGHBOURS}}
-
-EVERYTHING ELSE ON THE CANVAS ({{CANVAS_SHOWN}} of {{CANVAS_TOTAL}} cards):
-{{CANVAS}}
-
-WHAT STACK KNOWS ABOUT THIS PROJECT:
-{{RECORD}}
-
-You can see ONLY what is above — you have no access to the source code. Never
-claim to have read a file. Use en-AU spelling. Be concrete and short; this is a
-card on a canvas, not an essay.`;
-
-DEFAULTS.wbexpand = `{{CONTEXT}}
-
-TASK — EXPAND. Turn this rough idea into 3 distinct readings of what it could
-mean in practice. They must genuinely differ in shape or cost, not be three
-wordings of one thing. Then add ONE closing observation naming the cheapest of
-the three or a collision with something else on the canvas.
-
-Respond with ONLY this JSON:
-{ "title": "Expand — pick a reading of …", "choices": 3,
-  "lines": [ { "mk": "A", "t": "…" }, { "mk": "B", "t": "…" }, { "mk": "C", "t": "…" },
-             { "mk": "·", "t": "the closing observation" } ] }
-Each "t" is one sentence under 22 words.`;
-
-DEFAULTS.wbcluster = `{{CONTEXT}}
-
-TASK — CLUSTER. Group the canvas into the 2–4 themes actually present. Name each
-theme in the owner's own words where they used them, and say how many cards it
-holds. Then flag any near-duplicate pair worth merging (use "!" as its marker);
-if there is none, say so plainly rather than inventing one.
-
-Respond with ONLY this JSON:
-{ "title": "Cluster — pick a thread to work",
-  "lines": [ { "mk": "1", "t": "\\"theme\\" — which cards, (n)" }, { "mk": "!", "t": "…" } ] }
-Each "t" is one sentence under 22 words.`;
-
-DEFAULTS.wbplan = `{{CONTEXT}}
-
-TASK — DRAFT PLAN. Sequence this into 3–5 phases that each ship something on
-their own. Phase 0 must be the cheapest thing that proves the idea works.
-Every phase needs a GATE: the observable condition that must hold before the
-next phase starts. A gate must be checkable from something the project already
-records — if you want a metric nobody collects yet, make instrumenting it part
-of an earlier phase instead.
-
-"bucket" is how necessary the phase is: must | should | could | wont.
-Later, riskier or clearly-deferred phases belong lower.
-
-Respond with ONLY this JSON:
-{ "title": "Phased plan — …",
-  "phases": [ { "n": "P0", "t": "short phase name", "d": "one or two sentences on what ships",
-                "gate": "the observable condition", "bucket": "must|should|could|wont" } ] }`;
-
-DEFAULTS.wbblast = `{{CONTEXT}}
-
-TASK — BLAST RADIUS. Say how far this reaches and what it destabilises. Cover
-the read path, the write path, and schema/data changes — one line each, and say
-"none" where there is none rather than padding. Grade the whole thing low,
-medium or high in the title. Reason only from the record above; where you are
-guessing, say the word.
-
-Respond with ONLY this JSON:
-{ "title": "Blast radius — low|medium|high",
-  "lines": [ { "mk": "·", "t": "…" } ] }
-3–5 lines, each one sentence under 24 words.`;
-
-DEFAULTS.wbtouches = `{{CONTEXT}}
-
-TASK — TOUCHES. From the files recent sessions actually touched and the open
-bugs listed above, name what this work would most likely collide with: at most
-6 chips, each a real file path or bug id copied EXACTLY from the record. Invent
-nothing — if the record does not support a chip, leave it out. Then one line
-saying what the list is based on and how confident that makes it.
-
-Respond with ONLY this JSON:
-{ "title": "Touches N files, M open bugs",
-  "chips": [ "path/from/the/record.ts", "BUG-12" ],
-  "lines": [ { "mk": "·", "t": "…" } ] }`;
-
-DEFAULTS.wbcritique = `{{CONTEXT}}
-
-TASK — CRITIQUE. Argue AGAINST this. Give the 3 strongest reasons not to build
-it, or to build something else: evidence the canvas does not actually support
-it, a cost being waved away, a surface it damages, an assumption about the
-owner's behaviour that the record contradicts. No hedging, no balancing
-positives. If the idea is genuinely sound, say which single part is weakest and
-why — do not manufacture objections.
-
-Respond with ONLY this JSON:
-{ "title": "Counter-case", "lines": [ { "mk": "×", "t": "…" } ] }
-Each "t" is one sentence under 26 words.`;
-
-DEFAULTS.wbask = `{{CONTEXT}}
-
-THE OWNER ASKS: {{QUESTION}}
-
-TASK — ANSWER, strictly from the record above. You cannot read the source code,
-so if the answer is not in the record, say exactly that and name what would
-answer it (a file to open, a tab to check). A short honest "not in the record"
-beats a plausible guess.
-
-Respond with ONLY this JSON:
-{ "title": "the question, restated in under 9 words",
-  "lines": [ { "mk": "→", "t": "…" } ] }
-1–4 lines, each one sentence under 26 words.`;
-
-// #375 — the FOREMAN's read of one change, the Review room's headline op.
-//
-// It is the agent standing beside you at the moment you give the verdict, and
-// what makes it worth anything is that it is honest about the gap between what
-// it can see and what you are about to sign off. It has NOT seen the diff (the
-// server has no checkout) — it has the record. So the answer carries "blind":
-// what it could not see. A pre-verdict with no stated blind spots is a
-// pre-verdict pretending to be a review.
-//
-// "look" is the expected answer and the prompt says so twice. A model asked for
-// a call produces a confident one, and a confident "approve" off a built note
-// nobody verified is the single most damaging thing this op could emit — it is
-// one keypress from the human agreeing with it.
-//
-// "where" is the mirror-site half: the branch can be brought up as a running
-// copy of the app from this room, and a URL you have to go hunting through is a
-// URL nobody opens. Paths are from the site ROOT and include the hash route,
-// because these apps are hash-routed. An empty list is correct whenever the
-// record does not evidence which screen changed — inventing a plausible route
-// sends the reviewer to a page that has nothing to do with the change.
-DEFAULTS.sharpen = `A builder has just jotted a thought into their project's workbench. It is a scrap,
-written fast, and it is about to be filed as a note they will read back weeks from now.
-
-THE THOUGHT:
-{{TEXT}}
-
-{{PROJECT_LINE}}
-{{NORTH_STAR_LINE}}
-
-TASK — SHARPEN. Rewrite it so it still makes sense to them later: keep every specific they wrote
-(names, numbers, files, the actual complaint), fix what is garbled, and finish the sentence they
-were clearly in the middle of. Their words, tidied — not yours.
-
-Two things you must NOT do:
-  • Do not add information that is not in the thought. No invented reasons, no suggested solutions,
-    no "this would also affect…". If the thought is a fragment, it stays a fragment that reads well.
-  • Do not inflate it. A one-line thought comes back as one line. Never more than 3 short sentences.
-
-Returning "text": "" means "this is already clear — leave their words alone", and that is the
-EXPECTED answer whenever you cannot honestly say it better. Do not paraphrase for the sake of
-answering.
-
-Use en-AU spelling. Respond with ONLY this JSON:
-{ "text": "", "why": "" }
-where "why" is at most eight words on what you changed (or "" when text is blank).`;
-
 const ENV_KEYS = {
   judge: 'GEMINI_JUDGE_PROMPT',
   futureorbits: 'GEMINI_FUTUREORBITS_PROMPT',
   futurerestate: 'GEMINI_FUTURERESTATE_PROMPT',
-  wbcontext: 'GEMINI_WBCONTEXT_PROMPT',
-  wbexpand: 'GEMINI_WBEXPAND_PROMPT',
-  wbcluster: 'GEMINI_WBCLUSTER_PROMPT',
-  wbplan: 'GEMINI_WBPLAN_PROMPT',
-  wbblast: 'GEMINI_WBBLAST_PROMPT',
-  wbtouches: 'GEMINI_WBTOUCHES_PROMPT',
-  wbcritique: 'GEMINI_WBCRITIQUE_PROMPT',
-  wbask: 'GEMINI_WBASK_PROMPT',
   semantic: 'GEMINI_SEMANTIC_PROMPT',
   pushnote: 'GEMINI_PUSHNOTE_PROMPT',
   titler: 'GEMINI_TITLER_PROMPT',
@@ -434,9 +256,6 @@ const ENV_KEYS = {
   // along: Stack's own op, whichever backend answers it.
   arrange: 'STACK_ARRANGE_PROMPT',
   allocate: 'STACK_ALLOCATE_PROMPT',
-  // Coined today, so it wears STACK_ like the other new ones — it is Stack's
-  // own op, whichever backend answers it (this one is Gemini's).
-  sharpen: 'STACK_SHARPEN_PROMPT',
   triage: 'GEMINI_TRIAGE_PROMPT',
 };
 
