@@ -25,7 +25,7 @@
 import { Router } from 'express';
 import { pool, q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { ensureLists, isProtectedList } from '../lists.js';
+import { ensureLists } from '../lists.js';
 import { ensureLabels, labelKey, cleanTone, TONES } from '../labels.js';
 
 // Mounted at /api/projects/:slug/board (mergeParams to see :slug).
@@ -99,11 +99,11 @@ async function readAreas(projectId) {
   return out;
 }
 
-// `locked` is DERIVED from the key, never stored — the same rule areas follow
-// for their dots. A column is locked because `listFor` derives into it, and
-// that is a fact about the code, so a stored flag would be a second truth that
-// an old row could disagree with. See lists.js for what the lock protects.
-const shapeList = (r) => ({ ...r, locked: isProtectedList(r.key) });
+// No lane is locked any more (#428) — every column renames and deletes like
+// Trello, and `RoadmapPlan`'s catch-all lane is what keeps a deleted derived
+// column from losing its cards. lists.js says why the guard moved rather than
+// went. Kept as a function because the read still shapes what it serves.
+const shapeList = (r) => ({ ...r });
 
 // GET / -> { areas, lists, labels }
 board.get('/', async (req, res) => {
@@ -264,21 +264,17 @@ board.post('/lists', async (req, res) => {
        RETURNING id, key, name, position`,
     [req.project.id, `${key}-${pos[0].p}`, name, pos[0].p]
   );
-  // The `-<position>` suffix above is also what keeps an added list off the
-  // four protected keys, so a new lane is always an ordinary, editable one.
+  // The `-<position>` suffix above is what keeps an added key off the four the
+  // derivation returns — those four are wiring even now that nothing locks
+  // them, and a second lane answering to `shipped` would split one column in two.
   res.status(201).json({ list: shapeList(rows[0]) });
 });
 
-// The refusal both writers share. It NAMES the reason rather than just saying
-// no: "you cannot" with no "because" reads as a bug in the button.
-const LOCKED = 'That lane is part of how the board works — cards are sorted into '
-  + 'it automatically and the Review room moves work through it — so it cannot be '
-  + 'renamed or removed. Lanes you add yourself can be.';
-
 // PATCH /lists/:key  { name }
 board.patch('/lists/:key', async (req, res) => {
+  // Renaming is free on every lane: it writes `name` and never `key`, and the
+  // key is the only half `listFor` and the card rows know about.
   const key = String(req.params.key);
-  if (isProtectedList(key)) return res.status(400).json({ error: LOCKED });
   const name = String(req.body?.name || '').trim().slice(0, 60);
   if (!name) return res.status(400).json({ error: 'A list needs a name.' });
   const { rows } = await q(
@@ -291,10 +287,11 @@ board.patch('/lists/:key', async (req, res) => {
 
 // DELETE /lists/:key — the cards do not go with it. Their `list_key` is cleared,
 // which returns them to the DERIVED column rather than orphaning them in a
-// column that no longer exists.
+// column that no longer exists. Deleting one of the four the derivation targets
+// is allowed now (#428) and the cards land in the board's catch-all lane, which
+// is the only reason it is safe to allow — see lists.js.
 board.delete('/lists/:key', async (req, res) => {
   const key = String(req.params.key);
-  if (isProtectedList(key)) return res.status(400).json({ error: LOCKED });
   const { rows: left } = await q('SELECT count(*)::int AS n FROM project_lists WHERE project_id = $1', [req.project.id]);
   if (left[0].n <= 1) return res.status(400).json({ error: 'A board needs at least one list.' });
   await q('UPDATE roadmap_items SET list_key = NULL, updated_at = now() WHERE project_id = $1 AND list_key = $2', [req.project.id, key]);

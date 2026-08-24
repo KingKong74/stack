@@ -1,18 +1,20 @@
 // The arrange panel — two kinds of button, and the difference between them is
 // the whole design.
 //
-//  · SIX QUICK COMMANDS hand a job to the CURATOR'S OWN SESSION, live on this
-//    tab. They were arithmetic until now — pure functions over the rows on
+//  · QUICK COMMANDS hand a job to the CURATOR'S OWN SESSION, live on this tab.
+//    They were arithmetic until #379/#380 — pure functions over the rows on
 //    screen that returned a diff to accept or discard — and the sums were exact
-//    and also the ceiling: they could do the six things somebody had written a
+//    and also the ceiling: they could do the things somebody had written a
 //    function for and nothing else, and each was blind to everything the board
 //    does not store. Now the press composes an instruction (lib/curatorTasks.ts,
 //    pure and tested) and starts the session on it, so the answer can be argued
-//    with, corrected, and told what the board could not know.
-//  · TWO ✧ READS still answer in one shot and still come back as a DIFF the
-//    timeline ghosts until you apply it. They run on Gemini (server/src/
-//    agents.js), which is why they stay up when the host daemon is down and the
-//    six commands cannot run at all.
+//    with, corrected, and told what the board could not know. THERE ARE NONE
+//    LEFT at top level: all six were timeline arithmetic and went with the
+//    Timeline (#428). The row simply does not draw, and the catalogue is where
+//    the next board-shaped command goes.
+//  · ONE ✧ READ still answers in one shot and still comes back as a DIFF to
+//    apply or discard. It runs on Gemini (server/src/agents.js), which is why it
+//    stays up when the host daemon is down and a command could not run at all.
 //
 // A panel where both looked alike would hide which press opens a session in
 // your checkout and which one costs a read and proposes.
@@ -24,76 +26,50 @@
 // one ends by asking for the moves as a list before anything is written, so the
 // session starts immediately and stops at the write. Sent is not applied.
 //
-// IT FOLLOWS THE VIEW. Each action is about ONE thing — scheduling is about
-// bars, trimming is about scope — and offering "close the gaps on the timeline"
-// while you are cutting a feature is a button answering a question you did not
-// ask. `views` on each action is what it applies to, and a view with none gets
-// no panel at all rather than an empty one. The Plan boards have no bars to
-// arrange, so their only action is the ✧ allocation — which is a real reason
-// for the panel to be there, since untagged rows are exactly what those boards
-// are full of.
+// IT FOLLOWS THE BOARD. Each action is about ONE thing, and offering an action
+// that answers a question this board does not ask is chrome. `views` on each
+// action is what it applies to, and a board with none gets no panel at all
+// rather than an empty one.
 //
-// IT FOLLOWS THE AREA CHIP. A command names its population inside the brief, so
-// filtered to `agents` the session is told to work agents and nothing else.
-// THREE ACTIONS DO NOT NARROW, each for its own reason:
-//   • LEVEL THE LANES moves work BETWEEN areas, so one area is not a population
-//     it can work on at all.
-//   • FIT THE CYCLE reads every line of a feature, because a scope total over a
-//     subset reports a cycle that fits by not counting the rest.
-//   • ✧ SORT THE UNALLOCATED works on the rows carrying NO area, which is the
-//     one population an area chip cannot contain — under a real chip there is
-//     nothing to sort, so it is disabled and says so.
+// IT FOLLOWS THE AREA CHIP — except for ✧ SORT THE UNALLOCATED, which works on
+// the rows carrying NO area. That is the one population an area chip cannot
+// contain: under a real chip there is nothing to sort, so it is disabled and
+// says so.
 //
 // It is COLLAPSED by default. This is a tool, not information, and a row of
 // tall buttons above the board is chrome in front of the thing you came to read.
 
-import type { RoadmapItem, SchedSpan } from '../types';
+import type { RoadmapItem } from '../types';
 import type { AllocatePick } from '../store';
-import { areaMatches, UNALLOCATED, weekNo } from '../lib/plan';
+import { areaMatches, UNALLOCATED } from '../lib/plan';
 import { TOP_LEVEL_TASKS, type ArrangeView } from '../lib/curatorTasks';
 
 export type { ArrangeView };
 
-/** The two actions that cost a Gemini call. The op names are the server's. */
-export type ReadOp = 'arrange' | 'allocate';
-
-export type Arrangement =
-  | {
-    kind: 'order';
-    summary: string;
-    moves: { id: number; sched: SchedSpan | null }[];
-    /** Per-item reasons — the read supplies them. */
-    why?: Record<number, string>;
-    read: true;
-  }
-  /** Areas for the rows that carry none. Changes no schedule, so ghosts nothing. */
-  | { kind: 'allocate'; summary: string; picks: AllocatePick[]; read: true };
-
-export const arrangementCount = (a: Arrangement): number =>
-  (a.kind === 'allocate' ? a.picks.length : a.moves.length);
-
 /**
- * The proposed positions, for the timeline to ghost. Empty for an allocation:
- * it moves no bar, and a ghost drawn where the bar already is would say a move
- * is pending when none is.
+ * The action that costs a Gemini call. The op name is the server's.
+ *
+ * A UNION OF ONE, deliberately. `arrange` was the other — it proposed {id,
+ * sched} moves for the Timeline to ghost, and with no timeline there is nowhere
+ * to see a proposed bar, so the read went with the surface it answered to
+ * (CLAUDE.md's one-surface-one-switch, #428). The server route and the registry
+ * op survive the cut, unsurfaced, exactly as the branch previews do.
  */
-export function proposedSpans(a: Arrangement | null): Map<number, SchedSpan> {
-  const m = new Map<number, SchedSpan>();
-  if (a && a.kind === 'order') {
-    a.moves.forEach((mv) => { if (mv.sched) m.set(mv.id, mv.sched); });
-  }
-  return m;
-}
+export type ReadOp = 'allocate';
+
+/** Areas for the rows that carry none. */
+export type Arrangement = { kind: 'allocate'; summary: string; picks: AllocatePick[]; read: true };
+
+export const arrangementCount = (a: Arrangement): number => a.picks.length;
 
 export function RoadmapArrange({
-  view, items, areaFilter, selected, proposal, onApply, onDiscard, busy, open, onToggle,
+  view, items, areaFilter, proposal, onApply, onDiscard, busy, open, onToggle,
   onRead, canRead, readOffReason, reading, onCommand, consoleOffReason, sentNote,
 }: {
   view: ArrangeView;
   items: RoadmapItem[];
   /** The area chip in force. '' = the whole board; see the header. */
   areaFilter: string;
-  selected: RoadmapItem | null;
   proposal: Arrangement | null;
   onApply: () => void;
   onDiscard: () => void;
@@ -106,7 +82,7 @@ export function RoadmapArrange({
   canRead: (op: ReadOp) => boolean;
   /** Why not, straight from agentOffReason — never a string invented here. */
   readOffReason: (op: ReadOp) => string;
-  /** Which read is in flight — one at a time, and only that button says so. */
+  /** Which read is in flight, and only that button says so. */
   reading: ReadOp | '';
   /** Send a brief to the Curator's console. Undefined = the console cannot take one. */
   onCommand?: (key: string) => void;
@@ -141,39 +117,22 @@ export function RoadmapArrange({
     side?: { label: string; title: string; disabled: boolean; run: () => void };
   };
 
-  // The six that drive the session. A dead one says WHY, and the reasons run
-  // console → selection, which is the order the owner would fix them in: no
-  // session at all, then nothing for this one to act on.
+  // The ones that drive the session. A dead one says WHY rather than just
+  // going grey. EMPTY since the Timeline went (#428) — the catalogue is still
+  // read rather than the row deleted, so the next command added draws itself.
   const commands: Action[] = TOP_LEVEL_TASKS.map((t) => ({
     key: t.key,
     name: t.name,
     views: t.views,
     cmd: true,
-    disabled: !onCommand || (!!t.needsFeature && !selected),
+    disabled: !onCommand,
     note: !onCommand
       ? consoleOffReason || 'The Curator’s session cannot open, so there is nothing to send this to.'
-      : t.needsFeature && !selected
-        ? 'Select a bar on the timeline first — this one trims that feature’s scope.'
-        : `${t.note}${t.needsFeature && selected ? ` Reads every line of ${selected.title}.` : ''}${t.wide ? '' : only}`,
+      : `${t.note}${t.wide ? '' : only}`,
     run: () => onCommand?.(t.key),
   }));
 
   const reads: Action[] = [
-    {
-      key: 'order',
-      name: '✧ Order by dependency',
-      // The read that can be wrong about the WORK rather than the arithmetic.
-      // The reason comes from agentOffReason, never from a string written here:
-      // "switched off" and "Gemini is not configured" send you to different
-      // places, and only the state knows which one it is.
-      note: canRead('arrange')
-        ? `Reads what these items actually are and says what must come before what${only}. One Gemini read, back as a diff you apply.`
-        : readOffReason('arrange') || 'Nothing can read the board right now.',
-      views: ['timeline'],
-      disabled: !canRead('arrange') || !!reading,
-      read: true,
-      run: () => onRead('arrange'),
-    },
     {
       key: 'allocate',
       name: '✧ Sort the unallocated',
@@ -188,7 +147,7 @@ export function RoadmapArrange({
           : untagged.length === 0
             ? 'Every open item already carries an area. Nothing to sort.'
             : `${untagged.length} item${untagged.length === 1 ? '' : 's'} carry no area. Reads them and proposes one for each, from the areas this project already uses — a big backlog comes in batches, so press again for what is left.`,
-      views: ['timeline', 'scope', 'plan'],
+      views: ['scope', 'board'],
       disabled: !canRead('allocate') || !!reading || inAnArea || untagged.length === 0,
       read: true,
       run: () => onRead('allocate'),
@@ -266,12 +225,10 @@ export function RoadmapArrange({
               return (
                 <div key={a.key} className={`ra-action${a.read ? ' read' : ' cmd'}${off ? ' off' : ''}`}>
                   <button className="ra-main" disabled={off} onClick={a.run}>
-                    {/* Only the button that is reading says so. Two ✧ actions
-                        both showing "reading…" would claim two calls are out. */}
+                    {/* Only the button that is reading says so — a second ✧
+                        action showing "reading…" would claim two calls are out. */}
                     <span className="nm">
-                      {reading === 'arrange' && a.key === 'order' ? '✧ Reading the board…'
-                        : reading === 'allocate' && a.key === 'allocate' ? '✧ Reading the untagged…'
-                          : a.name}
+                      {reading === 'allocate' && a.key === 'allocate' ? '✧ Reading the untagged…' : a.name}
                     </span>
                     <span className="desc">{a.note}</span>
                   </button>
@@ -309,9 +266,9 @@ export function RoadmapArrange({
       {/* The per-item list. A summary says how many will change; this says
           WHICH — and why. Applying a diff you cannot see is the thing
           propose-then-accept was supposed to prevent. A COINED area is tagged:
-          the timeline gains a lane nobody asked for, and that is a thing to
-          notice before applying, not after. */}
-      {open && proposal && proposal.kind === 'allocate' && proposal.picks.length > 0 && (
+          the board gains a chip nobody asked for, and that is a thing to notice
+          before applying, not after. */}
+      {open && proposal && proposal.picks.length > 0 && (
         <div className="ra-moves">
           {proposal.picks.slice(0, 8).map((p) => (
             <div className="ra-move" key={p.id}>
@@ -325,31 +282,6 @@ export function RoadmapArrange({
           ))}
           {proposal.picks.length > 8 && (
             <div className="ra-move more">…and {proposal.picks.length - 8} more</div>
-          )}
-        </div>
-      )}
-
-      {open && proposal && proposal.kind === 'order' && proposal.moves.length > 0 && (
-        <div className="ra-moves">
-          {proposal.moves.slice(0, 8).map((mv) => {
-            const it = items.find((x) => x.id === mv.id);
-            if (!it) return null;
-            return (
-              <div className="ra-move" key={mv.id}>
-                <span className="t">{it.title}</span>
-                {/* The order read reasons in WEEKS and the column stores
-                    minutes (#401) — see routes/roadmap.js. This is the same
-                    grain the model was shown, so the row says what it decided
-                    rather than a minute figure it never saw. */}
-                <span className="wk">
-                  {it.sched ? `wk ${weekNo(it.sched.start)}` : 'tray'} → {mv.sched ? `wk ${weekNo(mv.sched.start)}` : 'tray'}
-                </span>
-                {proposal.why?.[mv.id] && <span className="why">{proposal.why[mv.id]}</span>}
-              </div>
-            );
-          })}
-          {proposal.moves.length > 8 && (
-            <div className="ra-move more">…and {proposal.moves.length - 8} more</div>
           )}
         </div>
       )}

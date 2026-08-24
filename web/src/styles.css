@@ -6437,11 +6437,6 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rtab-areasearch input[type='search']::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .rtab-nomatch { font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; }
 
-/* ---- the Plan view's three boards ---- */
-.rtab-boards { display: inline-flex; gap: 3px; padding: 3px; margin-bottom: 14px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; }
-.rtab-board { font-size: 12.5px; font-weight: 600; color: var(--chip-ink); border-radius: 7px; padding: 5px 14px; }
-.rtab-board:hover { color: var(--ink); }
-.rtab-board.on { background: var(--card); color: var(--accent); box-shadow: 0 1px 2px rgba(40, 30, 20, .07); }
 .rtab-editareas { margin-left: auto; font-size: 12px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; white-space: nowrap; }
 .rtab-editareas:hover { border-color: var(--accent); color: var(--accent); }
 .rtab-areaedit { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 6px 4px 10px; }
@@ -6522,394 +6517,6 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .ra-result .txt { flex: 1; min-width: 220px; font-size: 13px; line-height: 1.5; color: var(--body); }
 .ra-result .acts { display: flex; gap: 8px; }
 
-/* ---- the timeline (#401: continuous time, hours to quarters) --------------
-   The chart is ONE absolutely-positioned coordinate space per lane, driven by
-   percentages of the lane's own width. Nothing here knows a pixel: `lib/plan.ts`
-   turns minutes into percentages and the browser turns percentages into pixels,
-   which is what lets the drawer open, the window resize and the lanes scroll
-   without a single position being recomputed. */
-.rt { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
-.rt-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.rt-hint { font-size: 12px; color: var(--faint); }
-.rt-chart { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-.rt-empty { padding: 24px 16px; font-size: 13px; color: var(--faint); }
-
-/* `rt-toolbar`, NOT `rt-bar`: `.rt-bar` is the Gantt BAR further down, and that
-   rule — later in the file, same specificity — was winning, so the toolbar
-   inherited `position: absolute; height: 22px; overflow: hidden` and clipped its
-   own controls. Two things in one view that are both honestly "the bar" is
-   exactly how this happens; the schedule bar keeps the name. */
-.rt-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line-2); }
-.rt-window { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.rt-window .range { font-family: var(--mono); font-size: 12px; color: var(--body); white-space: nowrap; }
-.rt-window .sub { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--fainter); white-space: nowrap; }
-.rt-jump { margin-left: auto; font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--line-2); border-radius: 9px; padding: 5px 11px; }
-.rt-jump + .rt-jump { margin-left: 0; }
-.rt-jump:hover { border-color: var(--accent); color: var(--accent); }
-.rt-jump.now { color: var(--accent); border-color: var(--accent-tint-border); }
-
-/* The zoom. The STOPS are shortcuts to a pixel density and the DOT is the truth:
-   you can sit anywhere between two of them, so a control that only lit up one of
-   five would be lying about where the chart actually is. */
-.rt-zoom { display: inline-flex; align-items: center; gap: 2px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 9px; padding: 3px; }
-.rt-zoom > button { width: 24px; height: 24px; font-size: 12px; line-height: 1; color: var(--muted); border-radius: 7px; }
-.rt-zoom > button:hover { background: var(--card); color: var(--ink); }
-.rt-zoom-scale { display: flex; flex-direction: column; gap: 4px; padding: 2px 8px 3px; width: 216px; }
-.rt-zoom-scale .stops { display: flex; justify-content: space-between; }
-.rt-zoom-scale .stops button { font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--fainter); padding: 0; }
-.rt-zoom-scale .stops button:hover { color: var(--muted); }
-.rt-zoom-scale .stops button.on { color: var(--accent); }
-.rt-zoom-scale .rail { position: relative; height: 3px; background: var(--line-2); border-radius: 2px; }
-.rt-zoom-scale .rail .dot { position: absolute; top: -2px; width: 7px; height: 7px; margin-left: -3.5px; border-radius: 50%; background: var(--accent); transition: left .12s ease-out; }
-
-/* ---- the chart body: lane names, then one shared track ---- */
-.rt-body { display: flex; align-items: stretch; }
-.rt-viewwrap { flex: 1; min-width: 0; }
-.rt-grid-wrap { display: flex; align-items: stretch; }
-.rt-names { width: 168px; flex: none; border-right: 1px solid var(--line-2); }
-.rt-names-head { height: 44px; display: flex; align-items: flex-end; padding: 0 12px 9px; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--fainter); border-bottom: 1px solid var(--line-2); }
-/* The names column scrolls WITH the lanes and is capped identically, or the two
-   halves of a lane drift apart the moment either one scrolls. */
-.rt-names-list { max-height: 520px; overflow: hidden; }
-.rt-names-list.expanded { max-height: none; }
-
-/* The HEIGHT is inline, from `heightOf` in RoadmapTimeline.tsx — a lane that
-   stacks two bars is taller than one that does not, and a fixed height here
-   would drift the names a row out of step with the bars they name. */
-.rt-lane-name { position: relative; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px; border-bottom: 1px solid var(--line); overflow: hidden; }
-.rt-lane-name:last-child { border-bottom: none; }
-.rt-lane-name .dot { flex: none; width: 7px; height: 7px; border-radius: 2px; background: var(--line-3); }
-.rt-lane-name .dot.ghost { background: transparent; border: 1px dashed var(--line-3); }
-/* The dot is a button on a real area lane — a bigger hit area than 7px without
-   drawing a bigger dot. */
-.rt-lane-name .dot.pick { width: 7px; height: 7px; padding: 0; cursor: pointer; box-shadow: 0 0 0 4px transparent; }
-.rt-lane-name .dot.pick:hover { box-shadow: 0 0 0 4px var(--panel); }
-.rt-lane-name .nm { font-family: var(--disp); font-size: 13px; font-weight: 600; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rt-lane-name .nm.fold { display: inline-flex; align-items: center; gap: 6px; padding: 0; color: var(--muted); }
-.rt-lane-name .nm.fold:hover { color: var(--accent); }
-.rt-lane-name .nm .chev { font-size: 9px; color: var(--faint); }
-.rt-lane-name .n { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--fainter); }
-.rt-lane-name.quiet .nm { color: var(--faint); font-weight: 500; }
-/* Beside the dot and only two rows deep, NOT the chips' 8×4 block: the lane list
-   is a scroll box, and a popover that opened downwards from the last lane would
-   open into the part of it you cannot see. */
-.rt-lane-name .rtab-palette { grid-template-columns: repeat(16, 20px); top: 50%; left: calc(100% - 6px); transform: translateY(-50%); }
-
-/* THE TRACK IS THE GESTURE SURFACE. `touch-action: none` is what makes a pointer
-   drag pan instead of the browser scrolling the page under it, and `user-select`
-   is what stops a pan selecting every label it crosses. */
-.rt-track { position: relative; flex: 1; min-width: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none; }
-.rt-track.dragging { cursor: grabbing; }
-
-.rt-ruler { position: relative; height: 44px; overflow: hidden; border-bottom: 1px solid var(--line-2); }
-.rt-tick { position: absolute; bottom: 7px; padding-left: 7px; pointer-events: none; display: flex; flex-direction: column; }
-.rt-tick .sub { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--fainter); margin-bottom: 2px; white-space: nowrap; }
-.rt-tick .lbl { font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; }
-.rt-tick.major .lbl { color: var(--body-2); }
-/* Night at the hour grain, the weekend at the day grain. The same element in
-   both, because it is the same claim: nothing is expected to run here, which is
-   what makes a bar drawn across it worth noticing. */
-.rt-band { position: absolute; top: 0; bottom: 0; background: var(--panel); opacity: .55; pointer-events: none; }
-
-.rt-lanes { max-height: 520px; overflow: hidden; }
-.rt-lanes.expanded { max-height: none; }
-
-/* CLIPPED, because a panned window has bars that start before it: their left
-   edge is a negative percentage and without this they paint over the lane names.
-   The layout already keeps every LABEL inside the track (layoutLane flips one to
-   the left of its bar rather than overflowing), so nothing readable is lost. */
-.rt-lane { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); }
-.rt-lane:last-child { border-bottom: none; }
-/* The horizon row is a FIXED height and its chips do not wrap: it sits opposite
-   a name row that cannot grow with them, and a wrapped second line of chips
-   would push every lane above it out of alignment. What does not fit is what the
-   "…and N more" already accounts for. */
-.rt-lane.horizon { display: flex; align-items: center; padding: 0 10px; background: var(--panel); }
-.rt-lane-grid { position: absolute; inset: 0; pointer-events: none; }
-.rt-rule { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
-.rt-rule.major { background: var(--line-2); }
-.rt-lane-empty { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--fainter); font-style: italic; }
-
-/* A lane's off-window marker. Sits INSIDE the lane at the edge the bars went
-   off, so the count reads as belonging to that lane and not to the chart, and
-   pressing it takes you to the NEAREST of them rather than a fixed step. */
-.rt-off { position: absolute; top: 50%; transform: translateY(-50%); height: 22px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; z-index: 3;
-  font-family: var(--mono); font-size: 10px; color: var(--faint); background: var(--panel); border: 1px dashed var(--line-3); border-radius: 7px; }
-.rt-off:hover { border-color: var(--accent); color: var(--accent); }
-.rt-off.left { left: 6px; }
-.rt-off.right { right: 6px; }
-
-/* A bar is positioned in PERCENT of the lane, so the chart reflows with the
-   drawer without recomputing anything. */
-.rt-bar { position: absolute; height: 22px; border-radius: 6px; display: flex; align-items: center; padding: 0 9px; cursor: grab; touch-action: none; user-select: none; overflow: hidden; z-index: 2; }
-.rt-bar:active { cursor: grabbing; }
-.rt-bar .t { font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rt-bar .cap { position: absolute; left: 0; top: 0; bottom: 0; width: 2px; }
-.rt-bar .grip { position: absolute; right: 0; top: 0; bottom: 0; width: 7px; cursor: ew-resize; border-radius: 0 5px 5px 0; }
-/* #410 — a bar the chart moved for you. Dashed leading edge, because the start
-   is the part that is not a commitment: the length is still what was planned,
-   the start is only "no earlier than today". Never a tone of its own — it is
-   still a plan bar, and giving it a colour would read as a new state. */
-.rt-bar.rolled { border-left: 2px dashed var(--line-3); }
-
-.rt-bar:hover .grip, .rt-bar.sel .grip { background: currentColor; opacity: .5; }
-.rt-bar.plan { background: var(--panel); border: 1px solid var(--line-3); color: var(--body); }
-.rt-bar.plan .cap { background: var(--line-3); }
-.rt-bar.now { background: var(--accent-tint); border: 1px solid var(--accent); color: var(--accent-deep); }
-.rt-bar.now .cap { background: var(--accent); }
-.rt-bar.done { background: var(--live-tint); border: 1px solid var(--live); color: var(--live); }
-.rt-bar.done .cap { background: var(--live); }
-/* A TINTED bar wears its area's colour, and its STATE is how much of that colour
-   there is — never a different hue, or a finished bar would be indistinguishable
-   from an area that happens to be green. `--tint` is set inline from the lane's
-   dot; the mix is against the surface so it reads in both themes. */
-.rt-bar.tinted { background: color-mix(in oklab, var(--tint) 20%, var(--card)); border-color: color-mix(in oklab, var(--tint) 40%, var(--card)); color: color-mix(in oklab, var(--tint) 34%, var(--ink)); }
-.rt-bar.tinted .cap { background: var(--tint); }
-.rt-bar.tinted.now { background: color-mix(in oklab, var(--tint) 34%, var(--card)); border-color: var(--tint); }
-.rt-bar.tinted.done { background: color-mix(in oklab, var(--tint) 12%, var(--card)); border-style: dashed; }
-.rt-bar.sel { box-shadow: 0 0 0 1px var(--accent), 0 2px 10px rgba(0, 0, 0, .18); z-index: 4; }
-
-/* The baseline, and a proposal. Both are GHOSTS — an outline with no fill, so
-   neither can be mistaken for the bar itself. */
-.rt-ghost { position: absolute; height: 22px; border-radius: 6px; border: 1px dashed var(--line-3); pointer-events: none; z-index: 1; }
-.rt-proposed { position: absolute; height: 22px; border-radius: 6px; border: 1px dashed var(--accent); background: var(--accent-tint); opacity: .5; pointer-events: none; z-index: 1; }
-
-.rt-outlabel { position: absolute; height: 22px; display: inline-flex; align-items: center; padding: 0 7px; font-size: 11.5px; color: var(--muted); white-space: nowrap; z-index: 3; }
-.rt-outlabel:hover { color: var(--accent); }
-.rt-x { position: absolute; height: 22px; width: 20px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; color: var(--faint); background: var(--card); border: 1px solid var(--line-2); border-radius: 6px; z-index: 5; }
-.rt-x:hover { color: var(--critical); border-color: var(--critical); }
-
-/* The horizon: sized nothing, so it has no bar — a row of chips instead. */
-.rt-horizon-chips { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; }
-.rt-horizon-chip { font-size: 11.5px; color: var(--muted); background: var(--card); border: 1px dashed var(--line-3); border-radius: 7px; padding: 4px 9px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rt-horizon-chip:hover { border-color: var(--accent); color: var(--accent); }
-/* NOT `.rt-lane-empty`: that one is absolutely positioned and centred, which
-   inside this wrapping flex row takes it out of the flow entirely. */
-.rt-horizon-more { flex: none; white-space: nowrap; font-size: 11.5px; color: var(--fainter); font-style: italic; }
-
-/* The now marker. ONE overlay across the whole track rather than a segment per
-   lane, because the lanes clip and a per-lane line would end at each border.
-   `pointer-events: none` on the layer and `auto` on the handle is what lets the
-   line sit over the bars while the bars stay clickable. */
-.rt-nowlayer { position: absolute; inset: 44px 0 0 0; pointer-events: none; z-index: 6; }
-.rt-nowline { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--accent); opacity: .75; }
-.rt-nowhandle { position: absolute; top: -38px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 7px;
-  background: var(--accent); color: var(--on-accent); font-family: var(--mono); font-size: 10px; letter-spacing: .06em; white-space: nowrap; pointer-events: auto; cursor: grab; box-shadow: 0 1px 6px rgba(0, 0, 0, .35); }
-.rt-nowhandle:active { cursor: grabbing; }
-.rt-nowhandle .a { opacity: .6; font-size: 9px; }
-/* Now is OUTSIDE the window: a button back to it, never a line pinned to the
-   edge — that would be claiming today is just off screen when it can be months
-   away. Same rule as a NULL review_verdict. */
-/* Over the first LANE, not over the ruler: at the hour grain the ruler's first
-   label is a date, and a button parked on top of it hides the one thing that
-   says where the window even is. */
-.rt-nowoff { position: absolute; top: 9px; height: 24px; padding: 0 10px; pointer-events: auto; font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent); border-radius: 7px; }
-.rt-nowoff.left { left: 8px; }
-.rt-nowoff.right { right: 8px; }
-
-.rt-expand { width: 100%; padding: 9px; font-size: 12px; color: var(--accent); background: var(--panel); border-top: 1px solid var(--line-2); }
-.rt-expand:hover { background: var(--accent-tint); }
-
-.rt-foot { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 9px 14px; border-top: 1px solid var(--line-2); }
-.rt-foot .n { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--fainter); }
-
-/* ---- what's next: the chart shows the window, this says where to look ---- */
-.rt-next { background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
-.rt-next.empty { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 13px; color: var(--faint); }
-.rt-next.empty .lbl { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--fainter); }
-.rt-next-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border-top: 1px solid var(--line); }
-.rt-next-card { display: flex; flex-direction: column; gap: 7px; align-items: stretch; text-align: left; background: var(--card); padding: 12px 14px; }
-.rt-next-card:hover { background: var(--panel); }
-.rt-next-card .top { display: flex; align-items: center; gap: 7px; }
-.rt-next-card .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; }
-.rt-next-card .area { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.rt-next-card .when { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--faint); }
-.rt-next-card .t { font-size: 13px; line-height: 1.4; color: var(--body-2); }
-.rt-next-card .at { font-family: var(--mono); font-size: 10px; color: var(--fainter); }
-.rt-next-card.running .when { color: var(--accent); }
-
-/* The heading of a foldable panel — What's next and the tray share it. The COUNT
-   is not decoration and is never hidden: a fold that said only "Unscheduled ›"
-   would have hidden the one number that decides whether you open it, which is
-   the tray's whole reason to exist. The heading IS the control, so there is
-   nothing to hunt for. */
-.rt-fold { width: 100%; display: flex; align-items: center; gap: 9px; padding: 10px 13px; text-align: left; }
-.rt-fold:hover { background: var(--panel); }
-.rt-fold .chev { font-size: 9px; color: var(--faint); }
-.rt-fold .lbl { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--fainter); }
-.rt-fold.on .lbl { color: var(--muted); }
-.rt-fold .n { font-family: var(--mono); font-size: 11px; color: var(--muted); }
-
-/* ---- the tray: unscheduled work, grouped by the lane it belongs to ---- */
-.rt-tray { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-.rt-tray-group { display: flex; align-items: flex-start; gap: 14px; padding: 11px 14px; border-top: 1px solid var(--line); }
-.rt-tray-area { width: 150px; flex: none; display: flex; align-items: center; gap: 8px; padding-top: 5px; }
-.rt-tray-area .dot { flex: none; width: 6px; height: 6px; border-radius: 2px; background: var(--line-3); }
-.rt-tray-area .dot.ghost { background: transparent; border: 1px dashed var(--line-3); }
-.rt-tray-area .nm { font-size: 12.5px; color: var(--body-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rt-tray-area .nm.quiet { font-style: italic; color: var(--faint); }
-.rt-tray-area .n { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--fainter); }
-.rt-tray-items { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 8px; }
-.rt-chip { display: flex; align-items: center; gap: 8px; max-width: 100%; padding: 6px 10px 6px 9px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; cursor: grab; }
-.rt-chip:hover { border-color: var(--accent); background: var(--accent-tint); }
-.rt-chip .dot { flex: none; width: 5px; height: 5px; border-radius: 2px; background: var(--line-3); }
-.rt-chip .dot.ghost { background: transparent; border: 1px dashed var(--line-3); }
-.rt-chip .t { font-size: 12.5px; color: var(--body-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rt-chip .est { font-family: var(--mono); font-size: 10px; color: var(--fainter); }
-
-/* ---- the drawer: everything about the selected bar ---- */
-.rt-drawer { width: 340px; flex: none; display: flex; flex-direction: column; gap: 15px; padding: 13px 15px 15px; background: var(--panel); border-left: 1px solid var(--line-2); }
-.rt-drawer-head { display: flex; align-items: center; gap: 8px; }
-.rt-drawer-head .dot { flex: none; width: 7px; height: 7px; border-radius: 2px; background: var(--line-3); }
-.rt-drawer-head .dot.ghost { background: transparent; border: 1px dashed var(--line-3); }
-.rt-drawer-head .area { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.rt-drawer-toggle { width: 20px; height: 20px; font-size: 13px; color: var(--faint); border-radius: 6px; }
-.rt-drawer-toggle:hover { background: var(--card); color: var(--ink); }
-.rt-drawer-x { margin-left: auto; width: 22px; height: 22px; font-size: 15px; line-height: 1; color: var(--faint); border-radius: 7px; }
-.rt-drawer-x:hover { background: var(--card); color: var(--ink); }
-.rt-drawer-title { font-family: var(--disp); font-size: 16px; line-height: 1.35; letter-spacing: -.01em; color: var(--ink); text-align: left; padding: 0; }
-.rt-drawer-title:hover { color: var(--accent); }
-.rt-drawer-rail { width: 26px; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: var(--panel); border-left: 1px solid var(--line-2); font-size: 11px; color: var(--faint); }
-.rt-drawer-rail:hover { color: var(--accent); }
-.rt-drawer-rail .w { writing-mode: vertical-rl; letter-spacing: .08em; text-transform: uppercase; }
-
-.rt-field { display: flex; flex-direction: column; gap: 8px; }
-.rt-field .lbl { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--fainter); }
-.rt-dur, .rt-when { display: flex; align-items: center; gap: 10px; }
-.rt-dur .v { font-family: var(--mono); font-size: 22px; color: var(--ink); }
-.rt-when .v { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; color: var(--body-2); }
-.rt-when .ends { color: var(--faint); font-size: 11px; }
-/* One control, two buttons and the step BETWEEN them — the step is the grain you
-   are looking at, and a nudge that did not say how far it moves is a nudge you
-   have to test to trust. */
-.rt-step { margin-left: auto; display: inline-flex; align-items: center; gap: 1px; background: var(--card); border: 1px solid var(--line-2); border-radius: 9px; padding: 2px; }
-.rt-step button { width: 26px; height: 24px; font-size: 14px; line-height: 1; color: var(--muted); border-radius: 7px; }
-.rt-step button:hover { background: var(--panel); color: var(--ink); }
-.rt-step .by { font-family: var(--mono); font-size: 10px; color: var(--fainter); padding: 0 4px; }
-.rt-durbar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
-.rt-durbar span { display: block; height: 100%; border-radius: 3px; }
-.rt-durs { display: flex; flex-wrap: wrap; gap: 6px; }
-.rt-durs button { font-family: var(--mono); font-size: 11px; height: 26px; padding: 0 9px; color: var(--muted); border: 1px solid var(--line-3); border-radius: 7px; }
-.rt-durs button:hover { border-color: var(--accent); color: var(--accent); }
-.rt-durs button.on { border-color: var(--accent); background: var(--accent-tint); color: var(--accent); }
-.rt-note { font-size: 11.5px; color: var(--faint); }
-
-.rt-drawer-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
-.rt-act { font-size: 12px; color: var(--muted); background: var(--card); border: 1px solid var(--line-2); border-radius: 9px; padding: 6px 12px; }
-.rt-act:hover { border-color: var(--accent); color: var(--accent); }
-.rt-act.accent { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
-.rt-act.accent:hover { background: var(--accent-deep); color: var(--on-accent); }
-
-.rt-slip { font-size: 12px; line-height: 1.5; }
-.rt-slip.none { color: var(--faint); }
-.rt-slip.ok { color: var(--live); }
-.rt-slip.off { color: var(--paused); }
-.rt-drawer-act { font-size: 11.5px; color: var(--accent); padding: 0 0 0 6px; }
-.rt-drawer-act:hover { text-decoration: underline; }
-
-.rt-scope-sum { display: flex; flex-direction: column; gap: 6px; }
-.rt-scope-bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
-.rt-scope-bar .fill { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
-.rt-scope-bar .fill.over { background: var(--critical); }
-.rt-scope-line { font-size: 11.5px; color: var(--muted); }
-.rt-scope-warn { font-size: 11.5px; color: var(--paused); }
-.rt-scope { display: flex; flex-direction: column; gap: 10px; max-height: 260px; overflow: auto; }
-.rt-scope-group { display: flex; flex-direction: column; }
-.rt-scope-head { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; margin-bottom: 3px; }
-.rt-scope-head.must { color: var(--critical); }
-.rt-scope-head.should { color: var(--accent); }
-.rt-scope-head.could { color: var(--muted); }
-.rt-scope-head.wont { color: var(--faint); }
-.rt-scope-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
-.rt-scope-row .mk { flex: none; width: 15px; height: 15px; border-radius: 4px; border: 1px solid var(--line-2); font-size: 9px; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; }
-.rt-scope-row .mk:hover { border-color: var(--accent); color: var(--accent); }
-.rt-scope-row .t { flex: 1; min-width: 0; text-align: left; font-size: 12.5px; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rt-scope-row .w { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-.rt-scope-row.cut .t { text-decoration: line-through; color: var(--faint); }
-/* The drawer's own empty note. In the FLOW, unlike `.rt-lane-empty`, which is
-   absolutely positioned inside a lane and escapes any container that is not. */
-.rt-scope-empty { font-size: 12px; color: var(--fainter); font-style: italic; }
-
-/* ---- the calendar: the same window, at whatever grain the zoom is on ---- */
-.rt-cal { position: relative; cursor: grab; touch-action: none; user-select: none; }
-.rt-cal.dragging { cursor: grabbing; }
-.rt-cal-none { padding: 26px 18px; font-size: 13px; line-height: 1.6; color: var(--faint); }
-.rt-cal-head, .rt-cal-allday { display: flex; border-bottom: 1px solid var(--line-2); }
-.rt-cal-head .gutter, .rt-cal-allday .gutter { width: 58px; flex: none; border-right: 1px solid var(--line); }
-/* `nowrap`: "All-day" at 9.5px uppercase is a hair wider than the 58px gutter
-   minus its padding, so it wrapped and pushed its own first line out of view —
-   the label read "DAY". */
-.rt-cal-allday .gutter { display: flex; align-items: center; justify-content: flex-end; padding: 0 6px; white-space: nowrap; font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--fainter); }
-.rt-cal-head .col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0 7px; border-right: 1px solid var(--line); }
-.rt-cal-allday .col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 5px 4px; min-height: 26px; border-right: 1px solid var(--line); }
-.rt-cal-head .col:last-child, .rt-cal-allday .col:last-child { border-right: none; }
-.rt-cal-head .dow { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--fainter); }
-.rt-cal-head .num { font-family: var(--disp); font-size: 17px; line-height: 26px; min-width: 26px; text-align: center; border-radius: 13px; color: var(--body-2); }
-.rt-cal-head .num.today { color: var(--on-accent); background: var(--accent); }
-
-.rt-cal-scroll { max-height: 430px; overflow-y: auto; }
-.rt-cal-body { position: relative; display: flex; }
-.rt-cal-body .gutter { position: relative; width: 58px; flex: none; border-right: 1px solid var(--line); }
-.rt-cal-body .hr { position: absolute; right: 8px; transform: translateY(-6px); font-family: var(--mono); font-size: 10px; color: var(--fainter); }
-.rt-cal-body .col { position: relative; flex: 1; min-width: 0; border-right: 1px solid var(--line); }
-.rt-cal-body .col:last-child { border-right: none; }
-.rt-cal-body .rule { position: absolute; left: 0; right: 0; height: 1px; background: var(--line); }
-
-.rt-cal-ev { position: absolute; left: 3px; right: 5px; display: flex; flex-direction: column; gap: 1px; padding: 3px 6px; border-radius: 5px; overflow: hidden; cursor: grab; touch-action: none;
-  background: color-mix(in oklab, var(--tint, var(--accent)) 20%, var(--card)); border: 1px solid color-mix(in oklab, var(--tint, var(--accent)) 40%, var(--card)); border-left: 2px solid var(--tint, var(--accent)); color: color-mix(in oklab, var(--tint, var(--accent)) 34%, var(--ink)); }
-.rt-cal-ev.sel { box-shadow: 0 0 0 1px var(--accent); }
-.rt-cal-ev .tm { font-family: var(--mono); font-size: 9.5px; opacity: .85; }
-.rt-cal-ev .t { font-size: 11.5px; line-height: 1.3; overflow: hidden; }
-.rt-cal-ev .grip { position: absolute; left: 0; right: 0; bottom: 0; height: 7px; cursor: ns-resize; border-radius: 0 0 4px 4px; }
-.rt-cal-ev:hover .grip, .rt-cal-ev.sel .grip { background: currentColor; opacity: .45; }
-/* The now-line inside today's column. It overhangs the left edge by 4px so it
-   reads as a line across the day rather than a bar inside it. */
-.rt-cal-now { position: absolute; left: -4px; right: 0; height: 2px; background: var(--accent); z-index: 4; box-shadow: -4px 0 0 0 var(--accent); }
-
-.rt-cal-chip { display: block; width: 100%; text-align: left; font-size: 11px; padding: 3px 6px; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  background: color-mix(in oklab, var(--tint, var(--accent)) 20%, var(--card)); border-left: 2px solid var(--tint, var(--accent)); color: color-mix(in oklab, var(--tint, var(--accent)) 34%, var(--ink)); }
-.rt-cal-chip:hover { background: color-mix(in oklab, var(--tint, var(--accent)) 32%, var(--card)); }
-.rt-cal-chip.sel { box-shadow: 0 0 0 1px var(--accent); }
-
-.rt-cal.months { display: grid; grid-template-columns: 1fr; gap: 20px; padding: 16px; }
-.rt-cal.months.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.rt-cal-mhead { font-family: var(--disp); font-size: 14px; color: var(--ink); padding: 0 2px 6px; }
-.rt-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; }
-.rt-cal-grid .dow { font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--fainter); text-align: center; padding-bottom: 3px; }
-.rt-cal-cell { min-width: 0; min-height: 86px; padding: 5px 4px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; background: var(--card); border: 1px solid var(--line); border-radius: 6px; }
-.rt-cal-cell.out { background: transparent; opacity: .4; }
-.rt-cal-cell .num { font-family: var(--mono); font-size: 11px; line-height: 18px; min-width: 18px; text-align: center; align-self: flex-start; border-radius: 9px; color: var(--faint); }
-.rt-cal-cell .num.today { color: var(--on-accent); background: var(--accent); }
-.rt-cal-cell .more { font-size: 10px; color: var(--faint); padding-left: 3px; }
-/* At the quarter grain a cell is too small for a title, so the day's load is
-   drawn as DENSITY over the same population the chips would have listed. */
-.rt-cal-cell .load { display: block; height: 4px; border-radius: 2px; background: var(--accent); }
-.rt-cal.months.compact .rt-cal-cell { min-height: 30px; align-items: center; padding: 3px; }
-.rt-cal.months.compact .rt-cal-cell .num { font-size: 10px; align-self: center; }
-
-@media (max-width: 1180px) {
-  /* The drawer drops out of the row rather than squeezing the chart — a 340px
-     drawer beside a Gantt leaves neither readable. */
-  .rt-body { flex-direction: column; }
-  .rt-drawer { width: auto; border-left: none; border-top: 1px solid var(--line-2); }
-  .rt-drawer-rail { width: auto; height: 26px; flex-direction: row; border-left: none; border-top: 1px solid var(--line-2); }
-  .rt-drawer-rail .w { writing-mode: horizontal-tb; }
-  .rt-next-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 700px) {
-  /* Below this the lane names plus a legible track stop fitting side by side, so
-     the chart scrolls sideways with its lanes intact rather than reflowing into
-     something that is no longer a timeline. */
-  .rt-chart { overflow-x: auto; }
-  .rt-grid-wrap, .rt-cal-head, .rt-cal-allday, .rt-cal-body { min-width: 620px; }
-  .rt-names-list, .rt-lanes { max-height: 420px; }
-  .rt-next-grid { grid-template-columns: 1fr; }
-  .rt-cal.months.compact { grid-template-columns: 1fr; }
-  .rt-tray-group { flex-direction: column; gap: 8px; }
-  .rt-tray-area { width: auto; }
-}
-
-
 /* ---- the scope board ---- */
 /* `rsc-`, not `rs-`: ResumeSinceStrip already owned the `rs-` prefix, and its
    `.rs-head` was being flattened into a column by the Scope lane head. Third
@@ -6967,10 +6574,30 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rp-sweep-confirm .go:hover { background: var(--accent-deep); }
 .rp-sweep-confirm .no { font-family: var(--mono); font-size: 10px; color: var(--muted); }
 .rp-sweep-confirm .no:hover { color: var(--ink); }
-.rp-cols { display: flex; gap: 14px; align-items: start; overflow-x: auto; padding-bottom: 6px; }
-.rp-col { flex: none; width: 262px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 9px; }
-.rp-col.newlist { background: transparent; border: none; padding: 0; }
-/* Focus: ~2.3x the 262px column, so a card's built note and its labels are
+/* THE BOARD SCROLLS SIDEWAYS AND THE PAGE DOES NOT (#428). `.rp-cols` is the
+   one element that windows a row wider than itself; the columns inside it are
+   fixed-width and the cards inside those scroll on their own axis. That is what
+   makes this read as a board rather than as a very tall stack of lists.
+   `auto`, not `hidden`: scripts/playwright/smoke.mjs only reports an element
+   whose overflow is HIDDEN or CLIPPED and whose content outgrew it, so a real
+   scroller is never its business — but the PAGE scrolling sideways still is,
+   which is why the columns are fixed-width inside this one flexible row. */
+.rp-cols { display: flex; gap: 14px; align-items: start; overflow-x: auto; padding-bottom: 10px; scroll-padding-left: 4px; }
+.rp-col { flex: none; width: 272px; max-height: min(72vh, 780px); background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 9px; }
+.rp-col.newlist { background: transparent; border: none; padding: 0; max-height: none; }
+/* The cards' own axis. `min-height: 0` is what lets a flex child shrink below
+   its content and actually scroll; without it the column just grows. */
+.rp-col-cards { display: flex; flex-direction: column; gap: 9px; overflow-y: auto; min-height: 0; margin: 0 -4px; padding: 1px 4px; }
+/* THE DROP TARGET, named while the drag is live. A board where the column you
+   are about to drop into looks exactly like the four beside it is a board you
+   aim at by counting. */
+.rp-col.over { border-color: var(--accent); background: var(--accent-tint); box-shadow: inset 0 0 0 1px var(--accent-tint-border); }
+/* The catch-all (RoadmapPlan.tsx's header says why it exists). Dashed, because
+   it is not one of your columns — it is where a removed column's cards are
+   drawn until you file them. */
+.rp-col.unfiled { border-style: dashed; border-color: var(--building); background: transparent; }
+.rp-col.unfiled .rp-col-head .nm { color: var(--building); }
+/* Focus: ~2.2x the 272px column, so a card's built note and its labels are
    readable in place. A transition on width alone (never on `all`) so the
    neighbouring lanes slide rather than jump. */
 .rp-col { transition: width .18s ease; }
@@ -6993,8 +6620,11 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   border: 1px solid transparent; border-radius: 6px; padding: 3px 5px; }
 .rp-col-act:hover { color: var(--accent); border-color: var(--accent-tint-border); }
 .rp-col-act.on { color: var(--accent); border-color: var(--accent-tint-border); background: var(--accent-tint); }
-.rp-col-lock { display: inline-flex; align-items: center; color: var(--fainter); padding: 0 3px; cursor: help; }
-.rp-lock-ico { display: block; }
+/* The catch-all's head chip. It replaces the ✎ × pair rather than sitting
+   beside it, so the column that cannot be edited says why in the place the
+   tools would have been. */
+.rp-col-note { font-family: var(--mono); font-size: 10px; color: var(--building);
+  border: 1px solid var(--building); border-radius: 6px; padding: 1px 6px; cursor: help; white-space: nowrap; }
 /* The lane's tie to the Review room — accent, because it is work waiting on a
    person, and never a verdict tone: giving one is that room's job. Its own row
    under the head, so it can never reflow the lane name; see RoadmapPlan.tsx. */
@@ -7007,8 +6637,15 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rp-card-review:hover { color: var(--accent); }
 .rp-card-review.waiting { color: var(--accent); font-weight: 600; }
 .rp-card-review.waiting:hover { color: var(--accent-deep); }
-.rp-card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; cursor: grab; }
+.rp-card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; cursor: grab;
+  box-shadow: 0 1px 0 var(--line-2); }
 .rp-card:hover { border-color: var(--accent-tint-border); }
+.rp-card:active { cursor: grabbing; }
+/* The card under the cursor, not the ghost the browser draws. Dimmed and
+   tilted so the hole it left in the lane is visible while you aim — the whole
+   point of picking it up is seeing where it is going. */
+.rp-card.dragging { opacity: .45; transform: rotate(1.5deg); }
+@media (prefers-reduced-motion: reduce) { .rp-card.dragging { transform: none; } }
 .rp-stripes { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
 .rp-stripe { height: 6px; width: 32px; border-radius: 999px; }
 .rp-stripe.rl-accent { background: var(--accent); }

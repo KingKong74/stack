@@ -32,16 +32,16 @@
 // WHAT MAY BE AN INTERACTION — the read-only rule above is NOT relaxed here,
 // it is narrowed to something checkable. A control qualifies only if pressing
 // it changes VIEW STATE ONLY: React state that no store.ts call reads and no
-// request follows. The Timeline's zoom stops, Now and Fit all all qualify —
-// each is a bare `setView`, verified by reading the handlers. A bar, a card, a
-// tick, a drawer field and anything opening a modal over real tracker rows do
-// NOT, and the fact that a press "only opens something" is not the test: the
-// test is whether a write can follow from where it leaves you.
+// request follows. The Roadmap's four board buttons all qualify — each is a
+// bare `setBoard`, verified by reading the handlers. A bar, a card, a tick, a
+// drawer field and anything opening a modal over real tracker rows do NOT, and
+// the fact that a press "only opens something" is not the test: the test is
+// whether a write can follow from where it leaves you.
 //
 // AND AN INTERACTION FAILS LOUD (see the fail-safe note below). A control that
 // cannot be found, cannot be pressed, or leaves no trace of having been pressed
 // is an `error` finding, never a skip. Silence there would be this file's own
-// central lie in miniature — a run reporting a clean Timeline because it never
+// central lie in miniature — a run reporting a clean board because it never
 // managed to touch one.
 //
 //   node scripts/playwright/smoke.mjs [options]
@@ -65,42 +65,24 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 //   expect  proof the press LANDED — a selector that must exist afterwards and
 //           must not already exist before. Without it a run cannot tell a
 //           working control from an inert one, which is the difference between
-//           this harness testing the Timeline and merely photographing it.
+//           this harness testing a control and merely photographing it.
 //
-// The Timeline's zoom is the whole grain space (`ZOOM_STOPS` in
-// web/src/lib/plan.ts), pressed coarsest-first so each step is a real change
-// from the one before — the roadmap tab opens at a week-ish span, so leading
-// with `Week` would press a control that was already on and prove nothing.
-// The pressed stop is the one wearing `.on`, which is `grainFor()`'s answer
-// and not an echo of the click: if the density and the label ever disagree,
-// this is the finding that says so.
-const TIMELINE_ZOOM = ['Quarter', 'Month', 'Week', 'Day', 'Hour'].map((label) => ({
-  id: `zoom-${label.toLowerCase()}`,
-  label: `Timeline — zoom to ${label}`,
-  click: `.rt-zoom .stops button:text-is("${label}")`,
-  expect: `.rt-zoom .stops button.on:text-is("${label}")`,
+// The Roadmap's four boards (#428), pressed in an order where every step is a
+// real change from the one before: the tab opens on Board, so it is pressed
+// LAST rather than first — leading with it would press a control already on and
+// prove nothing. The pressed stop is the one wearing `.on`, which is `board`'s
+// own answer and not an echo of the click.
+//
+// These are `setBoard` calls and so are read-only by the rule above: each swaps
+// which board renders and writes nothing. Their `expect` is a pressed state
+// rather than a text change because each one IS a toggle — unlike the Timeline
+// jumps that stood here, which had to be proved by the window label.
+const ROADMAP_BOARDS = ['Scope', 'Tiers', 'Parked', 'Board'].map((label) => ({
+  id: `board-${label.toLowerCase()}`,
+  label: `Roadmap — ${label}`,
+  click: `.rtab-bar .seg-control button:text-is("${label}")`,
+  expect: `.rtab-bar .seg-control button.on:text-is("${label}")`,
 }));
-
-// Both are bare `setView` calls (RoadmapTimeline.tsx) and so are read-only by
-// the rule above. They are proved by the WINDOW LABEL changing rather than by a
-// pressed state, because neither is a toggle — `.rt-window .range` is what the
-// owner reads to know where they are looking, and #401 shipped a bug in exactly
-// that label. `expect` therefore names the label element and the run compares
-// its TEXT across the press (see `runInteraction`).
-const TIMELINE_JUMPS = [
-  {
-    id: 'fit-all',
-    label: 'Timeline — Fit all',
-    click: '.rt-jump:text-is("Fit all")',
-    expectTextChangeIn: '.rt-window .range',
-  },
-  {
-    id: 'now',
-    label: 'Timeline — Now',
-    click: '.rt-jump.now',
-    expectTextChangeIn: '.rt-window .range',
-  },
-];
 
 // ---- the screens ---------------------------------------------------------
 // One entry per top-level route this harness walks. `<slug>` is substituted
@@ -118,15 +100,15 @@ export const SCREENS = [
   { id: 'settings', label: 'Settings', path: '#/settings' },
   { id: 'project-overview', label: 'Project — Overview', path: '#/p/<slug>' },
   { id: 'project-quality', label: 'Project — Quality', path: '#/p/<slug>/quality' },
-  // The roadmap tab opens on the Timeline view (RoadmapTab.tsx defaults
-  // `view` to 'timeline'), so the zoom is on screen at first paint and needs
-  // no navigating to. If that default ever changes, the interactions below
-  // start reporting a missing control — which is the correct, loud answer.
+  // The roadmap tab opens on the Board (RoadmapTab.tsx defaults `board` to
+  // 'lists'), so the strip is on screen at first paint and needs no navigating
+  // to. If that default ever changes, the interactions below start reporting a
+  // control that is already pressed — which is the correct, loud answer.
   {
     id: 'project-roadmap',
     label: 'Project — Roadmap',
     path: '#/p/<slug>/roadmap',
-    interactions: [...TIMELINE_ZOOM, ...TIMELINE_JUMPS],
+    interactions: ROADMAP_BOARDS,
   },
   { id: 'project-activity', label: 'Project — Activity', path: '#/p/<slug>/activity' },
 ];
@@ -397,11 +379,11 @@ function scanLayout() {
   //     against, and went with the Workbench cull.)
   //   - either overflow axis on a VIEWPORT: an element windowing a coordinate
   //     space larger than itself is doing its job, not running out of room.
-  //     The Timeline is the horizontal case — `.rt-lane` clips overflow-x and
-  //     holds `.rt-bar`s placed at a percentage of a window zoomable from an
-  //     hour to a quarter, so at most zooms most bars are off-window BY DESIGN,
-  //     and the app discloses it itself with the `.rt-off` chip counting what
-  //     went off each edge. Adding the zoom interactions made this the single
+  //     The Roadmap board is the horizontal case — `.rp-cols` scrolls its own
+  //     columns sideways BY DESIGN, which is what a board of lists is, and the
+  //     page itself never scrolls with it. (The Timeline was the case this rule
+  //     was first written against, and it is culled.) Adding interactions that
+  //     move between boards made this the single
   //     loudest finding in the run (12 at first paint, 49 once pressed), all
   //     of it structural noise. Same reasoning as the ellipsis rule: the app
   //     shows the cut, so it is not the silent cut this finding hunts.
@@ -465,9 +447,12 @@ function scanLayout() {
   // ONE FUNCTION, BOTH AXES (#423). It was horizontal-only while the Timeline
   // was the only surface it had been checked against; the vertical case was
   // proven on the Workbench ground (an `inset: 0` field under a 2400×1800 wire
-  // canvas, panned and zoomed by a transform) before that surface was culled.
-  // It is the same shape as `.rt-lane`: every child positioned into the space,
-  // nothing in flow that spills. Two spellings of
+  // canvas, panned and zoomed by a transform). BOTH OF THOSE SURFACES ARE NOW
+  // CULLED — the Workbench with its canvas, the Timeline with #428 — so this
+  // rule currently has no live example, and saying so is the point: it is not
+  // dead code but an unexercised guard, and the next surface that windows a
+  // coordinate space larger than itself inherits it already parameterised. Two
+  // spellings of
   // this test would be the drift the rest of this file's rules exist to
   // prevent, so the axis is a parameter.
   const isViewport = (el, axis = 'x') => {
@@ -635,7 +620,7 @@ async function scanAndShoot(page, { screenId, viewportName, sink, shotPath }) {
 // budgets a NAVIGATION — a page load, a round trip, a render. A control that is
 // already on screen either responds in a moment or is broken, and inheriting a
 // 20s navigation budget would turn each missing control into a 20s stall,
-// making a fully-broken Timeline the slowest possible run.
+// making a fully-broken screen the slowest possible run.
 const CONTROL_TIMEOUT_MS = 4000;
 
 // Press one control and decide whether the press LANDED. Returns true only when

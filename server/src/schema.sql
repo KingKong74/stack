@@ -1164,6 +1164,12 @@ CREATE TABLE IF NOT EXISTS project_lists (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS project_lists_key_idx ON project_lists (project_id, key);
 
+-- Polaris was culled and the Ideas lane still carried its name (#428). Named
+-- rather than blanket-renamed: a board whose owner has since called that lane
+-- something of their own keeps it, because the lane's name is theirs and this
+-- is only clearing a reference to a surface that no longer exists.
+UPDATE project_lists SET name = 'Ideas' WHERE key = 'idea' AND name = 'Ideas · Polaris';
+
 -- The project's LABELS — was a code registry, now the owner's own set.
 --
 -- Seeded per project on first read (server/src/labels.js, the same shape as

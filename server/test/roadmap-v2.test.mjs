@@ -172,24 +172,43 @@ async function main() {
   ok('a card can be moved to any list', r.listKey === 'shipped', r.listKey);
   ok('moving a card to Shipped does NOT tick it — a column is not a verdict', r.done === false, r.done);
 
-  // The four defaults are the derivation's own targets and the Review room's
-  // ends, so they are LOCKED — see server/src/lists.js. The refusal has to come
-  // from the API rather than the board, because a client-side lock is a
-  // suggestion, and it has to NAME the reason.
-  let del = await call('DELETE', `/api/projects/${SLUG}/board/lists/shipped`);
-  ok('a default lane refuses to be deleted', del.status === 400, del.status);
-  ok('…and says why rather than just saying no', /cannot be renamed or removed/.test(del.json?.error || ''), del.json);
+  // EVERY LANE IS THE OWNER'S (#428). The four defaults were locked because
+  // `listFor` derives into them and a board missing one had a derived column
+  // with nowhere to render; the owner asked for a Trello board, so the guard
+  // moved to the client's catch-all lane (RoadmapPlan.tsx, pinned structurally
+  // by plan-lanes.test.mjs) and the API refuses nothing.
+  //
+  // What this asserts is the DATA half of that: a derived lane renames without
+  // its key moving, and deleting one leaves every card on the server, because
+  // the catch-all can only save cards that are still there to be drawn.
   let ren = await call('PATCH', `/api/projects/${SLUG}/board/lists/progress`, { name: 'Doing' });
-  ok('a default lane refuses to be renamed', ren.status === 400, ren.status);
-  let items = flat((await call('GET', `/api/projects/${SLUG}/roadmap`)).json);
-  ok('a refused delete leaves the cards exactly where they were',
-    items.find((i) => i.id === other.id).listKey === 'shipped', items.find((i) => i.id === other.id)?.listKey);
+  ok('a derived lane renames now', ren.status === 200, ren.status);
+  ok('…and the rename writes the NAME, never the key — the key is what a card derives to',
+    ren.json?.list?.key === 'progress' && ren.json?.list?.name === 'Doing', ren.json?.list);
 
-  // A lane the OWNER added is the opposite: nothing derives into it, so it
-  // renames and deletes freely — and deleting it returns its cards to the
-  // derived column rather than orphaning them in a lane that is gone.
+  let del = await call('DELETE', `/api/projects/${SLUG}/board/lists/shipped`);
+  ok('a derived lane deletes now', del.status === 200, del.status);
+  let board1 = (await call('GET', `/api/projects/${SLUG}/board`)).json;
+  ok('…and it is gone from the board', !board1.lists.some((l) => l.key === 'shipped'), board1.lists.map((l) => l.key));
+  let items = flat((await call('GET', `/api/projects/${SLUG}/roadmap`)).json);
+  ok('DELETING A LANE NEVER DELETES WORK — every card is still on the server',
+    items.length === 3, items.length);
+  // The card that WAS in shipped keeps existing with its column cleared. On the
+  // board it is drawn in the catch-all, because `listFor` still derives it to a
+  // lane that is not there; losing it silently is what the lock used to prevent.
+  ok('…and the card that sat in it has its column cleared rather than being dropped',
+    items.find((i) => i.id === other.id)?.listKey === '', items.find((i) => i.id === other.id)?.listKey);
+
+  // Restore it, so the rest of this file reads a board with its four lanes.
+  await call('POST', `/api/projects/${SLUG}/board/lists`, { name: 'Shipped' });
+
+  // A lane the OWNER adds is still keyed apart from the four the derivation
+  // targets — the `-<position>` suffix — because two lanes answering to
+  // `shipped` would split one derived column in two, with half the cards in each.
   const spike = (await call('POST', `/api/projects/${SLUG}/board/lists`, { name: 'Spike' })).json.list;
-  ok('an added lane is never one of the locked keys', spike.locked === false, spike);
+  ok('an added lane never takes one of the derivation\'s keys',
+    !['idea', 'planned', 'progress', 'shipped'].includes(spike.key), spike.key);
+  ok('…because its key carries the position suffix', /-\d+$/.test(spike.key), spike.key);
   ren = await call('PATCH', `/api/projects/${SLUG}/board/lists/${spike.key}`, { name: 'Spikes' });
   ok('an added lane renames', ren.json?.list?.name === 'Spikes', ren.json);
   await call('PATCH', `/api/projects/${SLUG}/roadmap/${other.id}`, { listKey: spike.key });

@@ -789,10 +789,10 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             of its own any more: the Auditor's whole surface there is the tab's
             live session, which carries its own switch. */}
         {tab === 'roadmap' && (
-          // RoadmapTab owns the view switch and every board under it. `legacy`
+          // RoadmapTab owns the board strip and every board under it. `legacy`
           // is the bag of callbacks that have to live up here because they open
           // modals, navigate, or write through a path this screen owns.
-          <RoadmapTab slug={slug} roadmap={roadmap} weekZero={project.weekZero} agents={data.agents}
+          <RoadmapTab slug={slug} roadmap={roadmap} agents={data.agents}
             onItemChanged={replaceRoadItem} onItemsChanged={replaceRoadItems} onItemAdded={addRoadItem}
             onOpenItem={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, editing: it })}
             legacy={{

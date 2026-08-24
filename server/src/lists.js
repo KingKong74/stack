@@ -41,32 +41,30 @@
 // this derivation.
 
 export const DEFAULT_LISTS = [
-  { key: 'idea', name: 'Ideas · Polaris', position: 0 },
+  { key: 'idea', name: 'Ideas', position: 0 },
   { key: 'planned', name: 'Planned', position: 1 },
   { key: 'progress', name: 'In progress', position: 2 },
   { key: 'shipped', name: 'Shipped', position: 3 },
 ];
 
 /**
- * The four lanes above are LOCKED: they cannot be renamed and cannot be
- * deleted, because their KEYS are wiring rather than decoration. `listFor`
- * returns these four strings and nothing else, so a board missing one has a
- * derived column with nowhere to render; the Review room's round trip (a
- * change leaves `progress` and arrives in `shipped` on a verdict) names them;
- * and the Plan view's Shipped-lane sweep and review panel key off `shipped`.
- * Rename one and every card the derivation sends there vanishes from the board
- * while still counting everywhere else — the worst kind of loss, the silent one.
+ * THE LANES ARE THE OWNER'S — none of them is locked (#428).
  *
- * Lanes the owner adds are the opposite: pure convenience, nothing derives into
- * them, and they rename and delete freely. `POST /lists` suffixes every new key
- * with its position, so an added lane can never collide with one of these four.
+ * The four above were unrenameable and undeletable, because `listFor` returns
+ * their keys and a board missing one had a derived column with nowhere to
+ * render — cards still counted everywhere else and invisible on the board, the
+ * worst kind of loss. The owner asked for a Trello board, where every column is
+ * yours, so the guard moved rather than went: `RoadmapPlan` draws a CATCH-ALL
+ * lane for any card whose derived key has no column, so deleting `shipped`
+ * relocates its cards in plain sight instead of losing them.
  *
- * The guard lives on the ROUTES (board.js), because the API is the boundary —
- * a client-side lock is a suggestion.
+ * What is still true: these four keys are WIRING. `listFor` returns them,
+ * `POST /lists` suffixes every added key with its position so a new lane can
+ * never collide with one, and renaming touches `name` only — the key a card
+ * derives to is untouched by any rename, which is what makes renaming free.
+ * Deleting one is a real change and the catch-all is what makes it safe; do not
+ * remove the catch-all without putting this lock back.
  */
-export const PROTECTED_LISTS = new Set(DEFAULT_LISTS.map((l) => l.key));
-
-export const isProtectedList = (key) => PROTECTED_LISTS.has(String(key || '').trim());
 
 /** Where a row sits when `list_key` is NULL. Pure. */
 export function listFor(row) {

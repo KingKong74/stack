@@ -12,8 +12,10 @@
 // that lost its scope line would be acted on across the whole board while the
 // owner watched one area; one that lost its ask would rewrite the plan on a
 // press. So both are asserted for EVERY task, by iterating the catalogue rather
-// than by naming them — a seventh command added without either is a failure
-// here rather than a surprise on the board.
+// than by naming them — the next command added without either is a failure here
+// rather than a surprise on the board. That matters more since #428 emptied the
+// catalogue down to one: a check written against named tasks would have been
+// deleted with them and covered nothing thereafter.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import module from 'node:module';
@@ -30,17 +32,19 @@ module.registerHooks({
 const url = new URL('../web/src/lib/curatorTasks.ts', import.meta.url);
 const { ARRANGE_TASKS, TOP_LEVEL_TASKS, taskByKey, scopeLine } = await import(url.href);
 
-const scope = (over = {}) => ({
-  slug: 'stack', areaFilter: '', feature: { id: 12, title: 'The editor' }, ...over,
-});
+const scope = (over = {}) => ({ slug: 'stack', areaFilter: '', ...over });
 
-test('the catalogue is the six top-level commands plus the one side action', () => {
-  assert.deepEqual(TOP_LEVEL_TASKS.map((t) => t.key),
-    ['schedule', 'compact', 'catchup', 'balance', 'tier', 'trim']);
-  // `allocate` is drawn INSIDE the ✧ read's card, not as a seventh button —
+// The six that went were all timeline arithmetic and went WITH the Timeline
+// (#428) — an op moves with its surface. This asserts the catalogue is what is
+// left rather than asserting a count, so adding a board-shaped command is a
+// one-line change here and not a rewrite.
+test('the catalogue is the one side action, and no top-level commands are left', () => {
+  assert.deepEqual(ARRANGE_TASKS.map((t) => t.key), ['allocate']);
+  // `allocate` is drawn INSIDE the ✧ read's card, not as a button of its own —
   // two top-level buttons with the same name would be a puzzle, not a choice.
   assert.deepEqual(ARRANGE_TASKS.filter((t) => t.side).map((t) => t.key), ['allocate']);
-  for (const t of ARRANGE_TASKS) assert.ok(t.views.length > 0, `${t.key} belongs to no view`);
+  assert.deepEqual(TOP_LEVEL_TASKS.map((t) => t.key), []);
+  for (const t of ARRANGE_TASKS) assert.ok(t.views.length > 0, `${t.key} belongs to no board`);
 });
 
 // It is a SECOND WAY to run the ✧ read, so the two must agree about what they
@@ -88,49 +92,16 @@ test('EVERY brief asks before it writes', () => {
   }
 });
 
-test('a narrowing command tells the session the other areas are out of scope', () => {
-  const b = taskByKey('compact').brief(scope({ areaFilter: 'agents' }));
-  assert.match(b, /ONLY the items in the "agents" area/);
-  assert.match(b, /out of scope/);
-});
-
 test('the untagged chip is a population, not an area called unallocated', () => {
   const line = scopeLine('UNALLOCATED');
   assert.match(line, /carrying no area at all/);
   assert.doesNotMatch(line, /the "UNALLOCATED" area/);
 });
 
-test('levelling refuses to be narrowed, and says why in the brief itself', () => {
-  const b = taskByKey('balance').brief(scope({ areaFilter: 'agents' }));
-  // It must NOT tell the session to work one area — that would be an
-  // instruction to level between areas while looking at one.
-  assert.doesNotMatch(b, /ONLY the items in the "agents" area/);
-  assert.match(b, /every area/);
-});
-
-test('the trim names the feature it was pressed on, id and all', () => {
-  const b = taskByKey('trim').brief(scope({ feature: { id: 77, title: 'Billing' } }));
-  assert.match(b, /"Billing"/);
-  assert.match(b, /roadmap item 77/);
-  // And it reads the whole feature whatever the chip says.
-  assert.match(taskByKey('trim').brief(scope({ areaFilter: 'agents' })), /including any in other areas/);
-});
-
-test('the trim survives being composed with nothing selected', () => {
-  // The button is disabled without a selection, but a brief that threw would
-  // take the panel down with it rather than doing nothing.
-  const b = taskByKey('trim').brief(scope({ feature: null }));
-  assert.match(b, /the selected feature/);
-});
-
-test('a Must is never cut, and the brief says so rather than leaving it to judgement', () => {
-  assert.match(taskByKey('trim').brief(scope()), /Musts are never cut/);
-});
-
-test('claimed work is protected in the two commands that could move it', () => {
-  assert.match(taskByKey('balance').brief(scope()), /claim never moves|never moves/i);
-});
-
+// The catalogue is down to one task, so the two properties every brief must
+// carry are asserted over it alone — and they are asserted by ITERATING, so the
+// next command added is covered the moment it lands rather than when somebody
+// remembers to add a case.
 test('an unknown key resolves to nothing rather than a stray brief', () => {
   assert.equal(taskByKey('nonsense'), undefined);
 });

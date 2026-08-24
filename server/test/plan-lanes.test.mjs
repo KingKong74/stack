@@ -1,5 +1,5 @@
-// The Plan view's LANES: where an untouched card is derived to, and which of
-// the four lanes may not be renamed or removed.
+// The Plan view's LANES: where an untouched card is derived to, and what keeps
+// a card visible when the lane it derives to has been deleted.
 //
 //   node server/test/plan-lanes.test.mjs      # exits non-zero on any failure
 //
@@ -10,10 +10,14 @@
 //     claim-first derivation left every verdicted change sitting in "In
 //     progress" for as long as its branch lived. `review_tag` has to outrank
 //     `claimed_by` here, and `done` has to stay out of it entirely.
-//  2. THE FOUR DEFAULT LANES ARE THE DERIVATION'S TARGETS. Every string
-//     `listFor` can return must be a protected key, or the board has a derived
-//     column somebody can rename out from under it — and the cards sent there
-//     would vanish from the board while still counting everywhere else.
+//  2. THE CATCH-ALL IS WHAT MAKES THE UNLOCK SAFE (#428). The four lanes were
+//     unrenameable and undeletable because every string `listFor` returns needs
+//     a column to render in — delete one and its cards vanish from the board
+//     while still counting everywhere else, which is the worst kind of loss.
+//     The owner asked for a Trello board, so the guard MOVED: `RoadmapPlan`
+//     draws an UNFILED lane for any card whose resolved key has no column. This
+//     asserts the guard is still there, structurally, in the file that carries
+//     it — take the catch-all out and the lock has to come back.
 //
 // It also holds the two twins in step by READING THE FILES: `listKeyOf` in
 // web/src/lib/plan.ts is the client copy of `listFor`, and neither package can
@@ -22,7 +26,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { listFor, listKeyOf, isProtectedList, PROTECTED_LISTS, DEFAULT_LISTS } from '../src/lists.js';
+import { listFor, listKeyOf, DEFAULT_LISTS } from '../src/lists.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -65,9 +69,11 @@ check('a stored column wins over every derived one',
 check('a blank stored column is derived, not "the first list"',
   listKeyOf(row({ list_key: '   ', claimed_by: 'feat/3-x' })), 'progress');
 
-// --- the lock ---------------------------------------------------------------
+// --- the catch-all ----------------------------------------------------------
 
-// The load-bearing one: whatever `listFor` can return must be protected.
+// Every string the derivation can return is one of the seeded lanes, so a fresh
+// board renders all of them. That is still true and still load-bearing — it is
+// what makes the catch-all a safety net rather than the normal case.
 const derived = new Set([
   listFor(row({ done: true })),
   listFor(row({ review_tag: 'solid' })),
@@ -75,23 +81,44 @@ const derived = new Set([
   listFor(row({ source: 'hook', reviewed_at: null })),
   listFor(row()),
 ]);
-check('every lane the derivation targets is locked',
-  [...derived].filter((k) => !isProtectedList(k)), []);
-check('the four defaults are exactly the locked set',
-  DEFAULT_LISTS.map((l) => l.key).sort(), [...PROTECTED_LISTS].sort());
-check('a lane the owner added is not locked', isProtectedList('backlog-4'), false);
-check('an empty key is not locked into anything', isProtectedList(''), false);
+const seeded = new Set(DEFAULT_LISTS.map((l) => l.key));
+check('every lane the derivation targets is one the board seeds',
+  [...derived].filter((k) => !seeded.has(k)), []);
+check('the seeded lanes are exactly the derivation\'s targets',
+  [...seeded].sort(), [...derived].sort());
 
-// A new lane's key is suffixed with its position (board.js), which is what
-// makes a collision with a protected key impossible. If that suffix ever goes,
-// an owner adding a lane called "Shipped" would silently take over the lane the
-// Review room delivers into.
+// Polaris is culled and the lane no longer carries its name (#428). Named
+// explicitly: the string is what the schema's convergent migration matches on,
+// so the two have to agree or an existing board keeps the dead reference.
+check('the ideas lane no longer names Polaris',
+  DEFAULT_LISTS.find((l) => l.key === 'idea').name, 'Ideas');
+
+// A new lane's key is suffixed with its position (board.js). Nothing locks the
+// four any more, but their keys are still WIRING: two lanes answering to
+// `shipped` would split one derived column in two, with half the cards in each.
 const board = readFileSync(join(REPO, 'server/src/routes/board.js'), 'utf8');
 check('POST /lists still suffixes the key with its position',
   /INSERT INTO project_lists[\s\S]{0,400}?\$\{key\}-\$\{pos\[0\]\.p\}/.test(board)
   || board.includes('`${key}-${pos[0].p}`'), true);
-check('both list writers refuse a protected key',
-  (board.match(/isProtectedList\(key\)\) return res\.status\(400\)/g) || []).length, 2);
+
+// THE ONE THAT REPLACES THE LOCK. Deleting `shipped` is allowed now, and the
+// only thing standing between that and silently losing every done card is the
+// board's catch-all. It lives in the client, which this cannot import — so it
+// is checked structurally, the same arrangement as the client twin below.
+const plan = readFileSync(join(REPO, 'web/src/detail/RoadmapPlan.tsx'), 'utf8');
+check('the board still declares a catch-all lane', /const UNFILED = '/.test(plan), true);
+check('a card whose key has no column is routed to it',
+  /lists\.some\(\(l\) => l\.key === derived\) \? derived : UNFILED/.test(plan), true);
+check('and the catch-all is actually drawn when it holds something',
+  /if \(orphans\.length\) columns\.push\(/.test(plan), true);
+// It is a rendering slot, never a stored column: writing this key would file a
+// card under a lane no server knows about.
+check('dropping onto the catch-all clears the column rather than storing its key',
+  /onMoveToList\(it, col\.list \? col\.key : ''\)/.test(plan), true);
+
+// The server, for its half: neither writer refuses a key any more.
+check('neither list writer refuses a key',
+  (board.match(/isProtectedList/g) || []).length, 0);
 
 // --- the client twin --------------------------------------------------------
 

@@ -144,10 +144,11 @@ export interface BoardArea {
   dot: string;
   registered: boolean;
 }
-// `locked` is one of the four lanes `listKeyOf` derives into and the Review room
-// moves work through, so it cannot be renamed or deleted — the server decides
-// it from the key and the guard lives there too (server/src/lists.js).
-export interface BoardList { id: number; key: string; name: string; position: number; locked?: boolean }
+// EVERY LANE RENAMES AND DELETES (#428) — there is no `locked`, because there
+// is no locked lane. The four keys `listKeyOf` derives into are still wiring,
+// and what keeps deleting one safe is the board's catch-all lane rather than a
+// flag on the row (server/src/lists.js, and RoadmapPlan.tsx's header).
+export interface BoardList { id: number; key: string; name: string; position: number }
 // A label the owner has defined for THIS project (#382 — was a code registry).
 // `tone` is one of the closed Atlas set, because styles.css needs a rule for it.
 export interface BoardLabel { key: string; name: string; tone: string }

@@ -1,11 +1,22 @@
-// The Roadmap tab's SHELL — one segmented control over three views.
+// The Roadmap tab's SHELL — one strip over four boards, and THE BOARD IS THE
+// ROADMAP (#428).
 //
-// Timeline, Scope and Plan. Tiers and Parked were views of their own until they
-// became BOARDS INSIDE PLAN: all five were the same rows read differently, and a
-// strip whose last two entries were two more readings of the plan made one tab
-// look like five screens. The move changes where they are drawn and nothing
-// about what they mean — `tier` is still set only by a human, from the Tiers
-// board, and the parked shelf still ages its rows (#247).
+// Lists opens by default and the other three sit beside it in the same strip.
+// It used to be a segmented control over three VIEWS — Timeline, Scope, Plan —
+// with Plan carrying a second strip of its own for Lists, Tiers and Parked, so
+// reaching the board you actually work on was two presses down a hierarchy that
+// only existed because the Timeline needed somewhere to be top-level. All of
+// them are the same rows read differently; one flat strip says so.
+//
+// THE TIMELINE IS GONE (#428, at the owner's request). What went with it,
+// because each answered to it and nothing else: the six arrange COMMANDS (they
+// were bar arithmetic — schedule, close the gaps, catch up, level, lead with
+// the tier, and `trim`, which was reached by selecting a bar), the ✧ ORDER read
+// (it proposes {id, sched} moves, and there is no longer anywhere to see a
+// proposed bar) and the SELECTED BAR itself. The schedule COLUMNS are untouched
+// — `sched_start_min` and the write-once baseline are still stored, still served
+// and still #401's minutes; nothing in the client edits them now, which is the
+// same state branch previews are in.
 //
 // THE OLD BOARD IS GONE — Scope replaced it, and replacing means ABSORBING:
 // Scope carries the Board's edit/delete/park/branch tools, every tag it showed,
@@ -13,9 +24,9 @@
 // tiebreak once `tier` has sorted it (CLAUDE.md). Dropping the Board without
 // moving all of that would have quietly removed controls the fleet depends on.
 //
-// This file owns everything the views share: the area chips and their editor,
+// This file owns everything the boards share: the area chips and their editor,
 // the label filter, the board's furniture (areas + lists + labels, fetched once
-// here), the selected bar, and the arrange proposal.
+// here), and the arrange proposal.
 //
 // THE AREA CHIPS COUNT WHAT IS IN THE CYCLE, and an area with nothing in it is
 // hidden behind a "+N more" rather than drawn as a zero. `inCycle` is
@@ -27,7 +38,7 @@
 // untagged work sits in no lane and behind no chip, which makes it the population most
 // easily forgotten, so it gets the one chip that finds it. It writes through
 // `store.ts` like every other screen and hands its children plain callbacks —
-// the views themselves are presentational and testable by inspection.
+// the boards themselves are presentational and testable by inspection.
 //
 // One rule worth stating: EVERY WRITE HERE IS OPTIMISTIC AND REVERSIBLE. The
 // local copy updates, the PATCH goes out, and a rejection puts the row back and
@@ -44,30 +55,26 @@ import {
   addArea, renameArea as renameAreaApi, deleteArea as deleteAreaApi, addList as addListApi,
   renameList as renameListApi, deleteList as deleteListApi,
   addLabel as addLabelApi, deleteLabel as deleteLabelApi,
-  setAreaColour, arrangeRoadmap, allocateRoadmap, agentCan, agentOffReason,
+  setAreaColour, allocateRoadmap, agentCan, agentOffReason,
 } from '../store';
-import { areaMatches, clampSpanToDomain, defaultLen, inCycle, nowMin, UNALLOCATED } from '../lib/plan';
+import { inCycle, UNALLOCATED } from '../lib/plan';
 import { taskByKey } from '../lib/curatorTasks';
 import { DEFAULT_LABELS } from '../lib/labels';
-import { RoadmapTimeline } from './RoadmapTimeline';
 import { RoadmapScope } from './RoadmapScope';
 import { RoadmapPlan } from './RoadmapPlan';
 import { RoadmapTiers, RoadmapParked } from './RoadmapBoards';
 import {
-  RoadmapArrange, proposedSpans, arrangementCount, type Arrangement, type ReadOp,
+  RoadmapArrange, arrangementCount, type Arrangement, type ReadOp,
 } from './RoadmapArrange';
 
-type View = 'timeline' | 'scope' | 'plan';
-type PlanBoard = 'lists' | 'tiers' | 'parked';
+// ONE FLAT STRIP, and Board is first because it is what the tab is for. The
+// other three are readings of the same rows, and a hierarchy that put two of
+// them a press further away was drawn around a Timeline that no longer exists.
+type Board = 'lists' | 'scope' | 'tiers' | 'parked';
 
-const VIEWS: { key: View; label: string; title: string }[] = [
-  { key: 'timeline', label: 'Timeline', title: 'When each area is working on what' },
+const BOARDS: { key: Board; label: string; title: string }[] = [
+  { key: 'lists', label: 'Board', title: 'The columns — drag a card between them' },
   { key: 'scope', label: 'Scope', title: 'What is in this cycle and what is first to cut' },
-  { key: 'plan', label: 'Plan', title: 'The boards — lists, tiers and the parked shelf' },
-];
-
-const PLAN_BOARDS: { key: PlanBoard; label: string; title: string }[] = [
-  { key: 'lists', label: 'Lists', title: 'Your own columns' },
   { key: 'tiers', label: 'Tiers', title: 'What you want built next — the run queue’s primary sort' },
   { key: 'parked', label: 'Parked', title: 'Everything parked, oldest park first' },
 ];
@@ -123,8 +130,6 @@ export interface RoadmapTabProps {
   /** #361 — which of the Curator's ops may run at all on this project. */
   agents: TabAgentState;
   roadmap: RoadmapData;
-  /** The Monday the timeline counts weeks from; null = no dates, no calendar. */
-  weekZero: string | null;
   /** Replace one item in the parent's copy after a write. */
   onItemChanged: (item: RoadmapItem) => void;
   /** Replace SEVERAL at once. Not a convenience — see the note on `writeOnly`. */
@@ -135,14 +140,12 @@ export interface RoadmapTabProps {
 }
 
 export function RoadmapTab({
-  slug, roadmap, weekZero, agents, onItemChanged, onItemsChanged, onItemAdded, legacy, onOpenItem,
+  slug, roadmap, agents, onItemChanged, onItemsChanged, onItemAdded, legacy, onOpenItem,
 }: RoadmapTabProps) {
-  // A deep link to an item lands on SCOPE, because that is where an item now
-  // lives — the Board used to reveal it and the Board is gone. Without this a
-  // search result would open the Timeline, which shows bars, not rows.
-  const [view, setView] = useState<View>(legacy.highlightId ? 'scope' : 'timeline');
-  useEffect(() => { if (legacy.highlightId) setView('scope'); }, [legacy.highlightId]);
-  const [board, setBoard] = useState<PlanBoard>('lists');
+  // A deep link to an item lands on SCOPE, because that is the board that can
+  // reveal one row and highlight it. Everything else opens on the board.
+  const [board, setBoard] = useState<Board>(legacy.highlightId ? 'scope' : 'lists');
+  useEffect(() => { if (legacy.highlightId) setBoard('scope'); }, [legacy.highlightId]);
   // Collapsed by default: Arrange is a TOOL, not information, and three tall
   // buttons above the board is chrome in front of the thing you came to read.
   const [arrangeOpen, setArrangeOpen] = useState(false);
@@ -159,8 +162,8 @@ export function RoadmapTab({
   const [palette, setPalette] = useState<string[]>([]);
   // Which area's swatch popover is open (one at a time).
   const [colourFor, setColourFor] = useState<string | null>(null);
-  // WHICH ✦ read is in flight, not whether one is: the panel has two, and a
-  // shared boolean would put "reading…" on the button you did not press.
+  // WHICH ✦ read is in flight, not whether one is — a shared boolean would put
+  // "reading…" on a button nobody pressed once there is a second read again.
   const [reading, setReading] = useState<ReadOp | ''>('');
   const [areaFilter, setAreaFilter] = useState('');
   // #378 — narrows which area CHIPS are drawn; never which items are shown.
@@ -168,7 +171,6 @@ export function RoadmapTab({
   const [labelFilter, setLabelFilter] = useState('');
   const [editAreas, setEditAreas] = useState(false);
   const [areaDraft, setAreaDraft] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [proposal, setProposal] = useState<Arrangement | null>(null);
   // What the last quick command did, so the panel can say the brief went to the
   // session. It is a receipt, not state anything depends on — the session
@@ -217,8 +219,6 @@ export function RoadmapTab({
   const guard = (p: Promise<unknown>, what: string) =>
     p.catch((e) => { setErr((e as Error)?.message || `Could not ${what}.`); });
 
-  const selected = selectedId === null ? null : items.find((i) => i.id === selectedId) || null;
-
   // --- the arrange proposal ------------------------------------------------
 
   const applyProposal = async () => {
@@ -226,25 +226,18 @@ export function RoadmapTab({
     setBusy(true);
     const landed: RoadmapItem[] = [];
     try {
-      if (proposal.kind === 'allocate') {
-        for (const p of proposal.picks) {
-          const it = items.find((x) => x.id === p.id);
-          if (it) landed.push(await writeOnly(it, { area: p.area }));
-        }
-        // An area is real the moment a row mentions it (routes/board.js unions
-        // the two), but this component's `areas` were read once on mount — so a
-        // coined area would have no lane, no chip and no colour until a reload,
-        // and its items would land in the timeline's Unallocated fold looking
-        // exactly like the ones the read had just failed to place.
-        await getBoardShape(slug)
-          .then((b) => { setAreas(b.areas); setPalette(b.palette || []); })
-          .catch(() => { /* the areas are stale, not wrong; the writes landed */ });
-      } else {
-        for (const mv of proposal.moves) {
-          const it = items.find((x) => x.id === mv.id);
-          if (it) landed.push(await writeOnly(it, { sched: mv.sched }));
-        }
+      for (const p of proposal.picks) {
+        const it = items.find((x) => x.id === p.id);
+        if (it) landed.push(await writeOnly(it, { area: p.area }));
       }
+      // An area is real the moment a row mentions it (routes/board.js unions
+      // the two), but this component's `areas` were read once on mount — so a
+      // coined area would have no chip and no colour until a reload, and its
+      // items would sit behind Unallocated looking exactly like the ones the
+      // read had just failed to place.
+      await getBoardShape(slug)
+        .then((b) => { setAreas(b.areas); setPalette(b.palette || []); })
+        .catch(() => { /* the areas are stale, not wrong; the writes landed */ });
       setProposal(null);
     } catch (e) {
       // Partial application is the honest outcome to report: some rows moved.
@@ -282,42 +275,11 @@ export function RoadmapTab({
     }
   };
 
-  // The Curator's read of the timeline. It PROPOSES; the moves land in the same
-  // proposal slot the arithmetic uses, so Apply and Discard work identically and
-  // the timeline ghosts them the same way.
+  // The Curator's read: an area for each row carrying none. It PROPOSES — the
+  // picks land in the proposal slot, and nothing is written until the owner
+  // presses Apply.
   //
-  // It reads the SAME population the arithmetic actions do — whatever the area
-  // chip leaves on screen. The filter travels as an explicit `untagged` flag
-  // rather than as the UNALLOCATED sentinel: that sentinel is a client filter
-  // value (lib/plan.ts), and spelling it into the server would be a second copy
-  // of a magic string that only the client's own rules keep safe.
-  const readTheBoard = () => {
-    setReading('arrange');
-    const scope = areaFilter === UNALLOCATED ? { untagged: true } : areaFilter ? { area: areaFilter } : {};
-    const inScope = items.filter((i) => !i.archived && !i.done && areaMatches(i.area, areaFilter));
-    arrangeRoadmap(slug, scope)
-      .then((r) => {
-        const why: Record<number, string> = {};
-        r.moves.forEach((m) => { if (m.why) why[m.id] = m.why; });
-        setProposal({
-          kind: 'order',
-          read: true,
-          why,
-          moves: r.moves.map((m) => ({ id: m.id, sched: m.sched })),
-          summary: r.moves.length
-            ? `Read ${inScope.length} item${inScope.length === 1 ? '' : 's'}${areaFilter ? ` in ${areaFilter === UNALLOCATED ? 'unallocated' : areaFilter}` : ''} and found ${r.moves.length} that sit before something they depend on.`
-            : r.note || 'Read the board and found nothing out of order — every item is scheduled after what it needs.',
-        });
-      })
-      .catch((e) => setErr((e as Error)?.message || 'The Curator could not read the board.'))
-      .finally(() => setReading(''));
-  };
-
-  // The Curator's OTHER read: an area for each row carrying none. Same proposal
-  // slot, same Apply and Discard — it writes `area` where the order writes
-  // `sched`, and nothing at all until the owner presses.
-  //
-  // NO SCOPE ARGUMENT, unlike the order read above. Untagged IS the population,
+  // NO SCOPE ARGUMENT. Untagged IS the population,
   // so there is nothing an area chip could narrow it to; the panel disables the
   // button under a real chip rather than sending a filter the server would have
   // to answer with an empty list.
@@ -326,7 +288,7 @@ export function RoadmapTab({
     allocateRoadmap(slug)
       .then((r) => {
         const missed = Math.max(0, r.seen - r.picks.length);
-        // Named, not just counted: a coined area is a new lane on the timeline,
+        // Named, not just counted: a coined area is a new chip on the board,
         // and "2 new areas" without their names is a change you cannot check.
         const coined = [...new Set(r.picks.filter((p) => p.isNew).map((p) => p.area))];
         setProposal({
@@ -349,18 +311,14 @@ export function RoadmapTab({
 
   // A QUICK COMMAND: compose the brief and hand it to the Curator's session.
   //
-  // Everything the brief needs is the view's own state — which chip is on, and
-  // which bar is selected — so the composition is pure (lib/curatorTasks.ts) and
-  // this only supplies it and reports that it went. Nothing here waits for an
-  // answer: the answer arrives in the session, which is on screen.
+  // Everything the brief needs is the board's own state — which chip is on — so
+  // the composition is pure (lib/curatorTasks.ts) and this only supplies it and
+  // reports that it went. Nothing here waits for an answer: the answer arrives
+  // in the session, which is on screen.
   const runCommand = (key: string) => {
     const task = taskByKey(key);
     if (!task || !legacy.onSendToConsole) return;
-    legacy.onSendToConsole(task.brief({
-      slug,
-      areaFilter,
-      feature: selected ? { id: selected.id, title: selected.title } : null,
-    }));
+    legacy.onSendToConsole(task.brief({ slug, areaFilter }));
     setSentNote(`“${task.name}” sent to the session`);
   };
   useEffect(() => {
@@ -371,9 +329,8 @@ export function RoadmapTab({
 
   // --- areas ----------------------------------------------------------------
 
-  // An area's colour, changed from wherever it is drawn — the chips' edit mode
-  // and the timeline's own lane dots both land here. The write returns the whole
-  // collection, so the lanes recolour without a re-read.
+  // An area's colour, changed from the chips' edit mode. The write returns the
+  // whole collection, so every dot recolours without a re-read.
   const recolour = (name: string, dot: string) =>
     guard(setAreaColour(slug, name, dot).then(setAreas), 'change that colour');
 
@@ -401,7 +358,7 @@ export function RoadmapTab({
   // counting the cycle there would put "Infra 0" above a column holding two
   // Infra cards, and hide the very chip you need to filter by. The number
   // always describes the rows you are looking at.
-  const parkedBoard = view === 'plan' && board === 'parked';
+  const parkedBoard = board === 'parked';
   const scoped = useMemo(
     () => (parkedBoard
       ? items.filter((i) => i.skipped && !i.done && !i.archived)
@@ -453,20 +410,19 @@ export function RoadmapTab({
   return (
     <div className="rtab">
       <div className="rtab-bar">
-        <div className="seg-control" role="tablist" aria-label="Roadmap view">
-          {VIEWS.map((v) => (
-            <button key={v.key} role="tab" aria-selected={view === v.key} title={v.title}
-              className={`seg-opt ${view === v.key ? 'on' : ''}`} onClick={() => setView(v.key)}>
-              {v.label}
+        <div className="seg-control" role="tablist" aria-label="Roadmap board">
+          {BOARDS.map((b) => (
+            <button key={b.key} role="tab" aria-selected={board === b.key} title={b.title}
+              className={`seg-opt ${board === b.key ? 'on' : ''}`} onClick={() => setBoard(b.key)}>
+              {b.label}
             </button>
           ))}
         </div>
         <span className="rtab-hint">
-          {view === 'timeline' ? 'Scroll to zoom, from hours to quarters · drag anywhere to move through time'
-            : view === 'scope' ? 'What is in the cycle, and what is first to cut'
-              : board === 'tiers' ? 'What you want built NEXT — drag a card to rank it'
-                : board === 'parked' ? 'Cut from this cycle, still part of the feature'
-                  : 'Cards move between lists; a column is not a verdict'}
+          {board === 'scope' ? 'What is in the cycle, and what is first to cut'
+            : board === 'tiers' ? 'What you want built NEXT — drag a card to rank it'
+              : board === 'parked' ? 'Cut from this cycle, still part of the feature'
+                : 'Drag a card between columns — a column is not a verdict'}
         </span>
       </div>
 
@@ -566,37 +522,23 @@ export function RoadmapTab({
           </button>
       </div>
 
-      {/* Arrange follows the view: each action is arithmetic over ONE thing, and
-          offering "close the gaps on the timeline" while you are cutting scope
-          is a button that answers a question you did not ask. A view with no
-          applicable action gets no panel — see ARRANGE_VIEWS in RoadmapArrange.
-          It follows the AREA CHIP too: filtered to one area, it proposes moves
-          for that area and nothing else. */}
+      {/* Arrange follows the board: each action answers ONE question, and a
+          board with no applicable action gets no panel rather than an empty one
+          — see `views` on each action in RoadmapArrange. Scope and the three
+          card boards ask different questions, so the three collapse to one
+          `board` view and Scope keeps its own. */}
       <RoadmapArrange
-        view={view} items={items} areaFilter={areaFilter} selected={selected} proposal={proposal} busy={busy}
+        view={board === 'scope' ? 'scope' : 'board'}
+        items={items} areaFilter={areaFilter} proposal={proposal} busy={busy}
         open={arrangeOpen} onToggle={() => setArrangeOpen(!arrangeOpen)}
         onApply={applyProposal} onDiscard={() => setProposal(null)}
         onCommand={legacy.onSendToConsole ? runCommand : undefined}
         consoleOffReason={legacy.consoleOffReason || ''} sentNote={sentNote}
-        onRead={(op) => (op === 'allocate' ? sortTheUnallocated() : readTheBoard())} reading={reading}
+        onRead={sortTheUnallocated} reading={reading}
         canRead={(op) => agentCan(agents, 'curator', op)}
         readOffReason={(op) => agentOffReason(agents, 'curator', op)} />
 
-      {view === 'timeline' && (
-        <>
-          <RoadmapTimeline
-            items={items} areas={areas} labels={labels} weekZero={weekZero} areaFilter={areaFilter}
-            selectedId={selectedId} onSelect={setSelectedId}
-            palette={palette} onRecolour={recolour}
-            proposed={proposedSpans(proposal)}
-            onSchedule={(it, sched) => write(it, { sched }).then(() => undefined)}
-            onRebaseline={(it) => write(it, { rebaseline: true }).then(() => undefined)}
-            onOpen={onOpenItem}
-            onToggleSkip={(it) => { guard(write(it, { skipped: !it.skipped }), 'defer that line'); }} />
-        </>
-      )}
-
-      {view === 'scope' && (
+      {board === 'scope' && (
         <RoadmapScope
           items={items} areas={areas} labels={labels} areaFilter={areaFilter} labelFilter={labelFilter}
           liveBranches={legacy.liveBranches || []} highlightId={legacy.highlightId}
@@ -606,38 +548,10 @@ export function RoadmapTab({
           onSetBucket={(it, bucket) => { guard(write(it, { bucket }), 'move that ticket'); }}
           onToggleSkip={(it) => { guard(write(it, { skipped: !it.skipped }), 'defer that line'); }}
           onArchive={(it, archived) => { guard(write(it, { archived }), 'archive that ticket'); }}
-          onSchedule={(it) => {
-            setView('timeline');
-            setSelectedId(it.id);
-            if (!it.sched) {
-              // After the last bar in its own lane, at its own size — the same
-              // rule the timeline's tray uses. Minutes (#401), and the length
-              // comes from `defaultLen` so the two paths cannot disagree about
-              // how long an unsized ticket is.
-              const len = defaultLen(it, 'week');
-              const end = items
-                .filter((x) => x.area === it.area && x.sched)
-                .reduce((n, x) => Math.max(n, x.sched!.start + x.sched!.len), nowMin(weekZero));
-              guard(write(it, { sched: clampSpanToDomain({ start: end, len }) }), 'schedule that ticket');
-            }
-          }}
           onAdd={(bucket: Priority) => legacy.onAdd(bucket, filterArea || undefined)} />
       )}
 
-      {view === 'plan' && (
-        <>
-        <div className="rtab-boards" role="tablist" aria-label="Plan board">
-          {PLAN_BOARDS.map((b) => (
-            <button key={b.key} role="tab" aria-selected={board === b.key} title={b.title}
-              className={`rtab-board${board === b.key ? ' on' : ''}`} onClick={() => setBoard(b.key)}>
-              {b.label}
-            </button>
-          ))}
-        </div>
-        </>
-      )}
-
-      {view === 'plan' && board === 'tiers' && (
+      {board === 'tiers' && (
         <RoadmapTiers
           items={items} areas={areas} labels={labels} areaFilter={areaFilter}
           onSetTier={(it, tier) => { guard(write(it, { tier }), 'rank that item'); }}
@@ -646,7 +560,7 @@ export function RoadmapTab({
           onCleanup={legacy.onCleanup} onSendToTerminal={legacy.onSendToTerminal} />
       )}
 
-      {view === 'plan' && board === 'parked' && (
+      {board === 'parked' && (
         <RoadmapParked
           items={items} areas={areas} labels={labels} areaFilter={areaFilter} staleItemDays={legacy.staleItemDays}
           onSetTier={(it, tier) => { guard(write(it, { tier }), 'rank that item'); }}
@@ -654,7 +568,7 @@ export function RoadmapTab({
           onOpen={onOpenItem} />
       )}
 
-      {view === 'plan' && board === 'lists' && (
+      {board === 'lists' && (
         <RoadmapPlan
           items={items} lists={lists} areas={areas} areaFilter={areaFilter}
           labels={labels} tones={tones}

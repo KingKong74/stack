@@ -53,7 +53,6 @@ export interface ScopeProps {
   onToggleDone: (item: RoadmapItem) => void;
   onToggleSkip: (item: RoadmapItem) => void;
   onArchive: (item: RoadmapItem, archived: boolean) => void;
-  onSchedule: (item: RoadmapItem) => void;
   onEdit: (item: RoadmapItem) => void;
   onDelete: (item: RoadmapItem) => void;
   onBranch?: (item: RoadmapItem) => void;
@@ -63,7 +62,7 @@ export interface ScopeProps {
 
 export function RoadmapScope({
   items, areas, labels, areaFilter, labelFilter, liveBranches, highlightId,
-  onSetBucket, onReorder, onToggleDone, onToggleSkip, onArchive, onSchedule,
+  onSetBucket, onReorder, onToggleDone, onToggleSkip, onArchive,
   onEdit, onDelete, onBranch, onClearNote, onAdd,
 }: ScopeProps) {
   const [openId, setOpenId] = useState<number | null>(null);
@@ -244,9 +243,6 @@ export function RoadmapScope({
                               → {l.name}
                             </button>
                           ))}
-                          <button className="rsc-move accent" onClick={() => onSchedule(it)}>
-                            {it.sched ? 'On the timeline' : 'Schedule'}
-                          </button>
                           <button className="rsc-move" onClick={() => onArchive(it, true)}>Archive</button>
                         </div>
                       </div>

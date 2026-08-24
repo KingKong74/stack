@@ -9,13 +9,14 @@ one file it lives in that file's header, and this file keeps only the pointer an
 cross-cutting half** — `ingest.js`, `prompts.js`, `checks.js`, `worktrees.js`, `lib/branch.ts`
 and `lib/plan.ts` all carry theirs.
 
-**FOUR SURFACES WERE CULLED** at the owner's request: **Mission Control** (all seven rooms, and
+**FIVE SURFACES WERE CULLED** at the owner's request: **Mission Control** (all seven rooms, and
 the `/api/control`, `/api/review` and `/api/merge` layers), **Polaris** (the Futures tab, the
 galaxy and the `futures` table), the **instructions tree** (the managed CLAUDE.md library and its
-host sync) and the **Workbench** (the canvas tab, `/api/…/workbench`, the `workbench_cards` and
-`workbench_edges` tables and the Drafter). **`notes` went with the Workbench** — the canvas was the
-only surface that read one, so the table, `/api/…/notes`, the ⌘K Notes scope and the corner ＋'s
-Thought composer are all gone; the ＋ is roadmap-only. `#/control` renders
+host sync), the **Workbench** (the canvas tab, `/api/…/workbench`, the `workbench_cards` and
+`workbench_edges` tables and the Drafter) and the Roadmap **Timeline** (#428 — the Gantt view, its
+six arrange commands and the ✧ order read's only surface). **`notes` went with the Workbench** — the
+canvas was the only surface that read one, so the table, `/api/…/notes`, the ⌘K Notes scope and the
+corner ＋'s Thought composer are all gone; the ＋ is roadmap-only. `#/control` renders
 `screens/ControlMock.tsx`, a placeholder. Rules that outlived their surface are kept below and SAY
 SO — a predicate written for a room is still the only definition of what it decided.
 
@@ -123,12 +124,23 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `risk` only when the human touched the control, or every save silently reclaims the tier.
 - **The schedule is MINUTES from week zero, not a week index** (#401) — `sched_start_min`/`sched_len_min`
   on `roadmap_items`, with `plan_start_min`/`plan_len_min` the write-once BASELINE a drag must never
-  move. The unit is load-bearing: the timeline zooms from hours to quarters, and whole weeks made its
+  move. The unit is load-bearing: the timeline zoomed from hours to quarters, and whole weeks made its
   hour grid a reading scale over a column that could not store one. Four packages must agree and none
   can import another — `routes/roadmap.js`, `shape.js` (BIGINT arrives as a STRING, above),
   `lib/plan.ts`, `lib/spine.ts`. **`estimate` stays in WEEKS**, so `defaultLen` in `lib/plan.ts` is the
-  ONE place the two units may meet. `/arrange` is shown WEEKS and converted at both boundaries —
-  ordering is a week-grained question, not a minute-grained one.
+  ONE place the two units may meet. **NOTHING IN THE CLIENT EDITS THESE NOW** (#428): the Timeline was
+  the only editor and it is culled, so the columns are still stored, still served and still baselined
+  on create — read them as data waiting for a surface, exactly like branch previews, and do NOT
+  "tidy them away" on the grounds that no screen writes them.
+- **The Roadmap is a BOARD** (#428) — one flat strip of four (Board · Scope · Tiers · Parked), Board
+  first, no view/board hierarchy. **Every lane renames and deletes, and the CATCH-ALL is the only
+  reason that is safe.** The four keys `listFor` returns (`idea`/`planned`/`progress`/`shipped`) are
+  still wiring, and deleting one used to be refused because a derived card would render in no column
+  while still counting everywhere else — the silent loss. So the guard MOVED rather than went:
+  `RoadmapPlan.tsx` draws an UNFILED lane for any card whose resolved key has no column, and
+  `server/test/plan-lanes.test.mjs` pins it structurally. Remove the catch-all and the server-side
+  lock has to come back in the same commit. Renaming was never the hazard — it writes `name`, never
+  the key a card derives to.
 - **The board order IS the run queue.** `position` is PATCHable and drag-reorderable; a Save-order
   write is the same PATCH the drag makes.
 - **`claimed_by` is the branch claim** (#277 — called a "lane" until the rename; the `lane/` git ref

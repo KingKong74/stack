@@ -31,14 +31,19 @@
 //    board that ticked on approval would be manufacturing the state the whole
 //    verdict chain exists to keep honest. A card with no `built_note` says so
 //    rather than presenting a title as evidence — the NULL-verdict rule.
-//  • FOUR LANES ARE LOCKED, THE REST ARE THE OWNER'S. `idea`, `planned`,
-//    `progress` and `shipped` are where `listKeyOf` derives cards to and where
-//    the Review room moves work through, so their keys are wiring: rename one
-//    and every derived card lands in a column that no longer exists. They carry
-//    a lock and no menu. A lane the owner ADDS is pure convenience — nothing
-//    derives into it — so it renames and deletes freely, and deleting it returns
-//    its cards to the derived column rather than taking them with it. The real
-//    guard is on the API (server/src/lists.js); this is only the affordance.
+//  • EVERY LANE IS THE OWNER'S (#428), AND THE CATCH-ALL IS WHY THAT IS SAFE.
+//    `idea`, `planned`, `progress` and `shipped` are where `listKeyOf` derives
+//    cards to, so their KEYS are wiring — and they used to be locked, because a
+//    board missing one had a derived column with nowhere to render and its
+//    cards vanished while still counting everywhere else. Renaming was never
+//    the hazard (it writes `name`; the key a card derives to is untouched), so
+//    what the unlock actually needed was somewhere for an orphan to land. That
+//    is the UNFILED lane at the end of the board: any card whose resolved key
+//    has no column is drawn there, named, and one drag from a real lane. It is
+//    rendered ONLY when it holds something — an empty "Unfiled" on a whole
+//    board is furniture — and DELETING IT IS NOT POSSIBLE because it is not a
+//    row. Do not remove it without putting the server-side lock back: it is the
+//    entire safety argument for letting `shipped` be deleted.
 //  • IN PROGRESS AND SHIPPED ARE THE TWO ENDS OF A VERDICT. A change is
 //    waiting on one from the moment it is BUILT (#374), which is exactly while
 //    it sits in In progress — so both lanes carry the state, per card and per
@@ -80,16 +85,13 @@ const BUCKET_LABEL: Record<Priority, string> = {
 // the per-card strip, the lane head link and the styling cannot drift apart.
 const REVIEW_LANES = new Set(['progress', 'shipped']);
 
-// DRAWN, not typed. A 🔒 renders as a tofu box in the display face this board
-// uses — an empty rectangle where the explanation was supposed to be, which is
-// worse than no affordance at all. An inline SVG in currentColor always draws
-// and follows the theme.
-const LockIcon = () => (
-  <svg className="rp-lock-ico" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true" focusable="false">
-    <path d="M3.6 5.2V3.9a2.4 2.4 0 0 1 4.8 0v1.3" fill="none" stroke="currentColor" strokeWidth="1.2" />
-    <rect x="2.4" y="5.2" width="7.2" height="5.4" rx="1.1" fill="currentColor" />
-  </svg>
-);
+// The catch-all lane's key. NOT a `project_lists` row and never sent to the
+// server: it is a rendering slot for cards whose column was deleted. The
+// underscores are what make it uncollidable — `POST /lists` slugifies a name to
+// [a-z0-9-] and suffixes it with a digit, so no real key can ever be this.
+// Deliberately NOT a control character: a NUL in a source file makes the file
+// silently invisible to grep, which is a cost paid by every future reader.
+const UNFILED = '__unfiled__';
 
 export interface PlanProps {
   /** The project, for the Review room link — a room-wide queue needs to be told whose change. */
@@ -119,9 +121,9 @@ export interface PlanProps {
   onSendBack: (item: RoadmapItem) => void;
   onAddCard: (listKey: string, title: string) => void;
   onAddList: (name: string) => void;
-  /** Rename an owner-added lane. Never called for a locked one. */
+  /** Rename a lane. Never called for the catch-all — it is not a row. */
   onRenameList: (list: BoardList, name: string) => void;
-  /** Remove an owner-added lane; its cards return to the derived column. */
+  /** Remove a lane; its cards return to the derived column, or to Unfiled. */
   onDeleteList: (list: BoardList) => void;
   onOpen: (item: RoadmapItem) => void;
 }
@@ -148,6 +150,11 @@ export function RoadmapPlan({
   const [renaming, setRenaming] = useState('');
   const [renameDraft, setRenameDraft] = useState('');
   const [confirmList, setConfirmList] = useState('');
+  // The lane a drag is currently over, and the card being dragged. Both are
+  // presentation only — a board where the column you are about to drop into
+  // looks exactly like the four beside it is a board you aim at by counting.
+  const [over, setOver] = useState('');
+  const [dragging, setDragging] = useState<number | null>(null);
 
   // CLICKING THE LANE IS THE GESTURE; the ⇥ is the label for it.
   //
@@ -181,6 +188,30 @@ export function RoadmapPlan({
     const key = listKeyOf(it);
     return lists.find((l) => l.key === key)?.name || 'a list since removed';
   };
+
+  // WHERE EVERY VISIBLE CARD IS DRAWN, the catch-all included.
+  //
+  // A card resolves to a key through `listKeyOf` — its stored one, else the one
+  // its own state derives to — and since the lanes were unlocked (#428) that
+  // key can name a column the owner has deleted. Those cards get the UNFILED
+  // lane at the end rather than being dropped from the render: a card that
+  // still counts everywhere else and appears on no board is exactly the loss
+  // the old lock existed to prevent, and it is silent.
+  //
+  // It is drawn only when it holds something, and it is not a `project_lists`
+  // row — so it has no rename, no remove and no composer. `list: null` is what
+  // every one of those checks off.
+  const byKey = new Map<string, RoadmapItem[]>();
+  visible.forEach((i) => {
+    const derived = listKeyOf(i);
+    const key = lists.some((l) => l.key === derived) ? derived : UNFILED;
+    const at = byKey.get(key);
+    if (at) at.push(i); else byKey.set(key, [i]);
+  });
+  const columns: { key: string; name: string; cards: RoadmapItem[]; list: BoardList | null }[] =
+    lists.map((l) => ({ key: l.key, name: l.name, cards: byKey.get(l.key) || [], list: l }));
+  const orphans = byKey.get(UNFILED) || [];
+  if (orphans.length) columns.push({ key: UNFILED, name: 'Unfiled', cards: orphans, list: null });
 
   const submit = (fn: (v: string) => void) => (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -228,39 +259,52 @@ export function RoadmapPlan({
       )}
 
       <div className="rp-cols">
-        {lists.map((list) => {
-          const cards = visible.filter((i) => listKeyOf(i) === list.key);
-          // How many cards in this lane the Review room is holding. Counted off
-          // the SHOWN cards, like the sweep: a lane head that counts rows the
-          // area filter is hiding is a number you cannot reconcile with the
-          // column under it.
-          const waiting = REVIEW_LANES.has(list.key) ? cards.filter(isBuilt).length : 0;
-          const wide = focus === list.key;
+        {columns.map((col) => {
+          const { cards } = col;
+          // How many cards in this lane are built and waiting on a verdict.
+          // Counted off the SHOWN cards, like the sweep: a lane head that counts
+          // rows the area filter is hiding is a number you cannot reconcile with
+          // the column under it.
+          const waiting = REVIEW_LANES.has(col.key) ? cards.filter(isBuilt).length : 0;
+          const wide = focus === col.key;
           return (
-            <div className={`rp-col${wide ? ' focus' : ''}`} key={list.key}
-              onClick={(e) => toggleFocusFromLane(e, list.key)}
-              onDragOver={(e) => e.preventDefault()}
+            <div className={`rp-col${wide ? ' focus' : ''}${over === col.key ? ' over' : ''}${col.list ? '' : ' unfiled'}`}
+              key={col.key}
+              onClick={(e) => toggleFocusFromLane(e, col.key)}
+              onDragOver={(e) => { e.preventDefault(); if (over !== col.key) setOver(col.key); }}
+              onDragLeave={(e) => {
+                // Only when the pointer has actually left the COLUMN — dragging
+                // across the cards inside it fires a leave per card, and a
+                // highlight that flickers off under the cursor reads as a lane
+                // refusing the drop.
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver('');
+              }}
               onDrop={(e) => {
                 e.preventDefault();
+                setOver(''); setDragging(null);
                 const it = items.find((x) => x.id === Number(e.dataTransfer.getData('text/plain')));
-                if (it) onMoveToList(it, list.key);
+                // Dropping onto Unfiled CLEARS the stored column rather than
+                // storing this key — the key is a rendering slot, not a lane,
+                // and writing it would file the card under a column no server
+                // knows about.
+                if (it) onMoveToList(it, col.list ? col.key : '');
               }}>
               <div className="rp-col-head"
                 title={wide ? 'Click the lane to close it' : 'Click the lane to open it wide enough to read'}>
-                {renaming === list.key ? (
+                {renaming === col.key && col.list ? (
                   <input className="field-input sm" autoFocus value={renameDraft}
                     onChange={(e) => setRenameDraft(e.target.value)}
                     onBlur={() => setRenaming('')}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         const v = renameDraft.trim();
-                        if (v && v !== list.name) onRenameList(list, v);
+                        if (v && col.list && v !== col.name) onRenameList(col.list, v);
                         setRenaming('');
                       } else if (e.key === 'Escape') setRenaming('');
                     }} />
                 ) : (
                   <>
-                    <span className="nm">{list.name}</span>
+                    <span className="nm">{col.name}</span>
                     <span className="n">{cards.length}</span>
                   </>
                 )}
@@ -270,8 +314,8 @@ export function RoadmapPlan({
                       exactly the cards ON SCREEN, so it can never touch rows the
                       area or label filter is hiding: a bulk action whose reach is
                       wider than its view is how you lose work you never saw. */}
-                  {list.key === 'shipped' && cards.length > 0 && (
-                    confirmSweep === list.key ? (
+                  {col.key === 'shipped' && cards.length > 0 && (
+                    confirmSweep === col.key ? (
                       <span className="rp-sweep-confirm">
                         <button className="go" onClick={() => { onArchiveMany(cards); setConfirmSweep(''); }}>
                           Archive {cards.length}?
@@ -279,7 +323,7 @@ export function RoadmapPlan({
                         <button className="no" onClick={() => setConfirmSweep('')}>Cancel</button>
                       </span>
                     ) : (
-                      <button className="rp-sweep" onClick={() => setConfirmSweep(list.key)}
+                      <button className="rp-sweep" onClick={() => setConfirmSweep(col.key)}
                         title={`Archive the ${cards.length} card${cards.length === 1 ? '' : 's'} shown here${
                           areaFilter || labelFilter ? ' — the filter is on, so only these' : ''}`}>
                         Archive all
@@ -287,20 +331,20 @@ export function RoadmapPlan({
                     )
                   )}
 
-                  {/* Rename and remove, for the lanes that are the owner's. A
-                      locked lane gets the lock in place of the menu — the
-                      affordance says WHY rather than going missing, since a
-                      button absent from one column and present on the next
-                      reads as a rendering fault. */}
-                  {list.locked ? (
-                    <span className="rp-col-lock"
-                      title="A built-in lane. Cards are sorted into it automatically and the Review room moves work through it, so it cannot be renamed or removed — lanes you add yourself can be.">
-                      <LockIcon />
+                  {/* Rename and remove, on EVERY lane (#428). The catch-all is
+                      the one column without them, because it is not a row — it
+                      is where a deleted lane's cards are drawn, and it says so
+                      rather than offering tools that would have nothing to
+                      write to. */}
+                  {!col.list ? (
+                    <span className="rp-col-note"
+                      title="These cards were in a column that has since been removed. Drag each one into a lane — this is a place they are drawn, not a lane of its own, so it cannot be renamed or removed.">
+                      no lane
                     </span>
-                  ) : confirmList === list.key ? (
+                  ) : confirmList === col.key ? (
                     <span className="rp-sweep-confirm">
-                      <button className="go" onClick={() => { setConfirmList(''); onDeleteList(list); }}
-                        title="The cards stay — they go back to the lane their own state puts them in">
+                      <button className="go" onClick={() => { setConfirmList(''); onDeleteList(col.list!); }}
+                        title="The cards stay — they go back to the lane their own state puts them in, or to Unfiled if that lane is gone too">
                         Remove lane{cards.length ? ` · ${cards.length} card${cards.length === 1 ? '' : 's'} stay` : ''}?
                       </button>
                       <button className="no" onClick={() => setConfirmList('')}>Cancel</button>
@@ -308,14 +352,14 @@ export function RoadmapPlan({
                   ) : (
                     <>
                       <button className="rp-col-act" title="Rename this lane"
-                        onClick={() => { setConfirmList(''); setRenameDraft(list.name); setRenaming(list.key); }}>✎</button>
+                        onClick={() => { setConfirmList(''); setRenameDraft(col.name); setRenaming(col.key); }}>✎</button>
                       <button className="rp-col-act" title="Remove this lane — its cards are not deleted"
-                        onClick={() => { setRenaming(''); setConfirmList(list.key); }}>×</button>
+                        onClick={() => { setRenaming(''); setConfirmList(col.key); }}>×</button>
                     </>
                   )}
 
                   <button className={`rp-col-act${wide ? ' on' : ''}`} aria-pressed={wide}
-                    onClick={() => setFocus(wide ? '' : list.key)}
+                    onClick={() => setFocus(wide ? '' : col.key)}
                     title={wide ? 'Close this lane back to its column width' : 'Focus this lane — open it wide enough to read'}>
                     {wide ? '⇤' : '⇥'}
                   </button>
@@ -342,122 +386,135 @@ export function RoadmapPlan({
                 </span>
               )}
 
-              {cards.map((c) => (
-                <div className="rp-card" key={c.id} draggable
-                  onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(c.id)); e.dataTransfer.effectAllowed = 'move'; }}
-                  onClick={() => setOpenCard(openCard === c.id ? null : c.id)}
-                  onDoubleClick={() => onOpen(c)}
-                  title="Click for labels and scope · double-click to open">
-                  {c.labels.length > 0 && (
-                    <div className="rp-stripes">
-                      {labelsOf(c.labels, labels).map((l) => (
-                        <span key={l.key} className={`rp-stripe rl-${l.tone}`} title={l.name} />
-                      ))}
-                    </div>
-                  )}
-                  <div className="rp-title">{c.title}</div>
-                  <div className="rp-meta">
-                    <span className="dot" style={{ background: dotOf(c.area) }} />
-                    <span className="area">{c.area || 'untagged'}</span>
-                    <span className={`rp-mos ${c.bucket}`}>{BUCKET_LABEL[c.bucket]}</span>
-                    <span className="est">{c.estimate === null ? '' : `${c.estimate}w`}</span>
-                    {c.reviewTag && <span className="rp-verdict" title="Verdict already recorded">✓ {c.reviewTag}</span>}
-                  </div>
-
-                  {/* The card's verdict state. It was a link into the Review
-                      room; the room was culled and the LABEL stayed, because
-                      the two states are what the lane is read for — a change
-                      still waiting on the owner, against one already verdicted.
-                      A card in these lanes with neither — claimed but nothing
-                      built yet — shows nothing. Deliberately not a link now:
-                      the verdict is given from the ✓ Review panel on the card
-                      itself, and a link to a culled room would teach a route
-                      that no longer exists. */}
-                  {REVIEW_LANES.has(list.key) && (isBuilt(c) || c.reviewTag) && (
-                    <span className={`rp-card-review${isBuilt(c) ? ' waiting' : ''}`}
-                      title={isBuilt(c)
-                        ? 'Built and waiting on your verdict — give it from ✓ Review on this card'
-                        : 'The verdict is already on record'}>
-                      {isBuilt(c) ? 'Waiting on your verdict' : `Verdicted ${c.reviewTag}`}
-                    </span>
-                  )}
-
-                  {list.key === 'shipped' && (
-                    <div className="rp-shipped-acts" onClick={(e) => e.stopPropagation()}>
-                      <button className="rail-link"
-                        onClick={() => setReviewing(reviewing === c.id ? null : c.id)}
-                        title="Read what landed and give it a verdict">
-                        {reviewing === c.id ? 'Close review' : '✓ Review'}
-                      </button>
-                    </div>
-                  )}
-
-                  {reviewing === c.id && (
-                    <div className="rp-review" onClick={(e) => e.stopPropagation()}>
-                      {/* The NULL-verdict rule: no built note is NOT "it went
-                          fine". Say what is missing, hardest under an approve. */}
-                      {c.builtNote
-                        ? <div className="rp-note built">{c.builtNote}</div>
-                        : (
-                          <div className="rp-review-blind">
-                            No built note on this card — nothing was recorded about what actually landed,
-                            so there is nothing to read here but the title.
-                          </div>
-                        )}
-                      {c.claimedBy && <div className="rp-review-branch">{c.claimedBy}</div>}
-                      <div className="rp-acts">
-                        <button className="rail-link go" onClick={() => { setReviewing(null); onApprove(c); }}
-                          title="Records the same verdict the Review room records, and archives the card. It does not tick the item.">
-                          ✓ Approve &amp; archive
-                        </button>
-                        <button className="rail-link" onClick={() => { setReviewing(null); onSendBack(c); }}
-                          title="It did not hold up — un-ticks it, clears the branch claim and returns it to the board">
-                          ↩ Send back
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {openCard === c.id && (
-                    <div className="rp-detail" onClick={(e) => e.stopPropagation()}>
-                      {c.note && <div className="rp-note">{c.note}</div>}
-
-                      <div className="lbl">Labels</div>
-                      <CardLabels labels={labels} on={c.labels}
-                        open={labelsFor === c.id}
-                        onToggleOpen={() => setLabelsFor(labelsFor === c.id ? null : c.id)}
-                        onToggle={(key) => onToggleLabel(c, key)} />
-
-                      <div className="lbl">Scope</div>
-                      <div className="rp-toggles">
-                        {BUCKETS.map((b) => (
-                          <button key={b} className={`rp-mos ${b}${c.bucket === b ? ' on' : ''}`}
-                            onClick={() => onSetBucket(c, b)}>{BUCKET_LABEL[b]}</button>
+              {/* The cards scroll INSIDE the lane, so the head and the
+                  composer stay put and the board's height is the viewport's
+                  rather than the tallest column's. A board you scroll the whole
+                  page to reach the bottom of is a list of lists. */}
+              <div className="rp-col-cards">
+                {cards.map((c) => (
+                  <div className={`rp-card${dragging === c.id ? ' dragging' : ''}`} key={c.id} draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('text/plain', String(c.id));
+                      e.dataTransfer.effectAllowed = 'move';
+                      setDragging(c.id);
+                    }}
+                    onDragEnd={() => { setDragging(null); setOver(''); }}
+                    onClick={() => setOpenCard(openCard === c.id ? null : c.id)}
+                    onDoubleClick={() => onOpen(c)}
+                    title="Click for labels and scope · double-click to open">
+                    {c.labels.length > 0 && (
+                      <div className="rp-stripes">
+                        {labelsOf(c.labels, labels).map((l) => (
+                          <span key={l.key} className={`rp-stripe rl-${l.tone}`} title={l.name} />
                         ))}
                       </div>
-
-                      <div className="rp-acts">
-                        <button className="rail-link" onClick={() => onOpen(c)}>Open</button>
-                        <button className="rail-link" onClick={() => onArchive(c, true)}>Archive</button>
-                        {/* Deleting is not archiving: it is gone, and for a
-                            hook-extracted row it tombstones the fingerprint so
-                            the next push cannot re-create it. The parent's
-                            modal is what says so before it happens. */}
-                        <button className="rail-link danger" onClick={() => onDelete(c)}
-                          title="Delete this item — not the same as archiving it">Delete</button>
-                      </div>
+                    )}
+                    <div className="rp-title">{c.title}</div>
+                    <div className="rp-meta">
+                      <span className="dot" style={{ background: dotOf(c.area) }} />
+                      <span className="area">{c.area || 'untagged'}</span>
+                      <span className={`rp-mos ${c.bucket}`}>{BUCKET_LABEL[c.bucket]}</span>
+                      <span className="est">{c.estimate === null ? '' : `${c.estimate}w`}</span>
+                      {c.reviewTag && <span className="rp-verdict" title="Verdict already recorded">✓ {c.reviewTag}</span>}
                     </div>
-                  )}
-                </div>
-              ))}
 
-              {composer === list.key ? (
+                    {/* The card's verdict state. It was a link into the Review
+                        room; the room was culled and the LABEL stayed, because
+                        the two states are what the lane is read for — a change
+                        still waiting on the owner, against one already verdicted.
+                        A card in these lanes with neither — claimed but nothing
+                        built yet — shows nothing. Deliberately not a link now:
+                        the verdict is given from the ✓ Review panel on the card
+                        itself, and a link to a culled room would teach a route
+                        that no longer exists. */}
+                    {REVIEW_LANES.has(col.key) && (isBuilt(c) || c.reviewTag) && (
+                      <span className={`rp-card-review${isBuilt(c) ? ' waiting' : ''}`}
+                        title={isBuilt(c)
+                          ? 'Built and waiting on your verdict — give it from ✓ Review on this card'
+                          : 'The verdict is already on record'}>
+                        {isBuilt(c) ? 'Waiting on your verdict' : `Verdicted ${c.reviewTag}`}
+                      </span>
+                    )}
+
+                    {col.key === 'shipped' && (
+                      <div className="rp-shipped-acts" onClick={(e) => e.stopPropagation()}>
+                        <button className="rail-link"
+                          onClick={() => setReviewing(reviewing === c.id ? null : c.id)}
+                          title="Read what landed and give it a verdict">
+                          {reviewing === c.id ? 'Close review' : '✓ Review'}
+                        </button>
+                      </div>
+                    )}
+
+                    {reviewing === c.id && (
+                      <div className="rp-review" onClick={(e) => e.stopPropagation()}>
+                        {/* The NULL-verdict rule: no built note is NOT "it went
+                            fine". Say what is missing, hardest under an approve. */}
+                        {c.builtNote
+                          ? <div className="rp-note built">{c.builtNote}</div>
+                          : (
+                            <div className="rp-review-blind">
+                              No built note on this card — nothing was recorded about what actually landed,
+                              so there is nothing to read here but the title.
+                            </div>
+                          )}
+                        {c.claimedBy && <div className="rp-review-branch">{c.claimedBy}</div>}
+                        <div className="rp-acts">
+                          <button className="rail-link go" onClick={() => { setReviewing(null); onApprove(c); }}
+                            title="Records the same verdict the Review room records, and archives the card. It does not tick the item.">
+                            ✓ Approve &amp; archive
+                          </button>
+                          <button className="rail-link" onClick={() => { setReviewing(null); onSendBack(c); }}
+                            title="It did not hold up — un-ticks it, clears the branch claim and returns it to the board">
+                            ↩ Send back
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {openCard === c.id && (
+                      <div className="rp-detail" onClick={(e) => e.stopPropagation()}>
+                        {c.note && <div className="rp-note">{c.note}</div>}
+
+                        <div className="lbl">Labels</div>
+                        <CardLabels labels={labels} on={c.labels}
+                          open={labelsFor === c.id}
+                          onToggleOpen={() => setLabelsFor(labelsFor === c.id ? null : c.id)}
+                          onToggle={(key) => onToggleLabel(c, key)} />
+
+                        <div className="lbl">Scope</div>
+                        <div className="rp-toggles">
+                          {BUCKETS.map((b) => (
+                            <button key={b} className={`rp-mos ${b}${c.bucket === b ? ' on' : ''}`}
+                              onClick={() => onSetBucket(c, b)}>{BUCKET_LABEL[b]}</button>
+                          ))}
+                        </div>
+
+                        <div className="rp-acts">
+                          <button className="rail-link" onClick={() => onOpen(c)}>Open</button>
+                          <button className="rail-link" onClick={() => onArchive(c, true)}>Archive</button>
+                          {/* Deleting is not archiving: it is gone, and for a
+                              hook-extracted row it tombstones the fingerprint so
+                              the next push cannot re-create it. The parent's
+                              modal is what says so before it happens. */}
+                          <button className="rail-link danger" onClick={() => onDelete(c)}
+                            title="Delete this item — not the same as archiving it">Delete</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* No composer on the catch-all: a new card filed into a
+                  rendering slot would have nowhere to be written. */}
+              {col.list && (composer === col.key ? (
                 <input className="field-input sm" autoFocus value={draft} placeholder="Card title, then Enter"
                   onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={submit((v) => onAddCard(list.key, v))} />
+                  onKeyDown={submit((v) => onAddCard(col.key, v))} />
               ) : (
-                <button className="rp-add" onClick={() => { setComposer(list.key); setDraft(''); }}>+ Add a card</button>
-              )}
+                <button className="rp-add" onClick={() => { setComposer(col.key); setDraft(''); }}>+ Add a card</button>
+              ))}
             </div>
           );
         })}
