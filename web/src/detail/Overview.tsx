@@ -126,8 +126,8 @@ function Spine({ stages, slug }: { stages: Stage[]; slug: string }) {
     <div className="spine">
       <div className="spine-head">
         <div className="left">
-          {/* `hint`, not `note` — `.note` is the Workbench sticky and would
-              paint this line on yellow paper. */}
+          {/* `hint`, not `note` — the bare `.note` class is spoken for; see
+              the note by `.tile .sub` in styles.css. */}
           <span className="lbl">Progression</span>
           <span className="hint">bar height is the queue standing in a stage</span>
         </div>
@@ -912,9 +912,8 @@ function ConfigStrip({ project, onSaveDeploy, onSaveStack }: {
 // The north star. Its editor lived on the Polaris tab and came here when that
 // tab was culled — the FIELD is not a Polaris artifact: `projects.north_star`
 // is read by the autopilot's spec prompt, the roadmap's ✧ ops, the tab
-// consoles, the Workbench ops and the SessionStart hook, so leaving it with no
-// editor would have made six live surfaces depend on a value nobody could
-// change. It sits beside Directives because they are the same kind of thing:
+// consoles and the SessionStart hook, so leaving it with no editor would have
+// made five live surfaces depend on a value nobody could change. It sits beside Directives because they are the same kind of thing:
 // standing text that shapes every session, edited in one place.
 function NorthStarPanel({ text, onSave }: { text: string; onSave: (t: string) => void }) {
   const [editing, setEditing] = useState(false);

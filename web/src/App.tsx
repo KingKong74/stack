@@ -100,10 +100,10 @@ export default function App() {
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <TermStatusPill hidden={route.name === 'terminal' || termAlive > 0} />
       {route.name !== 'terminal' && <ToTop />}
-      {/* The quick ＋: a roadmap item or a thought jotted to the Workbench,
-          from any screen. It took the recipe library's corner, because the
-          thing you need everywhere is somewhere to PUT what you just thought
-          of. Not on the terminal screen, where it would sit over the pane. */}
+      {/* The quick ＋: a roadmap item, from any screen. It took the recipe
+          library's corner, because the thing you need everywhere is somewhere
+          to PUT what you just thought of. Not on the terminal screen, where it
+          would sit over the pane. */}
       {route.name !== 'terminal' && <QuickAddDock />}
     </>
   );

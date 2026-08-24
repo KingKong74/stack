@@ -40,11 +40,10 @@ import type { TabAgentKey } from '../store';
 // The names are duplicated from the server's registry (`server/src/agents.js`),
 // which is the same arrangement `lib/branch.ts` has with `scripts/lib/lane.mjs`:
 // none of the packages can import another, so the copy is kept in step by
-// discipline. Adding a console to a fourth agent means adding it here.
+// discipline. Adding a console to a third agent means adding it here.
 export const CONSOLE_AGENTS: { key: TabAgentKey; name: string }[] = [
   { key: 'auditor', name: 'Auditor' },
   { key: 'curator', name: 'Curator' },
-  { key: 'drafter', name: 'Drafter' },
 ];
 
 export const consoleSessionName = (agentKey: TabAgentKey, slug: string) =>

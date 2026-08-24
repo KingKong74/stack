@@ -56,10 +56,7 @@ export function HowToGuide({ onClose }: { onClose: () => void }) {
             the live app; a failing check turns into a bug in one click. <b>Roadmap</b> buckets
             work into Must/Should/Could/Won't — ticking an item archives it, and archived work
             takes a review verdict (solid / needs work / rethink, the latter two bouncing a
-            follow-up back onto the board). <b>Polaris</b> is the idea funnel, <b>Workbench</b> is
-            the canvas where notes and ideas get placed, wired and worked — the ✧ ops rail turns a
-            rough card into directions, a phased plan or a counter-case, and a plan promotes
-            straight onto the Roadmap. <b>Activity</b> is every push.
+            follow-up back onto the board). <b>Activity</b> is every push.
           </div>
         </div>
 

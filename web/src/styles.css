@@ -53,22 +53,12 @@
   --fainter: #b3ab9e;
   --placeholder: #b0a896;
 
-  /* the sand-card's own muted ink (the resume card's timestamp, the Workbench's
-     "from polaris" stamp) — warmer than --muted, which reads grey on cream */
+  /* the sand-card's own muted ink (the resume card's timestamp) — warmer than
+     --muted, which reads grey on cream */
   --resume-when: #a9947f;
-  /* the ink a sticky's own paper wants; dark re-bases it rather than inverting */
-  --note-ink: #473f30;
-  /* a sticky's default paper. The literal lived only as a var() fallback
-     (`var(--note-c, #fef4a8)`), so anything else wanting the same yellow had
-     nothing to name — the explorer's note swatch drew transparent. */
-  --note-paper: #fef4a8;
-  /* the hairline around a sticky's paper. Was an inline hex on .wb-card.note
-     until the Workbench folder import (#414) needed the same edge on a second
-     surface — a colour used twice is a token, per the rule at the top here. */
-  --note-paper-border: #ecdf8a;
 
-  /* the one shadow a resting card may have: hover lift, and the folder cards
-     the Workbench stacks. Everything heavier is a floating layer's. */
+  /* the one shadow a resting card may have: a hover lift. Everything heavier
+     is a floating layer's. */
   --shadow-raise: 0 3px 10px rgba(28,26,23,.10);
 
   --green: var(--live);
@@ -148,13 +138,8 @@
   --green-tint: #1e2b23;
   --chip-ink: #b0a89b;
   --panel: #262320;
-  /* on a dark ground the cream card is gone, so the warm stamp goes plain
-     muted; the sticky's ink follows its remixed paper rather than staying brown */
+  /* on a dark ground the cream card is gone, so the warm stamp goes plain muted */
   --resume-when: var(--muted);
-  --note-ink: #e4ddd1;
-  /* the sticky's paper is remixed against the dark ground (see .wb-card.note),
-     so its hairline has to be too rather than staying a light-mode yellow */
-  --note-paper-border: #4a4433;
   /* a shadow on a dark ground reads as a hole unless it is deeper and softer */
   --shadow-raise: 0 3px 12px rgba(0,0,0,.36);
 }
@@ -202,37 +187,6 @@
 [data-theme='dark'] .status-pill.open { color: var(--chip-ink); background: #2b2823; }
 [data-theme='dark'] .sev-pill.critical { background: #3a2323; }
 [data-theme='dark'] .tl .node { background: var(--card); }
-/* Sticky notes + the composer go properly dark: each note's paper colour is
-   remixed into the dark ground (hue survives, glare doesn't). The Workbench's
-   note cards are the same paper and take the same remix. */
-[data-theme='dark'] .wb-card.note {
-  background: color-mix(in srgb, var(--note-c, #fef4a8) 22%, #1d1a16);
-  border-color: color-mix(in srgb, var(--note-c, #fef4a8) 30%, #1d1a16);
-  box-shadow: 0 1px 4px rgba(0,0,0,.4);
-}
-[data-theme='dark'] .wb-card.note .wb-card-head .k,
-[data-theme='dark'] .wb-card.note .wb-card-head .m { color: var(--faint); }
-[data-theme='dark'] .wb-card { box-shadow: 0 2px 8px rgba(0,0,0,.34); }
-[data-theme='dark'] .wb-zoom, [data-theme='dark'] .wb-tray { box-shadow: 0 6px 18px rgba(0,0,0,.4); }
-[data-theme='dark'] .note {
-  background: color-mix(in srgb, var(--note-c, #fef4a8) 22%, #1d1a16);
-  border-color: color-mix(in srgb, var(--note-c, #fef4a8) 30%, #1d1a16);
-  box-shadow: 0 1px 4px rgba(0,0,0,.4);
-}
-[data-theme='dark'] .note .txt { color: #e4ddd1; }
-[data-theme='dark'] .note .when { color: rgba(236, 231, 223, .45); }
-[data-theme='dark'] .note .x { color: rgba(236, 231, 223, .35); }
-[data-theme='dark'] .note .x:hover { color: rgba(236, 231, 223, .7); }
-[data-theme='dark'] .composer {
-  background: color-mix(in srgb, #fef4a8 16%, #1d1a16);
-  border-color: color-mix(in srgb, #ecdf8a 26%, #1d1a16);
-  box-shadow: 0 1px 3px rgba(0,0,0,.35);
-}
-[data-theme='dark'] .composer textarea { color: #e4ddd1; }
-[data-theme='dark'] .composer textarea::placeholder { color: rgba(236, 231, 223, .4); }
-[data-theme='dark'] .composer .hint { color: rgba(220, 205, 130, .55); }
-[data-theme='dark'] .composer .add { background: var(--accent); }
-[data-theme='dark'] .composer .add:hover { background: var(--accent-deep); }
 /* Header, avatar, chips, misc literals */
 [data-theme='dark'] .topbar { background: rgba(23, 21, 18, 0.86); }
 [data-theme='dark'] .avatar { background: #45403a; }
@@ -631,9 +585,10 @@ a.tab { display: inline-block; }
 .tile .v.live { color: var(--live); }
 .tile .v.accent { color: var(--accent-deep); }
 .tile .v.building { color: var(--building); }
-/* `.sub`, NOT `.note` — `.note` is the Workbench's sticky and would paint
-   every one of these lines on yellow paper. The same trap the spine's `.hint`
-   sidesteps; it has now caught this file twice. */
+/* `.sub`, NOT `.note`. `.note` was the Workbench's sticky paper and painted
+   every line wearing it yellow; the cull took the sticky, but the bare class
+   is still a descendant selector on half a dozen surfaces here, so treat the
+   name as taken. The same trap the spine's `.hint` sidesteps. */
 .tile .sub { font-size: 12px; line-height: 1.45; color: var(--muted); }
 
 /* ---- the auto-extract inbox: on screen only when a push left something ---- */
@@ -1384,574 +1339,6 @@ a.tab { display: inline-block; }
 .parked-row .road-actions.arch { margin-top: 0; flex: none; opacity: 1; }
 .parked-row .road-actions.arch button { font-size: 12px; }
 .parked-row.hl { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 12px; }
-
-/* ---------- notes ----------
-   The notes WALL is gone (the Workbench replaced that tab), so its layout and
-   composer-chrome classes went with it. What survives is deliberate: `.composer`
-   is the shared quick-capture box on Polaris/Overview/Quality, and `.note` is
-   the sticky paper itself — the Workbench's note cards reuse it and its
-   --note-c dark remix. */
-.composer { background: #fef4a8; border: 1px solid #ecdf8a; border-radius: 14px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.09); max-width: 540px; margin-bottom: 28px; transform: rotate(-0.5deg); }
-.composer textarea { width: 100%; border: none; background: transparent; resize: none; outline: none; font-size: 14px; line-height: 1.5; color: #5a513a; min-height: 62px; }
-.composer .row { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
-.composer .hint { font-size: 11px; color: #b0a14f; }
-.composer .add { height: 30px; padding: 0 15px; border-radius: 8px; background: var(--ink); color: #fff; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; }
-.note { break-inside: avoid; -webkit-column-break-inside: avoid; margin-bottom: 16px; border: 1px solid rgba(0,0,0,.06); border-radius: 12px; padding: 15px 16px; position: relative; box-shadow: 0 1px 4px rgba(0,0,0,.1); background: var(--note-c, #fef4a8); }
-.note .x { position: absolute; top: 7px; right: 10px; color: rgba(0,0,0,.28); font-size: 15px; line-height: 1; }
-.note .x:hover { color: rgba(0,0,0,.55); }
-.note .txt { font-size: 14px; line-height: 1.5; color: #473f30; white-space: pre-wrap; padding-right: 10px; }
-.note .when { font-size: 11px; color: rgba(0,0,0,.34); margin-top: 11px; }
-
-/* ---------- the Workbench canvas (replaces the notes wall) ----------
-   Cards are absolutely placed in field coordinates and the field is one CSS
-   transform, so only the transform and the width are inline; every colour and
-   every hairline comes from the named palette above. */
-.wb { display: flex; flex-direction: column; }
-.wb-hint { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-/* 366px of chrome: what the page already spent, plus the explorer bar (41) and
-   the status bar (26) this feature added. Guessing low here is what pushes the
-   whole page into a second scrollbar. */
-.wb-body { display: flex; min-height: 0; height: calc(100vh - 366px); min-height: 460px;
-  border: 1px solid var(--line-2); border-top: 0; border-radius: 0; overflow: hidden; background: var(--card); }
-
-/* ---------- the explorer (#414) ----------
-   The bar above the canvas and the tree beside it. Both are chrome around the
-   canvas rather than part of it: nothing here scrolls with the field, and the
-   ground keeps its own overflow so a zoomed canvas cannot push them about. */
-.wb-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 9px;
-  border: 1px solid var(--line-2); border-bottom: 0; border-radius: 10px 10px 0 0;
-  background: var(--panel); }
-.wb-nav { display: flex; gap: 3px; }
-.wb-nav button { width: 27px; height: 27px; border-radius: 6px; color: var(--muted);
-  border: 1px solid var(--line-2); background: var(--surface); font-size: 13px; }
-.wb-nav button:hover:not(:disabled) { color: var(--ink); border-color: var(--line-3); }
-.wb-nav button:disabled { opacity: .38; cursor: default; }
-
-.wb-crumbs { flex: 1 1 220px; min-width: 170px; display: flex; align-items: center;
-  height: 27px; padding: 0 8px; overflow: hidden;
-  border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); }
-.wb-crumb-wrap { display: inline-flex; align-items: center; min-width: 0; }
-.wb-crumbs .sep { font-family: var(--mono); font-size: 10.5px; color: var(--fainter); padding: 0 4px; }
-.wb-crumb { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis; max-width: 190px; border-radius: 4px; padding: 1px 3px; }
-.wb-crumb:hover { color: var(--accent); }
-.wb-crumb.here { color: var(--ink); font-weight: 500; }
-/* A crumb lights up only when the drop will be ACCEPTED — the accepts test runs
-   before this class is set, so a target that would refuse never highlights. */
-.wb-crumb.over { background: var(--accent-tint); color: var(--accent-deep);
-  outline: 1px dashed var(--accent-soft); }
-
-.wb-search { width: 180px; height: 27px; padding: 0 9px; font-size: 12.5px;
-  border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); color: var(--ink); }
-.wb-search::placeholder { color: var(--placeholder); }
-
-.wb-views { display: flex; height: 27px; border: 1px solid var(--line-2); border-radius: 6px;
-  overflow: hidden; background: var(--surface); }
-.wb-views button { padding: 0 10px; font-size: 12px; color: var(--muted);
-  border-right: 1px solid var(--line-2); }
-.wb-views button:last-child { border-right: 0; }
-.wb-views button.on { background: var(--accent-tint); color: var(--accent-deep); font-weight: 500; }
-
-.wb-tree { flex: 0 0 216px; min-width: 216px; overflow-y: auto; padding: 8px 6px;
-  border-right: 1px solid var(--line); background: var(--panel); }
-.wb-tree-head { display: flex; align-items: center; justify-content: space-between;
-  font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--faint); padding: 0 6px 6px; }
-.wb-tree-head button { width: 20px; height: 20px; border-radius: 5px; color: var(--faint); }
-.wb-tree-head button:hover { color: var(--ink); background: var(--line); }
-.wb-tree-label { font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em;
-  text-transform: uppercase; color: var(--fainter); padding: 9px 6px 4px; }
-.wb-tree-row { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 8px;
-  border-radius: 6px; text-align: left; color: var(--body); font-size: 12.5px; }
-.wb-tree-row:hover { background: var(--line); }
-.wb-tree-row.on { background: var(--accent-tint); color: var(--accent-deep); }
-.wb-tree-row.over { outline: 1px dashed var(--accent-soft); background: var(--accent-tint); }
-.wb-tree-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wb-tree-row .count { font-family: var(--mono); font-size: 10px; color: var(--fainter); }
-.wb-tree-row .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
-.wb-tree-row .ic { width: 12px; height: 9px; flex: none; border-radius: 1px 2px 2px 2px;
-  background: var(--accent-soft); opacity: .85; }
-.wb-tree-row .ic.root { background: var(--accent); }
-.wb-tree-row .twist { flex: none; width: 10px; font-size: 8px; color: var(--faint);
-  transition: transform .12s; }
-.wb-tree-row .twist.open { transform: rotate(90deg); }
-.wb-tree-row .twist.none { opacity: 0; }
-.wb-tree-empty { font-size: 11.5px; color: var(--faint); line-height: 1.6; padding: 6px 8px; }
-.wb-tree-peg { flex: none; width: 18px; border-right: 1px solid var(--line);
-  background: var(--panel); color: var(--faint); font-size: 11px; }
-.wb-tree-peg:hover { color: var(--ink); background: var(--line); }
-
-/* Tiles and Details. Both read the same rows and differ only in how much of
-   each one they show, so the row markup is shared and the layout is not. */
-.wb-list { flex: 1; min-width: 0; overflow-y: auto; background: var(--card); }
-.wb-list-head, .wb-row { display: grid; grid-template-columns: 1fr 110px 74px 96px;
-  gap: 10px; align-items: center; padding: 7px 12px; }
-.wb-list-head { position: sticky; top: 0; z-index: 1; background: var(--panel);
-  border-bottom: 1px solid var(--line); }
-.wb-sort { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--faint); text-align: left; }
-.wb-sort.on, .wb-sort:hover { color: var(--ink); }
-.wb-row { border-bottom: 1px solid var(--line); cursor: default; user-select: none; }
-.wb-row:hover { background: var(--panel); }
-.wb-row .kind, .wb-row .items { font-size: 12px; color: var(--muted); }
-.wb-row .items { font-family: var(--mono); font-size: 11.5px; }
-.wb-row .when { font-family: var(--mono); font-size: 11px; color: var(--muted); }
-/* The icon lives INSIDE the name cell — as a grid child of its own it would
-   take a column and shift Kind, Items and Updated one place to the right. */
-.wb-row .name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
-.wb-row .name .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.wb-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-  gap: 10px; padding: 12px; }
-.wb-tile { display: flex; flex-direction: column; gap: 5px; padding: 10px;
-  border: 1px solid var(--line-2); border-radius: 9px; background: var(--surface);
-  cursor: default; user-select: none; }
-.wb-tile:hover { box-shadow: var(--shadow-raise); }
-.wb-tile .name { display: flex; align-items: center; gap: 7px; min-width: 0;
-  font-size: 13px; font-weight: 500; }
-.wb-tile .name .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wb-tile .meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.wb-tile .kind, .wb-tile .when, .wb-tile .items {
-  font-family: var(--mono); font-size: 10px; color: var(--fainter); }
-.wb-tile .when { margin-left: auto; }
-
-/* One selection style for both, because they are one selection. */
-.wb-tile.sel, .wb-row.sel { border-color: var(--accent); background: var(--accent-tint); }
-.wb-tile.marked, .wb-row.marked { outline: 2px solid var(--accent); outline-offset: -2px; }
-.wb-tile.over, .wb-row.over { outline: 2px dashed var(--accent-soft); outline-offset: -2px; }
-/* Stale is dimmed, never hidden: the point of the smart folder is that you can
-   still read what has gone quiet. */
-.wb-tile.stale, .wb-row.stale { opacity: .66; }
-.wb-list-empty { padding: 26px 16px; font-size: 12.5px; color: var(--faint); text-align: center; }
-
-/* The kind swatch, shared by the tiles and the rows. `flex: none` is doing real
-   work: inside a column-flex tile an unpinned span stretches to the full tile
-   width and draws as a large empty box. */
-.wb-tile .ic, .wb-row .ic { flex: none; width: 11px; height: 11px; border-radius: 2px;
-  align-self: center; }
-.wb-tile .ic.k-folder, .wb-row .ic.k-folder { background: var(--accent-soft); border-radius: 1px 3px 3px 3px; }
-.wb-tile .ic.k-note, .wb-row .ic.k-note { background: var(--note-paper); border: 1px solid var(--note-paper-border); }
-.wb-tile .ic.k-polaris, .wb-row .ic.k-polaris { background: var(--accent); }
-.wb-tile .ic.k-ai, .wb-row .ic.k-ai { background: var(--live); }
-
-/* The split's second pane (#415). A list explorer, not a second canvas — its
-   header says so by offering only the views it actually has. */
-.wb-side { flex: 0 0 340px; min-width: 260px; display: flex; flex-direction: column;
-  border-left: 1px solid var(--line); background: var(--card); min-height: 0; }
-.wb-side-bar { display: flex; align-items: center; gap: 7px; flex: none; padding: 7px 8px;
-  border-bottom: 1px solid var(--line); background: var(--panel); }
-.wb-side-bar .nav { flex: none; width: 25px; height: 25px; border-radius: 6px; color: var(--muted);
-  border: 1px solid var(--line-2); background: var(--surface); font-size: 12px; }
-.wb-side-bar .nav:hover:not(:disabled) { color: var(--ink); }
-.wb-side-bar .nav:disabled { opacity: .38; cursor: default; }
-.wb-side-bar .wb-crumbs { height: 25px; flex: 1 1 auto; min-width: 0; }
-.wb-side-bar .wb-views { height: 25px; }
-.wb-side-bar .wb-views button { padding: 0 7px; font-size: 11px; }
-.wb-side-body { flex: 1; min-height: 0; overflow: auto; position: relative; }
-.wb-side .wb-tiles { grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); padding: 9px; }
-.wb-side .wb-row { grid-template-columns: 1fr; }
-.wb-side .wb-row .meta { display: none; }
-.wb-side .wb-map { margin: 10px; }
-.ghost.sm.on { color: var(--accent); background: var(--accent-tint); border-color: var(--accent-tint-border); }
-
-/* ---------- the Map view, minimap and fullscreen (#415) ---------- */
-.wb-map { position: relative; transform-origin: 0 0; }
-.wb-map-wires { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
-.wb-map-wires path { stroke: var(--line-3); stroke-width: 1.5; }
-.wb-map-node { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 8px;
-  height: 44px; padding: 0 11px; border-radius: 9px; cursor: pointer; user-select: none;
-  background: var(--surface); border: 1px solid var(--line-2); box-shadow: var(--shadow-note); }
-.wb-map-node:hover { box-shadow: var(--shadow-raise); }
-.wb-map-node.root { background: var(--panel); border-color: var(--line-3); }
-.wb-map-node.here { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
-.wb-map-node .nm { flex: 1; min-width: 0; font-size: 13px; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; }
-.wb-map-node .ct { font-family: var(--mono); font-size: 10px; color: var(--fainter); flex: none; }
-.wb-map-node .tw { flex: none; min-width: 22px; height: 20px; padding: 0 5px; border-radius: 5px;
-  font-family: var(--mono); font-size: 10px; color: var(--muted); border: 1px solid var(--line-2);
-  background: var(--panel); }
-.wb-map-node .tw:hover { color: var(--accent); border-color: var(--accent-tint-border); }
-
-/* The minimap sits opposite the zoom chip so the two never overlap. */
-/* Clears the zoom chip below it (bottom 16 + ~32 tall) with room to spare —
-   two floating overlays sharing a corner is a control you cannot press. */
-/* Width and height come from the COMPONENT (#417): the frame it draws is fitted
-   to this box's aspect ratio, so a size that lived only here would be a number
-   the maths had to guess at. */
-.wb-mini { position: absolute; right: 16px; bottom: 60px;
-  border: 1px solid var(--line-3); border-radius: 8px; background: var(--panel);
-  overflow: hidden; cursor: crosshair; box-shadow: var(--shadow-raise); }
-.wb-mini .dot { position: absolute; border-radius: 2px; background: var(--accent-soft); opacity: .5; }
-/* A card's kind, in the canvas's own tones — the folders are the landmarks you
-   steer by, so they are the one thing drawn solid (#417). */
-.wb-mini .dot.k-folder { background: var(--accent-deep); opacity: .8; border-radius: 1px; }
-.wb-mini .dot.k-polaris { background: var(--accent); opacity: .6; }
-.wb-mini .dot.k-ai { background: var(--sage); opacity: .6; }
-.wb-mini .dot.k-note { background: var(--paused); opacity: .55; }
-/* The viewport frame is the ONE thing that must stay legible over the dots, and
-   the one thing you can take hold of — hence the grab cursor and, unlike the
-   first cut, pointer events. */
-.wb-mini .port { position: absolute; border: 1.5px solid var(--accent); border-radius: 3px;
-  background: var(--accent-tint); opacity: .42; cursor: grab; }
-.wb-mini .port:active { cursor: grabbing; opacity: .55; }
-.wb-mini .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 6px;
-  font-family: var(--mono); font-size: 9px; color: var(--faint); pointer-events: none;
-  background: color-mix(in srgb, var(--panel) 78%, transparent); }
-.wb-zoom button.on { color: var(--accent); background: var(--accent-tint); }
-
-/* Fullscreen is a class on the tab's own root: fixed, above the app chrome,
-   with the body's height freed so the canvas takes everything that is left. */
-.wb.full { position: fixed; inset: 0; z-index: 60; margin: 0; padding: 10px 12px 0;
-  background: var(--bg); overflow: hidden; }
-.wb.full .section-bar { display: none; }
-.wb.full .wb-body { height: calc(100vh - 100px); }
-
-/* The two system folders (#415) — Polaris and the Roadmap. Read-only, so they
-   get a header saying what they are instead of the toolbar's verbs. */
-.wb-system-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
-  padding: 11px 13px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.wb-system-head .dot { width: 7px; height: 7px; border-radius: 50%; align-self: center; flex: none; }
-.wb-system-head .t { font-size: 13.5px; font-weight: 600; }
-.wb-system-head .b { font-size: 11.5px; color: var(--muted); }
-.wb-tree-row.system .name { color: var(--body-2); }
-/* The Stack folder (#416) draws in line with the two derived ones and still
-   reads as a folder you can drop into — the sage tone is the difference, and
-   it is the same token the roadmap's "could" swatch uses. */
-.wb-tree-row.pinned .name { color: var(--body); font-weight: 550; }
-.wb-row.sys { grid-template-columns: 1fr 132px 110px 104px; }
-.wb-row.sys .when { display: flex; justify-content: flex-end; }
-.wb-row.sys .on-canvas { font-family: var(--mono); font-size: 10px; color: var(--faint); }
-/* The bucket swatch on a board row: the roadmap's own four tones, so the two
-   surfaces cannot disagree about what "must" looks like. */
-.wb-row .ic.bk-must { background: var(--critical); }
-.wb-row .ic.bk-should { background: var(--accent); }
-.wb-row .ic.bk-could { background: var(--sage); }
-.wb-row .ic.bk-wont { background: var(--paused); }
-/* A capped list says so, and on the axis that matters — see routes/audit.js. */
-.wb-list-note { padding: 10px 13px; font-size: 11.5px; color: var(--faint);
-  border-top: 1px solid var(--line); line-height: 1.6; }
-
-.wb-status { display: flex; align-items: center; gap: 14px; height: 26px; padding: 0 11px;
-  border: 1px solid var(--line-2); border-top: 0; border-radius: 0 0 14px 14px;
-  background: var(--panel); font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-.wb-status .mid { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wb-status .right { color: var(--building); }
-
-.wb-ground { flex: 1; position: relative; overflow: hidden; cursor: grab; background-color: var(--paper);
-  background-image: radial-gradient(var(--line-3) 1px, transparent 1px); touch-action: none; }
-.wb-ground.hidden { display: none; }
-.wb-ground:active { cursor: grabbing; }
-.wb-ground.linking { cursor: crosshair; }
-.wb-field { position: absolute; inset: 0; transform-origin: 0 0; }
-.wb-wires { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
-.wb-wire { stroke: var(--line-3); stroke-width: 1.5; }
-.wb-wire.ai { stroke: var(--accent-soft); stroke-dasharray: 4 4; }
-.wb-wire.hot { stroke: var(--critical); stroke-width: 2.5; stroke-dasharray: 0; }
-.wb-wire.dim { opacity: .15; }
-.wb-wire-hit { pointer-events: auto; }
-.wb-wire-hit path { pointer-events: stroke; cursor: pointer; }
-.wb-scissor { pointer-events: none; }
-.wb-scissor circle { fill: var(--critical); }
-.wb-scissor text { fill: #fff; font-size: 11px; }
-
-@keyframes wb-in { from { opacity: 0; } to { opacity: 1; } }
-
-/* No `both` on the fill: the entry animation's `to { opacity: 1 }` would
-   otherwise stick as the card's final style and win against focus dimming. */
-.wb-card { position: absolute; left: 0; top: 0; border-radius: 12px; padding: 12px 13px 13px;
-  cursor: grab; user-select: none; animation: wb-in .18s ease;
-  transition: opacity .16s;
-  background: var(--card); border: 1px solid var(--line); box-shadow: 0 2px 8px rgba(28,26,23,.06); }
-.wb-card.note { background: var(--note-c, #fef4a8); border-color: var(--note-paper-border); }
-.wb-card.polaris { background: var(--sand); border-color: var(--resume-border); }
-/* A folder card (#414). It is the one card with nothing inside to read, so it
-   is shorter than the rest and says how much it holds instead. */
-.wb-card.folder { background: var(--panel); border-color: var(--line-3); }
-.wb-card.folder .wb-card-head .k { color: var(--accent-soft); }
-.wb-card.folder.over { border-color: var(--accent); border-style: dashed;
-  box-shadow: 0 0 0 3px var(--accent-tint); }
-/* The one folder the owner did not make (#416) — same card, a sage edge and no
-   editable title, so it is recognisable without being a different shape. */
-.wb-card.folder.pinned { border-color: var(--sage); }
-.wb-card.folder.pinned .wb-card-head .k { color: var(--sage); }
-.wb-card.marked { outline: 2px solid var(--accent); outline-offset: 2px; }
-.wb-open { margin-top: 9px; font-size: 12px; color: var(--accent); }
-.wb-open:hover { color: var(--accent-deep); }
-.wb-card.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint), 0 8px 22px rgba(28,26,23,.10); }
-.wb-card.linking { border-color: var(--accent); border-style: dashed; }
-.wb-card.hl { outline: 2px solid var(--accent); outline-offset: 3px; }
-/* Focus mode. Dimmed cards stay interactive on purpose — clicking one is how
-   you move the focus to a different thread rather than switching focus off. */
-.wb-card.dim { opacity: .2; }
-.wb-card.dim:hover { opacity: .55; }
-
-.wb-card-head { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
-.wb-card-head .k { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.wb-card-head .m { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--faint); }
-.wb-card.polaris .wb-card-head .k { color: var(--resume-when); }
-.wb-card.ai .wb-card-head .k { color: var(--accent); }
-.wb-card.note .wb-card-head .k,
-.wb-card.note .wb-card-head .m { color: rgba(0,0,0,.36); }
-
-/* The card suppresses selection so dragging it never smears a text highlight —
-   which would also make its editable lines unselectable, so they take it back. */
-.wb-card [contenteditable='true'] { user-select: text; cursor: text; }
-.wb-card [contenteditable='true']:empty { min-width: 60px; min-height: 1em; }
-
-.wb-title { font-family: var(--disp); font-size: 13.5px; font-weight: 600; line-height: 1.3;
-  text-wrap: pretty; outline: none; border-radius: 4px; }
-.wb-card.note .wb-title { color: var(--note-ink, #473f30); font-family: var(--sans); font-weight: 500; }
-.wb-title[contenteditable='true']:focus { background: var(--accent-tint); box-shadow: 0 0 0 3px var(--accent-tint); }
-
-.wb-lines { display: flex; flex-direction: column; gap: 6px; margin-top: 9px; }
-.wb-line { display: flex; gap: 7px; width: 100%; text-align: left; font-size: 12px; line-height: 1.45;
-  color: var(--body); border: 1px solid transparent; border-radius: 8px; cursor: default; }
-.wb-line .mk { flex: none; font-weight: 600; color: var(--accent); }
-.wb-line .t { flex: 1; text-wrap: pretty; }
-.wb-line .tick { flex: none; color: var(--accent); font-size: 11px; }
-.wb-line.pick { padding: 7px 9px; border-color: var(--line-2); cursor: pointer; }
-.wb-line.pick:hover { border-color: var(--accent-tint-border); }
-.wb-line.chosen { background: var(--accent-tint); border-color: var(--accent-tint-border); }
-.wb-line.dim { opacity: .45; }
-
-.wb-phases { display: flex; flex-direction: column; margin-top: 10px; border-top: 1px solid var(--line-2); }
-.wb-phase { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
-.wb-phase .n { flex: none; width: 22px; font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--accent); }
-.wb-phase .b { flex: 1; min-width: 0; }
-.wb-phase .t { font-size: 12.5px; font-weight: 600; line-height: 1.3; outline: none; border-radius: 4px; }
-.wb-phase .d { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.4; outline: none; border-radius: 4px; }
-.wb-phase .g { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
-.wb-phase .gk { font-family: var(--mono); font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--building); }
-.wb-phase .gv { font-family: var(--mono); font-size: 10.5px; color: var(--body); outline: none; border-radius: 4px; }
-.wb-phase .gb { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em;
-  color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 5px; }
-.wb-phase .t:focus, .wb-phase .d:focus, .wb-phase .gv:focus { background: var(--accent-tint); box-shadow: 0 0 0 3px var(--accent-tint); }
-.wb-phase .x { flex: none; width: 20px; height: 20px; border-radius: 6px; color: var(--fainter); font-size: 13px; line-height: 1; }
-.wb-phase .x:hover { color: var(--critical); }
-.wb-addphase { text-align: left; padding: 8px 0 2px; font-size: 11.5px; color: var(--fainter); }
-.wb-addphase:hover { color: var(--accent); }
-.wb-phasehint { font-family: var(--mono); font-size: 10.5px; color: var(--fainter); padding: 6px 0 0; }
-.wb-ship { margin-top: 12px; width: 100%; height: 32px; border-radius: 9px; background: var(--ink); color: #fff;
-  font-size: 12px; font-weight: 600; }
-.wb-ship:hover:not(:disabled) { filter: brightness(1.15); }
-.wb-ship:disabled { background: var(--panel); color: var(--live); border: 1px solid var(--line-2); cursor: default; }
-
-.wb-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-
-.wb-zoom { position: absolute; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 2px;
-  background: var(--card); border: 1px solid var(--line-2); border-radius: 10px; padding: 3px; box-shadow: 0 4px 14px rgba(28,26,23,.08); }
-.wb-zoom button { height: 26px; border-radius: 7px; color: var(--body); font-size: 14px; min-width: 28px; }
-.wb-zoom button:nth-child(2) { min-width: 44px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
-.wb-zoom button:hover { background: var(--panel); }
-
-/* The bottom-left dock: pull ideas across, or start a note. */
-/* THE BOTTOM OF THE CANVAS HAS TWO OVERLAYS and they must not share pixels.
-   The dock grew wide enough (two pull buttons plus + note) to run underneath
-   the zoom chip on the right, and its + note button then intercepted every
-   click meant for the chip — the Fullscreen button was simply unpressable.
-   Capping the width and allowing a wrap keeps the dock out of the chip's
-   column at every viewport instead of only at the wide one. */
-.wb-dock { position: absolute; left: 18px; bottom: 18px; display: flex; align-items: center;
-  gap: 8px; flex-wrap: wrap; max-width: calc(100% - 250px); }
-.wb-pull { display: flex; align-items: center; gap: 9px; padding: 9px 13px; border-radius: 11px;
-  border: 1px solid var(--line-3); background: var(--surface); box-shadow: 0 6px 18px rgba(28,26,23,.08); }
-.wb-pull:hover, .wb-pull.on { border-color: var(--accent); }
-.wb-pull .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-.wb-pull .l { font-size: 12.5px; font-weight: 600; color: var(--ink); }
-.wb-pull .n { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-.wb-dock .chip-sm { background: var(--surface); box-shadow: 0 6px 18px rgba(28,26,23,.08); }
-
-/* The debrief dock button is the same family as .wb-pull — same shape, same
-   accent-on-hover, so the two read as one object with two sources. */
-.wb-debrief { display: flex; align-items: center; gap: 9px; padding: 9px 13px; border-radius: 11px;
-  border: 1px solid var(--line-3); background: var(--surface); box-shadow: 0 6px 18px rgba(28,26,23,.08); }
-.wb-debrief:hover, .wb-debrief.on { border-color: var(--accent); }
-.wb-debrief .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-.wb-debrief .l { font-size: 12.5px; font-weight: 600; color: var(--ink); }
-.wb-debrief .n { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-
-/* The picker itself, standing above the dock. */
-.wb-picker { position: absolute; left: 18px; bottom: 66px; width: 344px; max-height: min(560px, calc(100% - 90px));
-  background: var(--surface); border: 1px solid var(--line-3); border-radius: 14px;
-  box-shadow: 0 18px 44px rgba(28,26,23,.18); display: flex; flex-direction: column; overflow: hidden; z-index: 5; }
-.wb-picker .head { display: flex; align-items: center; gap: 9px; padding: 13px 15px 11px; border-bottom: 1px solid var(--line-2); }
-.wb-picker .head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-.wb-picker .head .t { font-family: var(--disp); font-size: 14px; font-weight: 600; }
-.wb-picker .head .n { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-.wb-picker .head .x { margin-left: auto; width: 24px; height: 24px; border-radius: 7px; color: var(--muted); font-size: 14px; line-height: 1; }
-.wb-picker .head .x:hover { background: var(--panel); color: var(--ink); }
-.wb-picker .find { padding: 11px 15px 0; }
-/* The shared .searchbox already styles its own input — this only sizes it. */
-.wb-picker .searchbox { width: 100%; }
-.wb-picker .filters { display: flex; gap: 6px; margin-top: 10px; }
-.wb-picker .list { flex: 1; min-height: 0; overflow: auto; padding: 10px 10px 6px; }
-.wb-picker .list .none { padding: 26px 12px; text-align: center; font-size: 12.5px; color: var(--faint); line-height: 1.5; }
-.wb-picker .foot { display: flex; align-items: center; gap: 10px; padding: 11px 15px; border-top: 1px solid var(--line-2); }
-.wb-picker .foot .n { font-size: 11.5px; color: var(--muted); }
-.wb-picker .foot .btn-accent { margin-left: auto; height: 32px; font-size: 12px; }
-.wb-picker .foot .btn-accent:disabled { opacity: .4; cursor: default; }
-.wb-picker .foot .btn-accent:disabled:hover { background: var(--accent); }
-/* The debrief foot has a second landing action beside Import — Ideas, which
-   is a plain chip-sm and needs the same disabled dimming spelled out again. */
-.wb-picker .foot .chip-sm:disabled { opacity: .4; cursor: default; }
-
-/* The head note under a capped picker — "a capped list must say it is
-   capped" (CLAUDE.md), read here rather than folded into the count. */
-.wb-picker .cap { padding: 0 15px 9px; font-family: var(--mono); font-size: 10px; color: var(--faint); }
-
-.wb-idea { display: flex; gap: 10px; width: 100%; text-align: left; padding: 9px 10px; margin-bottom: 5px;
-  border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); }
-.wb-idea:hover:not(:disabled) { border-color: var(--accent-tint-border); }
-.wb-idea.picked { background: var(--accent-tint); border-color: var(--accent-tint-border); }
-.wb-idea.on-canvas { opacity: .45; cursor: default; }
-.wb-idea .box { flex: none; width: 15px; height: 15px; margin-top: 2px; border-radius: 5px;
-  border: 1.5px solid var(--line-3); color: #fff; font-size: 10px; line-height: 12px; text-align: center; }
-.wb-idea.picked .box { background: var(--accent); border-color: var(--accent); }
-.wb-idea .b { flex: 1; min-width: 0; }
-.wb-idea .top { display: flex; align-items: baseline; gap: 7px; }
-.wb-idea .meta { font-family: var(--mono); font-size: 10px; color: var(--accent); }
-.wb-idea .age { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-left: auto; }
-.wb-idea .b > .t { display: block; font-size: 12.5px; font-weight: 500; line-height: 1.35; margin-top: 3px; text-wrap: pretty; }
-.wb-idea .sub { display: block; font-size: 10.5px; color: var(--muted); margin-top: 4px; }
-.wb-idea .sub .star { color: var(--accent); }
-
-/* One night's own account, grouped in the debrief list: a header row naming
-   the run, then its insights below it — an insight picked without its night
-   attached would be a pick with no context for what it came from. */
-.wb-debrief-night { margin-bottom: 10px; }
-.wb-debrief-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 4px 10px 6px;
-  font-family: var(--mono); font-size: 10px; color: var(--faint); }
-.wb-debrief-head .w { color: var(--muted); }
-.wb-debrief-head .i { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wb-debrief-head .o { text-transform: uppercase; letter-spacing: .05em; }
-.wb-debrief-head .more { flex-basis: 100%; color: var(--fainter); }
-
-/* An insight row is .wb-idea's own family — same box, same picked wash — so
-   the two pickers read as the same object with two sources. */
-.wb-insight { display: flex; gap: 10px; width: 100%; text-align: left; padding: 9px 10px; margin-bottom: 5px;
-  border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); }
-.wb-insight:hover:not(:disabled) { border-color: var(--accent-tint-border); }
-.wb-insight.picked { background: var(--accent-tint); border-color: var(--accent-tint-border); }
-/* Greys the way .wb-idea.on-canvas does — already spoken for, not pickable
-   twice. */
-.wb-insight.imported { opacity: .45; cursor: default; }
-.wb-insight .box { flex: none; width: 15px; height: 15px; margin-top: 2px; border-radius: 5px;
-  border: 1.5px solid var(--line-3); color: #fff; font-size: 10px; line-height: 12px; text-align: center; }
-.wb-insight.picked .box { background: var(--accent); border-color: var(--accent); }
-.wb-insight .b { flex: 1; min-width: 0; }
-.wb-insight .top { display: flex; align-items: baseline; gap: 7px; }
-.wb-insight .kind { font-family: var(--mono); font-size: 10px; color: var(--accent); }
-.wb-insight .from { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-left: auto; }
-.wb-insight .b > .t { display: block; font-size: 12.5px; font-weight: 500; line-height: 1.35; margin-top: 3px; text-wrap: pretty; }
-.wb-insight .sub { display: block; font-size: 10.5px; color: var(--muted); margin-top: 4px; }
-
-/* The rail's "attached" list — the thread the selected card sits in. */
-.wb-lineage { padding: 13px 17px; border-bottom: 1px solid var(--line-2); }
-.wb-lineage .row { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
-.wb-lineage .focus { margin-left: auto; font-family: var(--mono); font-size: 10px; padding: 3px 8px;
-  border-radius: 6px; border: 1px solid var(--line-2); color: var(--muted); }
-.wb-lineage .focus:hover:not(:disabled) { border-color: var(--accent-tint-border); color: var(--accent); }
-.wb-lineage .focus.on { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent); }
-.wb-lineage .focus:disabled { opacity: .45; cursor: default; }
-.wb-lineage .none { font-size: 11.5px; color: var(--faint); line-height: 1.45; }
-.wb-lineage .line { display: flex; align-items: baseline; gap: 8px; width: calc(100% + 16px); margin: 0 -8px;
-  text-align: left; padding: 6px 8px; border-radius: 8px; }
-.wb-lineage .line:hover { background: var(--panel); }
-.wb-lineage .line .d { flex: none; width: 14px; font-family: var(--mono); font-size: 9.5px; color: var(--accent); }
-.wb-lineage .line .kind { flex: none; width: 52px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .05em;
-  text-transform: uppercase; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wb-lineage .line .t { flex: 1; min-width: 0; font-size: 12px; color: var(--body);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* Sits above the grid but takes no pointer events — panning an empty canvas
-   still has to work, and there is nothing here to click. */
-.wb-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 6px; pointer-events: none; text-align: center; padding: 0 24px; }
-.wb-empty .big { font-family: var(--disp); font-size: 17px; font-weight: 600; color: var(--muted); }
-.wb-empty div:last-child { font-size: 13px; color: var(--faint); max-width: 42ch; }
-
-/* The rail SCROLLS ITSELF. Its content (head, ops, the design panel, the log)
-   runs to ~900px, which is taller than the body on any laptop — without this it
-   pushes the body's scrollHeight past its clientHeight and the overflow is
-   simply clipped, so the log and the ops below the fold become unreachable
-   rather than scrollable. Found by the UI smoke harness at both viewports. */
-.wb-rail { width: 312px; flex: none; border-left: 1px solid var(--line-2); background: var(--card);
-  display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
-.wb-rail.closed { width: 46px; align-items: center; gap: 14px; padding: 14px 0; }
-.wb-rail.closed .collapse { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line-2); color: var(--body); font-size: 12px; }
-.wb-rail .spine { writing-mode: vertical-rl; font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
-  text-transform: uppercase; color: var(--muted); }
-
-.wb-rail-head { padding: 15px 17px 13px; border-bottom: 1px solid var(--line-2); }
-.wb-rail-head .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.wb-rail-head .k, .wb-ops .k, .wb-log .k { font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
-  text-transform: uppercase; color: var(--muted); }
-.wb-rail-head .collapse { margin-left: auto; width: 24px; height: 24px; border-radius: 7px;
-  border: 1px solid var(--line-2); color: var(--muted); font-size: 12px; line-height: 1; }
-.wb-rail-head .t { font-family: var(--disp); font-size: 14.5px; font-weight: 600; line-height: 1.3; text-wrap: pretty; }
-.wb-rail-head .m { font-size: 12px; color: var(--muted); margin-top: 5px; }
-.wb-rail-head .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.wb-rail-head .acts .chip-sm { padding: 4px 10px; font-size: 11.5px; }
-.wb-rail-head .acts .chip-sm.danger:hover { color: var(--critical); border-color: var(--critical-line); }
-.wb-rail-head .linking-hint { margin-top: 9px; font-size: 11.5px; color: var(--accent); }
-
-.wb-ops { padding: 14px 17px; border-bottom: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 6px; }
-.wb-ops .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
-.wb-ops .note { font-family: var(--mono); font-size: 10px; color: var(--faint); }
-.wb-op { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 9px 11px;
-  border-radius: 10px; border: 1px solid var(--line-3); background: var(--surface); transition: border-color .14s; }
-.wb-op:hover:not(:disabled) { border-color: var(--accent); }
-.wb-op:disabled { opacity: .5; cursor: default; }
-.wb-op .g { flex: none; width: 20px; font-family: var(--mono); font-size: 12px; color: var(--accent); }
-.wb-op .b { flex: 1; min-width: 0; }
-.wb-op .l { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink); }
-.wb-op .h { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
-.wb-op .s { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--accent); }
-.wb-op.busy { border-color: var(--accent); background: var(--accent-tint); }
-
-.wb-model { margin-bottom: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line-2); }
-.wb-model .k { display: block; margin-bottom: 5px; }
-.wb-model select { display: block; width: 100%; max-width: 100%; box-sizing: border-box; height: 32px;
-  padding: 0 8px; border-radius: 9px; border: 1px solid var(--line-3); background: var(--surface);
-  color: var(--ink); font: inherit; font-size: 12px; }
-.wb-model select:hover:not(:disabled) { border-color: var(--accent); }
-.wb-model select:disabled { opacity: .5; cursor: default; }
-.wb-model .hint { display: block; margin-top: 6px; font-size: 10.5px; color: var(--faint); line-height: 1.4; }
-
-.wb-ask { margin-top: 4px; display: flex; flex-direction: column; gap: 5px; }
-.wb-ask input { width: 100%; height: 32px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--accent);
-  background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; outline: none; }
-.wb-ask .hint { font-size: 10.5px; color: var(--faint); line-height: 1.4; }
-
-.wb-log { padding: 14px 17px; flex: 1; min-height: 0; overflow: auto; }
-.wb-log .k { display: block; margin-bottom: 10px; }
-.wb-log .none { font-size: 11.5px; color: var(--faint); }
-.wb-log .line { display: flex; gap: 9px; margin-bottom: 9px; }
-.wb-log .w { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--faint); width: 46px; }
-.wb-log .t { font-size: 12px; line-height: 1.45; color: var(--body); text-wrap: pretty; }
-
-/* ◈ design — composes a brief from the canvas for a Claude session elsewhere.
-   No key, no request, no round trip: that absence is stated in the .hint,
-   never dressed up as a live integration. */
-.wb-design { padding: 14px 17px; border-bottom: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 8px; }
-.wb-design .row { display: flex; align-items: center; justify-content: space-between; }
-.wb-design .k { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.wb-design .note { font-family: var(--mono); font-size: 10px; color: var(--faint); }
-.wb-design .none { font-size: 11.5px; color: var(--faint); line-height: 1.45; }
-.wb-design .ask { width: 100%; resize: vertical; padding: 8px 10px; border-radius: 8px;
-  border: 1px solid var(--line-2); background: var(--surface); color: var(--ink); font: inherit;
-  font-size: 12px; line-height: 1.4; outline: none; }
-.wb-design .ask:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
-.wb-design .count { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-.wb-copy { width: 100%; padding: 9px 11px; border-radius: 10px; border: none; background: var(--accent);
-  color: #fff; font-size: 12.5px; font-weight: 600; transition: background-color .14s; }
-.wb-copy:hover:not(:disabled) { background: var(--accent-deep); }
-.wb-copy:disabled { opacity: .6; cursor: default; }
-.wb-design .hint { font-size: 11px; color: var(--muted); line-height: 1.45; }
-.wb-design .hint code { font-family: var(--mono); font-size: 10.5px; }
-.wb-design .pasterow { display: flex; gap: 8px; align-items: center; }
-.wb-design .pasterow .wb-copy { width: auto; flex: 1; }
-.wb-design .pastehint { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
 
 /* ---------- activity timeline ---------- */
 .linkbanner { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 11px; padding: 11px 15px; margin-bottom: 18px; }
@@ -2708,7 +2095,6 @@ a.tab { display: inline-block; }
    row with the same terracotta ring on whichever tab it opens. */
 .bug.hl { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(196, 98, 61, 0.16); }
 .road-item.hl { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(196, 98, 61, 0.16); }
-.note.hl { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ---------- mission control · mirror sites (#208) ---------- */
 /* The running previews, in the Now room under the session lanes. The URL is
@@ -4206,8 +3592,8 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 
 /* ---- the corner ＋ (quick add) ---- */
 /* The recipe library used to sit here. What you actually reach for from every
-   screen is somewhere to PUT a thought — a roadmap item, or a note that lands
-   on the Workbench — so the corner holds a composer instead of a library.
+   screen is somewhere to PUT a decision — a roadmap item — so the corner holds
+   a composer instead of a library.
    Glass, not paint (BUG-8, and it still applies): a launcher fixed to the
    corner of a column that runs full-bleed to 32px of the edge WILL sit on top
    of something, so it stays translucent and blurred, and below 1200px it drops
@@ -4251,10 +3637,10 @@ button.mc-day-chip:hover { border-color: var(--accent); }
 }
 
 .qa-head { display: flex; align-items: center; gap: 10px; }
-.qa-modes { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--panel); flex: 1; }
-.qa-mode { flex: 1; padding: 6px 10px; border-radius: 6px; border: none; background: transparent; font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; }
-.qa-mode:hover { color: var(--ink); }
-.qa-mode.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(28, 26, 23, 0.06); }
+/* The ＋ had a two-way segmented control (item / thought) until the Workbench
+   cull took the second destination. A one-entry segmented control is not a
+   control, so what is left is a plain title. */
+.qa-title { flex: 1; font-size: 13px; font-weight: 600; color: var(--ink); }
 .qa-close { font-size: 18px; line-height: 1; color: var(--muted); background: none; border: none; cursor: pointer; padding: 0 2px; }
 .qa-close:hover { color: var(--ink); }
 
@@ -5744,8 +5130,8 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-hint.flat { margin-right: 0; }
 
 /* ---- #379 THE TAB AGENT'S CONSOLE -----------------------------------------
-   The strip under the tab bar on Quality, Roadmap, Polaris and Workbench: one
-   position, one anatomy, four agents. It wears the console palette (the
+   The strip under the tab bar on Quality and Roadmap: one position, one
+   anatomy, one agent each. It wears the console palette (the
    `--console*` tokens) — the one dark ground in the app, so a second surface
    with its own tones would read as a different kind of thing. Shut it is one
    line; open it is a real terminal, and the holder gets
@@ -6358,8 +5744,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .road-item.rollup .road-check { pointer-events: none; }
 .road-item.rollup .road-body { display: flex; flex-direction: column; min-width: 0; }
 .road-item.rollup .t { display: block; text-wrap: pretty; }
-/* NOT .note — that class is the sticky-note paper on the Notes tab, and it
-   would paint this line yellow with a shadow. */
+/* NOT .note — see the note by `.tile .sub`: the bare class is spoken for. */
 .rollup-note { display: block; margin-top: 5px; font-size: 11.5px; line-height: 1.4;
   color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rollup-claim { display: inline-block; margin-left: 7px; font-family: var(--mono);
@@ -7130,9 +6515,8 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .ra-side:hover:not(:disabled) { background: var(--accent-tint); }
 .ra-side:disabled { opacity: .5; }
 .ra-action .nm { font-size: 13px; font-weight: 600; color: var(--ink); }
-/* `desc`, not `note` — `.note` is the Workbench sticky and paints anything
-   wearing it on yellow paper. It has now caught two new surfaces in this
-   file; treat the bare class name as taken. */
+/* `desc`, not `note` — see the note by `.tile .sub`: the bare class is
+   spoken for. */
 .ra-action .desc { font-size: 12px; line-height: 1.5; color: var(--body-2); }
 .ra-result { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .ra-result .txt { flex: 1; min-width: 220px; font-size: 13px; line-height: 1.5; color: var(--body); }

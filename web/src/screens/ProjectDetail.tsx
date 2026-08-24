@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Severity, Priority, Bug, BugStatus, WorkbenchPhase, ProjectPulse } from '../types';
+import type { Roadmap as RoadmapData, RoadmapItem, Severity, Priority, Bug, BugStatus, ProjectPulse } from '../types';
 import {
   getProjectDetail, getProjectPulse, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
-  deleteNote,
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
   patchProject, createShareLink, deleteShareLink,
   getRoadDraft, setRoadDraft, type RoadDraft, assistRoadmapItem,
@@ -15,7 +14,6 @@ import { go, hrefTo } from '../lib/route';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Quality } from '../detail/Quality';
 import { RoadmapTab } from '../detail/RoadmapTab';
-import { Workbench } from '../detail/Workbench';
 import { Activity } from '../detail/Activity';
 import { Modal } from '../components/Modal';
 import { BugModal } from '../components/BugModal';
@@ -27,11 +25,10 @@ import { newItemSched } from '../lib/plan';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
 // (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
-type Tab = 'overview' | 'quality' | 'roadmap' | 'workbench' | 'activity';
+type Tab = 'overview' | 'quality' | 'roadmap' | 'activity';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Overview' }, { key: 'quality', label: 'Quality' },
-  { key: 'roadmap', label: 'Roadmap' },
-  { key: 'workbench', label: 'Workbench' }, { key: 'activity', label: 'Activity' },
+  { key: 'roadmap', label: 'Roadmap' }, { key: 'activity', label: 'Activity' },
 ];
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
 
@@ -43,22 +40,22 @@ const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', arc
 const TAB_AGENT: Partial<Record<Tab, { key: TabAgentKey; name: string }>> = {
   quality: { key: 'auditor', name: 'Auditor' },
   roadmap: { key: 'curator', name: 'Curator' },
-  workbench: { key: 'drafter', name: 'Drafter' },
 };
 
-const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'workbench', 'activity']);
+const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
 // payload from an older server, a ⌘K target) keep working. 'tips' still
 // resolves too: the recipe library was a tab, then the bottom-left dock, and
 // is now neither — the corner holds the quick ＋ instead — so an old link lands
-// on Overview rather than 404ing. 'notes' resolves to the Workbench, which
-// is where a note is read now — and `hl` on that link is still a NOTE id, which
-// the canvas resolves to the card wrapping it. 'futures' joins them now that
-// Polaris is culled — the tab is gone, but `#/p/<slug>/futures` is in
-// bookmarks and in every older search payload, and landing it on Overview is
-// the same courtesy the three above already get.
+// on Overview rather than 404ing. 'futures' and 'notes' join them now that
+// Polaris and the Workbench are culled — both tabs are gone, but
+// `#/p/<slug>/futures` and `#/p/<slug>/notes` are in bookmarks and in every
+// older search payload, and landing them on Overview is the same courtesy the
+// three above already get. `hl` on such a link names a row that no longer has
+// a tab to be highlighted on; Overview ignores an `hl` it does not recognise,
+// which is the right nothing to do.
 const LEGACY_TABS: Record<string, Tab> = {
-  bugs: 'quality', audit: 'quality', tips: 'overview', notes: 'workbench', futures: 'overview',
+  bugs: 'quality', audit: 'quality', tips: 'overview', notes: 'overview', futures: 'overview',
 };
 const asTab = (t: string | undefined): Tab =>
   (t && TAB_KEYS.has(t as Tab) ? (t as Tab) : (t && LEGACY_TABS[t]) || 'overview');
@@ -179,20 +176,19 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
     const t = setTimeout(() => setHighlightId(null), 2800);
     return () => { clearTimeout(t); clearTimeout(poll); };
   }, [highlightId, tab]);
-  const [bugModal, setBugModal] = useState<{ open: boolean; title: string; fromNote: number | null }>(
-    { open: false, title: '', fromNote: null });
+  const [bugModal, setBugModal] = useState<{ open: boolean; title: string }>({ open: false, title: '' });
   const [roadModal, setRoadModal] = useState<{
     open: boolean; priority: Priority; title: string; note: string;
-    fromNote: number | null; editing: RoadmapItem | null; branch?: string; area?: string; fromDraft?: boolean;
-  }>({ open: false, priority: 'should', title: '', note: '', fromNote: null, editing: null });
-  const roadModalClosed = { open: false, priority: 'should' as Priority, title: '', note: '', fromNote: null, editing: null };
+    editing: RoadmapItem | null; branch?: string; area?: string; fromDraft?: boolean;
+  }>({ open: false, priority: 'should', title: '', note: '', editing: null });
+  const roadModalClosed = { open: false, priority: 'should' as Priority, title: '', note: '', editing: null };
   // Device-local draft: a half-typed add-modal dismissed by a stray click.
   const [roadDraft, setRoadDraftState] = useState<RoadDraft | null>(() => getRoadDraft(slug));
   useEffect(() => { setRoadDraftState(getRoadDraft(slug)); }, [slug]);
   const updateRoadDraft = (d: RoadDraft | null) => { setRoadDraft(slug, d); setRoadDraftState(d); };
   const openRoadDraft = (d: RoadDraft) => setRoadModal({
     open: true, priority: d.priority, title: d.title, note: d.note, branch: d.branch, area: d.area,
-    fromNote: null, editing: null, fromDraft: true,
+    editing: null, fromDraft: true,
   });
   const [confirmRoadDelete, setConfirmRoadDelete] = useState<RoadmapItem | null>(null);
   const [confirmBugDelete, setConfirmBugDelete] = useState<Bug | null>(null);
@@ -202,17 +198,13 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const [cleanup, setCleanup] = useState<RoadmapCleanupSuggestion[] | 'loading' | null>(null);
   const [cleanupErr, setCleanupErr] = useState('');
   const [cleanupPicked, setCleanupPicked] = useState<Set<number>>(new Set());
-  const [promotedNote, setPromotedNote] = useState<{ id: number; kind: 'bug' | 'roadmap' } | null>(null);
-  // Bumped whenever a note is deleted from outside the canvas, so the Workbench
-  // reloads instead of drawing a card whose note no longer exists.
-  const [notesNonce, setNotesNonce] = useState(0);
   // The corner ＋ writes through store.ts, not through this screen, so an item
   // filed into the project already on screen would otherwise be saved and
   // invisible. Re-read the payload (no loading flash — the page is already
-  // drawn) and bump the canvas, which owns its own copy of the notes.
+  // drawn).
   const reread = useCallback(() => {
     getProjectDetail(slug)
-      .then((d) => { setData(d); setNotesNonce((n) => n + 1); })
+      .then((d) => { setData(d); })
       .catch(() => { /* the write succeeded; a stale read is not worth an error banner */ });
   }, [slug]);
   useEffect(() => onItemFiled((filedSlug) => {
@@ -277,7 +269,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
 
   const bugs = data.bugs;
   const roadmap = data.roadmap;
-  const notes = data.notes;
 
   const allRoadmap = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
   // The project-scoped review queue: items nobody typed, that no human has
@@ -307,10 +298,8 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const addBug = ({ title, severity }: { title: string; severity: Severity }) =>
     guard(async () => {
       const bug = await createBug(slug, { title, severity });
-      const fromNote = bugModal.fromNote;
       setData({ ...data, bugs: [bug, ...bugs] });
-      setBugModal({ open: false, title: '', fromNote: null });
-      if (fromNote != null) setPromotedNote({ id: fromNote, kind: 'bug' });
+      setBugModal({ open: false, title: '' });
     });
 
   // #161/#278: the Quality page's inline report bar. `checkId` is set when the
@@ -356,11 +345,9 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       // #425 — an item somebody adds by hand lands ON the timeline, so deciding
       // to do something puts it on the plan rather than in the tray.
       const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: branch || undefined, area: area || undefined, subArea: subArea || undefined, plan: plan.length ? plan : undefined, risk: risk !== 'normal' ? risk : undefined, tier: tier || undefined, sched: newItemSched(project.weekZero) });
-      const fromNote = roadModal.fromNote;
       if (roadModal.fromDraft) updateRoadDraft(null); // the draft landed — clear it
       setData({ ...data, roadmap: { ...roadmap, [priority]: [...roadmap[priority], item] } });
       setRoadModal(roadModalClosed);
-      if (fromNote != null) setPromotedNote({ id: fromNote, kind: 'roadmap' });
     });
 
   const removeRoad = (item: RoadmapItem) =>
@@ -506,19 +493,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       setData({ ...data, roadmap: { ...roadmap, [item.bucket]: bucket } });
     });
 
-  // Notes are created and edited on the Workbench now, through its own route
-  // (which writes the note AND places its card in one transaction). What is
-  // left here is the one path that still deletes a note from OUTSIDE the
-  // canvas: "you promoted it, delete the original?". Bumping `notesNonce` is
-  // how the canvas hears about it — its card is gone server-side (the FK
-  // cascades) and it would otherwise keep drawing a card for a dead note.
-  const removeNote = (nid: number) =>
-    guard(async () => {
-      await deleteNote(slug, nid);
-      setData({ ...data, notes: notes.filter((n) => n.id !== nid) });
-      setNotesNonce((n) => n + 1);
-    });
-
   const saveNorthStar = (text: string) =>
     guard(async () => {
       await patchProject(slug, { north_star: text });
@@ -615,47 +589,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   // first — untouched when there's no orbit — with the orbit appended as a
   // plain list, same '- title — note' shape the converge tray's epic draft
   // already uses.
-  // Promote a note into the existing create-bug / create-roadmap flow, prefilled.
-  // The Workbench hands over the note id and the text it is currently showing —
-  // it holds cards, not Note rows, and the text on the card IS the note's text.
-  const promoteNote = (noteId: number, text: string, kind: 'bug' | 'roadmap') => {
-    if (kind === 'bug') setBugModal({ open: true, title: text, fromNote: noteId });
-    else setRoadModal({ open: true, priority: 'should', title: text, note: '', fromNote: noteId, editing: null });
-  };
-
-  // A plan card's phases → real roadmap items. THIS is the dispose half of the
-  // Workbench's propose/dispose split: everything an op writes stays a card
-  // until the human presses this, and then it goes through the ordinary roadmap
-  // POST like anything else. The gate travels in the item's note, because a
-  // phase without its gate is just a title.
-  const promotePlan = async (phases: WorkbenchPhase[]): Promise<boolean> => {
-    try {
-      setActionError('');
-      const road = { ...roadmap };
-      for (const p of phases) {
-        const item = await createRoadmapItem(slug, {
-          title: p.t,
-          note: [p.d, p.gate ? `Gate: ${p.gate}` : ''].filter(Boolean).join('\n\n'),
-          bucket: p.bucket,
-        });
-        road[item.bucket] = [...road[item.bucket], item];
-      }
-      setData({ ...data, roadmap: road });
-      return true;
-    } catch (e) {
-      setActionError((e as Error)?.message || 'Could not promote the plan.');
-      return false;
-    }
-  };
-
-  const keepPromotedNote = () => setPromotedNote(null);
-  const deletePromotedNote = () => {
-    const target = promotedNote;
-    if (!target) return;
-    setPromotedNote(null);
-    removeNote(target.id);
-  };
-
   // ---- inline site/repo URL editing ----
   const startUrl = (kind: 'site' | 'repo') => {
     setUrlDraft(kind === 'site' ? project.siteUrl : project.repoUrl);
@@ -792,8 +725,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             // (red checks + serious open bugs). Two badges gave two counts and
             // no sense of how bad it was.
             const n = t.key === 'quality' ? needsAttention
-              : t.key === 'roadmap' ? openRoadCount
-                : t.key === 'workbench' ? notes.length : 0;
+              : t.key === 'roadmap' ? openRoadCount : 0;
             return (
               <button key={t.key} className={`tab ${tab === t.key ? 'on' : ''}`} onClick={() => setTab(t.key)}>
                 {t.label}{n > 0 && <span className={`tab-n${t.key === 'quality' ? ' bad' : ''}`}>{n}</span>}
@@ -862,18 +794,18 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           // modals, navigate, or write through a path this screen owns.
           <RoadmapTab slug={slug} roadmap={roadmap} weekZero={project.weekZero} agents={data.agents}
             onItemChanged={replaceRoadItem} onItemsChanged={replaceRoadItems} onItemAdded={addRoadItem}
-            onOpenItem={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it })}
+            onOpenItem={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, editing: it })}
             legacy={{
               highlightId, liveBranches: data.liveBranches,
               staleItemDays: data.staleItemDays,
               onAdd: (p, area) => roadDraft
                 ? openRoadDraft(roadDraft)
-                : setRoadModal({ open: true, priority: p, title: '', note: '', area, fromNote: null, editing: null }),
+                : setRoadModal({ open: true, priority: p, title: '', note: '', area, editing: null }),
               draft: roadDraft,
               onResumeDraft: () => roadDraft && openRoadDraft(roadDraft),
               onDiscardDraft: () => updateRoadDraft(null),
               onToggle: toggleRoad,
-              onEdit: (it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, fromNote: null, editing: it }),
+              onEdit: (it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, editing: it }),
               onDelete: (it) => setConfirmRoadDelete(it),
               onClearNote: clearRoadNote,
               onToggleSkip: toggleSkipRoad,
@@ -898,11 +830,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
               consoleOffReason: consoleOff,
             }} />
         )}
-        {tab === 'workbench' && (
-          <Workbench slug={slug} projectName={data.project.name} geminiReady={data.geminiReady}
-            highlightId={highlightId}
-            notesNonce={notesNonce} onPromoteNote={promoteNote} onPromotePlan={promotePlan} />
-        )}
         {tab === 'activity' && (
           <Activity activity={activity} highlightRef={highlightRef} linkedBugId={linkedBugId} onClear={() => setHighlightRef(null)} />
         )}
@@ -914,7 +841,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
 
       {bugModal.open && (
         <BugModal initialTitle={bugModal.title}
-          onClose={() => setBugModal({ open: false, title: '', fromNote: null })} onSubmit={addBug} />
+          onClose={() => setBugModal({ open: false, title: '' })} onSubmit={addBug} />
       )}
       {roadModal.open && (
         <RoadmapModal initialPriority={roadModal.priority} initialTitle={roadModal.title}
@@ -989,7 +916,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           <h3>Public showcase</h3>
           <div className="confirm-body" style={{ marginBottom: 16 }}>
             Anyone with this link sees a read-only view — name, progress, summary and recent
-            activity. No bugs, roadmap, notes or ideas, and no API token needed.
+            activity. No bugs, roadmap or checks, and no API token needed.
           </div>
           {data.shareToken ? (
             <>
@@ -1031,13 +958,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           confirmLabel="Delete item" cancelLabel="Cancel" danger
           onConfirm={() => { const it = confirmRoadDelete; setConfirmRoadDelete(null); removeRoad(it); }}
           onCancel={() => setConfirmRoadDelete(null)} />
-      )}
-      {promotedNote && (
-        <ConfirmModal
-          title={promotedNote.kind === 'bug' ? 'Promoted to a bug' : 'Promoted to a roadmap item'}
-          body="Keep the original note, or delete it now that it's tracked elsewhere?"
-          confirmLabel="Delete note" cancelLabel="Keep note" danger
-          onConfirm={deletePromotedNote} onCancel={keepPromotedNote} />
       )}
     </div>
   );

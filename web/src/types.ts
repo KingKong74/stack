@@ -196,136 +196,6 @@ export interface AutopilotRun {
   finishedAt: string | null;
 }
 
-export interface Note {
-  id: number;
-  text: string;
-  colour: string;
-  when: string;
-  source: Source;
-}
-
-// ---- the Workbench canvas (the tab that replaced the notes wall) ----
-
-// A card is a PLACEMENT. A 'note' card wraps a Note row and reads its title
-// through from it, so `notes` stays authoritative; only 'ai' cards own their
-// own words. ('polaris' was the third kind and went with the Polaris cull.)
-// 'folder' (#414) is the second kind that owns its own title — it wraps no row,
-// so there is nothing to read the words through from.
-export type WorkbenchKind = 'note' | 'ai' | 'folder';
-export type WorkbenchOp = 'expand' | 'cluster' | 'plan' | 'blast' | 'touches' | 'critique' | 'ask';
-
-export interface WorkbenchLine { mk: string; t: string }
-export interface WorkbenchPhase {
-  n: string; t: string; d: string; gate: string; bucket: Priority;
-}
-
-export interface WorkbenchBody {
-  lines?: WorkbenchLine[];
-  phases?: WorkbenchPhase[];
-  chips?: string[];
-  // Expand's first `choices` lines are a fork, not a list — picking one records
-  // `chosen` so a later op can be told which branch the owner took.
-  choices?: number;
-  chosen?: number;
-  question?: string;   // what Ask was asked
-  shipped?: boolean;   // this plan's phases already went to the roadmap
-}
-
-export interface WorkbenchCard {
-  id: number;
-  kind: WorkbenchKind;
-  op: WorkbenchOp | '';
-  noteId: number | null;
-  title: string;
-  colour: string;      // the sticky's palette tint ('' for anything but a note)
-  meta: string;        // the corner stamp: P-number, op name, or a note's age
-  body: WorkbenchBody;
-  x: number; y: number; w: number;
-  parentId: number | null;  // which folder it sits in; null = the root (#414)
-  days: number;             // age of the WRAPPED row, for the smart folders to compare
-  when: string;
-  // '' for everything the owner made. 'stack' marks the one folder they did not
-  // and cannot remove (#416) — it is why this is a STRING and not a boolean:
-  // the next pinned folder is a second value here, not a second column.
-  system: string;
-}
-
-export interface WorkbenchEdge { id: number; a: number; b: number; ai: boolean }
-
-// One choice in the model picker above the ops rail — an app-wide server
-// setting (workbenchModel), not a per-project one.
-export interface WorkbenchModel {
-  model: string;
-  label: string;
-  note: string;
-}
-
-// One board item inside the Workbench's Roadmap system folder (#415). A thin,
-// READ-ONLY read: the roadmap's own PATCH is the only writer of a board item,
-// and a second editing surface here would be a second truth about the plan.
-export interface WorkbenchBoardItem {
-  id: number;
-  title: string;
-  bucket: Priority;
-  area: string;
-  tier: string;      // S|A|B|C, '' = unranked
-  when: string;
-}
-
-export interface WorkbenchData {
-  cards: WorkbenchCard[];
-  edges: WorkbenchEdge[];
-  // The open board, in the run queue's order, for the Roadmap system folder.
-  // Capped server-side; `boardTotal` is how many there really are, so the
-  // folder can say it is showing a slice rather than implying it is the lot.
-  board: WorkbenchBoardItem[];
-  boardTotal: number;
-  ops: { key: WorkbenchOp; glyph: string; label: string }[];
-  models: WorkbenchModel[];
-  model: string;  // the currently-selected model id, '' = the server's default
-}
-
-// The Workbench's second pull source: a night's own account of itself, not an
-// idea. `kind`/`from` are provenance, not content — the picker groups by kind
-// but the text is what a session, a reviewer, an architect or the debrief pass
-// itself actually said.
-export type DebriefInsightKind = 'blocker' | 'next-step' | 'advisor' | 'note';
-export type DebriefInsightFrom = 'session' | 'reviewer' | 'architect' | 'debrief';
-
-// The fingerprint IS the pick id — the server re-reads the words off it on
-// import, so the canvas can never hold a copy that drifted from the record.
-// The whole night's list comes down including what is already imported,
-// exactly like `WorkbenchIdea.onCanvas`: `imported` greys a row rather than
-// the server filtering it out, so the picker can still show it was taken.
-export interface DebriefInsight {
-  key: string;
-  kind: DebriefInsightKind;
-  from: DebriefInsightFrom;
-  text: string;
-  imported: boolean;
-  importedAs: '' | 'note' | 'dismissed';
-}
-
-export interface DebriefNight {
-  runId: number;
-  branch: string;
-  day: string;          // UTC calendar day the run finished
-  when: string;
-  itemId: number | null;
-  itemTitle: string;
-  outcome: 'landed' | 'no-commits' | 'failed' | 'limit' | 'planned';
-  insights: DebriefInsight[];
-  truncated: number;    // insights this night's cap dropped — so a capped list can say so
-}
-
-export interface WorkbenchDebrief {
-  nights: DebriefNight[];
-  days: number;
-  runsShown: number;
-  runsTotal: number;    // vs runsShown: how much the `days` window is hiding
-  total: number;
-}
-
 // The methods a check may use — GET probes a page, the rest exercise an API
 // function (#143, the Quality tab).
 export type CheckMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
@@ -396,12 +266,6 @@ export interface Activity {
   tags: string[];
   geminiNote: string; // the second model's one-line take on the push ('' until stamped)
   tokens?: number;    // real session usage from the transcript (#178); 0/absent = unknown
-}
-
-export interface Collections {
-  bugs: Bug[];
-  roadmap: Roadmap;
-  notes: Note[];
 }
 
 // ---- terminal "Jump back in" debrief (GET /api/projects/:slug/debrief) ----
@@ -521,7 +385,7 @@ export interface Overview {
 }
 
 // ---- ⌘K command palette search (GET /api/search) ----
-export type SearchKind = 'project' | 'bug' | 'roadmap' | 'note' | 'activity';
+export type SearchKind = 'project' | 'bug' | 'roadmap' | 'activity';
 export interface SearchTarget { slug: string; tab: string; highlight: string | null }
 export interface SearchResult {
   kind: SearchKind;
@@ -531,12 +395,12 @@ export interface SearchResult {
 }
 export interface SearchGroups {
   projects: SearchResult[]; bugs: SearchResult[]; roadmap: SearchResult[];
-  notes: SearchResult[]; activity: SearchResult[];
+  activity: SearchResult[];
 }
 export interface SearchResponse {
   query: string;
   groups: SearchGroups;
-  counts: { projects: number; bugs: number; roadmap: number; notes: number; activity: number; total: number };
+  counts: { projects: number; bugs: number; roadmap: number; activity: number; total: number };
   projectCount: number;
 }
 
@@ -562,7 +426,6 @@ export interface Settings {
   assistGuidance: string;     // ✧ Fill from note — standing steer folded into the prompt
   assistFields: string[];     // which fields the assist may fill (title always)
   accessPinSet: boolean;      // PIN sign-in available (the PIN itself never leaves the server)
-  workbenchModel: string;     // ✧ ops model choice, app-wide; '' = server default
 }
 
 // ---- device manager (GET /api/auth/devices) ----

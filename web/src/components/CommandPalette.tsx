@@ -4,19 +4,18 @@ import { getSearch, AuthError } from '../store';
 import { go } from '../lib/route';
 
 // The ⌘K command palette: a centred modal over a dimmed, blurred backdrop.
-// Searches across every project (names, bugs, roadmap, notes, activity) via
+// Searches across every project (names, bugs, roadmap, activity) via
 // GET /api/search, debounced. Full keyboard control: type to search, ↑↓ to move
 // the selection across groups, ↵ to open (navigating to the item's project + tab
 // and flagging it via the existing highlight mechanism), esc to close. Scope
 // chips filter by kind. Focus is trapped while open and restored on close.
 
-type Scope = 'all' | 'bugs' | 'roadmap' | 'notes' | 'activity';
+type Scope = 'all' | 'bugs' | 'roadmap' | 'activity';
 
 const SCOPES: { key: Scope; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'bugs', label: 'Bugs' },
   { key: 'roadmap', label: 'Roadmap' },
-  { key: 'notes', label: 'Notes' },
   { key: 'activity', label: 'Activity' },
 ];
 
@@ -25,12 +24,11 @@ const GROUP_ORDER: { key: keyof SearchResponse['groups']; label: string }[] = [
   { key: 'projects', label: 'Projects' },
   { key: 'bugs', label: 'Bugs' },
   { key: 'roadmap', label: 'Roadmap' },
-  { key: 'notes', label: 'Notes' },
   { key: 'activity', label: 'Activity' },
 ];
 
 const KIND_ICON: Record<SearchResult['kind'], string> = {
-  project: '▦', bug: '!', roadmap: '◆', note: '✎', activity: '↗',
+  project: '▦', bug: '!', roadmap: '◆', activity: '↗',
 };
 
 // Wrap each case-insensitive occurrence of the query in <mark> (terracotta).
@@ -172,7 +170,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           <input
             ref={inputRef}
             className="cmdk-input"
-            placeholder="Search projects, bugs, roadmap, notes, activity…"
+            placeholder="Search projects, bugs, roadmap, activity…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             aria-label="Search query"

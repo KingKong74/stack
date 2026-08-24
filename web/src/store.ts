@@ -1,9 +1,8 @@
 import type {
-  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Note, Check, CheckRun, CheckHistory, Overview,
+  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Tier, ResumeSince, ProjectDebrief,
-  WorkbenchData, WorkbenchCard, WorkbenchEdge, WorkbenchBody, WorkbenchOp,
-  WorkbenchDebrief, SchedSpan, BoardShape, BoardArea, BoardLabel, BoardList, ProjectPulse,
+  SchedSpan, BoardShape, BoardArea, BoardLabel, BoardList, ProjectPulse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -456,7 +455,6 @@ export interface ProjectDetailData {
   activity: Activity[];
   bugs: Bug[];
   roadmap: Roadmap;
-  notes: Note[];
   checks: Check[];
   keepResumeCard: boolean;
   staleItemDays: number;   // parked-item stale threshold in days (#247) — ages the Parked view
@@ -473,7 +471,7 @@ export interface ProjectDetailData {
 
 export async function getProjectDetail(slug: string): Promise<ProjectDetailData> {
   const d = await request<ProjectPayload & {
-    activity: Activity[]; bugs: Bug[]; roadmap: Roadmap; notes: Note[];
+    activity: Activity[]; bugs: Bug[]; roadmap: Roadmap;
     checks?: Check[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
     staleItemDays?: number; geminiReady?: boolean; agents?: TabAgentState;
     cadence?: { day: string; n: number }[]; lastPushAt?: string | null;
@@ -481,7 +479,7 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   return {
     project: toProject(d), currentPhase: d.currentPhase || '', northStar: d.northStar || '',
     blockers: d.blockers || [], directives: d.directives || [],
-    activity: d.activity, bugs: d.bugs, roadmap: d.roadmap, notes: d.notes,
+    activity: d.activity, bugs: d.bugs, roadmap: d.roadmap,
     checks: d.checks || [],
     keepResumeCard: d.keepResumeCard !== false,
     // An older server that doesn't send it falls back to the same default (#247).
@@ -1232,18 +1230,17 @@ export async function deleteSkill(id: number): Promise<void> {
 
 // ---- the TAB AGENTS (#361) ----
 //
-// Named specialists, each bound to one project tab: the Auditor (Quality),
-// the Curator (Roadmap) and the Drafter (Workbench). The binding is the
-// SERVER's — agents.js owns which agent may run which op — so nothing here
-// invents an agent or widens one; this is the read of that registry plus the
-// things the owner may tune.
-// The cull took three with their surfaces: 'polaris' (the Futures tab),
-// 'merger' (Mission Control's Merge room) and 'foreman' (the Review room).
+// Named specialists, each bound to one project tab: the Auditor (Quality) and
+// the Curator (Roadmap). The binding is the SERVER's — agents.js owns which
+// agent may run which op — so nothing here invents an agent or widens one;
+// this is the read of that registry plus the things the owner may tune.
+// The cull took five with their surfaces: 'polaris' (the Futures tab),
+// 'merger' (Mission Control's Merge room), 'foreman' (the Review room),
+// 'scribe' (the instructions tree) and 'drafter' (the Workbench tab).
 // ONE SURFACE, ONE SWITCH cuts both ways — an agent whose only surface is gone
 // has nothing left to switch, so it leaves the registry rather than lingering
-// as a toggle that governs nothing. 'scribe' went with the instructions tree
-// for the same reason.
-export type TabAgentKey = 'auditor' | 'curator' | 'drafter';
+// as a toggle that governs nothing.
+export type TabAgentKey = 'auditor' | 'curator';
 
 export interface TabAgentOp {
   op: string;
@@ -1424,141 +1421,4 @@ export interface TriageResult {
 // existing Keep/Dismiss handlers. 503 when the server has no Gemini key.
 export async function triageInbox(): Promise<TriageResult> {
   return request<TriageResult>('/triage', { method: 'POST' });
-}
-
-// ---- notes ----
-
-const notesBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/notes`;
-
-export async function getNotes(slug: string): Promise<Note[]> {
-  return request<Note[]>(notesBase(slug));
-}
-export async function createNote(slug: string, input: { text: string; colour?: string }): Promise<Note> {
-  return request<Note>(notesBase(slug), { method: 'POST', body: input });
-}
-export async function patchNote(slug: string, id: number, patch: { text: string }): Promise<Note> {
-  return request<Note>(`${notesBase(slug)}/${id}`, { method: 'PATCH', body: patch });
-}
-export async function deleteNote(slug: string, id: number): Promise<void> {
-  await request<void>(`${notesBase(slug)}/${id}`, { method: 'DELETE' });
-}
-
-// ---- the Workbench canvas ----
-//
-// Positions travel from here, not the server: only the client knows how tall a
-// card actually rendered, and stacking an op's output under the last one needs
-// that. Every write returns the server's row, so the canvas never guesses what
-// it just saved.
-
-const wbBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/workbench`;
-
-export async function getWorkbench(slug: string): Promise<WorkbenchData> {
-  return request<WorkbenchData>(wbBase(slug));
-}
-
-// A note card writes a REAL note — it shows up in ⌘K and promotes to a bug
-// like any other. `parentId` is which folder the card is born in; null (or
-// omitted) is the root, which is what every caller predating folders means
-// (#414).
-export async function addWorkbenchCard(
-  slug: string,
-  input: { kind: 'note'; text: string; x: number; y: number; parentId?: number | null },
-): Promise<WorkbenchCard> {
-  return request<WorkbenchCard>(`${wbBase(slug)}/cards`, { method: 'POST', body: input });
-}
-
-// `title` writes THROUGH to the note the card wraps — there is no second copy
-// of the text to drift.
-// `parentId` refiles the card: a folder id, or null for the root. The server
-// refuses a target that would make a loop and leaves the card where it was, so
-// a caller must take the RETURNED parentId as the truth rather than assuming
-// the one it sent stuck (#414).
-export async function patchWorkbenchCard(
-  slug: string, id: number,
-  patch: Partial<{
-    x: number; y: number; w: number; title: string; body: WorkbenchBody;
-    parentId: number | null;
-  }>,
-): Promise<WorkbenchCard> {
-  return request<WorkbenchCard>(`${wbBase(slug)}/cards/${id}`, { method: 'PATCH', body: patch });
-}
-
-// A new folder inside `parentId` (null = the root). Folders are cards, so the
-// answer slots straight into `data.cards` beside everything else.
-export async function addWorkbenchFolder(
-  slug: string,
-  input: { title: string; parentId: number | null; x: number; y: number },
-): Promise<WorkbenchCard> {
-  return request<WorkbenchCard>(`${wbBase(slug)}/folders`, { method: 'POST', body: input });
-}
-
-// `dropped` is every card that went with it: an op's output takes the branch it
-// fed.
-// Deleting a FOLDER reports `lifted` — the cards that were inside it — and
-// `liftedTo`, the folder they went to. They are NOT in `dropped`: a folder
-// delete never deletes what it held (#414).
-export async function deleteWorkbenchCard(
-  slug: string, id: number,
-): Promise<{
-  dropped: number[];
-  lifted?: number[]; liftedTo?: number | null;
-}> {
-  return request<{
-    dropped: number[];
-    lifted?: number[]; liftedTo?: number | null;
-  }>(`${wbBase(slug)}/cards/${id}`, { method: 'DELETE' });
-}
-
-export async function linkWorkbenchCards(slug: string, a: number, b: number): Promise<WorkbenchEdge> {
-  return request<WorkbenchEdge>(`${wbBase(slug)}/edges`, { method: 'POST', body: { a, b } });
-}
-
-export async function cutWorkbenchEdge(slug: string, id: number): Promise<{ dropped: number[] }> {
-  return request<{ dropped: number[] }>(`${wbBase(slug)}/edges/${id}`, { method: 'DELETE' });
-}
-
-// ✧ Run an op. Gemini proposes: the answer lands as a card to keep, edit or
-// cut — it never writes tracker state. 503 when the server has no key, which
-// is why the rail hides the ops rather than disabling them.
-export async function runWorkbenchOp(
-  slug: string,
-  input: { op: WorkbenchOp; cardId: number; x: number; y: number; question?: string; model?: string },
-): Promise<{ card: WorkbenchCard; edge: WorkbenchEdge }> {
-  return request<{ card: WorkbenchCard; edge: WorkbenchEdge }>(
-    `${wbBase(slug)}/ops`, { method: 'POST', body: input });
-}
-
-// #418 — the Drafter's pass over a thought that has NOT been filed yet (the
-// corner ＋'s Thought composer). It writes nothing and returns a proposal; an
-// empty `text` is the honest answer for a scrap that already reads well, not a
-// failure, and the composer says so rather than replacing the words with the
-// same words.
-export async function sharpenThought(slug: string, text: string): Promise<{ text: string; why: string }> {
-  return request<{ text: string; why: string }>(
-    `${wbBase(slug)}/sharpen`, { method: 'POST', body: { text } });
-}
-
-// A night's own account of itself, pulled onto the canvas the same way an idea
-// is: `days` narrows the window (server default 21) and is only put on the
-// query string when the caller actually wants something other than that.
-export async function getWorkbenchDebrief(slug: string, days?: number): Promise<WorkbenchDebrief> {
-  const qs = days ? `?days=${encodeURIComponent(days)}` : '';
-  return request<WorkbenchDebrief>(`${wbBase(slug)}/debrief${qs}`);
-}
-
-// Picks travel as KEYS, never text — the server re-reads the words out of the
-// debrief itself, so the canvas can never hold a copy that drifted from the
-// record. `skipped` is why a caller must not assume every pick landed (a key
-// already imported elsewhere, or one that no longer matches, comes back here
-// instead of as a card).
-export async function importWorkbenchDebrief(
-  slug: string,
-  input: {
-    as: 'note' | 'idea';
-    picks: { key: string; x: number; y: number }[];
-    parentId?: number | null;   // the folder the picker was opened from (#414)
-  },
-): Promise<{ cards: WorkbenchCard[]; skipped: { key: string; why: string }[] }> {
-  return request<{ cards: WorkbenchCard[]; skipped: { key: string; why: string }[] }>(
-    `${wbBase(slug)}/debrief`, { method: 'POST', body: input });
 }
