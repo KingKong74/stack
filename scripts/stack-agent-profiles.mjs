@@ -4,8 +4,8 @@
 // list what a spawn can build with, read one profile in full (the prompt is
 // the thing a human actually wants to read before customising it), create or
 // PATCH one, reset a builtin back to factory or drop a custom one, and point
-// one roadmap item at a profile — the same `agentProfile` PATCH the Workbench
-// UI would make, from the command line.
+// one roadmap item at a profile — the same `agentProfile` PATCH the Roadmap
+// modal would make, from the command line.
 //
 // `assign` checks the requested key against the live catalogue itself: the
 // server stores `roadmap_items.agent_profile` as a free string (nothing to

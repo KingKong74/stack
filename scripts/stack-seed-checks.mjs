@@ -140,7 +140,7 @@ function suiteFor(slug, ORIGIN) {
     // `opsReady` and not `enabled`, for the reason the block above gives: the
     // switch is the owner's to flip, the SHAPE is the contract.
     { name: 'Agents — the app-wide readiness map', url: u('/api/agents/state'), auth: true, json_path: 'curator.opsReady' },
-    { name: 'Agents — readiness names the Gemini-backed ops', url: u('/api/agents/state'), auth: true, json_path: 'drafter.opsGemini' },
+    { name: 'Agents — readiness names the Gemini-backed ops', url: u('/api/agents/state'), auth: true, json_path: 'curator.opsGemini' },
     { name: 'Agents — state gate closed', url: u('/api/agents/state'), expect_status: 401 },
     // The per-project read the tabs actually use — a different route with its
     // own shape, and the one whose absence hides the switch rather than the
@@ -185,28 +185,6 @@ function suiteFor(slug, ORIGIN) {
     // go red the day that check is renamed or retired.
     { name: 'Checks — per-check history', url: u(`/api/projects/${slug}/checks/history?limit=5`), auth: true },
     { name: 'Roadmap — collection', url: u(`/api/projects/${slug}/roadmap`), auth: true, json_path: 'must' },
-    // #312 — the whole Polaris galaxy is derived from this field: no isStar and
-    // every idea renders loose, with no star, no planet and no moon anywhere in
-    // the sky. Existence only — false is the common value and a real answer.
-    { name: 'Notes — collection', url: u(`/api/projects/${slug}/notes`), auth: true, expect_status: 200 },
-    // The Workbench canvas. `cards` is the load-bearing key — the tab renders
-    // nothing without it, and the read is also what BACKFILLS a card for any
-    // note filed outside the canvas, so a green here means old notes are still
-    // reachable. (`polaris`, the pull picker's funnel, was asserted here too
-    // and went with the Polaris cull.)
-    { name: 'Workbench — the canvas', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'cards' },
-    // #327 — the ✧ ops' model picker. Losing `models` silently empties the
-    // picker (the rail still renders, ops still fire against whatever the
-    // stored setting resolves to); losing `model` loses the current pick, so
-    // the client would fall back to the FIRST catalogue entry rather than
-    // what's actually stored.
-    { name: 'Workbench — model catalogue', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'models' },
-    { name: 'Workbench — current model pick', url: u(`/api/projects/${slug}/workbench`), auth: true, json_path: 'model' },
-    // The debrief — the second pull source, over autopilot nights rather than
-    // Polaris. Asserting only `nights` (an array, empty is a pass): indexing
-    // into a specific night's insight shape would go red on a healthy server
-    // that simply has no autopilot night yet, which is worse than no check.
-    { name: 'Workbench — the debrief', url: u(`/api/projects/${slug}/workbench/debrief`), auth: true, json_path: 'nights' },
     { name: 'Checks — collection', url: u(`/api/projects/${slug}/checks`), auth: true, json_path: '0.name' },
     { name: 'Tips — app-wide library', url: u('/api/tips'), auth: true, json_path: '0.name' },
     // The agent spawn-and-customisation engine's read surface. The built-in
@@ -273,8 +251,6 @@ const FEATURE_BY_PREFIX = {
   Checks: 'A project and its collections',
   Roadmap: 'A project and its collections',
   Futures: 'A project and its collections',
-  Notes: 'A project and its collections',
-  Workbench: 'A project and its collections',
   Tips: 'A project and its collections',
   // the switches and the specialists they switch
   Settings: 'Settings',
@@ -364,10 +340,9 @@ export async function main(argv = process.argv.slice(2)) {
 
   // Checks the suite does not own. Nothing here is ever deleted — a check added
   // by hand is the owner's, and this file has no way to tell one from a row the
-  // suite renamed away from. But a RED one has to be said loudly (BUG-11): when
-  // the Workbench payload's `tray` was renamed, the new check was added under a
-  // new name and the old row was left behind asserting a key that no longer
-  // existed. It failed every night for a fortnight, indistinguishable on
+  // suite renamed away from. But a RED one has to be said loudly (BUG-11): a
+  // payload key was once renamed, the new check was added under a new name and
+  // the old row was left behind asserting a key that no longer existed. It failed every night for a fortnight, indistinguishable on
   // the Quality page from a real regression, and "left alone" is what this line
   // said about it each time. An unowned check that passes is somebody's extra
   // cover; an unowned check that fails is a claim nobody is maintaining.

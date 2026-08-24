@@ -148,9 +148,11 @@ pass/fail count, never out of the report.
   Timeline's lanes and ruler clip `overflow-x` and hold bars and ticks placed
   at a percentage of a window that zooms from an hour to a quarter, so at most
   zooms most bars sit off-window **by design** — and the app discloses it
-  itself, with the `.rt-off` chip counting what went off each edge. Same for
-  the Workbench ground (2400px, deliberately pannable) and the Polaris galaxy
-  stage. `element-overflow-x` therefore skips an element whose overflowing
+  itself, with the `.rt-off` chip counting what went off each edge. The
+  Workbench ground and the Polaris galaxy stage were the other two surfaces of
+  this shape; both are culled, and the rule is kept general because the shape,
+  not the screen, is what it is about.
+  `element-overflow-x` therefore skips an element whose overflowing
   children are all absolutely positioned, provided **no** child left in normal
   flow spills — one of those is a genuine out-of-room bug and disqualifies the
   element however many absolute siblings it has. Counted as `viewport`, and
@@ -200,10 +202,10 @@ pass/fail count, never out of the report.
   and nothing inside this app can change it. Suppressed as `foreignFrame`,
   and deliberately the tightest form of the rule: one non-frame child, or one
   same-origin frame, and it is this app's layout again and gets reported.
-- **A pannable canvas clipped by its container is not a bug.** The Workbench
-  canvas (`svg.wb-wires` inside `div.wb-ground`) is a deliberately-oversized,
-  pannable 2400px surface that its container clips with `overflow: hidden` —
-  it never makes the document itself scroll. `element-past-viewport` walks
+- **A pannable canvas clipped by its container is not a bug.** A
+  deliberately-oversized pannable surface whose container clips it with
+  `overflow: hidden` never makes the document itself scroll. (The Workbench's
+  2400px canvas was the case this was written against, and is culled.) `element-past-viewport` walks
   from the element up to `<body>` and, if any ancestor's computed
   `overflow-x` is `hidden`, `clip`, `auto` or `scroll`, the element is
   contained and is not reported — only an element that reaches the viewport

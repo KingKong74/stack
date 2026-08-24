@@ -62,7 +62,7 @@ The block is a snapshot. For the current state at any moment, read the API:
   are standing instructions from the owner — honour them before anything else,
   and don't remove them yourself (they're cleared from the dashboard).
 - `GET /api/agents` — Stack's own in-app agents (Auditor · Quality tab,
-  Curator · Roadmap tab, Drafter · Workbench tab).
+  Curator · Roadmap tab).
   **These are not you**: they are the ✧ buttons on those surfaces, each
   restricted to its own, and any of them can be switched off. Each also carries
   a `console` — a live

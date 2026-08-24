@@ -6,15 +6,18 @@ the reference, and a doc restating it drifts. A shipped feature's rationale live
 message and its `built_note`. Add here only when a session would get something WRONG without it,
 and keep under the 40 KB budget (`node scripts/context-budget.test.mjs`). **Where a rule governs
 one file it lives in that file's header, and this file keeps only the pointer and the
-cross-cutting half** — `ingest.js`, `prompts.js`, `checks.js`, `workbench.js`, `worktrees.js`,
-`lib/branch.ts` and `lib/plan.ts` all carry theirs.
+cross-cutting half** — `ingest.js`, `prompts.js`, `checks.js`, `worktrees.js`, `lib/branch.ts`
+and `lib/plan.ts` all carry theirs.
 
-**THREE SURFACES WERE CULLED** at the owner's request: **Mission Control** (all seven rooms, and
+**FOUR SURFACES WERE CULLED** at the owner's request: **Mission Control** (all seven rooms, and
 the `/api/control`, `/api/review` and `/api/merge` layers), **Polaris** (the Futures tab, the
-galaxy, the `futures` table and the Workbench's pull) and the **instructions tree** (the managed
-CLAUDE.md library and its host sync). `#/control` renders `screens/ControlMock.tsx`, a placeholder.
-Rules that outlived their surface are kept below and SAY SO — a predicate written for a room is
-still the only definition of what it decided.
+galaxy and the `futures` table), the **instructions tree** (the managed CLAUDE.md library and its
+host sync) and the **Workbench** (the canvas tab, `/api/…/workbench`, the `workbench_cards` and
+`workbench_edges` tables and the Drafter). **`notes` went with the Workbench** — the canvas was the
+only surface that read one, so the table, `/api/…/notes`, the ⌘K Notes scope and the corner ＋'s
+Thought composer are all gone; the ＋ is roadmap-only. `#/control` renders
+`screens/ControlMock.tsx`, a placeholder. Rules that outlived their surface are kept below and SAY
+SO — a predicate written for a room is still the only definition of what it decided.
 
 ## What Stack is
 
@@ -40,9 +43,11 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
   `fetch` and never touch localStorage. `request()` attaches the bearer and throws `AuthError` on 401,
   clearing the token and returning to the gate.
 - `lib/route.ts` — hash router. `go.detail(slug, tab, highlight)` deep-links and **the TAB decides
-  what `hl` means** (commit → activity, bug key → quality, row id → roadmap, NOTE id → workbench);
-  legacy tab spellings still resolve rather than 404ing — `futures` joins them, so a Polaris
-  bookmark lands on Overview. `#/control` and anything under it lands on the placeholder rather
+  what `hl` means** (commit → activity, bug key → quality, row id → roadmap);
+  legacy tab spellings still resolve rather than 404ing — `futures` and `notes` join them, so a
+  Polaris or Workbench bookmark lands on Overview. `hl` on one of those names a row with no tab
+  left to highlight it on, and Overview ignoring an `hl` it does not recognise is the right
+  nothing to do. `#/control` and anything under it lands on the placeholder rather
   than 404ing: it is linked from six topbars, and a dead link reads as a broken app rather than as
   a surface being rebuilt.
 - `screens/` — `ls` is the index. The recipe library (`/api/tips`) is app-wide and has no screen of
@@ -197,11 +202,6 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   deliberately absent from the tick/un-tick clearing lists. The invariant with
   teeth: **a spawn always gets at least one building agent** (no profiles, all disabled or an unknown
   key all fall back to the executor), or the expensive director model silently does all the building.
-- **A Workbench card is a PLACEMENT, not content** — `workbench_cards` holds where something sits and
-  a `note` card's words are read THROUGH from `notes`; copying the text onto the card is what leaves
-  ⌘K searching a stale one. The canvas's other invariants are in `routes/workbench.js`'s header — read it
-  before touching the canvas. Every ✧ op only PROPOSES a card; `Promote N phases → Roadmap` is the
-  dispose half and goes through the ordinary roadmap POST.
 - **Model spend is TWO populations and they must never be mixed.** `autopilot_runs` answers to the
   executor/advisor policy; `sessions.model_usage` (the human's interactive work) does not, so a model
   picked by hand is **not drift**. Any merged share must be **token-based**, because a transcript
@@ -223,10 +223,11 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
 - **`autopilot_jobs.branch` is a real column; a merge job's branch still round-trips through free-text
   `detail`** (#243) — three places re-parse that string, so merge's contract was left alone. The
   `advise` lane matches on the column; its `advice` NULL means NO PASS RAN, never "no conflicts".
-- **A night's debrief arithmetic has one definition, `server/src/debrief.js`** (pure, DB-free), and
-  `GET /api/review/debrief` composes one night from the same rows the `nights` index is built from, so
-  the two can't drift. The five outcomes partition across four buckets — `landed` / `failed` (failed +
-  limit) / `planned` / `noCommits` — which always sum to `stats.runs`.
+- **A night's outcomes partition across FOUR buckets** — `landed` / `failed` (failed + limit) /
+  `planned` / `noCommits` — from five outcome values, and they always sum to the run count.
+  `debrief.js` was the shared definition and is culled: `GET /api/review/debrief` went with the
+  Review room and the Workbench's pull was its last caller. `pulse.js` spells the same partition
+  out itself and says why — if a second reader ever comes back, that is the one to read.
 - **Deleting a `source='hook'` bug, roadmap item or future tombstones its fingerprint** so the next
   push won't re-create it. That is what Dismiss means, and why it has no undo.
 - **`DELETE /api/projects/:slug` is SOFT** — stamps `deleted_at`, clears the share link, keeps every
@@ -272,10 +273,9 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   wrote — and NOT the autopilot's `--dangerously-skip-permissions` posture, safe only because it runs
   its own code in a throwaway worktree; and **`ask()` returns PARSED JSON**
   (`parseAgentJson`, fence-tolerant), which every ✧ call site depends on. **Gemini is not gone** — the per-push
-  review note, check assertions, labelling, triage and the Workbench ops are still Gemini, still
-  key-gated.
+  review note, check assertions, labelling and triage are still Gemini, still key-gated.
 - **AN AGENT'S BINDING IS CODE, NOT DATA (#361, #375).** `src/agents.js` is the registry and its header
-  lists the three and their surfaces. The rules that bite: each agent's `ops` list is CLOSED, and
+  lists the two and their surfaces. The rules that bite: each agent's `ops` list is CLOSED, and
   `agent_configs` holds only what the owner tunes (enabled, model, guidance, `ops_off`) — never which
   surface or which ops, because those are the restriction itself. A route binds once
   (`agentClient('auditor')`) and that client THROWS on another agent's op; that throw, not a comment,

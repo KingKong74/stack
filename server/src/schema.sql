@@ -942,12 +942,13 @@ CREATE TABLE IF NOT EXISTS agent_configs (
 -- only place the owner can see what the ✧ buttons cost. NUMERIC, so it comes
 -- back from pg as a STRING and needs Number() on the way out.
 ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS cost_usd NUMERIC NOT NULL DEFAULT 0;
--- THE CONSOLE SWITCH — the tab agents that own a live session (the Auditor, the
--- Curator, Polaris and the Drafter) each carry a terminal on their own tab: a
--- Claude session in the project's checkout, inside a tmux session on the host.
+-- THE CONSOLE SWITCH — the tab agents that own a live session (the Auditor and
+-- the Curator; Polaris and the Drafter had one until their tabs were culled)
+-- each carry a terminal on their own tab: a Claude session in the project's
+-- checkout, inside a tmux session on the host.
 -- It is not an op — nothing asks it for JSON — so it cannot live in ops_off,
 -- and it gets its own switch rather than riding `enabled`: an owner who wants
--- the ✧ buttons without a session open on four tabs has to be able to say so.
+-- the ✧ buttons without a session open on every tab has to be able to say so.
 -- Stored as the NEGATIVE (off) for the same reason every other flag here is:
 -- a missing row, and a column added to an existing row, must both read as ON.
 ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS console_off BOOLEAN NOT NULL DEFAULT false;

@@ -128,7 +128,6 @@ export const SCREENS = [
     path: '#/p/<slug>/roadmap',
     interactions: [...TIMELINE_ZOOM, ...TIMELINE_JUMPS],
   },
-  { id: 'project-workbench', label: 'Project — Workbench', path: '#/p/<slug>/workbench' },
   { id: 'project-activity', label: 'Project — Activity', path: '#/p/<slug>/activity' },
 ];
 
@@ -391,10 +390,11 @@ function scanLayout() {
   //     silently too short for its content.
   //   - element-past-viewport: an element only pushes the DOCUMENT wider
   //     than the window (what `page-overflow-x` reports as a symptom) if
-  //     nothing between it and the page clips or scrolls it first. The
-  //     Workbench canvas is 2400px wide and deliberately pannable —
-  //     `div.wb-ground` clips it with `overflow: hidden`, so it never
-  //     causes the page itself to scroll and is not a bug.
+  //     nothing between it and the page clips or scrolls it first. A canvas
+  //     wider than the window that its own container clips with
+  //     `overflow: hidden` never causes the page itself to scroll and is not
+  //     a bug. (The Workbench's 2400px ground was the case this was written
+  //     against, and went with the Workbench cull.)
   //   - either overflow axis on a VIEWPORT: an element windowing a coordinate
   //     space larger than itself is doing its job, not running out of room.
   //     The Timeline is the horizontal case — `.rt-lane` clips overflow-x and
@@ -405,12 +405,11 @@ function scanLayout() {
   //     loudest finding in the run (12 at first paint, 49 once pressed), all
   //     of it structural noise. Same reasoning as the ellipsis rule: the app
   //     shows the cut, so it is not the silent cut this finding hunts.
-  //     THE VERTICAL HALF (#423) is the Workbench ground: it holds an
-  //     absolutely-positioned field panned under it, it is 3× its own height in
-  //     content by design, and it offers a minimap that says so. (The Polaris
-  //     stage was the second such surface and went with the Polaris cull; the
-  //     rule is kept general because the shape, not the screen, is what it is
-  //     about.) What it must NOT swallow is a pane whose FLOW content is too
+  //     THE VERTICAL HALF (#423) was proven on the Workbench ground: it held
+  //     an absolutely-positioned field panned under it, was 3× its own height
+  //     in content by design, and offered a minimap that said so. (The Polaris
+  //     stage was the second such surface. Both are culled now; the rule is
+  //     kept general because the shape, not the screen, is what it is about.) What it must NOT swallow is a pane whose FLOW content is too
   //     tall for it — which is why the test disqualifies an element with any
   //     in-flow child that spills, and why the Futures scrub's clipped drag
   //     handle was still reported and then fixed in styles.css rather than
@@ -464,11 +463,11 @@ function scanLayout() {
   // many absolute siblings it has.
   //
   // ONE FUNCTION, BOTH AXES (#423). It was horizontal-only while the Timeline
-  // was the only surface it had been checked against; the vertical case is now
-  // proven on two more — the Workbench ground (`div.wb-field` is
-  // `position: absolute; inset: 0` under a 2400×1800 wire canvas, panned and
-  // zoomed by a transform). It is the same shape as `.rt-lane`: every child
-  // positioned into the space, nothing in flow that spills. Two spellings of
+  // was the only surface it had been checked against; the vertical case was
+  // proven on the Workbench ground (an `inset: 0` field under a 2400×1800 wire
+  // canvas, panned and zoomed by a transform) before that surface was culled.
+  // It is the same shape as `.rt-lane`: every child positioned into the space,
+  // nothing in flow that spills. Two spellings of
   // this test would be the drift the rest of this file's rules exist to
   // prevent, so the axis is a parameter.
   const isViewport = (el, axis = 'x') => {
