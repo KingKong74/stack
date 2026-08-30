@@ -194,7 +194,11 @@ check('start: bug keys pass and keep their place',
 // because none of the three packages can import another. Every OTHER place
 // that gates work reads one of those three. This guard is what stops a fourth
 // hand-rolled copy drifting back in: it caught SessionPlanModal, which had
-// been filtering the Run-now agenda by its own copy since #228.
+// been filtering the Run-now agenda by its own copy since #228. That component
+// has since gone (nothing rendered it once the Roadmap strip was culled), so
+// the list below is the two host-side gates — but the guard's own self-test
+// still fires on SessionPlanModal's copy verbatim, which is what keeps this
+// from becoming a check that cannot fail.
 //
 // Scoped to the files that actually gate execution. The review-inbox COUNTS
 // (overview.js, triage.js, ProjectDetail.tsx) legitimately spell
@@ -207,7 +211,6 @@ check('start: bug keys pass and keep their place',
 const QUEUES = [
   ['scripts/stack-autopilot.mjs', 'lib/approval.mjs'],          // the runner's eligible()/pins/agenda
   ['server/src/routes/autopilot.js', '../approval.js'],         // the two enqueue gates
-  ['web/src/components/SessionPlanModal.tsx', '../lib/approval'], // the Run-now agenda picker
 ];
 // A hand-rolled copy is a source test and a reviewed test close enough
 // together to be the same expression…
