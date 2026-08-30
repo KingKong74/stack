@@ -67,22 +67,27 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 //           working control from an inert one, which is the difference between
 //           this harness testing a control and merely photographing it.
 //
-// The Roadmap's four boards (#428), pressed in an order where every step is a
-// real change from the one before: the tab opens on Board, so it is pressed
-// LAST rather than first — leading with it would press a control already on and
-// prove nothing. The pressed stop is the one wearing `.on`, which is `board`'s
-// own answer and not an echo of the click.
-//
-// These are `setBoard` calls and so are read-only by the rule above: each swaps
-// which board renders and writes nothing. Their `expect` is a pressed state
-// rather than a text change because each one IS a toggle — unlike the Timeline
-// jumps that stood here, which had to be proved by the window label.
-const ROADMAP_BOARDS = ['Scope', 'Tiers', 'Parked', 'Board'].map((label) => ({
-  id: `board-${label.toLowerCase()}`,
-  label: `Roadmap — ${label}`,
-  click: `.rtab-bar .seg-control button:text-is("${label}")`,
-  expect: `.rtab-bar .seg-control button.on:text-is("${label}")`,
-}));
+// THE ROADMAP IS ONE BOARD NOW. The strip of four (Board · Scope · Tiers ·
+// Parked) is culled, so the four `setBoard` presses that stood here have no
+// control to press. What replaces them are the two panels the board opens over
+// itself — both read-only, both proved by something that must NOT already be on
+// screen, and both drawn whatever the board holds. Deliberately NOT a press on a
+// card: a card-shaped interaction fails on a project whose board is empty, and a
+// harness that cries about an empty board is one nobody trusts.
+const ROADMAP_PANELS = [
+  {
+    id: 'board-labels',
+    label: 'Roadmap — labels menu',
+    click: '.rp-bar .rp-labelbtn',
+    expect: '.rp-bar .rp-labelpop',
+  },
+  {
+    id: 'board-archive',
+    label: 'Roadmap — archive rail',
+    click: '.rp-bar .rp-archive-toggle',
+    expect: '.rp .rp-archive',
+  },
+];
 
 // ---- the screens ---------------------------------------------------------
 // One entry per top-level route this harness walks. `<slug>` is substituted
@@ -100,15 +105,15 @@ export const SCREENS = [
   { id: 'settings', label: 'Settings', path: '#/settings' },
   { id: 'project-overview', label: 'Project — Overview', path: '#/p/<slug>' },
   { id: 'project-quality', label: 'Project — Quality', path: '#/p/<slug>/quality' },
-  // The roadmap tab opens on the Board (RoadmapTab.tsx defaults `board` to
-  // 'lists'), so the strip is on screen at first paint and needs no navigating
-  // to. If that default ever changes, the interactions below start reporting a
-  // control that is already pressed — which is the correct, loud answer.
+  // The roadmap tab IS the board, so its own bar is on screen at first paint
+  // and needs no navigating to. If a strip ever comes back over it, these
+  // interactions start reporting a control they cannot reach — which is the
+  // correct, loud answer.
   {
     id: 'project-roadmap',
     label: 'Project — Roadmap',
     path: '#/p/<slug>/roadmap',
-    interactions: ROADMAP_BOARDS,
+    interactions: ROADMAP_PANELS,
   },
   { id: 'project-activity', label: 'Project — Activity', path: '#/p/<slug>/activity' },
 ];

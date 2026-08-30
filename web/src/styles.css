@@ -6605,7 +6605,12 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rp-note { font-size: 12.5px; line-height: 1.55; color: var(--body-2); }
 .rp-detail .lbl { margin: 11px 0 6px; }
 .rp-toggles { display: flex; gap: 5px; flex-wrap: wrap; }
-.rp-acts { display: flex; gap: 10px; margin-top: 12px; }
+/* FIVE ACTIONS IN A 262px LANE. They wrap onto a second line rather than
+   overflowing the card — a clipped "Delete" is a control the owner cannot see
+   they have — and each one stays on ONE line itself, or "⎇ Branch" splits its
+   glyph off from its word and reads as two buttons. */
+.rp-acts { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 12px; }
+.rp-acts .rail-link { white-space: nowrap; }
 /* ---- the Plan board's label menu (#382) ----
    One menu is the filter AND the editor: they answer the same question from
    either side, and a set the owner can grow has no ceiling to lay out flat. */
