@@ -752,9 +752,11 @@ test('clearing the verdict returns the card to the lane its state puts it in', (
 });
 
 // --- in the cycle ------------------------------------------------------------
-// `inCycle` is what the Roadmap tab's area chips count, what decides whether an
-// area chip is hidden, and what the Tiers board ranks. Three surfaces, one
-// predicate — these pin the three exclusions and, just as importantly, the two
+// `inCycle` is the definition of "in this cycle": archived, parked and Won't are
+// out, done and claimed are in. Its three surfaces (the area chips, the chip
+// hiding, the Tiers board) have all gone — the chips count what the board draws
+// now — so these tests are what keeps the predicate honest until something reads
+// it again. They pin the three exclusions and, just as importantly, the two
 // states that are NOT exclusions.
 
 test("the three exclusions: archived, parked and a Won't", () => {

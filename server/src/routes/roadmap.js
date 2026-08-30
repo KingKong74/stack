@@ -577,18 +577,19 @@ roadmap.post('/assist', async (req, res) => {
 // 503 if the host is unreachable.
 // POST /arrange -> the Curator reads the timeline and proposes an ORDER.
 //
-// The Arrange panel's other actions are arithmetic (lib/plan.ts): they pack,
-// compact and trim without reading a word. This one exists for the thing the
-// arithmetic structurally cannot do — notice that "usage dashboard" cannot
-// precede "metering ingest" — and it is the only part of Arrange that costs a
-// model call.
+// NO CLIENT CALLS THIS, NOR /cleanup, NOR /allocate. Their surfaces are culled —
+// the Timeline (#428), then the Tiers board and the Arrange panel with it — and
+// the three routes are kept as the record of what the Curator can still be
+// asked, exactly as the branch-preview route is. Read that as "unsurfaced", not
+// as "unused by accident": a new board that wants one of these writes its own
+// client wrapper, and the ops are still in the registry with their switches.
 //
 // PROPOSES ONLY. It returns {moves:[{id,start,why}]} and writes nothing: the
 // timeline ghosts each move in the accent and the owner applies or discards.
 // That is what keeps "Gemini annotates, the human disposes" true of a button
 // whose whole job is rearranging a plan.
 //
-// SCOPED BY AREA, because the panel that calls it is. `{area}` narrows the read
+// SCOPED BY AREA, because the panel that called it was. `{area}` narrows the read
 // to one area and `{untagged:true}` to the items carrying none; neither is the
 // client's UNALLOCATED sentinel, which stays a client filter value. The rows the
 // model may MOVE are the rows it is SHOWN — a model handed the whole board and
@@ -669,15 +670,15 @@ roadmap.post('/arrange', async (req, res) => {
 // POST /allocate -> the Curator reads the UNTAGGED items and proposes an area
 // for each. The other half of /arrange: that one says WHEN a row runs, this one
 // says WHERE it belongs, and neither is arithmetic — an area is a reading of
-// what the work is about, which is why the Arrange panel's sums cannot do it.
+// what the work is about, which is why no sum over the board can do it.
 //
-// PROPOSES ONLY, like everything else the Curator does: the panel ghosts the
+// PROPOSES ONLY, like everything else the Curator does: a caller ghosts the
 // picks and the owner applies or discards. Nothing here writes an area.
 //
 // IT IS NOT SCOPED BY THE AREA CHIP, and that is not an oversight — untagged IS
 // the population, so narrowing it to an area would leave nothing to work on.
-// The panel says so at the button rather than proposing zero picks and letting
-// the filter take the blame.
+// Whatever surfaces this next has to say so at the button rather than proposing
+// zero picks and letting the filter take the blame.
 //
 // THE MODEL MAY COIN AN AREA, and each pick says whether it did (`isNew`). A
 // board with no areas yet would otherwise get an empty answer to the one

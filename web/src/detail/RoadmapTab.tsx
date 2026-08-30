@@ -1,44 +1,53 @@
-// The Roadmap tab's SHELL — one strip over four boards, and THE BOARD IS THE
-// ROADMAP (#428).
+// The Roadmap tab's SHELL — THE BOARD IS THE ROADMAP, and now it is the only
+// thing here (owner's call, following #428).
 //
-// Lists opens by default and the other three sit beside it in the same strip.
-// It used to be a segmented control over three VIEWS — Timeline, Scope, Plan —
-// with Plan carrying a second strip of its own for Lists, Tiers and Parked, so
-// reaching the board you actually work on was two presses down a hierarchy that
-// only existed because the Timeline needed somewhere to be top-level. All of
-// them are the same rows read differently; one flat strip says so.
+// #428 flattened three views into one strip of four boards (Board · Scope ·
+// Tiers · Parked). The strip is gone with them: the other three were the same
+// rows read three more ways, and a reading you have to press for is a reading
+// nobody presses. What is left is the lists board and the furniture it needs —
+// the area chips, the label filter, the board's shape (areas + lists + labels,
+// fetched once here).
 //
-// THE TIMELINE IS GONE (#428, at the owner's request). What went with it,
-// because each answered to it and nothing else: the six arrange COMMANDS (they
-// were bar arithmetic — schedule, close the gaps, catch up, level, lead with
-// the tier, and `trim`, which was reached by selecting a bar), the ✧ ORDER read
-// (it proposes {id, sched} moves, and there is no longer anywhere to see a
-// proposed bar) and the SELECTED BAR itself. The schedule COLUMNS are untouched
-// — `sched_start_min` and the write-once baseline are still stored, still served
-// and still #401's minutes; nothing in the client edits them now, which is the
-// same state branch previews are in.
+// THE ARRANGE PANEL WENT IN THE SAME CUT. It had one button left — the ✧ Sort
+// the unallocated read — after the Timeline took its six quick commands with
+// it, and a collapsible panel drawn above every board to hold one button is
+// chrome in front of the thing you came to read. Its brief catalogue
+// (`lib/curatorTasks.ts`) and its test went too: a brief nothing can press is a
+// command that cannot be run. As with #428's `arrange`, the SERVER survives the
+// cut — `POST /roadmap/allocate`, `POST /roadmap/cleanup` and their registry
+// ops are still there, unsurfaced, exactly as the branch previews are. The
+// Curator itself keeps two surfaced ops (`titler` and `assist`, both in the
+// item modal) and its live session on this tab, so it is still an agent with
+// something to govern.
 //
-// THE OLD BOARD IS GONE — Scope replaced it, and replacing means ABSORBING:
-// Scope carries the Board's edit/delete/park/branch tools, every tag it showed,
-// and its drag-reorder, because the order within a lane IS the run queue's
-// tiebreak once `tier` has sorted it (CLAUDE.md). Dropping the Board without
-// moving all of that would have quietly removed controls the fleet depends on.
+// WHAT THE THREE CULLED BOARDS SURFACED AND NOTHING ELSE DID moved onto the
+// card rather than going with them — the same absorbing #428 did when Scope
+// replaced the old board:
+//   · the ⎇ branch claim (#205) was Scope's;
+//   · park / unpark was Parked's only way back, and a parked item with no
+//     control to unpark it is work you can lose by pressing a button once;
+//   · the desire tier (#227) was the Tiers board's, and it is the run queue's
+//     primary sort, so the card SHOWS it. Setting it is still the item modal's
+//     and still humans-only.
+// Ticking, the note-clearers and the per-bucket add button did NOT move: the
+// board is deliberately not a place where a verdict is given by moving
+// something (RoadmapPlan's header says why), and ＋ files a new item.
 //
-// This file owns everything the boards share: the area chips and their editor,
-// the label filter, the board's furniture (areas + lists + labels, fetched once
-// here), and the arrange proposal.
+// THE AREA CHIPS COUNT WHAT THE BOARD DRAWS. They used to count what was in the
+// cycle (`inCycle`), because the Scope drawer beside them was totalling the
+// same population and two answers to one question is one too many. With Scope
+// gone the chips sit over the board alone, so they count the cards it renders —
+// everything not archived, parked and won't included. A chip reading 3 above a
+// column of five would be the same fault the other way round. The ACTIVE chip
+// is never hidden, however its count falls: the filter you are looking through
+// has to stay on screen to be released. UNALLOCATED is a chip of its own and
+// NOT an area (`lib/plan.ts` carries the sentinel and why it is safe): untagged
+// work sits in no lane and behind no chip, which makes it the population most
+// easily forgotten, so it gets the one chip that finds it.
 //
-// THE AREA CHIPS COUNT WHAT IS IN THE CYCLE, and an area with nothing in it is
-// hidden behind a "+N more" rather than drawn as a zero. `inCycle` is
-// `lib/plan.ts`'s, the same predicate `scopeTotals` splits on, because a chip
-// counting a different population from the drawer beside it is two answers to
-// one question. The ACTIVE chip is never hidden, however its count falls: the
-// filter you are looking through has to stay on screen to be released. UNALLOCATED is a
-// chip of its own and NOT an area (`lib/plan.ts` carries the sentinel and why it is safe):
-// untagged work sits in no lane and behind no chip, which makes it the population most
-// easily forgotten, so it gets the one chip that finds it. It writes through
-// `store.ts` like every other screen and hands its children plain callbacks —
-// the boards themselves are presentational and testable by inspection.
+// It writes through `store.ts` like every other screen and hands its children
+// plain callbacks — the board itself is presentational and testable by
+// inspection.
 //
 // One rule worth stating: EVERY WRITE HERE IS OPTIMISTIC AND REVERSIBLE. The
 // local copy updates, the PATCH goes out, and a rejection puts the row back and
@@ -47,37 +56,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
-  BoardArea, BoardLabel, BoardList, Priority, Roadmap as RoadmapData, RoadmapItem, Tier,
+  BoardArea, BoardLabel, BoardList, Priority, Roadmap as RoadmapData, RoadmapItem,
 } from '../types';
-import type { TabAgentState } from '../store';
 import {
   getBoardShape, patchRoadmapItem, createRoadmapItem,
   addArea, renameArea as renameAreaApi, deleteArea as deleteAreaApi, addList as addListApi,
   renameList as renameListApi, deleteList as deleteListApi,
   addLabel as addLabelApi, deleteLabel as deleteLabelApi,
-  setAreaColour, allocateRoadmap, agentCan, agentOffReason,
+  setAreaColour,
 } from '../store';
-import { inCycle, UNALLOCATED } from '../lib/plan';
-import { taskByKey } from '../lib/curatorTasks';
+import { UNALLOCATED } from '../lib/plan';
 import { DEFAULT_LABELS } from '../lib/labels';
-import { RoadmapScope } from './RoadmapScope';
 import { RoadmapPlan } from './RoadmapPlan';
-import { RoadmapTiers, RoadmapParked } from './RoadmapBoards';
-import {
-  RoadmapArrange, arrangementCount, type Arrangement, type ReadOp,
-} from './RoadmapArrange';
-
-// ONE FLAT STRIP, and Board is first because it is what the tab is for. The
-// other three are readings of the same rows, and a hierarchy that put two of
-// them a press further away was drawn around a Timeline that no longer exists.
-type Board = 'lists' | 'scope' | 'tiers' | 'parked';
-
-const BOARDS: { key: Board; label: string; title: string }[] = [
-  { key: 'lists', label: 'Board', title: 'The columns — drag a card between them' },
-  { key: 'scope', label: 'Scope', title: 'What is in this cycle and what is first to cut' },
-  { key: 'tiers', label: 'Tiers', title: 'What you want built next — the run queue’s primary sort' },
-  { key: 'parked', label: 'Parked', title: 'Everything parked, oldest park first' },
-];
 
 // #378 — how many areas a board needs before the chip row is worth searching.
 // Below this the chips all fit and a search box is furniture; above it you are
@@ -94,41 +84,18 @@ const flat = (r: RoadmapData): RoadmapItem[] => [...r.must, ...r.should, ...r.co
  */
 export interface RoadmapLegacy {
   highlightId?: string | null;
-  liveBranches?: string[];
-  /** #247 — days a parked item may sit before the shelf calls it stale. */
-  staleItemDays?: number;
-  onAdd: (p: Priority, area?: string) => void;
   /** An unfinished item from a modal that was closed — resumable, not lost. */
   draft?: { title: string } | null;
   onResumeDraft?: () => void;
   onDiscardDraft?: () => void;
-  onToggle: (item: RoadmapItem) => void;
-  onEdit: (item: RoadmapItem) => void;
+  /** The parent's confirm modal — deleting is not archiving and asks first. */
   onDelete: (item: RoadmapItem) => void;
-  onClearNote: (item: RoadmapItem, field: 'note' | 'refineNote') => void;
-  onToggleSkip: (item: RoadmapItem) => void;
-  onReorder?: (item: RoadmapItem, toBucket: Priority, beforeId: number | null) => void;
-  /** ✧ the Curator's board cleanup — Tiers board only, where it has lived. */
-  onCleanup?: () => void;
-  onSendToTerminal?: (brief: string) => void;
-  /**
-   * Hand a brief to THIS TAB'S AGENT CONSOLE — the Curator's live session,
-   * drawn by ProjectDetail directly above this tab. Undefined when the console
-   * cannot open at all, which is what makes the quick commands go dead rather
-   * than fail on the press; `consoleOffReason` is what they say instead.
-   */
-  onSendToConsole?: (brief: string) => void;
-  consoleOffReason?: string;
-  /** #227 — set (or clear, with '') an item's desire tier. HUMANS ONLY. */
-  onSetTier?: (item: RoadmapItem, tier: Tier) => void;
   /** ⎇ claim a branch and open a primed session (#205). */
   onBranch?: (item: RoadmapItem) => void;
 }
 
 export interface RoadmapTabProps {
   slug: string;
-  /** #361 — which of the Curator's ops may run at all on this project. */
-  agents: TabAgentState;
   roadmap: RoadmapData;
   /** Replace one item in the parent's copy after a write. */
   onItemChanged: (item: RoadmapItem) => void;
@@ -140,15 +107,8 @@ export interface RoadmapTabProps {
 }
 
 export function RoadmapTab({
-  slug, roadmap, agents, onItemChanged, onItemsChanged, onItemAdded, legacy, onOpenItem,
+  slug, roadmap, onItemChanged, onItemsChanged, onItemAdded, legacy, onOpenItem,
 }: RoadmapTabProps) {
-  // A deep link to an item lands on SCOPE, because that is the board that can
-  // reveal one row and highlight it. Everything else opens on the board.
-  const [board, setBoard] = useState<Board>(legacy.highlightId ? 'scope' : 'lists');
-  useEffect(() => { if (legacy.highlightId) setBoard('scope'); }, [legacy.highlightId]);
-  // Collapsed by default: Arrange is a TOOL, not information, and three tall
-  // buttons above the board is chrome in front of the thing you came to read.
-  const [arrangeOpen, setArrangeOpen] = useState(false);
   const [showHiddenAreas, setShowHiddenAreas] = useState(false);
   const [areas, setAreas] = useState<BoardArea[]>([]);
   const [lists, setLists] = useState<BoardList[]>([]);
@@ -162,20 +122,12 @@ export function RoadmapTab({
   const [palette, setPalette] = useState<string[]>([]);
   // Which area's swatch popover is open (one at a time).
   const [colourFor, setColourFor] = useState<string | null>(null);
-  // WHICH ✦ read is in flight, not whether one is — a shared boolean would put
-  // "reading…" on a button nobody pressed once there is a second read again.
-  const [reading, setReading] = useState<ReadOp | ''>('');
   const [areaFilter, setAreaFilter] = useState('');
   // #378 — narrows which area CHIPS are drawn; never which items are shown.
   const [areaQuery, setAreaQuery] = useState('');
   const [labelFilter, setLabelFilter] = useState('');
   const [editAreas, setEditAreas] = useState(false);
   const [areaDraft, setAreaDraft] = useState<string | null>(null);
-  const [proposal, setProposal] = useState<Arrangement | null>(null);
-  // What the last quick command did, so the panel can say the brief went to the
-  // session. It is a receipt, not state anything depends on — the session
-  // itself is the thing to look at, and it is drawn right above this.
-  const [sentNote, setSentNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -193,6 +145,16 @@ export function RoadmapTab({
       .catch((e) => { if (alive) setErr(e?.message || 'Could not read the board’s areas.'); });
     return () => { alive = false; };
   }, [slug]);
+
+  // A DEEP LINK RELEASES THE FILTERS. `hl` names one card and the board is the
+  // only surface left that can show it, so a chip or a label left on from
+  // earlier would scroll to nothing and highlight nothing — the deep link would
+  // silently do nothing at all, which is worse than landing on an unfiltered
+  // board. Both filters are one press to put back.
+  useEffect(() => {
+    if (!legacy.highlightId) return;
+    setAreaFilter(''); setLabelFilter('');
+  }, [legacy.highlightId]);
 
   useEffect(() => { if (!err) return; const t = setTimeout(() => setErr(''), 6000); return () => clearTimeout(t); }, [err]);
 
@@ -219,47 +181,12 @@ export function RoadmapTab({
   const guard = (p: Promise<unknown>, what: string) =>
     p.catch((e) => { setErr((e as Error)?.message || `Could not ${what}.`); });
 
-  // --- the arrange proposal ------------------------------------------------
-
-  const applyProposal = async () => {
-    if (!proposal) return;
-    setBusy(true);
-    const landed: RoadmapItem[] = [];
-    try {
-      for (const p of proposal.picks) {
-        const it = items.find((x) => x.id === p.id);
-        if (it) landed.push(await writeOnly(it, { area: p.area }));
-      }
-      // An area is real the moment a row mentions it (routes/board.js unions
-      // the two), but this component's `areas` were read once on mount — so a
-      // coined area would have no chip and no colour until a reload, and its
-      // items would sit behind Unallocated looking exactly like the ones the
-      // read had just failed to place.
-      await getBoardShape(slug)
-        .then((b) => { setAreas(b.areas); setPalette(b.palette || []); })
-        .catch(() => { /* the areas are stale, not wrong; the writes landed */ });
-      setProposal(null);
-    } catch (e) {
-      // Partial application is the honest outcome to report: some rows moved.
-      // Saying "failed" would suggest none did, and the board already shows
-      // which ones landed.
-      setErr(`${(e as Error)?.message || 'A change was rejected'} — the changes before it were applied.`);
-    } finally {
-      // Whatever landed goes back in ONE pass, on the failure path too — the
-      // rows that were accepted are on the server either way, and a board that
-      // did not show them would be behind the truth.
-      onItemsChanged(landed);
-      setBusy(false);
-    }
-  };
-
   // Sweep a lane into the archive. Sequential rather than parallel: these are
   // ordinary PATCHes and a lane can hold thirty, and firing thirty at once at a
   // single-container API to save a second is not a trade worth making.
   //
-  // A PARTIAL failure is reported as one, exactly as applyProposal does — some
-  // cards moved, the board already shows which, and calling that "failed" would
-  // suggest none did.
+  // A PARTIAL failure is reported as one — some cards moved, the board already
+  // shows which, and calling that "failed" would suggest none did.
   const archiveMany = async (cards: RoadmapItem[]) => {
     setBusy(true);
     const landed: RoadmapItem[] = [];
@@ -274,58 +201,6 @@ export function RoadmapTab({
       setBusy(false);
     }
   };
-
-  // The Curator's read: an area for each row carrying none. It PROPOSES — the
-  // picks land in the proposal slot, and nothing is written until the owner
-  // presses Apply.
-  //
-  // NO SCOPE ARGUMENT. Untagged IS the population,
-  // so there is nothing an area chip could narrow it to; the panel disables the
-  // button under a real chip rather than sending a filter the server would have
-  // to answer with an empty list.
-  const sortTheUnallocated = () => {
-    setReading('allocate');
-    allocateRoadmap(slug)
-      .then((r) => {
-        const missed = Math.max(0, r.seen - r.picks.length);
-        // Named, not just counted: a coined area is a new chip on the board,
-        // and "2 new areas" without their names is a change you cannot check.
-        const coined = [...new Set(r.picks.filter((p) => p.isNew).map((p) => p.area))];
-        setProposal({
-          kind: 'allocate',
-          read: true,
-          picks: r.picks,
-          // The read is CAPPED server-side, so the count says what was looked at
-          // out of what there is. A summary reading "12 untagged items" on a
-          // board holding eighty would be the capped-list lie (#239) again.
-          summary: r.picks.length
-            ? `Read ${r.seen}${r.total > r.seen ? ` of ${r.total}` : ''} untagged item${r.seen === 1 ? '' : 's'} and placed ${r.picks.length}${
-              missed ? `, leaving ${missed} it could not read` : ''}${
-              coined.length ? `. New ${coined.length === 1 ? 'area' : 'areas'}: ${coined.join(', ')}` : ''}.`
-            : r.note || `Read ${r.seen} untagged item${r.seen === 1 ? '' : 's'} and could not place any of them — these need your eye, not the Curator's.`,
-        });
-      })
-      .catch((e) => setErr((e as Error)?.message || 'The Curator could not read the untagged items.'))
-      .finally(() => setReading(''));
-  };
-
-  // A QUICK COMMAND: compose the brief and hand it to the Curator's session.
-  //
-  // Everything the brief needs is the board's own state — which chip is on — so
-  // the composition is pure (lib/curatorTasks.ts) and this only supplies it and
-  // reports that it went. Nothing here waits for an answer: the answer arrives
-  // in the session, which is on screen.
-  const runCommand = (key: string) => {
-    const task = taskByKey(key);
-    if (!task || !legacy.onSendToConsole) return;
-    legacy.onSendToConsole(task.brief({ slug, areaFilter }));
-    setSentNote(`“${task.name}” sent to the session`);
-  };
-  useEffect(() => {
-    if (!sentNote) return;
-    const t = setTimeout(() => setSentNote(''), 6000);
-    return () => clearTimeout(t);
-  }, [sentNote]);
 
   // --- areas ----------------------------------------------------------------
 
@@ -350,20 +225,10 @@ export function RoadmapTab({
       if (labelFilter === key) setLabelFilter('');
     }), 'delete that label');
 
-  // The chips count what is IN THE CYCLE (lib/plan.ts's `inCycle`), so the
-  // number on a chip and the weeks in the scope drawer describe the same rows.
-  //
-  // The PARKED board is the one exception, and it is not a special case so much
-  // as the same rule: a parked item is BY DEFINITION not in the cycle, so
-  // counting the cycle there would put "Infra 0" above a column holding two
-  // Infra cards, and hide the very chip you need to filter by. The number
-  // always describes the rows you are looking at.
-  const parkedBoard = board === 'parked';
-  const scoped = useMemo(
-    () => (parkedBoard
-      ? items.filter((i) => i.skipped && !i.done && !i.archived)
-      : items.filter(inCycle)),
-    [items, parkedBoard]);
+  // The chips count the cards the BOARD draws — see the header. Archived rows
+  // are the one exclusion, and they are excluded because the board keeps them
+  // in a rail of their own rather than in a lane.
+  const scoped = useMemo(() => items.filter((i) => !i.archived), [items]);
 
   const { shownAreas, hiddenAreas } = useMemo(() => {
     const counts = new Map<string, number>();
@@ -397,10 +262,10 @@ export function RoadmapTab({
 
   // UNALLOCATED is a chip of its own, not an area (lib/plan.ts says why the
   // filter value is a sentinel). Untagged work is the population most likely to
-  // be forgotten — it is in no lane on the timeline and behind no chip on the
-  // boards — so it gets the one chip that can find it. Drawn only when there IS
-  // some, or while you are filtered by it: an "Unallocated 0" on a tidy board is
-  // furniture, but a filter with no way back is a trap.
+  // be forgotten — it is in no lane and behind no chip — so it gets the one chip
+  // that can find it. Drawn only when there IS some, or while you are filtered
+  // by it: an "Unallocated 0" on a tidy board is furniture, but a filter with no
+  // way back is a trap.
   const unallocated = scoped.filter((i) => !i.area).length;
   // What a NEW row filed while a filter is on should be tagged with. Under
   // UNALLOCATED that is nothing — the sentinel is a filter value, never an area,
@@ -409,24 +274,23 @@ export function RoadmapTab({
 
   return (
     <div className="rtab">
-      <div className="rtab-bar">
-        <div className="seg-control" role="tablist" aria-label="Roadmap board">
-          {BOARDS.map((b) => (
-            <button key={b.key} role="tab" aria-selected={board === b.key} title={b.title}
-              className={`seg-opt ${board === b.key ? 'on' : ''}`} onClick={() => setBoard(b.key)}>
-              {b.label}
-            </button>
-          ))}
-        </div>
-        <span className="rtab-hint">
-          {board === 'scope' ? 'What is in the cycle, and what is first to cut'
-            : board === 'tiers' ? 'What you want built NEXT — drag a card to rank it'
-              : board === 'parked' ? 'Cut from this cycle, still part of the feature'
-                : 'Drag a card between columns — a column is not a verdict'}
-        </span>
-      </div>
-
       {err && <div className="action-error">{err}</div>}
+
+      {/* The unfinished item. The add modal saves what was typed when it is
+          dismissed, and this is the only thing that says so — without it a
+          draft is kept and never offered back, which is the same as losing it.
+          It was Scope's ＋ that resumed one; Scope is gone, so the strip is. */}
+      {legacy.draft && (
+        <div className="rtab-draft">
+          <span>Unfinished item: “{legacy.draft.title || 'untitled'}”</span>
+          {legacy.onResumeDraft && (
+            <button className="rail-link" onClick={legacy.onResumeDraft}>Resume</button>
+          )}
+          {legacy.onDiscardDraft && (
+            <button className="rail-link danger" onClick={legacy.onDiscardDraft}>Discard</button>
+          )}
+        </div>
+      )}
 
       <div className="rtab-chips">
           {searchableAreas && (
@@ -472,9 +336,7 @@ export function RoadmapTab({
             ) : (
               <button key={a.name} className={`chip-sm${areaFilter === a.name ? ' on' : ''}${a.n === 0 ? ' empty' : ''}`}
                 onClick={() => setAreaFilter(areaFilter === a.name ? '' : a.name)}
-                title={parkedBoard
-                  ? `${a.name} — ${a.n} parked`
-                  : a.n === 0 ? `${a.name} — nothing in the cycle` : `${a.name} — ${a.n} in the cycle`}>
+                title={a.n === 0 ? `${a.name} — nothing on the board` : `${a.name} — ${a.n} on the board`}>
                 {a.name}<span className="n">{a.n}</span>
               </button>
             )
@@ -489,7 +351,7 @@ export function RoadmapTab({
             && (!areaQ || 'unallocated'.includes(areaQ) || areaFilter === UNALLOCATED) && !editAreas && (
             <button className={`chip-sm unalloc${areaFilter === UNALLOCATED ? ' on' : ''}`}
               onClick={() => setAreaFilter(areaFilter === UNALLOCATED ? '' : UNALLOCATED)}
-              title={`Items with no area at all — ${unallocated} ${parkedBoard ? 'parked' : 'in the cycle'}`}>
+              title={`Items with no area at all — ${unallocated} on the board`}>
               Unallocated<span className="n">{unallocated}</span>
             </button>
           )}
@@ -506,13 +368,13 @@ export function RoadmapTab({
                 }} />
             ) : <button className="chip-sm dashed" onClick={() => setAreaDraft('')}>+ Add area</button>
           )}
-          {/* An area with nothing in the cycle is hidden rather than drawn as a
+          {/* An area with nothing on the board is hidden rather than drawn as a
               zero — but it is REPORTED, because an area you cannot see is one
               you cannot file work into. Editing always shows them all. */}
           {hiddenAreas.length > 0 && !editAreas && (
             <button className="rtab-hidden" onClick={() => setShowHiddenAreas(!showHiddenAreas)}
               title={showHiddenAreas
-                ? `Hide the areas with nothing ${parkedBoard ? 'parked' : 'in the cycle'}`
+                ? 'Hide the areas with nothing on the board'
                 : hiddenAreas.map((a) => a.name).join(', ')}>
               {showHiddenAreas ? 'Hide empty' : `+${hiddenAreas.length} empty`}
             </button>
@@ -522,111 +384,67 @@ export function RoadmapTab({
           </button>
       </div>
 
-      {/* Arrange follows the board: each action answers ONE question, and a
-          board with no applicable action gets no panel rather than an empty one
-          — see `views` on each action in RoadmapArrange. Scope and the three
-          card boards ask different questions, so the three collapse to one
-          `board` view and Scope keeps its own. */}
-      <RoadmapArrange
-        view={board === 'scope' ? 'scope' : 'board'}
-        items={items} areaFilter={areaFilter} proposal={proposal} busy={busy}
-        open={arrangeOpen} onToggle={() => setArrangeOpen(!arrangeOpen)}
-        onApply={applyProposal} onDiscard={() => setProposal(null)}
-        onCommand={legacy.onSendToConsole ? runCommand : undefined}
-        consoleOffReason={legacy.consoleOffReason || ''} sentNote={sentNote}
-        onRead={sortTheUnallocated} reading={reading}
-        canRead={(op) => agentCan(agents, 'curator', op)}
-        readOffReason={(op) => agentOffReason(agents, 'curator', op)} />
-
-      {board === 'scope' && (
-        <RoadmapScope
-          items={items} areas={areas} labels={labels} areaFilter={areaFilter} labelFilter={labelFilter}
-          liveBranches={legacy.liveBranches || []} highlightId={legacy.highlightId}
-          onEdit={legacy.onEdit} onDelete={legacy.onDelete} onBranch={legacy.onBranch}
-          onClearNote={legacy.onClearNote} onToggleDone={legacy.onToggle}
-          onReorder={(it, bucket, beforeId) => legacy.onReorder?.(it, bucket, beforeId)}
-          onSetBucket={(it, bucket) => { guard(write(it, { bucket }), 'move that ticket'); }}
-          onToggleSkip={(it) => { guard(write(it, { skipped: !it.skipped }), 'defer that line'); }}
-          onArchive={(it, archived) => { guard(write(it, { archived }), 'archive that ticket'); }}
-          onAdd={(bucket: Priority) => legacy.onAdd(bucket, filterArea || undefined)} />
-      )}
-
-      {board === 'tiers' && (
-        <RoadmapTiers
-          items={items} areas={areas} labels={labels} areaFilter={areaFilter}
-          onSetTier={(it, tier) => { guard(write(it, { tier }), 'rank that item'); }}
-          onToggleSkip={(it) => { guard(write(it, { skipped: !it.skipped }), 'park that item'); }}
-          onOpen={onOpenItem}
-          onCleanup={legacy.onCleanup} onSendToTerminal={legacy.onSendToTerminal} />
-      )}
-
-      {board === 'parked' && (
-        <RoadmapParked
-          items={items} areas={areas} labels={labels} areaFilter={areaFilter} staleItemDays={legacy.staleItemDays}
-          onSetTier={(it, tier) => { guard(write(it, { tier }), 'rank that item'); }}
-          onToggleSkip={(it) => { guard(write(it, { skipped: !it.skipped }), 'unpark that item'); }}
-          onOpen={onOpenItem} />
-      )}
-
-      {board === 'lists' && (
-        <RoadmapPlan
-          items={items} lists={lists} areas={areas} areaFilter={areaFilter}
-          labels={labels} tones={tones}
-          labelFilter={labelFilter} onSetLabelFilter={setLabelFilter}
-          onAddLabel={addLabel} onDeleteLabel={removeLabel}
-          onDelete={legacy.onDelete}
-          onApprove={(it) => {
-            // The Review room's verdict, made from the board: `review_tag`
-            // and the archive in ONE write. Deliberately no `done` — approving
-            // has never meant ticked (CLAUDE.md), and the item's own merge is
-            // what ticks it.
-            guard(write(it, { review_tag: 'solid', archived: true }), 'record that verdict');
-          }}
-          onSendBack={(it) => {
-            // Un-ticking clears review_tag and claimed_by server-side; clearing
-            // listKey returns the card to its DERIVED column, so a card dragged
-            // into Shipped by hand leaves the lane too.
-            guard(write(it, { done: false, listKey: '' }), 'send that card back');
-          }}
-          onMoveToList={(it, listKey) => { guard(write(it, { listKey }), 'move that card'); }}
-          onSetBucket={(it, bucket) => { guard(write(it, { bucket }), 'change that card’s scope'); }}
-          onToggleLabel={(it, id) => {
-            const next = it.labels.includes(id) ? it.labels.filter((l) => l !== id) : [...it.labels, id];
-            guard(write(it, { labels: next }), 'change that card’s labels');
-          }}
-          onArchive={(it, archived) => { guard(write(it, { archived }), 'archive that card'); }}
-          onArchiveMany={(cards) => { void archiveMany(cards); }}
-          onAddCard={(listKey, title) => {
-            guard(
-              createRoadmapItem(slug, { title, note: '', bucket: 'should', area: filterArea || undefined })
-                .then((created) => {
-                  onItemAdded(created);
-                  return patchRoadmapItem(slug, created.id, { listKey }).then(onItemChanged);
-                }),
-              'add that card');
-          }}
-          onAddList={(name) => { guard(addListApi(slug, name).then((l) => setLists((ls) => [...ls, l])), 'add that list'); }}
-          onRenameList={(list, name) => {
-            guard(renameListApi(slug, list.key, name)
-              .then((l) => setLists((ls) => ls.map((x) => (x.key === l.key ? l : x)))), 'rename that lane');
-          }}
-          onDeleteList={(list) => {
-            // The lane goes; its cards do not. The server clears their
-            // `list_key`, which returns them to the DERIVED column — so the
-            // same clear is mirrored into the rows in hand. Without it the
-            // board would keep every one of those cards filed under a lane that
-            // no longer renders: work that is still there, and invisible.
-            const freed = items.filter((i) => i.listKey === list.key).map((i) => ({ ...i, listKey: '' }));
-            guard(deleteListApi(slug, list.key).then(() => {
-              setLists((ls) => ls.filter((x) => x.key !== list.key));
-              if (freed.length) onItemsChanged(freed);
-            }), 'remove that lane');
-          }}
-          onOpen={onOpenItem} />
-      )}
+      <RoadmapPlan
+        items={items} lists={lists} areas={areas} areaFilter={areaFilter}
+        labels={labels} tones={tones} busy={busy}
+        labelFilter={labelFilter} onSetLabelFilter={setLabelFilter}
+        highlightId={legacy.highlightId}
+        onAddLabel={addLabel} onDeleteLabel={removeLabel}
+        onDelete={legacy.onDelete}
+        onBranch={legacy.onBranch}
+        onApprove={(it) => {
+          // The Review room's verdict, made from the board: `review_tag`
+          // and the archive in ONE write. Deliberately no `done` — approving
+          // has never meant ticked (CLAUDE.md), and the item's own merge is
+          // what ticks it.
+          guard(write(it, { review_tag: 'solid', archived: true }), 'record that verdict');
+        }}
+        onSendBack={(it) => {
+          // Un-ticking clears review_tag and claimed_by server-side; clearing
+          // listKey returns the card to its DERIVED column, so a card dragged
+          // into Shipped by hand leaves the lane too.
+          guard(write(it, { done: false, listKey: '' }), 'send that card back');
+        }}
+        onMoveToList={(it, listKey) => { guard(write(it, { listKey }), 'move that card'); }}
+        onSetBucket={(it, bucket) => { guard(write(it, { bucket }), 'change that card’s scope'); }}
+        // Parked (`skipped`) is one of the three states in schema.sql and the
+        // only one with no board of its own now. The card carries the toggle so
+        // it stays reversible: parking work you cannot unpark is losing it.
+        onTogglePark={(it) => { guard(write(it, { skipped: !it.skipped }), it.skipped ? 'unpark that item' : 'park that item'); }}
+        onToggleLabel={(it, id) => {
+          const next = it.labels.includes(id) ? it.labels.filter((l) => l !== id) : [...it.labels, id];
+          guard(write(it, { labels: next }), 'change that card’s labels');
+        }}
+        onArchive={(it, archived) => { guard(write(it, { archived }), 'archive that card'); }}
+        onArchiveMany={(cards) => { void archiveMany(cards); }}
+        onAddCard={(listKey, title) => {
+          guard(
+            createRoadmapItem(slug, { title, note: '', bucket: 'should' as Priority, area: filterArea || undefined })
+              .then((created) => {
+                onItemAdded(created);
+                return patchRoadmapItem(slug, created.id, { listKey }).then(onItemChanged);
+              }),
+            'add that card');
+        }}
+        onAddList={(name) => { guard(addListApi(slug, name).then((l) => setLists((ls) => [...ls, l])), 'add that list'); }}
+        onRenameList={(list, name) => {
+          guard(renameListApi(slug, list.key, name)
+            .then((l) => setLists((ls) => ls.map((x) => (x.key === l.key ? l : x)))), 'rename that lane');
+        }}
+        onDeleteList={(list) => {
+          // The lane goes; its cards do not. The server clears their
+          // `list_key`, which returns them to the DERIVED column — so the
+          // same clear is mirrored into the rows in hand. Without it the
+          // board would keep every one of those cards filed under a lane that
+          // no longer renders: work that is still there, and invisible.
+          const freed = items.filter((i) => i.listKey === list.key).map((i) => ({ ...i, listKey: '' }));
+          guard(deleteListApi(slug, list.key).then(() => {
+            setLists((ls) => ls.filter((x) => x.key !== list.key));
+            if (freed.length) onItemsChanged(freed);
+          }), 'remove that lane');
+        }}
+        onOpen={onOpenItem} />
 
     </div>
   );
 }
-
-export { arrangementCount };

@@ -978,15 +978,18 @@ export function listKeyOf(it: RoadmapItem): string {
 // and they were the ceiling — six jobs somebody had written a function for, and
 // every one of them blind to everything the board does not store.
 //
-// The Arrange panel's six buttons now hand the same jobs to the CURATOR'S OWN
-// SESSION instead (web/src/lib/curatorTasks.ts composes the brief; the console
-// on the Roadmap tab runs it), which can read the board AND the code, ask a
-// question back, and be told the thing the sum could not know. What is left in
-// this file is the GEOMETRY — where a bar is drawn — which is arithmetic that
-// has one right answer and belongs nowhere near a model.
+// They were handed to the CURATOR'S OWN SESSION next, as briefs, and then the
+// Arrange panel that pressed them went too — the board is the whole Roadmap tab
+// now (RoadmapTab's header). What is left in this file is the GEOMETRY — where a
+// bar is drawn — which is arithmetic that has one right answer and belongs
+// nowhere near a model.
 //
-// `Move` survives as the shape of a proposed position, because the two ✧ reads
-// still come back as one and the timeline still ghosts it.
+// SEVERAL EXPORTS HERE HAVE NO CALLER LEFT: `Move`, the schedule geometry,
+// `scopeTotals` (the Scope drawer's totals) and `horizonOf`. They are kept for
+// the same reason #428 kept the schedule COLUMNS — they are answers waiting for
+// a surface, they are pure, and `scripts/plan.test.mjs` pins them. `inCycle` is
+// in the same state and is the one to read before writing a second definition
+// of "in this cycle": it is the predicate three culled surfaces agreed on.
 
 /** A proposed position for one bar, in minutes. null = back to the tray. */
 export interface Move { id: number; sched: SchedSpan | null }

@@ -73,10 +73,12 @@ const WIRED = {
   // investigation the tab's live session does directly. Nothing routes to this
   // agent any more — its model, guidance and switch govern that session.
   auditor: [],
-  // 'arrange' reads the timeline and proposes an ORDER — the one thing the
-  // Arrange panel's arithmetic structurally cannot do. Routes: POST /roadmap/arrange.
-  // 'allocate' is its other half: WHERE an untagged row belongs, not when it
-  // runs. Routes: POST /roadmap/allocate.
+  // 'arrange' reads the timeline and proposes an ORDER; 'allocate' is its other
+  // half — WHERE an untagged row belongs, not when it runs. Routes:
+  // POST /roadmap/arrange, /allocate. Neither has a CLIENT any more, nor does
+  // 'cleanup': their surfaces are culled and the routes are kept unsurfaced, so
+  // this list is what still pins their switches (the Curator keeps 'titler' and
+  // 'assist' in the item modal, so it is not an agent governing nothing).
   curator: ['titler', 'assist', 'cleanup', 'arrange', 'allocate'],
 };
 for (const [key, ops] of Object.entries(WIRED)) {

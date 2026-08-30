@@ -1,4 +1,6 @@
-// The Roadmap tab's PLAN view — the lists board.
+// THE ROADMAP — the lists board, and the whole tab now that Scope, Tiers and
+// Parked have gone with the strip that switched between them (RoadmapTab's
+// header says why, and what moved onto the card rather than going with them).
 //
 // Cards move between owner-named columns by drag. The rules that are not
 // obvious from looking at it:
@@ -23,7 +25,14 @@
 //    the Shipped lane is a two-press confirm and not a modal: reversible, but
 //    not so reversible that a misclick should be able to empty a lane. DELETE
 //    is the one action here that is none of those things: it goes through the
-//    parent's confirm modal, the same one Scope's × opens.
+//    parent's confirm modal, which is what says so before it happens.
+//  • PARKING IS THE THIRD STATE, and this card is the only surface left that
+//    can set OR clear it. `skipped` cards stay in their lane — a parked item is
+//    still part of the feature — and wear a `parked` tag, because a card that
+//    the runner will not pick and that says nothing about why is the same
+//    silence as a NULL verdict.
+//  • THE TIER IS SHOWN AND NOT SET. #227 is the run queue's primary sort and
+//    HUMANS ONLY; the item modal is where it is chosen.
 //  • REVIEWING FROM THE SHIPPED LANE (#382) records the SAME verdict the Review
 //    room records — `review_tag: 'solid'` — and archives the card in the same
 //    write. What it does NOT do is tick the item: approving has never meant
@@ -67,8 +76,6 @@
 //    through, which lands it back where it started — harmless, and cheaper than
 //    a click-delay timer that would make every single click feel slow.
 //
-// Lists is one of THREE boards here; Tiers and Parked are in RoadmapBoards.tsx,
-// and the switcher between them is this view's own, not the tab's.
 
 import { useEffect, useRef, useState } from 'react';
 import type { BoardArea, BoardLabel, BoardList, Priority, RoadmapItem } from '../types';
@@ -104,6 +111,10 @@ export interface PlanProps {
   tones?: string[];
   areaFilter: string;
   labelFilter: string;
+  /** The deep-linked row (#303) — `hl` on the roadmap tab names a card here. */
+  highlightId?: string | null;
+  /** A bulk write is in flight; the sweep that started it must not re-fire. */
+  busy?: boolean;
   onSetLabelFilter: (id: string) => void;
   onAddLabel: (name: string, tone: string) => void;
   onDeleteLabel: (key: string) => void;
@@ -111,6 +122,8 @@ export interface PlanProps {
   onSetBucket: (item: RoadmapItem, bucket: Priority) => void;
   onToggleLabel: (item: RoadmapItem, labelId: string) => void;
   onArchive: (item: RoadmapItem, archived: boolean) => void;
+  /** Park / unpark (`skipped`). The board is the only surface left for it. */
+  onTogglePark: (item: RoadmapItem, parked: boolean) => void;
   /** Bulk archive, applied by the parent so a partial failure is reported once. */
   onArchiveMany: (items: RoadmapItem[]) => void;
   /** The parent's confirm modal — deleting is not archiving and asks first. */
@@ -125,13 +138,16 @@ export interface PlanProps {
   onRenameList: (list: BoardList, name: string) => void;
   /** Remove a lane; its cards return to the derived column, or to Unfiled. */
   onDeleteList: (list: BoardList) => void;
+  /** ⎇ claim a branch and open a primed session (#205). Absent = not offered. */
+  onBranch?: (item: RoadmapItem) => void;
   onOpen: (item: RoadmapItem) => void;
 }
 
 export function RoadmapPlan({
   items, lists, areas, labels, tones, areaFilter, labelFilter, onSetLabelFilter,
-  onAddLabel, onDeleteLabel, onMoveToList, onSetBucket, onToggleLabel, onArchive, onArchiveMany,
-  onDelete, onApprove, onSendBack, onAddCard, onAddList, onRenameList, onDeleteList, onOpen,
+  highlightId, busy, onAddLabel, onDeleteLabel, onMoveToList, onSetBucket, onToggleLabel,
+  onArchive, onArchiveMany, onTogglePark,
+  onDelete, onApprove, onSendBack, onAddCard, onAddList, onRenameList, onDeleteList, onBranch, onOpen,
 }: PlanProps) {
   const [openCard, setOpenCard] = useState<number | null>(null);
   const [composer, setComposer] = useState<string | null>(null);
@@ -317,7 +333,8 @@ export function RoadmapPlan({
                   {col.key === 'shipped' && cards.length > 0 && (
                     confirmSweep === col.key ? (
                       <span className="rp-sweep-confirm">
-                        <button className="go" onClick={() => { onArchiveMany(cards); setConfirmSweep(''); }}>
+                        <button className="go" disabled={busy}
+                          onClick={() => { onArchiveMany(cards); setConfirmSweep(''); }}>
                           Archive {cards.length}?
                         </button>
                         <button className="no" onClick={() => setConfirmSweep('')}>Cancel</button>
@@ -392,7 +409,9 @@ export function RoadmapPlan({
                   page to reach the bottom of is a list of lists. */}
               <div className="rp-col-cards">
                 {cards.map((c) => (
-                  <div className={`rp-card${dragging === c.id ? ' dragging' : ''}`} key={c.id} draggable
+                  <div key={c.id} data-hl={c.id} draggable
+                    className={`rp-card${dragging === c.id ? ' dragging' : ''}`
+                      + `${c.skipped ? ' parked' : ''}${highlightId === String(c.id) ? ' hl' : ''}`}
                     onDragStart={(e) => {
                       e.dataTransfer.setData('text/plain', String(c.id));
                       e.dataTransfer.effectAllowed = 'move';
@@ -414,6 +433,22 @@ export function RoadmapPlan({
                       <span className="dot" style={{ background: dotOf(c.area) }} />
                       <span className="area">{c.area || 'untagged'}</span>
                       <span className={`rp-mos ${c.bucket}`}>{BUCKET_LABEL[c.bucket]}</span>
+                      {/* THE DESIRE TIER IS READ-ONLY HERE (#227). It is the run
+                          queue's PRIMARY sort, so a board that shows the bucket
+                          and hides the tier shows the second key and not the
+                          first — but it is set in the item modal and by humans
+                          only, and a control on a card is one mis-drag from an
+                          agent-shaped write. The Tiers board was where it was
+                          ranked; the card is where it is now READ. */}
+                      {c.tier && (
+                        <span className={`rp-tier t${c.tier}`}
+                          title={`Desire tier ${c.tier} (#227) — the run queue works S, then A, B, C, then unranked. Set it in the item.`}>
+                          {c.tier}
+                        </span>
+                      )}
+                      {c.skipped && (
+                        <span className="rp-parked" title="Parked — cut from this cycle, still part of the feature">parked</span>
+                      )}
                       <span className="est">{c.estimate === null ? '' : `${c.estimate}w`}</span>
                       {c.reviewTag && <span className="rp-verdict" title="Verdict already recorded">✓ {c.reviewTag}</span>}
                     </div>
@@ -492,6 +527,24 @@ export function RoadmapPlan({
 
                         <div className="rp-acts">
                           <button className="rail-link" onClick={() => onOpen(c)}>Open</button>
+                          {/* ⎇ was Scope's, and Scope is gone (RoadmapTab's
+                              header). Claiming a branch is how work leaves this
+                              board for a session, so it comes with it. */}
+                          {onBranch && !c.claimedBy && (
+                            <button className="rail-link" onClick={() => onBranch(c)}
+                              title="Claim a branch for this item and open a session primed on it">⎇ Branch</button>
+                          )}
+                          {/* Parking is not archiving and not deleting — three
+                              states, three meanings (schema.sql). This is the
+                              only way back from it now that the Parked board is
+                              gone, which is why it is a toggle and not a one-way
+                              press. */}
+                          <button className="rail-link" onClick={() => onTogglePark(c, !c.skipped)}
+                            title={c.skipped
+                              ? 'Unpark — back into this cycle, and back in front of the runner'
+                              : 'Park — cut from this cycle, still part of the feature and still on the board'}>
+                            {c.skipped ? 'Unpark' : 'Park'}
+                          </button>
                           <button className="rail-link" onClick={() => onArchive(c, true)}>Archive</button>
                           {/* Deleting is not archiving: it is gone, and for a
                               hook-extracted row it tombstones the fingerprint so

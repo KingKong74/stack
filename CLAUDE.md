@@ -13,8 +13,12 @@ and `lib/plan.ts` all carry theirs.
 the `/api/control`, `/api/review` and `/api/merge` layers), **Polaris** (the Futures tab, the
 galaxy and the `futures` table), the **instructions tree** (the managed CLAUDE.md library and its
 host sync), the **Workbench** (the canvas tab, `/api/…/workbench`, the `workbench_cards` and
-`workbench_edges` tables and the Drafter) and the Roadmap **Timeline** (#428 — the Gantt view, its
-six arrange commands and the ✧ order read's only surface). **`notes` went with the Workbench** — the
+`workbench_edges` tables and the Drafter) and the Roadmap **Timeline** (#428 — the Gantt
+view and its six arrange commands). **The Roadmap's strip went next** — Scope,
+Tiers, Parked and the Arrange panel are gone, the BOARD IS THE TAB, and `lib/curatorTasks.ts` and
+the ✧ cleanup modal went with them; the Curator's `arrange`, `allocate` and `cleanup` are now
+unsurfaced (it keeps `titler`, `assist` and its console). The ⎇ branch
+claim, park/unpark and the tier chip moved ONTO THE CARD. **`notes` went with the Workbench** — the
 canvas was the only surface that read one, so the table, `/api/…/notes`, the ⌘K Notes scope and the
 corner ＋'s Thought composer are all gone; the ＋ is roadmap-only. `#/control` renders
 `screens/ControlMock.tsx`, a placeholder. Rules that outlived their surface are kept below and SAY
@@ -112,8 +116,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
 
 - **`bucket` vs `tier`** — bucket (must/should/could/wont) is how NECESSARY; `tier` (#227, S/A/B/C,
   NULL = unranked) is how much the owner wants it NEXT, and is the **primary sort of the run queue**
-  (bucket then `position` tiebreak, unranked last). Set only from the Tiers view — **agents must never
-  change it.**
+  (bucket then `position` tiebreak, unranked last). Set only from the ITEM MODAL now (the Tiers board
+  is culled; a card shows a tier and cannot set one) — **agents must never change it.**
 - **`risk`** (low/normal/high, #212) is how much DAMAGE a wrong build does — not difficulty, not the
   desire `tier` expresses; a `low` item whose run lands green auto-queues its own merge.
   **`risk_source` is who decided** (#262): `human` = the modal, `auto` = the plan-time pre-pass, NULL =
@@ -132,8 +136,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   the only editor and it is culled, so the columns are still stored, still served and still baselined
   on create — read them as data waiting for a surface, exactly like branch previews, and do NOT
   "tidy them away" on the grounds that no screen writes them.
-- **The Roadmap is a BOARD** (#428) — one flat strip of four (Board · Scope · Tiers · Parked), Board
-  first, no view/board hierarchy. **Every lane renames and deletes, and the CATCH-ALL is the only
+- **The Roadmap is a BOARD** (#428, and now the ONLY thing on the tab) — no strip, no views, no
+  boards beside it. **Every lane renames and deletes, and the CATCH-ALL is the only
   reason that is safe.** The four keys `listFor` returns (`idea`/`planned`/`progress`/`shipped`) are
   still wiring, and deleting one used to be refused because a derived card would render in no column
   while still counting everywhere else — the silent loss. So the guard MOVED rather than went:
@@ -141,8 +145,9 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `server/test/plan-lanes.test.mjs` pins it structurally. Remove the catch-all and the server-side
   lock has to come back in the same commit. Renaming was never the hazard — it writes `name`, never
   the key a card derives to.
-- **The board order IS the run queue.** `position` is PATCHable and drag-reorderable; a Save-order
-  write is the same PATCH the drag makes.
+- **The board order IS the run queue.** `position` is the bucket tiebreak and still PATCHable, but
+  **nothing in the client writes it now** — Scope's drag-reorder was its last editor. Same state as
+  the schedule columns above: stored, served, waiting for a surface.
 - **`claimed_by` is the branch claim** (#277 — called a "lane" until the rename; the `lane/` git ref
   prefix is unchanged, naming branches already on origin). Claim before starting; a terminal tab's
   claim is `term:<name>`. It is the don't-re-pick marker, injected by SessionStart as "Branch claims —

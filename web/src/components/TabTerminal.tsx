@@ -67,11 +67,17 @@ export function TabTerminal({ agentKey, agentName, slug, off, task, onTaskSent }
   agentName: string;
   slug: string;
   /**
-   * A COMMAND TO RUN IN THIS SESSION — the Arrange panel's quick commands, and
-   * the one place in Stack where text Stack composed is SUBMITTED rather than
-   * typed and left (console-prime.js carries the rule this departs from; the
-   * owner asked for the press to start the session working). `id` is what makes
-   * a repeat of the same text a second command rather than a no-op re-render.
+   * A COMMAND TO RUN IN THIS SESSION — the one place in Stack where text Stack
+   * composed is SUBMITTED rather than typed and left (console-prime.js carries
+   * the rule this departs from; the owner asked for the press to start the
+   * session working). `id` is what makes a repeat of the same text a second
+   * command rather than a no-op re-render.
+   *
+   * NOTHING PASSES IT RIGHT NOW. The Arrange panel's quick commands were the
+   * only sender and went with the panel; the channel is kept because it is the
+   * sanctioned shape for the next one, and because `submitAt` — the ref that
+   * presses Enter — exists only to serve it and must stay unreachable from
+   * anything that means to TYPE.
    *
    * It OPENS the console if it is shut and holds the brief until the socket is
    * live, because the press has to work from a closed strip — that is the state

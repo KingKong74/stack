@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Roadmap as RoadmapData, RoadmapItem, Severity, Priority, Bug, BugStatus, ProjectPulse } from '../types';
 import {
   getProjectDetail, getProjectPulse, type ProjectDetailData,
@@ -6,7 +6,6 @@ import {
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
   patchProject, createShareLink, deleteShareLink,
   getRoadDraft, setRoadDraft, type RoadDraft, assistRoadmapItem,
-  cleanupRoadmap, type RoadmapCleanupSuggestion,
   agentCan, setLastViewedProject, onItemFiled,
   agentConsoleCan, agentConsoleOffReason, type TabAgentKey,
 } from '../store';
@@ -195,9 +194,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const [shareOpen, setShareOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   // The Curator's board clean-up: null = closed, 'loading', or the suggestion list.
-  const [cleanup, setCleanup] = useState<RoadmapCleanupSuggestion[] | 'loading' | null>(null);
-  const [cleanupErr, setCleanupErr] = useState('');
-  const [cleanupPicked, setCleanupPicked] = useState<Set<number>>(new Set());
   // The corner ＋ writes through store.ts, not through this screen, so an item
   // filed into the project already on screen would otherwise be saved and
   // invisible. Re-read the payload (no loading flash — the page is already
@@ -263,8 +259,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   }, []);
   const interacting = pointerDown
     || bugModal.open || roadModal.open || shareOpen || editingUrl !== null
-    || confirmRoadDelete !== null || confirmBugDelete !== null
-    || cleanup !== null;
+    || confirmRoadDelete !== null || confirmBugDelete !== null;
   useAutoRefresh(reread, !interacting);
 
   const bugs = data.bugs;
@@ -381,85 +376,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       go.terminal(slug);
     });
 
-  // Drag-reorder: rebuild the target bucket's open order and renumber it. The
-  // client shape doesn't carry positions, so the whole bucket renumbers 0..n —
-  // buckets are small, and board order IS the autopilot queue.
-  const reorderRoad = (item: RoadmapItem, toBucket: Priority, beforeId: number | null) =>
-    guard(async () => {
-      const target = roadmap[toBucket].filter((i) => !i.done && i.id !== item.id);
-      let idx = beforeId == null ? target.length : target.findIndex((i) => i.id === beforeId);
-      if (idx < 0) idx = target.length;
-      const moved = { ...item, bucket: toBucket };
-      const newOpen = [...target.slice(0, idx), moved, ...target.slice(idx)];
-      const road = { ...roadmap };
-      if (item.bucket !== toBucket) road[item.bucket] = roadmap[item.bucket].filter((i) => i.id !== item.id);
-      road[toBucket] = [...newOpen, ...roadmap[toBucket].filter((i) => i.done)];
-      setData({ ...data, roadmap: road });
-      await Promise.all(newOpen.map((it, i) => patchRoadmapItem(slug, it.id, {
-        position: i,
-        ...(it.id === item.id && item.bucket !== toBucket ? { bucket: toBucket } : {}),
-      })));
-    });
-
-  const toggleSkipRoad = (item: RoadmapItem) =>
-    guard(async () => {
-      const updated = await patchRoadmapItem(slug, item.id, { skipped: !item.skipped });
-      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
-    });
-
-  // #313 — an in-place "remove this note" affordance on the board/parked
-  // cards: clears just the one field (never built_note) without opening the
-  // edit modal or touching the rest of the item.
-  const clearRoadNote = (item: RoadmapItem, field: 'note' | 'refineNote') =>
-    guard(async () => {
-      const updated = await patchRoadmapItem(slug, item.id, field === 'note' ? { note: '' } : { refine_note: '' });
-      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
-    });
-
-  // Board clean-up: the Curator proposes area/title/bucket fixes over the
-  // open board; the human unticks what they don't want and each applied fix
-  // lands through the normal PATCH path. The Curator proposes, the human
-  // disposes.
-  const openCleanup = async () => {
-    setCleanup('loading');
-    setCleanupErr('');
-    try {
-      const items = await cleanupRoadmap(slug);
-      setCleanup(items);
-      setCleanupPicked(new Set(items.map((s) => s.id)));
-    } catch (e) {
-      setCleanup(null);
-      setCleanupErr((e as Error)?.message || "The Curator's call failed.");
-    }
-  };
-  const closeCleanup = () => { setCleanup(null); setCleanupErr(''); };
-  const applyCleanup = () =>
-    guard(async () => {
-      if (!Array.isArray(cleanup)) return;
-      const chosen = cleanup.filter((s) => cleanupPicked.has(s.id));
-      const road = { ...roadmap };
-      for (const s of chosen) {
-        const updated = await patchRoadmapItem(slug, s.id, {
-          ...(s.area ? { area: s.area } : {}),
-          ...(s.title ? { title: s.title } : {}),
-          ...(s.bucket ? { bucket: s.bucket } : {}),
-        });
-        for (const b of Object.keys(road) as Priority[]) road[b] = road[b].filter((i) => i.id !== s.id);
-        road[updated.bucket] = [...road[updated.bucket], updated];
-      }
-      setData({ ...data, roadmap: road });
-      closeCleanup();
-    });
-
-  // #227 — set (or clear) an item's desire tier from the Tiers view. An ordinary
-  // PATCH like every other board mutation; the tier then leads the run queue in
-  // the Plan room and in the overnight runner's pick.
-  const setTierRoad = (item: RoadmapItem, tier: RoadmapItem['tier']) =>
-    guard(async () => {
-      const updated = await patchRoadmapItem(slug, item.id, { tier });
-      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
-    });
-
   // The v2 Roadmap views write through store.ts themselves and hand back the
   // row the server returned. These two put it into the local copy — including
   // the case a plain replace would get wrong: a PATCH that changed the item's
@@ -485,13 +401,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const addRoadItem = (created: RoadmapItem) => {
     setData({ ...data, roadmap: { ...roadmap, [created.bucket]: [...roadmap[created.bucket], created] } });
   };
-
-  const toggleRoad = (item: RoadmapItem) =>
-    guard(async () => {
-      const updated = await patchRoadmapItem(slug, item.id, { done: !item.done });
-      const bucket = roadmap[item.bucket].map((it) => (it.id === item.id ? updated : it));
-      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: bucket } });
-    });
 
   const saveNorthStar = (text: string) =>
     guard(async () => {
@@ -640,14 +549,11 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const tabAgent = TAB_AGENT[tab];
   const consoleCan = !!tabAgent && agentConsoleCan(data.agents, tabAgent.key);
   const consoleOff = tabAgent ? agentConsoleOffReason(data.agents, tabAgent.key) : '';
-  // A brief on its way to THIS TAB'S console (the Roadmap's Arrange commands).
-  // It is state here rather than inside the tab because the console is drawn
-  // here: the strip is one component above every tab's content, and a tab
-  // reaching into it any other way would be a second channel to the same
-  // session. The counter is what makes the same brief pressed twice two
-  // commands rather than a no-op re-render.
-  const [consoleTask, setConsoleTask] = useState<{ text: string; id: number } | null>(null);
-  const consoleTaskSeq = useRef(0);
+  // NOTHING SENDS A BRIEF TO A TAB CONSOLE ANY MORE. The Arrange panel's quick
+  // commands were the only sender and went with the panel, so `TabTerminal`'s
+  // `task` prop is left unpassed rather than kept alive from here: a piece of
+  // state whose only writer is gone is a channel that cannot carry anything.
+  // The component keeps the prop, unsurfaced, like the reads it once fed.
 
   const openBugLink = (hash: string) => { setHighlightRef(hash); setTab('activity'); };
   const viewAll = () => { setHighlightRef(null); setTab('activity'); };
@@ -758,8 +664,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         {tabAgent && (consoleCan || consoleOff) && (
           <TabTerminal key={`${tabAgent.key}:${slug}`}
             agentKey={tabAgent.key} agentName={tabAgent.name} slug={slug}
-            off={consoleCan ? '' : consoleOff}
-            task={consoleTask} onTaskSent={() => setConsoleTask(null)} />
+            off={consoleCan ? '' : consoleOff} />
         )}
 
         {tab === 'overview' && (
@@ -789,45 +694,19 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             of its own any more: the Auditor's whole surface there is the tab's
             live session, which carries its own switch. */}
         {tab === 'roadmap' && (
-          // RoadmapTab owns the board strip and every board under it. `legacy`
-          // is the bag of callbacks that have to live up here because they open
+          // RoadmapTab owns the board and the furniture around it. `legacy` is
+          // the bag of callbacks that have to live up here because they open
           // modals, navigate, or write through a path this screen owns.
-          <RoadmapTab slug={slug} roadmap={roadmap} agents={data.agents}
+          <RoadmapTab slug={slug} roadmap={roadmap}
             onItemChanged={replaceRoadItem} onItemsChanged={replaceRoadItems} onItemAdded={addRoadItem}
             onOpenItem={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, editing: it })}
             legacy={{
-              highlightId, liveBranches: data.liveBranches,
-              staleItemDays: data.staleItemDays,
-              onAdd: (p, area) => roadDraft
-                ? openRoadDraft(roadDraft)
-                : setRoadModal({ open: true, priority: p, title: '', note: '', area, editing: null }),
+              highlightId,
               draft: roadDraft,
               onResumeDraft: () => roadDraft && openRoadDraft(roadDraft),
               onDiscardDraft: () => updateRoadDraft(null),
-              onToggle: toggleRoad,
-              onEdit: (it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, editing: it }),
               onDelete: (it) => setConfirmRoadDelete(it),
-              onClearNote: clearRoadNote,
-              onToggleSkip: toggleSkipRoad,
-              onReorder: reorderRoad,
-              onCleanup: agentCan(data.agents, 'curator', 'cleanup') ? openCleanup : undefined,
-              onSendToTerminal: (brief: string) => {
-                // One-shot handoff — the terminal screen offers it as a paste.
-                try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the button just won't appear */ }
-                go.terminal(slug);
-              },
-              onSetTier: setTierRoad,
               onBranch: (it: RoadmapItem) => branchItem(it),
-              // The Arrange panel's quick commands. Undefined when the console
-              // cannot open, so the buttons go dead with a reason rather than
-              // failing on the press.
-              onSendToConsole: consoleCan
-                ? (brief: string) => {
-                  consoleTaskSeq.current += 1;
-                  setConsoleTask({ text: brief, id: consoleTaskSeq.current });
-                }
-                : undefined,
-              consoleOffReason: consoleOff,
             }} />
         )}
         {tab === 'activity' && (
@@ -863,53 +742,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           onDismiss={(d) => updateRoadDraft(d)}
           onAssist={agentCan(data.agents, 'curator', 'assist') ? (note) => assistRoadmapItem(slug, note) : undefined}
           onSubmit={submitRoad} />
-      )}
-      {(cleanup !== null || cleanupErr) && (
-        <Modal onClose={closeCleanup} wide>
-          <h3>✧ Board clean-up</h3>
-          {cleanupErr ? (
-            <div className="gemini-suggest err">✧ {cleanupErr}</div>
-          ) : cleanup === 'loading' ? (
-            <div className="confirm-body">The Curator is reading the open board…</div>
-          ) : Array.isArray(cleanup) && cleanup.length === 0 ? (
-            <div className="confirm-body">Nothing to tidy — every open item has an area and reads cleanly.</div>
-          ) : Array.isArray(cleanup) && (
-            <>
-              <div className="confirm-body" style={{ marginBottom: 14 }}>
-                Suggestions only — untick anything you don't want, then apply.
-              </div>
-              <div className="cleanup-list">
-                {cleanup.map((s) => (
-                  <label className="cleanup-row" key={s.id}>
-                    <input type="checkbox" checked={cleanupPicked.has(s.id)}
-                      onChange={() => setCleanupPicked((p) => {
-                        const next = new Set(p);
-                        if (next.has(s.id)) next.delete(s.id); else next.add(s.id);
-                        return next;
-                      })} />
-                    <span className="cleanup-body">
-                      <span className="t">{s.currentTitle}</span>
-                      <span className="changes">
-                        {s.title && <span className="chg">title → “{s.title}”</span>}
-                        {s.area && <span className="chg">area → {s.area}</span>}
-                        {s.bucket && <span className="chg">bucket → {s.bucket}</span>}
-                      </span>
-                      {s.why && <span className="why">{s.why}</span>}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </>
-          )}
-          <div className="modal-actions" style={{ marginTop: 16 }}>
-            <button className="btn-cancel" onClick={closeCleanup}>Close</button>
-            {Array.isArray(cleanup) && cleanup.length > 0 && (
-              <button className="btn-submit" onClick={applyCleanup} disabled={cleanupPicked.size === 0}>
-                Apply {cleanupPicked.size} fix{cleanupPicked.size === 1 ? '' : 'es'}
-              </button>
-            )}
-          </div>
-        </Modal>
       )}
       {shareOpen && (
         <Modal onClose={() => setShareOpen(false)}>

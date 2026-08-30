@@ -966,38 +966,14 @@ export async function setAreaColour(slug: string, name: string, dot: string): Pr
     `${boardBase(slug)}/areas/${encodeURIComponent(name)}`, { method: 'PATCH', body: { dot } });
   return r.areas;
 }
-// The Curator's read of the timeline: what must come BEFORE what. Proposes only
-// — the caller ghosts the moves and applies them itself.
-//
-// `scope` narrows it to one area, so the read acts on the same rows the Arrange
-// panel's arithmetic does. `untagged` is a flag rather than the client's
-// UNALLOCATED sentinel: the sentinel is safe only under the client's own rules
-// (lib/plan.ts), and a second spelling of it on the wire is a rule the server
-// would have to keep in step with by discipline alone.
-export interface ArrangeMove { id: number; title: string; sched: SchedSpan; why: string }
-export async function arrangeRoadmap(
-  slug: string, scope: { area?: string; untagged?: boolean } = {},
-): Promise<{ moves: ArrangeMove[]; note?: string }> {
-  return request<{ moves: ArrangeMove[]; note?: string }>(
-    `${roadmapBase(slug)}/arrange`, { method: 'POST', body: scope });
-}
-// The Curator's other read of the board: WHERE each untagged item belongs.
-// Proposes only, exactly like arrangeRoadmap — the caller ghosts the picks and
-// writes the areas itself, one ordinary PATCH each.
-//
-// NO SCOPE ARGUMENT, and that is the contract: untagged IS the population, so
-// there is nothing for an area filter to narrow it to. `seen` is how many
-// untagged rows the read was shown (the server caps the list) and `total` how
-// many there are, so the caller can say "9 of 12" rather than implying it saw
-// the lot. `isNew` marks an area the project has never used — a coined lane is
-// something the owner should have to notice before applying it.
-export interface AllocatePick { id: number; title: string; area: string; isNew: boolean; why: string }
-export async function allocateRoadmap(
-  slug: string,
-): Promise<{ picks: AllocatePick[]; seen: number; total: number; note?: string }> {
-  return request<{ picks: AllocatePick[]; seen: number; total: number; note?: string }>(
-    `${roadmapBase(slug)}/allocate`, { method: 'POST', body: {} });
-}
+// THE CURATOR'S TWO BOARD READS HAVE NO CLIENT LEFT. `arrangeRoadmap` proposed
+// {id, sched} moves for the Timeline to ghost and went unsurfaced with it
+// (#428); `allocateRoadmap` proposed an area for every untagged row and was the
+// Arrange panel's last button. Both wrappers are gone from here rather than
+// kept as callers nobody calls — `POST /roadmap/arrange`, `POST /allocate` and
+// `POST /cleanup` are still on the server, and the routes are the record of
+// what the Curator can still be asked. A new surface writes the wrapper it
+// needs; a wrapper with no surface only reads as one that has one.
 export async function renameArea(slug: string, from: string, name: string): Promise<BoardArea[]> {
   const r = await request<{ areas: BoardArea[] }>(
     `${boardBase(slug)}/areas/${encodeURIComponent(from)}`, { method: 'PATCH', body: { name } });
@@ -1068,16 +1044,6 @@ export async function assistRoadmapItem(slug: string, note: string): Promise<Roa
   return request<RoadmapAssist>(`${roadmapBase(slug)}/assist`, { method: 'POST', body: { note } });
 }
 
-// Gemini reviews the open board and proposes fixes (areas, titles, buckets).
-// Suggestions only — applied per-row by the human through the normal PATCH.
-export interface RoadmapCleanupSuggestion {
-  id: number; currentTitle: string; area?: string; title?: string; bucket?: Priority; why: string;
-}
-export async function cleanupRoadmap(slug: string): Promise<RoadmapCleanupSuggestion[]> {
-  const r = await request<{ items: RoadmapCleanupSuggestion[] }>(`${roadmapBase(slug)}/cleanup`, { method: 'POST', body: {} });
-  return r.items;
-}
-
 // ---- checks (the Quality tab's Suite segment) ----
 
 const checksBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/checks`;
@@ -1123,8 +1089,9 @@ export async function getCheckHistory(slug: string, limit = 20): Promise<CheckHi
 }
 
 // #251 — the Roadmap board's layout, per project. Which bucket column is
-// FOCUSED (fills the board, the others fold away), which columns are folded to
-// their header, and which tier rows are folded on the Tiers view. Device-local
+// FOCUSED (fills the board, the others fold away) and which columns are folded
+// to their header. (It also carried the Tiers view's folded rows; that board is
+// culled, and a stored key nothing reads is harmless.) Device-local
 // and keyed by slug, because it describes how you like to look at THIS board,
 // not anything about the work. Absent or corrupt storage falls back to the
 // all-sections-open default, so a wiped browser behaves exactly as before.

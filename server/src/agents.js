@@ -322,9 +322,15 @@ export const AGENTS = [
       // them off the host bought
       // two things a Claude session on the daemon could not: they answer in
       // seconds rather than the seventy-plus a `claude -p` round trip took on
-      // this host, and they no longer go dark when the daemon does — which
-      // matters more now that the Arrange panel's OTHER buttons need the daemon
-      // for the console. One surface, two backends, still one switch (#375).
+      // this host, and they no longer go dark when the daemon does. One surface,
+      // two backends, still one switch (#375).
+      //
+      // NEITHER HAS A SURFACE NOW, and nor does `cleanup`: the Timeline, the
+      // Arrange panel and the Tiers board are all culled. They are kept rather
+      // than dropped because the Curator itself still has one — `titler` and
+      // `assist` in the item modal, and its live session on the Roadmap tab —
+      // so this is not the case the one-surface-one-switch rule is about (an
+      // agent with NOTHING left to govern). Their routes say the same thing.
       //
       // #364's rule holds either way: they READ and propose. Nothing they
       // return writes a row — the timeline ghosts it and the owner applies.
