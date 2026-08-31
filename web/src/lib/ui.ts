@@ -8,11 +8,15 @@ export const STATUS_LABEL: Record<BugStatus, string> = {
 
 export const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low'];
 export const PRIORITY_ORDER: Priority[] = ['must', 'should', 'could', 'wont'];
+// `color` is rendered as TEXT (and a border) on a dark card, so each one names
+// the token whose foreground variant reads there — never a literal. These were
+// the old terracotta palette's hexes, hardcoded, and so they were the one part
+// of the app a stylesheet repalette could not reach.
 export const PRIORITY_META: { key: Priority; label: string; color: string; short: string }[] = [
-  { key: 'must', label: 'Must have', color: '#c4623d', short: 'Must' },
-  { key: 'should', label: 'Should have', color: '#b08a2e', short: 'Should' },
-  { key: 'could', label: 'Could have', color: '#6f9a72', short: 'Could' },
-  { key: 'wont', label: "Won't (now)", color: '#a39c90', short: "Won't" },
+  { key: 'must', label: 'Must have', color: 'var(--accent-text)', short: 'Must' },
+  { key: 'should', label: 'Should have', color: 'var(--building)', short: 'Should' },
+  { key: 'could', label: 'Could have', color: 'var(--sage)', short: 'Could' },
+  { key: 'wont', label: "Won't (now)", color: 'var(--muted)', short: "Won't" },
 ];
 
 // Dual-model sessions (#153): the executor runs every turn, the advisor is the
