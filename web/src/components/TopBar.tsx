@@ -35,7 +35,7 @@ function GearMark() {
 
 export type Crumb = { label: string; onClick?: () => void };
 
-export function TopBar({ crumb, onSearch, searchLabel = 'Search…', actions, dash }: {
+export function TopBar({ crumb, onSearch, searchLabel = 'Search…', actions, dash, noAvatar }: {
   /** Breadcrumb after the brand. The LAST entry is the current place. */
   crumb?: Crumb[];
   /** Opens ⌘K. Omitted on screens with nothing to search. */
@@ -44,6 +44,9 @@ export function TopBar({ crumb, onSearch, searchLabel = 'Search…', actions, da
   /** Screen-specific buttons, left of the avatar. */
   actions?: ReactNode;
   dash?: boolean;
+  /** The public showcase: its reader is not signed in, so there is no
+      Settings to send them to and no identity to represent. */
+  noAvatar?: boolean;
 }) {
   return (
     <div className={`topbar${dash ? ' dash' : ''}`}>
@@ -79,7 +82,9 @@ export function TopBar({ crumb, onSearch, searchLabel = 'Search…', actions, da
 
       <div className="right">
         {actions}
-        <button className="avatar" onClick={go.settings} aria-label="Settings"><GearMark /></button>
+        {!noAvatar && (
+          <button className="avatar" onClick={go.settings} aria-label="Settings"><GearMark /></button>
+        )}
       </div>
     </div>
   );

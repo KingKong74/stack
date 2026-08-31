@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getShowcase, type Showcase as ShowcaseData } from '../store';
 import { PRODUCT_NAME, isAccentTag } from '../lib/ui';
+import { TopBar } from '../components/TopBar';
 
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
 
@@ -38,10 +39,9 @@ export function Showcase({ slug, token }: { slug: string; token: string }) {
 
   return (
     <div>
-      <div className="topbar">
-        <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
-        <div className="right"><span className="show-badge">Shared view · read-only</span></div>
-      </div>
+      {/* No crumb and no avatar: a share link's reader is not signed in and has
+          nowhere of their own to go back to. */}
+      <TopBar actions={<span className="show-badge">Shared view · read-only</span>} noAvatar />
 
       <div className="page detail">
         <div className="detail-head">

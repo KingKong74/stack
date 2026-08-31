@@ -20,7 +20,6 @@ import {
   getOverview,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
-import { PRODUCT_NAME } from '../lib/ui';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
 // The wire codec and the palette are shared with the tab agents' consoles
@@ -34,6 +33,7 @@ import { b64encode, b64decode, GIT_BASH_THEME } from '../lib/termWire';
 import { parseConsoleSession, consoleTitle } from '../lib/agentConsole';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { tierRank, TIERS, type RoadmapItem, type Tier } from '../types';
+import { TopBar } from '../components/TopBar';
 
 // The web terminal (#/terminal[?cwd=…]) — xterm.js over websocket to the host
 // PTY daemon (via the server relay at /term). Parallel sessions live in tabs
@@ -1197,20 +1197,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           </span>
         </div>
       )}
-      <div className="topbar">
-        <div className="crumb">
-          <span className="chev" onClick={go.dashboard}>‹</span>
-          <span className="back" onClick={go.dashboard}>Projects</span>
-          <span className="sep">/</span>
-          <span className="here">Terminal</span>
-        </div>
-        <div className="right">
-          {/* #316 — the review quick link is the rail's `review ↗`, not a
-              second button up here: one entrance per screen. */}
-          <a className="btn-repo" href={hrefTo.control} title="Mission Control">Mission Control</a>
-          <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
-        </div>
-      </div>
+      {/* #316 — the review quick link is the rail's `review ↗`, not a second
+          button up here: one entrance per screen. */}
+      <TopBar crumb={[{ label: 'Projects', onClick: go.dashboard }, { label: 'Terminal' }]}
+        actions={<a className="btn-repo" href={hrefTo.control} title="Mission Control">Mission Control</a>} />
 
       {/* Panes > 1 takes the full viewport width by itself. That is what the
           old wide-mode button did, now tied to the reason people pressed it:
