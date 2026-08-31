@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import type { Settings as SettingsData, CheckpointDetail, AuthDevice, Project } from '../types';
 import {
   getSettings, patchSettings, getToken, clearToken, verifyToken, AuthError,
-  getThemePref, setThemePref, type ThemePref,
   getDeletedProjects, restoreProject, purgeProject, type DeletedProject,
   getProjects, deleteProject,
   getAuthDevices, revokeAuthDevice,
@@ -17,10 +16,6 @@ import { DIRECTIVES } from '../lib/brief';
 // back to the one surface it started as. The strip below is kept for the
 // Terminal jump that has always lived beside the tabs — it is the only way to
 // the host shell from here, and it was never a tab in the first place.
-
-const THEMES: { key: ThemePref; label: string }[] = [
-  { key: 'system', label: 'System' }, { key: 'light', label: 'Light' }, { key: 'dark', label: 'Dark' },
-];
 
 const DETAILS: { key: CheckpointDetail; label: string; blurb: string }[] = [
   { key: 'brief', label: 'Brief', blurb: 'A line or two — just enough to re-orient.' },
@@ -40,11 +35,10 @@ export function Settings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [test, setTest] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
-  const [theme, setTheme] = useState<ThemePref>(() => getThemePref());
-  // Terminal behaviour — device-local, like the theme.
+  // Terminal behaviour — device-local.
   const [termPrefs, setTermPrefsState] = useState<TermSessionPrefs>(() => getTermSessionPrefs());
   const saveTermPrefs = (p: TermSessionPrefs) => { setTermPrefsState(p); setTermSessionPrefs(p); };
-  // #312 — how often the moving screens re-read. Device-local like the theme:
+  // #312 — how often the moving screens re-read. Device-local:
   // the browser is what does the polling.
   const [refreshSecs, setRefreshSecs] = useState<AutoRefreshSeconds>(() => getAutoRefreshSeconds());
   const saveRefresh = (s: AutoRefreshSeconds) => { setRefreshSecs(s); setAutoRefreshSeconds(s); };
@@ -475,28 +469,6 @@ export function Settings() {
             </section>
 
             {/* ---- Appearance (device-local) ---- */}
-            <section className="set-card">
-              <div className="set-card-head">
-                <div className="set-card-title">Appearance</div>
-                <div className="set-card-sub">How {PRODUCT_NAME} looks on this device.</div>
-              </div>
-              <div className="set-row col">
-                <div className="set-row-text">
-                  <div className="set-row-label">Theme</div>
-                  <div className="set-row-hint">System follows your OS setting.</div>
-                </div>
-                <div className="seg-control" role="tablist" aria-label="Theme">
-                  {THEMES.map((t) => (
-                    <button key={t.key} role="tab" aria-selected={theme === t.key}
-                      className={`seg-opt ${theme === t.key ? 'on' : ''}`}
-                      onClick={() => { setTheme(t.key); setThemePref(t.key); }}>
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </section>
-
             {/* ---- Projects: the only place a project can be deleted ---- */}
             {live.length > 0 && (
               <section className="set-card">

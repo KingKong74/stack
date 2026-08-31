@@ -18,16 +18,12 @@ import { CommandPalette } from './components/CommandPalette';
 import { TermStatusPill } from './components/TermStatusPill';
 import { ToTop } from './components/ToTop';
 import { QuickAddDock } from './components/QuickAddDock';
-import { getToken, onAuthChange, getThemePref, onThemeChange } from './store';
+import { getToken, onAuthChange } from './store';
 
-// Resolve the stored preference to a concrete theme on <html data-theme>.
-// 'system' follows prefers-color-scheme live.
-function applyTheme() {
-  const pref = getThemePref();
-  const dark = pref === 'dark'
-    || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-}
+// The app is DARK-ONLY: the imported console kit ships one palette and no
+// light counterpart, so there is no preference to resolve, no attribute to
+// stamp and no listener to keep. styles.css states each colour once.
+
 
 export default function App() {
   const route = useRoute();
@@ -44,15 +40,6 @@ export default function App() {
 
   // Re-read the token whenever it changes (set on unlock, cleared on any 401).
   useEffect(() => onAuthChange(() => setTokenState(getToken())), []);
-
-  // Theme: apply on boot, on preference change (Settings), and on OS change.
-  useEffect(() => {
-    applyTheme();
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    media.addEventListener('change', applyTheme);
-    const off = onThemeChange(applyTheme);
-    return () => { media.removeEventListener('change', applyTheme); off(); };
-  }, []);
 
   // Global ⌘K / Ctrl+K toggles the command palette from anywhere.
   useEffect(() => {

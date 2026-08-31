@@ -106,30 +106,12 @@ export function setRoadDraft(slug: string, draft: RoadDraft | null) {
   localStorage.setItem(ROAD_DRAFT_KEY, JSON.stringify(all));
 }
 
-// ---- theme preference (device-local; App applies it to <html data-theme>) ----
+// The theme preference is GONE. The app is dark-only since the console kit
+// landed — it ships one palette and no light counterpart — so there is no
+// stored choice, no listener and no Settings control. App.tsx stamps
+// `data-theme="dark"` once on boot.
 
-const THEME_KEY = 'stack.theme';
-
-export type ThemePref = 'system' | 'light' | 'dark';
-
-export function getThemePref(): ThemePref {
-  const v = localStorage.getItem(THEME_KEY);
-  return v === 'light' || v === 'dark' ? v : 'system';
-}
-
-export function setThemePref(pref: ThemePref) {
-  localStorage.setItem(THEME_KEY, pref);
-  notifyTheme();
-}
-
-let themeListeners: Array<() => void> = [];
-function notifyTheme() { for (const cb of themeListeners) cb(); }
-export function onThemeChange(cb: () => void): () => void {
-  themeListeners.push(cb);
-  return () => { themeListeners = themeListeners.filter((x) => x !== cb); };
-}
-
-// ---- auto refresh (#312, device-local like the theme) ----
+// ---- auto refresh (#312, device-local) ----
 //
 // How often a screen that watches something MOVING re-reads it: the terminal's
 // running sessions, the branch previews, Mission Control's queue, the skill

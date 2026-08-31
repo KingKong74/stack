@@ -1,147 +1,309 @@
+/* ============================================================
+   THE PALETTE — imported from the Claude Design project
+   "Design system color palette" (7ff15c0c), ui_kits/console.
+
+   Two layers, and the split is the whole point:
+
+   1. THE KIT TOKENS (--grey-*, --blue-*, --lime-*, --surface-*,
+      --text-*, --border-*, --action-*, --status-*, --viz-*) are the
+      designer's, copied verbatim from the project's tokens/*.css.
+      They are the source of truth. Change a colour HERE.
+
+   2. STACK'S NAMES (--paper, --ink, --accent, --live …) are now
+      ALIASES onto layer 1. Every one of this file's rules and every
+      component still reads them, so the whole app repalettes from
+      the block above and nothing downstream had to be rewritten.
+
+   Adding a tone still means adding it here, never as an inline hex
+   — the rule is unchanged, only the source moved.
+
+   THE APP IS DARK-ONLY. The kit ships one palette and no light
+   counterpart, so there is no theme attribute, no override layer and
+   no Appearance toggle — every rule states its colour ONCE. If a
+   light theme is ever wanted it starts here, by giving these aliases
+   a second set of values; nothing downstream would need touching.
+   ============================================================ */
+
 :root {
-  /* ============================================================
-     Formal palette (Atlas design system) — the single source of
-     truth for colour. Everything below references these tokens.
-     ============================================================ */
+  /* ---------- 1. KIT TOKENS (verbatim — the designer's) ---------- */
+
+  /* Neutrals — cool-tinted greys */
+  --grey-1000: #0A0B0C;
+  --grey-950: #0E0F10;
+  --grey-900: #18191A;
+  --grey-850: #1F2022;
+  --grey-800: #242528;
+  --grey-750: #2A2C2F;
+  --grey-700: #33363A;
+  --grey-600: #43474C;
+  --grey-500: #6B7075;
+  --grey-400: #8F959C;
+  --grey-300: #B4BAC1;
+  --grey-200: #E3E8EE;
+  --grey-100: #F1F4F8;
+  --white: #FFFFFF;
+
+  /* Blue — primary action */
+  --blue-800: #0C3D8A;
+  --blue-700: #1150B0;
+  --blue-600: #1868DB;
+  --blue-500: #3B82E8;
+  --blue-400: #7DAAEB;
+  --blue-300: #A3C3F1;
+  --blue-tint: #1C2B42;
+
+  /* Lime — accent, success, highlight */
+  --lime-700: #7EA34C;
+  --lime-600: #A4C96F;
+  --lime-500: #BFEC7E;
+  --lime-400: #D0F29B;
+  --lime-300: #E1F7C2;
+  --lime-tint: #202A16;
+
+  /* Semantic hues */
+  --red-500: #E5484D;
+  --red-tint: #471F21;
+  --amber-500: #E2A336;
+  --amber-tint: #3A2C13;
+
+  /* Surfaces */
+  --surface-canvas: var(--grey-900);
+  --surface-sunken: var(--grey-950);
+  --surface-raised: var(--grey-850);
+  --surface-card: var(--grey-800);
+  --surface-overlay: var(--grey-750);
+  --surface-inverse: var(--grey-200);
+  --surface-selected: var(--blue-tint);
+  --surface-hover: rgba(255, 255, 255, 0.055);
+  --surface-press: rgba(255, 255, 255, 0.09);
+  --scrim: rgba(10, 11, 12, 0.72);
+
+  /* Text */
+  --text-primary: #F5F7F9;
+  --text-secondary: var(--grey-300);
+  --text-tertiary: var(--grey-400);
+  --text-disabled: var(--grey-500);
+  --text-inverse: var(--grey-900);
+  --text-accent: var(--lime-500);
+  --text-link: var(--blue-400);
+  --text-link-hover: var(--blue-300);
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-default: var(--grey-700);
+  --border-strong: var(--grey-600);
+  --border-focus: var(--blue-500);
+  --border-accent: var(--lime-500);
+
+  /* Interactive */
+  --action-primary: var(--blue-600);
+  --action-primary-hover: var(--blue-500);
+  --action-primary-press: var(--blue-700);
+  --action-accent: var(--lime-500);
+  --action-accent-hover: var(--lime-400);
+  --action-accent-press: var(--lime-600);
+  --action-danger: var(--red-500);
+
+  /* Status pairs (bg / fg) */
+  --status-success-bg: var(--lime-tint);
+  --status-success-fg: var(--lime-500);
+  --status-info-bg: var(--blue-tint);
+  --status-info-fg: var(--blue-400);
+  --status-danger-bg: var(--red-tint);
+  --status-danger-fg: #FF9A9D;
+  --status-warning-bg: var(--amber-tint);
+  --status-warning-fg: #F0C377;
+  --status-neutral-bg: var(--grey-750);
+  --status-neutral-fg: var(--grey-300);
+
+  /* Data viz — lime and blue lead, greys fill */
+  --viz-1: var(--lime-500);
+  --viz-2: var(--blue-500);
+  --viz-3: var(--blue-300);
+  --viz-4: var(--lime-700);
+  --viz-5: var(--grey-500);
+  --viz-6: var(--amber-500);
+
+  /* Type */
+  --font-sans: 'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  --text-3xl: 34px;
+  --text-4xl: 44px;
+
+  --leading-tight: 1.15;
+  --leading-snug: 1.3;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  --tracking-tight: -0.015em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-caps: 0.08em;
+
+  --type-display: var(--weight-semibold) var(--text-4xl) / var(--leading-tight) var(--font-sans);
+  --type-title: var(--weight-semibold) var(--text-2xl) / var(--leading-snug) var(--font-sans);
+  --type-heading: var(--weight-semibold) var(--text-lg) / var(--leading-snug) var(--font-sans);
+  --type-body: var(--weight-regular) var(--text-md) / var(--leading-normal) var(--font-sans);
+  --type-body-sm: var(--weight-regular) var(--text-sm) / var(--leading-normal) var(--font-sans);
+  --type-label: var(--weight-medium) var(--text-sm) / 1.2 var(--font-sans);
+  --type-caption: var(--weight-regular) var(--text-xs) / 1.4 var(--font-sans);
+  --type-code: var(--weight-regular) var(--text-sm) / var(--leading-normal) var(--font-mono);
+  --type-eyebrow: var(--weight-semibold) var(--text-2xs) / 1.2 var(--font-sans);
+
+  /* Space, radius, control heights, frame */
+  --space-0: 0px;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-9: 32px;
+  --space-10: 40px;
+  --space-11: 56px;
+  --space-12: 80px;
+
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-pill: 999px;
+
+  --control-h-sm: 28px;
+  --control-h-md: 32px;
+  --control-h-lg: 40px;
+
+  --sidebar-w: 260px;
+  --topbar-h: 48px;
+  --column-w: 272px;
+  --content-max: 1180px;
+
+  /* Elevation */
+  --shadow-none: none;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
+  --shadow-inset-hairline: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --ring-focus: 0 0 0 2px var(--surface-canvas), 0 0 0 4px var(--blue-500);
+  --ring-accent: 0 0 0 2px var(--surface-canvas), 0 0 0 4px var(--lime-600);
+
+  /* Motion */
+  --dur-instant: 80ms;
+  --dur-fast: 120ms;
+  --dur-normal: 180ms;
+  --dur-slow: 260ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --transition-control:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+
+  /* ---------- 2. STACK'S NAMES, aliased onto the kit ---------- */
 
   /* neutrals */
-  --paper: #f7f5f1;     /* app background */
-  --surface: #ffffff;   /* cards, inputs, panels */
-  --sand: #fbf3ec;      /* the signature resume / cream tint */
-  --keyline: #e0dacf;   /* strongest hairline (design "line") */
-  --muted: #8a847a;     /* secondary text */
-  --ink: #1c1a17;       /* primary text */
+  --paper: var(--surface-canvas);   /* app background */
+  --surface: var(--surface-card);   /* cards, inputs, panels */
+  --sand: var(--surface-raised);    /* was the cream resume tint; a raised
+                                       plane is what distinguishes it now */
+  --keyline: var(--border-default); /* strongest hairline */
+  --muted: var(--text-tertiary);    /* secondary text */
+  --ink: var(--text-primary);       /* primary text */
 
-  /* accent ramp (terracotta) */
-  --accent-deep: #a84f2e;       /* hover / pressed state for accent buttons */
-  --accent: #c4623d;            /* terracotta — the default accent */
-  --accent-soft: #dc8b63;       /* lighter accent */
-  --accent-tint: #f4e4dc;       /* accent wash */
-  --accent-tint-border: #ecd3c6;/* accent wash border */
-  --accent-tint-deep: #ecd5c8;  /* stronger wash — hover/active for tinted accent buttons */
+  /* accent ramp — TERRACOTTA IS GONE. The kit has two action colours and
+     they are not interchangeable: blue is the primary action (buttons,
+     links, focus, selection) and lime is the accent (success, highlight,
+     the first viz series). Stack's single --accent was doing the blue job,
+     so it maps to blue; the lime half lands on --live/--green below.
+     Hover gets LIGHTER on a dark ground, not darker. */
+  --accent-deep: var(--action-primary-hover);
+  --accent: var(--action-primary);
+  --accent-soft: var(--blue-400);
+  --accent-tint: var(--blue-tint);
+  --accent-tint-border: #24395a;
+  --accent-tint-deep: #223550;
 
   /* semantic tones */
-  --live: #3f8a5b;
-  --building: #b08a2e;
-  --sage: #6f9a72;
-  --critical: #b23b3b;
-  --paused: #a39c90;
+  --live: var(--lime-500);
+  --building: var(--amber-500);
+  --sage: var(--lime-700);
+  --critical: var(--red-500);
+  --paused: var(--grey-500);
 
-  /* semantic washes (the Polaris sky's verdict tints) */
-  --live-tint: #e4efe8;
-  --building-tint: #f3ead3;
-  --paused-tint: #ecebe6;
-  /* the critical wash + hairline — the Quality page's "something is wrong" tone
-     (#278). Named tokens rather than rgba literals, so dark overrides them once. */
-  --critical-tint: #f7eae9;
-  --critical-line: #e5cbc9;
+  /* semantic washes */
+  --live-tint: var(--lime-tint);
+  --building-tint: var(--amber-tint);
+  --paused-tint: var(--grey-750);
+  --critical-tint: var(--red-tint);
+  --critical-line: #5c2b2d;
 
   /* ---- derived / supporting tokens (kept for the existing UI) ---- */
   --bg: var(--paper);
   --card: var(--surface);
   --resume: var(--sand);
-  --resume-border: #ecdccf;
+  --resume-border: var(--border-default);
 
-  --line: #ebe7df;
-  --line-2: #e7e3db;
+  --line: var(--border-subtle);
+  --line-2: var(--border-subtle);
   --line-3: var(--keyline);
-  --line-panel: #e9e4da;
+  --line-panel: var(--border-default);
 
-  --body: #3a352e;
-  --body-2: #4a3f36;
-  --faint: #a9a294;
-  --fainter: #b3ab9e;
-  --placeholder: #b0a896;
+  --body: var(--text-secondary);
+  --body-2: var(--grey-200);
+  --faint: var(--text-tertiary);
+  --fainter: var(--text-disabled);
+  --placeholder: var(--text-disabled);
+  --resume-when: var(--text-tertiary);
 
-  /* the sand-card's own muted ink (the resume card's timestamp) — warmer than
-     --muted, which reads grey on cream */
-  --resume-when: #a9947f;
-
-  /* the one shadow a resting card may have: a hover lift. Everything heavier
-     is a floating layer's. */
-  --shadow-raise: 0 3px 10px rgba(28,26,23,.10);
+  /* the one shadow a resting card may have: a hover lift */
+  --shadow-raise: var(--shadow-md);
 
   --green: var(--live);
-  --green-tint: #e4efe8;
+  --green-tint: var(--live-tint);
 
-  --chip-ink: #6b6458;
+  --chip-ink: var(--grey-300);
 
-  --panel: #f1efe9;
+  --panel: var(--surface-raised);
 
-  /* The Auditor console's ground. A console reads as a console — it is the one
-     surface that does NOT invert with the theme (the terminal holder already
-     works this way), so these five sit in :root and dark leaves them alone.
-     Named here rather than inlined, because the palette is the only place a
-     tone may be defined. */
-  --console: #1c1814;
-  --console-line: #2e2822;
-  --console-ink: #e8e0d6;
-  --console-dim: #b8ab9c;
-  --console-faint: #7d7469;
-  --console-bad: #d99a9a;
+  /* The console's ground. It used to be the one surface that did NOT invert
+     with the theme — a distinction that dissolved when the app went dark,
+     so it is now simply the DEEPEST plane in the same cool ramp: a console
+     still reads as a console, one step below the canvas. */
+  --console: var(--grey-1000);
+  --console-line: var(--grey-800);
+  --console-ink: var(--text-primary);
+  --console-dim: var(--text-secondary);
+  --console-faint: var(--text-disabled);
+  --console-bad: var(--status-danger-fg);
 
   /* the feature table's column track, shared by its header and every row so
      the two can never drift apart */
   --q-feat-cols: 1.6fr 84px 1fr 68px 76px 62px;
 
-  --sans: 'Hanken Grotesk', system-ui, sans-serif;
-  --disp: 'Bricolage Grotesque', 'Hanken Grotesk', sans-serif;
-  --mono: 'JetBrains Mono', ui-monospace, monospace;
-}
-
-/* ============================================================
-   Dark theme — set via <html data-theme="dark"> (Settings →
-   Appearance; 'system' follows the OS). Overrides the same named
-   tokens, so everything that references the palette follows.
-   ============================================================ */
-[data-theme='dark'] {
-  /* neutrals */
-  --paper: #171512;
-  --surface: #201d19;
-  --sand: #272119;
-  --keyline: #3d372d;
-  --muted: #9b948a;
-  --ink: #ece7df;
-
-  /* accent ramp — hover gets lighter, not darker, on a dark ground */
-  --accent-deep: #de8055;
-  --accent: #cf6a42;
-  --accent-soft: #a85a39;
-  --accent-tint: #322019;
-  --accent-tint-border: #4c2f21;
-  --accent-tint-deep: #43291f;
-
-  /* semantic tones */
-  --live: #6fbe8c;
-  --building: #c9a44a;
-  --sage: #8ab48d;
-  --critical: #d76c6c;
-  --paused: #857e73;
-
-  /* semantic washes */
-  --live-tint: #1e2b23;
-  --building-tint: #2e2817;
-  --paused-tint: #2a2823;
-  --critical-tint: #2b1c1a;
-  --critical-line: #4a2e2c;
-
-  /* supporting literals re-based for dark */
-  --resume-border: #3b3226;
-  --line: #2b2822;
-  --line-2: #2e2a24;
-  --line-panel: #2e2a24;
-  --body: #cfc8bd;
-  --body-2: #d8d0c4;
-  --faint: #7d766a;
-  --fainter: #6f695e;
-  --placeholder: #6f695e;
-  --green-tint: #1e2b23;
-  --chip-ink: #b0a89b;
-  --panel: #262320;
-  /* on a dark ground the cream card is gone, so the warm stamp goes plain muted */
-  --resume-when: var(--muted);
-  /* a shadow on a dark ground reads as a hole unless it is deeper and softer */
-  --shadow-raise: 0 3px 12px rgba(0,0,0,.36);
+  /* The three faces. The kit ships no display face — Instrument Sans at
+     semibold IS the display weight — so --disp and --sans are one family
+     now and the distinction lives in weight and tracking. */
+  --sans: var(--font-sans);
+  --disp: var(--font-sans);
+  --mono: var(--font-mono);
 }
 
 /* ============================================================
@@ -164,37 +326,9 @@
 ::-webkit-scrollbar-thumb:active { background: var(--accent-soft); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 
-/* Literal light backgrounds that don't ride the tokens */
-[data-theme='dark'] .auto-badge { background: var(--panel); }
-[data-theme='dark'] .auto-cue { background: var(--accent-tint); }
-[data-theme='dark'] .deck-error,
-[data-theme='dark'] .action-error,
-[data-theme='dark'] .set-test.fail { background: #33211f; border-color: #4c2c28; }
-[data-theme='dark'] .resume-when,
-[data-theme='dark'] .hero-eyebrow,
-[data-theme='dark'] .hero-export,
-[data-theme='dark'] .col-progress .lbl,
-[data-theme='dark'] .col-next .lbl { color: var(--muted); }
-[data-theme='dark'] .col-keep .lbl { color: var(--sage); }
-[data-theme='dark'] .switch { background: #45403a; }
-[data-theme='dark'] .switch.on { background: var(--accent); }
-[data-theme='dark'] .statusbadge.building,
-[data-theme='dark'] .sev-pill.medium,
-[data-theme='dark'] .status-pill.investigating { color: var(--building); background: #2e2817; }
-[data-theme='dark'] .statusbadge.paused,
-[data-theme='dark'] .statusbadge.archived,
-[data-theme='dark'] .sev-pill.low,
-[data-theme='dark'] .status-pill.open { color: var(--chip-ink); background: #2b2823; }
-[data-theme='dark'] .sev-pill.critical { background: #3a2323; }
-[data-theme='dark'] .tl .node { background: var(--card); }
-/* Header, avatar, chips, misc literals */
-[data-theme='dark'] .topbar { background: rgba(23, 21, 18, 0.86); }
-[data-theme='dark'] .avatar { background: #45403a; }
-[data-theme='dark'] .avatar:hover { background: #524c44; }
-[data-theme='dark'] .crumb .sep { color: var(--faint); }
-[data-theme='dark'] .chip.on { color: var(--paper); }
-[data-theme='dark'] .road-check { color: transparent; }
-[data-theme='dark'] .road-check.on { color: #fff; }
+/* The overrides that used to live here are folded into their base rules.
+   With one palette there is no second theme to override FOR, and a rule that
+   states its colour once cannot drift from a twin that states it again. */
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; min-height: 100%; }
@@ -231,7 +365,7 @@ a { color: inherit; }
 .crumb .chev { font-size: 17px; color: var(--fainter); cursor: pointer; }
 .crumb .back { cursor: pointer; }
 .crumb .back:hover { color: var(--ink); }
-.crumb .sep { color: #cdc7ba; }
+.crumb .sep { color: var(--faint); }
 .crumb .here { font-family: var(--disp); color: var(--ink); font-weight: 600; }
 .topbar .right { display: flex; align-items: center; gap: 13px; }
 .searchbox {
@@ -240,9 +374,9 @@ a { color: inherit; }
 }
 .searchbox.sm { height: 34px; width: 200px; padding: 0 12px; }
 .searchbox input { border: 0; outline: none; background: transparent; color: var(--ink); width: 100%; font-size: 13px; }
-.searchbox .glass { width: 13px; height: 13px; border: 1.6px solid #c0b9ab; border-radius: 50%; position: relative; flex: none; }
-.searchbox .glass::after { content: ''; position: absolute; width: 5px; height: 1.6px; background: #c0b9ab; bottom: -2px; right: -3px; transform: rotate(45deg); }
-.avatar { width: 34px; height: 34px; border-radius: 50%; background: #dcd6cb; flex: none; }
+.searchbox .glass { width: 13px; height: 13px; border: 1.6px solid var(--text-tertiary); border-radius: 50%; position: relative; flex: none; }
+.searchbox .glass::after { content: ''; position: absolute; width: 5px; height: 1.6px; background: var(--text-tertiary); bottom: -2px; right: -3px; transform: rotate(45deg); }
+.avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--grey-600); flex: none; }
 .avatar.sm { width: 32px; height: 32px; }
 .btn-accent {
   height: 36px; padding: 0 16px; border-radius: 9px; background: var(--accent);
@@ -275,7 +409,7 @@ a { color: inherit; }
   transition: all 0.14s ease; user-select: none;
 }
 .chip:hover { border-color: var(--line-3); }
-.chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.chip.on { background: var(--accent); color: var(--white); border-color: var(--accent); }
 .chip .n { opacity: 0.55; margin-left: 3px; }
 .chip.on .n { opacity: 0.7; }
 
@@ -305,9 +439,9 @@ a { color: inherit; }
 .pcard .fill { height: 100%; border-radius: 3px; background: #fff; }
 .pcard .metarow { display: flex; justify-content: space-between; color: rgba(255,255,255,.86); font-size: 11px; margin-top: 8px; }
 .newtile {
-  height: 234px; border-radius: 16px; border: 1.5px dashed #d2ccbf;
+  height: 234px; border-radius: 16px; border: 1.5px dashed var(--border-default);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-  color: #9a9384; transition: border-color 0.16s, color 0.16s; width: 100%;
+  color: var(--text-tertiary); transition: border-color 0.16s, color 0.16s; width: 100%;
 }
 .newtile:hover { border-color: var(--accent); color: var(--accent); }
 .newtile .plus { width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid currentColor; display: flex; align-items: center; justify-content: center; font-size: 20px; line-height: 1; }
@@ -322,10 +456,10 @@ a { color: inherit; }
 .statusbadge .dot { width: 7px; height: 7px; border-radius: 50%; }
 .statusbadge.live { color: var(--green); background: var(--green-tint); }
 .statusbadge.live .dot { background: var(--green); }
-.statusbadge.building { color: #9a7a2e; background: #f1eada; }
-.statusbadge.building .dot { background: #9a7a2e; }
-.statusbadge.paused { color: var(--chip-ink); background: #eeebe6; }
-.statusbadge.paused .dot { background: #8f897d; }
+.statusbadge.building { color: var(--status-warning-fg); background: var(--status-warning-bg); }
+.statusbadge.building .dot { background: var(--building); }
+.statusbadge.paused { color: var(--status-neutral-fg); background: var(--status-neutral-bg); }
+.statusbadge.paused .dot { background: var(--paused); }
 /* Automode toggle in the title row — quiet when manual, sage when the
    autopilot may pick the project up. */
 .autobadge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 11px; border-radius: 20px; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); }
@@ -370,7 +504,7 @@ a.tab { display: inline-block; }
 .resume-head .left { display: flex; align-items: center; gap: 11px; }
 .resume-ico { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 15px; }
 .resume-title { font-family: var(--disp); font-size: 18px; font-weight: 600; }
-.resume-when { font-family: var(--mono); font-size: 11px; color: #a9947f; }
+.resume-when { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .resume-meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .btn-export { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 8px;
   border: 1px solid var(--accent-tint-border); font-size: 12px; font-weight: 500; color: var(--accent);
@@ -425,7 +559,7 @@ a.tab { display: inline-block; }
   background: var(--accent-tint); padding: 8px 12px; margin-bottom: 12px; }
 .resume-since .rs-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
 .resume-since .rs-lbl { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-deep); }
-.resume-since .rs-n { font-family: var(--mono); font-size: 11px; color: #a9947f; }
+.resume-since .rs-n { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .resume-since .rs-open { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--accent);
   border: 1px solid var(--accent-tint-border); border-radius: 7px; padding: 3px 8px; background: transparent; }
 .resume-since .rs-open:hover { background: var(--paper); color: var(--accent-deep); }
@@ -435,9 +569,9 @@ a.tab { display: inline-block; }
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .resume-cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 22px; }
 .resume-col .lbl { margin-bottom: 10px; }
-.col-progress .lbl { color: #b39a82; }
-.col-next .lbl { color: #b39a82; }
-.col-keep .lbl { color: #8aa07e; }
+.col-progress .lbl { color: var(--muted); }
+.col-next .lbl { color: var(--muted); }
+.col-keep .lbl { color: var(--sage); }
 .itemlist { display: flex; flex-direction: column; gap: 9px; }
 .item { display: flex; gap: 9px; align-items: flex-start; font-size: 13.5px; color: var(--body); }
 .item .mk { flex: none; }
@@ -843,7 +977,7 @@ a.tab { display: inline-block; }
 /* ---------- latest summaries / activity card ---------- */
 .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .section-head .left { display: flex; align-items: center; gap: 9px; }
-.auto-badge { font-size: 11px; color: var(--muted); background: #f0ece4; border: 1px solid var(--line-2); padding: 3px 9px; border-radius: 20px; }
+.auto-badge { font-size: 11px; color: var(--muted); background: var(--panel); border: 1px solid var(--line-2); padding: 3px 9px; border-radius: 20px; }
 .viewall { font-size: 13px; color: var(--accent); font-weight: 500; }
 .tags { display: flex; gap: 6px; flex-wrap: wrap; }
 .tag { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line-2); color: var(--chip-ink); }
@@ -930,15 +1064,13 @@ a.tab { display: inline-block; }
 .road-check:hover { border-color: var(--muted); }
 .road-check.on { background: var(--green, #3f8a5b); border-color: var(--green, #3f8a5b); }
 /* small "auto" cue: marks hook-extracted items apart from hand-entered ones */
-.auto-cue { display: inline-block; margin-left: 7px; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); background: #f0e7df; border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 5px; vertical-align: middle; }
+.auto-cue { display: inline-block; margin-left: 7px; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 5px; padding: 1px 5px; vertical-align: middle; }
 /* #381 — FLY: a card a live session opened for its own work. Shaped like the
    'auto' cue because they are the same KIND of fact (nobody typed this, it is
    held out of the runner), toned --live rather than the accent because it is
    the only one of the two that names something running right now. The session
    name rides inside the chip, so it stays legible at the small size rather
-   than needing a second element beside it. Both colours are tokens, which is
-   why this needs no [data-theme='dark'] twin — unlike .auto-cue above, whose
-   hardcoded background does. */
+   than needing a second element beside it. Both colours are tokens. */
 .fly-cue { display: inline-block; margin-left: 7px; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--live); background: var(--live-tint); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 5px; vertical-align: middle; }
 .road-item:hover .road-actions { opacity: 1; }
 .review-pick { display: flex; gap: 6px; align-items: center; flex: none; flex-wrap: wrap; }
@@ -978,28 +1110,28 @@ a.tab { display: inline-block; }
 /* #277 — the tier seg in the roadmap modal: the selected tier wears its own
    colour, so the modal and the Tiers view read as the same ranking. */
 .seg .opt.tier-S.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-.seg .opt.tier-A.on { background: var(--building); border-color: var(--building); color: #fff; }
-.seg .opt.tier-B.on { background: var(--sage); border-color: var(--sage); color: #fff; }
-.seg .opt.tier-C.on { background: #8f897d; border-color: #8f897d; color: #fff; }
+.seg .opt.tier-A.on { background: var(--building); border-color: var(--building); color: var(--text-inverse); }
+.seg .opt.tier-B.on { background: var(--sage); border-color: var(--sage); color: var(--text-inverse); }
+.seg .opt.tier-C.on { background: var(--paused); border-color: var(--paused); color: var(--white); }
 /* #251 — the tier card's text used to be pinned at 330px, so a long title wrapped
    into a narrow ribbon while the row had width to spare. Let it fill instead. */
 .tier-card .body { display: flex; flex-direction: column; gap: 2px; text-align: left; flex: 1 1 auto; min-width: 0; }
 
 /* #247 — the Parked view: everything set aside, aged, with stale flagged.
    Deliberately a plain list, not the board grid — this is a shelf to clear. */
-.seg-opt .seg-warn { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; color: #fff; background: #9a7a2e; border-radius: 6px; padding: 0 5px; vertical-align: 1px; }
+.seg-opt .seg-warn { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; color: var(--text-inverse); background: var(--building); border-radius: 6px; padding: 0 5px; vertical-align: 1px; }
 .seg-opt.on .seg-warn { background: rgba(0,0,0,.28); }
 
 /* ---------- activity timeline ---------- */
 .linkbanner { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 11px; padding: 11px 15px; margin-bottom: 18px; }
-.linkbanner .txt { font-size: 13px; color: #9a4f30; }
+.linkbanner .txt { font-size: 13px; color: var(--accent-soft); }
 .linkbanner .txt .mono { font-weight: 500; }
 .linkbanner .clear { font-size: 12px; color: var(--accent); font-weight: 500; }
 .timeline { position: relative; padding-left: 26px; }
 .timeline .rail { position: absolute; left: 5px; top: 6px; bottom: 6px; width: 2px; background: var(--line-2); }
 .timeline .items { display: flex; flex-direction: column; gap: 16px; }
 .tl { position: relative; }
-.tl .node { position: absolute; left: -26px; top: 18px; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 2.5px solid var(--accent); }
+.tl .node { position: absolute; left: -26px; top: 18px; width: 12px; height: 12px; border-radius: 50%; background: var(--card); border: 2.5px solid var(--accent); }
 .tl-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
 .tl-card.hl { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(196, 98, 61, 0.16); }
 .tl-card .top { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
@@ -1030,7 +1162,7 @@ a.tab { display: inline-block; }
 .btn-submit { height: 38px; padding: 0 18px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
 .btn-submit:hover { background: var(--accent-deep); }
 .btn-submit:active { background: var(--accent-deep); transform: translateY(1px); }
-.optional { text-transform: none; letter-spacing: 0; color: #c0b9ab; }
+.optional { text-transform: none; letter-spacing: 0; color: var(--faint); }
 .field-hint { font-size: 12px; line-height: 1.5; color: var(--muted); }
 .branch-pick { display: flex; gap: 8px; align-items: center; }
 .branch-pick .field-input { flex: 1; }
@@ -1119,12 +1251,12 @@ a.tab { display: inline-block; }
 .sev-bar.critical { background: var(--critical); }
 .sev-bar.high     { background: var(--accent); }
 .sev-bar.medium   { background: var(--building); }
-.sev-bar.low      { background: #bdb6a8; }
+.sev-bar.low      { background: var(--paused); }
 
-.sev-pill.critical { color: var(--critical); background: #f3e2e0; }
+.sev-pill.critical { color: var(--critical); background: var(--status-danger-bg); }
 .sev-pill.high     { color: var(--accent); background: var(--accent-tint); }
-.sev-pill.medium   { color: #9a7a2e; background: #f1eada; }
-.sev-pill.low      { color: #7a746a; background: #eeebe6; }
+.sev-pill.medium   { color: var(--status-warning-fg); background: var(--status-warning-bg); }
+.sev-pill.low      { color: var(--status-neutral-fg); background: var(--status-neutral-bg); }
 
 .status-pill.clickable { cursor: pointer; }
 .status-pill.clickable:hover { box-shadow: inset 0 0 0 1px currentColor; }
@@ -1133,46 +1265,46 @@ a.tab { display: inline-block; }
 .bug-quick button { color: var(--faint); font-size: 14px; line-height: 1; padding: 3px 6px; border-radius: 6px; }
 .bug-quick .bug-resolve:hover { color: var(--green); background: var(--green-tint); }
 .bug-quick .bug-x:hover { color: var(--critical); background: var(--panel); }
-.status-pill.open          { color: #6b6458; background: #eeebe6; }
-.status-pill.investigating { color: #9a7a2e; background: #f1eada; }
+.status-pill.open          { color: var(--status-neutral-fg); background: var(--status-neutral-bg); }
+.status-pill.investigating { color: var(--status-warning-fg); background: var(--status-warning-bg); }
 .status-pill.fixing        { color: var(--accent); background: var(--accent-tint); }
 .status-pill.fixed         { color: var(--live); background: var(--green-tint); }
 
 /* severity chips in the report-bug modal */
 .seg .opt.sev.on.critical { background: var(--critical); border-color: var(--critical); color: #fff; }
 .seg .opt.sev.on.high     { background: var(--accent); border-color: var(--accent); color: #fff; }
-.seg .opt.sev.on.medium   { background: #9a7a2e; border-color: #9a7a2e; color: #fff; }
-.seg .opt.sev.on.low      { background: #7a746a; border-color: #7a746a; color: #fff; }
+.seg .opt.sev.on.medium   { background: var(--building); border-color: var(--building); color: var(--text-inverse); }
+.seg .opt.sev.on.low      { background: var(--paused); border-color: var(--paused); color: var(--white); }
 
 /* priority chips in the roadmap modal */
 .seg .opt.prio.on.must   { background: var(--accent); border-color: var(--accent); color: #fff; }
-.seg .opt.prio.on.should { background: var(--building); border-color: var(--building); color: #fff; }
-.seg .opt.prio.on.could  { background: var(--sage); border-color: var(--sage); color: #fff; }
-.seg .opt.prio.on.wont   { background: #8f897d; border-color: #8f897d; color: #fff; }
+.seg .opt.prio.on.should { background: var(--building); border-color: var(--building); color: var(--text-inverse); }
+.seg .opt.prio.on.could  { background: var(--sage); border-color: var(--sage); color: var(--text-inverse); }
+.seg .opt.prio.on.wont   { background: var(--paused); border-color: var(--paused); color: var(--white); }
 
 /* risk chips in the roadmap modal (#249) — the selected tier reads at a glance,
    in the same tones the board's risk chip uses (sage = low, critical = high). */
-.seg .opt.risk-low.on    { background: var(--sage); border-color: var(--sage); color: #fff; }
-.seg .opt.risk-normal.on { background: #8f897d; border-color: #8f897d; color: #fff; }
+.seg .opt.risk-low.on    { background: var(--sage); border-color: var(--sage); color: var(--text-inverse); }
+.seg .opt.risk-normal.on { background: var(--paused); border-color: var(--paused); color: var(--white); }
 .seg .opt.risk-high.on   { background: var(--critical); border-color: var(--critical); color: #fff; }
 
 /* #262 — who set the risk tier, shown under the Risk seg control in the roadmap modal */
 .risk-prov { font-size: 12px; line-height: 1.5; color: var(--muted); margin-top: 8px; }
 
 /* status segmented control in the new-project modal */
-.seg .opt.pstatus.on.live     { background: var(--live); border-color: var(--live); color: #fff; }
-.seg .opt.pstatus.on.building { background: #9a7a2e; border-color: #9a7a2e; color: #fff; }
-.seg .opt.pstatus.on.paused   { background: #8f897d; border-color: #8f897d; color: #fff; }
+.seg .opt.pstatus.on.live     { background: var(--live); border-color: var(--live); color: var(--text-inverse); }
+.seg .opt.pstatus.on.building { background: var(--building); border-color: var(--building); color: var(--text-inverse); }
+.seg .opt.pstatus.on.paused   { background: var(--paused); border-color: var(--paused); color: var(--white); }
 
 /* card inner elements are spans — make them lay out as blocks */
 .pcard .pname, .pcard .track, .pcard .fill { display: block; }
 
 /* archived status badge (detail header) */
-.statusbadge.archived { color: #6b6458; background: #ece9e3; }
-.statusbadge.archived .dot { background: #8f897d; }
+.statusbadge.archived { color: var(--status-neutral-fg); background: var(--status-neutral-bg); }
+.statusbadge.archived .dot { background: var(--paused); }
 
 /* inline action error (detail screen) */
-.action-error { margin: 0 0 16px; padding: 10px 14px; font-size: 13px; color: var(--critical); background: #f7e9e7; border: 1px solid #e6cfca; border-radius: 10px; }
+.action-error { margin: 0 0 16px; padding: 10px 14px; font-size: 13px; color: var(--critical); background: var(--status-danger-bg); border: 1px solid var(--critical-line); border-radius: 10px; }
 
 /* ---------- gemini judge assist (suggestion line on idea rows) ---------- */
 .gemini-btn { font-size: 11.5px; font-weight: 600; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; padding: 3px 9px; white-space: nowrap; }
@@ -1344,16 +1476,13 @@ a.tab { display: inline-block; }
 .bug-quick-sev:hover { opacity: .75; }
 .bug-quick-sev.on { opacity: 1; }
 .bug-quick-sev.critical { color: var(--critical); border-color: var(--critical); }
-.bug-quick-sev.critical.on { background: #f3e2e0; }
+.bug-quick-sev.critical.on { background: var(--status-danger-bg); }
 .bug-quick-sev.high { color: var(--accent); border-color: var(--accent); }
 .bug-quick-sev.high.on { background: var(--accent-tint); }
-.bug-quick-sev.medium { color: #9a7a2e; border-color: #9a7a2e; }
-.bug-quick-sev.medium.on { background: #f1eada; }
+.bug-quick-sev.medium { color: var(--building); border-color: var(--building); }
+.bug-quick-sev.medium.on { background: var(--status-warning-bg); }
 .bug-quick-sev.low { color: #7a746a; border-color: #7a746a; }
-.bug-quick-sev.low.on { background: #eeebe6; }
-[data-theme='dark'] .bug-quick-sev.critical.on { background: #3a2323; }
-[data-theme='dark'] .bug-quick-sev.medium.on { background: #332e1a; }
-[data-theme='dark'] .bug-quick-sev.low.on { background: #2a2926; }
+.bug-quick-sev.low.on { background: var(--status-neutral-bg); }
 
 /* ---------- confirm dialog + delete-project control ---------- */
 .confirm-body { font-size: 13.5px; line-height: 1.55; color: var(--muted); margin-bottom: 22px; }
@@ -1364,7 +1493,7 @@ a.tab { display: inline-block; }
 /* ---------- command deck (cross-project glance) ---------- */
 .deck { margin-bottom: 34px; }
 .deck-skeleton { background: var(--resume); border: 1px solid var(--resume-border); border-radius: 18px; padding: 22px 26px; font-size: 13px; color: var(--muted); margin-bottom: 34px; }
-.deck-error { background: #f7e9e7; border: 1px solid #e6cfca; border-radius: 14px; padding: 12px 16px; font-size: 13px; color: var(--critical); margin-bottom: 34px; }
+.deck-error { background: var(--status-danger-bg); border: 1px solid var(--critical-line); border-radius: 14px; padding: 12px 16px; font-size: 13px; color: var(--critical); margin-bottom: 34px; }
 .hero-name { font-family: var(--disp); font-size: 26px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
 .hero-phase { font-family: var(--mono); font-size: 11px; color: var(--accent); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); padding: 2px 9px; border-radius: 20px; }
 .hero-summary { font-size: 14.5px; line-height: 1.6; color: var(--body-2); max-width: 70ch; }
@@ -1525,15 +1654,15 @@ a.tab { display: inline-block; }
   animation: pop 0.14s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .cmdk-input-row { display: flex; align-items: center; gap: 11px; padding: 16px 18px; border-bottom: 1px solid var(--line-2); }
-.cmdk-glass { width: 15px; height: 15px; border: 1.8px solid #b8b1a3; border-radius: 50%; position: relative; flex: none; }
-.cmdk-glass::after { content: ''; position: absolute; width: 6px; height: 1.8px; background: #b8b1a3; bottom: -2px; right: -4px; transform: rotate(45deg); }
+.cmdk-glass { width: 15px; height: 15px; border: 1.8px solid var(--text-tertiary); border-radius: 50%; position: relative; flex: none; }
+.cmdk-glass::after { content: ''; position: absolute; width: 6px; height: 1.8px; background: var(--text-tertiary); bottom: -2px; right: -4px; transform: rotate(45deg); }
 .cmdk-input { flex: 1; border: 0; outline: none; background: transparent; font-size: 16px; color: var(--ink); }
 .cmdk-esc { font-family: var(--mono); font-size: 11px; color: var(--faint); background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; padding: 3px 7px; flex: none; }
 
 .cmdk-scopes { display: flex; align-items: center; gap: 7px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); flex-wrap: wrap; }
 .cmdk-scope { padding: 5px 12px; border-radius: 18px; font-size: 12.5px; font-weight: 500; color: var(--chip-ink); background: var(--surface); border: 1px solid var(--line-2); display: inline-flex; align-items: center; gap: 5px; }
 .cmdk-scope:hover { border-color: var(--line-3); }
-.cmdk-scope.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.cmdk-scope.on { background: var(--accent); color: var(--white); border-color: var(--accent); }
 .cmdk-scope-n { font-family: var(--mono); font-size: 11px; opacity: 0.6; }
 .cmdk-scope.on .cmdk-scope-n { opacity: 0.75; }
 
@@ -1602,7 +1731,7 @@ a.tab { display: inline-block; }
 .set-row-actions { flex: none; display: flex; gap: 9px; }
 
 /* toggle switch */
-.switch { flex: none; width: 44px; height: 26px; border-radius: 20px; background: #d8d2c6; position: relative; transition: background 0.16s ease; }
+.switch { flex: none; width: 44px; height: 26px; border-radius: 20px; background: var(--grey-600); position: relative; transition: background 0.16s ease; }
 .switch.on { background: var(--accent); }
 .switch:hover.on { background: var(--accent-deep); }
 .switch-knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform 0.16s ease; }
@@ -1616,8 +1745,8 @@ a.tab { display: inline-block; }
 .set-detail-blurb { font-size: 12.5px; color: var(--muted); }
 
 .set-test { font-size: 12.5px; margin: 0 0 4px; padding: 8px 12px; border-radius: 9px; }
-.set-test.ok { color: var(--live); background: var(--green-tint); border: 1px solid #cfe5d8; }
-.set-test.fail { color: var(--critical); background: #f7e9e7; border: 1px solid #e6cfca; }
+.set-test.ok { color: var(--live); background: var(--green-tint); border: 1px solid var(--lime-700); }
+.set-test.fail { color: var(--critical); background: var(--status-danger-bg); border: 1px solid var(--critical-line); }
 .set-note { font-size: 12px; color: var(--faint); margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-2); }
 .set-note .mono { color: var(--muted); }
 
@@ -1793,7 +1922,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tc-session .tS { color: var(--accent); }
 .tc-session .tA { color: var(--building); }
 .tc-session .tB { color: var(--sage); }
-.tc-session .tC { color: #8f897d; }
+.tc-session .tC { color: var(--muted); }
 .tc-session .tnone { color: var(--fainter); }
 .tcs-grade { font-family: var(--mono); font-size: 10px; font-weight: 700; line-height: 1.5; border-radius: 4px; padding: 1px 5px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line-2); flex: none; }
 /* WORKING ON (1a) */
@@ -1868,7 +1997,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tcs-top .m .tag { border: 1px solid var(--line-3); border-radius: 999px; padding: 1px 7px; color: var(--chip-ink); }
 .tcs-top .a { display: flex; align-items: center; gap: 10px; }
 .tcs-top .a .btn-submit.sm { height: 32px; padding: 0 13px; font-size: 12px; }
-.tcs-top .w { font-size: 10px; color: #a9947f; }
+.tcs-top .w { font-size: 10px; color: var(--muted); }
 .tcs-unpass { align-self: flex-start; font-size: 10px; }
 .tcs-filter { border-top: 1px solid var(--line-2); background: var(--surface); padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 8px; }
 .tcs-field { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 9px; }
@@ -2170,30 +2299,8 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
   height: 100vh; max-height: 100vh;
 }
 
-/* -- the galaxy (#312) --------------------------------------------------
-   Tones first, as named tokens. The stage is a lit ground rather than a flat
-   panel, and it is the one surface in the app whose LIGHT theme is the odd one
-   out — a galaxy on paper reads as a diagram, so light mode keeps the same
-   geometry on a cool parchment while dark mode gets the deep sky the design
-   asked for. Everything below references these, never a literal.               */
-:root {
-  --gx-ground: radial-gradient(circle at 50% 46%, #f2ede4 0%, #ebe5da 52%, #e3ddd1 100%);
-  --gx-line: color-mix(in srgb, var(--keyline) 78%, transparent);
-  --gx-line-soft: color-mix(in srgb, var(--keyline) 42%, transparent);
-  --gx-speck: var(--muted);
-  --gx-plate: color-mix(in srgb, var(--paper) 88%, transparent);
-  --gx-core: radial-gradient(circle at 42% 38%, #fbeadf 0%, #f3ddcd 45%, #ecd0bd 100%);
-  --gx-disc: radial-gradient(circle at 36% 30%, var(--surface), var(--sand) 72%);
-  --gx-disc-sel: radial-gradient(circle at 36% 30%, #ffeee3, #f6dccb 72%);
-}
-[data-theme='dark'] {
-  --gx-ground: radial-gradient(circle at 50% 46%, #201b17 0%, #15120f 52%, #0e0c0b 100%);
-  --gx-speck: var(--ink);
-  --gx-plate: color-mix(in srgb, #100e0c 86%, transparent);
-  --gx-core: radial-gradient(circle at 42% 38%, #5a3220 0%, #3a2317 45%, #23170f 100%);
-  --gx-disc: radial-gradient(circle at 36% 30%, #332b25, #191612 72%);
-  --gx-disc-sel: radial-gradient(circle at 36% 30%, #5c3520, #2a1b13 72%);
-}   /* the tone is set inline, per shell */
+/* The galaxy tokens went with Polaris — nothing has referenced them since
+   the Futures tab was culled. */
 .pgx-orbit.shell.dashed { border-style: dashed; }
 
 /* A star is a disc with a ★ in it and a nameplate above, drawn only when the
@@ -3161,10 +3268,8 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    #363 (design 1a) — the MERGE room. Every open branch in the house as one
    weighted ledger, plus the agent rail that orders them into waves.
 
-   The whole block is tokens only: no literal hex, so dark mode comes from the
-   one [data-theme='dark'] override at the top of this file rather than from a
-   second copy of these rules down here. Where a row needs a tone it takes it
-   inline from lib/branch.ts, which also only names tokens.
+   The whole block is tokens only: no literal hex. Where a row needs a tone it
+   takes it inline from lib/branch.ts, which also only names tokens.
 
    The row is a GRID, not a flex run of fixed widths: the slug column is
    minmax(0, 1fr), so a narrow body squeezes the branch name to an ellipsis
@@ -3441,7 +3546,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rp-tier.tS { background: var(--accent); }
 .rp-tier.tA { background: var(--building); }
 .rp-tier.tB { background: var(--sage); }
-.rp-tier.tC { background: #8f897d; }
+.rp-tier.tC { background: var(--paused); }
 /* Parked, said in words on the card as well as in its border: a card the
    runner will not pick has to say so, not just look slightly different. */
 .rp-parked { font-family: var(--mono); font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase;
