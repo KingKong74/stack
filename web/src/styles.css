@@ -1488,7 +1488,7 @@ a.tab { display: inline-block; }
    never probed by Stack. Reads as its own quiet chip, not a warning — it's a
    provenance label, same idiom as .check-method. */
 .check-external { flex: none; font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: .04em;
-  color: var(--paused); background: var(--paused-tint); border-radius: 5px; padding: 1px 6px; text-transform: uppercase; }
+  color: var(--status-neutral-fg); background: var(--status-neutral-bg); border-radius: 5px; padding: 1px 6px; text-transform: uppercase; }
 .check-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; }
 .check-dot.pass { background: var(--green); }
 .check-dot.fail { background: var(--critical); }
@@ -2423,7 +2423,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 /* The target is shown even with one project: a quick-add whose destination is
    implicit is one that files into the wrong app exactly once. */
 .qa-project { display: flex; align-items: center; gap: 8px; }
-.qa-project .cap { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--paused); }
+.qa-project .cap { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--muted); }
 .qa-project select { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--line-3); background: var(--card); color: var(--ink); font: inherit; font-size: 12.5px; }
 .qa-quiet { font-size: 12px; color: var(--muted); }
 
@@ -2440,7 +2440,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .qa-pri:hover { border-color: var(--accent); }
 .qa-pri.on { background: var(--accent-tint); }
 
-.qa-hint { font-size: 11px; line-height: 1.6; color: var(--paused); }
+.qa-hint { font-size: 11px; line-height: 1.6; color: var(--muted); }
 .qa-hint.grow { flex: 1; min-width: 0; }
 
 /* The ✧ row sits UNDER its field, not in a label above it: this composer has
@@ -2461,7 +2461,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .qa-link:hover { text-decoration: underline; }
 
 .qa-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 2px; }
-.qa-kbd { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.qa-kbd { font-family: var(--mono); font-size: 10px; color: var(--muted); }
 .qa-foot .btn-accent:disabled { opacity: 0.45; cursor: default; }
 /* The window track: day (or week) ticks for rhythm, a shaded region for what
    the window excludes, and a grip you can grab anywhere along the bar. */
@@ -2637,14 +2637,14 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    ============================================================ */
 .quality { display: flex; flex-direction: column; gap: 14px; }
 .q-spacer { flex: 1; }
-.q-eyebrow { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.1em; color: var(--paused); }
-.q-hint { font-family: var(--mono); font-size: 10px; color: var(--paused); margin-right: auto; }
+.q-eyebrow { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.1em; color: var(--muted); }
+.q-hint { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-right: auto; }
 
 /* the bar: title, the three segments, Run all + Report */
 .q-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .q-bar-title { font-family: var(--disp); font-size: 20px; font-weight: 600; color: var(--ink); }
 .q-segs { flex: none; }
-.q-seg-n { font-family: var(--mono); font-size: 9.5px; color: var(--paused); }
+.q-seg-n { font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
 .seg-opt.on .q-seg-n { color: var(--accent-text); }
 
 /* the inline report composer — + Report, or → Bug off a red check */
@@ -2685,7 +2685,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-kpi-n .down { color: var(--critical); }
 .q-kpi-l { font-size: 11px; font-weight: 500; color: var(--ink); }
 .q-kpi.bad .q-kpi-l { color: var(--critical); }
-.q-kpi-s { font-family: var(--mono); font-size: 9.5px; color: var(--paused); }
+.q-kpi-s { font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
 
 /* the virgin state's teaching card — no KPIs until there's a number */
 .q-teach { flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 10px; justify-content: center;
@@ -2730,7 +2730,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-note { padding: 10px 11px; font-size: 12px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
 .q-note.bad { color: var(--critical); }
 .q-note.dashed { margin: 4px; border: 1px dashed var(--line-3); border-radius: 10px; }
-.q-more { padding: 8px 11px; font-family: var(--mono); font-size: 10.5px; color: var(--paused); }
+.q-more { padding: 8px 11px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 
 /* Needs-you rows: CHECK and BUG in one list, each with its other half */
 .q-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; }
@@ -2776,7 +2776,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-crow-result { flex: none; width: 132px; text-align: right; font-family: var(--mono); font-size: 9.5px; color: var(--muted); white-space: nowrap; }
 .q-crow-result.pass { color: var(--live); }
 .q-crow-result.fail { color: var(--critical); }
-.q-crow-result.never { color: var(--paused); }
+.q-crow-result.never { color: var(--muted); }
 
 /* the bugs card (Now) */
 .q-brow { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; border-left: 3px solid var(--paused); }
@@ -2787,7 +2787,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-brow.done { opacity: 0.6; }
 .q-brow.done .q-brow-title { text-decoration: line-through; }
 .q-brow-title { flex: 1; min-width: 0; font-size: 12px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.q-brow-meta { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--paused); }
+.q-brow-meta { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
 .q-brow .sev-pill, .q-brow .status-pill { font-size: 9px; padding: 2px 8px; min-width: 0; }
 .q-row .sev-pill, .q-row .status-pill { font-size: 9px; padding: 2px 8px; min-width: 0; }
 .q-brow-quick { display: flex; align-items: center; gap: 2px; flex: none; opacity: 0; transition: opacity 0.12s ease; }
@@ -2806,14 +2806,14 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-hrow { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 8px; }
 .q-hrow:hover { background: var(--panel); }
 .q-hrow-when { width: 92px; flex: none; font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--ink); }
-.q-hrow-scope { width: 54px; flex: none; font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.q-hrow-scope { width: 54px; flex: none; font-family: var(--mono); font-size: 10px; color: var(--muted); }
 .q-hrow-bar { width: 110px; flex: none; height: 5px; border-radius: 3px; background: var(--panel); overflow: hidden; }
 .q-hrow-bar span { display: block; height: 5px; border-radius: 3px; background: var(--green); }
 .q-hrow-bar span.bad { background: var(--critical); }
 .q-hrow-rate { flex: none; font-family: var(--mono); font-size: 11px; color: var(--live); }
 .q-hrow-rate.bad { color: var(--critical); }
 .q-hrow-note { flex: 1; min-width: 0; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.q-hrow-dur { width: 60px; flex: none; text-align: right; font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.q-hrow-dur { width: 60px; flex: none; text-align: right; font-family: var(--mono); font-size: 10px; color: var(--muted); }
 
 /* the single Quality badge is a "wrong now" count, not a neutral tally */
 .tab-n.bad { color: var(--critical); background: var(--critical-tint); border-color: var(--critical-line); }
@@ -2835,7 +2835,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    check that is passing but slowing down reads that way before it goes red. */
 .q-why-more { font-size: 11px; line-height: 1.55; color: var(--muted); font-style: italic; text-wrap: pretty; }
 .q-health.needs-work .q-why-more, .q-health.down .q-why-more { color: var(--critical); opacity: 0.9; }
-.q-diag { color: var(--paused); }
+.q-diag { color: var(--muted); }
 .q-row-sub.bad .q-diag { color: var(--critical); opacity: 0.8; }
 .q-spark { display: inline-flex; align-items: flex-end; gap: 1px; height: 16px; width: 68px; flex: none; }
 .q-spark span { flex: 1; min-width: 1px; border-radius: 1px; background: var(--green); }
@@ -2848,13 +2848,13 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-hist { margin: 2px 4px 8px 34px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--panel); overflow: hidden; }
 .q-hist-head { display: flex; align-items: baseline; gap: 10px; padding: 8px 11px; border-bottom: 1px solid var(--line-2);
   font-size: 10.5px; color: var(--muted); }
-.q-hist-note { font-size: 10px; line-height: 1.5; color: var(--paused); text-align: right; max-width: 380px; text-wrap: pretty; }
+.q-hist-note { font-size: 10px; line-height: 1.5; color: var(--muted); text-align: right; max-width: 380px; text-wrap: pretty; }
 .q-hist-row { display: flex; align-items: center; gap: 10px; padding: 5px 11px; font-family: var(--mono); font-size: 10px; }
 .q-hist-row + .q-hist-row { border-top: 1px solid var(--line); }
 .q-hist-when { width: 84px; flex: none; color: var(--ink); }
 .q-hist-code { width: 78px; flex: none; color: var(--muted); }
 .q-hist-row.fail .q-hist-code { color: var(--critical); }
-.q-hist-ms { width: 56px; flex: none; color: var(--paused); }
+.q-hist-ms { width: 56px; flex: none; color: var(--muted); }
 .q-hist-err { flex: 1; min-width: 0; color: var(--critical); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 900px) {
@@ -2883,7 +2883,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-top.teaching { grid-template-columns: 1.35fr 3fr; }
 .q-top .q-health { width: auto; flex: initial; }
 .q-top .q-kpis { display: contents; }
-.q-trend-cap { font-family: var(--mono); font-size: 9.5px; color: var(--paused); margin-top: 5px; }
+.q-trend-cap { font-family: var(--mono); font-size: 9.5px; color: var(--muted); margin-top: 5px; }
 
 /* the Now segment's bands, stacked full width — the feature table wants the
    room and the bug list reads better wide than boxed */
@@ -2963,7 +2963,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 /* ---- Quality by feature ---- */
 .q-feat-head { display: grid; grid-template-columns: var(--q-feat-cols); gap: 12px; padding: 0 15px 8px;
   font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.07em; text-transform: uppercase;
-  color: var(--paused); border-bottom: 1px solid var(--line-2); }
+  color: var(--muted); border-bottom: 1px solid var(--line-2); }
 .q-feats { display: flex; flex-direction: column; }
 .q-feat + .q-feat { border-top: 1px solid var(--line-2); }
 .q-feat-row { display: grid; grid-template-columns: var(--q-feat-cols); gap: 12px; align-items: center;
@@ -2971,7 +2971,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-feat-row:hover { background: var(--panel); }
 .q-feat.open .q-feat-row { background: var(--accent-tint); }
 .q-feat-name { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.q-feat-chev { flex: none; font-family: var(--mono); font-size: 9px; color: var(--paused); }
+.q-feat-chev { flex: none; font-family: var(--mono); font-size: 9px; color: var(--muted); }
 .q-feat-name .t { font-size: 13px; font-weight: 600; color: var(--ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .q-feat-checks { font-family: var(--mono); font-size: 11.5px; color: var(--live); }
@@ -2984,8 +2984,8 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-feat-bar span { display: block; height: 100%; border-radius: 999px; background: var(--live); }
 .q-feat-bar span.warn { background: var(--building); }
 .q-feat-bar span.bad { background: var(--critical); }
-.q-feat-pct, .q-feat-unrun { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--paused); }
-.q-feat-flakes, .q-feat-avg, .q-feat-bugs { font-family: var(--mono); font-size: 11.5px; color: var(--paused); }
+.q-feat-pct, .q-feat-unrun { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.q-feat-flakes, .q-feat-avg, .q-feat-bugs { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
 .q-feat-avg { color: var(--muted); }
 .q-feat-flakes.on { color: var(--building); }
 .q-feat-bugs.on { color: var(--critical); }
@@ -3000,7 +3000,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-feat-check.never .q-feat-mark { color: var(--keyline); }
 .q-feat-cname { min-width: 0; font-size: 12.5px; color: var(--body);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.q-feat-ms { flex: none; font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.q-feat-ms { flex: none; font-family: var(--mono); font-size: 10px; color: var(--muted); }
 .q-feat-ms.fail { color: var(--critical); }
 .q-feat-ms.never { color: var(--keyline); }
 .q-feat-acts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
@@ -3009,7 +3009,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-feat-read { display: flex; flex-direction: column; gap: 7px;
   border-left: 1px solid var(--line-2); padding-left: 16px; }
 .q-feat-read p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--body-2); text-wrap: pretty; }
-.q-feat-when { font-family: var(--mono); font-size: 10px; color: var(--paused); }
+.q-feat-when { font-family: var(--mono); font-size: 10px; color: var(--muted); }
 /* the same label on a Suite row, so the grouping is visible where it is edited */
 .q-feat-chip { flex: none; max-width: 130px; font-family: var(--mono); font-size: 9px; font-weight: 500;
   color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px;
@@ -3068,10 +3068,10 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rv-panel.mirror { border-color: var(--accent-tint-border); }
 /* no mirror up yet: the same paths, drawn as what they are — a list of screens
    this change touches, not links that go anywhere. */
-.rv-mirror-where.dim .p { color: var(--paused); }
+.rv-mirror-where.dim .p { color: var(--muted); }
 /* the ✦ draft's offer, when the agent cannot act: the reason stands where the
    button was rather than a disabled button explaining itself. */
-.rv-draft-offer.off { font-size: 11px; color: var(--paused); }
+.rv-draft-offer.off { font-size: 11px; color: var(--muted); }
 
 /* ============================================================
    Dashboard sections (the Stack Dashboard design handoff).
@@ -3238,7 +3238,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .sk-group-head .nm { font-family: var(--disp); font-size: 13.5px; font-weight: 600; color: var(--ink); }
 .sk-group-head .sub { font-family: var(--mono); font-size: 10px; color: var(--faint); }
 .sk-group-head .hair { flex: 1; height: 1px; background: var(--line-2); }
-.sk-group-head .n { font-family: var(--mono); font-size: 10.5px; color: var(--paused); }
+.sk-group-head .n { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 .sk-note, .sk-empty { padding: 10px 13px; border-radius: 9px; border: 1px dashed var(--line-2);
   font-size: 12px; line-height: 1.6; color: var(--muted); }
 
@@ -3256,7 +3256,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .sk-state.on { color: var(--live); }
 .sk-state.wait { color: var(--building); }
 .sk-state.warn { color: var(--critical); }
-.sk-state.off { color: var(--paused); }
+.sk-state.off { color: var(--muted); }
 .sk-where { flex: none; font-family: var(--mono); font-size: 10px; color: var(--fainter); white-space: nowrap; }
 .sk-acts { flex: none; display: inline-flex; align-items: center; gap: 6px; }
 .sk-x { font-size: 14px; line-height: 1; color: var(--fainter); padding: 2px 6px; border-radius: 6px; }
@@ -3451,7 +3451,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    styles.css has no rule for renders as bare text in one theme and vanishes in
    the other, which is exactly what a CLOSED tone set exists to prevent. */
 .rl-sage     { color: var(--sage);     background: var(--green-tint);    border-color: var(--green-tint); }
-.rl-paused   { color: var(--paused);   background: var(--paused-tint);   border-color: var(--paused-tint); }
+.rl-paused   { color: var(--muted);   background: var(--paused-tint);   border-color: var(--paused-tint); }
 .rl.on { color: var(--on-accent); }
 .rl-accent.on   { background: var(--accent); border-color: var(--accent); }
 .rl-muted.on    { background: var(--muted); border-color: var(--muted); }

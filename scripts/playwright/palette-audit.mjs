@@ -181,10 +181,20 @@ function auditInPage() {
     }
 
     // ---- stray tones ----
+    //
+    // A colour written by a component from a DATA value is not a palette
+    // violation: a project's stored tint is its identity, chosen per project
+    // and living in the database, and it has no business being on the app's
+    // ramp. Those arrive as inline styles, which is exactly what distinguishes
+    // them from a literal somebody typed into the stylesheet.
+    const inline = el.getAttribute('style') || '';
     for (const prop of ['color', 'backgroundColor', 'borderTopColor']) {
       const c = parse(cs[prop]);
       if (!c || c.a === 0) continue;
       if (prop === 'backgroundColor' && c.a === 0) continue;
+      const cssProp = prop === 'backgroundColor' ? 'background'
+        : prop === 'borderTopColor' ? 'border' : 'color';
+      if (inline.includes(cssProp)) continue;
       const h = hex(c);
       if (ramp.has(h)) continue;
       // translucent tones composite to something off-ramp by definition
