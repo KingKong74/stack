@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
-import { go } from '../lib/route';
 
-// THE CONSOLE'S LEFT RAIL (#430) — the kit's AppShell nav, carrying Stack's
+// THE CONSOLE'S LEFT RAIL (#432) — the kit's AppShell nav, carrying Stack's
 // own two levels.
 //
 // It replaces the horizontal tab strip, and the reason is not decoration: the
@@ -80,13 +79,9 @@ export const NavIcons = {
   grid: ico(<><rect width="7" height="7" x="3" y="3" rx="1" /><rect width="7" height="7" x="14" y="3" rx="1" /><rect width="7" height="7" x="14" y="14" rx="1" /><rect width="7" height="7" x="3" y="14" rx="1" /></>),
   clock: ico(<><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>),
   terminal: ico(<><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></>),
-  plus: ico(<><path d="M5 12h14" /><path d="M12 5v14" /></>),
-  branch: ico(<><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></>),
 };
 
 /** The project dots in Spaces — a project's stored tint is its identity. */
 export function SpaceDot({ tint }: { tint: string }) {
   return <span className="con-spacedot" style={{ background: tint }} />;
 }
-
-export function goProject(slug: string) { go.detail(slug); }

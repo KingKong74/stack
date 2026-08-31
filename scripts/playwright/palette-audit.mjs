@@ -1,4 +1,4 @@
-// palette-audit.mjs — does the app actually WEAR the palette? (#430)
+// palette-audit.mjs — does the app actually WEAR the palette? (#432)
 //
 // The UI smoke (smoke.mjs) proves a screen renders, loads and does not
 // overflow. It is blind to colour, and colour is exactly where a repalette

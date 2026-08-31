@@ -30,7 +30,7 @@ import { newItemSched } from '../lib/plan';
 // (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
 type Tab = 'overview' | 'quality' | 'roadmap' | 'activity';
 // The four readings of a project, in rail order. This stays the ONE list —
-// #430 moved it from a horizontal strip into the console's left rail, and a
+// #432 moved it from a horizontal strip into the console's left rail, and a
 // second copy inside the rail is how the two would drift.
 const TABS: { key: Tab; label: string; icon: ReactNode }[] = [
   { key: 'overview', label: 'Overview', icon: NavIcons.layers },
@@ -140,7 +140,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const { project, activity } = data;
   const slug = project.id;
 
-  // SPACES (#430) — the rail lists the other apps, so switching project no
+  // SPACES (#432) — the rail lists the other apps, so switching project no
   // longer means a trip back to the dashboard. Its own trip, and a failure is
   // simply an empty section: a rail that cannot list the other projects is
   // still a working rail, and blocking the screen on it would be absurd.
@@ -572,7 +572,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
 
   const openBugLink = (hash: string) => { setHighlightRef(hash); setTab('activity'); };
   const viewAll = () => { setHighlightRef(null); setTab('activity'); };
-  // THE RAIL'S CONTENTS (#430). Workspace is the four readings of THIS
+  // THE RAIL'S CONTENTS (#432). Workspace is the four readings of THIS
   // project — the old tab strip, one per row — and Spaces is every other app.
   // The counts are the ones the strip already wore: Quality carries what is
   // actually WRONG (red checks + serious open bugs) in the critical tone, and

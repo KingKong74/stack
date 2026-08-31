@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 
-// THE HEADER, merged (#430). Six screens each drew their own topbar out of the
+// THE HEADER, merged (#432). Six screens each drew their own topbar out of the
 // same three or four pieces, in a different order, at a different height — so
 // the app read as several apps stitched together. The console kit's TopBar is
 // one bar with three slots (brand · search · actions) and that is the shape

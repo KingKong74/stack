@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-palette-audit.sh — entry point for the palette audit (#430).
+# run-palette-audit.sh — entry point for the palette audit (#432).
 #
 # Same shape and the same reasons as run-ui-smoke.sh: scripts/playwright is its
 # own package, and chromium on this host needs a rootless private library
