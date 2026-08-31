@@ -227,7 +227,11 @@ function auditInPage() {
     // ---- contrast ----
     if (own) {
       const fgRaw = parse(cs.color);
-      if (fgRaw) {
+      // `color: transparent` is text deliberately HIDDEN — the roadmap's
+      // unticked checkbox holds its ✓ invisible until it is ticked. Composited
+      // it equals its own ground and scores 1:1, which is the tool describing
+      // an intention as a defect.
+      if (fgRaw && fgRaw.a > 0) {
         const { ground, unverified: why } = groundOf(el);
         const fg = over(fgRaw, ground);
         const size = parseFloat(cs.fontSize) || 14;
