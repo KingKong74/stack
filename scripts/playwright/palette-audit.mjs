@@ -18,8 +18,15 @@
 //      declared on :root. A literal that never rode a token shows up here as
 //      soon as the ramp moves under it.
 //
-// Both are reported with the selector, the tone, and what it sits on, because
+// Findings carry the selector, the tone, and what it sits on, because
 // "something is off-palette" that cannot be located is not actionable.
+//
+// There is a THIRD bucket, and it is the honest one: text whose real ground
+// this cannot compute — a gradient scrim, a cover image, an iframe preview
+// between the element and anything measurable. Those are reported apart and
+// do not fail the run. Asserting a ratio against a layer that is not actually
+// behind the text is a made-up number, and a made-up number that says PASS is
+// worse than one that says FAIL.
 //
 // Fails LOUD, in the sense scripts/playwright/smoke.mjs's header sets out: an
 // app it could not reach exits 1 with a reason, never 0 with no findings —
@@ -100,20 +107,76 @@ function auditInPage() {
   const hex = ({ r, g, b }) =>
     '#' + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
 
-  // The background actually painted behind an element: walk up through
-  // transparent ancestors, compositing each translucent layer as we go. An
-  // element whose own background is see-through does NOT sit on nothing — it
-  // sits on whatever its ancestors painted, which is the whole reason a
-  // naive `getComputedStyle(el).backgroundColor` check misses white-on-white.
+  // The background actually painted behind an element.
+  //
+  // Two things have to be composited, and missing either one invents findings
+  // or hides them:
+  //
+  //  1. ANCESTORS. An element whose own background is see-through does not sit
+  //     on nothing, it sits on whatever its ancestors painted. Skipping this
+  //     is what makes a naive `getComputedStyle(el).backgroundColor` check
+  //     blind to white-on-white.
+  //  2. OVERLAY LAYERS. A positioned element that COVERS the target and paints
+  //     before it — a scrim over a cover image, a tint wash — is between the
+  //     ancestor's background and this text, even though it is nowhere on the
+  //     ancestor chain. Skipping this reports every scrimmed caption as
+  //     unreadable: the project cards read as white-on-pale at 1.4:1 when the
+  //     scrim they actually sit on takes them past AA.
+  const rectOf = (n) => n.getBoundingClientRect();
+  const covers = (a, b) =>
+    a.left <= b.left + 0.5 && a.right >= b.right - 0.5 &&
+    a.top <= b.top + 0.5 && a.bottom >= b.bottom - 0.5;
+
+  // Returns the composited ground AND whether anything sat in the way that
+  // this cannot evaluate — a gradient scrim, a cover image, an iframe preview.
+  // Those are reported apart from real findings rather than asserted on: a
+  // ratio measured against a layer that is not actually the one behind the
+  // text is a made-up number, and a made-up number that says PASS is worse
+  // than one that says FAIL.
   const groundOf = (el) => {
-    const stack = [];
-    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
-      const c = parse(getComputedStyle(n).backgroundColor);
-      if (c && c.a > 0) { stack.push(c); if (c.a === 1) break; }
+    const target = rectOf(el);
+    const layers = [];                                  // nearest-first
+    let unverified = '';
+    let child = el;
+    for (let n = el; n && n.nodeType === 1; child = n, n = n.parentElement) {
+      // overlays painted inside n, on top of n's own background, that cover
+      // the target — but only those before `child` in paint order, since a
+      // later sibling would cover the TEXT too and it would not be legible
+      // regardless of colour.
+      if (n !== el) {
+        const kids = Array.from(n.children);
+        const stop = kids.indexOf(child);
+        for (let i = 0; i < (stop < 0 ? kids.length : stop); i++) {
+          const k = kids[i];
+          const ks = getComputedStyle(k);
+          if (ks.position !== 'absolute' && ks.position !== 'fixed') continue;
+          if (ks.visibility === 'hidden' || ks.display === 'none') continue;
+          const opacity = isNaN(+ks.opacity) ? 1 : +ks.opacity;
+          if (opacity === 0) continue;
+          if (!covers(rectOf(k), target)) continue;
+          if (ks.backgroundImage && ks.backgroundImage !== 'none') {
+            unverified = unverified || `a ${ks.backgroundImage.split('(')[0]} layer sits between`;
+            continue;
+          }
+          if (k.querySelector('iframe, img, video, canvas')) {
+            unverified = unverified || 'a media layer sits between';
+            continue;
+          }
+          const kc = parse(ks.backgroundColor);
+          if (!kc || kc.a === 0) continue;
+          layers.push({ ...kc, a: kc.a * opacity });
+        }
+      }
+      const ns = getComputedStyle(n);
+      if (n !== el && ns.backgroundImage && ns.backgroundImage !== 'none') {
+        unverified = unverified || 'an ancestor paints an image or gradient';
+      }
+      const c = parse(ns.backgroundColor);
+      if (c && c.a > 0) { layers.push(c); if (c.a === 1) break; }
     }
     let ground = { r: 255, g: 255, b: 255, a: 1 };       // the canvas under everything
-    for (let i = stack.length - 1; i >= 0; i--) ground = over(stack[i], ground);
-    return ground;
+    for (let i = layers.length - 1; i >= 0; i--) ground = over(layers[i], ground);
+    return { ground, unverified };
   };
 
   const sel = (el) => {
@@ -147,6 +210,7 @@ function auditInPage() {
   probe.remove();
 
   const contrast = [];
+  const unverified = [];
   const strays = [];
   const seenStray = new Set();
 
@@ -164,7 +228,7 @@ function auditInPage() {
     if (own) {
       const fgRaw = parse(cs.color);
       if (fgRaw) {
-        const ground = groundOf(el);
+        const { ground, unverified: why } = groundOf(el);
         const fg = over(fgRaw, ground);
         const size = parseFloat(cs.fontSize) || 14;
         const bold = (+cs.fontWeight || 400) >= 700;
@@ -172,10 +236,11 @@ function auditInPage() {
         const need = large ? AA_LARGE : AA_NORMAL;
         const got = ratio(fg, ground);
         if (got < need) {
-          contrast.push({
+          const row = {
             selector: sel(el), text: own.slice(0, 60), fg: hex(fg), bg: hex(ground),
             ratio: +got.toFixed(2), need, fontSize: size,
-          });
+          };
+          if (why) unverified.push({ ...row, why }); else contrast.push(row);
         }
       }
     }
@@ -208,7 +273,12 @@ function auditInPage() {
 
   // worst first, and cap so one broken screen cannot flood the report
   contrast.sort((a, b) => a.ratio - b.ratio);
-  return { contrast: contrast.slice(0, 40), strays: strays.slice(0, 40), ramp: ramp.size };
+  return {
+    contrast: contrast.slice(0, 40),
+    unverified: unverified.slice(0, 20),
+    strays: strays.slice(0, 40),
+    ramp: ramp.size,
+  };
 }
 /* c8 ignore stop */
 
@@ -262,6 +332,7 @@ async function main() {
       const res = await page.evaluate(auditInPage);
       audited++;
       for (const c of res.contrast) findings.push({ screen: screen.slug, kind: 'contrast', ...c });
+      for (const u of res.unverified) findings.push({ screen: screen.slug, kind: 'unverified', ...u });
       for (const s of res.strays) findings.push({ screen: screen.slug, kind: 'stray-tone', ...s });
     } catch (e) {
       findings.push({ screen: screen.slug, kind: 'unreachable', detail: e.message.split('\n')[0] });
@@ -276,6 +347,7 @@ async function main() {
   } else {
     const contrast = findings.filter((f) => f.kind === 'contrast');
     const strays = findings.filter((f) => f.kind === 'stray-tone');
+    const murky = findings.filter((f) => f.kind === 'unverified');
     const dead = findings.filter((f) => f.kind === 'unreachable');
 
     if (contrast.length) {
@@ -284,6 +356,12 @@ async function main() {
         process.stdout.write(
           `  ${f.screen.padEnd(10)} ${String(f.ratio).padStart(5)}:1 (needs ${f.need})  ` +
           `${f.fg} on ${f.bg}  ${f.selector}\n      “${f.text}”\n`);
+      }
+    }
+    if (murky.length) {
+      process.stdout.write('\ncould not be measured (a layer this cannot evaluate is in the way —\nnot a finding, and not a pass either):\n');
+      for (const f of murky) {
+        process.stdout.write(`  ${f.screen.padEnd(10)} ${f.selector}  — ${f.why}\n      \u201c${f.text}\u201d\n`);
       }
     }
     if (strays.length) {
@@ -298,7 +376,7 @@ async function main() {
     }
     process.stdout.write(
       `\n${audited} screens audited — ${contrast.length} contrast, ${strays.length} stray tones, ` +
-      `${dead.length} unreachable.\n`);
+      `${murky.length} unmeasurable, ${dead.length} unreachable.\n`);
   }
 
   // An unreachable screen is a FAILURE, not a clean pass: absence of findings

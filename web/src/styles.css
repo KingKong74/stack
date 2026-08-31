@@ -2645,7 +2645,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-bar-title { font-family: var(--disp); font-size: 20px; font-weight: 600; color: var(--ink); }
 .q-segs { flex: none; }
 .q-seg-n { font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
-.seg-opt.on .q-seg-n { color: var(--accent-text); }
+.seg-opt.on .q-seg-n { color: var(--white); }
 
 /* the inline report composer — + Report, or → Bug off a red check */
 .q-report { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border-radius: 11px;
