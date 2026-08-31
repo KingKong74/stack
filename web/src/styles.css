@@ -358,40 +358,76 @@ a { color: inherit; }
 /* ---------- top bar ---------- */
 .topbar {
   position: sticky; top: 0; z-index: 10;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 32px;
-  background: color-mix(in srgb, var(--surface-card) 86%, transparent);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--line);
+  height: var(--topbar-h); flex: 0 0 auto;
+  display: flex; align-items: center; gap: var(--space-6);
+  padding: 0 var(--space-6);
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--border-subtle);
 }
-.topbar.dash { padding: 16px 32px; }
-.brandmark { display: flex; align-items: center; gap: 10px; }
-.brandmark .sq { width: 22px; height: 22px; border-radius: 7px; background: var(--ink); }
-.brandmark .word { font-family: var(--disp); font-weight: 600; font-size: 18px; }
-.crumb { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
-.crumb .chev { font-size: 17px; color: var(--fainter); cursor: pointer; }
+/* The dash variant is only a padding tweak now — the kit's bar is one height
+   everywhere, and a header that changed size between screens was the thing
+   that made the app feel like several apps. */
+.topbar.dash { padding: 0 var(--space-6); }
+.brandmark { display: flex; align-items: center; gap: var(--space-4); flex: none; color: var(--text-primary); }
+.brandmark .sq {
+  width: 22px; height: 22px; border-radius: var(--radius-md); background: var(--action-primary);
+  display: inline-flex; align-items: center; justify-content: center; color: var(--white); flex: none;
+}
+.brandmark .word { font: var(--weight-semibold) var(--text-md)/1 var(--font-sans); }
+.crumb { display: flex; align-items: center; gap: var(--space-3); font: var(--type-caption); color: var(--text-tertiary); flex: none; min-width: 0; }
+.crumb .chev { font-size: 15px; color: var(--fainter); cursor: pointer; }
 .crumb .back { cursor: pointer; }
 .crumb .back:hover { color: var(--ink); }
 .crumb .sep { color: var(--faint); }
-.crumb .here { font-family: var(--disp); color: var(--ink); font-weight: 600; }
-.topbar .right { display: flex; align-items: center; gap: 13px; }
-.searchbox {
-  height: 36px; border-radius: 9px; background: var(--card); border: 1px solid var(--line-2);
-  display: flex; align-items: center; gap: 8px; padding: 0 13px; color: var(--faint); font-size: 13px;
+.crumb .here { color: var(--text-primary); font-weight: var(--weight-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar .right { display: flex; align-items: center; gap: var(--space-3); margin-left: auto; flex: none; }
+/* Each crumb carries its OWN leading separator, so the run reads
+   `Stack / Projects / stack` — the brand is the first crumb, which is why the
+   separator leads rather than trails. */
+.crumb-part { display: inline-flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.searchbox-label { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Holds the middle open on a screen with nothing to search, so the actions
+   stay pinned right instead of sliding in beside the crumb. */
+.topbar-gap { flex: 1 1 auto; }
+@media (max-width: 720px) {
+  /* The crumb is the first thing to go: the rail already says where you are,
+     and the brand mark still gets you home. */
+  .topbar .crumb { display: none; }
+  .brandmark .word { display: none; }
+  .searchbox-label { display: none; }
 }
-.searchbox.sm { height: 34px; width: 200px; padding: 0 12px; }
+.searchbox {
+  height: var(--control-h-sm); border-radius: var(--radius-md);
+  background: var(--surface-canvas); border: 1px solid var(--border-default);
+  display: flex; align-items: center; gap: var(--space-4); padding: 0 10px;
+  color: var(--text-tertiary); font: var(--type-body-sm);
+  transition: var(--transition-control);
+}
+.searchbox:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 25%, transparent); }
+.searchbox.sm { height: var(--control-h-sm); width: 200px; }
+/* In the header the search is the flexible middle, capped like the kit's. */
+.topbar .searchbox { flex: 1 1 auto; min-width: 90px; max-width: 520px; width: auto; }
 .searchbox input { border: 0; outline: none; background: transparent; color: var(--ink); width: 100%; font-size: 13px; }
 .searchbox .glass { width: 13px; height: 13px; border: 1.6px solid var(--text-tertiary); border-radius: 50%; position: relative; flex: none; }
 .searchbox .glass::after { content: ''; position: absolute; width: 5px; height: 1.6px; background: var(--text-tertiary); bottom: -2px; right: -3px; transform: rotate(45deg); }
-.avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--grey-600); flex: none; }
+.avatar {
+  width: 26px; height: 26px; border-radius: 50%; flex: none; cursor: pointer;
+  background: var(--action-accent); color: var(--grey-1000);
+  display: inline-flex; align-items: center; justify-content: center;
+  font: var(--weight-semibold) var(--text-2xs)/1 var(--font-sans);
+  transition: var(--transition-control);
+}
+.avatar:hover { background: var(--action-accent-hover); }
 .avatar.sm { width: 32px; height: 32px; }
 .btn-accent {
-  height: 36px; padding: 0 16px; border-radius: 9px; background: var(--accent);
-  color: #fff; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 7px;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  height: var(--control-h-md); padding: 0 14px; border-radius: var(--radius-md);
+  background: var(--action-primary); border: 1px solid transparent;
+  color: var(--white); font: var(--weight-medium) var(--text-md)/1 var(--font-sans);
+  display: inline-flex; align-items: center; gap: var(--space-4); white-space: nowrap;
+  transition: var(--transition-control);
 }
-.btn-accent:hover { background: var(--accent-deep); }
-.btn-accent:active { background: var(--accent-deep); transform: translateY(1px); }
+.btn-accent:hover { background: var(--action-primary-hover); }
+.btn-accent:active { background: var(--action-primary-press); }
 
 /* ---------- page shell ----------
    Every screen fills the viewport; --page-max is the ONE knob if a cap is ever
@@ -480,13 +516,15 @@ a { color: inherit; }
    added is behaviour, not colour, so it stays; it just dips in the neutral
    palette now instead of the accent one. */
 .btn-repo {
-  height: 38px; padding: 0 15px; border-radius: 10px; background: var(--card); border: 1px solid var(--line-3);
-  color: var(--ink); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  height: var(--control-h-md); padding: 0 14px; border-radius: var(--radius-md);
+  background: var(--surface-card); border: 1px solid var(--border-default);
+  color: var(--text-primary); font: var(--weight-medium) var(--text-md)/1 var(--font-sans);
+  display: inline-flex; align-items: center; gap: var(--space-4); white-space: nowrap;
+  transition: var(--transition-control);
 }
-.btn-repo .blk { width: 14px; height: 14px; border-radius: 50%; background: var(--ink); }
-.btn-repo:hover { border-color: var(--muted); }
-.btn-repo:active { border-color: var(--muted); transform: translateY(1px); }
+.btn-repo .blk { width: 12px; height: 12px; border-radius: 50%; background: var(--text-secondary); flex: none; }
+.btn-repo:hover { background: var(--surface-overlay); border-color: var(--border-strong); }
+.btn-repo:active { background: var(--surface-press); }
 .btn-visit { height: 38px; padding: 0 17px; }
 
 /* ---------- tabs ---------- */
@@ -1641,11 +1679,12 @@ a.tab { display: inline-block; }
 
 /* ---------- ⌘K hint on the dashboard search box ---------- */
 .searchbox .kbd-hint {
-  margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--faint);
-  background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 6px; line-height: 1;
+  margin-left: auto; font-family: var(--mono); font-size: var(--text-2xs); color: var(--text-tertiary);
+  background: var(--surface-overlay); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); padding: 2px 5px; line-height: 1; flex: none;
 }
 .searchbox.as-button { cursor: pointer; }
-.searchbox.as-button:hover { border-color: var(--line-3); }
+.searchbox.as-button:hover { border-color: var(--border-strong); }
 
 /* ---------- ⌘K command palette ---------- */
 .cmdk-overlay {
@@ -3761,4 +3800,162 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .mcx-foot {
   display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
   font-size: 12.5px; color: var(--muted);
+}
+
+/* ============================================================
+   THE CONSOLE — ui_kits/console/index.html, ported (#430).
+
+   The kit's AppShell is a top bar over [ left rail | scrolling
+   main ], and the rail is where the four tabs went. Everything
+   here is the kit's own geometry (--sidebar-w, --column-w,
+   --topbar-h, the space and radius scales) rather than a set of
+   numbers that happen to look similar — so a change to the kit's
+   spacing scale still moves this.
+
+   The shell OWNS THE SCROLL: the rail and the main region scroll
+   independently under a fixed bar, which is the whole reason the
+   rail can be long enough to list every project. That means the
+   page below cannot also be the scroller, hence the explicit
+   height chain from .con-shell down.
+   ============================================================ */
+
+.con-shell { display: flex; min-height: calc(100vh - var(--topbar-h)); align-items: stretch; }
+
+/* ---------- the left rail ---------- */
+.con-nav {
+  width: var(--sidebar-w); flex: 0 0 auto;
+  background: var(--surface-sunken);
+  border-right: 1px solid var(--border-subtle);
+  padding: var(--space-5) var(--space-4);
+  display: flex; flex-direction: column; gap: var(--space-2);
+  position: sticky; top: var(--topbar-h); align-self: flex-start;
+  max-height: calc(100vh - var(--topbar-h)); overflow-y: auto;
+}
+.con-navgroup { display: flex; flex-direction: column; gap: var(--space-2); }
+.con-seclabel {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
+  color: var(--text-tertiary); padding: var(--space-6) 10px var(--space-2);
+}
+.con-navitem {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  height: 30px; padding: 0 10px; border: 0; background: transparent;
+  border-radius: var(--radius-sm); cursor: pointer; text-align: left;
+  font: var(--type-label); color: var(--text-secondary);
+  transition: var(--transition-control);
+}
+.con-navitem.d1 { padding-left: 24px; }
+.con-navitem:hover { background: var(--surface-hover); color: var(--text-primary); }
+.con-navitem.on { background: var(--surface-selected); color: var(--blue-300); }
+.con-navico { display: flex; flex: none; color: var(--text-tertiary); }
+.con-navitem.on .con-navico { color: var(--blue-400); }
+.con-navlabel { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.con-navcount { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); flex: none; }
+.con-navcount.bad { color: var(--status-danger-fg); }
+.con-navfoot { margin-top: auto; padding-top: var(--space-6); }
+.con-spacedot { width: 8px; height: 8px; border-radius: var(--radius-xs); flex: none; display: inline-block; }
+
+/* ---------- the main region ---------- */
+.con-main { flex: 1; min-width: 0; padding: var(--space-8); }
+.con-main > .con-inner { max-width: var(--content-max); display: flex; flex-direction: column; gap: var(--space-6); }
+/* The board is the one section that must NOT be capped: its columns run off
+   the right and scroll, and a max-width would clip them instead. */
+.con-main > .con-inner.wide { max-width: none; }
+
+/* The page heading block — breadcrumb line, title, and the actions that
+   belong to this project rather than to the app. */
+.con-head { display: flex; flex-direction: column; gap: var(--space-3); }
+.con-head .con-eyebrow { font: var(--type-caption); color: var(--text-tertiary); }
+.con-headrow { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
+.con-headrow h1 { margin: 0; font: var(--type-title); letter-spacing: var(--tracking-tight); }
+.con-headrow .con-headacts { margin-left: auto; display: flex; gap: var(--space-3); flex-wrap: wrap; }
+
+/* ---------- the kit's primitives, as classes ---------- */
+.k-tile {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-4);
+}
+.k-tile .k-tile-label {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.k-tile .k-tile-val { display: flex; align-items: baseline; gap: var(--space-3); }
+.k-tile .k-tile-num { font: var(--weight-semibold) var(--text-2xl)/1 var(--font-mono); color: var(--text-primary); }
+.k-tile .k-tile-num.accent { color: var(--text-accent); }
+.k-tile .k-tile-unit { font: var(--type-caption); color: var(--text-tertiary); }
+.k-tile .k-tile-delta { margin-left: auto; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); }
+.k-tile .k-tile-delta.up { color: var(--status-success-fg); }
+.k-tile .k-tile-delta.down { color: var(--status-danger-fg); }
+.k-tilerow { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-5); }
+
+.k-card {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+  display: flex; flex-direction: column; transition: var(--transition-control);
+}
+.k-card.interactive { cursor: pointer; }
+.k-card.interactive:hover { background: var(--surface-overlay); box-shadow: var(--shadow-md); }
+.k-card.selected { border-color: var(--border-focus); }
+.k-card > .k-card-head { padding: var(--space-5) var(--space-5) 0; font: var(--type-label); color: var(--text-secondary); }
+.k-card > .k-card-body { padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+
+.k-tag {
+  display: inline-flex; align-items: center; gap: var(--space-3);
+  height: 22px; padding: 0 8px; border-radius: var(--radius-pill);
+  background: var(--status-neutral-bg); color: var(--status-neutral-fg);
+  font: var(--type-label); white-space: nowrap;
+}
+.k-tag.mono { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); }
+.k-tag.info { background: var(--status-info-bg); color: var(--status-info-fg); }
+.k-tag.success { background: var(--status-success-bg); color: var(--status-success-fg); }
+.k-tag.warning { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.k-tag.danger { background: var(--status-danger-bg); color: var(--status-danger-fg); }
+
+.k-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-sm);
+  background: var(--status-neutral-bg); color: var(--status-neutral-fg);
+  font: var(--weight-semibold) var(--text-2xs)/1 var(--font-mono);
+}
+
+.k-banner {
+  display: flex; align-items: flex-start; gap: var(--space-5);
+  padding: var(--space-5); border-radius: var(--radius-md);
+  background: var(--status-info-bg); border-left: 2px solid var(--status-info-fg);
+}
+.k-banner.warning { background: var(--status-warning-bg); border-left-color: var(--status-warning-fg); }
+.k-banner.danger { background: var(--status-danger-bg); border-left-color: var(--status-danger-fg); }
+.k-banner.success { background: var(--status-success-bg); border-left-color: var(--status-success-fg); }
+.k-banner .k-banner-text { flex: 1; display: flex; flex-direction: column; gap: var(--space-2); }
+.k-banner .k-banner-title { font: var(--type-label); color: var(--status-info-fg); }
+.k-banner.warning .k-banner-title { color: var(--status-warning-fg); }
+.k-banner.danger .k-banner-title { color: var(--status-danger-fg); }
+.k-banner.success .k-banner-title { color: var(--status-success-fg); }
+.k-banner .k-banner-body { font: var(--type-body-sm); color: var(--text-secondary); }
+
+.k-progress { display: flex; flex-direction: column; gap: var(--space-3); }
+.k-progress .k-progress-row { display: flex; justify-content: space-between; font: var(--type-caption); color: var(--text-tertiary); }
+.k-progress .k-progress-row .n { font-family: var(--font-mono); }
+.k-progress .k-progress-track { height: 6px; border-radius: var(--radius-pill); background: var(--grey-750); overflow: hidden; }
+.k-progress .k-progress-fill { height: 100%; background: var(--viz-1); transition: width var(--dur-slow) var(--ease-out); }
+.k-progress .k-progress-fill.primary { background: var(--viz-2); }
+
+/* ---------- narrow: the rail lies down ---------- */
+@media (max-width: 900px) {
+  .con-shell { flex-direction: column; }
+  .con-nav {
+    width: auto; position: static; max-height: none; align-self: stretch;
+    flex-direction: row; overflow-x: auto; gap: var(--space-2);
+    border-right: 0; border-bottom: 1px solid var(--border-subtle);
+    padding: var(--space-3) var(--space-4);
+  }
+  /* A section label in a horizontal run is a heading with nothing under it,
+     and the depth indent means nothing once the rail is a row. */
+  .con-nav .con-seclabel { display: none; }
+  .con-navgroup { flex-direction: row; gap: var(--space-2); }
+  .con-navitem { width: auto; }
+  .con-navitem.d1 { padding-left: 10px; }
+  .con-navfoot { margin-top: 0; padding-top: 0; }
+  .con-main { padding: var(--space-6); }
+  .k-tilerow { grid-template-columns: repeat(2, 1fr); }
 }

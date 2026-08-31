@@ -8,8 +8,12 @@ import {
   getRoadDraft, setRoadDraft, type RoadDraft, assistRoadmapItem,
   agentCan, setLastViewedProject, onItemFiled,
   agentConsoleCan, agentConsoleOffReason, type TabAgentKey,
+  getProjects,
 } from '../store';
+import type { Project } from '../types';
 import { go, hrefTo } from '../lib/route';
+import { TopBar } from '../components/TopBar';
+import { ConsoleNav, NavIcons, SpaceDot, type NavSection } from '../detail/ConsoleNav';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Quality } from '../detail/Quality';
 import { RoadmapTab } from '../detail/RoadmapTab';
@@ -25,9 +29,14 @@ import { newItemSched } from '../lib/plan';
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
 // (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
 type Tab = 'overview' | 'quality' | 'roadmap' | 'activity';
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'overview', label: 'Overview' }, { key: 'quality', label: 'Quality' },
-  { key: 'roadmap', label: 'Roadmap' }, { key: 'activity', label: 'Activity' },
+// The four readings of a project, in rail order. This stays the ONE list —
+// #430 moved it from a horizontal strip into the console's left rail, and a
+// second copy inside the rail is how the two would drift.
+const TABS: { key: Tab; label: string; icon: ReactNode }[] = [
+  { key: 'overview', label: 'Overview', icon: NavIcons.layers },
+  { key: 'quality', label: 'Quality', icon: NavIcons.check },
+  { key: 'roadmap', label: 'Roadmap', icon: NavIcons.grid },
+  { key: 'activity', label: 'Activity', icon: NavIcons.clock },
 ];
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
 
@@ -117,13 +126,8 @@ export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
 function Shell({ children }: { children: ReactNode }) {
   return (
     <div>
-      <div className="topbar">
-        <div className="crumb">
-          <span className="chev" onClick={go.dashboard}>‹</span>
-          <span className="back" onClick={go.dashboard}>Projects</span>
-        </div>
-      </div>
-      <div className="page detail" style={{ paddingTop: 40 }}>{children}</div>
+      <TopBar crumb={[{ label: 'Projects', onClick: go.dashboard }]} />
+      <div className="con-main"><div className="con-inner">{children}</div></div>
     </div>
   );
 }
@@ -135,6 +139,17 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
 }) {
   const { project, activity } = data;
   const slug = project.id;
+
+  // SPACES (#430) — the rail lists the other apps, so switching project no
+  // longer means a trip back to the dashboard. Its own trip, and a failure is
+  // simply an empty section: a rail that cannot list the other projects is
+  // still a working rail, and blocking the screen on it would be absurd.
+  const [spaces, setSpaces] = useState<Project[]>([]);
+  useEffect(() => {
+    let live = true;
+    getProjects().then((ps) => { if (live) setSpaces(ps); }).catch(() => { /* rail degrades to this project */ });
+    return () => { live = false; };
+  }, []);
 
   const initialTab = asTab(routeTab);
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -557,30 +572,60 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
 
   const openBugLink = (hash: string) => { setHighlightRef(hash); setTab('activity'); };
   const viewAll = () => { setHighlightRef(null); setTab('activity'); };
+  // THE RAIL'S CONTENTS (#430). Workspace is the four readings of THIS
+  // project — the old tab strip, one per row — and Spaces is every other app.
+  // The counts are the ones the strip already wore: Quality carries what is
+  // actually WRONG (red checks + serious open bugs) in the critical tone, and
+  // Roadmap carries how much is open, which is volume and not alarm.
+  const navSections: NavSection[] = [
+    {
+      label: 'Workspace',
+      items: TABS.map((t) => ({
+        key: t.key,
+        label: t.label,
+        icon: t.icon,
+        count: t.key === 'quality' ? needsAttention : t.key === 'roadmap' ? openRoadCount : 0,
+        bad: t.key === 'quality',
+        onClick: () => setTab(t.key),
+      })),
+    },
+    {
+      label: 'Spaces',
+      items: spaces.map((sp) => ({
+        key: `space:${sp.id}`,
+        label: sp.name,
+        icon: <SpaceDot tint={sp.tint} />,
+        depth: 1,
+        // The project you are already in is the rail's other selected row, so
+        // `active` cannot be the tab key alone.
+        href: hrefTo.detail(sp.id),
+      })),
+    },
+  ];
+
   const open = (url: string) => { if (url) window.open(url, '_blank', 'noopener'); };
 
   return (
     <div>
-      <div className="topbar">
-        <div className="crumb">
-          <span className="chev" onClick={go.dashboard}>‹</span>
-          <span className="back" onClick={go.dashboard}>Projects</span>
-          <span className="sep">/</span>
-          <span className="here">{project.name}</span>
-        </div>
-        <div className="right">
-          <button className="searchbox sm lg as-button" onClick={onOpenSearch} aria-label="Search everything (⌘K)">
-            <span className="glass" />
-            <span style={{ color: 'var(--faint)' }}>Search…</span>
-            <span className="kbd-hint">⌘K</span>
-          </button>
-          <button className="btn-repo" onClick={go.control} title="Mission Control — every project's automation">Mission Control</button>
-          <a className="btn-repo" href={hrefTo.terminal(slug)} title={`Open a terminal in ~/${slug}`}>⌨</a>
-          <button className="avatar sm" onClick={go.settings} aria-label="Settings" />
-        </div>
-      </div>
+      <TopBar
+        crumb={[{ label: 'Projects', onClick: go.dashboard }, { label: project.name }]}
+        onSearch={onOpenSearch}
+        actions={
+          <>
+            <button className="btn-repo" onClick={go.control} title="Mission Control — every project's automation">Mission Control</button>
+            <a className="btn-repo" href={hrefTo.terminal(slug)} title={`Open a terminal in ~/${slug}`} aria-label="Terminal">⌨</a>
+          </>
+        } />
 
-      <div className="page detail">
+      <div className="con-shell">
+        <ConsoleNav active={tab} sections={navSections} footer={
+          <a className="con-navitem" href={hrefTo.terminal(slug)}>
+            <span className="con-navico">{NavIcons.terminal}</span>
+            <span className="con-navlabel">Terminal</span>
+          </a>
+        } />
+
+      <main className="con-main"><div className={`con-inner${tab === 'roadmap' ? ' wide' : ''}`}>
         <div className="detail-head">
           <div>
             <div className="titlerow">
@@ -625,20 +670,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
 
         {actionError && <div className="action-error">{actionError}</div>}
 
-        <div className="tabs">
-          {TABS.map((t) => {
-            // #278 — Quality wears ONE number: what's actually wrong right now
-            // (red checks + serious open bugs). Two badges gave two counts and
-            // no sense of how bad it was.
-            const n = t.key === 'quality' ? needsAttention
-              : t.key === 'roadmap' ? openRoadCount : 0;
-            return (
-              <button key={t.key} className={`tab ${tab === t.key ? 'on' : ''}`} onClick={() => setTab(t.key)}>
-                {t.label}{n > 0 && <span className={`tab-n${t.key === 'quality' ? ' bad' : ''}`}>{n}</span>}
-              </button>
-            );
-          })}
-        </div>
 
         {/* #379 — THE TAB AGENT'S CONSOLE, and it is here rather than inside
             each tab on purpose: "the same position on every tab" is the whole
@@ -716,6 +747,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         {/* Deleting a project lives in Settings → Projects now. A destructive,
             once-a-year action does not belong at the foot of the screen you
             scroll past every day. */}
+      </div></main>
       </div>
 
       {bugModal.open && (

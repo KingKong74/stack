@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Project, ProjectStatus, Overview } from '../types';
 import { getProjects, getOverview, createProject } from '../store';
 import { go } from '../lib/route';
-import { PRODUCT_NAME } from '../lib/ui';
 import { NewProjectModal } from '../components/NewProjectModal';
 import { ConnectGuide } from '../components/ConnectGuide';
 import { HowToGuide } from '../components/HowToGuide';
+import { TopBar } from '../components/TopBar';
 import {
   AttentionRow, BranchClaims, ResumeHero, ReviewQueue,
 } from '../components/CommandDeck';
@@ -91,23 +91,16 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
 
   return (
     <div>
-      <div className="topbar dash">
-        <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
-        <div className="right">
-          <button className="searchbox lg as-button" style={{ width: 250 }} onClick={onOpenSearch}
-            aria-label="Search everything (⌘K)">
-            <span className="glass" />
-            <span style={{ color: 'var(--faint)' }}>Search everything…</span>
-            <span className="kbd-hint">⌘K</span>
-          </button>
+      {/* No crumb: the dashboard IS the root the crumb points back to. */}
+      <TopBar dash onSearch={onOpenSearch} searchLabel="Search everything…" actions={
+        <>
           {/* An anchor, not a button — middle/ctrl-click opens it in a new tab */}
           <a className="btn-repo" href="#/control" title="Every project's automation from one point">Mission Control</a>
           <button className="btn-repo" onClick={() => setHowToOpen(true)}>Guide</button>
           <button className="btn-repo" onClick={() => setGuideOpen(true)}>Connect</button>
           <button className="btn-accent" onClick={() => setNewOpen(true)}>New project</button>
-          <button className="avatar" onClick={go.settings} aria-label="Settings" />
-        </div>
-      </div>
+        </>
+      } />
 
       {overview && <SubNav totals={overview.totals} bugs={overview.bugs.total} />}
 

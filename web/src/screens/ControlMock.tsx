@@ -1,5 +1,5 @@
 import { go } from '../lib/route';
-import { PRODUCT_NAME } from '../lib/ui';
+import { TopBar } from '../components/TopBar';
 
 // Mission Control, culled and awaiting a rebuild.
 //
@@ -29,17 +29,7 @@ const PANELS: { title: string; bars: number[] }[] = [
 export function ControlMock() {
   return (
     <div>
-      <div className="topbar">
-        <div className="crumb">
-          <span className="chev" onClick={go.dashboard}>‹</span>
-          <span className="back" onClick={go.dashboard}>Projects</span>
-          <span className="sep">/</span>
-          <span className="here">Mission Control</span>
-        </div>
-        <div className="right">
-          <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
-        </div>
-      </div>
+      <TopBar crumb={[{ label: 'Projects', onClick: go.dashboard }, { label: 'Mission Control' }]} />
 
       <div className="page detail">
         <div className="dash-head" style={{ marginBottom: 16 }}>

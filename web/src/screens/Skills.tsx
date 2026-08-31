@@ -4,10 +4,10 @@ import {
   type Skill, type SkillOnDisk, type SkillsData,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
-import { PRODUCT_NAME } from '../lib/ui';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { TopBar } from '../components/TopBar';
 
 // The SKILL TREE (#228) — the skills that shape Claude, managed from one place
 // instead of by hand-editing files on the host.
@@ -201,19 +201,8 @@ export default function Skills() {
 
   return (
     <div className="term-screen">
-      <div className="topbar">
-        <div className="crumb">
-          <span className="chev" onClick={go.dashboard}>‹</span>
-          <span className="back" onClick={go.dashboard}>Projects</span>
-          <span className="sep">/</span>
-          <span className="here">Skills</span>
-        </div>
-        <div className="right">
-          <a className="btn-repo" href={hrefTo.settings}>Settings</a>
-          <a className="btn-repo" href={hrefTo.control}>Mission Control</a>
-          <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
-        </div>
-      </div>
+      <TopBar crumb={[{ label: 'Projects', onClick: go.dashboard }, { label: 'Skills' }]}
+        actions={<a className="btn-repo" href={hrefTo.control}>Mission Control</a>} />
 
       <div className="page detail sk-page">
         <div className="sk-head">

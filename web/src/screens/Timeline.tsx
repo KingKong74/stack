@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getTimeline, AuthError, type TimelineData } from '../store';
 import { go } from '../lib/route';
-import { PRODUCT_NAME, isAccentTag } from '../lib/ui';
+import { isAccentTag } from '../lib/ui';
 import { buildWeeks, contribLevel as level } from '../lib/contrib';
+import { TopBar } from '../components/TopBar';
 
 // The cross-project timeline: a year of pushes as a contribution grid (our own
 // terracotta take, weeks starting Monday) over a vertical day-by-day feed that
@@ -51,18 +52,8 @@ export function Timeline() {
 
   return (
     <div>
-      <div className="topbar">
-        <div className="crumb">
-          <span className="chev" onClick={go.dashboard}>‹</span>
-          <span className="back" onClick={go.dashboard}>Projects</span>
-          <span className="sep">/</span>
-          <span className="here">Timeline</span>
-        </div>
-        <div className="right">
-          <button className="btn-repo" onClick={go.control} title="Mission Control">Mission Control</button>
-          <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
-        </div>
-      </div>
+      <TopBar crumb={[{ label: 'Projects', onClick: go.dashboard }, { label: 'Timeline' }]}
+        actions={<button className="btn-repo" onClick={go.control} title="Mission Control">Mission Control</button>} />
 
       <div className="page detail">
         <div className="dash-head" style={{ marginBottom: 24 }}>

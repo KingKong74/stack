@@ -11,6 +11,7 @@ import {
 import { go } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { DIRECTIVES } from '../lib/brief';
+import { TopBar } from '../components/TopBar';
 
 // Mission Control and the instructions tree were culled, so this screen is
 // back to the one surface it started as. The strip below is kept for the
@@ -166,17 +167,7 @@ export function Settings() {
 
   return (
     <div>
-      <div className="topbar">
-        <div className="crumb">
-          <span className="chev" onClick={go.dashboard}>‹</span>
-          <span className="back" onClick={go.dashboard}>Projects</span>
-          <span className="sep">/</span>
-          <span className="here">Settings</span>
-        </div>
-        <div className="right">
-          <div className="brandmark"><span className="sq" /><span className="word">{PRODUCT_NAME}</span></div>
-        </div>
-      </div>
+      <TopBar crumb={[{ label: 'Projects', onClick: go.dashboard }, { label: 'Settings' }]} />
 
       <div className="page detail">
         <div className="dash-head" style={{ marginBottom: 16 }}>
