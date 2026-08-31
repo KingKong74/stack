@@ -461,20 +461,20 @@ a { color: inherit; }
   position: relative; height: 234px; border-radius: 16px; overflow: hidden; cursor: pointer;
   transition: transform 0.16s ease, box-shadow 0.16s ease; text-align: left; width: 100%; display: block;
 }
-.pcard:hover { transform: translateY(-3px); box-shadow: 0 10px 28px rgba(28, 26, 23, 0.13); }
+.pcard:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
 .pcard .stripe { position: absolute; inset: 0; background: repeating-linear-gradient(45deg, rgba(0,0,0,.022) 0 5px, transparent 5px 11px); z-index: 0; }
 /* live site preview: the iframe renders at 4x the card and scales to fit,
    giving a desktop-width viewport; inert so the card stays one big button */
 .pcard .preview { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .pcard .preview iframe { width: 400%; height: 400%; transform: scale(0.25); transform-origin: 0 0; border: 0; background: transparent; }
-.pcard .scrim { position: absolute; inset: 0; background: linear-gradient(to top, rgba(28,26,23,.62), rgba(28,26,23,.04) 56%); z-index: 1; }
+.pcard .scrim { position: absolute; inset: 0; background: linear-gradient(to top, rgba(10,11,12,.78), rgba(10,11,12,.06) 56%); z-index: 1; }
 .pcard .statuspill {
   position: absolute; top: 13px; right: 13px; z-index: 2; font-size: 11px; color: #fff;
   background: rgba(255, 255, 255, 0.18); backdrop-filter: blur(4px); padding: 4px 10px; border-radius: 20px;
 }
 .pcard .autopill {
   position: absolute; top: 13px; left: 13px; z-index: 2; font-size: 11px; color: #fff;
-  background: rgba(28, 26, 23, 0.38); backdrop-filter: blur(4px); padding: 4px 10px; border-radius: 20px;
+  background: rgba(10, 11, 12, 0.45); backdrop-filter: blur(4px); padding: 4px 10px; border-radius: 20px;
 }
 .pcard .meta { position: absolute; left: 17px; right: 17px; bottom: 15px; z-index: 2; }
 .pcard .pname { font-family: var(--disp); color: #fff; font-weight: 600; font-size: 17px; line-height: 1.2; }
@@ -1178,7 +1178,7 @@ a.tab { display: inline-block; }
 .tl { position: relative; }
 .tl .node { position: absolute; left: -26px; top: 18px; width: 12px; height: 12px; border-radius: 50%; background: var(--card); border: 2.5px solid var(--accent); }
 .tl-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
-.tl-card.hl { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(196, 98, 61, 0.16); }
+.tl-card.hl { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
 .tl-card .top { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
 .tl-card .hash { font-family: var(--mono); font-size: 12px; color: var(--accent-text); }
 .tl-card .branch { font-family: var(--mono); font-size: 11px; color: var(--faint); }
@@ -1186,7 +1186,7 @@ a.tab { display: inline-block; }
 .tl-card .body { font-size: 14px; line-height: 1.6; color: var(--body); margin-bottom: 12px; }
 
 /* ---------- modals ---------- */
-.overlay { position: fixed; inset: 0; z-index: 50; background: rgba(28, 26, 23, 0.42); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; padding: 24px; animation: fade 0.12s ease; }
+.overlay { position: fixed; inset: 0; z-index: 50; background: var(--scrim); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; padding: 24px; animation: fade 0.12s ease; }
 .modal { width: 460px; max-width: 100%; max-height: calc(100vh - 48px); overflow-y: auto; background: var(--card); border-radius: 18px; padding: 24px 26px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28); animation: pop 0.14s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .modal.wide { width: 640px; }
 /* #243 — the advisor report needs room: diff3-style conflict blocks with
@@ -1217,7 +1217,7 @@ a.tab { display: inline-block; }
 /* the Area combobox — type freely, or pick a known area from the drop list */
 .combo { position: relative; }
 .combo .field-input { width: 100%; }
-.combo-list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30; background: var(--surface); border: 1px solid var(--line-3); border-radius: 10px; box-shadow: 0 10px 28px rgba(28, 25, 18, 0.12); max-height: 176px; overflow: auto; padding: 4px; }
+.combo-list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30; background: var(--surface); border: 1px solid var(--line-3); border-radius: 10px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); max-height: 176px; overflow: auto; padding: 4px; }
 .combo-opt { display: block; width: 100%; text-align: left; padding: 7px 10px; border-radius: 7px; font-size: 13px; color: var(--ink); }
 .combo-opt:hover { background: var(--accent-tint); color: var(--accent-text); }
 .combo-opt.on { color: var(--accent-text); font-weight: 600; }
@@ -1438,7 +1438,7 @@ a.tab { display: inline-block; }
 
 /* ---------- token gate (first-load screen) ---------- */
 .gate { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.gate-card { width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--line-2); border-radius: 18px; padding: 30px 28px; box-shadow: 0 18px 50px rgba(40, 30, 20, .08); }
+.gate-card { width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--line-2); border-radius: 18px; padding: 30px 28px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4); }
 .gate-title { font-family: var(--disp); font-size: 20px; font-weight: 600; margin-bottom: 6px; }
 .gate-sub { font-size: 13px; line-height: 1.55; color: var(--muted); margin-bottom: 18px; }
 .gate .field-input { margin-bottom: 12px; }
@@ -1689,7 +1689,7 @@ a.tab { display: inline-block; }
 /* ---------- ⌘K command palette ---------- */
 .cmdk-overlay {
   position: fixed; inset: 0; z-index: 60;
-  background: rgba(28, 26, 23, 0.42); backdrop-filter: blur(6px);
+  background: var(--scrim); backdrop-filter: blur(6px);
   display: flex; align-items: flex-start; justify-content: center;
   padding: 11vh 24px 24px; animation: fade 0.12s ease;
 }
@@ -1814,8 +1814,8 @@ a.tab { display: inline-block; }
 /* ---------- search deep-link highlight (bug / roadmap / note rows) ---------- */
 /* Mirrors the activity card highlight (.tl-card.hl) so a ⌘K result flags its
    row with the same terracotta ring on whichever tab it opens. */
-.bug.hl { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(196, 98, 61, 0.16); }
-.road-item.hl { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(196, 98, 61, 0.16); }
+.bug.hl { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+.road-item.hl { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
 @media (max-width: 720px) {
   .mc-mirror .left { margin-left: 0; }
 }
@@ -1857,7 +1857,7 @@ a.tab { display: inline-block; }
   display: inline-flex; align-items: center; gap: 8px;
   background: var(--card); border: 1px solid var(--line-2); border-radius: 999px;
   padding: 8px 14px; font-size: 12.5px; font-weight: 600; color: var(--ink);
-  box-shadow: 0 4px 14px rgba(30, 24, 18, 0.12); cursor: pointer;
+  box-shadow: var(--shadow-md); cursor: pointer;
 }
 .term-presence:hover { border-color: var(--green); }
 .term-presence .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
@@ -2021,7 +2021,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tcs-scope-btn .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex: none; }
 .tcs-scope-btn .l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tcs-scope-btn .c { color: var(--faint); flex: none; }
-.tcs-pop { position: absolute; top: 30px; right: 0; z-index: 5; width: 190px; max-height: 240px; overflow-y: auto; background: var(--surface); border: 1px solid var(--line-3); border-radius: 9px; box-shadow: var(--shadow-pop, 0 10px 28px rgba(28, 25, 18, 0.12)); padding: 5px; }
+.tcs-pop { position: absolute; top: 30px; right: 0; z-index: 5; width: 190px; max-height: 240px; overflow-y: auto; background: var(--surface); border: 1px solid var(--line-3); border-radius: 9px; box-shadow: var(--shadow-pop, 0 10px 28px rgba(0, 0, 0, 0.45)); padding: 5px; }
 .tcs-pop-cap { font-family: var(--mono); font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--fainter); padding: 6px 8px 5px; }
 .tcs-pop-opt { display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; padding: 5px 8px; border-radius: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--body); }
 .tcs-pop-opt:hover { background: var(--panel); color: var(--ink); }
@@ -2258,7 +2258,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
   position: fixed; right: 18px; bottom: 18px; z-index: 60;
   width: min(560px, calc(100vw - 36px));
   background: var(--card); border: 1px solid var(--line-3); border-radius: 14px;
-  box-shadow: 0 10px 34px rgba(30, 24, 18, 0.22); overflow: hidden;
+  box-shadow: var(--shadow-lg); overflow: hidden;
 }
 .term-float .topbar, .term-float .term-cockpit { display: none; }
 /* 25b — the tabs live in the head bar now, and the floating dock still needs
@@ -2295,7 +2295,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
   display: inline-flex; align-items: center; gap: 8px;
   background: var(--card); border: 1px solid var(--line-2); border-radius: 999px;
   padding: 8px 14px; font-size: 12.5px; font-weight: 600; color: var(--ink);
-  box-shadow: 0 4px 14px rgba(30, 24, 18, 0.12); cursor: pointer;
+  box-shadow: var(--shadow-md); cursor: pointer;
 }
 .term-mini:hover { border-color: var(--green); }
 .term-mini .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
@@ -2316,7 +2316,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
   display: inline-flex; align-items: center; gap: 5px;
   background: var(--surface); border: 1px solid var(--keyline); border-radius: 999px;
   padding: 7px 14px; font-size: 12px; font-weight: 600; color: var(--muted);
-  box-shadow: 0 3px 12px rgba(28, 26, 23, 0.10);
+  box-shadow: var(--shadow-md);
   opacity: 0.92; transition: opacity 0.15s, border-color 0.15s, color 0.15s;
 }
 .totop:hover { opacity: 1; border-color: var(--accent-soft); color: var(--ink); }
@@ -2382,7 +2382,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
   -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px);
   border: 1px solid var(--keyline); border-radius: 999px;
   padding: 7px 14px; font-size: 12px; font-weight: 600; color: var(--muted);
-  box-shadow: 0 3px 12px rgba(28, 26, 23, 0.10);
+  box-shadow: var(--shadow-md);
   opacity: 0.92; cursor: pointer; transition: opacity 0.15s, border-color 0.15s, color 0.15s;
 }
 /* Hovered or open, it is being USED — no longer chrome to see past. */
@@ -2395,7 +2395,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
    spare beside it, and below --page-max it never has. */
 @media (max-width: 1200px) { .quick-dock .label { display: none; } .quick-dock { padding: 9px 11px; } }
 
-.quick-scrim { position: fixed; inset: 0; z-index: 55; background: rgba(28, 26, 23, 0.30); animation: fade 0.12s ease; }
+.quick-scrim { position: fixed; inset: 0; z-index: 55; background: var(--scrim); animation: fade 0.12s ease; }
 /* A composer, not a library: narrow enough to read as a note you are writing,
    and anchored to the button it came out of rather than centred like a modal —
    what you were looking at is often what you are writing about. */
@@ -2405,7 +2405,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
   display: flex; flex-direction: column; gap: 10px;
   padding: 16px 16px 14px;
   background: var(--paper); border: 1px solid var(--keyline); border-radius: 14px;
-  box-shadow: 0 18px 48px rgba(28, 26, 23, 0.26);
+  box-shadow: var(--shadow-lg);
   animation: fade 0.12s ease;
 }
 @media (max-width: 620px) {
@@ -3629,7 +3629,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rp-labelpop {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; min-width: 244px;
   background: var(--card); border: 1px solid var(--keyline); border-radius: 11px;
-  padding: 8px; box-shadow: 0 8px 24px rgba(40, 30, 20, .16);
+  padding: 8px; box-shadow: var(--shadow-lg);
 }
 /* On a card the menu pushes the rest of the card down instead of floating: a
    popover inside a 262px column would hang over the next card's controls. */
@@ -3763,7 +3763,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
   display: grid; grid-template-columns: repeat(8, 20px); gap: 6px;
   background: var(--card); border: 1px solid var(--keyline); border-radius: 10px;
-  padding: 8px; box-shadow: 0 6px 20px rgba(40, 30, 20, .14);
+  padding: 8px; box-shadow: var(--shadow-lg);
 }
 .rtab-palette button { width: 20px; height: 20px; border-radius: 50%; border: 1px solid rgba(0,0,0,.12); }
 .rtab-palette button:hover { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
@@ -3838,6 +3838,10 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   display: flex; flex-direction: column; gap: var(--space-2);
   position: sticky; top: var(--topbar-h); align-self: flex-start;
   height: calc(100vh - var(--topbar-h)); overflow-y: auto;
+  /* Clears the corner ＋, which is fixed to this same bottom-left corner.
+     Its glass is for sitting over CONTENT; the rail's last row is navigation
+     and should not have to be read through anything. */
+  padding-bottom: 72px;
 }
 .con-navgroup { display: flex; flex-direction: column; gap: var(--space-2); }
 .con-seclabel {
