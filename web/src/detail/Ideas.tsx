@@ -24,12 +24,17 @@ import { timeAgo } from '../lib/ui';
 //   Ready    — has a TIER (#227). The tier is how much the owner wants it NEXT
 //              and is the run queue's primary sort, so a tiered item is by
 //              definition the one ready to earn a branch.
-//   Thinking — no tier. Captured, kept, and not yet ranked.
+//   Thinking — no tier, or still held. Captured and not yet ranked.
 //
-// HELD ITEMS ARE NOT HERE. A `hook` or `fly` row awaiting sign-off lives in
-// For you → Auto-ideas (the kit: "accepting one files it into Ideas"), so this
-// tab shows what you have actually kept. Two inboxes for one queue would mean
-// approving the same row in two places.
+// A HELD ITEM IS SHOWN AND SAYS SO. The first cut of this file excluded rows
+// awaiting sign-off on the grounds that For you → Auto-ideas is their inbox —
+// and on a project whose every open item was `fly`-filed that drew an EMPTY
+// roadmap over four real items. An item that exists and appears on no screen is
+// a lie of omission, so a held row sits in Thinking (which is exactly what it
+// is: captured, not yet signed off) wearing a HELD chip, and carries the one
+// action that moves it on. Auto-ideas is still the queue you work THROUGH; this
+// is the shelf you look AT. Dismiss stays there alone — deleting a row is not
+// something to offer twice.
 
 type Col = { key: string; label: string; note: string; items: RoadmapItem[] };
 
@@ -43,27 +48,30 @@ function order(a: RoadmapItem, b: RoadmapItem): number {
   return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
 }
 
-export function Ideas({ roadmap, labels, onOpen, onPark, onDelete }: {
+export function Ideas({ roadmap, labels, onOpen, onPark, onDelete, onKeep }: {
   roadmap: RoadmapData;
   labels: { key: string; name: string; tone: string }[];
   onOpen: (it: RoadmapItem) => void;
   onPark: (it: RoadmapItem, parked: boolean) => void;
   onDelete: (it: RoadmapItem) => void;
+  onKeep: (it: RoadmapItem) => void;
 }) {
   const [open, setOpen] = useState<number | null>(null);
 
   const all = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
   // Kept, unstarted work. `claimedBy` is the line: a claim means it earned its
   // branch and the board owns it from here.
-  const capture = all.filter((i) => !i.done && !i.claimedBy && isApproved(i));
+  const capture = all.filter((i) => !i.done && !i.claimedBy);
   const cols: Col[] = [
     {
       key: 'ready', label: 'Ready', note: 'ranked — the runner picks from here',
-      items: capture.filter((i) => !i.skipped && i.tier).sort(order),
+      // Ready means the runner may actually pick it up, so a held row is never
+      // ready however it is tiered — that is the whole point of the hold.
+      items: capture.filter((i) => !i.skipped && i.tier && isApproved(i)).sort(order),
     },
     {
       key: 'thinking', label: 'Thinking', note: 'kept, not yet ranked',
-      items: capture.filter((i) => !i.skipped && !i.tier).sort(order),
+      items: capture.filter((i) => !i.skipped && (!i.tier || !isApproved(i))).sort(order),
     },
     {
       key: 'parked', label: 'Parked', note: 'cut from this cycle, still on the books',
@@ -101,7 +109,7 @@ export function Ideas({ roadmap, labels, onOpen, onPark, onDelete }: {
             {col.items.map((it) => (
               <IdeaCard key={it.id} item={it} labels={labels} ready={col.key === 'ready'}
                 open={open === it.id} onToggle={() => setOpen(open === it.id ? null : it.id)}
-                onOpen={onOpen} onPark={onPark} onDelete={onDelete} />
+                onOpen={onOpen} onPark={onPark} onDelete={onDelete} onKeep={onKeep} />
             ))}
           </div>
         ))}
@@ -110,15 +118,17 @@ export function Ideas({ roadmap, labels, onOpen, onPark, onDelete }: {
   );
 }
 
-function IdeaCard({ item, labels, ready, open, onToggle, onOpen, onPark, onDelete }: {
+function IdeaCard({ item, labels, ready, open, onToggle, onOpen, onPark, onDelete, onKeep }: {
   item: RoadmapItem;
   labels: { key: string; name: string; tone: string }[];
   ready: boolean; open: boolean; onToggle: () => void;
   onOpen: (it: RoadmapItem) => void;
   onPark: (it: RoadmapItem, parked: boolean) => void;
   onDelete: (it: RoadmapItem) => void;
+  onKeep: (it: RoadmapItem) => void;
 }) {
   const mine = labelsOf(item.labels, labels);
+  const held = !isApproved(item);
   // Where it came from, in the words of the thing that filed it. A card that
   // cannot say this is one you have to remember writing.
   const from = item.source === 'hook' ? 'extracted from a push'
@@ -138,7 +148,12 @@ function IdeaCard({ item, labels, ready, open, onToggle, onOpen, onPark, onDelet
 
       <div className="idea-meta">
         <span className="id">#{item.id}</span>
-        {item.tier && <span className={`tierchip t${item.tier}`}>{item.tier}</span>}
+        {held && (
+          <span className="held" title="Held from the overnight runner until you keep it — its queue is For you → Auto-ideas">
+            held
+          </span>
+        )}
+        {item.tier && <span className={`rp-tier t${item.tier}`}>{item.tier}</span>}
         <span className="bucket">{item.bucket}</span>
         {item.area && <span className="area">{item.area}</span>}
         {mine.map((l) => <span key={l.key} className={`rl rl-${l.tone} on`}>{l.name}</span>)}
@@ -148,6 +163,12 @@ function IdeaCard({ item, labels, ready, open, onToggle, onOpen, onPark, onDelet
       {open && (
         <div className="idea-acts" onClick={(e) => e.stopPropagation()}>
           <span className="from">{from}</span>
+          {held && (
+            <button className="rail-link go" onClick={() => onKeep(item)}
+              title="Keep — signs it off, and the overnight runner may pick it up">
+              ✓ Keep
+            </button>
+          )}
           <button className="rail-link" onClick={() => onOpen(item)}>Open</button>
           <button className="rail-link" onClick={() => onPark(item, !item.skipped)}
             title={item.skipped

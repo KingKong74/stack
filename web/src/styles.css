@@ -4082,6 +4082,11 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   background: var(--status-neutral-bg); color: var(--status-neutral-fg);
   border-radius: var(--radius-pill); padding: 2px 7px;
 }
+.idea-meta .held {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
+  background: var(--accent-tint); color: var(--accent-text);
+  border: 1px solid var(--accent-tint-border); border-radius: var(--radius-pill); padding: 1px 6px; cursor: help;
+}
 .idea-meta .age { margin-left: auto; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
 .idea-acts {
   display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap;

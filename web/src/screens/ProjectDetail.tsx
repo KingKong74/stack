@@ -28,7 +28,6 @@ import { BugModal } from '../components/BugModal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
-import { isApproved } from '../lib/approval';
 import { DEFAULT_LABELS } from '../lib/labels';
 import { newItemSched } from '../lib/plan';
 
@@ -300,10 +299,10 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   ];
 
   const openRoadCount = allRoadmap.filter((r) => !r.done).length;
-  // The Roadmap row's count is the CAPTURE INBOX, not the whole board: kept,
-  // unstarted, unclaimed. Same predicate Ideas.tsx sorts into three columns —
+  // The Roadmap row's count is the CAPTURE INBOX, not the whole board:
+  // unstarted and unclaimed. Same predicate Ideas.tsx sorts into three columns —
   // a row's count and the screen behind it must agree or one of them is lying.
-  const captureCount = allRoadmap.filter((r) => !r.done && !r.claimedBy && isApproved(r)).length;
+  const captureCount = allRoadmap.filter((r) => !r.done && !r.claimedBy).length;
   const failingChecks = data.checks.filter((c) => c.lastStatus === 'fail').length;
   // The Quality tab's single badge (#278): red checks plus serious open bugs.
   const needsAttention = failingChecks
@@ -817,7 +816,8 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           <Ideas roadmap={roadmap} labels={DEFAULT_LABELS}
             onOpen={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, editing: it })}
             onPark={parkItem}
-            onDelete={(it) => setConfirmRoadDelete(it)} />
+            onDelete={(it) => setConfirmRoadDelete(it)}
+            onKeep={(it) => guard(async () => { replaceRoadItem(await patchRoadmapItem(slug, it.id, { reviewed: true })); })} />
         )}
         {tab === 'plans' && (
           <Plans roadmap={roadmap} weekZero={project.weekZero}

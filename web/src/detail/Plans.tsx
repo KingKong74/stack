@@ -158,7 +158,7 @@ export function Plans({ roadmap, weekZero, onOpen }: {
                     </span>
                     <span className="c-pri">
                       {it.tier
-                        ? <span className={`tierchip t${it.tier}`}>{it.tier}</span>
+                        ? <span className={`rp-tier t${it.tier}`}>{it.tier}</span>
                         : <span className="dash">—</span>}
                       <span className="bucket">{it.bucket}</span>
                     </span>
