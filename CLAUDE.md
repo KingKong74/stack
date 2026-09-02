@@ -20,7 +20,7 @@ CONSOLES** went too (#379/#380 — the strip, `TabTerminal*`, `agentConsole.ts`,
 **Auditor** with them, that session being its whole surface; the CURATOR is the only agent left, and
 `⌨` opens an ordinary unprimed session. **`notes` went with the Workbench** — its only reader — so
 the table, `/api/…/notes`, the ⌘K Notes scope and the ＋'s Thought composer are gone and the ＋ is
-roadmap-only. `#/control` renders `screens/ControlMock.tsx`. Rules that outlived their surface are
+roadmap-only. Rules that outlived their surface are
 kept below and SAY SO — a predicate written for a room is still the only definition of what it
 decided.
 
@@ -50,10 +50,9 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
 - `lib/route.ts` — hash router. `go.detail(slug, tab, highlight)` deep-links and **the TAB decides
   what `hl` means** (commit → activity, bug key → quality, row id → roadmap);
   legacy tab spellings still resolve rather than 404ing — `futures` and `notes` among them, so a
-  Polaris or Workbench bookmark lands on Overview carrying an `hl` no tab is left to highlight, and
-  ignoring one it does not recognise is the right nothing to do. `#/control` and anything under it
-  lands on the placeholder: it is linked from six topbars, and a dead link reads as a broken app
-  rather than as a surface being rebuilt.
+  Polaris or Workbench bookmark lands on Overview and ignores its `hl`. `#/control` and anything
+  under it lands on the placeholder (`screens/ControlMock.tsx`): the merged topbar links it, and a
+  dead link reads as a broken app, not as a surface being rebuilt.
 - `screens/` — `ls` is the index. The recipe library (`/api/tips`) has no screen and no way in from
   the UI: the corner dock that opened it is gone.
 - `lib/brief.ts` — the resume brief + the `DIRECTIVES` catalogue (keys mirror `SESSION_DEFAULTS`).
@@ -138,8 +137,10 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet. **NOTHING IN THE CLIENT
   EDITS THESE NOW** (#428) — the Timeline was their only editor — but they are still stored, served
   and baselined on create: data waiting for a surface, like branch previews. Do NOT tidy them away.
-- **The Roadmap is a BOARD** (#428, the ONLY thing on the tab) — no strip, no views, no boards
-  beside it. **Every lane renames and deletes, and the CATCH-ALL is the only reason that is safe:**
+- **The Roadmap is a BOARD** (#428, the ONLY thing on the tab; the rail labels it with the
+  PROJECT'S NAME, #433, and its key is still `roadmap`, so a coming-soon row may
+  wear `Roadmap`) — no strip, no views, no boards beside it. **Every lane renames and deletes,
+  and the CATCH-ALL is the only reason that is safe:**
   the four keys `listFor` returns (`idea`/`planned`/`progress`/`shipped`) are wiring, and deleting
   one would leave a derived card rendering in no column while still counting everywhere else — a
   silent loss. `RoadmapPlan.tsx` draws an UNFILED lane for any card whose key has no column, and
