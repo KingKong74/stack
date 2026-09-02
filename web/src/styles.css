@@ -707,15 +707,16 @@ a.tab { display: inline-block; }
 .tile .sub { font-size: 12px; line-height: 1.45; color: var(--muted); }
 
 /* ---- the auto-extract inbox: on screen only when a push left something ---- */
-.ov-inbox { background: var(--card); border: 1px solid var(--accent-tint-border); border-radius: 14px; padding: 14px 17px 15px; }
-.inbox-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.inbox-head .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-text); }
-.inbox-head .hint { font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-left: auto; }
-.inbox-rows { display: flex; flex-direction: column; margin-top: 6px; }
-.inbox-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; }
-.inbox-row + .inbox-row { border-top: 1px solid var(--line-2); }
-.inbox-row .txt { flex: 1; min-width: 0; font-size: 13px; line-height: 1.45; color: var(--body); }
-.inbox-tail { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line-2); }
+/* The cue that the Auto-ideas tab has something in it. A row, not the queue:
+   the queue is a tab of its own now (detail/AutoIdeas.tsx says why). */
+.ov-inbox-cue {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; width: 100%; text-align: left;
+  background: var(--card); border: 1px solid var(--accent-tint-border); border-radius: 14px;
+  padding: 13px 17px; cursor: pointer; transition: var(--transition-control);
+}
+.ov-inbox-cue:hover { border-color: var(--accent); background: var(--accent-tint); }
+.ov-inbox-cue .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-text); }
+.ov-inbox-cue .hint { font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-left: auto; }
 
 /* ---- a measured band ---- */
 .band { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px 18px; }
@@ -3951,6 +3952,83 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .k-progress .k-progress-track { height: 6px; border-radius: var(--radius-pill); background: var(--grey-750); overflow: hidden; }
 .k-progress .k-progress-fill { height: 100%; background: var(--viz-1); transition: width var(--dur-slow) var(--ease-out); }
 .k-progress .k-progress-fill.primary { background: var(--viz-2); }
+
+/* ============================================================
+   THE KIT'S TAB STRIP + the For-you panes it switches between
+   (components/TabStrip.tsx, detail/AutoIdeas.tsx)
+   ============================================================ */
+
+.k-tabs {
+  display: flex; align-items: center; gap: var(--space-6);
+  border-bottom: 1px solid var(--border-subtle); margin-bottom: var(--space-2);
+}
+.k-tab {
+  display: inline-flex; align-items: center; gap: 7px;
+  border: 0; background: transparent; cursor: pointer;
+  padding: 0 0 9px; font: var(--type-label); color: var(--text-tertiary);
+  box-shadow: none; transition: var(--transition-control);
+}
+.k-tab:hover { color: var(--text-secondary); }
+/* The underline is the selection; the colour alone would leave two tabs that
+   differ only in tone, which is the state a colour-blind reader cannot read. */
+.k-tab.on { color: var(--text-link); box-shadow: inset 0 -2px 0 var(--action-primary); }
+.k-tab .n {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 17px; height: 17px; padding: 0 5px; border-radius: var(--radius-sm);
+  background: var(--status-neutral-bg); color: var(--status-neutral-fg);
+  font: var(--weight-semibold) var(--text-2xs)/1 var(--font-mono);
+}
+.k-tab.on .n { background: var(--surface-selected); color: var(--text-link); }
+.k-tabs-right { margin-left: auto; padding-bottom: 6px; }
+
+/* ---- Auto-ideas ---- */
+.ai { display: flex; flex-direction: column; gap: var(--space-4); }
+.ai-lede {
+  font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty;
+  max-width: 78ch; margin-bottom: var(--space-2);
+}
+.ai-lede strong { color: var(--text-primary); font-weight: var(--weight-semibold); }
+.ai-row {
+  display: flex; gap: var(--space-5); align-items: flex-start;
+  background: var(--surface-raised); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-5) var(--space-6);
+  transition: var(--transition-control);
+}
+.ai-row:hover { background: var(--surface-card); border-color: var(--border-default); }
+.ai-ico {
+  width: 26px; height: 26px; flex: none; border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 12px;
+  background: var(--status-info-bg); color: var(--status-info-fg);
+}
+.ai-row.bug .ai-ico { background: var(--status-danger-bg); color: var(--status-danger-fg); }
+.ai-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.ai-top { display: flex; align-items: baseline; gap: var(--space-4); }
+.ai-title { font: var(--weight-medium) var(--text-md)/1.3 var(--font-sans); color: var(--text-primary); text-wrap: pretty; }
+.ai-when { margin-left: auto; flex: none; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ai-why { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+.ai-meta { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.ai-src { font: var(--type-code); color: var(--text-link); }
+.ai-signal { font: var(--type-caption); color: var(--text-tertiary); }
+.ai-origin {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
+  border-radius: var(--radius-pill); padding: 2px 7px; cursor: help;
+  background: var(--status-neutral-bg); color: var(--status-neutral-fg);
+}
+.ai-acts { display: flex; flex-direction: column; gap: var(--space-3); flex: none; }
+.ai-keep, .ai-dismiss {
+  border-radius: var(--radius-sm); padding: 5px 10px; cursor: pointer; white-space: nowrap;
+  font: var(--type-label); transition: var(--transition-control);
+}
+.ai-keep { background: var(--action-primary); border: 1px solid var(--action-primary); color: var(--on-accent); }
+.ai-keep:hover { background: var(--accent-deep); }
+.ai-dismiss { background: transparent; border: 1px solid var(--border-default); color: var(--text-tertiary); }
+.ai-dismiss:hover { border-color: var(--critical); color: var(--critical-text); }
+.ai-empty {
+  background: var(--surface-raised); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-7);
+}
+.ai-empty .h { font: var(--type-heading); color: var(--text-primary); margin-bottom: var(--space-3); }
+.ai-empty p { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; max-width: 72ch; }
 
 /* ---------- narrow: the rail lies down ---------- */
 @media (max-width: 900px) {

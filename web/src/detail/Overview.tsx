@@ -53,11 +53,18 @@ import { MIN_PER_WEEK, fmtDur } from '../lib/plan';
 import { go } from '../lib/route';
 
 // One row of the project-scoped review queue (hook-created, not yet reviewed).
+// One held row in the review inbox. It grew the last three fields when the
+// inbox left the Overview for its own For-you tab (AutoIdeas.tsx): a queue with
+// room to breathe can say what a row IS and where it came from, which is the
+// difference between approving it and approving a title.
 export interface ReviewEntry {
   kind: 'bug' | 'roadmap';
   key: string;      // bug key or row id
   title: string;
   meta: string;     // severity / bucket / 'idea'
+  note?: string;    // what it says — a roadmap item's note ('' for a bug)
+  origin?: string;  // which source held it: 'hook' | 'fly'
+  when?: string;    // human-readable age
 }
 
 export interface DeployPatch { deploy_platform: string; logs_url: string; status: ProjectStatus }
@@ -1046,7 +1053,7 @@ export function Overview({
   project, phase, activity, directives, reviewQueue, roadmap, bugs, cadence, lastPushAt,
   northStar, onSaveNorthStar,
   pulse, pulseError,
-  onViewAll, onChangeDirectives, onReviewKeep, onReviewDismiss, onSaveDeploy, onSaveStack,
+  onViewAll, onChangeDirectives, onOpenAutoIdeas, onSaveDeploy, onSaveStack,
   keepResumeCard = true, onJumpBack,
 }: {
   project: Project; phase: string;
@@ -1057,7 +1064,8 @@ export function Overview({
   /** null = the second trip has not answered yet; see `pulseError` for a failure. */
   pulse: ProjectPulse | null; pulseError: string;
   onViewAll: () => void; onChangeDirectives: (next: string[]) => void;
-  onReviewKeep: (e: ReviewEntry) => void; onReviewDismiss: (e: ReviewEntry) => void;
+  /** The queue moved to its own tab; this is the cue that opens it. */
+  onOpenAutoIdeas: () => void;
   onSaveDeploy: (patch: DeployPatch) => void; onSaveStack: (next: string[]) => void;
   keepResumeCard?: boolean;
   onJumpBack?: () => void;
@@ -1239,31 +1247,20 @@ export function Overview({
         </div>
       </div>
 
-      {/* ---- the auto-extract inbox: only when a push actually left something ---- */}
+      {/* THE AUTO-EXTRACT INBOX IS THE AUTO-IDEAS TAB NOW (detail/AutoIdeas.tsx).
+          As a band here it was capped at four rows with "N more waiting" under
+          it, and the only way to reach the fifth was to keep one of the first
+          four — a queue you cannot see all of is a queue you approve blind.
+          What stays here is the one line that says the queue EXISTS, because a
+          held item nobody knows about is the failure this must not have. */}
       {reviewQueue.length > 0 && (
-        <div className="ov-inbox">
-          <div className="inbox-head">
-            <span className="lbl">✦ Auto-extracted from your pushes</span>
-            <span className="rail-count">{reviewQueue.length}</span>
-            <span className="hint">
-              a hook-extracted roadmap item is held from the auto runner until you keep it
-            </span>
-          </div>
-          <div className="inbox-rows">
-            {reviewQueue.slice(0, 4).map((e) => (
-              <div className="inbox-row" key={`${e.kind}:${e.key}`}>
-                <span className={`review-kind ${e.kind}`}>
-                  {e.kind === 'bug' ? e.key : e.kind === 'roadmap' ? 'roadmap' : 'idea'}
-                </span>
-                <span className="txt">{e.title}</span>
-                <button className="review-keep" onClick={() => onReviewKeep(e)} title="Keep — mark reviewed">✓ Keep</button>
-                <button className="review-dismiss" onClick={() => onReviewDismiss(e)}
-                  title="Dismiss — delete and don't re-extract">✕ Dismiss</button>
-              </div>
-            ))}
-          </div>
-          {reviewQueue.length > 4 && <div className="inbox-tail">{reviewQueue.length - 4} more waiting</div>}
-        </div>
+        <button className="ov-inbox-cue" onClick={onOpenAutoIdeas}>
+          <span className="lbl">✦ Auto-extracted from your pushes</span>
+          <span className="rail-count">{reviewQueue.length}</span>
+          <span className="hint">
+            held from the overnight runner until you keep them — open Auto-ideas →
+          </span>
+        </button>
       )}
 
       <Spine stages={stages} slug={slug} />

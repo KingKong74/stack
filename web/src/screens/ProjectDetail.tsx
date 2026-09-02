@@ -18,6 +18,9 @@ import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview
 import { Quality } from '../detail/Quality';
 import { RoadmapTab } from '../detail/RoadmapTab';
 import { Activity } from '../detail/Activity';
+import { AutoIdeas } from '../detail/AutoIdeas';
+import { TabStrip } from '../components/TabStrip';
+import { timeAgo } from '../lib/ui';
 import { Modal } from '../components/Modal';
 import { BugModal } from '../components/BugModal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
@@ -27,13 +30,23 @@ import { newItemSched } from '../lib/plan';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
 // (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
-type Tab = 'overview' | 'quality' | 'roadmap' | 'activity';
+//
+// FOR YOU IS THREE OF THESE KEYS, NOT ONE. `overview`, `activity` and `auto`
+// are the kit's three For-you tabs (ForYouScreen.jsx), and each keeps its own
+// ROUTE key rather than becoming component state: `#/p/x/activity` is in
+// bookmarks and in every older search payload, `hl` on it means a commit hash,
+// and Quality's "open the commit that caught this" link targets it. An inner
+// strip that swallowed the key would have broken all three at once.
+type Tab = 'overview' | 'quality' | 'roadmap' | 'activity' | 'auto';
+/** The keys that land on the For-you screen, in strip order. */
+const FORYOU_TABS: Tab[] = ['overview', 'activity', 'auto'];
+const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
 // The four readings of a project. `navSections` below is the ONE list of them
 // — #432 moved them from a horizontal strip into the console's left rail, and
 // a second copy anywhere is how the two would drift.
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
 
-const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity']);
+const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity', 'auto']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
 // payload from an older server, a ⌘K target) keep working. 'tips' still
 // resolves too: the recipe library was a tab, then the bottom-left dock, and
@@ -270,9 +283,16 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   // the same place. Held and invisible is unapprovable.
   const reviewQueue: ReviewEntry[] = [
     ...bugs.filter((b) => b.source === 'hook' && !b.reviewed)
-      .map((b) => ({ kind: 'bug' as const, key: b.id, title: b.title, meta: b.severity })),
+      .map((b) => ({
+        kind: 'bug' as const, key: b.id, title: b.title, meta: `${b.severity} severity`,
+        origin: 'hook', when: b.meta,
+      })),
     ...allRoadmap.filter((r) => (r.source === 'hook' || r.source === 'fly') && !r.reviewed)
-      .map((r) => ({ kind: 'roadmap' as const, key: String(r.id), title: r.title, meta: r.bucket })),
+      .map((r) => ({
+        kind: 'roadmap' as const, key: String(r.id), title: r.title,
+        meta: [r.bucket, r.area].filter(Boolean).join(' · '),
+        note: r.note, origin: r.source, when: timeAgo(r.updatedAt),
+      })),
   ];
 
   const openRoadCount = allRoadmap.filter((r) => !r.done).length;
@@ -617,10 +637,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           key: 'quality', label: 'Quality', icon: NavIcons.check, count: needsAttention, bad: true,
           menu: placeMenu(hrefTo.detail(slug, 'quality'), 'quality'), onClick: () => setTab('quality'),
         },
-        {
-          key: 'activity', label: 'Activity', icon: NavIcons.clock,
-          menu: placeMenu(hrefTo.detail(slug, 'activity'), 'activity'), onClick: () => setTab('activity'),
-        },
       ],
     },
     {
@@ -655,7 +671,10 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         } />
 
       <div className="con-shell">
-        <ConsoleNav active={tab} sections={navSections} footer={
+        {/* THE RAIL'S SELECTION IS THE SCREEN, NOT THE ROUTE KEY. Activity and
+            Auto-ideas are For-you tabs, so all three light the same row —
+            otherwise pressing a strip tab silently deselects the rail. */}
+        <ConsoleNav active={isForYou(tab) ? 'overview' : tab} sections={navSections} footer={
           <a className="con-navitem" href={hrefTo.terminal(slug)}>
             <span className="con-navico">{NavIcons.terminal}</span>
             <span className="con-navlabel">Terminal</span>
@@ -716,6 +735,21 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             left: `⌨` in the topbar and the rail's footer open one in this
             project's directory, unprimed and belonging to nobody. */}
 
+        {/* FOR YOU — the kit's ForYouScreen: one strip, three panes. The strip
+            writes the ROUTE key (see the Tab union), so a deep link into any of
+            the three still lands where it always did and every `hl` keeps its
+            meaning. Auto-ideas wears its count because that count is the whole
+            reason to press it; Overview and Activity carry none. */}
+        {isForYou(tab) && (
+          <TabStrip<Tab>
+            tabs={[
+              { key: 'overview', label: 'Overview' },
+              { key: 'activity', label: 'Activity' },
+              { key: 'auto', label: 'Auto-ideas', count: reviewQueue.length },
+            ]}
+            active={tab} onPick={setTab} />
+        )}
+
         {tab === 'overview' && (
           <Overview project={project} phase={data.currentPhase} activity={activity} directives={data.directives}
             reviewQueue={reviewQueue} keepResumeCard={data.keepResumeCard}
@@ -725,8 +759,11 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             pulse={pulse} pulseError={pulseError}
             onViewAll={viewAll} onJumpBack={() => setTab('roadmap')}
             onChangeDirectives={changeDirectives}
-            onReviewKeep={reviewKeep} onReviewDismiss={reviewDismiss} onSaveDeploy={saveDeploy}
+            onOpenAutoIdeas={() => setTab('auto')} onSaveDeploy={saveDeploy}
             onSaveStack={saveStack} />
+        )}
+        {tab === 'auto' && (
+          <AutoIdeas queue={reviewQueue} onKeep={reviewKeep} onDismiss={reviewDismiss} />
         )}
         {tab === 'quality' && (
           <Quality slug={slug} checks={data.checks} bugs={bugs} siteUrl={project.siteUrl}
