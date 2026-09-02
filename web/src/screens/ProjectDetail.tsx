@@ -19,6 +19,8 @@ import { Quality } from '../detail/Quality';
 import { RoadmapTab } from '../detail/RoadmapTab';
 import { Activity } from '../detail/Activity';
 import { AutoIdeas } from '../detail/AutoIdeas';
+import { Ideas } from '../detail/Ideas';
+import { Plans } from '../detail/Plans';
 import { TabStrip } from '../components/TabStrip';
 import { timeAgo } from '../lib/ui';
 import { Modal } from '../components/Modal';
@@ -26,6 +28,8 @@ import { BugModal } from '../components/BugModal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
+import { isApproved } from '../lib/approval';
+import { DEFAULT_LABELS } from '../lib/labels';
 import { newItemSched } from '../lib/plan';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
@@ -37,7 +41,7 @@ import { newItemSched } from '../lib/plan';
 // bookmarks and in every older search payload, `hl` on it means a commit hash,
 // and Quality's "open the commit that caught this" link targets it. An inner
 // strip that swallowed the key would have broken all three at once.
-type Tab = 'overview' | 'quality' | 'roadmap' | 'activity' | 'auto';
+type Tab = 'overview' | 'quality' | 'roadmap' | 'activity' | 'auto' | 'ideas' | 'plans';
 /** The keys that land on the For-you screen, in strip order. */
 const FORYOU_TABS: Tab[] = ['overview', 'activity', 'auto'];
 const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
@@ -46,7 +50,7 @@ const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
 // a second copy anywhere is how the two would drift.
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
 
-const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity', 'auto']);
+const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity', 'auto', 'ideas', 'plans']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
 // payload from an older server, a ⌘K target) keep working. 'tips' still
 // resolves too: the recipe library was a tab, then the bottom-left dock, and
@@ -296,6 +300,10 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   ];
 
   const openRoadCount = allRoadmap.filter((r) => !r.done).length;
+  // The Roadmap row's count is the CAPTURE INBOX, not the whole board: kept,
+  // unstarted, unclaimed. Same predicate Ideas.tsx sorts into three columns —
+  // a row's count and the screen behind it must agree or one of them is lying.
+  const captureCount = allRoadmap.filter((r) => !r.done && !r.claimedBy && isApproved(r)).length;
   const failingChecks = data.checks.filter((c) => c.lastStatus === 'fail').length;
   // The Quality tab's single badge (#278): red checks plus serious open bugs.
   const needsAttention = failingChecks
@@ -416,6 +424,11 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
     setData({ ...data, roadmap: next });
   };
   const replaceRoadItem = (updated: RoadmapItem) => replaceRoadItems([updated]);
+  // Parking from the capture board. Parked (`skipped`) is one of the three
+  // states in schema.sql and is neither archiving nor deleting, which is why it
+  // is a toggle: the board's card has the same pair, through the same PATCH.
+  const parkItem = (it: RoadmapItem, parked: boolean) =>
+    guard(async () => { replaceRoadItem(await patchRoadmapItem(slug, it.id, { skipped: parked })); });
   const addRoadItem = (created: RoadmapItem) => {
     setData({ ...data, roadmap: { ...roadmap, [created.bucket]: [...roadmap[created.bucket], created] } });
   };
@@ -631,8 +644,14 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           menuLabel: `${project.name} board`,
           menu: placeMenu(hrefTo.detail(slug, 'roadmap'), 'board'), onClick: () => setTab('roadmap'),
         },
-        { key: 'soon:roadmap', label: 'Roadmap', icon: NavIcons.map, soon: true },
-        { key: 'soon:plans', label: 'Plans', icon: NavIcons.route, soon: true },
+        {
+          key: 'ideas', label: 'Roadmap', icon: NavIcons.map, count: captureCount,
+          menu: placeMenu(hrefTo.detail(slug, 'ideas'), 'ideas'), onClick: () => setTab('ideas'),
+        },
+        {
+          key: 'plans', label: 'Plans', icon: NavIcons.route,
+          menu: placeMenu(hrefTo.detail(slug, 'plans'), 'plans'), onClick: () => setTab('plans'),
+        },
         {
           key: 'quality', label: 'Quality', icon: NavIcons.check, count: needsAttention, bad: true,
           menu: placeMenu(hrefTo.detail(slug, 'quality'), 'quality'), onClick: () => setTab('quality'),
@@ -793,6 +812,16 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
               onDelete: (it) => setConfirmRoadDelete(it),
               onBranch: (it: RoadmapItem) => branchItem(it),
             }} />
+        )}
+        {tab === 'ideas' && (
+          <Ideas roadmap={roadmap} labels={DEFAULT_LABELS}
+            onOpen={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, editing: it })}
+            onPark={parkItem}
+            onDelete={(it) => setConfirmRoadDelete(it)} />
+        )}
+        {tab === 'plans' && (
+          <Plans roadmap={roadmap} weekZero={project.weekZero}
+            onOpen={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, editing: it })} />
         )}
         {tab === 'activity' && (
           <Activity activity={activity} highlightRef={highlightRef} linkedBugId={linkedBugId} onClear={() => setHighlightRef(null)} />

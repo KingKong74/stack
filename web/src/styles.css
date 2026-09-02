@@ -3542,12 +3542,17 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 /* #227 — the desire tier, READ-ONLY on a card (RoadmapPlan's header says why).
    The four ranks wear the same colours the modal's tier seg does, so one
    ranking reads as one ranking wherever it is drawn. */
-.rp-tier { font-family: var(--mono); font-size: 9.5px; font-weight: 700; line-height: 1; color: #fff;
-  background: var(--paused); border-radius: 5px; padding: 3px 5px; }
-.rp-tier.tS { background: var(--accent); }
-.rp-tier.tA { background: var(--building); }
-.rp-tier.tB { background: var(--sage); }
-.rp-tier.tC { background: var(--paused); }
+/* A FILL TONE IS NOT A TEXT TONE, once more: --building and --sage are LIGHT,
+   so the flat `color:#fff` this chip shipped with is unreadable on two of its
+   four ranks — it just never got measured, because no card on screen wore a
+   tier when the audit last ran. Each rank names the ink that suits its ground,
+   exactly as the modal's tier seg already does. */
+.rp-tier { font-family: var(--mono); font-size: 9.5px; font-weight: 700; line-height: 1;
+  color: var(--white); background: var(--paused); border-radius: 5px; padding: 3px 5px; }
+.rp-tier.tS { background: var(--accent); color: var(--on-accent); }
+.rp-tier.tA { background: var(--building); color: var(--text-inverse); }
+.rp-tier.tB { background: var(--sage); color: var(--text-inverse); }
+.rp-tier.tC { background: var(--paused); color: var(--white); }
 /* Parked, said in words on the card as well as in its border: a card the
    runner will not pick has to say so, not just look slightly different. */
 .rp-parked { font-family: var(--mono); font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase;
@@ -4029,6 +4034,128 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 }
 .ai-empty .h { font: var(--type-heading); color: var(--text-primary); margin-bottom: var(--space-3); }
 .ai-empty p { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; max-width: 72ch; }
+
+/* ============================================================
+   THE ROADMAP TAB — the capture inbox (detail/Ideas.tsx)
+   ============================================================ */
+
+.ideas { display: flex; flex-direction: column; gap: var(--space-6); }
+.ideas-head { display: flex; align-items: flex-end; gap: var(--space-6); flex-wrap: wrap; }
+.ideas-lede { flex: 1; min-width: 320px; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; max-width: 80ch; }
+.ideas-count { font: var(--weight-regular) var(--text-xs)/1.4 var(--font-mono); color: var(--text-tertiary); }
+.ideas-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-5); align-items: start; }
+.ideas-col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.ideas-colhead { display: flex; align-items: baseline; gap: var(--space-3); padding: 0 var(--space-2); flex-wrap: wrap; }
+.ideas-colhead .lbl {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+/* Ready is the column that means "pick this up", so it is the one drawn in the
+   accent. The other two are places things wait. */
+.ideas-colhead .lbl.ready { color: var(--accent-text); }
+.ideas-colhead .n { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ideas-colhead .note { flex-basis: 100%; font: var(--type-caption); color: var(--text-tertiary); }
+.ideas-empty {
+  font: var(--type-caption); color: var(--text-tertiary);
+  border: 1px dashed var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-5);
+}
+.idea {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-4);
+  cursor: pointer; transition: var(--transition-control);
+}
+.idea:hover, .idea.open { background: var(--surface-overlay); border-color: var(--border-strong); }
+.idea.ready { border-left: 2px solid var(--accent); }
+.idea.parked { border-style: dashed; }
+.idea-top { display: flex; align-items: flex-start; gap: var(--space-4); }
+.idea-top .mark { color: var(--text-tertiary); font-size: 11px; line-height: 1.4; flex: none; }
+.idea.ready .idea-top .mark { color: var(--accent-text); }
+.idea-top .t { flex: 1; min-width: 0; font: var(--weight-medium) var(--text-md)/1.3 var(--font-sans); color: var(--text-primary); text-wrap: pretty; }
+.idea-top .est { flex: none; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.idea-note { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+.idea-note.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.idea-meta { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.idea-meta .id { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.idea-meta .bucket, .idea-meta .area {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
+  background: var(--status-neutral-bg); color: var(--status-neutral-fg);
+  border-radius: var(--radius-pill); padding: 2px 7px;
+}
+.idea-meta .age { margin-left: auto; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.idea-acts {
+  display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap;
+  padding-top: var(--space-3); border-top: 1px solid var(--border-subtle);
+}
+.idea-acts .from { font: var(--type-caption); color: var(--text-tertiary); flex-basis: 100%; }
+
+/* ============================================================
+   THE PLANS TAB — the stored schedule, read-only (detail/Plans.tsx)
+   ============================================================ */
+
+.plans { display: flex; flex-direction: column; gap: var(--space-6); }
+.plans-head { display: flex; align-items: flex-end; gap: var(--space-6); flex-wrap: wrap; }
+.plans-lede { flex: 1; min-width: 320px; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; max-width: 80ch; }
+.plans-count { font: var(--weight-regular) var(--text-xs)/1.4 var(--font-mono); color: var(--text-tertiary); }
+/* The table windows its own width, so the PAGE never scrolls sideways — the
+   same rule the board's columns follow. */
+.plans-scroll { overflow-x: auto; }
+.plans-grid {
+  min-width: 1080px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  overflow: hidden; background: var(--surface-canvas);
+}
+.pg-head, .pg-row, .pg-grouphead { display: flex; align-items: center; }
+.pg-head {
+  background: var(--surface-sunken); border-bottom: 1px solid var(--border-subtle);
+  font: var(--type-label); color: var(--text-tertiary);
+}
+.pg-head > span { padding: var(--space-4) var(--space-5); border-right: 1px solid var(--border-subtle); }
+.pg-head > span:last-child { border-right: 0; }
+.pg-grouphead {
+  gap: var(--space-4); padding: var(--space-4) var(--space-5);
+  background: var(--surface-raised); border-bottom: 1px solid var(--border-subtle);
+}
+.pg-grouphead .nm { font: var(--weight-semibold) var(--text-sm)/1 var(--font-sans); color: var(--text-primary); }
+.pg-grouphead .sub { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.pg-grouphead .pg-meter { width: 170px; margin-left: auto; }
+.pg-row { border-bottom: 1px solid var(--border-subtle); cursor: pointer; transition: var(--transition-control); }
+.pg-row:hover { background: var(--surface-hover); }
+.pg-row:last-child { border-bottom: 0; }
+.pg-row > span { padding: 0 var(--space-5); height: 40px; display: flex; align-items: center; gap: var(--space-3); min-width: 0; border-right: 1px solid var(--border-subtle); }
+.pg-row > span:last-child { border-right: 0; }
+.c-n { flex: 0 0 44px; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.c-item { flex: 1 1 320px; }
+.c-item .id { flex: none; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); }
+.c-item .t { min-width: 0; font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-status { flex: 0 0 128px; }
+.c-branch { flex: 0 0 210px; }
+.c-branch .br { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-date { flex: 0 0 96px; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
+.c-pri { flex: 0 0 128px; }
+.c-pri .bucket { font: var(--type-caption); color: var(--text-tertiary); text-transform: capitalize; }
+.c-prog { flex: 0 0 150px; }
+.c-verdict { flex: 0 0 140px; }
+.pg-row .dash, .pg-grouphead .dash { color: var(--text-disabled); font-family: var(--font-mono); font-size: var(--text-xs); }
+.pg-tag {
+  font: var(--type-label); border-radius: var(--radius-sm); padding: 2px 8px; white-space: nowrap;
+  background: var(--status-neutral-bg); color: var(--status-neutral-fg);
+}
+.pg-tag.info { background: var(--status-info-bg); color: var(--status-info-fg); }
+.pg-tag.success { background: var(--status-success-bg); color: var(--status-success-fg); }
+.pg-tag.warning { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.pg-meter { flex: 1; display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.pg-meter .track { flex: 1; height: 5px; border-radius: var(--radius-pill); background: var(--grey-750); overflow: hidden; }
+.pg-meter .fill { display: block; height: 100%; background: var(--viz-2); }
+.pg-meter .fill.full { background: var(--live); }
+.pg-meter .pct { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+/* A schedule that moved off the baseline it was given. Never drawn when there
+   IS no baseline — that is "never committed to", not "on plan". */
+.c-verdict .slip { margin-left: auto; font-size: 9px; color: var(--building); cursor: help; }
+.pg-empty { padding: var(--space-7); font: var(--type-body-sm); color: var(--text-secondary); }
+
+@media (max-width: 900px) {
+  .ideas-cols { grid-template-columns: 1fr; }
+}
 
 /* ---------- narrow: the rail lies down ---------- */
 @media (max-width: 900px) {
