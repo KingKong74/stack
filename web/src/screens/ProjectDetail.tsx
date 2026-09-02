@@ -589,11 +589,16 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
     {
       id: 'home',
       items: [
+        // FOR YOU IS THE OVERVIEW, one row rather than two. The kit's own shape
+        // says so: its rail has no Overview row at all — Overview is the first
+        // TAB inside For you, because "what is waiting on me" and "how is this
+        // project" are one question asked on open, and two rows made you pick
+        // which half to read first. Its KEY is still `overview`, so every deep
+        // link, legacy spelling and `hl` target resolves as before.
         {
-          key: 'overview', label: 'Overview', icon: NavIcons.layers,
+          key: 'overview', label: 'For you', icon: NavIcons.inbox,
           menu: placeMenu(hrefTo.detail(slug, 'overview'), 'overview'), onClick: () => setTab('overview'),
         },
-        { key: 'soon:foryou', label: 'For you', icon: NavIcons.sparkle, soon: true },
         { key: 'soon:starred', label: 'Starred', icon: NavIcons.star, soon: true },
       ],
     },
