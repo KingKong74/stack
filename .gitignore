@@ -15,3 +15,11 @@ __pycache__/
 # scripts/playwright's own run artefacts (#291) — screenshots + report.json
 scripts/playwright/screenshots/
 scripts/playwright/report.json
+
+# design-sync (/design-sync): ds-bundle/ is the GENERATED upload — rebuilt from
+# web/src/styles.css in two commands, so it is an artefact, not source. What IS
+# source lives in .design-sync/ and is committed: the generators, the gate, the
+# conventions header the design agent reads, and the notes.
+ds-bundle/
+.design-sync/.shots/
+.design-sync/.verify.json

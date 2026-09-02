@@ -1,0 +1,21 @@
+{
+  "projectId": "56c711ab-ce49-4f1d-bacd-68fee79ba196",
+  "projectName": "Stack UI",
+  "shape": "package",
+  "offScript": true,
+  "readmeHeader": ".design-sync/conventions.md",
+  "out": "ds-bundle",
+  "generate": [
+    "node .design-sync/tokens-split.mjs",
+    "node .design-sync/cards.mjs"
+  ],
+  "gate": [
+    "node .design-sync/validate-conventions.mjs",
+    "node .design-sync/verify-cards.mjs"
+  ],
+  "scope": "palette only — tokens, the alias layer, and the guideline cards. No components.",
+  "source": {
+    "palette": "web/src/styles.css (the :root block)",
+    "fonts": "web/index.html (the Google Fonts link, lifted into the bundle's styles.css)"
+  }
+}
