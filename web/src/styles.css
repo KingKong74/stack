@@ -4137,13 +4137,19 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .c-item .t { min-width: 0; font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-status { flex: 0 0 118px; }
 .c-branch { flex: 0 0 190px; }
-.c-branch .br { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The line box has to fit the glyph box: at /1 with overflow hidden the
+   descenders on a branch name are clipped, which the smoke measures. */
+.c-branch .br { font: var(--weight-regular) var(--text-xs)/1.4 var(--font-mono); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-date { flex: 0 0 88px; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
 .c-pri { flex: 0 0 118px; }
 .c-pri .bucket { font: var(--type-caption); color: var(--text-tertiary); text-transform: capitalize; }
 .c-prog { flex: 0 0 140px; }
 .c-verdict { flex: 0 0 128px; }
-.pg-row .dash, .pg-grouphead .dash { color: var(--text-disabled); font-family: var(--font-mono); font-size: var(--text-xs); }
+/* A dash is not decoration — it is the answer "nothing recorded this", and the
+   rule against a NULL rendering as a pass applies to whether you can READ it.
+   --text-disabled sits at 3.5:1 on the canvas, so the dash takes the tertiary
+   tone every other quiet label uses. */
+.pg-row .dash, .pg-grouphead .dash { color: var(--text-tertiary); font-family: var(--font-mono); font-size: var(--text-xs); }
 .pg-tag {
   font: var(--type-label); border-radius: var(--radius-sm); padding: 2px 8px; white-space: nowrap;
   background: var(--status-neutral-bg); color: var(--status-neutral-fg);

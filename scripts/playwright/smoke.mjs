@@ -116,6 +116,13 @@ export const SCREENS = [
     interactions: ROADMAP_PANELS,
   },
   { id: 'project-activity', label: 'Project — Activity', path: '#/p/<slug>/activity' },
+  // The three screens the console kit added. Activity above and Auto-ideas
+  // here are two tabs of ONE screen (For you) reached by two routes, and both
+  // are walked on purpose: the route is the contract, and a strip that stopped
+  // honouring one of its keys would still render perfectly on the other.
+  { id: 'project-auto', label: 'Project — Auto-ideas', path: '#/p/<slug>/auto' },
+  { id: 'project-ideas', label: 'Project — Roadmap capture', path: '#/p/<slug>/ideas' },
+  { id: 'project-plans', label: 'Project — Plans', path: '#/p/<slug>/plans' },
 ];
 
 // desktop = the ordinary window this app is designed for; narrow = where a
