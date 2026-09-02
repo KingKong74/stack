@@ -4105,8 +4105,11 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 /* The table windows its own width, so the PAGE never scrolls sideways — the
    same rule the board's columns follow. */
 .plans-scroll { overflow-x: auto; }
+/* Wide enough that the TITLE gets room after the fixed columns have taken
+   theirs: at 1080 the work item was the only elastic column and it ellipsed to
+   nothing, which is the one column you cannot read the table without. */
 .plans-grid {
-  min-width: 1080px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  min-width: 1220px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
   overflow: hidden; background: var(--surface-canvas);
 }
 .pg-head, .pg-row, .pg-grouphead { display: flex; align-items: center; }
@@ -4132,14 +4135,14 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .c-item { flex: 1 1 320px; }
 .c-item .id { flex: none; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); }
 .c-item .t { min-width: 0; font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.c-status { flex: 0 0 128px; }
-.c-branch { flex: 0 0 210px; }
+.c-status { flex: 0 0 118px; }
+.c-branch { flex: 0 0 190px; }
 .c-branch .br { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.c-date { flex: 0 0 96px; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
-.c-pri { flex: 0 0 128px; }
+.c-date { flex: 0 0 88px; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
+.c-pri { flex: 0 0 118px; }
 .c-pri .bucket { font: var(--type-caption); color: var(--text-tertiary); text-transform: capitalize; }
-.c-prog { flex: 0 0 150px; }
-.c-verdict { flex: 0 0 140px; }
+.c-prog { flex: 0 0 140px; }
+.c-verdict { flex: 0 0 128px; }
 .pg-row .dash, .pg-grouphead .dash { color: var(--text-disabled); font-family: var(--font-mono); font-size: var(--text-xs); }
 .pg-tag {
   font: var(--type-label); border-radius: var(--radius-sm); padding: 2px 8px; white-space: nowrap;

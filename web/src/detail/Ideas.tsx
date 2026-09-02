@@ -139,7 +139,11 @@ function IdeaCard({ item, labels, ready, open, onToggle, onOpen, onPark, onDelet
     <div className={`idea${open ? ' open' : ''}${ready ? ' ready' : ''}${item.skipped ? ' parked' : ''}`}
       onClick={onToggle}>
       <div className="idea-top">
-        <span className="mark" aria-hidden="true">{item.skipped ? '⏸' : '✦'}</span>
+        {/* One glyph for every card. A pause sign for the parked ones was the
+            obvious idea and it rendered as a tofu box in a plain headless
+            browser — the dashed border and the column it sits under already
+            say parked, in a font every machine has. */}
+        <span className="mark" aria-hidden="true">✦</span>
         <span className="t">{item.title}</span>
         {item.estimate != null && <span className="est">{item.estimate}w</span>}
       </div>
