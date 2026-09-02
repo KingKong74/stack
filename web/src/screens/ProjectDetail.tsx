@@ -27,15 +27,9 @@ import { newItemSched } from '../lib/plan';
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
 // (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
 type Tab = 'overview' | 'quality' | 'roadmap' | 'activity';
-// The four readings of a project, in rail order. This stays the ONE list —
-// #432 moved it from a horizontal strip into the console's left rail, and a
-// second copy inside the rail is how the two would drift.
-const TABS: { key: Tab; label: string; icon: ReactNode }[] = [
-  { key: 'overview', label: 'Overview', icon: NavIcons.layers },
-  { key: 'quality', label: 'Quality', icon: NavIcons.check },
-  { key: 'roadmap', label: 'Roadmap', icon: NavIcons.grid },
-  { key: 'activity', label: 'Activity', icon: NavIcons.clock },
-];
+// The four readings of a project. `navSections` below is the ONE list of them
+// — #432 moved them from a horizontal strip into the console's left rail, and
+// a second copy anywhere is how the two would drift.
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
 
 const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity']);
@@ -546,24 +540,51 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
 
   const openBugLink = (hash: string) => { setHighlightRef(hash); setTab('activity'); };
   const viewAll = () => { setHighlightRef(null); setTab('activity'); };
-  // THE RAIL'S CONTENTS (#432). Workspace is the four readings of THIS
-  // project — the old tab strip, one per row — and Spaces is every other app.
+  // THE RAIL'S CONTENTS (#432). Three sections: an unlabelled top block that is
+  // where you LAND and what is yours, Workspace as the readings of THIS
+  // project, and Spaces as every other app.
+  //
+  // THE BOARD'S ROW IS THE PROJECT'S NAME, not "Roadmap" — the board is the
+  // project's own surface, so it wears the project's name and its tint dot,
+  // the same identity Spaces gives every other app. `Roadmap` is a DIFFERENT
+  // thing now and takes the name back as a coming-soon row beside it; the tab
+  // KEY stays 'roadmap', so every deep link, legacy spelling and `hl` target
+  // keeps resolving exactly as before — this is a label change, not a route.
+  //
+  // A `soon` row is announced and inert (ConsoleNav's header says why). It has
+  // no tab key, so nothing about `asTab` or the route needs to know it exists.
+  //
   // The counts are the ones the strip already wore: Quality carries what is
   // actually WRONG (red checks + serious open bugs) in the critical tone, and
-  // Roadmap carries how much is open, which is volume and not alarm.
+  // the board carries how much is open, which is volume and not alarm.
   const navSections: NavSection[] = [
     {
-      label: 'Workspace',
-      items: TABS.map((t) => ({
-        key: t.key,
-        label: t.label,
-        icon: t.icon,
-        count: t.key === 'quality' ? needsAttention : t.key === 'roadmap' ? openRoadCount : 0,
-        bad: t.key === 'quality',
-        onClick: () => setTab(t.key),
-      })),
+      id: 'home',
+      items: [
+        { key: 'overview', label: 'Overview', icon: NavIcons.layers, onClick: () => setTab('overview') },
+        { key: 'soon:foryou', label: 'For you', icon: NavIcons.sparkle, soon: true },
+        { key: 'soon:starred', label: 'Starred', icon: NavIcons.star, soon: true },
+      ],
     },
     {
+      id: 'workspace',
+      label: 'Workspace',
+      items: [
+        {
+          key: 'roadmap', label: project.name, icon: <SpaceDot tint={project.tint} />,
+          count: openRoadCount, onClick: () => setTab('roadmap'),
+        },
+        { key: 'soon:roadmap', label: 'Roadmap', icon: NavIcons.map, soon: true },
+        { key: 'soon:plans', label: 'Plans', icon: NavIcons.route, soon: true },
+        {
+          key: 'quality', label: 'Quality', icon: NavIcons.check,
+          count: needsAttention, bad: true, onClick: () => setTab('quality'),
+        },
+        { key: 'activity', label: 'Activity', icon: NavIcons.clock, onClick: () => setTab('activity') },
+      ],
+    },
+    {
+      id: 'spaces',
       label: 'Spaces',
       items: spaces.map((sp) => ({
         key: `space:${sp.id}`,

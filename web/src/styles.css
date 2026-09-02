@@ -3763,10 +3763,22 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   padding-bottom: 72px;
 }
 .con-navgroup { display: flex; flex-direction: column; gap: var(--space-2); }
+.con-navitems { display: flex; flex-direction: column; gap: var(--space-2); }
+/* A section folds from its label, so the label is a button — same type and
+   tone it had as a heading, with a chevron that turns to say which way it is.
+   The fold is display:none on the items rather than unmounting them, so the
+   narrow layout below can show them again (ConsoleNav's header says why). */
 .con-seclabel {
+  display: flex; align-items: center; gap: var(--space-2); width: 100%;
+  border: 0; background: transparent; cursor: pointer; text-align: left;
   font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
   color: var(--text-tertiary); padding: var(--space-6) 10px var(--space-2);
+  transition: var(--transition-control);
 }
+.con-seclabel:hover { color: var(--text-secondary); }
+.con-secchev { flex: none; transition: transform var(--dur-fast) var(--ease-out); }
+.con-navgroup.shut .con-secchev { transform: rotate(-90deg); }
+.con-navgroup.shut .con-navitems { display: none; }
 .con-navitem {
   text-decoration: none;
   display: flex; align-items: center; gap: 10px; width: 100%;
@@ -3783,6 +3795,15 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .con-navlabel { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .con-navcount { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); flex: none; }
 .con-navcount.bad { color: var(--status-danger-fg); }
+/* An announced-but-unbuilt row: present, tagged on its face, and inert — it is
+   a div, so there is nothing to click and nothing to focus. */
+.con-navitem.soon { color: var(--text-tertiary); cursor: default; }
+.con-navitem.soon:hover { background: transparent; color: var(--text-tertiary); }
+.con-navsoon {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
+  color: var(--text-tertiary); background: var(--surface-raised);
+  border-radius: var(--radius-pill); padding: 2px 6px; flex: none;
+}
 .con-navfoot { margin-top: auto; padding-top: var(--space-6); }
 .con-spacedot { width: 8px; height: 8px; border-radius: var(--radius-xs); flex: none; display: inline-block; }
 
@@ -3885,6 +3906,9 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
      and the depth indent means nothing once the rail is a row. */
   .con-nav .con-seclabel { display: none; }
   .con-navgroup { flex-direction: row; gap: var(--space-2); }
+  /* No labels here means no fold handles, so a section folded shut on a wide
+     screen must not strand its rows where nothing can reopen them. */
+  .con-navitems, .con-navgroup.shut .con-navitems { display: flex; flex-direction: row; gap: var(--space-2); }
   .con-navitem { width: auto; }
   .con-navitem.d1 { padding-left: 10px; }
   .con-navfoot { margin-top: 0; padding-top: 0; }
