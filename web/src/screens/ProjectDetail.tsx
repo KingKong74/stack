@@ -603,6 +603,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       items: [
         {
           key: 'roadmap', label: project.name, icon: NavIcons.board, count: openRoadCount,
+          menuLabel: `${project.name} board`,
           menu: placeMenu(hrefTo.detail(slug, 'roadmap'), 'board'), onClick: () => setTab('roadmap'),
         },
         { key: 'soon:roadmap', label: 'Roadmap', icon: NavIcons.map, soon: true },
@@ -625,6 +626,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         label: sp.name,
         icon: <SpaceDot tint={sp.tint} />,
         depth: 1,
+        menuLabel: `${sp.name} space`,
         menu: placeMenu(hrefTo.detail(sp.id), `space:${sp.id}`),
         // The project you are already in is the rail's other selected row, so
         // `active` cannot be the tab key alone.

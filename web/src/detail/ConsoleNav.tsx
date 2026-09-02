@@ -50,6 +50,10 @@ export type NavSection = {
     soon?: boolean;
     /** What the row's ⋯ offers. Absent or empty draws no ⋯ at all. */
     menu?: MenuOption[];
+    /** What the ⋯ is CALLED, when the row's own label is not unique on its own
+        — the board row and a Spaces row can both be "stack", and two buttons
+        with one name is a screen reader with nothing to tell them apart. */
+    menuLabel?: string;
     depth?: number;
     onClick?: () => void;
     href?: string;
@@ -114,7 +118,8 @@ export function ConsoleNav({ sections, active, footer }: {
                   <div className="con-navrow" key={it.key}>
                     {row}
                     {it.menu && it.menu.length > 0 && (
-                      <MoreMenu options={it.menu} small btnClass="con-navmore" label={`${it.label} — more`} />
+                      <MoreMenu options={it.menu} small btnClass="con-navmore"
+                        label={`${it.menuLabel || it.label} — more`} />
                     )}
                   </div>
                 );
