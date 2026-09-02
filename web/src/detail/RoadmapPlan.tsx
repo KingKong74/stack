@@ -184,7 +184,7 @@ export function RoadmapPlan({
   // and bails on any of them. The alternative — stopPropagation on every child
   // — is the same rule written a dozen times, and the one place somebody
   // forgets it is a card that silently resizes the board instead of opening.
-  const INERT = '.rp-card, .rp-col-tools, .rp-col-review, button, a, input, textarea, select, label';
+  const INERT = '.rp-card, .rp-col-tools, .rp-col-review, .rp-col-confirm, button, a, input, textarea, select, label';
   const toggleFocusFromLane = (e: React.MouseEvent, key: string) => {
     if ((e.target as HTMLElement).closest(INERT)) return;
     setFocus((f) => (f === key ? '' : key));
@@ -331,22 +331,12 @@ export function RoadmapPlan({
                       exactly the cards ON SCREEN, so it can never touch rows the
                       area or label filter is hiding: a bulk action whose reach is
                       wider than its view is how you lose work you never saw. */}
-                  {col.key === 'shipped' && cards.length > 0 && (
-                    confirmSweep === col.key ? (
-                      <span className="rp-sweep-confirm">
-                        <button className="go" disabled={busy}
-                          onClick={() => { onArchiveMany(cards); setConfirmSweep(''); }}>
-                          Archive {cards.length}?
-                        </button>
-                        <button className="no" onClick={() => setConfirmSweep('')}>Cancel</button>
-                      </span>
-                    ) : (
-                      <button className="rp-sweep" onClick={() => setConfirmSweep(col.key)}
-                        title={`Archive the ${cards.length} card${cards.length === 1 ? '' : 's'} shown here${
-                          areaFilter || labelFilter ? ' — the filter is on, so only these' : ''}`}>
-                        Archive all
-                      </button>
-                    )
+                  {col.key === 'shipped' && cards.length > 0 && confirmSweep !== col.key && (
+                    <button className="rp-sweep" onClick={() => setConfirmSweep(col.key)}
+                      title={`Archive the ${cards.length} card${cards.length === 1 ? '' : 's'} shown here${
+                        areaFilter || labelFilter ? ' — the filter is on, so only these' : ''}`}>
+                      Archive all
+                    </button>
                   )}
 
                   {/* Rename and remove, on EVERY lane (#428) — behind one ⋯
@@ -365,14 +355,6 @@ export function RoadmapPlan({
                     <span className="rp-col-note"
                       title="These cards were in a column that has since been removed. Drag each one into a lane — this is a place they are drawn, not a lane of its own, so it cannot be renamed or removed.">
                       no lane
-                    </span>
-                  ) : confirmList === col.key ? (
-                    <span className="rp-sweep-confirm">
-                      <button className="go" onClick={() => { setConfirmList(''); onDeleteList(col.list!); }}
-                        title="The cards stay — they go back to the lane their own state puts them in, or to Unfiled if that lane is gone too">
-                        Remove lane{cards.length ? ` · ${cards.length} card${cards.length === 1 ? '' : 's'} stay` : ''}?
-                      </button>
-                      <button className="no" onClick={() => setConfirmList('')}>Cancel</button>
                     </span>
                   ) : (
                     <MoreMenu btnClass="rp-col-act" label={`${col.name} — lane options`}
@@ -396,6 +378,37 @@ export function RoadmapPlan({
                   </button>
                 </span>
               </div>
+
+              {/* A CONFIRM GETS ITS OWN ROW, for the same reason the review
+                  line below does: inside the head it fought a 272px lane for
+                  width, wrapped the lane's name onto two lines and pushed its
+                  own Cancel out over the NEXT column, where the press landed on
+                  that column instead. A control that only appears sometimes
+                  must never be able to reflow the line that is always there —
+                  and a confirm whose Cancel cannot be hit is worse than no
+                  confirm at all. Both live here: only one can be armed, since
+                  arming either closes the menu the other came from. */}
+              {(confirmSweep === col.key || confirmList === col.key) && (
+                <span className="rp-col-confirm">
+                  {confirmSweep === col.key ? (
+                    <>
+                      <button className="go" disabled={busy}
+                        onClick={() => { onArchiveMany(cards); setConfirmSweep(''); }}>
+                        Archive {cards.length}?
+                      </button>
+                      <button className="no" onClick={() => setConfirmSweep('')}>Cancel</button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="go danger" onClick={() => { setConfirmList(''); onDeleteList(col.list!); }}
+                        title="The cards stay — they go back to the lane their own state puts them in, or to Unfiled if that lane is gone too">
+                        Remove lane{cards.length ? ` · ${cards.length} card${cards.length === 1 ? '' : 's'} stay` : ''}?
+                      </button>
+                      <button className="no" onClick={() => setConfirmList('')}>Cancel</button>
+                    </>
+                  )}
+                </span>
+              )}
 
               {/* The lane's own tie to the Review room. It states the NUMBER
                   rather than just linking, because these two lanes are the only

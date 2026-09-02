@@ -3401,11 +3401,6 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 /* ---- Archive all, on the Shipped lane ---- */
 .rp-sweep { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--muted); background: transparent; border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 7px; white-space: nowrap; }
 .rp-sweep:hover { color: var(--accent-text); border-color: var(--accent-tint-border); }
-.rp-sweep-confirm { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
-.rp-sweep-confirm .go { font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--on-accent); background: var(--accent); border-radius: 6px; padding: 3px 8px; white-space: nowrap; }
-.rp-sweep-confirm .go:hover { background: var(--accent-deep); }
-.rp-sweep-confirm .no { font-family: var(--mono); font-size: 10px; color: var(--muted); }
-.rp-sweep-confirm .no:hover { color: var(--ink); }
 /* THE BOARD SCROLLS SIDEWAYS AND THE PAGE DOES NOT (#428). `.rp-cols` is the
    one element that windows a row wider than itself; the columns inside it are
    fixed-width and the cards inside those scroll on their own axis. That is what
@@ -3452,7 +3447,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rp-col-tools { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; flex: none; }
 /* The sweep keeps its own right-push for the case where it is the only tool;
    inside the tools group that push is already spent, so it must not re-apply. */
-.rp-col-tools .rp-sweep, .rp-col-tools .rp-sweep-confirm { margin-left: 0; }
+.rp-col-tools .rp-sweep { margin-left: 0; }
 .rp-col-act { font-size: 12px; line-height: 1; color: var(--fainter); background: transparent;
   border: 1px solid transparent; border-radius: 6px; padding: 3px 5px; }
 .rp-col-act:hover { color: var(--accent-text); border-color: var(--accent-tint-border); }
@@ -3468,6 +3463,25 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    tools would have been. */
 .rp-col-note { font-family: var(--mono); font-size: 10px; color: var(--building);
   border: 1px solid var(--building); border-radius: 6px; padding: 1px 6px; cursor: help; white-space: nowrap; }
+/* A confirm is its own row under the head (RoadmapPlan.tsx says why), and it
+   reads as one strip: the destructive half carries the weight, Cancel is
+   quiet, and neither can widen the lane. */
+.rp-col-confirm {
+  display: flex; align-items: center; gap: var(--space-3);
+  margin: -2px 0 1px; padding: 0 2px; min-width: 0;
+}
+.rp-col-confirm .go {
+  flex: 1; min-width: 0; text-align: center; font-family: var(--mono); font-size: 10px; font-weight: 600;
+  color: var(--on-accent); background: var(--accent); border-radius: 7px; padding: 4px 8px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rp-col-confirm .go:hover { background: var(--accent-deep); }
+/* Archiving a shipped lane's cards is reversible; removing the lane is not, so
+   only that one wears the critical tone. A confirm drawn in red for both
+   teaches the reader that red means nothing in particular. */
+.rp-col-confirm .go.danger, .rp-col-confirm .go.danger:hover { background: var(--critical); }
+.rp-col-confirm .no { flex: none; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.rp-col-confirm .no:hover { color: var(--ink); }
 /* The lane's tie to the Review room — accent, because it is work waiting on a
    person, and never a verdict tone: giving one is that room's job. Its own row
    under the head, so it can never reflow the lane name; see RoadmapPlan.tsx. */
