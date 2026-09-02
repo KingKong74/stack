@@ -38,19 +38,36 @@ const check = (name, got, want) => {
 };
 
 const row = (over = {}) => ({
-  done: false, claimed_by: null, review_tag: null, source: 'manual', reviewed_at: '2026-01-01',
-  list_key: null, ...over,
+  done: false, claimed_by: null, review_tag: null, built_note: null, source: 'manual',
+  reviewed_at: '2026-01-01', list_key: null, ...over,
 });
 
 // --- the derivation ---------------------------------------------------------
 
 check('a ticked row is shipped', listFor(row({ done: true })), 'shipped');
-check('a claimed row is in progress', listFor(row({ claimed_by: 'feat/3-x' })), 'progress');
-check('an unapproved hook extraction is an idea',
-  listFor(row({ source: 'hook', reviewed_at: null })), 'idea');
-check('an unapproved fly card is an idea',
-  listFor(row({ source: 'fly', reviewed_at: null })), 'idea');
+check('a claimed row with nothing built is in progress',
+  listFor(row({ claimed_by: 'feat/3-x' })), 'progress');
 check('everything else is planned', listFor(row()), 'planned');
+
+// #440 — the lane that carries the state, rather than In Progress carrying two.
+check('a built, unverdicted change is in review',
+  listFor(row({ claimed_by: 'feat/3-x', built_note: 'what landed' })), 'review');
+check('a built note with no claim is not in review — both halves are the predicate',
+  listFor(row({ built_note: 'what landed' })), 'planned');
+check('a whitespace-only built note does not move a card',
+  listFor(row({ claimed_by: 'feat/3-x', built_note: '  ' })), 'progress');
+check('a verdict outranks being built',
+  listFor(row({ claimed_by: 'feat/3-x', built_note: 'x', review_tag: 'solid' })), 'shipped');
+check('a tick outranks everything',
+  listFor(row({ done: true, claimed_by: 'feat/3-x', built_note: 'x' })), 'shipped');
+
+// The `idea` lane is retired (#440): the Roadmap tab's capture inbox says
+// "held" on the card, so the board does not need a lane for it. A held row is
+// planned work nobody has signed off, and it sits with the rest of To Do.
+check('an unapproved hook extraction is planned now, not an idea',
+  listFor(row({ source: 'hook', reviewed_at: null })), 'planned');
+check('an unapproved fly card is planned too',
+  listFor(row({ source: 'fly', reviewed_at: null })), 'planned');
 
 // The one that regressed the room: the claim outlives the verdict.
 check('a verdict ships a change whose branch claim still stands',
@@ -77,6 +94,7 @@ check('a blank stored column is derived, not "the first list"',
 const derived = new Set([
   listFor(row({ done: true })),
   listFor(row({ review_tag: 'solid' })),
+  listFor(row({ claimed_by: 'x', built_note: 'y' })),
   listFor(row({ claimed_by: 'x' })),
   listFor(row({ source: 'hook', reviewed_at: null })),
   listFor(row()),
@@ -87,11 +105,26 @@ check('every lane the derivation targets is one the board seeds',
 check('the seeded lanes are exactly the derivation\'s targets',
   [...seeded].sort(), [...derived].sort());
 
-// Polaris is culled and the lane no longer carries its name (#428). Named
-// explicitly: the string is what the schema's convergent migration matches on,
-// so the two have to agree or an existing board keeps the dead reference.
-check('the ideas lane no longer names Polaris',
-  DEFAULT_LISTS.find((l) => l.key === 'idea').name, 'Ideas');
+// The seeded NAMES are what the schema's convergent migration matches on, so
+// the two files have to agree or an existing board keeps the old wording while
+// a new one gets the new. Checked in order, because left-to-right IS the
+// workflow: what is next, what is running, what is waiting on you, what is done.
+check('the seeded lanes are the four the kit draws, in order',
+  DEFAULT_LISTS.map((l) => `${l.key}:${l.name}`),
+  ['planned:To Do', 'progress:In Progress', 'review:In Review', 'shipped:Done']);
+check('and their positions are left-to-right',
+  DEFAULT_LISTS.map((l) => l.position), [0, 1, 2, 3]);
+
+// The migration is what gives an EXISTING board the new lane: `ensureLists`
+// only seeds a board with none, so without these an old board derives cards to
+// `review` and the catch-all draws them under Unfiled.
+const schema = readFileSync(join(REPO, 'server/src/schema.sql'), 'utf8');
+check('the schema adds the review lane to every existing board',
+  /INSERT INTO project_lists[\s\S]{0,200}'review'[\s\S]{0,120}ON CONFLICT/.test(schema), true);
+check('and only renames a lane still carrying the name it was seeded with',
+  /UPDATE project_lists SET name = 'To Do' WHERE key = 'planned' AND name IN/.test(schema), true);
+check('and never deletes a lane that holds a dragged card',
+  /DELETE FROM project_lists l[\s\S]{0,300}NOT EXISTS[\s\S]{0,200}list_key = 'idea'/.test(schema), true);
 
 // A new lane's key is suffixed with its position (board.js). Nothing locks the
 // four any more, but their keys are still WIRING: two lanes answering to
@@ -127,9 +160,14 @@ const fn = twin.slice(twin.indexOf('export function listKeyOf'));
 const body = fn.slice(0, fn.indexOf('\n}'));
 check('the client twin returns the same four lanes',
   [...new Set([...body.matchAll(/return '([a-z]+)'/g)].map((m) => m[1]))].sort(),
-  ['idea', 'planned', 'shipped'].concat('progress').sort());
+  DEFAULT_LISTS.map((l) => l.key).sort());
 check('the client twin puts the verdict before the claim',
   body.indexOf('reviewTag') < body.indexOf('claimedBy'), true);
+// And BUILT before the claim, for the same reason: the claim outlives being
+// built, so a claim-first twin would leave finished work in In Progress on the
+// client while the server called it In Review.
+check('the client twin puts built before the claim',
+  body.indexOf('isBuilt') < body.indexOf('claimedBy'), true);
 
 // --- the write that makes the move unconditional ----------------------------
 

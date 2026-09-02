@@ -1169,6 +1169,43 @@ CREATE UNIQUE INDEX IF NOT EXISTS project_lists_key_idx ON project_lists (projec
 -- is only clearing a reference to a surface that no longer exists.
 UPDATE project_lists SET name = 'Ideas' WHERE key = 'idea' AND name = 'Ideas · Polaris';
 
+-- #440 — the board's lanes become To Do / In Progress / In Review / Done.
+--
+-- EVERY STATEMENT MATCHES ON THE NAME IT SEEDED, so a lane the owner has since
+-- renamed is left alone: the name is theirs, the key is ours. The keys of the
+-- three survivors are untouched — `planned` is called To Do, `shipped` is
+-- called Done — because a key is what a dragged card's `list_key` stores, and
+-- renaming the key would strand every one of them.
+UPDATE project_lists SET name = 'To Do' WHERE key = 'planned' AND name IN ('Planned', 'To Do');
+UPDATE project_lists SET name = 'In Progress' WHERE key = 'progress' AND name = 'In progress';
+UPDATE project_lists SET name = 'Done' WHERE key = 'shipped' AND name = 'Shipped';
+
+-- The new lane, on every board that has any lanes at all. `ensureLists` only
+-- seeds a board with NO lanes, so without this an existing board would derive
+-- cards to `review` with no column to draw them in — the catch-all would show
+-- them under Unfiled, which is the safety net working and not the intent.
+INSERT INTO project_lists (project_id, key, name, position)
+SELECT DISTINCT project_id, 'review', 'In Review', 2 FROM project_lists
+ON CONFLICT (project_id, key) DO NOTHING;
+
+-- The retired `idea` lane. Only where it is still the seeded one AND holds no
+-- card anybody dragged into it: a lane with work in it is never removed by a
+-- migration, and one the owner renamed is theirs to keep.
+DELETE FROM project_lists l
+ WHERE l.key = 'idea' AND l.name = 'Ideas'
+   AND NOT EXISTS (
+     SELECT 1 FROM roadmap_items r
+      WHERE r.project_id = l.project_id AND r.list_key = 'idea'
+   );
+
+-- Left-to-right order, for the boards the two statements above just changed.
+-- Only the four seeded keys are touched; a lane the owner added keeps the
+-- position it was given (its key carries that position as a suffix anyway).
+UPDATE project_lists SET position = 0 WHERE key = 'planned';
+UPDATE project_lists SET position = 1 WHERE key = 'progress';
+UPDATE project_lists SET position = 2 WHERE key = 'review';
+UPDATE project_lists SET position = 3 WHERE key = 'shipped';
+
 -- The project's LABELS — was a code registry, now the owner's own set.
 --
 -- Seeded per project on first read (server/src/labels.js, the same shape as

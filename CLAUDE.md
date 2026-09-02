@@ -141,7 +141,7 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   you) is the held queue and owns Dismiss alone; a held row still shows on Roadmap wearing HELD —
   an item on no screen is a lie of omission. **Every lane renames and deletes,
   and the CATCH-ALL is the only reason that is safe:**
-  the four keys `listFor` returns (`idea`/`planned`/`progress`/`shipped`) are wiring, and deleting
+  the keys `listFor` returns (`planned`/`progress`/`review`/`shipped`) are wiring, and deleting
   one would leave a derived card rendering in no column while still counting everywhere else — a
   silent loss. `RoadmapPlan.tsx` draws an UNFILED lane for any card whose key has no column, and
   `server/test/plan-lanes.test.mjs` pins it. Renaming was never the hazard — it writes `name`, never the derived key.
@@ -193,7 +193,7 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   non-empty **AND** `claimed_by` non-empty). **Both halves are load-bearing**: un-ticking clears
   `claimed_by` and keeps `built_note`, so `built_note` alone re-queues rejected changes and
   `claimed_by` alone queues items at claim time. It was the Review room's; the room is culled and
-  `isBuilt` in `web/src/lib/spine.ts` is now its ONLY definition, read by the Overview's verdict
+  `isBuilt` in `web/src/lib/plan.ts` is its ONLY definition (#440), read by the Overview's verdict
   band and the Roadmap board's lanes — do not simplify it back. Approving does NOT tick (the merge
   job does, with a human verdict stored). **Anything acting on a built change shares the
   predicate**; a path that opens `if (!item.done) 400` refuses the whole night's work.

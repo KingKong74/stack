@@ -916,7 +916,14 @@ export function defaultLen(it: RoadmapItem, grain: Grain): number {
   // is not: it is a line somebody's session dropped on the board, and three days
   // is a claim about it that nobody made. It still yields to a real `estimate`,
   // which is what "the owner can still override" means.
-  if (listKeyOf(it) === 'idea') return 2 * MIN_PER_HOUR;
+  //
+  // #440 retired the `idea` LANE, not the state it named: an idea is a row
+  // nobody has signed off and nobody has started. The three exits the lane gave
+  // it are spelt out rather than inherited, because the SIZE follows the stage —
+  // signing it off, claiming it or ticking it all make it work with a size, and
+  // a claimed-but-unsigned card that stayed two hours would size the stage wrong.
+  if (!it.done && !it.claimedBy.trim()
+    && (it.source === 'hook' || it.source === 'fly') && !it.reviewed) return 2 * MIN_PER_HOUR;
   if (grain === 'hour') return 2 * MIN_PER_HOUR;
   if (grain === 'day') return 4 * MIN_PER_HOUR;
   return 3 * MIN_PER_DAY;
@@ -961,14 +968,31 @@ export function listKeyOf(it: RoadmapItem): string {
   if (it.listKey) return it.listKey;
   if (it.done) return 'shipped';
   if (it.reviewTag.trim()) return 'shipped';
+  // #440 — BUILT and unverdicted is its own lane. Before the claim, because the
+  // claim survives being built and stays until a human merges and ticks.
+  if (isBuilt(it)) return 'review';
   if (it.claimedBy.trim()) return 'progress';
-  // #381 — a released fly card sits with the hook extractions: a session's note
-  // about what it was doing is not a commitment by the board until someone
-  // signs it off. While the session still holds it, `progress` above wins,
-  // which is where a fly card spends its whole working life.
-  if ((it.source === 'hook' || it.source === 'fly') && !it.reviewed) return 'idea';
+  // The `idea` lane is retired: an unapproved extraction (#359) and a released
+  // fly card (#381) were both "nobody has signed this off", which the Roadmap
+  // tab's capture inbox (#439) now says on the card itself.
   return 'planned';
 }
+
+/**
+ * THE BUILT-NOT-VERDICTED PREDICATE (#374), and the ONE definition of it on the
+ * client. It lives here rather than in `lib/spine.ts` — which is where it was
+ * written and which re-exports it, so every existing import still works —
+ * because `listKeyOf` above needs it and spine imports THIS file: one of the
+ * two had to be lower, and the lane derivation is the lower of the two.
+ *
+ * BOTH HALVES ARE LOAD-BEARING. Nothing in Stack ticks an item, so `done`
+ * alone drew an empty queue over a full night's work; un-ticking clears
+ * `claimed_by` and keeps `built_note`, so `built_note` alone re-queues rejected
+ * changes and `claimed_by` alone queues items at claim time. Do not simplify it
+ * back to `done`.
+ */
+export const isBuilt = (it: RoadmapItem): boolean =>
+  (it.done || (it.builtNote.trim() !== '' && it.claimedBy.trim() !== '')) && it.reviewTag === '';
 
 // THE ARRANGE PROPOSALS ARE GONE, and their absence is the point.
 //

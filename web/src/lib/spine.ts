@@ -51,7 +51,7 @@ import { parseBranch, type LaneKind } from './branch';
 // The Roadmap tab owns the schedule, so its arithmetic is imported and never
 // re-spelt here: one definition of the minute offsets, of slip, and of what "in
 // this cycle" means, or the Overview and the Timeline disagree about the same plan.
-import { SCHED_MINUTES, MIN_SCHED_LEN, slipOf, scopeTotals, type ScopeTotals } from './plan';
+import { SCHED_MINUTES, MIN_SCHED_LEN, slipOf, scopeTotals, isBuilt, type ScopeTotals } from './plan';
 
 export type StageKey = 'planned' | 'inflight' | 'built' | 'landed';
 
@@ -70,9 +70,13 @@ export interface Stage {
 
 const flat = (r: Roadmap): RoadmapItem[] => [...r.must, ...r.should, ...r.could, ...r.wont];
 
-/** The built-not-verdicted predicate (#374), kept in one place on the client. */
-export const isBuilt = (it: RoadmapItem): boolean =>
-  (it.done || (it.builtNote.trim() !== '' && it.claimedBy.trim() !== '')) && it.reviewTag === '';
+/**
+ * The built-not-verdicted predicate (#374). It MOVED to `lib/plan.ts` (#440),
+ * whose lane derivation needs it and which this file already imports — one of
+ * the two had to be lower. Re-exported, not re-spelt: every importer still says
+ * `from '../lib/spine'`, and there is still exactly one definition.
+ */
+export { isBuilt } from './plan';
 
 export const isLanded = (it: RoadmapItem): boolean => it.done && it.reviewTag !== '';
 /** Claimed and NOT yet built — see the header on why the subtraction matters. */

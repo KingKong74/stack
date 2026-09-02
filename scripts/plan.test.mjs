@@ -728,8 +728,22 @@ test('a parked line stops counting against the cycle', () => {
 test('an untouched card derives its column from the state it already carries', () => {
   assert.equal(listKeyOf(item({ done: true })), 'shipped');
   assert.equal(listKeyOf(item({ claimedBy: 'feat/3-x' })), 'progress');
-  assert.equal(listKeyOf(item({ source: 'hook', reviewed: false })), 'idea');
   assert.equal(listKeyOf(item({})), 'planned');
+  // #440 — the `idea` lane is retired, and a held row is planned work nobody
+  // has signed off. The Roadmap tab's capture inbox is where the hold is said.
+  assert.equal(listKeyOf(item({ source: 'hook', reviewed: false })), 'planned');
+});
+
+// #440 — In Progress used to hold two states that want different things from
+// you: work a machine is still doing, and work waiting on your verdict. The
+// claim outlives being built, so BUILT has to outrank it here.
+test('a built, unverdicted change sits in review, not in progress', () => {
+  assert.equal(listKeyOf(item({ claimedBy: 'feat/3-x', builtNote: 'what landed' })), 'review');
+  assert.equal(listKeyOf(item({ builtNote: 'what landed' })), 'planned', 'both halves are the predicate');
+  assert.equal(
+    listKeyOf(item({ claimedBy: 'feat/3-x', builtNote: 'x', reviewTag: 'solid' })), 'shipped',
+    'a verdict outranks being built',
+  );
 });
 
 test('an explicit column always wins over the derivation', () => {

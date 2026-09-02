@@ -41,7 +41,7 @@
 //    verdict chain exists to keep honest. A card with no `built_note` says so
 //    rather than presenting a title as evidence — the NULL-verdict rule.
 //  • EVERY LANE IS THE OWNER'S (#428), AND THE CATCH-ALL IS WHY THAT IS SAFE.
-//    `idea`, `planned`, `progress` and `shipped` are where `listKeyOf` derives
+//    `planned`, `progress`, `review` and `shipped` are where `listKeyOf` derives
 //    cards to, so their KEYS are wiring — and they used to be locked, because a
 //    board missing one had a derived column with nowhere to render and its
 //    cards vanished while still counting everywhere else. Renaming was never
@@ -53,11 +53,14 @@
 //    board is furniture — and DELETING IT IS NOT POSSIBLE because it is not a
 //    row. Do not remove it without putting the server-side lock back: it is the
 //    entire safety argument for letting `shipped` be deleted.
-//  • IN PROGRESS AND SHIPPED ARE THE TWO ENDS OF A VERDICT. A change is
-//    waiting on one from the moment it is BUILT (#374), which is exactly while
-//    it sits in In progress — so both lanes carry the state, per card and per
-//    lane, and a verdict given from the card's ✓ Review panel brings it back to
-//    Shipped (server/src/lists.js). The predicate is `isBuilt` from lib/spine,
+//  • IN REVIEW IS A LANE, NOT A FOOTNOTE (#440). A change is waiting on a
+//    verdict from the moment it is BUILT (#374), and that used to be a line of
+//    text on a card in In Progress — one lane holding two states that want
+//    different things from you: work a machine is still doing, and work waiting
+//    on a human. It derives to its own lane now, and a verdict given from the
+//    card's ✓ Review panel moves it on to Done (server/src/lists.js). The
+//    per-card strip stays, because the lane says WHICH pile and the strip says
+//    what the card is waiting for. The predicate is `isBuilt` from lib/plan,
 //    the same one the Overview's verdict queue counts: a lane saying "3
 //    waiting" beside a queue showing 4 is two answers to one question. Mission
 //    Control's Review room was culled and this board is now the ONLY place a
@@ -79,8 +82,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { BoardArea, BoardLabel, BoardList, Priority, RoadmapItem } from '../types';
-import { areaMatches, listKeyOf } from '../lib/plan';
-import { isBuilt } from '../lib/spine';
+import { areaMatches, isBuilt, listKeyOf } from '../lib/plan';
 import { LABEL_TONES, labelsOf } from '../lib/labels';
 import { MoreMenu } from '../components/MoreMenu';
 
@@ -89,9 +91,16 @@ const BUCKET_LABEL: Record<Priority, string> = {
   must: 'Must', should: 'Should', could: 'Could', wont: "Won't",
 };
 
-// The two lanes that are the Review room's ends — see the header. Named once so
-// the per-card strip, the lane head link and the styling cannot drift apart.
-const REVIEW_LANES = new Set(['progress', 'shipped']);
+// The lanes where a verdict can be given — see the header. Named once so the
+// per-card strip, the lane head count and the styling cannot drift apart.
+//
+// `review` is where a built change now derives to (#440) and is the lane this
+// is really about. `shipped` stays because a verdicted card lands there and its
+// verdict is still worth reading, and `progress` stays because a card DRAGGED
+// there by hand keeps its stored key — dropping it from the set would take the
+// ✓ Review panel away from a card that is built, on the only screen where a
+// verdict can be given at all.
+const REVIEW_LANES = new Set(['progress', 'review', 'shipped']);
 
 // The catch-all lane's key. NOT a `project_lists` row and never sent to the
 // server: it is a rendering slot for cards whose column was deleted. The

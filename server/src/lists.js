@@ -14,15 +14,18 @@
 // The derivation deliberately mirrors the states Stack tracks elsewhere, so the
 // Plan view agrees with the Overview spine without either importing the other:
 //   shipped   — done, OR a verdict is on record (see below)
-//   progress  — claimed by a branch or a session
-//   idea      — nobody typed it and nobody has signed it off yet (#359: an
-//               unapproved auto-extraction is not planned work, it is a
-//               suggestion; #381 puts a released fly card here on the same
-//               footing — a session's note about what it was doing is not a
-//               commitment by the board until someone says so). A fly card
-//               still claimed by its session is caught by `progress` above,
-//               which is where it spends its whole working life.
-//   planned   — everything else
+//   review    — BUILT and not yet verdicted (#374's predicate: a built note and
+//               a branch claim). #440 — a change waiting on the owner used to
+//               sit in "In progress" for as long as its branch lived, so the
+//               busiest lane held two states that want different things from
+//               you: work a machine is still doing, and work waiting on a
+//               human. The lane is the difference.
+//   progress  — claimed, and nothing built yet
+//   planned   — everything else, INCLUDING a held auto-extraction. The old
+//               `idea` lane (#359/#381) was the board's answer to "nobody has
+//               signed this off"; the Roadmap tab's capture inbox (#439) is
+//               that answer now, with the hold said on the card, so the board
+//               does not need a lane for it.
 //
 // A VERDICT SHIPS THE CARD, AND STILL DOES NOT TICK IT. `review_tag` outranks
 // the branch claim here because approving in the Review room is the moment the
@@ -40,11 +43,16 @@
 // Shipped. Un-ticking clears the verdict, which hands the row straight back to
 // this derivation.
 
+// THE KEYS OUTLIVE THE NAMES. `planned` and `shipped` are called To Do and
+// Done (#440) and their keys are untouched, because a key is what a stored
+// `list_key` and every derivation spell — renaming is free precisely because
+// the two halves are separate, and renaming the KEY would strand every card
+// that had been dragged into one.
 export const DEFAULT_LISTS = [
-  { key: 'idea', name: 'Ideas', position: 0 },
-  { key: 'planned', name: 'Planned', position: 1 },
-  { key: 'progress', name: 'In progress', position: 2 },
-  { key: 'shipped', name: 'Shipped', position: 3 },
+  { key: 'planned', name: 'To Do', position: 0 },
+  { key: 'progress', name: 'In Progress', position: 1 },
+  { key: 'review', name: 'In Review', position: 2 },
+  { key: 'shipped', name: 'Done', position: 3 },
 ];
 
 /**
@@ -72,8 +80,13 @@ export function listFor(row) {
   // The verdict, before the claim — see the header. Any of the three verdicts
   // counts: "needs-work" is still a change that has been read and answered.
   if (String(row.review_tag || '').trim()) return 'shipped';
+  // BUILT-or-ticked (#374), before the claim for the same reason the verdict
+  // is: the claim SURVIVES being built and stays until a human merges and
+  // ticks, so a claim-first derivation leaves finished work in In Progress.
+  // Both halves are load-bearing — `built_note` alone re-queues rejected work,
+  // `claimed_by` alone lands items in review the moment they are claimed.
+  if (String(row.built_note || '').trim() && String(row.claimed_by || '').trim()) return 'review';
   if (String(row.claimed_by || '').trim()) return 'progress';
-  if ((row.source === 'hook' || row.source === 'fly') && !row.reviewed_at) return 'idea';
   return 'planned';
 }
 
