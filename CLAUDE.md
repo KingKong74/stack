@@ -12,16 +12,13 @@ it lives in that file's header and this file keeps only the pointer and the cros
 rooms; `/api/control`, `/api/review`, `/api/merge`), **Polaris** (Futures tab, galaxy, `futures`),
 the **instructions tree** (managed CLAUDE.md library + host sync), the **Workbench** (canvas tab,
 `/api/…/workbench`, `workbench_*`, the Drafter), the Roadmap **Timeline** (#428) and the Roadmap
-**strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`, the ✧ cleanup modal) — **the BOARD IS
-THE TAB**, with the ⎇ claim, park/unpark and tier chip ON THE CARD; the Curator's
+**strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`, the ✧ cleanup modal) — the ⎇ claim,
+park/unpark and tier chip live ON THE CARD; the Curator's
 `arrange`/`allocate`/`cleanup` are unsurfaced (it keeps `titler` and `assist`). The **TAB AGENTS'
-CONSOLES** went too (#379/#380 — the strip, `TabTerminal*`, `agentConsole.ts`, `/api/…/console`,
-`console-prime.js`, `console-launch.mjs`, the start frame's `prime`, `console_off`) and the
-**Auditor** with them, that session being its whole surface; the CURATOR is the only agent left, and
-`⌨` opens an ordinary unprimed session. **`notes` went with the Workbench** — its only reader — so
-the table, `/api/…/notes`, the ⌘K Notes scope and the ＋'s Thought composer are gone and the ＋ is
-roadmap-only. Rules that outlived their surface are
-kept below and SAY SO — a predicate written for a room is still the only definition of what it
+CONSOLES** went too (#379/#380, with `console_off` kept in the database) and the **Auditor** with
+them, that session being its whole surface; the CURATOR is the only agent left. **`notes` went with the Workbench** — its only reader — so
+the table, its route, the ⌘K scope and the ＋'s composer went; the ＋ is roadmap-only. Rules that
+outlived their surface are kept below and SAY SO — a predicate written for a room is still the only definition of what it
 decided.
 
 ## What Stack is
@@ -47,14 +44,14 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
 - **`store.ts` is the only module that touches the network or device storage.** Components never
   `fetch` and never touch localStorage. `request()` attaches the bearer and throws `AuthError` on 401,
   clearing the token and returning to the gate.
+- **FOR YOU IS THREE ROUTE KEYS ON ONE SCREEN** (#436) — `overview`, `activity`, `auto`, switched
+  by a strip that WRITES the key; never collapse them into state (`hl` means a commit on
+  `activity`, which Quality links straight to).
 - `lib/route.ts` — hash router. `go.detail(slug, tab, highlight)` deep-links and **the TAB decides
-  what `hl` means** (commit → activity, bug key → quality, row id → roadmap);
-  legacy tab spellings still resolve rather than 404ing — `futures` and `notes` among them, so a
-  Polaris or Workbench bookmark lands on Overview and ignores its `hl`. `#/control` and anything
-  under it lands on the placeholder (`screens/ControlMock.tsx`): the merged topbar links it, and a
-  dead link reads as a broken app, not as a surface being rebuilt.
-- `screens/` — `ls` is the index. The recipe library (`/api/tips`) has no screen and no way in from
-  the UI: the corner dock that opened it is gone.
+  what `hl` means** (commit → activity, bug key → quality, row id → roadmap); legacy spellings
+  resolve rather than 404ing (`futures`, `notes` → Overview, ignoring their `hl`), and `#/control`
+  lands on `ControlMock.tsx` because a dead link reads as a broken app.
+- `screens/` — `ls` is the index. The recipe library (`/api/tips`) has no screen and no way in.
 - `lib/brief.ts` — the resume brief + the `DIRECTIVES` catalogue (keys mirror `SESSION_DEFAULTS`).
 - `lib/termClipboard.ts` — the terminal's copy/paste; its header says why ⌃C, ⌃V and OSC 52 each
   behave unlike a native terminal. Don't "simplify" any of the three.
@@ -134,18 +131,20 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   on `roadmap_items`, with `plan_start_min`/`plan_len_min` the write-once BASELINE a drag must never
   move. Four packages must agree and none can import another: `routes/roadmap.js`, `shape.js` (BIGINT
   arrives as a STRING, above), `lib/plan.ts`, `lib/spine.ts`. **`estimate` stays in WEEKS**, so
-  `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet. **NOTHING IN THE CLIENT
-  EDITS THESE NOW** (#428) — the Timeline was their only editor — but they are still stored, served
-  and baselined on create: data waiting for a surface, like branch previews. Do NOT tidy them away.
-- **The Roadmap is a BOARD** (#428, the ONLY thing on the tab; the rail labels it with the
-  PROJECT'S NAME, #433, and its key is still `roadmap`, so a coming-soon row may
-  wear `Roadmap`) — no strip, no views, no boards beside it. **Every lane renames and deletes,
+  `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet. **NOTHING EDITS THESE**
+  (#428 took the Timeline, their only editor); the PLANS tab (#439) is a READER of them.
+- **FOUR SCREENS OVER `roadmap_items`, each answering a DIFFERENT question** (#439). The
+  **board** (`roadmap`, the rail's project-name row) is work IN FLIGHT — no strip, no views, no
+  boards beside it. **Roadmap** (`ideas`) is the capture inbox: unstarted, unclaimed, sorted
+  Ready (tiered) / Thinking (unranked or still held) / Parked (`skipped`); an item LEAVES it the
+  moment it takes a claim. **Plans** (`plans`) reads the schedule. **Auto-ideas** (`auto`, in For
+  you) is the held queue and owns Dismiss alone; a held row still shows on Roadmap wearing HELD —
+  an item on no screen is a lie of omission. **Every lane renames and deletes,
   and the CATCH-ALL is the only reason that is safe:**
   the four keys `listFor` returns (`idea`/`planned`/`progress`/`shipped`) are wiring, and deleting
   one would leave a derived card rendering in no column while still counting everywhere else — a
   silent loss. `RoadmapPlan.tsx` draws an UNFILED lane for any card whose key has no column, and
-  `server/test/plan-lanes.test.mjs` pins it. Remove the catch-all and the server-side lock comes
-  back in the same commit. Renaming was never the hazard — it writes `name`, never the derived key.
+  `server/test/plan-lanes.test.mjs` pins it. Renaming was never the hazard — it writes `name`, never the derived key.
 - **The board order IS the run queue.** `position` is the bucket tiebreak and still PATCHable, but
   **nothing in the client writes it now** — Scope's drag-reorder was its last editor. Same state as
   the schedule columns above: stored, served, waiting for a surface.
