@@ -3508,6 +3508,9 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 }
 .rp-card:hover { background: var(--surface-overlay); box-shadow: var(--shadow-md); }
 .rp-card:active { cursor: grabbing; }
+/* The open card is the kit's SELECTED card: the focus border, because it is
+   the one whose panel is showing and the one every control below belongs to. */
+.rp-card.open { border-color: var(--border-focus); background: var(--surface-overlay); }
 /* The card under the cursor, not the ghost the browser draws. Dimmed and
    tilted so the hole it left in the lane is visible while you aim — the whole
    point of picking it up is seeing where it is going. */
@@ -3529,8 +3532,13 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rp-stripe.rl-critical { background: var(--critical); }
 .rp-stripe.rl-sage { background: var(--sage); }
 .rp-stripe.rl-paused { background: var(--paused); }
-.rp-title { font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--ink); }
-.rp-meta { display: flex; align-items: center; gap: 8px; margin-top: 9px; flex-wrap: wrap; }
+/* The kit's card title: body text, not a heading. A board card is a sentence
+   you read, and the meta line under it is what carries the labels. */
+.rp-title { font: var(--type-body-sm); color: var(--text-primary); text-wrap: pretty; }
+.rp-meta { display: flex; align-items: center; gap: 8px; margin-top: var(--space-4); flex-wrap: wrap; }
+/* The row's number, in the link tone the kit gives an issue id — it is the
+   handle you type into a commit message or quote back at a session. */
+.rp-id { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); flex: none; }
 .rp-meta .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
 .rp-meta .area { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); }
 .rp-meta .est { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
@@ -3623,8 +3631,13 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rp-verdict { font-family: var(--mono); font-size: 10px; color: var(--sage); background: var(--green-tint);
   border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
 
-.rp-add { font-size: 12px; color: var(--faint); padding: 6px 4px; text-align: left; }
-.rp-add:hover { color: var(--accent-text); }
+/* The kit's per-column composer row: a quiet line at the foot of the lane, not
+   a button competing with the cards above it. */
+.rp-add { display: flex; align-items: center; gap: 8px; width: 100%;
+  font: var(--type-label); color: var(--text-tertiary);
+  padding: 6px; border-radius: var(--radius-sm); text-align: left;
+  transition: var(--transition-control); }
+.rp-add:hover { color: var(--text-primary); background: var(--surface-hover); }
 .rp-add-list { width: 100%; font-size: 13px; color: var(--muted); border: 1px dashed var(--line-3); border-radius: 12px; padding: 13px 14px; background: transparent; }
 .rp-add-list:hover { border-color: var(--accent); color: var(--accent-text); }
 

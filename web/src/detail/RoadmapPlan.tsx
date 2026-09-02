@@ -447,7 +447,8 @@ export function RoadmapPlan({
                 {cards.map((c) => (
                   <div key={c.id} data-hl={c.id} draggable
                     className={`rp-card${dragging === c.id ? ' dragging' : ''}`
-                      + `${c.skipped ? ' parked' : ''}${highlightId === String(c.id) ? ' hl' : ''}`}
+                      + `${c.skipped ? ' parked' : ''}${highlightId === String(c.id) ? ' hl' : ''}`
+                      + `${openCard === c.id ? ' open' : ''}`}
                     onDragStart={(e) => {
                       e.dataTransfer.setData('text/plain', String(c.id));
                       e.dataTransfer.effectAllowed = 'move';
@@ -466,6 +467,12 @@ export function RoadmapPlan({
                     )}
                     <div className="rp-title">{c.title}</div>
                     <div className="rp-meta">
+                      {/* THE CARD SAYS ITS OWN NUMBER (#440, the kit's issue
+                          id). Every other surface cites a row as #N — commits,
+                          built notes, this repo's own docs — and the board was
+                          the one place you had to open a card to learn which
+                          number you were looking at. */}
+                      <span className="rp-id">#{c.id}</span>
                       <span className="dot" style={{ background: dotOf(c.area) }} />
                       <span className="area">{c.area || 'untagged'}</span>
                       <span className={`rp-mos ${c.bucket}`}>{BUCKET_LABEL[c.bucket]}</span>
