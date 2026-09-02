@@ -30,17 +30,18 @@ import { STATUS_LABEL } from '../lib/ui';
 //     what fraction of it they touch, so the bar is the PASS RATE and says so.
 //     A coverage bar here would be a number nobody could source.
 //
-//  2. **The Auditor is the tab's live session and nothing else.** This page
-//     carried a second one for a while: a console band under the health read,
-//     with a standing brief and a ✧ Run the audit that fetched the site,
-//     composed a prompt and filed suspected bugs into the review inbox. The tab
-//     consoles (#379) put a real Claude session in this project's checkout,
-//     under the tab bar, and it does that job without a template — it can open
-//     the code the page text only hints at, and it takes the steer as a
-//     sentence rather than as a saved field. Two auditors on one tab is one
-//     more than the page can explain, so the templated one went, along with its
-//     op, its route and its brief column. The Auditor's whole surface is the
-//     session now (server/src/agents.js says so: no ops, one console).
+//  2. **There is no Auditor on this tab any more, and no ✧ of any kind.** The
+//     page carried a console band under the health read for a while: a
+//     standing brief and a ✧ Run the audit that fetched the site, composed a
+//     prompt and filed suspected bugs into the review inbox. That retired when
+//     the tab consoles (#379) put a real Claude session in this project's
+//     checkout under the tab bar — a session reads the code the page text only
+//     hints at, and takes its steer as a sentence rather than as a saved
+//     field. The consoles are now culled too, and the Auditor went with them:
+//     the session WAS its whole surface, so it had nothing left to govern
+//     (server/src/agents.js says so). What is left on this page is the suite,
+//     the bugs and the numbers — the ⌨ topbar link opens a terminal in this
+//     project's checkout for the investigation the checks can only point at.
 //
 //  3. **The health read leads the page** as one band of five: the verdict, its
 //     trend, and the four numbers. Same numbers as before, one row instead of

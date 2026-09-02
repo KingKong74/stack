@@ -50,9 +50,9 @@ roadmap.use(async (req, res, next) => {
 
 // #361 — every ✧ surface on this file is the CURATOR, the Roadmap tab's agent,
 // and it is bound once here. The client refuses any op the Curator does not own
-// (the Auditor's audit, Polaris's judge), so the board cannot quietly become
-// somebody else's workspace, and it carries the agent's switch, model and
-// standing guidance.
+// (a culled agent's op — the Auditor's audit, Polaris's judge — resolves to
+// nobody at all), so the board cannot quietly become somebody else's
+// workspace, and it carries the agent's switch, model and standing guidance.
 const curator = agentClient('curator');
 
 // The Curator's gate, as a response. `true` = it refused and the reply is

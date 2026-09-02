@@ -30,7 +30,6 @@ import { b64encode, b64decode, GIT_BASH_THEME } from '../lib/termWire';
 // screen has no project payload and no agent state to read. Titling one
 // `claude · stack` hides the one fact that distinguishes it from the four
 // beside it, so the name is parsed back.
-import { parseConsoleSession, consoleTitle } from '../lib/agentConsole';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { tierRank, TIERS, type RoadmapItem, type Tier } from '../types';
 import { TopBar } from '../components/TopBar';
@@ -301,11 +300,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       let name = tmux;
       if (!name && cmd === 'claude') {
         const stored = getTermTmuxName(cwdKey);
-        // The console guard is on the READ as well as the write (BUG-13),
-        // because the write guard only stops NEW poisoning: a device that
-        // already attached a console before the fix has the agent's name
-        // sitting in its localStorage, and nothing else would ever clear it.
-        if (stored && !parseConsoleSession(stored)
+        if (stored
           && !s.some((x) => x.tmux === stored && (x.status === 'live' || x.status === 'connecting'))) {
           name = stored;
         }
@@ -584,19 +579,18 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // The daemon confirmed (or assigned) a tab's tmux session — remember it on
   // the tab and in the device-local cwd map so a reload can resume it.
   //
-  // BUG-13 — A TAB AGENT'S CONSOLE IS NEVER THE CWD'S RESUME SESSION. That map
-  // answers "which ad-hoc session was I last running here", and an agent's
-  // console is not ad-hoc: it is deterministic, owned by its project tab, and
-  // reachable by its own name. It still lands on this screen like anything else
-  // (⤢ sends one here, and it sits on the detached strip when its tab closes),
-  // so attaching one used to write `stack-term-auditor-stack` against
-  // /home/bailey/stack — after which every NEW claude tab opened in that
-  // directory silently re-attached the Auditor's console and wore its name.
-  // Two failures from one write: the owner's fresh tab is not fresh, and the
-  // agent's session is now mirrored somewhere it was never sent.
+  // BUG-13 is GONE with the tab consoles. The guard here refused to write an
+  // agent console's deterministic name (`stack-term-auditor-<slug>`) into the
+  // cwd's resume map, because that map answers "which ad-hoc session was I
+  // last running here" and a console was not ad-hoc — so remembering one made
+  // every new claude tab in that directory re-attach the agent's session. No
+  // session is spawned under an agent's name any more, so every name reaching
+  // this screen is an ordinary one and is remembered as such. A console left
+  // running from before still attaches; it is simply a claude session now,
+  // which is all it ever was underneath.
   const noteTmux = (id: number, cwdKey: string, name: string) => {
     setSessions((s) => s.map((x) => (x.id === id ? { ...x, tmux: name } : x)));
-    if (!parseConsoleSession(name)) setTermTmuxName(cwdKey, name);
+    setTermTmuxName(cwdKey, name);
   };
   // An exit frame while attached means the underlying process really ended
   // (a detach never sends one) — forget the mapping so the next open is fresh.
@@ -688,10 +682,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // so a tab that re-attached a detached session inherits the name it wore as
   // a chip instead of reading as unnamed until the next ask.
   const labelOf = (s: Sess) => (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux]) || '';
-  // #380 — is this session a tab agent's console, and whose? Null for every
-  // ordinary session, which is most of them. The tmux name is the whole of the
-  // evidence: a shell tab has none, so a shell can never read as an agent.
-  const paneConsole = (s: Sess) => (s.tmux ? parseConsoleSession(s.tmux) : null);
   const claudeLive = sessions.some((s) => s.cmd === 'claude' && (s.status === 'live' || s.status === 'connecting'));
   // Which sessions are on screen. The window STARTS at the active tab, so
   // clicking a tab always puts it top-left with its neighbours filling in
@@ -1231,19 +1221,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           <div className="term-tabs">
             {sessions.map((s) => {
               const label = labelOf(s);
-              // A console wears its AGENT, not its command: "Auditor · stack"
-              // is what the owner opened and what they are looking for when
-              // they come back to this screen with six tabs up.
-              const con = paneConsole(s);
               return (
                 <span key={s.id} className={`term-tab ${s.id === active ? 'on' : ''}`}>
                   <button className="term-tab-name" onClick={() => setActive(s.id)}
-                    title={[
-                      con ? `The ${con.agentName}'s console, from the ${con.slug} project's own tab` : '',
-                      label, s.tmux ? `tmux ${s.tmux}` : '',
-                    ].filter(Boolean).join(' — ') || undefined}>
+                    title={[label, s.tmux ? `tmux ${s.tmux}` : ''].filter(Boolean).join(' — ') || undefined}>
                     <span className={`dot ${s.status}`} />
-                    {con ? consoleTitle(con) : `${s.cmd === 'claude' ? 'claude' : 'shell'}${s.cwd ? ` · ${s.cwd}` : ''}`}
+                    {`${s.cmd === 'claude' ? 'claude' : 'shell'}${s.cwd ? ` · ${s.cwd}` : ''}`}
                     {/* #120 — what this session is doing, in its own words via
                         Gemini. Absent until one comes back: a tab with no name
                         reads as unnamed, never as idle. */}
@@ -1459,10 +1442,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             {detachedShown.map((d) => {
               const name = labels[d.name] || d.label || '';
               const picked = killPick.includes(d.name);
-              // A tab agent's console left running is the commonest chip on
-              // this strip now — closing the tab it lives on detaches it — so
-              // it is named as what it is rather than as a fifth "claude".
-              const con = parseConsoleSession(d.name);
               return (
                 <span key={d.name} className={`td-chip${d.attached ? ' away' : ''}${picked ? ' picked' : ''}${d.keep ? ' pinned' : ''}`}>
                   {/* #292 — the keep pin. Offered on EVERY chip, attached or
@@ -1479,13 +1458,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   </button>
                   <button className="td-attach"
                     title={[
-                      con ? `The ${con.agentName}'s console, opened from the ${con.slug} project's own tab.` : '',
                       d.attached
                         ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
                         : `Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`,
                     ].filter(Boolean).join(' ')}
                     onClick={() => attachDetached(d)}>
-                    ↺ {con ? con.agentName : 'claude'} · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}{name ? ` — ${name}` : ''}
+                    ↺ claude · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}{name ? ` — ${name}` : ''}
                   </button>
                   {/* Selection for a multi-kill sits on killable chips only:
                       the daemon refuses a name a client still holds, so
@@ -1543,19 +1521,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     + 'Paste: ⌃V. Shift-drag selects in the browser instead of tmux.'}>
                   <span className={`dot ${s.status}`} />
                   <span className="what">
-                    {/* A console that the labeller has not named yet is not
-                        "not named yet" — Stack knows exactly what it is, and
-                        the agent's own name is a better answer than a
-                        placeholder waiting on a Gemini call. */}
                     {labelOf(s) || (s.status === 'live'
-                      ? (paneConsole(s) ? `the ${paneConsole(s)!.agentName}'s console`
-                        : labelBusy ? 'naming this session…' : 'not named yet')
+                      ? (labelBusy ? 'naming this session…' : 'not named yet')
                       : s.note || s.status)}
                   </span>
                   <span className="where">
-                    {paneConsole(s)
-                      ? `${paneConsole(s)!.agentName} · ${s.cwd || '~'}`
-                      : `${s.cmd === 'claude' ? 'claude' : 'shell'} · ${s.cwd || '~'}`}
+                    {`${s.cmd === 'claude' ? 'claude' : 'shell'} · ${s.cwd || '~'}`}
                   </span>
                   {copied?.id === s.id && <span className="pane-copied">⧉ {copied.label}</span>}
                   {/* #292 — pin this session against the idle reaper. On the

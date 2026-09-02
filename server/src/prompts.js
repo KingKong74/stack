@@ -17,8 +17,7 @@
 //     twenty recent trivia and drops the long-standing criticals, which are
 //     exactly the rows the prompt existed to carry. Order by what makes a row
 //     worth knowing (severity, queue order), and let recency break ties.
-// `routes/console.js`'s cap() restates it at its own call sites; this is the
-// statement it points at.
+// This is the statement every capped prompt in the codebase points at.
 
 const DEFAULTS = {};
 

@@ -11,14 +11,18 @@ it lives in that file's header and this file keeps only the pointer and the cros
 **SURFACES CULLED** at the owner's request, with their routes and tables: **Mission Control** (seven
 rooms; `/api/control`, `/api/review`, `/api/merge`), **Polaris** (Futures tab, galaxy, `futures`),
 the **instructions tree** (managed CLAUDE.md library + host sync), the **Workbench** (canvas tab,
-`/api/…/workbench`, `workbench_cards`, `workbench_edges`, the Drafter), the Roadmap **Timeline**
-(#428) and the Roadmap **strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`, the ✧ cleanup
-modal) — **the BOARD IS THE TAB**, with the ⎇ claim, park/unpark and tier chip ON THE CARD. The
-Curator's `arrange`/`allocate`/`cleanup` are unsurfaced (it keeps `titler`, `assist`, its console).
-**`notes` went with the Workbench** — its only reader — so the table, `/api/…/notes`, the ⌘K Notes
-scope and the ＋'s Thought composer are gone and the ＋ is roadmap-only. `#/control` renders
-`screens/ControlMock.tsx`. Rules that outlived their surface are kept below and SAY SO — a
-predicate written for a room is still the only definition of what it decided.
+`/api/…/workbench`, `workbench_*`, the Drafter), the Roadmap **Timeline** (#428) and the Roadmap
+**strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`, the ✧ cleanup modal) — **the BOARD IS
+THE TAB**, with the ⎇ claim, park/unpark and tier chip ON THE CARD; the Curator's
+`arrange`/`allocate`/`cleanup` are unsurfaced (it keeps `titler` and `assist`). The **TAB AGENTS'
+CONSOLES** went too (#379/#380 — the strip, `TabTerminal*`, `agentConsole.ts`, `/api/…/console`,
+`console-prime.js`, `console-launch.mjs`, the start frame's `prime`, `console_off`) and the
+**Auditor** with them, that session being its whole surface; the CURATOR is the only agent left, and
+`⌨` opens an ordinary unprimed session. **`notes` went with the Workbench** — its only reader — so
+the table, `/api/…/notes`, the ⌘K Notes scope and the ＋'s Thought composer are gone and the ＋ is
+roadmap-only. `#/control` renders `screens/ControlMock.tsx`. Rules that outlived their surface are
+kept below and SAY SO — a predicate written for a room is still the only definition of what it
+decided.
 
 ## What Stack is
 
@@ -45,16 +49,15 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
   clearing the token and returning to the gate.
 - `lib/route.ts` — hash router. `go.detail(slug, tab, highlight)` deep-links and **the TAB decides
   what `hl` means** (commit → activity, bug key → quality, row id → roadmap);
-  legacy tab spellings still resolve rather than 404ing — `futures` and `notes` join them, so a
-  Polaris or Workbench bookmark lands on Overview. `hl` on one of those names a row with no tab
-  left to highlight it on, and Overview ignoring an `hl` it does not recognise is the right
-  nothing to do. `#/control` and anything under it lands on the placeholder rather
-  than 404ing: it is linked from six topbars, and a dead link reads as a broken app rather than as
-  a surface being rebuilt.
+  legacy tab spellings still resolve rather than 404ing — `futures` and `notes` among them, so a
+  Polaris or Workbench bookmark lands on Overview carrying an `hl` no tab is left to highlight, and
+  ignoring one it does not recognise is the right nothing to do. `#/control` and anything under it
+  lands on the placeholder: it is linked from six topbars, and a dead link reads as a broken app
+  rather than as a surface being rebuilt.
 - `screens/` — `ls` is the index. The recipe library (`/api/tips`) has no screen and no way in from
   the UI: the corner dock that opened it is gone.
 - `lib/brief.ts` — the resume brief + the `DIRECTIVES` catalogue (keys mirror `SESSION_DEFAULTS`).
-- `lib/termClipboard.ts` — copy/paste for both xterms; its header says why ⌃C, ⌃V and OSC 52 each
+- `lib/termClipboard.ts` — the terminal's copy/paste; its header says why ⌃C, ⌃V and OSC 52 each
   behave unlike a native terminal. Don't "simplify" any of the three.
 - `styles.css` — **the palette is the `:root` variables**, in TWO LAYERS (#432). Layer 1 is the
   console kit's tokens copied verbatim from Claude Design project `7ff15c0c` (`--grey-* --blue-*
@@ -273,24 +276,20 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   covers. `plan` still names its branches in the plan (an ordering that hid them would not be honest)
   but the press leaves them alone. None of the three relaxes the conflict probe, the #212 risk gate or
   the merge confirm.
-- **A CAPPED PROMPT MUST STATE ITS OWN CAP** (#364, from the culled Merge agent). Where host-side
-  material is trimmed before it reaches a model, the trim is named INSIDE the prompt: a model that
-  silently saw a tenth of a diff answers confidently about the other nine. Same rule as any capped
-  list in any prompt (`prompts.js`'s header).
 - **THE TAB AGENTS RUN CLAUDE ON THE HOST (#364), not Gemini** — `agentClient().ask()` goes through the
   terminal daemon's uplink to `claude -p --output-format json` on the owner's own subscription, so the
   no-paid-external-AI rule holds. Three consequences: **readiness is the DAEMON, not a key** (a
   switched-off agent is reported before an offline host); **every tool is disabled and they run in a
-  scratch directory**, because an agent prompt is assembled from tracker rows — text somebody else
-  wrote — and NOT the autopilot's `--dangerously-skip-permissions` posture, which is safe only because
-  it runs its own code in a throwaway worktree; and **`ask()` returns PARSED JSON** (`parseAgentJson`,
+  scratch directory**, since an agent prompt is assembled from tracker rows — text somebody else wrote
+  — and NOT the autopilot's `--dangerously-skip-permissions` posture, safe only because it runs its
+  own code in a throwaway worktree; and **`ask()` returns PARSED JSON** (`parseAgentJson`,
   fence-tolerant), which every ✧ call site depends on. **Gemini is not gone** — the per-push review
   note, check assertions, labelling and triage are still Gemini, still key-gated.
-- **AN AGENT'S BINDING IS CODE, NOT DATA (#361, #375).** `src/agents.js` is the registry; its header
-  lists the two and their surfaces. Each agent's `ops` list is CLOSED, and `agent_configs` holds only
-  what the owner tunes (enabled, model, guidance, `ops_off`) — never which surface or which ops,
-  because those ARE the restriction. A route binds once (`agentClient('auditor')`) and that client
-  THROWS on another agent's op; that throw, not a comment, stops one tab's route running another's,
+- **AN AGENT'S BINDING IS CODE, NOT DATA (#361, #375).** `src/agents.js` is the registry. An agent's
+  `ops` list is CLOSED and is now the WHOLE of what one is (the `console` half went with the
+  consoles); `agent_configs` holds only what the owner tunes (enabled, model, guidance, `ops_off`),
+  never which surface or which ops, because those ARE the restriction. A route binds once
+  (`agentClient('curator')`) and that client THROWS on another agent's op; that throw, not a comment, stops one tab's route running another's,
   and an unregistered op cannot run at all. An op MOVES with its surface: **one surface, one switch**,
   both ways — the cull took the agents whose surfaces went, since an agent with nothing to govern is
   a switch that governs nothing. **A missing config row means ON**, as with `readSettings()`. An op's `backend` may be `'gemini'`, so a surface with two backends still has ONE switch;
@@ -445,8 +444,9 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
 ## Gotchas
 
 - `server` retries the first Postgres connection — don't "fix" that; it's what survives compose order.
-- **A capped list inside a prompt must say it is capped, and on the right axis** (#239) — the rule is
-  in `prompts.js`'s header, and applies to any list in any prompt.
+- **A CAPPED PROMPT MUST STATE ITS OWN CAP, on the right axis** (#239, #364) — the rule is in
+  `prompts.js`'s header and applies to any list, and to host-side material trimmed before it reaches
+  a model: one that silently saw a tenth of a diff answers confidently about the other nine.
 - Status vocabulary is `live | building | paused | archived`. The old `active` migrates to `live`.
 - The web Dockerfile is multi-stage (Vite build → nginx), which does SPA fallback **and** proxies
   `/api` to `server:4000` plus `/term*` with upgrade headers; in local dev Vite proxies `/api`.

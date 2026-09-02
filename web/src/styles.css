@@ -290,17 +290,6 @@
 
   --panel: var(--surface-raised);
 
-  /* The console's ground. It used to be the one surface that did NOT invert
-     with the theme — a distinction that dissolved when the app went dark,
-     so it is now simply the DEEPEST plane in the same cool ramp: a console
-     still reads as a console, one step below the canvas. */
-  --console: var(--grey-1000);
-  --console-line: var(--grey-800);
-  --console-ink: var(--text-primary);
-  --console-dim: var(--text-secondary);
-  --console-faint: var(--text-tertiary);
-  --console-bad: var(--status-danger-fg);
-
   /* the feature table's column track, shared by its header and every row so
      the two can never drift apart */
   --q-feat-cols: 1.6fr 84px 1fr 68px 76px 62px;
@@ -2889,76 +2878,6 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    room and the bug list reads better wide than boxed */
 .q-stack { display: flex; flex-direction: column; gap: 14px; }
 .q-hint.flat { margin-right: 0; }
-
-/* ---- #379 THE TAB AGENT'S CONSOLE -----------------------------------------
-   The strip under the tab bar on Quality and Roadmap: one position, one
-   anatomy, one agent each. It wears the console palette (the
-   `--console*` tokens) — the one dark ground in the app, so a second surface
-   with its own tones would read as a different kind of thing. Shut it is one
-   line; open it is a real terminal, and the holder gets
-   an explicit height because xterm's fit addon measures its parent and a
-   flex-sized box gives it nothing to measure. */
-.tabterm { border-radius: 12px; border: 1px solid var(--console-line); background: var(--console);
-  overflow: hidden; margin-bottom: 16px; }
-.tabterm.off { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 10px 15px;
-  border-style: dashed; }
-.tabterm-head { display: flex; align-items: center; gap: 9px; padding: 9px 13px; flex-wrap: wrap; }
-.tabterm-chev { flex: none; font-size: 10px; color: var(--console-faint); padding: 2px 3px; }
-.tabterm-chev:hover { color: var(--console-dim); }
-.tabterm-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--console-faint); }
-.tabterm-dot.live { background: var(--live); }
-.tabterm-dot.connecting { background: var(--building); animation: tabterm-pulse 1.1s ease-in-out infinite; }
-@keyframes tabterm-pulse { 50% { opacity: 0.3; } }
-.tabterm-dot.error, .tabterm-dot.closed { background: var(--console-bad); }
-.tabterm-name { font-size: 12px; letter-spacing: 0.04em; color: var(--console-ink); }
-.tabterm-tag { flex: none; font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em;
-  color: var(--console-faint); border: 1px solid var(--console-line); border-radius: 4px; padding: 1px 6px; }
-.tabterm-sess { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--console-faint); }
-.tabterm-status { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--console-dim); }
-.tabterm-why { flex: 1; min-width: 0; font-size: 11.5px; line-height: 1.55; color: var(--console-dim); }
-.tabterm-acts { margin-left: auto; display: flex; align-items: center; gap: 5px; }
-.tabterm-act { font-family: var(--mono); font-size: 10.5px; line-height: 1; color: var(--console-dim);
-  border: 1px solid var(--console-line); border-radius: 6px; padding: 4px 7px; }
-.tabterm-act:hover { color: var(--accent-text); border-color: var(--accent); }
-.tabterm-act:disabled { opacity: .45; }
-/* The armed ⏻. It is the only control in this strip that destroys something,
-   so it is the only one that wears the critical tone — and it wears it only
-   while it is armed, because a permanently red button in a row of grey glyphs
-   reads as a warning about the strip rather than about the press. */
-.tabterm-act.warn { color: var(--critical); border-color: var(--critical); }
-.tabterm-act.warn:hover { color: #fff; background: var(--critical); border-color: var(--critical); }
-/* What the agent could not see. Truncated rather than wrapped: the strip is one
-   line high by design, and the whole sentence is on the title. */
-.tabterm-warn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 10.5px; color: var(--critical); }
-/* THE OPENERS — what this tab is worth asking for, between the head and the
-   terminal. They are drawn as quiet outlined chips, not as accented buttons:
-   the accent in this strip belongs to the controls that DO something, and these
-   only type. They wrap rather than scroll, since four short labels on a phone
-   are two rows and a hidden fourth ask is a menu that lies about its length. */
-.tabterm-openers { display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
-  padding: 0 13px 10px; }
-.tabterm-openers-lead { font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--console-faint); margin-right: 2px; }
-.tabterm-open { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; line-height: 1;
-  color: var(--console-dim); background: transparent; border: 1px solid var(--console-line);
-  border-radius: 999px; padding: 5px 10px 5px 6px; text-align: left; }
-.tabterm-open:hover { color: var(--accent-text); border-color: var(--accent); }
-.tabterm-open-n { flex: none; font-family: var(--mono); font-size: 9px; color: var(--console-faint);
-  border: 1px solid var(--console-line); border-radius: 50%; width: 14px; height: 14px;
-  display: inline-flex; align-items: center; justify-content: center; }
-.tabterm-open:hover .tabterm-open-n { color: var(--accent-text); border-color: var(--accent); }
-.tabterm-shut { padding: 0 15px 11px; font-size: 11.5px; line-height: 1.6; color: var(--console-faint); text-wrap: pretty; }
-.tabterm-shut .mono { font-family: var(--mono); color: var(--console-dim); }
-/* Same trap .term-holder documents: padding on the holder is space the fit
-   addon believes it has and does not, so it lives on .xterm instead. */
-.tabterm-holder { background: #000; height: 300px; }
-.tabterm.tall .tabterm-holder { height: 560px; }
-.tabterm-holder .xterm { height: 100%; padding: 10px 12px; }
-@media (max-width: 700px) {
-  .tabterm-sess, .tabterm-tag { display: none; }
-  .tabterm-holder { height: 260px; }
-}
 
 /* ---- Quality by feature ---- */
 .q-feat-head { display: grid; grid-template-columns: var(--q-feat-cols); gap: 12px; padding: 0 15px 8px;

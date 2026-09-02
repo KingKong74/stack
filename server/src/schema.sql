@@ -942,16 +942,15 @@ CREATE TABLE IF NOT EXISTS agent_configs (
 -- only place the owner can see what the ✧ buttons cost. NUMERIC, so it comes
 -- back from pg as a STRING and needs Number() on the way out.
 ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS cost_usd NUMERIC NOT NULL DEFAULT 0;
--- THE CONSOLE SWITCH — the tab agents that own a live session (the Auditor and
--- the Curator; Polaris and the Drafter had one until their tabs were culled)
--- each carry a terminal on their own tab: a Claude session in the project's
--- checkout, inside a tmux session on the host.
--- It is not an op — nothing asks it for JSON — so it cannot live in ops_off,
--- and it gets its own switch rather than riding `enabled`: an owner who wants
--- the ✧ buttons without a session open on every tab has to be able to say so.
--- Stored as the NEGATIVE (off) for the same reason every other flag here is:
--- a missing row, and a column added to an existing row, must both read as ON.
-ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS console_off BOOLEAN NOT NULL DEFAULT false;
+-- agent_configs.console_off is GONE from here on purpose, and is not dropped —
+-- the same treatment projects.audit_context got above. It switched off a tab
+-- agent's live session: a Claude running in the project's checkout, drawn on
+-- the agent's own tab. The consoles are culled, and the Auditor went with
+-- them (that session was its whole surface), so the column has nothing left to
+-- switch. Nothing reads or writes it, a fresh database no longer grows it, and
+-- an existing one keeps the flag — a row for an agent no longer in the
+-- registry is ignored by readAgents(), never rendered.
+-- The columns beside it (enabled, model, guidance, ops_off) are unchanged.
 
 -- #272 — a schedule with no item pinned stored 0 rather than NULL (Number(null)
 -- is 0), which reached the runner as `--item 0` and made the night a no-op.

@@ -502,14 +502,13 @@ export async function getProjectPulse(slug: string): Promise<ProjectPulse> {
 // attaches its handlers to the returned socket but never touches storage. The
 // start frame goes out on open; the daemon validates the token against the API
 // before anything spawns.
-// #380 — `prime` is a tab agent's briefing, appended to the spawned session's
-// system prompt by the daemon (see terminal/console-launch.mjs), and `model`
-// the alias that agent is pinned to. Both are ignored on a re-attach, because
-// there is nothing to spawn: an already-running session keeps the identity it
-// was started with.
+// A session is spawned as a plain `claude` (or a shell) in the requested
+// checkout. It carried a `prime` and a `model` while the tab agents had
+// consoles — a server-composed system prompt the daemon appended at spawn —
+// and both went with them, on the daemon's side too.
 export function openTerminal(opts: {
   cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number;
-  tmuxSession?: string; skipPerms?: boolean; prime?: string; model?: string;
+  tmuxSession?: string; skipPerms?: boolean;
 }): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${window.location.host}/term`);
@@ -1100,6 +1099,27 @@ export function setBoardLayout(slug: string, layout: BoardLayout) {
   catch { /* storage full or unavailable — the layout is a nicety, never a blocker */ }
 }
 
+// ---- which rail sections are folded shut ----
+//
+// Device-local for the same reason the board layout is: it describes how you
+// like to look at the rail on THIS screen, not anything about the work — a
+// phone with a short rail and the desktop may legitimately answer differently.
+// Not per-project: the sections are the same everywhere, so folding Spaces
+// shut once should stay shut as you move between apps. Absent or corrupt
+// storage falls back to everything open, which is the state the rail shipped
+// in before it could fold at all.
+const NAV_FOLDED_KEY = 'stack.navFolded';
+
+export function getNavFolded(): string[] {
+  return readStoredJSON(NAV_FOLDED_KEY, (p) => (
+    Array.isArray(p) ? [...new Set(p.filter((x): x is string => typeof x === 'string'))] : []
+  ));
+}
+export function setNavFolded(ids: string[]) {
+  try { localStorage.setItem(NAV_FOLDED_KEY, JSON.stringify(ids)); }
+  catch { /* storage full or unavailable — a fold is a nicety, never a blocker */ }
+}
+
 // #297 — the last project a detail page loaded successfully, device-local:
 // the BROWSER is what did the viewing, so a phone and the desktop may
 // legitimately answer differently (same reasoning as `stack.autoRefresh`).
@@ -1179,17 +1199,18 @@ export async function deleteSkill(id: number): Promise<void> {
 
 // ---- the TAB AGENTS (#361) ----
 //
-// Named specialists, each bound to one project tab: the Auditor (Quality) and
-// the Curator (Roadmap). The binding is the SERVER's — agents.js owns which
-// agent may run which op — so nothing here invents an agent or widens one;
-// this is the read of that registry plus the things the owner may tune.
-// The cull took five with their surfaces: 'polaris' (the Futures tab),
-// 'merger' (Mission Control's Merge room), 'foreman' (the Review room),
-// 'scribe' (the instructions tree) and 'drafter' (the Workbench tab).
-// ONE SURFACE, ONE SWITCH cuts both ways — an agent whose only surface is gone
-// has nothing left to switch, so it leaves the registry rather than lingering
-// as a toggle that governs nothing.
-export type TabAgentKey = 'auditor' | 'curator';
+// Named specialists bound to one project tab — the Curator (Roadmap) is the
+// one left. The binding is the SERVER's — agents.js owns which agent may run
+// which op — so nothing here invents an agent or widens one; this is the read
+// of that registry plus the things the owner may tune.
+// The cull took the other six with their surfaces: 'polaris' (the Futures
+// tab), 'merger' (Mission Control's Merge room), 'foreman' (the Review room),
+// 'scribe' (the instructions tree), 'drafter' (the Workbench tab) and the
+// 'auditor', whose whole surface on Quality was the live session the tab
+// consoles gave it. ONE SURFACE, ONE SWITCH cuts both ways — an agent whose
+// only surface is gone has nothing left to switch, so it leaves the registry
+// rather than lingering as a toggle that governs nothing.
+export type TabAgentKey = 'curator';
 
 export interface TabAgentOp {
   op: string;
@@ -1213,17 +1234,15 @@ export type TabAgentState = Partial<Record<TabAgentKey, {
   name: string; tab: string; enabled: boolean; ready?: boolean; ops: string[];
   /**
    * The ops whose BACKEND is up. An agent with ops on two backends has no
-   * single answer to "is it ready" — the Curator's two reads run on Gemini
-   * while its console needs the host daemon — so anything asking about one op
-   * reads this and not `ready`. Absent from an older server, which is what
-   * makes `ready` still the fallback rather than dead code.
+   * single answer to "is it ready" — the Curator's two board reads run on
+   * Gemini while its titler and assist run Claude on the host — so anything
+   * asking about one op reads this and not `ready`. Absent from an older
+   * server, which is what makes `ready` still the fallback rather than dead
+   * code.
    */
   opsReady?: string[];
   /** Which of them are Gemini-backed, so a refusal names the right backend. */
   opsGemini?: string[];
-  // #379 — three states, not two: null/absent = this agent has no live session,
-  // false = it has one and the owner switched it off, true = it may open.
-  console?: boolean | null;
 }>>;
 
 // May this tab's agent run this op right now? UNKNOWN MEANS YES — an older
@@ -1240,9 +1259,9 @@ export function agentCan(state: TabAgentState | undefined, key: TabAgentKey, op:
   //
   // PER-OP FIRST. `ready` is one boolean for the host daemon, and an agent
   // whose ops sit on two backends cannot be described by one boolean: with the
-  // daemon down, the Curator's Gemini reads are fine and only its console is
-  // not. `opsReady` is the answer for the op actually being asked about; the
-  // agent-wide `ready` is the fallback for a server that predates it.
+  // daemon down, the Curator's Gemini reads are fine and only its Claude ops
+  // are not. `opsReady` is the answer for the op actually being asked about;
+  // the agent-wide `ready` is the fallback for a server that predates it.
   return a.enabled
     && (a.opsReady ? a.opsReady.includes(op) : a.ready !== false)
     && a.ops.includes(op);
@@ -1269,80 +1288,6 @@ export function agentOffReason(state: TabAgentState | undefined, key: TabAgentKe
     return `The ${a.name} runs Claude on the host, and the host daemon is not connected.`;
   }
   return `The ${a.name} can still work here, but this one is switched off.`;
-}
-
-// ---- the tab agents' CONSOLES (#379) ----
-//
-// The same two-function shape as agentCan/agentOffReason, and for the same
-// reason: what may be drawn and what to say instead are read off ONE state, so
-// a tab can never print a reason it has not checked.
-//
-// The unknown-means-yes rule holds for an agent the server has not reported at
-// all — an older server hiding a working feature is the worse failure. But an
-// agent it HAS reported, with no `console` field, is the server saying this
-// agent has no live session, and that is not a refusal to explain: there is
-// nothing to draw and nothing to say.
-export function agentConsoleCan(state: TabAgentState | undefined, key: TabAgentKey): boolean {
-  const a = state?.[key];
-  if (!a) return true;
-  return a.console === true && a.enabled && a.ready !== false;
-}
-
-// '' both when the console may open AND when this agent has none — a tab asks
-// for the sentence only after `agentConsoleCan` said no, and an empty answer
-// means there is nothing here to explain.
-export function agentConsoleOffReason(state: TabAgentState | undefined, key: TabAgentKey): string {
-  const a = state?.[key];
-  if (!a || a.console == null || agentConsoleCan(state, key)) return '';
-  if (!a.enabled) return `The ${a.name} is switched off.`;
-  if (a.ready === false) {
-    return `The ${a.name}'s session runs on the host, and the host daemon is not connected.`;
-  }
-  return `The ${a.name} can still work here, but its live session is switched off.`;
-}
-
-// #380 — the briefing a console is SPAWNED with, composed server-side from the
-// agent's registry entry, the owner's standing guidance and a snapshot of the
-// tab. `partial` is non-empty when the snapshot could not be read: the session
-// still opens (fail open — an unprimed console is a working terminal), and the
-// strip says so rather than letting the owner believe the agent can see the tab.
-export interface AgentConsolePrime {
-  agent: TabAgentKey;
-  name: string;
-  model: string;
-  prime: string;
-  partial: string;
-  // What this tab is usually opened for — the buttons beside the console, in
-  // the order the session was told them, so a press and a bare number ask for
-  // the same thing. It comes from the server because it is registry state; a
-  // client-side copy would be a menu drifting from the one the agent has.
-  // Absent on an older server, so it is read as a list that may not be there.
-  openers?: { label: string; ask: string }[];
-}
-export async function getAgentConsolePrime(slug: string, key: TabAgentKey): Promise<AgentConsolePrime> {
-  return request<AgentConsolePrime>(
-    `/projects/${encodeURIComponent(slug)}/console/${encodeURIComponent(key)}`);
-}
-
-// How each tab agent's console is left on this DEVICE: open or shut, and how
-// tall. Device-local for the same reason the terminal's own view prefs are —
-// it is a way of looking at a screen, not a property of the project — and
-// keyed by agent so opening the Roadmap's session does not open four.
-export interface TabTermPrefs { open: boolean; tall: boolean }
-const TAB_TERM_KEY = 'stack.tabTerm';
-type TabTermStore = Partial<Record<string, TabTermPrefs>>;
-const readTabTerms = (): TabTermStore => readStoredJSON(TAB_TERM_KEY, (p) => (p && typeof p === 'object' ? p : {}));
-
-export function getTabTermPrefs(key: TabAgentKey): TabTermPrefs {
-  // SHUT by default. A console that opened itself on four tabs would spawn four
-  // Claude sessions on the host the first time somebody clicked through a
-  // project — the session is real work and real spend, so it waits to be asked.
-  const p = readTabTerms()[key];
-  return { open: p?.open === true, tall: p?.tall === true };
-}
-
-export function setTabTermPrefs(key: TabAgentKey, prefs: TabTermPrefs) {
-  localStorage.setItem(TAB_TERM_KEY, JSON.stringify({ ...readTabTerms(), [key]: prefs }));
 }
 
 // ---- inbox triage (#76 — Gemini's cross-project review assist) ----

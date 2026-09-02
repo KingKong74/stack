@@ -1,35 +1,32 @@
 // THE AGENTS (#361, #364) — Stack's in-app specialists, each one bound to a
 // single SURFACE and unable to act anywhere else.
 //
-//   Auditor  · Quality tab — investigates the app in a session of its own
 //   Curator  · Roadmap tab — shapes the board and writes it up
 //
-// There were seven. The cull took five of them — the Foreman (Review room),
-// the Merge agent (Merge room), Polaris (Futures tab), the Scribe
-// (Instructions tab) and the Drafter (Workbench tab) — WITH their surfaces,
-// and that is the rule rather than an accident of tidying: ONE SURFACE, ONE
-// SWITCH cuts both ways. An agent whose only surface is gone has nothing left
-// to switch, so it leaves the registry rather than lingering as a toggle that
-// governs nothing and a card naming a screen that does not exist.
+// There were seven, then two. The cull took the Foreman (Review room), the
+// Merge agent (Merge room), Polaris (Futures tab), the Scribe (Instructions
+// tab) and the Drafter (Workbench tab) WITH their surfaces, and then the
+// AUDITOR with the tab consoles: its templated bug audit had already gone when
+// the consoles landed, so the session on the Quality tab was the whole of what
+// it was, and culling the consoles left it governing nothing. That is the rule
+// rather than an accident of tidying: ONE SURFACE, ONE SWITCH cuts both ways.
+// An agent whose only surface is gone has nothing left to switch, so it leaves
+// the registry rather than lingering as a toggle that governs nothing and a
+// card naming a screen that does not exist.
 //
-// Both survivors are PROJECT tabs, so `surface` is 'tab' throughout now.
-// The field stays because it is the agent's identity rather than a convenience
-// — a room-bound agent coming back must be able to say so.
-// Nothing else about the binding changes: an agent owns its ops, and the client
-// that binds to it throws on anybody else's.
+// The survivor is a PROJECT tab, so `surface` is 'tab'. The field stays
+// because it is the agent's identity rather than a convenience — a room-bound
+// agent coming back must be able to say so. Nothing else about the binding
+// changes: an agent owns its ops, and the client that binds to it throws on
+// anybody else's.
 //
-// AN AGENT HAS TWO HALVES, AND ONLY ONE OF THEM IS AN OP LIST. `ops` is what
-// the agent can be ASKED — one prompt in, one JSON answer out, through ask().
-// `console` is a LIVE SESSION: a real Claude running in the project's checkout,
-// inside tmux on the host, that the owner types into on the agent's own tab.
-// They are deliberately not the same mechanism — see the `console` note below.
-// EITHER HALF MAY BE EMPTY. The Auditor has no ops at all: its templated bug
-// audit was retired once the tab consoles landed, and an agent whose whole
-// surface is a session is a legitimate shape, not a half-built one. Anything
-// reading `ops` therefore has to survive an empty list rather than assume at
-// least one (the Agents room drew the op list only when there was one, and
-// said the session was the surface when there was not; whatever replaces it
-// has to do the same).
+// AN AGENT IS ITS OP LIST, and only that. It used to have a second half — a
+// `console`, a real Claude session in the project's checkout drawn on the
+// agent's own tab, spawned with a server-composed system prompt — and that
+// went with the consoles: the field, its `console_off` switch, the prime and
+// the launcher. The ops are what is left, so `ask()` is the only way an agent
+// acts, and anything reading `ops` may once again assume it is what the agent
+// can do.
 //
 // Before this file the same three jobs existed as eight loose Gemini routes,
 // each one opening `if (!geminiEnabled()) 503` and calling askGemini directly.
@@ -40,10 +37,10 @@
 //
 // **The restriction is structural, not a comment.** A route does not call
 // `askAgent(op)` with whatever op string it likes: it binds ONCE to its agent
-// (`const auditor = agentClient('auditor')`) and every call goes through that
-// client, which throws if the op is not in that agent's list. So the Quality
-// route physically cannot run the Curator's board cleanup, and a later session
-// that wires one up gets an exception rather than a silent cross-tab agent.
+// (`const curator = agentClient('curator')`) and every call goes through that
+// client, which throws if the op is not in that agent's list. So a route bound
+// to one agent physically cannot run another's pass, and a later session that
+// wires one up gets an exception rather than a silent cross-tab agent.
 // `server/test/agents.test.mjs` pins that: it is the whole point of the item.
 //
 // Two rules inherited from the rest of the codebase, and both matter here:
@@ -144,10 +141,10 @@ export const cleanGuidance = (v) => String(v ?? '').replace(/\s+$/g, '').slice(0
 // EVERY OP HERE ASKS A MODEL. There used to be a `model: false` flag for one
 // that didn't — the Auditor's deep-audit prompt, composed server-side and
 // handed to a Claude session the human drove — and it went when the tab
-// consoles landed (#379): a session in the tab is the thing that prompt was a
-// substitute for. It is not worth carrying the flag for a hypothetical second
-// one: a model-less op is a template, and a template that needs the agent's
-// switch is the shape to re-derive if it ever comes back.
+// consoles landed (#379), which have since gone themselves. It is not worth
+// carrying the flag for a hypothetical second one: a model-less op is a
+// template, and a template that needs the agent's switch is the shape to
+// re-derive if it ever comes back.
 //
 // `backend: 'gemini'` marks an op that runs on GEMINI rather than on Claude via
 // the host. #364 moved the tab agents off Gemini because the CLI was the only
@@ -164,121 +161,8 @@ export const cleanGuidance = (v) => String(v ?? '').replace(/\s+$/g, '').slice(0
 // end. What changes per backend is only READINESS: a Claude op needs the host
 // daemon, a Gemini op needs the key, and the refusal has to name the right one
 // or the owner goes and investigates the wrong thing.
-//
 // ---------------------------------------------------------------------------
-// `console` — THE AGENT'S OWN TERMINAL, on the tab it is bound to.
-//
-// An op is a question: the server composes a prompt, `claude -p` answers once,
-// the answer is parsed and the run is over. That is the whole of what the ✧
-// buttons can do, and it is not what somebody wants when the board is wrong in
-// a way no template anticipated. So the PROJECT tabs whose agents work on
-// something you can point at get a session instead: `cmd: 'claude'` in the
-// project's own checkout, inside a tmux session on the host — the same thing
-// the Terminal screen opens, in the tab where the work is.
-//
-// Four rules, and each one is why this is a field of its own rather than an op:
-//
-//  • **It is never routed.** Nothing calls `ask('console')`; there is no prompt
-//    and no JSON. Putting it in `ops` would put a name in the op→agent map that
-//    no route can call and would make `ask()` able to reach it.
-//  • **It has its own switch** (`console_off`), because "I want the ✧ buttons
-//    but not a session open on four tabs" is a real position, and `enabled`
-//    cannot express it. Off means off; a missing column reads as ON, the same
-//    direction as everything else here.
-//  • **Its backend is the host daemon** — the same dependency the Claude ops
-//    have, reported the same way, so a disconnected host refuses the console
-//    and the ✧ buttons with one sentence rather than two stories.
-//  • **The session NAME is the client's**, composed as
-//    `stack-term-<agent key>-<project slug>`. It is deterministic on purpose:
-//    the same tab on any device re-attaches to the one session rather than
-//    spawning a second. `web/src/components/TabTerminal.tsx` owns that rule and
-//    its header carries the consequences (the `stack-term-` prefix puts it on
-//    the running-sessions strip and under the idle reaper, both intended).
-//
-// `label` names it in Mission Control → Agents; `hint` is the sentence under
-// the switch. The registry says WHICH agents have one and nothing more — how it
-// is drawn belongs to the tab.
-//
-// `openers` — WHAT THIS TAB IS USUALLY OPENED FOR (#380 follow-up).
-//
-// A primed session that answers "hello, I am the Auditor" and waits is still a
-// blank prompt as far as the owner is concerned: they know the agent's name,
-// what they do not know is what it is worth asking HERE, so the first thing
-// they do is compose the question the tab could have handed them. So each
-// console carries a short list of the asks that tab is actually for, and it is
-// used TWICE from this one definition:
-//
-//  • the prime prints it, numbered, as the session's opening turn, so a bare
-//    "2" in the console is a complete instruction; and
-//  • the strip draws it as buttons that TYPE the ask at the prompt — never
-//    with an Enter, the same rule the Terminal screen's brief paste follows.
-//
-// One list, so the number the owner reads on the strip is the number the agent
-// answers to. They are deliberately STATIC — an opener is what the tab is FOR,
-// not what is on it today; the snapshot below already carries the state, and an
-// opener computed from it would go stale the moment the session outlived its
-// briefing. `label` is the button (keep it short); `ask` is what gets typed and
-// must stand alone, because that is all the session receives.
-// ---------------------------------------------------------------------------
-const projectConsole = (what, openers) => ({
-  label: 'Live session',
-  hint: `A Claude session in the project's checkout, on this agent's own tab — ${what}. `
-    + 'It runs in tmux on the host, so it survives the tab being closed, and it is SPAWNED as '
-    + 'this agent: its identity, this steer and a snapshot of the tab go in as a system prompt '
-    + '(#377), so the session is the agent from its first turn rather than a blank prompt.',
-  openers,
-});
-
 export const AGENTS = [
-  {
-    key: 'auditor',
-    name: 'Auditor',
-    tab: 'quality',
-    tabLabel: 'Quality',
-    // #375 — tab or room. Every surviving agent is a project tab; the two
-    // room-bound ones went with their rooms. Kept because the binding is the
-    // agent's identity: everything used to print "tab" regardless, and the
-    // Merge agent's card read "Merge tab", which was a screen that never
-    // existed.
-    surface: 'tab',
-    blurb: 'Investigates the live app, the checks and the tracked bugs in a session on the Quality tab.',
-    // What the model itself is told it may and may not touch (see preamble()).
-    remit: 'the Quality tab: the project\'s checks, its tracked bugs and the live application',
-    console: projectConsole('for the investigation the checks can only point at', [
-      {
-        label: 'Walk the failing checks',
-        ask: 'Take the failing checks in the snapshot one at a time. For each, read the code behind '
-          + 'it in this checkout and tell me whether it is a real regression or a check that has gone '
-          + 'stale — with the evidence. Do not change anything yet.',
-      },
-      {
-        label: 'Reproduce the top bug',
-        ask: 'Take the highest-severity open bug and try to reproduce it here: find the code path, '
-          + 'say what actually happens and what should, and tell me whether the report is accurate '
-          + 'before you propose a fix.',
-      },
-      {
-        label: 'Probe the live app',
-        ask: 'Probe the live application for what the suite cannot see — the states a check does not '
-          + 'visit. Tell me what you drove, what you found, and what you could not reach.',
-      },
-      {
-        label: 'Find the gap in the suite',
-        ask: 'Read the checks against what this project actually does and tell me the most valuable '
-          + 'thing the suite does not cover. If I agree, write that check.',
-      },
-    ]),
-    // NO OPS, and the only agent without any. It had exactly one — `audit`:
-    // fetch the site's HTML, hand the text plus the check results and the
-    // tracked bugs to a model, file what came back into the review inbox. The
-    // consoles made it the weaker half of its own tab. A session in the
-    // checkout reads the CODE behind a symptom rather than the rendered text,
-    // takes its steer as a sentence instead of a saved brief, and files what it
-    // finds through the same tracker the owner uses. Two auditors on one tab
-    // could not both be the Auditor, so the templated one went — with its
-    // route, its prompt and the `audit_context` column that fed it.
-    ops: [],
-  },
   {
     key: 'curator',
     name: 'Curator',
@@ -287,30 +171,6 @@ export const AGENTS = [
     surface: 'tab',
     blurb: 'Shapes what is on the board: titles, areas, honest buckets, and the write-ups a reviewer reads.',
     remit: 'the Roadmap tab: the project\'s roadmap items, their fields and what was built against them',
-    console: projectConsole('for the reshuffle no template anticipated', [
-      {
-        label: 'Read the top of the queue',
-        ask: 'Read the top of the board in the order the run queue would take it and tell me which '
-          + 'of those items an unattended session could NOT build as written — what is missing from '
-          + 'each, in one line apiece.',
-      },
-      {
-        label: 'Split what is too big',
-        ask: 'Find the open items that are really several pieces of work, and propose the split for '
-          + 'each: the titles, and what belongs in which. Do not write anything to the board — show me.',
-      },
-      {
-        label: 'Write up what was built',
-        ask: 'Take the items that have been built but read thinly, look at what actually landed on '
-          + 'their branches, and draft a built_note for each that a reviewer could give a verdict '
-          + 'against.',
-      },
-      {
-        label: 'Sort the untagged',
-        ask: 'Find the open items carrying no area and propose one for each, with the reason. An '
-          + 'untagged item is in no lane, so it is the work that quietly never runs.',
-      },
-    ]),
     ops: [
       { op: 'titler', label: 'Suggest a title', hint: 'Titles an item from its note.' },
       { op: 'assist', label: 'Fill from note', hint: 'Fills an item\'s fields; never overwrites one you set.' },
@@ -328,9 +188,10 @@ export const AGENTS = [
       // NEITHER HAS A SURFACE NOW, and nor does `cleanup`: the Timeline, the
       // Arrange panel and the Tiers board are all culled. They are kept rather
       // than dropped because the Curator itself still has one — `titler` and
-      // `assist` in the item modal, and its live session on the Roadmap tab —
-      // so this is not the case the one-surface-one-switch rule is about (an
-      // agent with NOTHING left to govern). Their routes say the same thing.
+      // `assist` in the item modal, which is the whole of what it is surfaced
+      // as now that the consoles are gone — so this is not the case the
+      // one-surface-one-switch rule is about (an agent with NOTHING left to
+      // govern). Their routes say the same thing.
       //
       // #364's rule holds either way: they READ and propose. Nothing they
       // return writes a row — the timeline ghosts it and the owner applies.
@@ -412,14 +273,10 @@ export const backendReadyFor = (spec) =>
 // ---------------------------------------------------------------------------
 // The config row. Missing row = the registry defaults, which are all ON.
 // ---------------------------------------------------------------------------
-const DEFAULT_CONFIG = { enabled: true, model: '', guidance: '', opsOff: [], consoleOff: false };
+const DEFAULT_CONFIG = { enabled: true, model: '', guidance: '', opsOff: [] };
 
 export const agentConfigShape = (agent, row) => ({
   enabled: row ? Boolean(row.enabled) : DEFAULT_CONFIG.enabled,
-  // The console's own switch, stored as the negative. A row written before the
-  // column existed has it NULL/absent, and that has to read as ON — the same
-  // direction as the missing row itself.
-  consoleOff: Boolean(row?.console_off),
   model: cleanAgentModel(row?.model),
   guidance: cleanGuidance(row?.guidance),
   // Only ops this agent actually owns — a stale name left in the row after an
@@ -468,13 +325,6 @@ export async function writeAgent(key, patch) {
   if ('enabled' in patch) { fields.push(`enabled = $${i++}`); values.push(Boolean(patch.enabled)); }
   if ('model' in patch) { fields.push(`model = $${i++}`); values.push(cleanAgentModel(patch.model)); }
   if ('guidance' in patch) { fields.push(`guidance = $${i++}`); values.push(cleanGuidance(patch.guidance)); }
-  // Only an agent that HAS a console can have one switched off. A write against
-  // one that does not would leave a flag nothing reads — and would make the
-  // Agents room's "no console" state indistinguishable from "console off".
-  if ('consoleOff' in patch && agent.console) {
-    fields.push(`console_off = $${i++}`);
-    values.push(Boolean(patch.consoleOff));
-  }
   if ('opsOff' in patch) {
     const off = (Array.isArray(patch.opsOff) ? patch.opsOff : [])
       .map(String).filter((op) => agent.ops.some((s) => s.op === op));
@@ -672,13 +522,6 @@ export async function agentsForClient() {
       // GEMINI_API_KEY, and gateDecision's refusal is emphatic that naming the
       // wrong one sends them to investigate something that is fine.
       opsGemini: live.filter((s) => s.backend === 'gemini').map((s) => s.op),
-      // The console, as three states rather than two: null = this agent has no
-      // live session at all — every survivor has one, but a room-bound agent
-      // would not — false =
-      // it has one and the owner switched it off, true = it has one and may
-      // open it. A tab that cannot tell "no console" from "console off" would
-      // print a reason for a feature that was never there.
-      console: agent.console ? !config.consoleOff : null,
     };
   }
   return out;
@@ -705,11 +548,6 @@ export const agentShape = ({ agent, config }) => ({
     backend: s.backend || 'claude',
     enabled: !config.opsOff.includes(s.op),
   })),
-  // Null for an agent with no live session, so the room draws nothing rather
-  // than a switch for something that does not exist.
-  console: agent.console
-    ? { label: agent.console.label, hint: agent.console.hint, enabled: !config.consoleOff }
-    : null,
   runs: config.runs,
   costUsd: config.costUsd,
   lastRunAt: config.lastRunAt,

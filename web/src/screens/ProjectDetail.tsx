@@ -7,7 +7,6 @@ import {
   patchProject, createShareLink, deleteShareLink,
   getRoadDraft, setRoadDraft, type RoadDraft, assistRoadmapItem,
   agentCan, setLastViewedProject, onItemFiled,
-  agentConsoleCan, agentConsoleOffReason, type TabAgentKey,
   getProjects,
 } from '../store';
 import type { Project } from '../types';
@@ -22,7 +21,6 @@ import { Modal } from '../components/Modal';
 import { BugModal } from '../components/BugModal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { TabTerminal } from '../components/TabTerminal';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { newItemSched } from '../lib/plan';
 
@@ -39,16 +37,6 @@ const TABS: { key: Tab; label: string; icon: ReactNode }[] = [
   { key: 'activity', label: 'Activity', icon: NavIcons.clock },
 ];
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
-
-// #379 — which agent owns each tab, for the console strip under the tab bar.
-// The BINDING is the server's (agents.js); this is only the name to draw before
-// the payload has arrived, and the four tabs that have one. Overview and
-// Activity are readings of what already happened — there is nobody working
-// there to give a session to.
-const TAB_AGENT: Partial<Record<Tab, { key: TabAgentKey; name: string }>> = {
-  quality: { key: 'auditor', name: 'Auditor' },
-  roadmap: { key: 'curator', name: 'Curator' },
-};
 
 const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
@@ -556,20 +544,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
     } catch { /* clipboard blocked — the field is selectable */ }
   };
 
-  // #379 — this tab's agent and whether its live session may open. Three
-  // outcomes, and the strip is drawn for two of them: it may open, or it may
-  // not and there is a reason worth printing. An agent the server reports with
-  // NO console at all yields neither, and nothing is drawn — a sentence
-  // explaining the absence of a feature that was never offered is noise.
-  const tabAgent = TAB_AGENT[tab];
-  const consoleCan = !!tabAgent && agentConsoleCan(data.agents, tabAgent.key);
-  const consoleOff = tabAgent ? agentConsoleOffReason(data.agents, tabAgent.key) : '';
-  // NOTHING SENDS A BRIEF TO A TAB CONSOLE ANY MORE. The Arrange panel's quick
-  // commands were the only sender and went with the panel, so `TabTerminal`'s
-  // `task` prop is left unpassed rather than kept alive from here: a piece of
-  // state whose only writer is gone is a channel that cannot carry anything.
-  // The component keeps the prop, unsurfaced, like the reads it once fed.
-
   const openBugLink = (hash: string) => { setHighlightRef(hash); setTab('activity'); };
   const viewAll = () => { setHighlightRef(null); setTab('activity'); };
   // THE RAIL'S CONTENTS (#432). Workspace is the four readings of THIS
@@ -671,32 +645,13 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         {actionError && <div className="action-error">{actionError}</div>}
 
 
-        {/* #379 — THE TAB AGENT'S CONSOLE, and it is here rather than inside
-            each tab on purpose: "the same position on every tab" is the whole
-            proposition. A console the Roadmap drew above its board and Quality
-            drew below its health band would be four consoles that happen to
-            look alike, and the muscle memory — the strip under the tab bar is
-            where this tab's agent lives — would never form.
-
-            Four of the six tabs have one. Overview and Activity are readings of
-            what happened, not surfaces with an agent working on them; the
-            registry says which agents own a console and this only asks.
-
-            IT IS KEYED PER AGENT, so switching tabs is a REMOUNT and not a prop
-            change. Everything the strip holds belongs to one agent's console:
-            whether the pane is open and tall (stored per agent, but READ once at
-            mount), the connection status, whether it re-attached, what the
-            briefing could not see, and the ⏻ two-step. Swapping the props alone
-            carried all of that from the tab you left onto the tab you arrived
-            at — the Quality strip opening in the Roadmap's open/tall state and
-            then writing it back under its own key. The pane keys itself on the
-            agent too; that one is about the SOCKET, this one is about the strip
-            around it. */}
-        {tabAgent && (consoleCan || consoleOff) && (
-          <TabTerminal key={`${tabAgent.key}:${slug}`}
-            agentKey={tabAgent.key} agentName={tabAgent.name} slug={slug}
-            off={consoleCan ? '' : consoleOff} />
-        )}
+        {/* THE TAB AGENTS' CONSOLES ARE CULLED, and the strip that sat here —
+            in the same position on every tab, which was the whole proposition —
+            went with them. What it held was a live Claude session in this
+            project's checkout, spawned as the tab's agent and reachable from
+            the Terminal screen like any other. The Terminal screen is what is
+            left: `⌨` in the topbar and the rail's footer open one in this
+            project's directory, unprimed and belonging to nobody. */}
 
         {tab === 'overview' && (
           <Overview project={project} phase={data.currentPhase} activity={activity} directives={data.directives}
@@ -718,12 +673,11 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             onFileBug={fileBug} onSetBugStatus={setBugStatus} onDeleteBug={(b) => setConfirmBugDelete(b)}
             onOpenCommit={openBugLink} />
         )}
-        {/* #361 — the ✧ surfaces on the Roadmap and Polaris tabs belong to the
-            CURATOR and to POLARIS, and an absent callback is how each one goes
-            away when its agent (or that one op) is switched off: the button is
-            not rendered at all, rather than rendered to fail. Quality has no ✧
-            of its own any more: the Auditor's whole surface there is the tab's
-            live session, which carries its own switch. */}
+        {/* #361 — the ✧ surfaces on the Roadmap tab belong to the CURATOR, and
+            an absent callback is how each one goes away when the agent (or that
+            one op) is switched off: the button is not rendered at all, rather
+            than rendered to fail. Quality has no ✧ and no agent of its own —
+            the Auditor was its live session and went when the consoles did. */}
         {tab === 'roadmap' && (
           // RoadmapTab owns the board and the furniture around it. `legacy` is
           // the bag of callbacks that have to live up here because they open

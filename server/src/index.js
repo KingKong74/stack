@@ -20,7 +20,6 @@ import { devices } from './routes/devices.js';
 import { autopilot, autopilotGlobal } from './routes/autopilot.js';
 import { branches } from './routes/branches.js';
 import { previews, previewsGlobal } from './routes/previews.js';
-import { consoles } from './routes/console.js';
 import { terminal } from './routes/terminal.js';
 import { triage } from './routes/triage.js';
 import { tips } from './routes/tips.js';
@@ -77,18 +76,14 @@ app.use('/api/projects/:slug/checks', requireToken, checks);
 app.use('/api/projects/:slug/autopilot', requireToken, autopilot);
 app.use('/api/projects/:slug/branches', requireToken, branches);
 app.use('/api/projects/:slug/previews', requireToken, previews);
-// #380 — the briefing a tab agent's live session is SPAWNED with, so the
-// console on the Quality tab opens as the Auditor rather than as a bare claude
-// in a checkout. Per-project because the snapshot is this project's state.
-app.use('/api/projects/:slug/console', requireToken, consoles);
 app.use('/api/autopilot', requireToken, autopilotGlobal);
 app.use('/api/previews', requireToken, previewsGlobal);
 app.use('/api/terminal', requireToken, terminal);
 app.use('/api/triage', requireToken, triage);
 app.use('/api/tips', requireToken, tips);
 app.use('/api/skills', requireToken, skills);
-// #361 — the tab agents (Auditor · Curator). The REGISTRY of who may
-// act on which surface. App-wide, no slug.
+// #361 — the tab agents (the Curator, on the Roadmap tab). The REGISTRY of who
+// may act on which surface. App-wide, no slug.
 app.use('/api/agents', requireToken, agents);
 // #334 — a different thing that arrived under the same name: the catalogue of
 // SPAWN PROFILES the autopilot hands to `claude --agents`. Nothing to do with

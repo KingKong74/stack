@@ -61,25 +61,19 @@ The block is a snapshot. For the current state at any moment, read the API:
   direction and pull your work towards it. If it carries **directives**, they
   are standing instructions from the owner — honour them before anything else,
   and don't remove them yourself (they're cleared from the dashboard).
-- `GET /api/agents` — Stack's own in-app agents (Auditor · Quality tab,
-  Curator · Roadmap tab).
-  **These are not you**: they are the ✧ buttons on those surfaces, each
-  restricted to its own, and any of them can be switched off. Each also carries
-  a `console` — a live
-  Claude session in the project's checkout, opened from a strip on their own
-  tab and running in tmux on the host. It has its own switch (`consoleEnabled`
-  on the PATCH), is not an op, and never appears in `ops`. Its session is
-  SPAWNED as that agent: `GET /api/projects/:slug/console/:key` composes the
-  briefing (identity, remit, the owner's standing guidance and a snapshot of the
-  tab) and the host appends it to the session's system prompt, so one of these
-  may introduce itself as the Auditor or the Curator — that is a primed console,
-  not another session pretending to be one. Worth reading only to
-  explain why a ✧ surface is missing, or why one of those routes answered 409
-  (switched off) or 503 (the backend is down — since #364 they run `claude -p`
-  on the host through the terminal daemon, so that daemon is their backend
-  rather than an API key; the Curator's read-only board reads are the exception
-  and run on Gemini, so a 503 there means the key, not the daemon — each op
-  reports which in `backend`).
+- `GET /api/agents` — Stack's own in-app agents (the Curator, on the Roadmap
+  tab, is the one left).
+  **These are not you**: they are the ✧ buttons on that surface, each restricted
+  to its own ops, and any of them can be switched off. There is nothing else to
+  them — an agent used to carry a `console` too, a live Claude session in the
+  project's checkout opened from a strip on its own tab, and that is culled
+  (with the Auditor, whose whole surface it was). Worth reading only to explain
+  why a ✧ surface is missing, or why one of those routes answered 409 (switched
+  off) or 503 (the backend is down — since #364 they run `claude -p` on the host
+  through the terminal daemon, so that daemon is their backend rather than an
+  API key; the Curator's read-only board reads are the exception and run on
+  Gemini, so a 503 there means the key, not the daemon — each op reports which
+  in `backend`).
 
 **A repo's CLAUDE.md is the repo's.** Stack used to manage a tree of them and
 write each one from its own copy on a five-minute sync; that surface is culled,

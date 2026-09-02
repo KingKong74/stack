@@ -17,8 +17,9 @@
 // cut — `POST /roadmap/allocate`, `POST /roadmap/cleanup` and their registry
 // ops are still there, unsurfaced, exactly as the branch previews are. The
 // Curator itself keeps two surfaced ops (`titler` and `assist`, both in the
-// item modal) and its live session on this tab, so it is still an agent with
-// something to govern.
+// item modal), and that is now the WHOLE of its surface — its live session on
+// this tab went with the tab consoles. Those two are why it is still an agent
+// with something to govern, and why it survived the cut that took the Auditor.
 //
 // WHAT THE THREE CULLED BOARDS SURFACED AND NOTHING ELSE DID moved onto the
 // card rather than going with them — the same absorbing #428 did when Scope

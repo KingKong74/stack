@@ -1,5 +1,6 @@
 // The tab-agent sandbox (#364) — what makes a `claude -p` run started FOR an
-// agent prompt (Auditor · Curator · Polaris · the Merge room's read) safe to
+// agent prompt (the Curator's passes; the Auditor, Polaris and the Merge
+// room's read were culled with their surfaces) safe to
 // run at all.
 //
 // This is its own file, pulled out of stack-term.mjs, for one reason: it is
