@@ -253,6 +253,12 @@
   --building: var(--amber-500);
   --sage: var(--lime-700);
   --critical: var(--red-500);
+  /* A FILL TONE IS NOT A TEXT TONE (#432, again). --critical is the red things
+     are PAINTED in — a pill's ground, a border, a bar — and it sits at 4.2:1
+     against the page and 3.6:1 against its own tint, so as a `color` it fails
+     AA everywhere. The kit already ships the foreground half; this names it in
+     Stack's own vocabulary, exactly as --accent-text does for the accent. */
+  --critical-text: var(--status-danger-fg);
   --paused: var(--grey-500);
 
   /* semantic washes */
@@ -556,7 +562,7 @@ a.tab { display: inline-block; }
 .northstar-editor .hint { font-size: 11px; color: var(--faint); }
 .review-pick-opt.on-course:hover { color: var(--green); border-color: var(--green); background: var(--green-tint); }
 .review-pick-opt.tangent:hover { color: var(--building); border-color: var(--building); }
-.review-pick-opt.off-course:hover { color: var(--critical); border-color: var(--critical); }
+.review-pick-opt.off-course:hover { color: var(--critical-text); border-color: var(--critical); }
 
 /* ---------- connect guide (in-app onboarding) ---------- */
 .guide { display: flex; flex-direction: column; gap: 24px; margin-bottom: 24px; }
@@ -677,7 +683,7 @@ a.tab { display: inline-block; }
 .ovc-figure .v.live { color: var(--live); }
 .ovc-figure .v.muted { color: var(--muted); }
 .ovc-figure .tag { font-family: var(--mono); font-size: 10.5px; color: var(--accent-text-hover); }
-.ovc-figure .tag.bad { color: var(--critical); }
+.ovc-figure .tag.bad { color: var(--critical-text); }
 .ovc-note { font-size: 12.5px; line-height: 1.55; color: var(--body-2); margin-top: 7px; }
 .ovc-list { display: flex; flex-direction: column; gap: 7px; }
 .ovc-keep { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; line-height: 1.5; color: var(--body-2); margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--resume-border); }
@@ -724,7 +730,7 @@ a.tab { display: inline-block; }
    error: "no suite run in this window" is a normal, informative answer. */
 .band-empty { font-size: 12.5px; line-height: 1.6; color: var(--body-2); }
 .band.band-failed { border-color: var(--critical); }
-.band.band-failed .band-empty { color: var(--critical); }
+.band.band-failed .band-empty { color: var(--critical-text); }
 
 /* ---- the plan: area lanes in WEEKS, read-only ---- */
 .strip { display: flex; flex-direction: column; gap: 9px; }
@@ -842,7 +848,7 @@ a.tab { display: inline-block; }
 .eg-head .state { margin-left: auto; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
 .eg-head .state.good { color: var(--live); background: var(--green-tint); border: 1px solid var(--live); }
 .eg-head .state.warn { color: var(--accent-text); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); }
-.eg-head .state.bad { color: var(--critical); background: var(--card); border: 1px solid var(--critical); }
+.eg-head .state.bad { color: var(--critical-text); background: var(--card); border: 1px solid var(--critical); }
 .eg-head .state.muted { color: var(--muted); background: var(--panel); border: 1px solid var(--line-2); }
 .eg-read { font-size: 12px; line-height: 1.55; color: var(--muted); padding-top: 11px; border-top: 1px solid var(--line-2); }
 .eng-group .band-link { margin-top: auto; }
@@ -984,7 +990,7 @@ a.tab { display: inline-block; }
 .directive .mk { flex: none; color: var(--accent-text); font-size: 11px; margin-top: 2px; }
 .directive .txt { flex: 1; font-size: 13.5px; color: var(--body); line-height: 1.5; }
 .directive .x { flex: none; color: var(--faint); font-size: 15px; line-height: 1; padding: 1px 4px; }
-.directive .x:hover { color: var(--critical); }
+.directive .x:hover { color: var(--critical-text); }
 .directive-composer { display: flex; gap: 8px; margin-top: 10px; }
 .directive-composer .field-input { flex: 1; }
 
@@ -1001,7 +1007,7 @@ a.tab { display: inline-block; }
 .techchip { font-family: var(--mono); font-size: 12px; background: var(--panel); border: 1px solid var(--line-2); padding: 4px 10px; border-radius: 7px; }
 .techchip.editable { display: inline-flex; align-items: center; gap: 6px; }
 .techchip.editable button { color: var(--faint); font-size: 13px; line-height: 1; padding: 0; }
-.techchip.editable button:hover { color: var(--critical); }
+.techchip.editable button:hover { color: var(--critical-text); }
 .snap { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .snap-row { display: flex; justify-content: space-between; }
 .snap-row span:first-child { color: var(--muted); }
@@ -1111,7 +1117,7 @@ a.tab { display: inline-block; }
 .review-pick-opt { font-size: 11px; font-weight: 600; border-radius: 7px; padding: 3px 9px; border: 1px solid var(--line-2); color: var(--muted); white-space: nowrap; }
 .review-pick-opt.solid:hover { color: var(--green); border-color: var(--green); background: var(--green-tint); }
 .review-pick-opt.needs-work:hover { color: var(--building); border-color: var(--building); }
-.review-pick-opt.rethink:hover { color: var(--critical); border-color: var(--critical); }
+.review-pick-opt.rethink:hover { color: var(--critical-text); border-color: var(--critical); }
 .review-pick-opt.refine:hover { color: var(--accent-text); border-color: var(--accent-tint-border); background: var(--accent-tint); }
 @media (max-width: 640px) {
   .intake-row { flex-wrap: wrap; }
@@ -1124,12 +1130,12 @@ a.tab { display: inline-block; }
 .plan-text { flex: 1; min-width: 0; font-size: 13px; line-height: 1.4; }
 .plan-text.done { text-decoration: line-through; color: var(--faint); }
 .plan-x { flex: none; color: var(--faint); font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
-.plan-x:hover { color: var(--critical); background: var(--panel); }
+.plan-x:hover { color: var(--critical-text); background: var(--panel); }
 .road-item.skipped { opacity: 0.62; border-style: dashed; }
 /* risk tier (#212): low = trusted to auto-merge a green run, high = handle with care */
 .risk-chip { display: inline-block; margin-left: 8px; font-size: 10.5px; font-weight: 600; border-radius: 6px; padding: 1px 7px; vertical-align: 1px; }
 .risk-chip.low { color: var(--sage); background: transparent; border: 1px solid var(--sage); }
-.risk-chip.high { color: var(--critical); background: transparent; border: 1px solid var(--critical); }
+.risk-chip.high { color: var(--critical-text); background: transparent; border: 1px solid var(--critical); }
 .risk-chip .src { margin-left: 5px; font-size: 9px; font-weight: 600; color: inherit; opacity: 0.6; }
 /* claimed = someone's on it right now: dimmed, amber-tagged, read-only */
 .road-item.working { opacity: 0.68; }
@@ -1287,7 +1293,7 @@ a.tab { display: inline-block; }
 .sev-bar.medium   { background: var(--building); }
 .sev-bar.low      { background: var(--paused); }
 
-.sev-pill.critical { color: var(--critical); background: var(--status-danger-bg); }
+.sev-pill.critical { color: var(--critical-text); background: var(--status-danger-bg); }
 .sev-pill.high     { color: var(--accent-text); background: var(--accent-tint); }
 .sev-pill.medium   { color: var(--status-warning-fg); background: var(--status-warning-bg); }
 .sev-pill.low      { color: var(--status-neutral-fg); background: var(--status-neutral-bg); }
@@ -1298,7 +1304,7 @@ a.tab { display: inline-block; }
 .bug:hover .bug-quick { opacity: 1; }
 .bug-quick button { color: var(--faint); font-size: 14px; line-height: 1; padding: 3px 6px; border-radius: 6px; }
 .bug-quick .bug-resolve:hover { color: var(--green); background: var(--green-tint); }
-.bug-quick .bug-x:hover { color: var(--critical); background: var(--panel); }
+.bug-quick .bug-x:hover { color: var(--critical-text); background: var(--panel); }
 .status-pill.open          { color: var(--status-neutral-fg); background: var(--status-neutral-bg); }
 .status-pill.investigating { color: var(--status-warning-fg); background: var(--status-warning-bg); }
 .status-pill.fixing        { color: var(--accent-text); background: var(--accent-tint); }
@@ -1338,14 +1344,14 @@ a.tab { display: inline-block; }
 .statusbadge.archived .dot { background: var(--paused); }
 
 /* inline action error (detail screen) */
-.action-error { margin: 0 0 16px; padding: 10px 14px; font-size: 13px; color: var(--critical); background: var(--status-danger-bg); border: 1px solid var(--critical-line); border-radius: 10px; }
+.action-error { margin: 0 0 16px; padding: 10px 14px; font-size: 13px; color: var(--critical-text); background: var(--status-danger-bg); border: 1px solid var(--critical-line); border-radius: 10px; }
 
 /* ---------- gemini judge assist (suggestion line on idea rows) ---------- */
 .gemini-btn { font-size: 11.5px; font-weight: 600; color: var(--chip-ink); background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; padding: 3px 9px; white-space: nowrap; }
 .gemini-btn:hover:not(:disabled) { color: var(--accent-text); border-color: var(--accent-tint-border); }
 .gemini-btn:disabled { opacity: 0.6; cursor: default; }
 .gemini-suggest { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; margin-top: 8px; padding: 8px 11px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 9px; font-size: 12px; }
-.gemini-suggest.err { color: var(--critical); }
+.gemini-suggest.err { color: var(--critical-text); }
 .gemini-suggest .g-verdict { color: var(--ink); }
 .gemini-suggest .g-why { color: var(--muted); flex: 1; min-width: 120px; }
 .gemini-suggest .g-apply { font-size: 11.5px; font-weight: 600; color: var(--accent-text); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 7px; padding: 2px 10px; }
@@ -1431,7 +1437,7 @@ a.tab { display: inline-block; }
 .gate-title { font-family: var(--disp); font-size: 20px; font-weight: 600; margin-bottom: 6px; }
 .gate-sub { font-size: 13px; line-height: 1.55; color: var(--muted); margin-bottom: 18px; }
 .gate .field-input { margin-bottom: 12px; }
-.gate-error { font-size: 12.5px; color: var(--critical); margin-bottom: 12px; }
+.gate-error { font-size: 12.5px; color: var(--critical-text); margin-bottom: 12px; }
 .gate-btn { width: 100%; justify-content: center; }
 .gate-btn:disabled { opacity: .55; cursor: default; }
 .gate-hero { width: 100%; max-width: 420px; display: flex; flex-direction: column; align-items: center; }
@@ -1499,7 +1505,7 @@ a.tab { display: inline-block; }
 .audit-brief-text { width: 100%; resize: vertical; min-height: 64px; line-height: 1.5; }
 .audit-brief-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .audit-note { margin-top: 12px; font-size: 12.5px; color: var(--muted); }
-.audit-note.error { color: var(--critical); }
+.audit-note.error { color: var(--critical-text); }
 .audit-finding .check-url { font-family: inherit; font-size: 12px; max-width: none; flex: 1; min-width: 200px; }
 .audit-finding .sev-pill { flex: none; }
 .audit-outcome { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
@@ -1509,7 +1515,7 @@ a.tab { display: inline-block; }
   opacity: .45; transition: opacity .1s, border-color .1s; }
 .bug-quick-sev:hover { opacity: .75; }
 .bug-quick-sev.on { opacity: 1; }
-.bug-quick-sev.critical { color: var(--critical); border-color: var(--critical); }
+.bug-quick-sev.critical { color: var(--critical-text); border-color: var(--critical); }
 .bug-quick-sev.critical.on { background: var(--status-danger-bg); }
 .bug-quick-sev.high { color: var(--accent-text); border-color: var(--accent); }
 .bug-quick-sev.high.on { background: var(--accent-tint); }
@@ -1527,7 +1533,7 @@ a.tab { display: inline-block; }
 /* ---------- command deck (cross-project glance) ---------- */
 .deck { margin-bottom: 34px; }
 .deck-skeleton { background: var(--resume); border: 1px solid var(--resume-border); border-radius: 18px; padding: 22px 26px; font-size: 13px; color: var(--muted); margin-bottom: 34px; }
-.deck-error { background: var(--status-danger-bg); border: 1px solid var(--critical-line); border-radius: 14px; padding: 12px 16px; font-size: 13px; color: var(--critical); margin-bottom: 34px; }
+.deck-error { background: var(--status-danger-bg); border: 1px solid var(--critical-line); border-radius: 14px; padding: 12px 16px; font-size: 13px; color: var(--critical-text); margin-bottom: 34px; }
 .hero-name { font-family: var(--disp); font-size: 26px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
 .hero-phase { font-family: var(--mono); font-size: 11px; color: var(--accent-text); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); padding: 2px 9px; border-radius: 20px; }
 .hero-summary { font-size: 14.5px; line-height: 1.6; color: var(--body-2); max-width: 70ch; }
@@ -1564,7 +1570,7 @@ a.tab { display: inline-block; }
 .run-outcome { font-size: 12px; font-weight: 700; text-align: center; }
 .run-outcome.landed { color: var(--sage); }
 .run-outcome.limit { color: var(--building); }
-.run-outcome.failed { color: var(--critical); }
+.run-outcome.failed { color: var(--critical-text); }
 .run-outcome.no-commits { color: var(--muted); }
 .run-proj { font-size: 12px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run-title { font-size: 12.5px; color: var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1606,9 +1612,9 @@ a.tab { display: inline-block; }
 .review-keep { color: var(--green); }
 .review-keep:hover { border-color: var(--green); background: var(--green-tint); }
 .review-dismiss { color: var(--muted); }
-.review-dismiss:hover { color: var(--critical); border-color: var(--critical); }
+.review-dismiss:hover { color: var(--critical-text); border-color: var(--critical); }
 .review-more { font-size: 11px; color: var(--faint); padding: 7px 11px 6px; }
-.review-error { font-size: 12px; color: var(--critical); padding: 7px 11px 6px; }
+.review-error { font-size: 12px; color: var(--critical-text); padding: 7px 11px 6px; }
 /* #76 — ✧ Triage: inbox assist button + annotations */
 .triage-btn { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 7px; border: 1px solid var(--accent-tint-border); color: var(--accent-text); background: var(--accent-tint); margin-left: auto; white-space: nowrap; }
 .triage-btn:hover:not(:disabled) { background: var(--accent); color: var(--surface); border-color: var(--accent); }
@@ -1622,13 +1628,13 @@ a.tab { display: inline-block; }
 /* inline annotation chips on each row */
 .triage-ann { font-size: 11px; border-radius: 6px; padding: 1px 7px; border: 1px solid var(--line-2); color: var(--muted); background: var(--panel); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; max-width: 100%; }
 .triage-ann.cluster { color: var(--building); border-color: color-mix(in srgb, var(--building) 30%, transparent); background: color-mix(in srgb, var(--building) 8%, var(--surface)); }
-.triage-ann.severity { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 30%, transparent); background: color-mix(in srgb, var(--critical) 6%, var(--surface)); }
+.triage-ann.severity { color: var(--critical-text); border-color: color-mix(in srgb, var(--critical) 30%, transparent); background: color-mix(in srgb, var(--critical) 6%, var(--surface)); }
 .triage-ann.suggest.keep { color: var(--green); border-color: color-mix(in srgb, var(--green) 30%, transparent); background: color-mix(in srgb, var(--green) 7%, var(--surface)); }
 .triage-ann.suggest.dismiss { color: var(--muted); }
 /* Apply button — slots into the actions col, only when a suggestion exists */
 .triage-apply { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 7px; border: 1px solid var(--line-2); white-space: nowrap; color: var(--muted); }
 .triage-apply.keep:hover { color: var(--green); border-color: var(--green); background: var(--green-tint); }
-.triage-apply.dismiss:hover { color: var(--critical); border-color: var(--critical); }
+.triage-apply.dismiss:hover { color: var(--critical-text); border-color: var(--critical); }
 
 /* attention row */
 /* minmax(0, 1fr), not 1fr: a `1fr` track floors at its content's min-content
@@ -1703,7 +1709,7 @@ a.tab { display: inline-block; }
 
 .cmdk-results { overflow-y: auto; padding: 6px; flex: 1; min-height: 96px; }
 .cmdk-hint { padding: 30px 14px; text-align: center; font-size: 13px; color: var(--faint); }
-.cmdk-hint.cmdk-error { color: var(--critical); }
+.cmdk-hint.cmdk-error { color: var(--critical-text); }
 .cmdk-group { margin-bottom: 4px; }
 .cmdk-group-head { font-family: var(--disp); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); padding: 9px 10px 5px; }
 .cmdk-row {
@@ -1715,7 +1721,7 @@ a.tab { display: inline-block; }
   flex: none; width: 24px; height: 24px; border-radius: 7px; display: flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 700; background: var(--panel); color: var(--muted); border: 1px solid var(--line-2);
 }
-.cmdk-ico.kind-bug { color: var(--critical); }
+.cmdk-ico.kind-bug { color: var(--critical-text); }
 .cmdk-ico.kind-roadmap { color: var(--building); }
 .cmdk-ico.kind-note { color: var(--accent-text); }
 .cmdk-ico.kind-activity { color: var(--live); }
@@ -1781,7 +1787,7 @@ a.tab { display: inline-block; }
 
 .set-test { font-size: 12.5px; margin: 0 0 4px; padding: 8px 12px; border-radius: 9px; }
 .set-test.ok { color: var(--live); background: var(--green-tint); border: 1px solid var(--lime-700); }
-.set-test.fail { color: var(--critical); background: var(--status-danger-bg); border: 1px solid var(--critical-line); }
+.set-test.fail { color: var(--critical-text); background: var(--status-danger-bg); border: 1px solid var(--critical-line); }
 .set-note { font-size: 12px; color: var(--faint); margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-2); }
 .set-note .mono { color: var(--muted); }
 
@@ -1825,7 +1831,7 @@ a.tab { display: inline-block; }
 .term-cwd { max-width: 300px; height: 36px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
 .term-status { font-size: 12.5px; color: var(--muted); }
 .term-status.live { color: var(--green); font-weight: 600; }
-.term-status.error { color: var(--critical); }
+.term-status.error { color: var(--critical-text); }
 /* The 12px inset sits on the TERMINAL, not on the holder (BUG-6). FitAddon
    sizes the grid from `getComputedStyle(parent).height` minus the terminal
    element's own padding — and with the global `* { box-sizing: border-box }`
@@ -1937,11 +1943,11 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tc-link { font-size: 11px; color: var(--accent-text); padding: 0; }
 .tc-link:hover { color: var(--accent-text-hover); }
 .tc-link.dim { color: var(--muted); }
-.tc-link.dim:hover { color: var(--critical); }
+.tc-link.dim:hover { color: var(--critical-text); }
 .tc-link:disabled { color: var(--fainter); cursor: default; }
 .tc-empty { font-size: 11.5px; line-height: 1.5; color: var(--muted); }
 .tc-empty.pad { padding: 14px 6px; }
-.tc-warn { font-size: 11px; color: var(--critical); font-weight: 600; }
+.tc-warn { font-size: 11px; color: var(--critical-text); font-weight: 600; }
 .tc-foot { font-size: 10.5px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--line-3); padding-top: 10px; }
 /* ---- the ↩ Debrief segment (#276): the terminal's own resume card, so
    "Jump back in" arrives already briefed. Reuses .tc-body/.tc-block/.tc-cap
@@ -2071,7 +2077,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tc-run { color: var(--faint); font-size: 12px; padding: 3px 6px; border-radius: 5px; flex: none; }
 .tc-run:hover { color: var(--accent-text); background: var(--card); }
 .term-cmd-x { color: var(--faint); font-size: 14px; padding: 2px 5px; border-radius: 5px; }
-.term-cmd-x:hover { color: var(--critical); }
+.term-cmd-x:hover { color: var(--critical-text); }
 .term-cmd-add { display: flex; flex-direction: column; gap: 6px; }
 .term-cmd-add .field-input.sm { height: 32px; font-size: 12px; }
 .term-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -2132,7 +2138,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
    don't read as a row of buttons. */
 .pane-btn { flex: none; font-size: 12px; line-height: 1; color: var(--fainter); padding: 2px 5px; border-radius: 6px; opacity: 0; }
 .term-pane:hover .pane-btn, .term-pane.focused .pane-btn, .pane-btn:focus-visible { opacity: 1; }
-.pane-btn:hover { color: var(--critical); background: var(--card); }
+.pane-btn:hover { color: var(--critical-text); background: var(--card); }
 .pane-btn.end { font-size: 11px; }
 .pane-btn.end:hover { color: #fff; background: var(--critical); }
 /* #292 — the pane's keep pin. A PINNED pane keeps its pin visible without a
@@ -2173,7 +2179,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .term-tab .dot.connecting { background: #bfbf00; }
 .term-tab .dot.error { background: var(--critical); }
 .term-tab-x { color: var(--faint); font-size: 13px; padding: 2px 6px; border-radius: 5px; }
-.term-tab-x:hover { color: var(--critical); }
+.term-tab-x:hover { color: var(--critical-text); }
 /* the canvas keeps its git-bash colours — black, mintty palette (25b changed
    the chrome around it, never the box itself). The tab strip and the usage
    strip moved off this column, so it gets that height back. */
@@ -2193,20 +2199,20 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tu-limit:hover { color: var(--accent-text); }
 .tu-edit { width: 64px; height: 24px; padding: 0 6px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .tu-num { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--body); white-space: nowrap; }
-.tu-reset { color: var(--critical); font-weight: 600; }
+.tu-reset { color: var(--critical-text); font-weight: 600; }
 .tu-total { color: var(--faint); font-size: 11px; white-space: nowrap; } /* #130 — cache-inclusive raw volume */
-.tu-total.warn { color: var(--critical); font-weight: 600; } /* #195 — a plan weekly window running hot */
+.tu-total.warn { color: var(--critical-text); font-weight: 600; } /* #195 — a plan weekly window running hot */
 .tu-booked { color: var(--green); font-weight: 600; }
 /* #142 — the project's paused session (a limit-hit resume job in the queue) */
 .tu-resume { display: inline-flex; align-items: center; gap: 8px; color: var(--accent-text); font-weight: 600; }
 .tu-resume.paused { color: var(--muted); }
 .tu-resume .btn-submit.sm, .tu-resume .btn-cancel.sm { padding: 2px 8px; font-size: 11px; }
 .tu-auto { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
-.tu-note { flex-basis: 100%; color: var(--critical); }
+.tu-note { flex-basis: 100%; color: var(--critical-text); }
 /* ✧ the rail's Gemini command help — ask, get one command, type/save it */
 .term-assist { display: flex; flex-direction: column; gap: 6px; }
 .ta-note { font-size: 11.5px; color: var(--muted); }
-.ta-note.err { color: var(--critical); }
+.ta-note.err { color: var(--critical-text); }
 .ta-card { border: 1px solid var(--accent-tint-border); background: var(--accent-tint); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 .ta-cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--body); word-break: break-all; }
 .ta-why { font-size: 11.5px; color: var(--muted); }
@@ -2225,7 +2231,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .term-tab-name { max-width: 420px; }
 /* multi-kill: selection on the killable (detached) chips + the bulk action */
 .td-pick { padding: 3px 6px; color: var(--muted); font-size: 12px; line-height: 1; border-left: 1px solid var(--accent-tint-border); }
-.td-pick:hover, .td-pick.on { color: var(--critical); }
+.td-pick:hover, .td-pick.on { color: var(--critical-text); }
 .td-chip.picked { border-color: var(--critical); }
 /* #292 — the keep pin. Offered on every chip (the reaper measures OUTPUT, not
    attachment, so a mirrored session is as reapable as an orphan), and the
@@ -2238,7 +2244,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .td-bulk { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
 .td-bulk .btn-repo.sm, .td-bulk .btn-cancel.sm { padding: 3px 9px; font-size: 11.5px; }
 .td-killlist { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; }
-.td-x:hover { color: var(--critical); }
+.td-x:hover { color: var(--critical-text); }
 .term-float .term-detached { display: none; }
 /* #137/#139 — the persistent terminal dock. The whole screen stays mounted;
    these classes re-layout the SAME DOM as hidden, or as a floating panel. */
@@ -2443,7 +2449,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .qa-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px 3px 9px; border-radius: 20px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); font-size: 11px; font-weight: 500; color: var(--accent-text-hover); }
 .qa-chip .x { background: none; border: none; padding: 0 2px; font-size: 13px; line-height: 1; color: var(--accent-text-hover); opacity: 0.7; cursor: pointer; }
 .qa-chip .x:hover { opacity: 1; }
-.qa-err { font-size: 12px; color: var(--critical); }
+.qa-err { font-size: 12px; color: var(--critical-text); }
 /* A save with no way to what it made reads as a press that went nowhere. */
 .qa-filed { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); font-size: 12px; color: var(--ink); }
 .qa-link { background: none; border: none; padding: 0; font: inherit; font-size: 12px; font-weight: 500; color: var(--accent-text-hover); cursor: pointer; }
@@ -2655,7 +2661,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-health.good .q-verdict, .q-health.good .q-eyebrow { color: var(--live); }
 .q-health.needs-work, .q-health.down { border-color: var(--critical-line); background: var(--critical-tint); }
 .q-health.needs-work .q-verdict, .q-health.needs-work .q-eyebrow,
-.q-health.down .q-verdict, .q-health.down .q-eyebrow { color: var(--critical); }
+.q-health.down .q-verdict, .q-health.down .q-eyebrow { color: var(--critical-text); }
 .q-trend { display: flex; align-items: flex-end; gap: 2px; height: 34px; margin-top: auto; padding-top: 10px; }
 .q-trend.inline { height: 22px; margin: 0; padding: 0; flex: 1; min-width: 90px; max-width: 260px; }
 .q-trend-bar { flex: 1; min-width: 2px; border-radius: 1px; background: var(--green); }
@@ -2668,12 +2674,12 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-kpi.bad { border-color: var(--critical-line); background: var(--critical-tint); }
 .q-kpi-n { display: flex; align-items: baseline; gap: 7px; }
 .q-kpi-n b { font-family: var(--disp); font-size: 23px; font-weight: 600; line-height: 1; color: var(--ink); }
-.q-kpi.bad .q-kpi-n b { color: var(--critical); }
+.q-kpi.bad .q-kpi-n b { color: var(--critical-text); }
 .q-kpi-n span { font-family: var(--mono); font-size: 9.5px; }
 .q-kpi-n .up { color: var(--live); }
-.q-kpi-n .down { color: var(--critical); }
+.q-kpi-n .down { color: var(--critical-text); }
 .q-kpi-l { font-size: 11px; font-weight: 500; color: var(--ink); }
-.q-kpi.bad .q-kpi-l { color: var(--critical); }
+.q-kpi.bad .q-kpi-l { color: var(--critical-text); }
 .q-kpi-s { font-family: var(--mono); font-size: 9.5px; color: var(--muted); }
 
 /* the virgin state's teaching card — no KPIs until there's a number */
@@ -2700,11 +2706,11 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-card-head { display: flex; align-items: baseline; gap: 9px; padding: 12px 15px; border-bottom: 1px solid var(--line-2); flex-wrap: wrap; }
 .q-card.wrong .q-card-head { border-bottom-color: var(--critical-line); }
 .q-card-title { font-family: var(--disp); font-size: 13px; font-weight: 600; color: var(--ink); }
-.q-card.wrong .q-card-title { color: var(--critical); }
+.q-card.wrong .q-card-title { color: var(--critical-text); }
 .q-card-sub { font-size: 10.5px; color: var(--muted); }
 .q-card-act { font-family: var(--mono); font-size: 10px; color: var(--muted); }
 .q-card-act:hover:not(:disabled) { color: var(--accent-text); }
-.q-card-act.red { color: var(--critical); }
+.q-card-act.red { color: var(--critical-text); }
 .q-card-act.red:hover:not(:disabled) { color: var(--accent-text-hover); }
 .q-card-act:disabled { opacity: 0.5; }
 .q-card-body { padding: 12px 15px; display: flex; flex-direction: column; gap: 8px; }
@@ -2717,7 +2723,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-rows { padding: 6px 9px 10px; display: flex; flex-direction: column; gap: 2px; }
 .q-rows.tight { gap: 1px; }
 .q-note { padding: 10px 11px; font-size: 12px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
-.q-note.bad { color: var(--critical); }
+.q-note.bad { color: var(--critical-text); }
 .q-note.dashed { margin: 4px; border: 1px dashed var(--line-3); border-radius: 10px; }
 .q-more { padding: 8px 11px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 
@@ -2728,22 +2734,22 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-row.bug { border-left: 3px solid var(--paused); }
 .q-row.bug.critical { border-left-color: var(--critical); }
 .q-row.bug.high { border-left-color: var(--accent-soft); }
-.q-kind { width: 42px; flex: none; font-family: var(--mono); font-size: 9px; font-weight: 600; color: var(--critical); }
+.q-kind { width: 42px; flex: none; font-family: var(--mono); font-size: 9px; font-weight: 600; color: var(--critical-text); }
 .q-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .q-row-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .q-row-title .t { font-size: 12px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .q-row-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.q-row-sub.bad { color: var(--critical); }
+.q-row-sub.bad { color: var(--critical-text); }
 .q-row-acts { display: flex; align-items: center; gap: 6px; flex: none; }
 .q-act { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line-3); color: var(--ink);
   font-size: 10.5px; font-weight: 500; white-space: nowrap; }
 .q-act:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-text-hover); }
 .q-act:disabled { opacity: 0.5; }
-.q-act.red { color: var(--critical); border-color: var(--critical-line); }
+.q-act.red { color: var(--critical-text); border-color: var(--critical-line); }
 .q-act.red:hover { border-color: var(--critical); background: var(--card); }
 .q-icon { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 2px 5px; border-radius: 5px; }
 .q-icon:hover:not(:disabled) { color: var(--accent-text); background: var(--panel); }
-.q-icon.danger:hover { color: var(--critical); }
+.q-icon.danger:hover { color: var(--critical-text); }
 .q-icon:disabled { opacity: 0.45; }
 
 /* the link chip — the bug↔check pointer, clickable in both directions */
@@ -2764,7 +2770,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-assert.ai { color: var(--accent-text-hover); background: var(--accent-tint); }
 .q-crow-result { flex: none; width: 132px; text-align: right; font-family: var(--mono); font-size: 9.5px; color: var(--muted); white-space: nowrap; }
 .q-crow-result.pass { color: var(--live); }
-.q-crow-result.fail { color: var(--critical); }
+.q-crow-result.fail { color: var(--critical-text); }
 .q-crow-result.never { color: var(--muted); }
 
 /* the bugs card (Now) */
@@ -2783,7 +2789,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-brow:hover .q-brow-quick { opacity: 1; }
 .q-brow-quick button { color: var(--faint); font-size: 13px; line-height: 1; padding: 2px 5px; border-radius: 5px; }
 .q-brow-quick .bug-resolve:hover { color: var(--green); background: var(--green-tint); }
-.q-brow-quick .bug-x:hover { color: var(--critical); }
+.q-brow-quick .bug-x:hover { color: var(--critical-text); }
 
 /* the Suite segment's full rows */
 .q-srow { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 8px; }
@@ -2800,12 +2806,12 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-hrow-bar span { display: block; height: 5px; border-radius: 3px; background: var(--green); }
 .q-hrow-bar span.bad { background: var(--critical); }
 .q-hrow-rate { flex: none; font-family: var(--mono); font-size: 11px; color: var(--live); }
-.q-hrow-rate.bad { color: var(--critical); }
+.q-hrow-rate.bad { color: var(--critical-text); }
 .q-hrow-note { flex: 1; min-width: 0; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .q-hrow-dur { width: 60px; flex: none; text-align: right; font-family: var(--mono); font-size: 10px; color: var(--muted); }
 
 /* the single Quality badge is a "wrong now" count, not a neutral tally */
-.tab-n.bad { color: var(--critical); background: var(--critical-tint); border-color: var(--critical-line); }
+.tab-n.bad { color: var(--critical-text); background: var(--critical-tint); border-color: var(--critical-line); }
 
 /* narrow: KPIs go 2×2, the grid stacks in priority order, rows fold to two
    lines with their chips underneath. Nothing is removed. */
@@ -2823,9 +2829,9 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    unfolded run list. Bars are coloured by outcome and sized by latency, so a
    check that is passing but slowing down reads that way before it goes red. */
 .q-why-more { font-size: 11px; line-height: 1.55; color: var(--muted); font-style: italic; text-wrap: pretty; }
-.q-health.needs-work .q-why-more, .q-health.down .q-why-more { color: var(--critical); opacity: 0.9; }
+.q-health.needs-work .q-why-more, .q-health.down .q-why-more { color: var(--critical-text); opacity: 0.9; }
 .q-diag { color: var(--muted); }
-.q-row-sub.bad .q-diag { color: var(--critical); opacity: 0.8; }
+.q-row-sub.bad .q-diag { color: var(--critical-text); opacity: 0.8; }
 .q-spark { display: inline-flex; align-items: flex-end; gap: 1px; height: 16px; width: 68px; flex: none; }
 .q-spark span { flex: 1; min-width: 1px; border-radius: 1px; background: var(--green); }
 .q-spark span.bad { background: var(--critical); }
@@ -2842,9 +2848,9 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-hist-row + .q-hist-row { border-top: 1px solid var(--line); }
 .q-hist-when { width: 84px; flex: none; color: var(--ink); }
 .q-hist-code { width: 78px; flex: none; color: var(--muted); }
-.q-hist-row.fail .q-hist-code { color: var(--critical); }
+.q-hist-row.fail .q-hist-code { color: var(--critical-text); }
 .q-hist-ms { width: 56px; flex: none; color: var(--muted); }
-.q-hist-err { flex: 1; min-width: 0; color: var(--critical); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-hist-err { flex: 1; min-width: 0; color: var(--critical-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 900px) {
   .q-hist { margin-left: 8px; }
@@ -2894,7 +2900,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-feat-name .t { font-size: 13px; font-weight: 600; color: var(--ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .q-feat-checks { font-family: var(--mono); font-size: 11.5px; color: var(--live); }
-.q-feat-checks.bad { color: var(--critical); }
+.q-feat-checks.bad { color: var(--critical-text); }
 .q-feat-rate { display: flex; align-items: center; gap: 9px; min-width: 0; }
 /* capped, not fluid: past about this width the bar stops reading as a
    proportion and starts reading as a progress meter for something */
@@ -2907,7 +2913,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-feat-flakes, .q-feat-avg, .q-feat-bugs { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
 .q-feat-avg { color: var(--muted); }
 .q-feat-flakes.on { color: var(--building); }
-.q-feat-bugs.on { color: var(--critical); }
+.q-feat-bugs.on { color: var(--critical-text); }
 
 .q-feat-open { display: grid; grid-template-columns: 1fr 280px; gap: 20px; align-items: start;
   padding: 6px 15px 16px 34px; background: var(--panel); }
@@ -2915,12 +2921,12 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .q-feat-check { display: flex; align-items: center; gap: 10px; padding: 6px 9px; border-radius: 7px; }
 .q-feat-check:hover { background: var(--card); }
 .q-feat-mark { flex: none; font-size: 10px; color: var(--live); }
-.q-feat-check.fail .q-feat-mark { color: var(--critical); }
+.q-feat-check.fail .q-feat-mark { color: var(--critical-text); }
 .q-feat-check.never .q-feat-mark { color: var(--keyline); }
 .q-feat-cname { min-width: 0; font-size: 12.5px; color: var(--body);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .q-feat-ms { flex: none; font-family: var(--mono); font-size: 10px; color: var(--muted); }
-.q-feat-ms.fail { color: var(--critical); }
+.q-feat-ms.fail { color: var(--critical-text); }
 .q-feat-ms.never { color: var(--keyline); }
 .q-feat-acts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .q-act.accent { color: var(--accent-text-hover); border-color: var(--accent-tint-border); background: var(--accent-tint); }
@@ -3019,7 +3025,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .subnav-stats .d { font-size: 9px; vertical-align: 2px; }
 .subnav-stats .d.live { color: var(--live); }
 .subnav-stats .d.building { color: var(--building); }
-.subnav-stats .d.critical { color: var(--critical); }
+.subnav-stats .d.critical { color: var(--critical-text); }
 
 .dash-section { scroll-margin-top: 128px; margin-bottom: 44px; }
 .dash-section.last { margin-bottom: 0; }
@@ -3174,12 +3180,12 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .sk-state { font-family: var(--mono); font-size: 9.5px; white-space: nowrap; cursor: help; }
 .sk-state.on { color: var(--live); }
 .sk-state.wait { color: var(--building); }
-.sk-state.warn { color: var(--critical); }
+.sk-state.warn { color: var(--critical-text); }
 .sk-state.off { color: var(--muted); }
 .sk-where { flex: none; font-family: var(--mono); font-size: 10px; color: var(--fainter); white-space: nowrap; }
 .sk-acts { flex: none; display: inline-flex; align-items: center; gap: 6px; }
 .sk-x { font-size: 14px; line-height: 1; color: var(--fainter); padding: 2px 6px; border-radius: 6px; }
-.sk-x:hover { color: var(--critical); background: var(--panel); }
+.sk-x:hover { color: var(--critical-text); background: var(--panel); }
 .sk-foreign { flex: none; width: 22px; text-align: center; font-size: 12px; color: var(--faint); cursor: help; }
 .sk-group.unmanaged .sk-row { border-style: dashed; background: transparent; }
 
@@ -3354,7 +3360,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rtab-areaedit input { width: 96px; font-size: 12.5px; border: none; background: transparent; color: var(--ink); padding: 0; font-family: var(--sans); }
 .rtab-areaedit input:focus { outline: none; }
 .rtab-areaedit button { font-size: 13px; color: var(--faint); padding: 0 4px; }
-.rtab-areaedit button:hover { color: var(--critical); }
+.rtab-areaedit button:hover { color: var(--critical-text); }
 
 /* ---- the label chips: one class per Atlas tone, so a label is the same
        colour in both themes without either registry holding a hex ---- */
@@ -3363,7 +3369,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rl-muted    { color: var(--muted);    background: var(--panel);         border-color: var(--line-2); }
 .rl-live     { color: var(--live);     background: var(--live-tint);     border-color: var(--live-tint); }
 .rl-building { color: var(--building); background: var(--building-tint); border-color: var(--building-tint); }
-.rl-critical { color: var(--critical); background: var(--critical-tint); border-color: var(--critical-line); }
+.rl-critical { color: var(--critical-text); background: var(--critical-tint); border-color: var(--critical-line); }
 /* #382 — two more tones, because the label set is the owner's now and five
    colours ran out. Every tone in server/src/labels.js's TONES needs a rule
    here and an `.on` and a `.rp-stripe` below it: a label wearing a tone
@@ -3580,7 +3586,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rp-labelrow > .n { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
 .rp-labelrow > .tick { font-size: 11px; color: var(--accent-text); }
 .rp-labelrow > .x { flex: none; font-size: 13px; line-height: 1; color: var(--fainter); padding: 0 3px; }
-.rp-labelrow > .x:hover { color: var(--critical); }
+.rp-labelrow > .x:hover { color: var(--critical-text); }
 .rp-labelconfirm { display: inline-flex; align-items: center; gap: 6px; }
 .rp-labelconfirm .go { font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--on-accent);
   background: var(--critical); border-radius: 6px; padding: 3px 8px; white-space: nowrap; }
@@ -3602,12 +3608,12 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rp-note.built { font-size: 12.5px; line-height: 1.5; color: var(--body); }
 /* What the reviewer could NOT see, drawn hardest — the same rule the Foreman's
    blind list follows: absence of evidence is never rendered as good news. */
-.rp-review-blind { font-size: 12px; line-height: 1.5; color: var(--critical); }
+.rp-review-blind { font-size: 12px; line-height: 1.5; color: var(--critical-text); }
 .rp-review-branch { margin-top: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 .rp-review .rp-acts { margin-top: 10px; }
 .rail-link.go { font-weight: 600; }
 .rail-link.danger { color: var(--muted); }
-.rail-link.danger:hover { color: var(--critical); }
+.rail-link.danger:hover { color: var(--critical-text); }
 .rp-verdict { font-family: var(--mono); font-size: 10px; color: var(--sage); background: var(--green-tint);
   border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
 
