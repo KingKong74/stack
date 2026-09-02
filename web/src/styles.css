@@ -3456,6 +3456,12 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rp-col-act { font-size: 12px; line-height: 1; color: var(--fainter); background: transparent;
   border: 1px solid transparent; border-radius: 6px; padding: 3px 5px; }
 .rp-col-act:hover { color: var(--accent-text); border-color: var(--accent-tint-border); }
+/* The lane's ⋯ takes the tools' own dress rather than the rail's, so the two
+   buttons left in the head still read as one group. */
+.moremenu-btn.rp-col-act { width: auto; height: auto; padding: 3px 5px; border-radius: 6px; }
+.moremenu-btn.rp-col-act:hover, .moremenu-btn.rp-col-act.on {
+  background: transparent; color: var(--accent-text); border-color: var(--accent-tint-border);
+}
 .rp-col-act.on { color: var(--accent-text); border-color: var(--accent-tint-border); background: var(--accent-tint); }
 /* The catch-all's head chip. It replaces the ✎ × pair rather than sitting
    beside it, so the column that cannot be edited says why in the place the
@@ -3805,7 +3811,40 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   border-radius: var(--radius-pill); padding: 2px 6px; flex: none;
 }
 .con-navfoot { margin-top: auto; padding-top: var(--space-6); }
+/* The row and its ⋯, side by side. The ⋯ is a SIBLING of the row (ConsoleNav's
+   header says why), so the row keeps a slot free for it at all times and
+   nothing moves when it appears. */
+.con-navrow { position: relative; display: flex; align-items: center; }
+.con-navrow > .con-navitem { padding-right: 28px; }
+.con-navmore { position: absolute; right: 3px; opacity: 0; }
+.con-navrow:hover .con-navmore, .con-navmore:focus-visible, .con-navmore.on { opacity: 1; }
 .con-spacedot { width: 8px; height: 8px; border-radius: var(--radius-xs); flex: none; display: inline-block; }
+
+/* ---------- the ⋯ menu (components/MoreMenu.tsx) ---------- */
+/* Fixed, because both callers sit inside a container that clips its own
+   overflow; the component closes it on any scroll for the same reason. */
+.moremenu-btn {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 22px; height: 22px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-tertiary); cursor: pointer;
+  font-size: 13px; line-height: 1; transition: var(--transition-control);
+}
+.moremenu-btn.sm { width: 20px; height: 20px; font-size: 12px; }
+.moremenu-btn:hover, .moremenu-btn.on { background: var(--surface-hover); color: var(--text-primary); }
+.moremenu-pop {
+  position: fixed; z-index: 60; width: 184px;
+  background: var(--surface-raised); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); padding: var(--space-2); box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column; gap: 1px;
+}
+.moremenu-item {
+  display: block; width: 100%; text-align: left; border: 0; background: transparent; cursor: pointer;
+  padding: 6px 8px; border-radius: var(--radius-sm);
+  font: var(--type-label); color: var(--text-secondary); transition: var(--transition-control);
+}
+.moremenu-item:hover { background: var(--surface-hover); color: var(--text-primary); }
+.moremenu-item.danger { color: var(--status-danger-fg); }
+.moremenu-item.danger:hover { background: var(--status-danger-bg); color: var(--status-danger-fg); }
 
 /* ---------- the main region ---------- */
 .con-main { flex: 1; min-width: 0; padding: var(--space-8); }
@@ -3909,6 +3948,11 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   /* No labels here means no fold handles, so a section folded shut on a wide
      screen must not strand its rows where nothing can reopen them. */
   .con-navitems, .con-navgroup.shut .con-navitems { display: flex; flex-direction: row; gap: var(--space-2); }
+  /* The ⋯ is a hover affordance and there is no hover here, and a row of them
+     would crowd a strip that is already scrolling sideways. A Spaces row is a
+     real anchor, so a long-press still offers the browser's own version. */
+  .con-navrow > .con-navitem { padding-right: 10px; }
+  .con-navmore { display: none; }
   .con-navitem { width: auto; }
   .con-navitem.d1 { padding-left: 10px; }
   .con-navfoot { margin-top: 0; padding-top: 0; }

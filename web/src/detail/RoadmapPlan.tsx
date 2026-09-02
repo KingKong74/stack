@@ -82,6 +82,7 @@ import type { BoardArea, BoardLabel, BoardList, Priority, RoadmapItem } from '..
 import { areaMatches, listKeyOf } from '../lib/plan';
 import { isBuilt } from '../lib/spine';
 import { LABEL_TONES, labelsOf } from '../lib/labels';
+import { MoreMenu } from '../components/MoreMenu';
 
 const BUCKETS: Priority[] = ['must', 'should', 'could', 'wont'];
 const BUCKET_LABEL: Record<Priority, string> = {
@@ -348,11 +349,18 @@ export function RoadmapPlan({
                     )
                   )}
 
-                  {/* Rename and remove, on EVERY lane (#428). The catch-all is
-                      the one column without them, because it is not a row — it
-                      is where a deleted lane's cards are drawn, and it says so
-                      rather than offering tools that would have nothing to
-                      write to. */}
+                  {/* Rename and remove, on EVERY lane (#428) — behind one ⋯
+                      rather than as a ✎ and a × the reader has to decode. The
+                      catch-all is the one column without them, because it is
+                      not a row — it is where a deleted lane's cards are drawn,
+                      and it says so rather than offering tools that would have
+                      nothing to write to.
+
+                      THE ⋯ IS THE TRIGGER, NEVER THE CONSEQUENCE: Remove lane
+                      opens the same two-press confirm the × opened, naming the
+                      cards that stay. Focus keeps its own button — it is a
+                      toggle you flip while reading, not an edit, and burying a
+                      view control costs a press every time. */}
                   {!col.list ? (
                     <span className="rp-col-note"
                       title="These cards were in a column that has since been removed. Drag each one into a lane — this is a place they are drawn, not a lane of its own, so it cannot be renamed or removed.">
@@ -367,12 +375,18 @@ export function RoadmapPlan({
                       <button className="no" onClick={() => setConfirmList('')}>Cancel</button>
                     </span>
                   ) : (
-                    <>
-                      <button className="rp-col-act" title="Rename this lane"
-                        onClick={() => { setConfirmList(''); setRenameDraft(col.name); setRenaming(col.key); }}>✎</button>
-                      <button className="rp-col-act" title="Remove this lane — its cards are not deleted"
-                        onClick={() => { setRenaming(''); setConfirmList(col.key); }}>×</button>
-                    </>
+                    <MoreMenu btnClass="rp-col-act" label={`${col.name} — lane options`}
+                      options={[
+                        {
+                          key: 'rename', label: 'Rename lane', title: 'Rename this lane',
+                          onSelect: () => { setConfirmList(''); setRenameDraft(col.name); setRenaming(col.key); },
+                        },
+                        {
+                          key: 'remove', label: 'Remove lane', danger: true,
+                          title: 'Remove this lane — its cards are not deleted',
+                          onSelect: () => { setRenaming(''); setConfirmList(col.key); },
+                        },
+                      ]} />
                   )}
 
                   <button className={`rp-col-act${wide ? ' on' : ''}`} aria-pressed={wide}

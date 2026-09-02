@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { getNavFolded, setNavFolded } from '../store';
+import { MoreMenu, type MenuOption } from '../components/MoreMenu';
 
 // THE CONSOLE'S LEFT RAIL (#432) — the kit's AppShell nav, carrying Stack's
 // own two levels.
@@ -25,6 +26,11 @@ import { getNavFolded, setNavFolded } from '../store';
 // A `soon` row is a PLACEHOLDER: it is announced but not a link and not a
 // button, because a row that takes a click and then does nothing reads as a
 // broken app. It says "Soon" on its face rather than only in a tooltip.
+//
+// THE ⋯ IS A SIBLING OF THE ROW, never inside it: the row is itself a button
+// or an anchor, and a button nested in either is invalid and unreachable by
+// keyboard. Its slot is reserved in the row's padding whether or not it is
+// showing, so appearing on hover moves nothing.
 
 export type NavKey = string;
 
@@ -42,6 +48,8 @@ export type NavSection = {
     bad?: boolean;
     /** Announced but not built yet: shown, tagged, and inert. */
     soon?: boolean;
+    /** What the row's ⋯ offers. Absent or empty draws no ⋯ at all. */
+    menu?: MenuOption[];
     depth?: number;
     onClick?: () => void;
     href?: string;
@@ -99,9 +107,17 @@ export function ConsoleNav({ sections, active, footer }: {
                 if (it.soon) return <div key={it.key} className={cls}>{inner}</div>;
                 // An anchor where there is a real URL, so middle-click still opens
                 // a tab; a button where the move is state-only.
-                return it.href
-                  ? <a key={it.key} className={cls} href={it.href} aria-current={on ? 'page' : undefined}>{inner}</a>
-                  : <button key={it.key} className={cls} onClick={it.onClick} aria-current={on ? 'page' : undefined}>{inner}</button>;
+                const row = it.href
+                  ? <a className={cls} href={it.href} aria-current={on ? 'page' : undefined}>{inner}</a>
+                  : <button className={cls} onClick={it.onClick} aria-current={on ? 'page' : undefined}>{inner}</button>;
+                return (
+                  <div className="con-navrow" key={it.key}>
+                    {row}
+                    {it.menu && it.menu.length > 0 && (
+                      <MoreMenu options={it.menu} small btnClass="con-navmore" label={`${it.label} — more`} />
+                    )}
+                  </div>
+                );
               })}
             </div>
           </div>
@@ -122,6 +138,7 @@ export const NavIcons = {
   layers: ico(<><path d="m12 2 9 5-9 5-9-5 9-5Z" /><path d="m3 17 9 5 9-5" /><path d="m3 12 9 5 9-5" /></>),
   check: ico(<><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></>),
   grid: ico(<><rect width="7" height="7" x="3" y="3" rx="1" /><rect width="7" height="7" x="14" y="3" rx="1" /><rect width="7" height="7" x="14" y="14" rx="1" /><rect width="7" height="7" x="3" y="14" rx="1" /></>),
+  board: ico(<><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /><path d="M15 3v11" /></>),
   clock: ico(<><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>),
   terminal: ico(<><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></>),
   route: ico(<><circle cx="6" cy="19" r="3" /><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15" /><circle cx="18" cy="5" r="3" /></>),

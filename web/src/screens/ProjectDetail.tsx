@@ -13,6 +13,7 @@ import type { Project } from '../types';
 import { go, hrefTo } from '../lib/route';
 import { TopBar } from '../components/TopBar';
 import { ConsoleNav, NavIcons, SpaceDot, type NavSection } from '../detail/ConsoleNav';
+import { absoluteHref, type MenuOption } from '../components/MoreMenu';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Quality } from '../detail/Quality';
 import { RoadmapTab } from '../detail/RoadmapTab';
@@ -540,6 +541,33 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
 
   const openBugLink = (hash: string) => { setHighlightRef(hash); setTab('activity'); };
   const viewAll = () => { setHighlightRef(null); setTab('activity'); };
+  // EVERY RAIL ROW IS A PLACE, so its ⋯ offers the two things you do with a
+  // place rather than a menu invented per row: open it somewhere else, or hand
+  // someone the link. THE COPY'S OWN LABEL IS ITS RECEIPT — this app has no
+  // toast, and a copy that reports nothing is a copy you press twice — so that
+  // item keeps the menu open long enough to say what happened, including when
+  // the browser refuses the clipboard, which it does on an insecure origin.
+  const [copiedRow, setCopiedRow] = useState('');
+  useEffect(() => {
+    if (!copiedRow) return;
+    const t = setTimeout(() => setCopiedRow(''), 1800);
+    return () => clearTimeout(t);
+  }, [copiedRow]);
+  const placeMenu = (href: string, id: string): MenuOption[] => [
+    {
+      key: 'newtab', label: 'Open in new tab', title: 'Open this in a second browser tab',
+      onSelect: () => window.open(absoluteHref(href), '_blank', 'noopener'),
+    },
+    {
+      key: 'copy', keepOpen: true, title: 'Copy a link that lands straight here',
+      label: copiedRow === id ? 'Link copied' : copiedRow === `${id}:no` ? "Couldn't copy" : 'Copy link',
+      onSelect: () => {
+        navigator.clipboard.writeText(absoluteHref(href))
+          .then(() => setCopiedRow(id))
+          .catch(() => setCopiedRow(`${id}:no`));
+      },
+    },
+  ];
   // THE RAIL'S CONTENTS (#432). Three sections: an unlabelled top block that is
   // where you LAND and what is yours, Workspace as the readings of THIS
   // project, and Spaces as every other app.
@@ -561,7 +589,10 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
     {
       id: 'home',
       items: [
-        { key: 'overview', label: 'Overview', icon: NavIcons.layers, onClick: () => setTab('overview') },
+        {
+          key: 'overview', label: 'Overview', icon: NavIcons.layers,
+          menu: placeMenu(hrefTo.detail(slug, 'overview'), 'overview'), onClick: () => setTab('overview'),
+        },
         { key: 'soon:foryou', label: 'For you', icon: NavIcons.sparkle, soon: true },
         { key: 'soon:starred', label: 'Starred', icon: NavIcons.star, soon: true },
       ],
@@ -571,16 +602,19 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       label: 'Workspace',
       items: [
         {
-          key: 'roadmap', label: project.name, icon: <SpaceDot tint={project.tint} />,
-          count: openRoadCount, onClick: () => setTab('roadmap'),
+          key: 'roadmap', label: project.name, icon: NavIcons.board, count: openRoadCount,
+          menu: placeMenu(hrefTo.detail(slug, 'roadmap'), 'board'), onClick: () => setTab('roadmap'),
         },
         { key: 'soon:roadmap', label: 'Roadmap', icon: NavIcons.map, soon: true },
         { key: 'soon:plans', label: 'Plans', icon: NavIcons.route, soon: true },
         {
-          key: 'quality', label: 'Quality', icon: NavIcons.check,
-          count: needsAttention, bad: true, onClick: () => setTab('quality'),
+          key: 'quality', label: 'Quality', icon: NavIcons.check, count: needsAttention, bad: true,
+          menu: placeMenu(hrefTo.detail(slug, 'quality'), 'quality'), onClick: () => setTab('quality'),
         },
-        { key: 'activity', label: 'Activity', icon: NavIcons.clock, onClick: () => setTab('activity') },
+        {
+          key: 'activity', label: 'Activity', icon: NavIcons.clock,
+          menu: placeMenu(hrefTo.detail(slug, 'activity'), 'activity'), onClick: () => setTab('activity'),
+        },
       ],
     },
     {
@@ -591,6 +625,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         label: sp.name,
         icon: <SpaceDot tint={sp.tint} />,
         depth: 1,
+        menu: placeMenu(hrefTo.detail(sp.id), `space:${sp.id}`),
         // The project you are already in is the rail's other selected row, so
         // `active` cannot be the tab key alone.
         href: hrefTo.detail(sp.id),
