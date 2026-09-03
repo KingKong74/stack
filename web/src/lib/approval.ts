@@ -10,6 +10,14 @@ import type { RoadmapItem } from '../types';
 // its own work). A manual item is approved the moment a human writes it, and is
 // NEVER held, because blocking hand-written work is the failure mode this
 // feature must not have.
+//
+// NOTHING IN THIS CLIENT CALLS IT AT THE MOMENT. Its caller was the Roadmap
+// tab, which sorted a held row into Thinking and drew it a HELD chip; that tab
+// is a mockup now (detail/IdeasMock.tsx). Deleting this file would leave the
+// rule written twice instead of three times — and the three exist because none
+// of the packages can import another, not because three surfaces wanted it. It
+// stays, `scripts/approval.test.mjs` keeps it honest, and the next client that
+// has to know whether a row may run reads it rather than writing a fourth.
 
 const NEEDS_SIGNOFF = new Set(['hook', 'fly']);
 

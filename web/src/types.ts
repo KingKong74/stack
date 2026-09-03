@@ -147,7 +147,9 @@ export interface BoardArea {
 // EVERY LANE RENAMES AND DELETES (#428) — there is no `locked`, because there
 // is no locked lane. The four keys `listKeyOf` derives into are still wiring,
 // and what keeps deleting one safe is the board's catch-all lane rather than a
-// flag on the row (server/src/lists.js, and RoadmapPlan.tsx's header).
+// flag on the row (server/src/lists.js). No client draws lanes any more —
+// the board is a mockup (web/src/detail/BoardMock.tsx); the derivation is the
+// server's and the overnight runner's.
 export interface BoardList { id: number; key: string; name: string; position: number }
 // A label the owner has defined for THIS project (#382 — was a code registry).
 // `tone` is one of the closed Atlas set, because styles.css needs a rule for it.

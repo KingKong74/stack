@@ -2,7 +2,7 @@ import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Tier, ResumeSince, ProjectDebrief,
-  SchedSpan, BoardShape, BoardArea, BoardLabel, BoardList, ProjectPulse,
+  SchedSpan, ProjectPulse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -78,34 +78,11 @@ export function setBriefPrefs(prefs: BriefPrefs) {
   localStorage.setItem(BRIEF_PREFS_KEY, JSON.stringify(prefs));
 }
 
-// ---- roadmap draft (device-local): an accidentally-dismissed add-modal keeps
-// its text per project, so half-typed items survive a stray click ----
-
-const ROAD_DRAFT_KEY = 'stack.roadDrafts';
-// Drafts are a crash pad, not storage — stale ones self-clear after this long.
-const ROAD_DRAFT_TTL_MS = 30 * 60 * 1000;
-
-export interface RoadDraft { title: string; note: string; priority: Priority; branch: string; area?: string; savedAt?: number }
-
-function readRoadDrafts(): Record<string, RoadDraft> {
-  return readStoredJSON(ROAD_DRAFT_KEY, (p) => (p && typeof p === 'object' ? p : {}));
-}
-
-export function getRoadDraft(slug: string): RoadDraft | null {
-  const d = readRoadDrafts()[slug] || null;
-  if (d && d.savedAt && Date.now() - d.savedAt > ROAD_DRAFT_TTL_MS) {
-    setRoadDraft(slug, null); // expired — quietly bin it
-    return null;
-  }
-  return d;
-}
-
-export function setRoadDraft(slug: string, draft: RoadDraft | null) {
-  const all = readRoadDrafts();
-  if (draft) all[slug] = { ...draft, savedAt: Date.now() }; else delete all[slug];
-  localStorage.setItem(ROAD_DRAFT_KEY, JSON.stringify(all));
-}
-
+// THE HALF-TYPED-ITEM DRAFT IS GONE. The add modal saved one when a stray click
+// dismissed it, and a strip on the Roadmap tab was the only thing that ever
+// offered it back. That tab is a mockup now, so keeping the draft would be
+// writing to a device's storage something nothing can ever read out — which is
+// a slower way of losing it than not saving it at all.
 // The theme preference is GONE. The app is dark-only since the console kit
 // landed — it ships one palette and no light counterpart — so there is no
 // stored choice, no listener and no Settings control. App.tsx stamps
@@ -929,69 +906,15 @@ export async function patchRoadmapItem(
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });
 }
 
-// ---- the Roadmap tab's furniture: areas (the timeline's lanes) and Plan lists.
-// Every writer returns the fresh collection, so the caller never has to guess
-// what a rename did to the rows that carried the old name.
-const boardBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/board`;
-
-export async function getBoardShape(slug: string): Promise<BoardShape> {
-  return request<BoardShape>(boardBase(slug));
-}
-export async function addArea(slug: string, name: string): Promise<BoardArea[]> {
-  const r = await request<{ areas: BoardArea[] }>(`${boardBase(slug)}/areas`, { method: 'POST', body: { name } });
-  return r.areas;
-}
-/** Set an area's dot. Only a colour the server's palette knows is stored. */
-export async function setAreaColour(slug: string, name: string, dot: string): Promise<BoardArea[]> {
-  const r = await request<{ areas: BoardArea[] }>(
-    `${boardBase(slug)}/areas/${encodeURIComponent(name)}`, { method: 'PATCH', body: { dot } });
-  return r.areas;
-}
-// THE CURATOR'S TWO BOARD READS HAVE NO CLIENT LEFT. `arrangeRoadmap` proposed
-// {id, sched} moves for the Timeline to ghost and went unsurfaced with it
-// (#428); `allocateRoadmap` proposed an area for every untagged row and was the
-// Arrange panel's last button. Both wrappers are gone from here rather than
-// kept as callers nobody calls — `POST /roadmap/arrange`, `POST /allocate` and
-// `POST /cleanup` are still on the server, and the routes are the record of
-// what the Curator can still be asked. A new surface writes the wrapper it
-// needs; a wrapper with no surface only reads as one that has one.
-export async function renameArea(slug: string, from: string, name: string): Promise<BoardArea[]> {
-  const r = await request<{ areas: BoardArea[] }>(
-    `${boardBase(slug)}/areas/${encodeURIComponent(from)}`, { method: 'PATCH', body: { name } });
-  return r.areas;
-}
-export async function deleteArea(slug: string, name: string): Promise<BoardArea[]> {
-  const r = await request<{ areas: BoardArea[] }>(
-    `${boardBase(slug)}/areas/${encodeURIComponent(name)}`, { method: 'DELETE' });
-  return r.areas;
-}
-/**
- * The project's labels (#382). Both writers answer with the WHOLE set, like the
- * area writers: a delete takes the label off every card server-side, so the
- * caller must never assume the collection it had is still current.
- */
-export async function addLabel(slug: string, name: string, tone: string): Promise<BoardLabel[]> {
-  const r = await request<{ labels: BoardLabel[] }>(
-    `${boardBase(slug)}/labels`, { method: 'POST', body: { name, tone } });
-  return r.labels;
-}
-export async function deleteLabel(slug: string, key: string): Promise<BoardLabel[]> {
-  const r = await request<{ labels: BoardLabel[] }>(
-    `${boardBase(slug)}/labels/${encodeURIComponent(key)}`, { method: 'DELETE' });
-  return r.labels;
-}
-export async function addList(slug: string, name: string): Promise<BoardList> {
-  const r = await request<{ list: BoardList }>(`${boardBase(slug)}/lists`, { method: 'POST', body: { name } });
-  return r.list;
-}
-export async function renameList(slug: string, key: string, name: string): Promise<BoardList> {
-  const r = await request<{ list: BoardList }>(
-    `${boardBase(slug)}/lists/${encodeURIComponent(key)}`, { method: 'PATCH', body: { name } });
-  return r.list;
-}
-export async function deleteList(slug: string, key: string): Promise<void> {
-  await request<void>(`${boardBase(slug)}/lists/${encodeURIComponent(key)}`, { method: 'DELETE' });
-}
+// ---- THE BOARD'S FURNITURE HAS NO CLIENT LEFT ------------------------------
+// Ten wrappers stood here — the board read (`getBoardShape`) and the writers for
+// areas, labels and lanes. The Roadmap tab that called them is a mockup now
+// (web/src/detail/BoardMock.tsx) and calls nothing, so they go the same way the
+// Curator's two board reads went a few paragraphs of history ago, and for the
+// identical reason: `GET /board`, `POST /board/areas`, `/labels`, `/lists` and
+// their PATCH/DELETE siblings are all still on the server, and THE ROUTES ARE
+// THE RECORD of what a board can still be asked. A new surface writes the
+// wrapper it needs; a wrapper with no surface only reads as one that has one.
 export async function deleteRoadmapItem(slug: string, id: number): Promise<void> {
   await request<void>(`${roadmapBase(slug)}/${id}`, { method: 'DELETE' });
 }

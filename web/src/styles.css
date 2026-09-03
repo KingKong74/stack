@@ -3316,442 +3316,9 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   .mc-trees-row .proj { width: auto; }
 }
 
-/* ==========================================================================
-   THE ROADMAP TAB — the board, and the chips over it.
-   Atlas tokens only; dark mode follows through the same names. Nothing here
-   sets a colour that is not already in the palette at the top of this file.
-   ========================================================================== */
-
-.rtab-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-/* The unfinished item. Quiet — it is an offer, not a warning — but it carries
-   the accent border, because the one thing it must not do is read as furniture
-   and let a typed draft sit there unnoticed until it is lost. */
-.rtab-draft { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
-  font-size: 12.5px; color: var(--muted); background: var(--card);
-  border: 1px solid var(--accent-tint-border); border-radius: 10px; padding: 9px 13px; }
-.rtab-chips .chip-sm { display: inline-flex; align-items: center; gap: 7px; }
-.rtab-chips .chip-sm .n { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-.rtab-chips .chip-sm.on .n { color: inherit; opacity: .8; }
-.rtab-chips .chip-sm.dashed { border-style: dashed; color: var(--accent-text); border-color: var(--accent-tint-border); }
-/* An area chip carries NO colour dot. The dot said nothing the name did not,
-   and eleven of them turned a filter strip into a legend for a chart that is
-   not there. The lanes and cards still wear the area's dot, where it is doing
-   the work of telling two rows apart. */
-.rtab-chips .chip-sm.empty { color: var(--faint); border-style: dashed; }
-/* Unallocated is not an area — it is the absence of one, and it is drawn as the
-   odd one out on purpose so it never reads as a lane you can file work into. */
-.rtab-chips .chip-sm.unalloc { font-style: italic; color: var(--muted); }
-.rtab-chips .chip-sm.unalloc.on { font-style: normal; color: #fff; }
-.rtab-hidden { font-family: var(--mono); font-size: 11px; color: var(--muted); background: transparent; border: 1px dashed var(--line-3); border-radius: 999px; padding: 5px 11px; white-space: nowrap; }
-.rtab-hidden:hover { color: var(--accent-text); border-color: var(--accent-tint-border); }
-/* #378 — the area-chip search. Sized to a chip rather than to a form field: it
-   sits IN the chip row and a full-width input would read as the row's subject
-   rather than as the thing that narrows it. */
-.rtab-areasearch { display: inline-flex; align-items: center; }
-.rtab-areasearch .field-input { width: 168px; height: 30px; font-size: 12px; border-radius: 999px; padding: 0 12px; }
-/* Safari draws its own round × on a type=search and it lands off-centre in a
-   pill this short; Escape and clearing the text are the affordances here. */
-.rtab-areasearch input[type='search']::-webkit-search-decoration,
-.rtab-areasearch input[type='search']::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
-.rtab-nomatch { font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; }
-
-.rtab-editareas { margin-left: auto; font-size: 12px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; white-space: nowrap; }
-.rtab-editareas:hover { border-color: var(--accent); color: var(--accent-text); }
-.rtab-areaedit { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 6px 4px 10px; }
-.rtab-areaedit input { width: 96px; font-size: 12.5px; border: none; background: transparent; color: var(--ink); padding: 0; font-family: var(--sans); }
-.rtab-areaedit input:focus { outline: none; }
-.rtab-areaedit button { font-size: 13px; color: var(--faint); padding: 0 4px; }
-.rtab-areaedit button:hover { color: var(--critical-text); }
-
-/* ---- the label chips: one class per Atlas tone, so a label is the same
-       colour in both themes without either registry holding a hex ---- */
-.rl { font-size: 10.5px; font-weight: 600; border-radius: 5px; padding: 2px 7px; border: 1px solid transparent; white-space: nowrap; }
-.rl-accent   { color: var(--accent-text);   background: var(--accent-tint);   border-color: var(--accent-tint-border); }
-.rl-muted    { color: var(--muted);    background: var(--panel);         border-color: var(--line-2); }
-.rl-live     { color: var(--live);     background: var(--live-tint);     border-color: var(--live-tint); }
-.rl-building { color: var(--building); background: var(--building-tint); border-color: var(--building-tint); }
-.rl-critical { color: var(--critical-text); background: var(--critical-tint); border-color: var(--critical-line); }
-/* #382 — two more tones, because the label set is the owner's now and five
-   colours ran out. Every tone in server/src/labels.js's TONES needs a rule
-   here and an `.on` and a `.rp-stripe` below it: a label wearing a tone
-   styles.css has no rule for renders as bare text in one theme and vanishes in
-   the other, which is exactly what a CLOSED tone set exists to prevent. */
-.rl-sage     { color: var(--sage);     background: var(--green-tint);    border-color: var(--green-tint); }
-.rl-paused   { color: var(--muted);   background: var(--paused-tint);   border-color: var(--paused-tint); }
-.rl.on { color: var(--on-accent); }
-.rl-accent.on   { background: var(--accent); border-color: var(--accent); }
-.rl-muted.on    { background: var(--muted); border-color: var(--muted); }
-.rl-live.on     { background: var(--live); border-color: var(--live); }
-.rl-building.on { background: var(--building); border-color: var(--building); }
-.rl-critical.on { background: var(--critical); border-color: var(--critical); }
-.rl-sage.on     { background: var(--sage);     border-color: var(--sage); }
-.rl-paused.on   { background: var(--paused);   border-color: var(--paused); }
-
-/* ---- the plan board ---- */
-/* THE BOARD'S TOOLBAR (#443) — the kit's BoardScreen toolbar row: what narrows
-   the board on the left, what changes how it is READ on the right, one line.
-   `.rp-barsplit` is the push, not a spacer with a width — a margin-left:auto on
-   the first right-hand control breaks the moment another is added beside it. */
-.rp-bar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-5); }
-.rp-bar .lbl { margin-right: 4px; }
-.rp-barsplit { flex: 1 1 auto; }
-.rp-search { width: 230px; flex: 0 1 230px; }
-/* The browser's own search-clear sits inside the field and would be a second,
-   differently-shaped × beside the "n of m shown" one. Same suppression the area
-   search already carries. */
-.rp-search input[type='search']::-webkit-search-decoration,
-.rp-search input[type='search']::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
-.rp-searchnote {
-  font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary);
-  background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
-  padding: 5px 8px; white-space: nowrap; transition: var(--transition-control);
-}
-.rp-searchnote:hover { color: var(--text-primary); border-color: var(--border-strong); }
-.rp-views { display: inline-flex; align-items: center; gap: var(--space-2); flex: none; }
-.rp-views .k-iconbtn { font-size: 13px; }
-
-/* The board and the list are two READINGS of one set of cards, so the lanes are
-   hidden rather than unmounted: a composer half-typed into To Do, a lane left
-   focused, a card left open all survive a look at the table and back. */
-.rp-cols[hidden] { display: none; }
-
-/* ---------- the list reading (#443) ---------- */
-.rp-list {
-  border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
-  background: var(--surface-raised); overflow: hidden;
-}
-.rp-listhead, .rp-listrow {
-  display: grid; align-items: center; gap: var(--space-4);
-  grid-template-columns: 52px minmax(0, 1fr) 116px 128px 74px 44px;
-  padding: 9px var(--space-5); width: 100%; text-align: left;
-}
-.rp-listhead {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
-  color: var(--text-tertiary); border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-sunken);
-}
-.rp-listrow {
-  border: 0; border-top: 1px solid var(--border-subtle); background: transparent;
-  cursor: pointer; transition: var(--transition-control);
-}
-.rp-listrow:first-of-type { border-top: 0; }
-.rp-listrow:hover { background: var(--surface-hover); }
-.rp-listrow.hl { background: var(--accent-tint); box-shadow: inset 2px 0 0 var(--accent); }
-.rp-listrow .id { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); }
-.rp-listrow .t { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
-.rp-listrow .t .tt { font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rp-listrow .t .rp-tier, .rp-listrow .t .rp-parked, .rp-listrow .t .rp-listwaiting { flex: none; }
-.rp-listrow .lane, .rp-listhead .lane { font: var(--type-caption); color: var(--text-secondary); }
-.rp-listrow .area {
-  display: inline-flex; align-items: center; gap: 6px; min-width: 0;
-  font-family: var(--mono); font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
-  color: var(--faint); overflow: hidden;
-}
-.rp-listrow .area .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
-.rp-listrow .est, .rp-listhead .est { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-.rp-listrow .rp-mos { justify-self: start; }
-.rp-listwaiting { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--accent-text); }
-.rp-list .rail-empty { padding: var(--space-6) var(--space-5); }
-
-/* ---------- the card's scope picker (#443, the kit's priority control) ------ */
-.rp-pri { position: relative; display: inline-flex; }
-.rp-pri .rp-mos { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
-.rp-pri .rp-mos .chev { font-size: 8px; line-height: 1; opacity: .6; }
-.rp-pri .rp-mos.on .chev { opacity: 1; }
-.rp-pri .rp-mos:hover { border-color: var(--border-strong); }
-.rp-prilist {
-  position: absolute; top: calc(100% + 5px); left: 0; z-index: 40; min-width: 152px;
-  background: var(--surface-overlay); border: 1px solid var(--border-default);
-  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
-  padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3);
-}
-.rp-prilist .cur {
-  display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 9px;
-  border-radius: var(--radius-md); background: var(--surface-card);
-  border: 1px solid var(--border-focus);
-  font: var(--type-body-sm); color: var(--text-primary);
-}
-.rp-prilist .opt {
-  display: flex; align-items: center; gap: 10px; width: 100%;
-  padding: 6px 9px; border: 0; border-radius: var(--radius-sm); background: transparent;
-  font: var(--type-body-sm); color: var(--text-secondary); cursor: pointer;
-  transition: var(--transition-control);
-}
-.rp-prilist .opt:hover { background: var(--surface-hover); color: var(--text-primary); }
-.rp-prilist .opt.on { background: var(--action-primary); color: var(--white); }
-.rp-prilist .g { font-family: var(--mono); font-size: 10px; width: 15px; text-align: center; flex: none; }
-.rp-prilist .cur .g { color: var(--text-secondary); }
-.rp-prilist .opt.on .g { color: var(--white); }
-
-/* ---------- the lane composer (#443) ---------- */
-.rp-composer {
-  background: var(--surface-card); border: 1px solid var(--border-focus);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 22%, transparent);
-  border-radius: var(--radius-lg); padding: var(--space-5);
-  display: flex; flex-direction: column; gap: var(--space-5);
-}
-.rp-composer textarea {
-  width: 100%; resize: none; border: 0; outline: none; background: transparent;
-  font: var(--type-body-sm); color: var(--text-primary); caret-color: var(--blue-500);
-}
-.rp-composer-foot { display: flex; align-items: center; gap: var(--space-4); }
-.rp-composer-foot .hint { font: var(--type-caption); color: var(--text-tertiary); }
-.rp-composer-foot .go {
-  margin-left: auto; flex: none; width: 26px; height: 26px; border: 0;
-  border-radius: var(--radius-sm); background: var(--surface-overlay); color: var(--text-tertiary);
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 12px; cursor: pointer; transition: var(--transition-control);
-}
-.rp-composer-foot .go.armed { background: var(--action-primary); color: var(--white); }
-.rp-archive-toggle { margin-left: auto; font-size: 12px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px; }
-.rp-archive-toggle:hover { border-color: var(--accent); color: var(--accent-text); }
-.rp-archive { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 13px 15px; margin-bottom: 14px; }
-/* Archived rows are DULL on purpose — they are off the board, and the strip
-   sits above live columns. Faint ink plus a knocked-back area dot, so the eye
-   reads them as a footnote to the board rather than another row of it. The
-   Restore link keeps full contrast: the one thing here you might act on. */
-.rp-archive-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--faint); padding: 5px 0; }
-.rp-archive-row + .rp-archive-row { border-top: 1px solid var(--line-2); }
-.rp-archive-row .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; opacity: .45; }
-.rp-archive-row .t { flex: 1; min-width: 0; text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Which column it was archived FROM — where Restore will put it back. */
-.rp-archive-row .lane { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--fainter); background: var(--card); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 7px; }
-.rp-archive-row .rail-link { flex: none; }
-
-/* ---- Archive all, on the Shipped lane ---- */
-.rp-sweep { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--muted); background: transparent; border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 7px; white-space: nowrap; }
-.rp-sweep:hover { color: var(--accent-text); border-color: var(--accent-tint-border); }
-/* THE BOARD SCROLLS SIDEWAYS AND THE PAGE DOES NOT (#428). `.rp-cols` is the
-   one element that windows a row wider than itself; the columns inside it are
-   fixed-width and the cards inside those scroll on their own axis. That is what
-   makes this read as a board rather than as a very tall stack of lists.
-   `auto`, not `hidden`: scripts/playwright/smoke.mjs only reports an element
-   whose overflow is HIDDEN or CLIPPED and whose content outgrew it, so a real
-   scroller is never its business — but the PAGE scrolling sideways still is,
-   which is why the columns are fixed-width inside this one flexible row. */
-.rp-cols { display: flex; gap: var(--space-5); align-items: start; overflow-x: auto; padding-bottom: 10px; scroll-padding-left: 4px; }
-.rp-col { flex: none; width: var(--column-w); max-height: min(72vh, 780px); background: var(--surface-raised); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
-.rp-col.newlist { background: transparent; border: none; padding: 0; max-height: none; }
-/* The cards' own axis. `min-height: 0` is what lets a flex child shrink below
-   its content and actually scroll; without it the column just grows. */
-.rp-col-cards { display: flex; flex-direction: column; gap: 9px; overflow-y: auto; min-height: 0; margin: 0 -4px; padding: 1px 4px; }
-/* THE DROP TARGET, named while the drag is live. A board where the column you
-   are about to drop into looks exactly like the four beside it is a board you
-   aim at by counting. */
-.rp-col.over { border-color: var(--accent); background: var(--accent-tint); box-shadow: inset 0 0 0 1px var(--accent-tint-border); }
-/* The catch-all (RoadmapPlan.tsx's header says why it exists). Dashed, because
-   it is not one of your columns — it is where a removed column's cards are
-   drawn until you file them. */
-.rp-col.unfiled { border-style: dashed; border-color: var(--building); background: transparent; }
-.rp-col.unfiled .rp-col-head .nm { color: var(--building); }
-/* Focus: ~2.2x the 272px column, so a card's built note and its labels are
-   readable in place. A transition on width alone (never on `all`) so the
-   neighbouring lanes slide rather than jump. */
-.rp-col { transition: width .18s ease; }
-.rp-col.focus { width: 600px; border-color: var(--accent-tint-border); }
-@media (prefers-reduced-motion: reduce) { .rp-col { transition: none; } }
-/* The head is the lane's own click target (the blank space under the cards
-   works too), so it points. The tools sitting in it are their own controls and
-   revert to the default arrow — a group of buttons under one big pointer reads
-   as one control. */
-.rp-col-head { display: flex; align-items: center; gap: var(--space-4); padding: 2px 4px 4px; cursor: pointer; }
-.rp-col-head .rp-col-tools, .rp-col-head .field-input { cursor: auto; }
-.rp-col-head .nm { font: var(--type-label); color: var(--text-secondary); }
-.rp-col-head .n {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-sm);
-  background: var(--status-neutral-bg); color: var(--status-neutral-fg);
-  font: var(--weight-semibold) var(--text-2xs)/1 var(--font-mono);
-}
-.rp-col-head .field-input.sm { flex: 1; min-width: 0; }
-.rp-col-tools { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; flex: none; }
-/* The sweep keeps its own right-push for the case where it is the only tool;
-   inside the tools group that push is already spent, so it must not re-apply. */
-.rp-col-tools .rp-sweep { margin-left: 0; }
-.rp-col-act { font-size: 12px; line-height: 1; color: var(--fainter); background: transparent;
-  border: 1px solid transparent; border-radius: 6px; padding: 3px 5px; }
-.rp-col-act:hover { color: var(--accent-text); border-color: var(--accent-tint-border); }
-/* The lane's ⋯ takes the tools' own dress rather than the rail's, so the two
-   buttons left in the head still read as one group. */
-.moremenu-btn.rp-col-act { width: auto; height: auto; padding: 3px 5px; border-radius: 6px; }
-.moremenu-btn.rp-col-act:hover, .moremenu-btn.rp-col-act.on {
-  background: transparent; color: var(--accent-text); border-color: var(--accent-tint-border);
-}
-.rp-col-act.on { color: var(--accent-text); border-color: var(--accent-tint-border); background: var(--accent-tint); }
-/* The catch-all's head chip. It replaces the ✎ × pair rather than sitting
-   beside it, so the column that cannot be edited says why in the place the
-   tools would have been. */
-.rp-col-note { font-family: var(--mono); font-size: 10px; color: var(--building);
-  border: 1px solid var(--building); border-radius: 6px; padding: 1px 6px; cursor: help; white-space: nowrap; }
-/* A confirm is its own row under the head (RoadmapPlan.tsx says why), and it
-   reads as one strip: the destructive half carries the weight, Cancel is
-   quiet, and neither can widen the lane. */
-.rp-col-confirm {
-  display: flex; align-items: center; gap: var(--space-3);
-  margin: -2px 0 1px; padding: 0 2px; min-width: 0;
-}
-.rp-col-confirm .go {
-  flex: 1; min-width: 0; text-align: center; font-family: var(--mono); font-size: 10px; font-weight: 600;
-  color: var(--on-accent); background: var(--accent); border-radius: 7px; padding: 4px 8px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.rp-col-confirm .go:hover { background: var(--accent-deep); }
-/* Archiving a shipped lane's cards is reversible; removing the lane is not, so
-   only that one wears the critical tone. A confirm drawn in red for both
-   teaches the reader that red means nothing in particular. */
-.rp-col-confirm .go.danger, .rp-col-confirm .go.danger:hover { background: var(--critical); }
-.rp-col-confirm .no { flex: none; font-family: var(--mono); font-size: 10px; color: var(--muted); }
-.rp-col-confirm .no:hover { color: var(--ink); }
-/* The lane's tie to the Review room — accent, because it is work waiting on a
-   person, and never a verdict tone: giving one is that room's job. Its own row
-   under the head, so it can never reflow the lane name; see RoadmapPlan.tsx. */
-.rp-col-review { display: block; font-family: var(--mono); font-size: 10px; color: var(--accent-text);
-  background: var(--accent-tint); border: 1px solid var(--accent-tint-border);
-  border-radius: 7px; padding: 4px 8px; margin: -2px 0 1px; text-align: center; }
-.rp-col-review:hover { background: var(--accent); color: var(--on-accent); }
-.rp-card-review { display: block; margin-top: 9px; font-family: var(--mono); font-size: 10.5px;
-  color: var(--faint); }
-.rp-card-review:hover { color: var(--accent-text); }
-.rp-card-review.waiting { color: var(--accent-text); font-weight: 600; }
-.rp-card-review.waiting:hover { color: var(--accent-text-hover); }
-.rp-card {
-  background: var(--surface-card); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg); padding: var(--space-5); cursor: grab;
-  box-shadow: var(--shadow-sm); transition: var(--transition-control);
-}
-.rp-card:hover { background: var(--surface-overlay); box-shadow: var(--shadow-md); }
-.rp-card:active { cursor: grabbing; }
-/* The open card is the kit's SELECTED card: the focus border, because it is
-   the one whose panel is showing and the one every control below belongs to. */
-.rp-card.open { border-color: var(--border-focus); background: var(--surface-overlay); }
-/* The card under the cursor, not the ghost the browser draws. Dimmed and
-   tilted so the hole it left in the lane is visible while you aim — the whole
-   point of picking it up is seeing where it is going. */
-.rp-card.dragging { opacity: .45; transform: rotate(1.5deg); }
-@media (prefers-reduced-motion: reduce) { .rp-card.dragging { transform: none; } }
-/* A PARKED card stays in its lane and stops looking like live work: dashed, on
-   the page ground rather than the card's. It is cut from the cycle, not gone —
-   the same distinction the `parked` tag on its meta line spells out. */
-.rp-card.parked { background: transparent; border-style: dashed; }
-/* The deep-link target (#303). Mirrors every other `.hl` in this file so a ⌘K
-   result or an activity link flags its card the same way everywhere. */
-.rp-card.hl { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
-.rp-stripes { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
-.rp-stripe { height: 6px; width: 32px; border-radius: 999px; }
-.rp-stripe.rl-accent { background: var(--accent); }
-.rp-stripe.rl-muted { background: var(--muted); }
-.rp-stripe.rl-live { background: var(--live); }
-.rp-stripe.rl-building { background: var(--building); }
-.rp-stripe.rl-critical { background: var(--critical); }
-.rp-stripe.rl-sage { background: var(--sage); }
-.rp-stripe.rl-paused { background: var(--paused); }
-/* The kit's card title: body text, not a heading. A board card is a sentence
-   you read, and the meta line under it is what carries the labels. */
-.rp-title { font: var(--type-body-sm); color: var(--text-primary); text-wrap: pretty; }
-.rp-meta { display: flex; align-items: center; gap: 8px; margin-top: var(--space-4); flex-wrap: wrap; }
-/* The row's number, in the link tone the kit gives an issue id — it is the
-   handle you type into a commit message or quote back at a session. */
-.rp-id { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); flex: none; }
-.rp-meta .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
-.rp-meta .area { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); }
-.rp-meta .est { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-.rp-mos { font-size: 10.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; border-radius: 5px; padding: 2px 7px; border: 1px solid var(--line-2); background: var(--panel); color: var(--muted); }
-.rp-mos.must { color: var(--accent-text); background: var(--accent-tint); border-color: var(--accent-tint-border); }
-.rp-mos.should { color: var(--building); background: var(--building-tint); border-color: var(--building-tint); }
-.rp-mos.wont { color: var(--faint); background: transparent; }
-.rp-mos.on { outline: 1px solid var(--accent-soft); outline-offset: 1px; }
-/* #227 — the desire tier, READ-ONLY on a card (RoadmapPlan's header says why).
-   The four ranks wear the same colours the modal's tier seg does, so one
-   ranking reads as one ranking wherever it is drawn. */
-/* A FILL TONE IS NOT A TEXT TONE, once more: --building and --sage are LIGHT,
-   so the flat `color:#fff` this chip shipped with is unreadable on two of its
-   four ranks — it just never got measured, because no card on screen wore a
-   tier when the audit last ran. Each rank names the ink that suits its ground,
-   exactly as the modal's tier seg already does. */
-.rp-tier { font-family: var(--mono); font-size: 9.5px; font-weight: 700; line-height: 1;
-  color: var(--white); background: var(--paused); border-radius: 5px; padding: 3px 5px; }
-.rp-tier.tS { background: var(--accent); color: var(--on-accent); }
-.rp-tier.tA { background: var(--building); color: var(--text-inverse); }
-.rp-tier.tB { background: var(--sage); color: var(--text-inverse); }
-.rp-tier.tC { background: var(--paused); color: var(--white); }
-/* Parked, said in words on the card as well as in its border: a card the
-   runner will not pick has to say so, not just look slightly different. */
-.rp-parked { font-family: var(--mono); font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase;
-  color: var(--faint); border: 1px dashed var(--line-3); border-radius: 5px; padding: 1px 6px; }
-.rp-detail { margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--line-2); }
-.rp-note { font-size: 12.5px; line-height: 1.55; color: var(--body-2); }
-.rp-detail .lbl { margin: 11px 0 6px; }
-/* FIVE ACTIONS IN A 262px LANE. They wrap onto a second line rather than
-   overflowing the card — a clipped "Delete" is a control the owner cannot see
-   they have — and each one stays on ONE line itself, or "⎇ Branch" splits its
-   glyph off from its word and reads as two buttons. */
-.rp-acts { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 12px; }
-.rp-acts .rail-link { white-space: nowrap; }
-/* ---- the Plan board's label menu (#382) ----
-   One menu is the filter AND the editor: they answer the same question from
-   either side, and a set the owner can grow has no ceiling to lay out flat. */
-.rp-labelmenu { position: relative; }
-.rp-labelbtn { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--body);
-  background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; }
-.rp-labelbtn:hover, .rp-labelbtn.on { border-color: var(--accent); color: var(--accent-text); }
-.rp-labelbtn .n { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-.rp-labelbtn .chev { font-size: 9px; color: var(--muted); }
-.rp-labelbtn.sm { font-size: 11.5px; padding: 3px 8px; }
-.rp-labelpop {
-  position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; min-width: 244px;
-  background: var(--card); border: 1px solid var(--keyline); border-radius: 11px;
-  padding: 8px; box-shadow: var(--shadow-lg);
-}
-/* On a card the menu pushes the rest of the card down instead of floating: a
-   popover inside a 262px column would hang over the next card's controls. */
-.rp-labelpop.inline { position: static; box-shadow: none; min-width: 0; margin-top: 7px; padding: 6px; }
-.rp-labelrow { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 7px; }
-.rp-labelrow:hover { background: var(--panel); }
-.rp-labelrow.on { background: var(--accent-tint); }
-.rp-labelrow > .rl { flex: 1; text-align: left; }
-.rp-labelrow > .n { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
-.rp-labelrow > .tick { font-size: 11px; color: var(--accent-text); }
-.rp-labelrow > .x { flex: none; font-size: 13px; line-height: 1; color: var(--fainter); padding: 0 3px; }
-.rp-labelrow > .x:hover { color: var(--critical-text); }
-.rp-labelconfirm { display: inline-flex; align-items: center; gap: 6px; }
-.rp-labelconfirm .go { font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--on-accent);
-  background: var(--critical); border-radius: 6px; padding: 3px 8px; white-space: nowrap; }
-.rp-labelconfirm .no { font-family: var(--mono); font-size: 10px; color: var(--muted); }
-.rp-labelconfirm .no:hover { color: var(--ink); }
-.rp-labelempty { font-size: 12px; color: var(--faint); padding: 6px 4px 8px; }
-.rp-labeladd { display: flex; align-items: center; gap: 8px; margin-top: 7px; padding-top: 8px; border-top: 1px solid var(--line-2); }
-.rp-labeladd .field-input { flex: 1; min-width: 0; }
-.rp-tones { display: inline-flex; gap: 4px; }
-/* The tone swatches are the label chip itself, empty — you pick what the label
-   will LOOK like, not a colour name. */
-.rp-tones .rl { width: 15px; height: 15px; padding: 0; border-radius: 5px; }
-.rp-tones .rl.on { outline: 2px solid var(--accent-soft); outline-offset: 1px; }
-.rp-cardlabels .rp-toggles { align-items: center; }
-
-/* ---- reviewing a shipped card, and the delete that is not an archive ---- */
-.rp-shipped-acts { display: flex; justify-content: flex-end; margin-top: 9px; }
-.rp-review { margin-top: 10px; padding: 10px; border: 1px solid var(--accent-tint-border); background: var(--accent-tint); border-radius: 9px; }
-.rp-note.built { font-size: 12.5px; line-height: 1.5; color: var(--body); }
-/* What the reviewer could NOT see, drawn hardest — the same rule the Foreman's
-   blind list follows: absence of evidence is never rendered as good news. */
-.rp-review-blind { font-size: 12px; line-height: 1.5; color: var(--critical-text); }
-.rp-review-branch { margin-top: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
-.rp-review .rp-acts { margin-top: 10px; }
 .rail-link.go { font-weight: 600; }
 .rail-link.danger { color: var(--muted); }
 .rail-link.danger:hover { color: var(--critical-text); }
-.rp-verdict { font-family: var(--mono); font-size: 10px; color: var(--sage); background: var(--green-tint);
-  border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
-
-/* The kit's per-column composer row: a quiet line at the foot of the lane, not
-   a button competing with the cards above it. */
-.rp-add { display: flex; align-items: center; gap: 8px; width: 100%;
-  font: var(--type-label); color: var(--text-tertiary);
-  padding: 6px; border-radius: var(--radius-sm); text-align: left;
-  transition: var(--transition-control); }
-.rp-add:hover { color: var(--text-primary); background: var(--surface-hover); }
-.rp-add-list { width: 100%; font-size: 13px; color: var(--muted); border: 1px dashed var(--line-3); border-radius: 12px; padding: 13px 14px; background: transparent; }
-.rp-add-list:hover { border-color: var(--accent); color: var(--accent-text); }
 
 /* ---- the Overview hero: one full-width band, collapsible ------------------
    It replaced a two-column card whose left column was the summary and whose
@@ -3826,24 +3393,6 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    host found, so the list IS the answer; the typed row is the fallback for a
    path deeper than the offer depth or a repo git could not be asked about. */
 .ins-dest h3 { margin-bottom: 8px; }
-
-/* ---- Roadmap: the area colour picker and Arrange's per-move preview ---- */
-.rtab-swatch { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--line-3); }
-.rtab-swatch:hover { border-color: var(--accent); }
-.rtab-areaedit { position: relative; }
-/* Thirty-two swatches in an 8×4 grid: a closed set the picker shows WHOLE, so
-   there is never a colour on a lane you cannot get back to. Widening the grid
-   rather than scrolling it is the same rule — a picker you have to scroll is one
-   that can hide the colour a lane is already wearing. */
-.rtab-palette {
-  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
-  display: grid; grid-template-columns: repeat(8, 20px); gap: 6px;
-  background: var(--card); border: 1px solid var(--keyline); border-radius: 10px;
-  padding: 8px; box-shadow: var(--shadow-lg);
-}
-.rtab-palette button { width: 20px; height: 20px; border-radius: 50%; border: 1px solid rgba(0,0,0,.12); }
-.rtab-palette button:hover { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
-.rtab-palette button.on { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ---- Mission Control, culled (#/control renders screens/ControlMock.tsx) ----
    Deliberately self-contained: it borrows nothing from the old `.mc-*` /
@@ -4198,101 +3747,269 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .ai-empty .h { font: var(--type-heading); color: var(--text-primary); margin-bottom: var(--space-3); }
 .ai-empty p { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; max-width: 72ch; }
 
-/* ============================================================
-   THE ROADMAP TAB — the capture inbox (detail/Ideas.tsx)
-   ============================================================ */
 
-.ideas { display: flex; flex-direction: column; gap: var(--space-6); }
-/* The kit's IdeasScreen header: eyebrow over title on the left, the lede
-   trailing at the BASELINE of the title on the right — flex-end is what puts
-   the sentence on the title's line rather than floating it above. */
-.ideas-head { display: flex; align-items: flex-end; gap: var(--space-6); flex-wrap: wrap; }
-.ideas-title { display: flex; flex-direction: column; gap: var(--space-2); flex: none; }
-.ideas-title .eyebrow {
+/* ==========================================================================
+   THE TWO MOCKUPS — ui_kits/console BoardScreen and IdeasScreen, ported.
+   (web/src/detail/BoardMock.tsx, web/src/detail/IdeasMock.tsx)
+
+   These replaced the real board and the real capture inbox at the owner's
+   request; each component's header says what stopped being reachable when
+   they went. The CSS for both is here rather than as inline styles because
+   the kit's own screens carry their geometry inline and this app's rule is
+   that a colour is a token in styles.css and never a literal in a component
+   — porting them any other way would have smuggled 200 hardcoded values in.
+   ========================================================================== */
+
+.km, .im { display: flex; flex-direction: column; gap: var(--space-6); }
+
+/* ---- the board's own heading block (Stack's project header stands down) ---- */
+.km-head { display: flex; flex-direction: column; gap: var(--space-3); }
+.km-crumb { font: var(--type-caption); color: var(--text-tertiary); }
+.km-headrow { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
+.km-headrow h1 { margin: 0; font: var(--type-title); letter-spacing: var(--tracking-tight); color: var(--text-primary); }
+.km-create { margin-left: auto; }
+
+.km-tabs { margin-bottom: 0; }
+.km-banner { align-items: center; }
+.km-banner .k-btn { flex: none; }
+
+/* ---- the toolbar ---- */
+.km-toolbar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.km-avatars { display: inline-flex; align-items: center; flex: none; }
+.km-av {
+  width: 26px; height: 26px; border-radius: 50%; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.km-av.ghost { background: var(--surface-overlay); color: var(--text-tertiary); }
+.km-av.sm { width: 22px; height: 22px; background: var(--surface-raised); }
+/* The kit's one lime fill, and the one place a label on it is DARK: --lime-500
+   is a light tone, so white text on it is the trap #432 measured its way out
+   of twice. */
+.km-av.me {
+  margin-left: -6px; background: var(--lime-500); color: var(--grey-1000);
+  font: var(--weight-semibold) var(--text-2xs)/1 var(--font-sans);
+  box-shadow: 0 0 0 2px var(--surface-canvas);
+}
+.km-search { width: 220px; flex: 0 1 220px; }
+.km-search svg { color: var(--text-tertiary); }
+.km-views { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-2); flex: none; }
+
+/* ---- the lanes ---- */
+.km-cols { display: flex; gap: var(--space-5); align-items: flex-start; overflow-x: auto; padding-bottom: var(--space-4); }
+.km-col {
+  width: var(--column-w); flex: 0 0 auto;
+  background: var(--surface-raised); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-4);
+  display: flex; flex-direction: column; gap: var(--space-4);
+}
+.km-colhead { display: flex; align-items: center; gap: var(--space-4); padding: 2px 4px; position: relative; }
+.km-colhead .nm { font: var(--type-label); color: var(--text-secondary); }
+.km-colhead .lim { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.km-colhead .tools { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+.km-colbtn {
+  width: 24px; height: 24px; border: 0; background: transparent; cursor: pointer;
+  border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-tertiary); font: var(--text-xs)/1 var(--font-sans);
+  transition: var(--transition-control);
+}
+.km-colbtn:hover { color: var(--text-primary); }
+.km-colbtn.on { background: var(--action-primary); color: var(--white); }
+.km-tip {
+  position: absolute; top: 28px; right: -18px; z-index: 30; white-space: nowrap;
+  background: var(--surface-overlay); border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm); padding: 4px 8px; box-shadow: var(--shadow-md);
+  font: var(--type-caption); color: var(--text-secondary);
+}
+.km-menu {
+  position: absolute; top: 30px; right: 0; z-index: 40; min-width: 176px;
+  background: var(--surface-overlay); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  padding: var(--space-3); display: flex; flex-direction: column; gap: 2px;
+}
+.km-menuitem {
+  border: 0; background: transparent; cursor: pointer; text-align: left;
+  padding: 7px 9px; border-radius: var(--radius-sm);
+  font: var(--type-label); color: var(--text-secondary);
+  transition: var(--transition-control);
+}
+.km-menuitem:hover:not(:disabled) { background: var(--surface-hover); }
+/* The one tone in either mockup that measures under AA — 2.80:1 — and it is
+   deliberate: WCAG 1.4.3 exempts an inactive control, `--text-disabled` is the
+   token that exists to say inactive, and the kit spells this menu the same way.
+   If the palette audit ever learns to open a menu, this is the row it will
+   report; it is a pass, not a finding. */
+.km-menuitem:disabled { color: var(--text-disabled); cursor: not-allowed; }
+.km-menuitem.danger { color: var(--status-danger-fg); }
+.km-menusep { height: 1px; background: var(--border-subtle); margin: 4px 0; }
+
+/* ---- the issue card ---- */
+.km-card {
+  position: relative; cursor: pointer;
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-4);
+  box-shadow: var(--shadow-sm); transition: var(--transition-control);
+}
+.km-card:hover { background: var(--surface-overlay); box-shadow: var(--shadow-md); }
+.km-card.selected { border-color: var(--border-focus); }
+.km-card > .t { font: var(--type-body-sm); color: var(--text-primary); text-wrap: pretty; }
+.km-cardmeta { display: flex; align-items: center; gap: var(--space-3); }
+.km-cardmeta .kind { display: flex; }
+.km-cardmeta .id { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
+.km-cardmeta .pts { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.km-cardmeta .right { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+.km-pri {
+  width: 24px; height: 24px; border: 0; cursor: pointer;
+  border-radius: var(--radius-sm); background: var(--surface-raised);
+  display: inline-flex; align-items: center; justify-content: center;
+  font: var(--weight-medium) var(--text-xs)/1 var(--font-mono);
+  transition: var(--transition-control);
+}
+.km-pri.on { background: var(--surface-selected); box-shadow: inset 0 0 0 1px var(--border-focus); }
+.km-prilist {
+  position: absolute; top: calc(100% - 6px); right: var(--space-5); z-index: 40; width: 196px;
+  background: var(--surface-overlay); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4);
+}
+.km-prilist .cur {
+  display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 9px;
+  border-radius: var(--radius-md); background: var(--surface-card);
+  border: 1px solid var(--border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 25%, transparent);
+  font: var(--type-body-sm); color: var(--text-primary);
+}
+.km-prilist .opts { display: flex; flex-direction: column; gap: 2px; }
+.km-prilist .opt {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 7px 9px; border: 0; border-radius: var(--radius-sm); background: transparent;
+  cursor: pointer; font: var(--type-body-sm); color: var(--text-secondary);
+  transition: var(--transition-control);
+}
+.km-prilist .opt:hover { background: var(--surface-hover); color: var(--text-primary); }
+.km-prilist .opt.on { background: var(--action-primary); color: var(--white); }
+.km-prilist .g { width: 14px; text-align: center; flex: none; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); }
+.km-prilist .opt.on .g { color: var(--white); }
+
+/* ---- the lane composer ---- */
+.km-add {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  border: 0; background: transparent; cursor: pointer;
+  padding: 6px; border-radius: var(--radius-sm);
+  color: var(--text-tertiary); font: var(--type-label);
+  transition: var(--transition-control);
+}
+.km-add:hover { color: var(--text-primary); background: var(--surface-hover); }
+.km-composer {
+  background: var(--surface-card); border: 1px solid var(--border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 22%, transparent);
+  border-radius: var(--radius-lg); padding: var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-5);
+}
+.km-composer textarea {
+  width: 100%; resize: none; border: 0; outline: none; background: transparent;
+  font: var(--type-body-sm); color: var(--text-primary); caret-color: var(--blue-500);
+}
+.km-composer-foot { display: flex; align-items: center; gap: var(--space-4); }
+.km-composer-foot .ic {
+  display: inline-flex; align-items: center; gap: 3px;
+  border: 0; background: transparent; cursor: pointer; color: var(--text-tertiary);
+}
+.km-composer-foot .ic .chev { font: var(--text-xs)/1 var(--font-sans); color: var(--text-tertiary); }
+.km-composer-foot .go {
+  margin-left: auto; flex: none; width: 26px; height: 26px; border: 0; cursor: pointer;
+  border-radius: var(--radius-sm); background: var(--surface-overlay); color: var(--text-tertiary);
+  display: inline-flex; align-items: center; justify-content: center;
+  font: var(--text-xs)/1 var(--font-sans); transition: var(--transition-control);
+}
+.km-composer-foot .go.armed { background: var(--action-primary); color: var(--white); }
+
+/* ---- the create-issue dialog ---- */
+.km-scrim {
+  position: fixed; inset: 0; z-index: 50; background: var(--scrim);
+  display: flex; align-items: center; justify-content: center; padding: var(--space-8);
+}
+.km-dialog {
+  width: 420px; max-width: 100%;
+  background: var(--surface-overlay); border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); padding: var(--space-7);
+  display: flex; flex-direction: column; gap: var(--space-6);
+}
+.km-dialog-head { display: flex; flex-direction: column; gap: var(--space-3); }
+.km-dialog-head .t { font: var(--type-heading); color: var(--text-primary); }
+.km-dialog-head .d { font: var(--type-body-sm); color: var(--text-secondary); }
+.km-field { display: flex; flex-direction: column; gap: 6px; }
+.km-field .lbl { font: var(--type-label); color: var(--text-secondary); }
+.km-input { width: 100%; height: var(--control-h-md); background: var(--surface-card); }
+.km-select {
+  width: 100%; height: var(--control-h-md); padding: 0 10px;
+  background: var(--surface-card); color: var(--text-primary);
+  border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  font: var(--type-body-sm); cursor: pointer;
+}
+.km-dialog-foot { display: flex; justify-content: flex-end; gap: var(--space-4); }
+
+/* ==========================================================================
+   THE ROADMAP MOCKUP (IdeasMock.tsx)
+   ========================================================================== */
+
+.im-head { display: flex; align-items: flex-end; gap: var(--space-5); flex-wrap: wrap; }
+.im-title { display: flex; flex-direction: column; gap: var(--space-2); flex: none; }
+.im-title .eyebrow {
   font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
   text-transform: uppercase; color: var(--text-tertiary);
 }
-.ideas-title h2 { margin: 0; font: var(--type-title); letter-spacing: var(--tracking-tight); color: var(--text-primary); }
-.ideas-lede { flex: 1; min-width: 320px; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; max-width: 68ch; }
+.im-title h1 { margin: 0; font: var(--type-title); letter-spacing: var(--tracking-tight); color: var(--text-primary); }
+.im-lede { margin-left: auto; font: var(--type-body-sm); color: var(--text-tertiary); }
 
-/* One toolbar row, the kit's order: search, what the shelf holds, then the one
-   button that adds to it pinned right. */
-.ideas-bar { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
-.ideas-search { width: 250px; flex: 0 1 250px; }
-.ideas-search input[type='search']::-webkit-search-decoration,
-.ideas-search input[type='search']::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
-.ideas-count { font: var(--weight-regular) var(--text-xs)/1.4 var(--font-mono); color: var(--text-tertiary); }
-.ideas-searchnote {
-  font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary);
-  background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
-  padding: 5px 8px; white-space: nowrap; transition: var(--transition-control);
+.im-bar { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
+.im-search { width: 260px; flex: 0 1 260px; }
+.im-search svg { color: var(--text-tertiary); }
+.im-count { font: var(--type-caption); color: var(--text-tertiary); }
+.im-capture { margin-left: auto; flex: none; }
+
+.im-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-5); align-items: start; }
+.im-col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.im-colhead { display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-2); }
+.im-colhead .lbl {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
 }
-.ideas-searchnote:hover { color: var(--text-primary); border-color: var(--border-strong); }
-.ideas-capture { margin-left: auto; flex: none; }
-.ideas-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-5); align-items: start; }
-.ideas-col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
-.ideas-colhead { display: flex; align-items: baseline; gap: var(--space-3); padding: 0 var(--space-2); flex-wrap: wrap; }
-.ideas-colhead .lbl {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-/* Ready is the column that means "pick this up", so it is the one drawn in the
-   accent. The other two are places things wait. */
-/* READY IS THE KIT'S LIME, not the blue accent (ui_kits/console/IdeasScreen).
-   Blue is what this app uses for "the primary thing to press"; the lime is
-   what it uses for a state that is GOOD — live, passing, ready — and a column
-   saying "these have earned a branch" is the second, not the first. It is a
-   text tone here (--text-accent) and a border tone on the card, never a fill
-   with light text on it: --lime-500 is a LIGHT colour and the #432 audit found
-   fourteen chips that had forgotten it. */
-.ideas-colhead .lbl.ready { color: var(--text-accent); }
-.ideas-colhead .n { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
-.ideas-colhead .note { flex-basis: 100%; font: var(--type-caption); color: var(--text-tertiary); }
-.ideas-empty {
-  font: var(--type-caption); color: var(--text-tertiary);
-  border: 1px dashed var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-5);
-}
-.idea {
-  background: var(--surface-card); border: 1px solid var(--border-subtle);
+/* Ready is the kit's lime, as a TEXT tone (--text-accent), never a fill. */
+.im-colhead .lbl.ready { color: var(--text-accent); }
+.im-colhead .n { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+
+.im-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg); padding: var(--space-5);
   display: flex; flex-direction: column; gap: var(--space-4);
   cursor: pointer; transition: var(--transition-control);
 }
-.idea:hover, .idea.open { background: var(--surface-overlay); border-color: var(--border-strong); }
-.idea.ready { border-left: 2px solid var(--action-accent); }
-.idea.parked { border-style: dashed; }
-.idea-top { display: flex; align-items: flex-start; gap: var(--space-4); }
-.idea-top .mark { color: var(--text-tertiary); font-size: 11px; line-height: 1.4; flex: none; }
-.idea.ready .idea-top .mark { color: var(--text-accent); }
-.idea-top .t { flex: 1; min-width: 0; font: var(--weight-medium) var(--text-md)/1.3 var(--font-sans); color: var(--text-primary); text-wrap: pretty; }
-.idea-top .est { flex: none; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
-.idea-note { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
-.idea-note.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.idea-meta { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-/* The id is the kit's mono Tag — a pill, not loose text, so it reads as the
-   handle it is and lines up with the label chips beside it. */
-.idea-meta .k-tag.id { height: 20px; color: var(--text-link); }
-.idea-meta .bucket, .idea-meta .area {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
-  background: var(--status-neutral-bg); color: var(--status-neutral-fg);
-  border-radius: var(--radius-pill); padding: 2px 7px;
+.im-card:hover, .im-card.open { background: var(--surface-overlay); border-color: var(--border-strong); }
+.im-card.ready { border-left: 2px solid var(--lime-500); }
+.im-cardtop { display: flex; align-items: flex-start; gap: var(--space-4); }
+.im-cardtop .mark { color: var(--text-tertiary); display: flex; padding-top: 2px; flex: none; }
+.im-cardtop .t {
+  flex: 1; min-width: 0; text-wrap: pretty;
+  font: var(--weight-medium) var(--text-md)/1.3 var(--font-sans); color: var(--text-primary);
 }
-.idea-meta .held {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
-  background: var(--accent-tint); color: var(--accent-text);
-  border: 1px solid var(--accent-tint-border); border-radius: var(--radius-pill); padding: 1px 6px; cursor: help;
-}
-.idea-meta .age { margin-left: auto; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
-.idea-acts {
-  display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap;
+.im-cardtop .eff { flex: none; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.im-note { font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+.im-note.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.im-meta { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.im-meta .age { margin-left: auto; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.im-acts {
+  display: flex; flex-direction: column; gap: var(--space-4);
   padding-top: var(--space-3); border-top: 1px solid var(--border-subtle);
 }
-.idea-acts .from { font: var(--type-caption); color: var(--text-tertiary); flex-basis: 100%; }
-/* Real buttons rather than the text links these were, so the row reads as a set
-   of choices with one of them weighted — the kit's Button, at sm. */
-.idea-acts { gap: var(--space-3); }
-.idea-acts .k-btn { flex: none; }
-.idea-acts .k-btn.danger { margin-left: auto; }
+.im-acts .from { font: var(--type-caption); color: var(--text-tertiary); }
+.im-acts .btns { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+
+@media (max-width: 1080px) {
+  .im-cols { grid-template-columns: 1fr; }
+  .im-lede { margin-left: 0; flex-basis: 100%; }
+}
 
 /* ============================================================
    THE PLANS TAB — the stored schedule, read-only (detail/Plans.tsx)
@@ -4366,10 +4083,6 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    IS no baseline — that is "never committed to", not "on plan". */
 .c-verdict .slip { margin-left: auto; font-size: 9px; color: var(--building); cursor: help; }
 .pg-empty { padding: var(--space-7); font: var(--type-body-sm); color: var(--text-secondary); }
-
-@media (max-width: 900px) {
-  .ideas-cols { grid-template-columns: 1fr; }
-}
 
 /* ---------- narrow: the rail lies down ---------- */
 @media (max-width: 900px) {

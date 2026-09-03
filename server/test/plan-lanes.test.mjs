@@ -10,14 +10,17 @@
 //     claim-first derivation left every verdicted change sitting in "In
 //     progress" for as long as its branch lived. `review_tag` has to outrank
 //     `claimed_by` here, and `done` has to stay out of it entirely.
-//  2. THE CATCH-ALL IS WHAT MAKES THE UNLOCK SAFE (#428). The four lanes were
-//     unrenameable and undeletable because every string `listFor` returns needs
-//     a column to render in — delete one and its cards vanish from the board
-//     while still counting everywhere else, which is the worst kind of loss.
-//     The owner asked for a Trello board, so the guard MOVED: `RoadmapPlan`
-//     draws an UNFILED lane for any card whose resolved key has no column. This
-//     asserts the guard is still there, structurally, in the file that carries
-//     it — take the catch-all out and the lock has to come back.
+//  2. THE LANES NO LONGER HAVE A CLIENT AT ALL, and that is why the lock that
+//     used to guard them is still off. #428 unlocked renaming and deleting a
+//     lane on one condition: the board drew an UNFILED catch-all, so a card
+//     whose resolved key lost its column still rendered somewhere. The board is
+//     a MOCKUP now (web/src/detail/BoardMock.tsx) and reads no rows, so there is
+//     no rendering left to lose a card from — the four structural checks on
+//     that catch-all are gone with the file that carried them. What survives is
+//     the derivation itself, which the overnight runner and every server reader
+//     still depend on. IF A REAL BOARD EVER COMES BACK, one of the two has to
+//     come back with it: the catch-all lane, or `isProtectedList` in
+//     routes/board.js. Do not let a board ship with neither.
 //
 // It also holds the two twins in step by READING THE FILES: `listKeyOf` in
 // web/src/lib/plan.ts is the client copy of `listFor`, and neither package can
@@ -134,20 +137,21 @@ check('POST /lists still suffixes the key with its position',
   /INSERT INTO project_lists[\s\S]{0,400}?\$\{key\}-\$\{pos\[0\]\.p\}/.test(board)
   || board.includes('`${key}-${pos[0].p}`'), true);
 
-// THE ONE THAT REPLACES THE LOCK. Deleting `shipped` is allowed now, and the
-// only thing standing between that and silently losing every done card is the
-// board's catch-all. It lives in the client, which this cannot import — so it
-// is checked structurally, the same arrangement as the client twin below.
-const plan = readFileSync(join(REPO, 'web/src/detail/RoadmapPlan.tsx'), 'utf8');
-check('the board still declares a catch-all lane', /const UNFILED = '/.test(plan), true);
-check('a card whose key has no column is routed to it',
-  /lists\.some\(\(l\) => l\.key === derived\) \? derived : UNFILED/.test(plan), true);
-check('and the catch-all is actually drawn when it holds something',
-  /if \(orphans\.length\) columns\.push\(/.test(plan), true);
-// It is a rendering slot, never a stored column: writing this key would file a
-// card under a lane no server knows about.
-check('dropping onto the catch-all clears the column rather than storing its key',
-  /onMoveToList\(it, col\.list \? col\.key : ''\)/.test(plan), true);
+// THE CLIENT HALF IS GONE. Four checks stood here, pinning the board's UNFILED
+// catch-all — the thing that made deleting `shipped` safe. The board that drew
+// it was replaced by a mockup that reads no rows, so there is nothing left to
+// assert and nothing left to lose a card from. The header says what has to come
+// back if a real board ever does.
+//
+// This ALSO pins that the client board is still a mockup: the moment a file
+// under web/src reads lanes again, one of the two guards is owed.
+// Tested by its IMPORTS, not by prose: this file's header talks about store.ts
+// at length, and a word-match would fail on the very comment explaining why it
+// does not use it. `store.ts` is the only module in this client allowed to
+// touch the network, so an import of it is exactly the tripwire.
+const boardMock = readFileSync(join(REPO, 'web/src/detail/BoardMock.tsx'), 'utf8');
+check('the client board is still a mockup that reads nothing',
+  /^import .*from '.*store';$/m.test(boardMock), false);
 
 // The server, for its half: neither writer refuses a key any more.
 check('neither list writer refuses a key',

@@ -22,7 +22,7 @@ const ok = (name, cond) => check(name, !!cond, true);
     risk: 'low', limitHit: false, refineRound: false,
     checksRan: 7, checksFailing: 0,
     reviewBugs: 0,
-    changed: ['server/src/routes/roadmap.js', 'web/src/detail/RoadmapPlan.tsx',
+    changed: ['server/src/routes/roadmap.js', 'web/src/detail/BoardMock.tsx',
       'server/src/schema.sql', 'web/src/lib/route.ts'],
     declared: ['server/src', 'web/src'],
   };
@@ -128,17 +128,17 @@ const base = () => ({
 // ---- directory coverage vs sibling-prefix ---------------------------------
 
 check('a directory declaration covers a file beneath it',
-  unconfined(['web/src/detail/RoadmapPlan.tsx'], ['web/src']), []);
+  unconfined(['web/src/detail/BoardMock.tsx'], ['web/src']), []);
 check('a sibling directory sharing a prefix is NOT covered',
   unconfined(['web/src2/x.ts'], ['web/src']), ['web/src2/x.ts']);
 
 // ---- declaredFiles ------------------------------------------------------
 
 {
-  const text = 'Interfaces: server/src/routes/roadmap.js (PATCH), web/src/detail/RoadmapPlan.tsx';
+  const text = 'Interfaces: server/src/routes/roadmap.js (PATCH), web/src/detail/BoardMock.tsx';
   check('declaredFiles pulls both paths and skips the rest',
     declaredFiles(text),
-    ['server/src/routes/roadmap.js', 'web/src/detail/RoadmapPlan.tsx']);
+    ['server/src/routes/roadmap.js', 'web/src/detail/BoardMock.tsx']);
 }
 check('declaredFiles ignores bare words and bare basenames',
   declaredFiles('touches roadmap.js and the schema, mostly prose'), []);

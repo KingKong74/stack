@@ -12,8 +12,9 @@ it lives in that file's header and this file keeps only the pointer and the cros
 rooms; `/api/control`, `/api/review`, `/api/merge`), **Polaris** (Futures tab, galaxy, `futures`),
 the **instructions tree** (managed CLAUDE.md library + host sync), the **Workbench** (canvas tab,
 `/api/…/workbench`, `workbench_*`, the Drafter), the Roadmap **Timeline** (#428) and the Roadmap
-**strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`, the ✧ cleanup modal) — the ⎇ claim,
-park/unpark and tier chip live ON THE CARD; the Curator's
+**strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`, the ✧ cleanup modal), and with #443
+the BOARD and the Roadmap capture tab themselves — both are kit mockups now, and the Data rules
+below say what went unreachable with them. The Curator's
 `arrange`/`allocate`/`cleanup` are unsurfaced (it keeps `titler` and `assist`). The **TAB AGENTS'
 CONSOLES** went too (#379/#380, with `console_off` kept in the database) and the **Auditor** with
 them, that session being its whole surface; the CURATOR is the only agent left. **`notes` went with the Workbench** — its only reader — so
@@ -117,8 +118,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
 
 - **`bucket` vs `tier`** — bucket (must/should/could/wont) is how NECESSARY; `tier` (#227, S/A/B/C,
   NULL = unranked) is how much the owner wants it NEXT, and is the **primary sort of the run queue**
-  (bucket then `position` tiebreak, unranked last). Set only from the ITEM MODAL now (the Tiers board
-  is culled; a card shows a tier and cannot set one) — **agents must never change it.**
+  (bucket then `position` tiebreak, unranked last). Set from the ITEM MODAL and nowhere else —
+  **agents must never change it.**
 - **`risk`** (low/normal/high, #212) is how much DAMAGE a wrong build does — not difficulty, not the
   desire `tier` expresses; a `low` item whose run lands green auto-queues its own merge.
   **`risk_source` is who decided** (#262): `human` = the modal, `auto` = the plan-time pre-pass, NULL =
@@ -133,21 +134,18 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   arrives as a STRING, above), `lib/plan.ts`, `lib/spine.ts`. **`estimate` stays in WEEKS**, so
   `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet. **NOTHING EDITS THESE**
   (#428 took the Timeline, their only editor); the PLANS tab (#439) is a READER of them.
-- **FOUR SCREENS OVER `roadmap_items`, each answering a DIFFERENT question** (#439). The
-  **board** (`roadmap`) is work IN FLIGHT — no strip, no boards beside it; ▦/☰ read it two ways.
-  **Roadmap** (`ideas`) is the capture inbox: unstarted, unclaimed, sorted
-  Ready (tiered) / Thinking (unranked or still held) / Parked (`skipped`); an item LEAVES it the
-  moment it takes a claim. **Plans** (`plans`) reads the schedule. **Auto-ideas** (`auto`, in For
-  you) is the held queue and owns Dismiss alone; a held row still shows on Roadmap wearing HELD —
-  an item on no screen is a lie of omission. **Every lane renames and deletes,
-  and the CATCH-ALL is the only reason that is safe:**
-  the keys `listFor` returns (`planned`/`progress`/`review`/`shipped`) are wiring, and deleting
-  one would leave a derived card rendering in no column while still counting everywhere else — a
-  silent loss. `RoadmapPlan.tsx` draws an UNFILED lane for any card whose key has no column, and
-  `server/test/plan-lanes.test.mjs` pins it. Renaming was never the hazard — it writes `name`, never the derived key.
+- **TWO SCREENS READ `roadmap_items`; TWO ARE MOCKUPS** (#443, owner's call). **Plans** (`plans`)
+  reads the schedule; **Auto-ideas** (`auto`, in For you) is the held queue and owns ✓ Keep and
+  Dismiss ALONE — the only screen a `hook`/`fly` row can be signed off or deleted from. The
+  **board** (`roadmap`) and the **Roadmap** capture tab (`ideas`) are `BoardMock.tsx` /
+  `IdeasMock.tsx`: the kit's screens on the kit's sample rows, reading and writing nothing.
+  **GONE FROM THE UI ENTIRELY**: giving a verdict, park/unpark, archive, delete-from-the-board,
+  labels, lane drag, the ⎇ claim. Every column and route survives and the runner still reads
+  them, so a parked item stays parked and no browser can unpark it — `./stack` and the API are
+  the way back. `server/test/plan-lanes.test.mjs` says what a real board owes on its return.
 - **The board order IS the run queue.** `position` is the bucket tiebreak and still PATCHable, but
-  **nothing in the client writes it now** — Scope's drag-reorder was its last editor. Same state as
-  the schedule columns above: stored, served, waiting for a surface.
+  **nothing in the client writes it** — same state as the schedule columns above: stored, served,
+  waiting for a surface.
 - **`claimed_by` is the branch claim** (#277 — called a "lane" until the rename; the `lane/` git ref
   prefix is unchanged, naming branches already on origin). Claim before starting; a terminal tab's
   claim is `term:<name>`. It is the don't-re-pick marker, injected by SessionStart as "Branch claims —
@@ -193,8 +191,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   non-empty **AND** `claimed_by` non-empty). **Both halves are load-bearing**: un-ticking clears
   `claimed_by` and keeps `built_note`, so `built_note` alone re-queues rejected changes and
   `claimed_by` alone queues items at claim time. It was the Review room's; the room is culled and
-  `isBuilt` in `web/src/lib/plan.ts` is its ONLY definition (#440), read by the Overview's verdict
-  band and the Roadmap board's lanes — do not simplify it back. Approving does NOT tick (the merge
+  `isBuilt` in `web/src/lib/plan.ts` is its ONLY definition (#440), read now by the Overview's
+  verdict band and Plans — do not simplify it back. Approving does NOT tick (the merge
   job does, with a human verdict stored). **Anything acting on a built change shares the
   predicate**; a path that opens `if (!item.done) 400` refuses the whole night's work.
 - **`verdict_source` / `verdict_at` / `verdict_evidence` (#263, owner-sanctioned)** — the one place a
@@ -203,8 +201,10 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `scripts/lib/autoverdict.mjs`, whose header carries the reasoning — never a second spelling. Two
   exclusions are not negotiable: a refine round and a limit-hit run. Clearing `review_tag` resets
   `verdict_source` to 'human' and wipes the other two in the same statement, so ⎌ undo needs no second
-  route. `verdict_evidence` is the receipt, and the strip that showed it is culled — whatever
-  surfaces a machine verdict next must show it too, or the "visible" leg is gone.
+  route. **THE "VISIBLE" LEG IS CURRENTLY UNMET AND THAT IS A DEBT, NOT A DESIGN.** #443 left no
+  screen that reads `verdict_evidence` — or gives a human verdict at all — so every verdict on
+  record now arrives from the auto path with nobody able to read or reverse it in a browser.
+  Whatever surfaces a change next owes both: the evidence, and a way to disagree.
 - **Un-ticking clears `review_tag` and `claimed_by`** (unless the same PATCH sets them), so a sent-back
   item re-enters play fresh. Ticking clears `review_tags`, `refine_note` and `review_shelved` — each
   verify round starts unannotated.

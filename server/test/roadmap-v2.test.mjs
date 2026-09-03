@@ -175,7 +175,7 @@ async function main() {
   // EVERY LANE IS THE OWNER'S (#428). The four defaults were locked because
   // `listFor` derives into them and a board missing one had a derived column
   // with nowhere to render; the owner asked for a Trello board, so the guard
-  // moved to the client's catch-all lane (RoadmapPlan.tsx, pinned structurally
+  // moved to the client's catch-all lane (gone with the board; see plan-lanes.test.mjs,
   // by plan-lanes.test.mjs) and the API refuses nothing.
   //
   // What this asserts is the DATA half of that: a derived lane renames without

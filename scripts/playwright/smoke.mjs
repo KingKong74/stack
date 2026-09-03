@@ -67,35 +67,53 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 //           working control from an inert one, which is the difference between
 //           this harness testing a control and merely photographing it.
 //
-// THE ROADMAP IS ONE BOARD NOW. The strip of four (Board · Scope · Tiers ·
-// Parked) is culled, so the four `setBoard` presses that stood here have no
-// control to press. What replaces them are the two panels the board opens over
-// itself — both read-only, both proved by something that must NOT already be on
-// screen, and both drawn whatever the board holds. Deliberately NOT a press on a
-// card: a card-shaped interaction fails on a project whose board is empty, and a
-// harness that cries about an empty board is one nobody trusts.
+// THE ROADMAP TAB IS A MOCKUP NOW (web/src/detail/BoardMock.tsx), and that
+// changes what this harness may press. The rule the old set followed was
+// "nothing card-shaped, because a card-shaped interaction fails on a project
+// whose board is empty" — a real board could be empty, so only board-level
+// chrome was safe. A mockup CANNOT be empty: its rows are in the file. So the
+// three interactions here are the kit's own card- and lane-level ones, which
+// are the whole of what the screen still does.
+//
+// Each is proved by something that is NOT on screen beforehand, and each is
+// local state — none of them writes, so this stays a read-only harness.
 const ROADMAP_PANELS = [
+  // THEY RUN IN SEQUENCE ON ONE PAGE and do not reset between presses, so each
+  // one targets a DIFFERENT lane. Both of the board's popovers are absolutely
+  // positioned and tall enough to cover the cards below them — open the To Do
+  // column's ⋯ first and the next press lands on the menu instead of the card
+  // it named, which reports as an inert control and is a lie about the card.
   {
-    id: 'board-labels',
-    label: 'Roadmap — labels menu',
-    click: '.rp-bar .rp-labelbtn',
-    expect: '.rp-bar .rp-labelpop',
+    id: 'board-priority',
+    label: 'Board — card priority picker',
+    click: '.km-col:nth-child(2) .km-card [aria-label="Priority"]',
+    expect: '.km-col:nth-child(2) .km-card .km-prilist',
   },
   {
-    id: 'board-archive',
-    label: 'Roadmap — archive rail',
-    click: '.rp-bar .rp-archive-toggle',
-    expect: '.rp .rp-archive',
+    id: 'board-composer',
+    label: 'Board — lane composer',
+    click: '.km-col:nth-child(3) .km-add',
+    expect: '.km-col:nth-child(3) .km-composer',
   },
-  // #443 — the kit's board/list pair. Same rule as the two above: the toggle is
-  // drawn whatever the board holds, and the table it opens is not on screen
-  // until it is pressed. The scope picker and the composer are card- and
-  // lane-shaped, so they stay OUT for the reason stated above.
   {
-    id: 'board-listview',
-    label: 'Roadmap — list view',
-    click: '.rp-views [aria-label="List view"]',
-    expect: '.rp .rp-list',
+    id: 'board-colmenu',
+    label: 'Board — column actions menu',
+    click: '.km-col:nth-child(4) [aria-label="More actions"]',
+    expect: '.km-col:nth-child(4) .km-menu',
+  },
+];
+
+// The Roadmap capture screen is a mockup too (IdeasMock.tsx); its one
+// interaction is a card opening to show where it was captured and what can be
+// done with it. It presses a card in the SECOND column because the first
+// column's top card is open at first paint — pressing that one would prove
+// nothing, and expecting `.im-card.open` anywhere would pass before the click.
+const IDEAS_PANELS = [
+  {
+    id: 'ideas-expand',
+    label: 'Roadmap capture — card expands',
+    click: '.im-col:nth-child(2) .im-card',
+    expect: '.im-col:nth-child(2) .im-card.open .im-acts',
   },
 ];
 
@@ -115,8 +133,8 @@ export const SCREENS = [
   { id: 'settings', label: 'Settings', path: '#/settings' },
   { id: 'project-overview', label: 'Project — Overview', path: '#/p/<slug>' },
   { id: 'project-quality', label: 'Project — Quality', path: '#/p/<slug>/quality' },
-  // The roadmap tab IS the board, so its own bar is on screen at first paint
-  // and needs no navigating to. If a strip ever comes back over it, these
+  // The roadmap tab IS the board, so its controls are on screen at first paint
+  // and need no navigating to. If a strip ever comes back over it, these
   // interactions start reporting a control they cannot reach — which is the
   // correct, loud answer.
   {
@@ -131,7 +149,12 @@ export const SCREENS = [
   // are walked on purpose: the route is the contract, and a strip that stopped
   // honouring one of its keys would still render perfectly on the other.
   { id: 'project-auto', label: 'Project — Auto-ideas', path: '#/p/<slug>/auto' },
-  { id: 'project-ideas', label: 'Project — Roadmap capture', path: '#/p/<slug>/ideas' },
+  {
+    id: 'project-ideas',
+    label: 'Project — Roadmap capture',
+    path: '#/p/<slug>/ideas',
+    interactions: IDEAS_PANELS,
+  },
   { id: 'project-plans', label: 'Project — Plans', path: '#/p/<slug>/plans' },
 ];
 

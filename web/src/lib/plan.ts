@@ -1003,10 +1003,16 @@ export const isBuilt = (it: RoadmapItem): boolean =>
 // every one of them blind to everything the board does not store.
 //
 // They were handed to the CURATOR'S OWN SESSION next, as briefs, and then the
-// Arrange panel that pressed them went too — the board is the whole Roadmap tab
-// now (RoadmapTab's header). What is left in this file is the GEOMETRY — where a
-// bar is drawn — which is arithmetic that has one right answer and belongs
-// nowhere near a model.
+// Arrange panel that pressed them went too. What is left in this file is the
+// GEOMETRY — where a bar is drawn — which is arithmetic that has one right
+// answer and belongs nowhere near a model.
+//
+// AND THE BOARD ITSELF HAS SINCE GONE (web/src/detail/BoardMock.tsx is a
+// mockup, at the owner's request), which took `listKeyOf`'s and `UNALLOCATED`'s
+// last callers with it. They stay for the same reason as the exports named
+// below: `listKeyOf` is the client twin of the server's `listFor`, and
+// `server/test/plan-lanes.test.mjs` holds the two in step. `isBuilt` and
+// `areaMatches` still have real callers — Plans.tsx and the item modal.
 //
 // SEVERAL EXPORTS HERE HAVE NO CALLER LEFT: `Move`, the schedule geometry,
 // `scopeTotals` (the Scope drawer's totals) and `horizonOf`. They are kept for

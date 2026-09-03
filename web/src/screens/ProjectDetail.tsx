@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import type { Roadmap as RoadmapData, RoadmapItem, Severity, Priority, Bug, BugStatus, ProjectPulse } from '../types';
+import type { RoadmapItem, Severity, Priority, Bug, BugStatus, ProjectPulse } from '../types';
 import {
   getProjectDetail, getProjectPulse, type ProjectDetailData,
   createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
   patchProject, createShareLink, deleteShareLink,
-  getRoadDraft, setRoadDraft, type RoadDraft, assistRoadmapItem,
+  assistRoadmapItem,
   agentCan, setLastViewedProject, onItemFiled,
   getProjects,
 } from '../store';
@@ -16,11 +16,11 @@ import { ConsoleNav, NavIcons, SpaceDot, type NavSection } from '../detail/Conso
 import { absoluteHref, type MenuOption } from '../components/MoreMenu';
 import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Quality } from '../detail/Quality';
-import { RoadmapTab } from '../detail/RoadmapTab';
 import { Activity } from '../detail/Activity';
 import { AutoIdeas } from '../detail/AutoIdeas';
-import { Ideas } from '../detail/Ideas';
 import { Plans } from '../detail/Plans';
+import { BoardMock } from '../detail/BoardMock';
+import { IdeasMock } from '../detail/IdeasMock';
 import { TabStrip } from '../components/TabStrip';
 import { timeAgo } from '../lib/ui';
 import { Modal } from '../components/Modal';
@@ -28,7 +28,6 @@ import { BugModal } from '../components/BugModal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
-import { DEFAULT_LABELS } from '../lib/labels';
 import { newItemSched } from '../lib/plan';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
@@ -44,6 +43,8 @@ type Tab = 'overview' | 'quality' | 'roadmap' | 'activity' | 'auto' | 'ideas' | 
 /** The keys that land on the For-you screen, in strip order. */
 const FORYOU_TABS: Tab[] = ['overview', 'activity', 'auto'];
 const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
+/** The two tabs that are kit MOCKUPS and bring their own heading block. */
+const isMockTab = (t: Tab) => t === 'roadmap' || t === 'ideas';
 // The four readings of a project. `navSections` below is the ONE list of them
 // — #432 moved them from a horizontal strip into the console's left rail, and
 // a second copy anywhere is how the two would drift.
@@ -192,18 +193,13 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const [bugModal, setBugModal] = useState<{ open: boolean; title: string }>({ open: false, title: '' });
   const [roadModal, setRoadModal] = useState<{
     open: boolean; priority: Priority; title: string; note: string;
-    editing: RoadmapItem | null; branch?: string; area?: string; fromDraft?: boolean;
+    editing: RoadmapItem | null; branch?: string; area?: string;
   }>({ open: false, priority: 'should', title: '', note: '', editing: null });
   const roadModalClosed = { open: false, priority: 'should' as Priority, title: '', note: '', editing: null };
-  // Device-local draft: a half-typed add-modal dismissed by a stray click.
-  const [roadDraft, setRoadDraftState] = useState<RoadDraft | null>(() => getRoadDraft(slug));
-  useEffect(() => { setRoadDraftState(getRoadDraft(slug)); }, [slug]);
-  const updateRoadDraft = (d: RoadDraft | null) => { setRoadDraft(slug, d); setRoadDraftState(d); };
-  const openRoadDraft = (d: RoadDraft) => setRoadModal({
-    open: true, priority: d.priority, title: d.title, note: d.note, branch: d.branch, area: d.area,
-    editing: null, fromDraft: true,
-  });
-  const [confirmRoadDelete, setConfirmRoadDelete] = useState<RoadmapItem | null>(null);
+  // The half-typed-item DRAFT went with the board (BoardMock's header). It was
+  // saved on a stray dismiss and offered back by a strip on the Roadmap tab;
+  // with no strip to offer it, keeping one would be storing something nobody
+  // can ever get back — so the modal no longer saves one at all.
   const [confirmBugDelete, setConfirmBugDelete] = useState<Bug | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -273,7 +269,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   }, []);
   const interacting = pointerDown
     || bugModal.open || roadModal.open || shareOpen || editingUrl !== null
-    || confirmRoadDelete !== null || confirmBugDelete !== null;
+    || confirmBugDelete !== null;
   useAutoRefresh(reread, !interacting);
 
   const bugs = data.bugs;
@@ -298,11 +294,12 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       })),
   ];
 
-  const openRoadCount = allRoadmap.filter((r) => !r.done).length;
-  // The Roadmap row's count is the CAPTURE INBOX, not the whole board:
-  // unstarted and unclaimed. Same predicate Ideas.tsx sorts into three columns —
-  // a row's count and the screen behind it must agree or one of them is lying.
-  const captureCount = allRoadmap.filter((r) => !r.done && !r.claimedBy).length;
+  // THE BOARD AND ROADMAP ROWS CARRY NO COUNT any more. They used to say how
+  // many open items and how many captured, and the rule those counts obeyed was
+  // that a row's number and the screen behind it must agree or one of them is
+  // lying. Both screens are mockups now (BoardMock, IdeasMock) and can show
+  // neither number, so the honest badge is none rather than a real count that
+  // opens onto rows it does not describe.
   const failingChecks = data.checks.filter((c) => c.lastStatus === 'fail').length;
   // The Quality tab's single badge (#278): red checks plus serious open bugs.
   const needsAttention = failingChecks
@@ -365,72 +362,9 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       // #425 — an item somebody adds by hand lands ON the timeline, so deciding
       // to do something puts it on the plan rather than in the tray.
       const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: branch || undefined, area: area || undefined, subArea: subArea || undefined, plan: plan.length ? plan : undefined, risk: risk !== 'normal' ? risk : undefined, tier: tier || undefined, sched: newItemSched(project.weekZero) });
-      if (roadModal.fromDraft) updateRoadDraft(null); // the draft landed — clear it
       setData({ ...data, roadmap: { ...roadmap, [priority]: [...roadmap[priority], item] } });
       setRoadModal(roadModalClosed);
     });
-
-  const removeRoad = (item: RoadmapItem) =>
-    guard(async () => {
-      await deleteRoadmapItem(slug, item.id);
-      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].filter((i) => i.id !== item.id) } });
-    });
-
-  // ⎇ Branch for focused work (#205): claim the item's branch, then open a
-  // terminal session primed with a build brief for that branch. The claim is
-  // the board's in-progress marker (and the autopilot's keep-off signal); the
-  // merge back home is Mission Control's merge strip, like any other branch.
-  const branchItem = (item: RoadmapItem) =>
-    guard(async () => {
-      // The `lane/` ref prefix is deliberately unchanged by #277's rename: it
-      // names real branches that already exist on origin, and both the host
-      // dispatcher and `stack tree` group on it. The VOCABULARY is 'branch'.
-      const branch = `lane/item-${item.id}`;
-      const updated = await patchRoadmapItem(slug, item.id, { claimed_by: branch });
-      setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].map((i) => (i.id === item.id ? updated : i)) } });
-      const brief = [
-        `Build roadmap item #${item.id} — ${item.title} — on its own branch (${branch}).`,
-        item.note ? `\nThe item:\n${item.note}` : '',
-        item.plan.length ? `\nThe plan (work unticked steps top-down, PATCH the full list back as each lands):\n${item.plan.map((s) => `${s.done ? '[x]' : '[ ]'} ${s.text}`).join('\n')}` : '',
-        `\nWork it in a worktree so this checkout stays free: git worktree add ../wt-item-${item.id} -b ${branch}`,
-        `Commit in small units and push with: git push -u origin ${branch}`,
-        `When it lands: PATCH built_note + done:true on the item (the branch claim is already ${branch}),`,
-        'then merge the branch back from Mission Control’s merge strip (⇥ Merge) — or keep it open if it needs more nights.',
-      ].filter(Boolean).join('\n');
-      try { sessionStorage.setItem('stack.term.brief', brief); } catch { /* private mode — the handoff just won't appear */ }
-      go.terminal(slug);
-    });
-
-  // The v2 Roadmap views write through store.ts themselves and hand back the
-  // row the server returned. These two put it into the local copy — including
-  // the case a plain replace would get wrong: a PATCH that changed the item's
-  // BUCKET has to move it between the grouped arrays, not just overwrite it in
-  // the one it used to be in, or the card renders in its old lane until reload.
-  // Replace a BATCH in one pass. This is a list rather than a single row
-  // because `roadmap` here is closed over from this render: calling the
-  // one-row version N times in a loop rebuilds from the same base every time
-  // and only the LAST write survives — a lane swept into the archive would put
-  // one card away and silently leave the rest. Callers that write several rows
-  // collect them and land them together.
-  const replaceRoadItems = (updated: RoadmapItem[]) => {
-    if (!updated.length) return;
-    const byId = new Map(updated.map((u) => [u.id, u]));
-    const next: RoadmapData = { must: [], should: [], could: [], wont: [] };
-    (['must', 'should', 'could', 'wont'] as Priority[]).forEach((b) => {
-      next[b] = roadmap[b].filter((it) => !byId.has(it.id));
-    });
-    for (const u of updated) next[u.bucket] = [...next[u.bucket], u];
-    setData({ ...data, roadmap: next });
-  };
-  const replaceRoadItem = (updated: RoadmapItem) => replaceRoadItems([updated]);
-  // Parking from the capture board. Parked (`skipped`) is one of the three
-  // states in schema.sql and is neither archiving nor deleting, which is why it
-  // is a toggle: the board's card has the same pair, through the same PATCH.
-  const parkItem = (it: RoadmapItem, parked: boolean) =>
-    guard(async () => { replaceRoadItem(await patchRoadmapItem(slug, it.id, { skipped: parked })); });
-  const addRoadItem = (created: RoadmapItem) => {
-    setData({ ...data, roadmap: { ...roadmap, [created.bucket]: [...roadmap[created.bucket], created] } });
-  };
 
   const saveNorthStar = (text: string) =>
     guard(async () => {
@@ -639,12 +573,12 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       label: 'Workspace',
       items: [
         {
-          key: 'roadmap', label: project.name, icon: NavIcons.board, count: openRoadCount,
+          key: 'roadmap', label: project.name, icon: NavIcons.board,
           menuLabel: `${project.name} board`,
           menu: placeMenu(hrefTo.detail(slug, 'roadmap'), 'board'), onClick: () => setTab('roadmap'),
         },
         {
-          key: 'ideas', label: 'Roadmap', icon: NavIcons.map, count: captureCount,
+          key: 'ideas', label: 'Roadmap', icon: NavIcons.map,
           menu: placeMenu(hrefTo.detail(slug, 'ideas'), 'ideas'), onClick: () => setTab('ideas'),
         },
         {
@@ -700,7 +634,14 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         } />
 
       <main className="con-main"><div className={`con-inner${tab === 'roadmap' ? ' wide' : ''}`}>
-        <div className="detail-head">
+        {/* THE PROJECT HEADER STANDS DOWN ON THE TWO MOCK TABS. Each of them is
+            a whole kit screen and carries its own heading block — the
+            breadcrumb + "Stack" + KING tag on the board, the eyebrow +
+            "Roadmap" on the other — so drawing this one above them would stack
+            two titles on one screen and neither would read as the page's. The
+            actions that live here (Visit site, Repo, Share) are on every other
+            tab, which is where they were reached from anyway. */}
+        {!isMockTab(tab) && <div className="detail-head">
           <div>
             <div className="titlerow">
               <div className="detail-title">{project.name}</div>
@@ -740,7 +681,7 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
               </>
             )}
           </div>
-        </div>
+        </div>}
 
         {actionError && <div className="action-error">{actionError}</div>}
 
@@ -796,30 +737,14 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             one op) is switched off: the button is not rendered at all, rather
             than rendered to fail. Quality has no ✧ and no agent of its own —
             the Auditor was its live session and went when the consoles did. */}
-        {tab === 'roadmap' && (
-          // RoadmapTab owns the board and the furniture around it. `legacy` is
-          // the bag of callbacks that have to live up here because they open
-          // modals, navigate, or write through a path this screen owns.
-          <RoadmapTab slug={slug} roadmap={roadmap}
-            onItemChanged={replaceRoadItem} onItemsChanged={replaceRoadItems} onItemAdded={addRoadItem}
-            onOpenItem={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, editing: it })}
-            legacy={{
-              highlightId,
-              draft: roadDraft,
-              onResumeDraft: () => roadDraft && openRoadDraft(roadDraft),
-              onDiscardDraft: () => updateRoadDraft(null),
-              onDelete: (it) => setConfirmRoadDelete(it),
-              onBranch: (it: RoadmapItem) => branchItem(it),
-            }} />
-        )}
-        {tab === 'ideas' && (
-          <Ideas roadmap={roadmap} labels={DEFAULT_LABELS}
-            onOpen={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, editing: it })}
-            onPark={parkItem}
-            onDelete={(it) => setConfirmRoadDelete(it)}
-            onKeep={(it) => guard(async () => { replaceRoadItem(await patchRoadmapItem(slug, it.id, { reviewed: true })); })}
-            onCapture={() => setRoadModal({ open: true, priority: 'should', title: '', note: '', editing: null })} />
-        )}
+        {/* BOTH OF THESE ARE MOCKUPS at the owner's request — the kit's own
+            BoardScreen and IdeasScreen on the kit's own sample rows. They take
+            no props because they read nothing: `roadmap` is not passed, no
+            callback is wired, and neither can write. Each file's header lists
+            what stopped being reachable when the real screens went, and the
+            two together are the only record of it in the client. */}
+        {tab === 'roadmap' && <BoardMock />}
+        {tab === 'ideas' && <IdeasMock />}
         {tab === 'plans' && (
           <Plans roadmap={roadmap} weekZero={project.weekZero}
             onOpen={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, editing: it })} />
@@ -855,7 +780,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             .map((i) => i.subArea))].filter(Boolean).sort()}
           mode={roadModal.editing ? 'edit' : 'add'}
           onClose={() => setRoadModal(roadModalClosed)}
-          onDismiss={(d) => updateRoadDraft(d)}
           onAssist={agentCan(data.agents, 'curator', 'assist') ? (note) => assistRoadmapItem(slug, note) : undefined}
           onSubmit={submitRoad} />
       )}
@@ -890,22 +814,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
           confirmLabel="Delete bug" cancelLabel="Cancel" danger
           onConfirm={() => { const b = confirmBugDelete; setConfirmBugDelete(null); removeBug(b); }}
           onCancel={() => setConfirmBugDelete(null)} />
-      )}
-      {confirmRoadDelete && (
-        <ConfirmModal
-          title="Delete roadmap item?"
-          // #381 — a fly card names who would otherwise re-create it. Same
-          // tombstone as a hook card, different thing doing the re-creating,
-          // and naming it is what makes the sentence true rather than generic.
-          body={<>Delete <b>{confirmRoadDelete.title}</b>{
-            confirmRoadDelete.source === 'hook'
-              ? ' — it was auto-extracted, so it won’t be re-created by the next push.'
-              : confirmRoadDelete.source === 'fly'
-                ? ` — it was opened by ${confirmRoadDelete.flySession || 'a live session'}, which won’t re-create it.`
-                : '.'}</>}
-          confirmLabel="Delete item" cancelLabel="Cancel" danger
-          onConfirm={() => { const it = confirmRoadDelete; setConfirmRoadDelete(null); removeRoad(it); }}
-          onCancel={() => setConfirmRoadDelete(null)} />
       )}
     </div>
   );
