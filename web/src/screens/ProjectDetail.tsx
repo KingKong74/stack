@@ -817,7 +817,8 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             onOpen={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, editing: it })}
             onPark={parkItem}
             onDelete={(it) => setConfirmRoadDelete(it)}
-            onKeep={(it) => guard(async () => { replaceRoadItem(await patchRoadmapItem(slug, it.id, { reviewed: true })); })} />
+            onKeep={(it) => guard(async () => { replaceRoadItem(await patchRoadmapItem(slug, it.id, { reviewed: true })); })}
+            onCapture={() => setRoadModal({ open: true, priority: 'should', title: '', note: '', editing: null })} />
         )}
         {tab === 'plans' && (
           <Plans roadmap={roadmap} weekZero={project.weekZero}

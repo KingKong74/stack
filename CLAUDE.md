@@ -134,8 +134,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet. **NOTHING EDITS THESE**
   (#428 took the Timeline, their only editor); the PLANS tab (#439) is a READER of them.
 - **FOUR SCREENS OVER `roadmap_items`, each answering a DIFFERENT question** (#439). The
-  **board** (`roadmap`, the rail's project-name row) is work IN FLIGHT — no strip, no views, no
-  boards beside it. **Roadmap** (`ideas`) is the capture inbox: unstarted, unclaimed, sorted
+  **board** (`roadmap`) is work IN FLIGHT — no strip, no boards beside it; ▦/☰ read it two ways.
+  **Roadmap** (`ideas`) is the capture inbox: unstarted, unclaimed, sorted
   Ready (tiered) / Thinking (unranked or still held) / Parked (`skipped`); an item LEAVES it the
   moment it takes a claim. **Plans** (`plans`) reads the schedule. **Auto-ideas** (`auto`, in For
   you) is the held queue and owns Dismiss alone; a held row still shows on Roadmap wearing HELD —

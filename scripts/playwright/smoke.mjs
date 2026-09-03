@@ -87,6 +87,16 @@ const ROADMAP_PANELS = [
     click: '.rp-bar .rp-archive-toggle',
     expect: '.rp .rp-archive',
   },
+  // #443 — the kit's board/list pair. Same rule as the two above: the toggle is
+  // drawn whatever the board holds, and the table it opens is not on screen
+  // until it is pressed. The scope picker and the composer are card- and
+  // lane-shaped, so they stay OUT for the reason stated above.
+  {
+    id: 'board-listview',
+    label: 'Roadmap — list view',
+    click: '.rp-views [aria-label="List view"]',
+    expect: '.rp .rp-list',
+  },
 ];
 
 // ---- the screens ---------------------------------------------------------

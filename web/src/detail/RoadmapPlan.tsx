@@ -74,9 +74,10 @@
 //    is what keeps the click off everything inside a lane that means something
 //    else, and its comment says why that guard lives in one place.
 //  • A CLICK OPENS THE CARD, A DOUBLE-CLICK OPENS THE ITEM. The inline detail is
-//    for the things you change constantly (labels and scope); everything
-//    else lives in the modal. A double-click toggles the detail twice on its way
-//    through, which lands it back where it started — harmless, and cheaper than
+//    for the things you change constantly (the labels; scope moved onto the
+//    card's own face with #443); everything else lives in the modal. A
+//    double-click toggles the detail twice on its way through, which lands it
+//    back where it started — harmless, and cheaper than
 //    a click-delay timer that would make every single click feel slow.
 //
 
@@ -181,6 +182,24 @@ export function RoadmapPlan({
   // looks exactly like the four beside it is a board you aim at by counting.
   const [over, setOver] = useState('');
   const [dragging, setDragging] = useState<number | null>(null);
+  // The toolbar's own two controls (#443, the kit's BoardScreen toolbar).
+  //
+  // `query` NARROWS WHAT IS DRAWN and nothing else — it never writes, never
+  // reorders and never touches a lane, so a search left in the box is one press
+  // from the whole board again. It reads the title, the number and the note,
+  // because "#412" and "the grey ramp" are both things you arrive knowing.
+  //
+  // `view` is the kit's board/list pair. The list is not a second board: it is
+  // the SAME cards in one flat, sortable-by-eye table, which is the reading a
+  // 40-card board cannot give you — four columns of cards is a shape, not a
+  // list you can run your eye down. It is deliberately READ-ONLY apart from
+  // opening a card: every write on this screen is a lane-relative gesture
+  // (drag, park, archive) and a table has no lanes to be relative to.
+  const [query, setQuery] = useState('');
+  const [view, setView] = useState<'board' | 'list'>('board');
+  // Which card's bucket picker is open (#443). One at a time, and closed by a
+  // press anywhere else on the board — the same rule the lane menus follow.
+  const [priFor, setPriFor] = useState<number | null>(null);
 
   // CLICKING THE LANE IS THE GESTURE; the ⇥ is the label for it.
   //
@@ -201,10 +220,21 @@ export function RoadmapPlan({
 
   const dotOf = (area: string) => areas.find((a) => a.name === area)?.dot || 'var(--line-3)';
 
+  // The search reads the three things you might arrive knowing: the words, the
+  // number, and what you wrote in the note. A bare digit run matches the id
+  // whether or not you typed the # — "#412" and "412" are the same intent.
+  const q = query.trim().toLowerCase();
+  const matchesQuery = (i: RoadmapItem) => !q
+    || i.title.toLowerCase().includes(q)
+    || i.note.toLowerCase().includes(q)
+    || (i.area || '').toLowerCase().includes(q)
+    || `#${i.id}`.includes(q.startsWith('#') ? q : `#${q}`);
+
   const visible = items.filter((i) =>
     !i.archived
     && areaMatches(i.area, areaFilter)
-    && (labelFilter === '' || i.labels.includes(labelFilter)));
+    && (labelFilter === '' || i.labels.includes(labelFilter))
+    && matchesQuery(i));
   const archived = items.filter((i) => i.archived);
   // The column an archived card was sitting in. `listKeyOf` still answers,
   // because archiving does not touch `listKey`, `done` or `claimedBy`. A key
@@ -239,17 +269,27 @@ export function RoadmapPlan({
   const orphans = byKey.get(UNFILED) || [];
   if (orphans.length) columns.push({ key: UNFILED, name: 'Unfiled', cards: orphans, list: null });
 
-  const submit = (fn: (v: string) => void) => (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      const v = draft.trim();
-      if (v) fn(v);
-      setDraft(''); setComposer(null);
-    } else if (e.key === 'Escape') { setDraft(''); setComposer(null); }
-  };
+  // How many cards the whole board would draw with the search box empty. Only
+  // ever used to SAY what the search is hiding: a board that quietly shows six
+  // of forty is the same silence as a NULL verdict.
+  const unsearched = items.filter((i) =>
+    !i.archived
+    && areaMatches(i.area, areaFilter)
+    && (labelFilter === '' || i.labels.includes(labelFilter))).length;
 
   return (
-    <div className="rp">
+    <div className="rp" onClick={() => setPriFor(null)}>
+      {/* THE KIT'S TOOLBAR ROW (#443) — one line, in the order the kit puts it:
+          what narrows the board on the left, what changes how it is READ on the
+          right. It replaces a bar that had grown two half-rows and a gap. */}
       <div className="rp-bar">
+        <span className="searchbox sm rp-search">
+          <span className="glass" aria-hidden="true" />
+          <input type="search" value={query} placeholder="Search board"
+            aria-label="Search this board by title, number, note or area"
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setQuery(''); }} />
+        </span>
         <LabelMenu labels={labels} tones={tones && tones.length ? tones : LABEL_TONES}
           filter={labelFilter} onFilter={onSetLabelFilter}
           countOf={(key) => items.filter((i) => !i.archived && i.labels.includes(key)).length}
@@ -262,9 +302,26 @@ export function RoadmapPlan({
             {labels.find((l) => l.key === labelFilter)?.name || labelFilter} ×
           </button>
         )}
+        {/* A search that is hiding rows says how many, and offers the way back.
+            Hidden at zero rather than drawn as "40 of 40", which is furniture. */}
+        {q && (
+          <button className="rp-searchnote" onClick={() => setQuery('')}
+            title="Clear the search and show the whole board">
+            {visible.length} of {unsearched} shown ×
+          </button>
+        )}
+        <span className="rp-barsplit" />
         <button className="rp-archive-toggle" onClick={() => setShowArchive(!showArchive)}>
           {showArchive ? 'Hide archive' : `Archive${archived.length ? ` · ${archived.length}` : ''}`}
         </button>
+        <span className="rp-views">
+          <button className={`k-iconbtn sm solid${view === 'board' ? ' on' : ''}`} aria-pressed={view === 'board'}
+            aria-label="Board view" title="Board — the lanes, and the only place a card can be moved"
+            onClick={() => setView('board')}>▦</button>
+          <button className={`k-iconbtn sm solid${view === 'list' ? ' on' : ''}`} aria-pressed={view === 'list'}
+            aria-label="List view" title="List — every card shown here, in one table you can run your eye down"
+            onClick={() => setView('list')}>☰</button>
+        </span>
       </div>
 
       {showArchive && (
@@ -284,7 +341,57 @@ export function RoadmapPlan({
         </div>
       )}
 
-      <div className="rp-cols">
+      {/* THE LIST IS THE SAME CARDS, not a second board (#443). It draws the
+          columns' contents in board order, each row saying which lane it is in
+          — the one thing a table loses and the one thing this board is about.
+          Nothing here writes: a row opens its item, and every other gesture on
+          this screen is lane-relative and has no meaning without lanes. */}
+      {view === 'list' && (
+        <div className="rp-list">
+          <div className="rp-listhead">
+            <span className="id">#</span>
+            <span className="t">Title</span>
+            <span className="lane">Lane</span>
+            <span className="area">Area</span>
+            <span className="mos">Scope</span>
+            <span className="est">Est</span>
+          </div>
+          {columns.every((c) => c.cards.length === 0) && (
+            <div className="rail-empty">
+              {q ? `Nothing on this board matches “${query.trim()}”.` : 'Nothing on this board yet.'}
+            </div>
+          )}
+          {columns.flatMap((col) => col.cards.map((c) => (
+            <button className={`rp-listrow${highlightId === String(c.id) ? ' hl' : ''}`} key={c.id}
+              onClick={() => onOpen(c)} title="Open this item">
+              <span className="id">#{c.id}</span>
+              {/* The markers that have no column of their own ride WITH the
+                  title rather than after the last cell: an extra child of a
+                  six-column grid starts a second row, which gave every tiered
+                  card a ragged double-height row and lost the table's whole
+                  point — a set of lines you can run your eye down. */}
+              <span className="t">
+                <span className="tt">{c.title}</span>
+                {c.tier && (
+                  <span className={`rp-tier t${c.tier}`}
+                    title={`Desire tier ${c.tier} (#227) — set in the item`}>{c.tier}</span>
+                )}
+                {c.skipped && <span className="rp-parked">parked</span>}
+                {isBuilt(c) && <span className="rp-listwaiting">waiting on your verdict</span>}
+              </span>
+              <span className="lane">{col.name}</span>
+              <span className="area">
+                <span className="dot" style={{ background: dotOf(c.area) }} />
+                {c.area || 'untagged'}
+              </span>
+              <span className={`mos rp-mos ${c.bucket}`}>{BUCKET_LABEL[c.bucket]}</span>
+              <span className="est">{c.estimate === null ? '—' : `${c.estimate}w`}</span>
+            </button>
+          )))}
+        </div>
+      )}
+
+      <div className="rp-cols" hidden={view !== 'board'}>
         {columns.map((col) => {
           const { cards } = col;
           // How many cards in this lane are built and waiting on a verdict.
@@ -457,7 +564,7 @@ export function RoadmapPlan({
                     onDragEnd={() => { setDragging(null); setOver(''); }}
                     onClick={() => setOpenCard(openCard === c.id ? null : c.id)}
                     onDoubleClick={() => onOpen(c)}
-                    title="Click for labels and scope · double-click to open">
+                    title="Click for labels and the note · double-click to open">
                     {c.labels.length > 0 && (
                       <div className="rp-stripes">
                         {labelsOf(c.labels, labels).map((l) => (
@@ -475,7 +582,25 @@ export function RoadmapPlan({
                       <span className="rp-id">#{c.id}</span>
                       <span className="dot" style={{ background: dotOf(c.area) }} />
                       <span className="area">{c.area || 'untagged'}</span>
-                      <span className={`rp-mos ${c.bucket}`}>{BUCKET_LABEL[c.bucket]}</span>
+                      {/* THE SCOPE CHIP IS THE PICKER (#443, the kit's priority
+                          control). It reads the same as it always did and it is
+                          now the thing you press to change it, which is the one
+                          field on this card the owner changes constantly and
+                          used to need the card opened for.
+
+                          NOT the tier below it, and the difference is the whole
+                          reason this is safe: `bucket` is how NECESSARY the
+                          work is and has always been settable from this board;
+                          `tier` is the run queue's primary sort and is humans
+                          only, in the item modal. A control on the card for
+                          THAT would be one mis-press from an agent-shaped
+                          write, which is exactly what #227 forbids. */}
+                      <BucketPicker item={c} open={priFor === c.id}
+                        onOpen={(e) => {
+                          e.stopPropagation();
+                          setPriFor(priFor === c.id ? null : c.id);
+                        }}
+                        onPick={(b) => { setPriFor(null); if (b !== c.bucket) onSetBucket(c, b); }} />
                       {/* THE DESIRE TIER IS READ-ONLY HERE (#227). It is the run
                           queue's PRIMARY sort, so a board that shows the bucket
                           and hides the tier shows the second key and not the
@@ -560,14 +685,10 @@ export function RoadmapPlan({
                           onToggleOpen={() => setLabelsFor(labelsFor === c.id ? null : c.id)}
                           onToggle={(key) => onToggleLabel(c, key)} />
 
-                        <div className="lbl">Scope</div>
-                        <div className="rp-toggles">
-                          {BUCKETS.map((b) => (
-                            <button key={b} className={`rp-mos ${b}${c.bucket === b ? ' on' : ''}`}
-                              onClick={() => onSetBucket(c, b)}>{BUCKET_LABEL[b]}</button>
-                          ))}
-                        </div>
-
+                        {/* Scope's four toggles were here and are not any more:
+                            the chip on the card's own meta row IS the picker
+                            now (#443), and two controls for one field is two
+                            places to look for the state of it. */}
                         <div className="rp-acts">
                           <button className="rail-link" onClick={() => onOpen(c)}>Open</button>
                           {/* ⎇ was Scope's, and Scope is gone (RoadmapTab's
@@ -605,9 +726,9 @@ export function RoadmapPlan({
               {/* No composer on the catch-all: a new card filed into a
                   rendering slot would have nowhere to be written. */}
               {col.list && (composer === col.key ? (
-                <input className="field-input sm" autoFocus value={draft} placeholder="Card title, then Enter"
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={submit((v) => onAddCard(col.key, v))} />
+                <Composer draft={draft} onDraft={setDraft}
+                  onClose={() => { setDraft(''); setComposer(null); }}
+                  onSubmit={(v) => { onAddCard(col.key, v); setDraft(''); setComposer(null); }} />
               ) : (
                 <button className="rp-add" onClick={() => { setComposer(col.key); setDraft(''); }}>+ Add a card</button>
               ))}
@@ -627,6 +748,96 @@ export function RoadmapPlan({
             <button className="rp-add-list" onClick={() => setListDraft('')}>+ Add another list</button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// --- the scope picker and the composer (#443, the kit's BoardScreen) --------
+
+// The card's scope control. The kit draws a priority as a GLYPH so a column of
+// cards reads as a shape before it reads as words; Stack keeps the word too,
+// because "Must" and "Should" are the vocabulary the rest of the app writes in
+// and a board that abbreviates them to arrows is one more thing to learn.
+//
+// The open menu follows the kit exactly: the current value restated in a
+// focused box at the top, then the four to choose from. Restating it is not
+// redundant — the trigger is behind the menu once the menu is open.
+const BUCKET_GLYPH: Record<Priority, string> = {
+  must: '\u2303\u2303', should: '\u2303', could: '=', wont: '\u2304',
+};
+
+function BucketPicker({ item, open, onOpen, onPick }: {
+  item: RoadmapItem;
+  open: boolean;
+  onOpen: (e: React.MouseEvent) => void;
+  onPick: (b: Priority) => void;
+}) {
+  return (
+    <span className="rp-pri">
+      {/* The chip carries the WORD, so it does not also carry the kit's glyph:
+          "⌃⌃ MUST" at 10.5px is two spellings of one value fighting for the
+          same 60px. The glyphs earn their place inside the menu, where four
+          options in a row are what they are actually ordering. The ▾ is the
+          affordance — the same one the label menu on this board wears. */}
+      <button className={`rp-mos ${item.bucket}${open ? ' on' : ''}`} onClick={onOpen}
+        aria-expanded={open} aria-label={`Scope — ${BUCKET_LABEL[item.bucket]}`}
+        title="How necessary this is. Press to change it — not the same as the desire tier, which is set in the item.">
+        {BUCKET_LABEL[item.bucket]}
+        <span className="chev" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <span className="rp-prilist" role="menu" onClick={(e) => e.stopPropagation()}>
+          <span className="cur">
+            <span className="g" aria-hidden="true">{BUCKET_GLYPH[item.bucket]}</span>
+            {BUCKET_LABEL[item.bucket]}
+          </span>
+          {BUCKETS.map((b) => (
+            <button key={b} role="menuitem" className={`opt ${b}${b === item.bucket ? ' on' : ''}`}
+              onClick={() => onPick(b)}>
+              <span className="g" aria-hidden="true">{BUCKET_GLYPH[b]}</span>
+              {BUCKET_LABEL[b]}
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
+// The lane's composer. A TEXTAREA rather than the one-line field it replaced,
+// for the kit's reason and one of Stack's own: card titles here routinely run
+// past a 272px column, and a field that scrolls sideways while you type hides
+// the half you already wrote.
+//
+// Enter files it, Shift+Enter is a newline, Escape closes without filing —
+// and the ⏎ button is what says so to anyone who does not already know. It
+// lights only when there is something to file, so a press on an empty composer
+// cannot look like it did nothing.
+function Composer({ draft, onDraft, onClose, onSubmit }: {
+  draft: string;
+  onDraft: (v: string) => void;
+  onClose: () => void;
+  onSubmit: (v: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => { ref.current?.focus(); }, []);
+  const file = () => {
+    const v = draft.trim();
+    if (v) onSubmit(v); else onClose();
+  };
+  return (
+    <div className="rp-composer" onClick={(e) => e.stopPropagation()}>
+      <textarea ref={ref} rows={2} value={draft} placeholder="What needs to be done?"
+        onChange={(e) => onDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); file(); }
+          else if (e.key === 'Escape') onClose();
+        }} />
+      <div className="rp-composer-foot">
+        <span className="hint">Enter to add · Esc to close</span>
+        <button className={`go${draft.trim() ? ' armed' : ''}`} onClick={file}
+          aria-label="Add this card" title="Add this card">{'\u23ce'}</button>
       </div>
     </div>
   );

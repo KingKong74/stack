@@ -3388,8 +3388,121 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rl-paused.on   { background: var(--paused);   border-color: var(--paused); }
 
 /* ---- the plan board ---- */
-.rp-bar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
+/* THE BOARD'S TOOLBAR (#443) — the kit's BoardScreen toolbar row: what narrows
+   the board on the left, what changes how it is READ on the right, one line.
+   `.rp-barsplit` is the push, not a spacer with a width — a margin-left:auto on
+   the first right-hand control breaks the moment another is added beside it. */
+.rp-bar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-5); }
 .rp-bar .lbl { margin-right: 4px; }
+.rp-barsplit { flex: 1 1 auto; }
+.rp-search { width: 230px; flex: 0 1 230px; }
+/* The browser's own search-clear sits inside the field and would be a second,
+   differently-shaped × beside the "n of m shown" one. Same suppression the area
+   search already carries. */
+.rp-search input[type='search']::-webkit-search-decoration,
+.rp-search input[type='search']::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.rp-searchnote {
+  font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary);
+  background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+  padding: 5px 8px; white-space: nowrap; transition: var(--transition-control);
+}
+.rp-searchnote:hover { color: var(--text-primary); border-color: var(--border-strong); }
+.rp-views { display: inline-flex; align-items: center; gap: var(--space-2); flex: none; }
+.rp-views .k-iconbtn { font-size: 13px; }
+
+/* The board and the list are two READINGS of one set of cards, so the lanes are
+   hidden rather than unmounted: a composer half-typed into To Do, a lane left
+   focused, a card left open all survive a look at the table and back. */
+.rp-cols[hidden] { display: none; }
+
+/* ---------- the list reading (#443) ---------- */
+.rp-list {
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  background: var(--surface-raised); overflow: hidden;
+}
+.rp-listhead, .rp-listrow {
+  display: grid; align-items: center; gap: var(--space-4);
+  grid-template-columns: 52px minmax(0, 1fr) 116px 128px 74px 44px;
+  padding: 9px var(--space-5); width: 100%; text-align: left;
+}
+.rp-listhead {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
+  color: var(--text-tertiary); border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+}
+.rp-listrow {
+  border: 0; border-top: 1px solid var(--border-subtle); background: transparent;
+  cursor: pointer; transition: var(--transition-control);
+}
+.rp-listrow:first-of-type { border-top: 0; }
+.rp-listrow:hover { background: var(--surface-hover); }
+.rp-listrow.hl { background: var(--accent-tint); box-shadow: inset 2px 0 0 var(--accent); }
+.rp-listrow .id { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); }
+.rp-listrow .t { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.rp-listrow .t .tt { font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-listrow .t .rp-tier, .rp-listrow .t .rp-parked, .rp-listrow .t .rp-listwaiting { flex: none; }
+.rp-listrow .lane, .rp-listhead .lane { font: var(--type-caption); color: var(--text-secondary); }
+.rp-listrow .area {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--faint); overflow: hidden;
+}
+.rp-listrow .area .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.rp-listrow .est, .rp-listhead .est { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.rp-listrow .rp-mos { justify-self: start; }
+.rp-listwaiting { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--accent-text); }
+.rp-list .rail-empty { padding: var(--space-6) var(--space-5); }
+
+/* ---------- the card's scope picker (#443, the kit's priority control) ------ */
+.rp-pri { position: relative; display: inline-flex; }
+.rp-pri .rp-mos { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.rp-pri .rp-mos .chev { font-size: 8px; line-height: 1; opacity: .6; }
+.rp-pri .rp-mos.on .chev { opacity: 1; }
+.rp-pri .rp-mos:hover { border-color: var(--border-strong); }
+.rp-prilist {
+  position: absolute; top: calc(100% + 5px); left: 0; z-index: 40; min-width: 152px;
+  background: var(--surface-overlay); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3);
+}
+.rp-prilist .cur {
+  display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 9px;
+  border-radius: var(--radius-md); background: var(--surface-card);
+  border: 1px solid var(--border-focus);
+  font: var(--type-body-sm); color: var(--text-primary);
+}
+.rp-prilist .opt {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 6px 9px; border: 0; border-radius: var(--radius-sm); background: transparent;
+  font: var(--type-body-sm); color: var(--text-secondary); cursor: pointer;
+  transition: var(--transition-control);
+}
+.rp-prilist .opt:hover { background: var(--surface-hover); color: var(--text-primary); }
+.rp-prilist .opt.on { background: var(--action-primary); color: var(--white); }
+.rp-prilist .g { font-family: var(--mono); font-size: 10px; width: 15px; text-align: center; flex: none; }
+.rp-prilist .cur .g { color: var(--text-secondary); }
+.rp-prilist .opt.on .g { color: var(--white); }
+
+/* ---------- the lane composer (#443) ---------- */
+.rp-composer {
+  background: var(--surface-card); border: 1px solid var(--border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 22%, transparent);
+  border-radius: var(--radius-lg); padding: var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-5);
+}
+.rp-composer textarea {
+  width: 100%; resize: none; border: 0; outline: none; background: transparent;
+  font: var(--type-body-sm); color: var(--text-primary); caret-color: var(--blue-500);
+}
+.rp-composer-foot { display: flex; align-items: center; gap: var(--space-4); }
+.rp-composer-foot .hint { font: var(--type-caption); color: var(--text-tertiary); }
+.rp-composer-foot .go {
+  margin-left: auto; flex: none; width: 26px; height: 26px; border: 0;
+  border-radius: var(--radius-sm); background: var(--surface-overlay); color: var(--text-tertiary);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; cursor: pointer; transition: var(--transition-control);
+}
+.rp-composer-foot .go.armed { background: var(--action-primary); color: var(--white); }
 .rp-archive-toggle { margin-left: auto; font-size: 12px; color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px; }
 .rp-archive-toggle:hover { border-color: var(--accent); color: var(--accent-text); }
 .rp-archive { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 13px 15px; margin-bottom: 14px; }
@@ -3568,7 +3681,6 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .rp-detail { margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--line-2); }
 .rp-note { font-size: 12.5px; line-height: 1.55; color: var(--body-2); }
 .rp-detail .lbl { margin: 11px 0 6px; }
-.rp-toggles { display: flex; gap: 5px; flex-wrap: wrap; }
 /* FIVE ACTIONS IN A 262px LANE. They wrap onto a second line rather than
    overflowing the card — a clipped "Delete" is a control the owner cannot see
    they have — and each one stays on ONE line itself, or "⎇ Branch" splits its
@@ -3971,6 +4083,44 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .k-progress .k-progress-fill { height: 100%; background: var(--viz-1); transition: width var(--dur-slow) var(--ease-out); }
 .k-progress .k-progress-fill.primary { background: var(--viz-2); }
 
+/* The kit's Button and IconButton, as classes (components/actions/*.jsx).
+   Two variants carry meaning rather than weight and are worth stating: ACCENT
+   is the kit's lime, and it is the one button on a dark surface whose label is
+   DARK (--grey-1000) — inverting it to white is the --ink trap #432 sprang
+   twice. DANGER is a tinted outline, never a filled red: a destructive action
+   that shouts louder than the primary one teaches the eye to skip both. */
+.k-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: var(--control-h-md); padding: 0 14px; gap: 8px;
+  font: var(--weight-medium) var(--text-md)/1 var(--font-sans);
+  border-radius: var(--radius-md); border: 1px solid transparent;
+  white-space: nowrap; cursor: pointer; transition: var(--transition-control);
+  background: var(--action-primary); color: var(--white);
+}
+.k-btn.sm { height: var(--control-h-sm); padding: 0 10px; gap: 6px; font: var(--weight-medium) var(--text-sm)/1 var(--font-sans); }
+.k-btn:hover { background: var(--action-primary-hover); }
+.k-btn.accent { background: var(--action-accent); color: var(--grey-1000); }
+.k-btn.accent:hover { background: var(--action-accent-hover); }
+.k-btn.secondary { background: var(--surface-card); color: var(--text-primary); border-color: var(--border-default); }
+.k-btn.secondary:hover { background: var(--surface-overlay); border-color: var(--border-strong); }
+.k-btn.ghost { background: transparent; color: var(--text-secondary); }
+.k-btn.ghost:hover { background: var(--surface-hover); color: var(--text-primary); }
+.k-btn.danger { background: transparent; color: var(--status-danger-fg); border-color: var(--red-tint); }
+.k-btn.danger:hover { background: var(--red-tint); color: var(--status-danger-fg); }
+.k-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.k-iconbtn {
+  width: var(--control-h-md); height: var(--control-h-md); flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-md); border: 1px solid transparent; background: transparent;
+  color: var(--text-tertiary); cursor: pointer; transition: var(--transition-control);
+  font: var(--weight-medium) var(--text-sm)/1 var(--font-sans);
+}
+.k-iconbtn.sm { width: 26px; height: 26px; }
+.k-iconbtn.solid { background: var(--surface-card); border-color: var(--border-default); }
+.k-iconbtn:hover { background: var(--surface-hover); color: var(--text-primary); }
+.k-iconbtn.on { background: var(--surface-press); color: var(--text-primary); }
+
 /* ============================================================
    THE KIT'S TAB STRIP + the For-you panes it switches between
    (components/TabStrip.tsx, detail/AutoIdeas.tsx)
@@ -4053,9 +4203,32 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    ============================================================ */
 
 .ideas { display: flex; flex-direction: column; gap: var(--space-6); }
+/* The kit's IdeasScreen header: eyebrow over title on the left, the lede
+   trailing at the BASELINE of the title on the right — flex-end is what puts
+   the sentence on the title's line rather than floating it above. */
 .ideas-head { display: flex; align-items: flex-end; gap: var(--space-6); flex-wrap: wrap; }
-.ideas-lede { flex: 1; min-width: 320px; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; max-width: 80ch; }
+.ideas-title { display: flex; flex-direction: column; gap: var(--space-2); flex: none; }
+.ideas-title .eyebrow {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.ideas-title h2 { margin: 0; font: var(--type-title); letter-spacing: var(--tracking-tight); color: var(--text-primary); }
+.ideas-lede { flex: 1; min-width: 320px; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; max-width: 68ch; }
+
+/* One toolbar row, the kit's order: search, what the shelf holds, then the one
+   button that adds to it pinned right. */
+.ideas-bar { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
+.ideas-search { width: 250px; flex: 0 1 250px; }
+.ideas-search input[type='search']::-webkit-search-decoration,
+.ideas-search input[type='search']::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .ideas-count { font: var(--weight-regular) var(--text-xs)/1.4 var(--font-mono); color: var(--text-tertiary); }
+.ideas-searchnote {
+  font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary);
+  background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+  padding: 5px 8px; white-space: nowrap; transition: var(--transition-control);
+}
+.ideas-searchnote:hover { color: var(--text-primary); border-color: var(--border-strong); }
+.ideas-capture { margin-left: auto; flex: none; }
 .ideas-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-5); align-items: start; }
 .ideas-col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
 .ideas-colhead { display: flex; align-items: baseline; gap: var(--space-3); padding: 0 var(--space-2); flex-wrap: wrap; }
@@ -4065,7 +4238,14 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 }
 /* Ready is the column that means "pick this up", so it is the one drawn in the
    accent. The other two are places things wait. */
-.ideas-colhead .lbl.ready { color: var(--accent-text); }
+/* READY IS THE KIT'S LIME, not the blue accent (ui_kits/console/IdeasScreen).
+   Blue is what this app uses for "the primary thing to press"; the lime is
+   what it uses for a state that is GOOD — live, passing, ready — and a column
+   saying "these have earned a branch" is the second, not the first. It is a
+   text tone here (--text-accent) and a border tone on the card, never a fill
+   with light text on it: --lime-500 is a LIGHT colour and the #432 audit found
+   fourteen chips that had forgotten it. */
+.ideas-colhead .lbl.ready { color: var(--text-accent); }
 .ideas-colhead .n { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
 .ideas-colhead .note { flex-basis: 100%; font: var(--type-caption); color: var(--text-tertiary); }
 .ideas-empty {
@@ -4079,17 +4259,19 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   cursor: pointer; transition: var(--transition-control);
 }
 .idea:hover, .idea.open { background: var(--surface-overlay); border-color: var(--border-strong); }
-.idea.ready { border-left: 2px solid var(--accent); }
+.idea.ready { border-left: 2px solid var(--action-accent); }
 .idea.parked { border-style: dashed; }
 .idea-top { display: flex; align-items: flex-start; gap: var(--space-4); }
 .idea-top .mark { color: var(--text-tertiary); font-size: 11px; line-height: 1.4; flex: none; }
-.idea.ready .idea-top .mark { color: var(--accent-text); }
+.idea.ready .idea-top .mark { color: var(--text-accent); }
 .idea-top .t { flex: 1; min-width: 0; font: var(--weight-medium) var(--text-md)/1.3 var(--font-sans); color: var(--text-primary); text-wrap: pretty; }
 .idea-top .est { flex: none; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
 .idea-note { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
 .idea-note.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .idea-meta { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.idea-meta .id { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+/* The id is the kit's mono Tag — a pill, not loose text, so it reads as the
+   handle it is and lines up with the label chips beside it. */
+.idea-meta .k-tag.id { height: 20px; color: var(--text-link); }
 .idea-meta .bucket, .idea-meta .area {
   font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
   background: var(--status-neutral-bg); color: var(--status-neutral-fg);
@@ -4106,6 +4288,11 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   padding-top: var(--space-3); border-top: 1px solid var(--border-subtle);
 }
 .idea-acts .from { font: var(--type-caption); color: var(--text-tertiary); flex-basis: 100%; }
+/* Real buttons rather than the text links these were, so the row reads as a set
+   of choices with one of them weighted — the kit's Button, at sm. */
+.idea-acts { gap: var(--space-3); }
+.idea-acts .k-btn { flex: none; }
+.idea-acts .k-btn.danger { margin-left: auto; }
 
 /* ============================================================
    THE PLANS TAB — the stored schedule, read-only (detail/Plans.tsx)
