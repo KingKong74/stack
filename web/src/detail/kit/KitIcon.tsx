@@ -18,7 +18,9 @@ import type { CSSProperties, ReactNode } from 'react';
 export type KitIconName =
   | 'plus' | 'users' | 'list-filter' | 'layers' | 'search' | 'layout-grid'
   | 'list' | 'ellipsis' | 'circle-check' | 'bookmark' | 'calendar'
-  | 'arrow-up-right' | 'pencil' | 'trash-2';
+  | 'arrow-up-right' | 'pencil' | 'trash-2'
+  | 'git-branch' | 'circle-alert' | 'file-text' | 'code' | 'terminal'
+  | 'clock' | 'check';
 
 const PATHS: Record<KitIconName, ReactNode> = {
   plus: <><path d="M5 12h14" /><path d="M12 5v14" /></>,
@@ -78,6 +80,31 @@ const PATHS: Record<KitIconName, ReactNode> = {
       <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
     </>
   ),
+  'git-branch': (
+    <>
+      <path d="M15 6a9 9 0 0 0-9 9V3" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+    </>
+  ),
+  'circle-alert': (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" x2="12" y1="8" y2="12" />
+      <line x1="12" x2="12.01" y1="16" y2="16" />
+    </>
+  ),
+  'file-text': (
+    <>
+      <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+      <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+      <path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" />
+    </>
+  ),
+  code: <><path d="m16 18 6-6-6-6" /><path d="m8 6-6 6 6 6" /></>,
+  terminal: <><path d="M12 19h8" /><path d="m4 17 6-6-6-6" /></>,
+  clock: <><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></>,
+  check: <path d="M20 6 9 17l-5-5" />,
 };
 
 export function KitIcon({ name, size = 16, style }: {

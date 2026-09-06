@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import type { RoadmapItem, Severity, Priority, Bug, BugStatus, ProjectPulse } from '../types';
+import type { RoadmapItem, Severity, Priority, Bug, BugStatus } from '../types';
 import {
-  getProjectDetail, getProjectPulse, type ProjectDetailData,
-  createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
+  getProjectDetail, type ProjectDetailData,
+  createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem,
   createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
   patchProject, createShareLink, deleteShareLink,
   assistRoadmapItem,
@@ -14,15 +14,12 @@ import { go, hrefTo } from '../lib/route';
 import { TopBar } from '../components/TopBar';
 import { ConsoleNav, NavIcons, SpaceDot, type NavSection } from '../detail/ConsoleNav';
 import { absoluteHref, type MenuOption } from '../components/MoreMenu';
-import { Overview, type ReviewEntry, type DeployPatch } from '../detail/Overview';
 import { Quality } from '../detail/Quality';
-import { Activity } from '../detail/Activity';
-import { AutoIdeas } from '../detail/AutoIdeas';
+import { ForYouMock, AUTO_IDEA_COUNT } from '../detail/ForYouMock';
 import { Plans } from '../detail/Plans';
 import { BoardMock } from '../detail/BoardMock';
 import { IdeasMock } from '../detail/IdeasMock';
 import { TabStrip } from '../components/TabStrip';
-import { timeAgo } from '../lib/ui';
 import { Modal } from '../components/Modal';
 import { BugModal } from '../components/BugModal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
@@ -74,13 +71,11 @@ export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
   const [data, setData] = useState<ProjectDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  // The Overview's three measured bands, on their own trip: the heaviest read
-  // on a project and the only tab that wants it, so it must not sit in front of
-  // the payload every other tab renders from. Its failure is carried, not
-  // swallowed — a band that could not be READ says so rather than drawing a
-  // project that spent, tested and ran nothing.
-  const [pulse, setPulse] = useState<ProjectPulse | null>(null);
-  const [pulseError, setPulseError] = useState('');
+  // THE PULSE'S SECOND TRIP IS GONE with the Overview that read it. It was the
+  // heaviest read on a project and the only tab that wanted it, so it had its
+  // own fetch and carried its own failure. `GET /projects/:slug/pulse` and
+  // `store.getProjectPulse` are both still there, still tested, and nothing in
+  // the client calls either — ForYouMock's header says what that cost.
 
   useEffect(() => {
     let live = true;
@@ -97,16 +92,6 @@ export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
     return () => { live = false; };
   }, [id]);
 
-  useEffect(() => {
-    let live = true;
-    setPulse(null);
-    setPulseError('');
-    getProjectPulse(id)
-      .then((p) => { if (live) setPulse(p); })
-      .catch((e) => { if (live) setPulseError(e?.message || 'Could not read this project’s pulse'); });
-    return () => { live = false; };
-  }, [id]);
-
   if (loading) return <Shell><div className="empty-state"><div className="big">Loading…</div></div></Shell>;
   if (loadError || !data) {
     return (
@@ -119,7 +104,7 @@ export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
       </Shell>
     );
   }
-  return <Detail data={data} setData={setData} pulse={pulse} pulseError={pulseError}
+  return <Detail data={data} setData={setData}
     routeTab={tab} routeHighlight={highlight} onOpenSearch={onOpenSearch} />;
 }
 
@@ -132,12 +117,11 @@ function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, onOpenSearch }: {
+function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   data: ProjectDetailData; setData: (d: ProjectDetailData) => void;
-  pulse: ProjectPulse | null; pulseError: string;
   routeTab?: string; routeHighlight?: string; onOpenSearch: () => void;
 }) {
-  const { project, activity } = data;
+  const { project } = data;
   const slug = project.id;
 
   // SPACES (#432) — the rail lists the other apps, so switching project no
@@ -153,21 +137,19 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
 
   const initialTab = asTab(routeTab);
   const [tab, setTab] = useState<Tab>(initialTab);
-  // Two highlight channels: a commit hash (the existing activity highlight) and
-  // a row id (bug key / roadmap id / note id) for the other tabs. A search
-  // deep-link sets whichever matches the tab it lands on.
-  const [highlightRef, setHighlightRef] = useState<string | null>(
-    initialTab === 'activity' ? (routeHighlight ?? null) : null);
-  const [highlightId, setHighlightId] = useState<string | null>(
-    initialTab !== 'activity' ? (routeHighlight ?? null) : null);
+  // ONE HIGHLIGHT CHANNEL NOW: a row id (a bug key, a roadmap id) that the tab
+  // it lands on may recognise. The second channel was the ACTIVITY tab's commit
+  // hash, and that tab is the kit's mockup — it draws the kit's commits, so a
+  // real hash names a row it cannot show. The route still resolves and the
+  // highlight is simply ignored, which is the board's `hl` situation exactly
+  // and the right nothing to do (ForYouMock's header).
+  const [highlightId, setHighlightId] = useState<string | null>(routeHighlight ?? null);
 
   // Keep tab + highlight in sync when the route changes while staying on the
   // same project (e.g. opening another of this project's items from the palette).
   useEffect(() => {
-    const t = asTab(routeTab);
-    setTab(t);
-    if (t === 'activity') { setHighlightRef(routeHighlight ?? null); setHighlightId(null); }
-    else { setHighlightId(routeHighlight ?? null); setHighlightRef(null); }
+    setTab(asTab(routeTab));
+    setHighlightId(routeHighlight ?? null);
   }, [routeTab, routeHighlight]);
 
   // The row highlight is a brief flag; clear it after a moment so it doesn't
@@ -276,23 +258,12 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   const roadmap = data.roadmap;
 
   const allRoadmap = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
-  // The project-scoped review queue: items nobody typed, that no human has
-  // signed off. A bug can only be 'hook'; a roadmap item is also 'fly' (#381 —
-  // opened by a live session), held on the same footing, so it has to queue in
-  // the same place. Held and invisible is unapprovable.
-  const reviewQueue: ReviewEntry[] = [
-    ...bugs.filter((b) => b.source === 'hook' && !b.reviewed)
-      .map((b) => ({
-        kind: 'bug' as const, key: b.id, title: b.title, meta: `${b.severity} severity`,
-        origin: 'hook', when: b.meta,
-      })),
-    ...allRoadmap.filter((r) => (r.source === 'hook' || r.source === 'fly') && !r.reviewed)
-      .map((r) => ({
-        kind: 'roadmap' as const, key: String(r.id), title: r.title,
-        meta: [r.bucket, r.area].filter(Boolean).join(' · '),
-        note: r.note, origin: r.source, when: timeAgo(r.updatedAt),
-      })),
-  ];
+  // THE PROJECT-SCOPED REVIEW QUEUE IS GONE with the tab that drew it. It was
+  // every 'hook' and 'fly' row no human had signed off — held from the
+  // overnight runner by `lib/approval.ts` until someone kept one — and
+  // Auto-ideas was the last screen anywhere that could keep or dismiss one.
+  // Nothing filters for them now; the holding is unchanged and only the
+  // browser's way out of it went (ForYouMock's header).
 
   // THE BOARD AND ROADMAP ROWS CARRY NO COUNT any more. They used to say how
   // many open items and how many captured, and the rule those counts obeyed was
@@ -304,7 +275,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
   // The Quality tab's single badge (#278): red checks plus serious open bugs.
   const needsAttention = failingChecks
     + bugs.filter((b) => b.status !== 'fixed' && (b.severity === 'critical' || b.severity === 'high')).length;
-  const linkedBugId = bugs.find((b) => b.linkRef === highlightRef)?.id ?? null;
 
   const guard = async (fn: () => Promise<void>) => {
     try { setActionError(''); await fn(); }
@@ -366,49 +336,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
       setRoadModal(roadModalClosed);
     });
 
-  const saveNorthStar = (text: string) =>
-    guard(async () => {
-      await patchProject(slug, { north_star: text });
-      setData({ ...data, northStar: text });
-    });
-
-  // Keep = mark reviewed (stays in its tracker); Dismiss = delete (hook items
-  // tombstone server-side, so the next push can't re-create them).
-  const reviewKeep = (e: ReviewEntry) =>
-    guard(async () => {
-      if (e.kind === 'bug') {
-        const u = await patchBug(slug, e.key, { reviewed: true });
-        setData({ ...data, bugs: bugs.map((b) => (b.id === e.key ? u : b)) });
-      } else if (e.kind === 'roadmap') {
-        const id = Number(e.key);
-        const u = await patchRoadmapItem(slug, id, { reviewed: true });
-        setData({ ...data, roadmap: { ...roadmap, [u.bucket]: roadmap[u.bucket].map((i) => (i.id === id ? u : i)) } });
-      }
-    });
-
-  const reviewDismiss = (e: ReviewEntry) =>
-    guard(async () => {
-      if (e.kind === 'bug') {
-        await deleteBug(slug, e.key);
-        setData({ ...data, bugs: bugs.filter((b) => b.id !== e.key) });
-      } else if (e.kind === 'roadmap') {
-        const id = Number(e.key);
-        const item = allRoadmap.find((i) => i.id === id);
-        if (!item) return;
-        await deleteRoadmapItem(slug, id);
-        setData({ ...data, roadmap: { ...roadmap, [item.bucket]: roadmap[item.bucket].filter((i) => i.id !== id) } });
-      }
-    });
-
-  const saveDeploy = (patch: DeployPatch) =>
-    guard(async () => {
-      const updated = await patchProject(slug, patch);
-      setData({
-        ...data,
-        project: { ...project, status: updated.status, deployPlatform: patch.deploy_platform, logsUrl: patch.logs_url },
-      });
-    });
-
   // ---- checks (the Quality tab's test suite) ----
   // The scope travels as the same object the store sends: undefined = the whole
   // suite, {id} = one row, {feature} = one feature's worth. '' is a real feature
@@ -441,18 +368,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
     guard(async () => {
       await deleteCheck(slug, cid);
       setData({ ...data, checks: data.checks.filter((c) => c.id !== cid) });
-    });
-
-  const saveStack = (next: string[]) =>
-    guard(async () => {
-      await patchProject(slug, { tech_stack: next });
-      setData({ ...data, project: { ...project, meta: { ...project.meta, stack: next } } });
-    });
-
-  const changeDirectives = (next: string[]) =>
-    guard(async () => {
-      await patchProject(slug, { directives: next });
-      setData({ ...data, directives: next });
     });
 
   // Promote an idea (and everything in its orbit) into the existing
@@ -505,8 +420,11 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
     } catch { /* clipboard blocked — the field is selectable */ }
   };
 
-  const openBugLink = (hash: string) => { setHighlightRef(hash); setTab('activity'); };
-  const viewAll = () => { setHighlightRef(null); setTab('activity'); };
+  // QUALITY'S "OPEN THE COMMIT THAT CAUGHT THIS" STILL CROSSES TO ACTIVITY and
+  // now dead-ends on the kit's feed: the hash is dropped rather than passed to
+  // a screen that cannot honour it. Left pointing here on purpose — where it
+  // should point instead is a decision, not a tidy-up.
+  const openBugLink = () => { setTab('activity'); };
   // EVERY RAIL ROW IS A PLACE, so its ⋯ offers the two things you do with a
   // place rather than a menu invented per row: open it somewhere else, or hand
   // someone the link. THE COPY'S OWN LABEL IS ITS RECEIPT — this app has no
@@ -704,26 +622,21 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
             tabs={[
               { key: 'overview', label: 'Overview' },
               { key: 'activity', label: 'Activity' },
-              { key: 'auto', label: 'Auto-ideas', count: reviewQueue.length },
+              // THE COUNT IS THE MOCKUP'S OWN. A row's number and the screen
+              // behind it must agree or one of them is lying, and the pane
+              // behind this one draws the kit's four suggestions.
+              { key: 'auto', label: 'Auto-ideas', count: AUTO_IDEA_COUNT },
             ]}
             active={tab} onPick={setTab} />
         )}
 
-        {tab === 'overview' && (
-          <Overview project={project} phase={data.currentPhase} activity={activity} directives={data.directives}
-            reviewQueue={reviewQueue} keepResumeCard={data.keepResumeCard}
-            roadmap={roadmap} bugs={bugs}
-            northStar={data.northStar} onSaveNorthStar={saveNorthStar}
-            cadence={data.cadence} lastPushAt={data.lastPushAt}
-            pulse={pulse} pulseError={pulseError}
-            onViewAll={viewAll} onJumpBack={() => setTab('roadmap')}
-            onChangeDirectives={changeDirectives}
-            onOpenAutoIdeas={() => setTab('auto')} onSaveDeploy={saveDeploy}
-            onSaveStack={saveStack} />
-        )}
-        {tab === 'auto' && (
-          <AutoIdeas queue={reviewQueue} onKeep={reviewKeep} onDismiss={reviewDismiss} />
-        )}
+        {/* ALL THREE FOR-YOU PANES ARE THE KIT'S MOCKUP at the owner's request.
+            It takes one prop, and that prop is the ROUTE KEY — the pane is not
+            component state, so every deep link and legacy spelling lands where
+            it always did. It reads nothing: no `pulse`, no queue, no callback,
+            and its header lists what stopped being reachable when the real
+            Overview, Activity and Auto-ideas went. */}
+        {isForYou(tab) && <ForYouMock pane={tab as 'overview' | 'activity' | 'auto'} />}
         {tab === 'quality' && (
           <Quality slug={slug} checks={data.checks} bugs={bugs} siteUrl={project.siteUrl}
             geminiReady={data.geminiReady} highlightId={highlightId}
@@ -748,9 +661,6 @@ function Detail({ data, setData, pulse, pulseError, routeTab, routeHighlight, on
         {tab === 'plans' && (
           <Plans roadmap={roadmap} weekZero={project.weekZero}
             onOpen={(it) => setRoadModal({ open: true, priority: it.bucket, title: it.title, note: it.note, editing: it })} />
-        )}
-        {tab === 'activity' && (
-          <Activity activity={activity} highlightRef={highlightRef} linkedBugId={linkedBugId} onClear={() => setHighlightRef(null)} />
         )}
 
         {/* Deleting a project lives in Settings → Projects now. A destructive,

@@ -3,6 +3,12 @@
 // change passes through, the progress ledger's arithmetic, and the small
 // panels that hang off the spine.
 //
+// THE OVERVIEW IS A MOCKUP NOW (#444, detail/ForYouMock.tsx), so of everything
+// below only `isBuilt` still has a caller — Plans. The rest is KEPT rather than
+// culled on purpose: it is pure, it is covered by `scripts/spine.test.mjs`, and
+// it is the definition whatever surfaces these stages next has to be built on.
+// Do not treat "nothing imports it" as a licence to re-derive a predicate.
+//
 // WHY A STAGE IS DERIVED AND NEVER STORED. There is no `stage` column and there
 // must not be one: every stage below is a predicate over rows that already say
 // what they are, and a stored copy would be a second truth that drifts the first

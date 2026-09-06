@@ -3672,7 +3672,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 
 /* ============================================================
    THE KIT'S TAB STRIP + the For-you panes it switches between
-   (components/TabStrip.tsx, detail/AutoIdeas.tsx)
+   (components/TabStrip.tsx, detail/ForYouMock.tsx)
    ============================================================ */
 
 .k-tabs {
@@ -3704,7 +3704,6 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty;
   max-width: 78ch; margin-bottom: var(--space-2);
 }
-.ai-lede strong { color: var(--text-primary); font-weight: var(--weight-semibold); }
 .ai-row {
   display: flex; gap: var(--space-5); align-items: flex-start;
   background: var(--surface-raised); border: 1px solid var(--border-subtle);
@@ -3717,7 +3716,6 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   display: inline-flex; align-items: center; justify-content: center; font-size: 12px;
   background: var(--status-info-bg); color: var(--status-info-fg);
 }
-.ai-row.bug .ai-ico { background: var(--status-danger-bg); color: var(--status-danger-fg); }
 .ai-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
 .ai-top { display: flex; align-items: baseline; gap: var(--space-4); }
 .ai-title { font: var(--weight-medium) var(--text-md)/1.3 var(--font-sans); color: var(--text-primary); text-wrap: pretty; }
@@ -3726,26 +3724,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .ai-meta { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
 .ai-src { font: var(--type-code); color: var(--text-link); }
 .ai-signal { font: var(--type-caption); color: var(--text-tertiary); }
-.ai-origin {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
-  border-radius: var(--radius-pill); padding: 2px 7px; cursor: help;
-  background: var(--status-neutral-bg); color: var(--status-neutral-fg);
-}
 .ai-acts { display: flex; flex-direction: column; gap: var(--space-3); flex: none; }
-.ai-keep, .ai-dismiss {
-  border-radius: var(--radius-sm); padding: 5px 10px; cursor: pointer; white-space: nowrap;
-  font: var(--type-label); transition: var(--transition-control);
-}
-.ai-keep { background: var(--action-primary); border: 1px solid var(--action-primary); color: var(--on-accent); }
-.ai-keep:hover { background: var(--accent-deep); }
-.ai-dismiss { background: transparent; border: 1px solid var(--border-default); color: var(--text-tertiary); }
-.ai-dismiss:hover { border-color: var(--critical); color: var(--critical-text); }
-.ai-empty {
-  background: var(--surface-raised); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg); padding: var(--space-7);
-}
-.ai-empty .h { font: var(--type-heading); color: var(--text-primary); margin-bottom: var(--space-3); }
-.ai-empty p { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; max-width: 72ch; }
 
 
 /* ==========================================================================
@@ -3948,6 +3927,295 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   font: var(--type-body-sm); cursor: pointer;
 }
 .km-dialog-foot { display: flex; justify-content: flex-end; gap: var(--space-4); }
+
+/* ==========================================================================
+   THE FOR-YOU SCREEN — ui_kits/console ForYouScreen, ported.
+   (web/src/detail/ForYouMock.tsx)
+
+   Three panes on three ROUTE keys, and the strip that switches them is
+   ProjectDetail's, not this screen's. Same rule as the two mockups above: the
+   kit's own screen carries every colour inline as a `var(--status-*-fg)`
+   lookup, and this app's is that a colour is a token here and a component
+   names only the ROLE — so every tone below arrives as a `tone-*` class.
+   ========================================================================== */
+
+.fy { display: flex; flex-direction: column; gap: var(--space-8); }
+.fy-block { display: flex; flex-direction: column; gap: var(--space-5); }
+.fy-col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.fy-col.tight { gap: var(--space-2); }
+.fy-h { font: var(--type-heading); color: var(--text-primary); }
+.fy-dim { font: var(--type-body-sm); color: var(--text-tertiary); }
+.fy-eyebrow {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.fy-eyebrow.accent { color: var(--text-accent); }
+.fy-caret { font: var(--type-caption); color: var(--text-tertiary); width: 10px; flex: none; }
+.fy-ago { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); flex: none; }
+.fy-add { font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--status-success-fg); flex: none; }
+.fy-del { font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--status-danger-fg); flex: none; }
+
+/* The tone chip every row wears — a square of the status tint with the icon in
+   the status foreground. `lg` is the trail's slightly larger one. */
+.fy-chip {
+  width: 24px; height: 24px; flex: none; border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.fy-chip.lg { width: 28px; height: 28px; border-radius: var(--radius-md); }
+.fy-chip.tone-info, .ai-ico.tone-info { background: var(--status-info-bg); color: var(--status-info-fg); }
+.fy-chip.tone-danger, .ai-ico.tone-danger { background: var(--status-danger-bg); color: var(--status-danger-fg); }
+.fy-chip.tone-success, .ai-ico.tone-success { background: var(--status-success-bg); color: var(--status-success-fg); }
+.fy-chip.tone-warning, .ai-ico.tone-warning { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.fy-chip.tone-neutral, .ai-ico.tone-neutral { background: var(--status-neutral-bg); color: var(--text-tertiary); }
+
+/* ---- where you left off ---- */
+.fy-wc {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--lime-500); border-radius: var(--radius-lg);
+  display: flex; flex-direction: column;
+}
+.fy-wc-head {
+  display: flex; align-items: center; gap: var(--space-5);
+  padding: var(--space-5) var(--space-6); cursor: pointer;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  transition: var(--transition-control);
+}
+.fy-wc-head:hover { background: var(--surface-hover); }
+.fy-wc-titles { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.fy-wc-titles .t {
+  font: var(--weight-semibold) var(--text-lg)/1.25 var(--font-sans);
+  letter-spacing: var(--tracking-tight); color: var(--text-primary);
+}
+.fy-wc-right { margin-left: auto; display: flex; align-items: center; gap: var(--space-5); flex: none; }
+.fy-branch {
+  display: inline-flex; align-items: center; gap: 6px;
+  font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary);
+}
+.fy-branch svg { color: var(--text-accent); }
+.fy-wc-body {
+  padding: var(--space-5) var(--space-6) var(--space-6);
+  border-top: 1px solid var(--border-subtle);
+  display: flex; flex-direction: column; gap: var(--space-5);
+}
+.fy-wc-meta { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.fy-wc-meta .fy-dim { font: var(--weight-regular) var(--text-xs)/1.4 var(--font-mono); }
+.fy-wc-meta .staged { display: inline-flex; align-items: center; gap: 6px; }
+.fy-wc-meta .staged svg { color: var(--text-accent); }
+.fy-wc-last { font: var(--type-code); color: var(--text-tertiary); }
+
+.fy-files { display: flex; flex-direction: column; gap: var(--space-1); }
+.fy-file {
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: 5px var(--space-4); border-radius: var(--radius-sm);
+  cursor: pointer; transition: var(--transition-control);
+}
+.fy-file:hover { background: var(--surface-hover); }
+.fy-file .st {
+  width: 12px; text-align: center; flex: none;
+  font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary);
+}
+.fy-file .st.new { color: var(--status-success-fg); }
+.fy-file .path {
+  flex: 1; min-width: 0; font: var(--type-code); color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fy-file .bar { display: flex; gap: 2px; width: 60px; flex: none; }
+.fy-file .bar .a { height: 5px; border-radius: 1px; background: var(--lime-500); }
+.fy-file .bar .d { height: 5px; border-radius: 1px; background: var(--red-500); }
+.fy-file .n {
+  width: 62px; text-align: right; flex: none;
+  font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary);
+}
+
+.fy-wc-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-7);
+  padding-top: var(--space-4); border-top: 1px solid var(--border-subtle);
+}
+.fy-commit { display: flex; gap: var(--space-5); align-items: baseline; }
+.fy-commit .sha { flex: none; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); }
+.fy-commit .msg { flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+.fy-commit .ago { flex: none; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.fy-check { display: flex; align-items: center; gap: var(--space-4); }
+.fy-check .ico { display: flex; flex: none; }
+.fy-check .ico.tone-success { color: var(--status-success-fg); }
+.fy-check .ico.tone-danger { color: var(--status-danger-fg); }
+.fy-check .nm { width: 82px; flex: none; font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--text-primary); }
+.fy-check .det { font: var(--type-caption); color: var(--text-tertiary); }
+.fy-next { font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; padding-top: var(--space-2); }
+
+/* ---- recent pushes ---- */
+.fy-panel {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); display: flex; flex-direction: column;
+}
+.fy-panel-head {
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: var(--space-5) var(--space-6); border-bottom: 1px solid var(--border-subtle);
+}
+.fy-panel-head .k-btn { margin-left: auto; }
+.fy-panel-body { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-2); }
+.fy-push {
+  display: flex; align-items: center; gap: var(--space-5);
+  padding: var(--space-4) 0; border-top: 1px solid var(--border-subtle);
+}
+.fy-push:first-child { border-top: 0; }
+.fy-push-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.fy-push-mid .br {
+  font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fy-push-mid .sub { font: var(--type-caption); color: var(--text-tertiary); }
+
+/* ---- tests, verdicts and runs ---- */
+.fy-tvr {
+  background: var(--surface-raised); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl); padding: var(--space-6);
+  display: flex; flex-direction: column; gap: var(--space-6);
+}
+.fy-tvr-head { display: flex; align-items: baseline; gap: var(--space-4); flex-wrap: wrap; }
+.fy-tvr-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-5); }
+.fy-tvr-panel {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-6);
+  display: flex; flex-direction: column; gap: var(--space-5);
+}
+.fy-tvr-top { display: flex; align-items: center; gap: var(--space-4); }
+.fy-tvr-top .t { font: var(--weight-semibold) var(--text-md)/1 var(--font-sans); color: var(--text-primary); }
+/* An outline chip rather than a filled one: three of these sit side by side and
+   three filled tints would read as three alarms. */
+.fy-outline {
+  margin-left: auto; height: 20px; padding: 0 9px; border-radius: var(--radius-pill);
+  display: inline-flex; align-items: center; font: var(--type-label); white-space: nowrap;
+}
+.fy-outline.tone-danger { color: var(--status-danger-fg); box-shadow: inset 0 0 0 1px var(--status-danger-fg); }
+.fy-outline.tone-success { color: var(--status-success-fg); box-shadow: inset 0 0 0 1px var(--status-success-fg); }
+.fy-outline.tone-warning { color: var(--status-warning-fg); box-shadow: inset 0 0 0 1px var(--status-warning-fg); }
+.fy-outline.tone-info { color: var(--status-info-fg); box-shadow: inset 0 0 0 1px var(--status-info-fg); }
+.fy-outline.tone-neutral { color: var(--text-tertiary); box-shadow: inset 0 0 0 1px var(--border-default); }
+.fy-kvs { display: flex; flex-direction: column; }
+.fy-kvwrap:not(:first-child) .fy-kv { border-top: 1px solid var(--border-subtle); }
+.fy-kv { display: flex; align-items: baseline; gap: var(--space-5); padding: var(--space-4) 0; }
+.fy-kv .k { flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+.fy-kv .v { flex: none; font: var(--weight-semibold) var(--text-md)/1 var(--font-sans); color: var(--text-primary); }
+.fy-kv .v.danger { color: var(--status-danger-fg); }
+.fy-kv .v.warning { color: var(--status-warning-fg); }
+.fy-kv .v.success { color: var(--status-success-fg); }
+.fy-kv .v.muted { color: var(--text-tertiary); }
+.fy-kv .v.mono { font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--text-secondary); }
+.fy-bar {
+  display: block; height: 4px; border-radius: 2px; background: var(--grey-750);
+  overflow: hidden; margin-bottom: var(--space-2);
+}
+.fy-bar .fill { display: block; height: 100%; background: var(--blue-600); }
+.fy-bar .fill.success { background: var(--lime-500); }
+.fy-bar .fill.warning { background: var(--amber-500); }
+.fy-note {
+  font: var(--type-caption); line-height: 1.55; color: var(--text-tertiary);
+  text-wrap: pretty; margin-top: auto;
+}
+.fy-link { font: var(--type-code); color: var(--text-accent); }
+
+/* ---- model usage ---- */
+.fy-usage {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl); padding: var(--space-7);
+  display: flex; flex-direction: column; gap: var(--space-7);
+}
+.fy-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-7); }
+.fy-stat {
+  border-left: 2px solid var(--blue-600); padding-left: var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-3);
+}
+.fy-stat .num {
+  font: var(--weight-semibold) var(--text-3xl)/1 var(--font-sans);
+  letter-spacing: var(--tracking-tight); color: var(--text-primary);
+}
+.fy-stat .note { font: var(--type-caption); color: var(--text-secondary); text-wrap: pretty; }
+.fy-usage-grid { display: grid; grid-template-columns: 1fr 400px; gap: var(--space-9); align-items: flex-end; }
+.fy-weeks { display: flex; align-items: stretch; gap: 4px; height: 150px; }
+.fy-week { flex: 1; display: flex; flex-direction: column; }
+.fy-week .up { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; }
+.fy-week .dn { flex: 1; }
+.fy-week .axis { height: 1px; background: var(--border-default); }
+.fy-week .auto { background: var(--blue-800); border-radius: 2px 2px 0 0; }
+.fy-week .hand { display: block; background: var(--blue-400); border-radius: 0 0 2px 2px; }
+.fy-weeks-legend { display: flex; align-items: center; font: var(--type-caption); color: var(--text-tertiary); }
+.fy-weeks-legend .mid { margin: 0 auto; }
+.fy-weeks-legend .now { color: var(--text-link); }
+.fy-model {
+  display: flex; flex-direction: column; gap: 6px; cursor: pointer; text-align: left;
+  padding: var(--space-4) var(--space-5); border: 0; border-radius: var(--radius-md);
+  background: transparent; transition: var(--transition-control);
+}
+.fy-model:hover { background: var(--surface-hover); }
+.fy-model.on { background: var(--surface-hover); }
+.fy-model .row { display: flex; align-items: center; gap: 8px; }
+.fy-model .nm { font: var(--type-body-sm); color: var(--text-link); }
+.fy-model .val { margin-left: auto; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
+.fy-model-bar { display: block; min-width: 2px; height: 4px; border-radius: 2px; background: var(--blue-600); }
+.fy-mdetail {
+  border-top: 1px solid var(--border-subtle); padding-top: var(--space-6);
+  display: flex; flex-direction: column; gap: var(--space-6);
+}
+.fy-mdetail-head { display: flex; align-items: baseline; gap: var(--space-4); flex-wrap: wrap; }
+.fy-mdetail-head .nm { font: var(--weight-semibold) var(--text-lg)/1 var(--font-sans); color: var(--text-primary); }
+.fy-close {
+  margin-left: auto; border: 0; background: transparent; cursor: pointer;
+  font: var(--type-label); color: var(--text-tertiary);
+}
+.fy-close:hover { color: var(--text-primary); }
+.fy-mdetail-grid { display: grid; grid-template-columns: 232px 1fr; gap: var(--space-8); align-items: flex-start; }
+.fy-mtiles { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+.fy-mtile {
+  background: var(--surface-raised); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-3);
+}
+.fy-mtile .v {
+  font: var(--weight-semibold) var(--text-xl)/1.1 var(--font-sans);
+  color: var(--text-primary); word-break: break-word;
+}
+.fy-ran { display: flex; gap: var(--space-6); align-items: baseline; }
+.fy-ran .d { flex: none; font: var(--weight-medium) var(--text-xs)/1.5 var(--font-mono); color: var(--text-tertiary); }
+.fy-ran .t { min-width: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+
+/* ---- your trail ---- */
+.fy-trail { display: flex; flex-direction: column; gap: var(--space-6); }
+.fy-filter { width: 260px; }
+.fy-filter svg { color: var(--text-tertiary); }
+.fy-trailgroup { display: flex; flex-direction: column; gap: var(--space-2); }
+.fy-trailgroup > .fy-dim { font: var(--type-caption); padding-bottom: var(--space-2); }
+.fy-trow {
+  display: flex; align-items: center; gap: var(--space-5);
+  padding: var(--space-4) var(--space-5); border-radius: var(--radius-md);
+  cursor: pointer; transition: var(--transition-control);
+}
+.fy-trow:hover { background: var(--surface-hover); }
+.fy-trow .mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.fy-trow .mid .t {
+  font: var(--type-body-sm); color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fy-trow .mid .meta { font: var(--type-caption); font-family: var(--font-mono); color: var(--text-tertiary); }
+.fy-trow .trail { flex: none; font: var(--type-code); color: var(--text-tertiary); }
+
+/* ---- activity ---- */
+.fy-feed { display: flex; flex-direction: column; gap: var(--space-6); }
+.fy-day { display: flex; flex-direction: column; gap: var(--space-4); }
+.fy-day > .fy-dim { font: var(--type-caption); }
+.fy-event {
+  display: flex; gap: var(--space-5);
+  padding: var(--space-4) var(--space-5); border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle); background: var(--surface-raised);
+  transition: var(--transition-control);
+}
+.fy-event:hover { background: var(--surface-card); }
+.fy-event .mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.fy-event .top { display: flex; align-items: baseline; gap: var(--space-4); flex-wrap: wrap; }
+.fy-event .top .t { font: var(--type-body-sm); color: var(--text-primary); text-wrap: pretty; }
+.fy-event .top .br { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); }
+.fy-event .top .br.dim { color: var(--text-tertiary); }
+.fy-event .top .fy-ago { margin-left: auto; }
 
 /* ==========================================================================
    THE ROADMAP MOCKUP (IdeasMock.tsx)

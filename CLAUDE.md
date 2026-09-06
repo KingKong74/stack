@@ -13,8 +13,8 @@ rooms; `/api/control`, `/api/review`, `/api/merge`), **Polaris** (Futures tab, g
 the **instructions tree** (managed CLAUDE.md library + host sync), the **Workbench** (canvas tab,
 `/api/…/workbench`, `workbench_*`, the Drafter), the Roadmap **Timeline** (#428) and the Roadmap
 **strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`, the ✧ cleanup modal), and with #443
-the BOARD and the Roadmap capture tab themselves — both are kit mockups now, and the Data rules
-below say what went unreachable with them. The Curator's
+the BOARD and the Roadmap capture tab themselves, then **FOR YOU'S THREE PANES** (#444) —
+all five are kit mockups now, and the Data rules below say what went unreachable with them. The Curator's
 `arrange`/`allocate`/`cleanup` are unsurfaced (it keeps `titler` and `assist`). The **TAB AGENTS'
 CONSOLES** went too (#379/#380, with `console_off` kept in the database) and the **Auditor** with
 them, that session being its whole surface; the CURATOR is the only agent left. **`notes` went with the Workbench** — its only reader — so
@@ -46,12 +46,11 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
   `fetch` and never touch localStorage. `request()` attaches the bearer and throws `AuthError` on 401,
   clearing the token and returning to the gate.
 - **FOR YOU IS THREE ROUTE KEYS ON ONE SCREEN** (#436) — `overview`, `activity`, `auto`, switched
-  by a strip that WRITES the key; never collapse them into state (`hl` means a commit on
-  `activity`, which Quality links straight to).
+  by a strip that WRITES the key; never collapse them into state.
 - `lib/route.ts` — hash router. `go.detail(slug, tab, highlight)` deep-links and **the TAB decides
-  what `hl` means** (commit → activity, bug key → quality, row id → roadmap); legacy spellings
-  resolve rather than 404ing (`futures`, `notes` → Overview, ignoring their `hl`), and `#/control`
-  lands on `ControlMock.tsx` because a dead link reads as a broken app.
+  what `hl` means** — only Quality still honours one (a bug key); the mockups ignore theirs rather
+  than 404ing, as do the legacy spellings (`futures`, `notes` → Overview). `#/control` lands on
+  `ControlMock.tsx` because a dead link reads as a broken app.
 - `screens/` — `ls` is the index. The recipe library (`/api/tips`) has no screen and no way in.
 - `lib/brief.ts` — the resume brief + the `DIRECTIVES` catalogue (keys mirror `SESSION_DEFAULTS`).
 - `lib/termClipboard.ts` — the terminal's copy/paste; its header says why ⌃C, ⌃V and OSC 52 each
@@ -134,18 +133,19 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   arrives as a STRING, above), `lib/plan.ts`, `lib/spine.ts`. **`estimate` stays in WEEKS**, so
   `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet. **NOTHING EDITS THESE**
   (#428 took the Timeline, their only editor); the PLANS tab (#439) is a READER of them.
-- **TWO SCREENS READ `roadmap_items`; TWO ARE MOCKUPS** (#443, owner's call). **Plans** (`plans`)
-  reads the schedule; **Auto-ideas** (`auto`, in For you) is the held queue and owns ✓ Keep and
-  Dismiss ALONE — the only screen a `hook`/`fly` row can be signed off or deleted from. The
-  **board** (`roadmap`) and the **Roadmap** capture tab (`ideas`) are `BoardMock.tsx` /
-  `IdeasMock.tsx`: the kit's screens on the kit's sample rows, reading and writing nothing.
+- **ONE SCREEN READS `roadmap_items`; FOUR ARE MOCKUPS** (#443 then #444, owner's call). **Plans**
+  (`plans`) reads the schedule and is the last of them. The **board** (`roadmap`), the **Roadmap**
+  capture tab (`ideas`) and all three **For you** panes (`overview`/`activity`/`auto`) are
+  `BoardMock.tsx` / `IdeasMock.tsx` / `ForYouMock.tsx`: the kit's screens on the kit's rows,
+  reading and writing nothing.
   **GONE FROM THE UI ENTIRELY**: giving a verdict, park/unpark, archive, delete-from-the-board,
-  labels, lane drag, the ⎇ claim. Every column and route survives and the runner still reads
+  labels, lane drag, the ⎇ claim, and with #444 **signing off or dismissing a held row** — ✓ Keep
+  and ✕ Dismiss were Auto-ideas' alone, so no browser can clear `reviewed_at` or tombstone an
+  extracted fingerprint. Every column and route survives and the runner still reads
   them, so a parked item stays parked and no browser can unpark it — `./stack` and the API are
   the way back. `server/test/plan-lanes.test.mjs` says what a real board owes on its return.
 - **The board order IS the run queue.** `position` is the bucket tiebreak and still PATCHable, but
-  **nothing in the client writes it** — same state as the schedule columns above: stored, served,
-  waiting for a surface.
+  **nothing in the client writes it**: stored, served, waiting for a surface.
 - **`claimed_by` is the branch claim** (#277 — called a "lane" until the rename; the `lane/` git ref
   prefix is unchanged, naming branches already on origin). Claim before starting; a terminal tab's
   claim is `term:<name>`. It is the don't-re-pick marker, injected by SessionStart as "Branch claims —
@@ -175,7 +175,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   blocking hand-written work is the failure mode this must not have. Written out THREE times (`server/src/`,
   `scripts/lib/`, `web/src/lib/approval.*`) since none of the packages can import another. An
   unattended enqueue **drops a held item silently**; Run now / `POST /start` **refuses out loud and
-  names it**, since a silent drop under a button looks like the press did nothing. Not the **verdict**
+  names it**, since a silent drop under a button looks like the press did nothing. **Since #444 no browser
+  can un-hold one**; `./stack` and the API are the way out. Not the **verdict**
   queue below: this gates what may RUN, that queues what was BUILT.
 - **Branch names are `<kind>/<id>-<summary>`** (#363; feat · fix · ui · refactor · perf · test · docs ·
   chore). `scripts/lib/lane.mjs` is the canonical namer AND parser; `web/src/lib/branch.ts` is its
@@ -191,8 +192,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   non-empty **AND** `claimed_by` non-empty). **Both halves are load-bearing**: un-ticking clears
   `claimed_by` and keeps `built_note`, so `built_note` alone re-queues rejected changes and
   `claimed_by` alone queues items at claim time. It was the Review room's; the room is culled and
-  `isBuilt` in `web/src/lib/plan.ts` is its ONLY definition (#440), read now by the Overview's
-  verdict band and Plans — do not simplify it back. Approving does NOT tick (the merge
+  `isBuilt` in `web/src/lib/plan.ts` is its ONLY definition (#440), read now by Plans alone — do
+  not simplify it back. Approving does NOT tick (the merge
   job does, with a human verdict stored). **Anything acting on a built change shares the
   predicate**; a path that opens `if (!item.done) 400` refuses the whole night's work.
 - **`verdict_source` / `verdict_at` / `verdict_evidence` (#263, owner-sanctioned)** — the one place a
@@ -201,9 +202,9 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `scripts/lib/autoverdict.mjs`, whose header carries the reasoning — never a second spelling. Two
   exclusions are not negotiable: a refine round and a limit-hit run. Clearing `review_tag` resets
   `verdict_source` to 'human' and wipes the other two in the same statement, so ⎌ undo needs no second
-  route. **THE "VISIBLE" LEG IS CURRENTLY UNMET AND THAT IS A DEBT, NOT A DESIGN.** #443 left no
-  screen that reads `verdict_evidence` — or gives a human verdict at all — so every verdict on
-  record now arrives from the auto path with nobody able to read or reverse it in a browser.
+  route. **THE "VISIBLE" LEG IS CURRENTLY UNMET AND THAT IS A DEBT, NOT A DESIGN.** No screen reads
+  `verdict_evidence` or gives a human verdict at all, so every verdict on record now arrives from
+  the auto path with nobody able to read or reverse it in a browser.
   Whatever surfaces a change next owes both: the evidence, and a way to disagree.
 - **Un-ticking clears `review_tag` and `claimed_by`** (unless the same PATCH sets them), so a sent-back
   item re-enters play fresh. Ticking clears `review_tags`, `refine_note` and `review_shelved` — each
@@ -223,7 +224,9 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   executor/advisor policy; `sessions.model_usage` (the human's interactive work) does not, so a model
   picked by hand is **not drift**. Any merged share must be **token-based**, because a transcript
   carries no cost. A manual session's `model_usage` (main loop) and `agent_usage` (subagents) ARE its
-  director/executor split. (The Roles room read this and is culled; `pulse.js` still computes it.)
+  director/executor split. (Both readers are culled — the Roles room, then #444's
+  Overview bands — so `pulse.js` and its route compute for NO reader: served, tested, fetched by
+  nothing.)
 - **A subagent's usage is NOT in the parent transcript — it has its own**, at
   `<transcript-dir>/<session-id>/subagents/agent-*.jsonl` with a `.meta.json` naming the `agentType`.
   The parent records only the Agent call and never sets `isSidechain`, so globbing top-level `*.jsonl`
@@ -300,12 +303,11 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   (what it could not see) rendered hardest under an `approve`, and **`read[]`** (what the server
   assembled). Any agent field that becomes **a link the owner clicks** goes through a `cleanPath()`
   that drops anything not a same-origin path.
-- **Branch previews (#208) have no UI left** — the route, the host sweep and
-  `scripts/stack-preview.mjs` all survive, but only Mission Control's rooms reached them, so a
-  preview is started by hand until something surfaces it again.
+- **Branch previews (#208) have no UI left** — route, host sweep and `scripts/stack-preview.mjs`
+  survive; only Mission Control reached them, so a preview is started by hand.
 - **A batch verdict must count absence apart from green** — the rule that outlived the Review rail:
   an evidence summary tallies unrun checks and absent verdicts SEPARATELY from passing ones, or a
-  select-all becomes a blind mass-approve. Same NO PASS RAN rule as a NULL `review_verdict`.
+  select-all becomes a blind mass-approve.
 - **An autopilot `stack-auto-*` session is READABLE from the browser and still not mirrorable, killable
   or typeable-into** (#366). `listAutoSessions()` is a SIBLING of `listStackSessions()`, and the
   terminal's mirror/kill/reap paths read the `stack-term-*` list only — widening `listStackSessions` to
@@ -387,7 +389,7 @@ also documents the self-describing ones). The ones whose meaning isn't obvious f
 
 | key | meaning |
 | --- | --- |
-| `keepResumeCard` | off → ingest skips the resume refresh and the deck/Overview drop the card |
+| `keepResumeCard` | off → ingest skips the resume refresh and the deck drops the card (#444 took the Overview's) |
 | `sessionDefaults` | catalogue keys (lean/ship/checkpoint/confirm/verify) rendered server-side and injected by SessionStart into EVERY project. `ship` = commits pre-authorised, granted once |
 | `autopilotEnabled` | the ARM SWITCH. Nightly + scheduled jobs only enqueue while on; ▶ Run now stays manual-only |
 | `autopilotWorkers` | the FLEET-WIDE cap on concurrent jobs (0 = unlimited, default 3, clamped 1–8); per-project serialisation is separate and NOT tunable |
