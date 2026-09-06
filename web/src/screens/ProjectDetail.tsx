@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import type { RoadmapItem, Severity, Priority, Bug, BugStatus } from '../types';
+import type { RoadmapItem, Priority } from '../types';
 import {
   getProjectDetail, type ProjectDetailData,
-  createBug, patchBug, deleteBug, createRoadmapItem, patchRoadmapItem,
-  createCheck, patchCheck, deleteCheck, runChecks, type CheckInput,
+  createRoadmapItem, patchRoadmapItem,
   patchProject, createShareLink, deleteShareLink,
   assistRoadmapItem,
   agentCan, setLastViewedProject, onItemFiled,
@@ -14,16 +13,14 @@ import { go, hrefTo } from '../lib/route';
 import { TopBar } from '../components/TopBar';
 import { ConsoleNav, NavIcons, SpaceDot, type NavSection } from '../detail/ConsoleNav';
 import { absoluteHref, type MenuOption } from '../components/MoreMenu';
-import { Quality } from '../detail/Quality';
+import { QualityMock, QUALITY_ATTENTION } from '../detail/QualityMock';
 import { ForYouMock, AUTO_IDEA_COUNT } from '../detail/ForYouMock';
 import { Plans } from '../detail/Plans';
 import { BoardMock } from '../detail/BoardMock';
 import { IdeasMock } from '../detail/IdeasMock';
 import { TabStrip } from '../components/TabStrip';
 import { Modal } from '../components/Modal';
-import { BugModal } from '../components/BugModal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
-import { ConfirmModal } from '../components/ConfirmModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { newItemSched } from '../lib/plan';
 
@@ -152,8 +149,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     setHighlightId(routeHighlight ?? null);
   }, [routeTab, routeHighlight]);
 
+  // NO TAB RENDERS A `data-hl` ANCHOR ANY MORE. Quality was the last one that
+  // honoured a highlight (a bug key) and it is a mockup now, so this look-up
+  // matches nothing on every screen and gives up quietly after ~600ms. It is
+  // kept rather than deleted because the route still CARRIES `hl` — every deep
+  // link, search payload and ⌘K target still lands correctly — and the #303
+  // lesson below is the part a rewiring would otherwise have to relearn.
+  //
   // The row highlight is a brief flag; clear it after a moment so it doesn't
-  // linger. (The activity highlight keeps its own explicit clear control.)
+  // linger.
   useEffect(() => {
     if (!highlightId) return;
     // #303 — the row is not always in the DOM on this first pass. A tab may
@@ -172,7 +176,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     const t = setTimeout(() => setHighlightId(null), 2800);
     return () => { clearTimeout(t); clearTimeout(poll); };
   }, [highlightId, tab]);
-  const [bugModal, setBugModal] = useState<{ open: boolean; title: string }>({ open: false, title: '' });
   const [roadModal, setRoadModal] = useState<{
     open: boolean; priority: Priority; title: string; note: string;
     editing: RoadmapItem | null; branch?: string; area?: string;
@@ -182,7 +185,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // saved on a stray dismiss and offered back by a strip on the Roadmap tab;
   // with no strip to offer it, keeping one would be storing something nobody
   // can ever get back — so the modal no longer saves one at all.
-  const [confirmBugDelete, setConfirmBugDelete] = useState<Bug | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   // The Curator's board clean-up: null = closed, 'loading', or the suggestion list.
@@ -204,7 +206,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // has to cover the whole set, or a deleted star leaves its planets pointing
   // at a row that no longer exists (the server only cuts them loose when a
   // star is UN-starred, not when it's deleted).
-  const [checksBusy, setChecksBusy] = useState(false);
   const [editingUrl, setEditingUrl] = useState<'site' | 'repo' | null>(null);
   const [urlDraft, setUrlDraft] = useState('');
   const [actionError, setActionError] = useState('');
@@ -229,9 +230,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // is seconds behind it, so nothing is lost by waiting — whereas a refresh that
   // lands mid-gesture is a bug the owner sees.
   //
-  // Note this deliberately does NOT gate on `checksBusy` or the Curator's own
-  // in-flight reads: those are the screen waiting on the server, not the owner
-  // holding something, and a refresh during one is exactly what should happen.
+  // Note this deliberately does NOT gate on the screen's own in-flight reads:
+  // those are the screen waiting on the server, not the owner holding
+  // something, and a refresh during one is exactly what should happen.
   const [pointerDown, setPointerDown] = useState(false);
   useEffect(() => {
     const down = () => setPointerDown(true);
@@ -249,12 +250,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       window.removeEventListener('blur', up);
     };
   }, []);
-  const interacting = pointerDown
-    || bugModal.open || roadModal.open || shareOpen || editingUrl !== null
-    || confirmBugDelete !== null;
+  const interacting = pointerDown || roadModal.open || shareOpen || editingUrl !== null;
   useAutoRefresh(reread, !interacting);
 
-  const bugs = data.bugs;
   const roadmap = data.roadmap;
 
   const allRoadmap = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
@@ -271,10 +269,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // lying. Both screens are mockups now (BoardMock, IdeasMock) and can show
   // neither number, so the honest badge is none rather than a real count that
   // opens onto rows it does not describe.
-  const failingChecks = data.checks.filter((c) => c.lastStatus === 'fail').length;
-  // The Quality tab's single badge (#278): red checks plus serious open bugs.
-  const needsAttention = failingChecks
-    + bugs.filter((b) => b.status !== 'fixed' && (b.severity === 'critical' || b.severity === 'high')).length;
+  //
+  // QUALITY'S BADGE IS THE SAME RULE, ANSWERED THE OTHER WAY. It used to be red
+  // checks plus serious open bugs (#278); its screen is a mockup now, so the
+  // number comes FROM that mockup (`QUALITY_ATTENTION`) and the two agree. What
+  // it no longer is, is true of this project: the rail can read 2 while the
+  // real suite is entirely green, or entirely red.
 
   const guard = async (fn: () => Promise<void>) => {
     try { setActionError(''); await fn(); }
@@ -282,33 +282,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   };
 
   // ---- mutations (each persists, then patches the loaded data in place) ----
-  const addBug = ({ title, severity }: { title: string; severity: Severity }) =>
-    guard(async () => {
-      const bug = await createBug(slug, { title, severity });
-      setData({ ...data, bugs: [bug, ...bugs] });
-      setBugModal({ open: false, title: '' });
-    });
-
-  // #161/#278: the Quality page's inline report bar. `checkId` is set when the
-  // bug is filed straight off a red check — that link is what makes the loop
-  // legible from either side afterwards.
-  const fileBug = (title: string, severity: Severity, checkId: number | null) =>
-    guard(async () => {
-      const bug = await createBug(slug, { title, severity, check_id: checkId });
-      setData({ ...data, bugs: [bug, ...bugs] });
-    });
-
-  const setBugStatus = (b: Bug, status: BugStatus) =>
-    guard(async () => {
-      const updated = await patchBug(slug, b.id, { status });
-      setData({ ...data, bugs: bugs.map((x) => (x.id === b.id ? updated : x)) });
-    });
-
-  const removeBug = (b: Bug) =>
-    guard(async () => {
-      await deleteBug(slug, b.id);
-      setData({ ...data, bugs: bugs.filter((x) => x.id !== b.id) });
-    });
+  //
+  // FILING A BUG, MOVING ITS STATUS, DELETING ONE AND EVERY CHECK MUTATION went
+  // with the Quality tab. `createBug`/`patchBug`/`deleteBug` and the four check
+  // calls are still in store.ts and every route still answers — the corner ＋,
+  // `./stack`, the hook extractor and the nightly all keep writing — but this
+  // screen no longer holds a handle to any of them. The one worth naming is
+  // `check_id` (#278): a bug filed straight off a red check carried the link
+  // that made the loop legible from either side, and that was the only path
+  // that ever set it.
 
   // Create, or save an edit, depending on how the modal was opened.
   const submitRoad = ({ title, note, priority, branch, area, subArea, plan, risk, tier, riskChanged }: RoadmapFields) =>
@@ -334,40 +316,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: branch || undefined, area: area || undefined, subArea: subArea || undefined, plan: plan.length ? plan : undefined, risk: risk !== 'normal' ? risk : undefined, tier: tier || undefined, sched: newItemSched(project.weekZero) });
       setData({ ...data, roadmap: { ...roadmap, [priority]: [...roadmap[priority], item] } });
       setRoadModal(roadModalClosed);
-    });
-
-  // ---- checks (the Quality tab's test suite) ----
-  // The scope travels as the same object the store sends: undefined = the whole
-  // suite, {id} = one row, {feature} = one feature's worth. '' is a real feature
-  // (ungrouped), so this can never collapse into a truthiness test.
-  const runProjectChecks = (scope?: { id: number } | { feature: string }) =>
-    guard(async () => {
-      setChecksBusy(true);
-      try {
-        const updated = await runChecks(slug, scope);
-        const byId = new Map(updated.map((c) => [c.id, c]));
-        setData({ ...data, checks: data.checks.map((c) => byId.get(c.id) ?? c) });
-      } finally {
-        setChecksBusy(false);
-      }
-    });
-
-  const addCheck = (input: CheckInput) =>
-    guard(async () => {
-      const c = await createCheck(slug, input);
-      setData({ ...data, checks: [...data.checks, c] });
-    });
-
-  const editCheck = (cid: number, patch: Partial<CheckInput>) =>
-    guard(async () => {
-      const c = await patchCheck(slug, cid, patch);
-      setData({ ...data, checks: data.checks.map((x) => (x.id === cid ? c : x)) });
-    });
-
-  const removeCheck = (cid: number) =>
-    guard(async () => {
-      await deleteCheck(slug, cid);
-      setData({ ...data, checks: data.checks.filter((c) => c.id !== cid) });
     });
 
   // Promote an idea (and everything in its orbit) into the existing
@@ -420,11 +368,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     } catch { /* clipboard blocked — the field is selectable */ }
   };
 
-  // QUALITY'S "OPEN THE COMMIT THAT CAUGHT THIS" STILL CROSSES TO ACTIVITY and
-  // now dead-ends on the kit's feed: the hash is dropped rather than passed to
-  // a screen that cannot honour it. Left pointing here on purpose — where it
-  // should point instead is a decision, not a tidy-up.
-  const openBugLink = () => { setTab('activity'); };
+  // QUALITY'S "OPEN THE COMMIT THAT CAUGHT THIS" IS GONE ENTIRELY — the link
+  // that crossed to Activity went with the screen that drew it, and Activity is
+  // the kit's feed either way. The open question it stood for (where should a
+  // bug's commit point, now that neither end is real?) is on the roadmap, not
+  // in this file.
   // EVERY RAIL ROW IS A PLACE, so its ⋯ offers the two things you do with a
   // place rather than a menu invented per row: open it somewhere else, or hand
   // someone the link. THE COPY'S OWN LABEL IS ITS RECEIPT — this app has no
@@ -504,7 +452,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           menu: placeMenu(hrefTo.detail(slug, 'plans'), 'plans'), onClick: () => setTab('plans'),
         },
         {
-          key: 'quality', label: 'Quality', icon: NavIcons.check, count: needsAttention, bad: true,
+          key: 'quality', label: 'Quality', icon: NavIcons.check, count: QUALITY_ATTENTION, bad: true,
           menu: placeMenu(hrefTo.detail(slug, 'quality'), 'quality'), onClick: () => setTab('quality'),
         },
       ],
@@ -637,14 +585,14 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             and its header lists what stopped being reachable when the real
             Overview, Activity and Auto-ideas went. */}
         {isForYou(tab) && <ForYouMock pane={tab as 'overview' | 'activity' | 'auto'} />}
-        {tab === 'quality' && (
-          <Quality slug={slug} checks={data.checks} bugs={bugs} siteUrl={project.siteUrl}
-            geminiReady={data.geminiReady} highlightId={highlightId}
-            checksBusy={checksBusy} onRunChecks={runProjectChecks}
-            onAddCheck={addCheck} onEditCheck={editCheck} onDeleteCheck={removeCheck}
-            onFileBug={fileBug} onSetBugStatus={setBugStatus} onDeleteBug={(b) => setConfirmBugDelete(b)}
-            onOpenCommit={openBugLink} />
-        )}
+        {/* QUALITY IS A MOCKUP TOO at the owner's request — the kit's own
+            QualityScreen on the kit's own checks and bugs. It takes no props
+            because it reads nothing: neither `checks` nor `bugs` is passed and
+            no callback is wired, so running a check, filing a bug and reading
+            the run ledger have no surface in any browser. QualityMock's header
+            lists the whole of what that costs; it is the heaviest of the five
+            culls because a check is this app's only automated regression net. */}
+        {tab === 'quality' && <QualityMock />}
         {/* #361 — the ✧ surfaces on the Roadmap tab belong to the CURATOR, and
             an absent callback is how each one goes away when the agent (or that
             one op) is switched off: the button is not rendered at all, rather
@@ -669,10 +617,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       </div></main>
       </div>
 
-      {bugModal.open && (
-        <BugModal initialTitle={bugModal.title}
-          onClose={() => setBugModal({ open: false, title: '' })} onSubmit={addBug} />
-      )}
       {roadModal.open && (
         <RoadmapModal initialPriority={roadModal.priority} initialTitle={roadModal.title}
           initialNote={roadModal.note} initialBranch={roadModal.editing?.claimedBy ?? roadModal.branch ?? ''}
@@ -715,15 +659,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             <div className="confirm-body">Creating the link…</div>
           )}
         </Modal>
-      )}
-      {confirmBugDelete && (
-        <ConfirmModal
-          title="Delete bug?"
-          body={<>Delete <b>{confirmBugDelete.title}</b>{confirmBugDelete.source === 'hook'
-            ? ' — it was auto-extracted, so it won’t be re-created by the next push.' : '.'}</>}
-          confirmLabel="Delete bug" cancelLabel="Cancel" danger
-          onConfirm={() => { const b = confirmBugDelete; setConfirmBugDelete(null); removeBug(b); }}
-          onCancel={() => setConfirmBugDelete(null)} />
       )}
     </div>
   );

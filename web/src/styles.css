@@ -4556,6 +4556,292 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .c-verdict .slip { margin-left: auto; font-size: 9px; color: var(--building); cursor: help; }
 .pg-empty { padding: var(--space-7); font: var(--type-body-sm); color: var(--text-secondary); }
 
+/* ==========================================================================
+   THE QUALITY MOCKUP — ui_kits/console QualityScreen, ported.
+   (web/src/detail/QualityMock.tsx)
+
+   SEVERITY IS FOUR ROLES, NOT FOUR COLOURS. Each `.sev-*` class sets the same
+   four local custom properties — a text tone, a fill tone, a rule and a dot —
+   and every row below reads them BY ROLE. That is why a severity can appear on
+   a chip, a left border, a dot and a tag without any of those four spelling a
+   colour, and why the whole vocabulary is re-tonable from these five lines.
+
+   TWO DEPARTURES FROM THE KIT'S OWN VALUES, both the "a fill tone is not a
+   text tone" rule (#432): the kit's Cosmetic text is `--text-tertiary`, which
+   measures 4.3:1 on `--surface-card` and worse on the neutral tag fill it sits
+   in — so Cosmetic takes `--text-secondary` and is told apart from Flaky by
+   its dot and its label, which is what a colour-blind reader had to use
+   anyway. And the kit's "clean" reads `--text-disabled`; that is the same
+   sub-AA tone the Plans dash already refused.
+   ========================================================================== */
+
+.sev-blocking { --sev-fg: var(--status-danger-fg); --sev-bg: var(--red-tint); --sev-rule: var(--red-500); --sev-dot: var(--red-500); }
+.sev-broken   { --sev-fg: var(--status-warning-fg); --sev-bg: var(--amber-tint); --sev-rule: var(--amber-500); --sev-dot: var(--amber-500); }
+.sev-degraded { --sev-fg: var(--blue-300); --sev-bg: var(--blue-tint); --sev-rule: var(--blue-600); --sev-dot: var(--blue-500); }
+.sev-flaky    { --sev-fg: var(--text-secondary); --sev-bg: var(--status-neutral-bg); --sev-rule: var(--grey-600); --sev-dot: var(--grey-500); }
+.sev-cosmetic { --sev-fg: var(--text-secondary); --sev-bg: var(--status-neutral-bg); --sev-rule: var(--grey-700); --sev-dot: var(--grey-600); }
+
+.ql { display: flex; flex-direction: column; gap: var(--space-6); }
+
+.ql-head { display: flex; align-items: flex-end; gap: var(--space-5); flex-wrap: wrap; }
+.ql-title { display: flex; flex-direction: column; gap: var(--space-2); }
+.ql-title h1 { margin: 0; font: var(--type-title); letter-spacing: var(--tracking-tight); color: var(--text-primary); }
+.ql-title .lede { font: var(--type-body-sm); color: var(--text-tertiary); }
+.ql-headacts { margin-left: auto; display: flex; gap: var(--space-3); flex: none; }
+.ql-play { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); }
+
+/* One strip instead of five tiles: the numbers read left to right as a
+   sentence, and the sparkline is the same suite over its last 30 runs. */
+.ql-stats {
+  display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap;
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-5) var(--space-6);
+}
+.ql-stat { display: flex; align-items: baseline; gap: 7px; }
+.ql-stat .v { font: var(--weight-semibold) var(--text-lg)/1 var(--font-sans); color: var(--text-primary); }
+.ql-stat .v.good { color: var(--status-success-fg); }
+.ql-stat .v.sev-fg { color: var(--sev-fg); }
+.ql-stat .l { font: var(--type-caption); color: var(--text-tertiary); }
+.ql-spark { margin-left: auto; display: flex; align-items: center; gap: var(--space-5); }
+.ql-spark .bars { display: flex; align-items: flex-end; gap: 2px; height: 22px; width: 150px; }
+/* A run's bar is its pass band, not a value with a zero — every bar is drawn,
+   so a gap in the row means a run that did not happen. */
+.ql-spark .bar { flex: 1; border-radius: 1px; background: var(--lime-500); }
+.ql-spark .bar.amber { background: var(--amber-500); }
+.ql-spark .cap { font: var(--type-code); color: var(--text-tertiary); }
+
+.ql-tabs { margin-bottom: 0; }
+
+/* ---- a panel: one card, rows separated by their own top rule ---- */
+.ql-panel {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); display: flex; flex-direction: column;
+}
+.ql-panelhead {
+  display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap;
+  padding: var(--space-5) var(--space-6);
+}
+.ql-panelhead .t { font: var(--weight-semibold) var(--text-md)/1 var(--font-sans); color: var(--text-primary); }
+.ql-panelhead .sub { font: var(--type-caption); color: var(--text-tertiary); }
+
+.ql-sevfilter { margin-left: auto; display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.ql-sevchip {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  height: 22px; padding: 0 9px; border: 0; cursor: pointer;
+  border-radius: var(--radius-pill); font: var(--type-label);
+  color: var(--sev-fg); background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+  transition: var(--transition-control);
+}
+.ql-sevchip:hover { background: var(--surface-hover); }
+.ql-sevchip.on { background: var(--sev-bg); box-shadow: inset 0 0 0 1px var(--sev-rule); }
+.ql-sevchip .n { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+
+.ql-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--sev-dot); }
+.ql-dot.clean { background: var(--lime-500); }
+.ql-sevtag {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  height: 19px; padding: 0 8px; border-radius: var(--radius-pill);
+  background: var(--sev-bg); color: var(--sev-fg);
+  font: var(--type-label); white-space: nowrap;
+}
+
+/* ---- open items ---- */
+.ql-openrow {
+  display: flex; align-items: center; gap: var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--sev-rule);
+  transition: var(--transition-control);
+}
+.ql-openrow:hover { background: var(--surface-hover); }
+.ql-openrow .mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ql-openrow .nm { font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ql-openrow .sub { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary); }
+.ql-openrow .bug { flex: none; font: var(--weight-medium) var(--text-xs)/1.4 var(--font-mono); color: var(--text-link); }
+.ql-openrow .tag, .ql-frow .tag, .ql-barea .tag, .ql-brow .tag { flex: 0 0 74px; }
+
+/* A row action is quiet until the row is under the cursor, and it gets there
+   by CHANGING TONE rather than by carrying an opacity: an opacity dims the
+   painted colour without changing the computed one, which is a contrast the
+   palette audit cannot see and a reader still has to live with. */
+.ql-act {
+  border: 0; background: transparent; cursor: pointer; flex: none;
+  font: var(--type-code); color: var(--text-secondary);
+  transition: var(--transition-control);
+}
+.ql-openrow:hover .ql-act, .ql-crow:hover .ql-act,
+.ql-fbody .row:hover .ql-act, .ql-brow:hover .ql-act { color: var(--text-link); }
+.ql-act.write { color: var(--text-accent); }
+.ql-act:hover { text-decoration: underline; }
+/* Edit is the second action on a row that already has one, so it waits for the
+   cursor. `visibility` and not `opacity: 0`: a hidden control must be hidden
+   from the audit and from the keyboard alike, not merely transparent. */
+.ql-act.edit { visibility: hidden; color: var(--text-tertiary); }
+.ql-crow:hover .ql-act.edit { visibility: visible; }
+
+/* ---- by feature ---- */
+.ql-frow {
+  display: flex; align-items: center; gap: var(--space-5); width: 100%;
+  padding: var(--space-4) var(--space-6); text-align: left;
+  border: 0; border-top: 1px solid var(--border-subtle); background: transparent;
+  cursor: pointer; transition: var(--transition-control);
+}
+.ql-frow:hover, .ql-frow.open { background: var(--surface-hover); }
+.ql-frow .caret, .ql-cgroup .caret, .ql-barea .caret {
+  flex: none; width: 8px; font: var(--type-caption); color: var(--text-secondary);
+}
+.ql-frow .nm { flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ql-frow .meter { flex: 0 0 120px; display: inline-flex; align-items: center; }
+.ql-frow .track { flex: 1; height: 4px; border-radius: var(--radius-pill); background: var(--grey-750); overflow: hidden; }
+.ql-frow .fill { display: block; height: 100%; background: var(--lime-500); }
+.ql-frow .track.part .fill { background: var(--amber-500); }
+.ql-frow .n { flex: 0 0 56px; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
+.ql-frow .avg { flex: 0 0 56px; text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ql-frow .clean { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+
+.ql-fbody {
+  padding: var(--space-4) var(--space-6) var(--space-5) 44px;
+  border-top: 1px solid var(--border-subtle); background: var(--surface-raised);
+  display: flex; flex-direction: column; gap: var(--space-3);
+}
+.ql-fbody .row { display: flex; align-items: center; gap: var(--space-5); }
+.ql-fbody .ico { display: flex; flex: none; color: var(--sev-dot); }
+.ql-fbody .ico.ok { color: var(--lime-500); }
+.ql-fbody .nm { flex: 1; min-width: 0; font: var(--type-code); color: var(--text-secondary); }
+.ql-fbody .avg { flex: none; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+
+/* ---- the suite ---- */
+.ql-checks { display: flex; flex-direction: column; gap: var(--space-5); }
+.ql-checkbar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.ql-search { width: 220px; flex: 0 1 220px; }
+.ql-search svg { color: var(--text-tertiary); }
+.km-select.sm { height: var(--control-h-sm); font: var(--type-label); }
+.ql-area { width: 180px; flex: none; }
+.ql-seg {
+  display: inline-flex; padding: 3px; gap: 2px; flex: none;
+  background: var(--surface-raised); border-radius: var(--radius-md);
+}
+.ql-seg .opt {
+  height: 22px; padding: 0 9px; border: 0; cursor: pointer;
+  border-radius: var(--radius-sm); font: var(--type-label);
+  color: var(--text-tertiary); background: transparent;
+  transition: var(--transition-control);
+}
+.ql-seg .opt:hover { color: var(--text-secondary); }
+.ql-seg .opt.on { background: var(--surface-selected); color: var(--text-link); }
+.ql-checkcount { margin-left: auto; font: var(--type-body-sm); color: var(--text-tertiary); }
+
+.ql-crowhead {
+  display: flex; align-items: center; gap: var(--space-5);
+  padding: var(--space-3) var(--space-6);
+  background: var(--surface-sunken); border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+/* The head and the rows share these five widths and nothing else does — they
+   are scoped under .ql so they cannot collide with the Plans grid's own. */
+.ql .c-check { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ql .c-on { flex: 0 0 80px; }
+.ql .c-last { flex: 0 0 70px; }
+.ql .c-pass { flex: 0 0 70px; }
+.ql .c-time { flex: 0 0 70px; }
+.ql .c-act { flex: 0 0 70px; display: flex; gap: var(--space-4); justify-content: flex-end; }
+
+.ql-cgroup {
+  display: flex; align-items: center; gap: var(--space-5); width: 100%;
+  padding: var(--space-3) var(--space-6); text-align: left;
+  border: 0; border-top: 1px solid var(--border-subtle);
+  background: var(--surface-raised); cursor: pointer;
+  transition: var(--transition-control);
+}
+.ql-cgroup:hover { background: var(--surface-hover); }
+.ql-cgroup .nm { font: var(--type-label); color: var(--text-secondary); }
+.ql-cgroup .n { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ql-cgroup .state { margin-left: auto; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ql-cgroup .state.bad { font-weight: var(--weight-medium); color: var(--status-warning-fg); }
+
+.ql-crow {
+  display: flex; align-items: center; gap: var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border-subtle);
+  transition: var(--transition-control);
+}
+.ql-crow:hover { background: var(--surface-hover); }
+.ql-crow .c-check .nm { font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ql-crow .c-check .sub { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary); }
+.ql-crow .c-on { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
+.ql-crow .c-last { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); }
+/* A run's own result, and the one tone rule that matters: a check that has
+   never run is not a pass — the kit has no such row, and a wiring session owes
+   that state a colour of its own rather than the green one. */
+.ql-crow .c-last.pass { color: var(--status-success-fg); }
+.ql-crow .c-last.fail { color: var(--status-warning-fg); }
+.ql-crow .c-last.flake { color: var(--text-secondary); }
+.ql-crow .c-pass, .ql-crow .c-time { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+
+/* ---- the two composers ---- */
+.ql-composer {
+  background: var(--surface-card); border: 1px solid var(--border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 20%, transparent);
+  border-radius: var(--radius-lg); padding: var(--space-6);
+  display: flex; flex-direction: column; gap: var(--space-5);
+}
+.ql-composer > .t { font: var(--weight-semibold) var(--text-md)/1 var(--font-sans); color: var(--text-primary); }
+.ql-composer .foot { display: flex; gap: var(--space-3); justify-content: flex-end; }
+.ql-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); }
+.ql-fields .km-field .hint { font: var(--type-caption); color: var(--text-tertiary); }
+.ql-checkbox {
+  display: flex; align-items: center; gap: var(--space-4);
+  font: var(--type-body-sm); color: var(--text-secondary); cursor: pointer;
+}
+.ql-checkbox input { width: 15px; height: 15px; accent-color: var(--action-primary); cursor: pointer; }
+
+/* ---- bugs, clustered by area then subject ---- */
+.ql-barea {
+  display: flex; align-items: center; gap: var(--space-5); width: 100%;
+  padding: var(--space-4) var(--space-6); text-align: left;
+  border: 0; border-top: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--sev-rule); background: transparent;
+  cursor: pointer; transition: var(--transition-control);
+}
+.ql-barea:hover { background: var(--surface-hover); }
+.ql-barea .nm { flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-primary); }
+.ql-barea .n { flex: none; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ql-barea .unc { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+
+.ql-subject-group { display: contents; }
+.ql-subject {
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: 5px var(--space-6) 5px 34px; border-top: 1px solid var(--border-subtle);
+}
+.ql-subject .nm { font: var(--type-caption); color: var(--text-secondary); }
+.ql-subject .n { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ql-subject .rule { flex: 1; height: 1px; background: var(--border-subtle); }
+
+.ql-brow {
+  display: flex; align-items: center; gap: var(--space-5);
+  padding: var(--space-3) var(--space-6) var(--space-3) 48px;
+  border-top: 1px solid var(--border-subtle);
+  transition: var(--transition-control);
+}
+.ql-brow:hover { background: var(--surface-hover); }
+.ql-brow .id { flex: none; font: var(--weight-medium) var(--text-xs)/1.4 var(--font-mono); color: var(--text-link); }
+.ql-brow .t { flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ql-brow .repro { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ql-brow .age { flex: 0 0 34px; text-align: right; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ql-brow .ql-act { flex: 0 0 76px; text-align: right; }
+
+@media (max-width: 1080px) {
+  /* What goes first is what the row can be read without: the linked bug key,
+     the schedule and the pass count. The name, the severity and the action
+     are the row. */
+  .ql-openrow .bug, .ql .c-on, .ql .c-pass, .ql-brow .repro { display: none; }
+  .ql-fields { grid-template-columns: 1fr; }
+  .ql-stats { gap: var(--space-5); }
+  .ql-spark { margin-left: 0; }
+}
+
 /* ---------- narrow: the rail lies down ---------- */
 @media (max-width: 900px) {
   .con-shell { flex-direction: column; }

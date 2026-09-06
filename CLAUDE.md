@@ -12,9 +12,9 @@ it lives in that file's header and this file keeps only the pointer and the cros
 rooms; `/api/control`, `/api/review`, `/api/merge`), **Polaris** (Futures tab, galaxy, `futures`),
 the **instructions tree** (managed CLAUDE.md library + host sync), the **Workbench** (canvas tab,
 `/api/…/workbench`, `workbench_*`, the Drafter), the Roadmap **Timeline** (#428) and the Roadmap
-**strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`, the ✧ cleanup modal), and with #443
-the BOARD and the Roadmap capture tab themselves, then **FOR YOU'S THREE PANES** (#444) —
-all five are kit mockups now, and the Data rules below say what went unreachable with them. The Curator's
+**strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`, the ✧ cleanup modal), and then the screens
+themselves: the BOARD and the Roadmap capture tab (#443), FOR YOU'S THREE PANES (#444) and
+QUALITY (#450) — all kit mockups, and the Data rules say what went unreachable with them. The Curator's
 `arrange`/`allocate`/`cleanup` are unsurfaced (it keeps `titler` and `assist`). The **TAB AGENTS'
 CONSOLES** went too (#379/#380, with `console_off` kept in the database) and the **Auditor** with
 them, that session being its whole surface; the CURATOR is the only agent left. **`notes` went with the Workbench** — its only reader — so
@@ -48,8 +48,8 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
 - **FOR YOU IS THREE ROUTE KEYS ON ONE SCREEN** (#436) — `overview`, `activity`, `auto`, switched
   by a strip that WRITES the key; never collapse them into state.
 - `lib/route.ts` — hash router. `go.detail(slug, tab, highlight)` deep-links and **the TAB decides
-  what `hl` means** — only Quality still honours one (a bug key); the mockups ignore theirs rather
-  than 404ing, as do the legacy spellings (`futures`, `notes` → Overview). `#/control` lands on
+  what `hl` means** — NO tab honours one since #450, and each ignores its own rather than 404ing,
+  as do the legacy spellings (`futures`, `notes` → Overview). `#/control` lands on
   `ControlMock.tsx` because a dead link reads as a broken app.
 - `screens/` — `ls` is the index. The recipe library (`/api/tips`) has no screen and no way in.
 - `lib/brief.ts` — the resume brief + the `DIRECTIVES` catalogue (keys mirror `SESSION_DEFAULTS`).
@@ -59,8 +59,7 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
   console kit's tokens copied verbatim from Claude Design project `7ff15c0c` (`--grey-* --blue-*
   --lime-* --surface-* --text-* --border-* --action-* --status-* --viz-*` + its type/space/radius/
   elevation/motion scales) — the source of truth, and where a tone is added or changed. Layer 2
-  aliases Stack's own names (`--paper --ink --accent --live` …) onto it, which is why every existing
-  rule kept working. Never an inline hex. **DARK-ONLY**: no light counterpart ships, so there is no
+  aliases Stack's own names (`--paper --ink --accent --live` …) onto it. Never an inline hex. **DARK-ONLY**: no light counterpart ships, so there is no
   theme attribute, no override layer, no toggle — each rule states its colour once. Two traps it
   sprang: **`--ink` is near-WHITE** (anything inverting to `#fff` on it vanishes), and **a fill tone
   is not a text tone** — `--action-primary` is sized for white text ON it, so `--accent` and
@@ -108,8 +107,8 @@ invariants:**
 
 The single definition of "how done is a project" — read the weighting off the function. What you
 would not guess: it is **capped at 90% while any critical/high bug is open**, and 0% with no
-Must/Should items at all. On every project payload; the Dashboard's "Progress by app" panel is this
-one and says so — deliberately NOT called a health score.
+Must/Should items at all. The Dashboard's "Progress by app" panel is this one —
+deliberately NOT called a health score.
 
 ## Data rules (the non-obvious column semantics)
 
@@ -133,16 +132,18 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   arrives as a STRING, above), `lib/plan.ts`, `lib/spine.ts`. **`estimate` stays in WEEKS**, so
   `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet. **NOTHING EDITS THESE**
   (#428 took the Timeline, their only editor); the PLANS tab (#439) is a READER of them.
-- **ONE SCREEN READS `roadmap_items`; FOUR ARE MOCKUPS** (#443 then #444, owner's call). **Plans**
-  (`plans`) reads the schedule and is the last of them. The **board** (`roadmap`), the **Roadmap**
-  capture tab (`ideas`) and all three **For you** panes (`overview`/`activity`/`auto`) are
-  `BoardMock.tsx` / `IdeasMock.tsx` / `ForYouMock.tsx`: the kit's screens on the kit's rows,
-  reading and writing nothing.
+- **PLANS IS THE ONLY PROJECT TAB THAT READS ANYTHING; FIVE ARE MOCKUPS** (#443, #444, #447, #450 —
+  owner's call). The **board** (`roadmap`), the **Roadmap** capture tab (`ideas`), all three
+  **For you** panes (`overview`/`activity`/`auto`) and **Quality** are `BoardMock` / `IdeasMock` /
+  `ForYouMock` / `QualityMock`: the kit's screens on the kit's rows, reading and writing nothing,
+  and each file's header says what its cull cost.
   **GONE FROM THE UI ENTIRELY**: giving a verdict, park/unpark, archive, delete-from-the-board,
-  labels, lane drag, the ⎇ claim, and with #444 **signing off or dismissing a held row** — ✓ Keep
-  and ✕ Dismiss were Auto-ideas' alone, so no browser can clear `reviewed_at` or tombstone an
-  extracted fingerprint. Every column and route survives and the runner still reads
-  them, so a parked item stays parked and no browser can unpark it.
+  labels, lane drag, the ⎇ claim, signing off or dismissing a held row (#444: no browser can clear
+  `reviewed_at` or tombstone a fingerprint), and with #450 **running, adding, editing or deleting a
+  CHECK, filing a bug and moving its status** — the deck still keeps or deletes an extracted bug.
+  Every column and route survives and the runner still reads them, so a parked item stays
+  parked and nothing unparks it; **`./stack` and the API are the way in.** A mockup's nav badge
+  counts the MOCKUP (#444, #450): a row's number and the screen behind it have to agree.
   `server/test/plan-lanes.test.mjs` says what a real board owes on its return.
 - **The board order IS the run queue.** `position` is the bucket tiebreak and still PATCHable, but
   **nothing in the client writes it** — the Backlog mockup DRAWS rank order and writes none of it.
@@ -176,7 +177,7 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `scripts/lib/`, `web/src/lib/approval.*`) since none of the packages can import another. An
   unattended enqueue **drops a held item silently**; Run now / `POST /start` **refuses out loud and
   names it**, since a silent drop under a button looks like the press did nothing. **Since #444 no browser
-  can un-hold one**; `./stack` and the API are the way out. Not the **verdict**
+  can un-hold one.** Not the **verdict**
   queue below: this gates what may RUN, that queues what was BUILT.
 - **Branch names are `<kind>/<id>-<summary>`** (#363; feat · fix · ui · refactor · perf · test · docs ·
   chore). `scripts/lib/lane.mjs` is the canonical namer AND parser; `web/src/lib/branch.ts` is its
@@ -252,8 +253,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
 - **`DELETE /api/projects/:slug` is SOFT** — stamps `deleted_at`, clears the share link, keeps every
   row; deleted projects vanish from live queries and their collections 404. The real cascade is
   `/purge`, valid only on binned projects.
-- **`checks.auth`, `checks.external` and what an edit clears are in `routes/checks.js`'s header** —
-  read it before changing a check's columns. The cross-cutting half: `/report` writes `check_results`
+- **`checks.auth`, `checks.external` and what an edit clears are in `routes/checks.js`'s header.**
+  The cross-cutting half: `/report` writes `check_results`
   but NOT a `check_runs` row, because `check_runs` is the SUITE's ledger #212 auto-merge and #263
   auto-verdict spend against — one reported result there would read as a suite of 1/1 passed, a green
   light manufacturable from outside Stack.
@@ -304,7 +305,7 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   assembled). Any agent field that becomes **a link the owner clicks** goes through a `cleanPath()`
   that drops anything not a same-origin path.
 - **Branch previews (#208) have no UI left** — route, host sweep and `scripts/stack-preview.mjs`
-  survive; only Mission Control reached them, so a preview is started by hand.
+  survive; a preview is started by hand.
 - **A batch verdict must count absence apart from green** — the rule that outlived the Review rail:
   an evidence summary tallies unrun checks and absent verdicts SEPARATELY from passing ones, or a
   select-all becomes a blind mass-approve.

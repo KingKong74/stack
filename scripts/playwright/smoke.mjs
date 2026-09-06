@@ -163,6 +163,54 @@ const IDEAS_PANELS = [
   },
 ];
 
+// The Quality screen is a mockup too (QualityMock.tsx). Six presses walk its
+// three tabs, because a tab is where a mockup keeps the rest of itself and an
+// unpressed tab is a screen this harness has photographed rather than tested.
+//
+// ORDER IS LOAD-BEARING, the same way the board's is: the first two name
+// Overview's own rows, so they run before anything switches tabs. Each press
+// is proved by something that cannot already be on screen — no severity chip
+// is selected at first paint, no feature is folded open, and the check table,
+// the composer and a bug row each exist only after the press that reveals it.
+const QUALITY_PANELS = [
+  {
+    id: 'quality-severity',
+    label: 'Quality — severity filter',
+    click: '.ql-sevfilter .ql-sevchip',
+    expect: '.ql-sevchip.on',
+  },
+  {
+    id: 'quality-feature',
+    label: 'Quality — a feature folds open',
+    click: '.ql-frow',
+    expect: '.ql-fbody',
+  },
+  {
+    id: 'quality-checks-tab',
+    label: 'Quality — Checks tab',
+    click: '.ql-tabs .k-tab:nth-child(2)',
+    expect: '.ql-crowhead',
+  },
+  {
+    id: 'quality-composer',
+    label: 'Quality — new-check composer',
+    click: '.ql-checkbar .k-btn',
+    expect: '.ql-composer',
+  },
+  {
+    id: 'quality-bugs-tab',
+    label: 'Quality — Bugs tab',
+    click: '.ql-tabs .k-tab:nth-child(3)',
+    expect: '.ql-barea',
+  },
+  {
+    id: 'quality-bugarea',
+    label: 'Quality — a bug area folds open',
+    click: '.ql-barea',
+    expect: '.ql-brow',
+  },
+];
+
 // ---- the screens ---------------------------------------------------------
 // One entry per top-level route this harness walks. `<slug>` is substituted
 // for the --slug value at run time. Order matches the app's own nav order.
@@ -178,7 +226,12 @@ export const SCREENS = [
   { id: 'timeline', label: 'Timeline', path: '#/timeline' },
   { id: 'settings', label: 'Settings', path: '#/settings' },
   { id: 'project-overview', label: 'Project — Overview', path: '#/p/<slug>' },
-  { id: 'project-quality', label: 'Project — Quality', path: '#/p/<slug>/quality' },
+  {
+    id: 'project-quality',
+    label: 'Project — Quality',
+    path: '#/p/<slug>/quality',
+    interactions: QUALITY_PANELS,
+  },
   // The roadmap tab IS the board, so its controls are on screen at first paint
   // and need no navigating to. If a strip ever comes back over it, these
   // interactions start reporting a control they cannot reach — which is the

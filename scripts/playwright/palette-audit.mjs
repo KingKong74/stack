@@ -76,6 +76,8 @@ const SCREENS = [
   { slug: 'dashboard', hash: '#/' },
   { slug: 'overview', hash: '#/p/{slug}' },
   { slug: 'quality', hash: '#/p/{slug}/quality' },
+  { slug: 'quality-checks', hash: '#/p/{slug}/quality', press: ['.ql-tabs .k-tab:nth-child(2)'] },
+  { slug: 'quality-bugs', hash: '#/p/{slug}/quality', press: ['.ql-tabs .k-tab:nth-child(3)', '.ql-barea'] },
   { slug: 'roadmap', hash: '#/p/{slug}/roadmap' },
   { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'] },
   { slug: 'board-dev', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(3)'] },
