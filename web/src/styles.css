@@ -3950,7 +3950,10 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   text-transform: uppercase; color: var(--text-tertiary);
 }
 .fy-eyebrow.accent { color: var(--text-accent); }
-.fy-caret { font: var(--type-caption); color: var(--text-tertiary); width: 10px; flex: none; }
+/* THE CARET IS SECONDARY, NOT TERTIARY. It is the only thing on the row that
+   says whether the section is open, and `--text-tertiary` measured 4.3:1 on
+   `--surface-card` — under AA, and the palette audit caught it. */
+.fy-caret { font: var(--type-caption); color: var(--text-secondary); width: 10px; flex: none; }
 .fy-ago { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); flex: none; }
 .fy-add { font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--status-success-fg); flex: none; }
 .fy-del { font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--status-danger-fg); flex: none; }
@@ -4061,7 +4064,10 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .fy-push:first-child { border-top: 0; }
 .fy-push-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .fy-push-mid .br {
-  font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--text-primary);
+  /* A branch name is clipped to one line, so its line box must FIT that line —
+     `/1` on a mono face cuts the descenders off (the smoke measured 15 into
+     13). Same for any other single-line ellipsis row below. */
+  font: var(--weight-medium) var(--text-sm)/1.4 var(--font-mono); color: var(--text-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .fy-push-mid .sub { font: var(--type-caption); color: var(--text-tertiary); }
@@ -4181,7 +4187,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 
 /* ---- your trail ---- */
 .fy-trail { display: flex; flex-direction: column; gap: var(--space-6); }
-.fy-filter { width: 260px; }
+.searchbox.fy-filter { width: 260px; flex: none; }
 .fy-filter svg { color: var(--text-tertiary); }
 .fy-trailgroup { display: flex; flex-direction: column; gap: var(--space-2); }
 .fy-trailgroup > .fy-dim { font: var(--type-caption); padding-bottom: var(--space-2); }
