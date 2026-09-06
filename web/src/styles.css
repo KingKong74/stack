@@ -4223,6 +4223,155 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .fy-event .top .br.dim { color: var(--text-tertiary); }
 .fy-event .top .fy-ago { margin-left: auto; }
 
+/* ---- Backlog: rank order, and the line the board pulls from ---- */
+.km-bl, .km-dev { display: flex; flex-direction: column; gap: var(--space-5); }
+.km-dev { gap: var(--space-6); }
+.km-bl-bar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.km-bl-count { margin-left: auto; font: var(--type-body-sm); color: var(--text-tertiary); }
+.km-bl-add {
+  align-self: flex-start; border: 0; background: transparent; cursor: pointer;
+  padding: var(--space-4); font: var(--type-label); color: var(--text-tertiary);
+}
+.km-bl-add:hover { color: var(--text-primary); }
+
+/* The pull line and Development's "can land now" are ONE shape on purpose:
+   a card with a single lime edge, saying what happens next with nothing
+   pressed. The lime is a border here — as a LABEL it takes --text-accent,
+   which is the "a fill tone is not a text tone" rule (#432). */
+.km-pull {
+  display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap;
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--lime-500); border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-6);
+}
+.km-pull .lbl {
+  flex: none; font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-accent);
+}
+.km-pull .ids { display: flex; gap: var(--space-3); flex-wrap: wrap; min-width: 0; }
+.km-pull .say { margin-left: auto; font: var(--type-body-sm); color: var(--text-secondary); }
+.km-pull .k-btn { margin-left: auto; flex: none; }
+
+.km-batch { display: flex; flex-direction: column; gap: var(--space-2); }
+.km-devgroup { display: flex; flex-direction: column; gap: var(--space-3); }
+.km-batchhead { display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-4) var(--space-2); }
+.km-batchhead .lbl {
+  flex: none; font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.km-batchhead .lbl.tone-danger { color: var(--status-danger-fg); }
+.km-batchhead .lbl.tone-info { color: var(--status-info-fg); }
+.km-batchhead .lbl.tone-warning { color: var(--status-warning-fg); }
+.km-batchhead .lbl.tone-success { color: var(--status-success-fg); }
+.km-batchhead .lbl.tone-neutral { color: var(--text-tertiary); }
+.km-batchhead .n { flex: none; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.km-batchhead .rule { flex: 1; height: 1px; background: var(--border-subtle); }
+
+.km-blrow {
+  display: flex; align-items: center; gap: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); transition: var(--transition-control);
+}
+.km-blrow:hover { background: var(--surface-hover); }
+.km-blrow.dragging {
+  background: var(--surface-overlay); border-color: var(--border-focus);
+  box-shadow: var(--shadow-md);
+}
+/* The handle is a CONTROL, not decoration, so it takes a readable tone at rest
+   — --text-disabled is the tone the kit reaches for and it measures under AA
+   on this card. */
+.km-blrow .grip {
+  flex: none; width: 16px; padding: 0; border: 0; background: transparent;
+  cursor: grab; text-align: center; color: var(--text-tertiary);
+  font: var(--weight-regular) var(--text-sm)/1.4 var(--font-sans);
+}
+.km-blrow:hover .grip, .km-blrow.dragging .grip { color: var(--text-secondary); }
+.km-blrow .rank { flex: none; width: 20px; text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.km-blrow .kind { flex: none; display: flex; }
+.km-blrow .id { flex: none; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); }
+.km-blrow .t {
+  flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.km-blrow .from { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.km-blrow .k-tag { flex: none; }
+.km-blrow .pri { flex: none; width: 26px; text-align: center; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); }
+.km-blrow .pts { flex: none; width: 20px; text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+
+/* The cut: everything above it is what In Progress can hold. */
+.km-cut { display: flex; align-items: center; gap: var(--space-4); padding: 2px var(--space-4); }
+.km-cut .rule { flex: 1; height: 1px; background: var(--lime-700); }
+.km-cut .lbl { flex: none; font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--lime-600); }
+
+/* ---- Development: branches in the order they can land ---- */
+.km-branch {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); display: flex; flex-direction: column;
+}
+.km-branch.open { border-color: var(--border-default); }
+.km-branchhead {
+  display: flex; align-items: center; gap: var(--space-5); width: 100%;
+  padding: var(--space-5) var(--space-6); text-align: left;
+  border: 0; background: transparent; cursor: pointer;
+  border-radius: var(--radius-lg); transition: var(--transition-control);
+}
+.km-branchhead:hover { background: var(--surface-hover); }
+/* Secondary, not tertiary: the caret is the only thing saying whether the row
+   is open, and tertiary measured under AA on --surface-card (#444). */
+.km-branchhead .caret { flex: none; width: 10px; font: var(--type-caption); color: var(--text-secondary); }
+.km-branchico {
+  flex: none; width: 26px; height: 26px; border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.km-branchico.tone-danger { background: var(--status-danger-bg); color: var(--status-danger-fg); }
+.km-branchico.tone-info { background: var(--status-info-bg); color: var(--status-info-fg); }
+.km-branchico.tone-warning { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.km-branchico.tone-success { background: var(--status-success-bg); color: var(--status-success-fg); }
+.km-branchico.tone-neutral { background: var(--status-neutral-bg); color: var(--text-tertiary); }
+.km-branchhead .mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.km-branchhead .top { display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
+/* A branch name clipped to one line needs a line box that fits the glyph box:
+   `/1` on a mono face cuts the descenders off, which the smoke measures. */
+.km-branchhead .br {
+  min-width: 0; font: var(--weight-medium) var(--text-sm)/1.4 var(--font-mono); color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.km-branchhead .top .id { flex: none; font: var(--weight-medium) var(--text-xs)/1.4 var(--font-mono); color: var(--text-link); }
+.km-branchhead .sub { font: var(--type-caption); color: var(--text-tertiary); }
+.km-branchhead .delta { flex: none; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.km-branchhead .diff { flex: none; display: flex; gap: 6px; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); }
+.km-branchhead .diff .add { color: var(--status-success-fg); }
+.km-branchhead .diff .del { color: var(--status-danger-fg); }
+.km-branchhead .k-tag { flex: none; }
+.km-branchhead .age { flex: 0 0 34px; text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+
+/* Indented to the icon column, so the commits read as belonging to the row. */
+.km-branchbody {
+  padding: 0 var(--space-6) var(--space-6) 52px;
+  display: flex; flex-direction: column; gap: var(--space-5);
+}
+.km-branchbody .commits {
+  display: flex; flex-direction: column; gap: var(--space-3);
+  padding-top: var(--space-4); border-top: 1px solid var(--border-subtle);
+}
+.km-branchbody .commit { display: flex; gap: var(--space-5); align-items: baseline; }
+.km-branchbody .sha { flex: none; font: var(--weight-medium) var(--text-xs)/1.4 var(--font-mono); color: var(--text-link); }
+.km-branchbody .msg { min-width: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+.km-branchbody .failing { display: flex; flex-direction: column; gap: var(--space-3); }
+.km-branchbody .fail {
+  display: inline-flex; align-items: center; gap: 8px;
+  font: var(--type-code); color: var(--status-danger-fg);
+}
+.km-branchbody .acts { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+
+@media (max-width: 1080px) {
+  /* The backlog row's optional freight goes first: the provenance and the area
+     are context, the title and the rank are the row. */
+  .km-blrow .from, .km-blrow .k-tag { display: none; }
+  .km-branchhead .delta, .km-branchhead .diff { display: none; }
+}
+
 /* ==========================================================================
    THE ROADMAP MOCKUP (IdeasMock.tsx)
    ========================================================================== */
@@ -4236,11 +4385,60 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .im-title h1 { margin: 0; font: var(--type-title); letter-spacing: var(--tracking-tight); color: var(--text-primary); }
 .im-lede { margin-left: auto; font: var(--type-body-sm); color: var(--text-tertiary); }
 
-.im-bar { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
-.im-search { width: 260px; flex: 0 1 260px; }
+/* The scope strip: the area chips, then the search and the capture button
+   pushed to the far end. It wraps rather than scrolls — seven chips and two
+   controls do not fit one line under about 1200px, and a chip that has to be
+   scrolled to is a filter nobody finds. */
+.im-bar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.im-search { margin-left: auto; width: 210px; flex: 0 1 210px; }
 .im-search svg { color: var(--text-tertiary); }
-.im-count { font: var(--type-caption); color: var(--text-tertiary); }
-.im-capture { margin-left: auto; flex: none; }
+.im-capture { flex: none; }
+
+.im-chip {
+  display: inline-flex; align-items: center; gap: 7px; flex: none;
+  height: 28px; padding: 0 10px; border: 0; cursor: pointer;
+  border-radius: var(--radius-md); font: var(--type-label);
+  color: var(--text-secondary); background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+  transition: var(--transition-control);
+}
+.im-chip:hover { background: var(--surface-hover); color: var(--text-primary); }
+.im-chip .ico { display: flex; color: var(--text-tertiary); }
+.im-chip .n { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+/* The selected chip keeps its ring as well as its tint: tint alone is the
+   state a colour-blind reader cannot pick out of seven. */
+.im-chip.on {
+  background: var(--surface-selected); color: var(--blue-300);
+  box-shadow: inset 0 0 0 1px var(--border-focus);
+}
+.im-chip.on .ico { color: var(--blue-400); }
+.im-chipsep { width: 1px; height: 20px; flex: none; background: var(--border-default); margin: 0 var(--space-2); }
+
+/* ---- one section per area ---- */
+.im-sections { display: flex; flex-direction: column; gap: var(--space-7); }
+.im-section { display: flex; flex-direction: column; gap: var(--space-5); }
+.im-sechead {
+  display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap;
+  padding-bottom: var(--space-4); border-bottom: 1px solid var(--border-subtle);
+}
+.im-sechead .ico {
+  width: 24px; height: 24px; flex: none; border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface-overlay); color: var(--text-tertiary);
+}
+/* Global is the one area that is not a part of the product, so it is the one
+   marked — everything else is a place, and places look alike. */
+.im-sechead .ico.global { background: var(--surface-selected); color: var(--blue-400); }
+.im-sechead .nm { font: var(--weight-semibold) var(--text-md)/1.3 var(--font-sans); color: var(--text-primary); }
+.im-sechead .scope { font: var(--type-caption); color: var(--text-tertiary); }
+.im-sechead .n { margin-left: auto; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+
+/* An empty column says so. A column that just stops reads as a rendering bug. */
+.im-empty {
+  padding: var(--space-5); border-radius: var(--radius-lg);
+  border: 1px dashed var(--border-subtle);
+  font: var(--type-caption); color: var(--text-tertiary);
+}
 
 .im-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-5); align-items: start; }
 .im-col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }

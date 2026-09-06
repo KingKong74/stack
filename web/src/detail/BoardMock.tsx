@@ -1,7 +1,10 @@
 // THE BOARD TAB IS A MOCKUP. It reads nothing and it writes nothing.
 //
 // This is `ui_kits/console/BoardScreen.jsx` ported to TS, on the kit's OWN
-// sample rows (KING-07 … KING-33). It is not a view of this project: the board
+// sample rows (KING-07 … KING-41). ALL THREE OF ITS TABS ARE DRAWN — Board,
+// Backlog and Development — and each is a mockup on the same terms; the two
+// blocks further down say what the newer two would owe on their way to real
+// data. It is not a view of this project: the board
 // that read `roadmap_items` — its lanes, its drag, its labels, its area chips,
 // its archive, its park/unpark, its ✓ Review verdict panel and the scope
 // picker — was removed at the owner's request and replaced with this. Nothing
@@ -36,8 +39,9 @@
 //    instead is a decision, not a tidy-up.
 //
 // The interactions BELOW are the kit's own and are all local state: the column
-// menu, its tooltip, the priority picker, the composer, the create dialog and
-// the selected card. They persist nothing — closing the tab is the undo.
+// menu, its tooltip, the priority picker, the composer, the create dialog, the
+// selected card, the backlog's grab handle and the branch folds. They persist
+// nothing — closing the tab is the undo.
 
 import { useEffect, useRef, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
@@ -131,9 +135,10 @@ export function BoardMock() {
           </div>
         </div>
 
-        {/* The kit's Tabs, underline variant. Board is the only one drawn — the
-            other two are labels in the mockup and lead nowhere, which is what
-            a mockup's tabs do. */}
+        {/* The kit's Tabs, underline variant. All three lead somewhere now:
+            Board, Backlog (rank order) and Development (merge readiness), each
+            the kit's own screen on the kit's own rows. Switching tabs changes
+            which sample is drawn and nothing else — no route key, no fetch. */}
         <div className="k-tabs km-tabs">
           {[
             { value: 'board', label: 'Board', count: CARD_COUNT },
@@ -148,6 +153,10 @@ export function BoardMock() {
           ))}
         </div>
 
+        {view === 'backlog' && <BacklogView onCreate={() => setDialog(true)} />}
+        {view === 'dev' && <DevelopmentView />}
+
+        {view === 'board' && <>
         <div className="k-banner warning km-banner">
           <div className="k-banner-text">
             <span className="k-banner-title">One check red on the in-progress card</span>
@@ -208,6 +217,7 @@ export function BoardMock() {
             </div>
           ))}
         </div>
+        </>}
       </div>
 
       {dialog && (
@@ -347,5 +357,313 @@ function Composer({ onClose }: { onClose: () => void }) {
         </button>
       </div>
     </div>
+  );
+}
+
+/* ==========================================================================
+   BACKLOG — `ui_kits/console/BoardScreen.jsx`'s BacklogView, ported.
+
+   ORDER IS THE WHOLE POINT of this tab: the board pulls off the top, so a
+   row's rank is what it says it is. In this app that rank is
+   `roadmap_items.position`, the bucket tiebreak and the run queue's order —
+   and the thing to know before wiring it up is that NOTHING IN THE CLIENT HAS
+   EVER WRITTEN `position`. It is stored, served and PATCHable, and this is the
+   first surface that has ever drawn it. The grab handle below moves nothing:
+   it toggles one row's own styling and closing the tab is the undo.
+
+   The WIP line is likewise the kit's arithmetic, not this project's. A real
+   one would be the In Progress column's limit against the claimed rows, and
+   `tier` — not rank — is the run queue's PRIMARY sort, so a backlog that
+   ranked by position alone would order the night wrongly. Both are decisions
+   for the wiring, stated here so the mockup is not mistaken for the design.
+   ========================================================================== */
+
+const WIP = 3;
+
+type BacklogItem = {
+  rank: number; id: string; title: string; kind: 'task' | 'idea';
+  priority: PriorityKey; pts: number; area: string; from: string | null;
+};
+
+const BACKLOG: { batch: string; items: BacklogItem[] }[] = [
+  {
+    batch: 'Next batch',
+    items: [
+      { rank: 1, id: 'KING-33', title: 'Sidebar tree keyboard nav', kind: 'task', priority: 'high', pts: 5, area: 'Board and stack', from: 'MDP-5' },
+      { rank: 2, id: 'KING-24', title: 'Audit contrast on dark surfaces', kind: 'task', priority: 'medium', pts: 3, area: 'Design system', from: null },
+      { rank: 3, id: 'KING-36', title: 'Quarantine flaky checks', kind: 'idea', priority: 'high', pts: 3, area: 'Quality', from: 'MDP-9' },
+      { rank: 4, id: 'KING-31', title: 'Split token files by concern', kind: 'idea', priority: 'low', pts: 2, area: 'Design system', from: 'MDP-6' },
+    ],
+  },
+  {
+    batch: 'Below the line',
+    items: [
+      { rank: 5, id: 'KING-38', title: 'Drag a timeline bar to move a date', kind: 'idea', priority: 'medium', pts: 5, area: 'Plans', from: 'MDP-10' },
+      { rank: 6, id: 'KING-39', title: 'Second surface step for nested cards', kind: 'idea', priority: 'low', pts: 1, area: 'Design system', from: 'MDP-11' },
+      { rank: 7, id: 'ATL-04', title: 'Print sheet geometry', kind: 'idea', priority: 'lowest', pts: 5, area: 'Print and export', from: 'MDP-7' },
+      { rank: 8, id: 'KING-41', title: 'Budget line on the usage chart', kind: 'idea', priority: 'low', pts: 3, area: 'Plans', from: 'MDP-3' },
+    ],
+  },
+];
+
+function BacklogView({ onCreate }: { onCreate: () => void }) {
+  const [drag, setDrag] = useState<string | null>(null);
+  const total = BACKLOG.reduce((n, b) => n + b.items.length, 0);
+  const pts = BACKLOG.reduce((n, b) => n + b.items.reduce((m, i) => m + i.pts, 0), 0);
+
+  return (
+    <div className="km-bl">
+      <div className="km-bl-bar">
+        <span className="searchbox sm km-search">
+          <KitIcon name="search" size={14} />
+          <input placeholder="Search backlog" aria-label="Search backlog" />
+        </span>
+        <button className="k-btn sm secondary"><KitIcon name="list-filter" size={14} />Area</button>
+        <button className="k-btn sm secondary"><KitIcon name="layers" size={14} />Priority</button>
+        <span className="km-bl-count">{total} queued · {pts} points · drag to reorder</span>
+      </div>
+
+      {/* The pull line: what the board takes next, said before anyone asks. */}
+      <div className="km-pull">
+        <span className="lbl">Next pulls</span>
+        <span className="ids">
+          {BACKLOG[0].items.slice(0, WIP).map((i) => (
+            <span key={i.id} className="k-tag mono">{i.id}</span>
+          ))}
+        </span>
+        <span className="say">In Progress holds {WIP} — the top {WIP} rows are what the board takes next.</span>
+      </div>
+
+      {BACKLOG.map((batch) => (
+        <div className="km-batch" key={batch.batch}>
+          <div className="km-batchhead">
+            <span className="lbl">{batch.batch}</span>
+            <span className="n">{batch.items.length}</span>
+            <span className="rule" />
+          </div>
+          {batch.items.map((it) => (
+            <BacklogRow key={it.id} row={it}
+              dragging={drag === it.id}
+              onGrab={() => setDrag(drag === it.id ? null : it.id)}
+              cut={it.rank === WIP} />
+          ))}
+        </div>
+      ))}
+
+      <button className="km-bl-add" onClick={onCreate}>+ Add to backlog</button>
+    </div>
+  );
+}
+
+function BacklogRow({ row, dragging, onGrab, cut }: {
+  row: BacklogItem; dragging: boolean; onGrab: () => void; cut: boolean;
+}) {
+  const pri = PRIORITIES.find((p) => p.value === row.priority) || PRIORITIES[2];
+  return (
+    <>
+      <div className={`km-blrow${dragging ? ' dragging' : ''}`}>
+        <button className="grip" aria-label={`Reorder ${row.id}`} onClick={onGrab}>⠿</button>
+        <span className="rank">{row.rank}</span>
+        <span className="kind" style={{ color: row.kind === 'idea' ? 'var(--lime-500)' : 'var(--blue-400)' }}>
+          <KitIcon name={row.kind === 'idea' ? 'bookmark' : 'circle-check'} size={13} />
+        </span>
+        <span className="id">{row.id}</span>
+        <span className="t">{row.title}</span>
+        {row.from && <span className="from">from {row.from}</span>}
+        <span className="k-tag">{row.area}</span>
+        <span className="pri" style={{ color: pri.color }}>{pri.glyph}</span>
+        <span className="pts">{row.pts}</span>
+      </div>
+      {cut && (
+        <div className="km-cut">
+          <span className="rule" />
+          <span className="lbl">WIP limit {WIP}</span>
+          <span className="rule" />
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ==========================================================================
+   DEVELOPMENT — `ui_kits/console/BoardScreen.jsx`'s DevelopmentView, ported.
+
+   Branches in the order they can land. THE STATES BELOW ARE THE KIT'S FIVE
+   STRINGS AND NOT THIS APP'S: `web/src/lib/branch.ts` derives a FOUR-valued
+   merge state and its first rule is that `unprobed` is not `clean` — a branch
+   nobody probed has to read as NO PASS RAN, never as mergeable. The kit has no
+   such value ('never ran' here is a check string, not a merge state), so a
+   wiring that maps these five onto those four by name will manufacture a green
+   light. `branch.ts` is the definition; this is a picture.
+
+   Every button in here is inert, and two of them matter enough to say so:
+   Merge and Close branch are the actions #363's `merge_autonomy` and the
+   conflict probe exist to gate, and no press here reaches either.
+   ========================================================================== */
+
+type BranchRowData = {
+  branch: string; id: string; title: string; state: 'red' | 'running' | 'ready' | 'stale';
+  pr: string; ahead: number; behind: number; add: number; del: number;
+  checks: string; age: string;
+  commits: { sha: string; msg: string }[];
+  failing: string[];
+};
+
+type Tone = 'danger' | 'info' | 'warning' | 'success' | 'neutral';
+
+const BRANCHES: { group: string; tone: Tone; rows: BranchRowData[] }[] = [
+  {
+    group: 'Needs you', tone: 'danger',
+    rows: [
+      {
+        branch: 'king/token-split', id: 'KING-12', title: 'Replace legacy grey ramp', state: 'red',
+        pr: 'PR #211', ahead: 6, behind: 0, add: 302, del: 96, checks: '2 failed', age: '4h',
+        commits: [
+          { sha: 'a7d31f0', msg: 'split colors, type, spacing into separate files' },
+          { sha: '2c88b45', msg: 'point styles.css at the new imports' },
+        ],
+        failing: ['snapshot — Bugs collection', 'snapshot — bug→check link'],
+      },
+    ],
+  },
+  {
+    group: 'In flight', tone: 'info',
+    rows: [
+      {
+        branch: 'king/col-virtualisation', id: 'KING-18', title: 'Row recycling on scroll', state: 'running',
+        pr: 'draft PR #212', ahead: 3, behind: 4, add: 148, del: 22, checks: 'running', age: '17m',
+        commits: [
+          { sha: '4f2ac1d', msg: 'wip: recycle row nodes on scroll' },
+          { sha: '9be0742', msg: 'measure row height once per column' },
+        ],
+        failing: [],
+      },
+      {
+        branch: 'king/diff-bar', id: 'KING-35', title: 'Extract the diff bar', state: 'ready',
+        pr: 'PR #213', ahead: 2, behind: 0, add: 61, del: 44, checks: 'passing', age: '1d',
+        commits: [{ sha: 'e91b204', msg: 'add DiffBar and replace three inline copies' }],
+        failing: [],
+      },
+    ],
+  },
+  {
+    group: 'Stale', tone: 'warning',
+    rows: [
+      {
+        branch: 'king/print-styles', id: 'ATL-04', title: 'Print sheet geometry', state: 'stale',
+        pr: 'no PR', ahead: 1, behind: 34, add: 210, del: 4, checks: 'never ran', age: '11d',
+        commits: [{ sha: '5ea9c72', msg: 'first pass at print sheet geometry' }],
+        failing: [],
+      },
+    ],
+  },
+];
+
+const STATE_META: Record<BranchRowData['state'], { icon: 'circle-alert' | 'clock' | 'circle-check'; tone: Tone }> = {
+  red: { icon: 'circle-alert', tone: 'danger' },
+  running: { icon: 'clock', tone: 'warning' },
+  ready: { icon: 'circle-check', tone: 'success' },
+  stale: { icon: 'clock', tone: 'neutral' },
+};
+
+function DevelopmentView() {
+  const [open, setOpen] = useState<string | null>('king/token-split');
+  const mergeable = BRANCHES.flatMap((g) => g.rows).filter((r) => r.state === 'ready');
+
+  return (
+    <div className="km-dev">
+      <div className="km-pull">
+        <span className="lbl">Can land now</span>
+        {mergeable.length ? (
+          <>
+            <span className="ids">
+              {mergeable.map((r) => <span key={r.branch} className="k-tag mono">{r.branch}</span>)}
+            </span>
+            <button className="k-btn sm accent">
+              <KitIcon name="git-branch" size={13} />Merge {mergeable.length}
+            </button>
+          </>
+        ) : (
+          <span className="say">Nothing is green and ahead of main.</span>
+        )}
+      </div>
+
+      {BRANCHES.map((g) => (
+        <div className="km-devgroup" key={g.group}>
+          <div className="km-batchhead">
+            <span className={`lbl tone-${g.tone}`}>{g.group}</span>
+            <span className="n">{g.rows.length}</span>
+            <span className="rule" />
+          </div>
+          {g.rows.map((r) => (
+            <BranchRow key={r.branch} row={r} open={open === r.branch}
+              onToggle={() => setOpen(open === r.branch ? null : r.branch)} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BranchRow({ row, open, onToggle }: {
+  row: BranchRowData; open: boolean; onToggle: () => void;
+}) {
+  const meta = STATE_META[row.state];
+  return (
+    <section className={`km-branch${open ? ' open' : ''}`}>
+      <button className="km-branchhead" onClick={onToggle} aria-expanded={open}>
+        <span className="caret">{open ? '▾' : '▸'}</span>
+        <span className={`km-branchico tone-${meta.tone}`}><KitIcon name={meta.icon} size={13} /></span>
+
+        <span className="mid">
+          <span className="top">
+            <span className="br">{row.branch}</span>
+            <span className="id">{row.id}</span>
+          </span>
+          <span className="sub">{row.title} · {row.pr}</span>
+        </span>
+
+        <span className="delta">↑{row.ahead} ↓{row.behind}</span>
+        <span className="diff">
+          <span className="add">+{row.add}</span>
+          <span className="del">−{row.del}</span>
+        </span>
+        <span className={meta.tone === 'neutral' ? 'k-tag' : `k-tag ${meta.tone}`}>{row.checks}</span>
+        <span className="age">{row.age}</span>
+      </button>
+
+      {open && (
+        <div className="km-branchbody">
+          <div className="commits">
+            {row.commits.map((c) => (
+              <div className="commit" key={c.sha}>
+                <span className="sha">{c.sha}</span>
+                <span className="msg">{c.msg}</span>
+              </div>
+            ))}
+          </div>
+
+          {row.failing.length > 0 && (
+            <div className="failing">
+              {row.failing.map((f) => (
+                <span className="fail" key={f}><KitIcon name="circle-alert" size={13} />{f}</span>
+              ))}
+            </div>
+          )}
+
+          <div className="acts">
+            {row.state === 'ready' && (
+              <button className="k-btn sm accent"><KitIcon name="git-branch" size={13} />Merge</button>
+            )}
+            {row.state === 'red' && (
+              <button className="k-btn sm secondary"><KitIcon name="circle-alert" size={13} />Open failing run</button>
+            )}
+            {row.behind > 0 && <button className="k-btn sm secondary">Rebase on main</button>}
+            <button className="k-btn sm ghost"><KitIcon name="code" size={13} />Check out</button>
+            {row.state === 'stale' && <button className="k-btn sm danger">Close branch</button>}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
