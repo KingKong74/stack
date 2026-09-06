@@ -142,10 +142,10 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   labels, lane drag, the ⎇ claim, and with #444 **signing off or dismissing a held row** — ✓ Keep
   and ✕ Dismiss were Auto-ideas' alone, so no browser can clear `reviewed_at` or tombstone an
   extracted fingerprint. Every column and route survives and the runner still reads
-  them, so a parked item stays parked and no browser can unpark it — `./stack` and the API are
-  the way back. `server/test/plan-lanes.test.mjs` says what a real board owes on its return.
+  them, so a parked item stays parked and no browser can unpark it.
+  `server/test/plan-lanes.test.mjs` says what a real board owes on its return.
 - **The board order IS the run queue.** `position` is the bucket tiebreak and still PATCHable, but
-  **nothing in the client writes it**: stored, served, waiting for a surface.
+  **nothing in the client writes it** — the Backlog mockup DRAWS rank order and writes none of it.
 - **`claimed_by` is the branch claim** (#277 — called a "lane" until the rename; the `lane/` git ref
   prefix is unchanged, naming branches already on origin). Claim before starting; a terminal tab's
   claim is `term:<name>`. It is the don't-re-pick marker, injected by SessionStart as "Branch claims —

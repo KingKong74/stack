@@ -66,11 +66,19 @@ function readStackEnv() {
   } catch { return {}; }
 }
 
+// A screen may declare `press`: selectors clicked, in order, before the audit
+// runs. THIS IS NOT A CONVENIENCE. A tone behind a tab is a tone this audit
+// never measured, and "the route was audited" would read as "the screen was" —
+// the same absence-mistaken-for-a-pass this tool exists to catch. The board's
+// Backlog and Development views are two full screens' worth of tone that first
+// paint cannot reach, so each is walked as its own row and named as one.
 const SCREENS = [
   { slug: 'dashboard', hash: '#/' },
   { slug: 'overview', hash: '#/p/{slug}' },
   { slug: 'quality', hash: '#/p/{slug}/quality' },
   { slug: 'roadmap', hash: '#/p/{slug}/roadmap' },
+  { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'] },
+  { slug: 'board-dev', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(3)'] },
   { slug: 'activity', hash: '#/p/{slug}/activity' },
   { slug: 'auto', hash: '#/p/{slug}/auto' },
   { slug: 'ideas', hash: '#/p/{slug}/ideas' },
@@ -336,6 +344,22 @@ async function main() {
         await page.close();
         continue;
       }
+      // A press that cannot be made is reported, never skipped quietly: the
+      // alternative is auditing the tab underneath and calling it the one
+      // named, which is a clean result for a screen nobody looked at.
+      let reached = true;
+      for (const sel of screen.press || []) {
+        try {
+          await page.locator(sel).first().click({ timeout: 4000 });
+          await page.waitForTimeout(400);
+        } catch (e) {
+          findings.push({ screen: screen.slug, kind: 'unreachable', detail: `\`${sel}\` could not be pressed — ${e.message.split('\n')[0]}` });
+          reached = false;
+          break;
+        }
+      }
+      if (!reached) { await page.close(); continue; }
+
       const res = await page.evaluate(auditInPage);
       audited++;
       for (const c of res.contrast) findings.push({ screen: screen.slug, kind: 'contrast', ...c });

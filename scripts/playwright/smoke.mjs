@@ -101,19 +101,65 @@ const ROADMAP_PANELS = [
     click: '.km-col:nth-child(4) [aria-label="More actions"]',
     expect: '.km-col:nth-child(4) .km-menu',
   },
+  // THESE THREE MUST COME LAST, and not for tidiness: the presses above all
+  // name `.km-col`, which only exists while the Board tab is the one drawn.
+  // Switch tabs first and every one of them reports a control it cannot
+  // reach — a true finding about a harness that ordered itself wrongly, and a
+  // false one about the board.
+  {
+    id: 'board-backlog-tab',
+    label: 'Board — Backlog tab',
+    click: '.km-tabs .k-tab:nth-child(2)',
+    expect: '.km-bl .km-pull',
+  },
+  {
+    id: 'board-backlog-grab',
+    label: 'Backlog — row grab handle',
+    click: '.km-blrow .grip',
+    expect: '.km-blrow.dragging',
+  },
+  {
+    id: 'board-dev-tab',
+    label: 'Board — Development tab',
+    click: '.km-tabs .k-tab:nth-child(3)',
+    expect: '.km-dev .km-branch',
+  },
+  // The LAST group holds one branch and it is closed at first paint, so its
+  // body is the one thing on this screen that cannot already be there.
+  {
+    id: 'board-branch-fold',
+    label: 'Development — branch folds open',
+    click: '.km-devgroup:last-child .km-branchhead',
+    expect: '.km-devgroup:last-child .km-branchbody',
+  },
 ];
 
-// The Roadmap capture screen is a mockup too (IdeasMock.tsx); its one
-// interaction is a card opening to show where it was captured and what can be
-// done with it. It presses a card in the SECOND column because the first
-// column's top card is open at first paint — pressing that one would prove
-// nothing, and expecting `.im-card.open` anywhere would pass before the click.
+// The Roadmap capture screen is a mockup too (IdeasMock.tsx). Two presses: a
+// card opening to show where it was captured, and the area scope narrowing the
+// screen to one area.
+//
+// The card press names the SECOND column because the first column's top card
+// is open at first paint — pressing that one would prove nothing, and
+// expecting `.im-card.open` anywhere would pass before the click. Every
+// section now carries its own three columns, so `.im-col:nth-child(2)` matches
+// one per section and `.first()` takes the first section's Thinking column.
+//
+// The scope press has no new element to point at — narrowing HIDES sections
+// rather than adding one — so it is judged on the count line changing, which
+// is `expectTextChangeIn`'s whole purpose. That line reads "N ideas · M ready
+// in this scope", and M is what moves.
 const IDEAS_PANELS = [
   {
     id: 'ideas-expand',
     label: 'Roadmap capture — card expands',
     click: '.im-col:nth-child(2) .im-card',
     expect: '.im-col:nth-child(2) .im-card.open .im-acts',
+  },
+  {
+    id: 'ideas-scope',
+    label: 'Roadmap capture — area scope',
+    click: '.im-chip:nth-child(3)',
+    expectTextChangeIn: '.im-lede',
   },
 ];
 
