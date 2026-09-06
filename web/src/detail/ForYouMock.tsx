@@ -586,7 +586,9 @@ function ActivityPane() {
                 <span className={`fy-chip tone-${tone}`}><KitIcon name={KIND_ICON[e.kind]} size={13} /></span>
                 <div className="mid">
                   <div className="top">
-                    <span className="t">{isPush ? `Pushed ${e.commits?.length} commits to` : e.text}</span>
+                    <span className="t">
+                      {isPush ? `Pushed ${e.commits?.length} commit${e.commits?.length === 1 ? '' : 's'} to` : e.text}
+                    </span>
                     <span className={isPush ? 'br' : 'br dim'}>{e.branch}</span>
                     {e.ago && <span className="fy-ago">{e.ago}</span>}
                   </div>

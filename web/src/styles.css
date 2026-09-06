@@ -3724,7 +3724,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .ai-meta { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
 .ai-src { font: var(--type-code); color: var(--text-link); }
 .ai-signal { font: var(--type-caption); color: var(--text-tertiary); }
-.ai-acts { display: flex; flex-direction: column; gap: var(--space-3); flex: none; }
+.ai-acts { display: flex; flex-direction: column; justify-content: center; gap: var(--space-3); flex: none; }
 
 
 /* ==========================================================================
