@@ -4573,6 +4573,20 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    its dot and its label, which is what a colour-blind reader had to use
    anyway. And the kit's "clean" reads `--text-disabled`; that is the same
    sub-AA tone the Plans dash already refused.
+
+   A THIRD, AND IT IS THE ONE A REPALETTE WILL RE-LEARN: **a row's metadata
+   cannot be `--text-tertiary` if the row LIGHTENS.** `--surface-hover` is
+   +5.5% white, which over `--surface-card` lifts the ground from #242528 to
+   #303134 and drops tertiary from 5.07:1 to 4.30:1 — text that reads fine at
+   rest goes sub-AA the moment the cursor arrives. Every count, age, average
+   and sub-line inside `.ql-openrow`, `.ql-frow`, `.ql-crow`, `.ql-barea` and
+   `.ql-brow` is therefore `--text-secondary`, and hierarchy is carried by the
+   mono face and the smaller size rather than by the tone. `.ql-frow.open`
+   makes the point that this is not only a hover state: an open fold WEARS the
+   lightened ground with no cursor anywhere near it. Tertiary is still right
+   where the ground cannot move — the lede, the stat labels, the panel subs,
+   `.ql-subject`, `.ql-crowhead` — and on `--surface-raised`, which lightens to
+   4.62:1 and still passes.
    ========================================================================== */
 
 .sev-blocking { --sev-fg: var(--status-danger-fg); --sev-bg: var(--red-tint); --sev-rule: var(--red-500); --sev-dot: var(--red-500); }
@@ -4635,7 +4649,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 }
 .ql-sevchip:hover { background: var(--surface-hover); }
 .ql-sevchip.on { background: var(--sev-bg); box-shadow: inset 0 0 0 1px var(--sev-rule); }
-.ql-sevchip .n { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ql-sevchip .n { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
 
 .ql-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--sev-dot); }
 .ql-dot.clean { background: var(--lime-500); }
@@ -4657,7 +4671,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .ql-openrow:hover { background: var(--surface-hover); }
 .ql-openrow .mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .ql-openrow .nm { font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ql-openrow .sub { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary); }
+.ql-openrow .sub { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary); }
 .ql-openrow .bug { flex: none; font: var(--weight-medium) var(--text-xs)/1.4 var(--font-mono); color: var(--text-link); }
 .ql-openrow .tag, .ql-frow .tag, .ql-barea .tag, .ql-brow .tag { flex: 0 0 74px; }
 
@@ -4697,8 +4711,8 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .ql-frow .fill { display: block; height: 100%; background: var(--lime-500); }
 .ql-frow .track.part .fill { background: var(--amber-500); }
 .ql-frow .n { flex: 0 0 56px; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
-.ql-frow .avg { flex: 0 0 56px; text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
-.ql-frow .clean { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ql-frow .avg { flex: 0 0 56px; text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
+.ql-frow .clean { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
 
 .ql-fbody {
   padding: var(--space-4) var(--space-6) var(--space-5) 44px;
@@ -4769,7 +4783,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 }
 .ql-crow:hover { background: var(--surface-hover); }
 .ql-crow .c-check .nm { font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ql-crow .c-check .sub { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary); }
+.ql-crow .c-check .sub { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary); }
 .ql-crow .c-on { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
 .ql-crow .c-last { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); }
 /* A run's own result, and the one tone rule that matters: a check that has
@@ -4778,7 +4792,7 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .ql-crow .c-last.pass { color: var(--status-success-fg); }
 .ql-crow .c-last.fail { color: var(--status-warning-fg); }
 .ql-crow .c-last.flake { color: var(--text-secondary); }
-.ql-crow .c-pass, .ql-crow .c-time { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ql-crow .c-pass, .ql-crow .c-time { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
 
 /* ---- the two composers ---- */
 .ql-composer {
@@ -4807,8 +4821,8 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 }
 .ql-barea:hover { background: var(--surface-hover); }
 .ql-barea .nm { flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-primary); }
-.ql-barea .n { flex: none; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
-.ql-barea .unc { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ql-barea .n { flex: none; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
+.ql-barea .unc { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
 
 .ql-subject-group { display: contents; }
 .ql-subject {
@@ -4828,8 +4842,8 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .ql-brow:hover { background: var(--surface-hover); }
 .ql-brow .id { flex: none; font: var(--weight-medium) var(--text-xs)/1.4 var(--font-mono); color: var(--text-link); }
 .ql-brow .t { flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ql-brow .repro { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
-.ql-brow .age { flex: 0 0 34px; text-align: right; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.ql-brow .repro { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
+.ql-brow .age { flex: 0 0 34px; text-align: right; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
 .ql-brow .ql-act { flex: 0 0 76px; text-align: right; }
 
 @media (max-width: 1080px) {

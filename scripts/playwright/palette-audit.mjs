@@ -72,10 +72,18 @@ function readStackEnv() {
 // the same absence-mistaken-for-a-pass this tool exists to catch. The board's
 // Backlog and Development views are two full screens' worth of tone that first
 // paint cannot reach, so each is walked as its own row and named as one.
+//
+// A press also LEAVES THE GROUND LIT: the cursor rests on whatever was clicked
+// last, so that row is measured over `--surface-hover` rather than at rest,
+// which is how the Quality bug-area counts were caught at 4.30:1. That is a
+// state a reader really sees, so it is kept — and `quality-open` presses a
+// feature fold because `.ql-frow.open` wears the same lightened ground with no
+// cursor on it at all.
 const SCREENS = [
   { slug: 'dashboard', hash: '#/' },
   { slug: 'overview', hash: '#/p/{slug}' },
   { slug: 'quality', hash: '#/p/{slug}/quality' },
+  { slug: 'quality-open', hash: '#/p/{slug}/quality', press: ['.ql-frow'] },
   { slug: 'quality-checks', hash: '#/p/{slug}/quality', press: ['.ql-tabs .k-tab:nth-child(2)'] },
   { slug: 'quality-bugs', hash: '#/p/{slug}/quality', press: ['.ql-tabs .k-tab:nth-child(3)', '.ql-barea'] },
   { slug: 'roadmap', hash: '#/p/{slug}/roadmap' },

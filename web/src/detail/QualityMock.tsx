@@ -39,6 +39,12 @@
 //    Every deep link still RESOLVES and the highlight is ignored, exactly as
 //    the board's and Activity's are.
 //
+// THE KIT'S NUMBERS DO NOT RECONCILE AND THAT IS THE KIT'S, NOT A BUG HERE:
+// the strip and By feature describe a 59-check suite, while the Checks tab
+// lists the 33 the kit actually wrote out. Left alone on purpose — inventing
+// 26 more rows to square them would be authoring sample data rather than
+// porting a screen, and the real numbers arrive with the wiring anyway.
+//
 // Everything below is the kit's own and all of it is local state: the three
 // tabs, the severity filter, the feature folds, the area/Grouped-Flat controls,
 // the two composers and the bug-area folds. Nothing persists — closing the tab
@@ -47,7 +53,7 @@
 // (critical · high · medium · low) or a check's pass/fail; a wiring session
 // owes a mapping decision, not a rename.
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { KitIcon } from './kit/KitIcon';
 
 type SevKey = 'blocking' | 'broken' | 'degraded' | 'flaky' | 'cosmetic';
@@ -508,7 +514,7 @@ function CheckRow({ check }: { check: MockCheck }) {
    over a control is how two forms drift apart. */
 
 function Composer({ title, submit, onClose, children }: {
-  title: string; submit: string; onClose: () => void; children: React.ReactNode;
+  title: string; submit: string; onClose: () => void; children: ReactNode;
 }) {
   return (
     <section className="ql-composer">
