@@ -4,7 +4,7 @@
 // (MDP-3 … MDP-14). The tab that read `roadmap_items` — the Ready / Thinking /
 // Parked columns derived from `tier`, `skipped` and the approval predicate, the
 // HELD chip, ✓ Keep, Open, Park and Delete — was removed at the owner's request
-// and replaced with this. BoardMock's header lists what that costs across both
+// and replaced with this. Board.tsx's header lists what that costs across both
 // tabs; the two specific to this one:
 //
 //  • ✓ KEEP HAS NO SURFACE HERE ANY MORE, and since #444 it has none on For you

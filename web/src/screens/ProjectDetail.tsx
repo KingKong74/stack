@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { RoadmapItem, Priority } from '../types';
 import {
   getProjectDetail, type ProjectDetailData,
@@ -16,7 +16,7 @@ import { absoluteHref, type MenuOption } from '../components/MoreMenu';
 import { QualityMock, QUALITY_ATTENTION } from '../detail/QualityMock';
 import { ForYouMock, AUTO_IDEA_COUNT } from '../detail/ForYouMock';
 import { PlansMock } from '../detail/PlansMock';
-import { BoardMock } from '../detail/BoardMock';
+import { Board } from '../detail/Board';
 import { IdeasMock } from '../detail/IdeasMock';
 import { TabStrip } from '../components/TabStrip';
 import { Modal } from '../components/Modal';
@@ -37,7 +37,11 @@ type Tab = 'overview' | 'quality' | 'roadmap' | 'activity' | 'auto' | 'ideas' | 
 /** The keys that land on the For-you screen, in strip order. */
 const FORYOU_TABS: Tab[] = ['overview', 'activity', 'auto'];
 const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
-/** The two tabs that are kit MOCKUPS and bring their own heading block. */
+/** The two tabs that bring their OWN heading block — the console kit's screens
+ *  open with a breadcrumb and their own title, so this screen's `detail-head`
+ *  would stack a second one above them. The board is wired now (#443's mockup
+ *  is Board.tsx) and still draws its own head, so it stays on this list: what
+ *  the list means is "brings a heading", never "is a mockup". */
 const isMockTab = (t: Tab) => t === 'roadmap' || t === 'ideas';
 // The four readings of a project. `navSections` below is the ONE list of them
 // — #432 moved them from a horizontal strip into the console's left rail, and
@@ -181,10 +185,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     editing: RoadmapItem | null; branch?: string; area?: string;
   }>({ open: false, priority: 'should', title: '', note: '', editing: null });
   const roadModalClosed = { open: false, priority: 'should' as Priority, title: '', note: '', editing: null };
-  // The half-typed-item DRAFT went with the board (BoardMock's header). It was
-  // saved on a stray dismiss and offered back by a strip on the Roadmap tab;
-  // with no strip to offer it, keeping one would be storing something nobody
-  // can ever get back — so the modal no longer saves one at all.
+  // The half-typed-item DRAFT went with the board's first cull (#443) and did
+  // not come back with the wiring. It was saved on a stray dismiss and offered
+  // back by a strip on the Roadmap tab; with no strip to offer it, keeping one
+  // would be storing something nobody can ever get back — so the modal no
+  // longer saves one at all.
   const [shareOpen, setShareOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   // The Curator's board clean-up: null = closed, 'loading', or the suggestion list.
@@ -255,7 +260,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
 
   const roadmap = data.roadmap;
 
-  const allRoadmap = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
+  // MEMOISED BECAUSE THE BOARD HOLDS IT. Board.tsx re-seeds its own rows
+  // whenever this array's identity changes, so a fresh array on every render
+  // would throw away an in-flight optimistic move on the next keystroke
+  // anywhere on the screen. The ORDER matters too: `queueOrder` uses payload
+  // order as its last sort key, and this is the payload's order.
+  const allRoadmap = useMemo(
+    () => [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont],
+    [roadmap],
+  );
   // THE PROJECT-SCOPED REVIEW QUEUE IS GONE with the tab that drew it. It was
   // every 'hook' and 'fly' row no human had signed off — held from the
   // overnight runner by `lib/approval.ts` until someone kept one — and
@@ -263,12 +276,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // Nothing filters for them now; the holding is unchanged and only the
   // browser's way out of it went (ForYouMock's header).
 
-  // THE BOARD AND ROADMAP ROWS CARRY NO COUNT any more. They used to say how
-  // many open items and how many captured, and the rule those counts obeyed was
-  // that a row's number and the screen behind it must agree or one of them is
-  // lying. Both screens are mockups now (BoardMock, IdeasMock) and can show
-  // neither number, so the honest badge is none rather than a real count that
-  // opens onto rows it does not describe.
+  // THE BOARD ROW CARRIES A REAL COUNT AGAIN, and ROADMAP still carries none.
+  // The rule is unchanged — a row's number and the screen behind it must agree
+  // or one of them is lying — and the board is wired, so its badge is the open
+  // cards it actually draws. IdeasMock is still the kit's sample rows and can
+  // show no honest number, so the honest badge there is none.
   //
   // QUALITY'S BADGE IS THE SAME RULE, ANSWERED THE OTHER WAY. It used to be red
   // checks plus serious open bugs (#278); its screen is a mockup now, so the
@@ -439,7 +451,13 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       label: 'Workspace',
       items: [
         {
+          // THE BOARD'S BADGE IS REAL AGAIN. The rule it obeys is the one #444
+          // and #450 stated from the other side — a row's number and the screen
+          // behind it have to agree — and the board is wired now, so the number
+          // is what it draws: open, un-archived cards. Roadmap keeps no badge,
+          // because IdeasMock still cannot show one honestly.
           key: 'roadmap', label: project.name, icon: NavIcons.board,
+          count: allRoadmap.filter((i) => !i.done && !i.archived).length,
           menuLabel: `${project.name} board`,
           menu: placeMenu(hrefTo.detail(slug, 'roadmap'), 'board'), onClick: () => setTab('roadmap'),
         },
@@ -598,13 +616,21 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             one op) is switched off: the button is not rendered at all, rather
             than rendered to fail. Quality has no ✧ and no agent of its own —
             the Auditor was its live session and went when the consoles did. */}
-        {/* BOTH OF THESE ARE MOCKUPS at the owner's request — the kit's own
-            BoardScreen and IdeasScreen on the kit's own sample rows. They take
-            no props because they read nothing: `roadmap` is not passed, no
-            callback is wired, and neither can write. Each file's header lists
-            what stopped being reachable when the real screens went, and the
-            two together are the only record of it in the client. */}
-        {tab === 'roadmap' && <BoardMock />}
+        {/* THE BOARD IS WIRED — the kit's BoardScreen on this project's own
+            roadmap. It takes the flattened payload (memoised above, in payload
+            order, which `queueOrder` depends on), a re-read, and the item
+            modal, which is still the only writer of `tier` and of a human
+            `risk_source`. Its two sibling tabs, Backlog and Development, are
+            still mockups; Board.tsx's header lists the eight decisions the
+            wiring made and the one thing no browser can still do — give a
+            verdict. ROADMAP IS STILL A MOCKUP (IdeasMock) and reads nothing. */}
+        {tab === 'roadmap' && (
+          <Board slug={slug} projectName={project.name} items={allRoadmap}
+            onRefresh={reread} highlightId={highlightId}
+            onEdit={(it) => setRoadModal({
+              open: true, priority: it.bucket, title: it.title, note: it.note, editing: it,
+            })} />
+        )}
         {tab === 'ideas' && <IdeasMock />}
         {/* PLANS IS A MOCKUP TOO at the owner's request, and it was the LAST
             project tab that read anything — the kit's own PlansScreen, all six

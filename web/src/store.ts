@@ -2,7 +2,7 @@ import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Tier, ResumeSince, ProjectDebrief,
-  SchedSpan, ProjectPulse,
+  SchedSpan, ProjectPulse, BoardShape, BoardList,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -906,15 +906,37 @@ export async function patchRoadmapItem(
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });
 }
 
-// ---- THE BOARD'S FURNITURE HAS NO CLIENT LEFT ------------------------------
-// Ten wrappers stood here — the board read (`getBoardShape`) and the writers for
-// areas, labels and lanes. The Roadmap tab that called them is a mockup now
-// (web/src/detail/BoardMock.tsx) and calls nothing, so they go the same way the
-// Curator's two board reads went a few paragraphs of history ago, and for the
-// identical reason: `GET /board`, `POST /board/areas`, `/labels`, `/lists` and
-// their PATCH/DELETE siblings are all still on the server, and THE ROUTES ARE
-// THE RECORD of what a board can still be asked. A new surface writes the
-// wrapper it needs; a wrapper with no surface only reads as one that has one.
+// ---- the board's furniture (GET/POST/PATCH/DELETE /board) ------------------
+//
+// Ten wrappers stood here until #443 made the board a mockup, and the note that
+// replaced them said a new surface writes the wrapper it NEEDS. This is that
+// surface, and these five are what it needs: the read, and the four writes the
+// board's column head can make. The area and label writers are still absent —
+// the board filters BY an area and never renames one, so `POST /board/areas`,
+// `/labels` and their siblings stay what they were, routes with no client. THE
+// ROUTES ARE THE RECORD of what a board can be asked; this file is only the
+// record of what one screen asks.
+export async function getBoardShape(slug: string): Promise<BoardShape> {
+  return request<BoardShape>(`/projects/${encodeURIComponent(slug)}/board`);
+}
+const listsBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/board/lists`;
+export async function createList(slug: string, name: string): Promise<BoardList> {
+  const r = await request<{ list: BoardList }>(listsBase(slug), { method: 'POST', body: { name } });
+  return r.list;
+}
+// `position` is a SWAP, not a re-rank — the server's PATCH says why, and the
+// caller sends the position it wants rather than a direction.
+export async function patchList(
+  slug: string, key: string, patch: Partial<{ name: string; position: number }>,
+): Promise<BoardList> {
+  const r = await request<{ list: BoardList }>(`${listsBase(slug)}/${encodeURIComponent(key)}`, { method: 'PATCH', body: patch });
+  return r.list;
+}
+// The cards do NOT go with it: the server clears their `list_key`, which hands
+// each one back to the derivation rather than orphaning it.
+export async function deleteList(slug: string, key: string): Promise<void> {
+  await request<void>(`${listsBase(slug)}/${encodeURIComponent(key)}`, { method: 'DELETE' });
+}
 export async function deleteRoadmapItem(slug: string, id: number): Promise<void> {
   await request<void>(`${roadmapBase(slug)}/${id}`, { method: 'DELETE' });
 }

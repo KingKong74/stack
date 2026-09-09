@@ -979,6 +979,38 @@ export function listKeyOf(it: RoadmapItem): string {
 }
 
 /**
+ * THE RUN QUEUE'S ORDER, on the client. Twin of the runner's own sort in
+ * `scripts/stack-autopilot.mjs` (`tierRank`) over the server's `ORDER BY
+ * BUCKET_RANK, position` — the two halves of one ordering that no package can
+ * import from another, which is why this is a third spelling rather than an
+ * import.
+ *
+ * TIER IS THE PRIMARY SORT AND UNRANKED SORTS LAST (#227). What the owner wants
+ * NEXT outranks how necessary it is, so an S-tier Could runs before an unranked
+ * Must, and `bucket` is the tiebreak. Getting the order wrong on a board is not
+ * cosmetic: the top of To Do is a claim about what the night takes, and a board
+ * that ranks by bucket alone makes that claim falsely.
+ *
+ * `position` IS NOT IN IT, AND MUST NOT BE ADDED — not because it does not
+ * count, but because it is not on the row. `roadmapItemShape` does not serve
+ * the column; what it serves instead is ORDER, four arrays already sorted
+ * `bucket, position, created_at`. So the third key is the INPUT ORDER, which a
+ * stable sort preserves for free, and every caller therefore owes this
+ * comparator an array that arrived in the payload's own order. That is exactly
+ * how the runner does it (`scripts/stack-autopilot.mjs`: "the array arrives
+ * already ordered must-then-should within bucket position, so a stable sort by
+ * tier alone leaves an unranked board picking exactly as it always did") — and
+ * a `position` field added here without one being served would silently sort
+ * every row on 0.
+ */
+const TIER_RANK: Record<string, number> = { S: 0, A: 1, B: 2, C: 3 };
+const BUCKET_RANK: Record<string, number> = { must: 0, should: 1, could: 2, wont: 3 };
+export const tierRank = (t: string): number => TIER_RANK[String(t || '').toUpperCase()] ?? 4;
+export const queueOrder = (a: RoadmapItem, b: RoadmapItem): number =>
+  tierRank(a.tier) - tierRank(b.tier)
+  || (BUCKET_RANK[a.bucket] ?? 3) - (BUCKET_RANK[b.bucket] ?? 3);
+
+/**
  * THE BUILT-NOT-VERDICTED PREDICATE (#374), and the ONE definition of it on the
  * client. It lives here rather than in `lib/spine.ts` — which is where it was
  * written and which re-exports it, so every existing import still works —
@@ -1007,15 +1039,15 @@ export const isBuilt = (it: RoadmapItem): boolean =>
 // GEOMETRY — where a bar is drawn — which is arithmetic that has one right
 // answer and belongs nowhere near a model.
 //
-// AND THE BOARD ITSELF HAS SINCE GONE (web/src/detail/BoardMock.tsx is a
-// mockup, at the owner's request), which took `listKeyOf`'s and `UNALLOCATED`'s
-// last callers with it. They stay for the same reason as the exports named
-// below: `listKeyOf` is the client twin of the server's `listFor`, and
-// `server/test/plan-lanes.test.mjs` holds the two in step. `areaMatches` still
-// has a real caller — the item modal. `isBuilt` and `slipOf` no longer do:
-// Plans was the last screen to read either and #451 made it a mockup too, so
-// the whole schedule vocabulary in this file is now written, served and read by
-// nothing in a browser. It is still the definition (#374, #401) and the
+// AND THE BOARD IS WIRED AGAIN (web/src/detail/Board.tsx), which gave
+// `listKeyOf` its caller back — it is the client twin of the server's
+// `listFor`, and `server/test/plan-lanes.test.mjs` holds the two in step. So is
+// `isBuilt`, one derivation deeper: `listKeyOf` is what calls it, which is why
+// the board draws an In Review lane at all. `queueOrder` above is the board's
+// too. `areaMatches` has the item modal. `slipOf` and `UNALLOCATED` still have
+// NO caller in any browser — Plans was the last screen to read either and #451
+// made it a mockup, so the whole SCHEDULE vocabulary in this file is written,
+// served and read by nothing. It is still the definition (#401) and the next
 // wiring session's starting point — read the paragraph above before deleting.
 //
 // SEVERAL EXPORTS HERE HAVE NO CALLER LEFT: `Move`, the schedule geometry,

@@ -3772,6 +3772,22 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .km-search { width: 220px; flex: 0 1 220px; }
 .km-search svg { color: var(--text-tertiary); }
 .km-views { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-2); flex: none; }
+.km-filter { position: relative; display: inline-flex; }
+.km-count { margin-left: auto; font: var(--type-body-sm); color: var(--text-secondary); }
+/* A write that did not land says so where the press was, not in a toast this
+   app does not have. */
+.km-err {
+  padding: var(--space-4) var(--space-5); border-radius: var(--radius-md);
+  border: 1px solid var(--critical-line); background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+  font: var(--type-body-sm);
+}
+.km-composer-pick { display: inline-flex; align-items: center; gap: var(--space-3); }
+.km-composer-pick button {
+  border: 0; background: transparent; cursor: pointer;
+  font: var(--type-caption); padding: 2px 4px; border-radius: var(--radius-sm);
+}
+.km-composer-pick button.on { background: var(--surface-selected); }
 
 /* ---- the lanes ---- */
 .km-cols { display: flex; gap: var(--space-5); align-items: flex-start; overflow-x: auto; padding-bottom: var(--space-4); }
@@ -3785,6 +3801,34 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .km-colhead .nm { font: var(--type-label); color: var(--text-secondary); }
 .km-colhead .lim { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
 .km-colhead .tools { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+
+/* THE BOARD IS WIRED (Board.tsx) and these are the pieces the mockup had no
+   need of: a drop target, a card in flight, a column with nothing in it, the
+   catch-all lane, an inline column rename, and the tags a real card carries.
+   Every tone is a `:root` token — an inline hex here is what `run-palette-audit`
+   exists to catch. */
+.km-col.over { border-color: var(--border-focus); background: var(--surface-overlay); }
+.km-col.catchall { border-style: dashed; }
+.km-colempty {
+  padding: var(--space-5) var(--space-4); text-align: center;
+  font: var(--type-caption); color: var(--text-tertiary);
+}
+.km-colname {
+  width: 100%; height: 26px; padding: 0 6px;
+  background: var(--surface-card); color: var(--text-primary);
+  border: 1px solid var(--border-focus); border-radius: var(--radius-sm);
+  font: var(--type-label); outline: none;
+}
+.km-addcol {
+  width: var(--column-w); flex: 0 0 auto; min-height: 44px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  border: 1px dashed var(--border-default); border-radius: var(--radius-lg);
+  background: transparent; cursor: pointer; padding: var(--space-4);
+  color: var(--text-tertiary); font: var(--type-label);
+  transition: var(--transition-control);
+}
+.km-addcol:hover { color: var(--text-primary); border-color: var(--border-focus); }
+.km-addcol.open { cursor: default; }
 .km-colbtn {
   width: 24px; height: 24px; border: 0; background: transparent; cursor: pointer;
   border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center;
@@ -3837,6 +3881,15 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .km-cardmeta .id { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
 .km-cardmeta .pts { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
 .km-cardmeta .right { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+.km-card.dragging { opacity: 0.45; }
+.km-card[draggable='true'] { cursor: grab; }
+.km-cardtags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.km-cardtags .k-tag { display: inline-flex; align-items: center; gap: 4px; }
+/* The card menu opens BELOW the meta row, where the priority list opens, rather
+   than at the card's top-right like a column's — the card is short enough that
+   a menu anchored to its head would cover the title it belongs to. */
+.km-menu.card { top: auto; bottom: 6px; right: var(--space-5); }
+.km-menu.left { right: auto; left: 0; }
 .km-pri {
   width: 24px; height: 24px; border: 0; cursor: pointer;
   border-radius: var(--radius-sm); background: var(--surface-raised);

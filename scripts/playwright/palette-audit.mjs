@@ -86,7 +86,16 @@ const SCREENS = [
   { slug: 'quality-open', hash: '#/p/{slug}/quality', press: ['.ql-frow'] },
   { slug: 'quality-checks', hash: '#/p/{slug}/quality', press: ['.ql-tabs .k-tab:nth-child(2)'] },
   { slug: 'quality-bugs', hash: '#/p/{slug}/quality', press: ['.ql-tabs .k-tab:nth-child(3)', '.ql-barea'] },
+  // THE BOARD IS WIRED and its cards carry tone the mockup's never did: an
+  // area chip, a branch chip, a parked chip, a verdict chip, a tier and an
+  // estimate — every one of them small text on a card that LIGHTENS to
+  // --surface-overlay under the cursor, which is the exact shape of the #450
+  // findings. First paint measures the cards at rest; the two presses below
+  // measure the two popovers, each over a card the press has left lit.
   { slug: 'roadmap', hash: '#/p/{slug}/roadmap' },
+  { slug: 'board-priority', hash: '#/p/{slug}/roadmap', press: ['.km-card [aria-label^="Priority"]'] },
+  { slug: 'board-cardmenu', hash: '#/p/{slug}/roadmap', press: ['.km-card [aria-label^="More actions for #"]'] },
+  { slug: 'board-colmenu', hash: '#/p/{slug}/roadmap', press: ['[aria-label^="Column actions"]'] },
   { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'] },
   { slug: 'board-dev', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(3)'] },
   { slug: 'activity', hash: '#/p/{slug}/activity' },

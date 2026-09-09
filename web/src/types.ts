@@ -103,6 +103,15 @@ export interface RoadmapItem {
   subArea: string;
   builtNote: string;   // what actually landed — shown on the Reviews view
   reviewTag: string;   // archive verdict: '' | solid | needs-work | rethink
+  // #263 — WHO gave the verdict above and on what evidence. The server has
+  // shaped these since #263 and no client had ever declared them: the board is
+  // the first screen to read one, and it reads only `verdictSource`, so that a
+  // machine verdict at least SAYS it is one. That is a third of #263's third
+  // leg. `verdictEvidence` is the rest of it — nothing renders it yet, and
+  // nothing lets a human disagree, which CLAUDE.md calls a debt in those words.
+  verdictSource: 'human' | 'auto';
+  verdictAt: string | null;
+  verdictEvidence: string;
   reviewTags: string[]; // review annotations ('fix', 'needs-more', …) — #146
   refineNote: string;  // the refine delta — what to change on top ('' = none) — #146
   reviewShelved: boolean; // review set aside for later — off the To-verify list — #148
@@ -146,10 +155,10 @@ export interface BoardArea {
 }
 // EVERY LANE RENAMES AND DELETES (#428) — there is no `locked`, because there
 // is no locked lane. The four keys `listKeyOf` derives into are still wiring,
-// and what keeps deleting one safe is the board's catch-all lane rather than a
-// flag on the row (server/src/lists.js). No client draws lanes any more —
-// the board is a mockup (web/src/detail/BoardMock.tsx); the derivation is the
-// server's and the overnight runner's.
+// and what keeps deleting one safe is the board's CATCH-ALL lane rather than a
+// flag on the row (server/src/lists.js). The board draws lanes again
+// (web/src/detail/Board.tsx) and ships that catch-all;
+// `server/test/plan-lanes.test.mjs` is what holds it there.
 export interface BoardList { id: number; key: string; name: string; position: number }
 // A label the owner has defined for THIS project (#382 — was a code registry).
 // `tone` is one of the closed Atlas set, because styles.css needs a rule for it.

@@ -13,14 +13,14 @@ rooms; `/api/control`, `/api/review`, `/api/merge`), **Polaris** (Futures tab, g
 the **instructions tree** (managed CLAUDE.md library + host sync), the **Workbench** (canvas tab,
 `/api/…/workbench`, `workbench_*`, the Drafter), the Roadmap **Timeline** (#428) and the Roadmap
 **strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`, the ✧ cleanup modal), and then the screens
-themselves: EVERY PROJECT TAB IS A KIT MOCKUP NOW (#443–#451), and the Data rules say what went
-unreachable with them. The Curator's
+themselves: EVERY PROJECT TAB BECAME A KIT MOCKUP (#443–#451) and THE BOARD'S KANBAN IS WIRED BACK
+(#453); the Data rules say what is still unreachable. The Curator's
 `arrange`/`allocate`/`cleanup` are unsurfaced (it keeps `titler` and `assist`). The **TAB AGENTS'
 CONSOLES** went too (#379/#380, with `console_off` kept in the database) and the **Auditor** with
 them, that session being its whole surface; the CURATOR is the only agent left. **`notes` went with the Workbench** — its only reader — so
 the table, its route, the ⌘K scope and the ＋'s composer went; the ＋ is roadmap-only. Rules that
-outlived their surface are kept below and SAY SO — a predicate written for a room is still the only definition of what it
-decided.
+outlived their surface are kept below and SAY SO — a predicate written for a room is still the only
+definition of what it decided.
 
 ## What Stack is
 
@@ -132,21 +132,26 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   arrives as a STRING, above), `lib/plan.ts`, `lib/spine.ts`. **`estimate` stays in WEEKS**, so
   `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet. **NOTHING EDITS OR
   READS THESE** — #428 took the Timeline, their only editor, and #451 the Plans tab #439 gave them.
-- **EVERY PROJECT TAB IS A MOCKUP; NONE READS ANYTHING** (#443–#451, owner's call). The **board**
-  (`roadmap`), the **Roadmap** capture tab (`ideas`), all three **For you** panes, **Quality** and
-  **Plans** are `BoardMock` / `IdeasMock` / `ForYouMock` / `QualityMock` / `PlansMock`: the kit's
-  screens on the kit's rows, reading and writing nothing, each header saying what its cull cost.
-  **GONE FROM THE UI ENTIRELY**: giving a verdict, park/unpark, archive, delete-from-the-board,
-  labels, lane drag, the ⎇ claim, signing off or dismissing a held row (#444: no browser can clear
-  `reviewed_at` or tombstone a fingerprint), with #450 **running, adding, editing or deleting a
-  CHECK, filing a bug and moving its status** (the deck still keeps or deletes an extracted bug),
-  and with #451 the stored schedule and the plan row's way into the item modal.
-  Every column and route survives and the runner still reads them, so a parked item stays
-  parked and nothing unparks it; **`./stack` and the API are the way in.** A mockup's nav badge
-  counts the MOCKUP (#444, #450): a row's number and the screen behind it have to agree.
-  `server/test/plan-lanes.test.mjs` says what a real board owes on its return.
+  (`estimate` is the exception and only just: the board DRAWS it on a card, and nothing writes it.)
+- **ONLY THE BOARD'S KANBAN READS OR WRITES ANYTHING** (#443–#453, owner's call). `IdeasMock`,
+  `ForYouMock` (three panes), `QualityMock`, `PlansMock` and the two blocks at the foot of
+  `Board.tsx` (its Backlog and Development sub-tabs) are the kit's screens on the kit's rows,
+  reading and writing nothing, each header saying what its cull cost; `Board.tsx`'s carries the
+  eight decisions where the kit's picture and this data disagreed.
+  **STILL UNREACHABLE FROM A BROWSER, `./stack` and the API being the way in**: giving a **verdict**
+  (the board says one came from the auto path and cannot reverse it), **labels**, the **⎇ claim**,
+  **running/adding/editing/deleting a CHECK, filing a bug and moving its status** (#450; the deck
+  still keeps or deletes an extracted bug), and **the stored schedule and the plan row's way into
+  the item modal** (#451). **BACK, ON THE CARD MENU** (#453): park/unpark, archive, delete (still
+  tombstoning a `hook` fingerprint) and the **sign-off** releasing a held `hook`/`fly` row.
+  A mockup's nav badge counts the MOCKUP, the board's its real open cards: either way a row's number
+  and the screen behind it have to agree. `server/test/plan-lanes.test.mjs` pins the catch-all lane
+  the board owes for #428's unlocking of rename and delete.
 - **The board order IS the run queue.** `position` is the bucket tiebreak and still PATCHable, but
-  **nothing in the client writes it** — the Backlog mockup DRAWS rank order and writes none of it.
+  **nothing in the client writes it** — and the kanban has no within-column drag on purpose, because
+  `position` is scoped to the BUCKET and its columns cut across all four. `queueOrder` in
+  `lib/plan.ts` is the client twin of the runner's sort: **tier, then bucket, then PAYLOAD ORDER** —
+  a stable sort over arrays the server already ordered, since `position` is not on the served row.
 - **`claimed_by` is the branch claim** (#277 — called a "lane" until the rename; the `lane/` git ref
   prefix is unchanged, naming branches already on origin). Claim before starting; a terminal tab's
   claim is `term:<name>`. It is the don't-re-pick marker, injected by SessionStart as "Branch claims —
@@ -192,21 +197,19 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   drew an empty queue over a full night's work. The predicate is `done` **OR** (`built_note`
   non-empty **AND** `claimed_by` non-empty). **Both halves are load-bearing**: un-ticking clears
   `claimed_by` and keeps `built_note`, so `built_note` alone re-queues rejected changes and
-  `claimed_by` alone queues items at claim time. It was the Review room's; the room is culled and
-  `isBuilt` in `web/src/lib/plan.ts` is its ONLY definition (#440); since #451 no screen calls it,
-  which is not licence to simplify it back. Approving does NOT tick (the merge
-  job does, with a human verdict stored). **Anything acting on a built change shares the
-  predicate**; a path that opens `if (!item.done) 400` refuses the whole night's work.
+  `claimed_by` alone queues items at claim time. `isBuilt` in `web/src/lib/plan.ts` is its ONLY
+  client definition (#440) and the board's In Review column is what draws it. Approving does NOT
+  tick (the merge job does, with a human verdict stored). **Anything acting on a built change shares
+  the predicate**; a path that opens `if (!item.done) 400` refuses the whole night's work.
 - **`verdict_source` / `verdict_at` / `verdict_evidence` (#263, owner-sanctioned)** — the one place a
   machine may verdict instead of the human, and only while it is **positive evidence**, **reversible**
   and **visible**; drop one and it is not sanctioned. The gate is one pure function,
   `scripts/lib/autoverdict.mjs`, whose header carries the reasoning — never a second spelling. Two
   exclusions are not negotiable: a refine round and a limit-hit run. Clearing `review_tag` resets
   `verdict_source` to 'human' and wipes the other two in the same statement, so ⎌ undo needs no second
-  route. **THE "VISIBLE" LEG IS CURRENTLY UNMET AND THAT IS A DEBT, NOT A DESIGN.** No screen reads
-  `verdict_evidence` or gives a human verdict at all, so every verdict on record now arrives from
-  the auto path with nobody able to read or reverse it in a browser.
-  Whatever surfaces a change next owes both: the evidence, and a way to disagree.
+  route. **THE "VISIBLE" LEG IS STILL A DEBT, NOT A DESIGN.** The board says a verdict came from the
+  auto path and that is the whole of it: no screen reads `verdict_evidence` or lets anyone give or
+  reverse a verdict. What surfaces a change next owes the evidence AND a way to disagree.
 - **Un-ticking clears `review_tag` and `claimed_by`** (unless the same PATCH sets them), so a sent-back
   item re-enters play fresh. Ticking clears `review_tags`, `refine_note` and `review_shelved` — each
   verify round starts unannotated.
@@ -216,18 +219,17 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   the tick is what makes "is this an unclosed round" answerable at all.
 - **`agent_profiles` holds only OVERRIDES.** The built-ins (`executor`, `reviewer`) live in
   `server/src/agent-profiles.js` and are never seeded, so a fresh database spawns identically to a
-  customised one — and DELETE on a builtin RESETS it rather than removing it, because the spawn path
-  needs `executor`. `roadmap_items.agent_profile` ('' = default) is a free string, validated
-  client-side, deliberately absent from the tick/un-tick clearing lists. The invariant with teeth:
-  **a spawn always gets at least one building agent** (no profiles, all disabled or an unknown key
-  all fall back to the executor), or the expensive director model silently does all the building.
+  customised one — and DELETE on a builtin RESETS it, because the spawn path needs `executor`.
+  `roadmap_items.agent_profile` ('' = default) is a free string, validated client-side, deliberately
+  absent from the tick/un-tick clearing lists. The invariant with teeth: **a spawn always gets at
+  least one building agent** (no profiles, all disabled or an unknown key all fall back to the
+  executor), or the expensive director model silently does all the building.
 - **Model spend is TWO populations and they must never be mixed.** `autopilot_runs` answers to the
   executor/advisor policy; `sessions.model_usage` (the human's interactive work) does not, so a model
   picked by hand is **not drift**. Any merged share must be **token-based**, because a transcript
   carries no cost. A manual session's `model_usage` (main loop) and `agent_usage` (subagents) ARE its
-  director/executor split. (Both readers are culled — the Roles room, then #444's
-  Overview bands — so `pulse.js` and its route compute for NO reader: served, tested, fetched by
-  nothing.)
+  director/executor split. (Both readers are culled, so `pulse.js` and its route compute for NO
+  reader: served, tested, fetched by nothing.)
 - **A subagent's usage is NOT in the parent transcript — it has its own**, at
   `<transcript-dir>/<session-id>/subagents/agent-*.jsonl` with a `.meta.json` naming the `agentType`.
   The parent records only the Agent call and never sets `isSidechain`, so globbing top-level `*.jsonl`
@@ -245,33 +247,31 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `detail`** (#243) — three places re-parse that string, so merge's contract was left alone. The
   `advise` lane matches on the column; its `advice` NULL means NO PASS RAN, never "no conflicts".
 - **A night's outcomes partition across FOUR buckets** — `landed` / `failed` (failed + limit) /
-  `planned` / `noCommits` — from five outcome values, and they always sum to the run count. The
-  shared `debrief.js` is culled; `pulse.js` spells the same partition out itself and says why — if a
-  second reader ever comes back, that is the one to read.
+  `planned` / `noCommits` — from five outcome values, always summing to the run count. `debrief.js`
+  is culled; `pulse.js` spells the same partition out and says why — read that one.
 - **Deleting a `source='hook'` bug or roadmap item tombstones its fingerprint** so the next push
-  won't re-create it. That is what Dismiss means, and why it has no undo.
+  won't re-create it — what Dismiss means, and why it has no undo.
 - **`DELETE /api/projects/:slug` is SOFT** — stamps `deleted_at`, clears the share link, keeps every
-  row; deleted projects vanish from live queries and their collections 404. The real cascade is
-  `/purge`, valid only on binned projects.
+  row; deleted projects vanish from live queries and their collections 404. `/purge` is the real
+  cascade, valid only on binned projects.
 - **`checks.auth`, `checks.external` and what an edit clears are in `routes/checks.js`'s header.**
-  The cross-cutting half: `/report` writes `check_results`
-  but NOT a `check_runs` row, because `check_runs` is the SUITE's ledger #212 auto-merge and #263
-  auto-verdict spend against — one reported result there would read as a suite of 1/1 passed, a green
-  light manufacturable from outside Stack.
+  The cross-cutting half: `/report` writes `check_results` but NOT a `check_runs` row, because
+  `check_runs` is the SUITE's ledger #212 auto-merge and #263 auto-verdict spend against — one
+  reported result there would read as a suite of 1/1 passed, a green light manufacturable from
+  outside Stack.
 - **The `worktrees` table is a REGISTER, not a manager** (#229, and `routes/worktrees.js`'s header says
   why): the host alone runs git, identity is the PATH, release is a stamp. Two things that reach past
   that file: `session_name` keeps the `stack-term-` prefix, which is what puts a session on the
   running-sessions strip and what the host reapers key off; and trees live at
   `~/.stack/worktrees/<key>`, inside the $HOME cwd jail the terminal daemon enforces — move the root
   outside $HOME and browser access breaks silently.
-- **`0 = unlimited`** for `autopilotTokens`/`autopilotMaxItems` (#260); `termIdleHours` `0 = never`.
-- **A repo's CLAUDE.md is the repo's.** Stack used to manage a tree of them and write each from its
-  own copy every five minutes; that surface is culled. It is worth knowing WHY it went the way it
-  did: the sync was authoritative by design, so a stale DB copy silently reverted this very file for
-  several sessions running, and each one filed it as a mystery blocker. Nothing writes a CLAUDE.md
-  now — if something starts to again, it needs an off switch before it needs a schedule.
+- **`0 = unlimited`** for `autopilotTokens`/`autopilotMaxItems` (#260); `termIdleHours` 0 = never.
+- **A repo's CLAUDE.md is the repo's.** Stack used to write each from its own copy every five
+  minutes; the sync was authoritative by design, so a stale DB copy silently reverted this very file
+  for several sessions running and each filed it as a mystery blocker. That surface is culled and
+  nothing writes a CLAUDE.md now — if something starts to, it needs an off switch before a schedule.
 - **A worktree report's NULL is not `[]`** (#365) — same rule as a NULL `review_verdict`: defaulting
-  it to `[]` reports uncommitted work as absent. The type is `Worktree[] | null`; never default it.
+  it reports uncommitted work as absent. The type is `Worktree[] | null`; never default it.
 - **A branch's four-valued merge state (#363) is derived, never stored**, in `web/src/lib/branch.ts` —
   its header carries the guesses that cost the first cut its correctness. The one to hold in mind
   everywhere: **`unprobed` is not `clean`**, the same NO PASS RAN rule as a NULL `review_verdict`.
@@ -280,15 +280,15 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   covers. `plan` still names its branches in the plan (an ordering that hid them would not be honest)
   but the press leaves them alone. None of the three relaxes the conflict probe, the #212 risk gate or
   the merge confirm.
-- **THE TAB AGENTS RUN CLAUDE ON THE HOST (#364), not Gemini** — `agentClient().ask()` goes through the
-  terminal daemon's uplink to `claude -p --output-format json` on the owner's own subscription, so the
-  no-paid-external-AI rule holds. Three consequences: **readiness is the DAEMON, not a key** (a
-  switched-off agent is reported before an offline host); **every tool is disabled and they run in a
-  scratch directory**, since an agent prompt is assembled from tracker rows — text somebody else wrote
-  — and NOT the autopilot's `--dangerously-skip-permissions` posture, safe only because it runs its
-  own code in a throwaway worktree; and **`ask()` returns PARSED JSON** (`parseAgentJson`,
-  fence-tolerant), which every ✧ call site depends on. **Gemini is not gone** — the per-push review
-  note, check assertions, labelling and triage are still Gemini, still key-gated.
+- **THE TAB AGENTS RUN CLAUDE ON THE HOST (#364), not Gemini** — `agentClient().ask()` goes through
+  the terminal daemon's uplink to `claude -p --output-format json` on the owner's own subscription,
+  so the no-paid-external-AI rule holds. Three consequences: **readiness is the DAEMON, not a key**
+  (a switched-off agent is reported before an offline host); **every tool is disabled and they run
+  in a scratch directory**, since an agent prompt is assembled from tracker rows — text somebody
+  else wrote — and NOT the autopilot's `--dangerously-skip-permissions` posture, safe only because
+  it runs its own code in a throwaway worktree; and **`ask()` returns PARSED JSON**
+  (`parseAgentJson`, fence-tolerant). **Gemini is not gone** — the per-push review note, check
+  assertions, labelling and triage are still Gemini, still key-gated.
 - **AN AGENT'S BINDING IS CODE, NOT DATA (#361, #375).** `src/agents.js` is the registry. An agent's
   `ops` list is CLOSED and is now the WHOLE of what one is (the `console` half went with the
   consoles); `agent_configs` holds only what the owner tunes (enabled, model, guidance, `ops_off`),
@@ -306,13 +306,13 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   that drops anything not a same-origin path.
 - **Branch previews (#208) have no UI left** — route, host sweep and `scripts/stack-preview.mjs`
   survive; a preview is started by hand.
-- **A batch verdict must count absence apart from green** — the rule that outlived the Review rail:
-  an evidence summary tallies unrun checks and absent verdicts SEPARATELY from passing ones, or a
-  select-all becomes a blind mass-approve.
-- **An autopilot `stack-auto-*` session is READABLE from the browser and still not mirrorable, killable
-  or typeable-into** (#366). `listAutoSessions()` is a SIBLING of `listStackSessions()`, and the
-  terminal's mirror/kill/reap paths read the `stack-term-*` list only — widening `listStackSessions` to
-  cover both is the obvious tidy-up, and it hands the browser a kill button for a session running with
+- **A batch verdict must count absence apart from green** (the rule that outlived the Review rail):
+  tally unrun checks and absent verdicts SEPARATELY from passing ones, or a select-all is a blind
+  mass-approve.
+- **An autopilot `stack-auto-*` session is READABLE from the browser and still not mirrorable,
+  killable or typeable-into** (#366). `listAutoSessions()` is a SIBLING of `listStackSessions()`,
+  whose `stack-term-*` list alone the mirror/kill/reap paths read — widening it to cover both is the
+  obvious tidy-up, and it hands the browser a kill button for a session running with
   `--dangerously-skip-permissions`. The rest is in `routes/terminal.js`'s header.
 
 ## Fail-safe direction (get this right or you delete work)
@@ -426,8 +426,8 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
     `draft: ""` when the record doesn't evidence a change — a model told to produce a delta will
     otherwise produce one, and what comes back is "verify it works" dressed as a finding. Any prompt
     asked for a judgement needs the same escape hatch, or it manufactures one.
-- **Checks are Stack's only automated regression net.** When a route's payload contract changes, change
-  its check in the same commit — a green suite is the evidence #212 and #263 spend.
+- **Checks are Stack's only automated regression net.** When a route's payload contract changes,
+  change its check in the same commit — a green suite is what #212 and #263 spend.
 - `templates/stack-agent-context.md` is the single source of truth for the portable agent manual — if the
   API or hook contract changes, update it (`scripts/stack-context.mjs` exports it verbatim).
 - **A strict build is necessary and no longer sufficient for UI work.** Run `scripts/run-ui-smoke.sh` (or
@@ -446,18 +446,18 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
 
 ## Gotchas
 
-- `server` retries the first Postgres connection — don't "fix" that; it's what survives compose order.
+- `server` retries its first Postgres connection — don't "fix" it; it survives compose order.
 - **A CAPPED PROMPT MUST STATE ITS OWN CAP, on the right axis** (#239, #364) — the rule is in
   `prompts.js`'s header and applies to any list, and to host-side material trimmed before it reaches
   a model: one that silently saw a tenth of a diff answers confidently about the other nine.
-- Status vocabulary is `live | building | paused | archived`. The old `active` migrates to `live`.
+- Status vocabulary is `live | building | paused | archived`; the old `active` migrates to `live`.
 - The web Dockerfile is multi-stage (Vite build → nginx), which does SPA fallback **and** proxies
   `/api` to `server:4000` plus `/term*` with upgrade headers; in local dev Vite proxies `/api`.
   **Host-side agent ops run far longer than a web request** — nginx's `/api` read timeout and each op's
   own timeout must both clear `claude -p` (a 60s cut made a 240s agent read unreachable, silently,
   for weeks), and Cloudflare cuts at ~100s regardless.
 - Both closure counts in `totals` lean on `updated_at`, the only stamp either table carries — read
-  them as MOVEMENT, not an exact ledger.
+  as MOVEMENT, not a ledger.
 - **`autopilot.js`'s `JOB_SELECT` names its columns on purpose** (#243) — a `SELECT j.*` ships the
   kilobyte `advice` text on every job poll AND leaves `adviceReady` false forever.
 - `stack-autopilot.mjs` still inlines its own `git worktree add/remove` rather than calling

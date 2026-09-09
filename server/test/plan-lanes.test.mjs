@@ -10,17 +10,15 @@
 //     claim-first derivation left every verdicted change sitting in "In
 //     progress" for as long as its branch lived. `review_tag` has to outrank
 //     `claimed_by` here, and `done` has to stay out of it entirely.
-//  2. THE LANES NO LONGER HAVE A CLIENT AT ALL, and that is why the lock that
-//     used to guard them is still off. #428 unlocked renaming and deleting a
-//     lane on one condition: the board drew an UNFILED catch-all, so a card
-//     whose resolved key lost its column still rendered somewhere. The board is
-//     a MOCKUP now (web/src/detail/BoardMock.tsx) and reads no rows, so there is
-//     no rendering left to lose a card from — the four structural checks on
-//     that catch-all are gone with the file that carried them. What survives is
-//     the derivation itself, which the overnight runner and every server reader
-//     still depend on. IF A REAL BOARD EVER COMES BACK, one of the two has to
-//     come back with it: the catch-all lane, or `isProtectedList` in
-//     routes/board.js. Do not let a board ship with neither.
+//  2. THE LANES HAVE A CLIENT AGAIN, AND IT CARRIES THE CATCH-ALL. #428
+//     unlocked renaming and deleting a lane on one condition: the board draws a
+//     catch-all, so a card whose resolved key lost its column still renders
+//     somewhere rather than being counted everywhere and visible nowhere. That
+//     condition went unenforced while the board was a mockup (#443) and reading
+//     no rows; web/src/detail/Board.tsx reads rows again, so the four
+//     structural checks are back. The rule has not moved: a board ships with
+//     the catch-all lane OR with `isProtectedList` back in routes/board.js,
+//     never with neither.
 //
 // It also holds the two twins in step by READING THE FILES: `listKeyOf` in
 // web/src/lib/plan.ts is the client copy of `listFor`, and neither package can
@@ -137,21 +135,44 @@ check('POST /lists still suffixes the key with its position',
   /INSERT INTO project_lists[\s\S]{0,400}?\$\{key\}-\$\{pos\[0\]\.p\}/.test(board)
   || board.includes('`${key}-${pos[0].p}`'), true);
 
-// THE CLIENT HALF IS GONE. Four checks stood here, pinning the board's UNFILED
-// catch-all — the thing that made deleting `shipped` safe. The board that drew
-// it was replaced by a mockup that reads no rows, so there is nothing left to
-// assert and nothing left to lose a card from. The header says what has to come
-// back if a real board ever does.
-//
-// This ALSO pins that the client board is still a mockup: the moment a file
-// under web/src reads lanes again, one of the two guards is owed.
-// Tested by its IMPORTS, not by prose: this file's header talks about store.ts
-// at length, and a word-match would fail on the very comment explaining why it
-// does not use it. `store.ts` is the only module in this client allowed to
-// touch the network, so an import of it is exactly the tripwire.
-const boardMock = readFileSync(join(REPO, 'web/src/detail/BoardMock.tsx'), 'utf8');
-check('the client board is still a mockup that reads nothing',
-  /^import .*from '.*store';$/m.test(boardMock), false);
+// THE CLIENT HALF IS BACK, AND SO IS ITS GUARD. This file's header set the
+// terms while the board was a mockup: a real board may only ship with ONE of
+// the two — the catch-all lane, or `isProtectedList` back on the server. The
+// board is wired again (web/src/detail/Board.tsx), it ships the catch-all, and
+// these are the checks that hold it there. Every one is structural rather than
+// a word match, because this file's own prose names all of these things.
+const boardTsx = readFileSync(join(REPO, 'web/src/detail/Board.tsx'), 'utf8');
+
+// The tripwire the mockup era used, read the other way round: `store.ts` is the
+// only module in this client allowed to touch the network, so an import of it
+// is what says a board reads rows at all. It does now, which is what makes the
+// four checks below owed rather than optional.
+check('the client board reads rows again',
+  /^import \{[\s\S]{0,400}?\} from '\.\.\/store';$/m.test(boardTsx), true);
+
+// 1. There is a catch-all key at all, and it cannot collide with a real one.
+//    `POST /lists` slugifies a name into `[a-z0-9-]+-<position>`, so a key with
+//    a space in it is unreachable from that route by construction.
+const catchAll = /const CATCH_ALL = '([^']+)'/.exec(boardTsx);
+check('the client board declares a catch-all lane', !!catchAll, true);
+check('and its key cannot collide with one POST /lists could mint',
+  /[^a-z0-9-]/.test(catchAll ? catchAll[1] : 'x'), true);
+
+// 2. A card whose derived key has no column goes there rather than nowhere.
+//    This is the whole of what keeps deleting `shipped` from losing cards.
+check('a card whose derived lane has no column falls to the catch-all',
+  /known\.has\([a-zA-Z]+\)\s*\?\s*[a-zA-Z]+\s*:\s*CATCH_ALL/.test(boardTsx), true);
+
+// 3. The catch-all is RENDERED, not merely computed. A bag nobody draws is the
+//    same silent loss the lane exists to prevent.
+check('and the catch-all column is appended to the drawn columns',
+  /orphans[\s\S]{0,200}out\.push\(/.test(boardTsx), true);
+
+// 4. Nothing may be DROPPED into it. It is a holding pen for cards whose column
+//    was deleted, not a lane — a drop that wrote its key would store a
+//    `list_key` no derivation and no server route knows.
+check('and nothing can be dropped into the catch-all',
+  /if \(key === CATCH_ALL[\s\S]{0,80}\) return;/.test(boardTsx), true);
 
 // The server, for its half: neither writer refuses a key any more.
 check('neither list writer refuses a key',

@@ -26,6 +26,7 @@ const COMMANDS = {
   worktrees: { script: 'stack-worktrees-cli.mjs', blurb: 'see and reap interactive worktrees (--json, --prune, --run)' },
   'seed-checks': { script: 'stack-seed-checks.mjs', blurb: 'sync the regression suite onto a project (--dry, --run)' },
   'risk-backfill': { script: 'stack-risk-backfill.mjs', blurb: 'tier the open board\'s risk at plan time (dry unless --run)' },
+  'board-demo': { script: 'stack-board-demo.mjs', blurb: 'dummy cards for driving the board (--seed, --remove); every one is parked' },
   skills: { script: 'stack-skills.mjs', blurb: 'sync the managed skill tree onto this host (--dry)' },
   'ui-smoke': { script: 'playwright/smoke.mjs', blurb: 'headless browser smoke pass over the UI (#291; --url, --slug, --json)' },
   // Named for what it lists. `stack agents` would read as the tab agents

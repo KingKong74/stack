@@ -67,39 +67,75 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 //           working control from an inert one, which is the difference between
 //           this harness testing a control and merely photographing it.
 //
-// THE ROADMAP TAB IS A MOCKUP NOW (web/src/detail/BoardMock.tsx), and that
-// changes what this harness may press. The rule the old set followed was
-// "nothing card-shaped, because a card-shaped interaction fails on a project
-// whose board is empty" — a real board could be empty, so only board-level
-// chrome was safe. A mockup CANNOT be empty: its rows are in the file. So the
-// three interactions here are the kit's own card- and lane-level ones, which
-// are the whole of what the screen still does.
+// THE BOARD TAB IS WIRED NOW (web/src/detail/Board.tsx) and its two sibling
+// tabs, Backlog and Development, are still mockups. That splits this list in
+// two, and the split is the reason for the ordering below.
 //
-// Each is proved by something that is NOT on screen beforehand, and each is
-// local state — none of them writes, so this stays a read-only harness.
+// THIS HARNESS IS READ-ONLY, and a wired board is full of controls that write.
+// Every press here OPENS something — a popover, a menu, a composer, a filter —
+// and not one of them commits: the priority picker is pressed but no priority
+// is picked, the composer is opened but never submitted, the column menu is
+// opened but no item in it is chosen. Adding a press that writes would have
+// this harness reordering the owner's real board every time it runs. If a write
+// path ever needs covering, it needs a project of its own to write to first.
+//
+// TWO OF THESE NEED A CARD TO EXIST, and a real board can be empty — which is
+// exactly why the mockup era's rule was "nothing card-shaped". They are here
+// anyway, scoped with `:has(.km-card)` so they find a card wherever it is,
+// because a board's card is most of what a board is and a harness that never
+// touched one would be photographing the screen rather than testing it. An
+// EMPTY board reports both as `control-missing`, which is the honest answer —
+// nothing about those controls was tested — and `./stack board-demo --seed`
+// is what puts cards on a board that has none.
+//
+// THE ORDER IS LOAD-BEARING, and for a reason the mockup's list already knew:
+// every popover here is absolutely positioned and tall enough to cover what is
+// under it. The card presses come FIRST, because a column menu opens over the
+// first card in its own column. The parked filter comes LAST of the board-view
+// presses, because it HIDES rows — every demo card is parked, so pressing it
+// earlier would empty the board underneath every press that follows.
 const ROADMAP_PANELS = [
-  // THEY RUN IN SEQUENCE ON ONE PAGE and do not reset between presses, so each
-  // one targets a DIFFERENT lane. Both of the board's popovers are absolutely
-  // positioned and tall enough to cover the cards below them — open the To Do
-  // column's ⋯ first and the next press lands on the menu instead of the card
-  // it named, which reports as an inert control and is a lie about the card.
   {
     id: 'board-priority',
     label: 'Board — card priority picker',
-    click: '.km-col:nth-child(2) .km-card [aria-label="Priority"]',
-    expect: '.km-col:nth-child(2) .km-card .km-prilist',
+    click: '.km-col:has(.km-card) .km-card [aria-label^="Priority"]',
+    expect: '.km-card .km-prilist',
   },
   {
-    id: 'board-composer',
-    label: 'Board — lane composer',
-    click: '.km-col:nth-child(3) .km-add',
-    expect: '.km-col:nth-child(3) .km-composer',
+    // The same card: the priority list opens BELOW the card it belongs to, so
+    // it covers the next one down and never this card's own meta row.
+    id: 'board-cardmenu',
+    label: 'Board — card actions menu',
+    click: '.km-col:has(.km-card) .km-card [aria-label^="More actions for #"]',
+    expect: '.km-card .km-menu.card',
   },
   {
     id: 'board-colmenu',
     label: 'Board — column actions menu',
-    click: '.km-col:nth-child(4) [aria-label="More actions"]',
-    expect: '.km-col:nth-child(4) .km-menu',
+    click: '.km-col:nth-child(1) [aria-label^="Column actions"]',
+    expect: '.km-col:nth-child(1) .km-colhead .km-menu',
+  },
+  {
+    // A different column from the menu above, which covers its own column's
+    // cards and the composer under them.
+    id: 'board-composer',
+    label: 'Board — lane composer',
+    click: '.km-col:nth-child(2) .km-add',
+    expect: '.km-col:nth-child(2) .km-composer',
+  },
+  {
+    id: 'board-areafilter',
+    label: 'Board — area filter',
+    click: '.km-filter .k-btn',
+    expect: '.km-toolbar .km-menu.left',
+  },
+  {
+    // LAST of the board-view presses — it hides every parked row, and every
+    // card `stack board-demo` seeds is parked.
+    id: 'board-parked',
+    label: 'Board — parked filter',
+    click: '.km-parked',
+    expect: '.km-parked.on',
   },
   // THESE THREE MUST COME LAST, and not for tidiness: the presses above all
   // name `.km-col`, which only exists while the Board tab is the one drawn.

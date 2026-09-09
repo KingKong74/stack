@@ -270,19 +270,60 @@ board.post('/lists', async (req, res) => {
   res.status(201).json({ list: shapeList(rows[0]) });
 });
 
-// PATCH /lists/:key  { name }
+// PATCH /lists/:key  { name?, position? }
+//
+// Renaming is free on every lane: it writes `name` and never `key`, and the
+// key is the only half `listFor` and the card rows know about.
+//
+// `position` is the board's COLUMN ORDER and arrived with the board's wiring —
+// "move column left/right" is furniture the kit draws and nothing could answer,
+// so the menu item either got a route or got deleted. It is a SWAP, not a
+// re-rank: the caller names the position it wants and the list already sitting
+// there takes this one's, in ONE transaction. Renumbering the whole board from
+// a single row's new index would have been the other shape, and it loses to
+// this one because two columns are the whole of what a left/right press moves —
+// a full renumber rewrites every row on every press and turns a concurrent
+// rename into a lost update.
 board.patch('/lists/:key', async (req, res) => {
-  // Renaming is free on every lane: it writes `name` and never `key`, and the
-  // key is the only half `listFor` and the card rows know about.
   const key = String(req.params.key);
+  const hasName = req.body?.name !== undefined;
+  const hasPos = req.body?.position !== undefined && Number.isFinite(Number(req.body.position));
   const name = String(req.body?.name || '').trim().slice(0, 60);
-  if (!name) return res.status(400).json({ error: 'A list needs a name.' });
-  const { rows } = await q(
-    'UPDATE project_lists SET name = $1 WHERE project_id = $2 AND key = $3 RETURNING id, key, name, position',
-    [name, req.project.id, key]
-  );
-  if (!rows.length) return res.status(404).json({ error: 'No such list.' });
-  res.json({ list: shapeList(rows[0]) });
+  if (hasName && !name) return res.status(400).json({ error: 'A list needs a name.' });
+  if (!hasName && !hasPos) return res.status(400).json({ error: 'Nothing to change.' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: mine } = await client.query(
+      'SELECT id, key, name, position FROM project_lists WHERE project_id = $1 AND key = $2 FOR UPDATE',
+      [req.project.id, key]
+    );
+    if (!mine.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'No such list.' }); }
+
+    if (hasPos) {
+      const want = Math.trunc(Number(req.body.position));
+      // The row already at `want` takes this one's place. No row there means the
+      // caller asked for a gap or an end — the move still happens, because a
+      // board whose positions have holes in it (a delete leaves one) must still
+      // be reorderable.
+      await client.query(
+        'UPDATE project_lists SET position = $1 WHERE project_id = $2 AND position = $3 AND key <> $4',
+        [mine[0].position, req.project.id, want, key]
+      );
+      await client.query('UPDATE project_lists SET position = $1 WHERE id = $2', [want, mine[0].id]);
+    }
+    if (hasName) await client.query('UPDATE project_lists SET name = $1 WHERE id = $2', [name, mine[0].id]);
+
+    const { rows } = await client.query('SELECT id, key, name, position FROM project_lists WHERE id = $1', [mine[0].id]);
+    await client.query('COMMIT');
+    res.json({ list: shapeList(rows[0]) });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
 });
 
 // DELETE /lists/:key — the cards do not go with it. Their `list_key` is cleared,
