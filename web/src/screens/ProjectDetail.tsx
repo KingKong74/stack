@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { RoadmapItem, Priority } from '../types';
+import type { RoadmapItem } from '../types';
 import {
   getProjectDetail, type ProjectDetailData,
   createRoadmapItem, patchRoadmapItem,
@@ -182,10 +182,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     return () => { clearTimeout(t); clearTimeout(poll); };
   }, [highlightId, tab]);
   const [roadModal, setRoadModal] = useState<{
-    open: boolean; priority: Priority; title: string; note: string;
-    editing: RoadmapItem | null; branch?: string; area?: string;
-  }>({ open: false, priority: PRIORITY_DEFAULT, title: '', note: '', editing: null });
-  const roadModalClosed = { open: false, priority: PRIORITY_DEFAULT, title: '', note: '', editing: null };
+    open: boolean; title: string; note: string;
+    editing: RoadmapItem | null; area?: string;
+  }>({ open: false, title: '', note: '', editing: null });
+  const roadModalClosed = { open: false, title: '', note: '', editing: null };
   // The half-typed-item DRAFT went with the board's first cull (#443) and did
   // not come back with the wiring. It was saved on a stray dismiss and offered
   // back by a strip on the Roadmap tab; with no strip to offer it, keeping one
@@ -303,28 +303,35 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // that ever set it.
 
   // Create, or save an edit, depending on how the modal was opened.
-  const submitRoad = ({ title, note, priority, branch, area, subArea, plan, risk, tier, riskChanged }: RoadmapFields) =>
+  //
+  // #469 — the PATCH names only what the modal still edits. Priority, tier,
+  // risk and the branch claim came off it, and a PATCH that omits a field
+  // LEAVES IT ALONE, so an edit here can no longer blank a tier the queue
+  // sorts on or release a claim somebody is working behind. That is the whole
+  // of why removing the controls was safe: the write was already a partial one.
+  const submitRoad = ({ title, note, area, subArea, plan }: RoadmapFields) =>
     guard(async () => {
       const editing = roadModal.editing;
       if (editing) {
-        const updated = await patchRoadmapItem(slug, editing.id, {
-          title, note, bucket: priority, claimed_by: branch, area, subArea, plan,
-          // #262 — a save the human made without touching Risk must not write the
-          // tier back, because the server records any risk write with no explicit
-          // source as human-set. Reclaiming it that way would freeze the tier and
-          // leave the plan-time pre-pass unable to ever re-tier the item again.
-          ...(riskChanged ? { risk } : {}),
-          tier,
-        });
+        const updated = await patchRoadmapItem(slug, editing.id, { title, note, area, subArea, plan });
+        // The bucket cannot change from here any more, but the row still moves
+        // between the payload's lists when something else changes it, so the
+        // splice stays keyed on the bucket the response came back with.
         const without = { ...roadmap, [editing.bucket]: roadmap[editing.bucket].filter((i) => i.id !== editing.id) };
         setData({ ...data, roadmap: { ...without, [updated.bucket]: [...without[updated.bucket], updated] } });
         setRoadModal(roadModalClosed);
         return;
       }
       // #425 — an item somebody adds by hand lands ON the timeline, so deciding
-      // to do something puts it on the plan rather than in the tray.
-      const item = await createRoadmapItem(slug, { title, note, bucket: priority, claimed_by: branch || undefined, area: area || undefined, subArea: subArea || undefined, plan: plan.length ? plan : undefined, risk: risk !== 'normal' ? risk : undefined, tier: tier || undefined, sched: newItemSched(project.weekZero) });
-      setData({ ...data, roadmap: { ...roadmap, [priority]: [...roadmap[priority], item] } });
+      // to do something puts it on the plan rather than in the tray. It is born
+      // at the DEFAULT priority; the board's card picker is where that moves.
+      const item = await createRoadmapItem(slug, {
+        title, note, bucket: PRIORITY_DEFAULT,
+        area: area || undefined, subArea: subArea || undefined,
+        plan: plan.length ? plan : undefined,
+        sched: newItemSched(project.weekZero),
+      });
+      setData({ ...data, roadmap: { ...roadmap, [PRIORITY_DEFAULT]: [...roadmap[PRIORITY_DEFAULT], item] } });
       setRoadModal(roadModalClosed);
     });
 
@@ -625,9 +632,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {tab === 'roadmap' && (
           <Board slug={slug} projectName={project.name} items={allRoadmap}
             onRefresh={reread} highlightId={highlightId}
-            onEdit={(it) => setRoadModal({
-              open: true, priority: it.bucket, title: it.title, note: it.note, editing: it,
-            })} />
+            onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
         )}
         {tab === 'ideas' && <IdeasMock />}
         {/* PLANS IS A MOCKUP TOO at the owner's request, and it was the LAST
@@ -648,16 +653,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       </div>
 
       {roadModal.open && (
-        <RoadmapModal initialPriority={roadModal.priority} initialTitle={roadModal.title}
-          initialNote={roadModal.note} initialBranch={roadModal.editing?.claimedBy ?? roadModal.branch ?? ''}
+        <RoadmapModal initialTitle={roadModal.title}
+          initialNote={roadModal.note}
           initialArea={roadModal.editing?.area ?? roadModal.area ?? ''}
           initialSubArea={roadModal.editing?.subArea ?? ''}
           initialPlan={roadModal.editing?.plan ?? []}
-          initialRisk={roadModal.editing?.risk ?? 'normal'}
-          initialRiskSource={roadModal.editing?.riskSource ?? ''}
-          initialRiskReason={roadModal.editing?.riskReason ?? ''}
-          initialTier={roadModal.editing?.tier ?? ''}
-          branches={[...new Set(allRoadmap.map((i) => i.claimedBy))].filter(Boolean).sort()}
           areas={[...new Set(allRoadmap.map((i) => i.area))].filter(Boolean).sort()}
           subAreas={[...new Set(allRoadmap
             .filter((i) => i.area === (roadModal.editing?.area ?? roadModal.area ?? ''))

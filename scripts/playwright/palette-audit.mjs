@@ -96,6 +96,10 @@ const SCREENS = [
   { slug: 'board-priority', hash: '#/p/{slug}/roadmap', press: ['.km-card [aria-label^="Priority"]'] },
   { slug: 'board-cardmenu', hash: '#/p/{slug}/roadmap', press: ['.km-card [aria-label^="More actions for #"]'] },
   { slug: 'board-colmenu', hash: '#/p/{slug}/roadmap', press: ['[aria-label^="Column actions"]'] },
+  // #469 — a scoped board (one area section, its header carrying the lane line)
+  // and an open inline title editor, which paints its own text over a card in
+  // the focus state. Neither exists at first paint.
+  { slug: 'board-scoped', hash: '#/p/{slug}/roadmap', press: ['.km-scope .im-chip:last-of-type'] },
   { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'] },
   { slug: 'board-dev', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(3)'] },
   { slug: 'activity', hash: '#/p/{slug}/activity' },

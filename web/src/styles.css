@@ -3773,6 +3773,27 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .km-search svg { color: var(--text-tertiary); }
 .km-views { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-2); flex: none; }
 .km-filter { position: relative; display: inline-flex; }
+/* THE SCOPE CHIPS AND THE AREA SECTIONS ARE THE ROADMAP TAB'S OWN (#469) —
+   `.im-bar`, `.im-chip`, `.im-section` and `.im-sechead` are reused rather than
+   copied as `.km-*`, because the owner asked for the two screens to look alike
+   and two stylesheets for one look is how they stop. Only the pieces the board
+   needs that the Roadmap tab has no equivalent for live here. */
+.km-scope { margin-bottom: calc(var(--space-2) * -1); }
+/* An area's identity is its stored DOT, not an invented icon. */
+.km-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+/* The inline title editor. It sits exactly where the title it replaces sits, so
+   the card does not jump on a double-click: same font, same colour, no border
+   and no padding of its own — the focus ring is the card's `editing` state. */
+.km-inline {
+  width: 100%; resize: none; overflow: hidden;
+  border: 0; outline: none; padding: 0; background: transparent;
+  font: var(--type-body-sm); color: var(--text-primary);
+  caret-color: var(--blue-500);
+}
+.km-card.editing {
+  cursor: default; border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 22%, transparent);
+}
 .km-count { margin-left: auto; font: var(--type-body-sm); color: var(--text-secondary); }
 /* A write that did not land says so where the press was, not in a toast this
    app does not have. */

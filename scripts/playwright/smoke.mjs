@@ -61,11 +61,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // ---- the interactions ------------------------------------------------------
 // Presses a screen may declare. Each is { id, label, click, expect }:
 //
-//   click   the control to press (a Playwright selector)
-//   expect  proof the press LANDED — a selector that must exist afterwards and
-//           must not already exist before. Without it a run cannot tell a
-//           working control from an inert one, which is the difference between
-//           this harness testing a control and merely photographing it.
+//   click     the control to press (a Playwright selector)
+//   expect    proof the press LANDED — a selector that must exist afterwards and
+//             must not already exist before. Without it a run cannot tell a
+//             working control from an inert one, which is the difference between
+//             this harness testing a control and merely photographing it.
+//   dblclick  press it twice, for a control whose gesture IS the double press.
 //
 // THE BOARD TAB IS WIRED NOW (web/src/detail/Board.tsx) and its two sibling
 // tabs, Backlog and Development, are still mockups. That splits this list in
@@ -87,6 +88,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // EMPTY board reports both as `control-missing`, which is the honest answer —
 // nothing about those controls was tested — and `./stack board-demo --seed`
 // is what puts cards on a board that has none.
+//
+// THE BOARD IS GROUPED BY AREA NOW (#469), so `.km-col` appears once per area
+// SECTION rather than once per board. Every selector below is scoped with
+// `:has(.km-card)` or an `nth-child` inside one `.km-cols`, and the runner takes
+// `.first()`, so each press lands in the first section that can serve it.
 //
 // THE ORDER IS LOAD-BEARING, and for a reason the mockup's list already knew:
 // every popover here is absolutely positioned and tall enough to cover what is
@@ -124,10 +130,24 @@ const ROADMAP_PANELS = [
     expect: '.km-col:nth-child(2) .km-composer',
   },
   {
-    id: 'board-areafilter',
-    label: 'Board — area filter',
-    click: '.km-filter .k-btn',
-    expect: '.km-toolbar .km-menu.left',
+    // #469 — the inline title editor. It opens on a DOUBLE click and on
+    // nothing else. Read-only despite being an editor: the press opens it and
+    // types nothing, and the blur that follows commits an unchanged title,
+    // which `retitle` drops before it reaches the wire.
+    id: 'board-inline',
+    label: 'Board — inline title editor',
+    click: '.km-col:has(.km-card) .km-card .t',
+    dblclick: true,
+    expect: '.km-card.editing .km-inline',
+  },
+  {
+    // #469 — the area filter was a dropdown and is now the Roadmap tab's scope
+    // chips. The LAST chip is the one that is provably not already selected:
+    // "All areas" is first and starts on.
+    id: 'board-scope',
+    label: 'Board — area scope chip',
+    click: '.km-scope .im-chip:last-of-type',
+    expect: '.km-scope .im-chip:last-of-type.on',
   },
   {
     // LAST of the board-view presses — it hides every parked row, and every
@@ -907,7 +927,11 @@ async function runInteraction(page, { screenId, viewportName, interaction, sink 
   const before = textProbe ? await textProbe.textContent().catch(() => null) : null;
 
   try {
-    await control.click({ timeout: CONTROL_TIMEOUT_MS });
+    // `dblclick: true` for a control whose whole gesture IS the double press —
+    // the board's inline title editor opens on one and on nothing else, so a
+    // single click would report it inert and be describing the wrong gesture.
+    if (interaction.dblclick) await control.dblclick({ timeout: CONTROL_TIMEOUT_MS });
+    else await control.click({ timeout: CONTROL_TIMEOUT_MS });
   } catch (e) {
     return fail('control-inert', `${interaction.label}: \`${interaction.click}\` could not be clicked — ${e.message}`);
   }

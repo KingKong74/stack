@@ -1,68 +1,65 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Priority, PlanStep, RoadmapItem, Tier } from '../types';
-import { TIERS } from '../types';
+import type { PlanStep } from '../types';
 import type { RoadmapAssist } from '../store';
 import { Modal } from './Modal';
-import { PRIORITY_META } from '../lib/ui';
 
 // Add OR edit a roadmap item — `mode: 'edit'` prefills and relabels.
-// The note leads: it's the first field and the ✧ button reads it to fill
-// everything else (title, tidied note, area, branch, priority, tier) —
-// suggestions the human can still edit before saving.
+// The note leads: it's the first field and the ✧ button reads it to fill the
+// rest — suggestions the human can still edit before saving.
 //
-// #277: the desire TIER is set here as well as on the Tiers view. Bucket says
-// how necessary the work is; tier says how much you want it NEXT, and it leads
-// the run queue. Gemini may propose one, but only into an empty field — a tier
-// you set by hand is never re-decided.
-// #298: RISK is read from the note the same way, and with the same rule — it
-// only ever fills a Normal nobody has touched. The one exception in both
-// directions is tier S: it decides what the machine works first, so the assist
-// may argue for it but only a human press applies it.
+// FOUR FIELDS CAME OFF THIS MODAL AT THE OWNER'S REQUEST (#469): PRIORITY, the
+// desire TIER, RISK and the BRANCH claim. What is left is the work itself —
+// note, title, area, sub-area, plan. Priority moved rather than went: the
+// board's card picker writes `bucket` and is now its only writer, which is why
+// this modal no longer needs `initialPriority` at all.
+//
+// THE OTHER THREE HAVE NO WRITER LEFT IN ANY BROWSER, and that is a real
+// consequence rather than a tidy-up, so it is written down here once:
+//
+//  • `tier` (#227) is the PRIMARY sort of the overnight run queue — ahead of
+//    priority. This modal was its only surface, so stored tiers now stand
+//    still: the queue keeps ordering by them and nothing can re-rank one
+//    except `./stack` and the API.
+//  • `risk` (#212/#262) decides whether a green overnight run merges ITSELF.
+//    A human `risk_source` could only be set here, so risk is now auto-only —
+//    the plan-time pre-pass writes it and nobody can overrule the pre-pass
+//    from a browser. `risk_source` still guards the write (an auto pass may
+//    only replace the NULL nobody chose), so nothing is at risk of being
+//    silently re-tiered; there is simply no longer a human in that loop.
+//  • `claimed_by` (#277) is the branch claim. It was already gone from the
+//    board (#443) and this was the last writer, so a claim can be made and
+//    released only by a session or by the API.
+//
+// The ✧ assist still ANSWERS with a branch, a priority, a tier and a risk —
+// the route and `assistFields` in Settings are unchanged — and this modal now
+// drops all four on the floor. Settings still offers toggles for them, which
+// is the one loose end: they govern a fill that has nowhere to land.
+//
 // A stray click on the overlay (or Escape) with typed content calls onDismiss
 // with the fields so the caller can keep a draft; the explicit Cancel button
 // stays a genuine discard.
 // What the modal hands back on save (and on a draft-keeping dismiss).
 export interface RoadmapFields {
-  title: string; note: string; priority: Priority; branch: string; area: string; subArea: string;
-  plan: PlanStep[]; risk: RoadmapItem['risk']; tier: Tier;
-  riskChanged: boolean; // #262 — did the human actually touch Risk this time?
+  title: string; note: string; area: string; subArea: string; plan: PlanStep[];
 }
 
 export function RoadmapModal({
-  initialPriority, onClose, onSubmit, onDismiss, onAssist,
-  initialTitle = '', initialNote = '', initialBranch = '', initialArea = '', initialPlan = [],
-  initialRisk = 'normal', initialRiskSource = '', initialRiskReason = '',
-  initialTier = '', branches = [], areas = [], subAreas = [], initialSubArea = '', mode = 'add',
+  onClose, onSubmit, onDismiss, onAssist,
+  initialTitle = '', initialNote = '', initialArea = '', initialPlan = [],
+  areas = [], subAreas = [], initialSubArea = '', mode = 'add',
 }: {
-  initialPriority: Priority; onClose: () => void;
+  onClose: () => void;
   onSubmit: (v: RoadmapFields) => void;
   onDismiss?: (v: RoadmapFields) => void;
   onAssist?: (note: string) => Promise<RoadmapAssist>;
-  initialTitle?: string; initialNote?: string; initialBranch?: string; initialArea?: string;
-  initialPlan?: PlanStep[]; initialRisk?: RoadmapItem['risk'];
-  initialRiskSource?: RoadmapItem['riskSource']; initialRiskReason?: string;
-  initialTier?: Tier;
-  branches?: string[]; areas?: string[]; subAreas?: string[]; initialSubArea?: string; mode?: 'add' | 'edit';
+  initialTitle?: string; initialNote?: string; initialArea?: string;
+  initialPlan?: PlanStep[];
+  areas?: string[]; subAreas?: string[]; initialSubArea?: string; mode?: 'add' | 'edit';
 }) {
   const [title, setTitle] = useState(initialTitle);
   const [note, setNote] = useState(initialNote);
-  const [branch, setBranch] = useState(initialBranch);
   const [area, setArea] = useState(initialArea);
   const [subArea, setSubArea] = useState(initialSubArea);
-  const [priority, setPriority] = useState<Priority>(initialPriority);
-  const [risk, setRisk] = useState<RoadmapItem['risk']>(initialRisk);
-  // #277 — the desire tier, '' = unranked (which sorts last in the run queue).
-  const [tier, setTier] = useState<Tier>(initialTier);
-  // #298 — "do not override user-selected values". An empty tier says plainly
-  // that nobody has ranked it, but RISK has no empty: every item carries
-  // 'normal', so the field cannot tell a deliberate Normal from a default one.
-  // These flags are what makes the difference legible — once you touch either
-  // control, the assist stops filling it, whatever you set it to.
-  const [tierTouched, setTierTouched] = useState(false);
-  const [riskTouched, setRiskTouched] = useState(false);
-  // An S the assist argued for, held as an OFFER rather than applied (S is the
-  // owner's own call). Cleared once accepted, dismissed or overtaken by a hand-set tier.
-  const [tierOffer, setTierOffer] = useState<Tier>('');
   // The implementation plan (#75): ordered steps for bigger work. A pending
   // draft line is folded in on save so a typed-but-not-entered step isn't lost.
   const [plan, setPlan] = useState<PlanStep[]>(initialPlan);
@@ -78,11 +75,6 @@ export function RoadmapModal({
   const [suggesting, setSuggesting] = useState(false);
   const [suggestErr, setSuggestErr] = useState('');
   const noteRef = useRef<HTMLTextAreaElement>(null);
-  // Branch picker: a dropdown of the branches already in use on this project, with
-  // "New branch…" flipping to a free-text input. Starts on the input when the
-  // current branch isn't in the list (or there are no branches yet).
-  const knownBranches = [...new Set([...branches, ...(initialBranch ? [initialBranch] : [])])].sort();
-  const [newBranch, setNewBranch] = useState(knownBranches.length === 0);
   // Area combobox: type freely, or pick from the project's known areas.
   const knownAreas = [...new Set([...areas, ...(initialArea ? [initialArea] : [])])].sort();
   const [areaOpen, setAreaOpen] = useState(false);
@@ -96,8 +88,7 @@ export function RoadmapModal({
   const subMatches = knownSubAreas.filter(
     (a) => !subArea.trim() || a.includes(subArea.trim().toLowerCase()));
   const fields = (): RoadmapFields =>
-    ({ title, note, priority, branch: branch.trim(), area: area.trim().toLowerCase(), subArea: subArea.trim().toLowerCase(), plan: fullPlan(),
-      risk, tier, riskChanged: risk !== initialRisk });
+    ({ title, note, area: area.trim().toLowerCase(), subArea: subArea.trim().toLowerCase(), plan: fullPlan() });
   const submit = () => { if (title.trim()) onSubmit(fields()); };
   const typed = Boolean(title.trim() || note.trim());
   const dismiss = () => {
@@ -126,23 +117,17 @@ export function RoadmapModal({
     try {
       const s = await onAssist(note);
       // Never overwrite a field the human already filled (#211) — the assist
-      // fills gaps, it doesn't re-decide. The note is the exception by design
-      // (it's the input; tidying it is the feature), and priority always
-      // carries a value so a suggestion may still refine it.
+      // fills gaps, it doesn't re-decide. The note is the exception by design:
+      // it is the input, and tidying it is the feature.
+      //
+      // #469 — `s.branch`, `s.priority`, `s.tier`, `s.tierSuggested` and
+      // `s.risk` are still ANSWERED by the route and are dropped here, because
+      // the fields they filled came off this modal. Dropped explicitly rather
+      // than by omission: the shape still carries them, and a later reader
+      // should see that ignoring them is a decision.
       if (!title.trim()) setTitle(s.title);
       if (s.note) { setNote(s.note); requestAnimationFrame(growNote); }
       if (s.area && !area.trim()) setArea(s.area);
-      if (s.branch && !branch.trim()) { setBranch(s.branch); setNewBranch(false); }
-      if (s.priority) setPriority(s.priority);
-      // #277 — "adjusted by Gemini unless manually set": a tier already chosen
-      // (here or on the Tiers view) is left exactly as it is.
-      if (s.tier && !tier && !tierTouched) setTier(s.tier);
-      // #298 — S is offered, never assigned: it decides what the machine works
-      // tonight, and that ranking is the owner's. Only shown while the tier is
-      // still unset — an S proposed against a rank you already made is noise.
-      setTierOffer(s.tierSuggested === 'S' && !tier && !tierTouched ? 'S' : '');
-      // #298 — risk fills only a Normal nobody has touched (see riskTouched).
-      if (s.risk && !riskTouched && risk === 'normal') setRisk(s.risk);
     } catch (e) {
       setSuggestErr((e as Error)?.message || 'Gemini call failed.');
     } finally {
@@ -162,7 +147,7 @@ export function RoadmapModal({
           <button type="button" className="gemini-btn sm" onClick={assist}
             disabled={!note.trim() || suggesting}
             title={note.trim()
-              ? 'Gemini fills the title, area, priority (and tidies the note) from what you wrote'
+              ? 'Gemini fills the title and area (and tidies the note) from what you wrote'
               : 'Write the note first — everything comes from it'}>
             {suggesting ? '✧ Filling…' : '✧ Fill from note'}
           </button>
@@ -237,97 +222,6 @@ export function RoadmapModal({
           placeholder={plan.length ? 'add another step… (Enter)' : 'first step… (Enter to add)'}
           onChange={(e) => setPlanDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addStep(); } }} />
-      </div>
-      <div className="lbl">Branch <span className="optional">optional — who's claiming this</span></div>
-      {!newBranch ? (
-        <div className="branch-pick" style={{ marginBottom: 8 }}>
-          <select className="field-input" value={branch} onChange={(e) => setBranch(e.target.value)}>
-            <option value="">No branch — open for anyone</option>
-            {knownBranches.map((l) => <option key={l} value={l}>⚑ {l}</option>)}
-          </select>
-          <button type="button" className="btn-cancel sm" onClick={() => { setBranch(''); setNewBranch(true); }}>
-            + New branch
-          </button>
-        </div>
-      ) : (
-        <div className="branch-pick" style={{ marginBottom: 8 }}>
-          <input className="field-input" value={branch}
-            placeholder="e.g. ui/12-dark-mode, autopilot, or a name" onChange={(e) => setBranch(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
-          {knownBranches.length > 0 && (
-            <button type="button" className="btn-cancel sm" onClick={() => { setBranch(''); setNewBranch(false); }}>
-              Pick existing
-            </button>
-          )}
-        </div>
-      )}
-      <div className="field-hint" style={{ marginBottom: 18 }}>
-        A branch claims the item for one session or agent — other sessions (and the overnight
-        autopilot) see the ⚑ claim and leave it alone. Clear the branch to release it.
-      </div>
-      <div className="lbl" style={{ marginBottom: 9 }}>Priority</div>
-      <div className="seg" style={{ marginBottom: 26 }}>
-        {PRIORITY_META.map((p) => (
-          <button key={p.key} className={`opt prio ${p.key} ${priority === p.key ? 'on' : ''}`} onClick={() => setPriority(p.key)}>
-            {p.short}
-          </button>
-        ))}
-      </div>
-      <div className="lbl" style={{ marginBottom: 9 }}>
-        Tier <span className="optional">how much you want it NEXT — leads the run queue; unranked goes last</span>
-      </div>
-      <div className="seg" style={{ marginBottom: tierOffer ? 10 : 26 }} role="tablist" aria-label="Desire tier">
-        <button type="button" role="tab" aria-selected={tier === ''}
-          className={`opt ${tier === '' ? 'on' : ''}`}
-          onClick={() => { setTier(''); setTierTouched(true); setTierOffer(''); }}
-          title="Unranked — sorts behind every ranked item, so an unranked board queues exactly as it always did">
-          Unranked
-        </button>
-        {TIERS.map((t) => (
-          <button key={t} type="button" role="tab" aria-selected={tier === t}
-            className={`opt tier-${t} ${tier === t ? 'on' : ''}`}
-            onClick={() => { setTier(t); setTierTouched(true); setTierOffer(''); }}
-            title={`Tier ${t} — the queue works S first, then A, B, C`}>
-            {t}
-          </button>
-        ))}
-      </div>
-      {/* #298 — the S offer. Everything else the assist reads it just fills;
-          S is the one rank that says "work this tonight, before the rest", so
-          it arrives as a sentence with a button rather than as a done deal. */}
-      {tierOffer === 'S' && (
-        <div className="gemini-suggest tier-offer" style={{ marginBottom: 26 }}>
-          <span>✧ This reads like <b>S</b> — top of the queue, worked before everything else. S is
-            yours to give.</span>
-          <span className="tier-offer-acts">
-            <button type="button" className="btn-cancel sm"
-              onClick={() => { setTier('S'); setTierTouched(true); setTierOffer(''); }}>Make it S</button>
-            <button type="button" className="g-dismiss" onClick={() => setTierOffer('')}
-              title="Dismiss the suggestion — the tier stays unranked">no</button>
-          </span>
-        </div>
-      )}
-      <div className="lbl" style={{ marginBottom: 9 }}>
-        Risk <span className="optional">low = a green overnight run merges itself; you still give the verdict</span>
-      </div>
-      <div style={{ marginBottom: 26 }}>
-        <div className="seg" role="tablist" aria-label="Risk">
-          {(['low', 'normal', 'high'] as const).map((r) => (
-            <button key={r} type="button" role="tab" aria-selected={risk === r}
-              className={`opt risk-${r} ${risk === r ? 'on' : ''}`}
-              onClick={() => { setRisk(r); setRiskTouched(true); }}>
-              {r === 'low' ? 'Low' : r === 'normal' ? 'Normal' : 'High'}
-            </button>
-          ))}
-        </div>
-        {initialRiskSource === 'auto' && (
-          <div className="risk-prov">
-            ✧ Derived at plan time{initialRiskReason ? ` — ${initialRiskReason}` : ''}. Change it and it becomes yours.
-          </div>
-        )}
-        {initialRiskSource === 'human' && (
-          <div className="risk-prov">Set by you — the overnight pre-pass will not change it.</div>
-        )}
       </div>
       <div className="modal-actions">
         <button className="btn-cancel" onClick={onClose}>Cancel</button>
