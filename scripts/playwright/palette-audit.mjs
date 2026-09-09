@@ -334,6 +334,16 @@ function auditInPage() {
     // and living in the database, and it has no business being on the app's
     // ramp. Those arrive as inline styles, which is exactly what distinguishes
     // them from a literal somebody typed into the stylesheet.
+    //
+    // THE EXEMPTION IS ELEMENT-LOCAL AND PER-PROPERTY, deliberately, and #469
+    // is the worked example of what that costs: an inline `color` carrying an
+    // area's stored dot was reported twice anyway — once on the child `<svg>`
+    // that INHERITED it, and once as `borderTopColor`, whose initial value is
+    // `currentColor`. Neither element's own style named the property, so
+    // neither was exempt. That is the tool erring towards REPORTING, which is
+    // the right direction for it; the fix belongs in the component, and it is
+    // to paint a data tone as a `background` on a childless element, the way
+    // SpaceDot and the board's area dots do.
     const inline = el.getAttribute('style') || '';
     for (const prop of ['color', 'backgroundColor', 'borderTopColor']) {
       const c = parse(cs[prop]);
