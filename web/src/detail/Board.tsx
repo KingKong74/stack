@@ -463,10 +463,19 @@ export function Board({ slug, projectName, items, onRefresh, onEdit, highlightId
           {sections.map((sec) => (
             <section className="im-section" key={sec.key}>
               <div className="im-sechead">
-                <span className={`ico${sec.untagged ? ' global' : ''}`}
-                  style={sec.dot ? { color: sec.dot } : undefined}>
+                {/* THE DOT IS A LEAF, and that is not cosmetic. An area's colour
+                    is DATA (`project_areas.dot`), and the palette audit exempts a
+                    data tone only on the element whose own `style` names that
+                    property. Painting it as `color` on the icon box leaked it
+                    twice — onto the child `<svg>` by inheritance, and onto
+                    `borderTopColor`, whose initial value is `currentColor` — and
+                    the audit reported both as tones off the `:root` ramp. A
+                    `background` on a childless span, exactly as the scope chips
+                    and the rail's SpaceDot do it, leaks neither. */}
+                <span className={`ico${sec.untagged ? ' global' : ''}`}>
                   <KitIcon name={sec.untagged ? 'layers' : 'layout-grid'} size={13} />
                 </span>
+                {sec.dot && <span className="km-dot" style={{ background: sec.dot }} />}
                 <span className="nm">{sec.name}</span>
                 {/* THE ONE FACT ABOUT AN AREA THAT CHANGES WHAT THE NIGHT CAN
                     DO. Not a description — `project_areas` stores none, and an
