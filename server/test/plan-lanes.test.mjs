@@ -165,8 +165,13 @@ check('a card whose derived lane has no column falls to the catch-all',
 
 // 3. The catch-all is RENDERED, not merely computed. A bag nobody draws is the
 //    same silent loss the lane exists to prevent.
+//
+//    Matched on the PUSH carrying CATCH_ALL rather than on the array it is
+//    pushed into: #469 grouped the board by area, so the drawn columns are now
+//    built per SECTION and the array changed name. What must not change is that
+//    an orphan bag ends up in the list something renders.
 check('and the catch-all column is appended to the drawn columns',
-  /orphans[\s\S]{0,200}out\.push\(/.test(boardTsx), true);
+  /orphans[\s\S]{0,120}\.push\(\{\s*key: CATCH_ALL/.test(boardTsx), true);
 
 // 4. Nothing may be DROPPED into it. It is a holding pen for cards whose column
 //    was deleted, not a lane — a drop that wrote its key would store a
