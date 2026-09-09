@@ -3885,10 +3885,13 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .km-card[draggable='true'] { cursor: grab; }
 .km-cardtags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 .km-cardtags .k-tag { display: inline-flex; align-items: center; gap: 4px; }
-/* The card menu opens BELOW the meta row, where the priority list opens, rather
-   than at the card's top-right like a column's — the card is short enough that
-   a menu anchored to its head would cover the title it belongs to. */
-.km-menu.card { top: auto; bottom: 6px; right: var(--space-5); }
+/* THE CARD MENU OPENS EXACTLY WHERE THE PRIORITY LIST DOES — below the card,
+   not above it. It was anchored to the card's bottom edge first, which grows a
+   six-item menu UPWARD past a ~90px card and over the COLUMN HEADER above it:
+   the ⋯ that opens the column's own menu became unclickable while a card menu
+   was open, which the smoke caught as `control-inert`. Two popovers on one card
+   also have no business opening in opposite directions. */
+.km-menu.card { top: calc(100% - 6px); bottom: auto; right: var(--space-5); }
 .km-menu.left { right: auto; left: 0; }
 .km-pri {
   width: 24px; height: 24px; border: 0; cursor: pointer;
