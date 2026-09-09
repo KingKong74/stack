@@ -3884,7 +3884,12 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .km-card.dragging { opacity: 0.45; }
 .km-card[draggable='true'] { cursor: grab; }
 .km-cardtags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
-.km-cardtags .k-tag { display: inline-flex; align-items: center; gap: 4px; }
+/* `max-width` AND `min-width: 0` are both needed: a flex item's default
+   `min-width: auto` refuses to shrink below its content, which is how a long
+   branch name escaped the card entirely. The truncation is on the inner span
+   because the chip itself is a flex container. */
+.km-cardtags .k-tag { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; }
+.km-cardtags .k-tag .v { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* THE CARD MENU OPENS EXACTLY WHERE THE PRIORITY LIST DOES — below the card,
    not above it. It was anchored to the card's bottom edge first, which grows a
    six-item menu UPWARD past a ~90px card and over the COLUMN HEADER above it:

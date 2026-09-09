@@ -554,8 +554,15 @@ function IssueCard({
         <div className="km-cardtags">
           {item.area && <span className="k-tag">{item.area}</span>}
           {item.claimedBy && (
-            <span className="k-tag mono" title="The branch that has claimed this item">
-              <KitIcon name="git-branch" size={11} />{item.claimedBy}
+            // A BRANCH NAME IS THE ONE UNBOUNDED STRING ON A CARD. `<kind>/<id>-<summary>`
+            // (#363) routinely runs past a 272px column, and `.k-tag` is
+            // `white-space: nowrap`, so the first cut let one bleed straight
+            // out of the card and into the next lane. It truncates in its own
+            // span because `text-overflow` does nothing on a flex CONTAINER —
+            // the chip is an inline-flex with an icon in it — and the `title`
+            // is what makes the truncation lossless.
+            <span className="k-tag mono" title={item.claimedBy}>
+              <KitIcon name="git-branch" size={11} /><span className="v">{item.claimedBy}</span>
             </span>
           )}
           {item.skipped && <span className="k-tag warning" title="Parked — the overnight runner skips it">parked</span>}
