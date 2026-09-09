@@ -3889,7 +3889,15 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    branch name escaped the card entirely. The truncation is on the inner span
    because the chip itself is a flex container. */
 .km-cardtags .k-tag { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; }
-.km-cardtags .k-tag .v { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* THE LINE-HEIGHT IS PART OF THE TRUNCATION, not decoration. `.k-tag.mono`
+   spells its font with `/1`, and an `overflow: hidden` box on a line-height-1
+   mono font is 12px tall over a 14px glyph box — so the ellipsis arrived and
+   took every descender with it. Same bug #444 fixed on the branch row, one
+   layer down; the smoke reported it as element-overflow-y 13 times a screen. */
+.km-cardtags .k-tag .v {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  line-height: 1.4;
+}
 /* THE CARD MENU OPENS EXACTLY WHERE THE PRIORITY LIST DOES — below the card,
    not above it. It was anchored to the card's bottom edge first, which grows a
    six-item menu UPWARD past a ~90px card and over the COLUMN HEADER above it:
