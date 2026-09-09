@@ -3856,11 +3856,11 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   transition: var(--transition-control);
 }
 .km-menuitem:hover:not(:disabled) { background: var(--surface-hover); }
-/* The one tone in either mockup that measures under AA — 2.80:1 — and it is
-   deliberate: WCAG 1.4.3 exempts an inactive control, `--text-disabled` is the
-   token that exists to say inactive, and the kit spells this menu the same way.
-   If the palette audit ever learns to open a menu, this is the row it will
-   report; it is a pass, not a finding. */
+/* 2.80:1, deliberately: WCAG 1.4.3 exempts an inactive control, `--text-disabled`
+   is the token that exists to say inactive, and the kit spells this menu the
+   same way. The audit learned to open a menu (#453) and reported this row
+   exactly as predicted — so the exemption now lives in palette-audit.mjs, where
+   it applies to every disabled control rather than to this one from memory. */
 .km-menuitem:disabled { color: var(--text-disabled); cursor: not-allowed; }
 .km-menuitem.danger { color: var(--status-danger-fg); }
 .km-menusep { height: 1px; background: var(--border-subtle); margin: 4px 0; }

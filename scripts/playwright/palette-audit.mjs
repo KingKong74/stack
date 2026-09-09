@@ -275,7 +275,21 @@ function auditInPage() {
       // unticked checkbox holds its ✓ invisible until it is ticked. Composited
       // it equals its own ground and scores 1:1, which is the tool describing
       // an intention as a defect.
-      if (fgRaw && fgRaw.a > 0) {
+      // AN INACTIVE CONTROL IS EXEMPT, and this is the one carve-out in this
+      // file that comes from the standard rather than from a token. WCAG 1.4.3
+      // exempts "text that is part of an inactive user interface component" by
+      // name, and `--text-disabled` is the token that exists to SAY inactive:
+      // it measures 2.80:1 by design, because a control you cannot press must
+      // read as one you cannot press. styles.css predicted this row on
+      // `.km-menuitem:disabled` and called it a pass rather than a finding
+      // ("if the palette audit ever learns to open a menu…"); the audit has
+      // learned, so the exemption belongs here rather than in a reader's head.
+      //
+      // Scoped with `closest`, not a own-element check: a disabled button's
+      // label is usually in a child span, and greying the button while
+      // reporting the span would exempt nothing at all.
+      const inactive = el.closest('[disabled], [aria-disabled="true"]');
+      if (fgRaw && fgRaw.a > 0 && !inactive) {
         const { ground, unverified: why } = groundOf(el);
         const fg = over(fgRaw, ground);
         const size = parseFloat(cs.fontSize) || 14;
