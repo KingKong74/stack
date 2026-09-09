@@ -337,16 +337,94 @@ const PLANS_PANELS = [
   },
 ];
 
+// Mission Control's seven tabs, plus the four presses that prove a tab did more
+// than paint. They run in sequence on one page, so each entry assumes the state
+// the one before it left — the fold presses pick the LAST card on purpose,
+// because the first is already open at first paint and pressing it would prove
+// only that something can be closed.
+const CONTROL_PANELS = [
+  {
+    id: 'control-agents',
+    label: 'Mission Control — Agents tab',
+    click: '.mcx-tabs .k-tab:nth-child(2)',
+    expect: '.mcx-agenthead',
+  },
+  {
+    id: 'control-agent-fold',
+    label: 'Agents — a shut agent folds open',
+    click: '.mcx-fold:last-child .mcx-agenthead',
+    expect: '.mcx-fold:last-child .mcx-foldbody',
+  },
+  {
+    id: 'control-models',
+    label: 'Mission Control — Models tab',
+    click: '.mcx-tabs .k-tab:nth-child(3)',
+    expect: '.mcx-provhead',
+  },
+  {
+    id: 'control-provider-fold',
+    label: 'Models — a shut provider folds open',
+    click: '.mcx-fold:last-child .mcx-provhead',
+    expect: '.mcx-fold:last-child .mcx-modelrow',
+  },
+  {
+    id: 'control-context',
+    label: 'Mission Control — Context tab',
+    click: '.mcx-tabs .k-tab:nth-child(4)',
+    expect: '.mcx-doctree',
+  },
+  // The sixth row is the one context file with no body, so its empty state is
+  // something only a real selection can put on screen.
+  {
+    id: 'control-doc-select',
+    label: 'Context — picking an unwritten file',
+    click: '.mcx-docrow:nth-of-type(6)',
+    expect: '.mcx-docempty',
+  },
+  {
+    id: 'control-loops',
+    label: 'Mission Control — Loops tab',
+    click: '.mcx-tabs .k-tab:nth-child(5)',
+    expect: '.mcx-looprow',
+  },
+  // The panel note counts the active loops, so it is the one place a toggle
+  // that did nothing cannot hide.
+  {
+    id: 'control-loop-toggle',
+    label: 'Loops — a switch changes the active count',
+    click: '.mcx-looprow:first-of-type .k-switch-track',
+    expectTextChangeIn: '.mcx-panelhead .note',
+  },
+  {
+    id: 'control-connections',
+    label: 'Mission Control — Connections tab',
+    click: '.mcx-tabs .k-tab:nth-child(6)',
+    expect: '.mcx-conn',
+  },
+  {
+    id: 'control-settings',
+    label: 'Mission Control — Settings tab',
+    click: '.mcx-tabs .k-tab:nth-child(7)',
+    expect: '.mcx-dangerrow',
+  },
+];
+
 // ---- the screens ---------------------------------------------------------
 // One entry per top-level route this harness walks. `<slug>` is substituted
 // for the --slug value at run time. Order matches the app's own nav order.
 export const SCREENS = [
   { id: 'dashboard', label: 'Dashboard', path: '#/' },
-  // Mission Control's rooms are culled; `#/control` is the placeholder that
-  // stands where they were. Still walked, and deliberately: it is linked from
-  // six topbars, so a layout break on it is a break the owner meets — and the
-  // walk is what proves the route still resolves rather than 404ing.
-  { id: 'control', label: 'Control — placeholder', path: '#/control' },
+  // Mission Control is the console kit's own screen, as a mockup: seven tabs
+  // that read nothing and write nothing. Walked for two reasons — it is linked
+  // from six topbars, so a layout break on it is a break the owner meets, and
+  // six of its seven tabs are only reachable by a press, which is what the
+  // interactions below are for.
+  {
+    id: 'control',
+    label: 'Mission Control',
+    path: '#/control',
+    interactions: CONTROL_PANELS,
+  },
   { id: 'terminal', label: 'Terminal', path: '#/terminal' },
   { id: 'skills', label: 'Skills', path: '#/skills' },
   { id: 'timeline', label: 'Timeline', path: '#/timeline' },

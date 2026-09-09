@@ -3394,46 +3394,9 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    path deeper than the offer depth or a repo git could not be asked about. */
 .ins-dest h3 { margin-bottom: 8px; }
 
-/* ---- Mission Control, culled (#/control renders screens/ControlMock.tsx) ----
-   Deliberately self-contained: it borrows nothing from the old `.mc-*` /
-   `.mc14-*` rules, so the rebuild can delete or rewrite those without this
-   placeholder quietly losing its layout. Nothing here uses a semantic tone
-   (--live, --green, --critical) — a skeleton must not be able to read as a
-   status. The bars do not animate: a shimmer means "loading, wait", and this
-   is not loading. */
-.mcx-badge {
-  display: inline-block; margin-left: 12px; padding: 3px 10px; border-radius: 999px;
-  font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em;
-  text-transform: uppercase; vertical-align: middle;
-  color: var(--muted); background: var(--panel); border: 1px solid var(--line-2);
-}
-.mcx-rail {
-  display: flex; align-items: center; gap: 2px; padding: 3px; margin-bottom: 14px;
-  border-radius: 9px; background: var(--panel); width: fit-content; min-width: 100%;
-  overflow-x: auto;
-}
-.mcx-tab {
-  padding: 6px 16px; border-radius: 6px; white-space: nowrap;
-  font-size: 12.5px; font-weight: 500; color: var(--placeholder); cursor: default;
-}
-.mcx-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 14px; margin-bottom: 18px;
-}
-.mcx-panel {
-  background: var(--card); border: 1px solid var(--line-2); border-radius: 14px;
-  padding: 16px 18px; min-height: 120px;
-}
-.mcx-panel-head {
-  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--placeholder); margin-bottom: 14px;
-}
-.mcx-bars { display: flex; flex-direction: column; gap: 10px; }
-.mcx-bar { display: block; height: 10px; border-radius: 5px; background: var(--panel); }
-.mcx-foot {
-  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-  font-size: 12.5px; color: var(--muted);
-}
+/* Mission Control's own rules are at the foot of this file, with the other six
+   kit ports — the placeholder that used to stand here (a skeleton drawn in no
+   semantic tone at all) is gone with the screen it stood for. */
 
 /* ============================================================
    THE CONSOLE — ui_kits/console/index.html, ported (#432).
@@ -3669,6 +3632,48 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .k-iconbtn.solid { background: var(--surface-card); border-color: var(--border-default); }
 .k-iconbtn:hover { background: var(--surface-hover); color: var(--text-primary); }
 .k-iconbtn.on { background: var(--surface-press); color: var(--text-primary); }
+
+/* The kit's three form primitives (components/forms/Switch|Input|Select.jsx),
+   as classes. Mission Control is the first port that needed them; anything
+   later that takes a toggle or a field takes these rather than a fourth
+   spelling. The Switch is a real `role="switch"` BUTTON rather than the kit's
+   clickable span — a toggle a keyboard cannot reach is not a toggle — and its
+   track is the only place on a dark ground where an OFF state is carried by a
+   grey fill, so the label beside it always says what it governs. */
+.k-switch { display: inline-flex; align-items: center; gap: 10px; }
+.k-switch-track {
+  flex: none; width: 34px; height: 20px; padding: 2px; box-sizing: border-box;
+  display: inline-flex; align-items: center; border: 0; cursor: pointer;
+  border-radius: var(--radius-pill); background: var(--grey-700);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.k-switch-track.on { background: var(--action-primary); }
+.k-switch-knob {
+  width: 16px; height: 16px; border-radius: 50%; background: var(--white);
+  box-shadow: var(--shadow-sm); transform: translateX(0);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.k-switch-track.on .k-switch-knob { transform: translateX(14px); }
+.k-switch-label { font: var(--type-body-sm); color: var(--text-secondary); }
+
+.k-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.k-field-label { font: var(--type-label); color: var(--text-secondary); }
+.k-field-hint { font: var(--type-caption); color: var(--text-tertiary); }
+.k-input, .k-select {
+  height: var(--control-h-md); box-sizing: border-box; width: 100%;
+  padding: 0 10px; font: var(--type-body-sm); color: var(--text-primary);
+  background: var(--surface-card); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); outline: none;
+  transition: var(--transition-control);
+}
+.k-input:focus, .k-select:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-tint); }
+.k-input.sm, .k-select.sm { height: var(--control-h-sm); }
+.k-input::placeholder { color: var(--text-tertiary); }
+/* The kit draws its own ▾ over a stripped select. Keeping the native arrow
+   instead: the overlay costs a wrapper element on every field and the browser's
+   own is the one a screen reader and a touch device already agree about. */
+.k-select { padding-right: 8px; cursor: pointer; }
+.k-select option { background: var(--surface-overlay); color: var(--text-primary); }
 
 /* ============================================================
    THE KIT'S TAB STRIP + the For-you panes it switches between
@@ -5465,4 +5470,437 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   .con-navfoot { margin-top: 0; padding-top: 0; }
   .con-main { padding: var(--space-6); }
   .k-tilerow { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ==========================================================================
+   MISSION CONTROL — ui_kits/console mission-control.html, ported.
+   (#/control renders screens/ControlMock.tsx; that file's header carries what
+   each tab would have to be wired to, and the trap in each.)
+
+   THE GROUND IS DARKER THAN THE APP'S AND THAT IS THE KIT'S POINT: every other
+   screen sits on --surface-canvas (grey-900), and the machine room sits on
+   grey-1000 so it reads as infrastructure rather than as work. It is painted on
+   a FULL-BLEED wrapper outside `.page`, because `.page` is a centred column and
+   a darker ground inside it would read as a stripe down the middle of the app.
+
+   THE #450 CONTRAST RULE DECIDES NEARLY EVERY TONE HERE. `--surface-hover` is
+   +5.5% white, which lifts a card from #242528 to #303134 and drops
+   `--text-tertiary` from 4.9:1 to 4.15:1 — so every elapsed time, token count,
+   duration, cost, guard line and "last ran" INSIDE A ROW THAT LIGHTENS is
+   `--text-secondary`, and the hierarchy is carried by the mono face and the
+   smaller size instead. Tertiary is kept only where the ground cannot move: the
+   eyebrows, the column headers, the panel notes, the intro ledes and the doc
+   tree's footnote. The kit's `--text-disabled` is refused outright for text
+   ("unassigned", a dash): WCAG exempts an INACTIVE CONTROL, not a word that is
+   an answer, and none of these sit in a disabled control.
+
+   FIVE TONES, ONE VOCABULARY. `.mcx-t-*` sets two local custom properties
+   (--t-fg, --t-bg) and everything downstream reads them by ROLE — a pill, a run
+   icon, a progress fill, a card's left rule — so no row, chip or bar below
+   spells a colour, and the whole screen is re-tonable from those five lines.
+   ========================================================================== */
+
+.mcx-ground { min-height: 100vh; background: var(--grey-1000); }
+.mcx { display: flex; flex-direction: column; gap: var(--space-6); }
+
+/* ---- the five tones, as roles ---- */
+.mcx-t-info { --t-fg: var(--status-info-fg); --t-bg: var(--status-info-bg); }
+.mcx-t-warning { --t-fg: var(--status-warning-fg); --t-bg: var(--status-warning-bg); }
+.mcx-t-success { --t-fg: var(--status-success-fg); --t-bg: var(--status-success-bg); }
+.mcx-t-danger { --t-fg: var(--status-danger-fg); --t-bg: var(--status-danger-bg); }
+/* Neutral is a grey ON PURPOSE — it is the absence of a state (idle, offline,
+   no commits), and giving it a hue would make "nothing happened" look like
+   something did. */
+.mcx-t-neutral { --t-fg: var(--status-neutral-fg); --t-bg: var(--status-neutral-bg); }
+
+/* ---- the head ---- */
+.mcx-head { display: flex; align-items: flex-end; gap: var(--space-5); flex-wrap: wrap; }
+.mcx-title { display: flex; flex-direction: column; gap: var(--space-2); }
+.mcx-title .eyebrow {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.mcx-title h1 {
+  margin: 0; font: var(--type-title); letter-spacing: var(--tracking-tight);
+  color: var(--text-primary); display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+}
+/* The one label on the page that is about the page rather than about a fleet.
+   Neutral on purpose: a mockup badge in a status tone would be the very
+   confusion it exists to prevent. */
+.mcx-badge {
+  padding: 3px 9px; border-radius: var(--radius-pill);
+  font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono);
+  letter-spacing: 0.06em; color: var(--text-secondary);
+  background: var(--status-neutral-bg);
+}
+.mcx-headacts { margin-left: auto; display: flex; align-items: center; gap: var(--space-4); }
+.mcx-liveflag { display: inline-flex; align-items: center; gap: 7px; font: var(--type-body-sm); color: var(--text-secondary); }
+.mcx-liveflag .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lime-500); }
+
+.mcx-tabs { flex-wrap: wrap; }
+
+/* ---- the body rhythm ---- */
+.mcx-stack { display: flex; flex-direction: column; gap: var(--space-6); }
+.mcx-stack.tight { gap: var(--space-5); }
+.mcx-stack.narrow { max-width: 760px; }
+.mcx-intro { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.mcx-intro .lede { flex: 1; min-width: 260px; font: var(--type-body-sm); color: var(--text-tertiary); text-wrap: pretty; }
+
+/* ---- pills ---- */
+.mcx-pill {
+  display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
+  height: 19px; padding: 0 8px; border-radius: var(--radius-pill);
+  background: var(--t-bg); color: var(--t-fg); font: var(--type-label); white-space: nowrap;
+}
+.mcx-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--t-fg); }
+
+/* ---- panels and rows ---- */
+.mcx-panel {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); display: flex; flex-direction: column;
+}
+.mcx-panel.rule-live { border-left: 2px solid var(--lime-500); }
+.mcx-panel.rule-danger { border-left: 2px solid var(--red-500); }
+.mcx-panelhead {
+  display: flex; align-items: baseline; gap: var(--space-4);
+  padding: var(--space-5) var(--space-6); flex-wrap: wrap;
+}
+.mcx-panelhead .t { font: var(--weight-semibold) var(--text-md)/1 var(--font-sans); color: var(--text-primary); }
+.mcx-panelhead .note { font: var(--type-caption); color: var(--text-tertiary); }
+.mcx-panelhead .right { margin-left: auto; display: flex; align-items: center; gap: var(--space-4); }
+.mcx-panelbody { padding: var(--space-6); border-top: 1px solid var(--border-subtle); }
+.mcx-panelbody.rows { display: flex; flex-direction: column; gap: var(--space-5); }
+.mcx-panelbody.pairs { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); align-items: start; }
+
+.mcx-row {
+  display: flex; align-items: center; gap: var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border-subtle);
+  transition: var(--transition-control);
+}
+.mcx-row.hoverable:hover { background: var(--surface-hover); }
+/* A text button inside a row, at the row's own weight. Never a --k-btn: these
+   sit in a column of numbers and a filled control there reads as the row's
+   subject rather than as its verb. */
+.mcx-link {
+  border: 0; background: transparent; padding: 0; cursor: pointer;
+  font: var(--weight-regular) var(--text-xs)/1.5 var(--font-mono); color: var(--text-link);
+}
+.mcx-link:hover { color: var(--text-link-hover); }
+.mcx-link.danger { color: var(--status-danger-fg); }
+
+/* The shared bar. `--t-fg` when a run owns it, --viz-2 when it is a share of a
+   total — a distinction worth keeping: one is a STATE, the other a QUANTITY. */
+.mcx-track {
+  display: flex; height: 4px; border-radius: var(--radius-pill);
+  background: var(--grey-850); overflow: hidden;
+}
+.mcx-track.wide { flex: 1; height: 5px; }
+.mcx-track .fill { background: var(--t-fg); transition: width var(--dur-slow) var(--ease-out); }
+.mcx-track .fill.viz { background: var(--viz-2); }
+
+/* ---- Overview: the pulse strip ---- */
+.mcx-pulse {
+  display: flex; align-items: center; gap: var(--space-9); flex-wrap: wrap;
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-6);
+}
+.mcx-pulseitem { display: flex; flex-direction: column; gap: var(--space-3); }
+.mcx-pulseitem .l {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.mcx-pulseitem .v {
+  font: var(--weight-semibold) var(--text-2xl)/1 var(--font-sans);
+  letter-spacing: var(--tracking-tight); color: var(--text-primary);
+}
+.mcx-pulseitem .v.accent { color: var(--text-accent); }
+.mcx-pulseitem .note { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary); }
+
+/* ---- Overview: running now ---- */
+.mcx-liverow .mcx-liveicon {
+  width: 26px; height: 26px; flex: 0 0 auto; border-radius: var(--radius-sm);
+  background: var(--t-bg); color: var(--t-fg);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.mcx-liverow .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.mcx-liverow .line { display: flex; align-items: baseline; gap: var(--space-4); flex-wrap: wrap; }
+.mcx-liverow .who { font: var(--type-body-sm); color: var(--text-primary); }
+.mcx-liverow .model, .mcx-runrow .model { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-link); }
+.mcx-liverow .what { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary); }
+.mcx-liverow .num, .mcx-runrow .num, .mcx-looprow .num {
+  font: var(--weight-regular) var(--text-xs)/1 var(--font-mono);
+  color: var(--text-secondary); text-align: right; flex: 0 0 auto;
+}
+.mcx-liverow .num.strong, .mcx-runrow .num.strong { font-weight: var(--weight-medium); color: var(--text-primary); }
+.mcx-liverow .el { flex: 0 0 60px; }
+.mcx-liverow .tok { flex: 0 0 56px; }
+.mcx-liverow .cost { flex: 0 0 46px; }
+.mcx-liverow .mcx-link { flex: 0 0 54px; text-align: right; }
+.mcx-liverow .mcx-link.danger { flex: 0 0 40px; }
+
+/* ---- Overview: last runs ---- */
+.mcx-runrow .who { flex: 0 0 96px; font: var(--type-body-sm); color: var(--text-secondary); }
+.mcx-runrow .what {
+  flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mcx-runrow .model { flex: 0 0 130px; }
+.mcx-runrow .commits { flex: 0 0 66px; }
+.mcx-runrow .dur { flex: 0 0 44px; }
+.mcx-runrow .cost { flex: 0 0 46px; }
+.mcx-runrow .end, .mcx-agenthead .end, .mcx-provhead .end {
+  flex: 0 0 96px; display: flex; justify-content: flex-end;
+}
+
+/* ---- the folds (Agents, Models) ---- */
+.mcx-fold {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); display: flex; flex-direction: column;
+}
+.mcx-fold.on { border-color: var(--border-default); }
+.mcx-foldhead {
+  display: flex; align-items: center; gap: var(--space-5);
+  padding: var(--space-5) var(--space-6); cursor: pointer;
+  transition: var(--transition-control);
+}
+.mcx-foldhead:hover { background: var(--surface-hover); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+/* The caret is a CONTROL's affordance on a row that lightens, which is exactly
+   where tertiary went sub-AA on the Plans port. Secondary, and it stays. */
+.mcx-foldhead .caret { flex: 0 0 10px; font: var(--type-caption); color: var(--text-secondary); }
+.mcx-agenthead .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mcx-agenthead .name, .mcx-provhead .name { font: var(--weight-medium) var(--text-md)/1 var(--font-sans); color: var(--text-primary); }
+.mcx-agenthead .role { font: var(--type-caption); color: var(--text-secondary); text-wrap: pretty; }
+.mcx-agenthead .model { flex: 0 0 140px; font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-link); }
+.mcx-agenthead .autonomy { flex: 0 0 96px; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
+.mcx-agenthead .spend { flex: 0 0 46px; text-align: right; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-primary); }
+
+.mcx-provhead .name { flex: 0 0 150px; }
+.mcx-provhead .key { flex: 0 0 150px; font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary); }
+.mcx-provhead .share { flex: 1; min-width: 90px; display: flex; align-items: center; gap: var(--space-4); }
+.mcx-provhead .pct { width: 30px; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
+.mcx-provhead .latency { flex: 0 0 56px; text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
+
+.mcx-foldbody {
+  padding: 0 var(--space-6) var(--space-6) 40px;
+  display: flex; flex-direction: column; gap: var(--space-5);
+}
+.mcx-facts {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-5);
+  padding-top: var(--space-4); border-top: 1px solid var(--border-subtle);
+}
+.mcx-facts .fact { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.mcx-facts .l { font: var(--type-caption); color: var(--text-tertiary); }
+.mcx-facts .v { font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--text-primary); }
+.mcx-caps { display: flex; flex-direction: column; gap: var(--space-3); }
+.mcx-caps .eyebrow {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.mcx-caps .chips { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+/* A capability is a STATEMENT of what the code allows, not a control — no
+   hover, no cursor, no press. See the note in ControlMock.tsx. */
+.mcx-caps .chip {
+  height: 20px; padding: 0 8px; border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--border-default);
+  font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary);
+  display: inline-flex; align-items: center;
+}
+.mcx-foldacts { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+
+/* ---- the model table ---- */
+.mcx-modelrow { padding-left: 44px; gap: var(--space-5); }
+.mcx-modelrow.head { padding-top: var(--space-3); padding-bottom: var(--space-3); }
+.mcx-modelrow.head > span {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.mcx-modelrow .c-id { flex: 1 1 auto; min-width: 0; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-primary); }
+.mcx-modelrow .c-ctx { flex: 0 0 66px; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
+.mcx-modelrow .c-use { flex: 0 0 74px; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
+.mcx-modelrow .c-cost { flex: 0 0 54px; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-primary); }
+.mcx-modelrow .c-p { flex: 0 0 116px; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
+.mcx-modelrow .c-pick { flex: 0 0 108px; font: var(--type-caption); color: var(--text-secondary); }
+.mcx-modelrow .c-pick.picked { color: var(--text-link); }
+
+/* ---- Loops ---- */
+.mcx-looprow .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.mcx-looprow .line { display: flex; align-items: baseline; gap: var(--space-4); flex-wrap: wrap; }
+.mcx-looprow .name { font: var(--type-body-sm); color: var(--text-primary); }
+/* An off loop is dimmer, not unreadable: it is still the thing you are about to
+   switch back on. Secondary, which is the floor for a row that lightens. */
+.mcx-looprow .name.off { color: var(--text-secondary); }
+.mcx-looprow .when { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
+.mcx-looprow .who { font: var(--type-caption); color: var(--text-link); }
+.mcx-looprow .guard { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary); }
+.mcx-looprow .num { flex: 0 0 46px; }
+.mcx-looprow .last {
+  flex: 0 0 190px; text-align: right;
+  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary);
+}
+/* The switch's own label is the loop name, which the row already draws. */
+.mcx-looprow .k-switch-label { display: none; }
+
+/* ---- Connections ---- */
+.mcx-conns { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-5); }
+.mcx-conn {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-4);
+  cursor: pointer; transition: var(--transition-control);
+}
+.mcx-conn:hover { background: var(--surface-overlay); }
+/* Only a card that is NOT plainly connected takes a rule. A left edge on every
+   card would be decoration; on two of seven it is the answer to "what needs
+   me?" — and it is the tone the pill already states, never a second claim. */
+.mcx-conn.off { border-left: 2px solid var(--t-fg); }
+.mcx-conn .top { display: flex; align-items: center; gap: var(--space-4); }
+.mcx-conn .kind {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.mcx-conn .end { margin-left: auto; }
+.mcx-conn .name { font: var(--weight-medium) var(--text-md)/1 var(--font-sans); color: var(--text-primary); }
+.mcx-conn .detail { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary); text-wrap: pretty; }
+.mcx-conn .foot {
+  display: flex; align-items: center; gap: var(--space-4);
+  padding-top: var(--space-2); border-top: 1px solid var(--border-subtle);
+}
+.mcx-conn .last { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
+.mcx-conn .act {
+  margin-left: auto; font: var(--weight-regular) var(--text-xs)/1.5 var(--font-mono);
+  color: var(--text-link); opacity: .8; transition: var(--transition-control);
+}
+.mcx-conn.off .act { color: var(--text-accent); }
+.mcx-conn:hover .act { opacity: 1; }
+
+/* ---- Context ---- */
+.mcx-ctx { display: grid; grid-template-columns: 312px minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+.mcx-doctree {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden;
+}
+/* Each doc kind carries its own accent, and the row reads it by role — so the
+   tree, the selection stripe and the viewer's left rule can never disagree. */
+.mcx-docrow.kind-root, .mcx-docview.kind-root { --k-fg: var(--lime-500); }
+.mcx-docrow.kind-agent, .mcx-docview.kind-agent { --k-fg: var(--blue-400); }
+.mcx-docrow.kind-provider, .mcx-docview.kind-provider { --k-fg: var(--text-secondary); }
+.mcx-docrow {
+  display: flex; align-items: center; gap: var(--space-4); text-align: left;
+  padding: var(--space-3) var(--space-5) var(--space-3) 30px;
+  border: 0; border-top: 1px solid var(--border-subtle); background: transparent;
+  cursor: pointer; transition: var(--transition-control);
+}
+.mcx-docrow.root { padding: var(--space-4) var(--space-5); }
+.mcx-docrow:first-child { border-top: 0; }
+.mcx-docrow:hover { background: var(--surface-hover); }
+.mcx-docrow.on { background: var(--surface-selected); box-shadow: inset 2px 0 0 var(--k-fg); }
+.mcx-docrow .tick { flex: 0 0 8px; height: 1px; background: var(--border-default); }
+.mcx-docrow .ic { color: var(--k-fg); display: flex; flex: 0 0 auto; }
+/* THE LINE-HEIGHT IS PART OF THE TRUNCATION, not decoration — the third time
+   this has been paid for (#444's branch row, #453's branch chip, this). A mono
+   font set at `/1` inside an `overflow: hidden` ellipsis box gives a 12px clip
+   box over a 14px glyph box, so the truncation arrives and takes every
+   descender in the path with it. 1.4 is the headroom; the row's own flex
+   centring is unaffected. */
+.mcx-docrow .path {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: var(--weight-regular) var(--text-xs)/1.4 var(--font-mono); color: var(--text-secondary);
+}
+.mcx-docrow.root .path { font: var(--weight-medium) var(--text-sm)/1.4 var(--font-mono); color: var(--text-primary); }
+.mcx-docrow.on .path { color: var(--blue-300); }
+/* A dash IS an answer — never read, in this case — so it takes the same tone as
+   a count rather than the kit's sub-AA --text-disabled. */
+.mcx-docrow .reads { flex: 0 0 auto; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
+.mcx-docfoot {
+  padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border-subtle);
+  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary); text-wrap: pretty;
+}
+
+.mcx-docview {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--k-fg); border-radius: var(--radius-lg);
+  display: flex; flex-direction: column; min-width: 0;
+}
+.mcx-docviewhead {
+  display: flex; align-items: center; gap: var(--space-5);
+  padding: var(--space-5) var(--space-6); flex-wrap: wrap;
+}
+.mcx-docviewhead .path { font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--text-primary); }
+.mcx-docviewhead .meta { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary); }
+.mcx-docviewhead .acts { margin-left: auto; display: flex; gap: var(--space-3); }
+.mcx-docscope {
+  padding: var(--space-5) var(--space-6); border-top: 1px solid var(--border-subtle);
+  display: flex; flex-direction: column; gap: var(--space-4);
+}
+.mcx-docscope .line { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.mcx-docscope .eyebrow {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.mcx-docscope .who { font: var(--type-body-sm); color: var(--text-secondary); }
+.mcx-docscope .inherits { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary); }
+.mcx-docscope .summary { font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+
+/* The source pane sits on --surface-sunken so a file reads as a file, not as
+   another panel — and it is the one ground on this screen that never lightens,
+   so tertiary is safe on it. */
+.mcx-docbody {
+  padding: var(--space-6); border-top: 1px solid var(--border-subtle);
+  background: var(--surface-sunken); display: flex; flex-direction: column;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.mcx-doceditor {
+  display: block; width: 100%; box-sizing: border-box; min-height: 420px;
+  padding: var(--space-6); border: 0; border-top: 1px solid var(--border-subtle);
+  background: var(--surface-sunken); resize: vertical; outline: none;
+  font: var(--weight-regular) var(--text-sm)/1.5 var(--font-mono);
+  color: var(--text-primary); caret-color: var(--blue-500); white-space: pre-wrap;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.mcx-docempty {
+  padding: var(--space-9); border-top: 1px solid var(--border-subtle);
+  display: flex; flex-direction: column; gap: var(--space-4); align-items: center;
+  background: var(--surface-sunken); border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.mcx-docempty .t { font: var(--type-body-sm); color: var(--text-secondary); }
+
+.mcx-mdline { display: flex; gap: var(--space-5); }
+/* A LINE NUMBER IS A COORDINATE, NOT DECORATION — it is what you say out loud
+   to point at a line, so it has to be readable. The kit's --grey-700 measures
+   1.66:1 on this ground and --grey-600 only 2.05:1 (the audit caught the second
+   one; a screenshot would have caught neither). --text-tertiary is the quietest
+   tone that clears AA here at 6.1:1, and the ground under it never lightens.
+   It stays unselectable, so copying the file copies the file. */
+.mcx-mdline .n {
+  flex: 0 0 22px; text-align: right; user-select: none;
+  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary);
+}
+.mcx-mdline > span:not(.n) { flex: 1; min-width: 0; white-space: pre-wrap; }
+.mcx-mdline .h { font: var(--weight-semibold) var(--text-md)/1.6 var(--font-sans); color: var(--text-primary); padding-top: 6px; }
+.mcx-mdline .h.h1 { font-size: var(--text-lg); }
+/* The kit separates a bullet from a prose line by tone alone (secondary vs
+   tertiary), which would now put prose at the GUTTER's tone. Both take
+   secondary instead: a bullet already announces itself with its own "-" or
+   "1.", and the source pane keeps three levels — heading, text, gutter. */
+.mcx-mdline .bullet, .mcx-mdline .plain { font: var(--weight-regular) var(--text-sm)/1.5 var(--font-mono); color: var(--text-secondary); }
+
+/* ---- Settings ---- */
+.mcx-dangerrow { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
+.mcx-dangerrow .t { flex: 1; min-width: 220px; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+
+/* ---- narrow ----
+   The two-column Context grid and the four-up fact grid are the only things
+   here that cannot survive a phone; everything else already wraps. */
+@media (max-width: 1040px) {
+  .mcx-ctx { grid-template-columns: minmax(0, 1fr); }
+  .mcx-runrow .model, .mcx-agenthead .autonomy, .mcx-provhead .key { display: none; }
+}
+@media (max-width: 720px) {
+  .mcx-facts { grid-template-columns: repeat(2, 1fr); }
+  .mcx-panelbody.pairs { grid-template-columns: minmax(0, 1fr); }
+  .mcx-pulse { gap: var(--space-6); }
+  .mcx-looprow .last, .mcx-provhead .latency { display: none; }
+  .mcx-foldbody { padding-left: var(--space-6); }
+  .mcx-modelrow { padding-left: var(--space-6); }
 }
