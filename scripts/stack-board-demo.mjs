@@ -139,9 +139,13 @@ export async function main(argv = process.argv.slice(2)) {
     try { return JSON.parse(text); } catch { return null; }
   };
 
+  // The payload's five priority keys (#469). Spelled here because a host script
+  // imports nothing from the server — and a stale list does not error on the
+  // READ, it silently reports fewer demo cards than are really on the board and
+  // then leaves the rest behind on --remove.
   const readAll = async () => {
     const r = await api('GET', `/api/projects/${slug}/roadmap`);
-    return [...r.must, ...r.should, ...r.could, ...r.wont];
+    return ['highest', 'high', 'medium', 'low', 'lowest'].flatMap((b) => r[b] || []);
   };
 
   const existing = (await readAll()).filter((it) => it.note.includes(MARK));

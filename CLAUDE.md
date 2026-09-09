@@ -9,18 +9,19 @@ it lives in that file's header and this file keeps only the pointer and the cros
 `ingest.js`, `prompts.js`, `checks.js`, `worktrees.js`, `lib/branch.ts`, `lib/plan.ts`,
 `detail/Board.tsx` and `components/RoadmapModal.tsx` carry theirs.
 
-**SURFACES CULLED** at the owner's request, with their routes and tables: **Mission Control** (its
-seven rooms; `/api/control`, `/api/review`, `/api/merge`), **Polaris** (Futures tab, galaxy,
-`futures`), the **instructions tree** (managed CLAUDE.md library + host sync), the **Workbench**
-(canvas tab, `/api/…/workbench`, `workbench_*`, the Drafter), the Roadmap **Timeline** (#428) and the
-Roadmap **strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`, the ✧ cleanup modal), then
-the screens: EVERY PROJECT TAB BECAME A KIT MOCKUP (#443–#451), MISSION CONTROL TOO (#470), THE
-BOARD'S KANBAN IS WIRED BACK (#453) and the item modal lost Priority/Tier/Risk/Branch (#469); the
-Data rules say what is still unreachable. The Curator's `arrange`/`allocate`/`cleanup` are
-unsurfaced (it keeps `titler`, `assist`). The **TAB AGENTS' CONSOLES** went too (#379/#380,
-`console_off` kept in the DB) and the **Auditor** with them; the CURATOR is the only agent left.
-**`notes` went with the Workbench**, its only reader — table, route, ⌘K scope, the ＋'s composer;
-the ＋ is roadmap-only. Rules that outlived their surface are kept below and SAY SO.
+**GONE, so you don't go looking** (owner's calls, with what went with each): **Mission Control**'s
+seven rooms (`/api/control`, `/api/review`, `/api/merge`) · **Polaris** (Futures tab, galaxy,
+`futures`) · the **instructions tree** (managed CLAUDE.md library + host sync) · the **Workbench**
+(canvas tab, `/api/…/workbench`, `workbench_*`, the Drafter, and `notes` — its only reader — with
+the table, route, ⌘K scope and the ＋'s composer; the ＋ is roadmap-only now) · the Roadmap
+**Timeline** (#428) and **strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`) · the **TAB
+AGENTS' CONSOLES** (#379/#380, `console_off` kept in the DB) and the **Auditor** with them. THEN THE
+SCREENS: every project tab became a kit mockup (#443–#451), Mission Control too (#470), the board's
+kanban is wired back (#453) and the item modal lost Priority/Tier/Risk/Branch (#469).
+
+Two things that leaves: the **CURATOR is the only agent**, and only its `assist` op has a caller
+(`arrange`, `allocate`, `cleanup`, `titler` are registered and unsurfaced). Rules that outlived
+their surface are kept below and SAY SO.
 
 ## What Stack is
 
@@ -48,9 +49,9 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
 - **FOR YOU IS THREE ROUTE KEYS ON ONE SCREEN** (#436) — `overview`, `activity`, `auto`, switched
   by a strip that WRITES the key; never collapse them into state.
 - `lib/route.ts` — hash router. `go.detail(slug, tab, highlight)` deep-links and **the TAB decides
-  what `hl` means** — NO tab honours one since #450, and each ignores its own rather than 404ing,
-  as do the legacy spellings (`futures`, `notes` → Overview). `#/control` lands on
-  `ControlMock.tsx`, the kit's Mission Control mockup (#470).
+  what `hl` means**. The BOARD honours one (#453 — every card carries `data-hl`); every other tab is
+  a mockup and ignores its own rather than 404ing, as do the legacy spellings (`futures`, `notes` →
+  Overview). `#/control` lands on `ControlMock.tsx`, the kit's Mission Control mockup (#470).
 - `screens/` — `ls` is the index. The recipe library (`/api/tips`) has no screen and no way in.
 - `lib/brief.ts` — the resume brief + the `DIRECTIVES` catalogue (keys mirror `SESSION_DEFAULTS`).
 - `lib/termClipboard.ts` — the terminal's copy/paste; its header says why ⌃C, ⌃V and OSC 52 each
@@ -135,24 +136,24 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
 - **The schedule is MINUTES from week zero, not a week index** (#401) — `sched_start_min`/`sched_len_min`
   on `roadmap_items`, with `plan_start_min`/`plan_len_min` the write-once BASELINE a drag must never
   move. Four packages must agree and none can import another: `routes/roadmap.js`, `shape.js` (BIGINT
-  arrives as a STRING, above), `lib/plan.ts`, `lib/spine.ts`. **`estimate` stays in WEEKS**, so
+  arrives as a STRING, above), `lib/plan.ts` and `lib/spine.ts` (which NO component imports —
+  `scripts/spine.test.mjs` is its only reader). **`estimate` stays in WEEKS**, so
   `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet. **NOTHING EDITS OR
   READS THESE** — #428 took the Timeline, their only editor, and #451 the Plans tab.
   (`estimate` excepted, just: the board DRAWS it on a card; nothing writes it.)
-- **ONLY THE BOARD'S KANBAN READS OR WRITES ANYTHING** (#443–#470, owner's call). `IdeasMock`,
-  `ForYouMock` (3 panes), `QualityMock`, `PlansMock`, `ControlMock` (7 tabs) and the two blocks at
-  the foot of `Board.tsx` (Backlog, Development) are the kit's screens on the kit's rows, reading
-  and writing nothing, each header saying what its cull cost; `Board.tsx`'s carries the
-  eight decisions where the kit's picture and this data disagreed.
-  **STILL UNREACHABLE FROM A BROWSER; `./stack` and the API are the way in**: a **verdict** (the
-  board says one came from the auto path and cannot reverse it), **labels**, the **⎇ claim**,
-  **running/adding/editing/deleting a CHECK, filing a bug and moving its status** (#450; the deck
-  still keeps or deletes an extracted bug), and **the stored schedule and the plan row's way into
-  the item modal** (#451). **BACK, ON THE CARD MENU** (#453): park/unpark, archive, delete (still
-  tombstoning a `hook` fingerprint) and the **sign-off** releasing a held `hook`/`fly` row.
-  A mockup's nav badge counts the MOCKUP, the board's its real open cards: either way the number
-  and the screen behind it have to agree. `server/test/plan-lanes.test.mjs` pins the catch-all lane
-  the board owes for #428's unlocking of rename and delete.
+- **ONLY THE BOARD'S KANBAN READS OR WRITES ANYTHING** (#443–#470). `IdeasMock`, `ForYouMock` (3
+  panes), `QualityMock`, `PlansMock`, `ControlMock` (7 tabs) and the two blocks at the foot of
+  `Board.tsx` (Backlog, Development) are the kit's screens on the kit's rows; each header says what
+  its cull cost, and `Board.tsx`'s carries the decisions where the kit's picture and this data
+  disagreed. **UNREACHABLE FROM A BROWSER; `./stack` and the API are the way in**: a **verdict**
+  (the board says one came from the auto path and cannot reverse it), **labels**, the **⎇ claim**,
+  **tier** and **risk** (#469), **running/adding/editing/deleting a CHECK, filing a bug and moving
+  its status** (#450 — the deck still keeps or deletes an extracted bug), and **the stored
+  schedule** (#451). **ON THE CARD MENU** (#453): park/unpark, archive, delete (tombstoning a
+  `hook` fingerprint) and the **sign-off** releasing a held `hook`/`fly` row. A mockup's nav badge
+  counts the MOCKUP, the board's its real open cards: either way the number and the screen behind
+  it have to agree. `server/test/plan-lanes.test.mjs` pins the catch-all lane the board owes for
+  #428's unlocking of rename and delete.
 - **The board order IS the run queue.** `position` is the bucket tiebreak and still PATCHable, but
   **nothing in the client writes it** — and the kanban has no within-column drag on purpose, because
   `position` is scoped to the BUCKET and its columns cut across all four. `queueOrder` in
@@ -242,9 +243,9 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `agents_recorded` is what `agent_usage` prices, so a lost transcript reads as unpriced, not free;
   neither counts every delegation, so `agent_calls` is the MAX of the two.
 - **A plan night is the advisor working, not idle.** `planned` commits nothing by design, so it can
-  never be `landed`: counted apart (`planRuns`/`advisedPlanRuns`) and sitting out the land rate while
-  keeping its spend and role attribution. Folding it back in scores the advisor as having failed to
-  land runs nobody asked it to land.
+  never be `landed`: it is its own bucket in `pulse.js` and sits out the land rate while keeping its
+  spend and role attribution. Folding it back in scores the advisor as having failed to land runs
+  nobody asked it to land.
 - **An empty second-model read means NO PASS RAN, not "nothing found".** A NULL `review_verdict` /
   `architect_verdict` renders as NO REVIEW, never green. Same rule anywhere an agent's opinion is
   stored.
@@ -264,9 +265,9 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `check_runs` is the SUITE's ledger #212 auto-merge and #263 auto-verdict spend against — one
   reported result there would read as a suite of 1/1 passed, a green light manufacturable from
   outside Stack.
-- **The `worktrees` table is a REGISTER, not a manager** (#229, and `routes/worktrees.js`'s header says
-  why): the host alone runs git, identity is the PATH, release is a stamp. Two things that reach past
-  that file: `session_name` keeps the `stack-term-` prefix, which is what puts a session on the
+- **The `worktrees` table is a REGISTER, not a manager** (#229; `routes/worktrees.js`'s header says
+  why): the host alone runs git, identity is the PATH, release is a stamp. Two things reach past that
+  file: `session_name` keeps the `stack-term-` prefix, which is what puts a session on the
   running-sessions strip and what the host reapers key off; and trees live at
   `~/.stack/worktrees/<key>`, inside the $HOME cwd jail the terminal daemon enforces — move the root
   outside $HOME and browser access breaks silently.
@@ -300,16 +301,13 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   both ways — the cull took the agents whose surfaces went, since an agent with nothing to govern is
   a switch that governs nothing. **A missing config row means ON**, as with `readSettings()`. An op's `backend` may be `'gemini'`, so a surface with two backends still has ONE switch;
   only readiness and the refusal differ, and the refusal must NAME the missing backend.
-- **AN AGENT ANNOTATES A VERDICT; IT NEVER GIVES ONE (#375).** The Foreman proved the shape and went
-  with its room; the contract generalises to whatever reads a change next: answer with a CALL
+- **AN AGENT ANNOTATES A VERDICT; IT NEVER GIVES ONE (#375).** The contract, from the agent that
+  proved it and went with its room, generalises to whatever reads a change next: answer with a CALL
   (approve / look / send-back) drawn in the accent, never in a verdict tone; carry **`blind[]`**
   (what it could not see) rendered hardest under an `approve`, and **`read[]`** (what the server
-  assembled). Any agent field that becomes **a link the owner clicks** goes through `cleanPath()`,
-  which drops anything not a same-origin path.
-- **Branch previews (#208) have no UI left** — route, host sweep and `scripts/stack-preview.mjs`
-  survive; a preview is started by hand.
-- **A batch verdict counts absence apart from green** (outlived the Review rail): tally unrun checks
-  and absent verdicts SEPARATELY from passing ones, or a select-all is a blind mass-approve.
+  assembled). And an agent field that becomes **a link the owner clicks** must be reduced to a
+  same-origin PATH before it is rendered — the sanitiser that did it went with the last surface that
+  rendered one, so the next such surface writes it again rather than trusting the string.
 - **An autopilot `stack-auto-*` session is READABLE from the browser and still not mirrorable,
   killable or typeable-into** (#366). `listAutoSessions()` is a SIBLING of `listStackSessions()`,
   whose `stack-term-*` list alone the mirror/kill/reap paths read — widening it to cover both is the
@@ -389,11 +387,11 @@ also documents the self-describing ones). The ones whose meaning isn't obvious f
 | key | meaning |
 | --- | --- |
 | `keepResumeCard` | off → ingest skips the resume refresh and the deck drops the card (#444 took the Overview's) |
-| `sessionDefaults` | catalogue keys (lean/ship/checkpoint/confirm/verify) rendered server-side and injected by SessionStart into EVERY project. `ship` = commits pre-authorised, granted once |
+| `sessionDefaults` | catalogue keys (lean/ship/checkpoint/confirm/verify/**fly**) rendered server-side and injected by SessionStart into EVERY project. `ship` = commits pre-authorised, granted once; `fly` is what makes a session open its own card at all (#381) |
 | `autopilotEnabled` | the ARM SWITCH. Nightly + scheduled jobs only enqueue while on; ▶ Run now stays manual-only |
 | `autopilotWorkers` | the FLEET-WIDE cap on concurrent jobs (0 = unlimited, default 3, clamped 1–8); per-project serialisation is separate and NOT tunable |
 | `autopilotExecutorModel` / `autopilotAdvisorModel` | #153, **inverted by #285**: the ADVISOR runs the session (main loop, plans, delegates, verifies, commits) and the EXECUTOR is exposed to it as a subagent with the write tools. Advisor unset = single-model on the executor |
-| `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set, and **tier S is offered, never assigned** |
+| `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set. **branch/priority/tier/risk are dead toggles** — #469 took those four off the modal, so the route still answers them and nothing can land them |
 | `termIdleHours` | the idle-session reaper's threshold (0 = never); the host does the killing and fails SAFE |
 | `accessPinSet` | PIN sign-in available; PATCH takes write-only `accessPin` ('' disables). Any change signs out every PIN-connected device |
 
@@ -466,7 +464,7 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
 
 ## Tests and quick commands
 
-`ls server/test/ scripts/*.test.mjs web/test/` is the test index — each name says what it pins, each
+`ls server/test/ scripts/*.test.mjs` is the test index — each name says what it pins, each
 header how to run it. Most are **pure** (`node <file>`); ones needing a live API + `DATABASE_URL` say
 so at the top — stand up a throwaway `postgres:16-alpine` rather than treating "no database here" as
 a blocker. `scripts/context-budget.test.mjs` guards THIS file; `scripts/roadmap-refs.mjs` checks
@@ -480,8 +478,8 @@ cp hook/*.mjs ~/.stack/                    # install the hooks — ~/.stack hold
                                            # the writing ones are DRY until --run
 node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack --dry  # tonight's pick?
 node scripts/stack-autopilot-dispatch.mjs  # one dispatcher poll by hand (normally the cron line)
-node scripts/stack-preview.mjs --start <id> # bring a branch up as a preview (normally spawned)
-node hook/stack-gemini-review.mjs --dry    # second-model review of the last commit (--architect #284)
+node scripts/stack-preview.mjs --start <id> # a preview (#208) — no UI left; the route and sweep live
+node hook/stack-gemini-review.mjs --dry    # second-model review of the last commit (--architect too)
 node terminal/stack-term.mjs               # the web-terminal daemon (normally the @reboot cron line)
 crontab -l                                 # the dispatcher line — remove it to disable all runs
 tail -f ~/.stack/{term,autopilot,preview}.log
