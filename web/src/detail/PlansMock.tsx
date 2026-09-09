@@ -1065,7 +1065,7 @@ function ReleasesView() {
 function DependenciesView() {
   return (
     <div className="pl-view">
-      <div className="pl-toolbar wrap">
+      <div className="pl-toolbar">
         {['Roll-up to', 'Group by', 'Area', 'Release', 'Work item', 'Link type'].map((f) => (
           <button className="k-btn sm secondary" key={f}>{f}<Caret /></button>
         ))}
