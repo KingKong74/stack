@@ -133,11 +133,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bugs_auto_fp
 ALTER TABLE bugs          ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_bugs_project ON bugs (project_id, created_at DESC);
 
--- Per-project MoSCoW roadmap.
+-- Per-project roadmap.
+--
+-- `bucket` HELD MoSCoW UNTIL #469 and now holds the console kit's five
+-- priorities. The COLUMN KEEPS ITS NAME: it is spelled in five packages, three
+-- SQL orderings and every payload, and renaming it buys nothing the comment on
+-- util.js's BUCKETS does not. The migration is a few statements down.
 CREATE TABLE IF NOT EXISTS roadmap_items (
   id          SERIAL PRIMARY KEY,
   project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  bucket      TEXT NOT NULL DEFAULT 'should',          -- must | should | could | wont
+  bucket      TEXT NOT NULL DEFAULT 'high',            -- highest | high | medium | low | lowest (#469)
   title       TEXT NOT NULL,
   note        TEXT,
   done        BOOLEAN NOT NULL DEFAULT false,
@@ -220,7 +225,7 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS risk_reason TEXT;
 -- auto pass runs. Rows still on 'normal' stay NULL = unclaimed.
 UPDATE roadmap_items SET risk_source = 'human' WHERE risk_source IS NULL AND risk <> 'normal';
 -- The desire tier (#227): S | A | B | C, NULL = unranked. Deliberately distinct
--- from the MoSCoW bucket — bucket is how big/necessary the work is, tier is how
+-- from the priority bucket — bucket is how big/necessary the work is, tier is how
 -- much the owner wants it NEXT. It is the PRIMARY sort of the run queue, with
 -- the bucket and position as tiebreaks and unranked items sorting last, so a
 -- board nobody has ranked behaves exactly as it always did.
@@ -245,6 +250,31 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS verdict_evidence TEXT;
 -- '' = the default executor; otherwise the agent_profiles key that should build this item
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS agent_profile TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items (project_id, bucket, position);
+
+-- #469 — MoSCoW becomes the five-level priority the console kit draws.
+--
+-- Convergent, like every migration here: each statement matches only rows still
+-- carrying the old word, so a re-run is a no-op and a row an owner has since
+-- moved is never touched.
+--
+-- THE MAPPING IS POSITIONAL, first-of-four to first-of-five and last to last:
+-- must → highest, should → high, could → LOW, wont → lowest. `medium` is the
+-- level MoSCoW never had and nothing migrates into it, which is the whole point
+-- of widening from four to five — it arrives empty, for the owner to use.
+--
+-- `position` is scoped to a bucket and the mapping is one-to-one, so no two
+-- rows can collide on it. And the weights in util.js were left alone on
+-- purpose: must/should became highest/high, so every project's progress reads
+-- exactly what it read before this ran.
+--
+-- WON'T-DO STOPS BEING A STATE. MoSCoW's `wont` was a decision not to do
+-- something; `lowest` is only a rank. The decision still has two homes that say
+-- it better — `skipped` (parked) and `archived` — and neither is touched here.
+UPDATE roadmap_items SET bucket = 'highest' WHERE bucket = 'must';
+UPDATE roadmap_items SET bucket = 'high'    WHERE bucket = 'should';
+UPDATE roadmap_items SET bucket = 'low'     WHERE bucket = 'could';
+UPDATE roadmap_items SET bucket = 'lowest'  WHERE bucket = 'wont';
+ALTER TABLE roadmap_items ALTER COLUMN bucket SET DEFAULT 'high';
 
 -- Per-project checks: HTTP probes run against the project's live application
 -- from the Bugs tab ("is the site up, does the API answer"). Run on demand;
@@ -1018,7 +1048,7 @@ CREATE TABLE IF NOT EXISTS agent_profiles (
 --
 -- Everything below exists because the redesigned Roadmap tab asks the board
 -- three questions the old columns could not answer: WHEN is a thing happening,
--- WHAT is it part of, and HOW is it classified beyond its MoSCoW bucket.
+-- WHAT is it part of, and HOW is it classified beyond its priority bucket.
 --
 -- Read this before touching any of it:
 --

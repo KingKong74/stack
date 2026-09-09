@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRoute, go } from '../lib/route';
-import { PRIORITY_META } from '../lib/ui';
+import { PRIORITY_META, PRIORITY_DEFAULT } from '../lib/ui';
 import type { Priority, Project } from '../types';
 import {
   createRoadmapItem, getProjects, getLastViewedProject, emitItemFiled,
@@ -55,7 +55,7 @@ export function QuickAddDock() {
 
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
-  const [priority, setPriority] = useState<Priority>('should');
+  const [priority, setPriority] = useState<Priority>(PRIORITY_DEFAULT);
 
   // The assist's area suggestion, held as a droppable chip: the composer has no
   // area field to fill, and applying one invisibly would tag work with a lane

@@ -52,7 +52,7 @@ let seq = 0;
 function item(over = {}) {
   seq += 1;
   return {
-    id: seq, title: over.title || `Item ${seq}`, note: '', done: false, bucket: 'should',
+    id: seq, title: over.title || `Item ${seq}`, note: '', done: false, bucket: 'high',
     source: 'manual', reviewed: true, claimedBy: '', area: 'editor', builtNote: '',
     reviewTag: '', reviewTags: [], refineNote: '', reviewShelved: false,
     skipped: false, skippedAt: null, risk: 'normal', riskSource: '', riskReason: '',
@@ -694,11 +694,11 @@ test('a Could is IN the cycle until it is cut — that is what "first to cut" me
   // what has actually been parked. Treating Coulds as pre-deferred made
   // the old trim arithmetic believe cutting one bought back a week never spent.
   const t = scopeTotals([
-    item({ bucket: 'must', estimate: 2 }),
-    item({ bucket: 'should', estimate: 1.5 }),
-    item({ bucket: 'could', estimate: 1 }),
-    item({ bucket: 'could', estimate: 2, skipped: true }),
-    item({ bucket: 'wont', estimate: 3 }),
+    item({ bucket: 'highest', estimate: 2 }),
+    item({ bucket: 'high', estimate: 1.5 }),
+    item({ bucket: 'low', estimate: 1 }),
+    item({ bucket: 'low', estimate: 2, skipped: true }),
+    item({ bucket: 'lowest', estimate: 3 }),
   ]);
   assert.equal(t.committed, 4.5, 'the live Could counts');
   assert.equal(t.deferred, 2, 'the parked one does not');
@@ -707,8 +707,8 @@ test('a Could is IN the cycle until it is cut — that is what "first to cut" me
 
 test('an unsized line is counted apart, never as free', () => {
   const t = scopeTotals([
-    item({ bucket: 'must', estimate: 5 }),
-    item({ bucket: 'must', estimate: null }),
+    item({ bucket: 'highest', estimate: 5 }),
+    item({ bucket: 'highest', estimate: null }),
   ]);
   assert.equal(t.unsized, 1);
   assert.equal(t.committed, 5, 'the unsized line adds nothing…');
@@ -716,7 +716,7 @@ test('an unsized line is counted apart, never as free', () => {
 });
 
 test('a parked line stops counting against the cycle', () => {
-  const kids = [item({ bucket: 'must', estimate: 4 }), item({ bucket: 'should', estimate: 4 })];
+  const kids = [item({ bucket: 'highest', estimate: 4 }), item({ bucket: 'high', estimate: 4 })];
   assert.equal(scopeTotals(kids).fits, false);
   kids[1].skipped = true;
   assert.equal(scopeTotals(kids).fits, true);
@@ -777,14 +777,14 @@ test("the three exclusions: archived, parked and a Won't", () => {
   assert.equal(inCycle(item()), true);
   assert.equal(inCycle(item({ archived: true })), false, 'off the board, but recoverable');
   assert.equal(inCycle(item({ skipped: true })), false, 'cut from this cycle');
-  assert.equal(inCycle(item({ bucket: 'wont' })), false, 'out of the feature entirely');
+  assert.equal(inCycle(item({ bucket: 'lowest' })), false, 'out of the feature entirely');
 });
 
 test('a DONE row is still in the cycle — it is the cycle’s work, finished', () => {
   // Excluding it would empty an area's chip the moment its work shipped, and
   // take the Timeline lane that still draws its bars with it.
   assert.equal(inCycle(item({ done: true })), true);
-  assert.equal(inCycle(item({ done: true, bucket: 'must' })), true);
+  assert.equal(inCycle(item({ done: true, bucket: 'highest' })), true);
 });
 
 test('a CLAIMED row is in the cycle — being worked on is not being excluded', () => {
@@ -792,18 +792,18 @@ test('a CLAIMED row is in the cycle — being worked on is not being excluded', 
 });
 
 test('the exclusions compose — any one of them is enough', () => {
-  assert.equal(inCycle(item({ bucket: 'must', archived: true })), false);
-  assert.equal(inCycle(item({ bucket: 'could', skipped: true })), false);
-  assert.equal(inCycle(item({ bucket: 'wont', done: true })), false);
+  assert.equal(inCycle(item({ bucket: 'highest', archived: true })), false);
+  assert.equal(inCycle(item({ bucket: 'low', skipped: true })), false);
+  assert.equal(inCycle(item({ bucket: 'lowest', done: true })), false);
 });
 
 test('inCycle agrees with scopeTotals about what is committed', () => {
   // The chips and the scope drawer must never describe different populations.
   const kids = [
-    item({ bucket: 'must', estimate: 2 }),
-    item({ bucket: 'could', estimate: 1 }),
-    item({ bucket: 'could', estimate: 1, skipped: true }),   // deferred
-    item({ bucket: 'wont', estimate: 3 }),                   // out
+    item({ bucket: 'highest', estimate: 2 }),
+    item({ bucket: 'low', estimate: 1 }),
+    item({ bucket: 'low', estimate: 1, skipped: true }),   // deferred
+    item({ bucket: 'lowest', estimate: 3 }),                   // out
   ];
   const totals = scopeTotals(kids);
   const summed = kids.filter(inCycle).reduce((n, k) => n + (k.estimate ?? 0), 0);

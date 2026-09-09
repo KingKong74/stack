@@ -121,7 +121,7 @@ Respond with ONLY a JSON object, no markdown fences, in exactly this shape:
 {
   "summary": "one or two sentences on the overall quality of the change",
   "bugs": [{ "title": "…", "severity": "critical|high|medium|low" }],
-  "improvements": [{ "title": "…", "priority": "must|should|could" }],
+  "improvements": [{ "title": "…", "priority": "highest|high|medium|low" }],
   "ideas": [{ "title": "…", "note": "why it might matter" }]
 }
 Empty arrays are the correct answer when there is nothing real to report.
@@ -218,7 +218,7 @@ const body = {
   },
   extract: {
     bugs: bugs.map((b) => ({ title: b.title, severity: b.severity })),
-    next_steps: improvements.map((s) => ({ title: s.title, priority: s.priority || 'could' })),
+    next_steps: improvements.map((s) => ({ title: s.title, priority: s.priority || 'medium' })),
     futures: ideas.map((f) => ({ title: f.title, note: f.note || '' })),
   },
 };

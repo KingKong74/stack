@@ -38,7 +38,7 @@
 //     `centreOn(nowMin(...))` — and when now is off-screen, the caller says so
 //     rather than pinning a now-line to an edge it is nowhere near.
 
-import type { RoadmapItem, SchedSpan } from '../types';
+import type { Roadmap, RoadmapItem, SchedSpan } from '../types';
 
 // --- units -----------------------------------------------------------------
 
@@ -837,7 +837,10 @@ export interface ScopeTotals {
 // the old trim arithmetic believe it had saved time it had never spent, and a
 // figure that claims weeks it did not save is worse than one that refuses. The
 // trim is the Curator's job now, and the total it reads is still this one.
-const IN_CYCLE = new Set(['must', 'should', 'could']);
+// #469 — everything except the bottom rank. It was must/should/could against
+// MoSCoW's four; against five levels the same line is "not `lowest`", which is
+// what `lowest` inherited from `wont`.
+const IN_CYCLE = new Set(['highest', 'high', 'medium', 'low']);
 
 /**
  * Is this row part of the cycle at all? The predicate behind `scopeTotals`'s
@@ -943,9 +946,9 @@ export const DUR_OPTIONS: { label: string; min: number }[] = [
 export function scopeTotals(children: RoadmapItem[], cycle = CYCLE_WEEKS): ScopeTotals {
   let committed = 0; let deferred = 0; let out = 0; let unsized = 0;
   for (const c of children) {
-    if (c.estimate === null) { unsized += 1; if (c.bucket !== 'wont') continue; }
+    if (c.estimate === null) { unsized += 1; if (c.bucket !== 'lowest') continue; }
     const w = c.estimate ?? 0;
-    if (c.bucket === 'wont') out += w;
+    if (c.bucket === 'lowest') out += w;
     else if (c.skipped) deferred += w;
     else if (IN_CYCLE.has(c.bucket)) committed += w;
   }
@@ -1003,12 +1006,22 @@ export function listKeyOf(it: RoadmapItem): string {
  * a `position` field added here without one being served would silently sort
  * every row on 0.
  */
+/**
+ * EVERY ROADMAP ROW, IN THE PAYLOAD'S OWN ORDER — the one place the client
+ * spells the five priority keys, and the reason `queueOrder` below can use
+ * input order as its last sort key. Five call sites had hand-rolled this
+ * spread; #469 widened the shape from four keys to five and every one of them
+ * would have silently dropped a whole priority had the type not caught it.
+ */
+export const flatRoadmap = (r: Roadmap): RoadmapItem[] =>
+  [...r.highest, ...r.high, ...r.medium, ...r.low, ...r.lowest];
+
 const TIER_RANK: Record<string, number> = { S: 0, A: 1, B: 2, C: 3 };
-const BUCKET_RANK: Record<string, number> = { must: 0, should: 1, could: 2, wont: 3 };
+const BUCKET_RANK: Record<string, number> = { highest: 0, high: 1, medium: 2, low: 3, lowest: 4 };
 export const tierRank = (t: string): number => TIER_RANK[String(t || '').toUpperCase()] ?? 4;
 export const queueOrder = (a: RoadmapItem, b: RoadmapItem): number =>
   tierRank(a.tier) - tierRank(b.tier)
-  || (BUCKET_RANK[a.bucket] ?? 3) - (BUCKET_RANK[b.bucket] ?? 3);
+  || (BUCKET_RANK[a.bucket] ?? 4) - (BUCKET_RANK[b.bucket] ?? 4);
 
 /**
  * THE BUILT-NOT-VERDICTED PREDICATE (#374), and the ONE definition of it on the

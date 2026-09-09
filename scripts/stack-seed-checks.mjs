@@ -182,7 +182,10 @@ function suiteFor(slug, ORIGIN) {
     // keyed by check id, so any path assertion would name a specific check and
     // go red the day that check is renamed or retired.
     { name: 'Checks — per-check history', url: u(`/api/projects/${slug}/checks/history?limit=5`), auth: true },
-    { name: 'Roadmap — collection', url: u(`/api/projects/${slug}/roadmap`), auth: true, json_path: 'must' },
+    // #469 — the grouped payload's first key. It was 'must' until MoSCoW
+    // became the five priorities; the KEY is the contract this asserts, and a
+    // server still grouping the old way answers this check with a 404 path.
+    { name: 'Roadmap — collection', url: u(`/api/projects/${slug}/roadmap`), auth: true, json_path: 'highest' },
     { name: 'Checks — collection', url: u(`/api/projects/${slug}/checks`), auth: true, json_path: '0.name' },
     { name: 'Tips — app-wide library', url: u('/api/tips'), auth: true, json_path: '0.name' },
     // The agent spawn-and-customisation engine's read surface. The built-in

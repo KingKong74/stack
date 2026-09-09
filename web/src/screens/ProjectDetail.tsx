@@ -22,7 +22,8 @@ import { TabStrip } from '../components/TabStrip';
 import { Modal } from '../components/Modal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
-import { newItemSched } from '../lib/plan';
+import { newItemSched, flatRoadmap } from '../lib/plan';
+import { PRIORITY_DEFAULT } from '../lib/ui';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
 // (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
@@ -183,8 +184,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const [roadModal, setRoadModal] = useState<{
     open: boolean; priority: Priority; title: string; note: string;
     editing: RoadmapItem | null; branch?: string; area?: string;
-  }>({ open: false, priority: 'should', title: '', note: '', editing: null });
-  const roadModalClosed = { open: false, priority: 'should' as Priority, title: '', note: '', editing: null };
+  }>({ open: false, priority: PRIORITY_DEFAULT, title: '', note: '', editing: null });
+  const roadModalClosed = { open: false, priority: PRIORITY_DEFAULT, title: '', note: '', editing: null };
   // The half-typed-item DRAFT went with the board's first cull (#443) and did
   // not come back with the wiring. It was saved on a stray dismiss and offered
   // back by a strip on the Roadmap tab; with no strip to offer it, keeping one
@@ -265,10 +266,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // would throw away an in-flight optimistic move on the next keystroke
   // anywhere on the screen. The ORDER matters too: `queueOrder` uses payload
   // order as its last sort key, and this is the payload's order.
-  const allRoadmap = useMemo(
-    () => [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont],
-    [roadmap],
-  );
+  const allRoadmap = useMemo(() => flatRoadmap(roadmap), [roadmap]);
   // THE PROJECT-SCOPED REVIEW QUEUE IS GONE with the tab that drew it. It was
   // every 'hook' and 'fly' row no human had signed off — held from the
   // overnight runner by `lib/approval.ts` until someone kept one — and

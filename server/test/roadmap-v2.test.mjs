@@ -48,16 +48,16 @@ const call = async (method, path, body) => {
   return { status: res.status, json };
 };
 
-const flat = (roadmap) => ['must', 'should', 'could', 'wont'].flatMap((b) => roadmap[b] || []);
+const flat = (roadmap) => ['highest', 'high', 'medium', 'low', 'lowest'].flatMap((b) => roadmap[b] || []);
 
 async function main() {
   await call('POST', '/api/projects', { name: SLUG });
   const mk = async (title, extra = {}) =>
     (await call('POST', `/api/projects/${SLUG}/roadmap`, { title, ...extra })).json;
 
-  const feature = await mk('Inline comments', { bucket: 'must', area: 'editor' });
-  const ticket = await mk('Resolve / reopen', { bucket: 'should', area: 'editor' });
-  const other = await mk('Usage metering', { bucket: 'should', area: 'billing' });
+  const feature = await mk('Inline comments', { bucket: 'highest', area: 'editor' });
+  const ticket = await mk('Resolve / reopen', { bucket: 'high', area: 'editor' });
+  const other = await mk('Usage metering', { bucket: 'high', area: 'billing' });
 
   const wk = (n) => n * 7 * 24 * 60;
   // The horizon, twinned with SCHED_WEEKS in server/src/routes/roadmap.js.
@@ -270,7 +270,7 @@ async function main() {
   ok("#411 — and '' clears it back to none, rather than to NULL", r.subArea === '', r.subArea);
 
   // #425 — a row may be born on the timeline.
-  const born = await mk('Born scheduled', { bucket: 'should', sched: { start: wk(2), len: hr(6) } });
+  const born = await mk('Born scheduled', { bucket: 'high', sched: { start: wk(2), len: hr(6) } });
   ok('#425 — a create may carry a schedule', born.sched?.start === wk(2) && born.sched?.len === hr(6), born.sched);
   ok('#425 — …and it is baselined on the way in, or its first drag would slip against nothing',
     born.baseline?.start === wk(2) && born.baseline?.len === hr(6), born.baseline);

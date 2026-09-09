@@ -1027,7 +1027,7 @@ export interface BoardLayout {
   foldedTiers: Tier[];
 }
 const BOARD_LAYOUT_KEY = (slug: string) => `stack.boardLayout.${slug}`;
-const BUCKETS: Priority[] = ['must', 'should', 'could', 'wont'];
+const BUCKETS: Priority[] = ['highest', 'high', 'medium', 'low', 'lowest'];
 const TIER_KEYS: Tier[] = ['S', 'A', 'B', 'C', ''];
 
 export function getBoardLayout(slug: string): BoardLayout {

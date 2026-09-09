@@ -22,8 +22,8 @@ const DEMO = [
     working_well: ['Magic-link login flow feels clean', 'Difficulty-filter UX with URL sync'],
     bugs: [{ title: 'Tooltip mis-positions on mobile', severity: 'high', status: 'open' }],
     roadmap: {
-      must: [{ title: 'Remove the temporary token hack', done: false }],
-      should: [{ title: 'Test the difficulty filter', done: false }],
+      highest: [{ title: 'Remove the temporary token hack', done: false }],
+      high: [{ title: 'Test the difficulty filter', done: false }],
     },
   },
   {
@@ -39,9 +39,9 @@ const DEMO = [
     working_well: ['Incident timeline component is reusable', 'Go check runner is fast and lean'],
     bugs: [{ title: 'Scheduler drifts past 200 monitors', severity: 'critical', status: 'investigating' }],
     roadmap: {
-      must: [{ title: 'Leaky-bucket queue for the scheduler', done: false }],
-      should: [{ title: 'Slack delivery with retry', done: false }],
-      could: [{ title: 'Status-page themes', done: false }],
+      highest: [{ title: 'Leaky-bucket queue for the scheduler', done: false }],
+      high: [{ title: 'Slack delivery with retry', done: false }],
+      low: [{ title: 'Status-page themes', done: false }],
     },
   },
 ];

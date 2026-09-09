@@ -1,7 +1,10 @@
 export type ProjectStatus = 'live' | 'building' | 'paused' | 'archived';
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 export type BugStatus = 'open' | 'investigating' | 'fixing' | 'fixed';
-export type Priority = 'must' | 'should' | 'could' | 'wont';
+// #469 — the console kit's five levels. It was MoSCoW ('must' | 'should' |
+// 'could' | 'wont') and the column behind it is still called `bucket`; the
+// mapping every stored row took is in server/src/schema.sql's migration.
+export type Priority = 'highest' | 'high' | 'medium' | 'low' | 'lowest';
 // Where a tracker row came from. hook = auto-extracted from a push, manual =
 // hand-entered, fly = opened by a live Claude session for its own work (#381).
 // 'fly' is ROADMAP-ONLY — a bug cannot hold it — but the type is shared, so
@@ -77,7 +80,7 @@ export interface Bug {
 export interface PlanStep { text: string; done: boolean }
 
 // The desire tier (#227): how much the owner wants an item NEXT, deliberately
-// distinct from the MoSCoW bucket's sizing. '' = unranked and sorts last, so a
+// distinct from the priority bucket's sizing. '' = unranked and sorts last, so a
 // board nobody has ranked keeps its existing order everywhere.
 export type Tier = '' | 'S' | 'A' | 'B' | 'C';
 export const TIERS: Exclude<Tier, ''>[] = ['S', 'A', 'B', 'C'];
@@ -175,7 +178,13 @@ export interface BoardShape {
   palette?: string[];
   tones?: string[];
 }
-export interface Roadmap { must: RoadmapItem[]; should: RoadmapItem[]; could: RoadmapItem[]; wont: RoadmapItem[] }
+// THE KEY ORDER IS THE CONTRACT, not just a shape. Every client concatenates
+// these five in this order, and `queueOrder` uses the result's own order as its
+// last sort key because `position` is not on the served row.
+export interface Roadmap {
+  highest: RoadmapItem[]; high: RoadmapItem[]; medium: RoadmapItem[];
+  low: RoadmapItem[]; lowest: RoadmapItem[];
+}
 
 // Per-model token/cost breakdown for dual-model sessions (#167).
 export interface ModelUsageEntry {
@@ -339,7 +348,7 @@ export interface OverviewBug {
 }
 // Every project's bug standing, quiet ones included — the per-app health panel.
 export interface OverviewBugCount { slug: string; name: string; serious: number; open: number }
-// One card in the cross-project MoSCoW rollup.
+// One card in the cross-project priority rollup.
 export interface OverviewRoadmapItem {
   slug: string; name: string; id: string; title: string; note: string;
   done: boolean; auto: boolean; claimedBy: string;
@@ -430,7 +439,7 @@ export interface Settings {
   autopilotTokens: number;    // token budget per run; 0 = unlimited
   autopilotTime: string;      // nightly start, host-local HH:MM
   autopilotMaxItems: number;  // most items attempted per night
-  autopilotPlanSweep: boolean; // #255 — stand up a plan session for unplanned must/should work
+  autopilotPlanSweep: boolean; // #255 — stand up a plan session for unplanned highest/high work
   staleItemDays: number;      // a parked roadmap item reads as stale past this many days (#247)
   termIdleHours: number;      // #287 — terminate a silent terminal session after this long; 0 = never
   autopilotExecutorModel: string; // model alias sessions run as; '' = CLI default (#153)

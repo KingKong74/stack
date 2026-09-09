@@ -26,10 +26,13 @@
 //     seeded WITH a branch claim would hold a real lane if they wore a real
 //     area — instead they hold `stack::demo`, which only ever blocks each
 //     other.
-//  3. NOTHING IS `must` OR `should`. `computeProgress` weighs those two and
-//     ignores `could`/`wont` entirely, so a demo board cannot move the
+//  3. NOTHING IS `highest` OR `high`. `computeProgress` weighs those two and
+//     ignores medium/low/lowest entirely (#469 kept the old must/should
+//     weighting under the new names), so a demo board cannot move the
 //     dashboard's progress bar. Promote one from the card's priority picker and
-//     it will — that is the picker working, not a bug.
+//     it will — that is the picker working, not a bug. The same two names are
+//     what the overnight runner picks from, so a promoted demo card would also
+//     become buildable; it stays parked, which is guard 1.
 //  4. NOTHING IS TICKED. `done` is what the merge job writes and what progress
 //     weighs. The rows that sit in Done get there by carrying a VERDICT
 //     (`review_tag`), which is what `listFor` derives on — the same route a
@@ -56,38 +59,38 @@ const AREA = 'Demo';
 // around it.
 const CARDS = [
   // --- To Do: nothing claimed, nothing built.
-  { title: 'Sidebar tree keyboard nav', bucket: 'could', lane: 'planned', tier: 'A', estimate: 2 },
-  { title: 'Audit contrast on dark surfaces', bucket: 'could', lane: 'planned', tier: 'B' },
-  { title: 'Split token files by concern', bucket: 'could', lane: 'planned', estimate: 1 },
-  { title: 'Quarantine flaky checks', bucket: 'could', lane: 'planned', tier: 'C', estimate: 3 },
-  { title: 'Budget line on the usage chart', bucket: 'wont', lane: 'planned' },
-  { title: 'Print sheet geometry', bucket: 'wont', lane: 'planned', estimate: 5 },
+  { title: 'Sidebar tree keyboard nav', bucket: 'medium', lane: 'planned', tier: 'A', estimate: 2 },
+  { title: 'Audit contrast on dark surfaces', bucket: 'medium', lane: 'planned', tier: 'B' },
+  { title: 'Split token files by concern', bucket: 'medium', lane: 'planned', estimate: 1 },
+  { title: 'Quarantine flaky checks', bucket: 'medium', lane: 'planned', tier: 'C', estimate: 3 },
+  { title: 'Budget line on the usage chart', bucket: 'low', lane: 'planned' },
+  { title: 'Print sheet geometry', bucket: 'low', lane: 'planned', estimate: 5 },
 
   // --- In Progress: claimed, nothing built yet.
-  { title: 'Row recycling on scroll', bucket: 'could', lane: 'progress', tier: 'S', estimate: 3,
+  { title: 'Row recycling on scroll', bucket: 'medium', lane: 'progress', tier: 'S', estimate: 3,
     branch: 'perf/9001-row-recycling-on-scroll' },
-  { title: 'Second surface step for nested cards', bucket: 'could', lane: 'progress',
+  { title: 'Second surface step for nested cards', bucket: 'medium', lane: 'progress',
     branch: 'ui/9002-second-surface-step' },
 
   // --- In Review: built and not yet verdicted (#374).
-  { title: 'Replace the legacy grey ramp', bucket: 'could', lane: 'review', tier: 'A', estimate: 2,
+  { title: 'Replace the legacy grey ramp', bucket: 'medium', lane: 'review', tier: 'A', estimate: 2,
     branch: 'refactor/9003-replace-legacy-grey-ramp',
     built: 'Swapped every --grey-* reference for the kit ramp; two rules kept their own tone and say why.' },
-  { title: 'Extract the diff bar', bucket: 'could', lane: 'review',
+  { title: 'Extract the diff bar', bucket: 'medium', lane: 'review',
     branch: 'refactor/9004-extract-the-diff-bar',
     built: 'DiffBar replaces three inline copies. No behaviour change; the smoke walks all three call sites.' },
-  { title: 'Drag a timeline bar to move a date', bucket: 'wont', lane: 'review', estimate: 1,
+  { title: 'Drag a timeline bar to move a date', bucket: 'low', lane: 'review', estimate: 1,
     branch: 'feat/9005-drag-a-timeline-bar',
     built: 'Bars drag and snap to the grain. The BASELINE is untouched by a drag, per lib/plan.ts.' },
 
   // --- Done: a verdict is on record. NOT ticked — see note 4 above.
-  { title: 'Ship Button and IconButton', bucket: 'could', lane: 'shipped', verdict: 'solid',
+  { title: 'Ship Button and IconButton', bucket: 'medium', lane: 'shipped', verdict: 'solid',
     branch: 'feat/9006-ship-button-and-iconbutton',
     built: 'Both components land with the kit tokens and a focus ring spec.' },
-  { title: 'Focus ring spec', bucket: 'could', lane: 'shipped', verdict: 'solid',
+  { title: 'Focus ring spec', bucket: 'medium', lane: 'shipped', verdict: 'solid',
     branch: 'docs/9007-focus-ring-spec',
     built: 'One rule, one token, and the two places that were rolling their own.' },
-  { title: 'Point the palette audit at the board', bucket: 'wont', lane: 'shipped', verdict: 'needs-work',
+  { title: 'Point the palette audit at the board', bucket: 'low', lane: 'shipped', verdict: 'needs-work',
     branch: 'test/9008-palette-audit-board',
     built: 'Audits the four columns. Misses an open card menu, which is why this came back.' },
 ];

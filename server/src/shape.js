@@ -120,9 +120,11 @@ export function roadmapItemShape(row) {
 }
 
 // Group flat roadmap rows (already ordered by bucket, position) into the
-// MoSCoW shape the UI renders.
+// five-priority shape the UI renders (#469). The KEY ORDER is the contract:
+// every client concatenates these four... five arrays in this order and
+// `queueOrder` uses the result's own order as its last sort key.
 export function groupRoadmap(rows) {
-  const out = { must: [], should: [], could: [], wont: [] };
+  const out = { highest: [], high: [], medium: [], low: [], lowest: [] };
   for (const r of rows) {
     if (out[r.bucket]) out[r.bucket].push(roadmapItemShape(r));
   }

@@ -1,4 +1,4 @@
-// The roadmap's LABELS — the classification a card carries beyond its MoSCoW
+// The roadmap's LABELS — the classification a card carries beyond its priority
 // bucket and its area.
 //
 // This WAS a code registry, on the argument that the set is the classification

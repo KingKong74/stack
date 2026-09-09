@@ -70,7 +70,7 @@ const checkpoint = (built, extra = {}) => api('/api/ingest', {
 
 const roadmap = async () => {
   const r = await api(`/api/projects/${SLUG}/roadmap`);
-  return ['must', 'should', 'could', 'wont'].flatMap((b) => r.body?.[b] || []);
+  return ['highest', 'high', 'medium', 'low', 'lowest'].flatMap((b) => r.body?.[b] || []);
 };
 const byId = async (id) => (await roadmap()).find((it) => it.id === id);
 
@@ -79,7 +79,7 @@ await checkpoint([]);   // seeds the project
 // ---- the precise form: an id ------------------------------------------------
 
 const made = (await api(`/api/projects/${SLUG}/roadmap`, {
-  method: 'POST', body: JSON.stringify({ title: 'A planned piece of work', bucket: 'must' }),
+  method: 'POST', body: JSON.stringify({ title: 'A planned piece of work', bucket: 'highest' }),
 })).body;
 
 {
@@ -145,7 +145,7 @@ const made = (await api(`/api/projects/${SLUG}/roadmap`, {
 
 {
   const arch = (await api(`/api/projects/${SLUG}/roadmap`, {
-    method: 'POST', body: JSON.stringify({ title: 'Finished long ago', bucket: 'should' }),
+    method: 'POST', body: JSON.stringify({ title: 'Finished long ago', bucket: 'high' }),
   })).body;
   await api(`/api/projects/${SLUG}/roadmap/${arch.id}`, {
     method: 'PATCH', body: JSON.stringify({ done: true, built_note: 'The real account of it.', archived: true }),
@@ -163,7 +163,7 @@ const made = (await api(`/api/projects/${SLUG}/roadmap`, {
 {
   const r = await checkpoint([{
     title: 'The thing that shipped with no row', note: 'What landed, and how it was checked.',
-    bucket: 'must', area: 'Terminal',
+    bucket: 'highest', area: 'Terminal',
   }]);
   check('a built entry with no matching row FILES one', r.body?.built,
     { linked: 0, created: 1, missed: 0 });
@@ -173,7 +173,7 @@ const made = (await api(`/api/projects/${SLUG}/roadmap`, {
   check('…carrying the account', row?.builtNote, 'What landed, and how it was checked.');
   check('…claimed, so it reaches the Review room', row?.claimedBy, 'feat/9-thing');
   check('…NOT ticked', row?.done, false);
-  check('…in the bucket it was given', row?.bucket, 'must');
+  check('…in the bucket it was given', row?.bucket, 'highest');
   check('…with the area lowercased like every other write', row?.area, 'terminal');
 }
 

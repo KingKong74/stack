@@ -187,7 +187,7 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
             {/* ---- activity: the day-grouped push feed + its sidebar ---- */}
             <PushesSection overview={overview} projects={projects} />
 
-            {/* ---- roadmap: the cross-project MoSCoW rollup ---- */}
+            {/* ---- roadmap: the cross-project priority rollup ---- */}
             <RoadmapRollup roadmap={overview.roadmap} projects={projects} fallback={overview.resume?.slug} />
 
             {/* ---- audit: what needs a human ---- */}

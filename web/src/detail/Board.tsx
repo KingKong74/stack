@@ -13,12 +13,12 @@
 // EIGHT DECISIONS THE WIRING MADE. Each one is a place where the kit's picture
 // and this app's data disagreed, and the data won:
 //
-//  1. THE PRIORITY CONTROL IS `bucket`, AND IT HAS FOUR OPTIONS, NOT FIVE. The
-//     kit draws Highest…Lowest. Stack stores MoSCoW, so the picker offers Must,
-//     Should, Could and Won't and writes the column those names belong to. It
-//     is deliberately NOT `tier`: the desire tier is the item modal's and
-//     nowhere else's (CLAUDE.md), and a five-slot picker on a card is exactly
-//     the second writer that rule exists to prevent.
+//  1. THE PRIORITY CONTROL IS `bucket`, AND SINCE #469 IT IS THE KIT'S OWN
+//     FIVE. It offered Must/Should/Could/Won't at first, because that was what
+//     `bucket` stored; #469 migrated the column to Highest…Lowest and the
+//     picker, the ＋ dock and the Dashboard rollup all read one list for them
+//     now (`PRIORITY_META` in lib/ui.ts). It is still deliberately NOT `tier`:
+//     the desire tier leads the run queue and this control does not.
 //  2. THE COLUMN ORDER IS THE RUN QUEUE'S ORDER, not the payload's. `queueOrder`
 //     in lib/plan.ts sorts tier-then-bucket over an array that arrived in
 //     position order — read its header before touching either. The top of To Do
@@ -73,25 +73,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import type { BoardList, Priority, RoadmapItem } from '../types';
 import { listKeyOf, queueOrder } from '../lib/plan';
+import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta } from '../lib/ui';
 import { isHeld } from '../lib/approval';
 import {
   getBoardShape, createList, patchList, deleteList,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
 } from '../store';
 
-// THE RED AND AMBER GLYPHS USE TEXT TONES, NOT RAMP VALUES. The kit spells its
-// priority glyphs `--red-500`, which is the FILL red — the palette audit
-// measured it at 4.17:1 as a glyph on `--surface-raised`, under AA.
-// `--status-danger-fg` is the same red sized to be READ on a dark ground: "a
-// fill tone is not a text tone" (#432), and the only departure from the kit's
-// own values here. Won't-do is deliberately the quietest of the four.
-const BUCKETS: { value: Priority; label: string; glyph: string; color: string }[] = [
-  { value: 'must', label: 'Must', glyph: '⌃⌃', color: 'var(--status-danger-fg)' },
-  { value: 'should', label: 'Should', glyph: '⌃', color: 'var(--amber-500)' },
-  { value: 'could', label: 'Could', glyph: '=', color: 'var(--blue-400)' },
-  { value: 'wont', label: "Won't", glyph: '⌄', color: 'var(--text-secondary)' },
-];
-const bucketMeta = (b: Priority) => BUCKETS.find((x) => x.value === b) || BUCKETS[2];
+// The five priorities, their glyphs and their tones come from `lib/ui.ts` —
+// ONE list, shared with the ＋ dock. This file carried its own copy of it while
+// the vocabulary was still MoSCoW's four, which is how a card and a dock come
+// to disagree about what Medium looks like.
 
 // The lane for a card whose derived key has no column — decision 8 above. The
 // leading space is what keeps it off `project_lists`, whose keys are slugs.
@@ -513,7 +505,7 @@ function IssueCard({
   onEdit: () => void; onPark: () => void; onSignOff: () => void;
   onArchive: () => void; onDerive: () => void; onDelete: () => void;
 }) {
-  const pri = bucketMeta(item.bucket);
+  const pri = priorityMeta(item.bucket);
   const held = isHeld(item);
   const [confirming, setConfirming] = useState(false);
   useEffect(() => { if (!menuOpen) setConfirming(false); }, [menuOpen]);
@@ -585,10 +577,10 @@ function IssueCard({
             {pri.label}
           </span>
           <div className="opts">
-            {BUCKETS.map((p) => {
-              const on = p.value === item.bucket;
+            {PRIORITY_META.map((p) => {
+              const on = p.key === item.bucket;
               return (
-                <button key={p.value} className={`opt${on ? ' on' : ''}`} onClick={() => onPick(p.value)}>
+                <button key={p.key} className={`opt${on ? ' on' : ''}`} onClick={() => onPick(p.key)}>
                   <span className="g" style={on ? undefined : { color: p.color }}>{p.glyph}</span>
                   {p.label}
                 </button>
@@ -632,12 +624,12 @@ function IssueCard({
 
 function Composer({ onClose, onAdd }: { onClose: () => void; onAdd: (text: string, bucket: Priority) => void }) {
   const [text, setText] = useState('');
-  const [bucket, setBucket] = useState<Priority>('should');
+  const [bucket, setBucket] = useState<Priority>(PRIORITY_DEFAULT);
   const [pick, setPick] = useState(false);
   const ref = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => { ref.current?.focus(); }, []);
   const submit = () => { const t = text.trim(); if (t) onAdd(t, bucket); else onClose(); };
-  const meta = bucketMeta(bucket);
+  const meta = priorityMeta(bucket);
   return (
     <div className="km-composer" onClick={(e) => e.stopPropagation()}>
       <textarea ref={ref} rows={2} value={text} placeholder="What needs to be done?"
@@ -653,9 +645,9 @@ function Composer({ onClose, onAdd }: { onClose: () => void; onAdd: (text: strin
         </button>
         {pick && (
           <span className="km-composer-pick">
-            {BUCKETS.map((p) => (
-              <button key={p.value} className={p.value === bucket ? 'on' : ''} style={{ color: p.color }}
-                onClick={() => { setBucket(p.value); setPick(false); }}>{p.label}</button>
+            {PRIORITY_META.map((p) => (
+              <button key={p.key} className={p.key === bucket ? 'on' : ''} style={{ color: p.color }}
+                onClick={() => { setBucket(p.key); setPick(false); }}>{p.label}</button>
             ))}
           </span>
         )}
@@ -696,7 +688,7 @@ function AddColumn({ onAdd }: { onAdd: (name: string) => void }) {
 // necessary it is — so it deliberately asks for nothing else.
 function CreateDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (title: string, bucket: Priority) => void }) {
   const [title, setTitle] = useState('');
-  const [bucket, setBucket] = useState<Priority>('should');
+  const [bucket, setBucket] = useState<Priority>(PRIORITY_DEFAULT);
   const submit = () => { const t = title.trim(); if (t) onCreate(t, bucket); };
   return (
     <div className="km-scrim" onClick={onClose}>
@@ -716,7 +708,7 @@ function CreateDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (t
         <label className="km-field">
           <span className="lbl">Priority</span>
           <select className="km-select" value={bucket} onChange={(e) => setBucket(e.target.value as Priority)}>
-            {BUCKETS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+            {PRIORITY_META.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
         </label>
         <div className="km-dialog-foot">
@@ -731,8 +723,9 @@ function CreateDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (t
 /* ==========================================================================
    THE TWO TABS BELOW ARE STILL MOCKUPS — everything from here down reads
    nothing and writes nothing. `PriorityKey` and `PRIORITIES` are the KIT's five
-   priorities, kept alive for them alone: the wired board above uses `BUCKETS`,
-   which is what this app actually stores.
+   priorities, kept alive for them alone: the wired board above uses
+   `PRIORITY_META` from lib/ui.ts, which is what this app actually stores now
+   that #469 made the two the same five names.
    ========================================================================== */
 
 type PriorityKey = 'highest' | 'high' | 'medium' | 'low' | 'lowest';

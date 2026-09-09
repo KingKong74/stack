@@ -276,9 +276,9 @@ projects.get('/:slug/debrief', async (req, res) => {
     ),
     q(
       `SELECT id, title, bucket, tier, claimed_by FROM roadmap_items
-        WHERE project_id = $1 AND NOT done AND bucket IN ('must', 'should')
+        WHERE project_id = $1 AND NOT done AND bucket IN ('highest', 'high')
         ORDER BY CASE tier WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END,
-                 CASE bucket WHEN 'must' THEN 0 WHEN 'should' THEN 1 ELSE 2 END,
+                 CASE bucket WHEN 'highest' THEN 0 WHEN 'high' THEN 1 ELSE 2 END,
                  position
         LIMIT 5`,
       [p.id]

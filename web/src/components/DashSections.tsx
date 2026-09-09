@@ -6,6 +6,7 @@ import { go, hrefTo } from '../lib/route';
 import { getLastViewedProject, getTimeline, type TimelineData, type TimelineEntry } from '../store';
 import { buildWeeks, contribLevel } from '../lib/contrib';
 import { roadmapTarget } from '../lib/roadmapLink';
+import { PRIORITY_META } from '../lib/ui';
 import { AutopilotDigest, LiveNowStrip } from './CommandDeck';
 
 // The sectioned dashboard's own pieces: the sticky section nav, the day-grouped
@@ -274,14 +275,14 @@ function HeatmapPanel({ graph }: { graph: Overview['graph'] }) {
   );
 }
 
-// ---------- roadmap: the cross-project MoSCoW rollup ----------
+// ---------- roadmap: the cross-project priority rollup ----------
 
-const BUCKET_LABEL: Record<Priority, string> = {
-  must: 'Must', should: 'Should', could: 'Could', wont: "Won't (now)",
-};
-const BUCKET_DOT: Record<Priority, string> = {
-  must: 'var(--accent)', should: 'var(--building)', could: 'var(--sage)', wont: 'var(--paused)',
-};
+// #469 — the labels and dots come off PRIORITY_META, which is the one client
+// definition of a priority. The dot was a hand-rolled second palette here.
+const BUCKET_LABEL = Object.fromEntries(
+  PRIORITY_META.map((p) => [p.key, p.label])) as Record<Priority, string>;
+const BUCKET_DOT = Object.fromEntries(
+  PRIORITY_META.map((p) => [p.key, p.color])) as Record<Priority, string>;
 
 // Read-only on purpose: a tick here would close an item in another project
 // without its plan, claim or built_note in view, so the card opens the board
@@ -303,7 +304,7 @@ export function RoadmapRollup({ roadmap, projects, fallback }: {
         <div className="titles">
           <div className="h">Roadmap across apps</div>
           <div className="subtitle">
-            MoSCoW rollup · {open} open · {roadmap.closedThisWeek} closed this week
+            Priority rollup · {open} open · {roadmap.closedThisWeek} closed this week
           </div>
         </div>
         {href && (

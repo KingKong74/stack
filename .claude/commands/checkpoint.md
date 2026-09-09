@@ -61,7 +61,7 @@ Do the following:
      },
      "extract": {
        "bugs": [{ "title": "<bug found/introduced>", "severity": "critical|high|medium|low" }],
-       "next_steps": [{ "title": "<concrete follow-up>", "priority": "must|should|could|wont" }],
+       "next_steps": [{ "title": "<concrete follow-up>", "priority": "highest|high|medium|low|lowest" }],
        "futures": [{ "title": "<directional idea for later>", "note": "<why it might matter>" }],
        "built": [{ "item": 381, "note": "<what actually landed, where it lives, how it was verified>" }]
      }
@@ -90,7 +90,7 @@ Do the following:
      overwritten `built_note` on somebody else's finished work. Only send an
      `item` id you have actually seen on the roadmap this session.
    - **Built something with no row at all?** Send a title instead:
-     `{"title": "…", "note": "…", "bucket": "must", "area": "terminal"}`. It
+     `{"title": "…", "note": "…", "bucket": "highest", "area": "terminal"}`. It
      attaches to a matching row if one exists (including a ⚡ FLY card you opened
      when you started), and only files a new one if nothing matches. This is the
      case that matters — a feature that ships with no row is a feature nobody

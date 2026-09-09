@@ -72,7 +72,9 @@ Produce:
 - "area": the product area, lowercase, one or two words. Prefer a known area when one fits;
   otherwise coin a sensible new one.
 - "branch": one of the open branches ONLY if the note clearly belongs to that stream, else "".
-- "priority": "must" | "should" | "could" | "wont" — be honest, most things are not must.
+- "priority": "highest" | "high" | "medium" | "low" | "lowest" — how necessary the work is.
+  Be honest and use the whole scale: "highest" is for work that blocks or breaks something, and
+  most things are not that. "high" is the sensible default for real work somebody asked for.
 - "tier": "S" | "A" | "B" | "C" — how much the OWNER is likely to want this NEXT, which is a
   different question from priority. Priority is how necessary the work is; tier is appetite, and
   it leads the run queue. Read the appetite the note is written with, not just what it asks for:
@@ -99,7 +101,7 @@ THE NOTE:
 {{NOTE}}
 
 Use en-AU spelling. Respond with ONLY this JSON:
-{ "title": "…", "note": "…", "area": "…", "branch": "…", "priority": "must|should|could|wont",
+{ "title": "…", "note": "…", "area": "…", "branch": "…", "priority": "highest|high|medium|low|lowest",
   "tier": "S|A|B|C|", "risk": "low|normal|high|" }`;
 
 DEFAULTS.cleanup = `You are tidying a side project's roadmap board. Below are its OPEN items
@@ -110,7 +112,7 @@ Suggest fixes ONLY where something is actually off — an empty list is a fine a
 - Missing area (area is "-"): suggest one, lowercase, one or two words; prefer known areas.
 - Sloppy title: typos, vague one-worders, or missing the surface it targets — suggest a cleaned
   short imperative that keeps the author's intent.
-- Clearly mis-bucketed: suggest the honest bucket ("must|should|could|wont").
+- Clearly mis-prioritised: suggest the honest one ("highest|high|medium|low|lowest").
 Never invent new work, never merge or drop items, and only include a field you are changing.
 
 THE ITEMS:

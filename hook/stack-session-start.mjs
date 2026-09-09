@@ -112,10 +112,16 @@ function buildBlock(p) {
   if (Array.isArray(p.nextUp) && p.nextUp.length) lines.push('', '**Suggested next**', bullets(p.nextUp));
   if (Array.isArray(p.blockers) && p.blockers.length) lines.push('', '**Blockers**', bullets(p.blockers));
 
+  // THE FIVE PRIORITY KEYS THE PAYLOAD GROUPS BY (#469, was MoSCoW's four).
+  // Spelled here rather than imported because a hook imports nothing from the
+  // server — and walking a stale list does not error, it silently drops a whole
+  // priority's worth of claims and unverified work out of the resume block.
+  const BUCKETS = ['highest', 'high', 'medium', 'low', 'lowest'];
+
   // Branch claims: open roadmap items owned by a parallel session. Never grab
   // another branch's item; claim yours before starting (see the agent manual).
   const claims = [];
-  for (const b of ['must', 'should', 'could', 'wont']) {
+  for (const b of BUCKETS) {
     for (const it of (p.roadmap?.[b] || [])) {
       if (it && !it.done && it.claimedBy) claims.push(`${it.claimedBy} → ${it.title} (#${it.id})`);
     }
@@ -131,7 +137,7 @@ function buildBlock(p) {
   if (ideas.length) lines.push('', '**Idea funnel (futures — directional, not committed)**', bullets(ideas, 6));
 
   const toVerify = [];
-  for (const b of ['must', 'should', 'could', 'wont']) {
+  for (const b of BUCKETS) {
     for (const it of (p.roadmap?.[b] || [])) {
       if (it && it.done && !it.reviewTag && !it.reviewShelved) toVerify.push(`${it.title} (#${it.id})`);
     }

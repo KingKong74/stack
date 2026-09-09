@@ -60,7 +60,7 @@ import { parseBranch, type LaneKind } from './branch';
 // The Roadmap tab owns the schedule, so its arithmetic is imported and never
 // re-spelt here: one definition of the minute offsets, of slip, and of what "in
 // this cycle" means, or the Overview and the Timeline disagree about the same plan.
-import { SCHED_MINUTES, MIN_SCHED_LEN, slipOf, scopeTotals, isBuilt, type ScopeTotals } from './plan';
+import { SCHED_MINUTES, MIN_SCHED_LEN, slipOf, scopeTotals, isBuilt, flatRoadmap, type ScopeTotals } from './plan';
 
 export type StageKey = 'planned' | 'inflight' | 'built' | 'landed';
 
@@ -77,7 +77,7 @@ export interface Stage {
   lastMovedDays: number | null;
 }
 
-const flat = (r: Roadmap): RoadmapItem[] => [...r.must, ...r.should, ...r.could, ...r.wont];
+const flat = flatRoadmap;   // #469 — one spelling of the five keys (lib/plan.ts)
 
 /**
  * The built-not-verdicted predicate (#374). It MOVED to `lib/plan.ts` (#440),
@@ -194,8 +194,11 @@ export function progressLedger(pct: number, roadmap: Roadmap, bugs: Bug[]): Prog
   return {
     pct,
     lines: [
-      { label: 'Must have', done: done(roadmap.must), total: roadmap.must.length },
-      { label: 'Should have', done: done(roadmap.should), total: roadmap.should.length },
+      // The two that COUNT toward progress, and they are the two by name:
+      // `computeProgress` weighs highest and high, so a strip that listed all
+      // five would show three rows that can never move the bar beside them.
+      { label: 'Highest', done: done(roadmap.highest), total: roadmap.highest.length },
+      { label: 'High', done: done(roadmap.high), total: roadmap.high.length },
     ],
     seriousBugs,
     capBiting: seriousBugs > 0 && pct >= PROGRESS_CAP,
@@ -204,7 +207,7 @@ export function progressLedger(pct: number, roadmap: Roadmap, bugs: Bug[]): Prog
 
 // --- the panels that hang off the spine ------------------------------------
 
-const BUCKET_ORDER: Record<string, number> = { must: 0, should: 1, could: 2, wont: 3 };
+const BUCKET_ORDER: Record<string, number> = { highest: 0, high: 1, medium: 2, low: 3, lowest: 4 };
 
 /**
  * The top of the run queue: tier first, then bucket, then board order — the
@@ -216,7 +219,7 @@ export function nextUp(roadmap: Roadmap, limit = 3): RoadmapItem[] {
     .filter((it) => isPlanned(it) && !it.skipped)
     .sort((a, b) =>
       tierRank(a.tier) - tierRank(b.tier)
-      || (BUCKET_ORDER[a.bucket] ?? 4) - (BUCKET_ORDER[b.bucket] ?? 4))
+      || (BUCKET_ORDER[a.bucket] ?? 5) - (BUCKET_ORDER[b.bucket] ?? 5))
     .slice(0, limit);
 }
 
@@ -544,9 +547,9 @@ export interface InFlightFeature {
   unscoped: boolean;
 }
 
-const SCOPE_ORDER = ['must', 'should', 'could', 'wont'];
+const SCOPE_ORDER = ['highest', 'high', 'medium', 'low', 'lowest'];
 const SCOPE_LABEL: Record<string, string> = {
-  must: 'Must', should: 'Should', could: 'Could', wont: "Won't",
+  highest: 'Highest', high: 'High', medium: 'Medium', low: 'Low', lowest: 'Lowest',
 };
 
 /**
@@ -580,7 +583,7 @@ export function inFlightScope(roadmap: Roadmap, limit = 4): InFlightFeature[] {
       // give, and is reported in words beside the bar rather than drawn as
       // though it were zero weeks of work.
       const inBar = children.filter(
-        (c) => c.bucket !== 'wont' && !c.skipped && c.estimate !== null);
+        (c) => c.bucket !== 'lowest' && !c.skipped && c.estimate !== null);
       const byBucket = SCOPE_ORDER.map((bucket) => ({
         bucket,
         label: SCOPE_LABEL[bucket],

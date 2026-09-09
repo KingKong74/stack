@@ -521,9 +521,13 @@ const eligible = (targetArea) => (it) =>
   && (!targetArea || (it.area || '') === targetArea)
   && (KIND !== 'refine' || !!it.refineNote);
 // The desire tier (#227): S/A/B/C is the owner's ranking of what they want
-// next, sorted ahead of the MoSCoW bucket. Unranked = 4, so it lands after
+// next, sorted ahead of the priority bucket. Unranked = 4, so it lands after
 // every ranked item and a board nobody has tiered is untouched.
 const TIER_RANK = { S: 0, A: 1, B: 2, C: 3 };
+// #469 — the five priority keys the payload groups by, in the payload's own
+// order. It was MoSCoW's four; a runner still walking four does not error, it
+// silently stops picking up a whole priority's worth of work.
+const BUCKETS = ['highest', 'high', 'medium', 'low', 'lowest'];
 const tierRank = (t) => TIER_RANK[String(t || '').toUpperCase()] ?? 4;
 let tokensSpent = 0;
 let costSpent = 0;
@@ -1138,7 +1142,7 @@ never print the token). Finishing only some steps is fine; say where you stopped
   // The plan-before-build gate (#219): a Must item arriving with no plan gets
   // its design authored FIRST, in-session, and saved back — so even unplanned
   // work leaves an agreed-shape record and the build follows a written design.
-  const designFirstBlock = (item.plan?.length || item.refineNote || item.bucket !== 'must') ? '' : `
+  const designFirstBlock = (item.plan?.length || item.refineNote || item.bucket !== 'highest') ? '' : `
 This is a Must item with NO implementation plan yet. BEFORE you write any code:
 1. Read the relevant code and author a short design — approach, interfaces touched, data changes, risks — plus 4-8 ordered commit-sized steps.
 2. Save it to the item so the design outlives tonight: PATCH {"plan":[{"text":"…","done":false}, …]} (and append the design summary to the note via {"note":"…"}) at /api/projects/${SLUG}/roadmap/${item.id} — base URL + bearer token from ~/.stack/env, never print the token.
@@ -1449,7 +1453,7 @@ try {
     // apart. Done or already-claimed still refuse.
     let item;
     if (ITEM_ID != null) {
-      const all = ['must', 'should', 'could', 'wont'].flatMap((b) => detail.roadmap?.[b] || []);
+      const all = BUCKETS.flatMap((b) => detail.roadmap?.[b] || []);
       item = all.find((it) => Number(it.id) === ITEM_ID);
       if (!item) { log(`item #${ITEM_ID} not found on ${SLUG} — nothing run.`); break; }
       if (item.done || item.claimedBy) {
@@ -1477,7 +1481,7 @@ try {
       // #228 — an ordered agenda from the session planner: work exactly these,
       // in this order. Unrunnable entries (missing / done / claimed) are
       // skipped with a note rather than sinking the session.
-      const all = ['must', 'should', 'could', 'wont'].flatMap((b) => detail.roadmap?.[b] || []);
+      const all = BUCKETS.flatMap((b) => detail.roadmap?.[b] || []);
       for (const id of AGENDA) {
         if (attempted.has(id)) continue;
         const cand = all.find((it) => Number(it.id) === id);
@@ -1518,7 +1522,7 @@ try {
       // lane against their own later picks — one worker, working
       // sequentially, can keep building in an area it already occupies.
       const heldLanes = new Map(); // normalised area -> the claimedBy holding it
-      for (const b of ['must', 'should', 'could', 'wont']) {
+      for (const b of BUCKETS) {
         for (const it of detail.roadmap?.[b] || []) {
           const area = (it.area || '').trim().toLowerCase();
           if (it.done || !area || !it.claimedBy || attempted.has(it.id)) continue;
@@ -1528,7 +1532,7 @@ try {
       const blockedAreas = new Set();
       item = [...(detail.roadmap?.must || []), ...(detail.roadmap?.should || [])]
         // The desire tier (#227) is the PRIMARY sort — what the owner actually
-        // wants next beats MoSCoW sizing. Unranked items keep their old place
+        // wants next beats the priority. Unranked items keep their old place
         // (tier rank 4, after every ranked one), and the array arrives already
         // ordered must-then-should within bucket position, so a stable sort by
         // tier alone leaves an unranked board picking exactly as it always did.
@@ -1591,7 +1595,7 @@ try {
       let stepsLeftAfter = stepsLeftBefore;
       try {
         const roadmap = await api('GET', `/api/projects/${SLUG}/roadmap`);
-        const all = ['must', 'should', 'could', 'wont'].flatMap((b) => roadmap?.[b] || []);
+        const all = BUCKETS.flatMap((b) => roadmap?.[b] || []);
         const after = all.find((it) => Number(it.id) === item.id);
         if (after) stepsLeftAfter = stepsLeft(after);
       } catch { /* best effort — count it as unticked rather than sink the run */ }

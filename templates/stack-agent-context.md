@@ -7,7 +7,7 @@
 # Working with my projects through Stack
 
 Stack is my self-hosted side-project command centre. Each project has a live
-"where you left off" resume card, an activity feed, a bug tracker, a MoSCoW
+"where you left off" resume card, an activity feed, a bug tracker, a priority
 roadmap and sticky notes. State is **auto-managed** — you don't have to curate it.
 
 ## Trust the injected context
@@ -113,7 +113,7 @@ curl -s -X POST "$STACK_API/api/projects/<slug>/roadmap" \
   -H "authorization: Bearer $STACK_TOKEN" -H 'content-type: application/json' \
   -d '{"source":"fly","session":"'"$(tmux display-message -p '#S' 2>/dev/null)"'",
        "title":"Fix the console strip flicker","note":"What was asked for.",
-       "bucket":"should","area":"terminal"}'
+       "bucket":"high","area":"terminal"}'
 ```
 
 - **`source:"fly"`** is the marker — a live session opened this, as against
@@ -164,7 +164,7 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   view ages every parked item and flags the stale ones, so nothing rots unseen.)
 - **Respect the desire tier.** Open items may carry `tier` — `S`/`A`/`B`/`C`,
   the owner's ranking of what they want NEXT, deliberately separate from the
-  MoSCoW bucket's sizing. It is the primary sort of the run queue: work S before
+  priority bucket's sizing. It is the primary sort of the run queue: work S before
   A before B before C, and unranked items last. Never set or change a tier
   yourself — it's the owner's ground truth for what matters.
 - **A claim is on the ITEM; the collision is on the FILE.** A claim says who

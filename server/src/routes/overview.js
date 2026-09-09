@@ -23,7 +23,7 @@ import { PENDING_SQL } from '../approval.js';
 //   bugs:     { total, projects: [ { slug, name, count } ],
 //               open: [ { slug, name, key, title, severity, status, when, linkRef } ],   // the rows
 //               byProject: [ { slug, name, serious, open } ] },                          // every project
-//   roadmap:  { closedThisWeek, buckets: [ { bucket, open, items: [ … ] } ] }, // cross-project MoSCoW
+//   roadmap:  { closedThisWeek, buckets: [ { bucket, open, items: [ … ] } ] }, // cross-project priorities
 //   activity: [ { slug, name, hash, branch, summary, tags[], when } ],
 //   totals:   { byStatus: { live, building, paused, archived },
 //               openBugs, pushesThisWeek, pushesToday,
@@ -104,7 +104,7 @@ overview.get('/', async (_req, res) => {
                                  WHEN 'medium' THEN 2 ELSE 3 END,
                  b.created_at DESC
         LIMIT 12`),
-    // The cross-project MoSCoW rollup. Open, unparked work plus anything closed
+    // The cross-project priority rollup. Open, unparked work plus anything closed
     // in the last week (so the board shows movement, not only what's left).
     q(`SELECT r.id, r.project_id, r.bucket, r.title, r.note, r.done, r.source, r.tier,
               r.position, r.claimed_by, r.updated_at
@@ -258,10 +258,15 @@ overview.get('/', async (_req, res) => {
     }] : [];
   });
 
-  // The cross-project MoSCoW rollup. Within a bucket the order mirrors the run
+  // The cross-project priority rollup. Within a bucket the order mirrors the run
   // queue — desire tier first, then board position — so the column reads as
   // what would actually be worked next; done items sink to the bottom.
-  const BUCKETS = ['must', 'should', 'could', 'wont'];
+  //
+  // #469 — five buckets, not four, and this list is a LOCAL copy of util.js's
+  // BUCKETS rather than an import because it also fixes the DRAWN order. They
+  // must agree; the import would say that better if this file ever needs the
+  // validation too.
+  const BUCKETS = ['highest', 'high', 'medium', 'low', 'lowest'];
   const ROLLUP_CAP = 6;
   const tierRank = (t) => ({ S: 0, A: 1, B: 2, C: 3 }[t] ?? 4);
   const roadRows = roadR.rows.filter((r) => byId.has(r.project_id));

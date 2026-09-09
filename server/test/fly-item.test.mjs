@@ -161,7 +161,7 @@ const runNow = () => api('/api/autopilot/start', {
   const patch = (body) => api(`/api/projects/${SLUG}/roadmap/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
   const read = async () => {
     const r = await api(`/api/projects/${SLUG}/roadmap`);
-    const all = ['must', 'should', 'could', 'wont'].flatMap((b) => r.body?.[b] || []);
+    const all = ['highest', 'high', 'medium', 'low', 'lowest'].flatMap((b) => r.body?.[b] || []);
     return all.find((it) => it.id === id);
   };
 

@@ -42,7 +42,7 @@ let seq = 0;
 function item(over = {}) {
   seq += 1;
   return {
-    id: seq, title: `Item ${seq}`, note: '', done: false, bucket: 'should',
+    id: seq, title: `Item ${seq}`, note: '', done: false, bucket: 'high',
     source: 'manual', reviewed: true, claimedBy: '', area: '', builtNote: '',
     reviewTag: '', reviewTags: [], refineNote: '', reviewShelved: false,
     skipped: false, skippedAt: null, risk: 'normal', riskSource: '', riskReason: '',
@@ -53,12 +53,13 @@ function item(over = {}) {
     ...over,
   };
 }
-const board = (items) => ({
-  must: items.filter((i) => i.bucket === 'must'),
-  should: items.filter((i) => i.bucket === 'should'),
-  could: items.filter((i) => i.bucket === 'could'),
-  wont: items.filter((i) => i.bucket === 'wont'),
-});
+// #469 — FIVE keys, and the helper builds them off the vocabulary rather than
+// a hand-typed list. `medium` was the key MoSCoW never had, and a fixture board
+// missing it made `flatRoadmap` throw rather than quietly drop a priority,
+// which is the type doing its job one layer down.
+const PRIORITIES = ['highest', 'high', 'medium', 'low', 'lowest'];
+const board = (items) => Object.fromEntries(
+  PRIORITIES.map((p) => [p, items.filter((i) => i.bucket === p)]));
 const stage = (stages, key) => stages.find((s) => s.key === key);
 
 // --- the stage predicates --------------------------------------------
@@ -108,8 +109,8 @@ test('IN FLIGHT excludes what has already been built on the same claim', () => {
 
 test('the four stages count a real board without overlap', () => {
   const items = [
-    item({ bucket: 'must' }),                                             // planned
-    item({ bucket: 'should' }),                                           // planned
+    item({ bucket: 'highest' }),                                             // planned
+    item({ bucket: 'high' }),                                           // planned
     item({ claimedBy: 'feat/3-live' }),                                   // in flight
     item({ done: false, builtNote: 'b', claimedBy: 'fix/4-b' }),          // built
     item({ done: true }),                                                 // built (ticked, no verdict)
@@ -173,16 +174,16 @@ test('an unstamped queue is not reported as still', () => {
 
 test('the ledger explains the served percentage and never recomputes it', () => {
   const items = [
-    item({ bucket: 'must', done: true }), item({ bucket: 'must' }),
-    item({ bucket: 'should', done: true }), item({ bucket: 'should', done: true }),
+    item({ bucket: 'highest', done: true }), item({ bucket: 'highest' }),
+    item({ bucket: 'high', done: true }), item({ bucket: 'high', done: true }),
   ];
   // 71 is deliberately not what any local arithmetic would produce: the figure
   // must come from the payload, or the tab and the Dashboard can disagree.
   const led = progressLedger(71, board(items), []);
   assert.equal(led.pct, 71);
   assert.deepEqual(led.lines, [
-    { label: 'Must have', done: 1, total: 2 },
-    { label: 'Should have', done: 2, total: 2 },
+    { label: 'Highest', done: 1, total: 2 },
+    { label: 'High', done: 2, total: 2 },
   ]);
 });
 
@@ -199,11 +200,11 @@ test('the 90% cap is reported as armed vs actually biting', () => {
 
 test('next up sorts by tier, then bucket, and leaves parked items out', () => {
   const items = [
-    item({ title: 'unranked must', bucket: 'must' }),
-    item({ title: 'tier B', bucket: 'should', tier: 'B' }),
-    item({ title: 'tier S', bucket: 'could', tier: 'S' }),
-    item({ title: 'parked S', bucket: 'must', tier: 'S', skipped: true }),
-    item({ title: 'claimed S', bucket: 'must', tier: 'S', claimedBy: 'feat/9-x' }),
+    item({ title: 'unranked must', bucket: 'highest' }),
+    item({ title: 'tier B', bucket: 'high', tier: 'B' }),
+    item({ title: 'tier S', bucket: 'low', tier: 'S' }),
+    item({ title: 'parked S', bucket: 'highest', tier: 'S', skipped: true }),
+    item({ title: 'claimed S', bucket: 'highest', tier: 'S', claimedBy: 'feat/9-x' }),
   ];
   assert.deepEqual(nextUp(board(items)).map((i) => i.title), ['tier S', 'tier B', 'unranked must']);
 });
@@ -428,12 +429,12 @@ test('a bar wears the stage its own item is in', () => {
 test('a feature is drawn from its children, sized lines only', () => {
   const f = item({ title: 'Inline comments', claimedBy: 'feat/1-inline' });
   const kids = [
-    item({ parentId: f.id, bucket: 'must', estimate: 3 }),
-    item({ parentId: f.id, bucket: 'should', estimate: 1 }),
-    item({ parentId: f.id, bucket: 'could', estimate: null }),   // unsized
+    item({ parentId: f.id, bucket: 'highest', estimate: 3 }),
+    item({ parentId: f.id, bucket: 'high', estimate: 1 }),
+    item({ parentId: f.id, bucket: 'low', estimate: null }),   // unsized
   ];
   const [got] = inFlightScope(board([f, ...kids]));
-  assert.deepEqual(got.segs.map((s) => [s.bucket, s.weeks]), [['must', 3], ['should', 1]]);
+  assert.deepEqual(got.segs.map((s) => [s.bucket, s.weeks]), [['highest', 3], ['high', 1]]);
   assert.equal(got.segs[0].width, 75);
   assert.equal(got.totals.unsized, 1, 'an unsized line is counted apart, never as free');
   assert.equal(got.unscoped, false);
@@ -442,13 +443,13 @@ test('a feature is drawn from its children, sized lines only', () => {
 test('the bar IS the committed scope — a parked line and a Won\'t are not in it', () => {
   const f = item({ title: 'Resolve threads', claimedBy: 'ui/1-resolve' });
   const kids = [
-    item({ parentId: f.id, bucket: 'must', estimate: 3 }),
-    item({ parentId: f.id, bucket: 'should', estimate: 1 }),
-    item({ parentId: f.id, bucket: 'could', estimate: 1.5, skipped: true }),  // cut from the cycle
-    item({ parentId: f.id, bucket: 'wont', estimate: 2 }),                    // out of the feature
+    item({ parentId: f.id, bucket: 'highest', estimate: 3 }),
+    item({ parentId: f.id, bucket: 'high', estimate: 1 }),
+    item({ parentId: f.id, bucket: 'low', estimate: 1.5, skipped: true }),  // cut from the cycle
+    item({ parentId: f.id, bucket: 'lowest', estimate: 2 }),                    // out of the feature
   ];
   const [got] = inFlightScope(board([f, ...kids]));
-  assert.deepEqual(got.segs.map((s) => s.bucket), ['must', 'should']);
+  assert.deepEqual(got.segs.map((s) => s.bucket), ['highest', 'high']);
   const barWeeks = got.segs.reduce((n, s) => n + s.weeks, 0);
   assert.equal(barWeeks, got.totals.committed,
     'the bar and the "N wks committed" beside it must describe the same set');
@@ -459,10 +460,10 @@ test('the bar IS the committed scope — a parked line and a Won\'t are not in i
 test('an in-cycle Could IS in the bar — it is committed until somebody cuts it', () => {
   const f = item({ claimedBy: 'feat/1-x' });
   const [got] = inFlightScope(board([f,
-    item({ parentId: f.id, bucket: 'must', estimate: 2 }),
-    item({ parentId: f.id, bucket: 'could', estimate: 2 }),
+    item({ parentId: f.id, bucket: 'highest', estimate: 2 }),
+    item({ parentId: f.id, bucket: 'low', estimate: 2 }),
   ]));
-  assert.deepEqual(got.segs.map((s) => s.bucket), ['must', 'could']);
+  assert.deepEqual(got.segs.map((s) => s.bucket), ['highest', 'low']);
   assert.equal(got.totals.committed, 4);
 });
 

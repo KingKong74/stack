@@ -31,7 +31,8 @@ import { b64encode, b64decode, GIT_BASH_THEME } from '../lib/termWire';
 // `claude · stack` hides the one fact that distinguishes it from the four
 // beside it, so the name is parsed back.
 import { ConfirmModal } from '../components/ConfirmModal';
-import { tierRank, TIERS, type RoadmapItem, type Tier } from '../types';
+import { tierRank, TIERS, type Roadmap, type RoadmapItem, type Tier } from '../types';
+import { flatRoadmap } from '../lib/plan';
 import { TopBar } from '../components/TopBar';
 
 // The web terminal (#/terminal[?cwd=…]) — xterm.js over websocket to the host
@@ -140,7 +141,7 @@ const BUCKET_RANK: Record<string, number> = { must: 0, should: 1, could: 2, wont
 // the board's Uncategorised tab uses.
 const RAIL_UNTAGGED = ' untagged';
 function nextUpItems(roadmap: ProjectDetailData['roadmap']): RoadmapItem[] {
-  const all = [...roadmap.must, ...roadmap.should, ...roadmap.could, ...roadmap.wont];
+  const all = flatRoadmap(roadmap);
   return all
     .map((it, i) => ({ it, i }))
     .filter(({ it }) => !it.done && !it.skipped && !it.claimedBy)
@@ -853,7 +854,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const openItems = useMemo(() => {
     const r = board?.roadmap;
     if (!r) return [] as RoadmapItem[];
-    return [...r.must, ...r.should, ...r.could, ...r.wont].filter((it) => !it.done);
+    return flatRoadmap(r).filter((it) => !it.done);
   }, [board]);
   // Everything the rail could hand over, in the runner's own order.
   const nextAll = useMemo(() => (board ? nextUpItems(board.roadmap) : []), [board]);
@@ -1040,15 +1041,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // the detail fetch only re-runs on a cwd change or a re-show.
   const applyClaim = (ids: number[], claim: string) => setDetail((d) => {
     if (!d) return d;
+    // Mapped over every KEY rather than a named five, so widening the
+    // vocabulary again cannot silently drop a priority's claims here (#469).
     const bucket = (list: RoadmapItem[]) =>
       list.map((it) => (ids.includes(it.id) ? { ...it, claimedBy: claim } : it));
-    return {
-      ...d,
-      roadmap: {
-        must: bucket(d.roadmap.must), should: bucket(d.roadmap.should),
-        could: bucket(d.roadmap.could), wont: bucket(d.roadmap.wont),
-      },
-    };
+    const roadmap = { ...d.roadmap };
+    for (const k of Object.keys(roadmap) as (keyof Roadmap)[]) roadmap[k] = bucket(roadmap[k]);
+    return { ...d, roadmap };
   });
 
   // Send = type the brief at the prompt (bracketed, so a multi-line block

@@ -694,7 +694,7 @@ autopilotGlobal.get('/next', async (req, res) => {
   // the night's token budget. The candidate pick is ONE aggregate query across
   // every automode project (never one query per project), windowed to the top
   // 20 per project by the run queue's own order — tier first (S/A/B/C, then
-  // unranked last), then bucket (must before should), then position/id — and
+  // unranked last), then bucket (highest before high), then position/id — and
   // filtered exactly like the runner's own `eligible()`: open, unclaimed, not
   // parked, human-approved (or manual), inside the project's target area. The
   // fan-out and the split are pure helpers (nightFanOut/splitNightBudget)
@@ -712,7 +712,7 @@ autopilotGlobal.get('/next', async (req, res) => {
                  ORDER BY
                    CASE upper(COALESCE(r.tier, ''))
                      WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END,
-                   CASE r.bucket WHEN 'must' THEN 0 WHEN 'should' THEN 1 ELSE 2 END,
+                   CASE r.bucket WHEN 'highest' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
                    r.position, r.id
                ) AS rn
           FROM projects p
@@ -720,7 +720,14 @@ autopilotGlobal.get('/next', async (req, res) => {
          WHERE p.automode AND p.deleted_at IS NULL
            AND NOT r.done AND NOT COALESCE(r.skipped, false)
            AND COALESCE(r.claimed_by, '') = ''
-           AND r.bucket IN ('must', 'should')
+           -- #469 — the two priorities that were must and should. NOT widened
+           -- to medium when MoSCoW became five levels: the migration kept every
+           -- project building exactly what it was building, and what the machine
+           -- works unattended is not a thing to change under a rename. Widening
+           -- it is one word here and one in the plan sweep below, and it is a
+           -- decision, not a tidy-up. (No backticks in here: this comment is
+           -- inside a JS template literal, and one ends the query mid-sentence.)
+           AND r.bucket IN ('highest', 'high')
            -- #359's rule, not a copy of it. #266's fan-out query is newer than
            -- #359's branch, so it arrived spelling this out inline and became
            -- the fourth hand-rolled copy the moment the two merged.
@@ -795,7 +802,7 @@ autopilotGlobal.get('/next', async (req, res) => {
                  AND NOT r.done
                  AND NOT COALESCE(r.skipped, false)
                  AND COALESCE(r.claimed_by, '') = ''
-                 AND r.bucket IN ('must', 'should')
+                 AND r.bucket IN ('highest', 'high')   -- #469, see the pick above
                  AND jsonb_array_length(COALESCE(r.plan, '[]'::jsonb)) = 0
                  -- Fail safe (unattended spend, no human watching): without this,
                  -- an unapproved hook item alone stands a plan job up, and the

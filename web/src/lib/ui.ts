@@ -7,17 +7,38 @@ export const STATUS_LABEL: Record<BugStatus, string> = {
 };
 
 export const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low'];
-export const PRIORITY_ORDER: Priority[] = ['must', 'should', 'could', 'wont'];
+export const PRIORITY_ORDER: Priority[] = ['highest', 'high', 'medium', 'low', 'lowest'];
+
+// THE ONE CLIENT DEFINITION OF A PRIORITY (#469). It was MoSCoW until the board
+// was wired and the console kit's five levels replaced it, and the board had
+// grown a second copy of this list to carry the kit's `glyph` — so the glyph
+// moved here instead and the board imports it. Two lists of the same five
+// things is how a card and a dock come to disagree about what Medium looks
+// like.
+//
 // `color` is rendered as TEXT (and a border) on a dark card, so each one names
-// the token whose foreground variant reads there — never a literal. These were
-// the old terracotta palette's hexes, hardcoded, and so they were the one part
-// of the app a stylesheet repalette could not reach.
-export const PRIORITY_META: { key: Priority; label: string; color: string; short: string }[] = [
-  { key: 'must', label: 'Must have', color: 'var(--accent-text)', short: 'Must' },
-  { key: 'should', label: 'Should have', color: 'var(--building)', short: 'Should' },
-  { key: 'could', label: 'Could have', color: 'var(--sage)', short: 'Could' },
-  { key: 'wont', label: "Won't (now)", color: 'var(--muted)', short: "Won't" },
+// the token whose FOREGROUND variant reads there — never a literal, and never a
+// fill tone. The reds are the kit's own `--red-500` swapped for
+// `--status-danger-fg`: the palette audit measured the fill red at 4.17:1 as a
+// glyph on `--surface-raised`, under AA, and "a fill tone is not a text tone"
+// (#432) is the rule that predicted it. Everything else is the kit's, unchanged.
+//
+// The order is HIGHEST FIRST and it is load-bearing — `queueOrder` in
+// lib/plan.ts, `BUCKET_ORDER` in lib/spine.ts, `BUCKETS` in server/src/util.js
+// and three SQL CASE expressions all spell it, and none can import another.
+export const PRIORITY_META: {
+  key: Priority; label: string; color: string; short: string; glyph: string;
+}[] = [
+  { key: 'highest', label: 'Highest', color: 'var(--status-danger-fg)', short: 'Highest', glyph: '⌃⌃' },
+  { key: 'high', label: 'High', color: 'var(--status-danger-fg)', short: 'High', glyph: '⌃' },
+  { key: 'medium', label: 'Medium', color: 'var(--amber-500)', short: 'Medium', glyph: '=' },
+  { key: 'low', label: 'Low', color: 'var(--blue-400)', short: 'Low', glyph: '⌄' },
+  { key: 'lowest', label: 'Lowest', color: 'var(--blue-400)', short: 'Lowest', glyph: '⌄⌄' },
 ];
+/** The default a new item is born with — twin of BUCKET_DEFAULT in server/src/util.js. */
+export const PRIORITY_DEFAULT: Priority = 'high';
+export const priorityMeta = (p: Priority) =>
+  PRIORITY_META.find((x) => x.key === p) || PRIORITY_META[1];
 
 // Dual-model sessions (#153): the executor runs every turn, the advisor is the
 // stronger model it consults as a subagent. '' = CLI default / no advisor.

@@ -122,12 +122,12 @@ export function buildBrief(
     .map((b) => `- ${b.id} · ${b.severity} — ${b.title}${b.status !== 'open' ? ` _(${b.status})_` : ''}`);
   if (openBugs.length > caps.bugs) bugLines.push(`- …and ${openBugs.length - caps.bugs} more`);
 
-  // Open Must/Should roadmap items not already covered by the resume's next-up list.
+  // Open Highest/High roadmap items not already covered by the resume's next-up list.
   const covered = new Set((r?.nextUp || []).map((t) => t.trim().toLowerCase()));
-  const openRoadmap = [...roadmap.must, ...roadmap.should]
+  const openRoadmap = [...roadmap.highest, ...roadmap.high]
     .filter((it) => !it.done && !covered.has(it.title.trim().toLowerCase()));
   const roadLines = openRoadmap.slice(0, caps.roadmap)
-    .map((it) => `- [ ] ${it.title}${it.bucket === 'must' ? ' _(must)_' : ''}`);
+    .map((it) => `- [ ] ${it.title}${it.bucket === 'highest' ? ' _(highest)_' : ''}`);
   if (openRoadmap.length > caps.roadmap) roadLines.push(`- …and ${openRoadmap.length - caps.roadmap} more`);
 
   const pushLines = activity.slice(0, caps.activity)

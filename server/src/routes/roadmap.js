@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { fingerprint, oneOf, BUCKETS, cleanPlan, cleanReviewTags, riskWriteSource, capNote } from '../util.js';
+import { fingerprint, oneOf, BUCKETS, BUCKET_DEFAULT, cleanPlan, cleanReviewTags, riskWriteSource, capNote } from '../util.js';
 import { cleanLabels, ensureLabels } from '../labels.js';
 
 // How far the timeline spans, and where "now" sits in it. A bar is an OFFSET IN
@@ -22,7 +22,7 @@ const MIN_SCHED_LEN = 15;
 // auto-queue its own merge; anything else keeps the human on the merge button.
 const RISKS = ['low', 'normal', 'high'];
 // Desire tiers (#227) — the owner's ranking of what they want NEXT, distinct
-// from the MoSCoW bucket's sizing. '' (→ NULL) = unranked, which sorts last.
+// from the priority bucket's sizing. '' (→ NULL) = unranked, which sorts last.
 const TIERS = ['S', 'A', 'B', 'C'];
 const cleanTier = (v) => {
   const t = String(v ?? '').trim().toUpperCase();
@@ -69,7 +69,7 @@ const refused = async (op, res) => {
   }
 };
 
-// GET  /  -> grouped MoSCoW roadmap
+// GET  /  -> the roadmap, grouped by priority (#469 — five keys, was four)
 roadmap.get('/', async (req, res) => {
   const { rows } = await q(
     'SELECT * FROM roadmap_items WHERE project_id = $1 ORDER BY bucket, position, created_at',
@@ -116,7 +116,7 @@ roadmap.post('/', async (req, res) => {
   const rawSession = String(req.body?.session || '').trim();
   const flySession = source === 'fly' && FLY_SESSION_RE.test(rawSession) ? rawSession : null;
   const note = String(req.body?.note || '').trim().slice(0, 1000);
-  const bucket = oneOf(req.body?.bucket, BUCKETS, 'should');
+  const bucket = oneOf(req.body?.bucket, BUCKETS, BUCKET_DEFAULT);
   const claimedBy = String(req.body?.claimed_by || '').trim().slice(0, 100) || null;
   const area = String(req.body?.area || '').trim().toLowerCase().slice(0, 40) || null;
   const plan = cleanPlan(req.body?.plan);
@@ -325,7 +325,7 @@ roadmap.patch('/:id', async (req, res) => {
     // PATCH win — the column is already SET above and can't go twice.
     if (req.body.review_shelved === undefined) sets.push('review_shelved = false');
   }
-  if (req.body?.bucket !== undefined) { sets.push(`bucket = $${i++}`); vals.push(oneOf(req.body.bucket, BUCKETS, 'should')); }
+  if (req.body?.bucket !== undefined) { sets.push(`bucket = $${i++}`); vals.push(oneOf(req.body.bucket, BUCKETS, BUCKET_DEFAULT)); }
   if (req.body?.title !== undefined) {
     const title = String(req.body.title).trim().slice(0, 300);
     if (title) { sets.push(`title = $${i++}`); vals.push(title); }
@@ -701,9 +701,10 @@ roadmap.post('/arrange', async (req, res) => {
 // was made (#239) and again in the panel's summary, and the next press picks up
 // what was left.
 const ALLOCATE_CAP = 30;
-// The buckets in the order the owner reads them, so a cap cuts the Won'ts
-// before it cuts the Musts.
-const BUCKET_RANK = "CASE bucket WHEN 'must' THEN 0 WHEN 'should' THEN 1 WHEN 'could' THEN 2 ELSE 3 END";
+// The buckets in the order the owner reads them, so a cap cuts the Lowests
+// before it cuts the Highests. #469 — five levels, and the ELSE is `lowest`
+// plus anything unrecognised, which sorts last either way.
+const BUCKET_RANK = "CASE bucket WHEN 'highest' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END";
 
 roadmap.post('/allocate', async (req, res) => {
   if (await refused('allocate', res)) return;
@@ -745,7 +746,7 @@ roadmap.post('/allocate', async (req, res) => {
     AREAS: areaList || '(none yet — this project has never used an area, so every one you give will be new)',
     // #239 — a capped list says it is capped, and names the axis it was cut on.
     CAP_LINE: total > rows.length
-      ? `Only the first ${rows.length} of ${total} untagged items are listed, taken in bucket order (Musts first). File the ones you can see; the rest come round again next time.\n\n`
+      ? `Only the first ${rows.length} of ${total} untagged items are listed, taken in priority order (Highest first). File the ones you can see; the rest come round again next time.\n\n`
       : '',
     ITEMS: rows.map((r) =>
       `${r.id} | ${r.bucket} | ${r.title} | ${(r.note || '-').slice(0, 200)}`).join('\n'),

@@ -75,7 +75,7 @@ async function finishOpenJob() {
   });
   const item = await call(`/projects/${SLUG}/roadmap`, {
     method: 'POST',
-    body: { title: 'Refine round-trip fixture item', bucket: 'must' },
+    body: { title: 'Refine round-trip fixture item', bucket: 'highest' },
   });
 
   await finishOpenJob(); // in case a previous failed run left one open

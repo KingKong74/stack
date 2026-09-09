@@ -14,7 +14,25 @@ export const NOTE_PALETTE = ['#fef4a8', '#e6f0d8', '#dce8f0', '#f3dfe1', '#f0e7d
 
 export const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 export const BUG_STATUSES = ['open', 'investigating', 'fixing', 'fixed'];
-export const BUCKETS = ['must', 'should', 'could', 'wont'];
+// #469 — THE PRIORITY VOCABULARY, and the column is still called `bucket`.
+// It held MoSCoW (must/should/could/wont) until the board was wired and the
+// console kit's own five levels replaced it. The COLUMN keeps its name: it is
+// spelled in five packages, three SQL orderings and every payload, and renaming
+// it buys nothing a comment does not. What changed is the VALUES.
+//
+// HIGHEST FIRST, and the array order is load-bearing — `BUCKET_RANK` in
+// routes/roadmap.js and routes/autopilot.js, `queueOrder` in web/src/lib/plan.ts
+// and the runner's own sort all spell this same order, and none of the four can
+// import another.
+export const BUCKETS = ['highest', 'high', 'medium', 'low', 'lowest'];
+// What every row that predates #469 became, kept as the ONE statement of the
+// mapping: schema.sql migrates the data with it and the prompts describe it.
+// `medium` is the level MoSCoW never had — nothing migrates INTO it.
+export const LEGACY_BUCKET = { must: 'highest', should: 'high', could: 'low', wont: 'lowest' };
+// The default a row is born with. 'high' rather than 'medium' because it is
+// what 'should' translated to, and a default that stopped counting toward
+// progress (see WEIGHT) would move every project's headline number.
+export const BUCKET_DEFAULT = 'high';
 export const PROJECT_STATUSES = ['live', 'building', 'paused', 'archived'];
 // (#363) How much of a project's merging the Merge room's agent may do on one
 // press: auto = its clean branches are queued by ▶ Run; plan = they are in the
@@ -22,8 +40,10 @@ export const PROJECT_STATUSES = ['live', 'building', 'paused', 'archived'];
 // projects.merge_autonomy comment in schema.sql for what each does NOT change.
 export const MERGE_AUTONOMY = ['auto', 'plan', 'off'];
 
-// Short MoSCoW labels, used by the search route's meta field.
-export const PRIORITY_SHORT = { must: 'Must', should: 'Should', could: 'Could', wont: "Won't" };
+// Short priority labels, used by the search route's meta field.
+export const PRIORITY_SHORT = {
+  highest: 'Highest', high: 'High', medium: 'Medium', low: 'Low', lowest: 'Lowest',
+};
 
 // #262 — who is allowed to write the risk tier. ABSENT source = the modal, i.e.
 // a person, and a person's tier always wins. PRESENT but unrecognised takes the
@@ -146,15 +166,24 @@ export function relativeTime(input) {
 // ---------------------------------------------------------------------------
 // Progress model — the single, tweakable definition of "how done is a project".
 //
-//   • Only Must-have and Should-have roadmap items count toward progress.
-//   • A done Must counts double a done Should (Must weight 2, Should weight 1).
+//   • Only Highest and High roadmap items count toward progress.
+//   • A done Highest counts double a done High (weight 2 against weight 1).
 //   • progress = doneWeight / totalWeight, as a 0–100 integer.
 //   • While any critical or high bug is still open, progress is capped at 90%.
-//   • With no Must/Should items at all, progress is 0.
+//   • With no Highest/High items at all, progress is 0.
+//
+// THE WEIGHTS ARE UNCHANGED BY #469, DELIBERATELY. MoSCoW became five levels
+// and `must`/`should` became `highest`/`high`, so every project's headline
+// number is EXACTLY the number it read before the migration. The consequence is
+// worth stating rather than discovering: `medium` — the level MoSCoW never had
+// — does not move the bar, exactly as `could` did not. Weighting all five is a
+// defensible change and it is a DIFFERENT change: it moves every number on
+// every dashboard, and it should be made on its own, not smuggled in under a
+// rename.
 //
 // Tune the weights or the cap here and everywhere reflects it.
 // ---------------------------------------------------------------------------
-const WEIGHT = { must: 2, should: 1 };
+const WEIGHT = { highest: 2, high: 1 };
 const PROGRESS_CAP_WITH_OPEN_SERIOUS_BUG = 90;
 
 export function computeProgress(roadmapItems, bugs) {
@@ -162,7 +191,7 @@ export function computeProgress(roadmapItems, bugs) {
   let done = 0;
   for (const it of roadmapItems) {
     const w = WEIGHT[it.bucket];
-    if (!w) continue; // could/wont don't move the bar
+    if (!w) continue; // medium/low/lowest don't move the bar
     total += w;
     if (it.done) done += w;
   }

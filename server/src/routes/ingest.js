@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db.js';
 import {
   slugify, fingerprint, asList, oneOf, TINTS,
-  SEVERITIES, BUCKETS, capNote,
+  SEVERITIES, BUCKETS, BUCKET_DEFAULT, capNote,
 } from '../util.js';
 import { readSettings } from '../settings.js';
 import { geminiEnabled, askGemini } from '../gemini.js';
@@ -30,7 +30,7 @@ function asStepCandidates(v) {
   return v
     .map((s) => ({
       title: str(s?.title, 300),
-      bucket: oneOf(s?.priority, BUCKETS, 'should'), // default bucket: should
+      bucket: oneOf(s?.priority, BUCKETS, BUCKET_DEFAULT), // #469 — 'high', the old 'should'
     }))
     .filter((s) => s.title)
     .slice(0, 25);
@@ -62,7 +62,7 @@ function asBuiltCandidates(v) {
         item: Number.isFinite(id) && id > 0 ? Math.trunc(id) : null,
         title: str(b?.title, 300),
         note: str(b?.note, 4000) || '',
-        bucket: oneOf(b?.bucket, BUCKETS, 'should'),
+        bucket: oneOf(b?.bucket, BUCKETS, BUCKET_DEFAULT),
         area: str(b?.area, 40)?.toLowerCase() || null,
       };
     })
