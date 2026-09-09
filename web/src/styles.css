@@ -4511,7 +4511,11 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 
    A DASH IS AN ANSWER, not decoration, so it never takes `--text-disabled`
    (3.5:1 on the canvas) — the same call the read-only Plans tab made before
-   this replaced it.
+   this replaced it. TWO TONES THE AUDIT STILL CAUGHT after all of that, both
+   worth remembering: the FOLD CARETS (tertiary, on a lightened area row) and
+   the dependency connector's ARROWHEAD (`--action-primary` as a glyph, 3.39:1
+   — the "a fill tone is not a text tone" trap, in a place a screenshot reads
+   as perfectly fine). Each is fixed at its own rule below.
    ========================================================================== */
 
 .pl { display: flex; flex-direction: column; gap: var(--space-6); }
@@ -4544,7 +4548,11 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .pl-tabs .k-tab { gap: 7px; }
 .pl-tabadd { color: var(--text-tertiary); }
 
-.pl-caret { font: var(--text-xs)/1 var(--font-sans); color: var(--text-tertiary); flex: none; }
+/* A caret is not decoration — it is the only thing on a fold that says which
+   way it is pointing — and it appears in every row on this screen that
+   LIGHTENS, where tertiary measures 4.30:1 (the audit caught it on an area row
+   at #303134). Secondary, everywhere, for the same reason the counts are. */
+.pl-caret { font: var(--text-xs)/1 var(--font-sans); color: var(--text-secondary); flex: none; }
 .pl-dash { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-tertiary); }
 
 /* A sub-view's own body. The Timeline is the exception — it owns the full
@@ -5001,9 +5009,15 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .pl-deps { display: flex; flex-direction: column; gap: var(--space-8); }
 .pl-deprow { display: flex; align-items: center; }
 .pl-deplink { flex: 0 0 190px; display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-4); }
-.pl-deplink .rule { flex: 1; height: 1px; background: var(--action-primary); }
+/* THE WHOLE CONNECTOR IS --text-link, NOT --action-primary. The kit draws both
+   the rule and its arrowhead in the button blue, and that is a FILL tone: as a
+   glyph on the canvas it measures 3.39:1, which the audit caught. The arrow is
+   text — it is what says which way "blocks" runs — so it takes the text blue,
+   and the rule follows it rather than leaving an arrowhead lighter than its
+   own line. */
+.pl-deplink .rule { flex: 1; height: 1px; background: var(--text-link); }
 .pl-deplink .rel { font: var(--type-caption); color: var(--text-secondary); }
-.pl-deplink .arrow { color: var(--action-primary); font: var(--text-sm)/1 var(--font-sans); }
+.pl-deplink .arrow { color: var(--text-link); font: var(--text-sm)/1 var(--font-sans); }
 .pl-depcard {
   width: 300px; flex: 0 0 300px;
   background: var(--surface-card); border: 1px solid var(--border-subtle);
