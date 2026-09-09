@@ -92,7 +92,21 @@ const SCREENS = [
   { slug: 'activity', hash: '#/p/{slug}/activity' },
   { slug: 'auto', hash: '#/p/{slug}/auto' },
   { slug: 'ideas', hash: '#/p/{slug}/ideas' },
+  // Plans is six sub-views behind one strip and first paint reaches ONE of
+  // them, so each of the other five is walked as its own row. Nearly every row
+  // on this screen lightens — a timeline row on hover, an area row when it is
+  // selected, a subject row while its fold is open — and the press leaves the
+  // ground lit, which is exactly the state the #450 findings were caught in.
   { slug: 'plans', hash: '#/p/{slug}/plans' },
+  { slug: 'plans-summary', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(1)'] },
+  { slug: 'plans-progress', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(2)'] },
+  // An OPEN subject fold, measured with the cursor resting on it: the fold's
+  // body sits on --surface-raised inside a card, and the row above it wears
+  // --surface-hover permanently while it is open.
+  { slug: 'plans-progress-open', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(2)', '.pl-childrow'] },
+  { slug: 'plans-calendar', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(4)'] },
+  { slug: 'plans-releases', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(5)'] },
+  { slug: 'plans-deps', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(6)'] },
   { slug: 'settings', hash: '#/settings' },
   { slug: 'skills', hash: '#/skills' },
   { slug: 'timeline', hash: '#/timeline' },

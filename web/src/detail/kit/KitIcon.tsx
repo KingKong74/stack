@@ -20,7 +20,7 @@ export type KitIconName =
   | 'list' | 'ellipsis' | 'circle-check' | 'bookmark' | 'calendar'
   | 'arrow-up-right' | 'pencil' | 'trash-2'
   | 'git-branch' | 'circle-alert' | 'file-text' | 'code' | 'terminal'
-  | 'clock' | 'check';
+  | 'clock' | 'check' | 'chart-no-axes-column' | 'settings';
 
 const PATHS: Record<KitIconName, ReactNode> = {
   plus: <><path d="M5 12h14" /><path d="M12 5v14" /></>,
@@ -105,6 +105,13 @@ const PATHS: Record<KitIconName, ReactNode> = {
   terminal: <><path d="M12 19h8" /><path d="m4 17 6-6-6-6" /></>,
   clock: <><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></>,
   check: <path d="M20 6 9 17l-5-5" />,
+  'chart-no-axes-column': <><path d="M5 21v-6" /><path d="M12 21V3" /><path d="M19 21V9" /></>,
+  settings: (
+    <>
+      <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
 };
 
 export function KitIcon({ name, size = 16, style }: {

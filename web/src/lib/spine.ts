@@ -3,10 +3,13 @@
 // change passes through, the progress ledger's arithmetic, and the small
 // panels that hang off the spine.
 //
-// THE OVERVIEW IS A MOCKUP NOW (#444, detail/ForYouMock.tsx), so of everything
-// below only `isBuilt` still has a caller — Plans. The rest is KEPT rather than
-// culled on purpose: it is pure, it is covered by `scripts/spine.test.mjs`, and
-// it is the definition whatever surfaces these stages next has to be built on.
+// THE OVERVIEW IS A MOCKUP NOW (#444, detail/ForYouMock.tsx) and so is Plans
+// (#451, detail/PlansMock.tsx), which took `isBuilt`'s last CLIENT caller with
+// it — nothing in any component below this line is imported by a screen any
+// more. All of it is KEPT rather than culled on purpose: it is pure, it is
+// covered by `scripts/spine.test.mjs`, and it is the definition whatever
+// surfaces these stages next has to be built on. `isBuilt` in particular is
+// the #374 predicate the runner spends, re-exported here from `lib/plan.ts`.
 // Do not treat "nothing imports it" as a licence to re-derive a predicate.
 //
 // WHY A STAGE IS DERIVED AND NEVER STORED. There is no `stage` column and there

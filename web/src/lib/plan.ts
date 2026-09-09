@@ -1011,8 +1011,12 @@ export const isBuilt = (it: RoadmapItem): boolean =>
 // mockup, at the owner's request), which took `listKeyOf`'s and `UNALLOCATED`'s
 // last callers with it. They stay for the same reason as the exports named
 // below: `listKeyOf` is the client twin of the server's `listFor`, and
-// `server/test/plan-lanes.test.mjs` holds the two in step. `isBuilt` and
-// `areaMatches` still have real callers — Plans.tsx and the item modal.
+// `server/test/plan-lanes.test.mjs` holds the two in step. `areaMatches` still
+// has a real caller — the item modal. `isBuilt` and `slipOf` no longer do:
+// Plans was the last screen to read either and #451 made it a mockup too, so
+// the whole schedule vocabulary in this file is now written, served and read by
+// nothing in a browser. It is still the definition (#374, #401) and the
+// wiring session's starting point — read the paragraph above before deleting.
 //
 // SEVERAL EXPORTS HERE HAVE NO CALLER LEFT: `Move`, the schedule geometry,
 // `scopeTotals` (the Scope drawer's totals) and `horizonOf`. They are kept for

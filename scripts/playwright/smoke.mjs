@@ -211,6 +211,76 @@ const QUALITY_PANELS = [
   },
 ];
 
+// The Plans tab is a mockup too (PlansMock.tsx) and it is the widest of them:
+// SIX sub-views behind one strip, of which first paint shows one. Five of the
+// eight presses below exist only to walk the other five, because a sub-view
+// nothing has pressed is a screen this harness has photographed rather than
+// tested — the same reason Quality's three tabs are all walked.
+//
+// ORDER IS LOAD-BEARING. The Timeline is what first paint draws, so its status
+// workflow menu is pressed FIRST, before anything switches views. After that
+// the strip is walked left to right and each view is judged on something that
+// cannot already be on screen: the donut, an area row, the month grid, a
+// release header, a dependency card.
+//
+// The Progress fold is the one press with nothing new to point at — one area
+// is open at first paint, so `.pl-childrow` and `.pl-childbody` both already
+// exist — so it is judged on the button's own label, which reads "Expand all"
+// until every area is open and "Collapse all" after. That is what
+// `expectTextChangeIn` is for.
+const PLANS_PANELS = [
+  {
+    id: 'plans-status-menu',
+    label: 'Plans — the status workflow menu',
+    click: '.pl-statusbtn',
+    expect: '.pl-menu',
+  },
+  {
+    id: 'plans-summary',
+    label: 'Plans — Summary view',
+    click: '.pl-tabs .k-tab:nth-child(1)',
+    expect: '.pl-donut',
+  },
+  {
+    id: 'plans-progress',
+    label: 'Plans — Progress view',
+    click: '.pl-tabs .k-tab:nth-child(2)',
+    expect: '.pl-arearow',
+  },
+  {
+    id: 'plans-progress-expand',
+    label: 'Progress — every area folds open',
+    click: '.pl-panelhead .pl-linkbtn',
+    expectTextChangeIn: '.pl-panelhead .pl-linkbtn',
+  },
+  {
+    id: 'plans-calendar',
+    label: 'Plans — Calendar view',
+    click: '.pl-tabs .k-tab:nth-child(4)',
+    expect: '.pl-calgrid',
+  },
+  {
+    id: 'plans-releases',
+    label: 'Plans — Releases view',
+    click: '.pl-tabs .k-tab:nth-child(5)',
+    expect: '.pl-relhead',
+  },
+  // The LAST release is closed at first paint (only tokens-v1.5 is open), so
+  // its body is the one thing on this view that cannot already be there.
+  {
+    id: 'plans-release-fold',
+    label: 'Releases — a release folds open',
+    click: '.pl-release:last-child .pl-relhead',
+    expect: '.pl-release:last-child .pl-relbody',
+  },
+  {
+    id: 'plans-dependencies',
+    label: 'Plans — Dependencies view',
+    click: '.pl-tabs .k-tab:nth-child(6)',
+    expect: '.pl-depcard',
+  },
+];
+
 // ---- the screens ---------------------------------------------------------
 // One entry per top-level route this harness walks. `<slug>` is substituted
 // for the --slug value at run time. Order matches the app's own nav order.
@@ -254,7 +324,12 @@ export const SCREENS = [
     path: '#/p/<slug>/ideas',
     interactions: IDEAS_PANELS,
   },
-  { id: 'project-plans', label: 'Project — Plans', path: '#/p/<slug>/plans' },
+  {
+    id: 'project-plans',
+    label: 'Project — Plans',
+    path: '#/p/<slug>/plans',
+    interactions: PLANS_PANELS,
+  },
 ];
 
 // desktop = the ordinary window this app is designed for; narrow = where a

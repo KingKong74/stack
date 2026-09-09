@@ -13,8 +13,8 @@ rooms; `/api/control`, `/api/review`, `/api/merge`), **Polaris** (Futures tab, g
 the **instructions tree** (managed CLAUDE.md library + host sync), the **Workbench** (canvas tab,
 `/api/…/workbench`, `workbench_*`, the Drafter), the Roadmap **Timeline** (#428) and the Roadmap
 **strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`, the ✧ cleanup modal), and then the screens
-themselves: the BOARD and the Roadmap capture tab (#443), FOR YOU'S THREE PANES (#444) and
-QUALITY (#450) — all kit mockups, and the Data rules say what went unreachable with them. The Curator's
+themselves: EVERY PROJECT TAB IS A KIT MOCKUP NOW (#443–#451), and the Data rules say what went
+unreachable with them. The Curator's
 `arrange`/`allocate`/`cleanup` are unsurfaced (it keeps `titler` and `assist`). The **TAB AGENTS'
 CONSOLES** went too (#379/#380, with `console_off` kept in the database) and the **Auditor** with
 them, that session being its whole surface; the CURATOR is the only agent left. **`notes` went with the Workbench** — its only reader — so
@@ -130,17 +130,17 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   on `roadmap_items`, with `plan_start_min`/`plan_len_min` the write-once BASELINE a drag must never
   move. Four packages must agree and none can import another: `routes/roadmap.js`, `shape.js` (BIGINT
   arrives as a STRING, above), `lib/plan.ts`, `lib/spine.ts`. **`estimate` stays in WEEKS**, so
-  `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet. **NOTHING EDITS THESE**
-  (#428 took the Timeline, their only editor); the PLANS tab (#439) is a READER of them.
-- **PLANS IS THE ONLY PROJECT TAB THAT READS ANYTHING; FIVE ARE MOCKUPS** (#443, #444, #447, #450 —
-  owner's call). The **board** (`roadmap`), the **Roadmap** capture tab (`ideas`), all three
-  **For you** panes (`overview`/`activity`/`auto`) and **Quality** are `BoardMock` / `IdeasMock` /
-  `ForYouMock` / `QualityMock`: the kit's screens on the kit's rows, reading and writing nothing,
-  and each file's header says what its cull cost.
+  `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet. **NOTHING EDITS OR
+  READS THESE** — #428 took the Timeline, their only editor, and #451 the Plans tab #439 gave them.
+- **EVERY PROJECT TAB IS A MOCKUP; NONE READS ANYTHING** (#443–#451, owner's call). The **board**
+  (`roadmap`), the **Roadmap** capture tab (`ideas`), all three **For you** panes, **Quality** and
+  **Plans** are `BoardMock` / `IdeasMock` / `ForYouMock` / `QualityMock` / `PlansMock`: the kit's
+  screens on the kit's rows, reading and writing nothing, each header saying what its cull cost.
   **GONE FROM THE UI ENTIRELY**: giving a verdict, park/unpark, archive, delete-from-the-board,
   labels, lane drag, the ⎇ claim, signing off or dismissing a held row (#444: no browser can clear
-  `reviewed_at` or tombstone a fingerprint), and with #450 **running, adding, editing or deleting a
-  CHECK, filing a bug and moving its status** — the deck still keeps or deletes an extracted bug.
+  `reviewed_at` or tombstone a fingerprint), with #450 **running, adding, editing or deleting a
+  CHECK, filing a bug and moving its status** (the deck still keeps or deletes an extracted bug),
+  and with #451 the stored schedule and the plan row's way into the item modal.
   Every column and route survives and the runner still reads them, so a parked item stays
   parked and nothing unparks it; **`./stack` and the API are the way in.** A mockup's nav badge
   counts the MOCKUP (#444, #450): a row's number and the screen behind it have to agree.
@@ -193,8 +193,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   non-empty **AND** `claimed_by` non-empty). **Both halves are load-bearing**: un-ticking clears
   `claimed_by` and keeps `built_note`, so `built_note` alone re-queues rejected changes and
   `claimed_by` alone queues items at claim time. It was the Review room's; the room is culled and
-  `isBuilt` in `web/src/lib/plan.ts` is its ONLY definition (#440), read now by Plans alone — do
-  not simplify it back. Approving does NOT tick (the merge
+  `isBuilt` in `web/src/lib/plan.ts` is its ONLY definition (#440); since #451 no screen calls it,
+  which is not licence to simplify it back. Approving does NOT tick (the merge
   job does, with a human verdict stored). **Anything acting on a built change shares the
   predicate**; a path that opens `if (!item.done) 400` refuses the whole night's work.
 - **`verdict_source` / `verdict_at` / `verdict_evidence` (#263, owner-sanctioned)** — the one place a
