@@ -543,7 +543,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           </a>
         } />
 
-      <main className="con-main"><div className={`con-inner${tab === 'roadmap' ? ' wide' : ''}`}>
+      {/* No `wide` modifier any more (#483): the console fills its column on
+          every tab, so the board no longer needs carving out of a cap that was
+          wrong for all six. */}
+      <main className="con-main"><div className="con-inner">
         {/* THE PROJECT HEADER STANDS DOWN ON THE TWO MOCK TABS. Each of them is
             a whole kit screen and carries its own heading block — the
             breadcrumb + "Stack" + KING tag on the board, the eyebrow +

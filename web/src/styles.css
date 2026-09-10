@@ -205,7 +205,6 @@
   --sidebar-w: 260px;
   --topbar-h: 48px;
   --column-w: 272px;
-  --content-max: 1180px;
 
   /* Elevation */
   --shadow-none: none;
@@ -3534,10 +3533,19 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 
 /* ---------- the main region ---------- */
 .con-main { flex: 1; min-width: 0; padding: var(--space-8); }
-.con-main > .con-inner { max-width: var(--content-max); display: flex; flex-direction: column; gap: var(--space-6); }
-/* The board is the one section that must NOT be capped: its columns run off
-   the right and scroll, and a max-width would clip them instead. */
-.con-main > .con-inner.wide { max-width: none; }
+/* NO READING-WIDTH CAP, and the `.wide` opt-out that used to carve the board
+   out of one is gone with it (#483).
+   
+   `--content-max: 1180px` was a prose measure on screens that carry no prose.
+   Every project tab is one of the console kit's own layouts — dense tables, a
+   kanban, a month grid, three panes of stat tiles — and each of them was
+   drawing 1180px wide inside a 1660px column, so at 1920 the right 456px sat
+   empty while the tables it would have filled truncated their own last
+   column. The board had already been carved out for exactly that reason; what
+   was actually true was that NONE of them wanted the cap, and one exception
+   hid it. `min-width: 0` on the parent is what still lets a scroller inside
+   (the timeline grid, a kanban column run) scroll rather than push the page. */
+.con-main > .con-inner { display: flex; flex-direction: column; gap: var(--space-6); }
 
 /* The page heading block — breadcrumb line, title, and the actions that
    belong to this project rather than to the app. */
