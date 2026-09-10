@@ -2046,19 +2046,6 @@ a.tab { display: inline-block; }
   height: calc(100vh - 210px); min-height: 320px;
 }
 .term-holder .xterm { height: 100%; padding: 12px; }
-/* #121 — the global terminal presence pill (App-level, floats on every screen) */
-.term-presence {
-  position: fixed; right: 18px; bottom: 18px; z-index: 40;
-  display: inline-flex; align-items: center; gap: 8px;
-  background: var(--card); border: 1px solid var(--line-2); border-radius: 999px;
-  padding: 8px 14px; font-size: 12.5px; font-weight: 600; color: var(--ink);
-  box-shadow: var(--shadow-md); cursor: pointer;
-}
-.term-presence:hover { border-color: var(--green); }
-.term-presence .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
-a.term-presence { text-decoration: none; } /* it's an anchor now — middle-click opens a tab */
-.term-presence.claude .dot { background: var(--accent); }
-.term-presence.claude:hover { border-color: var(--accent); }
 .btn-repo.sm { height: 30px; padding: 0 11px; font-size: 12px; }
 .lbl-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 /* drag-reorder on the board */
@@ -2619,10 +2606,10 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 }
 
 /* ---------- #165 to-top button ---------- */
-/* Sits ABOVE the running-sessions pill (.term-presence, bottom: 18px), not on
-   top of it — both are fixed to the same corner. */
+/* The bottom-right corner is its own now — #492 took the running-sessions pill
+   it used to sit 70px above. */
 .totop {
-  position: fixed; bottom: 70px; right: 18px; z-index: 50;
+  position: fixed; bottom: 18px; right: 18px; z-index: 50;
   display: inline-flex; align-items: center; gap: 5px;
   background: var(--surface); border: 1px solid var(--keyline); border-radius: 999px;
   padding: 7px 14px; font-size: 12px; font-weight: 600; color: var(--muted);
@@ -2688,8 +2675,8 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
    Mission Control/Terminal strip all go, because none of them is Mission
    Control itself. What survives is the room strip below (`.mc14-tabs`) — it
    is Mission Control's OWN navigation, not page chrome, and the way out has
-   to stay where the way in was. The corner docks (to-top, terminal presence)
-   are siblings outside this tree entirely, so they fold via a
+   to stay where the way in was. The to-top button is a sibling outside this
+   tree entirely, so it folds via a
    `data-mc-full` flag on <body> instead of a descendant selector.
    z-index 40 matches `.term-fullscreen` and is deliberate: it clears the
    page and stays UNDER `.overlay` (50), so a modal opened from Mission
@@ -2707,7 +2694,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
    have to be paired with `width: auto` or they just shift the pill left
    instead of widening it. */
 .mc-fullscreen { position: fixed; inset: 0; z-index: 40; overflow-y: auto; background: var(--bg); }
-body[data-mc-full] .totop, body[data-mc-full] .term-presence { display: none; }
+body[data-mc-full] .totop { display: none; }
 @media (max-width: 1000px) { .mc14-cols, .mc14-cols.rail-slim { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .mc14-cols { transition: none; } }
 @media (max-width: 800px) { .mc14-toprow { flex-direction: column; } }
@@ -3659,10 +3646,6 @@ body[data-mc-full] .totop, body[data-mc-full] .term-presence { display: none; }
   display: flex; flex-direction: column; gap: var(--space-2);
   position: sticky; top: var(--topbar-h); align-self: flex-start;
   height: calc(100vh - var(--topbar-h)); overflow-y: auto;
-  /* Clears the corner ＋, which is fixed to this same bottom-left corner.
-     Its glass is for sitting over CONTENT; the rail's last row is navigation
-     and should not have to be read through anything. */
-  padding-bottom: 72px;
 }
 .con-navgroup { display: flex; flex-direction: column; gap: var(--space-2); }
 .con-navitems { display: flex; flex-direction: column; gap: var(--space-2); }

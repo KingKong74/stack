@@ -20,9 +20,9 @@ that belongs in one of those is how this file got to 40 KB.**
 seven rooms (`/api/control`, `/api/review`, `/api/merge`) · **Polaris** (Futures tab, galaxy,
 `futures`) · the **instructions tree** (managed CLAUDE.md library + host sync) · the **Workbench**
 (canvas tab, `/api/…/workbench`, `workbench_*`, the Drafter, and `notes` — its only reader — with
-the table, route, ⌘K scope and the ＋'s composer) · the **corner ＋** and the **floating terminal
-dock** (#492 — the board's composer files an item, the presence pill says a session is live) · the
-Roadmap
+the table, route, ⌘K scope and the ＋'s composer) · the **three corner docks** (#492 — the ＋, the
+terminal's chip and float panel, and the running-sessions pill; `/term-status` has no
+watcher) · the Roadmap
 **Timeline** (#428) and **strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`) · the **TAB
 AGENTS' CONSOLES** (#379/#380, `console_off` kept in the DB) and the **Auditor** with them. THEN THE
 SCREENS: every project tab became a kit mockup (#443–#451), Mission Control too (#470), the board's

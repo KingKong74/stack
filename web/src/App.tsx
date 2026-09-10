@@ -15,7 +15,6 @@ const Skills = lazy(() => import('./screens/Skills'));
 import { TokenGate } from './components/TokenGate';
 import { Showcase } from './screens/Showcase';
 import { CommandPalette } from './components/CommandPalette';
-import { TermStatusPill } from './components/TermStatusPill';
 import { ToTop } from './components/ToTop';
 import { getToken, onAuthChange } from './store';
 
@@ -83,7 +82,6 @@ export default function App() {
         </Suspense>
       )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
-      <TermStatusPill hidden={route.name === 'terminal'} />
       {route.name !== 'terminal' && <ToTop />}
     </>
   );
