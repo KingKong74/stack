@@ -5,7 +5,8 @@ import '@xterm/xterm/css/xterm.css';
 import {
   openTerminal, getTermCmds, setTermCmds, type TermCmd,
   getTermUsagePrefs, setTermUsagePrefs, type TermUsagePrefs,
-  getTermViewPrefs, setTermViewPrefs, type TermViewPrefs, TERM_PANE_CHOICES, type TermPaneCount,
+  getTermViewPrefs, setTermViewPrefs, type TermViewPrefs, type TermPaneCount,
+  type TermLayout, LAYOUT_PANES, LAYOUT_META,
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
@@ -21,6 +22,7 @@ import {
   getOverview,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
+
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
 // The wire codec and the palette are shared with the tab agents' consoles
@@ -188,6 +190,23 @@ function itemsBrief(items: RoadmapItem[]): string {
 // whole), and it is the only id that exists for EVERY session — a shell has no
 // tmux name, so keying names by tmux is why shells used to go unnamed.
 type Sess = { id: number; cwd: string; cmd: 'shell' | 'claude'; status: Status; note: string; tmux?: string; sid?: string };
+
+// #487 — the rail groups sessions by TOOL, as the Mission Control design does.
+//
+// A TABLE RATHER THAN A TERNARY, and that is the whole reason it is here. Stack
+// runs two kinds of session today, so a `cmd === 'claude' ? … : …` would be
+// shorter and would also be the thing somebody has to unpick the moment a third
+// arrives — and one is arriving: `stack term --cli` (#481) launches codex,
+// gemini, qwen and aider through the OmniRoute gateway. When a session records
+// which runtime it is, it becomes a row here and nothing else on this screen
+// changes. Until then this honestly lists the two that exist.
+//
+// The order is the order the rail draws: claude first because it is what the
+// screen is mostly for, shells last because they are furniture.
+const TOOL_GROUPS: { key: Sess['cmd']; name: string; mark: string }[] = [
+  { key: 'claude', name: 'Claude Code', mark: 'C' },
+  { key: 'shell', name: 'Shell', mark: '$' },
+];
 type Handle = { sendText: (s: string) => void; reconnect: () => void; focus: () => void };
 
 // Mounted once by App and never unmounted (#137): sessions, sockets and
@@ -203,7 +222,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // Terminal; default claude — that's what this screen is for).
   const [mode, setMode] = useState<'shell' | 'claude'>(() => getTermSessionPrefs().autoStart);
   const [sessions, setSessions] = useState<Sess[]>([]);
-  // A mirror of `sessions` for the async restore (#484) to read. The adoption
+  // A mirror of `sessions` for the async restore (#486) to read. The adoption
   // pass resolves after its own round trip, by which time the `sessions` it
   // closed over at mount is empty — and deciding "is this already open" from a
   // stale empty list is exactly how a duplicate gets opened.
@@ -335,7 +354,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // ?attach= / ?cwd= that a restored tab already covers just focuses that tab
   // instead of opening a duplicate.
   //
-  // A RESTORED CLAUDE TAB NEVER SPAWNS. That is the whole of #484, and it is
+  // A RESTORED CLAUDE TAB NEVER SPAWNS. That is the whole of #486, and it is
   // the difference between reloading a screen and breeding host sessions.
   //
   // What went wrong: `openSession` resolves a missing tmux name through
@@ -649,6 +668,16 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // renders. A tab whose session the daemon has not advertised yet has no
   // answer, which reads as unpinned, the same as the reaper would read it.
   const pinnedOf = (tmux?: string) => !!tmux && detached.some((d) => d.name === tmux && d.keep);
+  // #487 — is this session sitting on a permission prompt. Read off the
+  // daemon's own scan (`blocked`), which is the same source the Approve button
+  // above the canvas answers from, so the rail's "N asking" and the row you
+  // press can never disagree about who is waiting.
+  //
+  // It leans toward NULL exactly as `terminal/prompt-scan.mjs` does: a false
+  // positive here puts an "asking" badge on a session nobody asked anything,
+  // which is worse than noticing a real one a tick late.
+  const blockedOf = (x: Sess) =>
+    (x.tmux ? detached.find((d) => d.name === x.tmux)?.blocked : null) ?? null;
 
   const attachDetached = (d: DetachedSession) => {
     setDetached((l) => l.filter((x) => x.name !== d.name));
@@ -789,15 +818,90 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // a chip instead of reading as unnamed until the next ask.
   const labelOf = (s: Sess) => (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux]) || '';
   const claudeLive = sessions.some((s) => s.cmd === 'claude' && (s.status === 'live' || s.status === 'connecting'));
-  // Which sessions are on screen. The window STARTS at the active tab, so
-  // clicking a tab always puts it top-left with its neighbours filling in
-  // beside it — predictable enough to navigate without thinking, and it never
-  // reorders the tab strip under you. Near the end of the list the window
-  // backs up so the panes stay full rather than leaving holes.
-  const paneCount = Math.max(1, Math.min(viewPrefs.panes, Math.max(1, sessions.length)));
-  const activeIdx = Math.max(0, sessions.findIndex((s) => s.id === active));
-  const paneStart = Math.max(0, Math.min(activeIdx, sessions.length - paneCount));
-  const shownIds = sessions.slice(paneStart, paneStart + paneCount).map((s) => s.id);
+  // WHICH SESSIONS ARE ON SCREEN, and WHERE (#487).
+  //
+  // It was a sliding WINDOW over the session list — start at the active tab,
+  // take N. That is why there was nothing to drag: a pane was a position in a
+  // list, so "put this session in that pane" had no meaning. The design asks
+  // for placement, so panes are SLOTS now: `slots[i]` names the session in
+  // pane i, and dragging swaps two entries.
+  //
+  // SLOTS ARE NOT PERSISTED. A session id is a per-mount counter, so a stored
+  // arrangement would point at whatever happened to take those numbers next
+  // time — a layout restored onto the wrong terminals is worse than one that
+  // simply starts tidy. The LAYOUT is device-local; the arrangement inside it
+  // lasts as long as the screen is open.
+  const layout = viewPrefs.layout;
+  const [slots, setSlots] = useState<(number | null)[]>([]);
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [overSlot, setOverSlot] = useState<number | null>(null);
+
+  /**
+   * The slot assignment for a layout: every entry still alive is KEPT where it
+   * is, and holes are filled from the sessions nobody has placed. Keeping
+   * beats re-deriving because a pane must not move under the cursor when an
+   * unrelated session opens or dies somewhere else on screen.
+   *
+   * Pure, and given everything it reads, so it can be called during render
+   * without becoming a second source of truth beside `slots`.
+   */
+  const slotsFor = (lay: TermLayout, all: Sess[], cur: (number | null)[]): (number | null)[] => {
+    const want = Math.max(1, Math.min(LAYOUT_PANES[lay], Math.max(1, all.length)));
+    const alive = new Set(all.map((x) => x.id));
+    const used = new Set<number>();
+    const out: (number | null)[] = [];
+    for (let i = 0; i < want; i++) {
+      const id = cur[i];
+      if (id != null && alive.has(id) && !used.has(id)) { out[i] = id; used.add(id); }
+      else out[i] = null;
+    }
+    // The ACTIVE session is placed first when it has no slot, so clicking a
+    // rail row always puts it on screen rather than behind a full grid.
+    const queue = [
+      ...all.filter((x) => x.id === active && !used.has(x.id)),
+      ...all.filter((x) => x.id !== active && !used.has(x.id)),
+    ];
+    let q = 0;
+    for (let i = 0; i < want; i++) {
+      if (out[i] != null) continue;
+      const next = queue[q++];
+      if (next) { out[i] = next.id; used.add(next.id); }
+    }
+    return out;
+  };
+
+  const slotIds = slotsFor(layout, sessions, slots);
+  const paneCount = slotIds.length;
+  const shownIds = slotIds.filter((x): x is number => x != null);
+
+  /** Drop `dragId` into pane `index`, swapping with whatever was there. */
+  const dropInSlot = (index: number) => {
+    const id = dragId;
+    setDragId(null); setOverSlot(null);
+    if (id == null) return;
+    const next = slotsFor(layout, sessions, slots).slice();
+    const from = next.indexOf(id);
+    if (from === index) return;
+    const displaced = next[index];
+    next[index] = id;
+    // A session dragged from ANOTHER pane swaps; one dragged from the rail
+    // (not on screen at all) simply displaces, and the displaced session goes
+    // back to being unplaced rather than vanishing from the arrangement.
+    if (from !== -1) next[from] = displaced ?? null;
+    setSlots(next);
+    setActive(id);
+  };
+
+  /** Put a session on screen in the first pane, whatever it takes. */
+  const focusInSlot = (id: number) => {
+    const next = slotsFor(layout, sessions, slots).slice();
+    const from = next.indexOf(id);
+    if (from === 0) { setActive(id); return; }
+    if (from !== -1) next[from] = next[0];
+    next[0] = id;
+    setSlots(next);
+    setActive(id);
+  };
 
   // Asking for N terminals is asking for N terminals. The pane control used to
   // set a number and stop, so choosing 4 with one session open left one pane
@@ -808,8 +912,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // a client holds elsewhere (attaching to those only mirrors them), then open
   // fresh sessions in the active tab's directory for whatever is still short.
   const [filling, setFilling] = useState(false);
-  const choosePanes = async (n: TermPaneCount) => {
-    saveViewPrefs({ panes: n });
+  const chooseLayout = async (lay: TermLayout) => {
+    // The pane COUNT rides along so a device that later loads an older build
+    // lands on the nearest shape rather than on the default.
+    const n = LAYOUT_PANES[lay];
+    saveViewPrefs({ layout: lay, panes: Math.min(4, n) as TermPaneCount });
     const liveNow = sessions.filter((s) => s.status === 'live' || s.status === 'connecting');
     let need = n - liveNow.length;
     if (need <= 0 || filling) return;
@@ -1322,7 +1429,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   useEffect(() => { if (visible) loadServerUsage(); }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
   useAutoRefresh(loadServerUsage, visible);
 
-  // #484 — the OmniRoute gateway, as the HOST sees it. null = not asked yet,
+  // #486 — the OmniRoute gateway, as the HOST sees it. null = not asked yet,
   // which renders as nothing rather than as a claim; the three states the
   // answer can carry are handled where it is drawn.
   const [gateway, setGateway] = useState<GatewayState | null>(null);
@@ -1444,17 +1551,20 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           {/* How many terminals are on screen at once — this replaced the
               wide-mode toggle. Panes are filled from the active tab onwards,
               so picking a tab puts it top-left and its neighbours beside it. */}
-          <span className="seg-control sm term-panes" role="tablist" aria-label="Terminals on screen">
-            {TERM_PANE_CHOICES.map((n) => (
-              <button key={n} role="tab" aria-selected={viewPrefs.panes === n}
-                className={`seg-opt ${viewPrefs.panes === n ? 'on' : ''}`}
-                title={n === 1
-                  ? 'One terminal, normal page width'
-                  : `${n} terminals side by side — the screen goes full width.`
-                    + ' Empty panes fill from the sessions still running on the host,'
-                    + ' then with new ones.'}
-                onClick={() => void choosePanes(n)}>
-                {n === 1 ? '▢' : `▢${n}`}
+          {/* #487 — THE LAYOUT SWITCHER, from the Mission Control design. Five
+              SHAPES rather than a pane count: two of them are asymmetric, and
+              a number cannot express "one wide one with the rest stacked
+              beside it". Picking one still FILLS it — empty panes take the
+              sessions already running on the host before any new one is
+              spawned, which is the rule the pane count had and the reason a
+              bigger layout does not strand claude sessions nobody is watching. */}
+          <span className="seg-control sm term-panes" role="tablist" aria-label="Terminal layout">
+            {LAYOUT_META.map((l) => (
+              <button key={l.key} role="tab" aria-selected={layout === l.key}
+                className={`seg-opt ${layout === l.key ? 'on' : ''}`}
+                title={`${l.name} — ${l.hint}. Empty panes fill from the sessions still running on the host, then with new ones.`}
+                onClick={() => void chooseLayout(l.key)}>
+                {l.icon}
               </button>
             ))}
           </span>
@@ -1597,7 +1707,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           </div>
         )}
 
-        {/* #484 — the OmniRoute gateway. THREE STATES, drawn as three different
+        {/* #486 — the OmniRoute gateway. THREE STATES, drawn as three different
             sentences, because collapsing them is the whole hazard: "Stack
             cannot see this host" is not "the gateway is down", and neither is
             a green tick. Same rule as a NULL review_verdict — absence is never
@@ -1718,9 +1828,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         )}
 
         <div className="term-layout">
-          <div className={`term-main term-grid p${paneCount}`}>
+          {/* #487 — the grid is driven by the LAYOUT, and each pane knows its
+              SLOT. `data-slot` is what a drop reads; the layout class is what
+              styles.css turns into the asymmetric shapes. */}
+          <div className={`term-main term-grid lay-${layout} p${paneCount}`}>
             {sessions.map((s) => {
-              const shown = shownIds.includes(s.id);
+              const slot = slotIds.indexOf(s.id);
+              const shown = slot !== -1;
               // Every session stays MOUNTED whether or not it is on screen —
               // unmounting one would drop its socket and its scrollback, which
               // is the whole reason this component never unmounts either. Off
@@ -1730,16 +1844,45 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               // :first-child, because off-screen panes stay in the DOM (they
               // keep their sockets) and would win that selector while invisible.
               return (
-              <div key={s.id} className={`term-pane${shown ? '' : ' off'}${s.id === active ? ' focused' : ''}${shown && s.id === shownIds[0] ? ' lead' : ''}`}
+              <div key={s.id}
+                className={`term-pane${shown ? '' : ' off'}${s.id === active ? ' focused' : ''}${shown && slot === 0 ? ' lead' : ''}${overSlot === slot && shown ? ' dropping' : ''}`}
+                style={shown ? { order: slot } : undefined}
+                data-slot={shown ? slot : undefined}
+                onDragOver={shown ? (e) => { e.preventDefault(); if (overSlot !== slot) setOverSlot(slot); } : undefined}
+                onDragLeave={shown ? () => setOverSlot((k) => (k === slot ? null : k)) : undefined}
+                onDrop={shown ? (e) => { e.preventDefault(); dropInSlot(slot); } : undefined}
                 onMouseDown={() => { if (s.id !== active) setActive(s.id); }}>
+                {/* The drop hint. It is drawn on the PANE rather than as a
+                    ghost following the cursor, because what a drop needs to
+                    say is which pane will take it — a cursor ghost says only
+                    that something is being dragged. */}
+                {overSlot === slot && shown && dragId !== null && dragId !== s.id && (
+                  <div className="term-drop" aria-hidden="true"><span>Drop here</span></div>
+                )}
                 {/* The title: what this session is working on, in its own
                     words via the labeller. It sits ON the pane rather than on
                     the tab because with four terminals up, the tab strip is no
                     longer where you are looking. */}
-                <div className="term-pane-title"
-                  title={'Copy: drag to select — releasing copies it (⌃⇧C, or ⌃C with a selection).\n'
+                {/* THE TITLE BAR IS THE DRAG HANDLE, not the pane. Dragging
+                    the whole pane would eat every text selection inside the
+                    terminal — the same trap the board's inline rename hit, and
+                    the reason the card there switches `draggable` off while an
+                    editor is open. The terminal is ALWAYS a text surface, so
+                    the handle is the one strip that is not one. */}
+                <div className="term-pane-title" draggable
+                  onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDragId(s.id); }}
+                  onDragEnd={() => { setDragId(null); setOverSlot(null); }}
+                  title={'Drag this bar onto another pane to rearrange.\n'
+                    + 'Copy: drag to select in the terminal — releasing copies it (⌃⇧C, or ⌃C with a selection).\n'
                     + 'Paste: ⌃V. Shift-drag selects in the browser instead of tmux.'}>
                   <span className={`dot ${s.status}`} />
+                  {/* The tool mark, from the design: which runtime this pane
+                      is. Two today (claude / shell); it is a lookup rather
+                      than a ternary so a CLI runtime (#481) drops in beside
+                      them without touching the pane. */}
+                  <span className={`term-mark ${s.cmd}`} aria-hidden="true">
+                    {s.cmd === 'claude' ? 'C' : '$'}
+                  </span>
                   <span className="what">
                     {labelOf(s) || (s.status === 'live'
                       ? (labelBusy ? 'naming this session…' : 'not named yet')
@@ -1777,6 +1920,17 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       onClick={(e) => { e.stopPropagation(); void endSession(s); }}>
                       {ending === s.id ? '…' : '⏻'}
                     </button>
+                  )}
+                  {/* ⤢ — bring this pane to the front of the arrangement.
+                      The design calls it Focus; here it moves the session into
+                      slot 0 rather than changing the layout, because the layout
+                      is a choice somebody made and a focus press is not a
+                      request to undo it. */}
+                  {paneCount > 1 && (
+                    <button className="pane-btn"
+                      title="Bring this session to the first pane"
+                      onClick={(e) => { e.stopPropagation(); focusInSlot(s.id); }}
+                      aria-label="Move to the first pane">⤢</button>
                   )}
                   <button className="pane-btn"
                     title={s.tmux
@@ -1837,8 +1991,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                 {/* One head row: the segment picker, and the control that
                     narrows the list — a scope in 1a, tick-mode in 1b. */}
                 <div className="tc-head">
+                  {/* #487 — SESSIONS leads, and the work cockpit keeps its
+                      place beside it. The design's rail is a list of what is
+                      running; the cockpit answers what you are running it ON,
+                      which nothing else on this screen answers. Both, one
+                      press apart, rather than one at the cost of the other. */}
                   <div className="tc-segs seg-control sm" role="tablist" aria-label="Cockpit rail">
-                    {([['session', 'Session'], ['runbook', 'Runbook']] as const).map(([k, label]) => (
+                    {([['sessions', 'Sessions'], ['session', 'Work'], ['runbook', 'Runbook']] as const).map(([k, label]) => (
                       <button key={k} role="tab" aria-selected={viewPrefs.railSeg === k}
                         className={`seg-opt ${viewPrefs.railSeg === k ? 'on' : ''}`}
                         onClick={() => saveViewPrefs({ railSeg: k })}>
@@ -1910,7 +2069,85 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   ))}
                 </div>
 
-                {viewPrefs.railSeg === 'session' ? (
+                {viewPrefs.railSeg === 'sessions' ? (
+                  /* ---- #487 · SESSIONS — the design's rail, on real data.
+                     What is running, grouped by TOOL, each row a drag source
+                     for the panes. The count beside a tool is its sessions;
+                     the pill beside that is how many are BLOCKED on a
+                     permission prompt, which is the one fact on this rail that
+                     changes what you do next.
+                     ---- */
+                  <div className="tc-sessions">
+                    {sessions.length === 0 ? (
+                      <div className="tc-empty pad">
+                        No session open. Start one with + New session.
+                      </div>
+                    ) : TOOL_GROUPS.map((g) => {
+                      const mine = sessions.filter((x) => x.cmd === g.key);
+                      if (!mine.length) return null;
+                      const asking = mine.filter((x) => !!blockedOf(x)).length;
+                      return (
+                        <div className="tcg" key={g.key}>
+                          <div className="tcg-head">
+                            <span className={`term-mark ${g.key}`} aria-hidden="true">{g.mark}</span>
+                            <span className="nm">{g.name}</span>
+                            {asking > 0 && (
+                              <span className="asking" title={`${asking} waiting on a permission answer`}>
+                                <span className="d" />{asking} asking
+                              </span>
+                            )}
+                            <span className="n">{mine.length}</span>
+                          </div>
+                          {mine.map((x) => {
+                            const onScreen = slotIds.includes(x.id);
+                            const pinned = !!x.tmux && pinnedOf(x.tmux);
+                            return (
+                              <div key={x.id}
+                                className={`tcg-row${x.id === active ? ' on' : ''}${onScreen ? '' : ' off'}${dragId === x.id ? ' dragging' : ''}`}
+                                draggable
+                                onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDragId(x.id); }}
+                                onDragEnd={() => { setDragId(null); setOverSlot(null); }}
+                                title={onScreen
+                                  ? 'Drag onto a pane to move it there'
+                                  : 'Not on screen — click to bring it into the first pane, or drag it onto a pane'}
+                                onClick={() => focusInSlot(x.id)}>
+                                <span className={`dot ${x.status}`} />
+                                <span className="t">
+                                  {labelOf(x) || (x.status === 'live'
+                                    ? (labelBusy ? 'naming…' : 'not named yet')
+                                    : x.note || x.status)}
+                                </span>
+                                {/* Pin and end, the two controls the design
+                                    puts on a rail row. Kept because they are
+                                    the ones you reach for while looking at the
+                                    LIST rather than at a terminal. */}
+                                {x.tmux && (
+                                  <button className={`tcg-btn${pinned ? ' on' : ''}`} aria-pressed={pinned}
+                                    title={pinned
+                                      ? `Pinned — the idle reaper will not take ${x.tmux}`
+                                      : `Pin ${x.tmux} against the idle reaper`}
+                                    onClick={(e) => { e.stopPropagation(); void togglePin(x.tmux!, !pinned); }}>
+                                    {pinned ? '📌' : '📍'}
+                                  </button>
+                                )}
+                                <span className="cw">{x.cwd || '~'}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                    {/* The detached strip stays exactly where it was — this
+                        panel lists what this BROWSER holds, and those are
+                        sessions it does not. Bulk kill lives with them. */}
+                    {detachedShown.length > 0 && (
+                      <div className="tcg-note">
+                        {detachedShown.length} session{detachedShown.length === 1 ? '' : 's'} running on the host
+                        that no pane here holds — the strip above the canvas re-attaches or kills them.
+                      </div>
+                    )}
+                  </div>
+                ) : viewPrefs.railSeg === 'session' ? (
                   // The Session rail, both layouts on one skeleton: a head that
                   // never scrolls (what you are on, what to send next), the list,
                   // and a footer that acts. One panel ground with hairlines only
@@ -2451,7 +2688,7 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
         // Device pref (Settings → Terminal): claude without permission prompts.
         // A boolean only — the daemon maps it to its one allow-listed flag.
         skipPerms: sess.cmd === 'claude' && getTermSessionPrefs().skipPermissions ? true : undefined,
-        // #484 — route this session through the local gateway. Read at CONNECT
+        // #486 — route this session through the local gateway. Read at CONNECT
         // time, not render time, so the pref governs the session it starts and
         // never retro-fits one already running: the daemon fixes a provider at
         // spawn and nothing here can move it afterwards.

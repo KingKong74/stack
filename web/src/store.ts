@@ -494,7 +494,7 @@ export async function getProjectPulse(slug: string): Promise<ProjectPulse> {
 export function openTerminal(opts: {
   cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number;
   tmuxSession?: string; skipPerms?: boolean;
-  // #484 — 'omniroute' routes this session through the local gateway instead of
+  // #486 — 'omniroute' routes this session through the local gateway instead of
   // the account's own subscription. A provider KEY, never a base URL or a
   // credential: the host owns both, and the browser has no business with either.
   provider?: 'omniroute';
@@ -593,6 +593,30 @@ export function setTermUsagePrefs(p: TermUsagePrefs) {
 // reason people actually wanted it.
 export const TERM_PANE_CHOICES = [1, 2, 3, 4] as const;
 export type TermPaneCount = (typeof TERM_PANE_CHOICES)[number];
+
+// #487 — THE LAYOUTS, from the Mission Control design. Five shapes rather than
+// a pane COUNT, because two of them are asymmetric and a count cannot express
+// "one big one with the rest stacked beside it".
+//
+// The count each one wants is derived here and nowhere else, so a layout and
+// the number of panes it draws can never disagree. `focus` and `grid` both
+// want four: they differ in SHAPE, not in how many sessions are on screen.
+export const TERM_LAYOUTS = ['single', 'columns', 'grid', 'six', 'focus'] as const;
+export type TermLayout = (typeof TERM_LAYOUTS)[number];
+export const LAYOUT_PANES: Record<TermLayout, number> = {
+  single: 1, columns: 3, grid: 4, six: 6, focus: 4,
+};
+export const LAYOUT_META: { key: TermLayout; icon: string; name: string; hint: string }[] = [
+  { key: 'single', icon: '▢', name: 'Single', hint: 'One terminal, the whole canvas' },
+  { key: 'columns', icon: '▥', name: 'Main + stack', hint: 'One wide terminal, two stacked beside it' },
+  { key: 'grid', icon: '▦', name: '2×2', hint: 'Four equal terminals' },
+  { key: 'six', icon: '⊞', name: '6 up', hint: 'Six terminals, three across' },
+  { key: 'focus', icon: '▣', name: 'Focus', hint: 'One across the top, three small beneath' },
+];
+/** The nearest layout to a stored pane COUNT — what a device upgrading from
+ *  the 1–4 control lands on, so nobody's screen silently changes shape. */
+export const layoutForPanes = (n: number): TermLayout =>
+  (n <= 1 ? 'single' : n === 2 ? 'columns' : n === 3 ? 'columns' : 'grid');
 // `railStyle` picks which reading of the Session rail is on screen. They are two
 // layouts over the SAME list, never two lists: `sprints` makes the SPRINT the
 // shape of the rail — one lane per box, the sprint in progress first — and the
@@ -602,8 +626,20 @@ export type TermPaneCount = (typeof TERM_PANE_CHOICES)[number];
 // stored the old spelling lands on the sprint stack, which is the same reading
 // of the same list with the ranking it actually has now.
 export type TermRailStyle = 'sprints' | 'upnext';
+// #487 — 'sessions' joins the rail's segments and is the DEFAULT: the design's
+// rail is a list of what is running, grouped by tool, and that is what the
+// screen is for. The work cockpit ('session' — the sprint stack, the working
+// item, the branch claims) keeps its segment rather than being replaced;
+// nothing it answers is answered anywhere else.
+export type TermRailSeg = 'sessions' | 'session' | 'runbook' | 'debrief';
 export interface TermViewPrefs {
-  railOpen: boolean; panes: TermPaneCount; railSeg: 'session' | 'runbook' | 'debrief'; railStyle: TermRailStyle;
+  railOpen: boolean;
+  /** Retained so a device upgrading from the 1–4 control keeps its shape; the
+   *  LAYOUT is what the screen reads. */
+  panes: TermPaneCount;
+  layout: TermLayout;
+  railSeg: TermRailSeg;
+  railStyle: TermRailStyle;
 }
 const TERM_VIEW_KEY = 'stack.termView';
 export function getTermViewPrefs(): TermViewPrefs {
@@ -618,8 +654,17 @@ export function getTermViewPrefs(): TermViewPrefs {
     // #276 — 'debrief' is the third segment: the "Jump back in" button lands
     // here so it opens already showing it, but the choice is still sticky
     // per device like the other two.
+    // #487 — an unrecognised or ABSENT segment lands on 'sessions', the new
+    // default. A device that had explicitly chosen one of the other three
+    // keeps it: a redesign may change what opens by default, but it must not
+    // overrule a choice somebody actually made.
     railSeg: p?.railSeg === 'runbook' ? 'runbook' as const
-      : p?.railSeg === 'debrief' ? 'debrief' as const : 'session' as const,
+      : p?.railSeg === 'debrief' ? 'debrief' as const
+      : p?.railSeg === 'session' ? 'session' as const : 'sessions' as const,
+    // A stored layout wins; otherwise the device's old pane count decides the
+    // nearest shape, so nobody's screen changes under them on first load.
+    layout: TERM_LAYOUTS.includes(p?.layout) ? p.layout as TermLayout
+      : layoutForPanes(TERM_PANE_CHOICES.includes(p?.panes) ? p.panes : 1),
     railStyle: p?.railStyle === 'upnext' ? 'upnext' as const : 'sprints' as const,
   }));
 }
@@ -651,7 +696,7 @@ export function setTermWorkingItem(cwd: string, id: number | null) {
 // screen opens on arrival and what a Mission Control ⌨ press opens;
 // skipPermissions runs claude sessions with --dangerously-skip-permissions
 // (the daemon allow-lists the flag — the browser only ever sends a boolean).
-// onGateway (#484) routes NEW claude sessions through the local OmniRoute
+// onGateway (#486) routes NEW claude sessions through the local OmniRoute
 // gateway instead of the account's subscription. Device-local like the rest of
 // this card, and it only ever affects sessions started AFTER it is set — a
 // running session's provider is fixed at spawn, so flipping this cannot move
@@ -692,7 +737,7 @@ export interface DetachedSession {
   blocked?: BlockedPrompt | null;  // stopped on a permission prompt right now
 }
 
-// (#484) The OmniRoute gateway, as the HOST sees it — this process cannot ask
+// (#486) The OmniRoute gateway, as the HOST sees it — this process cannot ask
 // it directly, since the server is in a container and the firewall drops
 // container->host. THREE STATES, and the type says so: `connected: false` means
 // Stack cannot SEE the host and therefore knows NOTHING about the gateway, which
