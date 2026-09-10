@@ -617,29 +617,18 @@ export const LAYOUT_META: { key: TermLayout; icon: string; name: string; hint: s
  *  the 1–4 control lands on, so nobody's screen silently changes shape. */
 export const layoutForPanes = (n: number): TermLayout =>
   (n <= 1 ? 'single' : n === 2 ? 'columns' : n === 3 ? 'columns' : 'grid');
-// `railStyle` picks which reading of the Session rail is on screen. They are two
-// layouts over the SAME list, never two lists: `sprints` makes the SPRINT the
-// shape of the rail — one lane per box, the sprint in progress first — and the
-// tab a single scope; `upnext` promotes one item to send and reaches the rest by
-// typing. Device-local because it is a way of looking, not a property of the
-// project. It was `tiers` until #477 retired the desire tier; a device that
-// stored the old spelling lands on the sprint stack, which is the same reading
-// of the same list with the ranking it actually has now.
-export type TermRailStyle = 'sprints' | 'upnext';
-// #487 — 'sessions' joins the rail's segments and is the DEFAULT: the design's
-// rail is a list of what is running, grouped by tool, and that is what the
-// screen is for. The work cockpit ('session' — the sprint stack, the working
-// item, the branch claims) keeps its segment rather than being replaced;
-// nothing it answers is answered anywhere else.
-export type TermRailSeg = 'sessions' | 'session' | 'runbook' | 'debrief';
+// #489 — `railSeg` and `railStyle` ARE GONE FROM THIS TYPE. The rail has one
+// job now (the sessions list), so there is no segment to remember and no second
+// reading of a queue it no longer draws. The stored KEY is untouched and the
+// reader below simply stops looking at those two fields: a device that had
+// chosen 'runbook' keeps that value on disk, so restoring the segment restores
+// the choice rather than resetting everybody to the default.
 export interface TermViewPrefs {
   railOpen: boolean;
   /** Retained so a device upgrading from the 1–4 control keeps its shape; the
    *  LAYOUT is what the screen reads. */
   panes: TermPaneCount;
   layout: TermLayout;
-  railSeg: TermRailSeg;
-  railStyle: TermRailStyle;
 }
 const TERM_VIEW_KEY = 'stack.termView';
 export function getTermViewPrefs(): TermViewPrefs {
@@ -651,25 +640,19 @@ export function getTermViewPrefs(): TermViewPrefs {
     // landing on two panes, which is the nearest honest reading of what it was
     // asking for. Anything unrecognised falls back to a single pane.
     panes: TERM_PANE_CHOICES.includes(p?.panes) ? p.panes as TermPaneCount : (p?.wide ? 2 : 1),
-    // #276 — 'debrief' is the third segment: the "Jump back in" button lands
-    // here so it opens already showing it, but the choice is still sticky
-    // per device like the other two.
-    // #487 — an unrecognised or ABSENT segment lands on 'sessions', the new
-    // default. A device that had explicitly chosen one of the other three
-    // keeps it: a redesign may change what opens by default, but it must not
-    // overrule a choice somebody actually made.
-    railSeg: p?.railSeg === 'runbook' ? 'runbook' as const
-      : p?.railSeg === 'debrief' ? 'debrief' as const
-      : p?.railSeg === 'session' ? 'session' as const : 'sessions' as const,
     // A stored layout wins; otherwise the device's old pane count decides the
     // nearest shape, so nobody's screen changes under them on first load.
     layout: TERM_LAYOUTS.includes(p?.layout) ? p.layout as TermLayout
       : layoutForPanes(TERM_PANE_CHOICES.includes(p?.panes) ? p.panes : 1),
-    railStyle: p?.railStyle === 'upnext' ? 'upnext' as const : 'sprints' as const,
   }));
 }
 export function setTermViewPrefs(p: TermViewPrefs) {
-  localStorage.setItem(TERM_VIEW_KEY, JSON.stringify(p));
+  // MERGED, not replaced — the stored row still carries `railSeg`/`railStyle`
+  // from before #489 and this type no longer has them. A bare write would drop
+  // both on the next toggle, which is exactly the choice the comment above
+  // promises to keep.
+  const prev = readStoredJSON(TERM_VIEW_KEY, (x) => (x && typeof x === 'object' ? x : {}));
+  localStorage.setItem(TERM_VIEW_KEY, JSON.stringify({ ...prev, ...p }));
 }
 
 // 25b — what the terminal session was handed to work on, device-local and

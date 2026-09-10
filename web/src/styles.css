@@ -537,10 +537,6 @@ a { color: inherit; }
 /* ---------- tabs ---------- */
 .tabs { display: flex; align-items: center; gap: 26px; border-bottom: 1px solid var(--line-2); margin-bottom: 26px; }
 .tab { padding: 0 1px 13px; font-size: 14px; font-weight: 500; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
-/* Navigation "buttons" that are really anchors (so middle/ctrl-click opens a
-   new tab) keep their button look — the classes carry the styling. */
-a.btn-repo, a.btn-accent, a.tab, a.mc-term,
-a.mc14-tab, a.link, a.tc-link { text-decoration: none; cursor: pointer; }
 a.tab { display: inline-block; }
 .tab:hover { color: var(--ink); }
 .tab.on { font-weight: 600; color: var(--accent-text); border-bottom-color: var(--accent); }
@@ -1871,16 +1867,43 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 /* "what landed" note on Reviews rows — the completing session's account */
 .built { margin-top: 8px; font-size: 12.5px; line-height: 1.55; color: var(--body); background: var(--panel); border-left: 3px solid var(--sage, var(--green)); border-radius: 6px; padding: 8px 11px; white-space: pre-wrap; }
 
-/* terminal v2 — session tabs, quick-command rail, git-bash colours */
-.term-layout { display: flex; gap: 14px; align-items: stretch; }
+/* terminal v2 — the sessions rail, the pane grid, git-bash colours */
+
+/* #489 — THE COCKPIT IS FULL-BLEED AND THE RAIL IS A FIXTURE OF IT.
+   Every other screen is a document in a centred column; this one is an
+   instrument panel, so the page frame comes off: no max-width, no side
+   padding, and the row under the topbar takes the rest of the viewport.
+   The rail then sits ON the left edge with square corners and one hairline
+   on its inside — flush, the way a rail in an application chrome is, rather
+   than a rounded card floating 32px in from the glass. The terminals take
+   everything left over, which is the ask stated the other way round. */
+.page.term-page {
+  display: flex; flex-direction: column;
+  /* Beats `.page.detail`'s padding AND the 1600px media query's 44px gutters,
+     which is what the `.page` half of this selector is for — a single-class
+     rule loses to both, and the rail was inset by exactly that gutter. The
+     `detail` class came off the element with this: the terminal is not a
+     project page and never used anything else `detail` carries. */
+  max-width: none; margin: 0; padding: 0;
+}
+.term-layout {
+  display: flex; align-items: stretch; gap: 0;
+  height: calc(100vh - var(--topbar-h)); min-height: 0;
+}
+/* The column beside the rail owns ALL the page padding now — the head bar, the
+   strips and the grid live in it, so the rail can reach the edge without them
+   losing their gutter. */
+.term-col {
+  flex: 1; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+  padding: 14px 20px 16px;
+}
 /* #487 — THE RAIL IS ON THE LEFT, as the Mission Control design has it. Done
    with `order` rather than by moving the markup: the rail is written after the
    canvas so a screen reader and a tab press both reach the terminals first,
    which is the order somebody actually works in. Visual order and DOM order
    answer different questions and this is one of the few places they differ. */
 .term-cockpit { order: -1; }
-/* #136 — wide mode: terminal page expands past the 1080px max-width */
-.term-page.term-wide { max-width: none; }
 
 /* #305 — FULL SCREEN. Everywhere else the pane grid is sized by
    `calc(100vh - 210px)`, a number that has to guess at how much chrome sits
@@ -1898,96 +1921,48 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
   display: flex; flex-direction: column; background: var(--bg);
 }
 .term-fullscreen .topbar, .term-fullscreen .term-detached { display: none; }
-.term-fullscreen .page.term-page {
-  max-width: none; margin: 0; padding: 10px 14px 12px; flex: 1; min-height: 0;
-}
-.term-fullscreen .term-layout { flex: 1; min-height: 0; }
-/* The grid and the rail both give up their viewport-relative heights and take
-   the row's instead — the whole point of the mode is that nothing above them
-   has to be guessed at any more. */
-.term-fullscreen .term-grid,
-.term-fullscreen .term-cockpit { height: auto; min-height: 0; }
+.term-fullscreen .page.term-page { flex: 1; min-height: 0; }
+/* The topbar is gone in this mode, so the row's height cannot be measured from
+   it — it takes the whole fixed screen instead. Everything below already sizes
+   itself from the row (#489), so this one override is the whole of the mode's
+   geometry now. */
+.term-fullscreen .term-layout { flex: 1; height: auto; min-height: 0; }
+.term-fullscreen .term-col { padding: 8px 12px 10px; }
 .term-full-btn.on { border-color: var(--accent); color: var(--accent-text-hover); }
-/* 25b — the cockpit rail: the terminal keeps the width, everything else
-   folds in here. Collapsed it is just the toggle.
-   The rail's ground is --panel and the LIST sits on --surface, so the part you
-   read scrolling is the lightest thing in it. Hairlines only between the parts
-   that genuinely separate (head · list · footer) — the old rail drew a bordered
-   card inside a bordered block inside the rail's own border, and three nested
-   frames is what made a 300px column feel like a form. */
+/* 25b — the sessions rail: the terminal keeps the width, the rail keeps the
+   list. Collapsed it is the tool marks and the toggle.
+   Its ground is --panel and the LIST sits on --surface, so the part you read
+   scrolling is the lightest thing in it. Hairlines only between the parts that
+   genuinely separate (head · list · footer) — the old rail drew a bordered card
+   inside a bordered block inside its own border, and three nested frames is
+   what made a 300px column feel like a form.
+
+   #489 — FLUSH: it is the page's left edge and the page's full height, so it
+   loses its radius, its outer three borders and its viewport-height guess. One
+   hairline on the inside is all that separates it from the terminals. It is
+   260px rather than 300 because it holds one list now, not three segments. */
 .term-cockpit {
-  width: 300px; flex: none; display: flex; flex-direction: column; gap: 0;
-  height: calc(100vh - 210px); background: var(--panel);
-  border: 1px solid var(--line-2); border-radius: 14px; padding: 8px 0 0;
+  width: 260px; flex: none; display: flex; flex-direction: column; gap: 0;
+  height: auto; min-height: 0; background: var(--panel);
+  border: 0; border-right: 1px solid var(--line-2); border-radius: 0;
+  padding: 8px 0 0;
 }
-.term-cockpit.collapsed { width: 34px; overflow: hidden; padding: 10px 0; }
+.term-cockpit.collapsed { width: 44px; overflow: hidden; padding: 10px 0; }
 .tc-top { display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; }
 .term-cockpit.collapsed .tc-top { padding: 0 5px; }
 .tc-top .term-rail-toggle { align-self: center; margin: 0 0 0 auto; }
 .term-rail-toggle { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; align-self: flex-end; background: var(--card); border: 1px solid var(--line-2); color: var(--muted); flex: none; margin-bottom: 2px; }
 .term-rail-toggle:hover { border-color: var(--accent); color: var(--accent-text); }
 .term-rail-toggle-icon { font-size: 13px; line-height: 1; }
-/* The two Session layouts (1a tier stack / 1b up next), named by where the
-   press takes you. Rail chrome, so it sits with the collapse control. */
-.tc-style { font-family: var(--mono); font-size: 10px; color: var(--muted); padding: 2px 6px; border-radius: 6px; }
-.tc-style:hover { color: var(--accent-text); background: var(--card); }
-/* #136 — connect-time mode toggle + wide mode button */
+/* #136 — the connect-time shell/Claude toggle */
 .term-mode-btn { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .term-mode-btn.on { color: var(--accent-text); border-color: var(--accent-tint-border); background: var(--accent-tint); }
 .term-mode-btn.on:hover { border-color: var(--accent); }
 /* How many terminals are on screen — this replaced the wide-mode toggle. */
 .term-panes .seg-opt { font-size: 11.5px; padding: 4px 8px; font-variant-numeric: tabular-nums; }
-/* ---- the cockpit's two segments ---- */
-.tc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 12px 9px; }
-.tc-segs { margin: 0; flex: none; align-self: center; }
-/* The rail head carries the segment picker AND the control that narrows the
-   list in 300px. The picker keeps its full labels; the scope is the part that
-   gives, and ellipsises its own label rather than pushing the row out. */
-.tc-segs .seg-opt { padding: 4px 9px; }
-.tc-body { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 12px 12px; display: flex; flex-direction: column; gap: 14px; }
-.tc-block { display: flex; flex-direction: column; gap: 6px; }
-.tc-cap { font-family: var(--mono, ui-monospace), Menlo, Consolas, monospace; font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; color: var(--muted); }
-.tc-cap.row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.tc-link { font-size: 11px; color: var(--accent-text); padding: 0; }
-.tc-link:hover { color: var(--accent-text-hover); }
-.tc-link.dim { color: var(--muted); }
-.tc-link.dim:hover { color: var(--critical-text); }
-.tc-link:disabled { color: var(--fainter); cursor: default; }
 .tc-empty { font-size: 11.5px; line-height: 1.5; color: var(--muted); }
 .tc-empty.pad { padding: 14px 6px; }
-.tc-warn { font-size: 11px; color: var(--critical-text); font-weight: 600; }
 .tc-foot { font-size: 10.5px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--line-3); padding-top: 10px; }
-/* ---- the ↩ Debrief segment (#276): the terminal's own resume card, so
-   "Jump back in" arrives already briefed. Reuses .tc-body/.tc-block/.tc-cap
-   from the segments either side of it — only what is genuinely new here
-   (the status pill, the commit rows) gets its own rule. ---- */
-.tcd-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-/* ---- the Session rail: head (never scrolls) · list · footer that acts ---- */
-.tc-session { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.tcs-lede { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 7px; }
-/* Nothing to show yet — a dashed hint, not an error and not a card. */
-.tcs-none { border: 1px dashed var(--line-3); border-radius: 8px; padding: 11px; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
-/* Tier ink, the app's own ranking colours (#227): S wears the accent. */
-/* #477 — THE RAIL'S LANES ARE SPRINTS, and there are only TWO tones for them
-   rather than the five the desire tier had: the box in progress, and every
-   other box. That is not a simplification for its own sake — a tier was an
-   ordered scale and wanted a ramp, whereas a sprint is a binary about what the
-   machine may touch, and a five-step ramp over a two-state fact would invite
-   reading a gradient into it. `.on` is the sprint that is running. */
-.tc-session .tcs-lane-head .k, .tc-session .tcs-group-head .k { color: var(--muted); }
-.tc-session .tcs-lane-head .k.on, .tc-session .tcs-group-head .k.on { color: var(--accent-text); }
-.tc-session .tcs-lane-head .bar { color: var(--fainter); }
-.tc-session .tcs-lane-head .bar.on { color: var(--accent-text); }
-.tcs-grade { font-family: var(--mono); font-size: 10px; font-weight: 700; line-height: 1.5; border-radius: 4px; padding: 1px 5px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line-2); flex: none; color: var(--muted); }
-.tcs-grade.on { color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-tint-border); }
-/* WORKING ON (1a) */
-.tc-work { display: flex; align-items: flex-start; gap: 9px; border: 1px solid var(--accent-tint-border); background: var(--accent-tint); border-radius: 8px; padding: 10px 11px; }
-.tc-work .b { min-width: 0; }
-.tc-work .t { font-size: 12px; line-height: 1.45; font-weight: 600; color: var(--ink); }
-.tc-work .m { font-family: var(--mono); font-size: 10px; line-height: 1.5; color: var(--muted); margin-top: 4px; }
-.tc-work .tc-claim { font-size: 10.5px; font-weight: 600; color: var(--accent-text-hover); margin-top: 6px; }
-.tc-work .tc-claim.off { color: var(--muted); font-weight: 500; }
-.tc-work-acts { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin-top: 7px; }
 /* ---- #487 · the Mission Control chrome ----
    PROVIDER PILLS, the design's header strip. Each says what is true of that
    provider — a measured percentage where there is one, a state where there is
@@ -2140,65 +2115,18 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tcg-btn { flex: none; border: 0; background: transparent; cursor: pointer; font-size: 10px; padding: 0 2px; color: var(--fainter); }
 .tcg-btn:hover, .tcg-btn.on { color: var(--accent-text); }
 .tcg-note { font-size: 10px; line-height: 1.5; color: var(--fainter); padding: 6px 2px 0; border-top: 1px solid var(--line-2); }
-
-/* DO NEXT's head strip: the count, the census, and what a click does. The shape
-   line is why an empty tier lane is worth drawing below — it says the queue has
-   nothing at S before you go looking for it. */
-.tcs-strip { border-top: 1px solid var(--line-2); background: var(--surface); padding: 10px 12px 9px; display: flex; flex-direction: column; gap: 6px; }
-.tcs-shape { font-family: var(--mono); font-size: 10px; line-height: 1.5; color: var(--body); }
-.tcs-hint { font-family: var(--mono); font-size: 9.5px; color: var(--fainter); }
-/* the scrolling list — the lightest surface in the rail */
-.tcs-list { flex: 1; min-height: 0; overflow-y: auto; background: var(--surface); padding: 7px 9px 12px; display: flex; flex-direction: column; gap: 11px; }
-.tcs-lane { display: flex; flex-direction: column; gap: 3px; }
-.tcs-lane-head, .tcs-group-head { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; padding: 3px 2px; }
-.tcs-lane-head .bar { width: 3px; height: 12px; border-radius: 2px; background: currentColor; flex: none; }
-.tcs-lane-head .k, .tcs-group-head .k { font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
-.tcs-lane-head .n, .tcs-group-head .n { font-family: var(--mono); font-size: 9.5px; color: var(--fainter); }
-.tcs-lane-head .rule, .tcs-group-head .rule { flex: 1; height: 1px; background: var(--line-2); }
-.tcs-lane-head .w { font-size: 10px; color: var(--fainter); flex: none; }
-.tcs-lane-none { margin-left: 10px; font-size: 10px; color: var(--fainter); }
-.tcs-more { align-self: flex-start; margin-left: 10px; font-family: var(--mono); font-size: 10px; color: var(--muted); padding: 2px 0; }
-.tcs-more:hover { color: var(--accent-text); }
-/* A row is a LINE, not a box: the ring only appears once it is ticked. */
-.tcs-row { display: flex; align-items: flex-start; gap: 9px; width: 100%; text-align: left; padding: 7px 8px; border-radius: 8px; }
-.tcs-row:hover { background: var(--panel); }
-.tcs-row.on { background: var(--accent-tint); box-shadow: inset 0 0 0 1px var(--accent-soft); }
-.tcs-row .box { width: 15px; height: 15px; flex: none; margin-top: 1px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 9px; color: #fff; box-shadow: inset 0 0 0 1.5px var(--line-3); }
-.tcs-row .box.on { background: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
-.tcs-row .b { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
-.tcs-row .t { font-size: 11.5px; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
-.tcs-row .m { font-family: var(--mono); font-size: 9.5px; color: var(--faint); }
-.tcs-row .m .sep { color: var(--line-3); margin: 0 4px; }
-.tcs-row .m .tab { color: var(--chip-ink); }
-/* the footer that acts */
-.tcs-foot { border-top: 1px solid var(--line-2); background: var(--panel); padding: 10px 12px 11px; display: flex; flex-direction: column; gap: 7px; }
-.tcs-foot .r { display: flex; align-items: center; gap: 10px; }
-.tcs-foot .r .s { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-left: auto; white-space: nowrap; }
-.tcs-foot .btn-submit.sm { height: 30px; padding: 0 12px; font-size: 11.5px; flex: none; }
 /* 1a's scope — one control where three rows of chips and a fifteen-option
-   select used to be. The popover scrolls; it never grows to the board's size. */
-.tcs-scope { position: relative; flex: 0 1 auto; min-width: 0; }
-.tcs-scope-btn { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--line-3); background: var(--card); font-family: var(--mono); font-size: 10px; color: var(--ink); max-width: 100%; }
+   select used to be. The popover scrolls;
 .tcs-scope-btn.on, .tcs-scope-btn:hover { border-color: var(--accent); }
 .tcs-scope-btn .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex: none; }
 .tcs-scope-btn .l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tcs-scope-btn .c { color: var(--faint); flex: none; }
-.tcs-pop { position: absolute; top: 30px; right: 0; z-index: 5; width: 190px; max-height: 240px; overflow-y: auto; background: var(--surface); border: 1px solid var(--line-3); border-radius: 9px; box-shadow: var(--shadow-pop, 0 10px 28px rgba(0, 0, 0, 0.45)); padding: 5px; }
-.tcs-pop-cap { font-family: var(--mono); font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--fainter); padding: 6px 8px 5px; }
-.tcs-pop-opt { display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; padding: 5px 8px; border-radius: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--body); }
-.tcs-pop-opt:hover { background: var(--panel); color: var(--ink); }
 .tcs-pop-opt.on { background: var(--accent-tint); color: var(--accent-text-hover); font-weight: 600; }
 .tcs-pop-opt .l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tcs-pop-opt .n { color: var(--fainter); flex: none; }
-/* 1b — one item promoted, everything else typed for */
-.tcs-bulk-btn { height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--card); font-family: var(--mono); font-size: 10px; color: var(--faint); flex: none; }
-.tcs-bulk-btn:hover { border-color: var(--accent); color: var(--ink); }
 .tcs-bulk-btn.on { border-color: var(--accent); color: var(--accent-text-hover); background: var(--accent-tint); }
-.tcs-on { display: flex; align-items: baseline; gap: 7px; padding: 0 12px 9px; font-size: 10.5px; color: var(--muted); }
 .tcs-on .k { color: var(--accent-text-hover); flex: none; }
 .tcs-on .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--body); }
-.tcs-on .tc-link { flex: none; font-size: 10px; }
-.tcs-top { background: var(--sand); border: 1px solid var(--resume-border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 9px; }
 .tcs-top .h { display: flex; align-items: flex-start; gap: 8px; }
 .tcs-top .h .t { font-size: 13px; line-height: 1.4; color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
 .tcs-top .m { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
@@ -2206,51 +2134,32 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tcs-top .a { display: flex; align-items: center; gap: 10px; }
 .tcs-top .a .btn-submit.sm { height: 32px; padding: 0 13px; font-size: 12px; }
 .tcs-top .w { font-size: 10px; color: var(--muted); }
-.tcs-unpass { align-self: flex-start; font-size: 10px; }
-.tcs-filter { border-top: 1px solid var(--line-2); background: var(--surface); padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 8px; }
-.tcs-field { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 9px; }
 .tcs-field.on { border-color: var(--accent-soft); }
 .tcs-field .s { font-family: var(--mono); font-size: 11px; color: var(--accent-text); flex: none; }
-.tcs-field input { flex: 1; min-width: 0; background: none; border: none; outline: none; color: var(--ink); font-family: var(--mono); font-size: 11px; }
-.tcs-field .tc-link { flex: none; font-family: var(--mono); font-size: 10px; }
-.tcs-tokens { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
-.tcs-token { flex: none; border: 1px solid var(--line-2); border-radius: 999px; padding: 2px 9px; font-family: var(--mono); font-size: 10px; color: var(--chip-ink); white-space: nowrap; }
-.tcs-token:hover { border-color: var(--accent-soft); color: var(--ink); }
 .tcs-token.on { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-text-hover); }
-.tcs-group { display: flex; flex-direction: column; gap: 2px; }
-.tcs-group-head:hover { background: var(--panel); border-radius: 7px; }
 .tcs-group-head .c { font-family: var(--mono); font-size: 9px; color: var(--faint); width: 9px; flex: none; }
-.tcs-group .tcs-row { padding-left: 20px; }
-.tcs-bulk { border-top: 1px solid var(--line-2); background: var(--accent-tint); padding: 10px 12px; display: flex; align-items: center; gap: 10px; }
 .tcs-bulk .s { flex: 1; min-width: 0; font-family: var(--mono); font-size: 10px; color: var(--body-2); }
 .tcs-bulk .btn-submit.sm { height: 30px; padding: 0 12px; font-size: 11.5px; flex: none; }
-.tcs-roster { border-top: 1px solid var(--line-2); padding: 10px 12px 11px; display: flex; align-items: center; gap: 9px; }
 .tcs-roster .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--paused); flex: none; }
 .tcs-roster .dot.live { background: var(--live); }
 .tcs-roster .l { font-size: 11.5px; color: var(--body); }
 .tcs-roster .s { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: auto; flex: none; border-bottom: 1px dotted var(--line-3); cursor: help; }
-/* RUNBOOK — cmd on the left, the reason you reach for it on the right. The
-   hovers lift to --card: the rail's own ground is --panel now, so hovering to
-   panel would have been a no-op. */
-.tc-cmd-row { display: flex; gap: 2px; align-items: center; }
-.tc-cmd { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; text-align: left; padding: 5px 8px; border-radius: 7px; color: var(--ink); }
-.tc-cmd:hover { background: var(--card); }
 .tc-cmd .c { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tc-cmd .w { margin-left: auto; font-size: 10px; color: var(--muted); flex: none; }
 .tc-cmd.add { color: var(--muted); border: 1px dashed var(--line-2); font-size: 11.5px; }
 .tc-cmd.add:hover { color: var(--accent-text); border-color: var(--accent); }
 .tc-cmd.brief { border: 1px solid var(--accent-tint-border); background: var(--accent-tint); color: var(--accent-text-hover); font-size: 11.5px; }
 .tc-cmd.brief:hover { border-color: var(--accent); }
-.tc-run { color: var(--faint); font-size: 12px; padding: 3px 6px; border-radius: 5px; flex: none; }
-.tc-run:hover { color: var(--accent-text); background: var(--card); }
-.term-cmd-x { color: var(--faint); font-size: 14px; padding: 2px 5px; border-radius: 5px; }
-.term-cmd-x:hover { color: var(--critical-text); }
-.term-cmd-add { display: flex; flex-direction: column; gap: 6px; }
 .term-cmd-add .field-input.sm { height: 32px; font-size: 12px; }
-.term-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.term-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 /* The pane grid. The GRID owns the height and each pane fills its cell, so
    two rows of terminals split the space instead of running off the page. */
-.term-grid { display: grid; gap: 10px; height: calc(100vh - 210px); min-height: 320px; }
+/* #489 — the grid stopped guessing. It was `calc(100vh - 210px)`, a hardcoded
+   allowance for however much chrome sat above it, and the head bar's height is
+   not a constant: it wraps. Now the layout row owns the height and the grid is
+   just the flex child that takes what the strips above it leave, which is the
+   same arithmetic full screen has always used — one rule, both modes. */
+.term-grid { display: grid; gap: 10px; flex: 1; min-height: 260px; }
 /* Tracks are minmax(0, 1fr), never a bare 1fr. A bare 1fr means
    minmax(AUTO, 1fr), and that auto floor is the item's intrinsic height —
    which for a terminal is xterm's canvas, a real number of pixels. So any
@@ -2401,20 +2310,9 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
   /* Stacked in one column, a tall lead would just be a double-height pane. */
   .term-grid.p3 .term-pane.lead { grid-row: auto; }
 }
-.term-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 /* 25b — the head bar's spacer + the real lane count (#277) */
 .term-bar-gap { flex: 1; }
 .term-lanes { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); }
-.term-tab { display: inline-flex; align-items: center; gap: 2px; background: var(--card); border: 1px solid var(--line-2); border-radius: 9px; padding: 0 4px 0 0; }
-.term-tab.on { background: #000; border-color: #000; }
-.term-tab.on .term-tab-name, .term-tab.on .term-tab-x { color: #bfbfbf; }
-.term-tab-name { display: inline-flex; align-items: center; gap: 7px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--chip-ink); padding: 7px 6px 7px 11px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.term-tab .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--faint); }
-.term-tab .dot.live { background: var(--green); }
-.term-tab .dot.connecting { background: #bfbf00; }
-.term-tab .dot.error { background: var(--critical); }
-.term-tab-x { color: var(--faint); font-size: 13px; padding: 2px 6px; border-radius: 5px; }
-.term-tab-x:hover { color: var(--critical-text); }
 /* the canvas keeps its git-bash colours — black, mintty palette (25b changed
    the chrome around it, never the box itself). The tab strip and the usage
    strip moved off this column, so it gets that height back. */
@@ -2444,14 +2342,6 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tu-resume .btn-submit.sm, .tu-resume .btn-cancel.sm { padding: 2px 8px; font-size: 11px; }
 .tu-auto { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
 .tu-note { flex-basis: 100%; color: var(--critical-text); }
-/* ✧ the rail's Gemini command help — ask, get one command, type/save it */
-.term-assist { display: flex; flex-direction: column; gap: 6px; }
-.ta-note { font-size: 11.5px; color: var(--muted); }
-.ta-note.err { color: var(--critical-text); }
-.ta-card { border: 1px solid var(--accent-tint-border); background: var(--accent-tint); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-.ta-cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--body); word-break: break-all; }
-.ta-why { font-size: 11.5px; color: var(--muted); }
-.ta-actions { display: flex; align-items: center; gap: 6px; }
 /* #188 — detached claude sessions on the host: ▶ re-attach chips + × kill */
 /* #484 — the OmniRoute gateway strip. Three states, three tones, and the
    UNKNOWN one is deliberately not the down one: --muted says "no information",
@@ -2471,11 +2361,6 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .td-attach { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--body); padding: 3px 8px; }
 .td-attach:hover { color: var(--accent-text-hover); }
 .td-x { padding: 3px 7px; color: var(--muted); border-left: 1px solid var(--accent-tint-border); }
-/* #120 on this screen — the session's own name, beside its tab */
-.term-tab-name .tab-label { color: var(--muted); font-size: 11px; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.term-tab-name .tab-label::before { content: '— '; }
-.term-tab.on .term-tab-name .tab-label { color: #8f8f8f; }
-.term-tab-name { max-width: 420px; }
 /* multi-kill: selection on the killable (detached) chips + the bulk action */
 .td-pick { padding: 3px 6px; color: var(--muted); font-size: 12px; line-height: 1; border-left: 1px solid var(--accent-tint-border); }
 .td-pick:hover, .td-pick.on { color: var(--critical-text); }
@@ -2506,7 +2391,6 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 /* 25b — the tabs live in the head bar now, and the floating dock still needs
    them: keep the bar, hide everything on it except the tab strip. */
 .term-float .term-bar { margin: 0; padding: 6px 8px 0; gap: 6px; }
-.term-float .term-bar > *:not(.term-tabs) { display: none; }
 .term-float .page.term-page { padding: 0; max-width: none; margin: 0; }
 .term-float .term-layout { display: block; }
 /* The floating dock is a 300px chip — a grid of terminals has no business in
@@ -2517,7 +2401,6 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .term-float .term-pane-title { display: none; }
 .term-float .term-pane .term-holder,
 .term-float .term-pane .term-holder.gitbash { height: 300px; flex: none; border-radius: 0; }
-.term-float .term-tabs { padding: 6px 8px 0; }
 .term-float .term-holder { height: 300px; min-height: 0; border-radius: 0; }
 .term-float-head {
   display: flex; align-items: center; gap: 8px; padding: 8px 12px;
@@ -2541,13 +2424,21 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 }
 .term-mini:hover { border-color: var(--green); }
 .term-mini .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
+/* A phone has no room for a 260px column beside a terminal, so the rail lies
+   DOWN across the top — still flush, still the first thing, just on the other
+   axis. `column`, not `column-reverse`: reversing flips what `order: -1` means
+   and put the rail UNDER the terminal, which is where it sat before #489 and
+   is the one place on this screen the rail stopped leading. */
 @media (max-width: 760px) {
-  .term-layout { flex-direction: column-reverse; }
-  /* The Session rail spends a fixed head and a fixed footer before the list
-     gets any height, so 320px left the list a couple of rows on a phone. */
-  .term-cockpit { width: 100%; height: auto; max-height: 420px; }
-  .term-cockpit.collapsed { width: 100%; height: 40px; }
+  .term-layout { flex-direction: column; height: auto; min-height: 0; }
+  .term-col { padding: 12px 14px 14px; }
+  .term-cockpit {
+    width: 100%; height: auto; max-height: 340px;
+    border-right: 0; border-bottom: 1px solid var(--line-2);
+  }
+  .term-cockpit.collapsed { width: 100%; height: 44px; }
   .term-cockpit .term-rail-toggle { transform: rotate(90deg); }
+  .term-grid { min-height: 60vh; }
 }
 
 /* ---------- #165 to-top button ---------- */

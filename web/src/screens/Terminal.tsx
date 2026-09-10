@@ -3,7 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import {
-  openTerminal, getTermCmds, setTermCmds, type TermCmd,
+  openTerminal,
   getTermUsagePrefs, setTermUsagePrefs, type TermUsagePrefs,
   getTermViewPrefs, setTermViewPrefs, type TermViewPrefs, type TermPaneCount,
   type TermLayout, LAYOUT_PANES, LAYOUT_META,
@@ -15,11 +15,9 @@ import {
   getTermTmuxName, setTermTmuxName, clearTermTmuxName,
   getTermOpenTabs, setTermOpenTabs,
   getTermNames, setTermName,
-  getTermSessionPrefs, setTermSessionPrefs, termAssist, type TermAssistSuggestion,
+  getTermSessionPrefs, setTermSessionPrefs,
   getTerminalGateway, type GatewayState,
-  getTermWorkingItem, setTermWorkingItem,
   getProjectDetail, type ProjectDetailData,
-  patchRoadmapItem,
   getOverview,
 } from '../store';
 import { go, hrefTo } from '../lib/route';
@@ -35,29 +33,34 @@ import { b64encode, b64decode, GIT_BASH_THEME } from '../lib/termWire';
 // `claude · stack` hides the one fact that distinguishes it from the four
 // beside it, so the name is parsed back.
 import { ConfirmModal } from '../components/ConfirmModal';
-import { type Roadmap, type RoadmapItem } from '../types';
+
 import { flatRoadmap } from '../lib/plan';
 import { TopBar } from '../components/TopBar';
 
 // The web terminal (#/terminal[?cwd=…]) — xterm.js over websocket to the host
-// PTY daemon (via the server relay at /term). Parallel sessions live in tabs
-// (every tab is its own socket; the relay multiplexes them over the one agent
+// PTY daemon (via the server relay at /term). Parallel sessions are panes in a
+// grid (each is its own socket; the relay multiplexes them over the one agent
 // connection), and the theme is a mintty/git-bash homage: black, grey
 // foreground, the classic ANSI palette.
 //
-// 25b — THE COCKPIT. The screen used to spend its chrome on itself: a quick-
-// commands rail on the left, a usage strip and a tab strip stacked above the
-// canvas. The terminal is the work surface, so it now keeps the width, and
-// everything else folds into ONE right rail with two segments:
-//   Session   what this session is on, what to hand it next, what it is
-//             spending, and who is on it — the rail that ties the tab to the
-//             plan, which is the whole argument of the design.
-//   Runbook   the eight commands you type every day, grouped, each with the
-//             reason you reach for it. Clicking one LOADS it at the prompt
-//             (↵ on the row runs it) — the same "nothing runs until you press
-//             Enter" rule the brief paste and the ✧ assist already follow.
-// The terminal's own colours are untouched: black canvas, the mintty palette,
-// the black active tab. The cockpit is Stack's palette around a git-bash box.
+// #489 — THE SCREEN IS THE MISSION CONTROL DESIGN, and the compromises #487
+// made while porting it are gone. Three shapes, and each is the owner's call:
+//
+//  1. FULL BLEED. The page's 1080px column and its 32px gutters came off, so
+//     the terminals have the window. `.page.term-page` is what beats the
+//     `.page.detail` padding that was insetting the whole screen, and the row
+//     under the topbar owns the height — nothing below it guesses at chrome
+//     any more, which is the arithmetic full screen has always used.
+//  2. ONE RAIL, FLUSH LEFT, FULL HEIGHT: the sessions list, grouped by tool,
+//     each row a drag source for a pane. It was three segments (Sessions ·
+//     Work · Runbook); the other two are gone, and the block above
+//     `claimedItems` says exactly what went with them.
+//  3. NO SESSION TABS. A session was drawn three times — the rail, its pane,
+//     and a tab strip in the head bar — and the strip was the one that wrapped
+//     the bar onto a second row. It went; nothing moved to replace it.
+//
+// The terminal's own colours are untouched: black canvas, the mintty palette.
+// The chrome around it is Stack's palette; the box is git-bash.
 type Status = 'connecting' | 'live' | 'closed' | 'error';
 
 // The daemon's `usage` frame — today's real token count from the host's Claude
@@ -103,85 +106,17 @@ const parseTok = (s: string): number => {
   return Math.round(n * (m[2].toLowerCase() === 'm' ? 1e6 : m[2].toLowerCase() === 'k' ? 1e3 : 1));
 };
 
-// The essentials only. Claude is NOT a quick command any more — typing claude
-// into a shell tab bypasses tmux persistence entirely (the daemon only wraps
-// sessions opened in Claude mode), which is exactly the trap #188 closed.
-// Claude tabs are the seg control / the auto-opened session.
-// 25b groups them and states WHY you reach for each — a runbook, not a
-// palette. `label` stays the storage shape (custom commands are {label, cmd}),
-// `why` is the right-hand note the design puts on every line.
-const RUNBOOK: { name: string; items: (TermCmd & { why: string })[] }[] = [
-  {
-    name: 'GIT',
-    items: [
-      { label: 'git status', cmd: 'git status', why: 'what is dirty' },
-      { label: 'git log', cmd: 'git log --oneline -15', why: 'what landed' },
-      { label: 'git diff', cmd: 'git diff --stat', why: 'size of the change' },
-      { label: 'git pull', cmd: 'git pull', why: 'take the night’s work' },
-    ],
-  },
-  {
-    name: 'COMPOSE',
-    items: [
-      { label: 'compose up', cmd: 'docker compose up -d --build', why: 'rebuild and run' },
-      { label: 'compose logs', cmd: 'docker compose logs -f --tail=50', why: 'why it broke' },
-    ],
-  },
-  {
-    name: 'HOST',
-    items: [
-      { label: 'autopilot log', cmd: 'tail -40 ~/.stack/autopilot.log', why: 'last night' },
-      { label: 'tmux sessions', cmd: 'tmux ls', why: 'what survived' },
-    ],
-  },
-];
-// The rail's DO NEXT list mirrors the runner's own pick: THE SPRINT IN PROGRESS
-// first and in its own top-to-bottom order (#477), then priority, then board
-// order — and it never offers work that is parked or already claimed by a
-// branch. Same rules as the runner, applied to one project, so what the rail
-// hands you is what the night would take.
-//
-// The bucket keys were MoSCoW's four until #469 and this table was not updated
-// with them, so every bucket scored 9 and the tiebreak did nothing for months.
-// It is five names now, matching `PRIORITY_META`.
-const BUCKET_RANK: Record<string, number> = { highest: 0, high: 1, medium: 2, low: 3, lowest: 4 };
-// #299 — the rail's sentinel for "no area tag". The leading space can never
-// collide with a real area (areas are trimmed + lowercased), the same trick
-// the board's Uncategorised tab uses.
-const RAIL_UNTAGGED = ' untagged';
-function nextUpItems(roadmap: ProjectDetailData['roadmap'], activeId: number | null): RoadmapItem[] {
-  const inSprint = (it: RoadmapItem) => activeId !== null && it.sprintId === activeId;
-  return flatRoadmap(roadmap)
-    .map((it, i) => ({ it, i }))
-    .filter(({ it }) => !it.done && !it.skipped && !it.claimedBy)
-    .sort((a, b) =>
-      // A rank only means something inside the sprint in progress: it is 0 on
-      // every backlog row, so comparing it unguarded would float the whole
-      // backlog above committed work on the strength of a default.
-      (Number(inSprint(b.it)) - Number(inSprint(a.it)))
-      || (inSprint(a.it) && inSprint(b.it) ? a.it.sprintRank - b.it.sprintRank : 0)
-      || (BUCKET_RANK[a.it.bucket] ?? 9) - (BUCKET_RANK[b.it.bucket] ?? 9)
-      || a.i - b.i)
-    .map(({ it }) => it);
-}
-
-// What gets typed at the prompt when you send items across. Plain text, no
-// commands: the session reads it and asks you what it should do — which is
-// why it is pasted without an Enter, like every other handoff on this screen.
-function itemsBrief(items: RoadmapItem[]): string {
-  const head = items.length === 1
-    ? 'Work this roadmap item:'
-    : `Work these ${items.length} roadmap items, in this order:`;
-  const body = items.map((it) => {
-    const meta = [it.bucket, it.area].filter(Boolean).join(' · ');
-    const note = it.note ? `\n    ${it.note.trim().replace(/\s*\n\s*/g, ' ').slice(0, 400)}` : '';
-    const plan = it.plan.length
-      ? `\n    Plan:\n${it.plan.map((s, i) => `      ${s.done ? '[x]' : '[ ]'} ${i + 1}. ${s.text}`).join('\n')}`
-      : '';
-    return `  #${it.id} ${it.title}  (${meta})${note}${plan}`;
-  }).join('\n');
-  return `${head}\n${body}\n`;
-}
+// #489 — THE RUNBOOK CATALOGUE IS GONE with the rail segment that drew it,
+// and so are the custom commands stored beside it. `getTermCmds`/`setTermCmds`
+// and the `stack.term.cmds` key are UNTOUCHED in store.ts: whatever anybody
+// saved is still on their device, so restoring the segment restores their list
+// rather than starting them empty. Nothing reads it today.
+// #489 — `nextUpItems`, `BUCKET_RANK`, `RAIL_UNTAGGED` and `itemsBrief` went
+// with the Work rail. They were the client's fourth spelling of the runner's
+// pick (`queueOrder` in lib/plan.ts is the surviving one, and it is the one
+// CLAUDE.md names), plus the text a send typed at the prompt. Nothing on this
+// screen orders the queue any more, which is the point: the terminal draws
+// sessions, and what runs next is decided on the board.
 
 // tmux is the host-side tmux session a claude tab runs inside (#188): seeded
 // from a detached-session chip or the device-local cwd map, confirmed by the
@@ -273,8 +208,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     prevVisible.current = visible;
   }, [visible]);
 
-  const [customCmds, setCustomCmds] = useState<TermCmd[]>(() => getTermCmds());
-
   // The copy receipt. xterm draws to a canvas, so a copy leaves nothing on the
   // page to look at — without a mark, a working copy and a failed one look
   // identical, which is how "I can't copy from the terminal" survives a fix.
@@ -300,23 +233,24 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [schedNote, setSchedNote] = useState('');
   const scheduling = useRef(false);
   const savePrefs = (p: TermUsagePrefs) => { setPrefsState(p); setTermUsagePrefs(p); };
-  const [adding, setAdding] = useState(false);
-  const [newLabel, setNewLabel] = useState('');
-  const [newCmd, setNewCmd] = useState('');
-
-  // #136 — view prefs: the collapsible rail + wide mode; 25b adds which
-  // segment the rail opens on.
+  // #136 — view prefs, device-local: whether the rail is open, and which pane
+  // layout the grid is in. #489 took `railSeg`/`railStyle` off the type with
+  // the two rail segments they belonged to (store.ts says why the stored row
+  // keeps them).
   const [viewPrefs, setViewPrefsState] = useState(() => getTermViewPrefs());
   const saveViewPrefs = (p: Partial<TermViewPrefs>) => {
     const next = { ...viewPrefs, ...p };
     setViewPrefsState(next); setTermViewPrefs(next);
   };
-  // #276 — "Jump back in" opens the terminal already briefed: reuse the same
-  // rail state a manual toggle would set (no second "briefed" flag), so the
-  // rail opens on the ↩ Debrief segment rather than landing collapsed or on
-  // whichever segment was last open.
+  // #276 — "Jump back in" opens the terminal already briefed. It used to land
+  // on the rail's Runbook segment, because that is where the ▶ Paste roadmap
+  // brief button lived; #489 removed that segment and moved the button to the
+  // head bar, where it is visible whatever the rail is doing. So all this flag
+  // still owes the link is an OPEN rail — the sessions list is what somebody
+  // arriving from "Jump back in" wants to see first, and landing collapsed
+  // hides the session they came to pick up.
   useEffect(() => {
-    if (initialBrief) saveViewPrefs({ railOpen: true, railSeg: 'runbook' });
+    if (initialBrief) saveViewPrefs({ railOpen: true });
   }, [initialBrief]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // #138 — bare-slug cwd resolution: a slug with no path separators (e.g.
@@ -999,23 +933,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   };
 
 
-  // 25b — a runbook line LOADS at the prompt; the row's ↵ runs it. Typing it
-  // is the default because the command is usually the start of the thought,
-  // not the whole of it (`git log --oneline -15` wants a `| grep` half the
-  // time), and it keeps this screen's one rule: Stack never presses Enter.
-  const typeQuick = (cmd: string) => {
-    const h = handles.current.get(active);
-    if (!h) return;
-    h.sendText(cmd);
-    h.focus();
-  };
-  const runQuick = (cmd: string) => {
-    const h = handles.current.get(active);
-    if (!h) return;
-    h.sendText(cmd + '\r');
-    h.focus();
-  };
-
   // A roadmap brief handed over by the board's ⌨ To terminal (one-shot).
   // Pasted bracketed so multi-line briefs land in claude/bash as one block —
   // nothing runs until the human presses Enter.
@@ -1032,53 +949,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     h.sendText(`\x1b[200~${brief}\x1b[201~`);
     h.focus();
   };
-  const addCmd = () => {
-    const label = newLabel.trim() || newCmd.trim();
-    const cmd = newCmd.trim();
-    if (!cmd) return;
-    const next = [...customCmds, { label, cmd }];
-    setCustomCmds(next);
-    setTermCmds(next);
-    setNewLabel(''); setNewCmd(''); setAdding(false);
-  };
-  const dropCmd = (i: number) => {
-    const next = customCmds.filter((_, j) => j !== i);
-    setCustomCmds(next);
-    setTermCmds(next);
-  };
-
   const activeSess = sessions.find((s) => s.id === active);
-
-  // ✧ Gemini command help (the rail's side assist): describe the goal, get one
-  // command back. Suggestion only — ⌨ types it into the active session without
-  // Enter, + Save keeps it as a quick command. Silent 503 when keyless.
-  const [askText, setAskText] = useState('');
-  const [askBusy, setAskBusy] = useState(false);
-  const [askErr, setAskErr] = useState('');
-  const [suggestion, setSuggestion] = useState<TermAssistSuggestion | null>(null);
-  const runAssist = async () => {
-    const q = askText.trim();
-    if (!q || askBusy) return;
-    setAskBusy(true); setAskErr(''); setSuggestion(null);
-    try { setSuggestion(await termAssist(q, (activeSess?.cwd || cwd).trim())); }
-    catch (e) { setAskErr(e instanceof Error ? e.message : 'Assist failed.'); }
-    finally { setAskBusy(false); }
-  };
-  const typeSuggestion = () => {
-    if (!suggestion) return;
-    const h = handles.current.get(active);
-    if (!h) return;
-    h.sendText(suggestion.command); // no Enter — the human runs it
-    h.focus();
-  };
-  const saveSuggestion = () => {
-    if (!suggestion) return;
-    const next = [...customCmds, { label: suggestion.label, cmd: suggestion.command }];
-    setCustomCmds(next);
-    setTermCmds(next);
-    setSuggestion(null);
-    setAskText('');
-  };
 
   // The project a booked session runs against — the dispatcher resolves repos
   // as $STACK_AUTOPILOT_ROOT/<slug>, so the cwd's first segment IS the slug.
@@ -1095,328 +966,55 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     : usagePrefs.dailyLimit;
   const usagePct = usedTokens > 0 ? Math.round((usedTokens / effectiveLimit) * 100) : 0;
 
-  // ---- 25b: the cockpit rail's Session segment ----
-  // The cwd's project, fetched once per slug (and refreshed when the screen
-  // comes back), because that is what ties this tab to the plan. Silent on
-  // failure: a cwd that isn't a Stack project is normal, and the rail says so
-  // rather than erroring at you.
+  // #489 — THE WORK COCKPIT IS GONE, and this is the whole of what went with
+  // it, said once so nobody has to reconstruct it from the diff:
+  //
+  //  • THE TERMINAL NO LONGER READS THE PLAN. It fetched the cwd's project
+  //    (`getProjectDetail`), derived the runner's own next-up order and drew it
+  //    two ways — one lane per sprint, or one item promoted with the rest
+  //    behind a typed filter. Both are gone; nothing on this screen now knows
+  //    what the night would take next.
+  //  • A TAB CAN NO LONGER CLAIM. `term:<name>` claims were written from here
+  //    (`patchRoadmapItem` with `claimed_by`) and released from here. The
+  //    CLAIM ITSELF IS UNCHANGED — `claimed_by` is still the don't-re-pick
+  //    marker, SessionStart still injects it, the lane rules still read it —
+  //    but a browser can no longer make or drop one from this screen, so a
+  //    session worked in a tab now claims the way every other session does:
+  //    by hand, or not at all. That is a real gap, not a tidy-up.
+  //  • SENDING WORK TO THE PROMPT went with it: the rail typed an item's brief
+  //    at the active session, bracketed, and Stack still never pressed Enter.
+  //    The board's ⌨ To terminal handoff survives — it arrives through
+  //    sessionStorage and is pasted by the head bar's ▶ Paste brief.
+  //  • THE PINNED "WORKING ON" ITEM (`stack.term.working`) has no reader.
+  //    `getTermWorkingItem`/`setTermWorkingItem` stay in store.ts with whatever
+  //    each device pinned, for the same reason the runbook's commands do.
+  //
+  // What is NOT affected: the usage strip, the resume-job chip, the gateway
+  // pills and the layout switcher all sat above the canvas, never in the rail.
+  //
+  // ONE READ OF THE PLAN SURVIVES, and it is the head bar's, not the rail's:
+  // "N branches claimed" is a fact about the whole project that belongs beside
+  // the spawn controls — it is what says somebody else is already on this
+  // checkout before you open a sixth session in it. It costs one fetch and
+  // nothing writes back, which is the whole difference between it and the
+  // cockpit that went.
   const [detail, setDetail] = useState<ProjectDetailData | null>(null);
   const [detailSlug, setDetailSlug] = useState('');
-  // Why the board is missing, so the rail can say which: a directory that
-  // isn't a tracked project reads differently from an API that hiccuped.
-  const [detailErr, setDetailErr] = useState(false);
   useEffect(() => {
     if (!visible || !projectSlug) return;
     let gone = false;
     getProjectDetail(projectSlug)
-      .then((d) => { if (!gone) { setDetail(d); setDetailErr(false); setDetailSlug(projectSlug); } })
-      .catch((e) => {
-        if (gone) return;
-        setDetail(null);
-        setDetailErr(!/not found|404/i.test(e instanceof Error ? e.message : ''));
-        setDetailSlug(projectSlug);
-      });
+      .then((d) => { if (!gone) { setDetail(d); setDetailSlug(projectSlug); } })
+      // Quiet: a cwd that isn't a tracked project is normal, and the chip's
+      // absence is the honest answer — never a "0 claimed" that would read as
+      // "nobody is on this".
+      .catch(() => { if (!gone) { setDetail(null); setDetailSlug(projectSlug); } });
     return () => { gone = true; };
   }, [visible, projectSlug]);
   const board = detailSlug === projectSlug ? detail : null;
-
-
-  const openItems = useMemo(() => {
-    const r = board?.roadmap;
-    if (!r) return [] as RoadmapItem[];
-    return flatRoadmap(r).filter((it) => !it.done);
-  }, [board]);
-  // Everything the rail could hand over, in the runner's own order.
-  // The sprint in progress, or null. Null is the state where the automation has
-  // nothing to take, and the rail says so rather than drawing a queue that
-  // looks like tonight's work.
-  const activeSprintId = useMemo(
-    () => board?.sprints.find((sp) => sp.status === 'active')?.id ?? null, [board]);
-  const nextAll = useMemo(
-    () => (board ? nextUpItems(board.roadmap, activeSprintId) : []), [board, activeSprintId]);
-  // #299, reshaped this turn — the rail offers the same list two ways, and
-  // NEITHER of them reorders it, so what the rail hands over is still what the
-  // night would take. The old version stacked three rows of filter chips and a
-  // fifteen-option tab select above two rows of list; both layouts below spend
-  // that chrome on the list instead:
-  //   sprints (1a) the SPRINT is the layout — one lane per box, the one in
-  //          progress first, each showing its first two rows — and the tab
-  //          narrows to one scope behind a single control. Nothing to read to
-  //          know the shape of the queue. It was one lane per desire TIER until
-  //          #477 retired that column; the shape is the same and the lanes now
-  //          mean something the runner actually acts on.
-  //   upnext (1b) ONE item is promoted, ready to send in a press; everything
-  //          else is reached by typing (`sprint:...`, `tab:polaris`, free text)
-  //          and the sprint groups fold away.
-  // Which one is on screen is device-local (viewPrefs.railStyle).
-  const railStyle = viewPrefs.railStyle;
-  const [railArea, setRailArea] = useState('');          // '' = every tab
-  const [railRisk, setRailRisk] = useState<'' | 'low' | 'high'>('');
-  const [scopeOpen, setScopeOpen] = useState(false);     // 1a — the scope popover
-  const [laneOpen, setLaneOpen] = useState<string[]>([]); // 1a — lanes past their first two
-  const [railQuery, setRailQuery] = useState('');        // 1b — the typed filter
-  const [bulk, setBulk] = useState(false);               // 1b — tick-several mode
-  const [laneShut, setLaneShut] = useState<string[]>([]); // 1b — folded sprint groups
-  // 1b — which item is promoted, and the ones you have waved past. Both are
-  // ways of LOOKING at the queue: skipping changes nothing on the board (the
-  // runner's order is unmoved), it just asks the rail for the next one down.
-  const [promoted, setPromoted] = useState<number | null>(null);
-  const [passed, setPassed] = useState<number[]>([]);
-  // What is ticked for the next send. ONE list across both layouts: flipping the
-  // rail is a change of view, and a view change that dropped your ticks would
-  // make the switch cost something.
-  const [picked, setPicked] = useState<number[]>([]);
-  const togglePick = (id: number) =>
-    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
-  useEffect(() => {
-    setRailArea(''); setRailRisk(''); setRailQuery(''); setPicked([]);
-    setLaneOpen([]); setLaneShut([]); setPromoted(null); setPassed([]);
-  }, [projectSlug]);
-  // The tabs the rail can offer, counted over what is actually handable.
-  const railAreas = useMemo(() => {
-    const seen = new Map<string, number>();
-    for (const it of nextAll) {
-      const k = it.area || RAIL_UNTAGGED;
-      seen.set(k, (seen.get(k) ?? 0) + 1);
-    }
-    return [...seen.entries()].sort((a, b) =>
-      (a[0] === RAIL_UNTAGGED ? 1 : 0) - (b[0] === RAIL_UNTAGGED ? 1 : 0) || a[0].localeCompare(b[0]));
-  }, [nextAll]);
-  const railRiskCount = (r: 'low' | 'high') => nextAll.filter((it) => it.risk === r).length;
-
-  // THE LANES ARE THE SPRINTS (#477), in the order the payload serves them —
-  // and the one IN PROGRESS is hoisted to the top whatever its position, because
-  // reading the rail top to bottom has to read the queue and that box is the
-  // only one the night takes from. The backlog is the last lane and is always
-  // drawn: it is where everything unlanded sits, and a rail that hid it would
-  // make a project between sprints look empty rather than uncommitted.
-  //
-  // A `null` lane id is the backlog. Finished sprints are not lanes at all —
-  // nothing in one is handable work.
-  type Lane = { id: number | null; name: string; active: boolean };
-  const LANES: Lane[] = useMemo(() => {
-    const live = (board?.sprints || []).filter((sp) => sp.status !== 'done');
-    const ordered = [...live].sort((a, b) =>
-      (Number(b.status === 'active') - Number(a.status === 'active')) || a.position - b.position || a.id - b.id);
-    return [
-      ...ordered.map((sp) => ({ id: sp.id, name: sp.name, active: sp.status === 'active' })),
-      { id: null, name: 'backlog', active: false },
-    ];
-  }, [board]);
-  const laneKey = (id: number | null) => (id === null ? 'backlog' : String(id));
-  /** The lane an item is in, named — for a chip's tooltip. */
-  const laneNameOf = (it: RoadmapItem) =>
-    (LANES.find((ln) => (it.sprintId ?? null) === ln.id)?.name
-      // A row in a FINISHED sprint is not in any lane: finished boxes are not
-      // drawn, so `find` misses and the honest answer is the sprint's absence
-      // from the queue rather than a name that appears nowhere on screen.
-      ?? (it.sprintId === null ? 'backlog' : 'a finished sprint'));
-  /** Two characters for the grade chip. The rail is a narrow column and a
-   *  sprint's name is not: the initials of the first two words are what fits,
-   *  and the tooltip carries the name. `·` is the backlog. */
-  const laneGlyphOf = (it: RoadmapItem) => {
-    const name = laneNameOf(it);
-    if (it.sprintId === null) return '·';
-    return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '·';
-  };
-  const inLane = (it: RoadmapItem, id: number | null) => (it.sprintId ?? null) === id;
-  const railLaneCount = (id: number | null) => nextAll.filter((it) => inLane(it, id)).length;
-
-  // ---- 1a: the sprint stack ----
-  // The scope: a tab, a risk class, or both. The sprint is deliberately NOT one
-  // of them here — it is the shape of the list, so scoping by it would be
-  // asking the same question twice.
-  const scoped = useMemo(() => nextAll.filter((it) =>
-    (!railArea || (railArea === RAIL_UNTAGGED ? !it.area : it.area === railArea))
-    && (!railRisk || it.risk === railRisk)), [nextAll, railArea, railRisk]);
-  const scopeLabel = [
-    railArea ? (railArea === RAIL_UNTAGGED ? 'untagged' : railArea) : 'all tabs',
-    railRisk === 'low' ? '⇣ low' : railRisk === 'high' ? '⇡ high' : '',
-  ].filter(Boolean).join(' · ');
-  const LANE_CAP = 2; // rows per lane before "+N more" — the lane, not the rail, is the unit
-  const lanes = useMemo(() => LANES.map((ln) => {
-    const all = scoped.filter((it) => inLane(it, ln.id));
-    const open = laneOpen.includes(laneKey(ln.id));
-    const shown = open ? all : all.slice(0, LANE_CAP);
-    const hidden = all.length - shown.length;
-    return {
-      ...ln, all, shown,
-      // The fold is only offered where it does something: a lane that fits in
-      // LANE_CAP has nothing to open and nothing to close.
-      more: hidden > 0 ? `+${hidden} more` : open && all.length > LANE_CAP ? 'fewer' : '',
-      // The note is the one fact that changes what the night can do: the box in
-      // progress is the only one it takes from, and everything else — including
-      // a planned sprint that looks every bit as committed — is out of play.
-      note: ln.active ? (all.length ? 'the runner takes these' : '') : 'not picked up',
-    };
-    // An EMPTY ACTIVE SPRINT IS NEWS and is drawn — "the runner has nothing" is
-    // the answer somebody came to the rail for. An empty planned box is not.
-  }).filter((ln) => ln.active || ln.all.length > 0), [scoped, laneOpen, LANES]);
-  const laneShape = LANES
-    .map((ln) => `${ln.name} ${scoped.filter((it) => inLane(it, ln.id)).length}`).join(' · ');
-  // Ticks are resolved against the SCOPE, so "select all" and the count on the
-  // send button mean the list you are looking at.
-  const scopedPicked = picked.filter((id) => scoped.some((it) => it.id === id));
-  const allScopedPicked = scoped.length > 0 && scopedPicked.length === scoped.length;
-
-  // ---- 1b: up next ----
-  // Typed filter. `tier:`, `tab:`, `risk:` and `plan:none` are exact questions;
-  // anything else is free text over the title, the tab and the #id. Every term
-  // must match, so two tokens narrow rather than widen.
-  const matched = useMemo(() => {
-    const terms = railQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    if (!terms.length) return nextAll;
-    return nextAll.filter((it) => terms.every((t) => {
-      // `sprint:` matches the box's NAME, not its id — a filter you type has to
-      // be one you can read off the screen.
-      if (t.startsWith('sprint:')) {
-        const name = LANES.find((ln) => inLane(it, ln.id))?.name || 'backlog';
-        return name.toLowerCase().includes(t.slice(7));
-      }
-      if (t.startsWith('tab:')) return (it.area || 'untagged').toLowerCase().includes(t.slice(4));
-      if (t.startsWith('risk:')) return it.risk === t.slice(5);
-      if (t === 'plan:none') return it.plan.length === 0;
-      return `${it.title} ${it.area} #${it.id}`.toLowerCase().includes(t);
-    }));
-  }, [nextAll, railQuery]);
-  // The promoted item: the one you picked if it survives the filter, else the
-  // top of the queue you haven't waved past. Skipping the last one leaves NO
-  // promotion rather than quietly re-offering something you just passed on —
-  // the card says so, and every skipped item is still in the list below.
-  const topItem = matched.find((it) => it.id === promoted)
-    ?? matched.find((it) => !passed.includes(it.id))
-    ?? null;
-  const groups = useMemo(() => LANES.map((ln) => ({
-    ...ln,
-    items: matched.filter((it) => inLane(it, ln.id) && it.id !== topItem?.id),
-    open: !laneShut.includes(laneKey(ln.id)),
-  })).filter((g) => g.items.length > 0), [matched, topItem, laneShut, LANES]);
-  // Filter tokens are offered only where they'd land on something — a chip for
-  // a tier nothing sits at is a dead press.
-  const railTokens = useMemo(() => {
-    const out: string[] = [];
-    for (const ln of LANES) if (railLaneCount(ln.id) > 0) out.push(`sprint:${ln.name.toLowerCase()}`);
-    for (const r of ['low', 'high'] as const) if (railRiskCount(r) > 0) out.push(`risk:${r}`);
-    for (const [a] of railAreas) if (a !== RAIL_UNTAGGED) out.push(`tab:${a}`);
-    if (nextAll.some((it) => it.plan.length === 0)) out.push('plan:none');
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextAll, railAreas, LANES]);
-  const matchedPicked = picked.filter((id) => matched.some((it) => it.id === id));
-  const allMatchedPicked = matched.length > 0 && matchedPicked.length === matched.length;
-
-  // One list row, shared by both layouts: the title, then the machine facts on a
-  // mono line. Borderless by default — the ring only appears on a ticked row, so
-  // a list of twelve is twelve lines rather than twelve boxes. The tick square
-  // is drawn only where a tick is what a click MEANS (1a always, 1b in select
-  // mode); in 1b a bare click promotes instead, and a checkbox would lie about
-  // that.
-  const railRow = (it: RoadmapItem, opts: { tick: boolean; toggle: boolean; onClick: () => void }) => {
-    const on = picked.includes(it.id);
-    return (
-      <button key={it.id} className={`tcs-row${on ? ' on' : ''}`} onClick={opts.onClick}
-        aria-pressed={opts.toggle ? on : undefined}
-        title={it.note ? it.note.trim().slice(0, 300) : undefined}>
-        {opts.tick && <span className={`box${on ? ' on' : ''}`}>{on ? '✓' : ''}</span>}
-        <span className="b">
-          <span className="t">{it.title}</span>
-          <span className="m">
-            #{it.id}<span className="sep">·</span>{it.bucket}
-            <span className="sep">·</span><span className="tab">{it.area || 'untagged'}</span>
-            {it.risk !== 'normal' && <><span className="sep">·</span>{it.risk === 'low' ? '⇣' : '⇡'}</>}
-            {it.plan.length === 0 && <><span className="sep">·</span>no plan</>}
-          </span>
-        </span>
-      </button>
-    );
-  };
-
-  // The head's claim count — open items a branch holds (#277). Real Stack
-  // state, not a guess about how many terminal tabs you have open.
-  const claimedItems = openItems.filter((it) => it.claimedBy);
-
-  // WORKING ON: what you last sent this cwd's session. Device-local (see
-  // store.setTermWorkingItem) and re-read whenever the cwd changes.
-  const [workingId, setWorkingId] = useState<number | null>(null);
-  useEffect(() => { setWorkingId(getTermWorkingItem(projectSlug)); }, [projectSlug]);
-  const workingItem = openItems.find((it) => it.id === workingId) ?? null;
-  const pinWorking = (id: number | null) => {
-    setWorkingId(id);
-    setTermWorkingItem(projectSlug, id);
-  };
-
-  // Handing an item over CLAIMS it. The pin above is device-local by design,
-  // but "I am working this now" is not a browser fact — the overnight runner
-  // would otherwise pick up an item you are half-way through in a tab. So the
-  // send writes a real claim (#277), which drops the item out of DO NEXT
-  // everywhere, wears the ⚑ chip on the board and makes the runner skip it.
-  // The claim names the SESSION rather than a branch, honestly: a terminal tab
-  // has no branch to name, and a claim that lied about one would be worse than
-  // one that says where it came from.
-  const claimLabel = activeSess?.tmux ? `term:${activeSess.tmux}` : `term:${projectSlug || 'session'}`;
-  const isTermClaim = (c: string) => c.startsWith('term:');
-  const [claimNote, setClaimNote] = useState('');
-  // Fold a claim change into the loaded board so DO NEXT settles immediately —
-  // the detail fetch only re-runs on a cwd change or a re-show.
-  const applyClaim = (ids: number[], claim: string) => setDetail((d) => {
-    if (!d) return d;
-    // Mapped over every KEY rather than a named five, so widening the
-    // vocabulary again cannot silently drop a priority's claims here (#469).
-    const bucket = (list: RoadmapItem[]) =>
-      list.map((it) => (ids.includes(it.id) ? { ...it, claimedBy: claim } : it));
-    const roadmap = { ...d.roadmap };
-    for (const k of Object.keys(roadmap) as (keyof Roadmap)[]) roadmap[k] = bucket(roadmap[k]);
-    return { ...d, roadmap };
-  });
-
-  // Send = type the brief at the prompt (bracketed, so a multi-line block
-  // lands as one paste), remember the first item as what this session is on
-  // and claim the lot. Nothing runs: the human presses Enter. The typing is
-  // unconditional — it has already happened by the time the claims are
-  // written, so a failed claim reports itself rather than pretending.
-  //
-  // Both layouts come through here: 1a sends the ticked set, 1b sends the one
-  // promoted item (and the ticked set when it is in select mode).
-  const sendItems = async (send: number[]) => {
-    const h = handles.current.get(active);
-    if (!h || send.length === 0) return;
-    // Resolved against the WHOLE eligible list, not the filtered slice, so a
-    // pick survives switching scope — one send can carry two areas (#299) — and
-    // always goes over in the runner's order rather than the order you ticked.
-    const items = nextAll.filter((it) => send.includes(it.id));
-    if (!items.length) return;
-    h.sendText(`\x1b[200~${itemsBrief(items)}\x1b[201~`);
-    h.focus();
-    pinWorking(items[0].id);
-    const ids = items.map((it) => it.id);
-    setPicked((p) => p.filter((x) => !ids.includes(x)));
-    // Sending consumes the promotion: the claim drops the item out of the queue,
-    // so the next one down is what 1b should be offering.
-    setPromoted(null);
-    applyClaim(ids, claimLabel);
-    setClaimNote('');
-    try {
-      for (const id of ids) await patchRoadmapItem(projectSlug, id, { claimed_by: claimLabel });
-    } catch {
-      applyClaim(ids, '');
-      setClaimNote('Sent to the prompt, but the claim did not save — the board still reads it as free.');
-    }
-  };
-
-  // Release = give the item back to the board (and to the runner). Only ever
-  // offered for a claim this screen made; a branch claim from a real lane is
-  // not this tab's to drop.
-  const releaseWorking = async () => {
-    if (!workingItem) return;
-    const id = workingItem.id;
-    applyClaim([id], '');
-    setClaimNote('');
-    try { await patchRoadmapItem(projectSlug, id, { claimed_by: '' }); }
-    catch {
-      applyClaim([id], claimLabel);
-      setClaimNote('Could not release the claim just now.');
-    }
-  };
+  const claimedItems = useMemo(
+    () => (board ? flatRoadmap(board.roadmap).filter((it) => !it.done && it.claimedBy) : []),
+    [board]);
 
   const bookReset = async () => {
     const sched = usage?.sched;
@@ -1553,10 +1151,15 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       <TopBar crumb={[{ label: 'Projects', onClick: go.dashboard }, { label: 'Terminal' }]}
         actions={<a className="btn-repo" href={hrefTo.control} title="Mission Control">Mission Control</a>} />
 
-      {/* Panes > 1 takes the full viewport width by itself. That is what the
-          old wide-mode button did, now tied to the reason people pressed it:
-          you widen the screen because you want more than one session on it. */}
-      <div className={`page detail term-page${viewPrefs.panes > 1 ? ' term-wide' : ''}`}>
+      {/* #489 — THE COCKPIT IS FULL-BLEED, and the page's own frame is gone
+          with the width cap that came with it. Every other screen in Stack is
+          a document in a 1080px column; this one is an instrument panel, and
+          the terminal is the instrument. There is no `term-wide` any more
+          either — it widened the page when panes > 1, which was the same
+          answer to the same question asked from the other side. */}
+      <div className="page term-page">
+        <div className="term-layout">
+        <div className="term-col">
         <div className="term-bar">
           {/* #138 — bare slug (no /) resolves to $HOME/<slug> on the daemon;
               a full path like "stack/src" also works within that root.
@@ -1586,38 +1189,29 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             title={`Open a ${mode === 'claude' ? 'Claude' : 'shell'} session in ~/${cwd.trim() || ''}`}>
             + {mode === 'claude' ? 'Claude' : 'Shell'} in ~/{cwd.trim()}
           </button>
-          {/* 25b — the tabs live in the head bar now. Each is still its own
-              socket with its own warm buffer; only the row they sit on moved. */}
-          <div className="term-tabs">
-            {sessions.map((s) => {
-              const label = labelOf(s);
-              return (
-                <span key={s.id} className={`term-tab ${s.id === active ? 'on' : ''}`}>
-                  <button className="term-tab-name" onClick={() => setActive(s.id)}
-                    title={[label, s.tmux ? `tmux ${s.tmux}` : ''].filter(Boolean).join(' — ') || undefined}>
-                    <span className={`dot ${s.status}`} />
-                    {`${s.cmd === 'claude' ? 'claude' : 'shell'}${s.cwd ? ` · ${s.cwd}` : ''}`}
-                    {/* #120 — what this session is doing, in its own words via
-                        Gemini. Absent until one comes back: a tab with no name
-                        reads as unnamed, never as idle. */}
-                    {label && <span className="tab-label">{label}</span>}
-                  </button>
-                  {/* Closing a session that is ON SCREEN lessens the grid,
-                      whichever control you close it from — the tab and the
-                      pane are two handles on the same session, so they should
-                      not leave the screen in different states. */}
-                  <button className="term-tab-x"
-                    onClick={() => closeSession(s.id, { shrink: shownIds.includes(s.id) })}
-                    aria-label="Close session" title="Close">×</button>
-                </span>
-              );
-            })}
-          </div>
-          {/* Called END, not close, on purpose — the tab and pane controls
-              already name the two endings apart (× closes a tab and the host
+          {/* #489 — the roadmap brief's paste button, moved out of the rail's
+              Runbook segment when that segment went. It is drawn ONLY when a
+              brief actually arrived (the board's ⌨ To terminal, or the
+              dashboard's Jump back in), which is what keeps a one-shot action
+              out of the bar the rest of the time. Nothing runs until the human
+              presses Enter — the same rule it followed on the rail. */}
+          {brief && (
+            <button className="btn-repo sm" onClick={pasteBrief}
+              title="Types the roadmap brief into the active session — review it, then press Enter yourself">
+              ▶ Paste brief
+            </button>
+          )}
+          {/* #489 — THE SESSION TABS ARE GONE FROM THIS BAR. They were the
+              third place one session was drawn: the rail lists it, a pane
+              holds it, and this strip named it again — and being the widest
+              of the three, it is what pushed the rest of the bar onto a
+              second row. Everything it did is on the rail's session row:
+              press to focus, × to close, ⏻ to end. Nothing about a session
+              MOVED to make room; a duplicate went. */}
+          {/* Called END, not close, on purpose — the pane and rail controls
+              already name the two endings apart (× closes a pane and the host
               session keeps running, ⏻ is the one that stops it), so a control
-              that kills must not be spelled "close". It sits at the end of
-              the tab strip because that is the thing it acts on. */}
+              that kills must not be spelled "close". */}
           {(sessions.length > 0 || endingAll) && (
             <button className="btn-cancel sm" disabled={endingAll} onClick={() => setEndAllAsk(true)}
               title={`End every session — closes all ${sessions.length} tab${sessions.length === 1 ? '' : 's'} and kills the ones still running on the host`}>
@@ -1902,7 +1496,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           </div>
         )}
 
-        <div className="term-layout">
           {/* #487 — the grid is driven by the LAYOUT, and each pane knows its
               SLOT. `data-slot` is what a drop reads; the layout class is what
               styles.css turns into the asymmetric shapes. */}
@@ -2033,39 +1626,31 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               </div>
             )}
           </div>
+        </div>{/* /term-col */}
 
-          {/* ---- 25b: the cockpit rail. Two segments, one job each — what
-              this session is on (Session) and what you type at it (Runbook).
-              Collapsing it gives the canvas the whole width; the choice and
-              the open segment are device-local. ---- */}
+          {/* ---- #489: THE RAIL IS THE SESSIONS LIST AND NOTHING ELSE, which
+              is what the Mission Control design has always drawn. #487 kept
+              Work and Runbook beside it as a compromise; the owner has called
+              it, and a rail with one job does not need a segment picker, a
+              layout switcher for one of its segments, or a head row to hold
+              either. It is flush to the left edge and the full height of the
+              page now — a fixture of the screen rather than a panel inside it
+              — so collapsing it is what gives the terminals the last 250px,
+              and that choice stays device-local. ---- */}
           <div className={`term-cockpit${viewPrefs.railOpen ? '' : ' collapsed'}`}>
             <div className="tc-top">
-              {/* The two Session layouts, switchable in a press so they can be
-                  compared against real work rather than against a mock. Named
-                  by what you are going TO, since that is the choice. */}
-              {viewPrefs.railOpen && viewPrefs.railSeg === 'session' && (
-                <button className="tc-style" onClick={() => {
-                  saveViewPrefs({ railStyle: railStyle === 'sprints' ? 'upnext' : 'sprints' });
-                  setScopeOpen(false);
-                }}
-                  title={railStyle === 'sprints'
-                    ? 'Switch the rail to Up next — one item promoted to send, the rest reached by typing'
-                    : 'Switch the rail to Sprint stack — one lane per sprint, the one in progress first'}>
-                  ⇄ {railStyle === 'sprints' ? 'up next' : 'sprints'}
-                </button>
-              )}
               <button
                 className="term-rail-toggle"
-                title={viewPrefs.railOpen ? 'Collapse the cockpit rail' : 'Expand the cockpit rail'}
+                title={viewPrefs.railOpen ? 'Collapse the sessions rail' : 'Expand the sessions rail'}
                 onClick={() => saveViewPrefs({ railOpen: !viewPrefs.railOpen })}>
-                <span className="term-rail-toggle-icon">{viewPrefs.railOpen ? '›' : '‹'}</span>
+                <span className="term-rail-toggle-icon">{viewPrefs.railOpen ? '‹' : '›'}</span>
               </button>
             </div>
             {/* #487 — the design's rail head: what this rail is, and the two
                 counts that say whether it is worth opening. Only while open;
                 collapsed, the marks below carry the same information in the
                 space there is. */}
-            {viewPrefs.railOpen && viewPrefs.railSeg === 'sessions' && (
+            {viewPrefs.railOpen && (
               <div className="tc-toolshead">
                 <span className="lbl">Tools</span>
                 <span className="n">
@@ -2087,7 +1672,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   return (
                     <button key={g.key} className={`tc-markbtn ${g.key}`}
                       title={`${mine.length} ${g.name}${asks ? ` · ${asks} waiting on you` : ''} — open the rail`}
-                      onClick={() => saveViewPrefs({ railOpen: true, railSeg: 'sessions' })}>
+                      onClick={() => saveViewPrefs({ railOpen: true })}>
                       {g.mark}
                       {asks > 0 && <span className="b">{asks}</span>}
                     </button>
@@ -2097,88 +1682,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             )}
             {viewPrefs.railOpen && (
               <>
-                {/* One head row: the segment picker, and the control that
-                    narrows the list — a scope in 1a, tick-mode in 1b. */}
-                <div className="tc-head">
-                  {/* #487 — SESSIONS leads, and the work cockpit keeps its
-                      place beside it. The design's rail is a list of what is
-                      running; the cockpit answers what you are running it ON,
-                      which nothing else on this screen answers. Both, one
-                      press apart, rather than one at the cost of the other. */}
-                  <div className="tc-segs seg-control sm" role="tablist" aria-label="Cockpit rail">
-                    {([['sessions', 'Sessions'], ['session', 'Work'], ['runbook', 'Runbook']] as const).map(([k, label]) => (
-                      <button key={k} role="tab" aria-selected={viewPrefs.railSeg === k}
-                        className={`seg-opt ${viewPrefs.railSeg === k ? 'on' : ''}`}
-                        onClick={() => saveViewPrefs({ railSeg: k })}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  {board && viewPrefs.railSeg === 'session' && (railStyle === 'sprints' ? (
-                    // 1a — the scope. ONE control for "which tab", where there
-                    // used to be a select carrying every area on the board plus
-                    // two rows of chips. Risk rides along in the same popover:
-                    // it is the same question (which slice of the queue), and it
-                    // has only ever had two answers.
-                    // A popover that only closed by pressing its own button again
-                    // would sit over the list you opened it to narrow. Closing on
-                    // focus LEAVING the group covers both the option press (which
-                    // closes it itself) and a click anywhere else on the screen.
-                    <div className="tcs-scope"
-                      onBlur={(e) => {
-                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setScopeOpen(false);
-                      }}>
-                      <button className={`tcs-scope-btn${scopeOpen ? ' on' : ''}`}
-                        aria-expanded={scopeOpen}
-                        title="Scope the queue to one tab, or to a risk class"
-                        onClick={() => setScopeOpen((o) => !o)}>
-                        <span className="dot" />
-                        <span className="l">{scopeLabel}</span>
-                        <span className="c">▾</span>
-                      </button>
-                      {scopeOpen && (
-                        <div className="tcs-pop">
-                          <div className="tcs-pop-cap">scope to a tab</div>
-                          {[['', 'all tabs', nextAll.length] as const,
-                            ...railAreas.map(([a, n]) =>
-                              [a, a === RAIL_UNTAGGED ? 'untagged' : a, n] as const)]
-                            .map(([k, label, n]) => (
-                              <button key={k || 'all'} className={`tcs-pop-opt${railArea === k ? ' on' : ''}`}
-                                onClick={() => { setRailArea(k); setScopeOpen(false); }}>
-                                <span className="l">{label}</span>
-                                <span className="n">{n}</span>
-                              </button>
-                            ))}
-                          {(railRiskCount('low') > 0 || railRiskCount('high') > 0) && (
-                            <>
-                              <div className="tcs-pop-cap">and a risk class</div>
-                              {([['', 'any risk'], ['low', '⇣ low — merges itself'],
-                                ['high', '⇡ high — wants watching']] as const)
-                                .filter(([r]) => !r || railRiskCount(r) > 0)
-                                .map(([r, label]) => (
-                                  <button key={r || 'any'} className={`tcs-pop-opt${railRisk === r ? ' on' : ''}`}
-                                    onClick={() => { setRailRisk(r); setScopeOpen(false); }}>
-                                    <span className="l">{label}</span>
-                                    <span className="n">{r ? railRiskCount(r) : nextAll.length}</span>
-                                  </button>
-                                ))}
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    // 1b — one item sends in a press, so ticking several is the
-                    // deliberate mode rather than the standing one.
-                    <button className={`tcs-bulk-btn${bulk ? ' on' : ''}`} aria-pressed={bulk}
-                      title="Tick several items and send them as one prompt"
-                      onClick={() => { setBulk((b) => !b); setPicked([]); }}>
-                      select
-                    </button>
-                  ))}
-                </div>
-
-                {viewPrefs.railSeg === 'sessions' ? (
+                {/* NO HEAD ROW. It existed to hold the segment picker and
+                    whichever control the Work segment wanted beside it; with
+                    one segment left there is nothing for it to carry, and an
+                    empty bar is 30px of the rail's height spent on nothing. */}
+                {(
                   /* ---- #487 · SESSIONS — the design's rail, on real data.
                      What is running, grouped by TOOL, each row a drag source
                      for the panes. The count beside a tool is its sessions;
@@ -2396,419 +1904,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         ))}
                       </div>
                     )}
-                  </div>
-                ) : viewPrefs.railSeg === 'session' ? (
-                  // The Session rail, both layouts on one skeleton: a head that
-                  // never scrolls (what you are on, what to send next), the list,
-                  // and a footer that acts. One panel ground with hairlines only
-                  // where the parts genuinely separate — no card inside a block
-                  // inside the rail's own border, which is what made the old rail
-                  // read as three nested boxes.
-                  <div className="tc-session">
-                    {!board ? (
-                      <div className="tcs-lede">
-                        <div className="tc-cap">{railStyle === 'sprints' ? 'WORKING ON' : 'UP NEXT'}</div>
-                        <div className="tcs-none">
-                          {!projectSlug ? 'Open a session in a project directory to tie it to the plan.'
-                            : detailErr ? `Could not read ~/${projectSlug} just now — the plan is there, this rail isn't.`
-                            : `~/${projectSlug} isn't a tracked project — there is no plan to tie this session to.`}
-                        </div>
-                      </div>
-                    ) : railStyle === 'sprints' ? (
-                      /* ---- 1a · tier stack: the tier IS the layout ---- */
-                      <>
-                        {/* WORKING ON — what you handed this session. Device-local:
-                            Stack has no server-side "the item this TAB is on", and
-                            inventing one from branch claims would be a guess. */}
-                        <div className="tcs-lede">
-                          <div className="tc-cap">WORKING ON</div>
-                          {workingItem ? (
-                            <div className="tc-work">
-                              {/* THE GRADE CHIP IS THE SPRINT NOW (#477) — and
-                                  it reads `on` only for the box in progress,
-                                  because that is the one fact about this item
-                                  that changes what the machine will do with it. */}
-                              <span className={`tcs-grade${workingItem.sprintId === activeSprintId && activeSprintId !== null ? ' on' : ''}`}
-                                title={laneNameOf(workingItem)}>{laneGlyphOf(workingItem)}</span>
-                              <div className="b">
-                                <div className="t">{workingItem.title}</div>
-                                <div className="m">
-                                  #{workingItem.id} · {workingItem.bucket}
-                                  {workingItem.area ? ` · ${workingItem.area}` : ''}
-                                  {workingItem.plan.length
-                                    ? ` · ☰ ${workingItem.plan.filter((s) => s.done).length}/${workingItem.plan.length}`
-                                    : ''}
-                                  {' · in the prompt'}
-                                </div>
-                                {/* The claim is what makes this more than a note to
-                                    yourself: while it stands, the runner leaves the
-                                    item alone. A claim from a real branch is shown
-                                    but never dropped from here. */}
-                                <div className={`tc-claim${workingItem.claimedBy ? '' : ' off'}`}>
-                                  {workingItem.claimedBy
-                                    ? `⚑ in progress · ${workingItem.claimedBy}`
-                                    : '○ not claimed — the runner may still pick this up'}
-                                </div>
-                                <div className="tc-work-acts">
-                                  <button className="tc-link"
-                                    onClick={() => go.detail(projectSlug, 'roadmap', String(workingItem.id))}>
-                                    Open on the board ↗
-                                  </button>
-                                  {workingItem.claimedBy && isTermClaim(workingItem.claimedBy) && (
-                                    <button className="tc-link" onClick={() => void releaseWorking()}
-                                      title="Give the item back to the board — it becomes pickable again">release</button>
-                                  )}
-                                  <button className="tc-link dim" onClick={() => pinWorking(null)}
-                                    title="Forget what this session is on (the claim, if any, stays)">clear</button>
-                                </div>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="tcs-none">Nothing handed over yet. Select below and send.</div>
-                          )}
-                        </div>
-
-                        {/* DO NEXT — the runner's own order, so what the rail offers
-                            is what the night would take. The shape line is the
-                            queue's whole census in one line, which is what makes a
-                            lane with nothing in it worth drawing below. */}
-                        <div className="tcs-strip">
-                          <div className="tc-cap row">
-                            <span>DO NEXT · {scoped.length}</span>
-                            <button className="tc-link" onClick={() => go.detail(projectSlug, 'roadmap')}>roadmap ↗</button>
-                          </div>
-                          <div className="tcs-shape">{scoped.length ? laneShape : 'Queue clear in this scope.'}</div>
-                          <div className="tcs-hint">click to select, click again to drop it</div>
-                        </div>
-
-                        <div className="tcs-list">
-                          {nextAll.length === 0 ? (
-                            <div className="tc-empty pad">Every open item is claimed or parked — nothing free to hand over.</div>
-                          ) : scoped.length === 0 ? (
-                            <div className="tc-empty pad">
-                              Nothing free in this scope.{' '}
-                              <button className="tc-link" onClick={() => { setRailArea(''); setRailRisk(''); }}>clear it</button>
-                            </div>
-                          ) : lanes.map((ln) => (
-                            <div className="tcs-lane" key={laneKey(ln.id)}>
-                              <div className="tcs-lane-head">
-                                <span className={`bar${ln.active ? ' on' : ''}`} />
-                                <span className={`k${ln.active ? ' on' : ''}`}>{ln.name}</span>
-                                <span className="n">{ln.all.length}</span>
-                                <span className="rule" />
-                                {ln.note && <span className="w">{ln.note}</span>}
-                              </div>
-                              {ln.all.length === 0 ? (
-                                <div className="tcs-lane-none">
-                                  {ln.active
-                                    ? 'nothing free in the sprint in progress — the runner has no work tonight'
-                                    : `nothing in ${ln.name}`}
-                                </div>
-                              ) : (
-                                <>
-                                  {ln.shown.map((it) => railRow(it, {
-                                    // No checkbox in this layout: the row IS the
-                                    // tick, and the accent ring is the state.
-                                    tick: false, toggle: true,
-                                    onClick: () => togglePick(it.id),
-                                  }))}
-                                  {ln.more && (
-                                    <button className="tcs-more"
-                                      onClick={() => setLaneOpen((l) => {
-                                        const k = laneKey(ln.id);
-                                        return l.includes(k) ? l.filter((x) => x !== k) : [...l, k];
-                                      })}>
-                                      {ln.more}
-                                    </button>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="tcs-foot">
-                          {claimNote && <div className="tc-warn">{claimNote}</div>}
-                          <div className="r">
-                            {/* Select-all works on the SCOPE, so the count on the
-                                button always means the list you are looking at —
-                                and clearing only drops what this scope shows, so a
-                                pick made in another tab's scope survives. */}
-                            <button className="tc-link dim" disabled={scoped.length === 0}
-                              onClick={() => setPicked((p) => (allScopedPicked
-                                ? p.filter((id) => !scoped.some((it) => it.id === id))
-                                : [...new Set([...p, ...scoped.map((it) => it.id)])]))}>
-                              {allScopedPicked ? 'clear' : `select all ${scoped.length}`}
-                            </button>
-                            <span className="s">
-                              {scopedPicked.length ? `${scopedPicked.length} selected` : 'nothing selected'}
-                            </span>
-                            <button className="btn-submit sm" disabled={scopedPicked.length === 0 || !activeSess}
-                              onClick={() => void sendItems(scopedPicked)}
-                              title="Types the selected items at the prompt as one block and claims them — read it, then press Enter yourself">
-                              send →
-                            </button>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      /* ---- 1b · up next: one item to send, type to filter ---- */
-                      <>
-                        {/* Already sent? Say so in a line. This layout's card is
-                            about what to send NEXT, but the claim made a minute ago
-                            is still the thing keeping the runner off it — and the
-                            release has to live wherever the claim is shown. */}
-                        {workingItem && (
-                          <div className="tcs-on">
-                            <span className="k">{workingItem.claimedBy ? '⚑' : '○'}</span>
-                            <span className="t" title={workingItem.claimedBy
-                              ? `In progress · ${workingItem.claimedBy}`
-                              : 'Not claimed — the runner may still pick this up'}>
-                              #{workingItem.id} {workingItem.title}
-                            </span>
-                            <button className="tc-link"
-                              onClick={() => go.detail(projectSlug, 'roadmap', String(workingItem.id))}>board ↗</button>
-                            {workingItem.claimedBy && isTermClaim(workingItem.claimedBy) && (
-                              <button className="tc-link" onClick={() => void releaseWorking()}
-                                title="Give the item back to the board — it becomes pickable again">release</button>
-                            )}
-                            <button className="tc-link dim" onClick={() => pinWorking(null)}
-                              title="Forget what this session is on (the claim, if any, stays)">clear</button>
-                          </div>
-                        )}
-
-                        <div className="tcs-lede">
-                          <div className="tc-cap">UP NEXT</div>
-                          {topItem ? (
-                            <div className="tcs-top">
-                              <div className="h">
-                                <span className={`tcs-grade${topItem.sprintId === activeSprintId && activeSprintId !== null ? ' on' : ''}`}
-                                  title={laneNameOf(topItem)}>{laneGlyphOf(topItem)}</span>
-                                <span className="t">{topItem.title}</span>
-                              </div>
-                              <div className="m">
-                                <span className="ref">#{topItem.id}</span>
-                                <span className="tag">{topItem.area || 'untagged'}</span>
-                                <span className="tag">{topItem.bucket}</span>
-                                <span className="tag">
-                                  {topItem.plan.length
-                                    ? `☰ ${topItem.plan.filter((s) => s.done).length}/${topItem.plan.length}`
-                                    : 'no plan'}
-                                </span>
-                              </div>
-                              <div className="a">
-                                <button className="btn-submit sm" disabled={!activeSess}
-                                  onClick={() => void sendItems([topItem.id])}
-                                  title="Types this item at the prompt and claims it — read it, then press Enter yourself">
-                                  send to the prompt
-                                </button>
-                                <button className="tc-link dim"
-                                  onClick={() => { setPassed((p) => [...p, topItem.id]); setPromoted(null); }}
-                                  title="Offer the next one down instead — nothing on the board changes, this is only what the rail shows">
-                                  skip
-                                </button>
-                              </div>
-                              <div className="w">typed, not run · sending claims the item</div>
-                            </div>
-                          ) : (
-                            <div className="tcs-none">
-                              {nextAll.length === 0
-                                ? 'Every open item is claimed or parked — nothing free to hand over.'
-                                : matched.length === 0 ? 'No match for that filter.'
-                                : 'Skipped past everything here — pick one below, or offer them again.'}
-                            </div>
-                          )}
-                          {passed.length > 0 && (
-                            <button className="tc-link dim tcs-unpass" onClick={() => setPassed([])}>
-                              {passed.length} skipped past · offer them again
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Typing is the filter: `sprint:…`, `tab:polaris`, `risk:low`,
-                            `plan:none`, or any words from the title. Terms narrow
-                            each other, and the chips are only the ones with work
-                            behind them — a token that matches nothing is a dead
-                            press. */}
-                        <div className="tcs-filter">
-                          <div className={`tcs-field${railQuery ? ' on' : ''}`}>
-                            <span className="s">/</span>
-                            <input value={railQuery} onChange={(e) => setRailQuery(e.target.value)}
-                              aria-label="Filter the queue"
-                              placeholder="filter — sprint:cycle 3, tab:polaris, branching" />
-                            {railQuery && (
-                              <button className="tc-link dim" onClick={() => setRailQuery('')}>clear</button>
-                            )}
-                          </div>
-                          <div className="tcs-tokens">
-                            {railTokens.map((t) => (
-                              <button key={t} className={`tcs-token${railQuery === t ? ' on' : ''}`}
-                                onClick={() => setRailQuery(railQuery === t ? '' : t)}>{t}</button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="tcs-list">
-                          {groups.length === 0 ? (
-                            <div className="tc-empty pad">
-                              {nextAll.length === 0 ? 'Every open item is claimed or parked — nothing free to hand over.'
-                                : matched.length > 0 ? 'That is the whole queue — nothing below the promoted item.'
-                                : 'No match for that filter.'}
-                            </div>
-                          ) : groups.map((g) => (
-                            <div className="tcs-group" key={laneKey(g.id)}>
-                              <button className="tcs-group-head" aria-expanded={g.open}
-                                onClick={() => setLaneShut((l: string[]) => {
-                                  const k = laneKey(g.id);
-                                  return l.includes(k) ? l.filter((x) => x !== k) : [...l, k];
-                                })}>
-                                <span className="c">{g.open ? '▾' : '▸'}</span>
-                                <span className={`k${g.active ? ' on' : ''}`}>{g.name}</span>
-                                <span className="n">{g.items.length}</span>
-                                <span className="rule" />
-                              </button>
-                              {g.open && g.items.map((it) => railRow(it, {
-                                tick: bulk, toggle: bulk,
-                                onClick: () => {
-                                  if (bulk) { togglePick(it.id); return; }
-                                  // Not a tick: promote it. One press moves the
-                                  // send target, which is the whole argument of
-                                  // this layout.
-                                  setPromoted(it.id);
-                                  setPassed((p) => p.filter((x) => x !== it.id));
-                                },
-                              }))}
-                            </div>
-                          ))}
-                        </div>
-
-                        {bulk && (
-                          <div className="tcs-bulk">
-                            <span className="s">
-                              {matchedPicked.length
-                                ? `${matchedPicked.length} ticked · sends as one prompt`
-                                : 'tick items to batch them'}
-                            </span>
-                            <button className="tc-link dim" disabled={matched.length === 0}
-                              onClick={() => setPicked((p) => (allMatchedPicked
-                                ? p.filter((id) => !matched.some((it) => it.id === id))
-                                : [...new Set([...p, ...matched.map((it) => it.id)])]))}>
-                              {allMatchedPicked ? 'clear' : 'tick all'}
-                            </button>
-                            <button className="btn-submit sm" disabled={matchedPicked.length === 0 || !activeSess}
-                              onClick={() => void sendItems(matchedPicked)}
-                              title="Types the ticked items at the prompt as one block and claims them">
-                              send →
-                            </button>
-                          </div>
-                        )}
-                        {claimNote && <div className="tcs-foot"><div className="tc-warn">{claimNote}</div></div>}
-
-                        {/* ROSTER as a line, not a block. Stack keeps per-model
-                            usage for autopilot runs, never for a terminal session
-                            (#283), so the honest read is who is at the keyboard and
-                            the host's whole day; anything more would be invented. */}
-                        <div className="tcs-roster">
-                          <span className={`dot ${claudeLive ? 'live' : 'closed'}`} />
-                          <span className="l">you and claude, in this tab</span>
-                          <span className="s"
-                            title="No per-model record for a terminal session — that figure is this host's whole day.">
-                            {fmtTok(usedTokens)} tok today
-                          </span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <div className="tc-body">
-                    {brief && (
-                      <div className="tc-block">
-                        <div className="tc-cap">FROM THE ROADMAP</div>
-                        <button className="tc-cmd brief" onClick={pasteBrief}
-                          title="Types the roadmap brief into the active session — review it, then press Enter yourself">
-                          ▶ Paste roadmap brief
-                        </button>
-                      </div>
-                    )}
-                    {RUNBOOK.map((g) => (
-                      <div className="tc-block" key={g.name}>
-                        <div className="tc-cap">{g.name}</div>
-                        {g.items.map((c) => (
-                          <div className="tc-cmd-row" key={c.cmd}>
-                            <button className="tc-cmd" onClick={() => typeQuick(c.cmd)}
-                              title={`Load "${c.cmd}" at the prompt`}>
-                              <span className="c">{c.cmd}</span>
-                              <span className="w">{c.why}</span>
-                            </button>
-                            <button className="tc-run" onClick={() => runQuick(c.cmd)}
-                              aria-label={`Run ${c.cmd}`} title="Run it now">↵</button>
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                    <div className="tc-block">
-                      <div className="tc-cap">YOURS</div>
-                      {customCmds.map((c, i) => (
-                        <div className="tc-cmd-row" key={`${c.cmd}-${i}`}>
-                          <button className="tc-cmd" onClick={() => typeQuick(c.cmd)}
-                            title={`Load "${c.cmd}" at the prompt`}>
-                            <span className="c">{c.label}</span>
-                            <span className="w">{c.cmd === c.label ? '' : c.cmd}</span>
-                          </button>
-                          <button className="tc-run" onClick={() => runQuick(c.cmd)}
-                            aria-label={`Run ${c.label}`} title="Run it now">↵</button>
-                          <button className="term-cmd-x" onClick={() => dropCmd(i)}
-                            aria-label={`Remove ${c.label}`} title="Remove">×</button>
-                        </div>
-                      ))}
-                      {adding ? (
-                        <div className="term-cmd-add">
-                          <input className="field-input sm" value={newLabel} placeholder="label (optional)"
-                            onChange={(e) => setNewLabel(e.target.value)} />
-                          <input className="field-input sm" value={newCmd} placeholder="command" autoFocus
-                            onChange={(e) => setNewCmd(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') addCmd(); else if (e.key === 'Escape') setAdding(false); }} />
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <button className="btn-cancel sm" onClick={() => setAdding(false)}>Cancel</button>
-                            <button className="btn-submit sm" onClick={addCmd} disabled={!newCmd.trim()}>Add</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button className="tc-cmd add" onClick={() => setAdding(true)}>+ Add a command</button>
-                      )}
-                    </div>
-
-                    {/* ✧ side gemini — command help. Suggestion only; nothing
-                        runs until the human presses Enter in the terminal. */}
-                    <div className="tc-block">
-                      <div className="tc-cap">✧ COMMAND HELP</div>
-                      <div className="term-assist">
-                        <input className="field-input sm" value={askText} placeholder="what do you want to do?"
-                          onChange={(e) => setAskText(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') void runAssist(); }} />
-                        {askBusy && <div className="ta-note">thinking…</div>}
-                        {askErr && <div className="ta-note err">{askErr}</div>}
-                        {suggestion && (
-                          <div className="ta-card">
-                            <code className="ta-cmd">{suggestion.command}</code>
-                            {suggestion.explanation && <div className="ta-why">{suggestion.explanation}</div>}
-                            <div className="ta-actions">
-                              <button className="btn-submit sm" onClick={typeSuggestion}
-                                title="Types the command into the active session — press Enter yourself to run it">
-                                ⌨ Type it
-                              </button>
-                              <button className="btn-cancel sm" onClick={saveSuggestion} title="Save as a quick command">
-                                + Save
-                              </button>
-                              <button className="term-cmd-x" onClick={() => setSuggestion(null)} aria-label="Dismiss suggestion">×</button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="tc-foot">
-                      Ask in plain words at the prompt instead — the runbook is only for the ones you type every day.
-                    </div>
                   </div>
                 )}
               </>
