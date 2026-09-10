@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getShowcase, type Showcase as ShowcaseData } from '../store';
 import { PRODUCT_NAME, isAccentTag } from '../lib/ui';
+import { Brandmark } from '../components/Brandmark';
 import { TopBar } from '../components/TopBar';
 
 const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
@@ -26,9 +27,7 @@ export function Showcase({ slug, token }: { slug: string; token: string }) {
     return (
       <div className="gate">
         <div className="gate-card">
-          <div className="brandmark" style={{ marginBottom: 18 }}>
-            <span className="sq" /><span className="word">{PRODUCT_NAME}</span>
-          </div>
+          <Brandmark size={28} style={{ marginBottom: 18 }} />
           <div className="gate-title">Nothing here</div>
           <div className="gate-sub">{error}</div>
         </div>

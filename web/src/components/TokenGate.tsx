@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { setToken, verifyToken, loginWithPin } from '../store';
 import { PRODUCT_NAME } from '../lib/ui';
+import { Brandmark } from './Brandmark';
 import { HowToGuide } from './HowToGuide';
 
 // First-load landing: what Stack is, plus the gate. Two ways in: paste the
@@ -47,9 +48,10 @@ export function TokenGate() {
   return (
     <div className="gate">
       <div className="gate-hero">
-        <div className="brandmark" style={{ marginBottom: 14 }}>
-          <span className="sq" /><span className="word">{PRODUCT_NAME}</span>
-        </div>
+        {/* The splash is the one place the logo has the room to be the only
+            thing on screen, so it gets the stacked lockup at hero size — and,
+            being ≥32px, the tile with its inset and hairline. */}
+        <Brandmark lockup="stacked" size={56} style={{ marginBottom: 18 }} />
         <div className="gate-tag">
           Your side-project command centre. Claude Code sessions checkpoint their work here —
           you pick up where you left off, review what happened while you were away, and steer

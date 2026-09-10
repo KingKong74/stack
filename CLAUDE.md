@@ -13,7 +13,7 @@ own: `routes/ingest.js`, `prompts.js`, `routes/checks.js`, `routes/worktrees.js`
 `routes/terminal.js`, `routes/autopilot.js`, `routes/sprints.js`, `agent-profiles.js`, `agents.js`, `pulse.js`,
 `lanes.js`, `terminal/agent-run.mjs`, `terminal/model-switch.mjs`, `terminal/cli-registry.mjs`, `scripts/lib/autoverdict.mjs`, `scripts/lib/refine.mjs`,
 `scripts/stack-autopilot-dispatch.mjs`, `lib/branch.ts`, `lib/plan.ts`, `styles.css`,
-`detail/Board.tsx`, `detail/Roadmap.tsx`, `detail/Plans.tsx` and `components/RoadmapModal.tsx`. **Adding a rule here
+`components/Brandmark.tsx`, `detail/Board.tsx`, `detail/Roadmap.tsx`, `detail/Plans.tsx` and `components/RoadmapModal.tsx`. **Adding a rule here
 that belongs in one of those is how this file got to 40 KB.**
 
 **GONE, so you don't go looking** (owner's calls, with what went with each): **Mission Control**'s
@@ -61,6 +61,11 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
 - `styles.css` — **the palette is the `:root` variables, in TWO LAYERS** (#432, kit tokens then
   Stack's aliases). Its header owns the rest, including the two traps the split sprang; read it
   before reaching for a token. **Never an inline hex.**
+- `components/Brandmark.tsx` — THE LOGO, and the only place the mark is drawn; its header owns the
+  form rules. The cross-cutting half: THE GEOMETRY IS COPIED THREE TIMES and no copy can import
+  another — the component, `scripts/render-icons.mjs` (favicon + PWA icons; it refuses to write if a
+  tone drifted from `styles.css`) and `scripts/lib/brandmark.cjs` (the CLI banner, CJS because
+  `stack` is). Move a plate, move all three and re-run the renderer.
 - `lib/termClipboard.ts` — its header says why ⌃C, ⌃V and OSC 52 each behave unlike a native
   terminal. Don't "simplify" any of the three.
 - `lib/brief.ts` — the resume brief + the `DIRECTIVES` catalogue (keys mirror `SESSION_DEFAULTS`).

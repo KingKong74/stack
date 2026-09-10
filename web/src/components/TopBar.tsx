@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { go } from '../lib/route';
-import { PRODUCT_NAME } from '../lib/ui';
+import { Brandmark } from './Brandmark';
 
 // THE HEADER, merged (#432). Six screens each drew their own topbar out of the
 // same three or four pieces, in a different order, at a different height — so
@@ -13,15 +13,6 @@ import { PRODUCT_NAME } from '../lib/ui';
 // The avatar is the kit's user chip doing Stack's job. Stack has no user
 // model — one owner, one token — so a chip with someone's initials in it would
 // be decoration claiming to be data. It carries the gear it actually does.
-
-function TerminalMark() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
-    </svg>
-  );
-}
 
 function GearMark() {
   return (
@@ -50,10 +41,11 @@ export function TopBar({ crumb, onSearch, searchLabel = 'Search…', actions, da
 }) {
   return (
     <div className={`topbar${dash ? ' dash' : ''}`}>
-      <a className="brandmark" href="#/" aria-label={`${PRODUCT_NAME} — all projects`}>
-        <span className="sq"><TerminalMark /></span>
-        <span className="word">{PRODUCT_NAME}</span>
-      </a>
+      {/* 24px is the smallest the mark keeps all three plates (Brandmark.tsx),
+          which is why the bar's logo is that and not the 22px square it
+          replaced — a topbar is where the logo is seen most and least often
+          looked at, so it gets the full form. */}
+      <Brandmark size={24} href="#/" />
 
       {crumb && crumb.length > 0 && (
         <div className="crumb">

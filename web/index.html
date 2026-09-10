@@ -5,8 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Stack</title>
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#1c1a17" />
-    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+    <!-- The app is dark-only (web/src/styles.css), so the browser chrome is
+         --surface-card, the same tone the topbar the logo sits in is painted. -->
+    <meta name="theme-color" content="#242528" />
+    <!-- The SVG first: a tab strip draws it at 16px, and the mark's reduced
+         two-plate form is what stays legible there. The PNG stays behind it
+         for anything that cannot read an SVG icon. Both come out of
+         scripts/render-icons.mjs — never hand-edit one. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/icon-180.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

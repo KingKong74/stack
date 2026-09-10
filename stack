@@ -14,6 +14,7 @@
 //   stack help
 const { join } = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { banner, wantsColour } = require('./scripts/lib/brandmark.cjs');
 
 // fn = the module export to call (default `main`); mains may be async and
 // resolve to the exit code.
@@ -38,10 +39,15 @@ const COMMANDS = {
 
 const [cmd, ...rest] = process.argv.slice(2);
 
+// The banner is the logo's third application (scripts/lib/brandmark.cjs) and
+// it goes HERE and nowhere else: `stack` bare and `stack help` are the two
+// outputs nobody pipes. A subcommand printing a mark above its JSON would be a
+// subcommand nobody can parse.
 function usage(code) {
-  const lines = ['usage: stack <command> [options]', ''];
+  const out = code ? process.stderr : process.stdout;
+  const lines = [banner({ colour: wantsColour(out) }), '', 'usage: stack <command> [options]', ''];
   for (const [name, { blurb }] of Object.entries(COMMANDS)) lines.push(`  ${name.padEnd(15)} ${blurb}`);
-  (code ? process.stderr : process.stdout).write(lines.join('\n') + '\n');
+  out.write(lines.join('\n') + '\n');
   process.exit(code);
 }
 
