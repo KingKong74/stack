@@ -20,7 +20,9 @@ that belongs in one of those is how this file got to 40 KB.**
 seven rooms (`/api/control`, `/api/review`, `/api/merge`) · **Polaris** (Futures tab, galaxy,
 `futures`) · the **instructions tree** (managed CLAUDE.md library + host sync) · the **Workbench**
 (canvas tab, `/api/…/workbench`, `workbench_*`, the Drafter, and `notes` — its only reader — with
-the table, route, ⌘K scope and the ＋'s composer; the ＋ files board items only) · the Roadmap
+the table, route, ⌘K scope and the ＋'s composer) · the **corner ＋** and the **floating terminal
+dock** (#492 — the board's composer files an item, the presence pill says a session is live) · the
+Roadmap
 **Timeline** (#428) and **strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`) · the **TAB
 AGENTS' CONSOLES** (#379/#380, `console_off` kept in the DB) and the **Auditor** with them. THEN THE
 SCREENS: every project tab became a kit mockup (#443–#451), Mission Control too (#470), the board's
@@ -400,7 +402,7 @@ also documents the self-describing ones). The ones whose meaning isn't obvious f
 | `autopilotEnabled` | the ARM SWITCH. Nightly + scheduled jobs only enqueue while on; ▶ Run now stays manual-only |
 | `autopilotWorkers` | the FLEET-WIDE cap on concurrent jobs (0 = unlimited, default 3, clamped 1–8); per-project serialisation is separate and NOT tunable |
 | `autopilotExecutorModel` / `autopilotAdvisorModel` | #153, **inverted by #285**: the ADVISOR runs the session (main loop, plans, delegates, verifies, commits) and the EXECUTOR is exposed to it as a subagent with the write tools. Advisor unset = single-model on the executor |
-| `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set. **branch/risk are dead toggles** — #469 took them off the modal, so the route still answers them and nothing can land them. `tier` went with its column (#477); `priority` has the ＋ dock |
+| `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set. **branch/risk are dead toggles** — #469 took them off the modal, so the route still answers them and nothing can land them. `tier` went with its column (#477); `priority` went with the corner ＋ (#492) |
 | `termIdleHours` | the idle-session reaper's threshold (0 = never); the host does the killing and fails SAFE |
 | `accessPinSet` | PIN sign-in available; PATCH takes write-only `accessPin` ('' disables). Any change signs out every PIN-connected device |
 

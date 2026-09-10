@@ -1272,25 +1272,6 @@ export function setLastViewedProject(slug: string) {
   catch { /* storage full or unavailable — a nicety, never a blocker */ }
 }
 
-// ---- what the corner ＋ just filed ----
-//
-// The quick-add dock is a SIBLING of every screen (App.tsx renders it outside
-// the page tree), so an item it writes into the project you are looking at has
-// no props path back to that screen — it would sit saved and invisible, which
-// reads as a press that did nothing. Same one-line pub/sub as `onAuthChange`:
-// the dock announces the slug it wrote to and the open project re-reads.
-// The GET /api/tips recipe routes are still served and their rows untouched;
-// nothing in the client calls them since the library left the corner.
-let filedListeners: Array<(slug: string) => void> = [];
-
-export function emitItemFiled(slug: string) {
-  for (const cb of [...filedListeners]) cb(slug);
-}
-export function onItemFiled(cb: (slug: string) => void): () => void {
-  filedListeners.push(cb);
-  return () => { filedListeners = filedListeners.filter((x) => x !== cb); };
-}
-
 // ---- the skill tree (#228) ----
 //
 // A managed library of Claude Code skills. The server holds the library; the

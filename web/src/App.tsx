@@ -17,7 +17,6 @@ import { Showcase } from './screens/Showcase';
 import { CommandPalette } from './components/CommandPalette';
 import { TermStatusPill } from './components/TermStatusPill';
 import { ToTop } from './components/ToTop';
-import { QuickAddDock } from './components/QuickAddDock';
 import { getToken, onAuthChange } from './store';
 
 // The app is DARK-ONLY: the imported console kit ships one palette and no
@@ -29,13 +28,12 @@ export default function App() {
   const route = useRoute();
   const [token, setTokenState] = useState<string | null>(() => getToken());
   const [paletteOpen, setPaletteOpen] = useState(false);
-  // The terminal dock (#137/#139): once visited, the Terminal stays mounted for
-  // the life of the tab — sessions, sockets and scrollback survive navigation.
-  // Away from #/terminal it minimises to a bottom-right dock while sessions
-  // are alive; `termAlive` (reported up by the Terminal) also quiets the
-  // global presence pill so the corner isn't doubled up.
+  // The terminal dock (#137): once visited, the Terminal stays mounted for the
+  // life of the tab — sessions, sockets and scrollback survive navigation.
+  // Away from #/terminal it is hidden outright (#492 removed the floating
+  // panel and its corner chip), so the global presence pill is what says a
+  // session is still alive.
   const [termMounted, setTermMounted] = useState(false);
-  const [termAlive, setTermAlive] = useState(0);
   useEffect(() => { if (route.name === 'terminal') setTermMounted(true); }, [route]);
 
   // Re-read the token whenever it changes (set on unlock, cleared on any 401).
@@ -81,17 +79,12 @@ export default function App() {
           <Terminal initialCwd={route.name === 'terminal' ? route.cwd : ''}
             initialAttach={route.name === 'terminal' ? route.attach : undefined}
             initialBrief={route.name === 'terminal' ? route.brief : undefined}
-            visible={route.name === 'terminal'} onAlive={setTermAlive} />
+            visible={route.name === 'terminal'} />
         </Suspense>
       )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
-      <TermStatusPill hidden={route.name === 'terminal' || termAlive > 0} />
+      <TermStatusPill hidden={route.name === 'terminal'} />
       {route.name !== 'terminal' && <ToTop />}
-      {/* The quick ＋: a roadmap item, from any screen. It took the recipe
-          library's corner, because the thing you need everywhere is somewhere
-          to PUT what you just thought of. Not on the terminal screen, where it
-          would sit over the pane. */}
-      {route.name !== 'terminal' && <QuickAddDock />}
     </>
   );
 }

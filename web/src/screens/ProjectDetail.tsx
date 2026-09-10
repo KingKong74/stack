@@ -5,7 +5,7 @@ import {
   createRoadmapItem, patchRoadmapItem,
   patchProject, createShareLink, deleteShareLink,
   assistRoadmapItem,
-  agentCan, setLastViewedProject, onItemFiled,
+  agentCan, setLastViewedProject,
   getProjects,
 } from '../store';
 import type { Project } from '../types';
@@ -193,19 +193,14 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // longer saves one at all.
   const [shareOpen, setShareOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
-  // The Curator's board clean-up: null = closed, 'loading', or the suggestion list.
-  // The corner ＋ writes through store.ts, not through this screen, so an item
-  // filed into the project already on screen would otherwise be saved and
-  // invisible. Re-read the payload (no loading flash — the page is already
-  // drawn).
+  // Re-read the payload in place (no loading flash — the page is already
+  // drawn): what the auto-refresh polls and what a child screen calls after a
+  // write of its own.
   const reread = useCallback(() => {
     getProjectDetail(slug)
       .then((d) => { setData(d); })
       .catch(() => { /* the write succeeded; a stale read is not worth an error banner */ });
   }, [slug]);
-  useEffect(() => onItemFiled((filedSlug) => {
-    if (filedSlug === slug) reread();
-  }), [slug, reread]);
 
   // #314 — the ids a promotion actually carried through: the idea plus its
   // orbit (planets/moons), never just the one that was clicked. Keep-or-delete
