@@ -468,7 +468,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           // is what it draws: open, un-archived COMMITTED cards — #472 moved
           // held rows and child ideas to Roadmap, and the two counts partition.
           key: 'roadmap', label: project.name, icon: NavIcons.board,
-          count: allRoadmap.filter((i) => !i.done && !i.archived).length,
+          // COMMITTED, open and un-archived — the rows the board actually
+          // draws. It counted every open row until #472 moved held items and
+          // child ideas to Roadmap, at which point the rail read 15 over a
+          // board of 3: the exact failure the "a row's number and the screen
+          // behind it must agree" rule is about, committed against my own rule.
+          count: allRoadmap.filter((i) => !i.done && !i.archived && !isIdea(i)).length,
           menuLabel: `${project.name} board`,
           menu: placeMenu(hrefTo.detail(slug, 'roadmap'), 'board'), onClick: () => setTab('roadmap'),
         },
