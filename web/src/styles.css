@@ -550,20 +550,15 @@ a.tab { display: inline-block; }
 .tab.tab-term:hover { color: var(--accent-text-hover); }
 .tab-n { margin-left: 6px; font-family: var(--mono); font-size: 10.5px; font-weight: 600; color: var(--accent-text); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); border-radius: 9px; padding: 1px 6px; vertical-align: 1px; }
 
-/* ---------- resume card ---------- */
-.resume { background: var(--resume); border: 1px solid var(--resume-border); border-radius: 18px; padding: 24px 26px; margin-bottom: 22px; }
-.resume-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
-.resume-head .left { display: flex; align-items: center; gap: 11px; }
-.resume-ico { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 15px; }
-.resume-title { font-family: var(--disp); font-size: 18px; font-weight: 600; }
-.resume-when { font-family: var(--mono); font-size: 11px; color: var(--muted); }
-.resume-meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.btn-export { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 8px;
-  border: 1px solid var(--accent-tint-border); font-size: 12px; font-weight: 500; color: var(--accent-text);
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
-.btn-export:hover { background: var(--accent-tint); color: var(--accent-text-hover); }
-.btn-export:active { background: var(--accent-tint-deep); color: var(--accent-text-hover); transform: translateY(1px); }
-.btn-export .arr { font-size: 12px; }
+/* ---------- resume card ----------
+   THE CARD ITSELF IS `.fy-wc` NOW, at the foot of this file: the dashboard's
+   Continue section draws it in the shape For-you's working-copy card gave it,
+   out of the same classes rather than a look-alike (CommandDeck's ResumeHero
+   says why, and its `.resume-wc` modifier sits beside the `.fy-wc` block).
+   What stayed here is what that card still CONTAINS — the since-strip and the
+   three lists, further down. The cream `.resume` shell, its head, its three
+   equal columns and `.btn-export` went with the reshape and had no other
+   caller; `--resume`/`--resume-border` are still `.northstar`'s. */
 
 /* ---------- futures tab (north star + idea funnel) ---------- */
 .northstar { background: var(--resume); border: 1px solid var(--resume-border); border-radius: 16px; padding: 20px 22px; margin-bottom: 26px; }
@@ -602,7 +597,6 @@ a.tab { display: inline-block; }
 .brief-tighten:hover { background: var(--accent-tint); color: var(--accent-text-hover); }
 .brief-edit { width: 100%; height: 340px; resize: vertical; border: 1px solid var(--line-3); border-radius: 10px; background: var(--panel); color: var(--body); padding: 12px 14px; font-family: var(--mono); font-size: 12px; line-height: 1.55; margin-bottom: 18px; }
 .modal-actions.split { justify-content: space-between; }
-.resume-summary { font-size: 15px; line-height: 1.65; color: var(--body-2); margin-bottom: 20px; }
 /* the "since that checkpoint" band — sits above the checkpoint content, because
    the pushes that landed after it are the fresher fact (see ResumeSinceStrip).
    Kept SMALL on purpose: it is a caveat on the thing below it, and it was
@@ -619,11 +613,6 @@ a.tab { display: inline-block; }
    the activity feed, and this is a caveat, not the content. */
 .resume-since .rs-sum { font-size: 12.5px; line-height: 1.5; color: var(--body-2); margin-top: 6px;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.resume-cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 22px; }
-.resume-col .lbl { margin-bottom: 10px; }
-.col-progress .lbl { color: var(--muted); }
-.col-next .lbl { color: var(--muted); }
-.col-keep .lbl { color: var(--sage); }
 .itemlist { display: flex; flex-direction: column; gap: 9px; }
 .item { display: flex; gap: 9px; align-items: flex-start; font-size: 13.5px; color: var(--body); }
 .item .mk { flex: none; }
@@ -3171,11 +3160,27 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 
 .dash-section { scroll-margin-top: 128px; margin-bottom: 44px; }
 .dash-section.last { margin-bottom: 0; }
-/* the resume card carries its own bottom margin; the section owns the spacing */
-.dash-section .resume { margin-bottom: 0; }
-.dash-section .resume-head .hero-phase { align-self: center; }
 .dash-section .deck-branches { margin-top: 16px; }
 .dash-section .deck-attention { margin-top: 16px; }
+
+/* ---------- inside: the map of the app (DashSections' InsideSection) ----------
+   Inert cards, so nothing here takes a hover, a focus ring or a cursor: they
+   are sentences with a chip, not a second navigation (the component's header
+   says why). The chip is `.con-navsoon`, the rail's own, deliberately — one
+   spelling of "this is a mockup" across every surface that has to say it. */
+.inside-groups { display: flex; flex-direction: column; gap: 22px; }
+.inside-glabel {
+  font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 11px;
+}
+.inside-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 12px; }
+.inside-card {
+  background: var(--card); border: 1px solid var(--line-2); border-radius: 12px;
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 7px;
+}
+.inside-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.inside-name { font-family: var(--disp); font-size: 14px; font-weight: 600; color: var(--ink); }
+.inside-body { font-size: 12.5px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
 
 /* ---------- activity: the day-grouped push feed ---------- */
 .push-layout { display: grid; grid-template-columns: minmax(0, 1fr) 292px; gap: 20px; align-items: start; }
@@ -4202,6 +4207,14 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    kit's own screen carries every colour inline as a `var(--status-*-fg)`
    lookup, and this app's is that a colour is a token here and a component
    names only the ROLE — so every tone below arrives as a `tone-*` class.
+
+   THE `.fy-wc*` RULES AND THE `.fy-*` HELPERS ABOVE THEM ARE NOT THE MOCKUP'S
+   ANY MORE. The dashboard's Continue section draws its resume card in the same
+   shape and out of the same classes (components/CommandDeck.tsx's ResumeHero,
+   whose header says why), so this block survives the For-you screen being
+   wired or culled. Everything BELOW the working-copy block — the pushes panel,
+   the TVR grid, the model list, the trail, the feed, the auto-idea cards — is
+   still the mockup's alone and goes when it goes.
    ========================================================================== */
 
 .fy { display: flex; flex-direction: column; gap: var(--space-8); }
@@ -4310,6 +4323,46 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .fy-check .nm { width: 82px; flex: none; font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--text-primary); }
 .fy-check .det { font: var(--type-caption); color: var(--text-tertiary); }
 .fy-next { font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; padding-top: var(--space-2); }
+
+/* ---- the dashboard's Continue card, in the same shape ----
+   `.resume-wc` is a MODIFIER on `.fy-wc`, never a copy of it: the card above is
+   where the design is decided, and two spellings of one card drift. Only the
+   differences live here, and each is a difference the real data forced —
+   the kit's head carries a branch and one button and this one carries a phase,
+   a branch and three, so it has to wrap; and the kit's grid is two file lists
+   where this is two paragraphs of prose, so it stacks before it gets narrow. */
+.resume-wc .fy-wc-head { flex-wrap: wrap; row-gap: var(--space-4); }
+/* NOT the kit's `flex: none`. Its head carries one branch and one button and
+   can afford to refuse to shrink; this one carries a phase, a branch and three
+   buttons, and `flex: none` held that run at its full width — so on a phone
+   Continue sat off the right edge with nothing to say it was there. */
+.resume-wc .fy-wc-right {
+  flex: 1 1 auto; min-width: 0; justify-content: flex-end;
+  flex-wrap: wrap; gap: var(--space-4); row-gap: var(--space-3);
+}
+/* The head is the fold's handle, so it takes focus. The global `:focus-visible`
+   ring is what draws it — the offset is inward here only so the ring sits on
+   the card rather than half a pixel outside its rounded corner. */
+.resume-wc .fy-wc-head:focus-visible { outline-offset: -3px; }
+.resume-wc.empty .fy-wc-head { cursor: default; }
+.resume-wc.empty .fy-wc-head:hover { background: transparent; }
+.rwc-sum { font: var(--type-body); color: var(--text-secondary); text-wrap: pretty; }
+.rwc-sum.clamp {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.rwc-list { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+/* the three lists are the app's own `.item` rows, not the kit's file rows —
+   this only restates the type against the card's darker ground */
+.resume-wc .itemlist { gap: 7px; }
+.resume-wc .item { font-size: 13px; color: var(--text-secondary); }
+.resume-wc .resume-since { margin-bottom: 0; }
+@media (max-width: 720px) {
+  .resume-wc .fy-wc-grid { grid-template-columns: 1fr; gap: var(--space-5); }
+  /* the actions get their own line rather than competing with the title for a
+     width neither of them has */
+  .resume-wc .fy-wc-right { margin-left: 0; width: 100%; justify-content: flex-start; }
+  .resume-wc .fy-wc-head, .resume-wc .fy-wc-body { padding-left: var(--space-5); padding-right: var(--space-5); }
+}
 
 /* ---- recent pushes ---- */
 .fy-panel {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type {
   Overview, OverviewRoadmapBucket, Priority, Project,
 } from '../types';
@@ -8,6 +8,8 @@ import { buildWeeks, contribLevel } from '../lib/contrib';
 import { roadmapTarget } from '../lib/roadmapLink';
 import { PRIORITY_META } from '../lib/ui';
 import { AutopilotDigest, LiveNowStrip } from './CommandDeck';
+import { NavIcons } from '../detail/ConsoleNav';
+import { KitIcon } from '../detail/kit/KitIcon';
 
 // The sectioned dashboard's own pieces: the sticky section nav, the day-grouped
 // push feed with its sidebar, the cross-project roadmap rollup and the audit
@@ -19,8 +21,9 @@ const SECTIONS = [
   { id: 'projects', label: 'Projects' },
   { id: 'continue', label: 'Continue' },
   { id: 'activity', label: 'Activity' },
-  { id: 'roadmap', label: 'Roadmap' },
+  { id: 'roadmap', label: 'Priorities' },
   { id: 'audit', label: 'Audit' },
+  { id: 'inside', label: 'Inside' },
 ];
 
 // The sticky section rail under the topbar: jump links on the left, the state
@@ -302,16 +305,20 @@ export function RoadmapRollup({ roadmap, projects, fallback }: {
     <section id="roadmap" className="dash-section">
       <div className="section-bar">
         <div className="titles">
-          <div className="h">Roadmap across apps</div>
+          {/* NOT "Roadmap across apps" any more (#472): Roadmap is the IDEA
+              tab now and this rollup draws the BOARDS — committed work, in the
+              five buckets #469 gave `bucket`. The `roadmap` id and tab key are
+              unchanged, so every anchor and deep link still resolves. */}
+          <div className="h">Priorities across apps</div>
           <div className="subtitle">
-            Priority rollup · {open} open · {roadmap.closedThisWeek} closed this week
+            Every board's committed work · {open} open · {roadmap.closedThisWeek} closed this week
           </div>
         </div>
         {href && (
           <div className="bar-actions">
             <a className="viewall" href={href}
-              title={hrefProject ? `Open the roadmap for ${hrefProject.name}` : 'Open the roadmap'}>
-              Open Roadmap →
+              title={hrefProject ? `Open the board for ${hrefProject.name}` : 'Open the board'}>
+              Open the board →
             </a>
           </div>
         )}
@@ -319,12 +326,24 @@ export function RoadmapRollup({ roadmap, projects, fallback }: {
       {open === 0 && !roadmap.buckets.some((b) => b.items.length) ? (
         <div className="empty-state">
           <div className="big">Nothing on any board</div>
-          <div>Roadmap items land here from every project, bucketed the same way.</div>
+          <div>
+            Committed work lands here from every project, in the same five buckets. Ideas nobody has
+            signed off sit on each project's Roadmap tab instead.
+          </div>
         </div>
       ) : (
-        <div className="road-grid">
-          {roadmap.buckets.map((b) => <RollupColumn key={b.bucket} col={b} />)}
-        </div>
+        <>
+          <div className="road-grid">
+            {roadmap.buckets.map((b) => <RollupColumn key={b.bucket} col={b} />)}
+          </div>
+          {/* #477 — the server already sorts the active sprint's rows to the
+              top of each column, so this says what the order MEANS rather
+              than leaving it as an unexplained shuffle. */}
+          <div className="push-note">
+            Within a bucket, whatever sits in the sprint in progress comes first, in its sprint
+            order — that box is the run queue, and it is the only thing the overnight runner reads.
+          </div>
+        </>
       )}
     </section>
   );
@@ -425,10 +444,140 @@ export function AuditLists({ overview, projects }: { overview: Overview; project
           {!rows.length && <div className="empty-soft">No live projects.</div>}
         </div>
         <div className="health-note">
-          The bar is Stack's computed progress — done Must/Should work, capped at 90% while a
-          serious bug is open. It is not a separate health score.
+          The bar is Stack's computed progress — done Highest/High work, capped at 90% while a
+          critical or high bug is open, and 0% for a project with no Highest/High items at all.
+          It is not a separate health score.
         </div>
       </div>
     </div>
+  );
+}
+
+// ---------- inside: what a project's rail actually holds ----------
+
+// THE MAP OF THE APP, on the screen you land on. The dashboard is the whole
+// house and every other surface is one click into a project, so the one thing
+// it could never say was what those clicks OPEN — six rail rows, four of them
+// renamed or rebuilt in the last dozen changes, and nothing between the project
+// grid and the rail to say which is which.
+//
+// IT IS DESCRIPTIVE AND INERT, and both halves are deliberate. Inert because
+// these rows are not a second navigation: the project you want decides which
+// board you open, so a row here would have to guess one, and a control that
+// guesses is worse than a sentence that explains. Descriptive because the
+// honest chip is the point —
+//
+// A MOCK CHIP HERE OBEYS THE SAME RULE AS THE RAIL'S (#472, ConsoleNav's
+// header): the screen behind a `mock` row really opens and really draws the
+// console kit's sample rows, so saying so on its face is the only thing that
+// stops a mockup being read as data. `soon` is the opposite case — announced
+// and not built. And the chip's GRAIN follows the surface: Plans is part wired,
+// so it says which of its six sub-views are real rather than wearing one label
+// that would be wrong about four of them.
+//
+// KEEP THIS IN STEP WITH `navSections` IN ProjectDetail.tsx. There is no shared
+// definition to import — the rail's rows carry live counts, per-project hrefs
+// and a ⋯ menu, none of which this has — so the two are kept in step by
+// discipline, exactly like the branch namer and its client twin.
+type Standing = 'wired' | 'mock' | 'soon' | string;
+
+const INSIDE: { label: string; group: string; icon: ReactNode; standing: Standing; body: string }[] = [
+  {
+    group: 'A project', label: 'For you', icon: NavIcons.inbox, standing: 'mock',
+    body: 'Where you left off, the push feed and the queue of ideas a push extracted — three panes '
+      + 'on one screen, each keeping its own route key so a deep link still lands on the right one.',
+  },
+  {
+    group: 'A project', label: 'The board', icon: NavIcons.board, standing: 'wired',
+    body: 'The committed work, and it writes: a kanban whose every control patches a row, and a '
+      + 'Backlog tab where sprints are ordered. The sprint in progress IS the run queue — top row '
+      + 'first — and it is the only box the overnight runner reads.',
+  },
+  {
+    group: 'A project', label: 'Roadmap', icon: NavIcons.map, standing: 'wired',
+    body: 'The rows the board deliberately does not draw: ideas read off a push that nobody has '
+      + 'signed off, and children filed under something already on the board. Promote moves one '
+      + 'across, and that one write is the whole boundary.',
+  },
+  {
+    group: 'A project', label: 'Plans', icon: NavIcons.route, standing: 'Timeline + Calendar wired',
+    body: 'The stored schedule, read back. Timeline is the order the night works in, grouped by '
+      + 'sprint; Calendar is when each one runs. Summary, Progress, Releases and Dependencies still '
+      + 'draw the kit’s sample rows and each says so on its own sub-tab.',
+  },
+  {
+    group: 'A project', label: 'Quality', icon: NavIcons.check, standing: 'mock',
+    body: 'Checks and bugs in one loop — run, see red, file it, fix it, re-run. The route, the '
+      + 'tables and the suite ledger are all live; this screen is not reading them yet.',
+  },
+  {
+    group: 'A project', label: 'Starred', icon: NavIcons.star, standing: 'soon',
+    body: 'Announced and not built. It is a row rather than a promise elsewhere so the rail’s '
+      + 'shape stops moving under you.',
+  },
+  {
+    group: 'A project', label: 'Terminal', icon: NavIcons.terminal, standing: 'wired',
+    body: 'The host’s tmux sessions, in the browser, in five layouts you drag sessions into. The '
+      + 'rail counts how many are blocked on a permission prompt — and you can answer one from a '
+      + 'phone, switch a session’s model, or start one on a different runtime. The daemon dials '
+      + 'out, so nothing here needs a port open on your machine.',
+  },
+  {
+    group: 'The house', label: 'Mission Control', icon: NavIcons.layers, standing: 'mock',
+    body: 'The fleet from one point — seven kit tabs standing in for the rooms that were culled. '
+      + 'It reads nothing and writes nothing, and the button that opens it says so too.',
+  },
+  {
+    group: 'The house', label: 'Timeline', icon: NavIcons.clock, standing: 'wired',
+    body: 'Every push, every app, day by day. A push is one checkpoint rather than one commit, so '
+      + 'this is the record of sessions — not a git log with the names changed.',
+  },
+  {
+    group: 'The house', label: 'Skills', icon: NavIcons.grid, standing: 'wired',
+    body: 'The managed Claude skill library beside what the host actually has on disk. Stack only '
+      + 'ever writes or removes the skills it planted; anything else is reported and left alone.',
+  },
+  {
+    group: 'The house', label: 'Settings', icon: <KitIcon name="settings" size={14} />, standing: 'wired',
+    body: 'The arm switch for the overnight runner, the fleet-wide worker cap, the executor and '
+      + 'advisor models, the session defaults injected into every project, and the access PIN.',
+  },
+];
+
+const INSIDE_GROUPS = ['A project', 'The house'];
+
+export function InsideSection() {
+  return (
+    <section id="inside" className="dash-section last">
+      <div className="section-bar">
+        <div className="titles">
+          <div className="h">What’s inside</div>
+          <div className="subtitle">Every surface, and which of them are still mockups</div>
+        </div>
+      </div>
+      <div className="inside-groups">
+        {INSIDE_GROUPS.map((g) => (
+          <div className="inside-group" key={g}>
+            <div className="inside-glabel">{g}</div>
+            <div className="inside-grid">
+              {INSIDE.filter((r) => r.group === g).map((r) => (
+                <div className="inside-card" key={r.label}>
+                  <div className="inside-head">
+                    <span className="con-navico">{r.icon}</span>
+                    <span className="inside-name">{r.label}</span>
+                    {r.standing !== 'wired' && (
+                      <span className={`con-navsoon${r.standing === 'mock' ? ' mock' : ''}`}>
+                        {r.standing === 'mock' ? 'Mock' : r.standing === 'soon' ? 'Soon' : r.standing}
+                      </span>
+                    )}
+                  </div>
+                  <div className="inside-body">{r.body}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

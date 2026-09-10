@@ -440,6 +440,13 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // The counts are the ones the strip already wore: Quality carries what is
   // actually WRONG (red checks + serious open bugs) in the critical tone, and
   // the board carries how much is open, which is volume and not alarm.
+  //
+  // THE DASHBOARD DESCRIBES THIS LIST IN PROSE — `InsideSection` in
+  // components/DashSections.tsx, which is the landing screen's answer to "what
+  // do these rows open, and which of them are still mockups". It cannot import
+  // this one (these rows carry live counts, per-project hrefs and a ⋯ menu; it
+  // carries sentences), so the two are kept in step by discipline: rename,
+  // cull or WIRE a row here and its card there is part of the same change.
   const navSections: NavSection[] = [
     {
       id: 'home',

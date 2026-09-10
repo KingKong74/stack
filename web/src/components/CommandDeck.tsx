@@ -10,19 +10,41 @@ import {
 } from '../store';
 import { ExportBriefModal } from './ExportBriefModal';
 import { ResumeSinceStrip } from './ResumeSinceStrip';
+import { KitIcon } from '../detail/kit/KitIcon';
 
 // The command deck's parts. They used to render as one block at the top of the
 // dashboard; the dashboard is now sectioned (projects · continue · activity ·
 // roadmap · audit), so each part is exported on its own and the screen places
 // it in the section it belongs to. The behaviour of each is unchanged.
 
-// "Pick up where you left off" — the signature cream card, with the full three
-// resume columns the project detail has always shown. The overview payload only
-// carries a slice of the project, so the export modal pulls the detail on demand.
-export function ResumeHero({ resume, keepResumeCard }: {
-  resume: Overview['resume']; keepResumeCard: boolean;
+// "Pick up where you left off" — THE CONTINUE BOARD, drawn in the shape
+// For-you's working-copy card gave it (`detail/ForYouMock.tsx`'s `WorkingCopy`,
+// ported from the console kit). It shares that card's CLASSES — `.fy-wc*`, and
+// the `.fy-*` helpers under them — rather than a look-alike of its own, which
+// is the whole point of the resemblance: two spellings of one card drift, and
+// the mockup is where the design is decided. If the For-you screen is ever
+// culled, those rules stay: styles.css's block says so on its face.
+//
+// WHAT THE SHAPE COST, AND WHAT IT DIDN'T. The kit's card is a working copy —
+// per-file diff bars, staged/unstaged, the branch's commits, its checks. Stack
+// keeps NONE of that: a push is one checkpoint, not a git status, so inventing
+// a file list here would be the kit's sample rows wearing this project's name.
+// What goes in each slot instead is the resume card's own content, and the
+// mapping is one-for-one:
+//
+//   the kit's ...          →  here
+//   branch + ago              the checkpoint's branch and when it was written
+//   the file list             "Currently in progress" — what is mid-flight
+//   the folded grid           "Suggested next" | "Working well — keep"
+//   the last commit line      what the fold is hiding, counted
+//
+// THE FOLD IS THE ONLY STATE and it persists nothing — the same rule the kit's
+// card follows. Leaving the dashboard is the undo.
+export function ResumeHero({ resume, keepResumeCard, claims = [] }: {
+  resume: Overview['resume']; keepResumeCard: boolean; claims?: ClaimItem[];
 }) {
   const [exportOpen, setExportOpen] = useState(false);
+  const [open, setOpen] = useState(false);
   if (!keepResumeCard) return null;
 
   const loadHeroInput = async () => {
@@ -33,63 +55,119 @@ export function ResumeHero({ resume, keepResumeCard }: {
 
   if (!resume) {
     return (
-      <div className="resume empty">
-        <div className="resume-head">
-          <div className="left">
-            <div className="resume-ico">↩</div>
-            <div className="resume-title">Pick up where you left off</div>
+      <section className="fy-wc resume-wc empty">
+        <header className="fy-wc-head">
+          <span className="fy-caret" aria-hidden="true">▸</span>
+          <div className="fy-wc-titles">
+            <span className="fy-eyebrow accent">Where you left off</span>
+            <span className="t">Nothing on the go yet</span>
           </div>
+        </header>
+        <div className="fy-wc-body">
+          <span className="rwc-sum">
+            Start a project or land a push and your resume point lands here — the checkpoint's own
+            summary, what is mid-flight, and what it suggested doing next.
+          </span>
         </div>
-        <div className="resume-summary">
-          Nothing on the go yet. Start a project or fire a push, and your resume point lands here.
-        </div>
-      </div>
+      </section>
     );
   }
 
+  // The card's CONTENT time, not the last push's — ResumeSinceStrip says why
+  // those are different, and shows the gap when there is one.
+  const ago = resume.since?.authoredWhen || resume.when;
+  const branch = resume.since?.branch || '';
+  const mine = claims.filter((c) => c.slug === resume.slug);
+  const hidden = resume.nextUp.length + resume.workingWell.length;
+
   return (
     <>
-      <div className="resume">
-        <div className="resume-head">
-          <div className="left">
-            <div className="resume-ico">↩</div>
-            <div className="resume-title">{resume.name}</div>
-            {resume.currentPhase && <span className="hero-phase">{resume.currentPhase}</span>}
+      <section className="fy-wc resume-wc">
+        {/* The kit's head is the fold's handle. It carries real buttons, so
+            every one of them stops the click from reaching the header — and
+            the header answers the keyboard, since a div that only takes a
+            mouse is a control half the room cannot use. */}
+        <header className="fy-wc-head" role="button" tabIndex={0}
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen((o) => !o); }
+          }}>
+          <span className="fy-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
+          <div className="fy-wc-titles">
+            <span className="fy-eyebrow accent">Where you left off{ago ? ` · ${ago}` : ''}</span>
+            <span className="t">{resume.name}</span>
           </div>
-          <div className="resume-meta">
-            {/* the time the card's CONTENT was written, not the last push — see
-                ResumeSinceStrip for why those are different */}
-            {(resume.since?.authoredWhen || resume.when) && (
-              <div className="resume-when">
-                {resume.since?.authoredWhen
-                  ? `checkpoint ${resume.since.authoredWhen}`
-                  : resume.when}
-              </div>
+          <span className="fy-wc-right">
+            {resume.currentPhase && <span className="k-tag">{resume.currentPhase}</span>}
+            {branch && (
+              <span className="fy-branch"><KitIcon name="git-branch" size={13} />{branch}</span>
             )}
-            <button className="btn-export" onClick={() => setExportOpen(true)}
+            <button className="k-btn ghost sm"
+              onClick={(e) => { e.stopPropagation(); setExportOpen(true); }}
               title="Download a markdown brief for starting back into this project">
-              Export session brief <span className="arr">↗</span>
+              <KitIcon name="file-text" size={14} />Brief
             </button>
-            <button className="btn-export" onClick={() => go.terminal(resume.slug, undefined, true)}
+            <button className="k-btn secondary sm"
+              onClick={(e) => { e.stopPropagation(); go.terminal(resume.slug, undefined, true); }}
               title="Open a Claude session in this project with a debrief of where things stand">
-              Jump back in <span className="arr">↗</span>
+              <KitIcon name="terminal" size={14} />Jump back in
             </button>
-            <button className="btn-accent" onClick={() => go.detail(resume.slug)}>
-              Continue <span className="arr">→</span>
+            <button className="k-btn accent sm"
+              onClick={(e) => { e.stopPropagation(); go.detail(resume.slug); }}>
+              <KitIcon name="code" size={14} />Continue
             </button>
+          </span>
+        </header>
+
+        <div className="fy-wc-body">
+          <div className="fy-wc-meta">
+            <span className="k-tag mono">{resume.slug}</span>
+            {resume.when && <span className="fy-dim">last session {resume.when}</span>}
+            {/* ⚑ A claim is the don't-re-pick marker (#277), so it belongs on
+                the card you are about to pick up FROM. The chips themselves
+                are BranchClaims', below — this is the count, not a second
+                copy of the list. */}
+            {mine.length > 0 && (
+              <span className="fy-dim staged" title="Open items on this project held by a branch claim">
+                <KitIcon name="check" size={12} />{mine.length} claimed
+              </span>
+            )}
           </div>
-        </div>
-        <ResumeSinceStrip since={resume.since} slug={resume.slug} />
-        {resume.summary && <div className="resume-summary">{resume.summary}</div>}
-        <div className="resume-cols">
-          <ResumeCol kind="progress" label="Currently in progress" mark="dot"
+
+          <ResumeSinceStrip since={resume.since} slug={resume.slug} />
+          {/* CLAMPED WHILE THE CARD IS SHUT, and this is what the fold is FOR.
+              A /checkpoint summary is a paragraph, not a commit subject — the
+              kit's one-line `fy-wc-last` slot had no idea — and left loose it
+              pushed the projects grid, the queue and everything under it off
+              the first screen. Shut: the opening lines. Open: all of it. */}
+          {resume.summary && (
+            <span className={`rwc-sum${open ? '' : ' clamp'}`}>{resume.summary}</span>
+          )}
+
+          <ResumeList label="Currently in progress" mark="dot"
             items={resume.inProgress} empty="Nothing mid-flight." />
-          <ResumeCol kind="next" label="Suggested next" mark="arrow"
-            items={resume.nextUp} empty="Open road." />
-          <ResumeCol kind="keep" label="Working well — keep" mark="tick"
-            items={resume.workingWell} empty="—" />
+
+          {open ? (
+            <div className="fy-wc-grid">
+              <div className="fy-col">
+                <ResumeList label="Suggested next" mark="arrow"
+                  items={resume.nextUp} empty="Open road." />
+              </div>
+              <div className="fy-col">
+                <ResumeList label="Working well — keep" mark="tick"
+                  items={resume.workingWell} empty="—" />
+              </div>
+            </div>
+          ) : (
+            <span className="fy-wc-last">
+              {hidden
+                ? `${resume.nextUp.length} suggested next · ${resume.workingWell.length} working well — open for those and the full checkpoint`
+                : 'This checkpoint left no next steps.'}
+            </span>
+          )}
         </div>
-      </div>
+      </section>
       {exportOpen && (
         <ExportBriefModal projectName={resume.name} loadInput={loadHeroInput}
           onClose={() => setExportOpen(false)} />
@@ -98,12 +176,12 @@ export function ResumeHero({ resume, keepResumeCard }: {
   );
 }
 
-function ResumeCol({ kind, label, mark, items, empty }: {
-  kind: string; label: string; mark: 'dot' | 'arrow' | 'tick'; items: string[]; empty: string;
+function ResumeList({ label, mark, items, empty }: {
+  label: string; mark: 'dot' | 'arrow' | 'tick'; items: string[]; empty: string;
 }) {
   return (
-    <div className={`resume-col col-${kind}`}>
-      <div className="lbl">{label}</div>
+    <div className="rwc-list">
+      <span className="fy-eyebrow">{label}</span>
       <div className="itemlist">
         {items.length ? items.map((t, i) => (
           <div className="item" key={i}>

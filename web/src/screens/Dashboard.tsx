@@ -10,7 +10,7 @@ import {
   AttentionRow, BranchClaims, ResumeHero, ReviewQueue,
 } from '../components/CommandDeck';
 import {
-  AuditLists, PushesSection, RoadmapRollup, SubNav,
+  AuditLists, InsideSection, PushesSection, RoadmapRollup, SubNav,
 } from '../components/DashSections';
 
 type Filter = 'all' | ProjectStatus;
@@ -180,7 +180,8 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
                   )}
                 </div>
               </div>
-              <ResumeHero resume={overview.resume} keepResumeCard={overview.keepResumeCard} />
+              <ResumeHero resume={overview.resume} keepResumeCard={overview.keepResumeCard}
+                claims={overview.claims} />
               <BranchClaims claims={overview.claims} />
             </section>
 
@@ -191,7 +192,7 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
             <RoadmapRollup roadmap={overview.roadmap} projects={projects} fallback={overview.resume?.slug} />
 
             {/* ---- audit: what needs a human ---- */}
-            <section id="audit" className="dash-section last">
+            <section id="audit" className="dash-section">
               <div className="section-bar">
                 <div className="titles">
                   <div className="h">Audit</div>
@@ -202,6 +203,9 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
               <AttentionRow blockers={overview.blockers} stale={overview.stale} bugs={overview.bugs} />
               <AuditLists overview={overview} projects={projects} />
             </section>
+
+            {/* ---- inside: the map of the app, and what is still a mockup ---- */}
+            <InsideSection />
           </>
         ) : null}
       </div>

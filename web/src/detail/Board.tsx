@@ -1,5 +1,6 @@
-// THE BOARD IS WIRED. Its kanban reads `roadmap_items` and writes them back;
-// the Backlog and Development tabs below it are still the kit's mockups.
+// THE BOARD IS WIRED. Its kanban reads `roadmap_items` and writes them back,
+// and so does the Backlog tab since #477 made it the sprint surface; the
+// Development tab below them is still the kit's mockup.
 //
 // This is `ui_kits/console/BoardScreen.jsx` ported to TS (#443/#447) and then
 // given the data it was drawn for. The kanban half now reads the project's own
