@@ -240,8 +240,20 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
     if (Number.isFinite(n) && n > 0) setOpen(n);
   }, [highlightId]);
 
+  // THE LEDE SAYS "IN THIS SCOPE", so both of its numbers have to be. They were
+  // read off the unscoped list, which made the sentence false the moment a chip
+  // was pressed — the sections narrowed and the count sat still. The smoke
+  // caught it as `control-inert`, which was the honest reading: from outside,
+  // a press that changes no number IS a control that did nothing.
+  //
+  // `total` stays unscoped on purpose — it is the "All areas" chip's count, and
+  // a chip that counted only what is already showing would always read the same
+  // as the lede beside it.
   const total = rows.filter((it) => !it.archived && isIdea(it)).length;
-  const ready = ideas.filter((it) => colOf(it) === 'ready').length;
+  const scoped = useMemo(
+    () => (scope ? ideas.filter((it) => areaKey(it) === scope) : ideas),
+    [ideas, scope]);
+  const ready = scoped.filter((it) => colOf(it) === 'ready').length;
 
   return (
     <div className="im">
@@ -251,7 +263,7 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
           <h1>Roadmap</h1>
         </div>
         <span className="im-lede">
-          {total} idea{total === 1 ? '' : 's'} · {ready} ready in this scope
+          {scoped.length} idea{scoped.length === 1 ? '' : 's'} · {ready} ready in this scope
         </span>
       </div>
 
