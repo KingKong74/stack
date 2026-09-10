@@ -53,7 +53,7 @@
 import { Router } from 'express';
 import { pool, q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { sprintShape } from '../shape.js';
+import { sprintShape, dayOf } from '../shape.js';
 import { numericId } from '../params.js';
 
 // Mounted at /api/projects/:slug/sprints.
@@ -73,6 +73,26 @@ sprints.use(async (req, res, next) => {
 export const SPRINT_STATUSES = ['planned', 'active', 'done'];
 
 const cleanName = (v) => String(v ?? '').trim().slice(0, 80);
+
+/**
+ * A bare YYYY-MM-DD, or null. `undefined` means "not in this PATCH"; an explicit
+ * null, '' or anything unparseable means CLEAR IT.
+ *
+ * Anything unrecognised clearing the field rather than 400-ing is deliberate and
+ * is the safe direction here: the alternative is a sprint stuck with a window
+ * nobody can remove because the only value the client can send back is the one
+ * the server already refuses. A date is an annotation, not a gate — nothing
+ * downstream reads it — so the cost of losing one is a re-type.
+ */
+const cleanDate = (v) => {
+  if (v === null || v === undefined) return null;
+  const t = String(v).trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return null;
+  // Reject a well-formed string that is not a real day (2026-02-31), which the
+  // regex above happily passes and Postgres would reject with a 500.
+  const d = new Date(`${t}T00:00:00Z`);
+  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === t ? t : null;
+};
 
 /**
  * THE ACTIVE SPRINT OF ONE PROJECT, or null. The single reader every gate in
@@ -119,9 +139,18 @@ sprints.post('/', async (req, res) => {
     'SELECT COALESCE(MAX(position), -1) + 1 AS p FROM sprints WHERE project_id = $1',
     [req.project.id]
   );
+  // The window MAY be set at creation — naming a cycle and saying when it runs
+  // is one thought, and making it two round trips would leave every new sprint
+  // undated by default. Still optional: both null is the common case.
+  const startsOn = cleanDate(req.body?.startsOn);
+  const endsOn = cleanDate(req.body?.endsOn);
+  if (startsOn && endsOn && endsOn < startsOn) {
+    return res.status(400).json({ error: `A sprint cannot end (${endsOn}) before it starts (${startsOn}).` });
+  }
   const { rows } = await q(
-    `INSERT INTO sprints (project_id, name, position) VALUES ($1, $2, $3) RETURNING *`,
-    [req.project.id, name, pos[0].p]
+    `INSERT INTO sprints (project_id, name, position, starts_on, ends_on)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [req.project.id, name, pos[0].p, startsOn, endsOn]
   );
   res.status(201).json(sprintShape(rows[0]));
 });
@@ -174,6 +203,27 @@ sprints.patch('/:id', async (req, res) => {
     }
     if (req.body?.position !== undefined && Number.isFinite(Number(req.body.position))) {
       sets.push(`position = $${i++}`); vals.push(Math.max(0, Math.trunc(Number(req.body.position))));
+    }
+    // The planned window. Each end is settable on its own — half a window is a
+    // real thing to know ("starts Monday, no end decided") and demanding both
+    // would make the first date impossible to enter.
+    const startsOn = req.body?.startsOn === undefined ? undefined : cleanDate(req.body.startsOn);
+    const endsOn = req.body?.endsOn === undefined ? undefined : cleanDate(req.body.endsOn);
+    if (startsOn !== undefined) { sets.push(`starts_on = $${i++}`); vals.push(startsOn); }
+    if (endsOn !== undefined) { sets.push(`ends_on = $${i++}`); vals.push(endsOn); }
+    // A window that ends before it starts is not a window, and it is the one
+    // date mistake worth refusing OUT LOUD rather than storing: every reader
+    // would render it as a negative length. Checked against the row's OWN other
+    // end when the PATCH only sends one, or "move the start later" would be
+    // accepted and silently invert a window somebody set last week.
+    // `dayOf`, never a UTC round trip — the row's own dates come back from pg
+    // at LOCAL midnight and converting them would compare yesterday's date
+    // against today's input. See its header in shape.js.
+    const finalStart = startsOn !== undefined ? startsOn : dayOf(mine[0].starts_on);
+    const finalEnd = endsOn !== undefined ? endsOn : dayOf(mine[0].ends_on);
+    if (finalStart && finalEnd && finalEnd < finalStart) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: `A sprint cannot end (${finalEnd}) before it starts (${finalStart}).` });
     }
     if (wantStatus !== null) {
       sets.push(`status = $${i++}`); vals.push(wantStatus);

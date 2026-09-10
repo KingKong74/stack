@@ -475,6 +475,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
 
         {view === 'backlog' && (
           <BacklogView slug={slug} rows={rows} boxes={boxes} activeId={activeId} areas={areas}
+            lists={lists || []}
             onCreate={() => setDialog(true)} onEdit={onEdit}
             onWrote={setRows} onRefresh={onRefresh} onError={setErr} />
         )}
@@ -1098,8 +1099,64 @@ function CreateDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (t
 const runnable = (it: RoadmapItem): boolean =>
   !it.done && !it.skipped && !it.archived && !it.claimedBy.trim() && !isIdea(it);
 
+/**
+ * THE COLUMN A ROW IS IN, resolved against the board's OWN lanes — its name and
+ * its key, or the catch-all when the row derives into a column this board does
+ * not have.
+ *
+ * IT READS `project_lists`, NEVER A HARD-CODED FOUR. Every lane renames and
+ * deletes (#428) and new ones are added, so a status tag spelling "In Review"
+ * from a constant would disagree with the column the very same card sits in one
+ * tab across — which is the "a number and the screen behind it must agree" rule
+ * applied to a word. The four default names are seeds, not a vocabulary.
+ */
+function columnOf(it: RoadmapItem, lists: BoardList[]): { key: string; name: string } {
+  const derived = listKeyOf(it);
+  const found = lists.find((l) => l.key === derived);
+  return found ? { key: found.key, name: found.name } : { key: CATCH_ALL, name: 'No column' };
+}
+
+/**
+ * THE STATUS SQUARES: one per board column, in the board's own order, counting
+ * the rows handed to it.
+ *
+ * ONE PER COLUMN AND NOT A FIXED THREE. A board with four lanes drawn as three
+ * squares leaves the fourth counted nowhere — the exact loss `Board.tsx`'s
+ * catch-all decision exists to prevent, and worse here because a summary that
+ * omits a column reads as a complete census. The catch-all is appended only
+ * when something is actually in it: a permanent "No column: 0" is noise on
+ * every healthy board, but hiding a non-zero one would hide the cards it is
+ * there to find.
+ */
+function statusCounts(items: RoadmapItem[], lists: BoardList[]): { key: string; name: string; n: number }[] {
+  const byKey = new Map<string, number>();
+  for (const it of items) {
+    const k = columnOf(it, lists).key;
+    byKey.set(k, (byKey.get(k) || 0) + 1);
+  }
+  const out = lists.map((l) => ({ key: l.key, name: l.name, n: byKey.get(l.key) || 0 }));
+  const orphans = byKey.get(CATCH_ALL) || 0;
+  if (orphans) out.push({ key: CATCH_ALL, name: 'No column', n: orphans });
+  return out;
+}
+
+/** A planned window, in the shortest form that stays unambiguous. */
+function windowLabel(startsOn: string | null, endsOn: string | null): string {
+  const day = (iso: string) => {
+    const d = new Date(`${iso}T00:00:00Z`);
+    return `${d.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()]}`;
+  };
+  // HALF A WINDOW IS A REAL STATE and says which half it has. "starts 10 Sep"
+  // is a different claim from "10 Sep — 24 Sep", and rendering the first as the
+  // second with a guessed end would invent a deadline.
+  if (startsOn && endsOn) return `${day(startsOn)} — ${day(endsOn)}`;
+  if (startsOn) return `from ${day(startsOn)}`;
+  if (endsOn) return `until ${day(endsOn)}`;
+  return '';
+}
+
 function BacklogView({
-  slug, rows, boxes, activeId, areas, onCreate, onEdit, onWrote, onRefresh, onError,
+  slug, rows, boxes, activeId, areas, lists, onCreate, onEdit, onWrote, onRefresh, onError,
 }: {
   slug: string;
   /** Every roadmap row this screen knows about, in payload order. */
@@ -1107,6 +1164,10 @@ function BacklogView({
   boxes: Sprint[];
   activeId: number | null;
   areas: BoardArea[];
+  /** The board's OWN columns, in its own order — what a row's status tag and
+   *  the header squares are drawn from. Empty while the shape is still loading,
+   *  which draws no squares rather than four invented ones. */
+  lists: BoardList[];
   onCreate: () => void;
   onEdit: (it: RoadmapItem) => void;
   /** Apply a whole new row set at once — what a drop's answer produces. */
@@ -1124,7 +1185,14 @@ function BacklogView({
   const [overBox, setOverBox] = useState<string | null>(null);
   const [naming, setNaming] = useState(false);
   const [newName, setNewName] = useState('');
+  // The new sprint's planned window. Both optional — a sprint is a box of work
+  // first and a date range only if somebody says so — so the composer opens
+  // with them empty and Open is pressable without them.
+  const [newFrom, setNewFrom] = useState('');
+  const [newTo, setNewTo] = useState('');
   const [renaming, setRenaming] = useState<number | null>(null);
+  // Which box has its date editor open. One at a time, keyed by id.
+  const [dating, setDating] = useState<number | null>(null);
   // The finish/delete confirm, keyed by sprint id — both are decisions with a
   // visible consequence, and neither is a browser `confirm()`.
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -1225,13 +1293,27 @@ function BacklogView({
     });
   };
 
+  const closeComposer = () => { setNaming(false); setNewName(''); setNewFrom(''); setNewTo(''); };
+
   const addSprint = () => guard(async () => {
     const name = newName.trim();
     if (!name) return;
-    await createSprint(slug, name);
-    setNewName(''); setNaming(false);
+    // Naming a cycle and saying when it runs is ONE thought, so the window goes
+    // with the create rather than costing a second round trip that every new
+    // sprint would skip.
+    await createSprint(slug, name, { startsOn: newFrom || null, endsOn: newTo || null });
+    closeComposer();
     onRefresh();
   });
+
+  const setWindow = (b: Sprint, patch: { startsOn?: string | null; endsOn?: string | null }) =>
+    guard(async () => {
+      // Each end writes on its own. The server refuses a window that would end
+      // before it starts and says both dates in the message, which is the one
+      // date mistake worth refusing rather than storing.
+      await patchSprint(slug, b.id, patch);
+      onRefresh();
+    });
 
   const setStatus = (b: Sprint, status: Sprint['status']) => guard(async () => {
     // Starting one FINISHES the incumbent, in the server's own transaction —
@@ -1297,13 +1379,24 @@ function BacklogView({
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') addSprint();
-                if (e.key === 'Escape') { setNaming(false); setNewName(''); }
+                if (e.key === 'Escape') closeComposer();
               }} />
+            {/* The window, optional, on the create. Native date inputs: this is
+                a DAY somebody names, and the platform picker already knows how
+                to name one in the reader's own locale. */}
+            <input type="date" className="dt" aria-label="Sprint starts" value={newFrom}
+              onChange={(e) => setNewFrom(e.target.value)} />
+            <span className="sep">→</span>
+            <input type="date" className="dt" aria-label="Sprint ends" value={newTo}
+              onChange={(e) => setNewTo(e.target.value)}
+              // The end cannot precede the start, and saying so in the control
+              // beats a 400 that arrives after the press.
+              min={newFrom || undefined} />
             <button className="k-btn sm" onClick={addSprint} disabled={!newName.trim()}>Open</button>
-            <button className="k-btn sm ghost" onClick={() => { setNaming(false); setNewName(''); }}>Cancel</button>
+            <button className="k-btn sm ghost" onClick={closeComposer}>Cancel</button>
           </span>
         ) : (
-          <button className="k-btn sm secondary" onClick={() => setNaming(true)}>
+          <button className="k-btn sm accent" onClick={() => setNaming(true)}>
             <KitIcon name="plus" size={14} />New sprint
           </button>
         )}
@@ -1342,10 +1435,12 @@ function BacklogView({
       </div>
 
       {live.map((b) => (
-        <SprintBox key={b.id} sprint={b} items={bags.byBox.get(b.id) || []}
+        <SprintBox key={b.id} sprint={b} items={bags.byBox.get(b.id) || []} lists={lists}
           isActive={b.id === activeId} anyActive={activeId !== null}
           over={overBox === String(b.id)} dragging={drag}
           renaming={renaming === b.id} onRename={(n) => rename(b, n)} onStartRename={() => setRenaming(b.id)}
+          dating={dating === b.id} onDates={() => setDating(dating === b.id ? null : b.id)}
+          onWindow={(patch) => setWindow(b, patch)}
           confirming={confirming} onConfirm={setConfirming}
           onStart={() => setStatus(b, 'active')}
           onFinish={() => setStatus(b, 'done')}
@@ -1366,16 +1461,21 @@ function BacklogView({
         onDrop={(e) => { e.preventDefault(); drop(null, null); }}>
         <div className="km-batchhead">
           <span className="lbl">Backlog</span>
-          <span className="n">{bags.loose.length}</span>
+          <span className="items">{bags.loose.length} item{bags.loose.length === 1 ? '' : 's'}</span>
           <span className="rule" />
           <span className="km-batchsay">Not in any sprint — the runner never touches these</span>
+          {/* The same census the sprint boxes carry. It is worth drawing over
+              the backlog too: a backlog with rows sitting in In Progress is a
+              board where somebody is building work nobody committed to, which
+              is invisible from anywhere else. */}
+          <StatusSquares items={bags.loose} lists={lists} />
         </div>
         {bags.loose.length === 0 ? (
           <div className="km-bl-empty">
             {pool.length === 0 ? 'No committed work on this board yet.' : 'Everything is in a sprint.'}
           </div>
         ) : bags.loose.map((it, i) => (
-          <BacklogRow key={it.id} row={it} rank={i + 1} inSprint={false} runs={false}
+          <BacklogRow key={it.id} row={it} rank={i + 1} inSprint={false} runs={false} lists={lists}
             dragging={drag === it.id} onGrab={() => setDrag(it.id)} onDrop={() => {}}
             onEdit={() => onEdit(it)} />
         ))}
@@ -1398,6 +1498,10 @@ function BacklogView({
             return (
               <div className="km-donerow" key={b.id}>
                 <span className="nm">{b.name}</span>
+                {/* What it was PLANNED to run, kept beside what it landed. */}
+                {windowLabel(b.startsOn, b.endsOn) && (
+                  <span className="km-when">{windowLabel(b.startsOn, b.endsOn)}</span>
+                )}
                 <span className="k-tag">{mine.length - left} built</span>
                 {left > 0 && <span className="k-tag warning">{left} unfinished</span>}
                 <span className="right">
@@ -1417,10 +1521,13 @@ function BacklogView({
 
 /** One sprint box: a header that owns its lifecycle, and a drop zone. */
 function SprintBox({
-  sprint, items, isActive, anyActive, over, dragging, renaming, onRename, onStartRename,
+  sprint, items, lists, isActive, anyActive, over, dragging, renaming, onRename, onStartRename,
+  dating, onDates, onWindow,
   confirming, onConfirm, onStart, onFinish, onReopen, onDelete, onOver, onDrop, onGrab, onEdit,
 }: {
   sprint: Sprint; items: RoadmapItem[];
+  /** The board's own columns — what the header squares count into. */
+  lists: BoardList[];
   isActive: boolean;
   /** Is ANY sprint in progress. Starting this one while another runs finishes
    *  that one, in one transaction — so the button has to say so before it is
@@ -1428,6 +1535,9 @@ function SprintBox({
   anyActive: boolean;
   over: boolean; dragging: number | null;
   renaming: boolean; onRename: (name: string) => void; onStartRename: () => void;
+  /** Is this box's date editor open, and the toggle for it. */
+  dating: boolean; onDates: () => void;
+  onWindow: (patch: { startsOn?: string | null; endsOn?: string | null }) => void;
   confirming: string | null; onConfirm: (key: string | null) => void;
   onStart: () => void; onFinish: () => void; onReopen: () => void; onDelete: () => void;
   onOver: (on: boolean) => void;
@@ -1438,6 +1548,7 @@ function SprintBox({
 }) {
   const runs = items.filter(runnable).length;
   const built = items.filter((it) => it.done).length;
+  const when = windowLabel(sprint.startsOn, sprint.endsOn);
 
   return (
     <section className={`km-batch km-sprintbox${isActive ? ' on' : ''}${over ? ' over' : ''}`}
@@ -1453,7 +1564,15 @@ function SprintBox({
             {sprint.name}
           </button>
         )}
-        <span className="n">{items.length}</span>
+        <span className="items">{items.length} item{items.length === 1 ? '' : 's'}</span>
+        {/* THE PLANNED WINDOW, and the press that edits it. Absent reads as
+            "undated" rather than as nothing, because a sprint with no dates is
+            a deliberate and common state and an empty gap would look like a
+            control that failed to render. */}
+        <button className={`km-when${when ? '' : ' none'}${dating ? ' on' : ''}`} onClick={onDates}
+          title={when ? 'Change when this sprint runs' : 'Give this sprint a start and end'}>
+          <KitIcon name="calendar" size={12} />{when || 'undated'}
+        </button>
         {/* The count that matters is the RUNNABLE one, and only on the box that
             is running — see decision 3. On a planned box the same number would
             be a promise about a night that is not happening. */}
@@ -1464,6 +1583,8 @@ function SprintBox({
         {!isActive && (
           <span className="km-batchsay">Nothing here is picked up until this sprint is in progress</span>
         )}
+
+        <StatusSquares items={items} lists={lists} />
 
         <span className="right">
           {isActive ? (
@@ -1506,12 +1627,40 @@ function SprintBox({
         </span>
       </div>
 
+      {dating && (
+        <div className="km-dates">
+          <span className="lbl">Runs</span>
+          <input type="date" className="dt" aria-label={`${sprint.name} starts`}
+            value={sprint.startsOn || ''}
+            onChange={(e) => onWindow({ startsOn: e.target.value || null })} />
+          <span className="sep">→</span>
+          <input type="date" className="dt" aria-label={`${sprint.name} ends`}
+            value={sprint.endsOn || ''}
+            min={sprint.startsOn || undefined}
+            onChange={(e) => onWindow({ endsOn: e.target.value || null })} />
+          {(sprint.startsOn || sprint.endsOn) && (
+            <button className="k-btn sm ghost"
+              onClick={() => onWindow({ startsOn: null, endsOn: null })}>Clear</button>
+          )}
+          {/* WHAT ACTUALLY HAPPENED, beside what was planned — the whole reason
+              the window is a separate pair from the stamps. A sprint that ran a
+              fortnight late says so here and nowhere else. */}
+          {sprint.startedAt && (
+            <span className="say">
+              Actually started {new Date(sprint.startedAt).toISOString().slice(0, 10)}
+              {sprint.endedAt ? `, finished ${new Date(sprint.endedAt).toISOString().slice(0, 10)}` : ''}
+            </span>
+          )}
+          <span className="say dim">Dates are a note to you — they never gate the runner.</span>
+        </div>
+      )}
+
       {items.length === 0 ? (
         <div className="km-bl-empty">
           {dragging !== null ? 'Drop it here to commit it to this sprint' : 'Empty — drag work in from the backlog'}
         </div>
       ) : items.map((it, i) => (
-        <BacklogRow key={it.id} row={it} rank={i + 1} inSprint runs={isActive && runnable(it)}
+        <BacklogRow key={it.id} row={it} rank={i + 1} inSprint runs={isActive && runnable(it)} lists={lists}
           dragging={dragging === it.id}
           onGrab={() => onGrab(it.id)}
           onDrop={() => onDrop(it.id)}
@@ -1521,7 +1670,37 @@ function SprintBox({
   );
 }
 
-function BacklogRow({ row, rank, inSprint, runs, dragging, onGrab, onDrop, onEdit }: {
+/**
+ * THE STATUS SQUARES — one per board column, in the board's own order, over
+ * whatever set of rows it is handed.
+ *
+ * A ZERO IS DRAWN, dimmed, and never blanked. The cluster is a CENSUS: the eye
+ * reads it as "here is every column and how much is in each", so a column
+ * silently missing because it is empty turns "nothing is in review" into "there
+ * is no review" — two different boards. Blank space cannot be told apart from a
+ * column that was never rendered.
+ *
+ * It draws nothing at all while `lists` is empty, which is the loading state.
+ * Four invented squares would be a claim about a board this component has not
+ * read yet, and the names would be seeds rather than the owner's own.
+ */
+function StatusSquares({ items, lists }: { items: RoadmapItem[]; lists: BoardList[] }) {
+  if (!lists.length) return null;
+  const counts = statusCounts(items, lists);
+  return (
+    <span className="km-squares" role="group"
+      aria-label={`By column: ${counts.map((c) => `${c.n} ${c.name}`).join(', ')}`}>
+      {counts.map((c) => (
+        <span key={c.key} className={`sq${c.n ? '' : ' zero'}${c.key === CATCH_ALL ? ' orphan' : ''}`}
+          title={`${c.n} in ${c.name}`}>
+          {c.n}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function BacklogRow({ row, rank, inSprint, runs, lists, dragging, onGrab, onDrop, onEdit }: {
   row: RoadmapItem;
   /** 1-based place in whatever list this is drawn in. Inside a sprint that IS
    *  the priority; in the backlog it is only a position in a bucket ordering,
@@ -1531,6 +1710,8 @@ function BacklogRow({ row, rank, inSprint, runs, dragging, onGrab, onDrop, onEdi
   /** Would tonight take this row. Only ever true inside the sprint in
    *  progress — see `runnable`. */
   runs: boolean;
+  /** The board's own columns, for the status tag. */
+  lists: BoardList[];
   dragging: boolean;
   onGrab: () => void;
   /** Dropped ON this row: the dragged card goes in ABOVE it. */
@@ -1538,6 +1719,7 @@ function BacklogRow({ row, rank, inSprint, runs, dragging, onGrab, onDrop, onEdi
   onEdit: () => void;
 }) {
   const pri = priorityMeta(row.bucket);
+  const col = columnOf(row, lists);
   const why = row.done ? 'built'
     : row.skipped ? 'parked'
     : row.claimedBy.trim() ? 'claimed'
@@ -1558,7 +1740,25 @@ function BacklogRow({ row, rank, inSprint, runs, dragging, onGrab, onDrop, onEdi
       </span>
       <span className="id">#{row.id}</span>
       <span className="t">{row.title}</span>
-      {row.area && <span className="k-tag">{row.area}</span>}
+      {/* THE STATUS, read off the BOARD'S OWN COLUMNS and never a hard-coded
+          four — a lane the owner renamed or added shows here under its own
+          name, because a row's status here and the column it sits in one tab
+          across have to be the same word. `.st-<key>` carries the tone, so a
+          custom lane still gets the neutral one rather than no styling. */}
+      {lists.length > 0 && (
+        <span className={`k-tag km-status st-${col.key.trim() || 'none'}`}
+          title={`In the board's "${col.name}" column`}>{col.name}</span>
+      )}
+      {/* THE AREA, and UNTAGGED IS DRAWN rather than left blank (#267). An
+          untagged row is real work and is the one kind that can never hold an
+          overnight lane, so an empty gap here hides exactly the population
+          worth noticing. */}
+      <span className={`k-tag km-area${row.area ? '' : ' none'}`}
+        title={row.area
+          ? `Area "${row.area}" — (project, area) is the overnight lane`
+          : 'No area — untagged work never holds an overnight lane, and never waits on one'}>
+        {row.area || 'no area'}
+      </span>
       {/* WHY A ROW IN THE SPRINT IS NOT RUNNABLE, said on the row rather than
           only in the header's count. A parked or claimed item sitting in the
           box in progress is not a mistake and not a problem; it is just not

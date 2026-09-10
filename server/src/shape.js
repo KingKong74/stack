@@ -380,6 +380,32 @@ export function runCore(r) {
   };
 }
 
+/**
+ * A pg DATE as the bare YYYY-MM-DD day it actually is.
+ *
+ * THE TRAP, AND IT IS NOT THEORETICAL — the test caught it on the first run.
+ * node-postgres parses a DATE column into a JS Date at LOCAL midnight, not UTC
+ * midnight. So `new Date(row.starts_on).toISOString().slice(0, 10)` — the
+ * obvious spelling, and the one this file shipped for about an hour — converts
+ * local midnight to UTC and lands on the PREVIOUS DAY for every host east of
+ * Greenwich. On this one (UTC+10) a sprint starting 14 Sep was served as 13 Sep.
+ *
+ * So the components are read in the same zone the driver built them in, and the
+ * value never passes through UTC at all. A DATE is a day somebody named; it has
+ * no instant and must never be given one.
+ *
+ * A string passes through untouched — some drivers and some queries hand the
+ * raw text back, and re-parsing it would reintroduce the very conversion this
+ * exists to avoid.
+ */
+export function dayOf(v) {
+  if (!v) return null;
+  if (typeof v === 'string') return v.slice(0, 10);
+  const d = v instanceof Date ? v : new Date(v);
+  if (!Number.isFinite(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // A SPRINT ROW (#477) — the box the backlog draws and the only box the runner
 // reads. `status` is the whole contract: exactly one 'active' row per project
 // (the partial unique index in schema.sql enforces it, not this file), and
@@ -394,6 +420,17 @@ export function sprintShape(row) {
     name: row.name || '',
     status: row.status || 'planned',    // planned | active | done
     position: Number(row.position) || 0,
+    // THE PLANNED WINDOW (what the owner said) and the ACTUAL STAMPS (what
+    // happened), side by side and never merged — see schema.sql. Both halves
+    // are null far more often than not, and null is a real answer: a sprint
+    // with no window is a box of work nobody has dated.
+    //
+    // `starts_on`/`ends_on` are DATE columns — read through `dayOf`, and read
+    // its header before touching either. The first cut of this line was
+    // `new Date(v).toISOString().slice(0, 10)` and it moved every date back a
+    // day on this very host.
+    startsOn: dayOf(row.starts_on),
+    endsOn: dayOf(row.ends_on),
     startedAt: row.started_at || null,   // stamped on start, KEPT past the finish
     endedAt: row.ended_at || null,
     createdAt: row.created_at || null,

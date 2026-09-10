@@ -1374,6 +1374,26 @@ CREATE TABLE IF NOT EXISTS sprints (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- THE PLANNED WINDOW the owner sets — "Cycle 1 runs 10-24 Sep". Both NULL is
+-- the default and a real state: a sprint is a box of work first and a date
+-- range only if somebody says so, and a window invented at creation would be a
+-- deadline nobody agreed to.
+--
+-- DELIBERATELY NOT `started_at` / `ended_at`, which sit beside them and are the
+-- record of when the sprint ACTUALLY ran (stamped by the Start and Finish
+-- presses). Two pairs, because "when did we mean to" and "when did we" are
+-- different questions and collapsing them loses the only comparison worth
+-- having. The window also does NOT gate the runner: `status = 'active'` is the
+-- gate, and a second one on the clock would stop a night silently at midnight
+-- on a date somebody typed a fortnight ago.
+--
+-- DATE, not TIMESTAMPTZ. A sprint boundary is a day somebody names, not an
+-- instant — storing it with a zone would slide the end date by one for
+-- everybody east of Greenwich, which is the bug the schedule columns' own
+-- header warns about one table over.
+ALTER TABLE sprints ADD COLUMN IF NOT EXISTS starts_on DATE;
+ALTER TABLE sprints ADD COLUMN IF NOT EXISTS ends_on   DATE;
+
 -- Rule 1. Partial, so any number of planned and done sprints coexist.
 CREATE UNIQUE INDEX IF NOT EXISTS sprints_one_active_idx
   ON sprints (project_id) WHERE status = 'active';

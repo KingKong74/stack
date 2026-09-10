@@ -248,6 +248,63 @@ test('renaming and reopening, and an unknown status is refused', async () => {
   assert.equal(gone.status, 404);
 });
 
+// --- the planned window ------------------------------------------------------
+//
+// TWO PAIRS OF DATES, and they answer different questions: `startsOn`/`endsOn`
+// is when the owner MEANT the sprint to run, `startedAt`/`endedAt` is when it
+// actually did. Collapsing them would lose the only comparison worth having.
+// Nothing gates on the window — a date must never stop a night at midnight.
+
+test('a sprint can be born with its window, or given one later, or have half of one', async () => {
+  const born = await call('POST', sprintsPath, { name: 'Dated', startsOn: '2026-09-14', endsOn: '2026-09-28' });
+  assert.equal(born.status, 201, born.text);
+  assert.equal(born.body.startsOn, '2026-09-14', 'a bare day, never an instant');
+  assert.equal(born.body.endsOn, '2026-09-28');
+  assert.equal(born.body.startedAt, null, 'the planned window is not a run stamp');
+
+  // HALF A WINDOW IS A REAL STATE — "starts Monday, no end decided". Demanding
+  // both would make the first date impossible to enter.
+  const half = (await call('POST', sprintsPath, { name: 'Half', startsOn: '2026-10-01' })).body;
+  assert.equal(half.startsOn, '2026-10-01');
+  assert.equal(half.endsOn, null);
+
+  const later = await call('PATCH', `${sprintsPath}/${half.id}`, { endsOn: '2026-10-15' });
+  assert.equal(later.body.startsOn, '2026-10-01', 'the end alone does not disturb the start');
+  assert.equal(later.body.endsOn, '2026-10-15');
+
+  const cleared = await call('PATCH', `${sprintsPath}/${half.id}`, { startsOn: null, endsOn: null });
+  assert.equal(cleared.body.startsOn, null);
+  assert.equal(cleared.body.endsOn, null);
+});
+
+// The one date mistake worth refusing rather than storing: every reader would
+// render a backwards window as a negative length.
+test('a window cannot end before it starts — including when only one end is sent', async () => {
+  const bad = await call('POST', sprintsPath, { name: 'Backwards', startsOn: '2026-09-28', endsOn: '2026-09-14' });
+  assert.equal(bad.status, 400, bad.text);
+
+  const ok = (await call('POST', sprintsPath, { name: 'Forwards', startsOn: '2026-09-14', endsOn: '2026-09-28' })).body;
+  // Checked against the row's OWN other end, not just against what this PATCH
+  // carries — otherwise "move the start later" silently inverts a window
+  // somebody set last week.
+  const invert = await call('PATCH', `${sprintsPath}/${ok.id}`, { startsOn: '2026-10-30' });
+  assert.equal(invert.status, 400, 'moving one end past the other is the same mistake');
+  const still = (await call('GET', sprintsPath)).body.find((x) => x.id === ok.id);
+  assert.equal(still.startsOn, '2026-09-14', 'and nothing was written');
+});
+
+test('a date that is not a real day clears the field rather than 500-ing', async () => {
+  const b = (await call('POST', sprintsPath, { name: 'Junk dates', startsOn: '2026-02-31' })).body;
+  // 2026-02-31 passes a YYYY-MM-DD shape test and is not a day. Postgres would
+  // reject it; the route resolves it to null, which is recoverable by typing
+  // again — a 400 the client can only answer with the value already refused is
+  // not.
+  assert.equal(b.startsOn, null);
+  const c = await call('PATCH', `${sprintsPath}/${b.id}`, { endsOn: 'not-a-date' });
+  assert.equal(c.status, 200);
+  assert.equal(c.body.endsOn, null);
+});
+
 test('a non-numeric :id is refused before it reaches Postgres', async () => {
   const r = await call('DELETE', `${sprintsPath}/undefined`);
   assert.ok(r.status === 400 || r.status === 404, `expected a clean refusal, got ${r.status}`);

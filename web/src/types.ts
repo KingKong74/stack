@@ -93,6 +93,16 @@ export interface Sprint {
   name: string;
   status: SprintStatus;
   position: number;          // order of the boxes themselves, top to bottom
+  // THE PLANNED WINDOW the owner set, as bare YYYY-MM-DD days (never instants —
+  // a sprint boundary is a day somebody named, and a zone would slide the end
+  // by one for half the world). Both null is the common case: a sprint is a box
+  // of work first and a date range only if somebody says so.
+  //
+  // Distinct from the two stamps below, which are when it ACTUALLY ran. Neither
+  // pair substitutes for the other, and NOTHING GATES ON THE WINDOW — the
+  // runner reads `status`, so a date cannot stop a night at midnight.
+  startsOn: string | null;
+  endsOn: string | null;
   startedAt: string | null;  // ISO — stamped on start and KEPT past the finish
   endedAt: string | null;
   createdAt: string | null;

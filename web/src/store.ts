@@ -974,8 +974,10 @@ export async function deleteList(slug: string, key: string): Promise<void> {
 // handler stop caring which of the three just happened.
 const sprintsBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/sprints`;
 
-export async function createSprint(slug: string, name: string): Promise<Sprint> {
-  return request<Sprint>(sprintsBase(slug), { method: 'POST', body: { name } });
+export async function createSprint(
+  slug: string, name: string, window?: { startsOn?: string | null; endsOn?: string | null },
+): Promise<Sprint> {
+  return request<Sprint>(sprintsBase(slug), { method: 'POST', body: { name, ...(window || {}) } });
 }
 // Setting `status: 'active'` FINISHES whichever sprint was in progress, in the
 // same transaction — one project has at most one active sprint and the database
@@ -983,7 +985,14 @@ export async function createSprint(slug: string, name: string): Promise<Sprint> 
 // caller does not send the second write and must not try.
 export async function patchSprint(
   slug: string, id: number,
-  patch: Partial<{ name: string; status: Sprint['status']; position: number }>,
+  // `startsOn`/`endsOn` take a bare YYYY-MM-DD, or null to clear. Each end is
+  // settable alone — half a window is a real thing to know. A window that would
+  // end before it starts is refused OUT LOUD (400), because every reader would
+  // otherwise render it as a negative length.
+  patch: Partial<{
+    name: string; status: Sprint['status']; position: number;
+    startsOn: string | null; endsOn: string | null;
+  }>,
 ): Promise<Sprint> {
   return request<Sprint>(`${sprintsBase(slug)}/${id}`, { method: 'PATCH', body: patch });
 }
