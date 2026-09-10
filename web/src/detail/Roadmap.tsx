@@ -473,9 +473,15 @@ function IdeaCard({ idea, parent, open, onToggle, onPromote, onBucket, onPark, o
           <div className="rm-tier" role="tablist" aria-label="How necessary this is">
             <span className="lbl">Worth doing</span>
             {PRIORITY_META.map((p) => (
+              // THE SELECTED OPTION IS NOT TINTED, and the palette audit is
+              // why. `.opt.on` already fills with the accent, so painting the
+              // priority's own colour on top put a red glyph on a blue fill at
+              // 2.56:1 — well under AA, and invisible to the smoke, which
+              // measures layout and not tone. Selection is carried by the fill;
+              // the priority's COLOUR lives on the card's own chip above,
+              // where it sits on a ground it contrasts with.
               <button key={p.key} type="button" role="tab" aria-selected={idea.bucket === p.key}
                 className={`opt${idea.bucket === p.key ? ' on' : ''}`}
-                style={idea.bucket === p.key ? { color: p.color } : undefined}
                 title={`${p.label}${READY.includes(p.key) ? ' — sits in Ready' : ' — sits in Thinking'}`}
                 onClick={() => onBucket(p.key)}>{p.glyph}</button>
             ))}

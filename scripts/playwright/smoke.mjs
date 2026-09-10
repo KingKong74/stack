@@ -168,11 +168,25 @@ const ROADMAP_PANELS = [
     click: '.km-tabs .k-tab:nth-child(2)',
     expect: '.km-bl .km-pull',
   },
+  // THE GRAB HANDLE IS NO LONGER A PRESS (#477). It was a button that toggled
+  // one row's own styling and moved nothing — the mockup's stand-in for a drag,
+  // and the honest thing to test while the tab was a picture. The rows are real
+  // HTML5 drag sources now, which this harness cannot drive and which would be
+  // a lie to assert a click against, so what is tested instead is the control
+  // that actually opens on a press: the sprint composer.
   {
-    id: 'board-backlog-grab',
-    label: 'Backlog — row grab handle',
-    click: '.km-blrow .grip',
-    expect: '.km-blrow.dragging',
+    id: 'board-backlog-newsprint',
+    label: 'Backlog — New sprint opens its name field',
+    click: '.km-bl-bar .k-btn.secondary',
+    expect: '.km-bl-new input',
+  },
+  // And back out of it, so the Development tab below is reached from a screen
+  // with no half-finished composer sitting on it.
+  {
+    id: 'board-backlog-newsprint-cancel',
+    label: 'Backlog — the composer cancels',
+    click: '.km-bl-new .k-btn.ghost',
+    expect: '.km-bl-bar .k-btn.secondary',
   },
   {
     id: 'board-dev-tab',
