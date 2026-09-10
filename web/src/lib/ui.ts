@@ -2,6 +2,14 @@ import type { BugStatus, Severity, Priority } from '../types';
 
 export const PRODUCT_NAME = 'Stack';
 
+// A PROJECT'S NAME AS THE CHROME SAYS IT. A slug-derived name arrives lowercase
+// ("stack"), and in the topbar's crumb that sits beside "Stack" and "Projects"
+// as if it were a path segment rather than the name of the thing. Only the
+// FIRST character is touched, so a name somebody actually typed keeps its own
+// shape — `bkOS` and `KingKong` are not title-cased into something they aren't.
+// Display only: never write this back, the stored name is the stored name.
+export const crumbName = (name: string) => name.charAt(0).toUpperCase() + name.slice(1);
+
 export const STATUS_LABEL: Record<BugStatus, string> = {
   open: 'Open', investigating: 'Investigating', fixing: 'Fixing', fixed: 'Fixed',
 };

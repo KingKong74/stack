@@ -1825,6 +1825,56 @@ a.tab { display: inline-block; }
 /* ---------- web terminal (#/terminal) ---------- */
 .term-page { display: flex; flex-direction: column; max-width: 1080px; }
 .term-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+/* #490 — THE CHROME SCALE, and why it is a zoom rather than forty edits.
+   The ask was "chrome down 1-2px, and much smaller on a narrow screen so you
+   can see what is going on". The terminal chrome is spread across roughly forty
+   rules with absolute px sizes; rewriting each to a variable is a large diff
+   that still leaves the NEXT rule someone adds at the old size. Scaling the
+   containers instead scales everything inside them, including rules not written
+   yet, and it takes the paddings and gaps with it — which is most of what makes
+   a narrow screen feel full.
+
+   Scoped to the CHROME only. The selectors are direct children of .term-col
+   plus the rail and the pane titles, so `.term-holder` — the xterm itself — is
+   deliberately outside every one of them: the terminal's own font is the
+   session's business, not the page's.
+
+   The trade-off, stated rather than discovered later: zoom scales borders too,
+   so a 1px rule becomes sub-pixel and can render soft. At these ratios it is
+   not visible; below about 0.7 it would be. */
+:root { --term-chrome-zoom: 0.85; }
+@media (max-width: 900px) { :root { --term-chrome-zoom: 0.72; } }
+.term-col > .term-bar,
+.term-col > .term-attn,
+.term-col > .term-usage,
+.term-col > .term-detached,
+.term-pane-title,
+.term-cockpit { zoom: var(--term-chrome-zoom); }
+
+/* #490 — THE LAYOUT SWITCHER IS PINNED HARD RIGHT. `margin-left: auto` on the
+   last child would only hold while the bar is one line; this bar wraps, and on
+   the wrapped line the switcher would drift back to wherever the previous
+   control ended. Ordering it last and letting the gap before it absorb the
+   slack keeps it in the same place at every width. */
+.term-bar .term-panes { margin-left: auto; order: 99; }
+.term-bar .term-panes::before {
+  content: ''; align-self: stretch; width: 1px; margin-right: 8px;
+  background: var(--line-2);
+}
+/* #490 — a handle says it is grabbable once the hold has armed it. Without a
+   cue a hold-to-drag reads as a drag that is broken. */
+.term-pane-title.armed, .tcg-row.armed { cursor: grab; box-shadow: inset 0 0 0 1px var(--accent); }
+/* #490 — the rail's status block: pinned above the footers, never scrolling. */
+.tc-status { flex: none; padding: 6px 9px; display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--line-2); }
+.tcs-row { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--muted); min-width: 0; }
+.tcs-row .d { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--fainter); }
+.tcs-row.ok .d, .tcs-row.live .d { background: var(--live); }
+.tcs-row.warn .d { background: var(--building); }
+.tcs-row.error .d { background: var(--critical); }
+.tcs-row .n { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--body); flex: none; }
+.tcs-row.live .n { color: var(--green); font-weight: 600; }
+.tcs-row.error .n { color: var(--critical-text); font-weight: 600; }
+.tcs-row .v { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .term-lbl { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--muted); font-size: 13px; }
 .term-cwd { max-width: 300px; height: 36px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
 .term-status { font-size: 12.5px; color: var(--muted); }

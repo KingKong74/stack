@@ -23,7 +23,7 @@ import { Modal } from '../components/Modal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { newItemSched, flatRoadmap, isIdea } from '../lib/plan';
-import { PRIORITY_DEFAULT } from '../lib/ui';
+import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
 // (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
@@ -44,18 +44,6 @@ const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
  *  is Board.tsx) and still draws its own head, so it stays on this list: what
  *  the list means is "brings a heading", never "is a mockup". */
 const isMockTab = (t: Tab) => t === 'roadmap' || t === 'ideas';
-// THE CRUMB'S LAST WORD IS THE PAGE YOU ARE ON — one label per route key, so
-// the topbar reads `Stack / Projects / <project> / <page>` rather than stopping
-// at the project and leaving six screens sharing one address. Deliberately NOT
-// the rail's own labels: the board's rail row wears the PROJECT's name (see
-// navSections), which the crumb has already said one step earlier, so borrowing
-// it here would draw `Projects / Stack / Stack`. The three For-you keys keep
-// their own words for the same reason a deep link into any of them is a
-// different place (see the Tab union).
-const TAB_LABEL: Record<Tab, string> = {
-  overview: 'For you', activity: 'Activity', auto: 'Auto-ideas',
-  roadmap: 'Board', ideas: 'Roadmap', plans: 'Plans', quality: 'Quality',
-};
 // The four readings of a project. `navSections` below is the ONE list of them
 // — #432 moved them from a horizontal strip into the console's left rail, and
 // a second copy anywhere is how the two would drift.
@@ -537,15 +525,16 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   return (
     <div>
       <TopBar
+        // THE CRUMB STOPS AT THE PROJECT, and the TAB IS NOT A STEP IN IT.
+        // A tab is a reading of the same place, chosen in the rail that is
+        // already showing you which one you are on; adding it here would make
+        // the crumb restate the rail on every screen while the ONE thing it
+        // uniquely says — which project you are inside — kept the same weight
+        // as a duplicate. A separate SCREEN (Terminal, Mission Control,
+        // Settings) is a different place and does take the third step.
         crumb={[
           { label: 'Projects', onClick: go.dashboard },
-          // The project step lands on its own landing page. It writes the HASH
-          // as well as the tab because the rail's rows do not — pressing one
-          // leaves the route on whatever tab was deep-linked — so a crumb that
-          // only set state would leave the address bar disagreeing with the
-          // screen it just took you to.
-          { label: project.name, onClick: () => { go.detail(slug); setTab('overview'); } },
-          { label: TAB_LABEL[tab] },
+          { label: crumbName(project.name) },
         ]}
         onSearch={onOpenSearch}
         actions={

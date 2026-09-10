@@ -40,6 +40,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 
 import { flatRoadmap } from '../lib/plan';
 import { TopBar } from '../components/TopBar';
+import { crumbName } from '../lib/ui';
 
 // The web terminal (#/terminal[?cwd=…]) — xterm.js over websocket to the host
 // PTY daemon (via the server relay at /term). Parallel sessions are panes in a
@@ -686,6 +687,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // knows its tmux name from the ready frame). Shell tabs are not labelled:
   // the daemon only reads claude sessions' output for this.
   const [labels, setLabels] = useState<Record<string, string>>({});
+  // The REF is the guard (two triggers in one tick would both read a stale
+  // `false` and fire two calls); the STATE is what a session row renders as
+  // "naming this session…" while the one ask is in flight. The ✧ Re-label
+  // button that also read it is gone (#490), but this placeholder is the more
+  // useful of the two: it is the difference between a session that has no name
+  // yet and one that is about to get one.
   const [labelBusy, setLabelBusy] = useState(false);
   const labelBusyRef = useRef(false);
   const refreshLabels = async () => {
@@ -709,44 +716,36 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         for (const d of r.detached) if (d.label) next[d.name] = d.label;
         return next;
       });
-      // Everything on screen has just been named, so nothing is owed a re-ask.
-      dirtyRef.current = {};
-      lastLabelAt.current = Date.now();
     } catch { /* keyless (503) or offline — sessions just stay unnamed */ }
     finally { labelBusyRef.current = false; setLabelBusy(false); }
   };
-  // Bytes each session has emitted since it was last named, and when we last
-  // asked. A title that says what you are working on has to follow the work,
-  // and the work shows up as OUTPUT — so the re-ask is driven by the session
-  // talking, not by a clock. An idle screen makes no calls at all; a busy one
-  // re-titles about a minute after the conversation moves on.
-  const dirtyRef = useRef<Record<number, number>>({});
-  const lastLabelAt = useRef(0);
-  const noteOutput = (id: number, bytes: number) => {
-    dirtyRef.current[id] = (dirtyRef.current[id] || 0) + bytes;
-  };
-  const RELABEL_BYTES = 1500;      // roughly a screenful of new conversation
-  const RELABEL_MIN_MS = 60_000;   // never more than once a minute, whatever happens
-  // Names arrive by themselves, and then KEEP UP. Two triggers, one call:
-  //   • something on screen is unnamed — a new tab, a fresh detached chip;
-  //   • something named has since said enough to have moved on.
-  // Both are checked on a slow tick rather than in a render effect, so a
-  // re-render can never re-ask and the cost is bounded to one call a minute
-  // even when every pane is busy.
+  // (#490) NAMED ONCE, THEN NEVER AGAIN.
+  //
+  // This used to re-ask as a session talked: a title that says what you are
+  // working on ought to follow the work, and the work shows up as output. The
+  // trouble is that a title which keeps changing underneath you is not a name,
+  // it is a status line — you learn where a pane is by its position rather than
+  // by reading it, and the one moment the label matters (finding a session you
+  // walked away from) is the moment it has just been rewritten to describe
+  // whatever happened last.
+  //
+  // So the labeller now answers exactly one question, once per session: what
+  // is this? After that the name is the OWNER'S, and `names` already wins over
+  // the labeller's for anything renamed by hand. The re-ask machinery — the
+  // per-session dirty-byte counters, the minimum interval, the "has it moved
+  // on" test — is gone rather than merely disabled, because a threshold left
+  // in the file is an invitation to tune it back up.
   useEffect(() => {
     if (!visible) return;
     const tick = () => {
       const live = sessions.filter((x) => x.status === 'live' || x.status === 'connecting');
       if (!live.length && !detachedShown.length) return;
+      // ONLY the never-named. A session that has a label keeps it for life.
       const unnamed = [
         ...live.filter((x) => !labelOf(x)).map((x) => x.id),
         ...detachedShown.filter((d) => !labels[d.name]).map((d) => d.name),
       ];
-      const moved = live.some((x) => (dirtyRef.current[x.id] || 0) >= RELABEL_BYTES);
-      if (!unnamed.length && !moved) return;
-      // An unnamed session is worth asking for straight away; a re-ask for one
-      // that has merely moved on waits out the floor.
-      if (!unnamed.length && Date.now() - lastLabelAt.current < RELABEL_MIN_MS) return;
+      if (!unnamed.length) return;
       void refreshLabels();
     };
     tick();
@@ -779,7 +778,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     if (x.tmux) { setTermName(x.tmux, draft); setNames(getTermNames()); }
     setRenaming(null); setDraft('');
   };
-  const claudeLive = sessions.some((s) => s.cmd === 'claude' && (s.status === 'live' || s.status === 'connecting'));
   // WHICH SESSIONS ARE ON SCREEN, and WHERE (#487).
   //
   // It was a sliding WINDOW over the session list — start at the active tab,
@@ -796,6 +794,40 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const layout = viewPrefs.layout;
   const [slots, setSlots] = useState<(number | null)[]>([]);
   const [dragId, setDragId] = useState<number | null>(null);
+
+  // (#490) HOLD, THEN DRAG. A pane title and a rail row are both things you
+  // CLICK — focus a session, rename it — and both were also drag handles the
+  // instant the pointer moved, so every slightly-imprecise click tore a pane
+  // out of the grid.
+  //
+  // The gate is on dragstart, NOT on the `draggable` attribute. Flipping that
+  // attribute mid-gesture is the obvious fix and an unreliable one: the browser
+  // decides whether a drag is possible as the gesture begins, and a handle that
+  // was not draggable at pointer-down may simply start selecting text instead.
+  // Leaving it always draggable and REFUSING the dragstart until the hold has
+  // elapsed behaves the same on every browser.
+  const HOLD_MS = 220;
+  const holdTimer = useRef<number | null>(null);
+  const armedRef = useRef<number | null>(null);
+  const [armed, setArmed] = useState<number | null>(null);
+  const clearHold = () => {
+    if (holdTimer.current !== null) { clearTimeout(holdTimer.current); holdTimer.current = null; }
+  };
+  const disarm = () => { clearHold(); armedRef.current = null; setArmed(null); };
+  // Spread onto anything that may be dragged. `armed` also drives a class, so
+  // the handle says it is grabbable before you move — a hold with no feedback
+  // reads as the drag being broken.
+  const holdProps = (id: number) => ({
+    onPointerDown: () => {
+      clearHold();
+      holdTimer.current = window.setTimeout(() => { armedRef.current = id; setArmed(id); }, HOLD_MS);
+    },
+    onPointerUp: disarm,
+    onPointerLeave: disarm,
+  });
+  // The ref, not the state: dragstart can fire in the same tick the timer set
+  // it, before React has re-rendered with the new value.
+  const dragAllowed = (id: number) => armedRef.current === id;
   const [overSlot, setOverSlot] = useState<number | null>(null);
 
   /**
@@ -1039,12 +1071,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     } finally { scheduling.current = false; }
   };
 
-  // Automatic mode: a limit frame with a bookable slot books itself, once per
-  // slot (lastAutoKey survives reloads, so a refresh can't double-book).
-  useEffect(() => {
-    if (usagePrefs.autoSchedule && usage?.sched && !booked) void bookReset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usagePrefs.autoSchedule, usage?.sched?.runDate, usage?.sched?.atTime, projectSlug]);
+  // (#490) AUTO-BOOK IS GONE, and the EFFECT went with the switch rather than
+  // being left behind it. A stored `autoSchedule: true` from before this change
+  // would otherwise keep booking sessions with nothing on screen able to say so
+  // or turn it off — a setting with no surface is worse than no setting.
+  // Booking is a button now, pressed on purpose. lastAutoKey stays: it is what
+  // stops a manual double-book across a reload.
 
   // #142 — this project's paused session, if any: a limit-hit autopilot run
   // sits in the queue as a kind='resume' job. Read while the screen is showing
@@ -1113,25 +1145,25 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // design draws them and say what is TRUE for each: a percentage where there
   // is one, and the provider's state where there is not. A fabricated "4%"
   // would look identical to a measured one, which is the whole objection.
-  const providerPills = useMemo(() => {
+  // (#490) THE STATUS PILLS MOVED TO THE RAIL, and the Anthropic one did not
+  // survive the move. The rail's limits block already draws that session
+  // percentage and its reset time — the pill was the same number a second time
+  // on the same screen, which is the rule this repo keeps breaking and then
+  // fixing. What is left is the two facts nothing else on the rail says: which
+  // session this pane is holding, and whether the gateway can take a new one.
+  const railStatus = useMemo(() => {
     const out: { key: string; name: string; detail: string; tone: 'ok' | 'warn' | 'off' }[] = [];
-    const sess = usage?.plan?.session;
-    if (sess) {
-      out.push({
-        key: 'anthropic', name: 'Anthropic',
-        detail: `${Math.round(sess.pct)}%${sess.resetAt ? ` · resets ${fmtReset(sess.resetAt)}` : ''}`,
-        tone: sess.pct >= 90 ? 'warn' : 'ok',
-      });
-    }
     if (gateway) {
       out.push({
         key: 'gateway', name: 'OmniRoute',
+        // Still three sentences, still never collapsing "cannot see" into
+        // "down" — see routes/terminal.js's header on the three states.
         detail: gateway.connected ? (gateway.reachable ? 'reachable' : 'no gateway') : 'host offline',
         tone: gateway.connected && gateway.reachable ? 'ok' : 'off',
       });
     }
     return out;
-  }, [usage, gateway]);
+  }, [gateway]);
 
 
   const dockLabel = activeSess
@@ -1163,7 +1195,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           project and must not be drawn as one. */}
       <TopBar crumb={[
         { label: 'Projects', onClick: go.dashboard },
-        ...(board ? [{ label: board.project.name, onClick: () => go.detail(board.project.id) }] : []),
+        ...(board ? [{ label: crumbName(board.project.name), onClick: () => go.detail(board.project.id) }] : []),
         { label: 'Terminal' },
       ]}
         actions={<a className="btn-repo" href={hrefTo.control} title="Mission Control">Mission Control</a>} />
@@ -1178,6 +1210,19 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         <div className="term-layout">
         <div className="term-col">
         <div className="term-bar">
+          {/* #490 — THE BAR READS RIGHT-TO-LEFT. Everything you PRESS is on the
+              right, under the hand that is already there for the layout
+              switcher; the left holds only what you READ. The branch count is
+              the one passive thing on this bar, so it is the only thing here. */}
+          {/* Real claim state (#277 — a claim is a BRANCH, and is called one),
+              not a count of browser tabs: open roadmap items a branch holds. */}
+          {claimedItems.length > 0 && (
+            <span className="term-lanes"
+              title={claimedItems.map((it) => `⚑ ${it.claimedBy} — #${it.id} ${it.title}`).join('\n')}>
+              {claimedItems.length} branch{claimedItems.length === 1 ? '' : 'es'} claimed
+            </span>
+          )}
+          <div className="term-bar-gap" />
           {/* #138 — bare slug (no /) resolves to $HOME/<slug> on the daemon;
               a full path like "stack/src" also works within that root.
               The "~/" label makes the relative-to-home semantics visible. */}
@@ -1235,24 +1280,26 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               {endingAll ? `⏻ Ending ${endingAllCount}…` : `⏻ End all ${sessions.length}`}
             </button>
           )}
-          <div className="term-bar-gap" />
-          {/* ✧ re-ask for the session names. They arrive by themselves when an
-              unnamed claude session appears; this is for when one has moved on
-              to something else. Absent without claude sessions, and silent when
-              the server has no Gemini key. */}
-          {claudeLive && (
-            <button className="btn-repo sm" onClick={() => void refreshLabels()} disabled={labelBusy}
-              title="Re-read what each claude session is doing (✧ Gemini, annotation only)">
-              {labelBusy ? '✧ …' : '✧ Re-label'}
+          {/* ✧ RE-LABEL IS GONE (#490), with the re-asking it belonged to. A
+              session is named once and then the name is yours — a button whose
+              only job is to overwrite the name you are reading is not a
+              convenience, it is the churn this screen just stopped doing.
+              Renaming by hand is still on the rail's own row. */}
+          {/* #305 — the grid takes the whole window. Sits beside the pane
+              count because they are the same question asked twice: how much
+              screen do these terminals get. The head bar itself survives, so
+              the way out is where the way in was. */}
+          <button className={`btn-repo sm term-full-btn${full ? ' on' : ''}`} onClick={toggleFull}
+            aria-pressed={full}
+            title={full
+              ? 'Leave full screen (esc also works)'
+              : 'Full screen — the terminals take the whole window and the page chrome goes away'}>
+            {full ? '⤡' : '⤢'}
+          </button>
+          {activeSess && (activeSess.status === 'closed' || activeSess.status === 'error') && (
+            <button className="btn-cancel sm" onClick={() => handles.current.get(active)?.reconnect()}>
+              ↻ Reconnect
             </button>
-          )}
-          {/* Real claim state (#277 — a claim is a BRANCH, and is called one),
-              not a count of browser tabs: open roadmap items a branch holds. */}
-          {claimedItems.length > 0 && (
-            <span className="term-lanes"
-              title={claimedItems.map((it) => `⚑ ${it.claimedBy} — #${it.id} ${it.title}`).join('\n')}>
-              {claimedItems.length} branch{claimedItems.length === 1 ? '' : 'es'} claimed
-            </span>
           )}
           {/* How many terminals are on screen at once — this replaced the
               wide-mode toggle. Panes are filled from the active tab onwards,
@@ -1274,46 +1321,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               </button>
             ))}
           </span>
-          {/* #487 — THE PROVIDER PILLS, from the design's header. Ahead of the
-              layout switcher, as drawn. Each says what is TRUE of that
-              provider — a percentage where one is measured, a state where none
-              is — because a fabricated percentage is indistinguishable from a
-              measured one and this strip is read at a glance. */}
-          {providerPills.length > 0 && (
-            <span className="term-provs">
-              {providerPills.map((p) => (
-                <span key={p.key} className={`term-prov ${p.tone}`} title={`${p.name} — ${p.detail}`}>
-                  <span className="d" />
-                  <span className="n">{p.name}</span>
-                  <span className="v">{p.detail}</span>
-                </span>
-              ))}
-            </span>
-          )}
-          {/* #305 — the grid takes the whole window. Sits beside the pane
-              count because they are the same question asked twice: how much
-              screen do these terminals get. The head bar itself survives, so
-              the way out is where the way in was. */}
-          <button className={`btn-repo sm term-full-btn${full ? ' on' : ''}`} onClick={toggleFull}
-            aria-pressed={full}
-            title={full
-              ? 'Leave full screen (esc also works)'
-              : 'Full screen — the terminals take the whole window and the page chrome goes away'}>
-            {full ? '⤡' : '⤢'}
-          </button>
-          {activeSess && (
-            <span className={`term-status ${activeSess.status}`}>
-              {activeSess.status === 'live' ? `● live ${activeSess.note}`
-                : activeSess.status === 'connecting' ? '… connecting'
-                : activeSess.status === 'closed' ? '○ closed'
-                : `✗ ${activeSess.note}`}
-            </span>
-          )}
-          {activeSess && (activeSess.status === 'closed' || activeSess.status === 'error') && (
-            <button className="btn-cancel sm" onClick={() => handles.current.get(active)?.reconnect()}>
-              ↻ Reconnect
-            </button>
-          )}
         </div>
 
         {/* #487 — THE ATTENTION STRIP, the design's second toolbar row. What is
@@ -1330,7 +1337,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             )}
             <span className="ta-say">
               {shownIds.length} of {sessions.length} session{sessions.length === 1 ? '' : 's'} shown
-              {sessions.length > shownIds.length ? ' · drag one from the rail onto any pane' : ' · drag a pane’s title bar onto another to rearrange'}
+              {sessions.length > shownIds.length ? ' · hold a rail row, then drag it onto any pane' : ' · hold a pane’s title bar, then drag it onto another'}
             </span>
           </div>
         )}
@@ -1426,14 +1433,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                 ▶ Book session at {usage.sched.atTime}
               </button>
             ) : null)}
-            <span className="tu-auto" title="When the usage limit hits, book the next automated session just past the reset without asking">
-              auto-book at reset
-              <button role="switch" aria-checked={usagePrefs.autoSchedule} aria-label="Auto-book a session at the limit reset"
-                className={`switch sm ${usagePrefs.autoSchedule ? 'on' : ''}`}
-                onClick={() => savePrefs({ ...usagePrefs, autoSchedule: !usagePrefs.autoSchedule })}>
-                <span className="switch-knob" />
-              </button>
-            </span>
             {schedNote && <span className="tu-note">{schedNote}</span>}
           </div>
         )}
@@ -1554,9 +1553,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     the reason the card there switches `draggable` off while an
                     editor is open. The terminal is ALWAYS a text surface, so
                     the handle is the one strip that is not one. */}
-                <div className="term-pane-title" draggable
-                  onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDragId(s.id); }}
-                  onDragEnd={() => { setDragId(null); setOverSlot(null); }}
+                <div className={`term-pane-title${armed === s.id ? ' armed' : ''}`} draggable
+                  {...holdProps(s.id)}
+                  onDragStart={(e) => {
+                    if (!dragAllowed(s.id)) { e.preventDefault(); return; }
+                    e.dataTransfer.effectAllowed = 'move'; setDragId(s.id);
+                  }}
+                  onDragEnd={() => { setDragId(null); setOverSlot(null); disarm(); }}
                   title={'Drag this bar onto another pane to rearrange.\n'
                     + 'Copy: drag to select in the terminal — releasing copies it (⌃⇧C, or ⌃C with a selection).\n'
                     + 'Paste: ⌃V. Shift-drag selects in the browser instead of tmux.'}>
@@ -1629,7 +1632,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   onUsage={setUsage}
                   onTmux={(name) => noteTmux(s.id, s.cwd, name)}
                   onSid={(sid) => setSessions((cur) => cur.map((x) => (x.id === s.id ? { ...x, sid } : x)))}
-                  onOutput={(bytes) => noteOutput(s.id, bytes)}
                   onExit={(name) => noteTmuxEnded(s.cwd, name)}
                   onCopied={(label) => noteCopied(s.id, label)}
                   register={(h) => { if (h) handles.current.set(s.id, h); else handles.current.delete(s.id); }} />
@@ -1711,6 +1713,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                      permission prompt, which is the one fact on this rail that
                      changes what you do next.
                      ---- */
+                  <>
                   <div className="tc-sessions">
                     {sessions.length === 0 ? (
                       <div className="tc-empty pad">
@@ -1737,10 +1740,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                             const pinned = !!x.tmux && pinnedOf(x.tmux);
                             return (
                               <div key={x.id}
-                                className={`tcg-row${x.id === active ? ' on' : ''}${onScreen ? '' : ' off'}${dragId === x.id ? ' dragging' : ''}`}
+                                className={`tcg-row${x.id === active ? ' on' : ''}${onScreen ? '' : ' off'}${dragId === x.id ? ' dragging' : ''}${armed === x.id ? ' armed' : ''}`}
                                 draggable
-                                onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDragId(x.id); }}
-                                onDragEnd={() => { setDragId(null); setOverSlot(null); }}
+                                {...holdProps(x.id)}
+                                onDragStart={(e) => {
+                                  if (!dragAllowed(x.id)) { e.preventDefault(); return; }
+                                  e.dataTransfer.effectAllowed = 'move'; setDragId(x.id);
+                                }}
+                                onDragEnd={() => { setDragId(null); setOverSlot(null); disarm(); }}
                                 title={onScreen
                                   ? 'Drag onto a pane to move it there'
                                   : 'Not on screen — click to bring it into the first pane, or drag it onto a pane'}
@@ -1810,7 +1817,45 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       </div>
                     )}
 
-                    {/* ---- #487 · the design's two rail footers ----
+                  </div>
+
+                    {/* #490 — THE STATUS PILLS, moved off the header. Two facts
+                        and no third: what the focused pane is holding, and
+                        whether the gateway could take a new session. Pinned
+                        with the footers rather than sitting in the scroller,
+                        because a status you have to scroll to is not a status. */}
+                    <div className="tc-status">
+                      {activeSess && (
+                        <span className={`tcs-row ${activeSess.status}`}>
+                          <span className="d" />
+                          <span className="n">
+                            {activeSess.status === 'live' ? 'live'
+                              : activeSess.status === 'connecting' ? 'connecting'
+                              : activeSess.status === 'closed' ? 'closed' : 'error'}
+                          </span>
+                          <span className="v" title={activeSess.note}>
+                            {activeSess.status === 'live' || activeSess.status === 'connecting'
+                              ? activeSess.note : (activeSess.note || '')}
+                          </span>
+                        </span>
+                      )}
+                      {railStatus.map((r) => (
+                        <span key={r.key} className={`tcs-row ${r.tone}`} title={`${r.name} — ${r.detail}`}>
+                          <span className="d" />
+                          <span className="n">{r.name}</span>
+                          <span className="v">{r.detail}</span>
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* The two footers sit OUTSIDE the scroller (#490): the
+                        list above is `flex: 1`, so a sibling after it is pinned
+                        to the bottom of the rail. Inside it they were merely
+                        the last thing in a scrolling column — which on a rail
+                        with two sessions put Settings and the limits halfway up
+                        the screen with empty rail beneath them.
+
+                        ---- #487 · the design's two rail footers ----
                         SETTINGS, with the integrations popover: what is wired
                         into these sessions, and whether each is actually on.
                         The design lists four fixtures; these are the real ones
@@ -1921,7 +1966,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         ))}
                       </div>
                     )}
-                  </div>
+                  </>
                 )}
               </>
             )}
@@ -1990,7 +2035,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
-function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid, onOutput, onExit, onCopied, register }: {
+function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid, onExit, onCopied, register }: {
   sess: { id: number; cwd: string; cmd: 'shell' | 'claude'; tmux?: string };
   // Rendered on screen at all (it may be one of several panes)...
   visible: boolean;
@@ -2002,7 +2047,6 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
   onUsage: (u: TermUsage) => void;
   onTmux: (name: string) => void;
   onSid: (sid: string) => void;
-  onOutput: (bytes: number) => void;
   onExit: (tmuxName: string | null) => void;
   // A finished clipboard gesture, already worded — "copied 12 lines",
   // "paste needs ⌃V here". With a canvas and no browser selection to look at,
@@ -2124,10 +2168,6 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
         if (typeof m.sid === 'string' && m.sid && !sidRef.current) { sidRef.current = m.sid; onSid(m.sid); }
         if (m.t === 'out' && m.data) {
           scheduleWrite(b64decode(m.data));
-          // How much this session has said since it was last named. The title
-          // is re-asked on OUTPUT rather than on a timer, so an active
-          // conversation re-titles quickly and an idle one costs nothing.
-          onOutput(m.data.length);
         }
         else if (m.t === 'usage' && typeof m.tokens === 'number') {
           onUsage({ tokens: m.tokens, totalTokens: m.totalTokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched, plan: m.plan });
