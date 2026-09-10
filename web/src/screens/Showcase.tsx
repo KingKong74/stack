@@ -27,7 +27,7 @@ export function Showcase({ slug, token }: { slug: string; token: string }) {
     return (
       <div className="gate">
         <div className="gate-card">
-          <Brandmark size={28} style={{ marginBottom: 18 }} />
+          <Brandmark size={28} />
           <div className="gate-title">Nothing here</div>
           <div className="gate-sub">{error}</div>
         </div>
