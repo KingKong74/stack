@@ -3,10 +3,11 @@
 // change passes through, the progress ledger's arithmetic, and the small
 // panels that hang off the spine.
 //
-// THE OVERVIEW IS A MOCKUP NOW (#444, detail/ForYouMock.tsx) and so is Plans
-// (#451, detail/PlansMock.tsx), which took `isBuilt`'s last CLIENT caller with
-// it — nothing in any component below this line is imported by a screen any
-// more. All of it is KEPT rather than culled on purpose: it is pure, it is
+// THE OVERVIEW IS A MOCKUP NOW (#444, detail/ForYouMock.tsx), and Plans was one
+// too until #482 wired its Timeline and Calendar (detail/Plans.tsx) — which is
+// where `isBuilt` got a CLIENT caller back, though from `lib/plan.ts` and not
+// from here. Nothing in any component below this line is imported by a screen.
+// All of it is KEPT rather than culled on purpose: it is pure, it is
 // covered by `scripts/spine.test.mjs`, and it is the definition whatever
 // surfaces these stages next has to be built on. `isBuilt` in particular is
 // the #374 predicate the runner spends, re-exported here from `lib/plan.ts`.

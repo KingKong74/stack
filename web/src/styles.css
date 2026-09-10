@@ -3643,6 +3643,13 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .k-btn.danger { background: transparent; color: var(--status-danger-fg); border-color: var(--red-tint); }
 .k-btn.danger:hover { background: var(--red-tint); color: var(--status-danger-fg); }
 .k-btn:disabled { opacity: .45; cursor: not-allowed; }
+/* A PRESSED TOGGLE (#482). `aria-pressed` is what says a button holds a state,
+   so the selector reads it rather than a hand-added class — a toggle styled off
+   `.on` while announcing `aria-pressed` is two sources of truth for one fact,
+   and only one of them reaches a screen reader. */
+.k-btn.secondary[aria-pressed="true"] {
+  background: var(--surface-selected); color: var(--text-link); border-color: var(--border-strong);
+}
 
 .k-iconbtn {
   width: var(--control-h-md); height: var(--control-h-md); flex: none;
@@ -4864,18 +4871,15 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   letter-spacing: var(--tracking-tight); color: var(--text-primary);
 }
 .pl-headrow .acts { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
-/* The kit's lime count sits INSIDE a blue primary button, so it is a fill with
-   text on it: --grey-1000 on --lime-500 is the pairing the kit ships and the
-   only one that clears AA at 11px. */
-.pl-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--radius-xs);
-  background: var(--action-accent); color: var(--grey-1000);
-  font: var(--weight-semibold) var(--text-2xs)/1 var(--font-mono);
-}
-.pl-tabs { margin-bottom: 0; }
-.pl-tabs .k-tab { gap: 7px; }
-.pl-tabadd { color: var(--text-tertiary); }
+/* SIX SUB-TABS, FOUR OF THEM CARRYING A CHIP (#482), which is wider than a
+   1024px viewport has. The strip SCROLLS rather than wrapping: wrapping puts a
+   second row above the underline that draws the selection, so the strip stops
+   looking like one control. `flex: none` is what makes the tabs keep their own
+   width inside it — without it they simply squash and the labels truncate,
+   which is the same overflow hidden rather than fixed. */
+.pl-tabs { margin-bottom: 0; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.pl-tabs .k-tab { gap: 7px; flex: none; }
+.pl-tabs .k-tab .con-navsoon { margin-left: 2px; }
 
 /* A caret is not decoration — it is the only thing on a fold that says which
    way it is pointing — and it appears in every row on this screen that
@@ -4950,13 +4954,6 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   overflow: hidden; background: var(--surface-canvas);
 }
 
-.pl-workbar {
-  display: flex; align-items: center; gap: var(--space-5);
-  padding: var(--space-4) var(--space-5);
-  background: var(--surface-raised); border-bottom: 1px solid var(--border-subtle);
-}
-.pl-workbar .lbl { display: inline-flex; align-items: center; gap: var(--space-3); font: var(--type-label); color: var(--text-secondary); }
-.pl-workbar .add { display: inline-flex; align-items: center; gap: var(--space-3); font: var(--type-label); color: var(--text-tertiary); }
 
 .pl-row, .pl-subrow { display: grid; grid-template-columns: var(--pl-cols); align-items: center; }
 .pl-row > span {
@@ -5002,18 +4999,9 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    keystroke would land. */
 .pl-row.cursor { box-shadow: inset 2px 0 0 var(--action-accent); }
 
-.pl-row .c-check .hit { display: flex; cursor: pointer; }
-.pl-box {
-  width: 14px; height: 14px; border-radius: var(--radius-xs); flex: none;
-  box-shadow: inset 0 0 0 1px var(--border-strong);
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.pl-box.on { background: var(--action-primary); color: var(--white); box-shadow: inset 0 0 0 1px var(--action-primary); }
 .pl-row .c-n { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
 .pl-row .c-item .id { flex: none; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); text-decoration: underline; text-underline-offset: 2px; }
 .pl-row .c-item .t { min-width: 0; font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pl-row .c-status { position: relative; overflow: visible; }
-.pl-statusbtn { border: 0; cursor: pointer; display: inline-flex; align-items: center; gap: var(--space-3); }
 .pl-row .c-branch .br { display: inline-flex; align-items: center; gap: var(--space-3); min-width: 0; color: var(--text-tertiary); }
 /* The line box has to fit the glyph box: at /1 with overflow hidden the
    descenders on a branch name are clipped, which the smoke measures. */
@@ -5026,7 +5014,6 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .pl-pri.lo { background: var(--blue-400); }
 .pl-kind { display: flex; flex: none; color: var(--text-link); }
 .pl-kind.idea { color: var(--text-accent); }
-.pl-dirty { width: 6px; height: 6px; border-radius: 50%; background: var(--amber-500); }
 .pl-row .c-flag { justify-content: center; }
 
 .pl-meter { flex: 1; display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
@@ -5035,22 +5022,6 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .pl-meter .fill.full { background: var(--viz-1); }
 .pl-meter .pct { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
 
-/* The status workflow menu — the one dropdown on this screen. */
-.pl-menu {
-  position: absolute; top: 34px; left: var(--space-4); z-index: 20; min-width: 176px;
-  background: var(--surface-overlay); border: 1px solid var(--border-default);
-  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
-  padding: var(--space-3); display: flex; flex-direction: column; gap: 2px;
-}
-.pl-menuitem {
-  border: 0; background: none; cursor: pointer; text-align: left;
-  padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm);
-  display: flex; align-items: center; gap: var(--space-4);
-}
-.pl-menuitem:hover { background: var(--surface-hover); }
-.pl-menuitem.plain { font: var(--type-label); color: var(--text-secondary); }
-.pl-menuitem .tick { margin-left: auto; color: var(--text-secondary); display: flex; }
-.pl-menurule { height: 1px; background: var(--border-subtle); margin: var(--space-2) 0; }
 
 .pl-subrow { border-bottom: 1px solid var(--border-subtle); }
 .pl-subrow .c-item {
@@ -5314,6 +5285,50 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   border-radius: var(--radius-md); font: var(--type-label); color: var(--text-secondary);
 }
 .pl-monthnav .arw { cursor: pointer; color: var(--text-tertiary); }
+.pl-monthnav .arw { border: 0; background: none; padding: 0; font: inherit; }
+.pl-monthnav .arw:hover { color: var(--text-secondary); }
+
+/* A SPRINT'S BAND (#482) — one element per day it covers, rounded only on the
+   two real ends, so a run of cells reads as one bar rather than as a row of
+   separate commitments. The tone is the sprint's STATUS and the dashed edge is
+   the fallback window: a band drawn from `startedAt`/`endedAt` is when the box
+   actually ran, not a window anybody planned, and the two must not look alike. */
+.pl-calband {
+  height: 18px; min-width: 0; display: flex; align-items: center;
+  padding: 0 var(--space-3); background: var(--surface-overlay);
+  border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle);
+  box-shadow: inset 3px 0 0 transparent;
+}
+.pl-calband.start { border-radius: var(--radius-sm) 0 0 var(--radius-sm); box-shadow: inset 3px 0 0 var(--grey-600); }
+.pl-calband.end { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.pl-calband.start.end { border-radius: var(--radius-sm); }
+.pl-calband.st-active { background: var(--status-info-bg); }
+.pl-calband.st-active.start { box-shadow: inset 3px 0 0 var(--status-info-fg); }
+.pl-calband.st-done { background: var(--status-success-bg); }
+.pl-calband.st-done.start { box-shadow: inset 3px 0 0 var(--status-success-fg); }
+.pl-calband.ran { border-top-style: dashed; border-bottom-style: dashed; }
+.pl-calband .nm {
+  min-width: 0; font: var(--type-caption); color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* The sprints the grid cannot draw, under it rather than missing from it. */
+.pl-calundated {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4);
+  padding: var(--space-5) 0 0;
+}
+.pl-calundated .lbl { font: var(--type-caption); color: var(--text-secondary); text-wrap: pretty; }
+
+/* THE RISK DOT (#212), on the column the kit gave its uncommitted-work flag.
+   Only a level somebody or something DECIDED is drawn — `normal` is the one
+   nobody chose, and a dot on every row would say three levels where there are
+   two worth seeing. */
+.pl-risk { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.pl-risk.low { background: var(--lime-500); }
+.pl-risk.high { background: var(--red-500); }
+
+/* The group fold. A button, because it is one — the kit drew a bare caret. */
+.pl-fold { border: 0; background: none; padding: 0; cursor: pointer; display: flex; color: inherit; }
 
 /* ---- Releases ---- */
 .pl-release { padding: 0; gap: 0; }

@@ -15,7 +15,7 @@ import { ConsoleNav, NavIcons, SpaceDot, type NavSection } from '../detail/Conso
 import { absoluteHref, type MenuOption } from '../components/MoreMenu';
 import { QualityMock, QUALITY_ATTENTION } from '../detail/QualityMock';
 import { ForYouMock, AUTO_IDEA_COUNT } from '../detail/ForYouMock';
-import { PlansMock } from '../detail/PlansMock';
+import { Plans } from '../detail/Plans';
 import { Board } from '../detail/Board';
 import { Roadmap } from '../detail/Roadmap';
 import { TabStrip } from '../components/TabStrip';
@@ -487,7 +487,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           menu: placeMenu(hrefTo.detail(slug, 'ideas'), 'ideas'), onClick: () => setTab('ideas'),
         },
         {
-          key: 'plans', label: 'Plans', icon: NavIcons.route, mock: true,
+          key: 'plans', label: 'Plans', icon: NavIcons.route,
           menu: placeMenu(hrefTo.detail(slug, 'plans'), 'plans'), onClick: () => setTab('plans'),
         },
         {
@@ -667,16 +667,20 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             onRefresh={reread} highlightId={highlightId}
             onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
         )}
-        {/* PLANS IS A MOCKUP TOO at the owner's request, and it was the LAST
-            project tab that read anything — the kit's own PlansScreen, all six
-            sub-views, on the kit's own rows. Its one prop is a navigation
-            callback and not data: "See on board" moves to the board, which is
-            itself a mockup with nothing to narrow, so the kit's area+subject
-            filter cannot come across. PlansMock's header lists what the real
-            Plans tab (#439) took with it — the stored schedule loses its only
-            reader again, and `slipOf` and `isBuilt` lose their last callers in
-            the client. */}
-        {tab === 'plans' && <PlansMock onBoard={() => setTab('roadmap')} />}
+        {/* PLANS IS TWO WIRED SUB-VIEWS AND FOUR MOCKUPS (#482), and the tab
+            opens on a wired one. Timeline groups the board's committed work by
+            SPRINT — the run order, top of the box first — and Calendar draws
+            each sprint on the days it runs; Summary, Progress, Releases and
+            Dependencies still draw the kit's rows and each says so on its own
+            sub-tab, which is why the rail's Mock chip came off this row. It
+            takes the same flattened payload the board and Roadmap take, so one
+            list is partitioned across three screens rather than three fetches
+            disagreeing, plus `weekZero` — which is what gives the stored
+            schedule (#401) a reader again after #451 took its last one. */}
+        {tab === 'plans' && (
+          <Plans items={allRoadmap} sprints={data.sprints} weekZero={project.weekZero}
+            onBoard={() => setTab('roadmap')} />
+        )}
 
         {/* Deleting a project lives in Settings → Projects now. A destructive,
             once-a-year action does not belong at the foot of the screen you

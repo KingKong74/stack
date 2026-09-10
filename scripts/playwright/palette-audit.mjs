@@ -131,7 +131,17 @@ const SCREENS = [
   // on this screen lightens — a timeline row on hover, an area row when it is
   // selected, a subject row while its fold is open — and the press leaves the
   // ground lit, which is exactly the state the #450 findings were caught in.
+  // TWO OF THE SIX ARE WIRED NOW (#482) and they are the two that carry tone
+  // this audit had never measured: the Timeline's derived status tags and risk
+  // dot, and the Calendar's sprint bands, which paint --status-info-bg and
+  // --status-success-bg as a GROUND with a caption on top of them.
   { slug: 'plans', hash: '#/p/{slug}/plans' },
+  // #482 — the Timeline is wired, so first paint above is real rows on real
+  // tone: derived status tags, a verdict tag, the risk dot and the sprint's own
+  // status. This row is the BUILT TOGGLE HELD DOWN, which is the one ground on
+  // the screen that only exists after a press — a --surface-selected fill under
+  // --text-link, the pairing #432's two layers exist to keep honest.
+  { slug: 'plans-timeline-pressed', hash: '#/p/{slug}/plans', press: ['.pl-toolbar .k-btn[aria-pressed]'] },
   { slug: 'plans-summary', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(1)'] },
   { slug: 'plans-progress', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(2)'] },
   // An OPEN subject fold, measured with the cursor resting on it: the fold's

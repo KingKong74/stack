@@ -300,17 +300,25 @@ const QUALITY_PANELS = [
   },
 ];
 
-// The Plans tab is a mockup too (PlansMock.tsx) and it is the widest of them:
-// SIX sub-views behind one strip, of which first paint shows one. Five of the
-// eight presses below exist only to walk the other five, because a sub-view
+// The Plans tab is HALF WIRED (#482, Plans.tsx) and it is the widest screen in
+// here: SIX sub-views behind one strip, of which first paint shows one. Most of
+// the presses below exist only to walk the other five, because a sub-view
 // nothing has pressed is a screen this harness has photographed rather than
 // tested — the same reason Quality's three tabs are all walked.
 //
-// ORDER IS LOAD-BEARING. The Timeline is what first paint draws, so its status
-// workflow menu is pressed FIRST, before anything switches views. After that
+// ORDER IS LOAD-BEARING. The Timeline is what first paint draws, so its two
+// real controls are pressed FIRST, before anything switches views. After that
 // the strip is walked left to right and each view is judged on something that
 // cannot already be on screen: the donut, an area row, the month grid, a
 // release header, a dependency card.
+//
+// THE TWO WIRED VIEWS ARE JUDGED ON A NUMBER MOVING, not on an element
+// appearing. Timeline's Built toggle and Calendar's month arrow are filters
+// over real rows, and the failure they exist to catch is the one #472's Roadmap
+// lede had: a control that repaints without changing what it claims to change
+// is indistinguishable from a broken one, which is what this harness calls
+// control-inert. The four mock sub-views keep the weaker assertion, because
+// there is no real number behind them to move.
 //
 // The Progress fold is the one press with nothing new to point at — one area
 // is open at first paint, so `.pl-childrow` and `.pl-childbody` both already
@@ -319,10 +327,16 @@ const QUALITY_PANELS = [
 // `expectTextChangeIn` is for.
 const PLANS_PANELS = [
   {
-    id: 'plans-status-menu',
-    label: 'Plans — the status workflow menu',
-    click: '.pl-statusbtn',
-    expect: '.pl-menu',
+    id: 'plans-built-filter',
+    label: 'Timeline — hiding built rows changes the count',
+    click: '.pl-toolbar .k-btn[aria-pressed]',
+    expectTextChangeIn: '.pl-toolbar .k-btn[aria-pressed]',
+  },
+  {
+    id: 'plans-sprint-fold',
+    label: 'Timeline — a sprint folds shut',
+    click: '.pl-fold',
+    expectTextChangeIn: '.pl-fold',
   },
   {
     id: 'plans-summary',
@@ -347,6 +361,14 @@ const PLANS_PANELS = [
     label: 'Plans — Calendar view',
     click: '.pl-tabs .k-tab:nth-child(4)',
     expect: '.pl-calgrid',
+  },
+  // The month the grid is on is the one thing on this view that a press must
+  // move. A calendar whose arrow repaints the same month is the whole bug.
+  {
+    id: 'plans-calendar-month',
+    label: 'Calendar — the arrow moves the month',
+    click: '.pl-monthnav .arw:last-child',
+    expectTextChangeIn: '.pl-monthnav',
   },
   {
     id: 'plans-releases',

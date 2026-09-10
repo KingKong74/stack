@@ -1,65 +1,71 @@
-// THE PLANS TAB IS A MOCKUP. It reads nothing and it writes nothing.
+// THE PLANS TAB — TWO WIRED SUB-VIEWS AND FOUR MOCKUPS, and which is which is
+// said on the sub-tab itself.
 //
-// `ui_kits/console/PlansScreen.jsx` ported to TS, on the kit's own sample rows
-// (KING-07 … ATL-12, five areas, three releases). It is the sixth and last of
-// the kit ports — after the board and the Roadmap capture tab (#443), For you
-// (#444), the board's two newer views (#447) and Quality (#450) — and it is
-// the one that changes what the app IS, so the price is written out first.
+// `ui_kits/console/PlansScreen.jsx` came across whole in #451, all six views on
+// the kit's own sample rows (KING-07 … ATL-12). #482 wires the two that carry
+// the tab — TIMELINE, which is the order the night actually works in, and
+// CALENDAR, which is when the sprints run. Summary, Progress, Releases and
+// Dependencies still draw the kit's rows and each wears a MOCK CHIP ON ITS OWN
+// SUB-TAB. The rail's chip came off with this: the tab opens on Timeline, and a
+// "Mock" label over a wired default view breaks the "a number and the screen
+// behind it must agree" rule from the other side.
 //
-// THIS WAS THE ONLY PROJECT TAB THAT READ ANYTHING. `detail/Plans.tsx` (#439)
-// was 202 lines over the real roadmap, and with it gone EVERY project tab is
-// now a mockup. What went, all of it the same shape — a column that is still
-// written, still served and now read by nothing:
+// THE GROUPING IS THE SPRINT, NOT THE AREA, and it is the one thing the port
+// could not carry across. The kit groups its timeline by space and its progress
+// by area; in Stack `area` is the OVERNIGHT LANE (#267) — `(project, area)`
+// admits one worker at a time — so grouping the plan by it would draw the
+// collision domain and call it the plan. What ranks work here is the SPRINT
+// (#477): one group per box in board order, the backlog underneath, and inside
+// a box the rows sit in `sprintRank` order because that IS the priority, top
+// first. The `#` column therefore means something only inside a sprint, and its
+// tooltip is what says so — the same distinction `BacklogRow` draws in
+// Board.tsx, for the same reason.
 //
-//  • THE STORED SCHEDULE HAS NO READER AGAIN. `sched_start_min` /
-//    `sched_len_min` and their write-once `plan_start_min` / `plan_len_min`
-//    baseline have been stored and baselined on create since #401. #428 took
-//    their editor (the Timeline), #439 gave them a reader, and this takes it
-//    back. Four packages still have to agree on the unit (CLAUDE.md's Data
-//    rules), and nothing in any browser now depends on them agreeing.
-//  • SLIP AGAINST THE BASELINE went with it — `slipOf` in `lib/plan.ts` has no
-//    caller in the client at all now, and the three-state answer it exists to
-//    give (moved / on plan / never baselined) is unaskable from a browser.
-//  • `isBuilt` LOSES ITS LAST COMPONENT. #440 named Plans as its only reader;
-//    the predicate itself stays exactly where it is (lib/plan.ts, re-exported
-//    by lib/spine.ts, which still uses it internally) because it is the #374
-//    definition and the runner spends it. Do not simplify it back on the
-//    grounds that no screen calls it.
-//  • OPENING AN ITEM'S MODAL FROM A PLAN ROW is gone. Plans rows were clickable
-//    into `RoadmapModal`, which is where `tier` and `risk` are set BY HAND
-//    (CLAUDE.md: from the item modal and nowhere else). The modal itself still
-//    exists on the roadmap side; this screen cannot reach it.
-//  • WEEK ZERO stops mattering to any screen. `project.weekZero` is still
-//    served; nothing renders a date off it.
+// WHAT IT DRAWS IS COMMITTED WORK — `!isIdea` (#472), the board's own
+// population. A held hook/fly row and a child idea are on Roadmap and are in
+// nobody's plan yet; drawing them here would put one row on three screens.
 //
-// THE ONE PROP IS A NAVIGATION CALLBACK, NOT DATA. The kit's "See on board"
-// carries a filter (area + subject) into its BoardScreen; ours cannot, because
-// the board is a mockup with nothing to filter. So the press moves to the
-// board tab and stops there — a link that goes to the right screen and cannot
-// narrow it is honest, a link that does nothing at all reads as a broken app.
+// EVERY STATUS IS DERIVED, AND NOTHING ON THIS SCREEN WRITES. The kit's status
+// cell is a dropdown that sets a row's state; Stack has no such column —
+// `listKeyOf` is the client's one derivation (done / built-and-unverdicted /
+// claimed / not started) and it is read off the row. So the cell is a TAG and
+// not a button: the menu came out rather than being wired to a write it cannot
+// make. Same call the toolbar's four filter buttons and the dead Timeline/List
+// segmented control got — a press that moves nothing is indistinguishable from
+// a broken app, which is what the smoke reports it as.
 //
-// SIX SUB-VIEWS, all the kit's, all local state: Summary, Progress, Timeline
-// (the default, and the densest), Calendar, Releases, Dependencies. Nothing
-// persists — closing the tab is the undo. Two edits to the kit's own screen:
+// THE STORED SCHEDULE HAS A READER AGAIN. `sched` (#401, MINUTES from week
+// zero) lost its last one when #451 replaced the real Plans tab with this
+// mockup. Both date columns render it through `dateAt(weekZero)`, and the
+// calendar puts a scheduled row on every day it covers. An item with no bar
+// reads as an em dash — UNSCHEDULED, which is a real state and is not "today".
+// Nothing here EDITS one: the timeline drag went with #428 and has not come
+// back, so the four packages that must agree on the unit still have no browser
+// depending on them agreeing.
 //
-//  1. THE CALENDAR'S OFF-BY-ONE IS FIXED. The kit labels a cell from `i - 1`
-//     but shades and fills it from `i`, so its events land a day off their own
-//     numbers and Aug 31 draws as in-month. Here one index does both.
-//  2. THE KIT'S "SPACES" ARE AREAS. Its Timeline groups by space (King, Atlas)
-//     and its Progress groups by area; both are one thing in Stack, and both
-//     read as `area` here. That word is load-bearing in the database in a way
-//     this screen cannot honour: `(project, area)` IS the overnight lane
-//     (#267), and an area with an open claimed item admits no second worker.
-//     Nothing here can reach that, and a wiring session owes the mapping.
+// THE CALENDAR IS A REAL MONTH, and the kit's off-by-one went with the sample
+// data that carried it. Two things about it are decisions:
 //
-// THE PLAN'S NUMBERS ARE THE KIT'S AND THEY DO NOT ALL RECONCILE — the Summary
-// counts seven items against the Timeline's seven rows, while Progress tallies
-// sixty-odd across five areas, because the kit wrote the two views against
-// different samples. Left alone for the reason QualityMock's header gives:
-// inventing rows to square them is authoring sample data, not porting a screen.
+//  • IT BUILDS ITS OWN GRID rather than calling `calendarMonths` in lib/plan.ts,
+//    which is the obvious reuse and is the wrong shape here. That helper is
+//    keyed on WEEK-ZERO MINUTES, and a sprint window is a bare `YYYY-MM-DD` day
+//    with no week zero anywhere in it (`Sprint.startsOn` — a day somebody named,
+//    never an instant). The two populations have to share a cell, so the cell
+//    has to be a real date. Its rule is kept though: a bar is drawn on EVERY day
+//    it covers, because a fortnight-long box drawn once is a month claiming
+//    thirteen free days.
+//  • THE WINDOW IT DRAWS IS THE PLANNED ONE, falling back to when the sprint
+//    ACTUALLY RAN (`startedAt`/`endedAt`). Neither pair substitutes for the
+//    other and the row says which it is showing, because "planned for next
+//    week" and "ran last week" are different claims. A sprint with neither is
+//    UNDATED and is listed under the grid rather than dropped — a box with no
+//    window is the common case, and a calendar that silently omits it is a
+//    calendar that hides the sprint in progress.
 
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { KitIcon, type KitIconName } from './kit/KitIcon';
+import type { RoadmapItem, Sprint } from '../types';
+import { dateAt, fmtDate, isBuilt, isIdea, listKeyOf } from '../lib/plan';
 
 type SubTab = 'summary' | 'progress' | 'timeline' | 'calendar' | 'releases' | 'dependencies';
 type StatusKey = 'todo' | 'progress' | 'review' | 'done';
@@ -76,12 +82,6 @@ const SUBTABS: { value: SubTab; label: string; icon: KitIconName }[] = [
   { value: 'dependencies', label: 'Dependencies', icon: 'git-branch' },
 ];
 
-const STATUSES: { value: StatusKey; label: string; tone: Tone }[] = [
-  { value: 'todo', label: 'To do', tone: 'neutral' },
-  { value: 'progress', label: 'In progress', tone: 'info' },
-  { value: 'review', label: 'In review', tone: 'info' },
-  { value: 'done', label: 'Done', tone: 'success' },
-];
 const STATUS_META: Record<StatusKey, { label: string; tone: Tone }> = {
   todo: { label: 'To do', tone: 'neutral' },
   progress: { label: 'In progress', tone: 'info' },
@@ -92,8 +92,8 @@ const STATUS_META: Record<StatusKey, { label: string; tone: Tone }> = {
 // Priority is a ROLE here, never a colour: `.pl-pri` carries the rule's tone in
 // styles.css, keyed off the level. Same rule the severity vocabulary follows on
 // Quality — a component names the level, styles.css owns the tone.
-const PRIORITY: Record<'high' | 'medium' | 'low', string> = {
-  high: 'High', medium: 'Medium', low: 'Low',
+const PRIORITY: Record<PriKey, string> = {
+  highest: 'Highest', high: 'High', medium: 'Medium', low: 'Low', lowest: 'Lowest',
 };
 const PRI_GLYPH: Record<PriKey, string> = {
   highest: '⌃⌃', high: '⌃', medium: '=', low: '⌄', lowest: '⌄⌄',
@@ -102,34 +102,150 @@ const PRI_LEVEL: Record<PriKey, 'hi' | 'med' | 'lo'> = {
   highest: 'hi', high: 'hi', medium: 'med', low: 'lo', lowest: 'lo',
 };
 
-/* ---------------------------------------------------------------- Timeline */
+/* ------------------------------------------------- what a plan row reads off */
 
-type TimelineRow = {
-  n: number; id: string; kind: Kind; title: string; status: StatusKey;
-  branch: string | null; start: string | null; due: string;
-  priority: 'high' | 'medium' | 'low'; progress: number;
-  checks: string | null; checkTone: Tone; dirty?: boolean; subtasks?: number;
+/**
+ * A ROW'S STATUS, DERIVED — the client has exactly one derivation and this is a
+ * translation of it, not a second one. `listKeyOf` (lib/plan.ts) is the twin of
+ * `listFor` on the server and already answers the question the kit's four
+ * statuses ask; the map below is only the kit's spelling of its four answers.
+ *
+ * A row whose `listKey` was set by hand falls through to 'todo' rather than to
+ * nothing: the board may carry lanes this screen has no column for (#428 lets
+ * every lane be renamed and new ones added), and a status cell rendering blank
+ * is worse than one rendering the honest floor.
+ */
+const STATUS_OF: Record<string, StatusKey> = {
+  shipped: 'done', review: 'review', progress: 'progress', planned: 'todo',
+};
+const statusOf = (it: RoadmapItem): StatusKey => STATUS_OF[listKeyOf(it)] ?? 'todo';
+
+/**
+ * HOW FAR ALONG A ROW IS, AND NEVER A GUESS. An implementation plan (#75) is a
+ * real denominator — steps ticked over steps — and it is the only one a roadmap
+ * row carries. Without one the honest answers are 0 and 100 and nothing in
+ * between, so a half-finished row with no plan reads as 0 here, which is
+ * exactly what the board says about it. The alternative — 50% for "claimed" —
+ * is a number the app would be inventing, and the meter draws it as if it had
+ * been measured.
+ */
+function progressOf(it: RoadmapItem): number {
+  if (isBuilt(it) || it.done) return 100;
+  if (it.plan.length) {
+    return Math.round((it.plan.filter((s) => s.done).length / it.plan.length) * 100);
+  }
+  return 0;
+}
+
+/** The scheduled bar as two days, or nulls. UNSCHEDULED is a real state (#401). */
+function schedDays(it: RoadmapItem, weekZero: string | null): { start: string | null; due: string | null } {
+  if (!it.sched || !weekZero) return { start: null, due: null };
+  const from = dateAt(it.sched.start, weekZero);
+  const to = dateAt(it.sched.start + it.sched.len, weekZero);
+  return { start: from ? fmtDate(from) : null, due: to ? fmtDate(to) : null };
+}
+
+/**
+ * THE VERDICT CELL, which is what the kit's "Checks" column became. Stack has
+ * no per-item check result to put there — `check_results` answers to a SUITE
+ * and a suite is the project's, not a row's — so a column headed Checks would
+ * have had to be filled with something, and the something available is the one
+ * thing a plan actually waits on: whether a built row has been judged yet.
+ *
+ * A MACHINE VERDICT SAYS IT IS ONE (#263). `verdictSource` is a third of that
+ * decision's third leg and the board is the only other screen that reads it.
+ */
+function verdictOf(it: RoadmapItem): { label: string; tone: Tone } | null {
+  const tag = it.reviewTag.trim();
+  if (tag) {
+    const tone: Tone = tag === 'solid' ? 'success' : tag === 'rethink' ? 'warning' : 'info';
+    return { label: it.verdictSource === 'auto' ? `${tag} · auto` : tag, tone };
+  }
+  if (isBuilt(it)) return { label: 'awaiting verdict', tone: 'warning' };
+  return null;
+}
+
+/**
+ * ONE PLAN GROUP: a sprint and the rows committed to it, or the backlog.
+ *
+ * The boxes arrive in the payload's own board order (planned and active first,
+ * finished newest-first — `routes/sprints.js`), and a sprint with NO rows is
+ * still drawn. An empty box is a decision somebody made and has not filled yet;
+ * dropping it would make a new sprint invisible on the screen whose whole job
+ * is showing what is committed to.
+ */
+type PlanGroup = {
+  key: string; sprint: Sprint | null;
+  /** EVERY row committed to this box, filter or no filter. */
+  rows: RoadmapItem[];
+  /** The subset the toolbar leaves visible — what the group actually draws. */
+  shown: RoadmapItem[];
 };
 
-const GROUPS: { area: string; due: string; progress: number; rows: TimelineRow[] }[] = [
-  {
-    area: 'King', due: 'Sep 14, 2026', progress: 46,
-    rows: [
-      { n: 1, id: 'KING-18', kind: 'task', title: 'Row recycling on scroll', status: 'progress', branch: 'king/col-virtualisation', start: 'Aug 30', due: 'Sep 04', priority: 'high', progress: 72, checks: '2 failing', checkTone: 'warning', dirty: true },
-      { n: 2, id: 'KING-12', kind: 'task', title: 'Replace legacy grey ramp', status: 'review', branch: 'king/token-split', start: 'Aug 24', due: 'Sep 09', priority: 'medium', progress: 90, checks: 'passing', checkTone: 'success', dirty: true },
-      { n: 3, id: 'KING-24', kind: 'task', title: 'Audit contrast on dark surfaces', status: 'todo', branch: null, start: null, due: 'Sep 14', priority: 'medium', progress: 0, checks: null, checkTone: 'neutral' },
-      { n: 4, id: 'KING-31', kind: 'idea', title: 'Split token files by concern', status: 'done', branch: 'king/token-split', start: 'Aug 20', due: 'Aug 28', priority: 'low', progress: 100, checks: 'passing', checkTone: 'success' },
-      { n: 5, id: 'KING-09', kind: 'idea', title: 'The terminal needs a focus ring spec', status: 'done', branch: 'main', start: 'Aug 12', due: 'Aug 18', priority: 'low', progress: 100, checks: 'passing', checkTone: 'success', subtasks: 2 },
-    ],
-  },
-  {
-    area: 'Atlas', due: 'Sep 30, 2026', progress: 12,
-    rows: [
-      { n: 6, id: 'ATL-04', kind: 'task', title: 'Print sheet geometry', status: 'todo', branch: 'king/print-styles', start: null, due: 'Sep 22', priority: 'low', progress: 8, checks: 'stale', checkTone: 'warning' },
-      { n: 7, id: 'ATL-07', kind: 'idea', title: 'Budget line on the usage chart', status: 'todo', branch: null, start: null, due: 'Sep 30', priority: 'medium', progress: 0, checks: null, checkTone: 'neutral' },
-    ],
-  },
-];
+/**
+ * A FILTER NARROWS WHAT IS DRAWN, NEVER WHAT THE BOX CONTAINS. The group row's
+ * count and meter are facts about the SPRINT and are measured over `rows`; only
+ * the list under it is `shown`. The board does the same thing one tab across and
+ * for the same reason — its lane holder is read off every row, so a hidden
+ * parked row is still the holder it really is — and the inverse is a sprint that
+ * reads as 0% built because somebody pressed "hide built", which is the "a
+ * number and the screen behind it must agree" rule broken by a view control.
+ */
+function groupBySprint(items: RoadmapItem[], sprints: Sprint[], keep: (it: RoadmapItem) => boolean): PlanGroup[] {
+  const byBox = new Map<number, RoadmapItem[]>();
+  const loose: RoadmapItem[] = [];
+  for (const it of items) {
+    if (it.sprintId == null) { loose.push(it); continue; }
+    const bag = byBox.get(it.sprintId);
+    if (bag) bag.push(it); else byBox.set(it.sprintId, [it]);
+  }
+  // Inside a box, `sprintRank` IS the order — dense, 0 at the top, and the order
+  // the night works in. The backlog keeps the payload's own order instead
+  // (bucket, then position), because a backlog rank is a default nobody set.
+  for (const bag of byBox.values()) bag.sort((a, b) => a.sprintRank - b.sprintRank || a.id - b.id);
+  const out: PlanGroup[] = sprints.map((s) => {
+    const rows = byBox.get(s.id) ?? [];
+    return { key: `s${s.id}`, sprint: s, rows, shown: rows.filter(keep) };
+  });
+  out.push({ key: 'backlog', sprint: null, rows: loose, shown: loose.filter(keep) });
+  return out;
+}
+
+/** What a group's meter measures: rows BUILT over rows in the box (#374). */
+const builtShare = (rows: RoadmapItem[]): number =>
+  (rows.length ? Math.round((rows.filter(isBuilt).length / rows.length) * 100) : 0);
+
+const SPRINT_TONE: Record<Sprint['status'], Tone> = {
+  active: 'info', planned: 'neutral', done: 'success',
+};
+const SPRINT_LABEL: Record<Sprint['status'], string> = {
+  active: 'In progress', planned: 'Planned', done: 'Finished',
+};
+
+/**
+ * THE WINDOW A SPRINT IS DRAWN ON, and which of the two it is.
+ *
+ * `startsOn`/`endsOn` is the PLANNED window the owner set — bare days, never
+ * instants. `startedAt`/`endedAt` is when it actually ran. The planned window
+ * wins where there is one and the fallback is labelled, because "planned for
+ * next week" and "ran last week" are different claims about the same box and a
+ * calendar that renders them identically is lying about one of them.
+ *
+ * A running sprint with no planned window is open-ended: it started and has not
+ * finished, so its band runs to TODAY and stops, rather than to a date nobody
+ * has set.
+ */
+type Window = { from: string; to: string; planned: boolean } | null;
+
+function windowOf(s: Sprint, today: string): Window {
+  if (s.startsOn) return { from: s.startsOn, to: s.endsOn || s.startsOn, planned: true };
+  if (s.startedAt) {
+    const from = s.startedAt.slice(0, 10);
+    const to = s.endedAt ? s.endedAt.slice(0, 10) : (today > from ? today : from);
+    return { from, to, planned: false };
+  }
+  return null;
+}
 
 /* ---------------------------------------------------------------- Progress */
 
@@ -290,26 +406,35 @@ const KEY_DEPS = [
 
 /* ---------------------------------------------------------------- Calendar */
 
-// Keyed by DAY OF SEPTEMBER, and read by the same index that labels and shades
-// the cell — the kit's own version labelled off one index and filled off
-// another, so its events sat a day away from their own numbers.
-type CalEvent = { id: string; title: string; kind: Kind; tone: 'active' | 'done' | 'idle' };
-const CAL_EVENTS: Record<number, CalEvent[]> = {
-  4: [{ id: 'KING-09', title: 'Focus ring spec', kind: 'task', tone: 'done' }],
-  9: [
-    { id: 'KING-12', title: 'Grey ramp merge window', kind: 'task', tone: 'active' },
-    { id: 'KING-31', title: 'Token split review', kind: 'idea', tone: 'idle' },
-  ],
-  14: [
-    { id: 'KING-18', title: 'Virtualisation ship date', kind: 'task', tone: 'active' },
-    { id: 'ATL-04', title: 'Print sheet spike', kind: 'idea', tone: 'idle' },
-  ],
-  22: [{ id: 'ATL-04', title: 'Print styles decision', kind: 'idea', tone: 'idle' }],
-  30: [{ id: 'ATL-07', title: 'Budget line on usage chart', kind: 'idea', tone: 'idle' }],
-};
+// The grid is Monday-first and built from real days, so every helper below
+// works in BARE `YYYY-MM-DD` STRINGS rather than instants — a sprint boundary
+// is a day somebody named, and giving it a time zone slides it by one for half
+// the world (`dayOf` in server/src/shape.js caught exactly that on this side of
+// the wire; this is the same rule on the other).
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-// Sep 2026 opens on a Tuesday, so cell 0 is Aug 31 and cell 30 is Sep 30.
-const TODAY = 2;
+const MONTHS_LONG = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** A UTC date as the day it is. Never `toISOString` on a local-midnight Date. */
+const dayKey = (d: Date): string =>
+  `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+
+/**
+ * THE CELLS OF ONE MONTH, Monday-first and always whole weeks. `lead` is how
+ * many days of the previous month open the grid; the trailing days of the next
+ * one close it, and both are drawn (dimmed) rather than left blank so a bar
+ * crossing a month boundary does not appear to stop at the edge of the screen.
+ */
+function monthCells(anchor: Date): { key: string; date: Date; inMonth: boolean }[] {
+  const first = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1));
+  const lead = (first.getUTCDay() + 6) % 7;
+  const dim = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  const weeks = Math.ceil((lead + dim) / 7);
+  return Array.from({ length: weeks * 7 }, (_, i) => {
+    const date = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 1 - lead + i));
+    return { key: dayKey(date), date, inMonth: date.getUTCMonth() === first.getUTCMonth() };
+  });
+}
+
 
 /* ---------------------------------------------------------------- Releases */
 
@@ -357,8 +482,30 @@ const LINKS: { rel: string; from: DepNode; to: DepNode }[] = [
 
 /* ================================================================= the tab */
 
-export function PlansMock({ onBoard }: { onBoard?: () => void }) {
+/**
+ * The four sub-views still drawing the kit's own sample rows. The chip is on
+ * the SUB-TAB rather than the rail, because two of the six are real now and a
+ * warning that covers all six is a warning about the wrong thing.
+ */
+const MOCK_SUBS = new Set<SubTab>(['summary', 'progress', 'releases', 'dependencies']);
+
+export function Plans({ items, sprints, weekZero, onBoard }: {
+  /** EVERY roadmap row, in the payload's own order — the same flattened list the
+   *  board and Roadmap take. This screen keeps the committed half (`!isIdea`). */
+  items: RoadmapItem[];
+  /** The project's sprints, in board order, off the same payload (#477). */
+  sprints: Sprint[];
+  /** The project's week zero — what `sched` counts minutes from. null = the
+   *  schedule cannot be rendered as dates at all, which is why `schedDays`
+   *  answers nulls rather than throwing. */
+  weekZero: string | null;
+  onBoard?: () => void;
+}) {
   const [sub, setSub] = useState<SubTab>('timeline');
+
+  // COMMITTED WORK ONLY (#472), and archived rows are neither surface's. Done
+  // once here so the two wired views cannot disagree about their population.
+  const plan = useMemo(() => items.filter((it) => !isIdea(it) && !it.archived), [items]);
 
   return (
     <div className="pl">
@@ -366,12 +513,11 @@ export function PlansMock({ onBoard }: { onBoard?: () => void }) {
         <span className="pl-crumb">Plans and progress</span>
         <div className="pl-headrow">
           <span className="mark"><KitIcon name="list" size={16} /></span>
-          <h1>Terminal</h1>
-          <button className="k-iconbtn sm" aria-label="Plan actions"><KitIcon name="ellipsis" size={15} /></button>
+          <h1>Plans</h1>
           <span className="acts">
-            <button className="k-iconbtn sm solid" aria-label="Share"><KitIcon name="arrow-up-right" size={14} /></button>
-            <button className="k-iconbtn sm solid" aria-label="Comments"><KitIcon name="file-text" size={14} /></button>
-            <button className="k-btn sm">Unsaved changes<span className="pl-count">5</span></button>
+            {/* The one number in the header, and it is the real one: how much
+                of the plan is committed to a box at all. */}
+            <span className="k-tag">{plan.filter((it) => it.sprintId != null).length} of {plan.length} in a sprint</span>
           </span>
         </div>
 
@@ -379,16 +525,18 @@ export function PlansMock({ onBoard }: { onBoard?: () => void }) {
           {SUBTABS.map((t) => (
             <button key={t.value} className={`k-tab${sub === t.value ? ' on' : ''}`} onClick={() => setSub(t.value)}>
               <KitIcon name={t.icon} size={14} />{t.label}
+              {MOCK_SUBS.has(t.value) && (
+                <span className="con-navsoon mock" title="A mockup — the console kit's own sample rows. It reads and writes nothing.">Mock</span>
+              )}
             </button>
           ))}
-          <button className="k-tab pl-tabadd" aria-label="Add a view"><KitIcon name="plus" size={14} /></button>
         </div>
       </div>
 
       {sub === 'summary' && <SummaryView />}
       {sub === 'progress' && <ProgressView onBoard={onBoard} />}
-      {sub === 'timeline' && <TimelineView />}
-      {sub === 'calendar' && <CalendarView />}
+      {sub === 'timeline' && <TimelineView rows={plan} sprints={sprints} weekZero={weekZero} />}
+      {sub === 'calendar' && <CalendarView rows={plan} sprints={sprints} weekZero={weekZero} />}
       {sub === 'releases' && <ReleasesView />}
       {sub === 'dependencies' && <DependenciesView />}
     </div>
@@ -410,178 +558,200 @@ function Meter({ value }: { value: number }) {
 
 /* ---------------------------------------------------------------- Timeline */
 
-function TimelineView() {
-  const [mode, setMode] = useState<'Timeline' | 'List'>('List');
-  const [statusOf, setStatusOf] = useState<Record<string, StatusKey>>(
-    () => Object.fromEntries(GROUPS.flatMap((g) => g.rows.map((r) => [r.id, r.status]))),
-  );
-  const [menu, setMenu] = useState<string | null>(null);
-  const [picked, setPicked] = useState<Record<string, boolean>>({});
-  const [cursor, setCursor] = useState('KING-09');
+function TimelineView({ rows, sprints, weekZero }: {
+  rows: RoadmapItem[]; sprints: Sprint[]; weekZero: string | null;
+}) {
+  const [find, setFind] = useState('');
+  const [hideBuilt, setHideBuilt] = useState(false);
+  const [shut, setShut] = useState<string[]>([]);
+  const [cursor, setCursor] = useState<number | null>(null);
+
+  // The two toolbar controls are FILTERS OVER THE ROWS, never over the boxes: a
+  // sprint whose every row is filtered out still draws, with its own count
+  // saying what it really holds. Hiding the box would make a search read as
+  // "this sprint is empty", which is the one thing this screen must not say.
+  const groups = useMemo(() => {
+    const needle = find.trim().toLowerCase();
+    return groupBySprint(rows, sprints, (it) => {
+      if (hideBuilt && isBuilt(it)) return false;
+      if (!needle) return true;
+      return it.title.toLowerCase().includes(needle) || String(it.id).includes(needle);
+    });
+  }, [rows, sprints, find, hideBuilt]);
+
+  const shown = groups.reduce((n, g) => n + g.shown.length, 0);
+  const filtered = shown !== rows.length;
 
   return (
     <>
       <div className="pl-toolbar">
         <span className="pl-search">
           <KitIcon name="search" size={14} />
-          <input placeholder="Search timeline" aria-label="Search timeline" />
+          <input placeholder="Search the plan" aria-label="Search the plan"
+            value={find} onChange={(e) => setFind(e.target.value)} />
         </span>
-        <button className="k-btn sm secondary">Filter<Caret /></button>
-        <button className="k-btn sm secondary"><KitIcon name="list" size={14} />Basic view<Caret /></button>
-        <button className="k-iconbtn sm solid" aria-label="Save view"><KitIcon name="check" size={14} /></button>
-
+        {/* A LABEL, NOT A MENU. The kit offers "Group: Area" and three more
+            filter buttons; the grouping here is the sprint and there is nothing
+            else it could honestly be, so this says what the screen is doing
+            rather than offering a choice that resolves to one option. */}
+        <span className="k-tag"><KitIcon name="layers" size={13} />Grouped by sprint</span>
+        <button className="k-btn sm secondary"
+          aria-pressed={hideBuilt} onClick={() => setHideBuilt(!hideBuilt)}
+          title="Built rows are finished work still waiting on a verdict — they stay in their sprint (#477)">
+          <KitIcon name="check" size={14} />{hideBuilt ? 'Built hidden' : 'Built shown'}
+        </button>
         <span className="right">
-          <button className="k-btn sm secondary"><KitIcon name="layers" size={14} />Group: Area<Caret /></button>
-          <span className="pl-seg2">
-            {(['Timeline', 'List'] as const).map((m) => (
-              <button key={m} className={`pl-seg2b${mode === m ? ' on' : ''}`} aria-pressed={mode === m}
-                onClick={() => setMode(m)}>{m}</button>
-            ))}
-          </span>
-          <button className="k-iconbtn sm" aria-label="View settings"><KitIcon name="settings" size={15} /></button>
+          <span className="pl-saved">{shown} of {rows.length} work items</span>
         </span>
       </div>
 
       <div className="pl-scroll">
         <div className="pl-grid">
-          <div className="pl-workbar">
-            <span className="lbl">Work item<Caret /></span>
-            <button className="k-btn sm secondary"><KitIcon name="plus" size={13} />Create work</button>
-            <span className="add">Add fields<Caret /></span>
-          </div>
-
           <div className="pl-row head">
-            <span className="c-check"><Box /></span>
-            <span className="c-n">#</span>
+            <span className="c-check" />
+            <span className="c-n" title="Inside a sprint this is the order the night works in">#</span>
             <span className="c-item">Work item</span>
             <span className="c-status">Status</span>
             <span className="c-branch">Branch</span>
-            <span className="c-date">Start date<span className="pl-coltag">D</span></span>
-            <span className="c-date">Due date<span className="pl-coltag">D</span></span>
+            <span className="c-date">Start<span className="pl-coltag">D</span></span>
+            <span className="c-date">Due<span className="pl-coltag">D</span></span>
             <span className="c-pri">Priority</span>
             <span className="c-prog">Progress</span>
-            <span className="c-checks">Checks</span>
-            <span className="c-flag"><KitIcon name="plus" size={14} /></span>
+            <span className="c-checks">Verdict</span>
+            <span className="c-flag" title="Risk (#212) — a low-risk row whose run lands green merges itself">⚑</span>
           </div>
 
-          {GROUPS.map((g) => (
-            <div className="pl-group" key={g.area}>
-              <div className="pl-row group">
-                <span className="c-check"><span className="pl-caret">▾</span></span>
-                <span className="c-groupname">
-                  <span className="glyph"><KitIcon name="layers" size={11} /></span>
-                  <span className="nm">{g.area}</span>
-                  <span className="plus"><KitIcon name="plus" size={13} /></span>
-                </span>
-                <span className="c-status"><Meter value={g.progress} /></span>
-                <span className="c-branch mono">{g.rows.length} items</span>
-                <span className="c-date">Earliest</span>
-                <span className="c-date mono strong">{g.due}</span>
-                <span className="c-pri">Medium</span>
-                <span className="c-prog"><Meter value={g.progress} /></span>
-                <span className="c-checks" />
-                <span className="c-flag" />
+          {groups.map((g) => {
+            const open = !shut.includes(g.key);
+            const win = g.sprint ? windowOf(g.sprint, dayKey(new Date())) : null;
+            return (
+              <div className="pl-group" key={g.key}>
+                <div className="pl-row group">
+                  <span className="c-check">
+                    <button className="pl-fold" aria-expanded={open}
+                      aria-label={`${open ? 'Collapse' : 'Expand'} ${g.sprint ? g.sprint.name : 'the backlog'}`}
+                      onClick={() => setShut(open ? [...shut, g.key] : shut.filter((k) => k !== g.key))}>
+                      <span className="pl-caret">{open ? '▾' : '▸'}</span>
+                    </button>
+                  </span>
+                  <span className="c-groupname">
+                    <span className="glyph"><KitIcon name="layers" size={11} /></span>
+                    <span className="nm">{g.sprint ? g.sprint.name : 'Backlog'}</span>
+                  </span>
+                  <span className="c-status">
+                    {g.sprint
+                      ? <span className={`k-tag ${SPRINT_TONE[g.sprint.status]}`}>{SPRINT_LABEL[g.sprint.status]}</span>
+                      : <span className="k-tag" title="Not in any sprint — the automation never touches these (#477)">Not committed</span>}
+                  </span>
+                  {/* What the BOX holds, with the filtered count only where the
+                      two differ — "4 items" when nothing is hidden, "1 of 4"
+                      when something is. */}
+                  <span className="c-branch mono" title={filtered ? 'Showing / in this sprint' : ''}>
+                    {filtered ? `${g.shown.length} of ${g.rows.length}` : `${g.rows.length} item${g.rows.length === 1 ? '' : 's'}`}
+                  </span>
+                  {/* The sprint's own window, on the two date columns the rows
+                      use for theirs. Undated is an em dash on both. */}
+                  <span className="c-date mono">{win ? win.from.slice(5) : <span className="pl-dash">—</span>}</span>
+                  <span className="c-date mono strong">{win ? win.to.slice(5) : <span className="pl-dash">—</span>}</span>
+                  <span className="c-pri">{win && !win.planned ? 'ran' : win ? 'planned' : ''}</span>
+                  <span className="c-prog"><Meter value={builtShare(g.rows)} /></span>
+                  <span className="c-checks" />
+                  <span className="c-flag" />
+                </div>
+
+                {/* THE RANK IS THE ROW'S OWN, NEVER ITS INDEX IN THE FILTERED
+                    LIST. Inside a sprint it is `sprintRank` + 1 — dense, 0 at
+                    the top, the order the night works in — so hiding a row can
+                    never renumber the ones left. The backlog has no such number,
+                    so it counts its own full list and the tooltip says the
+                    number means nothing. */}
+                {open && g.shown.map((r) => (
+                  <TimelineRowView key={r.id} row={r} inSprint={g.sprint !== null}
+                    rank={g.sprint ? r.sprintRank + 1 : g.rows.indexOf(r) + 1}
+                    weekZero={weekZero}
+                    cursor={cursor === r.id} onFocus={() => setCursor(r.id)} />
+                ))}
+                {open && g.shown.length === 0 && (
+                  <div className="pl-subrow">
+                    <span className="c-check" />
+                    <span className="c-item">
+                      {g.rows.length > 0
+                        ? `All ${g.rows.length} filtered out.`
+                        : g.sprint
+                          ? 'Nothing committed to this sprint yet — the board’s Backlog view is where a row is dragged in.'
+                          : 'Every work item is in a sprint.'}
+                    </span>
+                  </div>
+                )}
               </div>
-
-              {g.rows.map((r) => (
-                <TimelineRowView
-                  key={r.id} row={r}
-                  status={statusOf[r.id]}
-                  onStatus={(v) => { setStatusOf({ ...statusOf, [r.id]: v }); setMenu(null); }}
-                  menuOpen={menu === r.id}
-                  onMenu={() => setMenu(menu === r.id ? null : r.id)}
-                  checked={!!picked[r.id]}
-                  onCheck={() => setPicked({ ...picked, [r.id]: !picked[r.id] })}
-                  cursor={cursor === r.id}
-                  onFocus={() => setCursor(r.id)}
-                />
-              ))}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </>
   );
 }
 
-function Box({ checked }: { checked?: boolean }) {
-  return (
-    <span className={`pl-box${checked ? ' on' : ''}`} aria-hidden="true">
-      {checked && (
-        <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor"
-          strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M1.5 5.2 3.8 7.5 8.5 2.6" />
-        </svg>
-      )}
-    </span>
-  );
-}
-
-function TimelineRowView({ row, status, onStatus, menuOpen, onMenu, checked, onCheck, cursor, onFocus }: {
-  row: TimelineRow; status: StatusKey; onStatus: (v: StatusKey) => void;
-  menuOpen: boolean; onMenu: () => void;
-  checked: boolean; onCheck: () => void;
-  cursor: boolean; onFocus: () => void;
+function TimelineRowView({ row, rank, inSprint, weekZero, cursor, onFocus }: {
+  row: RoadmapItem;
+  /** 1-based place in the group. Inside a sprint that IS the priority; in the
+   *  backlog it is a row count and claims nothing — same distinction the
+   *  board's own backlog row draws, and the tooltip is what carries it. */
+  rank: number;
+  inSprint: boolean;
+  weekZero: string | null;
+  cursor: boolean;
+  onFocus: () => void;
 }) {
-  const st = STATUS_META[status];
+  const st = STATUS_META[statusOf(row)];
+  const when = schedDays(row, weekZero);
+  const verdict = verdictOf(row);
+  const built = isBuilt(row);
+
   return (
-    <>
-      <div className={`pl-row${cursor ? ' cursor' : ''}`} onClick={onFocus}>
-        <span className="c-check">
-          <span className="hit" onClick={(e) => { e.stopPropagation(); onCheck(); }}><Box checked={checked} /></span>
+    <div className={`pl-row${cursor ? ' cursor' : ''}`} onClick={onFocus} data-hl={row.id}>
+      <span className="c-check" />
+      <span className="c-n mono" title={inSprint
+        ? `${rank} in this sprint — the runner works top down`
+        : 'A place in the backlog listing, not a priority'}>{rank}</span>
+      <span className="c-item">
+        <span className={`pl-kind ${built ? 'task' : 'idea'}`}>
+          <KitIcon name={built ? 'circle-check' : 'list'} size={14} />
         </span>
-        <span className="c-n mono">{row.n}</span>
-        <span className="c-item">
-          <span className={`pl-kind ${row.kind}`}><KitIcon name={row.kind === 'idea' ? 'bookmark' : 'circle-check'} size={14} /></span>
-          <span className="id">{row.id}</span>
-          <span className="t">{row.title}</span>
-        </span>
+        <span className="id">#{row.id}</span>
+        <span className="t" title={row.title}>{row.title}</span>
+      </span>
 
-        <span className="c-status">
-          <button className={`pl-statusbtn k-tag ${st.tone}`} onClick={(e) => { e.stopPropagation(); onMenu(); }}
-            aria-expanded={menuOpen}>{st.label}<Caret /></button>
-          {menuOpen && (
-            <div className="pl-menu" onClick={(e) => e.stopPropagation()}>
-              {STATUSES.map((s) => (
-                <button key={s.value} className="pl-menuitem" onClick={() => onStatus(s.value)}>
-                  <span className={`k-tag ${s.tone}`}>{s.label}</span>
-                  {s.value === status && <span className="tick"><KitIcon name="check" size={13} /></span>}
-                </button>
-              ))}
-              <span className="pl-menurule" />
-              <button className="pl-menuitem plain">View workflow</button>
-            </div>
-          )}
-        </span>
+      <span className="c-status">
+        <span className={`k-tag ${st.tone}`}>{st.label}</span>
+      </span>
 
-        <span className="c-branch">
-          {row.branch
-            ? <span className="br"><KitIcon name="git-branch" size={12} /><span className="mono">{row.branch}</span></span>
-            : <span className="pl-dash">—</span>}
-        </span>
-        <span className="c-date mono">{row.start ?? <span className="pl-dash">—</span>}</span>
-        <span className="c-date mono">{row.due}</span>
-        <span className="c-pri">
-          <span className={`pl-pri ${PRI_LEVEL[row.priority]}`} />
-          {PRIORITY[row.priority]}
-        </span>
-        <span className="c-prog"><Meter value={row.progress} /></span>
-        <span className="c-checks">
-          {row.checks && <span className={`k-tag ${row.checkTone}`}>{row.checks}</span>}
-        </span>
-        <span className="c-flag">{row.dirty && <span className="pl-dirty" title="Uncommitted work in this branch" />}</span>
-      </div>
-
-      {row.subtasks ? (
-        <div className="pl-subrow">
-          <span className="c-check" />
-          <span className="c-item">
-            <span className="pl-caret">▸</span>
-            Subtask — {row.subtasks} work items
-          </span>
-        </div>
-      ) : null}
-    </>
+      <span className="c-branch">
+        {row.claimedBy.trim()
+          ? <span className="br" title={`Claimed by ${row.claimedBy} (#277)`}>
+              <KitIcon name="git-branch" size={12} /><span className="mono">{row.claimedBy}</span>
+            </span>
+          : <span className="pl-dash">—</span>}
+      </span>
+      <span className="c-date mono">{when.start ?? <span className="pl-dash">—</span>}</span>
+      <span className="c-date mono">{when.due ?? <span className="pl-dash">—</span>}</span>
+      <span className="c-pri">
+        <span className={`pl-pri ${PRI_LEVEL[row.bucket]}`} />
+        {PRIORITY[row.bucket]}
+      </span>
+      <span className="c-prog"><Meter value={progressOf(row)} /></span>
+      <span className="c-checks">
+        {verdict && <span className={`k-tag ${verdict.tone}`}>{verdict.label}</span>}
+      </span>
+      <span className="c-flag">
+        {row.risk !== 'normal' && (
+          <span className={`pl-risk ${row.risk}`}
+            title={row.risk === 'low'
+              ? `Low risk${row.riskReason ? ` — ${row.riskReason}` : ''} — a green run on this merges itself (#212)`
+              : `High risk${row.riskReason ? ` — ${row.riskReason}` : ''} — a wrong build here is expensive`} />
+        )}
+      </span>
+    </div>
   );
 }
 
@@ -965,23 +1135,76 @@ function AreaDetail({ area }: { area: Area }) {
 
 /* ---------------------------------------------------------------- Calendar */
 
-function CalendarView() {
+function CalendarView({ rows, sprints, weekZero }: {
+  rows: RoadmapItem[]; sprints: Sprint[]; weekZero: string | null;
+}) {
+  const today = dayKey(new Date());
+  // The month on screen, as an offset from this one. An offset rather than a
+  // Date so "Today" is a reset to zero and cannot drift.
+  const [off, setOff] = useState(0);
+  const anchor = useMemo(() => {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + off, 1));
+  }, [off]);
+  const cells = useMemo(() => monthCells(anchor), [anchor]);
+
+  // THE BANDS. Each sprint with a window becomes one entry per day it covers,
+  // and only the first day of the band OR the first day of a week row carries
+  // the name — that is what makes fourteen cells read as one bar rather than as
+  // fourteen separate commitments. `head` is that flag.
+  const bands = useMemo(() => {
+    const map = new Map<string, { sprint: Sprint; planned: boolean; start: boolean; end: boolean }[]>();
+    for (const s of sprints) {
+      const win = windowOf(s, today);
+      if (!win) continue;
+      for (const c of cells) {
+        if (c.key < win.from || c.key > win.to) continue;
+        const bag = map.get(c.key) ?? [];
+        bag.push({ sprint: s, planned: win.planned, start: c.key === win.from, end: c.key === win.to });
+        map.set(c.key, bag);
+      }
+    }
+    return map;
+  }, [sprints, cells, today]);
+
+  // A SCHEDULED ROW IS ON EVERY DAY IT COVERS, not only the day it starts — the
+  // rule `calendarMonths` states in lib/plan.ts, and for its reason: a bar shown
+  // once over a fortnight is a month claiming thirteen free days.
+  const scheduled = useMemo(() => {
+    const map = new Map<string, RoadmapItem[]>();
+    if (!weekZero) return map;
+    for (const it of rows) {
+      if (!it.sched) continue;
+      const from = dateAt(it.sched.start, weekZero);
+      const to = dateAt(it.sched.start + it.sched.len, weekZero);
+      if (!from || !to) continue;
+      const a = dayKey(from);
+      const b = dayKey(to);
+      for (const c of cells) {
+        if (c.key < a || c.key > b) continue;
+        const bag = map.get(c.key) ?? [];
+        bag.push(it);
+        map.set(c.key, bag);
+      }
+    }
+    return map;
+  }, [rows, cells, weekZero]);
+
+  const undated = sprints.filter((s) => !windowOf(s, today));
+
   return (
     <div className="pl-view">
       <div className="pl-toolbar">
-        <span className="pl-search">
-          <KitIcon name="search" size={14} />
-          <input placeholder="Search calendar" aria-label="Search calendar" />
+        <span className="pl-saved">
+          Each sprint on the days it runs, and every scheduled work item on the days its bar covers.
         </span>
-        {['Area', 'Type', 'Status', 'More filters'].map((f) => (
-          <button className="k-btn sm secondary" key={f}>{f}<Caret /></button>
-        ))}
         <span className="right">
-          <button className="k-btn sm secondary">Today</button>
+          <button className="k-btn sm secondary" onClick={() => setOff(0)} disabled={off === 0}>Today</button>
           <span className="pl-monthnav">
-            <span className="arw" aria-hidden="true">‹</span>Sep 2026<span className="arw" aria-hidden="true">›</span>
+            <button className="arw" aria-label="Previous month" onClick={() => setOff(off - 1)}>‹</button>
+            {MONTHS_LONG[anchor.getUTCMonth()]} {anchor.getUTCFullYear()}
+            <button className="arw" aria-label="Next month" onClick={() => setOff(off + 1)}>›</button>
           </span>
-          <button className="k-btn sm secondary">Month<Caret /></button>
         </span>
       </div>
 
@@ -990,20 +1213,29 @@ function CalendarView() {
           {DAY_NAMES.map((d) => <span key={d}>{d}</span>)}
         </div>
         <div className="pl-calgrid">
-          {Array.from({ length: 35 }, (_, i) => {
-            const inMonth = i >= 1 && i <= 30;
-            const label = i === 0 ? 'Aug 31' : i === 1 ? 'Sep 1' : i <= 30 ? String(i) : `Oct ${i - 30}`;
-            const events = inMonth ? CAL_EVENTS[i] ?? [] : [];
+          {cells.map((c, i) => {
+            const day = c.date.getUTCDate();
+            // The 1st of a month says which month it is, so a grid whose edges
+            // are another month's days cannot be misread.
+            const label = day === 1 ? `${MONTHS_LONG[c.date.getUTCMonth()]} 1` : String(day);
+            const onDay = bands.get(c.key) ?? [];
+            const work = scheduled.get(c.key) ?? [];
             return (
-              <div className={`pl-calcell${inMonth ? '' : ' out'}`} key={i}>
-                <span className={`d${i === TODAY ? ' today' : ''}`}>{label}</span>
-                {events.map((e) => (
-                  <div className={`pl-calev tone-${e.tone}`} key={e.id + e.title}>
-                    <span className={`pl-kind ${e.kind}`}>
-                      <KitIcon name={e.kind === 'idea' ? 'bookmark' : 'circle-check'} size={11} />
-                    </span>
-                    <span className="id">{e.id}</span>
-                    <span className="t">{e.title}</span>
+              <div className={`pl-calcell${c.inMonth ? '' : ' out'}`} key={c.key}>
+                <span className={`d${c.key === today ? ' today' : ''}`}>{label}</span>
+                {onDay.map((b) => (
+                  <div key={b.sprint.id}
+                    className={`pl-calband${b.start ? ' start' : ''}${b.end ? ' end' : ''}`
+                      + ` st-${b.sprint.status}${b.planned ? '' : ' ran'}`}
+                    title={`${b.sprint.name} — ${SPRINT_LABEL[b.sprint.status].toLowerCase()}, ${b.planned ? 'planned window' : 'when it actually ran'}`}>
+                    {(b.start || i % 7 === 0) && <span className="nm">{b.sprint.name}</span>}
+                  </div>
+                ))}
+                {work.map((it) => (
+                  <div className={`pl-calev tone-${isBuilt(it) ? 'done' : it.claimedBy.trim() ? 'active' : 'idle'}`}
+                    key={it.id} title={it.title}>
+                    <span className="id">#{it.id}</span>
+                    <span className="t">{it.title}</span>
                   </div>
                 ))}
               </div>
@@ -1011,6 +1243,30 @@ function CalendarView() {
           })}
         </div>
       </div>
+
+      {/* UNDATED SPRINTS ARE LISTED, NEVER DROPPED. A box with no window is the
+          common case — a sprint is a box of work first — and a calendar that
+          silently omits the sprint in progress is the worst version of this
+          screen. Same rule as a NULL verdict: absence is reported, not hidden. */}
+      {undated.length > 0 && (
+        <div className="pl-calundated">
+          <span className="lbl">Not on the calendar — no dates set:</span>
+          {undated.map((s) => (
+            <span className={`k-tag ${SPRINT_TONE[s.status]}`} key={s.id}
+              title={`${s.name} — ${SPRINT_LABEL[s.status].toLowerCase()}, and no window set. The board's Backlog view is where a sprint's dates are.`}>
+              {s.name}
+            </span>
+          ))}
+        </div>
+      )}
+      {sprints.length === 0 && (
+        <div className="pl-calundated">
+          <span className="lbl">
+            No sprints yet — the board’s Backlog view is where one is opened, and the
+            overnight runner does nothing at all until one is in progress (#477).
+          </span>
+        </div>
+      )}
     </div>
   );
 }
