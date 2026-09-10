@@ -1982,6 +1982,116 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .tc-work .tc-claim { font-size: 10.5px; font-weight: 600; color: var(--accent-text-hover); margin-top: 6px; }
 .tc-work .tc-claim.off { color: var(--muted); font-weight: 500; }
 .tc-work-acts { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin-top: 7px; }
+/* ---- #487 · the Mission Control chrome ----
+   PROVIDER PILLS, the design's header strip. Each says what is true of that
+   provider — a measured percentage where there is one, a state where there is
+   not — because at a glance a fabricated number and a measured one look the
+   same. */
+.term-provs { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.term-prov {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  padding: 3px 10px; border: 1px solid var(--line-2); border-radius: 999px;
+  background: var(--card); font-size: 10.5px;
+}
+.term-prov .d { width: 6px; height: 6px; border-radius: 50%; background: var(--live); }
+.term-prov.warn .d { background: var(--building); }
+.term-prov.off .d { background: var(--fainter); }
+.term-prov .n { color: var(--body); font-weight: 500; }
+.term-prov .v { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+/* THE ATTENTION STRIP. Drawn only when it has something to say — a permanent
+   "0 waiting" trains the eye to skip the row that will one day say 3. */
+.term-attn { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 0 8px; }
+.ta-pill {
+  display: inline-flex; align-items: center; gap: 7px; border: 0; cursor: pointer;
+  padding: 4px 11px; border-radius: 999px;
+  background: var(--status-warning-bg); color: var(--status-warning-fg);
+  font-size: 11px; font-weight: 600;
+}
+.ta-pill .d { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: term-ask 1.6s ease-in-out infinite; }
+.ta-pill:hover { filter: brightness(1.08); }
+.ta-say { font-size: 11px; color: var(--fainter); }
+.term-spawn { white-space: nowrap; }
+
+/* THE RAIL HEAD, and the collapsed rail's tool marks. 52px is enough for a
+   mark and a badge, and the badge is the one thing you must not have to
+   expand a rail to discover. */
+.tc-toolshead { display: flex; align-items: center; gap: 8px; padding: 2px 11px 6px; }
+.tc-toolshead .lbl {
+  flex: 1; font-family: var(--mono); font-size: 9.5px; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--fainter);
+}
+.tc-toolshead .n { font-family: var(--mono); font-size: 9.5px; color: var(--fainter); white-space: nowrap; }
+.tc-marks { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 8px 0; }
+.tc-markbtn {
+  position: relative; width: 32px; height: 32px; flex: none; border: 0; cursor: pointer;
+  display: grid; place-items: center; border-radius: 7px;
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  background: var(--surface-hover); color: var(--muted);
+}
+.tc-markbtn.claude { background: var(--accent-tint); color: var(--accent-text); }
+.tc-markbtn .b {
+  position: absolute; top: -4px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px;
+  display: grid; place-items: center; border-radius: 999px;
+  background: var(--status-warning-fg); color: var(--surface);
+  font-size: 9px; font-weight: 700; border: 1.5px solid var(--surface);
+  animation: term-ask 1.6s ease-in-out infinite;
+}
+.tcg-edit {
+  flex: 1; min-width: 0; font-size: 11.5px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--accent-text);
+  border-radius: 4px; padding: 1px 6px; outline: none;
+}
+
+/* THE RAIL FOOTERS — Settings with its integrations popover, and the limits
+   block. Both sit below the scrolling list, as the design has them. */
+.tc-foot { position: relative; border-top: 1px solid var(--line-2); padding: 7px 9px; flex: none; }
+.tc-footbtn {
+  width: 100%; display: flex; align-items: center; gap: 8px; cursor: pointer;
+  border: 0; background: transparent; padding: 5px 7px; border-radius: 6px;
+}
+.tc-footbtn:hover { background: var(--surface-hover); }
+.tc-footbtn .ico { font-size: 12px; color: var(--fainter); }
+.tc-footbtn .lbl { flex: 1; text-align: left; font-size: 11px; color: var(--body); }
+.tc-footbtn .chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px;
+  font-size: 9.5px; background: var(--status-success-bg); color: var(--status-success-fg);
+}
+.tc-footbtn .chip.off { background: var(--surface-hover); color: var(--fainter); }
+.tc-footbtn .chip .d { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.tc-pop {
+  position: absolute; bottom: calc(100% + 6px); left: 9px; right: 9px; z-index: 30;
+  display: flex; flex-direction: column; gap: 2px; padding: 10px;
+  background: var(--card); border: 1px solid var(--line-3); border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .45);
+}
+.tc-pop .cap {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--fainter); padding-bottom: 4px;
+}
+.tc-pop .row { display: flex; align-items: center; gap: 8px; padding: 6px 2px; border-top: 1px solid var(--line-2); }
+.tc-pop .row .b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tc-pop .row .n { font-size: 11px; color: var(--ink); }
+.tc-pop .row .d { font-family: var(--mono); font-size: 9.5px; color: var(--fainter); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tc-pop .row .st { flex: none; white-space: nowrap; padding: 2px 8px; border-radius: 999px; font-size: 9.5px; background: var(--surface-hover); color: var(--muted); }
+.tc-pop .row .st.on { background: var(--status-success-bg); color: var(--status-success-fg); }
+
+.tc-limits { border-top: 1px solid var(--line-2); padding: 8px 9px 10px; display: flex; flex-direction: column; gap: 6px; flex: none; }
+.tl-head { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: transparent; cursor: pointer; padding: 0; }
+.tl-head .c { font-size: 9px; color: var(--fainter); }
+.tl-head .nm { flex: 1; text-align: left; font-size: 10.5px; color: var(--muted); }
+.tl-head .pct { font-family: var(--mono); font-size: 10px; color: var(--body); }
+.tl-bar { display: block; height: 4px; border-radius: 999px; background: var(--surface-hover); overflow: hidden; }
+.tl-bar.sm { height: 3px; }
+.tl-bar .v { display: block; height: 100%; transition: width .25s ease; }
+.tl-reset { font-size: 9.5px; color: var(--fainter); }
+.tl-row { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; cursor: pointer; border: 0; border-radius: 6px; padding: 6px 7px; background: transparent; }
+.tl-row:hover { background: var(--surface-hover); }
+.tl-row.on { background: var(--surface-selected); }
+.tl-row .t { display: flex; align-items: baseline; gap: 6px; width: 100%; }
+.tl-row .t .nm { flex: 1; font-size: 10.5px; color: var(--ink); }
+.tl-row .t .pct { font-family: var(--mono); font-size: 10px; color: var(--fainter); }
+
 /* ---- #487 · SESSIONS — the rail's default segment, from the design ----
    What is running, grouped by tool. Each row is a drag SOURCE for the panes,
    which is why the whole row is grabbable and the two buttons on it stop

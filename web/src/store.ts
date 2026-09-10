@@ -808,6 +808,37 @@ export function clearTermTmuxName(cwd: string, name: string) {
 // its process died with the socket, so the pane comes back and the shell is
 // new. Order is the tab order, so the grid comes back the way it was left.
 export interface TermOpenTab { cwd: string; cmd: 'shell' | 'claude'; tmux?: string }
+// #487 — A NAME THE OWNER TYPED, overriding the labeller's.
+//
+// The Gemini labeller names a session from what it is doing, which is right
+// almost always and wrong exactly when you have decided a session is "the
+// migration one" regardless of what it is reading this minute. The design has
+// a rename on every rail row; this is where it lands.
+//
+// KEYED BY TMUX NAME, never by the tab id. A tab id is a per-mount counter, so
+// a name keyed on it would attach to a different session after a reload — and
+// a terminal wearing another session's name is worse than an unnamed one.
+// A session with no tmux name yet cannot be renamed, which the row reflects.
+//
+// Device-local, like every other way-of-looking on this screen: it is what YOU
+// call that session, and the labeller's answer is still there underneath.
+const TERM_NAMES_KEY = 'stack.termNames';
+export function getTermNames(): Record<string, string> {
+  return readStoredJSON(TERM_NAMES_KEY, (v) => {
+    const o = (v && typeof v === 'object') ? v as Record<string, unknown> : {};
+    const out: Record<string, string> = {};
+    for (const [k, val] of Object.entries(o)) if (typeof val === 'string' && val.trim()) out[k] = val;
+    return out;
+  });
+}
+/** '' clears the override and hands the row back to the labeller. */
+export function setTermName(key: string, name: string) {
+  const m = getTermNames();
+  if (name.trim()) m[key] = name.trim().slice(0, 60); else delete m[key];
+  try { localStorage.setItem(TERM_NAMES_KEY, JSON.stringify(m)); }
+  catch { /* storage full — a name is a nicety, never a blocker */ }
+}
+
 const TERM_TABS_KEY = 'stack.termTabs';
 const TERM_TABS_MAX = 8;
 export function getTermOpenTabs(): TermOpenTab[] {

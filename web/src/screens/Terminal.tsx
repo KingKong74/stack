@@ -14,6 +14,7 @@ import {
   labelTerminalSessions,
   getTermTmuxName, setTermTmuxName, clearTermTmuxName,
   getTermOpenTabs, setTermOpenTabs,
+  getTermNames, setTermName,
   getTermSessionPrefs, setTermSessionPrefs, termAssist, type TermAssistSuggestion,
   getTerminalGateway, type GatewayState,
   getTermWorkingItem, setTermWorkingItem,
@@ -816,7 +817,28 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // Named by sid first (every session has one), falling back to the tmux name
   // so a tab that re-attached a detached session inherits the name it wore as
   // a chip instead of reading as unnamed until the next ask.
-  const labelOf = (s: Sess) => (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux]) || '';
+  // #487 — the OWNER'S OWN NAME wins over the labeller's. A name you typed is
+  // a decision; the labeller's is a reading of what the session is doing this
+  // minute, and it keeps changing underneath by design.
+  const [names, setNames] = useState<Record<string, string>>(() => getTermNames());
+  const [renaming, setRenaming] = useState<number | null>(null);
+  const [draft, setDraft] = useState('');
+  const [setsOpen, setSetsOpen] = useState(false);
+  const [limitsOpen, setLimitsOpen] = useState(false);
+  const [limitIdx, setLimitIdx] = useState(0);
+  const labelOf = (s: Sess) =>
+    (s.tmux && names[s.tmux]) || (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux]) || '';
+  const startRename = (x: Sess) => {
+    if (!x.tmux) return;   // nothing stable to key the name on yet
+    setRenaming(x.id); setDraft(labelOf(x));
+  };
+  // BLUR COMMITS rather than discarding — losing a name you just typed by
+  // clicking away is the worst of the three outcomes, which is the same call
+  // the board's inline rename makes.
+  const commitRename = (x: Sess) => {
+    if (x.tmux) { setTermName(x.tmux, draft); setNames(getTermNames()); }
+    setRenaming(null); setDraft('');
+  };
   const claudeLive = sessions.some((s) => s.cmd === 'claude' && (s.status === 'live' || s.status === 'connecting'));
   // WHICH SESSIONS ARE ON SCREEN, and WHERE (#487).
   //
@@ -891,6 +913,42 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     setSlots(next);
     setActive(id);
   };
+
+  // ---- #487 · what the design's chrome reads ------------------------------
+  //
+  // THE LIMITS BLOCK's rows. The design lists three PROVIDERS; these are the
+  // three real windows the daemon reads off the Claude account, which is the
+  // same shape over numbers that are actually measured. A window the daemon
+  // did not report is simply absent — an unmeasured limit drawn at 0% reads as
+  // "plenty left", which is the most expensive possible way to be wrong here.
+  const planLimits = useMemo(() => {
+    const p = usage?.plan;
+    if (!p) return [] as { key: string; name: string; pct: number; resets: string }[];
+    const rows: { key: string; name: string; pct: number; resets: string }[] = [];
+    if (p.session) {
+      rows.push({ key: 'session', name: 'Session', pct: Math.round(p.session.pct),
+        resets: p.session.resetAt ? `resets ${fmtReset(p.session.resetAt)}` : 'no reset reported' });
+    }
+    if (p.week) {
+      rows.push({ key: 'week', name: 'Week', pct: Math.round(p.week.pct),
+        resets: p.week.resetAt ? `resets ${fmtReset(p.week.resetAt, true)}` : 'no reset reported' });
+    }
+    if (p.weekModel) {
+      rows.push({ key: 'weekModel', name: `Week · ${p.weekModel.model || 'strong model'}`,
+        pct: Math.round(p.weekModel.pct),
+        resets: p.weekModel.resetAt ? `resets ${fmtReset(p.weekModel.resetAt, true)}` : 'no reset reported' });
+    }
+    return rows;
+  }, [usage]);
+
+  // THE ATTENTION PILL — sessions stopped on a permission prompt. The design's
+  // wording exactly, because it is the right wording: one of them names the
+  // session, several do not, and the difference is whether naming it saves you
+  // a look.
+  const waiting = sessions.filter((x) => (x.status === 'live') && !!blockedOf(x));
+  const attentionLabel = waiting.length === 1
+    ? `1 session waiting on you — ${labelOf(waiting[0]) || waiting[0].cwd || 'unnamed'}`
+    : `${waiting.length} sessions waiting on you`;
 
   /** Put a session on screen in the first pane, whatever it takes. */
   const focusInSlot = (id: number) => {
@@ -1444,6 +1502,34 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   useEffect(() => { if (visible) loadGateway(); }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
   useAutoRefresh(loadGateway, visible);
 
+  // THE PROVIDER PILLS. The design shows three (Anthropic 67%, OpenAI 22%,
+  // DeepSeek 4%). Stack has a real percentage for exactly ONE of those — the
+  // Claude plan window the daemon reads off the account — and knows of the
+  // others only whether a key is configured. So the pills are drawn as the
+  // design draws them and say what is TRUE for each: a percentage where there
+  // is one, and the provider's state where there is not. A fabricated "4%"
+  // would look identical to a measured one, which is the whole objection.
+  const providerPills = useMemo(() => {
+    const out: { key: string; name: string; detail: string; tone: 'ok' | 'warn' | 'off' }[] = [];
+    const sess = usage?.plan?.session;
+    if (sess) {
+      out.push({
+        key: 'anthropic', name: 'Anthropic',
+        detail: `${Math.round(sess.pct)}%${sess.resetAt ? ` · resets ${fmtReset(sess.resetAt)}` : ''}`,
+        tone: sess.pct >= 90 ? 'warn' : 'ok',
+      });
+    }
+    if (gateway) {
+      out.push({
+        key: 'gateway', name: 'OmniRoute',
+        detail: gateway.connected ? (gateway.reachable ? 'reachable' : 'no gateway') : 'host offline',
+        tone: gateway.connected && gateway.reachable ? 'ok' : 'off',
+      });
+    }
+    return out;
+  }, [usage, gateway]);
+
+
   const dockLabel = activeSess
     ? `${activeSess.cmd === 'claude' ? 'claude' : 'shell'}${activeSess.cwd ? ` · ${activeSess.cwd}` : ''}`
     : 'terminal';
@@ -1490,7 +1576,16 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             onClick={() => setMode((m) => m === 'shell' ? 'claude' : 'shell')}>
             {mode === 'claude' ? 'Claude' : 'Shell'}
           </button>
-          <button className="btn-submit sm" onClick={() => openSession()}>+ New session</button>
+          {/* #487 — the design's spawn button SAYS WHAT IT WILL DO: the tool
+              and the directory, not "+ New session". Both are already chosen
+              in the two controls beside it, so a button that repeats them back
+              is the last chance to notice you are about to open claude in the
+              wrong project — which is the mistake this label prevents and a
+              generic one cannot. */}
+          <button className="btn-submit sm term-spawn" onClick={() => openSession()}
+            title={`Open a ${mode === 'claude' ? 'Claude' : 'shell'} session in ~/${cwd.trim() || ''}`}>
+            + {mode === 'claude' ? 'Claude' : 'Shell'} in ~/{cwd.trim()}
+          </button>
           {/* 25b — the tabs live in the head bar now. Each is still its own
               socket with its own warm buffer; only the row they sit on moved. */}
           <div className="term-tabs">
@@ -1568,6 +1663,22 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               </button>
             ))}
           </span>
+          {/* #487 — THE PROVIDER PILLS, from the design's header. Ahead of the
+              layout switcher, as drawn. Each says what is TRUE of that
+              provider — a percentage where one is measured, a state where none
+              is — because a fabricated percentage is indistinguishable from a
+              measured one and this strip is read at a glance. */}
+          {providerPills.length > 0 && (
+            <span className="term-provs">
+              {providerPills.map((p) => (
+                <span key={p.key} className={`term-prov ${p.tone}`} title={`${p.name} — ${p.detail}`}>
+                  <span className="d" />
+                  <span className="n">{p.name}</span>
+                  <span className="v">{p.detail}</span>
+                </span>
+              ))}
+            </span>
+          )}
           {/* #305 — the grid takes the whole window. Sits beside the pane
               count because they are the same question asked twice: how much
               screen do these terminals get. The head bar itself survives, so
@@ -1593,6 +1704,25 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             </button>
           )}
         </div>
+
+        {/* #487 — THE ATTENTION STRIP, the design's second toolbar row. What is
+            stopped and waiting on you, then what the grid is showing. It is
+            drawn only when it has something to say: a permanent "0 waiting"
+            trains the eye to skip the row that will one day say 3. */}
+        {(waiting.length > 0 || sessions.length > 0) && (
+          <div className="term-attn">
+            {waiting.length > 0 && (
+              <button className="ta-pill" title="Jump to the first session waiting on an answer"
+                onClick={() => { const w = waiting[0]; if (w) focusInSlot(w.id); }}>
+                <span className="d" />{attentionLabel}
+              </button>
+            )}
+            <span className="ta-say">
+              {shownIds.length} of {sessions.length} session{sessions.length === 1 ? '' : 's'} shown
+              {sessions.length > shownIds.length ? ' · drag one from the rail onto any pane' : ' · drag a pane’s title bar onto another to rearrange'}
+            </span>
+          </div>
+        )}
 
         {/* The usage strip lives ABOVE the canvas, not in the cockpit rail: it
             is about the machine and the day, not about this session, and
@@ -1986,6 +2116,40 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                 <span className="term-rail-toggle-icon">{viewPrefs.railOpen ? '›' : '‹'}</span>
               </button>
             </div>
+            {/* #487 — the design's rail head: what this rail is, and the two
+                counts that say whether it is worth opening. Only while open;
+                collapsed, the marks below carry the same information in the
+                space there is. */}
+            {viewPrefs.railOpen && viewPrefs.railSeg === 'sessions' && (
+              <div className="tc-toolshead">
+                <span className="lbl">Tools</span>
+                <span className="n">
+                  {sessions.filter((x) => !!x.tmux && pinnedOf(x.tmux)).length} pinned
+                  {' · '}
+                  {sessions.filter((x) => x.status === 'live').length} live
+                </span>
+              </div>
+            )}
+            {/* COLLAPSED — one mark per tool, with the asking badge riding it.
+                The design's collapsed rail, and it earns its 52px: the badge is
+                the one thing you must not have to expand a rail to discover. */}
+            {!viewPrefs.railOpen && sessions.length > 0 && (
+              <div className="tc-marks">
+                {TOOL_GROUPS.map((g) => {
+                  const mine = sessions.filter((x) => x.cmd === g.key);
+                  if (!mine.length) return null;
+                  const asks = mine.filter((x) => !!blockedOf(x)).length;
+                  return (
+                    <button key={g.key} className={`tc-markbtn ${g.key}`}
+                      title={`${mine.length} ${g.name}${asks ? ` · ${asks} waiting on you` : ''} — open the rail`}
+                      onClick={() => saveViewPrefs({ railOpen: true, railSeg: 'sessions' })}>
+                      {g.mark}
+                      {asks > 0 && <span className="b">{asks}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             {viewPrefs.railOpen && (
               <>
                 {/* One head row: the segment picker, and the control that
@@ -2110,13 +2274,25 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                 title={onScreen
                                   ? 'Drag onto a pane to move it there'
                                   : 'Not on screen — click to bring it into the first pane, or drag it onto a pane'}
-                                onClick={() => focusInSlot(x.id)}>
+                                onClick={() => { if (renaming !== x.id) focusInSlot(x.id); }}>
                                 <span className={`dot ${x.status}`} />
-                                <span className="t">
-                                  {labelOf(x) || (x.status === 'live'
-                                    ? (labelBusy ? 'naming…' : 'not named yet')
-                                    : x.note || x.status)}
-                                </span>
+                                {renaming === x.id ? (
+                                  <input className="tcg-edit" autoFocus value={draft}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => setDraft(e.target.value)}
+                                    onBlur={() => commitRename(x)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') commitRename(x);
+                                      if (e.key === 'Escape') { setRenaming(null); setDraft(''); }
+                                    }} />
+                                ) : (
+                                  <span className="t" title="Double-click to rename"
+                                    onDoubleClick={(e) => { e.stopPropagation(); startRename(x); }}>
+                                    {labelOf(x) || (x.status === 'live'
+                                      ? (labelBusy ? 'naming…' : 'not named yet')
+                                      : x.note || x.status)}
+                                  </span>
+                                )}
                                 {/* Pin and end, the two controls the design
                                     puts on a rail row. Kept because they are
                                     the ones you reach for while looking at the
@@ -2130,6 +2306,23 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                     {pinned ? '📌' : '📍'}
                                   </button>
                                 )}
+                                {/* ✎, as the design draws it. A session with no
+                                    tmux name yet has nothing stable to key a
+                                    name on, so it gets no pencil rather than
+                                    one that silently does nothing. */}
+                                {x.tmux && renaming !== x.id && (
+                                  <button className="tcg-btn" title="Rename this session"
+                                    onClick={(e) => { e.stopPropagation(); startRename(x); }}>✎</button>
+                                )}
+                                {/* The design's last column is the session's
+                                    token count. There is no PER-SESSION token
+                                    figure on this screen — the daemon reports
+                                    one host-wide number — and printing it on
+                                    every row would have six sessions each
+                                    claiming the same 54k. The directory is
+                                    what is true per row, and it is the thing
+                                    you actually need when two sessions wear
+                                    similar names. */}
                                 <span className="cw">{x.cwd || '~'}</span>
                               </div>
                             );
@@ -2144,6 +2337,88 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       <div className="tcg-note">
                         {detachedShown.length} session{detachedShown.length === 1 ? '' : 's'} running on the host
                         that no pane here holds — the strip above the canvas re-attaches or kills them.
+                      </div>
+                    )}
+
+                    {/* ---- #487 · the design's two rail footers ----
+                        SETTINGS, with the integrations popover: what is wired
+                        into these sessions, and whether each is actually on.
+                        The design lists four fixtures; these are the real ones
+                        this screen can answer for, and each says its own state
+                        rather than a decorative "Enabled". */}
+                    <div className="tc-foot">
+                      <button className="tc-footbtn" aria-expanded={setsOpen}
+                        onClick={() => setSetsOpen((v) => !v)}>
+                        <span className="ico">⚙</span>
+                        <span className="lbl">Settings</span>
+                        <span className={`chip ${gateway?.reachable ? 'ok' : 'off'}`}>
+                          <span className="d" />OmniRoute
+                        </span>
+                      </button>
+                      {setsOpen && (
+                        <div className="tc-pop" role="dialog" aria-label="Active integrations">
+                          <span className="cap">Active integrations</span>
+                          {[
+                            { n: 'Terminal daemon', d: 'host-side tmux + the uplink',
+                              on: !!gateway?.connected, s: gateway?.connected ? 'Connected' : 'Offline' },
+                            { n: 'OmniRoute', d: gateway?.baseUrl || 'the local gateway',
+                              on: !!gateway?.reachable, s: gateway?.reachable ? 'Reachable' : 'Not reachable' },
+                            { n: 'Session labeller', d: 'names sessions from what they are doing',
+                              on: Object.keys(labels).length > 0, s: Object.keys(labels).length ? 'In use' : 'Idle' },
+                            { n: 'Idle reaper', d: 'pinned sessions are exempt',
+                              on: true, s: `${sessions.filter((x) => !!x.tmux && pinnedOf(x.tmux)).length} pinned` },
+                          ].map((i) => (
+                            <div className="row" key={i.n}>
+                              <span className="b">
+                                <span className="n">{i.n}</span>
+                                <span className="d">{i.d}</span>
+                              </span>
+                              <span className={`st ${i.on ? 'on' : 'off'}`}>{i.s}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* THE LIMITS, the design's bottom block. Its three are
+                        three PROVIDERS; these are the three real windows the
+                        daemon reads off the Claude account — session, week,
+                        and the weekly cap on the strong model — which is the
+                        same shape (name, plan, percentage, bar, reset) over
+                        numbers that are actually measured. Nothing here is an
+                        estimate; when the daemon has no plan data the block is
+                        absent rather than guessing. */}
+                    {planLimits.length > 0 && (
+                      <div className="tc-limits">
+                        <button className="tl-head" aria-expanded={limitsOpen}
+                          onClick={() => setLimitsOpen((v) => !v)}>
+                          <span className="c">{limitsOpen ? '▾' : '▸'}</span>
+                          <span className="nm">{planLimits[limitIdx % planLimits.length].name}</span>
+                          <span className="pct">{planLimits[limitIdx % planLimits.length].pct}%</span>
+                        </button>
+                        <span className="tl-bar">
+                          <span className="v" style={{
+                            width: `${Math.min(100, planLimits[limitIdx % planLimits.length].pct)}%`,
+                            background: planLimits[limitIdx % planLimits.length].pct >= 90
+                              ? 'var(--critical)' : 'var(--accent-text)',
+                          }} />
+                        </span>
+                        {!limitsOpen && (
+                          <span className="tl-reset">{planLimits[limitIdx % planLimits.length].resets}</span>
+                        )}
+                        {limitsOpen && planLimits.map((l, i) => (
+                          <button key={l.key} className={`tl-row${i === limitIdx ? ' on' : ''}`}
+                            onClick={() => setLimitIdx(i)}>
+                            <span className="t"><span className="nm">{l.name}</span><span className="pct">{l.pct}%</span></span>
+                            <span className="tl-bar sm">
+                              <span className="v" style={{
+                                width: `${Math.min(100, l.pct)}%`,
+                                background: l.pct >= 90 ? 'var(--critical)' : 'var(--accent-text)',
+                              }} />
+                            </span>
+                            <span className="tl-reset">{l.resets}</span>
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
