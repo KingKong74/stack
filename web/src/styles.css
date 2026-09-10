@@ -4460,7 +4460,13 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
   font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono);
   color: var(--text-secondary);
 }
-.km-squares .sq.zero { color: var(--text-disabled); background: transparent; }
+/* A ZERO IS DIMMED, NOT DISABLED. The first cut used --text-disabled and the
+   palette audit measured it at 3.06:1 — under AA, on the one glyph in the
+   cluster that carries the least redundancy. A zero here is CONTENT: "nothing
+   is in review" is the whole reason the square is drawn rather than omitted, so
+   it has to be as readable as any other count. --text-tertiary is the quiet
+   tone that still measures. */
+.km-squares .sq.zero { color: var(--text-tertiary); background: transparent; }
 /* An orphan square only exists when something is IN it, and it is the one that
    wants finding — a card counted everywhere else and drawn in no column. */
 .km-squares .sq.orphan { color: var(--status-warning-fg); box-shadow: inset 0 0 0 1px var(--status-warning-fg); }
