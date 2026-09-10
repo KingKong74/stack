@@ -7,7 +7,7 @@ import {
   openTerminal,
   getTermUsagePrefs, setTermUsagePrefs, type TermUsagePrefs,
   getTermViewPrefs, setTermViewPrefs, type TermViewPrefs, type TermPaneCount,
-  type TermLayout, LAYOUT_PANES, LAYOUT_META,
+  type TermLayout, LAYOUT_PANES, LAYOUT_META, autoLayout,
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
@@ -480,20 +480,19 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // dependency says out loud which layout changes are expected to reflow.
   useEffect(() => {
     window.dispatchEvent(new Event('resize'));
-  }, [visible, dock, full, viewPrefs.panes, viewPrefs.railOpen]);
+  }, [visible, dock, full, viewPrefs.layout, viewPrefs.railOpen]);
 
-  const closeSession = (id: number, opts?: { shrink?: boolean }) => {
+  // #491 — CLOSING A PANE NO LONGER ADJUSTS THE SHAPE HERE. It used to
+  // decrement the stored pane count, which was this screen's second opinion
+  // about how many terminals are on it; the auto-fit below reads the sessions
+  // themselves, so the close needs only to close.
+  const closeSession = (id: number) => {
     handles.current.delete(id);
     setSessions((s) => {
       const rest = s.filter((x) => x.id !== id);
       if (id === active && rest.length) setActive(rest[rest.length - 1].id);
       return rest;
     });
-    // Closing a pane from the grid LESSENS the grid. The count would clamp to
-    // the sessions that are left anyway, but leaving the stored number high
-    // means the next session you open silently re-splits the screen — so the
-    // close is taken as the intent it looks like.
-    if (opts?.shrink && viewPrefs.panes > 1) saveViewPrefs({ panes: (viewPrefs.panes - 1) as TermPaneCount });
   };
 
   // End a session for REAL: close the tab, then kill the tmux session it was
@@ -508,7 +507,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [ending, setEnding] = useState<number | null>(null);
   const endSession = async (sess: Sess) => {
     const name = sess.tmux;
-    closeSession(sess.id, { shrink: true });
+    closeSession(sess.id);
     if (!name) return;
     setEnding(sess.id);
     try {
@@ -551,7 +550,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     handles.current.clear();
     setSessions([]);
     setActive(0);
-    if (viewPrefs.panes > 1) saveViewPrefs({ panes: 1 });
     const left = new Set(cwdOf.keys());
     if (!left.size) return;
     setEndingAll(true);
@@ -806,6 +804,35 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // simply starts tidy. The LAYOUT is device-local; the arrangement inside it
   // lasts as long as the screen is open.
   const layout = viewPrefs.layout;
+
+  // #491 — THE LAYOUT FOLLOWS THE SESSIONS. Opening a third terminal used to
+  // leave it off screen until you ALSO pressed a layout button, and closing
+  // one left the grid holding a shape for a session that had gone — the screen
+  // asked to be told twice what the session count already says. So opening or
+  // closing one steps the layout to the shape that fits it: one, side by side,
+  // three up.
+  //
+  // It fires on a CHANGE in the count, never on the count itself, and that is
+  // the whole reason the switcher still works: choosing Single with three
+  // sessions open is a deliberate call to look at one of them, and a rule that
+  // re-read the count every render would undo it on the next frame. A hand-
+  // picked shape stands until the set of sessions actually moves under it.
+  //
+  // An EMPTY screen keeps whatever shape it had. There is nothing to fit, and
+  // the alternative — snapping to single on the last close — would silently
+  // undo a choice the moment you ended a session.
+  const fittedTo = useRef<number | null>(null);
+  useEffect(() => {
+    const n = sessions.length;
+    if (fittedTo.current === n) return;
+    fittedTo.current = n;
+    if (n === 0) return;
+    const want = autoLayout(n);
+    if (want !== viewPrefs.layout) {
+      saveViewPrefs({ layout: want, panes: LAYOUT_PANES[want] as TermPaneCount });
+    }
+  }, [sessions.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [slots, setSlots] = useState<(number | null)[]>([]);
   const [dragId, setDragId] = useState<number | null>(null);
 
@@ -960,7 +987,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     // The pane COUNT rides along so a device that later loads an older build
     // lands on the nearest shape rather than on the default.
     const n = LAYOUT_PANES[lay];
-    saveViewPrefs({ layout: lay, panes: Math.min(4, n) as TermPaneCount });
+    saveViewPrefs({ layout: lay, panes: n as TermPaneCount });
+    // The fit is now up to date by construction: a hand-picked layout fills
+    // itself to N sessions below, and recording N here stops that fill being
+    // read back as a change somebody made and re-fitted a second time.
+    fittedTo.current = Math.max(sessions.length, n);
     const liveNow = sessions.filter((s) => s.status === 'live' || s.status === 'connecting');
     let need = n - liveNow.length;
     if (need <= 0 || filling) return;
@@ -1318,18 +1349,20 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           {/* How many terminals are on screen at once — this replaced the
               wide-mode toggle. Panes are filled from the active tab onwards,
               so picking a tab puts it top-left and its neighbours beside it. */}
-          {/* #487 — THE LAYOUT SWITCHER, from the Mission Control design. Five
-              SHAPES rather than a pane count: two of them are asymmetric, and
-              a number cannot express "one wide one with the rest stacked
-              beside it". Picking one still FILLS it — empty panes take the
+          {/* #491 — THE LAYOUT SWITCHER IS THREE SHAPES, one per session
+              count, and the screen picks between them itself as sessions come
+              and go. It is still HERE because the auto-fit answers "how many
+              are open" and not "how many do I want to look at": pressing one
+              says the second thing, and it holds until the set of sessions
+              changes. Picking one still FILLS it — empty panes take the
               sessions already running on the host before any new one is
-              spawned, which is the rule the pane count had and the reason a
-              bigger layout does not strand claude sessions nobody is watching. */}
+              spawned, so a bigger shape does not strand claude sessions
+              nobody is watching. */}
           <span className="seg-control sm term-panes" role="tablist" aria-label="Terminal layout">
             {LAYOUT_META.map((l) => (
               <button key={l.key} role="tab" aria-selected={layout === l.key}
                 className={`seg-opt ${layout === l.key ? 'on' : ''}`}
-                title={`${l.name} — ${l.hint}. Empty panes fill from the sessions still running on the host, then with new ones.`}
+                title={`${l.name} — ${l.hint}. Empty panes fill from the sessions still running on the host, then with new ones; the shape follows the session count on its own until you press one.`}
                 onClick={() => void chooseLayout(l.key)}>
                 {l.icon}
               </button>
@@ -1476,13 +1509,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               // unmounting one would drop its socket and its scrollback, which
               // is the whole reason this component never unmounts either. Off
               // -screen panes are hidden, not destroyed.
-              // `lead` marks the FIRST pane on screen, which the 3-up layout
-              // gives the tall left column to. It has to be a class rather than
-              // :first-child, because off-screen panes stay in the DOM (they
-              // keep their sockets) and would win that selector while invisible.
+              // #491 — `lead` WENT WITH THE ASYMMETRIC LAYOUTS THAT READ IT.
+              // It marked slot 0 for the old columns/focus shapes, which gave
+              // that pane a tall or wide cell; the trio's odd cell is the
+              // THIRD pane, not the first, and it is placed by `data-slot`.
+              // A class nothing styles is a trap for whoever adds a shape next.
               return (
               <div key={s.id}
-                className={`term-pane${shown ? '' : ' off'}${s.id === active ? ' focused' : ''}${shown && slot === 0 ? ' lead' : ''}${overSlot === slot && shown ? ' dropping' : ''}`}
+                className={`term-pane${shown ? '' : ' off'}${s.id === active ? ' focused' : ''}${overSlot === slot && shown ? ' dropping' : ''}`}
                 style={shown ? { order: slot } : undefined}
                 data-slot={shown ? slot : undefined}
                 onDragOver={shown ? (e) => { e.preventDefault(); if (overSlot !== slot) setOverSlot(slot); } : undefined}
@@ -1577,7 +1611,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     title={s.tmux
                       ? 'Close this pane — the session keeps running on the host, re-attach it any time'
                       : 'Close this pane — the session ends with it'}
-                    onClick={(e) => { e.stopPropagation(); closeSession(s.id, { shrink: true }); }}
+                    onClick={(e) => { e.stopPropagation(); closeSession(s.id); }}
                     aria-label="Close pane">×</button>
                 </div>
                 <TermSession sess={s} visible={shown} focused={shown && s.id === active}

@@ -375,12 +375,20 @@ a { color: inherit; }
    everywhere, and a header that changed size between screens was the thing
    that made the app feel like several apps. */
 .topbar.dash { padding: 0 var(--space-6); }
-.brandmark { text-decoration: none; display: flex; align-items: center; gap: var(--space-4); flex: none; color: var(--text-primary); }
-.brandmark .sq {
-  width: 22px; height: 22px; border-radius: var(--radius-md); background: var(--action-primary);
-  display: inline-flex; align-items: center; justify-content: center; color: var(--white); flex: none;
+/* THE LOGO'S LOCKUP. The mark itself is components/Brandmark.tsx — this is the
+   arrangement only, and the gap is set inline there because it comes off the
+   mark's own grid (one plate-step, an eighth of the icon width) rather than
+   the spacing scale. The wordmark's tracking is the design's and is NOT
+   --tracking-tight: the name is set tighter than any heading in the app so
+   the five letters read as one object beside the plates. */
+.brandmark { text-decoration: none; display: flex; align-items: center; flex: none; color: var(--text-primary); }
+/* 4a's stacked lockup is centred — it exists for square slots (the splash,
+   an avatar, a tile), where a left edge would read as a mistake. */
+.brandmark.stacked { flex-direction: column; align-items: center; }
+.brandmark .word {
+  font: var(--weight-semibold) var(--text-md)/1 var(--font-sans);
+  letter-spacing: -0.035em;
 }
-.brandmark .word { font: var(--weight-semibold) var(--text-md)/1 var(--font-sans); }
 .crumb { display: flex; align-items: center; gap: var(--space-3); font: var(--type-caption); color: var(--text-tertiary); flex: none; min-width: 0; }
 .crumb .chev { font-size: 15px; color: var(--fainter); cursor: pointer; }
 .crumb .back { cursor: pointer; }
@@ -1272,7 +1280,7 @@ a.tab { display: inline-block; }
 
   /* phone pass: tighter chrome, scrollable tabs, roomier modals */
   .topbar .right { gap: 8px; }
-  .topbar.dash .brandmark .word { display: none; }  /* the sq mark carries the brand */
+  .topbar.dash .brandmark .word { display: none; }  /* the plates carry the brand */
   .btn-accent, .btn-repo { padding: 0 12px; font-size: 12.5px; }
   .tabs {
     gap: 18px; overflow-x: auto; -webkit-overflow-scrolling: touch;
@@ -2256,63 +2264,55 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
    layout with two ROWS would grow past the grid's own height by however much
    the canvas exceeded its share: the "slightly over" overflow. minmax(0, 1fr)
    removes the floor and makes the shares exact. */
-.term-grid.p1 { grid-template-columns: minmax(0, 1fr); }
-.term-grid.p2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-/* Three up is NOT three columns: at this width three abreast gives each one
-   too little to read. One tall pane on the left — the active session, since
-   the window starts there — with the other two stacked beside it. */
-.term-grid.p3 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-}
-.term-grid.p3 .term-pane.lead { grid-row: span 2; }
-.term-grid.p4 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-}
 
-/* ---- #487 · THE FIVE LAYOUTS, from the Mission Control design ----
-   The `p{n}` rules above are the pane COUNT and still carry `single`; these
-   are the SHAPES. Every track is minmax(0, 1fr) for the reason spelled out
-   above — a bare 1fr floors on xterm's canvas height and any two-row layout
-   then overflows its own grid.
+/* ---- #491 · THREE SHAPES, ONE PER SESSION COUNT ----
+   It was five (single/columns/2×2/six/focus) and a separate `p{n}` pane-count
+   family underneath them, which is two rules deciding one thing: the p3 rule
+   below gave the LEAD pane a tall left column, and the trio wants the narrow
+   one there instead — a pair that would have fought, silently, in whichever
+   order the file happens to be in. So the count classes are gone from the
+   grid's geometry (`p{n}` is still on the element, and is what the trio's
+   fallbacks read while a chosen shape is still filling itself).
 
    Panes are placed by `order`, set inline from the slot index, so a drag
-   rearranges them without any pane changing which grid AREA it belongs to.
-   That is what keeps `lead` meaningful: it is slot 0, not :first-child, and
-   off-screen panes stay in the DOM holding their sockets. */
+   rearranges them without any pane changing which grid AREA it belongs to —
+   except in the trio, which places by `data-slot` explicitly (see there). */
 .term-grid.lay-single { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-/* Main + stack: one wide pane down the left, the rest stacked beside it. The
-   1.7fr is the design's own ratio — enough that the main pane reads as the
-   one you are working in rather than as the widest of three. */
-.term-grid.lay-columns {
-  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-}
-.term-grid.lay-columns .term-pane.lead { grid-row: 1 / 3; }
-.term-grid.lay-grid {
+/* Side by side: two equal terminals, one row. Equal and not 1.7fr — with two
+   up, both are sessions you are working in; the asymmetry belonged to the
+   old three-across shape, where the wide one was the only readable pane. */
+.term-grid.lay-split {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
 }
-.term-grid.lay-six {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+/* THREE UP: THE NARROW ONE STICKS TO THE LEFT AND THE OTHER TWO DO NOT MOVE.
+   Going from two to three, the two terminals already on screen keep their
+   columns and the newcomer takes a slim column beside them, so the pane you
+   were reading is still where your eye left it. That is why this is the one
+   shape placed by `data-slot` rather than by `order`: slot 2 is the newest
+   pane (slots fill in order and the ones in use are kept), and it is the one
+   that has to land in column 1 while slots 0 and 1 stay in 2 and 3. `order`
+   cannot express that — it can only walk the panes across the tracks. */
+.term-grid.lay-trio {
+  grid-template-columns: minmax(0, 0.62fr) repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
 }
-/* Focus: one across the top, the rest small beneath. `1 / -1` spans whatever
-   the column count is, so this does not need to know it. */
-.term-grid.lay-focus {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 2.4fr) minmax(0, 1fr);
-}
-.term-grid.lay-focus .term-pane.lead { grid-column: 1 / -1; }
-/* Six-up and focus put a terminal in a third of the width — the chrome has to
-   give way before the terminal does, so the secondary furniture goes and what
-   is left gets smaller. The title never wraps: a two-line pane header eats the
-   canvas it labels. */
-.term-grid.lay-six .term-pane-title,
-.term-grid.lay-focus .term-pane:not(.lead) .term-pane-title { font-size: 10px; padding: 5px 7px; }
-.term-grid.lay-six .term-pane-title .where,
-.term-grid.lay-focus .term-pane:not(.lead) .term-pane-title .where { display: none; }
+.term-grid.lay-trio .term-pane[data-slot="2"] { grid-column: 1; grid-row: 1; }
+.term-grid.lay-trio .term-pane[data-slot="0"] { grid-column: 2; grid-row: 1; }
+.term-grid.lay-trio .term-pane[data-slot="1"] { grid-column: 3; grid-row: 1; }
+/* The trio while it is still filling — a hand-picked shape opens the sessions
+   it is short of, and until they land there is no slot 2 to hold the narrow
+   column. Without these the grid would draw an empty gutter down the left. */
+.term-grid.lay-trio.p1 { grid-template-columns: minmax(0, 1fr); }
+.term-grid.lay-trio.p2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.term-grid.lay-trio.p2 .term-pane[data-slot="0"] { grid-column: 1; }
+.term-grid.lay-trio.p2 .term-pane[data-slot="1"] { grid-column: 2; }
+/* A terminal in 0.62 of a third of the width has room for the canvas or for
+   the chrome around it, not both — so the secondary furniture goes and what
+   is left gets smaller. The title never wraps: a two-line pane header eats
+   the canvas it labels. */
+.term-grid.lay-trio .term-pane[data-slot="2"] .term-pane-title { font-size: 10px; padding: 5px 7px; }
+.term-grid.lay-trio .term-pane[data-slot="2"] .term-pane-title .where { display: none; }
 
 /* THE DROP TARGET. It lights the pane that will take the card BEFORE anything
    moves — a drag with no target says only that something is being dragged. */
@@ -2396,9 +2396,14 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 /* Multi-pane on a narrow screen stacks: three terminals abreast on a phone is
    three unusable terminals. */
 @media (max-width: 900px) {
-  .term-grid.p2, .term-grid.p3, .term-grid.p4 { grid-template-columns: 1fr; grid-template-rows: none; }
-  /* Stacked in one column, a tall lead would just be a double-height pane. */
-  .term-grid.p3 .term-pane.lead { grid-row: auto; }
+  .term-grid.lay-split, .term-grid.lay-trio,
+  .term-grid.lay-trio.p1, .term-grid.lay-trio.p2 {
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: none;
+  }
+  /* Stacked in one column there is no left edge to stick to, so the panes go
+     back to slot order — the narrow third would otherwise jump to the TOP of
+     the stack, above the session you were reading. */
+  .term-grid.lay-trio .term-pane[data-slot] { grid-column: 1; grid-row: auto; }
 }
 /* 25b — the head bar's spacer + the real lane count (#277) */
 .term-bar-gap { flex: 1; }
