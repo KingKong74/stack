@@ -56,6 +56,12 @@ try {
     runtimeArgv('gemini', { passthrough: ['--skip-trust'] }).args,
     ['run', 'gemini', '--api-key-env', 'OMNIROUTE_API_KEY', '--', '--skip-trust']);
 
+  check('codex: a base URL is passed only when overridden',
+    runtimeArgv('codex', { baseUrl: 'http://10.0.0.5:20128' }).args,
+    ['run', 'codex', '--api-key-env', 'OMNIROUTE_API_KEY', '--base-url', 'http://10.0.0.5:20128']);
+  check('codex: and is absent by default, so the two defaults cannot silently diverge',
+    runtimeArgv('codex').args.includes('--base-url'), false);
+
   // The credential invariant, asserted directly rather than left to review:
   // this is the line a well-meaning edit breaks first.
   for (const r of RUNTIMES) {

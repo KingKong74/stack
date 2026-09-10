@@ -6,6 +6,7 @@
 //
 //   stack tree [--repo <path>] [--json]        the branch navigator
 //   stack models [--json] [--check]            which alt AI providers have a key configured
+//   stack omniroute [runtimes|launch|setup]    the local AI gateway and the CLIs that run on it
 //   stack start-session [<slug>] [--item N]    start an automation session
 //   stack list-sessions [<slug>] [--limit N]   list recent automation sessions
 //   stack ui-smoke [--url] [--slug] [--json]   headless browser smoke pass over the UI (#291)
@@ -19,6 +20,7 @@ const { pathToFileURL } = require('node:url');
 const COMMANDS = {
   tree: { script: 'stack-tree.mjs', blurb: 'render the branch navigator tree' },
   models: { script: 'stack-models.mjs', blurb: 'which alternative AI providers have an API key configured (--json, --check)' },
+  omniroute: { script: 'stack-omniroute.mjs', blurb: 'the local AI gateway: status, runtimes, launch, setup (--json, --check)' },
   'start-session': { script: 'stack-sessions.mjs', fn: 'mainStart', blurb: 'start an automation session (▶ Run now, from the terminal)' },
   'list-sessions': { script: 'stack-sessions.mjs', fn: 'mainList', blurb: 'list recent automation sessions' },
   sessions: { script: 'stack-sessions.mjs', fn: 'mainList', blurb: 'alias for list-sessions' },

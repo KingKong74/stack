@@ -21,6 +21,12 @@
 //             without --check the exit code is always 0 — nothing configured
 //             yet is a state to report, not a failure
 //
+// #481 — ONE ROW IS NOT ABOUT A KEY. The OmniRoute gateway runs on this host, so
+// its row reports REACHABILITY and counts as configured when it answers, key or
+// no key. That is the right reading for --check, whose real question is "can
+// this host survive a usage limit": a host that can route can. The detail lives
+// in `stack omniroute`; this stays the one-screen answer.
+//
 // Zero dependencies.
 
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -29,7 +35,7 @@ import { statSync } from 'node:fs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const {
-  PROVIDERS, keySources, resolveProviderKey, loadPreferredProvider,
+  PROVIDERS, keySources, resolveProviderKey, loadPreferredProvider, probeOmniRoute,
 } = await import(pathToFileURL(join(HERE, '..', 'terminal', 'model-switch.mjs')).href);
 
 // statSync inside a try is existsSync-then-read without the race.
@@ -38,23 +44,34 @@ function pathExists(path) {
   catch { return false; }
 }
 
-function collect() {
+// ASYNC since #481: one entry is a gateway on this host, and for that one
+// "configured" is REACHABILITY rather than a key — the only honest way to ask
+// is to knock. Everything else in here is still a pure key lookup.
+async function collect() {
+  const gateway = await probeOmniRoute({ timeoutMs: 2500 });
   const providers = PROVIDERS.map((p) => {
     const { key, source } = resolveProviderKey(p.envKey);
+    // A keyless provider's key is optional and says nothing about whether it can
+    // take a session, so it does not decide `configured` — see the header of
+    // terminal/model-switch.mjs for why those are two questions and not one.
+    const configured = p.keyless ? gateway.reachable : key.length > 0;
     return {
       key: p.key,
       label: p.label,
       model: p.model,
       envKey: p.envKey,
-      configured: key.length > 0,
+      keyless: Boolean(p.keyless),
+      configured,
       source: key.length > 0 ? source : null,
       keyLength: key.length,
+      reachable: p.keyless ? gateway.reachable : null,
+      reason: p.keyless && !gateway.reachable ? gateway.reason : null,
     };
   });
   const sources = keySources().map((s) => ({ ...s, exists: pathExists(s.path) }));
   const preferred = loadPreferredProvider();
   const configuredCount = providers.filter((p) => p.configured).length;
-  return { providers, sources, preferred, configuredCount };
+  return { providers, sources, preferred, configuredCount, gateway };
 }
 
 function renderTable(state) {
@@ -70,6 +87,15 @@ function renderTable(state) {
       p.envKey.padEnd(20),
       p.model.padEnd(22),
     ].join(' ');
+    if (p.keyless) {
+      // Reachability, not a key — and the reason when it is not reachable, so a
+      // stopped gateway does not read as a broken install.
+      out.push(p.reachable
+        ? `${line} reachable · no key needed`
+        : `${line} unreachable — ${p.reason}`);
+      out.push(`${' '.repeat(2)}  see: stack omniroute`);
+      continue;
+    }
     out.push(p.configured
       ? `${line} ${p.source} · ${p.keyLength} chars`
       : `${line} ${status}`);
@@ -84,7 +110,7 @@ function renderTable(state) {
     ? `Preferred provider: ${state.preferred} — offered first when Claude hits a usage limit.`
     : 'No preferred provider saved yet — the web terminal will offer whichever is configured.');
 
-  if (state.providers.some((p) => !p.configured)) {
+  if (state.providers.some((p) => !p.configured && !p.keyless)) {
     out.push('');
     out.push('To add one, append a line to ~/.stack/env, e.g.:');
     out.push("  echo 'DEEPSEEK_API_KEY=your-key-here' >> ~/.stack/env");
@@ -107,7 +133,7 @@ export async function main(argv = []) {
     return 1;
   }
 
-  const state = collect();
+  const state = await collect();
   process.stdout.write(args.includes('--json')
     ? JSON.stringify(state, null, 2) + '\n'
     : renderTable(state) + '\n');

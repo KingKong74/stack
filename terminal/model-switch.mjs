@@ -252,6 +252,7 @@ export function providerEnv(providerKey) {
   if (!apiKey && !p.keyless) return null;
   if (p.keyless) {
     const model = resolveHostValue('OMNIROUTE_MODEL').key || p.model;
+    const contextTokens = resolveHostValue('OMNIROUTE_CONTEXT_TOKENS').key;
     return {
       ANTHROPIC_BASE_URL: omniRouteBaseUrl(),
       ANTHROPIC_AUTH_TOKEN: apiKey || 'omniroute-anonymous',
@@ -265,6 +266,14 @@ export function providerEnv(providerKey) {
       // ids starting claude*/anthropic*, so this surfaces whatever the gateway
       // has aliased into that shape and nothing else — harmless when it has not.
       CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1',
+      // Claude Code cannot read a real context window for an id it does not
+      // recognise, and a gateway combo is always such an id — it assumes 200k
+      // and auto-compacts there. That is right for the default combo (the
+      // gateway clamps it to 200k too) and WRONG in both directions the moment
+      // OMNIROUTE_MODEL pins something else: a 1M model gets compacted at a
+      // fifth of its window, a 32k one overflows. One knob, set only when the
+      // owner knows the answer, because a guess here is worse than the default.
+      ...(contextTokens ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: contextTokens } : {}),
       ANTHROPIC_API_KEY: '',
     };
   }

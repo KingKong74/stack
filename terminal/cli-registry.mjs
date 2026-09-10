@@ -180,7 +180,7 @@ export function telemetryBanner(key) {
 // Returns { bin, args } or { error } — never throws, and never a half-built
 // command, because a launcher that ships `omniroute run qwen` with no model
 // gets exit 2 from a process the reader did not start and cannot explain.
-export function runtimeArgv(key, { model = '', passthrough = [] } = {}) {
+export function runtimeArgv(key, { model = '', baseUrl = '', passthrough = [] } = {}) {
   const r = getRuntime(key);
   if (!r) return { error: `unknown runtime: ${key}` };
   const extra = Array.isArray(passthrough) ? passthrough.map(String) : [];
@@ -206,6 +206,10 @@ export function runtimeArgv(key, { model = '', passthrough = [] } = {}) {
   // key reaches the child through the environment and `ps` stays clean. That is
   // the same invariant stack-term.mjs keeps for a respawn.
   const args = ['run', r.target, '--api-key-env', 'OMNIROUTE_API_KEY'];
+  // Only when overridden. `omniroute run` already defaults to the same local
+  // port, so passing it unconditionally would bake Stack's default into every
+  // command line and hide the day the two defaults diverge.
+  if (baseUrl) args.push('--base-url', String(baseUrl));
   if (model) args.push('--model', String(model));
   if (extra.length) args.push('--', ...extra);
   return { bin: 'omniroute', args };

@@ -153,6 +153,16 @@ try {
   check('keyless: a configured key does NOT put it in availableProviders',
     availableProviders().map((p) => p.key), ['deepseek']);
 
+  // The context-window knob is absent unless set: Claude Code's own 200k
+  // assumption matches the default combo's clamp, and a guessed number would be
+  // wrong in one of the two directions for every model it is not.
+  writeFileSync(stackEnvPath, 'DEEPSEEK_API_KEY=sk-test-not-a-real-key\n', 'utf8');
+  check('keyless: no context-window override by default',
+    'CLAUDE_CODE_MAX_CONTEXT_TOKENS' in providerEnv('omniroute'), false);
+  writeFileSync(stackEnvPath, 'OMNIROUTE_CONTEXT_TOKENS=1000000\n', 'utf8');
+  check('keyless: OMNIROUTE_CONTEXT_TOKENS sets the window when the owner knows it',
+    providerEnv('omniroute')?.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '1000000');
+
   // The base URL override, so a gateway on another host is one line.
   writeFileSync(stackEnvPath, 'OMNIROUTE_BASE_URL=http://10.0.0.5:20128/\n', 'utf8');
   check('keyless: OMNIROUTE_BASE_URL overrides, trailing slash stripped',
