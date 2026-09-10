@@ -15,6 +15,23 @@
 //   stack term stack      claude in ~/stack (session stack-term-stack)
 //   stack term --safe …   without --dangerously-skip-permissions
 //   stack term --shell …  a plain shell instead of claude
+//   stack term --cli codex …   a DIFFERENT runtime, on the OmniRoute gateway (#481)
+//   stack term --cli claude    claude ON THE GATEWAY, which is NOT the same
+//                              session `stack term` gives you: bare, it runs on
+//                              your own subscription; --cli routes it through
+//                              OmniRoute to a free model. Both are wanted, and
+//                              the flag is the only thing that says which.
+//
+// --cli (#481) does NOT build its own command. It runs `stack omniroute launch`
+// inside the pane, and that is deliberate: tmux does not carry this process's
+// environment into a new session when a server is already running (verified —
+// the pane sees nothing), so the env has to be established INSIDE the pane. The
+// two ways to do that from out here are `new-session -e NAME=value`, which puts
+// every value in argv where `ps` shows it to every user on the box, and a shell
+// prelude that reads ~/.stack/env, which is the same leak wearing a hat.
+// Composing instead keeps the key out of argv entirely and keeps ONE
+// implementation of the env allowlist, the .env shadow and the telemetry banner
+// — all of it in scripts/stack-omniroute.mjs, already tested.
 //
 // --worktree (#229): a tree of ITS OWN instead of the shared checkout, so a
 // second interactive session in the same repo never fights the first one's
@@ -32,6 +49,7 @@ import { fileURLToPath } from 'node:url';
 import { tmuxAvailable, sessionArgv } from '../terminal/tmux-session.mjs';
 import { git, loadStackEnv } from '../hook/stack-post.mjs';
 import { worktreesRoot, worktreeKey, branchWorktree, worktreeAt, addWorktree } from './lib/worktree.mjs';
+import { RUNTIMES, getRuntime, runtimeArgv } from '../terminal/cli-registry.mjs';
 
 // POST /api/worktrees — a report, not a gate (CLAUDE.md "Fail-safe
 // direction": this call only RECORDS). An unreachable API or missing token
@@ -61,6 +79,10 @@ async function registerWorktree({ path, repo, branch, sessionName }) {
 export async function main(args = []) {
   const safe = args.includes('--safe');
   const shell = args.includes('--shell');
+  const cliIdx = args.indexOf('--cli');
+  const cli = cliIdx !== -1 ? String(args[cliIdx + 1] || '') : '';
+  const modelIdx = args.indexOf('--model');
+  const model = modelIdx !== -1 ? String(args[modelIdx + 1] || '') : '';
   const wtIdx = args.indexOf('--worktree');
   const worktree = wtIdx !== -1;
   // The label following --worktree, if any ("stack term stack --worktree
@@ -72,7 +94,11 @@ export async function main(args = []) {
     rawLabel = args[wtIdx + 1];
     labelIdx = wtIdx + 1;
   }
-  const dir = args.filter((a, i) => i !== labelIdx && !a.startsWith('--'))[0] || '';
+  // Values that FOLLOW a flag are not the directory argument, whatever the flag
+  // order. --worktree's label is excluded above; --cli and --model likewise, or
+  // `stack term --cli codex` would try to open ~/codex.
+  const valueIdx = new Set([labelIdx, cliIdx !== -1 ? cliIdx + 1 : -1, modelIdx !== -1 ? modelIdx + 1 : -1]);
+  const dir = args.filter((a, i) => !valueIdx.has(i) && !a.startsWith('--'))[0] || '';
 
   if (!tmuxAvailable()) {
     process.stderr.write('[stack term] tmux is not installed — install it or run claude directly.\n');
@@ -144,8 +170,41 @@ export async function main(args = []) {
     await registerWorktree({ path: wtPath, repo: cwd, branch, sessionName: name });
   }
 
-  const cmd = shell ? 'exec bash -l'
-    : `exec claude${safe ? '' : ' --dangerously-skip-permissions'}`;
+  // --cli composes rather than building its own command; see the header.
+  // The dispatcher is reached by absolute path because a tmux pane's PATH is
+  // not this process's, and a bare `stack` that resolves to nothing leaves an
+  // empty pane with no explanation.
+  let cmd;
+  if (cli) {
+    const r = getRuntime(cli);
+    if (!r) {
+      process.stderr.write(`[stack term] unknown runtime: ${cli}\n`
+        + `             known: ${RUNTIMES.map((x) => x.key).join(', ')}\n`);
+      return 1;
+    }
+    // Refuse HERE rather than inside a pane the caller then has to go and read.
+    const built = runtimeArgv(cli, { model });
+    if (built.error) {
+      process.stderr.write(`[stack term] ${built.error}\n`);
+      return 1;
+    }
+    const dispatcher = resolve(fileURLToPath(import.meta.url), '..', '..', 'stack');
+    const parts = [dispatcher, 'omniroute', 'launch', '--cli', r.key];
+    if (model) parts.push('--model', model);
+    // Single-quoted for sh, with any embedded quote closed and reopened. The
+    // whole string is interpolated into `/bin/bash -lc "…"` below, so a double
+    // quote here would end that string early.
+    cmd = `exec ${parts.map((a) => `'${String(a).replace(/'/g, "'\\''")}'`).join(' ')}`;
+  } else {
+    cmd = shell ? 'exec bash -l'
+      : `exec claude${safe ? '' : ' --dangerously-skip-permissions'}`;
+  }
+
+  // The stack-term- PREFIX is load-bearing and stays (the running-sessions strip
+  // and the host reapers both key off it), but the runtime goes in the NAME, so
+  // `tmux ls` does not show a codex session that reads as a claude one. Trimmed
+  // to the 64 chars listStackSessions' pattern accepts.
+  if (cli && cli !== 'claude') name = `${name}-${cli}`.slice(0, 75);
 
   process.stderr.write(`[stack term] session ${name} in ${sessionCwd} — detach with ctrl-b d, it keeps running\n`);
   const argv = sessionArgv(name, sessionCwd, `/bin/bash -lc "${cmd}"`);
