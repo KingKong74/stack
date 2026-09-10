@@ -79,13 +79,28 @@ export interface Bug {
 // ticked off by whoever builds them (the autopilot works them top-down).
 export interface PlanStep { text: string; done: boolean }
 
-// The desire tier (#227): how much the owner wants an item NEXT, deliberately
-// distinct from the priority bucket's sizing. '' = unranked and sorts last, so a
-// board nobody has ranked keeps its existing order everywhere.
-export type Tier = '' | 'S' | 'A' | 'B' | 'C';
-export const TIERS: Exclude<Tier, ''>[] = ['S', 'A', 'B', 'C'];
-export const TIER_RANK: Record<string, number> = { S: 0, A: 1, B: 2, C: 3 };
-export const tierRank = (t: string) => TIER_RANK[t] ?? 4;
+// A SPRINT (#477) — the box the backlog fills and the ONLY box the automation
+// touches. It replaced the desire tier (#227), which was a rank you assigned an
+// item; a sprint is a rank you give it by putting it somewhere, and its place
+// in the box IS its priority, top first.
+//
+// `status` carries the whole contract. At most one sprint per project is
+// 'active' and the DATABASE enforces that, not this type — so a client may
+// safely `find` the active one rather than reducing over candidates.
+export type SprintStatus = 'planned' | 'active' | 'done';
+export interface Sprint {
+  id: number;
+  name: string;
+  status: SprintStatus;
+  position: number;          // order of the boxes themselves, top to bottom
+  startedAt: string | null;  // ISO — stamped on start and KEPT past the finish
+  endedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+/** The one in progress, or null — which means the automation has nothing to do. */
+export const activeSprint = (list: Sprint[]): Sprint | null =>
+  list.find((s) => s.status === 'active') || null;
 
 export interface RoadmapItem {
   id: number;
@@ -121,9 +136,14 @@ export interface RoadmapItem {
   skipped: boolean;    // parked — planned, but not to be picked up yet
   skippedAt: string | null; // ISO — when it was parked; ages the Parked view (#247)
   risk: 'low' | 'normal' | 'high'; // graduated trust (#212): low auto-merges a green run
-  riskSource: 'human' | 'auto' | ''; // who set the tier (#262) — '' = the default nobody chose
-  riskReason: string;                // one line: why the auto tier is what it is ('' when none)
-  tier: Tier;          // desire tier (#227) — what the owner wants NEXT; '' = unranked (sorts last)
+  riskSource: 'human' | 'auto' | ''; // who set the level (#262) — '' = the default nobody chose
+  riskReason: string;                // one line: why the auto level is what it is ('' when none)
+  // #477 — the sprint this was dragged into. null = the BACKLOG, which is the
+  // default and the majority: an item is in a sprint only because somebody put
+  // it there. `sprintRank` is its place in that box, 0 = the top and the first
+  // thing the night takes, and it means NOTHING while sprintId is null.
+  sprintId: number | null;
+  sprintRank: number;
   plan: PlanStep[];    // the implementation plan ([] = none)
   updatedAt: string | null; // ISO — latest-first ordering in the archive
   agentProfile: string; // '' = the default executor; else the agent profile that should build it
@@ -292,7 +312,10 @@ export interface Activity {
 // ---- terminal "Jump back in" debrief (GET /api/projects/:slug/debrief) ----
 export interface DebriefBugTop { key: string; title: string; severity: Severity }
 export interface DebriefRoadmapItem {
-  id: number; title: string; bucket: Priority; tier: Tier; claimedBy: string;
+  id: number; title: string; bucket: Priority; claimedBy: string;
+  // #477 — the sprint's NAME rides this payload (and only this one) because
+  // the hook that reads it has no sprint list to resolve an id against.
+  sprintId: number | null; sprintName: string; inSprint: boolean;
 }
 export interface ProjectDebrief {
   slug: string;

@@ -162,11 +162,17 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
 - **Never start an item with `skipped: true`** — it's parked on purpose; the
   owner unparks it from the UI when it's back in play. (The Roadmap tab's Parked
   view ages every parked item and flags the stale ones, so nothing rots unseen.)
-- **Respect the desire tier.** Open items may carry `tier` — `S`/`A`/`B`/`C`,
-  the owner's ranking of what they want NEXT, deliberately separate from the
-  priority bucket's sizing. It is the primary sort of the run queue: work S before
-  A before B before C, and unranked items last. Never set or change a tier
-  yourself — it's the owner's ground truth for what matters.
+- **Only the sprint IN PROGRESS is yours to build.** Each project has at most
+  one sprint with `status: "active"` (they arrive on the project payload as
+  `sprints`), and an item carries `sprintId` and `sprintRank`. Work only items
+  whose `sprintId` is that sprint's id, **in `sprintRank` order, lowest first** —
+  the top of the box is what the owner wants built first. An item in no sprint,
+  or in a `planned` or `done` one, is not yours to start: nobody has committed
+  to it yet. If no sprint is active, there is nothing to build unattended.
+- **Never set or change `sprintId` or `sprintRank` yourself.** Which sprint work
+  belongs to, and its order inside one, is the owner's ground truth for what
+  matters — it is the one thing on a roadmap row that decides what the machine
+  does tonight. A new item you file is always born in the backlog.
 - **A claim is on the ITEM; the collision is on the FILE.** A claim says who
   owns a roadmap row, not who owns a file — two sessions in one checkout share
   a dirty tree, so git cannot tell their edits apart. If you are in a shared

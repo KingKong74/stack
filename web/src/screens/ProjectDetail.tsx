@@ -644,14 +644,16 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             the Auditor was its live session and went when the consoles did. */}
         {/* THE BOARD IS WIRED — the kit's BoardScreen on this project's own
             roadmap. It takes the flattened payload (memoised above, in payload
-            order, which `queueOrder` depends on), a re-read, and the item
-            modal, which is still the only writer of `tier` and of a human
-            `risk_source`. Its two sibling tabs, Backlog and Development, are
-            still mockups; Board.tsx's header lists the eight decisions the
-            wiring made and the one thing no browser can still do — give a
-            verdict. Roadmap is wired too (#472) and draws what this does not. */}
+            order, which `queueOrder` depends on), the project's SPRINTS from
+            that same payload (#477 — the boxes its Backlog tab fills, and the
+            one the runner reads), a re-read, and the item modal, which is still
+            the only writer of a human `risk_source`. Its Backlog tab is wired
+            too now; Development is the last mockup on this screen. Board.tsx's
+            header lists the decisions each wiring made and the one thing no
+            browser can still do — give a verdict. Roadmap is wired (#472) and
+            draws what this does not. */}
         {tab === 'roadmap' && (
-          <Board slug={slug} projectName={project.name} items={allRoadmap}
+          <Board slug={slug} projectName={project.name} items={allRoadmap} sprints={data.sprints}
             onRefresh={reread} highlightId={highlightId}
             onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
         )}

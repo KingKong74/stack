@@ -337,6 +337,15 @@ autopilotGlobal.delete('/schedule/:id', async (req, res) => {
 // POST /start — the Mission Control "Run now" button: queue a manual job.
 // { slug, itemId? }. Idempotent-ish: an already queued/claimed/running job for
 // the same project comes back instead of stacking a duplicate.
+//
+// THE SPRINT GATE (#477) DOES NOT APPLY HERE, and the line is worth stating
+// because two paths above it do apply it. What the sprint gates is the
+// automation CHOOSING work: the nightly fan-out and the plan sweep both scan a
+// board and decide for themselves what to spend on, so both are confined to the
+// sprint in progress. Run now and a calendar row are not that — each names one
+// item a human picked, which is the same commitment dragging it into the box
+// would have been. Refusing them would mean a human could not run their own
+// board without first opening a sprint for it.
 autopilotGlobal.post('/start', async (req, res) => {
   const b = req.body || {};
   const project = await projectBySlug(String(b.slug || ''));
@@ -693,10 +702,11 @@ autopilotGlobal.get('/next', async (req, res) => {
   // logic already applies with no runner change) and carries its own slice of
   // the night's token budget. The candidate pick is ONE aggregate query across
   // every automode project (never one query per project), windowed to the top
-  // 20 per project by the run queue's own order — tier first (S/A/B/C, then
-  // unranked last), then bucket (highest before high), then position/id — and
-  // filtered exactly like the runner's own `eligible()`: open, unclaimed, not
-  // parked, human-approved (or manual), inside the project's target area. The
+  // 20 per project by the run queue's own order — SPRINT RANK, top of the box
+  // first (#477), then bucket and position as tiebreaks — and filtered exactly
+  // like the runner's own `eligible()`: open, unclaimed, not parked,
+  // human-approved (or manual), inside the project's target area AND INSIDE
+  // THE SPRINT THAT IS IN PROGRESS. The
   // fan-out and the split are pure helpers (nightFanOut/splitNightBudget)
   // above; the unique partial index (now keyed on the item too) carries the
   // dedup, so re-polls stay free. A project with zero eligible items gets NO
@@ -710,24 +720,32 @@ autopilotGlobal.get('/next', async (req, res) => {
                row_number() OVER (
                  PARTITION BY p.id
                  ORDER BY
-                   CASE upper(COALESCE(r.tier, ''))
-                     WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END,
+                   r.sprint_rank,
                    CASE r.bucket WHEN 'highest' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
                    r.position, r.id
                ) AS rn
           FROM projects p
           JOIN roadmap_items r ON r.project_id = p.id
+          -- #477 — THE SPRINT GATE, and it is an INNER join on purpose. The
+          -- automation only ever touches the sprint that is in progress, so a
+          -- row in no sprint, or in a planned or finished one, is not a
+          -- candidate at all. A project between sprints therefore has zero
+          -- candidates and gets no nightly job, which is the same handling a
+          -- project with an empty board already gets.
+          JOIN sprints s ON s.id = r.sprint_id AND s.project_id = p.id AND s.status = 'active'
          WHERE p.automode AND p.deleted_at IS NULL
            AND NOT r.done AND NOT COALESCE(r.skipped, false)
            AND COALESCE(r.claimed_by, '') = ''
-           -- #469 — the two priorities that were must and should. NOT widened
-           -- to medium when MoSCoW became five levels: the migration kept every
-           -- project building exactly what it was building, and what the machine
-           -- works unattended is not a thing to change under a rename. Widening
-           -- it is one word here and one in the plan sweep below, and it is a
-           -- decision, not a tidy-up. (No backticks in here: this comment is
-           -- inside a JS template literal, and one ends the query mid-sentence.)
-           AND r.bucket IN ('highest', 'high')
+           -- #477 — THE BUCKET FILTER IS GONE, and its absence is the decision.
+           -- Until then this read bucket IN (highest, high), the two priorities
+           -- that had been must and should. Dragging a row into the sprint in
+           -- progress is now the commitment, and it is a stronger statement
+           -- than any priority: a medium item somebody put at the top of the
+           -- box is what they want built tonight, and a gate that silently
+           -- refused it would make the box a lie. Priority still ORDERS the
+           -- candidates below the sprint rank; it no longer excludes any.
+           -- (No backticks in here: this comment is inside a JS template
+           -- literal, and one ends the query mid-sentence.)
            -- #359's rule, not a copy of it. #266's fan-out query is newer than
            -- #359's branch, so it arrived spelling this out inline and became
            -- the fourth hand-rolled copy the moment the two merged.
@@ -798,11 +816,17 @@ autopilotGlobal.get('/next', async (req, res) => {
           WHERE p.automode AND p.deleted_at IS NULL
             AND EXISTS (
               SELECT 1 FROM roadmap_items r
+               -- #477 — the sweep is gated on the sprint in progress, exactly
+               -- like the pick above. The sweep SPENDS, unattended, and what it
+               -- spends on has to be the same set the night can then build:
+               -- planning the backlog ahead of time would burn tokens designing
+               -- work nobody has committed to, and the runner would filter every
+               -- one of those items back out.
+               JOIN sprints sp ON sp.id = r.sprint_id AND sp.project_id = p.id AND sp.status = 'active'
                WHERE r.project_id = p.id
                  AND NOT r.done
                  AND NOT COALESCE(r.skipped, false)
                  AND COALESCE(r.claimed_by, '') = ''
-                 AND r.bucket IN ('highest', 'high')   -- #469, see the pick above
                  AND jsonb_array_length(COALESCE(r.plan, '[]'::jsonb)) = 0
                  -- Fail safe (unattended spend, no human watching): without this,
                  -- an unapproved hook item alone stands a plan job up, and the

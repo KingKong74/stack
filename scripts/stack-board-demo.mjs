@@ -59,21 +59,21 @@ const AREA = 'Demo';
 // around it.
 const CARDS = [
   // --- To Do: nothing claimed, nothing built.
-  { title: 'Sidebar tree keyboard nav', bucket: 'medium', lane: 'planned', tier: 'A', estimate: 2 },
-  { title: 'Audit contrast on dark surfaces', bucket: 'medium', lane: 'planned', tier: 'B' },
+  { title: 'Sidebar tree keyboard nav', bucket: 'medium', lane: 'planned', estimate: 2 },
+  { title: 'Audit contrast on dark surfaces', bucket: 'medium', lane: 'planned' },
   { title: 'Split token files by concern', bucket: 'medium', lane: 'planned', estimate: 1 },
-  { title: 'Quarantine flaky checks', bucket: 'medium', lane: 'planned', tier: 'C', estimate: 3 },
+  { title: 'Quarantine flaky checks', bucket: 'medium', lane: 'planned', estimate: 3 },
   { title: 'Budget line on the usage chart', bucket: 'low', lane: 'planned' },
   { title: 'Print sheet geometry', bucket: 'low', lane: 'planned', estimate: 5 },
 
   // --- In Progress: claimed, nothing built yet.
-  { title: 'Row recycling on scroll', bucket: 'medium', lane: 'progress', tier: 'S', estimate: 3,
+  { title: 'Row recycling on scroll', bucket: 'medium', lane: 'progress', estimate: 3,
     branch: 'perf/9001-row-recycling-on-scroll' },
   { title: 'Second surface step for nested cards', bucket: 'medium', lane: 'progress',
     branch: 'ui/9002-second-surface-step' },
 
   // --- In Review: built and not yet verdicted (#374).
-  { title: 'Replace the legacy grey ramp', bucket: 'medium', lane: 'review', tier: 'A', estimate: 2,
+  { title: 'Replace the legacy grey ramp', bucket: 'medium', lane: 'review', estimate: 2,
     branch: 'refactor/9003-replace-legacy-grey-ramp',
     built: 'Swapped every --grey-* reference for the kit ramp; two rules kept their own tone and say why.' },
   { title: 'Extract the diff bar', bucket: 'medium', lane: 'review',
@@ -181,7 +181,6 @@ export async function main(argv = process.argv.slice(2)) {
       note: `${MARK} A dummy card for driving the board. Delete it, or run stack-board-demo.mjs --remove.`,
       bucket: c.bucket,
       area: AREA,
-      ...(c.tier ? { tier: c.tier } : {}),
     });
 
     // The state that derives the column. Parked and the estimate go on in the

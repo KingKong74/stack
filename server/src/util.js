@@ -45,8 +45,8 @@ export const PRIORITY_SHORT = {
   highest: 'Highest', high: 'High', medium: 'Medium', low: 'Low', lowest: 'Lowest',
 };
 
-// #262 — who is allowed to write the risk tier. ABSENT source = the modal, i.e.
-// a person, and a person's tier always wins. PRESENT but unrecognised takes the
+// #262 — who is allowed to write the risk level. ABSENT source = the modal, i.e.
+// a person, and a person's call always wins. PRESENT but unrecognised takes the
 // guarded 'auto' path: a machine typo must never be able to claim a row as
 // human-decided, because nothing can unclaim it afterwards.
 export const RISK_SOURCES = ['human', 'auto'];

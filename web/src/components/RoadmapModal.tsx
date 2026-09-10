@@ -13,27 +13,27 @@ import { Modal } from './Modal';
 // board's card picker writes `bucket` and is now its only writer, which is why
 // this modal no longer needs `initialPriority` at all.
 //
-// THE OTHER THREE HAVE NO WRITER LEFT IN ANY BROWSER, and that is a real
-// consequence rather than a tidy-up, so it is written down here once:
+// ONE OF THE FOUR IS SETTLED AND TWO ARE STILL LOOSE:
 //
-//  • `tier` (#227) is the PRIMARY sort of the overnight run queue — ahead of
-//    priority. This modal was its only surface, so stored tiers now stand
-//    still: the queue keeps ordering by them and nothing can re-rank one
-//    except `./stack` and the API.
+//  • `tier` (#227) WAS the primary sort of the overnight run queue, and #477
+//    retired the column outright rather than leave a stored rank nothing could
+//    re-decide. What ranks work now is the order of the SPRINT it was dragged
+//    into, on the board's Backlog tab — a writer in a browser, which is what
+//    this modal losing the field had cost it.
 //  • `risk` (#212/#262) decides whether a green overnight run merges ITSELF.
 //    A human `risk_source` could only be set here, so risk is now auto-only —
 //    the plan-time pre-pass writes it and nobody can overrule the pre-pass
 //    from a browser. `risk_source` still guards the write (an auto pass may
 //    only replace the NULL nobody chose), so nothing is at risk of being
-//    silently re-tiered; there is simply no longer a human in that loop.
+//    silently re-graded; there is simply no longer a human in that loop.
 //  • `claimed_by` (#277) is the branch claim. It was already gone from the
 //    board (#443) and this was the last writer, so a claim can be made and
 //    released only by a session or by the API.
 //
-// The ✧ assist still ANSWERS with a branch, a priority, a tier and a risk —
-// the route and `assistFields` in Settings are unchanged — and this modal now
-// drops all four on the floor. Settings still offers toggles for them, which
-// is the one loose end: they govern a fill that has nowhere to land.
+// The ✧ assist still ANSWERS with a branch, a priority and a risk — the route
+// and `assistFields` in Settings are unchanged — and this modal drops all
+// three on the floor. Settings still offers toggles for them, which is the one
+// loose end: they govern a fill that has nowhere to land.
 //
 // A stray click on the overlay (or Escape) with typed content calls onDismiss
 // with the fields so the caller can keep a draft; the explicit Cancel button
@@ -120,11 +120,11 @@ export function RoadmapModal({
       // fills gaps, it doesn't re-decide. The note is the exception by design:
       // it is the input, and tidying it is the feature.
       //
-      // #469 — `s.branch`, `s.priority`, `s.tier`, `s.tierSuggested` and
-      // `s.risk` are still ANSWERED by the route and are dropped here, because
-      // the fields they filled came off this modal. Dropped explicitly rather
-      // than by omission: the shape still carries them, and a later reader
-      // should see that ignoring them is a decision.
+      // #469 — `s.branch`, `s.priority` and `s.risk` are still ANSWERED by the
+      // route and are dropped here, because the fields they filled came off
+      // this modal. Dropped explicitly rather than by omission: the shape still
+      // carries them, and a later reader should see that ignoring them is a
+      // decision. (`s.tier` went with the column itself, in #477.)
       if (!title.trim()) setTitle(s.title);
       if (s.note) { setNote(s.note); requestAnimationFrame(growNote); }
       if (s.area && !area.trim()) setArea(s.area);

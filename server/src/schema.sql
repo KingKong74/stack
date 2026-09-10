@@ -224,12 +224,14 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS risk_reason TEXT;
 -- by a human (nothing else could have), so claim it as theirs before the first
 -- auto pass runs. Rows still on 'normal' stay NULL = unclaimed.
 UPDATE roadmap_items SET risk_source = 'human' WHERE risk_source IS NULL AND risk <> 'normal';
--- The desire tier (#227): S | A | B | C, NULL = unranked. Deliberately distinct
--- from the priority bucket — bucket is how big/necessary the work is, tier is how
--- much the owner wants it NEXT. It is the PRIMARY sort of the run queue, with
--- the bucket and position as tiebreaks and unranked items sorting last, so a
--- board nobody has ranked behaves exactly as it always did.
-ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS tier TEXT;
+-- THE DESIRE TIER (#227) IS GONE, and its absence is deliberate (#477). It was
+-- S | A | B | C with NULL = unranked, and it was the PRIMARY sort of the run
+-- queue. What replaced it is the SPRINT: a row's rank is its position inside
+-- the sprint it was dragged into, top to bottom, and the runner reads only the
+-- sprint that is in progress. Dropped rather than left in place, because a
+-- served column nothing writes is a second ranking waiting to disagree with
+-- the first.
+ALTER TABLE roadmap_items DROP COLUMN IF EXISTS tier;
 -- When the item was PARKED (#247). Stamped as `skipped` flips true, cleared as
 -- it flips false, so "parked 34 days" is the honest age of the park rather than
 -- of the last edit. NULL on a parked row = parked before this column existed;
@@ -425,16 +427,20 @@ UPDATE settings SET advisor_default_applied = true WHERE id AND NOT advisor_defa
 -- ✧ Fill from note (#131): a standing guidance line folded into the assist
 -- prompt, and which fields the assist is allowed to fill (title always is).
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS assist_guidance TEXT  NOT NULL DEFAULT '';
-ALTER TABLE settings ADD COLUMN IF NOT EXISTS assist_fields   JSONB NOT NULL DEFAULT '["title","note","area","lane","priority","tier","risk"]'::jsonb;
--- #298 — tier and risk join the assist catalogue. A fresh install gets them
--- from the column default above; a database written before they existed is
--- upgraded ONCE, guarded by its own flag, so a field switched off by hand in
--- Settings is not switched back on at every boot (same shape as tips_seeded).
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS assist_fields   JSONB NOT NULL DEFAULT '["title","note","area","lane","priority","risk"]'::jsonb;
+-- #298 — risk joins the assist catalogue. A fresh install gets it from the
+-- column default above; a database written before it existed is upgraded ONCE,
+-- guarded by its own flag, so a field switched off by hand in Settings is not
+-- switched back on at every boot (same shape as tips_seeded).
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS assist_tier_risk_applied BOOLEAN NOT NULL DEFAULT false;
 UPDATE settings
-   SET assist_fields = assist_fields || '["tier","risk"]'::jsonb
+   SET assist_fields = assist_fields || '["risk"]'::jsonb
  WHERE id AND NOT assist_tier_risk_applied;
 UPDATE settings SET assist_tier_risk_applied = true WHERE id AND NOT assist_tier_risk_applied;
+-- #477 — and loses 'tier' with the column. Unconditional and convergent: the
+-- catalogue key no longer exists, so a stored 'tier' is not a preference
+-- somebody set, it is a toggle for a field the route can no longer fill.
+UPDATE settings SET assist_fields = assist_fields - 'tier' WHERE assist_fields ? 'tier';
 
 -- Google Calendar sync (#222): OAuth2 credentials for one-way push of
 -- autopilot schedule rows to a GCal calendar. All four must be set for sync
@@ -1327,3 +1333,59 @@ DROP TABLE IF EXISTS workbench_cards CASCADE;
 DROP TABLE IF EXISTS notes CASCADE;
 ALTER TABLE settings DROP COLUMN IF EXISTS workbench_model;
 
+
+-- ---------------------------------------------------------------------------
+-- SPRINTS (#477) — the commitment surface, and the only thing the runner reads.
+--
+-- A sprint is a named, ordered box of board items with a STATUS: `planned` (a
+-- box being filled), `active` (the one in progress) or `done`. Three rules make
+-- it worth a table rather than a label:
+--
+--  1. AT MOST ONE SPRINT PER PROJECT IS ACTIVE, enforced by the partial unique
+--     index below and not by application code. "The automation only touches the
+--     sprint in progress" is only a meaningful sentence while "the sprint in
+--     progress" names exactly one row, and the place to guarantee that is the
+--     database — three separate packages decide what may run (the route, the
+--     dispatcher's SQL and the runner's own pick), and any of them could
+--     otherwise be looking at a different active sprint from the other two.
+--  2. ORDER INSIDE THE SPRINT IS THE PRIORITY, top to bottom. That is what
+--     replaced the desire tier: `roadmap_items.sprint_rank` is a dense
+--     ascending index within one sprint, rank 0 is the top of the box and the
+--     first thing the night takes. It is scoped to the SPRINT, unlike
+--     `position`, which is scoped to the bucket — the two are not
+--     interchangeable and neither is a fallback for the other.
+--  3. A SPRINT DOES NOT OWN ITS ITEMS. `sprint_id` is ON DELETE SET NULL, so
+--     deleting a sprint returns its items to the backlog rather than taking a
+--     night's committed work with it. A sprint is a decision about work, not
+--     the work.
+CREATE TABLE IF NOT EXISTS sprints (
+  id         SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  -- planned | active | done. No 'cancelled': a sprint nobody ran is deleted,
+  -- and its items go back to the backlog by rule 3 above.
+  status     TEXT NOT NULL DEFAULT 'planned',
+  -- Order of the sprint boxes themselves on the backlog screen, top to bottom.
+  position   INTEGER NOT NULL DEFAULT 0,
+  -- Stamped as the sprint is started and finished. Both NULL on a planned one;
+  -- `started_at` survives the finish, so a done sprint can say how long it ran.
+  started_at TIMESTAMPTZ,
+  ended_at   TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Rule 1. Partial, so any number of planned and done sprints coexist.
+CREATE UNIQUE INDEX IF NOT EXISTS sprints_one_active_idx
+  ON sprints (project_id) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS sprints_project_idx ON sprints (project_id, position, id);
+
+-- Which sprint a board item was dragged into, and where in it. NULL = the
+-- backlog, which is the default and the majority: an item is in a sprint only
+-- because somebody put it there, and that act is the whole signal.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS sprint_id INTEGER
+  REFERENCES sprints(id) ON DELETE SET NULL;
+-- Rule 2. Meaningless while `sprint_id` is NULL and deliberately not NULLable:
+-- a rank of 0 on a backlog row is not a claim about anything, and a nullable
+-- integer here would have every sort site writing its own COALESCE.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS sprint_rank INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS roadmap_sprint_idx ON roadmap_items (sprint_id, sprint_rank, id);

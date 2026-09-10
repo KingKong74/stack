@@ -40,6 +40,7 @@ const {
   slipOf, layoutLane, scopeTotals, defaultLen, DUR_OPTIONS, rolledSched, isRolled,
   newItemSched,
   listKeyOf, inCycle, areaMatches, horizonOf, UNALLOCATED,
+  queueOrder, inActiveSprint, bucketRank,
 } = await import(planUrl.href);
 
 // A Monday, which is what a project's week zero is. Several tests below read a
@@ -56,7 +57,7 @@ function item(over = {}) {
     source: 'manual', reviewed: true, claimedBy: '', area: 'editor', builtNote: '',
     reviewTag: '', reviewTags: [], refineNote: '', reviewShelved: false,
     skipped: false, skippedAt: null, risk: 'normal', riskSource: '', riskReason: '',
-    tier: '', plan: [], updatedAt: null, agentProfile: '',
+    sprintId: null, sprintRank: 0, plan: [], updatedAt: null, agentProfile: '',
     parentId: null, sched: null, baseline: null, labels: [], listKey: '',
     archived: false, estimate: null,
     ...over,
@@ -880,4 +881,57 @@ test('weekNo is 1-based, so wk 1 is the first week and not the zeroth', () => {
 test('the window opens around now rather than at week zero', () => {
   const v = viewAround(50 * MIN_PER_DAY);
   assert.ok(inView(50 * MIN_PER_DAY, v));
+});
+
+// --- the run queue's order (#477) --------------------------------------------
+//
+// THE CLIENT TWIN of the runner's own sort and of the server's fan-out ORDER
+// BY. No package can import another, so this is the third spelling of one
+// ordering and these are what keep it honest.
+
+test('the sprint in progress leads, in its own order, and it outranks the priority', () => {
+  const a = item({ title: 'top of the box', bucket: 'lowest', sprintId: 7, sprintRank: 0 });
+  const b = item({ title: 'below it', bucket: 'highest', sprintId: 7, sprintRank: 1 });
+  const c = item({ title: 'uncommitted', bucket: 'highest' });
+  assert.deepEqual(
+    [c, b, a].sort(queueOrder(7)).map((i) => i.title),
+    ['top of the box', 'below it', 'uncommitted'],
+    'a lowest at the top of the running sprint goes before a highest nobody committed to');
+});
+
+// `sprintRank` is 0 on EVERY backlog row. An unguarded compare would therefore
+// float the whole backlog above committed work on the strength of a default,
+// which is the one way this comparator can be quietly wrong.
+test('a rank means nothing outside the sprint in progress', () => {
+  const backlog = item({ title: 'backlog', bucket: 'lowest', sprintId: null, sprintRank: 0 });
+  const planned = item({ title: 'planned box', bucket: 'lowest', sprintId: 8, sprintRank: 0 });
+  const running = item({ title: 'running box', bucket: 'lowest', sprintId: 7, sprintRank: 5 });
+  assert.deepEqual(
+    [backlog, planned, running].sort(queueOrder(7)).map((i) => i.title)[0],
+    'running box',
+    'rank 5 in the running sprint still beats rank 0 in a box nobody started');
+  assert.equal(inActiveSprint(planned, 7), false, 'a planned box is not the sprint in progress');
+  assert.equal(inActiveSprint(running, 7), true);
+});
+
+// A project between sprints is a real state, and on the BOARD it is not an
+// empty one — only the runner reads no active sprint as nothing to do. Here it
+// degrades to a plain priority ordering.
+test('no sprint in progress leaves a plain priority ordering', () => {
+  const rows = [
+    item({ title: 'low', bucket: 'low' }),
+    item({ title: 'highest', bucket: 'highest' }),
+    item({ title: 'ranked in a planned box', bucket: 'lowest', sprintId: 8, sprintRank: 0 }),
+  ];
+  assert.deepEqual(
+    rows.sort(queueOrder(null)).map((i) => i.title),
+    ['highest', 'low', 'ranked in a planned box']);
+  assert.equal(inActiveSprint(rows[0], null), false, 'null means nothing is in progress, never "everything is"');
+});
+
+test('the bucket rank is the five keys, and an unknown one sorts last', () => {
+  assert.deepEqual(
+    ['highest', 'high', 'medium', 'low', 'lowest'].map(bucketRank), [0, 1, 2, 3, 4]);
+  assert.equal(bucketRank('must'), 4, 'MoSCoW is gone; its keys must not silently score first');
+  assert.equal(bucketRank(''), 4);
 });

@@ -90,8 +90,19 @@ export function roadmapItemShape(row) {
     skippedAt: row.skipped_at || null, // ISO — when it was parked; ages the Parked view (#247)
     risk: row.risk || 'normal',        // graduated trust (#212): low auto-merges a green run
     riskSource: row.risk_source || '', // 'human' | 'auto' | '' — '' = the default nobody chose (#262)
-    riskReason: row.risk_reason || '', // one line: why the auto tier is what it is
-    tier: row.tier || '',              // desire tier S|A|B|C ('' = unranked, sorts last) — #227
+    riskReason: row.risk_reason || '', // one line: why the auto level is what it is
+    // THE SPRINT (#477), which is what replaced the desire tier. `sprintId`
+    // null = the BACKLOG, and that is the majority state: an item is in a
+    // sprint only because somebody dragged it there. `sprintRank` is its place
+    // in that box top-to-bottom (0 = the top, the first thing the night takes)
+    // and means NOTHING while sprintId is null — read the pair, never the rank
+    // alone. The NAME and STATUS are deliberately NOT here: every screen that
+    // draws a sprint chip has already loaded the project's sprints to draw the
+    // boxes themselves, so it resolves the id against that one list — and a
+    // name carried on the item as well would be a second copy, stale from the
+    // moment somebody renames a sprint, on the very screen that renamed it.
+    sprintId: row.sprint_id ?? null,
+    sprintRank: Number(row.sprint_rank) || 0,
     plan: cleanPlan(row.plan),         // implementation steps [{text, done}] (#75)
     agentProfile: row.agent_profile || '', // '' = default executor; else the agent_profiles key to build this
     updatedAt: row.updated_at || null, // ISO — the archive sorts latest-touched first
@@ -254,7 +265,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, checks, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, agents, since }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, checks, sprints, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, agents, since }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
@@ -273,6 +284,13 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cade
     // the missing-row default means server-side too.
     agents: agents || {},
     liveBranches: liveBranches || [],         // branches with a live session now (board lock, BUG-2)
+    // #477 — the project's SPRINTS, in board order, riding the one payload
+    // every tab already renders from. The board needs them to draw its boxes,
+    // and the host runner needs the ACTIVE one to know what it may touch at
+    // all; both were otherwise a second fetch against a list that has to agree
+    // with the items in this very response. At most one carries status
+    // 'active', which the database guarantees and no reader should re-check.
+    sprints: sprints || [],
     // The Monday the Roadmap timeline counts weeks from. null = no start date,
     // which the calendar view states rather than inventing one.
     weekZero: p.week_zero ? new Date(p.week_zero).toISOString().slice(0, 10) : null,
@@ -359,5 +377,26 @@ export function runCore(r) {
     // '' means no auto-verdict was given, which is not the same as one refused.
     autoVerdict: r.auto_verdict || '',
     ...agentReads(r),
+  };
+}
+
+// A SPRINT ROW (#477) — the box the backlog draws and the only box the runner
+// reads. `status` is the whole contract: exactly one 'active' row per project
+// (the partial unique index in schema.sql enforces it, not this file), and
+// 'active' is the only status the automation looks at.
+//
+// NO ITEM COUNT. A sprint's membership lives on the items, which arrive in the
+// same payload, so a count served here would be a second answer to "what is in
+// this sprint" that the screen could draw beside the first and disagree with.
+export function sprintShape(row) {
+  return {
+    id: row.id,
+    name: row.name || '',
+    status: row.status || 'planned',    // planned | active | done
+    position: Number(row.position) || 0,
+    startedAt: row.started_at || null,   // stamped on start, KEPT past the finish
+    endedAt: row.ended_at || null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
   };
 }

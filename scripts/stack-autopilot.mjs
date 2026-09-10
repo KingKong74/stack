@@ -520,15 +520,21 @@ const eligible = (targetArea) => (it) =>
   !it.done && !it.skipped && !it.claimedBy && (ALLOW_UNAPPROVED || isApproved(it))
   && (!targetArea || (it.area || '') === targetArea)
   && (KIND !== 'refine' || !!it.refineNote);
-// The desire tier (#227): S/A/B/C is the owner's ranking of what they want
-// next, sorted ahead of the priority bucket. Unranked = 4, so it lands after
-// every ranked item and a board nobody has tiered is untouched.
-const TIER_RANK = { S: 0, A: 1, B: 2, C: 3 };
 // #469 — the five priority keys the payload groups by, in the payload's own
 // order. It was MoSCoW's four; a runner still walking four does not error, it
 // silently stops picking up a whole priority's worth of work.
+//
+// WHICH IS EXACTLY WHAT HAPPENED, and #477 found it. The pick below read
+// `detail.roadmap.must` and `.should` — MoSCoW's key names — for four months
+// after #469 renamed them, so every unattended night that was not driven by an
+// explicit agenda flattened two undefined arrays and reported "nothing to do".
+// It is the strongest argument in this file for the constant above: a key list
+// spelled once is a key list that gets renamed once.
 const BUCKETS = ['highest', 'high', 'medium', 'low', 'lowest'];
-const tierRank = (t) => TIER_RANK[String(t || '').toUpperCase()] ?? 4;
+// The bucket's own rank, for the tiebreak below the sprint's order. The desire
+// tier (#227) used to lead this comparison and is gone (#477) — see the pick.
+const BUCKET_RANK = { highest: 0, high: 1, medium: 2, low: 3, lowest: 4 };
+const bucketRank = (b) => BUCKET_RANK[String(b || '')] ?? 4;
 let tokensSpent = 0;
 let costSpent = 0;
 // The branch resolveRunBranch most recently resolved, so a run that throws
@@ -1530,13 +1536,26 @@ try {
         }
       }
       const blockedAreas = new Set();
-      item = [...(detail.roadmap?.must || []), ...(detail.roadmap?.should || [])]
-        // The desire tier (#227) is the PRIMARY sort — what the owner actually
-        // wants next beats the priority. Unranked items keep their old place
-        // (tier rank 4, after every ranked one), and the array arrives already
-        // ordered must-then-should within bucket position, so a stable sort by
-        // tier alone leaves an unranked board picking exactly as it always did.
-        .sort((a, b) => tierRank(a.tier) - tierRank(b.tier))
+      // #477 — THE SPRINT IN PROGRESS IS THE WHOLE CANDIDATE SET.
+      //
+      // The automation only ever touches the sprint that is running, so this is
+      // a filter and not a preference: an item in no sprint, or in one that is
+      // planned or finished, is not a candidate at all. No active sprint means
+      // there is nothing to do tonight, which is a real and deliberate state —
+      // it is how a project is put down between cycles — and it is reported as
+      // such below rather than quietly falling back to the whole board.
+      //
+      // This mirrors the server's own fan-out gate in routes/autopilot.js, and
+      // the two cannot import each other. Change one, change the other.
+      const sprint = (detail.sprints || []).find((sp) => sp.status === 'active');
+      item = (!sprint ? [] : BUCKETS.flatMap((b) => detail.roadmap?.[b] || [])
+        .filter((it) => it.sprintId != null && String(it.sprintId) === String(sprint.id)))
+        // THE ORDER INSIDE THE BOX IS THE PRIORITY, top first — that is what
+        // replaced the desire tier, and it is the owner's own hand rather than
+        // a rank derived from anything. Bucket is the tiebreak for two rows
+        // somehow sharing a rank, and the payload's own order (which arrives
+        // sorted bucket-then-position) is the last, via a stable sort.
+        .sort((a, b) => (a.sprintRank ?? 0) - (b.sprintRank ?? 0) || bucketRank(a.bucket) - bucketRank(b.bucket))
         .filter((it) => !attempted.has(it.id))
         // A plan night wants the items still missing a design (#219).
         .filter((it) => !PLAN_ONLY || !(it.plan?.length))
@@ -1549,6 +1568,10 @@ try {
           log(`item #${it.id} "${it.title}" skipped — the "${area}" lane is held by ${holder}`);
           return false;
         });
+      if (!item && !sprint && n === 0) {
+        log(`no sprint is in progress on ${SLUG} — the automation only builds the sprint in progress, so there is nothing to do tonight.`);
+        break;
+      }
       if (!item && targetArea && n === 0) log(`(target area "${targetArea}" — items outside it are ignored)`);
       if (!item && blockedAreas.size) {
         log(`every remaining eligible item is waiting on an occupied area lane (${[...blockedAreas].join(', ')}) — nothing more to run tonight.`);
@@ -1557,7 +1580,7 @@ try {
     }
     if (!item) {
       log(n === 0
-        ? `no eligible ${PLAN_ONLY ? 'plan-less ' : ''}must/should item on ${SLUG} — nothing to do tonight.`
+        ? `no eligible ${PLAN_ONLY ? 'plan-less ' : ''}item in the sprint in progress on ${SLUG} — nothing to do tonight.`
         : 'no more eligible items — night complete.');
       break;
     }

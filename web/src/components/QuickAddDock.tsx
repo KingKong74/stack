@@ -31,13 +31,14 @@ import {
 // ✧ FILL FROM NOTE — the CURATOR's `assist`, the same op and the same route the
 // Roadmap modal's ✧ uses. Same rule too: it fills what you left EMPTY and never
 // re-decides what you typed. What it does NOT take here is as deliberate as
-// what it does. `tier` is the run queue's own rank and this composer has no
-// control for it, and `risk` sent from a form the human did not touch would be
-// credited as a HUMAN decision (`risk_source`, #262) and lock out the plan-time
-// pre-pass — so a quick add leaves both unset and the full modal keeps being
-// where they are decided. `area` it does take, and shows as a chip you can
-// drop: untagged work is in no lane, which is the population that quietly
-// never runs.
+// what it does. `risk` sent from a form the human did not touch would be
+// credited as a HUMAN decision (`risk_source`, #262) and lock out the
+// plan-time pre-pass, so a quick add leaves it unset and the full modal keeps
+// being where it is decided. A SPRINT it cannot set at all (#477): a new row is
+// born in the backlog by rule, and a composer that could file straight into the
+// box in progress would let a typed title commission tonight's work. `area` it
+// does take, and shows as a chip you can drop: untagged work is in no lane,
+// which is the population that quietly never runs.
 //
 // Readiness comes from `GET /api/agents/state` — the same map a project tab
 // reads, so this cannot grow a second opinion about whether an agent may act.
@@ -164,8 +165,8 @@ export function QuickAddDock() {
       if (s.note) { setNote(s.note); requestAnimationFrame(growNote); }
       if (s.priority) setPriority(s.priority);
       if (s.area) setArea(s.area);
-      // s.branch / s.tier / s.tierSuggested / s.risk are deliberately dropped
-      // here — see the header. They are the full modal's to decide.
+      // s.branch and s.risk are deliberately dropped here — see the header.
+      // They are the full modal's to decide.
     } catch (e) {
       setAssistErr((e as Error)?.message || 'The Curator could not answer.');
     } finally {

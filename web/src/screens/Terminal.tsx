@@ -31,7 +31,7 @@ import { b64encode, b64decode, GIT_BASH_THEME } from '../lib/termWire';
 // `claude · stack` hides the one fact that distinguishes it from the four
 // beside it, so the name is parsed back.
 import { ConfirmModal } from '../components/ConfirmModal';
-import { tierRank, TIERS, type Roadmap, type RoadmapItem, type Tier } from '../types';
+import { type Roadmap, type RoadmapItem } from '../types';
 import { flatRoadmap } from '../lib/plan';
 import { TopBar } from '../components/TopBar';
 
@@ -131,22 +131,31 @@ const RUNBOOK: { name: string; items: (TermCmd & { why: string })[] }[] = [
     ],
   },
 ];
-// The rail's DO NEXT list mirrors the runner's own pick: tier first (#227),
-// then must before should, then board order — and never offers work that is
-// parked or already claimed by a branch. Same rules as the Plan room, applied
-// to one project, so what the rail hands you is what the night would take.
-const BUCKET_RANK: Record<string, number> = { must: 0, should: 1, could: 2, wont: 3 };
+// The rail's DO NEXT list mirrors the runner's own pick: THE SPRINT IN PROGRESS
+// first and in its own top-to-bottom order (#477), then priority, then board
+// order — and it never offers work that is parked or already claimed by a
+// branch. Same rules as the runner, applied to one project, so what the rail
+// hands you is what the night would take.
+//
+// The bucket keys were MoSCoW's four until #469 and this table was not updated
+// with them, so every bucket scored 9 and the tiebreak did nothing for months.
+// It is five names now, matching `PRIORITY_META`.
+const BUCKET_RANK: Record<string, number> = { highest: 0, high: 1, medium: 2, low: 3, lowest: 4 };
 // #299 — the rail's sentinel for "no area tag". The leading space can never
 // collide with a real area (areas are trimmed + lowercased), the same trick
 // the board's Uncategorised tab uses.
 const RAIL_UNTAGGED = ' untagged';
-function nextUpItems(roadmap: ProjectDetailData['roadmap']): RoadmapItem[] {
-  const all = flatRoadmap(roadmap);
-  return all
+function nextUpItems(roadmap: ProjectDetailData['roadmap'], activeId: number | null): RoadmapItem[] {
+  const inSprint = (it: RoadmapItem) => activeId !== null && it.sprintId === activeId;
+  return flatRoadmap(roadmap)
     .map((it, i) => ({ it, i }))
     .filter(({ it }) => !it.done && !it.skipped && !it.claimedBy)
     .sort((a, b) =>
-      tierRank(a.it.tier) - tierRank(b.it.tier)
+      // A rank only means something inside the sprint in progress: it is 0 on
+      // every backlog row, so comparing it unguarded would float the whole
+      // backlog above committed work on the strength of a default.
+      (Number(inSprint(b.it)) - Number(inSprint(a.it)))
+      || (inSprint(a.it) && inSprint(b.it) ? a.it.sprintRank - b.it.sprintRank : 0)
       || (BUCKET_RANK[a.it.bucket] ?? 9) - (BUCKET_RANK[b.it.bucket] ?? 9)
       || a.i - b.i)
     .map(({ it }) => it);
@@ -160,7 +169,7 @@ function itemsBrief(items: RoadmapItem[]): string {
     ? 'Work this roadmap item:'
     : `Work these ${items.length} roadmap items, in this order:`;
   const body = items.map((it) => {
-    const meta = [it.bucket, it.tier ? `tier ${it.tier}` : '', it.area].filter(Boolean).join(' · ');
+    const meta = [it.bucket, it.area].filter(Boolean).join(' · ');
     const note = it.note ? `\n    ${it.note.trim().replace(/\s*\n\s*/g, ' ').slice(0, 400)}` : '';
     const plan = it.plan.length
       ? `\n    Plan:\n${it.plan.map((s, i) => `      ${s.done ? '[x]' : '[ ]'} ${i + 1}. ${s.text}`).join('\n')}`
@@ -857,18 +866,27 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     return flatRoadmap(r).filter((it) => !it.done);
   }, [board]);
   // Everything the rail could hand over, in the runner's own order.
-  const nextAll = useMemo(() => (board ? nextUpItems(board.roadmap) : []), [board]);
+  // The sprint in progress, or null. Null is the state where the automation has
+  // nothing to take, and the rail says so rather than drawing a queue that
+  // looks like tonight's work.
+  const activeSprintId = useMemo(
+    () => board?.sprints.find((sp) => sp.status === 'active')?.id ?? null, [board]);
+  const nextAll = useMemo(
+    () => (board ? nextUpItems(board.roadmap, activeSprintId) : []), [board, activeSprintId]);
   // #299, reshaped this turn — the rail offers the same list two ways, and
   // NEITHER of them reorders it, so what the rail hands over is still what the
   // night would take. The old version stacked three rows of filter chips and a
   // fifteen-option tab select above two rows of list; both layouts below spend
   // that chrome on the list instead:
-  //   tiers  (1a) the TIER is the layout — one lane per tier, each showing its
-  //          first two rows — and the tab narrows to one scope behind a single
-  //          control. Nothing to read to know the shape of the queue.
+  //   sprints (1a) the SPRINT is the layout — one lane per box, the one in
+  //          progress first, each showing its first two rows — and the tab
+  //          narrows to one scope behind a single control. Nothing to read to
+  //          know the shape of the queue. It was one lane per desire TIER until
+  //          #477 retired that column; the shape is the same and the lanes now
+  //          mean something the runner actually acts on.
   //   upnext (1b) ONE item is promoted, ready to send in a press; everything
-  //          else is reached by typing (`tier:a`, `tab:polaris`, free text) and
-  //          the tier groups fold away.
+  //          else is reached by typing (`sprint:...`, `tab:polaris`, free text)
+  //          and the sprint groups fold away.
   // Which one is on screen is device-local (viewPrefs.railStyle).
   const railStyle = viewPrefs.railStyle;
   const [railArea, setRailArea] = useState('');          // '' = every tab
@@ -877,7 +895,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [laneOpen, setLaneOpen] = useState<string[]>([]); // 1a — lanes past their first two
   const [railQuery, setRailQuery] = useState('');        // 1b — the typed filter
   const [bulk, setBulk] = useState(false);               // 1b — tick-several mode
-  const [tierShut, setTierShut] = useState<string[]>([]); // 1b — folded tier groups
+  const [laneShut, setLaneShut] = useState<string[]>([]); // 1b — folded sprint groups
   // 1b — which item is promoted, and the ones you have waved past. Both are
   // ways of LOOKING at the queue: skipping changes nothing on the board (the
   // runner's order is unmoved), it just asks the rail for the next one down.
@@ -891,7 +909,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   useEffect(() => {
     setRailArea(''); setRailRisk(''); setRailQuery(''); setPicked([]);
-    setLaneOpen([]); setPromoted(null); setPassed([]);
+    setLaneOpen([]); setLaneShut([]); setPromoted(null); setPassed([]);
   }, [projectSlug]);
   // The tabs the rail can offer, counted over what is actually handable.
   const railAreas = useMemo(() => {
@@ -903,18 +921,50 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     return [...seen.entries()].sort((a, b) =>
       (a[0] === RAIL_UNTAGGED ? 1 : 0) - (b[0] === RAIL_UNTAGGED ? 1 : 0) || a[0].localeCompare(b[0]));
   }, [nextAll]);
-  const railTierCount = (t: Tier) => nextAll.filter((it) => it.tier === t).length;
   const railRiskCount = (r: 'low' | 'high') => nextAll.filter((it) => it.risk === r).length;
-  // Lanes and groups run S → A → B → C → unranked, the run queue's own order
-  // (tierRank sorts '' last), so reading the rail top to bottom reads the queue.
-  const LANES: Tier[] = [...TIERS, ''];
-  const laneKey = (t: Tier) => t || 'none';
-  const laneName = (t: Tier) => (t ? `tier ${t}` : 'unranked');
 
-  // ---- 1a: the tier stack ----
-  // The scope: a tab, a risk class, or both. Tier is deliberately NOT one of
-  // them here — it is the shape of the list, so scoping by it would be asking
-  // the same question twice.
+  // THE LANES ARE THE SPRINTS (#477), in the order the payload serves them —
+  // and the one IN PROGRESS is hoisted to the top whatever its position, because
+  // reading the rail top to bottom has to read the queue and that box is the
+  // only one the night takes from. The backlog is the last lane and is always
+  // drawn: it is where everything unlanded sits, and a rail that hid it would
+  // make a project between sprints look empty rather than uncommitted.
+  //
+  // A `null` lane id is the backlog. Finished sprints are not lanes at all —
+  // nothing in one is handable work.
+  type Lane = { id: number | null; name: string; active: boolean };
+  const LANES: Lane[] = useMemo(() => {
+    const live = (board?.sprints || []).filter((sp) => sp.status !== 'done');
+    const ordered = [...live].sort((a, b) =>
+      (Number(b.status === 'active') - Number(a.status === 'active')) || a.position - b.position || a.id - b.id);
+    return [
+      ...ordered.map((sp) => ({ id: sp.id, name: sp.name, active: sp.status === 'active' })),
+      { id: null, name: 'backlog', active: false },
+    ];
+  }, [board]);
+  const laneKey = (id: number | null) => (id === null ? 'backlog' : String(id));
+  /** The lane an item is in, named — for a chip's tooltip. */
+  const laneNameOf = (it: RoadmapItem) =>
+    (LANES.find((ln) => (it.sprintId ?? null) === ln.id)?.name
+      // A row in a FINISHED sprint is not in any lane: finished boxes are not
+      // drawn, so `find` misses and the honest answer is the sprint's absence
+      // from the queue rather than a name that appears nowhere on screen.
+      ?? (it.sprintId === null ? 'backlog' : 'a finished sprint'));
+  /** Two characters for the grade chip. The rail is a narrow column and a
+   *  sprint's name is not: the initials of the first two words are what fits,
+   *  and the tooltip carries the name. `·` is the backlog. */
+  const laneGlyphOf = (it: RoadmapItem) => {
+    const name = laneNameOf(it);
+    if (it.sprintId === null) return '·';
+    return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '·';
+  };
+  const inLane = (it: RoadmapItem, id: number | null) => (it.sprintId ?? null) === id;
+  const railLaneCount = (id: number | null) => nextAll.filter((it) => inLane(it, id)).length;
+
+  // ---- 1a: the sprint stack ----
+  // The scope: a tab, a risk class, or both. The sprint is deliberately NOT one
+  // of them here — it is the shape of the list, so scoping by it would be
+  // asking the same question twice.
   const scoped = useMemo(() => nextAll.filter((it) =>
     (!railArea || (railArea === RAIL_UNTAGGED ? !it.area : it.area === railArea))
     && (!railRisk || it.risk === railRisk)), [nextAll, railArea, railRisk]);
@@ -923,23 +973,26 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     railRisk === 'low' ? '⇣ low' : railRisk === 'high' ? '⇡ high' : '',
   ].filter(Boolean).join(' · ');
   const LANE_CAP = 2; // rows per lane before "+N more" — the lane, not the rail, is the unit
-  const lanes = useMemo(() => LANES.map((t) => {
-    const all = scoped.filter((it) => it.tier === t);
-    const open = laneOpen.includes(laneKey(t));
+  const lanes = useMemo(() => LANES.map((ln) => {
+    const all = scoped.filter((it) => inLane(it, ln.id));
+    const open = laneOpen.includes(laneKey(ln.id));
     const shown = open ? all : all.slice(0, LANE_CAP);
     const hidden = all.length - shown.length;
     return {
-      tier: t, all, shown,
+      ...ln, all, shown,
       // The fold is only offered where it does something: a lane that fits in
       // LANE_CAP has nothing to open and nothing to close.
       more: hidden > 0 ? `+${hidden} more` : open && all.length > LANE_CAP ? 'fewer' : '',
-      note: t === 'S' && all.length > 0 ? 'send first' : t === '' ? 'needs a tier' : '',
+      // The note is the one fact that changes what the night can do: the box in
+      // progress is the only one it takes from, and everything else — including
+      // a planned sprint that looks every bit as committed — is out of play.
+      note: ln.active ? (all.length ? 'the runner takes these' : '') : 'not picked up',
     };
-    // An unranked lane with nothing in it is not news; an empty TIER is — a
-    // board with nothing at S says so, and that is why the lane is drawn.
-  }).filter((ln) => ln.tier !== '' || ln.all.length > 0), [scoped, laneOpen]);
+    // An EMPTY ACTIVE SPRINT IS NEWS and is drawn — "the runner has nothing" is
+    // the answer somebody came to the rail for. An empty planned box is not.
+  }).filter((ln) => ln.active || ln.all.length > 0), [scoped, laneOpen, LANES]);
   const laneShape = LANES
-    .map((t) => `${t || 'unranked'} ${scoped.filter((it) => it.tier === t).length}`).join(' · ');
+    .map((ln) => `${ln.name} ${scoped.filter((it) => inLane(it, ln.id)).length}`).join(' · ');
   // Ticks are resolved against the SCOPE, so "select all" and the count on the
   // send button mean the list you are looking at.
   const scopedPicked = picked.filter((id) => scoped.some((it) => it.id === id));
@@ -953,7 +1006,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     const terms = railQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!terms.length) return nextAll;
     return nextAll.filter((it) => terms.every((t) => {
-      if (t.startsWith('tier:')) return it.tier.toLowerCase() === t.slice(5);
+      // `sprint:` matches the box's NAME, not its id — a filter you type has to
+      // be one you can read off the screen.
+      if (t.startsWith('sprint:')) {
+        const name = LANES.find((ln) => inLane(it, ln.id))?.name || 'backlog';
+        return name.toLowerCase().includes(t.slice(7));
+      }
       if (t.startsWith('tab:')) return (it.area || 'untagged').toLowerCase().includes(t.slice(4));
       if (t.startsWith('risk:')) return it.risk === t.slice(5);
       if (t === 'plan:none') return it.plan.length === 0;
@@ -967,22 +1025,22 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const topItem = matched.find((it) => it.id === promoted)
     ?? matched.find((it) => !passed.includes(it.id))
     ?? null;
-  const groups = useMemo(() => LANES.map((t) => ({
-    tier: t,
-    items: matched.filter((it) => it.tier === t && it.id !== topItem?.id),
-    open: !tierShut.includes(laneKey(t)),
-  })).filter((g) => g.items.length > 0), [matched, topItem, tierShut]);
+  const groups = useMemo(() => LANES.map((ln) => ({
+    ...ln,
+    items: matched.filter((it) => inLane(it, ln.id) && it.id !== topItem?.id),
+    open: !laneShut.includes(laneKey(ln.id)),
+  })).filter((g) => g.items.length > 0), [matched, topItem, laneShut, LANES]);
   // Filter tokens are offered only where they'd land on something — a chip for
   // a tier nothing sits at is a dead press.
   const railTokens = useMemo(() => {
     const out: string[] = [];
-    for (const t of TIERS) if (railTierCount(t) > 0) out.push(`tier:${t.toLowerCase()}`);
+    for (const ln of LANES) if (railLaneCount(ln.id) > 0) out.push(`sprint:${ln.name.toLowerCase()}`);
     for (const r of ['low', 'high'] as const) if (railRiskCount(r) > 0) out.push(`risk:${r}`);
     for (const [a] of railAreas) if (a !== RAIL_UNTAGGED) out.push(`tab:${a}`);
     if (nextAll.some((it) => it.plan.length === 0)) out.push('plan:none');
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextAll, railAreas]);
+  }, [nextAll, railAreas, LANES]);
   const matchedPicked = picked.filter((id) => matched.some((it) => it.id === id));
   const allMatchedPicked = matched.length > 0 && matchedPicked.length === matched.length;
 
@@ -1595,13 +1653,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   by what you are going TO, since that is the choice. */}
               {viewPrefs.railOpen && viewPrefs.railSeg === 'session' && (
                 <button className="tc-style" onClick={() => {
-                  saveViewPrefs({ railStyle: railStyle === 'tiers' ? 'upnext' : 'tiers' });
+                  saveViewPrefs({ railStyle: railStyle === 'sprints' ? 'upnext' : 'sprints' });
                   setScopeOpen(false);
                 }}
-                  title={railStyle === 'tiers'
+                  title={railStyle === 'sprints'
                     ? 'Switch the rail to Up next — one item promoted to send, the rest reached by typing'
-                    : 'Switch the rail to Tier stack — one lane per tier, the tab as a single scope'}>
-                  ⇄ {railStyle === 'tiers' ? 'up next' : 'tiers'}
+                    : 'Switch the rail to Sprint stack — one lane per sprint, the one in progress first'}>
+                  ⇄ {railStyle === 'sprints' ? 'up next' : 'sprints'}
                 </button>
               )}
               <button
@@ -1625,7 +1683,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       </button>
                     ))}
                   </div>
-                  {board && viewPrefs.railSeg === 'session' && (railStyle === 'tiers' ? (
+                  {board && viewPrefs.railSeg === 'session' && (railStyle === 'sprints' ? (
                     // 1a — the scope. ONE control for "which tab", where there
                     // used to be a select carrying every area on the board plus
                     // two rows of chips. Risk rides along in the same popover:
@@ -1699,14 +1757,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   <div className="tc-session">
                     {!board ? (
                       <div className="tcs-lede">
-                        <div className="tc-cap">{railStyle === 'tiers' ? 'WORKING ON' : 'UP NEXT'}</div>
+                        <div className="tc-cap">{railStyle === 'sprints' ? 'WORKING ON' : 'UP NEXT'}</div>
                         <div className="tcs-none">
                           {!projectSlug ? 'Open a session in a project directory to tie it to the plan.'
                             : detailErr ? `Could not read ~/${projectSlug} just now — the plan is there, this rail isn't.`
                             : `~/${projectSlug} isn't a tracked project — there is no plan to tie this session to.`}
                         </div>
                       </div>
-                    ) : railStyle === 'tiers' ? (
+                    ) : railStyle === 'sprints' ? (
                       /* ---- 1a · tier stack: the tier IS the layout ---- */
                       <>
                         {/* WORKING ON — what you handed this session. Device-local:
@@ -1716,7 +1774,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           <div className="tc-cap">WORKING ON</div>
                           {workingItem ? (
                             <div className="tc-work">
-                              <span className={`tcs-grade t${workingItem.tier || 'none'}`}>{workingItem.tier || '·'}</span>
+                              {/* THE GRADE CHIP IS THE SPRINT NOW (#477) — and
+                                  it reads `on` only for the box in progress,
+                                  because that is the one fact about this item
+                                  that changes what the machine will do with it. */}
+                              <span className={`tcs-grade${workingItem.sprintId === activeSprintId && activeSprintId !== null ? ' on' : ''}`}
+                                title={laneNameOf(workingItem)}>{laneGlyphOf(workingItem)}</span>
                               <div className="b">
                                 <div className="t">{workingItem.title}</div>
                                 <div className="m">
@@ -1777,16 +1840,20 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                               <button className="tc-link" onClick={() => { setRailArea(''); setRailRisk(''); }}>clear it</button>
                             </div>
                           ) : lanes.map((ln) => (
-                            <div className="tcs-lane" key={laneKey(ln.tier)}>
+                            <div className="tcs-lane" key={laneKey(ln.id)}>
                               <div className="tcs-lane-head">
-                                <span className={`bar t${ln.tier || 'none'}`} />
-                                <span className={`k t${ln.tier || 'none'}`}>{laneName(ln.tier)}</span>
+                                <span className={`bar${ln.active ? ' on' : ''}`} />
+                                <span className={`k${ln.active ? ' on' : ''}`}>{ln.name}</span>
                                 <span className="n">{ln.all.length}</span>
                                 <span className="rule" />
                                 {ln.note && <span className="w">{ln.note}</span>}
                               </div>
                               {ln.all.length === 0 ? (
-                                <div className="tcs-lane-none">nothing at {ln.tier}</div>
+                                <div className="tcs-lane-none">
+                                  {ln.active
+                                    ? 'nothing free in the sprint in progress — the runner has no work tonight'
+                                    : `nothing in ${ln.name}`}
+                                </div>
                               ) : (
                                 <>
                                   {ln.shown.map((it) => railRow(it, {
@@ -1798,7 +1865,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                   {ln.more && (
                                     <button className="tcs-more"
                                       onClick={() => setLaneOpen((l) => {
-                                        const k = laneKey(ln.tier);
+                                        const k = laneKey(ln.id);
                                         return l.includes(k) ? l.filter((x) => x !== k) : [...l, k];
                                       })}>
                                       {ln.more}
@@ -1865,7 +1932,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           {topItem ? (
                             <div className="tcs-top">
                               <div className="h">
-                                <span className={`tcs-grade t${topItem.tier || 'none'}`}>{topItem.tier || '·'}</span>
+                                <span className={`tcs-grade${topItem.sprintId === activeSprintId && activeSprintId !== null ? ' on' : ''}`}
+                                  title={laneNameOf(topItem)}>{laneGlyphOf(topItem)}</span>
                                 <span className="t">{topItem.title}</span>
                               </div>
                               <div className="m">
@@ -1907,7 +1975,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           )}
                         </div>
 
-                        {/* Typing is the filter: `tier:a`, `tab:polaris`, `risk:low`,
+                        {/* Typing is the filter: `sprint:…`, `tab:polaris`, `risk:low`,
                             `plan:none`, or any words from the title. Terms narrow
                             each other, and the chips are only the ones with work
                             behind them — a token that matches nothing is a dead
@@ -1917,7 +1985,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                             <span className="s">/</span>
                             <input value={railQuery} onChange={(e) => setRailQuery(e.target.value)}
                               aria-label="Filter the queue"
-                              placeholder="filter — tier:a, tab:polaris, branching" />
+                              placeholder="filter — sprint:cycle 3, tab:polaris, branching" />
                             {railQuery && (
                               <button className="tc-link dim" onClick={() => setRailQuery('')}>clear</button>
                             )}
@@ -1938,14 +2006,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                 : 'No match for that filter.'}
                             </div>
                           ) : groups.map((g) => (
-                            <div className="tcs-group" key={laneKey(g.tier)}>
+                            <div className="tcs-group" key={laneKey(g.id)}>
                               <button className="tcs-group-head" aria-expanded={g.open}
-                                onClick={() => setTierShut((l) => {
-                                  const k = laneKey(g.tier);
+                                onClick={() => setLaneShut((l: string[]) => {
+                                  const k = laneKey(g.id);
                                   return l.includes(k) ? l.filter((x) => x !== k) : [...l, k];
                                 })}>
                                 <span className="c">{g.open ? '▾' : '▸'}</span>
-                                <span className={`k t${g.tier || 'none'}`}>{laneName(g.tier)}</span>
+                                <span className={`k${g.active ? ' on' : ''}`}>{g.name}</span>
                                 <span className="n">{g.items.length}</span>
                                 <span className="rule" />
                               </button>

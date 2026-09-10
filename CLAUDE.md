@@ -10,7 +10,7 @@ keep under the 40 KB budget (`node scripts/context-budget.test.mjs`).
 pointer and the cross-cutting half. That is not tidiness: a rule beside the code it governs is read
 by whoever is changing it, and a rule here is read by everyone else once. Headers that carry their
 own: `routes/ingest.js`, `prompts.js`, `routes/checks.js`, `routes/worktrees.js`,
-`routes/terminal.js`, `routes/autopilot.js`, `agent-profiles.js`, `agents.js`, `pulse.js`,
+`routes/terminal.js`, `routes/autopilot.js`, `routes/sprints.js`, `agent-profiles.js`, `agents.js`, `pulse.js`,
 `lanes.js`, `terminal/agent-run.mjs`, `scripts/lib/autoverdict.mjs`, `scripts/lib/refine.mjs`,
 `scripts/stack-autopilot-dispatch.mjs`, `lib/branch.ts`, `lib/plan.ts`, `styles.css`,
 `detail/Board.tsx`, `detail/Roadmap.tsx` and `components/RoadmapModal.tsx`. **Adding a rule here
@@ -109,15 +109,15 @@ or the header of the file named in the pointer.
 - **`bucket` IS THE PRIORITY: five values since #469** — highest/high/medium/low/lowest (it held
   MoSCoW; the column keeps its name, `util.js`'s BUCKETS is the vocabulary, `schema.sql` the
   convergent migration must→highest, should→high, could→LOW, wont→lowest). **`medium` is the level
-  MoSCoW never had**: nothing migrated in, and like low/lowest it moves no progress bar and is never
-  picked by the runner — only highest/high are, exactly as must/should were. Widening either is one
-  word and a decision.
-- **`bucket` vs `tier`** — bucket is how NECESSARY; `tier` (#227, S/A/B/C, NULL = unranked) is how
-  much the owner wants it NEXT and is the **primary sort of the run queue** (bucket then `position`
-  tiebreak, unranked last). Roadmap's Ready/Thinking columns are its only writer (#472).
-  **Agents must never change it.**
-- **`risk`** (low/normal/high, #212) is how much DAMAGE a wrong build does — not difficulty, not the
-  desire `tier` expresses. **A `low` item whose run lands green auto-queues its own merge**, which is
+  MoSCoW never had**: nothing migrated in, and it moves no progress bar. **It no longer gates the
+  runner** — #477 dropped the highest/high filter, because being in the sprint in progress is the
+  stronger commitment and a gate that silently refused a `medium` somebody dragged into the box
+  would make the box a lie. Bucket ORDERS candidates below the sprint rank; it excludes none.
+- **THE DESIRE TIER (#227) IS GONE** (#477 dropped the column). What ranks work is **the SPRINT** —
+  see its own section below. Roadmap's Ready/Thinking columns are `bucket` now (highest+high vs the
+  rest), which is triage and no longer a claim about what runs next.
+- **`risk`** (low/normal/high, #212) is how much DAMAGE a wrong build does — not difficulty, not
+  desire. Prose across the repo calls it a "risk tier"; it is not the tier that went. **A `low` item whose run lands green auto-queues its own merge**, which is
   the whole reason the column exists and why writing it casually is expensive. `risk_source` is who
   decided (#262): `human` = a hand-set write, `auto` = the plan-time pre-pass, NULL = the `normal`
   nobody chose, **and NULL is the only state an auto write may replace**. The guard is CASE
@@ -153,13 +153,16 @@ or the header of the file named in the pointer.
   `reviewed: true` + `parentId: null`. There is deliberately **no free-floating capture on Roadmap** —
   a manual row is never held, so it is committed work by definition and the board's composer is where
   it goes; ＋ on a board item is how an idea gets filed.
-- **The board order IS the run queue.** `position` is the bucket tiebreak and still PATCHable, but
-  **nothing in the client writes it** — and the kanban has no within-column drag on purpose, because
-  `position` is scoped to the BUCKET and its columns cut across it. `queueOrder` (`lib/plan.ts`) is
-  the client twin of the runner's sort: **tier, then bucket, then PAYLOAD ORDER** — a stable sort over
-  arrays the server already ordered, since `position` is not on the served row.
+- **The SPRINT order IS the run queue** (#477). `queueOrder` (`lib/plan.ts`) is the client twin of
+  the runner's sort: **the active sprint's rows by `sprint_rank`, then bucket, then PAYLOAD ORDER** —
+  a stable sort over arrays the server already ordered. It is **curried on the active sprint's id**
+  because a rank means nothing outside that box: `sprint_rank` is 0 on every backlog row, so an
+  unguarded compare floats the whole backlog above committed work. `position` is a different number —
+  scoped to the BUCKET, still PATCHable, **written by nothing in the client** — and the kanban has no
+  within-column drag because its columns cut across buckets.
 - **THE REST ARE MOCKUPS AND SAY SO ON THE RAIL** (#443–#472): `ForYouMock` (3 panes), `QualityMock`,
-  `PlansMock`, `ControlMock` (7 tabs) and the two blocks at the foot of `Board.tsx`. Each wears a
+  `PlansMock`, `ControlMock` (7 tabs) and `DevelopmentView` at the foot of `Board.tsx` — its Backlog
+  sibling is wired (#477). Each wears a
   **Mock chip**, because these screens look exactly like the real thing — that was the point of
   porting them. **A number and the screen behind it must agree**: a wired row's badge is its real
   count, a mockup's counts the MOCKUP. Still UNREACHABLE from a browser, with `./stack` and the API
@@ -176,6 +179,24 @@ or the header of the file named in the pointer.
 
 ### Who may run, and where
 
+- **THE AUTOMATION ONLY TOUCHES THE SPRINT IN PROGRESS** (#477), and that is the outermost gate —
+  ahead of approval, the fleet cap and the area lane. A sprint is a named, ordered box of board items
+  (`sprints`, status `planned | active | done`); **at most one per project is `active` and the
+  DATABASE enforces it** (a partial unique index), because THREE packages independently decide what
+  may run and each says "the sprint in progress". Two rows would have them building from different
+  boxes with nothing saying so. **`roadmap_items.sprint_rank` is the order inside one box, 0 = top =
+  what the night takes first** — dense, rewritten whole on every drop (`PUT /sprints/:id/order`),
+  scoped to the SPRINT and **not** `position`, which is scoped to the bucket. `sprint_id` NULL is the
+  BACKLOG and is the majority. Three spellings, none able to import another: the fan-out's `JOIN
+  sprints … status = 'active'` in `routes/autopilot.js`, the runner's own pick, and `queueOrder`.
+  **NO ACTIVE SPRINT MEANS THE NIGHT DOES NOTHING** — a real state, reported out loud on the backlog
+  and in the runner's log, never a fallback to the whole board.
+  Two carve-outs: **Run now and a calendar row are NOT gated**, because each names one item a human
+  picked, which is the same commitment dragging it in would have been; and **a POST never sets a
+  sprint** — a new row is born in the backlog, or the extractor could commission tonight's work by
+  writing a title. Deleting a sprint **releases its items** (ON DELETE SET NULL); finishing one
+  **leaves its unfinished rows in it**, because a done sprint is the record of what was committed to.
+  **Agents must never write `sprint_id` or `sprint_rank`.**
 - **"Approved for the auto runner" is `source NOT IN ('hook','fly') OR reviewed_at IS NOT NULL`**
   (#359, widened by #381), with no column of its own — an `approved` flag would be a second, drifting
   truth. TWO origins need a human's sign-off: `hook` (read off a push) and `fly` (a live session's own
@@ -367,7 +388,7 @@ also documents the self-describing ones). The ones whose meaning isn't obvious f
 | `autopilotEnabled` | the ARM SWITCH. Nightly + scheduled jobs only enqueue while on; ▶ Run now stays manual-only |
 | `autopilotWorkers` | the FLEET-WIDE cap on concurrent jobs (0 = unlimited, default 3, clamped 1–8); per-project serialisation is separate and NOT tunable |
 | `autopilotExecutorModel` / `autopilotAdvisorModel` | #153, **inverted by #285**: the ADVISOR runs the session (main loop, plans, delegates, verifies, commits) and the EXECUTOR is exposed to it as a subagent with the write tools. Advisor unset = single-model on the executor |
-| `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set. **branch/priority/tier/risk are dead toggles** — #469 took those four off the modal, so the route still answers them and nothing can land them |
+| `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set. **branch/risk are dead toggles** — #469 took them off the modal, so the route still answers them and nothing can land them. `tier` went with its column (#477); `priority` has the ＋ dock |
 | `termIdleHours` | the idle-session reaper's threshold (0 = never); the host does the killing and fails SAFE |
 | `accessPinSet` | PIN sign-in available; PATCH takes write-only `accessPin` ('' disables). Any change signs out every PIN-connected device |
 

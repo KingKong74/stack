@@ -46,7 +46,7 @@ function item(over = {}) {
     source: 'manual', reviewed: true, claimedBy: '', area: '', builtNote: '',
     reviewTag: '', reviewTags: [], refineNote: '', reviewShelved: false,
     skipped: false, skippedAt: null, risk: 'normal', riskSource: '', riskReason: '',
-    tier: '', plan: [], updatedAt: ago(1), agentProfile: '',
+    sprintId: null, sprintRank: 0, plan: [], updatedAt: ago(1), agentProfile: '',
     // the Roadmap v2 columns the schedule panels read
     parentId: null, sched: null, baseline: null, labels: [], listKey: '',
     archived: false, estimate: null,
@@ -198,15 +198,38 @@ test('the 90% cap is reported as armed vs actually biting', () => {
 
 // --- the rail ---------------------------------------------------------
 
-test('next up sorts by tier, then bucket, and leaves parked items out', () => {
+// #477 — the sprint in progress leads, in its OWN order, and it outranks the
+// priority: a `low` sitting at the top of the running box goes before a
+// `highest` nobody has committed to. Getting this backwards is the whole
+// failure mode the sprint replaced the desire tier to fix.
+test('next up leads with the sprint in progress, in its own order, then bucket', () => {
   const items = [
-    item({ title: 'unranked must', bucket: 'highest' }),
-    item({ title: 'tier B', bucket: 'high', tier: 'B' }),
-    item({ title: 'tier S', bucket: 'low', tier: 'S' }),
-    item({ title: 'parked S', bucket: 'highest', tier: 'S', skipped: true }),
-    item({ title: 'claimed S', bucket: 'highest', tier: 'S', claimedBy: 'feat/9-x' }),
+    item({ title: 'uncommitted must', bucket: 'highest' }),
+    item({ title: 'sprint second', bucket: 'high', sprintId: 7, sprintRank: 1 }),
+    item({ title: 'sprint first', bucket: 'low', sprintId: 7, sprintRank: 0 }),
+    item({ title: 'parked in sprint', bucket: 'highest', sprintId: 7, sprintRank: 2, skipped: true }),
+    item({ title: 'claimed in sprint', bucket: 'highest', sprintId: 7, sprintRank: 3, claimedBy: 'feat/9-x' }),
+    // A row in a PLANNED box is not in the running one, so its rank means
+    // nothing here — it must not outrank the backlog on a default of 0.
+    item({ title: 'other sprint', bucket: 'lowest', sprintId: 8, sprintRank: 0 }),
   ];
-  assert.deepEqual(nextUp(board(items)).map((i) => i.title), ['tier S', 'tier B', 'unranked must']);
+  assert.deepEqual(
+    nextUp(board(items), 7).map((i) => i.title),
+    ['sprint first', 'sprint second', 'uncommitted must']);
+});
+
+// No sprint in progress is NOT an empty answer here: the panel asks "what would
+// you work on next", which still has an answer between cycles. Only the RUNNER
+// reads no active sprint as nothing to do.
+test('next up falls back to priority order when no sprint is in progress', () => {
+  const items = [
+    item({ title: 'low', bucket: 'low' }),
+    item({ title: 'highest', bucket: 'highest' }),
+    item({ title: 'ranked in a planned box', bucket: 'lowest', sprintId: 8, sprintRank: 0 }),
+  ];
+  assert.deepEqual(
+    nextUp(board(items), null).map((i) => i.title),
+    ['highest', 'low', 'ranked in a planned box']);
 });
 
 test('the bug spread always carries all four severities so a zero reads as measured', () => {

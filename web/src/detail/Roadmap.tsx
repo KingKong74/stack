@@ -20,12 +20,21 @@
 //
 // FOUR DECISIONS WORTH THE INK:
 //
-//  1. THE THREE COLUMNS ARE `tier` AND `skipped`, which gives the DESIRE TIER
-//     its writer back. #469 took tier off the item modal and left the run
-//     queue's PRIMARY sort with nothing in a browser able to set it; ranking an
-//     idea here is that writer, and it is the honest place for it — tier asks
-//     "how much do you want this next", which is the question this screen is
-//     for. Ready = ranked. Thinking = unranked. Parked = `skipped`.
+//  1. THE THREE COLUMNS ARE `bucket` AND `skipped`. Ready = highest or high,
+//     Thinking = medium, low or lowest, Parked = `skipped`, and dragging an
+//     idea between the first two writes its priority.
+//
+//     THIS COLUMN USED TO BE `tier`, THE DESIRE RANK (#227), and #477 retired
+//     that column outright: what the machine works next is the order of the
+//     SPRINT it was dragged into, on the board's Backlog tab, and a second
+//     ranking living here would have been a rival answer to the same question.
+//     The split survives the change because the question it asks survives it —
+//     "is this worth doing" is what triage is for, and it is the question
+//     `bucket` has always answered. What it no longer does is decide what runs
+//     tonight: an idea is not runnable at all until somebody promotes it AND
+//     puts it in a sprint, so the Ready column is a recommendation now rather
+//     than a queue position, which is the honest thing for a triage screen to
+//     be.
 //  2. THERE IS NO FREE-FLOATING CAPTURE, and that is not an omission. A manual
 //     row is NEVER held (CLAUDE.md — blocking hand-written work is the failure
 //     mode approval must not have), so a hand-typed row with no parent is
@@ -49,11 +58,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
-import type { BoardArea, RoadmapItem, Tier } from '../types';
-import { TIERS } from '../types';
+import type { BoardArea, Priority, RoadmapItem } from '../types';
+import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta } from '../lib/ui';
 import { isIdea } from '../lib/plan';
 import { isHeld } from '../lib/approval';
-import { PRIORITY_DEFAULT } from '../lib/ui';
 import {
   getBoardShape, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
 } from '../store';
@@ -69,10 +77,16 @@ const COLS: { key: Col; label: string }[] = [
   { key: 'parked', label: 'Parked' },
 ];
 
-/** Which of the three an idea sits in. `skipped` outranks the tier: a parked
- *  row is parked whatever you once thought of it. */
+/** The two priorities that read as "worth doing" — the Ready column. They are
+ *  the same two the overnight runner used to gate on before #477 made sprint
+ *  membership the gate instead, which is not a coincidence: this is where that
+ *  judgement went once it stopped being a run condition. */
+const READY: Priority[] = ['highest', 'high'];
+
+/** Which of the three an idea sits in. `skipped` outranks the priority: a
+ *  parked row is parked whatever you once thought of it. */
 const colOf = (it: RoadmapItem): Col =>
-  (it.skipped ? 'parked' : it.tier ? 'ready' : 'thinking');
+  (it.skipped ? 'parked' : READY.includes(it.bucket) ? 'ready' : 'thinking');
 
 /** Where an idea came from, in one word. `manual` on a CHILD means somebody
  *  typed it here, which is the only way a manual row reaches this screen. */
@@ -209,8 +223,8 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
     guard(async () => {
       wrote(await patchRoadmapItem(slug, it.id, { reviewed: true, parentId: null }));
     });
-  const setTier = (it: RoadmapItem, tier: Tier) =>
-    guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { tier })); });
+  const setBucket = (it: RoadmapItem, bucket: Priority) =>
+    guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { bucket })); });
   const park = (it: RoadmapItem) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { skipped: !it.skipped })); });
   const discard = (it: RoadmapItem) =>
@@ -349,7 +363,7 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
                       open={open === it.id}
                       onToggle={() => setOpen(open === it.id ? null : it.id)}
                       onPromote={() => promote(it)}
-                      onTier={(t) => setTier(it, t)}
+                      onBucket={(b) => setBucket(it, b)}
                       onPark={() => park(it)}
                       onEdit={() => onEdit(it)}
                       onDiscard={() => discard(it)} />
@@ -411,9 +425,9 @@ function IdeaComposer({ parent, onClose, onAdd }: {
   );
 }
 
-function IdeaCard({ idea, parent, open, onToggle, onPromote, onTier, onPark, onEdit, onDiscard }: {
+function IdeaCard({ idea, parent, open, onToggle, onPromote, onBucket, onPark, onEdit, onDiscard }: {
   idea: RoadmapItem; parent: RoadmapItem | null; open: boolean; onToggle: () => void;
-  onPromote: () => void; onTier: (t: Tier) => void; onPark: () => void;
+  onPromote: () => void; onBucket: (b: Priority) => void; onPark: () => void;
   onEdit: () => void; onDiscard: () => void;
 }) {
   const ready = colOf(idea) === 'ready';
@@ -429,7 +443,8 @@ function IdeaCard({ idea, parent, open, onToggle, onPromote, onTier, onPark, onE
           <KitIcon name="bookmark" size={14} />
         </span>
         <span className="t">{idea.title}</span>
-        {idea.tier && <span className="eff">{idea.tier}</span>}
+        <span className="eff" style={{ color: priorityMeta(idea.bucket).color }}
+          title={`Priority — ${priorityMeta(idea.bucket).label}`}>{priorityMeta(idea.bucket).glyph}</span>
       </div>
 
       {idea.note.trim() && <span className={`im-note${open ? '' : ' clamp'}`}>{idea.note}</span>}
@@ -449,20 +464,20 @@ function IdeaCard({ idea, parent, open, onToggle, onPromote, onTier, onPark, onE
 
       {open && (
         <div className="im-acts" onClick={(e) => e.stopPropagation()}>
-          {/* THE TIER IS THE RANK THE RUN QUEUE SORTS ON FIRST (#227), and
-              since #469 this is the only control in any browser that writes
-              one. Ranking an idea is also what moves it out of Thinking. */}
-          <div className="rm-tier" role="tablist" aria-label="How much you want this next">
-            <span className="lbl">Want it next</span>
-            <button type="button" role="tab" aria-selected={idea.tier === ''}
-              className={`opt${idea.tier === '' ? ' on' : ''}`}
-              title="Unranked — sorts behind every ranked item"
-              onClick={() => onTier('')}>—</button>
-            {TIERS.map((t) => (
-              <button key={t} type="button" role="tab" aria-selected={idea.tier === t}
-                className={`opt${idea.tier === t ? ' on' : ''}`}
-                title={`Tier ${t} — the queue works S first, then A, B, C`}
-                onClick={() => onTier(t)}>{t}</button>
+          {/* HOW NECESSARY, which is what this screen is triaging — and it is
+              deliberately NOT a claim about what runs next. Nothing here is
+              runnable until it is promoted onto the board AND dragged into a
+              sprint (#477); the top two priorities are what moves an idea into
+              Ready, and that is a recommendation to the person filling the next
+              sprint rather than a queue position. */}
+          <div className="rm-tier" role="tablist" aria-label="How necessary this is">
+            <span className="lbl">Worth doing</span>
+            {PRIORITY_META.map((p) => (
+              <button key={p.key} type="button" role="tab" aria-selected={idea.bucket === p.key}
+                className={`opt${idea.bucket === p.key ? ' on' : ''}`}
+                style={idea.bucket === p.key ? { color: p.color } : undefined}
+                title={`${p.label}${READY.includes(p.key) ? ' — sits in Ready' : ' — sits in Thinking'}`}
+                onClick={() => onBucket(p.key)}>{p.glyph}</button>
             ))}
           </div>
 

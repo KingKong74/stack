@@ -1,7 +1,7 @@
 import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
-  AuthDevice, Tier, ResumeSince, ProjectDebrief,
+  AuthDevice, Sprint, ResumeSince, ProjectDebrief,
   SchedSpan, ProjectPulse, BoardShape, BoardList,
 } from './types';
 
@@ -415,6 +415,10 @@ export interface ProjectDetailData {
   bugs: Bug[];
   roadmap: Roadmap;
   checks: Check[];
+  // #477 — the project's sprints, in board order, riding the payload every tab
+  // already renders from. The board draws its boxes from this and resolves an
+  // item's `sprintId` against it; nothing carries a sprint's NAME on the item.
+  sprints: Sprint[];
   keepResumeCard: boolean;
   staleItemDays: number;   // parked-item stale threshold in days (#247) — ages the Parked view
   geminiReady: boolean;    // #278 — a key is configured; keyless hides the Quality page's AI surfaces
@@ -431,7 +435,7 @@ export interface ProjectDetailData {
 export async function getProjectDetail(slug: string): Promise<ProjectDetailData> {
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap;
-    checks?: Check[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
+    checks?: Check[]; sprints?: Sprint[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
     staleItemDays?: number; geminiReady?: boolean; agents?: TabAgentState;
     cadence?: { day: string; n: number }[]; lastPushAt?: string | null;
   }>(`/projects/${encodeURIComponent(slug)}`);
@@ -440,6 +444,10 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     blockers: d.blockers || [], directives: d.directives || [],
     activity: d.activity, bugs: d.bugs, roadmap: d.roadmap,
     checks: d.checks || [],
+    // An older server sends none, which reads as "no sprints yet" — the board
+    // then draws a backlog and an invitation to open one, which is exactly the
+    // state a project that has never used them is in.
+    sprints: d.sprints || [],
     keepResumeCard: d.keepResumeCard !== false,
     // An older server that doesn't send it falls back to the same default (#247).
     staleItemDays: Number.isFinite(d.staleItemDays) ? Number(d.staleItemDays) : 21,
@@ -582,11 +590,14 @@ export function setTermUsagePrefs(p: TermUsagePrefs) {
 export const TERM_PANE_CHOICES = [1, 2, 3, 4] as const;
 export type TermPaneCount = (typeof TERM_PANE_CHOICES)[number];
 // `railStyle` picks which reading of the Session rail is on screen. They are two
-// layouts over the SAME list, never two lists: `tiers` makes the tier the shape
-// of the rail and the tab a single scope; `upnext` promotes one item to send and
-// reaches the rest by typing. Device-local because it is a way of looking, not a
-// property of the project.
-export type TermRailStyle = 'tiers' | 'upnext';
+// layouts over the SAME list, never two lists: `sprints` makes the SPRINT the
+// shape of the rail — one lane per box, the sprint in progress first — and the
+// tab a single scope; `upnext` promotes one item to send and reaches the rest by
+// typing. Device-local because it is a way of looking, not a property of the
+// project. It was `tiers` until #477 retired the desire tier; a device that
+// stored the old spelling lands on the sprint stack, which is the same reading
+// of the same list with the ranking it actually has now.
+export type TermRailStyle = 'sprints' | 'upnext';
 export interface TermViewPrefs {
   railOpen: boolean; panes: TermPaneCount; railSeg: 'session' | 'runbook' | 'debrief'; railStyle: TermRailStyle;
 }
@@ -605,7 +616,7 @@ export function getTermViewPrefs(): TermViewPrefs {
     // per device like the other two.
     railSeg: p?.railSeg === 'runbook' ? 'runbook' as const
       : p?.railSeg === 'debrief' ? 'debrief' as const : 'session' as const,
-    railStyle: p?.railStyle === 'upnext' ? 'upnext' as const : 'tiers' as const,
+    railStyle: p?.railStyle === 'upnext' ? 'upnext' as const : 'sprints' as const,
   }));
 }
 export function setTermViewPrefs(p: TermViewPrefs) {
@@ -874,7 +885,11 @@ export async function createRoadmapItem(
   // not place by hand.
   input: {
     title: string; note: string; bucket: Priority; claimed_by?: string; area?: string; subArea?: string;
-    plan?: PlanStep[]; risk?: RoadmapItem['risk']; tier?: RoadmapItem['tier'];
+    plan?: PlanStep[]; risk?: RoadmapItem['risk'];
+    // NO `sprintId` HERE, and the server refuses one too (#477). Filing work
+    // into a sprint is a commitment somebody makes by dragging it into a box;
+    // a create that could land straight in the ACTIVE sprint would let the
+    // composer commission tonight's work by typing a title.
     sched?: { start: number; len: number };
   },
 ): Promise<RoadmapItem> {
@@ -890,7 +905,12 @@ export async function patchRoadmapItem(
     // #262 — omitting risk_source means the server records the write as human,
     // which is exactly what an edit from the modal is.
     risk_source: 'human' | 'auto'; risk_reason: string;
-    tier: RoadmapItem['tier'];   // #227 — desire rank; '' unranks it
+    // #477 — move ONE item between the backlog and a sprint. `null` sends it
+    // back to the backlog; an id files it at the BOTTOM of that box, because a
+    // single-item move has no opinion about where in the order it lands and the
+    // top is the one slot it must not guess at. Reordering a whole box is
+    // `putSprintOrder` below, which is the only call that writes ranks.
+    sprintId: number | null;
     // ---- the Roadmap tab v2 ----
     // null returns the bar to the tray. The server writes the BASELINE only if
     // there isn't one, so a drag can never erase the slip it is showing.
@@ -937,6 +957,53 @@ export async function patchList(
 export async function deleteList(slug: string, key: string): Promise<void> {
   await request<void>(`${listsBase(slug)}/${encodeURIComponent(key)}`, { method: 'DELETE' });
 }
+// ---- sprints (#477) --------------------------------------------------------
+//
+// The backlog's boxes, and the boundary of what the automation may touch. The
+// READ is not here: sprints ride the project detail payload every tab already
+// renders from, so a screen never fetches a list that has to agree with the
+// items in the same response. These are the writes.
+//
+// `putSprintOrder` IS THE ONLY CALL THAT WRITES A RANK, and it sends the WHOLE
+// box top to bottom rather than one row's new index. That is not verbosity: the
+// alternative is a read-modify-write over rows another browser may be dragging
+// at the same moment, and a full list is idempotent where a partial one is a
+// race. It also ADOPTS — an id that was in the backlog or in another sprint
+// moves into this one — so a drag from the backlog, a drag between boxes and a
+// reorder inside one are the same single request, which is what lets the drop
+// handler stop caring which of the three just happened.
+const sprintsBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/sprints`;
+
+export async function createSprint(slug: string, name: string): Promise<Sprint> {
+  return request<Sprint>(sprintsBase(slug), { method: 'POST', body: { name } });
+}
+// Setting `status: 'active'` FINISHES whichever sprint was in progress, in the
+// same transaction — one project has at most one active sprint and the database
+// enforces it, so "start this one" and "end that one" are inseparable. The
+// caller does not send the second write and must not try.
+export async function patchSprint(
+  slug: string, id: number,
+  patch: Partial<{ name: string; status: Sprint['status']; position: number }>,
+): Promise<Sprint> {
+  return request<Sprint>(`${sprintsBase(slug)}/${id}`, { method: 'PATCH', body: patch });
+}
+// The response is the sprint's REAL membership afterwards, which is not always
+// what was sent: an id belonging to a row somebody else has since moved is
+// dropped rather than taking the whole reorder down with it. Render the answer,
+// not the request.
+export async function putSprintOrder(
+  slug: string, id: number, items: number[],
+): Promise<{ sprintId: number; items: number[] }> {
+  return request<{ sprintId: number; items: number[] }>(
+    `${sprintsBase(slug)}/${id}/order`, { method: 'PUT', body: { items } });
+}
+// The box goes; the work stays. Its items return to the backlog rather than
+// being deleted with it — deleting a decision about work must never delete the
+// work, so this needs no confirmation about losing anything.
+export async function deleteSprint(slug: string, id: number): Promise<void> {
+  await request<void>(`${sprintsBase(slug)}/${id}`, { method: 'DELETE' });
+}
+
 export async function deleteRoadmapItem(slug: string, id: number): Promise<void> {
   await request<void>(`${roadmapBase(slug)}/${id}`, { method: 'DELETE' });
 }
@@ -953,16 +1020,13 @@ export async function suggestRoadmapTitle(slug: string, note: string): Promise<s
 
 // Gemini fills the whole item from its note — title, tidied note, area, branch
 // claim, priority. Suggestion only: it prefills the modal, the human saves.
-// #277 — the assist may also propose a desire tier. Like every other field it
-// is a SUGGESTION: the modal only takes it into an empty tier, so a tier set by
-// hand is never re-decided.
+//
+// IT NEVER PROPOSES A SPRINT (#477). #277 let it propose a desire tier and #298
+// then carved the top rank back out on the grounds that what the machine works
+// tonight is the owner's call. Sprint membership IS what the machine works
+// tonight, so the whole field is that carve-out now.
 export interface RoadmapAssist {
   title: string; note: string; area: string; branch: string; priority: Priority | null;
-  tier: RoadmapItem['tier'];   // #277 — '' when the assist has no opinion or the field is off
-  // #298 — S never arrives as a fill. The top of the desire queue is the
-  // owner's own call, so the server hands an S back here instead, for the
-  // modal to OFFER; everything below it fills an empty tier as usual.
-  tierSuggested?: RoadmapItem['tier'];
   // #298 — '' when the assist has no read on it or the field is switched off.
   risk?: RoadmapItem['risk'] | '';
 }
@@ -1016,19 +1080,21 @@ export async function getCheckHistory(slug: string, limit = 20): Promise<CheckHi
 
 // #251 — the Roadmap board's layout, per project. Which bucket column is
 // FOCUSED (fills the board, the others fold away) and which columns are folded
-// to their header. (It also carried the Tiers view's folded rows; that board is
-// culled, and a stored key nothing reads is harmless.) Device-local
-// and keyed by slug, because it describes how you like to look at THIS board,
-// not anything about the work. Absent or corrupt storage falls back to the
-// all-sections-open default, so a wiped browser behaves exactly as before.
+// to their header. Device-local and keyed by slug, because it describes how you
+// like to look at THIS board, not anything about the work. Absent or corrupt
+// storage falls back to the all-sections-open default, so a wiped browser
+// behaves exactly as before.
+//
+// It also carried `foldedTiers`, the culled Tiers board's folded rows, which
+// #477 removed with the tier itself. A stored key nothing reads is harmless and
+// is left where it is rather than migrated away — the parser below drops
+// anything it does not recognise.
 export interface BoardLayout {
   focus: Priority | null;
   collapsed: Priority[];
-  foldedTiers: Tier[];
 }
 const BOARD_LAYOUT_KEY = (slug: string) => `stack.boardLayout.${slug}`;
 const BUCKETS: Priority[] = ['highest', 'high', 'medium', 'low', 'lowest'];
-const TIER_KEYS: Tier[] = ['S', 'A', 'B', 'C', ''];
 
 export function getBoardLayout(slug: string): BoardLayout {
   return readStoredJSON(BOARD_LAYOUT_KEY(slug), (p) => {
@@ -1036,7 +1102,7 @@ export function getBoardLayout(slug: string): BoardLayout {
     const list = <T,>(v: unknown, allowed: readonly T[]): T[] =>
       Array.isArray(v) ? [...new Set(v.filter((x): x is T => allowed.includes(x as T)))] : [];
     const focus = BUCKETS.includes(o.focus as Priority) ? o.focus as Priority : null;
-    return { focus, collapsed: list(o.collapsed, BUCKETS), foldedTiers: list(o.foldedTiers, TIER_KEYS) };
+    return { focus, collapsed: list(o.collapsed, BUCKETS) };
   });
 }
 export function setBoardLayout(slug: string, layout: BoardLayout) {

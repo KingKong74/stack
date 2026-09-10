@@ -984,16 +984,24 @@ export function listKeyOf(it: RoadmapItem): string {
 
 /**
  * THE RUN QUEUE'S ORDER, on the client. Twin of the runner's own sort in
- * `scripts/stack-autopilot.mjs` (`tierRank`) over the server's `ORDER BY
- * BUCKET_RANK, position` — the two halves of one ordering that no package can
+ * `scripts/stack-autopilot.mjs` and of the server's fan-out `ORDER BY` in
+ * `routes/autopilot.js` — three halves of one ordering that no package can
  * import from another, which is why this is a third spelling rather than an
  * import.
  *
- * TIER IS THE PRIMARY SORT AND UNRANKED SORTS LAST (#227). What the owner wants
- * NEXT outranks how necessary it is, so an S-tier Could runs before an unranked
- * Must, and `bucket` is the tiebreak. Getting the order wrong on a board is not
- * cosmetic: the top of To Do is a claim about what the night takes, and a board
- * that ranks by bucket alone makes that claim falsely.
+ * THE SPRINT LEADS, AND ITS ORDER IS THE PRIORITY (#477). A row in the sprint
+ * in progress sorts above everything, top of the box first, because that box is
+ * the only thing the automation touches and its order is the owner's own hand.
+ * `bucket` is the tiebreak now; it used to be the tiebreak under the desire
+ * tier, which is gone. Getting this wrong on a board is not cosmetic: the top
+ * of To Do is a claim about what the night takes next, and a board that ranks
+ * by bucket alone makes that claim falsely.
+ *
+ * A RANK ONLY MEANS SOMETHING INSIDE THE ACTIVE SPRINT. `sprintRank` defaults
+ * to 0 on every backlog row, so comparing it unguarded would float the entire
+ * backlog above committed work on the strength of a default — which is why the
+ * comparator takes the active sprint's id and reads the rank only for rows that
+ * are actually in it.
  *
  * `position` IS NOT IN IT, AND MUST NOT BE ADDED — not because it does not
  * count, but because it is not on the row. `roadmapItemShape` does not serve
@@ -1043,12 +1051,31 @@ export const isIdea = (it: RoadmapItem): boolean => it.parentId !== null || isHe
 export const flatRoadmap = (r: Roadmap): RoadmapItem[] =>
   [...r.highest, ...r.high, ...r.medium, ...r.low, ...r.lowest];
 
-const TIER_RANK: Record<string, number> = { S: 0, A: 1, B: 2, C: 3 };
 const BUCKET_RANK: Record<string, number> = { highest: 0, high: 1, medium: 2, low: 3, lowest: 4 };
-export const tierRank = (t: string): number => TIER_RANK[String(t || '').toUpperCase()] ?? 4;
-export const queueOrder = (a: RoadmapItem, b: RoadmapItem): number =>
-  tierRank(a.tier) - tierRank(b.tier)
-  || (BUCKET_RANK[a.bucket] ?? 4) - (BUCKET_RANK[b.bucket] ?? 4);
+export const bucketRank = (b: string): number => BUCKET_RANK[String(b || '')] ?? 4;
+
+/**
+ * Is this row in the sprint that is in progress — i.e. is it work the night can
+ * actually take? `activeId` null (a project between sprints) makes this false
+ * for every row, which is correct and is the state that means the automation
+ * has nothing to do.
+ */
+export const inActiveSprint = (it: RoadmapItem, activeId: number | null): boolean =>
+  activeId !== null && it.sprintId === activeId;
+
+/**
+ * The comparator, curried on the active sprint's id (null = none in progress).
+ * Curried rather than reading a module global because the id is a property of
+ * the PROJECT and this file is pure — the same board rendered for two projects
+ * must not share one.
+ */
+export const queueOrder = (activeId: number | null) => (a: RoadmapItem, b: RoadmapItem): number => {
+  const ina = inActiveSprint(a, activeId);
+  const inb = inActiveSprint(b, activeId);
+  if (ina !== inb) return ina ? -1 : 1;
+  if (ina && inb && a.sprintRank !== b.sprintRank) return a.sprintRank - b.sprintRank;
+  return bucketRank(a.bucket) - bucketRank(b.bucket);
+};
 
 /**
  * THE BUILT-NOT-VERDICTED PREDICATE (#374), and the ONE definition of it on the

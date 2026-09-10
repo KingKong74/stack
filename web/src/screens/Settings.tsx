@@ -353,7 +353,6 @@ export function Settings() {
                 { key: 'note', label: 'Tidy the note', hint: 'Restructure your note for the agent that builds it — intent kept, filler dropped.' },
                 { key: 'area', label: 'Suggest the area', hint: 'Tag the item with a product area, preferring ones the board already uses.' },
                 { key: 'branch', label: 'Suggest a branch', hint: 'Only ever an already-open branch claim, and only when the note clearly belongs to it.' },
-                { key: 'tier', label: 'Suggest a tier', hint: 'The desire rank that leads the run queue. Only ever fills an EMPTY tier — one you set by hand always stands, and S is offered for you to accept rather than applied.' },
                 { key: 'risk', label: 'Suggest the risk', hint: 'How much care the change needs, read from the note. Only ever fills a Normal you have not touched — and low risk is what lets a green overnight run merge itself, so it is read conservatively.' },
                 { key: 'priority', label: 'Suggest the priority', hint: 'An honest call on the five levels — most things are not Highest.' },
               ] as { key: string; label: string; hint: string }[]).map((f) => (

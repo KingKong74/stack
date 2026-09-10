@@ -43,17 +43,19 @@ export const sessionDefaultLines = (keys) =>
 
 // ✧ Fill from note (#131): the fields the assist may fill. Title is the point
 // of the feature and always allowed; the rest can be switched off in Settings.
-// #277 — 'tier' joins the catalogue: Gemini may propose a desire tier, and the
-// modal only accepts one into an empty field, so a hand-set tier always stands.
+// #477 — 'tier' has LEFT the catalogue with the column it filled. The desire
+// tier is gone; what ranks work is the order of the sprint it was dragged into,
+// and that is a commitment somebody makes by hand — never something a model
+// fills in. schema.sql strips a stored 'tier' from `assist_fields` convergently.
 // #277 — the item's claim is a BRANCH, and is now called one everywhere. Rows
 // stored before the rename carry 'lane', so it is accepted as an alias and
 // normalised on read: a setting the owner switched on stays on across the
 // rename rather than silently reverting to the default.
 // #298 — 'risk' joins it too: the note is where "this is a small safe change"
 // or "this touches auth, be careful" is actually written, so it is where the
-// risk call can honestly be read from. Like tier, it only ever fills a field
+// risk call can honestly be read from. It only ever fills a field
 // the human has left alone.
-export const ASSIST_FIELDS = ['title', 'note', 'area', 'branch', 'priority', 'tier', 'risk'];
+export const ASSIST_FIELDS = ['title', 'note', 'area', 'branch', 'priority', 'risk'];
 const ASSIST_FIELD_ALIASES = { lane: 'branch' };
 export const cleanAssistFields = (v) => {
   const keys = Array.isArray(v)

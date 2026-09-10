@@ -11,6 +11,7 @@ import { projects } from './routes/projects.js';
 import { bugs } from './routes/bugs.js';
 import { roadmap } from './routes/roadmap.js';
 import { board } from './routes/board.js';
+import { sprints } from './routes/sprints.js';
 import { presence } from './routes/presence.js';
 import { checks } from './routes/checks.js';
 import { publicShowcase } from './routes/public.js';
@@ -72,6 +73,12 @@ app.use('/api/projects/:slug/roadmap', requireToken, roadmap);
 // the Plan view's lists. Separate from /roadmap because it is the BOARD's
 // shape rather than its contents.
 app.use('/api/projects/:slug/board', requireToken, board);
+// Sprints (#477) — the backlog's boxes, and the gate on what the night may
+// touch. Its own router rather than part of /board, because /board is the
+// board's SHAPE (lanes, areas, labels) and a sprint is a commitment about its
+// contents; and rather than part of /roadmap, because membership is written by
+// dragging a whole box at a time, not one item at a time.
+app.use('/api/projects/:slug/sprints', requireToken, sprints);
 app.use('/api/projects/:slug/checks', requireToken, checks);
 app.use('/api/projects/:slug/autopilot', requireToken, autopilot);
 app.use('/api/projects/:slug/branches', requireToken, branches);

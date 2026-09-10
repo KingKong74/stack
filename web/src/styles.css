@@ -1974,12 +1974,18 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 /* Nothing to show yet — a dashed hint, not an error and not a card. */
 .tcs-none { border: 1px dashed var(--line-3); border-radius: 8px; padding: 11px; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
 /* Tier ink, the app's own ranking colours (#227): S wears the accent. */
-.tc-session .tS { color: var(--accent-text); }
-.tc-session .tA { color: var(--building); }
-.tc-session .tB { color: var(--sage); }
-.tc-session .tC { color: var(--muted); }
-.tc-session .tnone { color: var(--fainter); }
-.tcs-grade { font-family: var(--mono); font-size: 10px; font-weight: 700; line-height: 1.5; border-radius: 4px; padding: 1px 5px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line-2); flex: none; }
+/* #477 — THE RAIL'S LANES ARE SPRINTS, and there are only TWO tones for them
+   rather than the five the desire tier had: the box in progress, and every
+   other box. That is not a simplification for its own sake — a tier was an
+   ordered scale and wanted a ramp, whereas a sprint is a binary about what the
+   machine may touch, and a five-step ramp over a two-state fact would invite
+   reading a gradient into it. `.on` is the sprint that is running. */
+.tc-session .tcs-lane-head .k, .tc-session .tcs-group-head .k { color: var(--muted); }
+.tc-session .tcs-lane-head .k.on, .tc-session .tcs-group-head .k.on { color: var(--accent-text); }
+.tc-session .tcs-lane-head .bar { color: var(--fainter); }
+.tc-session .tcs-lane-head .bar.on { color: var(--accent-text); }
+.tcs-grade { font-family: var(--mono); font-size: 10px; font-weight: 700; line-height: 1.5; border-radius: 4px; padding: 1px 5px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line-2); flex: none; color: var(--muted); }
+.tcs-grade.on { color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-tint-border); }
 /* WORKING ON (1a) */
 .tc-work { display: flex; align-items: flex-start; gap: 9px; border: 1px solid var(--accent-tint-border); background: var(--accent-tint); border-radius: 8px; padding: 10px 11px; }
 .tc-work .b { min-width: 0; }
@@ -3932,6 +3938,15 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
    branch name escaped the card entirely. The truncation is on the inner span
    because the chip itself is a flex container. */
 .km-cardtags .k-tag { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; }
+/* #477 — the sprint chip. Muted for a box that is only planned, accented for
+   the one in progress: a card in a planned sprint is committed but not running,
+   and the whole feature is that those are different. The name truncates in its
+   own `.v` span for the same reason a branch name does — `text-overflow` does
+   nothing on the flex CONTAINER, and the `title` makes the cut lossless. */
+.km-cardtags .km-sprint { color: var(--text-tertiary); }
+.km-cardtags .km-sprint.on {
+  background: var(--status-success-bg); color: var(--status-success-fg);
+}
 /* THE LINE-HEIGHT IS PART OF THE TRUNCATION, not decoration. `.k-tag.mono`
    spells its font with `/1`, and an `overflow: hidden` box on a line-height-1
    mono font is 12px tall over a 14px glyph box — so the ellipsis arrived and
@@ -4363,6 +4378,65 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .km-pull .ids { display: flex; gap: var(--space-3); flex-wrap: wrap; min-width: 0; }
 .km-pull .say { margin-left: auto; font: var(--type-body-sm); color: var(--text-secondary); }
 .km-pull .k-btn { margin-left: auto; flex: none; }
+/* #477 — NOTHING IN PROGRESS IS A REPORTED STATE, not an absent one, so the
+   line keeps its shape and only its tone changes. Lime says "this is what
+   happens next"; the muted edge says "nothing does", which is a different
+   answer from the same instrument rather than a missing instrument. Same rule
+   as a NULL verdict rendering as NO REVIEW instead of vanishing. */
+.km-pull:not(.on) { border-left-color: var(--border-strong); }
+.km-pull:not(.on) .lbl { color: var(--text-tertiary); }
+
+/* ---- the sprint boxes (#477) ---- */
+/* A box is a batch with a body, and the ONE in progress is the only one that
+   gets the accent. That contrast is the feature: a planned sprint is full of
+   real work in a real order and is one press from running, so if the two look
+   alike the screen is lying about what the machine is doing. */
+.km-sprintbox, .km-backlog, .km-done {
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-5); gap: var(--space-2);
+}
+.km-sprintbox.on { border-color: var(--lime-700); border-left: 2px solid var(--lime-500); }
+/* The drop target lights up BEFORE anything is written — an empty box that
+   gives no sign it will accept the card is a box nobody drops into twice. */
+.km-sprintbox.over, .km-backlog.over {
+  border-color: var(--border-focus); background: var(--surface-hover);
+}
+.km-sprintbox .km-batchhead, .km-backlog .km-batchhead, .km-done .km-batchhead {
+  padding: 0 0 var(--space-3);
+}
+.km-sprintbox .km-batchhead .right, .km-done .km-donerow .right {
+  display: flex; align-items: center; gap: var(--space-3); flex: none;
+}
+.km-batchsay { flex: none; font: var(--type-body-sm); color: var(--text-tertiary); }
+/* The live dot on the box in progress. A dot rather than a word because the
+   word is already there ("N to build"); this is what the eye finds first. */
+.km-live {
+  flex: none; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--lime-500); box-shadow: 0 0 0 3px var(--lime-tint);
+}
+.km-sprintname {
+  border: 0; background: transparent; cursor: text; padding: 0;
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.km-sprintbox.on .km-sprintname { color: var(--text-accent); }
+.km-sprintname:hover { color: var(--text-primary); }
+.km-bl-empty {
+  padding: var(--space-5) var(--space-4); font: var(--type-body-sm);
+  color: var(--text-tertiary); text-align: center;
+  border: 1px dashed var(--border-subtle); border-radius: var(--radius-md);
+}
+.km-bl-new { display: flex; align-items: center; gap: var(--space-3); }
+.km-bl-new input {
+  width: 170px; padding: var(--space-3) var(--space-4);
+  background: var(--surface-input); border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); font: var(--type-body-sm); color: var(--text-primary);
+}
+.km-donerow {
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: var(--space-4) var(--space-3);
+}
+.km-donerow .nm { flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-secondary); }
 
 .km-batch { display: flex; flex-direction: column; gap: var(--space-2); }
 .km-devgroup { display: flex; flex-direction: column; gap: var(--space-3); }
@@ -4393,11 +4467,16 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 /* The handle is a CONTROL, not decoration, so it takes a readable tone at rest
    — --text-disabled is the tone the kit reaches for and it measures under AA
    on this card. */
+.km-blrow { cursor: grab; }
 .km-blrow .grip {
-  flex: none; width: 16px; padding: 0; border: 0; background: transparent;
-  cursor: grab; text-align: center; color: var(--text-tertiary);
+  flex: none; width: 16px; text-align: center; color: var(--text-tertiary);
   font: var(--weight-regular) var(--text-sm)/1.4 var(--font-sans);
 }
+/* #477 — the rows the night would actually take, inside the box in progress.
+   A left edge rather than a fill: the row already carries chips, and a tinted
+   background behind them would recolour every one of their grounds — which is
+   exactly what the palette audit measures. */
+.km-blrow.runs { border-left: 2px solid var(--lime-500); }
 .km-blrow:hover .grip, .km-blrow.dragging .grip { color: var(--text-secondary); }
 .km-blrow .rank { flex: none; width: 20px; text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
 .km-blrow .kind { flex: none; display: flex; }
@@ -4411,10 +4490,11 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .km-blrow .pri { flex: none; width: 26px; text-align: center; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); }
 .km-blrow .pts { flex: none; width: 20px; text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
 
-/* The cut: everything above it is what In Progress can hold. */
-.km-cut { display: flex; align-items: center; gap: var(--space-4); padding: 2px var(--space-4); }
-.km-cut .rule { flex: 1; height: 1px; background: var(--lime-700); }
-.km-cut .lbl { flex: none; font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--lime-600); }
+/* `.km-cut` — the mockup's WIP line — went with the mockup (#477). The board's
+   In Progress column has no stored limit and inventing one here would have been
+   a second truth about concurrency next to `autopilotWorkers`; what the backlog
+   says instead is which rows are RUNNABLE in the sprint that is running, which
+   is a fact rather than an invented threshold. */
 
 /* ---- Development: branches in the order they can land ---- */
 .km-branch {
@@ -4478,9 +4558,13 @@ body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .t
 .km-branchbody .acts { display: flex; gap: var(--space-3); flex-wrap: wrap; }
 
 @media (max-width: 1080px) {
-  /* The backlog row's optional freight goes first: the provenance and the area
-     are context, the title and the rank are the row. */
-  .km-blrow .from, .km-blrow .k-tag { display: none; }
+  /* The backlog row's optional freight goes first: the area is context, the
+     title and the rank are the row. THE WARNING CHIP STAYS (#477) — "parked",
+     "claimed", "built" is WHY a row in the sprint in progress is not going to
+     be built tonight, and dropping it at a narrow width would leave the header's
+     runnable count unexplainable on exactly the screens with least room to go
+     hunting. Same for "runs". */
+  .km-blrow .k-tag:not(.warning):not(.success) { display: none; }
   .km-branchhead .delta, .km-branchhead .diff { display: none; }
 }
 

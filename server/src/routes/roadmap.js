@@ -18,16 +18,17 @@ const SCHED_MINUTES = SCHED_WEEKS * MIN_PER_WEEK;
 // grab — fifteen minutes is the finest the timeline's hour grain snaps to.
 const MIN_SCHED_LEN = 15;
 
-// Risk tiers (#212) — graduated trust. 'low' lets a green overnight run
+// Risk levels (#212) — graduated trust. 'low' lets a green overnight run
 // auto-queue its own merge; anything else keeps the human on the merge button.
+// Called a "risk tier" everywhere until #477, which retired the OTHER tier and
+// left the word ambiguous on a route that has to be read exactly.
 const RISKS = ['low', 'normal', 'high'];
-// Desire tiers (#227) — the owner's ranking of what they want NEXT, distinct
-// from the priority bucket's sizing. '' (→ NULL) = unranked, which sorts last.
-const TIERS = ['S', 'A', 'B', 'C'];
-const cleanTier = (v) => {
-  const t = String(v ?? '').trim().toUpperCase();
-  return TIERS.includes(t) ? t : null;
-};
+// THE DESIRE TIER (#227) IS GONE (#477). S/A/B/C was the run queue's primary
+// sort and it is now the item's place inside the sprint it was dragged into —
+// see routes/sprints.js. This route writes `sprint_id` and `sprint_rank` only
+// as a SINGLE-ITEM move (drag one card out of a box, or into the backlog); the
+// ordered kind goes through `PUT /sprints/:id/order`, which rewrites a whole
+// box at once and is the only way a rank stops being ambiguous.
 import { roadmapItemShape, groupRoadmap } from '../shape.js';
 import { buildPrompt } from '../prompts.js';
 import { agentClient } from '../agents.js';
@@ -124,7 +125,6 @@ roadmap.post('/', async (req, res) => {
   // #262 — an untouched default isn't a human decision; only a caller who
   // actually sent a risk gets credited as its source.
   const riskSource = req.body?.risk !== undefined ? 'human' : null;
-  const tier = cleanTier(req.body?.tier);
   // The Polaris hook: which agent_profiles key should build this item ('' =
   // the default executor). A plain string, same handling as any other.
   const agentProfile = String(req.body?.agentProfile || '').trim().slice(0, 60);
@@ -207,10 +207,15 @@ roadmap.post('/', async (req, res) => {
     // branches that each rewrote this one statement. Both columns are real;
     // the merge left two whole INSERTs stacked, which JS read as a tagged
     // template call rather than a syntax error.
-    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, tier, agent_profile, fly_session,
+    // A NEW ROW IS ALWAYS BORN IN THE BACKLOG. `sprint_id` is not settable
+    // here and that is deliberate: putting work into a sprint is a commitment
+    // somebody makes by dragging it into a box, and a POST that could land
+    // straight in the ACTIVE sprint would let any caller — the extractor, a
+    // fly card, a script — commission tonight's work by writing a title.
+    `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, agent_profile, fly_session,
                                 sched_start_min, sched_len_min, plan_start_min, plan_len_min, sub_area)
-     VALUES ($1,$2,$3,$4,$5,$14,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$15,$16,$17,$16,$17,$18) RETURNING *`,
-    [req.project.id, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, tier, agentProfile, source, flySession,
+     VALUES ($1,$2,$3,$4,$5,$13,$6,$7,$8,$9::jsonb,$10,$11,$12,$14,$15,$16,$15,$16,$17) RETURNING *`,
+    [req.project.id, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, agentProfile, source, flySession,
       schedStart, schedLen, subArea]
   );
   res.status(201).json(roadmapItemShape(rows[0]));
@@ -345,10 +350,10 @@ roadmap.patch('/:id', async (req, res) => {
     vals.push(String(req.body.subArea || '').trim().toLowerCase().slice(0, 40));
   }
   if (req.body?.risk !== undefined) {
-    // #262 — where the tier comes from decides who may write it. A human
+    // #262 — where the level comes from decides who may write it. A human
     // decision overrides the machine outright, justification and all — its old
-    // reason no longer applies. An auto tier is only a SUGGESTION, so the guard
-    // against it clobbering a human's tier has to live IN the UPDATE: every RHS
+    // reason no longer applies. An auto level is only a SUGGESTION, so the guard
+    // against it clobbering a human's has to live IN the UPDATE: every RHS
     // sees the OLD row, so the CASE is atomic and two nights writing the same
     // item can't race it — a read-then-check first would leave exactly that gap.
     // ABSENT means the modal: a bare {risk} PATCH is a person, and a person
@@ -368,9 +373,33 @@ roadmap.patch('/:id', async (req, res) => {
       vals.push(risk, reason);
     }
   }
-  if (req.body?.tier !== undefined) {
-    // #227 — the desire tier. '' (or anything outside S/A/B/C) unranks it.
-    sets.push(`tier = $${i++}`); vals.push(cleanTier(req.body.tier));
+  if (req.body?.sprintId !== undefined) {
+    // #477 — move ONE item between the backlog and a sprint. `null` sends it
+    // back to the backlog and zeroes the rank with it, because a rank left
+    // behind is a position in a box the row is no longer in and the next drop
+    // would read it as a real one.
+    //
+    // The sprint is checked against THIS PROJECT in the same statement rather
+    // than in a lookup first: an id belonging to somebody else's project would
+    // otherwise pass a check and then be written by a second query. A row that
+    // fails the sub-select lands NULL — the backlog — which is the safe end of
+    // the two, since the alternative is silently filing work into a stranger's
+    // sprint.
+    const sid = req.body.sprintId === null ? null : Math.trunc(Number(req.body.sprintId));
+    if (sid === null || !Number.isFinite(sid)) {
+      sets.push('sprint_id = NULL'); sets.push('sprint_rank = 0');
+    } else {
+      sets.push(`sprint_id = (SELECT id FROM sprints WHERE id = $${i++} AND project_id = $${i++})`);
+      vals.push(sid, req.project.id);
+      // The bottom of the box. A single-item move has no opinion about where
+      // in the order it lands, and the top is the one place it must not
+      // default to — that slot is a claim about what the night takes first.
+      sets.push(`sprint_rank = (SELECT COALESCE(MAX(sprint_rank), -1) + 1 FROM roadmap_items WHERE sprint_id = $${i++})`);
+      vals.push(sid);
+    }
+  }
+  if (req.body?.sprintRank !== undefined && Number.isFinite(Number(req.body.sprintRank))) {
+    sets.push(`sprint_rank = $${i++}`); vals.push(Math.max(0, Math.trunc(Number(req.body.sprintRank))));
   }
   if (req.body?.built_note !== undefined) {
     // Capped out loud — see capNote. This is the ONLY writer of the column, so
@@ -505,10 +534,15 @@ roadmap.post('/suggest-title', async (req, res) => {
 
 // POST /assist  -> the Curator fills the whole item from its note (the
 // modal's ✧ button): title, tidied note, area, branch claim, priority and
-// tier (#277). Suggestion only — it prefills the fields and the human saves
-// (or doesn't), and the modal only takes a tier into an EMPTY tier, so a rank
-// you set by hand is never re-decided by the model. 503 if the host is
-// unreachable.
+// risk. Suggestion only — it prefills the fields and the human saves (or
+// doesn't). 503 if the host is unreachable.
+//
+// IT DOES NOT PROPOSE A SPRINT, and never will. #277 let it propose a desire
+// tier and #298 then carved S back out again on the grounds that the top of
+// the owner's queue is the rank deciding what the machine works tonight, so a
+// model may argue for it but must never assign it. #477 made that carve-out
+// the whole rule: sprint membership IS what the machine works tonight, so a
+// field that filled it would be the assist commissioning work.
 roadmap.post('/assist', async (req, res) => {
   if (await refused('assist', res)) return;
   const note = String(req.body?.note || '').trim().slice(0, 4000);
@@ -544,8 +578,6 @@ roadmap.post('/assist', async (req, res) => {
     const answer = await curator.ask('assist', prompt, { timeoutMs: 25_000 });
     const title = String(answer?.title || '').trim().slice(0, 300);
     if (!title) return res.status(502).json({ error: 'The Curator returned nothing usable.' });
-    const rawTier = String(answer?.tier || '').trim().toUpperCase();
-    const fillTier = allowed.has('tier') && TIERS.includes(rawTier) ? rawTier : '';
     // A switched-off field comes back empty — the modal leaves it untouched.
     res.json({
       title,
@@ -554,14 +586,6 @@ roadmap.post('/assist', async (req, res) => {
       // A branch claims work for a stream — only ever suggest one that already exists.
       branch: allowed.has('branch') && branches.includes(String(answer?.branch || '').trim()) ? String(answer.branch).trim() : '',
       priority: allowed.has('priority') && BUCKETS.includes(answer?.priority) ? answer.priority : null,
-      // #277 — a desire tier, only ever S/A/B/C; anything else means "no view".
-      // #298 splits S back out of it: S is the top of the owner's own queue —
-      // the rank that decides what the machine works TONIGHT — so the model
-      // may argue for it but must never assign it. A/B/C fill an empty field
-      // as before; an S comes back as a suggestion the modal offers, and only
-      // a human press puts it on the item.
-      tier: fillTier && fillTier !== 'S' ? fillTier : '',
-      tierSuggested: fillTier === 'S' ? 'S' : '',
       // #298 — how much care the change needs, read from the same note.
       risk: allowed.has('risk') && RISKS.includes(String(answer?.risk || '').trim().toLowerCase())
         ? String(answer.risk).trim().toLowerCase() : '',
